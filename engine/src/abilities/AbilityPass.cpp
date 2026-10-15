@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityLeases.h>
+#include <abilities/AbilityPredictionJournal.h>
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
 #include <authored/AuthoredQueryDispatcher.h>
@@ -9,6 +10,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
+#include <cassert>
 
 AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const AbilityHost& host, const FixedSimTime& now,
                          std::uint32_t stepBudget, std::uint32_t lingerTicks, bool predicting)
@@ -22,10 +24,30 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , TagRegistry(world.TryGetResource<GameplayTagRegistry>())
     , Attributes(world.TryGetResource<AttributeRegistry>())
     , History(world.TryGetResource<AbilityTrace>())
+    , Journal(predicting ? world.TryGetResource<AbilityPredictionJournal>() : nullptr)
     , Inputs(buffers.Inputs)
     , Answer(buffers.Answer)
     , Costs(buffers.Costs)
+    , Emitted(buffers.Emitted)
 {
+    Emitted.clear();
+}
+
+std::uint8_t AbilityPass::NextCueOrdinal(EntityId actor, std::uint64_t activation, std::uint16_t op, EntityId target)
+{
+    const auto same = [&](const AbilityCueEmission& emitted) {
+        return emitted.Actor == actor && emitted.Activation == activation && emitted.Op == op
+            && emitted.Target == target;
+    };
+    auto found = std::ranges::find_if(Emitted, same);
+    if (found == Emitted.end())
+    {
+        Emitted.push_back({ .Actor = actor, .Activation = activation, .Op = op, .Target = target });
+        found = Emitted.end() - 1;
+    }
+    const std::uint8_t ordinal = found->Count;
+    found->Count = static_cast<std::uint8_t>(std::min<int>(ordinal + 1, 0xFF));
+    return ordinal;
 }
 
 const AbilityDefinition* AbilityPass::DefinitionOf(const AbilityRecord& record) const
@@ -149,6 +171,12 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
                 .Element = failing });
         return -1;
     }
+    if (Predicting && (Journal == nullptr || Journal->Full()))
+    {
+        Trace({ .Actor = actor.Entity, .Key = key, .Event = AbilityTraceEvent::Refused,
+                .Refusal = AbilityRefusal::PredictionFull });
+        return -1;
+    }
     const int claimed = ClaimSlot(actor);
     if (claimed < 0)
     {
@@ -173,6 +201,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability), grant.Id);
     record.Predicted = Predicting;
     actor.Locals(slot) = AbilityRecordLocals{};
+    if (Predicting)
+    {
+        [[maybe_unused]] const bool tracked = Journal->Track(actor.Entity, record, actor.Locals(slot));
+        assert(tracked && "the journal had room when the start was admitted");
+    }
 
     (void)Commit(actor, slot, definition, definition.StartGroups);
     if (definition.Cooldown && definition.Cooldown->Start == AbilityCooldownStart::OnStart)
@@ -511,7 +544,9 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
                                                  : Entities.TryGet<AbilityCueLog>(actor.Entity))
             (void)AppendAbilityCue(*log, { .Cue = op.Cue, .Activation = running.Identity, .Op = index,
                                            .Tick = Now.TickIndex, .Point = place.Point, .Normal = place.Normal,
-                                           .Target = place.Target });
+                                           .Target = place.Target,
+                                           .Ordinal = NextCueOrdinal(actor.Entity, running.Identity, index,
+                                                                     place.Target) });
         Trace(traced);
         return true;
     }

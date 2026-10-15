@@ -52,6 +52,11 @@ void Forget(ActiveAbilities& active, AbilityLocals& locals, std::uint64_t identi
 }
 }
 
+bool AbilityPredictionJournal::Track(EntityId actor, const AbilityRecord& record, const AbilityRecordLocals& locals)
+{
+    return Guesses.Add(Guess{ actor, record, locals }, record.Key.CommandTick);
+}
+
 void AbilityPredictionJournal::Note(World& world, EntityId actor)
 {
     const ActiveAbilities* active = static_cast<const World&>(world).TryGet<ActiveAbilities>(actor);
@@ -63,6 +68,7 @@ void AbilityPredictionJournal::Note(World& world, EntityId actor)
         const AbilityRecord& record = active->Records[slot];
         if (!record.Predicted || record.State == AbilityRecordState::Free)
             continue;
+        // A guess the journal has decided is not tracked again while it lingers.
         if (Guess* known = Guesses.Find([&](const Guess& guess) {
                 return guess.Actor == actor && guess.Record.Identity == record.Identity;
             }))
@@ -70,8 +76,6 @@ void AbilityPredictionJournal::Note(World& world, EntityId actor)
             known->Record = record;
             known->Locals = locals->Records[slot];
         }
-        else
-            (void)Guesses.Add(Guess{ actor, record, locals->Records[slot] }, record.Key.CommandTick);
     }
 }
 

@@ -2,6 +2,7 @@
 // leases and every way an activation ends, driven through real input records and
 // the real dispatchers.
 
+#include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
@@ -40,6 +41,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -944,6 +946,33 @@ TEST_F(AbilityRuntime, TwoGrantsOfOneAbilityStartTwoActivationsNamedApart)
             identities.push_back(record.Identity);
     ASSERT_EQ(identities.size(), 2u) << "one press, observed by both grants";
     EXPECT_NE(identities[0], identities[1]) << "leases, cues and guesses key on the identity";
+}
+
+TEST_F(AbilityRuntime, AnOpsRepeatedCueIsNumberedByWhatItEmittedNotWhatTheRingKept)
+{
+    // After the release, A and B alternate within the tick until the step budget ends
+    // them: A's shot cue repeats, each time after B's cues have filled the ring.
+    std::string cues;
+    for (std::size_t i = 0; i < kAbilityCueLogCapacity; ++i)
+        cues += std::format(R"({{ "key": "o_b{}", "op": "cue", "cue": "cue.impact" }}{})", i,
+                            i + 1 < kAbilityCueLogCapacity ? ", " : "");
+    const AbilityId looping = Define("asset://abilities/looping.sdata", std::format(R"({{
+        "input_default": {{ "action": "Input.PrimaryFire", "policy": "press_release" }},
+        "phases": [
+          {{ "key": "p_a", "enter": [ {{ "key": "o_a", "op": "cue", "cue": "cue.shot" }} ],
+            "then": [ {{ "key": "t_b", "on": "release", "to": "p_b" }} ] }},
+          {{ "key": "p_b", "enter": [ {} ], "then": [ {{ "key": "t_a", "to": "p_a" }} ] }} ] }})",
+                                                                                     cues));
+    const EntityId actor = Actor();
+    Grant(actor, looping);
+    Step({ Press(kFire), Release(kFire) });
+    ASSERT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::StepBudget);
+
+    const AbilityCueLog& log = *Entities.TryGet<AbilityCueLog>(actor);
+    ASSERT_EQ(std::ranges::count(log.Entries, Tag("cue.shot"), &AbilityCueEntry::Cue), 1)
+        << "only the last shot cue is still in the ring";
+    const auto shot = std::ranges::find(log.Entries, Tag("cue.shot"), &AbilityCueEntry::Cue);
+    EXPECT_EQ(shot->Ordinal, Settings.StepBudget / 2) << "the op's fifth shot cue this tick";
 }
 
 TEST_F(AbilityRuntime, RevokingOneGrantEndsOnlyItsActivations)

@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <vector>
 
+class AbilityPredictionJournal;
 class AbilityRegistry;
 class AttributeRegistry;
 class GameplayTagRegistry;
@@ -46,12 +47,23 @@ struct AbilityActor
     [[nodiscard]] bool Alive() const { return Entities->IsAlive(Entity); }
 };
 
+// How many cues one op has logged at one target this tick: the next one's ordinal.
+struct AbilityCueEmission
+{
+    EntityId Actor;
+    std::uint64_t Activation = 0;
+    std::uint16_t Op = 0;
+    EntityId Target;
+    std::uint8_t Count = 0;
+};
+
 // What one pass reuses from the last, as a World resource.
 struct AbilityPassBuffers
 {
     std::vector<AuthoredValue> Inputs;
     AuthoredValue Answer;
     std::vector<EffectId> Costs;
+    std::vector<AbilityCueEmission> Emitted;
 };
 
 struct AbilityCommitResult
@@ -149,6 +161,8 @@ private:
     void Write(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition, std::uint8_t local,
                const AuthoredValue& answer, bool answered);
     int ClaimSlot(const AbilityActor& actor);
+    [[nodiscard]] std::uint8_t NextCueOrdinal(EntityId actor, std::uint64_t activation, std::uint16_t op,
+                                              EntityId target);
 
     World& Entities;
     AbilityHost Host;
@@ -160,6 +174,7 @@ private:
     const GameplayTagRegistry* TagRegistry = nullptr;
     const AttributeRegistry* Attributes = nullptr;
     AbilityTrace* History = nullptr;
+    AbilityPredictionJournal* Journal = nullptr;
 
     // The op being run with `targets`, and its current element.
     EntityId Target;
@@ -167,4 +182,5 @@ private:
     std::vector<AuthoredValue>& Inputs;
     AuthoredValue& Answer;
     std::vector<EffectId>& Costs;
+    std::vector<AbilityCueEmission>& Emitted;
 };

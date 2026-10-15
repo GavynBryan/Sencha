@@ -23,7 +23,8 @@ struct AbilityCueEntry
     Vec3d Point = Vec3d::Zero();
     Vec3d Normal = Vec3d::Zero();
     EntityId Target;
-    // Which of the op's cues at this target this tick it is, from zero.
+    // Which of the op's cues at this target this tick it is, from zero, counted by
+    // the pass that made it rather than by what the ring still holds.
     std::uint8_t Ordinal = 0;
 };
 
@@ -46,8 +47,7 @@ struct SENCHA_COMPONENT("sencha.ability_predicted_cues") AbilityPredictedCues
     AbilityCueLog Log;
 };
 
-// Appends `entry` under the next serial number, which it returns, numbering it
-// after the log's entries for the same activation, op, tick and target.
+// Appends `entry` under the next serial number, which it returns.
 std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry);
 
 // One occurrence as every machine names it: the activation, op, tick, target and

@@ -434,6 +434,8 @@ record's wire form now carries; `AbilityCueEntry` gains `Ordinal`, which the cue
 log's wire form carries and `AbilityCueOccurrence` hashes with the target. The
 replication table hash moves. `AbilityGrantEntries` rebuilds when the tag registry
 grows, and a binding whose context names an unregistered tag is unbound.
+`AbilityRefusal` appends `PredictionFull`; `AbilityPredictionJournal::Track` and
+`Full` are new, and `Note` only updates guesses the journal already tracks.
 
 **Engine teardown.** `Engine` declares its `BackRouter` before the pause menu and
 options page that lease consumers from it, so they hand their leases back to a

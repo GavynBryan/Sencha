@@ -1844,3 +1844,24 @@ bytes per actor with grants, up from 5,976 (2,912 for the guess slots, 128 for t
 ordinal). The pass at 256 actors takes 0.073 ms idle and 0.126 ms firing, up from
 0.060 and 0.117, because it walks ten slots instead of six. A firing actor costs a
 peer 340 B/s.
+
+### 17.13 Second review of PR #166
+
+Against `3ead98f`: the five findings above confirmed fixed, plus two more.
+
+1. **Prediction journal exhaustion was not enforced at activation.** Fixed. A guess
+   is tracked by the journal as it starts (`AbilityPredictionJournal::Track`), and a
+   start the journal has no room for is refused `PredictionFull` before anything
+   runs. `Note` now only updates tracked guesses: before, it re-added guesses the
+   journal had already decided while they lingered, which spent its capacity on
+   nothing. (`NoGuessStartsThatTheJournalCannotDecide`: seventeen unacknowledged
+   shots, then a held glow the authority never hears.)
+2. **Cue ordinals could repeat after the ring dropped an entry.** Fixed rather than
+   documented. The pass counts each op's cues per target in its per-tick buffers
+   (`AbilityPassBuffers::Emitted`, cleared when a pass starts, so a warm pass
+   allocates nothing). It is reachable only through a phase loop the compiler's
+   `zero_time_cycle` check does not see: `on: release` stays true after a release,
+   so A →release→ B →immediate→ A repeats until the step budget ends it.
+   (`AnOpsRepeatedCueIsNumberedByWhatItEmittedNotWhatTheRingKept`.)
+
+The wire forms are unchanged and the replication table hash does not move.

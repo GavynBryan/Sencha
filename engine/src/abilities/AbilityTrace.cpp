@@ -11,6 +11,7 @@ std::string_view AbilityRefusalName(AbilityRefusal refusal)
     case AbilityRefusal::Instances: return "at its instance limit";
     case AbilityRefusal::Capacity: return "no room";
     case AbilityRefusal::CostFailed: return "cannot pay";
+    case AbilityRefusal::PredictionFull: return "too many guesses undecided";
     }
     return "unknown";
 }

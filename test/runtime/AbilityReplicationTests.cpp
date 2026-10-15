@@ -902,20 +902,20 @@ TEST_F(AbilityReplication, TwoGrantsOfOneAbilityAreNamedApartOnEveryMachine)
 
 TEST(AbilityCueOccurrence, NamesEachTargetAndEachRepeat)
 {
-    AbilityCueLog log;
     const GameplayTagId cue{ 3 };
-    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 1, 1 }));
-    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 2, 1 }));
-    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 1, 1 }));
-    const std::uint64_t first = AbilityCueOccurrence(log.Entries[1]);
-    const std::uint64_t other = AbilityCueOccurrence(log.Entries[2]);
-    const std::uint64_t again = AbilityCueOccurrence(log.Entries[3]);
-    EXPECT_NE(first, other) << "one op striking two targets in a tick is two occurrences";
-    EXPECT_NE(first, again) << "and striking one target twice is two";
-
-    AbilityCueLog guessed;
-    (void)AppendAbilityCue(guessed, CueAt(cue, 10, EntityId{ 1, 1 }));
-    EXPECT_EQ(AbilityCueOccurrence(guessed.Entries[1]), first) << "a guess names its occurrence as the authority does";
+    const AbilityCueEntry first = CueAt(cue, 10, EntityId{ 1, 1 });
+    AbilityCueEntry other = first;
+    other.Target = EntityId{ 2, 1 };
+    AbilityCueEntry again = first;
+    again.Ordinal = 1;
+    AbilityCueEntry later = first;
+    later.Seq = 9;
+    later.Point = Vec3d(1.0f, 2.0f, 3.0f);
+    EXPECT_NE(AbilityCueOccurrence(first), AbilityCueOccurrence(other))
+        << "one op striking two targets in a tick is two occurrences";
+    EXPECT_NE(AbilityCueOccurrence(first), AbilityCueOccurrence(again)) << "and striking one target twice is two";
+    EXPECT_EQ(AbilityCueOccurrence(first), AbilityCueOccurrence(later))
+        << "a guess names its occurrence as the authority does, whatever its serial or place";
 }
 
 TEST_F(AbilityReplication, AGuessedCueHidesOnlyTheAuthorityEntryItGuessed)
@@ -936,4 +936,34 @@ TEST_F(AbilityReplication, AGuessedCueHidesOnlyTheAuthorityEntryItGuessed)
     Client.Presenter->Present(client, ClientNow);
     EXPECT_EQ(Client.Showings.Counts.size(), 2u) << "the authority's entry for the guessed target is not shown again; "
                                                      "the one the guess did not make is";
+}
+
+TEST_F(AbilityReplication, NoGuessStartsThatTheJournalCannotDecide)
+{
+    Grant(kShot, "asset://abilities/shot.sdata", "g_shot");
+    Grant(kGlowing, "asset://abilities/glowing.sdata", "g_glow");
+    Predict();
+    const AbilityPredictionJournal& journal = Client.Entities.GetResource<AbilityPredictionJournal>();
+    // No snapshot arrives while the client fires: every guess waits on the authority.
+    const auto unheard = [&](std::vector<InputActionEdge> edges) {
+        ClientTick(edges);
+        Commands.emplace_back();
+    };
+    for (std::size_t shot = 0; shot <= AbilityPredictionJournal::kCapacity; ++shot)
+    {
+        unheard({ { kFire, InputEdgeKind::Press } });
+        unheard({ { kFire, InputEdgeKind::Release } });
+    }
+    ASSERT_EQ(journal.Size(), AbilityPredictionJournal::kCapacity);
+
+    unheard({ { kGlowAction, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Glows.Held, 0) << "a guess the journal has no room for is not made";
+    EXPECT_FALSE(std::ranges::any_of(RemoteRecords().Records, [](const AbilityRecord& record) {
+        return record.Predicted && record.State == AbilityRecordState::Live;
+    }));
+
+    // The authority heard none of it, and refuses everything the client guessed.
+    Locksteps(24);
+    EXPECT_EQ(journal.Size(), 0u);
+    EXPECT_EQ(Client.Glows.Held, 0);
 }

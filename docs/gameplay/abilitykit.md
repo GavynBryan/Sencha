@@ -363,7 +363,8 @@ Three channels carry what happened, all in replicated state:
   `AbilityCueLog`, a ring of eight entries with a u16 serial, the activation, the
   op, the tick and the place (a hit's point, normal and entity, an entity, or a
   vector). An op run over a target list makes one entry per target, and an entry
-  carries its ordinal among the op's entries at that target that tick.
+  carries its ordinal among the op's entries at that target that tick, counted by
+  the pass rather than read back from the ring.
 - **Pulse cues** — a `cue` op in a pulse list writes nothing new: the record's pulse
   count and its last hit (`LastPoint`, `LastNormal`, `LastTarget`) carry it, so an
   automatic weapon costs no log entries.
@@ -437,8 +438,10 @@ The guesses sit beside the authority's records, never over them. `ActiveAbilitie
 holds the authority's six records, which the codec sends and a snapshot rewrites,
 then `kAbilityGuessCapacity` slots for guesses, one per activation the authority can
 hold live, so a client can guess every start the authority admits.
-`AbilityPredictionJournal` (a `PredictionJournal`) puts the guesses back after each
-snapshot. A client's pass changes only its guesses (`AbilityPass::Runs`): input,
+`AbilityPredictionJournal` (a `PredictionJournal`) takes each guess as it starts
+and puts the guesses back after each snapshot. A guess the journal has no room
+for is not made (`PredictionFull`): with sixteen undecided, the client waits for
+the authority's word, and its input still reaches the authority as always. A client's pass changes only its guesses (`AbilityPass::Runs`): input,
 `cancel_tags` and requests leave the authority's records as they arrived. A guess the authority
 also started keeps running here, with the authority's extra pulses added; one it
 ended ends here with the authority's reason; one it never started, once it has run

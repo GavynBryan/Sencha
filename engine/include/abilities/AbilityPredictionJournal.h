@@ -19,7 +19,11 @@ class AbilityPredictionJournal
 public:
     static constexpr std::size_t kCapacity = 16;
 
-    // After a client's pass: what each of `actor`'s guesses now is.
+    // A guess as it starts, the only way one is made. False, tracking nothing, when full.
+    [[nodiscard]] bool Track(EntityId actor, const AbilityRecord& record, const AbilityRecordLocals& locals);
+    [[nodiscard]] bool Full() const { return Guesses.Full(); }
+
+    // After a client's pass: what each of `actor`'s tracked guesses now is.
     void Note(World& world, EntityId actor);
 
     // After a snapshot, with the last command the authority ran.
