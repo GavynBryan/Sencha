@@ -126,9 +126,11 @@ namespace
     struct Region
     {
         std::vector<Vec2d> Outline;
-        // The neighbour face this region is shared with, when it is.
+        // The neighbour face this region is shared with, when it is, and that
+        // neighbour's index.
         const BrushFace*   Across = nullptr;
         bool               Keep = true;
+        std::optional<std::uint32_t> Neighbour;
     };
 
     // The slab over `outline` (on the face plane) between the inner and outer
@@ -211,7 +213,7 @@ namespace
                                 float thickness, std::span<const ShellNeighbour> neighbours, std::uint32_t f,
                                 ShellResult& result)
     {
-        std::vector<Region> regions{ Region{ face } };
+        std::vector<Region> regions{ Region{ face, nullptr, true, std::nullopt } };
         for (std::uint32_t index = 0; index < neighbours.size(); ++index)
         {
             const ShellNeighbour& neighbour = neighbours[index];
@@ -261,9 +263,9 @@ namespace
                     }
                     std::vector<Vec2d> inside = ClipPolygonToConvex2D(region.Outline, shared, kShareTolerance);
                     if (inside.size() >= 3 && PolygonSignedArea(inside) > kShareTolerance)
-                        split.push_back(Region{ std::move(inside), &across, neighbour.OwnsShared });
+                        split.push_back(Region{ std::move(inside), &across, neighbour.OwnsShared, index });
                     for (std::vector<Vec2d>& piece : Outside(region.Outline, shared))
-                        split.push_back(Region{ std::move(piece) });
+                        split.push_back(Region{ std::move(piece), nullptr, true, std::nullopt });
                 }
                 regions = std::move(split);
             }
@@ -396,10 +398,16 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
                        "face " + std::to_string(f) + " is narrower than twice the wall thickness");
                 return result;
             }
-            ShellSlab slab{ std::move(*mesh), f, faces[f].Inner.Normal, {} };
+            ShellSlab slab{ std::move(*mesh), f, faces[f].Inner.Normal, {}, region.Neighbour, {} };
             for (std::uint32_t g = 0; g < slab.Mesh.Faces.size(); ++g)
-                if (slab.Mesh.Faces[g].Normal.Dot(faces[f].Inner.Normal) < -1.0f + kParallel)
+            {
+                const BrushFace& built = slab.Mesh.Faces[g];
+                const float facing = built.Normal.Dot(faces[f].Inner.Normal);
+                if (facing < -1.0f + kParallel)
                     slab.InnerFaces.push_back(g);
+                else if (facing < 1.0f - kParallel)
+                    slab.Ends.push_back(Plane::FromNormalAndPoint(built.Normal, slab.Mesh.Vertices[built.Loop.front()].Position));
+            }
             result.Slabs.push_back(std::move(slab));
         }
     }
@@ -507,4 +515,67 @@ void CutOpenings(ShellResult& shell, float thickness, std::span<const ShellOpeni
         if (cut)
             slab.InnerFaces = FacesFacing(slab.Mesh, slab.Outward * -1.0f);
     }
+}
+
+namespace
+{
+    bool OnAnyPlane(const BrushMesh& mesh, const BrushFace& face, std::span<const Plane> planes)
+    {
+        const Vec3d normal = BrushComputeFaceNormal(mesh, face);
+        return std::any_of(planes.begin(), planes.end(), [&](const Plane& plane) {
+            return normal.Dot(plane.Normal) > 1.0f - kParallel
+                && std::all_of(face.Loop.begin(), face.Loop.end(), [&](std::uint32_t v) {
+                       return std::abs(plane.SignedDistanceTo(mesh.Vertices[v].Position)) <= kPlanarTolerance;
+                   });
+        });
+    }
+
+    // The faces of `mesh` listed, with only the vertices they use.
+    BrushMesh FacesOf(const BrushMesh& mesh, std::span<const std::uint32_t> faces)
+    {
+        BrushMesh part;
+        std::vector<std::uint32_t> remap(mesh.Vertices.size(), BrushInvalidIndex);
+        for (const std::uint32_t f : faces)
+        {
+            BrushFace face = mesh.Faces[f];
+            for (std::uint32_t& v : face.Loop)
+            {
+                if (remap[v] == BrushInvalidIndex)
+                {
+                    remap[v] = static_cast<std::uint32_t>(part.Vertices.size());
+                    part.Vertices.push_back(mesh.Vertices[v]);
+                }
+                v = remap[v];
+            }
+            part.Faces.push_back(std::move(face));
+        }
+        return part;
+    }
+}
+
+std::vector<ShellSurface> ShellSurfaces(const ShellResult& shell)
+{
+    std::vector<ShellSurface> surfaces;
+    for (std::uint32_t index = 0; index < shell.Slabs.size(); ++index)
+    {
+        const ShellSlab& slab = shell.Slabs[index];
+        std::vector<std::uint32_t> sides[3];
+        for (std::uint32_t f = 0; f < slab.Mesh.Faces.size(); ++f)
+        {
+            const BrushFace& face = slab.Mesh.Faces[f];
+            const float facing = BrushComputeFaceNormal(slab.Mesh, face).Dot(slab.Outward);
+            ShellSide side = ShellSide::Outside;
+            if (facing < -1.0f + kParallel)
+                side = ShellSide::Room;
+            else if (facing > 1.0f - kParallel)
+                side = slab.SharedWith ? ShellSide::NeighbourRoom : ShellSide::Outside;
+            else if (!OnAnyPlane(slab.Mesh, face, slab.Ends))
+                side = ShellSide::Room; // a reveal: the side of an opening cut through it
+            sides[static_cast<std::size_t>(side)].push_back(f);
+        }
+        for (std::size_t side = 0; side < 3; ++side)
+            if (!sides[side].empty())
+                surfaces.push_back({ index, static_cast<ShellSide>(side), FacesOf(slab.Mesh, sides[side]) });
+    }
+    return surfaces;
 }

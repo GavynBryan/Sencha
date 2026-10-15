@@ -369,3 +369,71 @@ TEST(ShellGeneration, WallsNearerThanTheirThicknessAreNoted)
     ASSERT_FALSE(shell.Problems.empty());
     EXPECT_EQ(shell.Problems.front().Kind, ShellProblemKind::WallsOverlap);
 }
+
+namespace
+{
+    std::size_t Count(const std::vector<ShellSurface>& surfaces, ShellSide side)
+    {
+        return static_cast<std::size_t>(std::ranges::count(surfaces, side, &ShellSurface::Side));
+    }
+
+    // Faces of `mesh` running across `through`: an opening's reveals.
+    std::size_t Across(const BrushMesh& mesh, Vec3d through)
+    {
+        return static_cast<std::size_t>(std::ranges::count_if(mesh.Faces, [&](const BrushFace& face) {
+            return std::abs(BrushComputeFaceNormal(mesh, face).Dot(through)) < 0.01f;
+        }));
+    }
+}
+
+TEST(ShellSurfaces, EachWallIsARoomSideAndASeparateOutside)
+{
+    const BrushMesh room = BrushOps::MakeBox({ 4, 1.5f, 3 });
+    const std::vector<ShellSurface> surfaces = ShellSurfaces(GenerateShell(room, Rules(0.25f)));
+    EXPECT_EQ(Count(surfaces, ShellSide::Room), 6u);
+    EXPECT_EQ(Count(surfaces, ShellSide::Outside), 6u);
+    EXPECT_EQ(Count(surfaces, ShellSide::NeighbourRoom), 0u);
+    for (const ShellSurface& surface : surfaces)
+    {
+        if (surface.Side == ShellSide::Room)
+        {
+            EXPECT_EQ(surface.Mesh.Faces.size(), 1u) << "a plain wall's room side is the one face looking in";
+        }
+    }
+}
+
+TEST(ShellSurfaces, ASharedWallGivesTheNeighbourItsOwnSide)
+{
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 0, 0 });
+    const BrushMesh east = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { 2.25f, 0, 0 });
+    const ShellNeighbour eastNeighbour{ &east, 0.25f, true };
+    const ShellResult shell = GenerateShell(west, Rules(0.25f), std::span(&eastNeighbour, 1));
+    const std::vector<ShellSurface> surfaces = ShellSurfaces(shell);
+    ASSERT_EQ(Count(surfaces, ShellSide::NeighbourRoom), 1u);
+    const ShellSurface& theirs = *std::ranges::find(surfaces, ShellSide::NeighbourRoom, &ShellSurface::Side);
+    EXPECT_EQ(shell.Slabs[theirs.Slab].SharedWith, std::optional<std::uint32_t>(0u));
+    EXPECT_GT(BrushComputeFaceNormal(theirs.Mesh, theirs.Mesh.Faces.front()).X, 0.99f) << "it looks into the east room";
+}
+
+TEST(ShellSurfaces, AnOpeningsRevealsBelongToTheRoomSide)
+{
+    const BrushMesh room = Shifted(BrushOps::MakeBox({ 4, 1.5f, 3 }), { 0, 1.5f, 0 });
+    ShellResult shell = GenerateShell(room, Rules(0.25f));
+    const ShellOpening door = EastOpening(4.125f, 0.0f, 0.0f, 1.2f, 2.2f);
+    CutOpenings(shell, 0.25f, std::span(&door, 1));
+    for (const ShellSurface& surface : ShellSurfaces(shell))
+    {
+        if (room.Faces[shell.Slabs[surface.Slab].SourceFace].Normal.X < 0.99f)
+            continue;
+        const std::size_t across = Across(surface.Mesh, { 1, 0, 0 });
+        if (surface.Side == ShellSide::Room)
+        {
+            EXPECT_EQ(across, 3u) << "the jambs and the head";
+        }
+        else
+        {
+            EXPECT_EQ(across, 3u) << "the outside keeps the wall's ends square to it: its top and its foot "
+                                     "either side of the door";
+        }
+    }
+}

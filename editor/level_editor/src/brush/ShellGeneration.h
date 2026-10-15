@@ -4,8 +4,10 @@
 #include "CarveShape.h"
 
 #include <core/assets/AssetRef.h>
+#include <math/geometry/3d/Plane.h>
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -20,6 +22,11 @@ struct ShellSlab
     std::uint32_t              SourceFace = 0; // the volume face it stands on
     Vec3d                      Outward;        // that face's outward normal
     std::vector<std::uint32_t> InnerFaces;     // its faces on that volume face, looking into the space
+    // The neighbour it is shared with, by index among those given: its outside
+    // is that neighbour's room side.
+    std::optional<std::uint32_t> SharedWith;
+    // The planes of its ends as built, before any opening cut it.
+    std::vector<Plane>         Ends;
 };
 
 enum class ShellProblemKind : std::uint8_t
@@ -111,3 +118,22 @@ inline constexpr float kOpeningReach = 0.5f;
 // doorway differs from a window. A cut the carve refuses is reported and the
 // slab stands uncut there.
 void CutOpenings(ShellResult& shell, float thickness, std::span<const ShellOpening> openings);
+
+enum class ShellSide : std::uint8_t
+{
+    Room,          // on the volume face, looking into the space, with the reveals of openings through it
+    NeighbourRoom, // a shared wall's other face, looking into the neighbour
+    Outside,       // the rest: the outer face and the slab's ends
+};
+
+struct ShellSurface
+{
+    std::uint32_t Slab = 0;
+    ShellSide     Side = ShellSide::Room;
+    BrushMesh     Mesh; // open, in the volume's frame
+};
+
+// Each slab's faces sorted into the surfaces a level shows, each surface its
+// own open mesh, so a room's side of a wall and its outside are separate
+// things. Every face lands in exactly one; empty surfaces are left out.
+[[nodiscard]] std::vector<ShellSurface> ShellSurfaces(const ShellResult& shell);

@@ -1,7 +1,8 @@
 # Level spatial model and authoring operations
 
 Status: **revision 3, approved 2026-10-11, with decisions D1 to D8 as
-recommended in section 10. Implementation starts with M0.** Revision 1 was
+recommended in section 10. Implementation starts with M0. Amended 2026-10-15
+by D9 (section 5.8): generated walls are real brushes, not derived pieces.** Revision 1 was
 discussed in conversation; its review is dispositioned in section 11. The
 second review, including where this plan pushes back on it, is dispositioned
 in section 12. Section 6.7 draws on the decision records of SINR's room-logic
@@ -149,7 +150,7 @@ ceiling materials.
 
 | Derived fact | Computed from | Provenance |
 |---|---|---|
-| Shell slabs | volume, `shell`, neighbouring volumes, intersecting openings | measured |
+| Shell slabs | volume, `shell`, neighbouring volumes, intersecting openings | measured; since D9 written out as wall brushes (5.8), which are saved |
 | Which spaces an opening joins | opening frame against volumes | measured |
 | Walkable surface, clearance, reachability | in-memory navigation build of solid geometry | measured, plus the scenario's assumptions |
 | Space proposals for unannotated levels | navigation segmentation | inferred (output is a proposal) |
@@ -515,6 +516,9 @@ After slabs are built:
 
 ### 5.5 Edits, detach, and staying in agreement
 
+*Superseded by D9 (5.8): walls are brushes you edit directly. What follows is
+the revision 3 design, kept for the record.*
+
 - **Generated slabs are never edit targets.** Kyusu already treats generated
   pieces this way (`viewport/Picking.cpp:330-371`). Clicking one selects the
   space. A face edit on a slab resolves to the volume face it came from, so
@@ -534,6 +538,9 @@ After slabs are built:
 
 ### 5.6 Invalidation and evaluation
 
+*Under D9 (5.8) the inputs hash below decides when a space's wall brushes are
+rebuilt, and the cook sees ordinary brushes; nothing is evaluated per frame.*
+
 - **Inputs:** the volume's mesh and world transform, `shell`, the volumes
   within `thickness` plus tolerance (found by bounds broadphase), and the
   openings whose prisms intersect the shell.
@@ -552,6 +559,65 @@ After slabs are built:
   - The zone halo collects through the same function.
   - Hidden spaces don't cook, consistent with hidden brushes today
     (`BrushCookInput.cpp:84`).
+
+### 5.8 Wall brushes (revision 4, D9)
+
+The owner's live trial of a T-shaped hallway found the derived shell hard to
+work with: a space and all its walls are one thing that can't be edited or
+optimised a wall at a time, every wall is a closed solid with its outside
+modelled as part of the room, and that outside is not separable for the
+occlusion culling the engine will want. So the shell's output becomes
+ordinary brushes the space writes into the level.
+
+**What a space writes.** The kernel (`GenerateShell`, `CutOpenings`) is
+unchanged. Each slab's faces are sorted into surfaces, and each surface is
+one open brush:
+- the **room side**: the slab's faces on the volume face, looking into the
+  space, with the reveals of every opening cut through it;
+- for a wall shared with a neighbour, **the neighbour's room side**: the
+  faces looking into the neighbour;
+- the **outside**: everything else (the outer face and the slab's ends), a
+  separate brush, so culling can drop it and a level never seen from outside
+  can delete it.
+Every wall brush is a child of the space that built it, so moving, copying
+or deleting the space takes its walls, and is named for the side it shows
+("Hall north wall", "Hall north wall outside", and "Stem south wall" for the
+Stem's side of a wall the Hall built). Materials come from the volume's face
+materials as before; a face painted with the open-face material still gets
+nothing.
+
+**Identity.** Each wall brush carries the editor-only `generated_wall`
+component: its slot (volume face, piece of that face, side), the digest of
+the brush as built, and the shell inputs it was built from. The parent is
+the space that built it. The slot is what a rebuild matches on, so a resize
+or move rewrites the same entities.
+
+**Rebuilding.** A space whose shell inputs (5.6's hash) differ from the hash
+it last built from is rebuilt: each slot's brush is rewritten if it still is
+what was built, created if missing, and deleted if the slot is gone. One
+function does this (`RebuildSpaceWalls`), and it runs in the same undo step
+as the edit that made a space stale:
+- every level-target mutation calls it before finishing, drafts included,
+  so a proposal's walls are in its change set and in its ghost;
+- every other command on the level (a face drag or bounds handle on a
+  volume, the Delete key, an inspector edit of `shell`) gets it through a
+  follow-up the command stack runs after each command and folds into that
+  command's undo step (`CommandStack::SetExecuteFollowUp`).
+Undo and redo never rebuild: they restore the walls the step recorded.
+
+**Hand edits.** A wall brush whose digest no longer matches what was built
+has been edited by hand. Its slot becomes `kept`: rebuilds leave it alone, and
+diagnostics report a kept wall that no longer meets its volume face.
+`shell.rebuild` takes a space's walls back (kept slots are rebuilt from the
+volume). `shell.detach` keeps every wall brush as it stands and drops
+`generated_wall` and `shell`, so the space stops managing them.
+
+**What this costs, against revision 3.** Walls are now saved, so a level file
+grows by its walls, and a space and its walls can disagree when a wall is
+kept. Revision 3 rejected generated-and-saved walls because telling hand
+edits apart needs bookkeeping; the slot digest is that bookkeeping, kept to
+one comparison. The cook, picking, navigation and lighting need nothing new:
+walls are brushes, and volumes stay air.
 
 ### 5.7 Moving a room with a connected corridor
 
@@ -1356,6 +1422,12 @@ socket, CLI and skill v1 (M2). MCP only later, as a thin client of the socket.
 outside the content roots, so neither asset discovery nor the cook sees them.
 Kyusu lists them in the proposal tray. Whether they are committed to version
 control is a per-project choice; the default would be to ignore them.
+
+**D9. Walls are brushes (decided 2026-10-15 by the owner, after a live
+trial).** A space writes its walls as ordinary brushes it keeps up to date
+until a wall is edited by hand, with each wall's outside a separate brush
+(5.8). Chosen over keeping walls derived and splitting them into per-wall
+pieces with a per-wall detach.
 
 ---
 
