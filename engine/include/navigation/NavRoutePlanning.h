@@ -52,10 +52,9 @@ struct NavRouteCapacity
     std::size_t Dependencies = 128;
 };
 
-// Plans a batch of inputs as one fork-join: each input gets its own output and
-// route buffer, each worker its own query context. Below `minParallel` inputs,
-// or without workers, the same function runs inline in index order. Contexts
-// and buffers are made on the owner thread on first need and kept.
+// Plans a batch as one fork-join: an output and route per input, a context per
+// worker. Below `minParallel` inputs, or with no workers, the same PlanRoute runs
+// inline in order. See docs/navigation/runtime.md, "Agents".
 class NavRoutePlanner
 {
 public:

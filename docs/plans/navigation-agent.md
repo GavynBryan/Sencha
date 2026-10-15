@@ -1,8 +1,31 @@
 # Navigation agent: requests and path following (SEN-F012)
 
-Status: **approved, revision 3** (2026-10-15); implementation in progress on
-`claude/navigation-agent-plan`. Ticket: GitHub #100. Base: `origin/main` at
-`8f13cb5e`.
+Status: **approved, revision 3** (2026-10-15); stages 0-6 implemented on
+`claude/navigation-agent-plan`. The current architecture is described in
+`docs/navigation/runtime.md`, "Agents"; this document remains the record of
+the decisions. Ticket: GitHub #100. Base: `origin/main` at `8f13cb5e`.
+
+**Where the implementation departs from this plan:**
+
+- **Stage boundaries.** The repath reactions (validation, refresh, deviation,
+  stuck) landed with Stage 2's system, because they live in the same passes.
+  Stage 3 added the fixtures that exercise them.
+- **The `Planning` phase.** It never shows between ticks for a new order: pass 2
+  plans in the same tick pass 1 takes the order up, as D11 intends. It shows
+  only while an order waits in a full queue.
+- **Authored queries.** These are hand-declared engine queries
+  (`navigation.phase`, `navigation.failure`, `navigation.remaining`), as
+  perception's are, not `SENCHA_QUERY` members of `NavAgentProgress`. The engine
+  binds them in `EngineVocabularyBindings::BindNavigation`.
+- **Console.** `nav.agent.goto <agent> me` replaces `... aim`, which needs the
+  physics world and is deferred (`docs/deferred.md`).
+- **Allocation.** With workers, a planning tick allocates exactly once:
+  `JobSystem::ParallelFor`'s own per-batch control block, which every
+  `ParallelFor` user pays. The follower itself allocates nothing in steady state
+  (`test/core/NavigationAllocationTests.cpp`).
+- **Request API.** `NavDestination::AtPoint` and `AtEntity` construct orders.
+- **Registration.** `RegisterNavigationAgents` takes the runtime world and the
+  data-asset cache too.
 
 Revision 3 makes five local corrections from the second review:
 
@@ -350,7 +373,7 @@ gameplay verbs, authority only:
 | `navigation.move_to` | target (NavAgent), point | `RequestNavigation` to a point |
 | `navigation.approach` | target, subject (entity), follow=false | `RequestNavigation` to an entity |
 | `navigation.stop` | target | `CancelNavigation` |
-| `sencha.navigation.agent_progress.phase` / `.failure` / `.remaining` | entity | `NavAgentProgress` members |
+| `navigation.phase` / `navigation.failure` / `navigation.remaining` | agent | `NavAgentProgress`'s phase, failure (enum names) and remaining metres |
 
 Traversal executors (D7):
 
@@ -1214,9 +1237,20 @@ admission comparison. At the recommended 16 plans per tick:
 
 Serial and every parallel configuration produced identical routes.
 
-**Estimated, not measured.**
-- Steering, cursor and arrival work is a few vector operations per agent:
-  roughly 0.3–1 µs each, so 256 agents ≈ 0.1–0.25 ms.
+**Measured in Stage 6: the follower at scale.** The run used the 96 m maze,
+storms of simultaneous orders, and the profile preset. The full table is in the
+evidence README.
+
+| Agents | Planning tick median: serial / 14 workers | Follow-only tick median: serial / 14 workers | Ticks to plan a storm |
+| --- | --- | --- | --- |
+| 32 | 1.36 / 0.44 ms | 12 / 11 µs | 2 |
+| 128 | 1.30 / 0.37 ms | 49 / 50 µs | 8 |
+| 256 | 1.29 / 0.42 ms | 97 / 102 µs | 16 |
+
+- **Following** costs about 0.4 µs per agent per tick. That is inside the
+  revision-1 estimate of 0.1–0.25 ms for 256 agents, so steering stays serial.
+- **The first planning tick** with workers reaches about 1.0–1.3 ms, because it
+  makes the per-worker contexts.
 - Idle agents cost one branch each.
 
 Stage 6 measures 1, 32, 128 and 256 agents in the harness:

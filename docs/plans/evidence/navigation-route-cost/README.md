@@ -173,3 +173,35 @@ maze query, and allocating 15 route buffers grew resident memory as follows:
 | 4096 nodes | 4.3 MB |
 
 That is about 0.17 MB and 0.26 MB per warmed context respectively.
+
+# The follower at scale
+
+`NavAgentScaleProbe.cpp` drives `NavAgentSystem` alone over the 96 m maze,
+moving each agent along its own wish at 6 m/s instead of through physics, so
+the times are the follower's own.
+
+- **Workload.** 1, 32, 128 or 256 agents are ordered to random points at once.
+  Once the queue drains they walk for 120 ticks, then the whole crowd is
+  re-ordered mid-walk: a second storm.
+- **Classification.** Ticks that planned anything are reported apart from
+  follow-only ticks.
+- **Setup.** Profile preset; serial, and `DefaultWorkerCount()` (14) workers.
+  Recorded 2026-10-15 on `claude/navigation-agent-plan`, run twice; the second
+  run (load average 2.7) is below, and the first agreed within noise.
+
+| Agents | Workers | Planning tick median / max µs | Follow tick median / max µs | Ticks to plan a storm |
+| --- | --- | --- | --- | --- |
+| 1 | 0 | 187 / 187 | 0.3 / 7.5 | 1 |
+| 32 | 0 | 1355 / 1408 | 12.4 / 16.3 | 2 |
+| 128 | 0 | 1299 / 1574 | 48.5 / 58.0 | 8 |
+| 256 | 0 | 1292 / 1701 | 97.4 / 116.9 | 16 |
+| 1 | 14 | 77 / 77 | 0.3 / 2.5 | 1 |
+| 32 | 14 | 438 / 1325 | 11.3 / 19.4 | 2 |
+| 128 | 14 | 367 / 1007 | 50.3 / 84.5 | 8 |
+| 256 | 14 | 421 / 1183 | 101.7 / 167.2 | 16 |
+
+- **The workers' maximum** is the first planning tick. It makes the per-worker
+  query contexts, which are created on first need.
+- **Following** costs about 0.4 µs per agent per tick.
+- **A storm** of N orders drains in N/16 ticks whatever the worker count, as the
+  budget is designed to.
