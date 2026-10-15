@@ -357,3 +357,6 @@ codecs (`ActiveAbilitiesWire.h`, `AbilityCueLogWire.h`, precisions in
 join `core/hash/Fnv1a.h`, which the tag registry and `AnimStableKey` now use; and
 `WireTag`/`LocalTag` (`gameplay_tags/GameplayTagWire.h`) are what codecs translate
 tags with.
+
+**Received impulses.** `AnimRequest` gains the local-only `Received` and
+`Observed`; `NoteAnimImpulsesObserved` and `kAnimReceivedImpulseTicks` are new.

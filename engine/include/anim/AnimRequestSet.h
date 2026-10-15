@@ -63,6 +63,11 @@ struct AnimRequest
     // Issued here ahead of the authority (AnimRequestJournal). Never replicated, so
     // the authority's set arriving clears it.
     bool Predicted = false;
+    // Local only: it arrived from the wire for an entity this machine does not
+    // simulate, whose start tick had passed by then, so an Impulse is observed on
+    // the first tick this machine looks instead; and whether it has been.
+    bool Received = false;
+    bool Observed = false;
 
     [[nodiscard]] bool IsCancelled() const { return CancelReason != AnimCancelReason::None; }
 };

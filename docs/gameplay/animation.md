@@ -617,6 +617,16 @@ is taken down. What is still undecided is issued again on top. A refused guess
 starts selection over from the authority's word. Past its capacity the journal
 predicts nothing more, so every guess on a set is one it will take down.
 
+An Impulse is live for the tick it starts on, which has passed by the time a
+machine that only receives the entity hears of it. A record the wire delivers for
+an entity this machine does not predict is marked `Received`, and a received
+Impulse is observed once instead: live on the first tick this machine resolves
+the entity after it arrives, marked `Observed` by content resolution
+(`NoteAnimImpulsesObserved`), and never live again. The codec keeps that mark
+across snapshots of the same record. One that waits longer than
+`kAnimReceivedImpulseTicks` is too old to play. The authority and a predicting
+client keep the tick rule, so neither plays an Impulse twice.
+
 Nothing in animation is rewound: content follows the set it is given, and a
 corrected start restarts content where the authority put it. Cancels and anchors
 are the authority's. A client keeps a cancelled request retained while its own

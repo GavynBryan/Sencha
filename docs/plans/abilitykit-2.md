@@ -1709,3 +1709,9 @@ Deviations from the plan's wording, each for a stated reason:
   the plan's 6 B (16 bits per axis over the replicated position range); the normal
   is 8 bits per axis, a byte more than the plan's 2 B, so each is one quantized
   field with no codec of its own.
+- **9b delivered: an Impulse presents remotely.** A record the wire delivers for an
+  entity the machine does not predict is `Received`; a received Impulse is live on
+  the first tick that machine resolves the entity and marked `Observed` after it,
+  bounded by `kAnimReceivedImpulseTicks`. The authority and a predicting client keep
+  the start-tick rule. `ImpulseRequestPresentsRemotely` (which fails without the
+  change) shows the remote playing the wave once and returning to idle.

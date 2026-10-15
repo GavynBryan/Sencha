@@ -67,6 +67,12 @@ struct AnimRequestResult
 // Live, or cancelled with a tail that has not ended.
 [[nodiscard]] bool IsAnimRequestRetained(const AnimRequest& request, AnimTick now);
 
+// How long a received Impulse waits to be observed before it is too old to play.
+inline constexpr AnimTick kAnimReceivedImpulseTicks = 30;
+
+// After a tick's resolution: every received Impulse live this tick has been observed.
+void NoteAnimImpulsesObserved(AnimRequestSet& set, AnimTick now);
+
 void PruneAnimRequests(AnimRequestSet& set, AnimTick now, AnimDecisionLog* log);
 
 [[nodiscard]] AnimRequestResult IssueAnimRequest(AnimRequestSet& set,

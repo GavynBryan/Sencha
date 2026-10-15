@@ -1,6 +1,7 @@
 #include <anim/AnimRequestWire.h>
 
 #include <gameplay_tags/GameplayTagWire.h>
+#include <world/SimulationTimeline.h>
 
 #include <array>
 
@@ -68,11 +69,15 @@ void ReplicationCodec<AnimRequestSet>::ToWire(const ReplicationWireContext& cont
 void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& context, const AnimRequestSetWire& wire,
                                                 AnimRequestSet& set)
 {
+    // An entity this machine predicts runs on its own timeline, where a start tick
+    // is still ahead; every other one is behind the records it receives.
+    const bool received = context.Entities == nullptr || !IsLocallyPredicted(*context.Entities, context.Entity);
     const auto records = RecordsOf(wire);
     for (std::size_t i = 0; i < kAnimRequestCapacity; ++i)
     {
         const AnimRequestWireRecord& in = *records[i];
         AnimRequest& request = set.Records[i];
+        const AnimRequest before = request;
         request = AnimRequest{};
         if ((in.Words.Values[9] & 1u) == 0)
             continue;
@@ -98,6 +103,9 @@ void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& co
         request.Lifetime = static_cast<AnimRequestLifetime>(static_cast<std::uint8_t>(shape >> 8));
         request.CancelReason = static_cast<AnimCancelReason>(static_cast<std::uint8_t>(shape >> 16));
         request.AnchorSection = static_cast<std::uint8_t>(shape >> 24);
+        request.Received = received;
+        request.Observed = received && before.Received && before.Observed && before.Id == request.Id
+                        && before.StartTick == request.StartTick;
     }
     set.NextSequence = wire.NextSequence;
     set.RigTiming = wire.RigTiming;

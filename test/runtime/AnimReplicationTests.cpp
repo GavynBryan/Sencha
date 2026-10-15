@@ -722,3 +722,56 @@ TEST(AnimReplication, AClientCountsContentTimeOnTheAuthoritysTicks)
     world.GetResource<SimulationAuthority>().TickOffset = 7;
     EXPECT_EQ(AuthorityTickOf(world, 40), 47u);
 }
+
+namespace
+{
+    // A wave played once for an Impulse and latched until it completes.
+    DataAssetHandle WaveRigContent(AnimRigFixture& fx)
+    {
+        for (const char* tag : { "anim.intent.wave", "Anim.Idle", "Anim.Wave" })
+            (void)fx.Tags().RegisterTag(tag);
+        fx.Clip("asset://anim/w.idle.sanim", 1.0f);
+        fx.Clip("asset://anim/w.wave.sanim", 0.5f);
+        (void)fx.Load("asset://anim/w.requests.sdata", kAnimRequestSchemaType,
+                      R"({ "intents": [ { "intent": "anim.intent.wave", "params": [] } ] })");
+        (void)fx.Load("asset://anim/w.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+            { "tag": "Anim.Idle", "kind": "cyclic" },
+            { "tag": "Anim.Wave", "kind": "one_shot", "latch": { "mode": "until_complete" } } ] })");
+        (void)fx.Load("asset://anim/w.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+            { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/w.idle.sanim" },
+            { "id": "wave", "behavior": "Anim.Wave", "clip": "asset://anim/w.wave.sanim" } ] })");
+        (void)fx.Load("asset://anim/w.selector.sdata", kAnimSelectorType, R"({ "rules": [
+            { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" },
+            { "name": "wave", "priority": 10, "enter": [ { "request": "anim.intent.wave" } ], "behavior": "Anim.Wave" } ] })");
+        return fx.Load("asset://anim/w.rig.sdata", kAnimRigType, R"({
+            "requests": "asset://anim/w.requests.sdata", "behaviors": [ "asset://anim/w.behaviors.sdata" ],
+            "slot_maps": [ "asset://anim/w.slots.sdata" ],
+            "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/w.selector.sdata", "idle": "Anim.Idle" } ] })");
+    }
+}
+
+// An Impulse is live for the tick it starts on, which has passed by the time a
+// remote machine hears of it; that machine observes it once on arrival instead.
+TEST(AnimReplication, ImpulseRequestPresentsRemotely)
+{
+    AnimSession session(WaveRigContent);
+    session.Authority.Tick();
+    session.Join(4);
+    for (int i = 0; i < 3; ++i)
+        session.Step();
+    AnimRequestDesc desc;
+    desc.Source = session.Prop;
+    desc.Intent = session.Authority.Tag("anim.intent.wave");
+    desc.Lifetime = AnimRequestLifetime::Impulse;
+    ASSERT_TRUE(IssueAnimRequest(session.Authority.Entities, session.Prop, desc, session.Authority.Now).Accepted());
+    session.Step();
+    EXPECT_EQ(session.Authority.BehaviorName(session.Prop), "Anim.Wave");
+    EXPECT_EQ(session.Client.BehaviorName(session.Mirror), "Anim.Wave") << "the client is past its tick, and plays it";
+    const AnimRequest& arrived = session.ClientRequests().Records[0];
+    EXPECT_TRUE(arrived.Received);
+    EXPECT_TRUE(arrived.Observed);
+    for (int i = 0; i < 40; ++i)
+        session.Step();
+    EXPECT_EQ(session.Client.BehaviorName(session.Mirror), "Anim.Idle") << "once: the wave completes and does not start again";
+    EXPECT_EQ(session.Authority.BehaviorName(session.Prop), "Anim.Idle");
+}

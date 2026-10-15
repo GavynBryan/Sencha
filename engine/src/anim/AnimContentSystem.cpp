@@ -679,6 +679,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             progress.Layers[l] = {};
     }
     WriteAnimRequestProgress(world, entity, rig, progress, now);
+    if (AnimRequestSet* simulation = world.TryGet<AnimRequestSet>(entity))
+        NoteAnimImpulsesObserved(*simulation, now);
     content.Reconstruct = false;
 }
 

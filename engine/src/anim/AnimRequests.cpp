@@ -9,14 +9,16 @@
 namespace
 {
     // The tick a Fixed or Impulse record stops being live. An Impulse is
-    // observed for exactly the tick it starts on; a Fixed of zero ticks is the
-    // same thing and is treated as one.
+    // observed for exactly the tick it starts on, or once within a while of it
+    // when it was received; a Fixed of zero ticks is the same thing and is
+    // treated as one.
     AnimTick EndTick(const AnimRequest& request)
     {
         switch (request.Lifetime)
         {
         case AnimRequestLifetime::Held: return kAnimNoTick;
-        case AnimRequestLifetime::Impulse: return request.StartTick + 1;
+        case AnimRequestLifetime::Impulse:
+            return request.StartTick + (request.Received ? kAnimReceivedImpulseTicks : 1);
         case AnimRequestLifetime::Fixed:
             return request.StartTick + std::max<AnimTick>(request.FixedTicks, 1);
         }
@@ -49,8 +51,15 @@ namespace
 
 bool IsAnimRequestLive(const AnimRequest& request, AnimTick now)
 {
-    return request.Occupied && !request.IsCancelled() && now >= request.StartTick
+    return request.Occupied && !request.IsCancelled() && !request.Observed && now >= request.StartTick
         && now < EndTick(request);
+}
+
+void NoteAnimImpulsesObserved(AnimRequestSet& set, AnimTick now)
+{
+    for (AnimRequest& request : set.Records)
+        if (request.Received && request.Lifetime == AnimRequestLifetime::Impulse && IsAnimRequestLive(request, now))
+            request.Observed = true;
 }
 
 bool WasAnimRequestLive(const AnimRequest& request, AnimTick at)
