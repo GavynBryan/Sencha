@@ -43,17 +43,7 @@ namespace
                     ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
                     return SubjectRefusal(subject);
-                const EntityId entity = subject.Entities.front();
-                const std::string newName = NormalizedEntityName(arguments.Find("name")->AsString());
-                const bool space = document.GetScene().GetRegistry().Components.HasComponent<Space>(entity);
-                if (space && newName.empty())
-                    return EditorOperationOutcome::Refused("space.name_invalid", "a space needs a name");
-                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, entity, space, newName))
-                    return std::move(*refused);
-                recorder.Touch(entity);
-                if (auto rename = MakeRenameEntityCommand(entity, newName, document.GetScene(), document))
-                    rename->Execute();
-                return EditorOperationOutcome::Ok({});
+                return RenameEntity(document, recorder, subject.Entities.front(), arguments.Find("name")->AsString());
             });
         };
         return entry;

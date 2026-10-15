@@ -5,12 +5,13 @@
 #include <core/json/JsonValue.h>
 #include <ecs/EntityId.h>
 
-#include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 class EditorDocument;
+class EntityChangeRecorder;
 
 // What an operation was asked to act on, in a document. Stored references are
 // persistent ids; a name is a lookup convenience and may match several.
@@ -45,8 +46,15 @@ struct SubjectResolution
 // Empty when the entity carries no authored name.
 [[nodiscard]] std::string EntityNameText(const EditorDocument& document, EntityId entity);
 
-// Why `entity` (invalid for one not made yet) may not be called `name`, already
-// normalized: too long to hold, or shared with another entity where either is
-// a space, since a space is always reachable as @<name>. Nullopt when it may.
-[[nodiscard]] std::optional<EditorOperationOutcome> RefuseEntityName(const EditorDocument& document, EntityId entity,
-                                                                     bool asSpace, std::string_view name);
+// The name `text` gives `entity` (invalid for one not made yet, and a space
+// when `asSpace`), as NormalizedEntityName trims it; or why it may not have
+// it: a space without a name, a name too long to hold, or one shared with
+// another entity where either is a space, since a space is always reachable
+// as @<name>. Every operation that names something asks this.
+[[nodiscard]] std::variant<std::string, EditorOperationOutcome> CheckEntityName(const EditorDocument& document,
+                                                                                EntityId entity, bool asSpace,
+                                                                                std::string_view text);
+
+// Renames `entity` to `text`, or clears its name, as CheckEntityName allows.
+[[nodiscard]] EditorOperationOutcome RenameEntity(EditorDocument& document, EntityChangeRecorder& recorder,
+                                                  EntityId entity, std::string_view text);

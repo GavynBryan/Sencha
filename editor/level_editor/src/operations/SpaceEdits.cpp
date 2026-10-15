@@ -42,11 +42,10 @@ LevelConventions ConventionsOf(const EditorDocument& document)
 EditorOperationOutcome CreateSpace(EditorDocument& document, EntityChangeRecorder& recorder, const NewSpace& space,
                                    EntityId& created)
 {
-    const std::string name = NormalizedEntityName(space.Name);
-    if (name.empty())
-        return EditorOperationOutcome::Refused("space.name_invalid", "a space needs a name");
-    if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, true, name))
+    std::variant<std::string, EditorOperationOutcome> checked = CheckEntityName(document, EntityId{}, true, space.Name);
+    if (auto* refused = std::get_if<EditorOperationOutcome>(&checked))
         return std::move(*refused);
+    const std::string& name = std::get<std::string>(checked);
     const Vec3d size = space.Max - space.Min;
     if (size.X < kSmallest || size.Y < kSmallest || size.Z < kSmallest)
         return EditorOperationOutcome::Refused("space.too_small", "max must exceed min by at least 0.1 m on every axis");

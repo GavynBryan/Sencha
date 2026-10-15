@@ -112,6 +112,12 @@ TEST_F(SpaceOperationsTest, ASpaceKeepsItsNameToItselfWhicheverWayANameArrives)
     EXPECT_EQ(Code(Call("brush.box", R"({"min": [60, 0, 0], "max": [61, 1, 1], "name": "Hall"})")), "space.name_taken");
     EXPECT_EQ(Code(Call("component.set", R"({"subject": "@Atrium", "component": "name", "field": "value", "value": "\"Hall\""})")),
               "space.name_taken");
+    EXPECT_EQ(Code(Call("component.set", R"({"subject": "@Atrium", "component": "name", "field": "value", "value": "\"  \""})")),
+              "space.name_invalid") << "component.set names a space as entity.rename does";
+    EXPECT_EQ(Ok("component.set", R"({"subject": "@Atrium", "component": "name", "field": "value", "value": "\" Atrium Hall \""})")
+                  .Find("stored")->AsString(),
+              "\"Atrium Hall\"");
+    Ok("entity.rename", R"({"subject": "@Atrium Hall", "name": "Atrium"})");
 
     Ok("entity.rename", R"({"subject": "@Atrium", "name": " Atrium "})");
     EXPECT_EQ(Find("Atrium"), atrium) << "renaming a space to its own name is no clash";

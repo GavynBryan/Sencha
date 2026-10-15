@@ -116,10 +116,11 @@ namespace
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 EditorScene& scene = document.GetScene();
                 const JsonValue* given = arguments.Find("name");
-                const std::string chosen = given != nullptr && given->IsString() ? NormalizedEntityName(given->AsString())
-                                                                                 : std::string{};
-                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, false, chosen))
+                std::variant<std::string, EditorOperationOutcome> checked = CheckEntityName(
+                    document, EntityId{}, false, given != nullptr && given->IsString() ? given->AsString() : std::string{});
+                if (auto* refused = std::get_if<EditorOperationOutcome>(&checked))
                     return std::move(*refused);
+                const std::string& chosen = std::get<std::string>(checked);
                 const std::optional<WallHit> wall = WallAt(scene, PointFromJson(*arguments.Find("at")));
                 if (!wall)
                     return EditorOperationOutcome::Refused("opening.no_wall",

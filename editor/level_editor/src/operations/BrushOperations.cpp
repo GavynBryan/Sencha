@@ -61,9 +61,11 @@ namespace
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const JsonValue* wanted = arguments.Find("name");
-                const std::string given = wanted != nullptr ? NormalizedEntityName(wanted->AsString()) : std::string{};
-                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, false, given))
+                std::variant<std::string, EditorOperationOutcome> checked =
+                    CheckEntityName(document, EntityId{}, false, wanted != nullptr ? wanted->AsString() : std::string{});
+                if (auto* refused = std::get_if<EditorOperationOutcome>(&checked))
                     return std::move(*refused);
+                const std::string& given = std::get<std::string>(checked);
                 const Vec3d a = PointFromJson(*arguments.Find("min"));
                 const Vec3d b = PointFromJson(*arguments.Find("max"));
                 const Vec3d low{ std::min(a.X, b.X), std::min(a.Y, b.Y), std::min(a.Z, b.Z) };
