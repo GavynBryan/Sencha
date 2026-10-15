@@ -271,23 +271,10 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     // rest of the authored input.
     std::vector<AuthoredDockCookInput> dockInputs;
     std::vector<AuthoredLinkCookInput> linkInputs;
-    const EditorScene& worldScene = world.WorldSceneDocument().GetScene();
-    const Registry& registry = world.WorldSceneDocument().GetRegistry();
-    for (EntityId entity : worldScene.GetAllEntities())
-    {
-        const uint64_t authoredEntity = (static_cast<uint64_t>(entity.Generation) << 32)
-            | entity.Index;
-        if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
-        {
-            const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(entity);
-            if (transform == nullptr)
-                return fail("CookWorld: a world dock has no transform");
-            dockInputs.push_back({ *dock, transform->Value, authoredEntity });
-        }
-        if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
-            linkInputs.push_back({ *link, authoredEntity });
-    }
     std::string topologyError;
+    if (!world.CollectAuthoredTopology(dockInputs, linkInputs, &topologyError))
+        return fail("CookWorld: " + topologyError);
+    const Registry& registry = world.WorldSceneDocument().GetRegistry();
     if (!CookWorldTopology(data->Manifest, dockInputs, linkInputs, &topologyError))
         return fail("CookWorld: " + topologyError);
 

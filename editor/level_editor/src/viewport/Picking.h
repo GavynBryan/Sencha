@@ -37,12 +37,13 @@ struct BrushPickRequest
     EntityId RestrictTo = {};
 };
 
-// Nearest ray/brush-surface intersection: the world hit point and that face's
-// world-space normal. Used to rest a new brush on the geometry under the cursor.
+// Nearest ray/brush-surface intersection: the world hit point, that face's
+// world-space normal, and the brush it belongs to (a space, for a generated wall).
 struct SurfaceHit
 {
     Vec3d Point = {};
     Vec3d Normal = {};
+    EntityId Entity = {};
 };
 
 // Nearest ray/face intersection: intersects the face plane and tests the hit for
@@ -60,6 +61,13 @@ struct SurfaceHit
 // entry distance (0 when the origin is inside). The reject every brush pick
 // runs before it builds a piece's faces.
 [[nodiscard]] bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear);
+
+// The nearest visible solid brush surface along `ray` within `maxDistance`:
+// what a pointer pick finds under the cursor, and what an editor measurement
+// finds in any direction. Locked brushes are still geometry unless `skipLocked`.
+[[nodiscard]] std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene,
+                                                              const Ray3d& ray, float maxDistance,
+                                                              bool skipLocked);
 
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
 // Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —

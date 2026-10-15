@@ -54,11 +54,11 @@ DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world
 {
 }
 
-void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
+void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner)
 {
     registry.RegisterCommand({
         .Name = "editor.open",
-        .Owner = "editor",
+        .Owner = std::string(commandOwner),
         .Usage = "editor.open <path>",
         .Help = "Open a level or world document by path, without the file "
                 "dialog. Synchronous: the document is open when this returns, "
@@ -89,7 +89,7 @@ void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
     });
     registry.RegisterCommand({
         .Name = "editor.select",
-        .Owner = "editor",
+        .Owner = std::string(commandOwner),
         .Usage = "editor.select <persistent-id-hex> [face|edge|vertex <index>]",
         .Help = "Replace the selection with the focus document's entity carrying "
                 "the given persistent id (the hex id a scene file names), or one "
@@ -161,7 +161,7 @@ void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
     });
     registry.RegisterCommand({
         .Name = "editor.mode",
-        .Owner = "editor",
+        .Owner = std::string(commandOwner),
         .Usage = "editor.mode <object|face|edge|vertex>",
         .Help = "Set the mesh element edit mode, as the toolbar would.",
         .Callback = [this](ConsoleExecutionContext&,
@@ -194,7 +194,7 @@ void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
     });
     registry.RegisterCommand({
         .Name = "editor.brush.counters",
-        .Owner = "editor",
+        .Owner = std::string(commandOwner),
         .Usage = "editor.brush.counters",
         .Help = "Last frame's brush geometry work: interactive reconstruction "
                 "(zero on an idle unchanged scene) and intentional flattening.",

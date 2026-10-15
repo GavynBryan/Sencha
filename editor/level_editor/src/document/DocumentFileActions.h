@@ -38,7 +38,7 @@ public:
     // startup script's next command sees the document already open. And
     // editor.select <persistent-id>, so a scripted run can measure what the
     // editor draws for a selected entity without a pointer.
-    void RegisterCommands(ConsoleRegistry& registry);
+    void RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner);
     // The window file dialogs open over.
     void SetWindow(SdlWindow& window) { Window = &window; }
 

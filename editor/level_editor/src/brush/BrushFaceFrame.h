@@ -47,6 +47,6 @@ struct BrushFaceFrameResult
 //
 // `planarTol` is relative: a vertex may sit off the plane by
 // `planarTol * extent`, with an absolute floor so a small face is not held to
-// an impossible standard. The caller owns the value, which is a cvar at the
-// tool layer; the mesh layer does not read the console.
+// an impossible standard. The caller owns the value; carving uses
+// kCarvePlanarTolerance.
 [[nodiscard]] BrushFaceFrameResult FaceFrame(const BrushMesh& mesh, std::uint32_t face, float planarTol);

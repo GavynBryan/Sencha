@@ -57,6 +57,7 @@ class ComponentPropertySource;
 class ElementVerbs;
 class MaterialExplorer;
 class PrefabExplorer;
+class ProposalTray;
 class NoticeQueue;
 class ProblemList;
 class LightingDiagnostics;
@@ -65,6 +66,7 @@ class PartitionOutline;
 class PropertyHandles;
 class EntityVerbs;
 class WorldExplorer;
+class EditorOperations;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -93,7 +95,8 @@ public:
                    PromptQueue& prompts,
                    ProblemList& problems,
                    NoticeQueue& notices,
-                   AssetPictures& pictures);
+                   AssetPictures& pictures,
+                   EditorOperations& operations);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -136,6 +139,7 @@ private:
     // editor against the engine (*EnginePtr) and primary window (*Window), so the
     // constructor reads as the bring-up sequence.
     void BuildDocument();
+    void BuildOperations();
     void BuildPlayLoop();
     void BuildFileActions();
     void OfferDocumentActions();
@@ -187,6 +191,11 @@ private:
     DocumentSourceSet& Documents;
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
+    // The level's and the world's operations, retired before the documents
+    // they read go.
+    EditorOperations& Operations;
+    // Tells clients of the operations what is selected whenever it changes.
+    std::shared_ptr<SelectionService::ObserverFn> SelectionEvents;
     // The open level in the application's journal; destroyed before the
     // workspace whose world it reports on.
     std::unique_ptr<LevelDocumentSource> LevelDocument;
@@ -217,6 +226,7 @@ private:
     std::unique_ptr<PropertyHandles> Handles;
     std::unique_ptr<MaterialExplorer> MaterialsExplorer;
     std::unique_ptr<PrefabExplorer> PrefabsExplorer;
+    std::unique_ptr<ProposalTray> Proposals;
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
     std::unique_ptr<PartitionOutline> Partition;

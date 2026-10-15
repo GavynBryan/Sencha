@@ -1,5 +1,6 @@
 #include <navigation/NavigationPolicyData.h>
 
+#include <core/metadata/DataSchemaFields.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <memory>
@@ -30,27 +31,17 @@ namespace
         traversalCost.Children = { MakeDataField(DataFieldKind::GameplayTag, "kind", "Traversal kind"),
                                    std::move(multiplier), std::move(add) };
 
-        const auto listOf = [](std::string key, std::string display, std::string summary,
-                               DataFieldSchema element)
-        {
-            DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(key),
-                                                 std::move(display), std::move(summary));
-            list.Required = false;
-            list.Children.push_back(std::move(element));
-            return list;
-        };
-
         DataSchema schema;
         schema.TypeName = std::string(kNavigationPolicySubtype);
         schema.DisplayName = "Navigation Policy";
         schema.Description = "How an agent weighs ground areas and link traversals.";
         schema.Root = MakeDataField(DataFieldKind::Record, {}, "Navigation policy");
         schema.Root.Children = {
-            listOf("area_costs", "Area costs", "Cost multipliers per ground area.",
+            DataField::ArrayOf("area_costs", "Area costs", "Cost multipliers per ground area.",
                    std::move(areaCost)),
-            listOf("forbidden_areas", "Forbidden areas", "Areas the agent never enters.",
+            DataField::ArrayOf("forbidden_areas", "Forbidden areas", "Areas the agent never enters.",
                    MakeDataField(DataFieldKind::GameplayTag, {}, "Area")),
-            listOf("traversal_costs", "Traversal costs", "Cost adjustments per traversal kind.",
+            DataField::ArrayOf("traversal_costs", "Traversal costs", "Cost adjustments per traversal kind.",
                    std::move(traversalCost)),
         };
         return schema;

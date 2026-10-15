@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <span>
 #include <vector>
 
 // Reads a whole file into `out` as bytes. False when the file cannot be
@@ -10,3 +11,8 @@
 // had each written for themselves.
 [[nodiscard]] bool ReadFileBytes(const std::filesystem::path& path,
                                  std::vector<std::byte>& out);
+
+// Writes `bytes` as the whole file, replacing what was there. False when the
+// file cannot be opened or fully written.
+[[nodiscard]] bool WriteFileBytes(const std::filesystem::path& path,
+                                  std::span<const std::byte> bytes);

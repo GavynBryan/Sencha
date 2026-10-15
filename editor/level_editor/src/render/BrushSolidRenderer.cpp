@@ -51,7 +51,7 @@ void BrushSolidRenderer::DrawViewportTinted(const FrameContext& frame, const Edi
 {
     std::vector<EditorSolidVertex> vertices;
     vertices.reserve(scene.GetEntityCount() * 36);
-    ForEachVisibleBrush(scene, /*skipLocked*/ false,
+    ForEachVisibleBrush(scene, /*skipLocked*/ false, BrushRoleFilter::Solids,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         {
             AppendBrushMesh(vertices, mesh, transform, tint);

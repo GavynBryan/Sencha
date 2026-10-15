@@ -6,8 +6,8 @@
 
 struct NavQueryContextConfig
 {
-    // Search nodes available to one query. A search that needs more stops with
-    // SearchLimitReached rather than growing.
+    // Search nodes available to one query, at most 65535. A search that needs
+    // more stops with SearchLimitReached rather than growing.
     std::uint32_t MaxNodes = 2048;
     // Longest polygon corridor a route may pass through.
     std::uint32_t MaxCorridor = 512;

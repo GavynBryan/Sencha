@@ -1,5 +1,7 @@
 #include "CommandStack.h"
 
+#include "CompositeCommand.h"
+
 #include <utility>
 
 void CommandStack::Execute(std::unique_ptr<ICommand> command)
@@ -11,6 +13,13 @@ void CommandStack::Execute(std::unique_ptr<ICommand> command)
         Commands.erase(Commands.begin() + static_cast<std::ptrdiff_t>(Cursor), Commands.end());
 
     command->Execute();
+    if (std::unique_ptr<ICommand> followUp = ExecuteFollowUp ? ExecuteFollowUp() : nullptr)
+    {
+        std::vector<std::unique_ptr<ICommand>> step;
+        step.push_back(std::move(command));
+        step.push_back(std::move(followUp));
+        command = std::make_unique<CompositeCommand>(std::move(step));
+    }
     Commands.push_back(std::move(command));
     Cursor = Commands.size();
     if (ExecuteObserver)

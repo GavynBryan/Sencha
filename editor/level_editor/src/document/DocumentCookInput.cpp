@@ -1,6 +1,7 @@
 #include "DocumentCookInputData.h"
 
 #include "BakeTriangleGather.h"
+#include "NavigationCookInput.h"
 #include "EditorDocument.h"
 
 #include <core/assets/AssetPath.h>
@@ -8,7 +9,6 @@
 #include <assets/runtime/AssetSystem.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/hash/ContentHash.h>
-#include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <navigation/NavLinkComponent.h>
 #include <render/IrradianceVolumeComponent.h>
@@ -25,8 +25,6 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <optional>
 #include <span>
 #include <string>
@@ -212,86 +210,6 @@ std::vector<LightmapPlacement> CollectLightmapPlacements(
     return placements;
 }
 
-// Every authored navigation link, anchors resolved in world space through the
-// composed transform so a parented link is placed where it appears.
-std::vector<NavLinkRecord> CollectNavLinks(const EditorDocument& document)
-{
-    std::vector<NavLinkRecord> links;
-    const World& world = document.GetRegistry().Components;
-    if (!world.IsRegistered<NavLink>())
-        return links;
-    world.ForEachComponent<NavLink>(
-        [&](EntityId entity, const NavLink& link)
-        {
-            const Transform3f toWorld = document.GetScene().ComposeWorldTransform(entity);
-            NavLinkRecord cooked;
-            cooked.Id = link.Id;
-            cooked.Traversal = std::string(link.Traversal.View());
-            cooked.Directions = link.Directions;
-            cooked.BaseCost = link.BaseCost;
-            cooked.EntryRadius = link.EntryRadius;
-            cooked.Entry = toWorld.Position;
-            cooked.Exit = toWorld.TransformPoint(link.ExitOffset);
-            links.push_back(std::move(cooked));
-        });
-    return links;
-}
-
-// The project's navigation settings: the single navigation.settings data
-// asset under the assets root. Paths are visited in sorted order so the
-// "more than one" diagnostic names the same files every cook.
-void CollectNavigationSettings(const std::filesystem::path& assetsRoot,
-                               DocumentCookSnapshot& snapshot)
-{
-    std::vector<std::filesystem::path> candidates;
-    std::error_code ec;
-    for (auto it = std::filesystem::recursive_directory_iterator(assetsRoot, ec);
-         !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
-    {
-        const std::filesystem::path& path = it->path();
-        if (it->is_directory() && path.filename().string().starts_with("."))
-        {
-            it.disable_recursion_pending();
-            continue;
-        }
-        if (it->is_regular_file() && path.extension() == ".sdata")
-            candidates.push_back(path);
-    }
-    std::sort(candidates.begin(), candidates.end());
-
-    std::vector<std::pair<std::filesystem::path, JsonValue>> found;
-    for (const std::filesystem::path& path : candidates)
-    {
-        std::ifstream stream(path, std::ios::binary);
-        std::stringstream text;
-        text << stream.rdbuf();
-        std::optional<JsonValue> parsed = JsonParse(text.str());
-        const JsonValue* type = parsed ? parsed->Find("type") : nullptr;
-        if (type != nullptr && type->IsString() && type->AsString() == kNavigationSettingsSubtype)
-            found.emplace_back(path, std::move(*parsed));
-    }
-
-    if (found.empty())
-        return;
-    if (found.size() > 1)
-    {
-        std::string message = "more than one navigation.settings asset:";
-        for (const auto& [path, envelope] : found)
-            message += " " + std::filesystem::relative(path, assetsRoot, ec).generic_string();
-        snapshot.NavigationDiagnostics.push_back(CookDiagnostic{
-            .Severity = CookDiagnosticSeverity::Error,
-            .Source = CookDiagnosticSource::NavigationSettings,
-            .Rule = "nav.settings.ambiguous",
-            .Message = std::move(message),
-        });
-        return;
-    }
-    NavigationSettings settings;
-    if (ParseNavigationSettings(found.front().second, settings,
-                                snapshot.NavigationDiagnostics))
-        snapshot.Navigation = std::move(settings);
-}
-
 JsonValue* FindMutable(JsonValue& value, std::string_view key)
 {
     if (!value.IsObject())
@@ -335,17 +253,15 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
         if (JsonValue* components = FindMutable(entityJson, "components");
             components != nullptr && components->IsObject())
         {
-            // Editor-only annotations: the bake linkage and the authored
-            // display name. Neither exists in the runtime schema, and an
-            // unknown component key fails the zone import by design.
+            // Editor-only components are absent from the runtime schema, and
+            // an unknown component key fails the zone import by design.
             std::erase_if(components->AsObject(),
-                [](const auto& field)
-                { return field.first == "baked_brush" || field.first == "name"; });
+                [](const auto& field) { return IsEditorOnlyComponent(field.first); });
 
             // Navigation links are cooked into the zone's navigation file;
             // the runtime reads them from there, never from the scene.
             std::erase_if(components->AsObject(),
-                [](const auto& field) { return field.first == "Nav Link"; });
+                [](const auto& field) { return field.first == TypeSchema<NavLink>::Name; });
 
             // Expanded placement members carry their instance identity into
             // the cooked scene (locked decision D1): the placement id, and
@@ -510,7 +426,9 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     }
     if (selectNavigation)
     {
-        CollectNavigationSettings(assetsRoot, snapshot);
+        NavigationSettingsLookup settings = FindNavigationSettings(assetsRoot);
+        snapshot.Navigation = std::move(settings.Settings);
+        snapshot.NavigationDiagnostics = std::move(settings.Diagnostics);
         snapshot.NavLinks = CollectNavLinks(document);
     }
     snapshot.Placements = (snapshot.BakeLights.empty() && snapshot.ProbeVolumes.empty())

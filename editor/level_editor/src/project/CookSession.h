@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class Engine;
@@ -61,7 +62,7 @@ public:
     void Cancel();
 
     [[nodiscard]] std::vector<CookProfile> AvailableProfiles() const;
-    void RegisterCommands(ConsoleRegistry& registry);
+    void RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner);
 
     [[nodiscard]] bool IsActive() const;
     [[nodiscard]] Status GetStatus() const;

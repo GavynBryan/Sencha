@@ -13,6 +13,7 @@
 #include <core/json/JsonValue.h>
 #include <world/registry/Registry.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -29,6 +30,8 @@ struct RuntimeAssets;
 struct IComponentSerializer;
 
 class PersistentEntityIndex;
+[[nodiscard]] std::uint64_t NextDocumentInstance();
+
 class EditorDocument
 {
 public:
@@ -69,10 +72,9 @@ public:
     // Where asset://... source references resolve on disk. Set before Load on
     // any document that may hold scene instances; a document with none never
     // consults them.
-    void SetContentRoots(std::vector<std::filesystem::path> roots)
-    {
-        Projection.SetContentRoots(std::move(roots));
-    }
+    // Also reads the project's level conventions, whose open-face material
+    // decides which volume faces get no wall.
+    void SetContentRoots(std::vector<std::filesystem::path> roots);
     [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const
     {
         return Projection.ContentRoots();
@@ -90,13 +92,18 @@ public:
     // source change.
     void RebuildSceneProjection() { Projection.Rebuild(); }
 
-    // Fired after every rebuild, once the new projection is live. Projected
-    // entities are destroyed and recreated, so anything holding their handles
-    // -- the workspace's selection, above all -- has to re-resolve, and this
-    // is how it learns without the document knowing who is listening.
-    void SetProjectionObserver(std::function<void()> observer)
+    // Fired whenever entities were destroyed or recreated under their handles:
+    // after every projection rebuild and every change set applied. Anything
+    // holding handles -- the workspace's selection, above all -- re-resolves.
+    void SetHandleObserver(std::function<void()> observer)
     {
-        Projection.SetObserver(std::move(observer));
+        Projection.SetObserver(observer);
+        HandleObserver = std::move(observer);
+    }
+    void AnnounceHandlesChanged() const
+    {
+        if (HandleObserver)
+            HandleObserver();
     }
 
     // ── Scene instances ─────────────────────────────────────────────────────
@@ -220,6 +227,11 @@ public:
     [[nodiscard]] EntitySnapshot CaptureEntity(EntityId entity) const;
     EntityId RestoreEntity(const EntitySnapshot& snapshot, bool freshMesh = false);
 
+    // Makes a live entity what `snapshot` records, in place: its handle, its
+    // children and its persistent id stay, which a destroy and restore would
+    // not keep.
+    void OverwriteEntity(EntityId entity, const EntitySnapshot& snapshot);
+
     // Deep copy of a live entity (capture + restore with a fresh brush mesh). The
     // one "clone a live entity" primitive; the duplicate command and the drag
     // preview both go through here.
@@ -241,6 +253,12 @@ public:
     void TakeFileAsRead() { Baseline.Record(FilePath); }
 
     void MarkDirty(bool dirty = true);
+    // Moves on every authored mutation: two readings that agree saw the same
+    // document. Loads and saves leave it alone.
+    [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
+    // Which document this is, for as long as the process runs: minted once per
+    // document and never reused, so one that replaced it is never mistaken for it.
+    [[nodiscard]] std::uint64_t Instance() const { return Instance_; }
     // Owner hook for derived editor state (world validation). It is invoked only
     // for authored mutations, never for load/save clearing dirty state.
     std::function<void()> OnEdited;
@@ -270,6 +288,8 @@ private:
     std::string FilePath;
     FileBaseline Baseline;
     bool Dirty = false;
+    std::uint64_t Revision_ = 0;
+    std::uint64_t Instance_ = NextDocumentInstance();
     Registry Registry_;
     EditorScene Scene;
     // What the file said that the live registry does not model: unknown
@@ -288,4 +308,5 @@ private:
     // Declared last: it names Registry_, Scene, Retained_ and Logging, so all
     // four have to exist before it is constructed.
     SceneInstanceProjection Projection{ Registry_, Scene, Retained_, Logging };
+    std::function<void()> HandleObserver;
 };

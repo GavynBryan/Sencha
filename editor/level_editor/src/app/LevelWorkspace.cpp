@@ -1,4 +1,12 @@
 #include "LevelWorkspace.h"
+#include "workspace/ProposalTray.h"
+
+#include "operations/EditorOperations.h"
+#include "operations/LevelOperations.h"
+#include "operations/EntityRecords.h"
+#include "operations/LevelTarget.h"
+#include "operations/ViewOperations.h"
+#include "operations/WorldQueries.h"
 
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
@@ -83,6 +91,12 @@
 namespace
 {
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
+// Commands capture this workspace and go with it; its cvars are archived
+// settings registered under "editor" and outlive it.
+constexpr std::string_view kCommandOwner = "editor.level";
+constexpr std::string_view kLevelOperations = "level";
+constexpr std::string_view kWorldOperations = "world";
+constexpr std::string_view kViewOperations = "view";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -103,8 +117,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
                                ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
-                               NoticeQueue& notices, AssetPictures& pictures)
+                               NoticeQueue& notices, AssetPictures& pictures,
+                               EditorOperations& operations)
     : Documents(documents)
+    , Operations(operations)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
     , Notices(notices)
@@ -125,6 +141,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     Problems.Publish("components", UnknownPlaceIcons(EditorSceneSerializers()));
 
     BuildDocument();
+    BuildOperations();
     // After the document: an authored workflow presents editor state, and the
     // inspector's is the selection and the command stack the document owns.
     BuildAuthoredWorkflows();
@@ -144,6 +161,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
+    Operations.Retire(kViewOperations);
+    Operations.Retire(kWorldOperations);
+    Operations.Retire(kLevelOperations);
+    EnginePtr->Console().Registry().UnregisterOwner(kCommandOwner);
     // Before the render feature that owns the studio goes.
     ScenePictures = {};
     if (Window != nullptr)
@@ -211,13 +232,28 @@ void LevelWorkspace::BuildDocument()
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
 }
 
+void LevelWorkspace::BuildOperations()
+{
+    SelectionEvents = Workspace->Selection.Subscribe([this](const SelectionSnapshot& snapshot) {
+        Operations.Emit(JsonValue(JsonValue::Object{
+            { "event", JsonValue("selection") },
+            { "selected", SelectionJson(Workspace->ActiveDocument(), snapshot.Items) } }));
+    });
+    std::vector<std::string> errors;
+    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(Workspace->Level, Operations), errors)
+        || !Operations.Register(std::string(kWorldOperations), WorldOperations(Workspace->World), errors)
+        || !Operations.Register(std::string(kViewOperations), ViewOperations({ Workspace->World, Workspace->Layout, Workspace->Selection, Workspace->Commands }), errors))
+        for (const std::string& error : errors)
+            EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);
+}
+
 void LevelWorkspace::BuildPlayLoop()
 {
     Engine& engine = *EnginePtr;
     CookRuntime = std::make_unique<EditorCookRuntime>(engine, Workspace->World,
                                                       Project ? &*Project : nullptr,
                                                       Assets ? &*Assets : nullptr);
-    CookRuntime->RegisterConsoleCommands(engine.Console().Registry());
+    CookRuntime->RegisterConsoleCommands(engine.Console().Registry(), kCommandOwner);
     CookRuntime->SetSaveGate([this](std::string& error) { return SaveBeforeLaunch(error); });
 }
 
@@ -242,7 +278,7 @@ void LevelWorkspace::BuildFileActions()
     Files = std::make_unique<DocumentFileActions>(
         *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
         *Materials, std::move(contentRoots), Workspace->Selection, Workspace->MeshEdit);
-    Files->RegisterCommands(engine.Console().Registry());
+    Files->RegisterCommands(engine.Console().Registry(), kCommandOwner);
 }
 
 void LevelWorkspace::OfferDocumentActions()
@@ -448,6 +484,11 @@ void LevelWorkspace::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
+    renderFeature->SetDraftSource([this] {
+        LevelTarget& level = Workspace->Level;
+        const LevelDraft* draft = level.PreviewedDraft();
+        return EditorRenderFeature::ShownDraft{ draft, draft != nullptr ? level.BaseOf(*draft) : nullptr };
+    });
     // Staged, not added: the commit happens at the end of BuildUi, once the UI
     // feature this one depends on has been staged too. The pointer is good only
     // if the commit reports the id succeeded.
@@ -513,6 +554,11 @@ void LevelWorkspace::BuildUi()
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
         ExplorerRows.Offer(Catalog, ActionHandlers, PrefabsExplorer->Row());
     }
+    Proposals = std::make_unique<ProposalTray>(
+        Workspace->Level, Operations, Notices,
+        Project != nullptr ? std::filesystem::path(Project->Directory) / ".proposals" : std::filesystem::path{});
+    ExplorerRows.Offer(Catalog, ActionHandlers, Proposals->Row());
+    Proposals->Offer(Catalog, ActionHandlers);
     Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands,
                                                      LightingReportsFrom(RenderFeature, *CookRuntime));
     Lighting->Offer(Catalog, ActionHandlers);
@@ -698,6 +744,9 @@ void LevelWorkspace::ProcessFrame()
     if (Entities != nullptr)
         Entities->OfferZoneMoves(Catalog, ActionHandlers);
     PublishProblems();
+    for (const std::string& label : Workspace->Level.DropOrphanedDrafts())
+        Notices.Post("The proposal '" + label + "' was dropped: the level it was for closed", NoticeTone::Warning,
+                     NoticeClockNow());
     if (Files)
         Files->ProcessPending();
 

@@ -575,3 +575,59 @@ do the work and delete the entry.
   the perception system over its ~1 ms share of the fixed tick, measured with
   `frame.trace.output`. Distance-ordered ray grants belong with it if far
   targets in view crowd out near ones.
+
+## Shell neighbour lookup
+
+- **What:** a shelled space finds the spaces and openings near it by visiting
+  every entity and measuring bounds, and every space does so each time the
+  level checks for stale walls, which is after every edit. That is
+  O(spaces x entities x volume vertices) per edit.
+- **Where:** `NeighboursOf` and `OpeningsNear` in
+  `editor/level_editor/src/document/SpaceWalls.cpp`, reached through
+  `SpaceShellInputs` from `RebuildStaleSpaceWalls`.
+- **Trigger:** a level with more than about a hundred shelled spaces, or an
+  edit whose profile shows `SpaceShellInputs`. The fix is a retained
+  per-scene index of shelled volumes' and openings' world bounds,
+  invalidated by their placement keys.
+
+## Tool commits through the level target
+
+- **What:** decision D5 of `docs/plans/level-spatial-model.md`: every mutation
+  is a change set through the level target, so a designer's tool and an
+  agent's operation edit alike. The move gizmo's transform commits, the Space
+  tool and the Brush tool do; the rest of the tools still commit their own
+  commands. The clip tool already shares its cut with `brush.clip`
+  (`brush/BrushClipCut`), and the delete and duplicate verbs share their
+  branch rules with `entity.*` (`document/EntityBranches`); only their
+  commits remain.
+- **Where:** `BrushManipulationSink` (`CommitMeshes`, `CommitMesh`,
+  `CommitSplits`, `CommitDuplicate`), the carve, clip and edge-cut tools,
+  `PendingBridgeEdit` (`DeferredCreateBrushCommand`), and the selection verbs
+  in `editor/level_editor/src/workspace/SelectionActions.cpp`.
+- **Trigger:** each tool moves the next time its commit path is changed.
+
+## Command labels
+
+- **What:** the level spatial model plan (M1) asks for undo steps to carry
+  labels, so an accepted proposal reads as its label in the undo history.
+  `ICommand` has no label, and nothing shows undo history: the tray lists
+  proposals, not steps, so a label would have no reader.
+- **Where:** `editor/common/src/commands/ICommand.h` and `CommandStack`;
+  `ApplyChangeSetCommand` would carry the proposal's label.
+- **Trigger:** an undo history display, or an "Undo <what>" menu label.
+
+## Cross-zone reachability moves onto the cross-zone planner
+
+- **What:** `world.reachable` and `world.bypasses`
+  (`editor/level_editor/src/operations/WorldReachability.cpp`) walk a world
+  zone by zone themselves: within a zone with `NavCollectReachable`, between
+  zones through the authored docks (a dock's mouth reached on one side, its
+  landing projected on the other). That is zone-graph search, which the
+  roadmap's hierarchical cross-zone planner (`docs/plans/engine-roadmap.md`,
+  Track A item 6) will own. Its design is not settled, so the analysis does
+  not wait for it.
+- **Where:** `WorldReachability.cpp` (`Walk`, `Mouth`, `Landing`).
+- **Trigger:** the cross-zone planner lands. The analysis then asks it rather
+  than walking docks itself, keeping its sure and possible scenarios, gate
+  assumptions and one-way drops; world links get positions through the same
+  work (`navigation-core.md`, section 7) and stop being unconsidered.

@@ -51,6 +51,27 @@ namespace
 constexpr std::string_view kContentUiFeatureId = "content_ui";
 constexpr std::string_view kMotionCVar = "editor.ui.motion";
 constexpr std::string_view kScaleCVar = "editor.ui.scale";
+constexpr std::string_view kSocketCVar = "editor.operations.socket";
+constexpr std::string_view kSocketPathCVar = "editor.operations.socket_path";
+
+namespace
+{
+    std::string_view SaveStatusName(DocumentSaveStatus status)
+    {
+        switch (status)
+        {
+        case DocumentSaveStatus::Saved:
+            return "saved";
+        case DocumentSaveStatus::SavedWithProblems:
+            return "saved_with_problems";
+        case DocumentSaveStatus::Conflict:
+            return "conflict";
+        case DocumentSaveStatus::Failed:
+            return "failed";
+        }
+        return "failed";
+    }
+}
 
 // Platform branding, not theme art: the icon is the product's and never
 // changes with a theme, so it is set once and forgotten. SDL copies the
@@ -142,10 +163,20 @@ void KyusuApp::OnStart(GameStartupContext&)
     GraphicsServices& graphics = engine.Graphics();
     const PresentationId mainWindow = graphics.MainRenderer.PrimaryPresentation();
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
+    SaveEvents = Session->Documents().SubscribeReport([this](const DocumentSaveResult* saved) {
+        if (saved == nullptr)
+            return;
+        Operations.Emit(JsonValue(JsonValue::Object{
+            { "event", JsonValue("saved") },
+            { "document", JsonValue(saved->Document.Key) },
+            { "status", JsonValue(std::string(SaveStatusName(saved->Status))) },
+        }));
+    });
     PublishAdoptionProblems();
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices),
+    Operations.ExposeTo(engine.Console().Registry());
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices, Operations),
                                                  Session->Project() != nullptr, mainWindow);
 
     Theme = std::make_unique<ThemeSheet>(engine.Console().Registry(), Problems, SENCHA_EDITOR_THEME_DIR);
@@ -433,6 +464,27 @@ void KyusuApp::DefineApplicationActions()
         .Max = 4.0,
     });
     registry.RegisterCVar({
+        .Name = std::string(kSocketCVar),
+        .Owner = "editor",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        .Flags = CVarFlags::Archive,
+        .Help = "Serve the editor's operations on a local socket, for kyusu_client and agents working "
+                "beside you. Only your user can reach it.",
+        .Source = { "editor" },
+    });
+    registry.RegisterCVar({
+        .Name = std::string(kSocketPathCVar),
+        .Owner = "editor",
+        .Type = CVarType::String,
+        .DefaultValue = std::string{},
+        .CurrentValue = std::string{},
+        .Flags = CVarFlags::Archive,
+        .Help = "Where the operation socket listens; empty for the runtime directory's sencha/kyusu.sock.",
+        .Source = { "editor" },
+    });
+    registry.RegisterCVar({
         .Name = std::string(kMotionCVar),
         .Owner = "editor",
         .Type = CVarType::Bool,
@@ -584,6 +636,7 @@ void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
             CloseRequestedWindows();
             SyncActionLayers();
             UpdateShells();
+            ServeOperations();
             Input.Advance();
         });
 }
@@ -703,6 +756,34 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
                      .Files = Session != nullptr ? Session->Files() : nullptr },
         .Role = role,
     });
+}
+
+void KyusuApp::ServeOperations()
+{
+    const ConsoleRegistry& registry = GetEngine().Console().Registry();
+    const CVarMetadata* on = registry.FindCVar(kSocketCVar);
+    const bool* wanted = on != nullptr ? std::get_if<bool>(&on->CurrentValue) : nullptr;
+    if (wanted == nullptr || !*wanted)
+    {
+        if (OperationServing != Serving::Off)
+            OperationServer.Close();
+        OperationServing = Serving::Off;
+        return;
+    }
+    if (OperationServing == Serving::Off)
+    {
+        std::filesystem::path path = DefaultEditorSocketPath();
+        if (const CVarMetadata* chosen = registry.FindCVar(kSocketPathCVar))
+            if (const std::string* text = std::get_if<std::string>(&chosen->CurrentValue); text != nullptr && !text->empty())
+                path = *text;
+        std::string error;
+        OperationServing = OperationServer.Open(path, error) ? Serving::On : Serving::Refused;
+        Notices.Post(OperationServing == Serving::On ? "Serving operations at " + path.string()
+                                                     : "The operation socket did not open: " + error,
+                     OperationServing == Serving::On ? NoticeTone::Info : NoticeTone::Failed, NoticeClockNow());
+    }
+    if (OperationServing == Serving::On)
+        OperationServer.Poll();
 }
 
 void KyusuApp::UpdateShells()

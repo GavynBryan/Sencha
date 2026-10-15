@@ -1,6 +1,6 @@
 #include <anim/AnimBlendOverrides.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -11,9 +11,9 @@ namespace
 {
     DataSchema MakeSchema()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::Field;
+        using DataField::Record;
         DataFieldSchema entry = Record({}, "Override", {},
             {
                 Field("from", DataFieldKind::GameplayTag, "From", "The behavior the layer leaves."),

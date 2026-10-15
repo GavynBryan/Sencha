@@ -52,6 +52,19 @@ TEST(NavigationQuery, ProjectsOntoWalkableSurfaceAndRefusesEmptySpace)
               NavStatus::ProfileUnavailable);
 }
 
+TEST(NavigationQuery, AContextAskingForMoreNodesThanTheBackendIndexesStillQueries)
+{
+    NavZoneFixture f;
+    const ZoneNavigation zone = f.Load(WallRoom());
+    NavQueryContextConfig config;
+    config.MaxNodes = 100000;
+    NavQueryContext context(config);
+    EXPECT_LE(context.Config().MaxNodes, 65535u);
+    EXPECT_EQ(NavProjectPoint(zone, context, f.Request(), Vec3d(5.0f, 1.0f, 5.0f), Vec3d(1, 2, 1))
+                  .Status,
+              NavStatus::Success);
+}
+
 TEST(NavigationQuery, RoutesAroundAWall)
 {
     NavZoneFixture f;

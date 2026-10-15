@@ -55,7 +55,7 @@ void SceneWireframeRenderer::DrawWireframe(const FrameContext& frame, const Edit
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& mesh = entity.Meshes[run.MeshIndex];
-            if (mesh.Edges.empty() || run.PlacementCount == 0)
+            if (mesh.Edges.empty() || run.PlacementCount == 0 || mesh.Role == BrushRole::Volume)
                 continue;
             EdgeScratch.clear();
             EdgeScratch.reserve(mesh.Edges.size());
@@ -63,11 +63,9 @@ void SceneWireframeRenderer::DrawWireframe(const FrameContext& frame, const Edit
                 EdgeScratch.push_back(ColoredVertex{
                     .Position = edge.Position,
                     .Color = edge.Soft ? EditorTheme::SoftEdgeWireframe : color });
-            // InstanceRows holds Mat4 by rows, the ColoredVertexInstance layout.
-            const std::span<const ColoredVertexInstance> instances(
-                reinterpret_cast<const ColoredVertexInstance*>(entity.InstanceRows.data() + run.FirstPlacement),
-                run.PlacementCount);
-            Lines.Submit(frame, viewport, camera, EdgeScratch, instances);
+            Lines.Submit(frame, viewport, camera, EdgeScratch,
+                         AsLineInstances(std::span(entity.InstanceRows).subspan(run.FirstPlacement,
+                                                                                run.PlacementCount)));
         }
     }
 }

@@ -4,6 +4,7 @@
 // exactly why these need their own coverage -- every other editor test would
 // still pass with the composition removed.
 
+#include "document/BrushCookInput.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
@@ -242,5 +243,23 @@ namespace
         const std::optional<Aabb3d> bounds = Scene.EvaluatedWorldBounds(brush);
         ASSERT_TRUE(bounds.has_value());
         ExpectNear(bounds->Center(), Vec3d{ 20.0f, 0.0f, 0.0f });
+    }
+
+    // The cook from a file loads the document and collects at once; nothing on
+    // that path draws a frame, so composition cannot be left to the renderer.
+    TEST_F(SceneHierarchyTest, AParentedBrushCooksWhereItIsDrawnAfterAReload)
+    {
+        const EntityId parent = Scene.CreateEntity(Vec3d{ 20.0f, 0.0f, 0.0f });
+        const EntityId brush = Scene.CreateBrush(Vec3d{ 0.0f, 0.0f, 0.0f },
+                                                 Vec3d{ 1.0f, 1.0f, 1.0f });
+        ASSERT_TRUE(Scene.SetParent(brush, parent));
+
+        EditorDocument reloaded(Logging);
+        ASSERT_TRUE(reloaded.LoadFromSceneText(Document.ToSceneText()));
+        const std::vector<CookBrushGeometry> cooked =
+            CollectCookBrushes(reloaded.GetScene(), reloaded.GetDefaultMaterial());
+
+        ASSERT_EQ(cooked.size(), 1u);
+        ExpectNear(cooked.front().WorldBounds.Center(), Vec3d{ 20.0f, 0.0f, 0.0f });
     }
 } // namespace

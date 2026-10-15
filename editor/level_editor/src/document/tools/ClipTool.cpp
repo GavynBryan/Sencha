@@ -8,6 +8,7 @@
 
 #include "EditorTheme.h"
 
+#include "brush/BrushClipCut.h"
 #include "brush/BrushOps.h"
 #include "brush/BrushValidation.h"
 #include "commands/CommandStack.h"
@@ -433,62 +434,27 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
     for (Target& target : Targets)
     {
         const Plane local = ClipPlaneMath::InLocal(*ClipPlane, front, target.Transform);
-        // Missed is a fact about the brush, not about the kernel's answer: the
-        // plane crosses it only if it has vertices strictly on both sides.
-        bool anyFront = false, anyBack = false;
-        for (const BrushVertex& vertex : target.Original.Vertices)
+        const BrushOps::ClipCap cap = Capped ? BrushOps::ClipCap::Capped : BrushOps::ClipCap::Open;
+        target.Cut = CutBrush(target.Original, local, cap);
+        if (target.Cut.Outcome == ClipCut::Result::Missed)
         {
-            const float d = local.SignedDistanceTo(vertex.Position);
-            anyFront = anyFront || d > BrushOps::kClipSnap;
-            anyBack = anyBack || d < -BrushOps::kClipSnap;
-        }
-        if (!anyFront || !anyBack)
-        {
-            target.Result = Outcome::Missed;
             ++Missed;
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
             continue;
         }
-        const BrushOps::ClipCap cap = Capped ? BrushOps::ClipCap::Capped : BrushOps::ClipCap::Open;
-        target.Front = BrushOps::Clip(target.Original, local, true, cap);
-        target.Back = BrushOps::Clip(target.Original, local, false, cap);
-        // A capped cut of a closed solid must come out as two closed solids;
-        // an open cut is open by request and only has to be a usable mesh. A
-        // crossing plane with an empty half is a cut the kernel could not
-        // complete, not a miss. Each stage names itself when it refuses.
-        BrushMesh originalCheck = target.Original;
-        BrushMesh frontCheck = target.Front;
-        BrushMesh backCheck = target.Back;
-        const bool wasClosed = Capped && BrushValidateAndRepair(originalCheck).Closed;
-        const BrushRepairResult frontReport = BrushValidateAndRepair(frontCheck);
-        const BrushRepairResult backReport = BrushValidateAndRepair(backCheck);
-        const auto stage = [&](const char* name, const BrushMesh& half, const BrushRepairResult& report) -> std::string {
-            if (half.Faces.empty())
-                return std::string(name) + " kernel refused";
-            if (!report.Ok)
-                return std::string(name) + " not usable";
-            if (wasClosed && !report.Closed)
-                return std::string(name) + " open";
-            return {};
-        };
-        target.Why = stage("front", target.Front, frontReport);
-        if (target.Why.empty())
-            target.Why = stage("back", target.Back, backReport);
-        if (!target.Why.empty())
+        if (target.Cut.Outcome == ClipCut::Result::Invalid)
         {
-            target.Result = Outcome::Invalid;
             ++Failed;
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
             continue;
         }
-        target.Result = Outcome::Valid;
         ++Crossed;
         if (Mode == ClipMode::Split)
         {
             // Nothing goes: the brush stays whole and the section shows where
             // the two halves will part, whatever the cap toggle says.
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
-            const BrushMesh capped = Capped ? target.Front
+            const BrushMesh capped = Capped ? target.Cut.Front
                                             : BrushOps::Clip(target.Original, local, true, BrushOps::ClipCap::Capped);
             BrushMesh section;
             for (const BrushFace& face : capped.Faces)
@@ -513,8 +479,8 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
             continue;
         }
         // The entity shows what it keeps; what it loses draws dim.
-        const BrushMesh& kept = Mode == ClipMode::KeepBack ? target.Back : target.Front;
-        const BrushMesh& other = Mode == ClipMode::KeepBack ? target.Front : target.Back;
+        const BrushMesh& kept = Mode == ClipMode::KeepBack ? target.Cut.Back : target.Cut.Front;
+        const BrushMesh& other = Mode == ClipMode::KeepBack ? target.Cut.Front : target.Cut.Back;
         ctx.Sink.PreviewMesh(target.Entity, kept);
         AppendInWorld(wire, other, target.Transform);
     }
@@ -529,9 +495,9 @@ void ClipTool::RefreshPreview(ToolContext& ctx)
         // The first refusal's stage, by name; the count when there are more.
         Status.clear();
         for (const Target& target : Targets)
-            if (target.Result == Outcome::Invalid)
+            if (target.Cut.Outcome == ClipCut::Result::Invalid)
             {
-                Status = target.Why;
+                Status = target.Cut.Why;
                 break;
             }
         if (Failed > 1)
@@ -680,25 +646,17 @@ void ClipTool::Commit(ToolContext& ctx)
         if (ctx.Sink.ResolveMesh(target.Entity).has_value())
             ctx.Sink.PreviewMesh(target.Entity, target.Original);
 
-    // The kernel answers what the half-space intersection is; what a shell
-    // is, is decided here: the entity keeps the first, every other shell --
-    // of a kept half that came apart, or of a split's two halves -- becomes
-    // its own brush. One brush, one solid.
+    // The entity keeps the first shell the cut keeps; every other becomes its
+    // own brush. One brush, one solid.
     std::vector<SplitEdit> splits;
     std::vector<MeshEdit> edits;
     std::vector<SelectableRef> kept;
     const RegistryId registry = ctx.Scene.GetRegistry().Id;
     for (Target& target : targets)
     {
-        if (target.Result != Outcome::Valid || !ctx.Sink.ResolveMesh(target.Entity).has_value())
+        if (target.Cut.Outcome != ClipCut::Result::Valid || !ctx.Sink.ResolveMesh(target.Entity).has_value())
             continue;
-        std::vector<BrushMesh> shells;
-        if (mode == ClipMode::Split || mode == ClipMode::KeepFront)
-            for (BrushMesh& shell : BrushConnectedComponents(target.Front))
-                shells.push_back(std::move(shell));
-        if (mode == ClipMode::Split || mode == ClipMode::KeepBack)
-            for (BrushMesh& shell : BrushConnectedComponents(target.Back))
-                shells.push_back(std::move(shell));
+        std::vector<BrushMesh> shells = KeptShells(target.Cut, mode);
         if (shells.empty())
             continue;
         BrushMesh keep = std::move(shells.front());

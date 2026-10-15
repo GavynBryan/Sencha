@@ -54,3 +54,14 @@ std::ostream& operator<<(std::ostream& os, const Plane& plane)
 	os << "{Normal: " << plane.Normal << ", D: " << plane.D << "}";
 	return os;
 }
+
+std::optional<Vec3d> IntersectPlanes(const Plane& a, const Plane& b, const Plane& c, float epsilon)
+{
+	const Vec3d bc = b.Normal.Cross(c.Normal);
+	const float determinant = a.Normal.Dot(bc);
+	if (std::abs(determinant) <= epsilon)
+		return std::nullopt;
+	const Vec3d ca = c.Normal.Cross(a.Normal);
+	const Vec3d ab = a.Normal.Cross(b.Normal);
+	return (bc * -a.D + ca * -b.D + ab * -c.D) / determinant;
+}

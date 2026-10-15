@@ -1,5 +1,7 @@
 #pragma once
 
+#include "operations/LevelTarget.h"
+
 #include "PendingBridgeEdit.h"
 #include "SelectionActions.h"
 #include "PendingElementEdit.h"
@@ -36,6 +38,9 @@ class EditorWorkspace
 {
 public:
     EditorWorkspace(LoggingProvider& logging, CommandStack& commands);
+    ~EditorWorkspace();
+    EditorWorkspace(const EditorWorkspace&) = delete;
+    EditorWorkspace& operator=(const EditorWorkspace&) = delete;
 
     // The document all editing binds: the focus zone's document in world mode,
     // the single anonymous document in legacy mode. Long-lived objects resolve
@@ -187,6 +192,9 @@ public:
     // outlives it. Workspace-level edits (DeleteSelection) route through the
     // same undo history every other surface writes to.
     CommandStack& Commands;
+    // The level operations and tool commits edit: the focus level, or a draft
+    // an operation client is writing.
+    LevelTarget Level{ World, Commands };
 
     // Cross-brush bridge preview. Owns the staged entity, the paths it
     // regenerates from, and the pending-edit scope that goes with them.

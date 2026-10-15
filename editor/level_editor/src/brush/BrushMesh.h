@@ -10,8 +10,9 @@
 #include <vector>
 
 //=============================================================================
-// BrushMesh — the authored brush geometry: a closed, orientable polygon mesh
-// stored as indexed face-vertex. Faces are polygons (a box is 6 quads, not 12
+// BrushMesh — the authored brush geometry: an orientable polygon mesh, closed
+// for a solid and open for a surface such as a wall brush, stored as indexed
+// face-vertex. Faces are polygons (a box is 6 quads, not 12
 // tris); triangulation happens only at render/cook time. Non-convex allowed.
 // (docs/plans/sencha-level-editor/03-brush-representation.md §2.1)
 //=============================================================================

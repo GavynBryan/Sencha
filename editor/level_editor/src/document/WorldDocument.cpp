@@ -62,8 +62,9 @@ std::string SanitizeZoneFileName(std::string_view name)
 
 } // namespace
 
-WorldDocument::WorldDocument(LoggingProvider& logging)
+WorldDocument::WorldDocument(LoggingProvider& logging, UserState userState)
     : Logging_(logging)
+    , UserState_(userState)
     , LegacyDocument_(std::make_unique<EditorDocument>(logging))
     , Rng_(std::random_device{}())
 {
@@ -1164,13 +1165,49 @@ void WorldDocument::AssignSceneRefsForNewZones()
     }
 }
 
+bool WorldDocument::CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& docks,
+                                            std::vector<AuthoredLinkCookInput>& links,
+                                            std::string* error) const
+{
+    const EditorScene& worldScene = WorldSceneDocument().GetScene();
+    const Registry& registry = WorldSceneDocument().GetRegistry();
+    for (EntityId entity : worldScene.GetAllEntities())
+    {
+        const uint64_t authoredEntity = (static_cast<uint64_t>(entity.Generation) << 32)
+            | entity.Index;
+        if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+        {
+            const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(entity);
+            if (transform == nullptr)
+            {
+                if (error != nullptr)
+                    *error = "a world dock has no transform";
+                return false;
+            }
+            docks.push_back({ *dock, transform->Value, authoredEntity });
+        }
+        if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+            links.push_back({ *link, authoredEntity });
+    }
+    return true;
+}
+
 void WorldDocument::RunValidation()
 {
     ValidationRecords_.clear();
     if (!WorldMode_)
         return;
 
-    ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
+    // The authored manifest carries no dock or link endpoints: the topology
+    // they compile to is cooked from the world scene. Reachability is checked
+    // against that compiled topology, so a zone a dock reaches is reached.
+    WorldPartitionManifest compiled = Manifest_;
+    std::vector<AuthoredDockCookInput> docks;
+    std::vector<AuthoredLinkCookInput> links;
+    if (CollectAuthoredTopology(docks, links) && CookWorldTopology(compiled, docks, links))
+        ValidationRecords_ = ValidateWorldPartitionManifest(compiled, WorldPartitionIndex::Build(compiled));
+    else
+        ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
 
     std::vector<DockId> dockIds;
     std::vector<LinkId> linkIds;
@@ -1422,7 +1459,7 @@ std::string WorldDocument::UserSidecarPath() const
 
 void WorldDocument::WriteUserSidecar() const
 {
-    if (!WorldMode_ || WorldPath_.empty())
+    if (!WorldMode_ || WorldPath_.empty() || UserState_ == UserState::Ignored)
         return;
 
     JsonValue::Object root;
@@ -1462,6 +1499,8 @@ void WorldDocument::WriteUserSidecar() const
 
 WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
 {
+    if (UserState_ == UserState::Ignored)
+        return {};
     std::ifstream file(UserSidecarPath(), std::ios::binary);
     if (!file.is_open())
         return {};

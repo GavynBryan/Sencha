@@ -142,9 +142,9 @@ bool SceneThumbnailCache::LoadEntry(const std::string& assetPath, Entry& entry)
         Logging.GetLogger<SceneThumbnailCache>().Warn("scene thumbnail: could not place '{}': {}", assetPath, error);
         return false;
     }
-    entry.Stage->Build();
+    entry.Stage->Staged().Build();
     entry.Camera = ThumbnailStudio::FrameSubject(
-        RenderableBounds(entry.Stage->Document(), Meshes, Assets.SkinnedMeshes.get()));
+        RenderableBounds(entry.Stage->Staged().Document(), Meshes, Assets.SkinnedMeshes.get()));
     return true;
 }
 
@@ -182,7 +182,7 @@ void SceneThumbnailCache::RenderPending(const FrameContext& frame)
         pending->Loaded = true;
     }
 
-    const SceneRenderQueueBuilder& built = *pending->Stage->Queues();
+    const SceneRenderQueueBuilder& built = *pending->Stage->Staged().Queues();
     const RenderQueue* queues[] = { &built.BrushQueue(), &built.MeshQueue() };
     if (!Studio.RenderPass(frame, pending->Target, pending->Camera, queues))
         return;

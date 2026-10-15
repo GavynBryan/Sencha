@@ -4,6 +4,8 @@
 
 #include "EditorScene.h"
 #include "EntityNameComponent.h"
+#include "NoteComponent.h"
+#include "SpaceComponents.h"
 
 #include <core/serialization/Archive.h>
 #include <core/serialization/JsonArchive.h>
@@ -16,6 +18,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 
 // A BrushId persists as its raw u32; the mesh it points at is serialized
 // separately by EditorDocument as a sidecar (03-§5). Must be visible before
@@ -48,6 +51,45 @@ ComponentSerializerRegistry& EditorSceneSerializers()
     return instance;
 }
 
+namespace
+{
+    std::unordered_set<std::string_view>& EditorOnlyComponentKeys()
+    {
+        static std::unordered_set<std::string_view> keys;
+        return keys;
+    }
+
+    std::unordered_set<std::string_view>& MaintainedComponentKeys()
+    {
+        static std::unordered_set<std::string_view> keys;
+        return keys;
+    }
+
+    template <typename Component>
+    void RegisterEditorOnlyComponent(ComponentSerializerRegistry& serializers)
+    {
+        RegisterComponent<Component>(serializers);
+        EditorOnlyComponentKeys().insert(TypeSchema<Component>::Name);
+    }
+
+    template <typename Component>
+    void RegisterMaintainedComponent(ComponentSerializerRegistry& serializers)
+    {
+        RegisterEditorOnlyComponent<Component>(serializers);
+        MaintainedComponentKeys().insert(TypeSchema<Component>::Name);
+    }
+}
+
+bool IsEditorOnlyComponent(std::string_view jsonKey)
+{
+    return EditorOnlyComponentKeys().contains(jsonKey);
+}
+
+bool IsMaintainedComponent(std::string_view jsonKey)
+{
+    return MaintainedComponentKeys().contains(jsonKey);
+}
+
 void RegisterDocumentSerializers()
 {
     static bool registered = false;
@@ -60,10 +102,15 @@ void RegisterDocumentSerializers()
     // Engine components: LocalTransform, CameraComponent, StaticMeshComponent.
     RegisterEngineSceneSerializers(serializers);
 
-    // Editor-only components.
-    RegisterComponent<BrushComponent>(serializers);
-    RegisterComponent<BakedBrushComponent>(serializers);
-    RegisterComponent<EntityNameComponent>(serializers);
+    RegisterEditorOnlyComponent<BrushComponent>(serializers);
+    RegisterEditorOnlyComponent<BakedBrushComponent>(serializers);
+    RegisterEditorOnlyComponent<EntityNameComponent>(serializers);
+    RegisterEditorOnlyComponent<BrushVolume>(serializers);
+    RegisterEditorOnlyComponent<Space>(serializers);
+    RegisterEditorOnlyComponent<Shell>(serializers);
+    RegisterMaintainedComponent<GeneratedWall>(serializers);
+    RegisterEditorOnlyComponent<Opening>(serializers);
+    RegisterEditorOnlyComponent<Note>(serializers);
 }
 
 namespace

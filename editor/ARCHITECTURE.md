@@ -15,6 +15,8 @@ of editing it offers is a workspace library:
 | `editor/common/` | `editor_common` (static lib) | What every workspace shares: the shell (rail, stations, cards, explorers, prompts, palette, presented through Shoji), the theme, actions, properties, generic input, commands/selection/tools/interaction abstractions, offscreen targets shown as host images, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
 | `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is what needs a GPU and a window over it (composition root, the views and dialog surfaces, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/kyusu/` | `kyusu` | The Kyusu executable and composition root: `KyusuApp`, the `ProjectSession`, and the table of workspace kinds. The only tree that sees every workspace. |
+| `editor/kyusu_batch/` | `kyusu_batch` | The editor's operations without a window: opens a level, or a world at its start zone or a named one, runs a script of operations from a file or stdin, and answers each with one line of JSON (`docs/plans/level-spatial-model.md`); a script proposes changes by writing a draft as a proposal file. `--reference` prints every operation as markdown (`OperationReference`), which is the agent skill's `reference.md`. A world is opened with its user state ignored, so no one's view is read or written. Links `level_authoring` only. |
+| `editor/kyusu_client/` | `kyusu_client` | A running Kyusu's operations from a shell: connects to the operation socket (`editor.operations.socket`), sends one operation or each line of stdin, prints each answer as one line of JSON, or with `--events` prints what the editor reports. Links `editor_common` only. |
 | `editor/data_editor/` | `data_editor` (static lib) | The Data workspace: schema-laid sheets over typed `.sdata` documents. |
 | `editor/animation_editor/` | `animation_authoring` + `animation_editor` (static libs) | The Animation workspace: rig, selector and clip-event authoring over a live skinned preview and a scenario lab. |
 | `editor/ability_editor/` | `ability_authoring` + `ability_editor` (static libs) | The Abilities workspace (the Ability Workbench, `docs/editor/ability-workbench.md`): `ability.definition` documents edited as elements selected by key, checked against the project's names as they change. The authoring library (element model, edits, checks, recipes, `AbilityWorkbench`) is GUI-free; the workspace library holds `AbilityWorkspace` alone. |
@@ -33,7 +35,9 @@ The engine never depends on editor code (one-way dependency).
 ## Kyusu and its workspaces
 
 Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
-`ProjectSession`, each window's `ShellWindow`, the `ThemeSheet`, and a
+`ProjectSession`, each window's `ShellWindow`, the `ThemeSheet`, the
+`EditorOperations` exposed on the console (a workspace registers its
+operations while it lives), and a
 `WorkspaceHost` (`common/src/workspaces/`) built from the kinds table in
 `kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
 first opened and destroyed when closed. Each window's `ShellWindow`
@@ -184,6 +188,8 @@ Shared shell (`editor/common/src/`):
 | `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `AskAboutDocuments` (the one prompt listing the changed documents a close would drop), `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
 | `presenters/` | Neutral models as what a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source (a property's kind chooses its control -- a choice a drop-down, a number a box to type or drag, a vector its numbers side by side, a switch a toggle, a plot bars, anything else a field; a group is a section that stays folded as it was left; a typed field holds the rows still and commits once focus leaves); `ContentPicture` shows a host image full bleed with picked marks and frames; `PlanePad` shows a 2D value as a pad the workspace drags; `StageOrbit` turns a press on a stage into a click or turntable orbit; `ColorPicker` edits a colour property on a hue and saturation wheel with a value bar, through the property's edit session. Used by the shell and by documents a workspace owns. | shell, workspaces |
 | `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `TimelineDeck`, `CommandPalette`, `PromptDialog`, `ThemeSheet`, `SurfacePlacement` (the explorer opens in free space, the selection at its place; both moved by the header and sized by the corner), `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of, and the `Shelf` (the project's content along a window's bottom, or alone in a window of its own: tiles to open, carry and drop, its file verbs, a tile's wheel and `NewContentWheel`). Workspaces never include it. | Kyusu |
+| `ipc/` | `LineSocketServer` and `LineSocketClient`: a local Unix domain socket carrying lines, never blocking, its directory private to the user; `DefaultEditorSocketPath`. | -- |
+| `operations/` | Named operations with typed contracts, the one surface every editing client calls (Kyusu's tools, the console, `kyusu_batch`, external agents): `EditorOperations` over an `AuthoredCatalog` of `EditorOperationDefinition`s (each a query, a mutation of the document, which a draft records and a proposal may replay, or a session operation on the editor around it), arguments checked and defaulted by `NormalizeDataValue`, answers checked against the declared result and returned as one JSON object; `OperationArgumentsFromText`, `AnswerOperationLine` and `RunOperationScript`, `OperationReference` (the catalog as compact markdown; `OperationContract`, one operation's entry, which a proposal file digests), events (`Listen`/`Emit`: a selection, a save, a draft accepted), and `OperationSocket` (the operations and their events over a local `ipc/LineSocket`, polled on the owner's thread). Knows nothing about levels. Distinct from `actions/`: an action takes no arguments and acts on the selection. | a provider's `Register` |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first); `ActionWheelModel` offers a context's actions as a wheel. | Kyusu, workspaces |
 | `ui/` | The theme palette (`EditorUiStyle`, loaded from `editor/themes/*.json` by `EditorThemeFile`) and its stylesheet (`AuthoredThemeStyleSheet`), the display scale choice (`UiScaleChoice`), material thumbnails as host images, and the wheel's screen (`RadialMenuScreen`). | a palette entry; an SVG in `editor/ui/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
@@ -197,17 +203,18 @@ Level editor (`editor/level_editor/src/`):
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
 | `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
-| `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
-| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
+| `workspace/` | The per-document authoring hub (`EditorWorkspace`, which owns the `LevelTarget`; `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`, and `ProposalTray` (the Proposals explorer: open drafts with what they change and their diagnostics delta, unopened `.proposals` files, and `proposal.accept` / `proposal.reject` on the draft shown). | -- |
+| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation, and `ShellGeneration` (a volume's walls: one slab per face, bounded by the join rules, a face shared with a neighbour across the gap split so the shared part is built once, `CutOpenings` piercing each opening through the slabs it crosses, or a refusal naming the face), and `BrushClipCut` (a brush cut by a plane, judged as missed, valid or invalid by stage, and the solids a `ClipMode` keeps; the clip tool and `brush.clip` share it). Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
-| `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
+| `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). Volume brushes stay out of the solid queue, the shadow casters and the wireframe; `VolumeRenderer` draws them, translucent, from the retained `BrushDrawSet`. `DocumentStage` is a scratch document drawn beside the level with its own bakes and queues; the placement ghost (`SceneSourceStage`) and `DraftPreview` (the previewed draft's additions and changes tinted green, its deletions red, each at its world transform) are stages, drawn by `EditorRenderFeature::DrawStage`. | `IRenderFeature` (engine) |
 | `ui/` | The level editor's authored surfaces: the views (`LevelViewSurface`) and the cook profiles dialog (`CookProfilesModal`). | -- |
 | `authoring/` | The selection's components as properties (`ComponentPropertySource`, walking the serializer registry), the adapters that author a component's own presentation (`EditorComponentAdapter`), and what entities show in the views (`EntityMarkers`, `PlaceIcons`). A component is a Group keyed by its serializer's JSON key; a field is `<component>/<field>`, one number of it `<component>/<field>[i]`, one asset slot `<component>/<field>#<slot>`, and an adapter's property `<component>:<key>`, so an edit lands by key after the list changed. Several selected entities read as one: a component only some hold says how many, a field they disagree on is Mixed, a set writes every holder, a drag moves each from its own value, and either is one step; an adapter-authored component is edited one object at a time. A scene instance's member carries `reset` on a field or component that differs from its source. Byte fields preview inside the command stack's pending-edit scope and commit as one `RawComponentEditCommand`; an asset field commits its path through `AssetFieldEditCommand`. | `EditorComponentAdapter` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
+| `operations/` | The level's operations over a `LevelTarget` (the level they read and write: the `LevelDraft` being written, else the focus level; `Mutate` refreshes world transforms on both sides of one edit run under an `EntityChangeRecorder`, puts back a refused edit's changes, and records a successful one in the draft or as an undo step; drafts are copies accepted as one `ApplyChangeSetCommand` after `ChangeSetConflicts`, or rebased by replaying their steps), gathered by `LevelOperations`: `LevelDraftOperations` (`draft.begin`, `write`, `list`, `diff`, `accept`, `discard`, `resume`, `rebase`, and `save` and `open`, which write a draft as a `LevelProposal` file, with each operation's contract digest, and replay one into a new draft, naming the operations whose contract changed since), `LevelQueryOperations` (`level.summary`, `entity.describe`, `query.box`, `query.near`, `plan.section`, `nav.reachable` in `LevelReachability`: the walkable surface asked with unknown traversal kinds blocked and then open, over `LevelNavigation` (the level's navigation built in memory under a scenario of held, denied and unknown kinds, shared by every navigation question); `space.graph` in `SpaceGraph`: which spaces the walkable surface joins, by mapping each `SnapshotNavMesh` polygon to its space and flooding with `NavCollectReachable` under the sure and the possible capabilities, and whether a `NavRaycast` runs through each opening, and `measure.clearance` in `LevelClearance`: floor, ceiling and width around a point against the navigation profile's capsule, cast with `viewport/Picking`'s `CastRayAgainstBrushes`, and `conventions.get`), `LevelChangeOperations` (`changes.mark` and `changes.since`: what was created, changed and deleted in the level, never a draft, since a mark, by per-entity digest; the newest 16 marks are held by the executors, and an unchanged revision answers without digesting), `WorldQueryOperations` (`world.summary`: zones and the docks between them; `diagnostics`: the world's validation records), `LevelJson` (how answers spell metres, points, compass bearings and axis directions), `EntityRecords` (how answers name an entity, list one and spell the selection, shared by the selection event), subject resolution (`ResolveEntitySubject`: a persistent id, or `@name`; `ResolveEntitySubjects` for a list; `SubjectRefusal`, which names an ambiguous name's candidates), `LevelMutationOperations` (`entity.rename`, `entity.delete`, `entity.duplicate` and `entity.reparent`, over `document/EntityBranches` and `ResolveReparentTargets`), `BrushOperations` (`brush.box` between two corners, painted by the conventions; `brush.extrude` of the face toward a direction, through `MeshEditService::ExtrudeElements` as the gizmo extrude; `brush.clip` through `BrushClipCut`, each extra solid a copy of the brush alone; `brush.carve`, a rectangle or arch through or into a face at a point, through `CarveAcrossSurface`; the Brush tool commits its pending brush through `LevelTarget::MutateLevel`), `AssetQueries` (`assets.list`: the project's files through the asset shelf's `FindAssets` query), `MaterialOperations` (`material.apply` to every face or the face toward a direction, refusing a path the project does not hold), `NoteOperations` (`note.add`, about an entity and parented to it or at a point; `note.resolve`; `notes.list`), `WorldCrossingOperations` (`world.crossings`: stretches of a zone's walkable border on its bounds with another zone beyond, less what docks between the two cover, confirmed against the far zone when it is open; `dock.place_at`: a dock built by `WorldDockRecipe` in the world scene, fitted to a crossing or an opening), `WorldReachability` (`world.reachable` and `world.bypasses`: travel across zones only through authored docks, mouth to landing, with gates shut for the sure walk unless assumed open), `WorldZones` (`world.focus`; `ZoneNamed`, a zone by id or else by `ZoneDisplayedAs`, which `kyusu_batch --zone` uses too; `ZoneJson`), `InstanceOperations` (`instance.place`: a scene source at a point, turned about up, recorded as the placement's instance record), `ComponentOperations` (`component.set`: one field, by dotted name, of a component keyed as `entity.describe` lists it, written through the entity's serialized record with `OverwriteEntity`, so any registered component edits without naming its type; the value must be the kind the field holds), `SpaceOperations` (`space.create`: a named box space between two corners, painted and walled by the project's conventions; `opening.create`: a door or window in the generated wall at a point, owned by that wall's space; `space.move` with carry, `space.resize_face` by compass direction, `opening.move`; `shell.detach`: a space stops managing its wall brushes, which stay as ordinary brushes; `shell.rebuild`: a space's walls rebuilt, kept ones taken back; `level.diagnostics`: `SpaceDiagnostics`' records about spaces, their walls (`shell.stale`, `wall.kept_stale`) and openings; `deps`: what follows from a space or an opening; `space.propose`: spaces for walkable surface no space holds, from `SpaceProposals`, a heuristic over the navigation snapshot), `SpaceEdits` (the space edits operations and tools share: `CreateSpace`, `MoveEntities` with the carry rule, `MoveFace`; the move gizmo commits through `MoveEntities` via `LevelTarget::MutateLevel`, which always edits the level itself), `SpaceRelations` (derived, never stored: the wall at a point, the far side of an opening, an opening's owner, the smallest space holding a point by winding number, the face of a brush toward a direction), `ViewOperations` (registered by the running editor over a `ViewTarget`, its views, selection and level: `view.context`, the active view's eye, the surface at its middle and the spaces it sees; `view.select` through `SelectCommand`; `view.frame`), `DiagnosticRecords` (how answers spell `ContentRiskRecord`s, for the world's and the level's diagnostics alike), and `FloorPlan` (a level cut at a height through `brush/BrushSection`, rasterized north-up for `plan.section`'s PNG). | an entry in an operations list |
 
 Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
 `MaterialDocumentSet` (the open materials as journal documents, one undo
@@ -270,13 +277,67 @@ that opens a project in a new process).
 
 - Document/scene model: `EditorDocument`, `EditorScene`, `DocumentSerialization`,
   `EntitySnapshot`.
+- The spatial model's components (`docs/plans/level-spatial-model.md` §2):
+  `BrushVolume` (the `volume` tag, in `BrushComponents.h`: a brush enclosing
+  air, never geometry), and in `SpaceComponents.h` `Space`, `Shell` (walls
+  built around the volume), `GeneratedWall` (a wall brush its parent space
+  built: its slot, its shape's digest as built, and whether it was kept
+  after a hand edit) and `Opening` (a cut through walls). All are
+  declared editor-only, and `GeneratedWall` maintained too
+  (`IsMaintainedComponent`): `component.set` and the inspector show it but
+  never change, add or remove it. `NoteComponent.h` holds `Note` (text, author, open
+  or resolved), a remark parented to what it is about, editor-only too.
+  `EditorScene::RoleOf` says whether a brush entity is a volume;
+  `VolumeEvaluations` evaluates volumes with every mesh a volume. Every walk
+  over brush geometry (`SceneBrushWalk`'s `BrushRoleFilter`,
+  `CollectCookBrushes`, picking) admits per mesh role, so air never cooks,
+  collides, navigates or lights.
+- `SpaceWalls` writes a shelled space's walls into the level as brushes it
+  parents (plan §5.8): `BuildSpaceShell` runs `GenerateShell` and
+  `CutOpenings` in the world against the shelled volumes and openings near
+  it, `ShellSurfaces` splits each slab into a room side, a neighbour's side
+  and an outside, and `RebuildSpaceWalls` matches them to wall brushes by
+  slot, writing only the walls that differ from what was built, leaving a
+  hand-reshaped wall kept and carrying paint across by plane.
+  `SpaceShellInputs` hashes what the walls are built from, never saved;
+  `RebuildStaleSpaceWalls` checks every space whose hash moved since
+  `EditorScene::CheckedWallInputs`, and the level target runs it inside
+  every mutation so the walls land in the same change set, and
+  `EditorWorkspace` runs it as the command stack's execute follow-up, so a
+  face drag, a delete or an inspector edit carries its walls in its own undo
+  step.
+- Change sets: `EntityChangeRecorder` records the entities an edit touches by
+  persistent id, before and after, keeping only those that changed;
+  `ApplyEntityChangeSet` puts either side back (overwriting in place, so
+  handles and children survive); `ChangeSetConflicts` names entities edited
+  since; `commands/ApplyChangeSetCommand` adopts an edit already made as one
+  undo step. Applying a change set fires the document's handle observer, as a
+  projection rebuild does, so the selection re-resolves. A change set also
+  carries placed scenes as their instance records (`InstanceChange`): the
+  entities a placement projects come and go with its record, put back before
+  the entity changes and taken away after them. And it carries reads
+  (`EntityRead`): the entities an edit relied on without changing, by digest,
+  which `ChangeSetConflicts` checks like the changes' befores.
+- `EntityBranches`: an entity in the hierarchy means its branch.
+  `CollectBranches` (parents before children, each once), and `BranchCopy`
+  captured and restored for duplication (fresh names claimed at capture,
+  parent links rebound to the copies). The delete and duplicate commands and
+  the `entity.*` operations share them.
 - Cook: `DocumentCook` (`CookDocument` turns an `EditorDocument` into a runtime
-  level file), `BrushCookInput`, `BrushBake`.
+  level file), `BrushCookInput`, `NavigationCookInput` (the authored links and
+  the project's navigation settings), `BrushBake`; `DocumentNavigation` builds a
+  document's navigation in memory from the same inputs, for analysis.
+- `LevelConventions`: the project's `level.conventions` data asset (wall
+  thickness, opening size, space height, material roles), its schema, and the
+  lookup that finds it once under the content roots. Kyusu registers the
+  subtype so the Data workspace edits it. `PaintByConvention` paints a brush's
+  faces by which way they face, for spaces and boxes alike.
 - File actions: `DocumentFileActions` (dialogs, content-root material rescan,
   unresolved-ref logging), `AssetFieldIo`.
 - `document/commands/`: entity-edit commands (`ICommand` implementations).
 - `document/tools/`: built-in tools (`SelectTool`, `BrushTool`, `EdgeCutTool`,
-  `FaceCarveTool`).
+  `FaceCarveTool`, and `SpaceTool`, which drags a space's footprint on a floor
+  and commits through `operations/SpaceEdits`' `CreateSpace`).
 - `document/interactions/`: tool-driven drag interactions (`IInteraction`).
 
 The authoring session that ties these to tools, mesh edit, viewport, and render

@@ -127,7 +127,7 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
         {
             const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
             const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
-            if (mesh == nullptr)
+            if (mesh == nullptr || drawMesh.Role == BrushRole::Volume)
                 continue;
             for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
             {
@@ -161,7 +161,7 @@ void SceneRenderQueueBuilder::RebuildBrushCasters(const EditorDocument& document
         {
             const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
             const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
-            if (mesh == nullptr)
+            if (mesh == nullptr || drawMesh.Role == BrushRole::Volume)
                 continue;
             for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
             {

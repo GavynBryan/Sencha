@@ -72,6 +72,12 @@ struct ZoneNavigation::Backend
     std::vector<std::string> Diagnostics;
 };
 
+// The gameplay tag a polygon's area index names; invalid when unbound.
+[[nodiscard]] inline GameplayTagId AreaTagOf(const ZoneNavigation::Backend& zone, std::uint8_t area)
+{
+    return area < zone.AreaTags.size() ? zone.AreaTags[area] : GameplayTagId{};
+}
+
 // Re-attaches every link of one profile to its current mesh and rebuilds the
 // profile's edge index. Appends to `moved` the links whose attachment changed.
 void AttachNavLinks(ZoneNavigation::Backend& zone, ZoneNavProfile& profile,

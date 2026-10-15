@@ -5,10 +5,12 @@
 #include "viewport/WorldViewSettings.h"
 
 #include <zone/ContentRiskRecord.h>
+#include <zone/WorldTopologyCook.h>
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 
 #include <cassert>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -53,8 +55,19 @@ public:
     // assets root. Applied to the documents that already exist and to every
     // one created afterwards.
     void SetContentRoots(std::vector<std::filesystem::path> roots);
+    [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const { return ContentRoots_; }
 
-    explicit WorldDocument(LoggingProvider& logging);
+    // Whether a person's view of a world -- its focus, open zones and
+    // overlays -- is read from and written to the world's .user.json sidecar.
+    // A tool that opens a world to answer questions ignores it, so its answers
+    // do not depend on, or disturb, anyone's view.
+    enum class UserState : std::uint8_t
+    {
+        Sidecar,
+        Ignored,
+    };
+
+    explicit WorldDocument(LoggingProvider& logging, UserState userState = UserState::Sidecar);
     ~WorldDocument();   // writes the user sidecar so view state survives exit
 
     // Forwarded to every zone document, present and future.
@@ -105,6 +118,12 @@ public:
     // Manifest validation plus the editor-side scene-resolvability check, rerun
     // on world load, save, and every manifest verb. Errors are logged as they
     // are produced; the records stay here for the partition panel to display.
+    // The world scene's docks and links as the topology cook reads them. False
+    // with `error` set when a dock has no transform.
+    [[nodiscard]] bool CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& docks,
+                                               std::vector<AuthoredLinkCookInput>& links,
+                                               std::string* error = nullptr) const;
+
     [[nodiscard]] std::span<const ContentRiskRecord> ValidationRecords() const
     {
         return ValidationRecords_;
@@ -304,6 +323,7 @@ private:
     void NotifyEditedDocumentChanged();
 
     LoggingProvider& Logging_;
+    UserState UserState_ = UserState::Sidecar;
     RuntimeAssets* Assets_ = nullptr;
 
     bool WorldMode_ = false;

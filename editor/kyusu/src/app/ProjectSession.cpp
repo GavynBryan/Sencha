@@ -1,5 +1,7 @@
 #include "app/ProjectSession.h"
 
+#include "document/LevelConventions.h"
+
 #include "project/AssetAdoption.h"
 #include "project/ProjectContentMount.h"
 #include "project/ProjectFileSteps.h"
@@ -49,7 +51,9 @@ ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projec
         modulePath = envPath;
     }
 
-    // The module's data asset types before the content that holds them is scanned.
+    // The editor's own data asset types and the module's, before the content
+    // that holds them is scanned.
+    RegisterLevelConventionsData(Assets().DataTypes, Assets().DataSchemas);
     LoadModule(modulePath);
     MountContent();
     if (!Descriptor)

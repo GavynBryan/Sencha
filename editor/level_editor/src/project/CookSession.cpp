@@ -366,7 +366,7 @@ std::uint64_t CookSession::PublicationSerial() const
     return State->PublicationSerial;
 }
 
-void CookSession::RegisterCommands(ConsoleRegistry& registry)
+void CookSession::RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner)
 {
     registry.RegisterCVar({
         .Name = "editor.cook.cell_size",
@@ -414,7 +414,7 @@ void CookSession::RegisterCommands(ConsoleRegistry& registry)
 
     ConsoleCommandMetadata cook;
     cook.Name = "cook";
-    cook.Owner = "editor";
+    cook.Owner = std::string(commandOwner);
     cook.Usage = "cook [--rebuild] [profile-id] [level-name]";
     cook.Help = "Start an incremental cook with a named profile. The profile defaults to full.";
     cook.Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args)

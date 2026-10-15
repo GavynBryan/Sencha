@@ -5,6 +5,7 @@
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
 #include "properties/PropertyEditSession.h"
@@ -310,4 +311,24 @@ TEST(ComponentPropertySource, AComponentOnOfferSaysWhatAddingItBringsWithIt)
     const std::string& note = add.ChoiceNotes[static_cast<std::size_t>(movement - add.Choices.begin())];
     EXPECT_TRUE(note.starts_with("Also adds ")) << note;
     EXPECT_NE(note.find("Jump State"), std::string::npos) << note;
+}
+
+TEST(ComponentPropertySource, WhatTheEditorKeepsIsShownButNeverEdited)
+{
+    Fixture f;
+    EXPECT_EQ(f.Source.Act("components", "add", "generated_wall"), PropertyEditResult::Refused) << "nor added";
+    f.Components().AddComponent(f.Entity, GeneratedWall{ .Slot = 7, .Built = 11, .State = WallState::Generated });
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const auto group = std::ranges::find(nodes, std::string("generated_wall"), &PropertyNode::Key);
+    ASSERT_NE(group, nodes.end()) << "a generated wall says so";
+    EXPECT_TRUE(group->Descriptor.Verbs.empty()) << "nor can it be removed";
+    ASSERT_FALSE(group->Children.empty());
+    for (const PropertyNode& field : group->Children)
+    {
+        EXPECT_TRUE(field.Descriptor.ReadOnly) << field.Key;
+        EXPECT_NE(f.Source.CommitEdit(field.Key, "3"), PropertyEditResult::Applied) << field.Key;
+    }
+    EXPECT_EQ(f.Source.Act("generated_wall", "remove", {}), PropertyEditResult::Refused);
+    EXPECT_EQ(f.Components().TryGet<GeneratedWall>(f.Entity)->Slot, 7u);
+    EXPECT_FALSE(f.Commands.CanUndo());
 }

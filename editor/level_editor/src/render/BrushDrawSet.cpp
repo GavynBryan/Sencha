@@ -1,11 +1,14 @@
 #include "BrushDrawSet.h"
 
 #include "document/EditorScene.h"
+#include "brush/BrushTessellation.h"
 #include "brush/BrushWorkCounters.h"
+#include "brush/FaceMaterial.h"
 
 #include <core/hash/Fnv1a.h>
 #include <world/registry/Registry.h>
 
+#include <span>
 #include <utility>
 
 namespace
@@ -74,7 +77,10 @@ bool BrushDrawSet::Refresh(const EditorScene& scene, BrushBakeCache& bakes, cons
             RebuildPlacements(record, *evaluated, baked, facts.GetPiecePlacements(entity),
                               facts.GetPieceBounds(entity));
             if (!sameKey)
+            {
                 RebuildEdges(record, *evaluated);
+                RebuildVolumeFill(record, *evaluated);
+            }
             ++Rebuilds;
             ++BrushWorkCounters::Frame().DrawRecordRebuilds;
             changed = true;
@@ -106,6 +112,7 @@ void BrushDrawSet::RebuildPlacements(BrushDrawEntity& record, const BrushEvaluat
     for (std::size_t i = 0; i < evaluated.Meshes.size(); ++i)
     {
         BrushDrawMesh& mesh = record.Meshes[i];
+        mesh.Role = evaluated.Meshes[i].Role;
         if (i < baked.Meshes.size())
         {
             mesh.Handle = baked.Meshes[i].Handle;
@@ -170,7 +177,10 @@ void BrushDrawSet::RebuildPlacements(BrushDrawEntity& record, const BrushEvaluat
     const Transform3f& world = record.Key.World;
     std::uint64_t digest = kFnv1aOffsetBasis;
     for (const BrushDrawMesh& mesh : record.Meshes)
+    {
         HashFnv1aValue(digest, mesh.ContentHash);
+        HashFnv1aValue(digest, mesh.Role);
+    }
     HashFnv1aValue(digest, world.Position);
     HashFnv1aValue(digest, world.Rotation);
     HashFnv1aValue(digest, world.Scale);
@@ -201,6 +211,24 @@ void BrushDrawSet::RebuildEdges(BrushDrawEntity& record, const BrushEvaluated& e
             edges.push_back(BrushEdgeVertex{ mesh.Mesh->Vertices[mesh.EdgePairs[e][0]].Position, soft });
             edges.push_back(BrushEdgeVertex{ mesh.Mesh->Vertices[mesh.EdgePairs[e][1]].Position, soft });
         }
+    }
+}
+
+void BrushDrawSet::RebuildVolumeFill(BrushDrawEntity& record, const BrushEvaluated& evaluated)
+{
+    for (std::size_t i = 0; i < record.Meshes.size(); ++i)
+    {
+        std::vector<Vec3d>& fill = record.Meshes[i].VolumeFill;
+        fill.clear();
+        if (i >= evaluated.Meshes.size() || evaluated.Meshes[i].Role != BrushRole::Volume
+            || evaluated.Meshes[i].Mesh == nullptr)
+            continue;
+        BrushTessellate(*evaluated.Meshes[i].Mesh, Transform3f::Identity(),
+            [&fill](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> triangles)
+            {
+                for (const BrushTriVertex& vertex : triangles)
+                    fill.push_back(vertex.Position);
+            });
     }
 }
 

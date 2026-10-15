@@ -156,12 +156,13 @@ struct RayPieceCandidate
 };
 
 // The one traversal a ray pick makes: every visible (and, with skipLocked,
-// unlocked) brush's pieces, kept only when the ray enters the piece's tight
+// unlocked) brush's pieces in `roles`, kept only when the ray enters the piece's tight
 // world box, ordered by entry distance so a caller that wants the nearest hit
 // can stop early. Baked brushes keep their dormant source as a body target
 // (Live == false) but offer no faces.
 std::vector<RayPieceCandidate> GatherRayPieceCandidates(const EditorScene& scene, const Ray3d& ray,
-                                                        bool skipLocked, EntityId restrictTo)
+                                                        bool skipLocked, BrushRoleFilter roles,
+                                                        EntityId restrictTo)
 {
     std::vector<RayPieceCandidate> candidates;
     const BrushPlacementFacts& facts = scene.PlacementFacts();
@@ -205,7 +206,8 @@ std::vector<RayPieceCandidate> GatherRayPieceCandidates(const EditorScene& scene
             continue;
         for (const BrushPiece& piece : evaluated->Pieces)
         {
-            if (piece.Ordinal >= bounds.size() || piece.Ordinal >= placements.size())
+            if (piece.Ordinal >= bounds.size() || piece.Ordinal >= placements.size()
+                || !Admits(roles, evaluated->Meshes[piece.MeshIndex].Role))
                 continue;
             float near = 0.0f;
             if (!IntersectRayAabb(ray, bounds[piece.Ordinal], near))
@@ -243,7 +245,7 @@ bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Ve
 
     // Candidates arrive nearest-box first: once a box starts beyond the
     // threshold no face in it or after it can occlude.
-    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, EntityId{}))
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, BrushRoleFilter::Solids, EntityId{}))
     {
         if (static_cast<double>(candidate.Near) >= threshold)
             break;
@@ -333,7 +335,7 @@ SelectableRef PickingService::PickBrushElement(const EditorViewport& viewport,
     // selectable. Only live brushes have faces to edit.
     const RegistryId registry = scene.GetRegistry().Id;
     for (RayPieceCandidate& candidate :
-         GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, request.RestrictTo))
+         GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, BrushRoleFilter::All, request.RestrictTo))
     {
         const bool wantFaces = AllowsFaces(request) && candidate.Live;
         const bool wantBody = AllowsEntities(request);
@@ -722,10 +724,16 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
                                                       Vec2d point,
                                                       const EditorScene& scene) const
 {
-    const Ray3d ray = BuildRay(viewport, point);
-    float best = static_cast<float>(kMaxPickDistance);
+    return CastRayAgainstBrushes(scene, BuildRay(viewport, point),
+                                 static_cast<float>(kMaxPickDistance), true);
+}
+
+std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene, const Ray3d& ray,
+                                                float maxDistance, bool skipLocked)
+{
+    float best = maxDistance;
     std::optional<SurfaceHit> hit;
-    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, EntityId{}))
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, skipLocked, BrushRoleFilter::Solids, EntityId{}))
     {
         if (candidate.Near >= best)
             break; // nearest-box order: nothing after this can beat the hit in hand
@@ -737,7 +745,7 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
             if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
             {
                 best = distance;
-                hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };
+                hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal, .Entity = candidate.Entity };
             }
         }
     }

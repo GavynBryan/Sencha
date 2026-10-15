@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DocumentStage.h"
+
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
@@ -9,12 +11,8 @@
 #include <string>
 #include <vector>
 
-class BrushBakeCache;
 class EditorDocument;
-class EditorScene;
 class LoggingProvider;
-class SceneRenderQueueBuilder;
-struct BrushEvaluationPolicy;
 struct RuntimeAssets;
 
 // A scene source placed in a scratch document exactly as a level places it, so
@@ -36,15 +34,9 @@ public:
 
     // The placement's root transform, as editing a placement sets it.
     void Pose(const Transform3f& placement);
-    // The preview piece budget its brushes evaluate under, as the views'.
-    void SetEvaluationPolicy(const BrushEvaluationPolicy& policy);
-    // Propagates transforms, then builds the queues when there are any.
-    void Build();
-
-    [[nodiscard]] const EditorDocument& Document() const { return *Doc; }
-    [[nodiscard]] const EditorScene& Scene() const;
-    // Null without an asset environment.
-    [[nodiscard]] const SceneRenderQueueBuilder* Queues() const { return Builder.get(); }
+    // What is drawn: the scratch document the source is placed in.
+    [[nodiscard]] DocumentStage& Staged() { return *Stage; }
+    [[nodiscard]] const DocumentStage& Staged() const { return *Stage; }
     [[nodiscard]] EntityId Root() const { return RootEntity; }
 
     // Whether a source it placed would read differently from disk now.
@@ -55,9 +47,6 @@ public:
 private:
     SceneSourceStage() = default;
 
-    // In dependency order, so they go in reverse: the builder holds the bakes.
-    std::unique_ptr<EditorDocument> Doc;
-    std::unique_ptr<BrushBakeCache> Bakes;
-    std::unique_ptr<SceneRenderQueueBuilder> Builder;
+    std::unique_ptr<DocumentStage> Stage;
     EntityId RootEntity;
 };

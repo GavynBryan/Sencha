@@ -6,6 +6,7 @@
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
 #include "BrushPlacementFacts.h"
+#include "VolumeEvaluations.h"
 #include "brush/BrushMeshStore.h"
 #include "brush/BrushRecord.h"
 #include "document/BrushComponents.h"
@@ -28,6 +29,7 @@
 #include <string_view>
 #include <type_traits>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -158,6 +160,8 @@ public:
     // the runtime allocator namespace. The returned id is reserved immediately,
     // so a discarded mint is retired for the life of the document.
     [[nodiscard]] PersistentEntityId MintPersistentId();
+    // From now on the ids minted follow from `seed`, so a replay mints the same ones.
+    void SeedPersistentIds(std::uint64_t seed) { IdRng_.Seed(seed); }
     // The id an entity is known by across rebuilds and reloads; invalid without one.
     [[nodiscard]] PersistentEntityId PersistentIdOf(EntityId entity) const;
     // The entity known by `id` now; invalid when none is.
@@ -249,6 +253,14 @@ public:
     // Own flag AND every ancestor's: what the viewport actually shows and what
     // picking may actually hit.
     [[nodiscard]] bool IsEntityEffectivelyVisible(EntityId entity) const;
+    [[nodiscard]] BrushRole RoleOf(EntityId entity) const;
+    // The material that marks a volume face as open: it gets no wall.
+    [[nodiscard]] const AssetRef& OpenFaceMaterial() const { return OpenFaceMaterial_; }
+    void SetOpenFaceMaterial(AssetRef material) { OpenFaceMaterial_ = std::move(material); }
+    // The shell inputs a space's walls were last found to match (SpaceWalls.h).
+    // Derived and never saved, so a loaded level checks its walls once.
+    [[nodiscard]] std::uint32_t CheckedWallInputs(EntityId space) const;
+    void SetCheckedWallInputs(EntityId space, std::uint32_t inputs);
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).
@@ -261,6 +273,9 @@ private:
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
+    mutable VolumeEvaluations Volumes_;
+    std::unordered_map<std::uint64_t, std::uint32_t> CheckedWallInputs_;
+    AssetRef OpenFaceMaterial_;
     BrushEvaluationPolicy InteractivePolicy_ = BrushEvaluationPolicy::Interactive(4096);
     BrushPlacementFacts PlacementFacts_{ *this }; // after the store and policy it reads
     // Persistent-id minting entropy (per document, like WorldDocument's Rng_).

@@ -54,8 +54,8 @@ void PlacementGhost::Update(const PlacementSession& session, const BrushEvaluati
     if (Current != nullptr)
     {
         Current->Pose(pending->Placement);
-        Current->SetEvaluationPolicy(policy);
-        Current->Build();
+        Current->Staged().SetEvaluationPolicy(policy);
+        Current->Staged().Build();
     }
 }
 

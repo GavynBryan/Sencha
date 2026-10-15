@@ -28,6 +28,13 @@ public:
 
     // Called after each command Execute lands; never for Undo or Redo.
     void SetExecuteObserver(std::function<void()> observer) { ExecuteObserver = std::move(observer); }
+    // Called after each command executes, before it lands; never for Undo or
+    // Redo. A command it returns has already been applied and joins the same
+    // undo step, after the command.
+    void SetExecuteFollowUp(std::function<std::unique_ptr<ICommand>()> followUp)
+    {
+        ExecuteFollowUp = std::move(followUp);
+    }
     // Called after Clear drops the history.
     void SetClearObserver(std::function<void()> observer) { ClearObserver = std::move(observer); }
 
@@ -58,5 +65,6 @@ private:
     std::size_t Cursor = 0;
     std::function<void()> PendingEditCancel; // empty == no scope open
     std::function<void()> ExecuteObserver;
+    std::function<std::unique_ptr<ICommand>()> ExecuteFollowUp;
     std::function<void()> ClearObserver;
 };

@@ -310,6 +310,7 @@ void EditorScene::DestroyEntity(EntityId entity)
     World& world = Registry_.Components;
     if (!world.IsAlive(entity))
         return;
+    Volumes_.Forget(entity);
 
     // Free the brush's sidecar mesh, unless another entity still shares it (an
     // instanced brush: several entities carry the same BrushId, live or dormant).
@@ -464,7 +465,11 @@ const BrushEvaluated* EditorScene::TryGetBrushPieces(EntityId entity,
                                                      const BrushEvaluationPolicy& policy) const
 {
     const BrushId id = BrushRecordIdOf(entity);
-    return id.IsValid() ? BrushMeshes.Evaluated(id, policy) : nullptr;
+    if (!id.IsValid())
+        return nullptr;
+    if (RoleOf(entity) == BrushRole::Volume)
+        return Volumes_.Evaluate(*this, entity, policy);
+    return BrushMeshes.Evaluated(id, policy);
 }
 
 void EditorScene::Clear()
@@ -475,7 +480,9 @@ void EditorScene::Clear()
     Entities.clear();
     TakenIds_.clear();
     BrushMeshes.Clear();
+    Volumes_.Clear();
     PlacementFacts_.Clear();
+    CheckedWallInputs_.clear();
     HiddenEntities.clear();
     LockedEntities.clear();
 }
@@ -662,6 +669,22 @@ bool EditorScene::IsEntityVisible(EntityId entity) const
 {
     const std::uint64_t key = FlagKeyOf(entity);
     return key == 0 || !HiddenEntities.contains(key);
+}
+
+std::uint32_t EditorScene::CheckedWallInputs(EntityId space) const
+{
+    const auto found = CheckedWallInputs_.find((static_cast<std::uint64_t>(space.Index) << 32) | space.Generation);
+    return found != CheckedWallInputs_.end() ? found->second : 0;
+}
+
+void EditorScene::SetCheckedWallInputs(EntityId space, std::uint32_t inputs)
+{
+    CheckedWallInputs_[(static_cast<std::uint64_t>(space.Index) << 32) | space.Generation] = inputs;
+}
+
+BrushRole EditorScene::RoleOf(EntityId entity) const
+{
+    return Registry_.Components.HasComponent<BrushVolume>(entity) ? BrushRole::Volume : BrushRole::Solid;
 }
 
 bool EditorScene::IsEntityEffectivelyVisible(EntityId entity) const

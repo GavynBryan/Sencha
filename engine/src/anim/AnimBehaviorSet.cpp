@@ -1,6 +1,6 @@
 #include <anim/AnimBehaviorSet.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -43,11 +43,11 @@ namespace
 
     DataSchema MakeSchema()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::DataRef;
-        using AnimSchema::Enum;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::DataRef;
+        using DataField::Enum;
+        using DataField::Field;
+        using DataField::Record;
         const auto optional = [](DataFieldSchema field) {
             field.Required = false;
             return field;
@@ -254,9 +254,9 @@ namespace
 
 DataFieldSchema AnimBlendPolicySchema(std::string key, std::string label, std::string summary)
 {
-    using AnimSchema::Enum;
-    using AnimSchema::Field;
-    using AnimSchema::Record;
+    using DataField::Enum;
+    using DataField::Field;
+    using DataField::Record;
     const auto optional = [](DataFieldSchema field) {
         field.Required = false;
         return field;

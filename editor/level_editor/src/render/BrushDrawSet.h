@@ -21,6 +21,7 @@
 
 class EditorScene;
 
+
 //=============================================================================
 // BrushDrawSet — the retained render representation of a document's brushes.
 //
@@ -47,6 +48,8 @@ struct BrushDrawMesh // one distinct mesh of the entity, owned by value
     Aabb3d                       LocalBounds = Aabb3d::Empty();
     std::uint64_t                ContentHash = 0;
     std::vector<BrushEdgeVertex> Edges;         // two per edge
+    std::vector<Vec3d>           VolumeFill;    // brush-local triangles; a volume's only
+    BrushRole                    Role = BrushRole::Solid;
 };
 
 struct BrushPlacement
@@ -95,6 +98,7 @@ private:
                            std::span<const Transform3f> pieceWorld,
                            std::span<const Aabb3d> pieceBounds);
     static void RebuildEdges(BrushDrawEntity& record, const BrushEvaluated& evaluated);
+    static void RebuildVolumeFill(BrushDrawEntity& record, const BrushEvaluated& evaluated);
     void RefreshDigest();
 
     std::vector<BrushDrawEntity> Records;

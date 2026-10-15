@@ -2,7 +2,7 @@
 
 #include <anim/AnimBlendOverrides.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
@@ -19,8 +19,8 @@
 
 namespace
 {
-    using AnimSchema::DataRef;
-    using AnimSchema::Field;
+    using DataField::DataRef;
+    using DataField::Field;
 
     DataSchema MakeSchema()
     {
@@ -94,20 +94,20 @@ namespace
                     kAnimRequestSchemaType),
             std::move(capacity),
             std::move(layers),
-            AnimSchema::ArrayOf("behaviors", "Behavior sets",
+            DataField::ArrayOf("behaviors", "Behavior sets",
                                 "In order; a later set overrides an earlier one by tag.",
                                 DataRef({}, "Behavior set", {}, kAnimBehaviorSetType, true)),
-            AnimSchema::ArrayOf("slot_maps", "Slot maps", "The base map first, then overlays.",
+            DataField::ArrayOf("slot_maps", "Slot maps", "The base map first, then overlays.",
                                 DataRef({}, "Slot map", {}, kAnimSlotMapType, true)),
-            AnimSchema::ArrayOf("blend_overrides", "Blend overrides",
+            DataField::ArrayOf("blend_overrides", "Blend overrides",
                                 "Pairwise blend policies, in order; a later asset replaces an earlier pair.",
                                 DataRef({}, "Blend overrides", {}, kAnimBlendOverridesType, true)),
-            AnimSchema::ArrayOf("bindings", "Event bindings",
+            DataField::ArrayOf("bindings", "Event bindings",
                                 "The authored bindings this rig's events name, in order.",
                                 DataRef({}, "Bindings", {}, kVerbBindingsTypeName, true)),
-            AnimSchema::ArrayOf("extensions", "Extension bindings",
+            DataField::ArrayOf("extensions", "Extension bindings",
                                 "Selectors bound to the extension points rules expose.",
-                                AnimSchema::Record({}, "Extension", {},
+                                DataField::Record({}, "Extension", {},
                                     {
                                         Field("name", DataFieldKind::String, "Name",
                                               "The extension point's name.", true),

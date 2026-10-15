@@ -6,6 +6,7 @@
 #include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 
+#include <cstdint>
 #include <optional>
 
 // A type-erased capture of one entity's persistent state, taken through the
@@ -32,3 +33,7 @@ struct EntitySnapshot
     bool Hidden = false;
     bool Locked = false;
 };
+
+// A hash of everything the snapshot records, so two captures of one entity
+// compare by value: equal digests mean nothing persistent changed between them.
+[[nodiscard]] std::uint64_t DigestOf(const EntitySnapshot& snapshot);

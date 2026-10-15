@@ -280,6 +280,54 @@ if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 
+# The headless operations host end to end: a fixture level in, one line of JSON
+# per script line out, and no answer an error.
+if(TARGET kyusu_batch)
+    add_test(NAME kyusu_batch.AnswersAFixtureLevel
+        COMMAND kyusu_batch
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/level_queries.txt")
+    set_tests_properties(kyusu_batch.AnswersAFixtureLevel PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"operation\":\"query.near\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
+    # A world opens at its start zone, whatever anyone last focused.
+    add_test(NAME kyusu_batch.OpensAWorldAtItsStartZone
+        COMMAND kyusu_batch
+            --project "${CMAKE_SOURCE_DIR}/templates/fps/project.senchaproj"
+            --world "${CMAKE_SOURCE_DIR}/templates/fps/assets/traversal3.sworld"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/level_queries.txt")
+    set_tests_properties(kyusu_batch.OpensAWorldAtItsStartZone PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"document\":\"asset://levels/zone_1.sscene\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
+    # One run writes a proposal file; a second opens it into a draft and accepts it.
+    add_test(NAME kyusu_batch.WritesAProposal
+        COMMAND kyusu_batch
+            --project "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/project.senchaproj"
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/propose_rename.txt"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(kyusu_batch.WritesAProposal PROPERTIES
+        FIXTURES_SETUP kyusu_batch_proposal
+        PASS_REGULAR_EXPRESSION "\"operation\":\"draft.save\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
+    add_test(NAME kyusu_batch.AcceptsAProposal
+        COMMAND kyusu_batch
+            --project "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/project.senchaproj"
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/accept_proposal.txt"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # The skill an agent reads its vocabulary from is generated from the registry.
+    add_test(NAME kyusu_batch.SkillReferenceIsCurrent
+        COMMAND "${CMAKE_COMMAND}"
+            -DBATCH=$<TARGET_FILE:kyusu_batch>
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/.claude/skills/kyusu-level/reference.md
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckOperationReference.cmake")
+    set_tests_properties(kyusu_batch.AcceptsAProposal PROPERTIES
+        FIXTURES_REQUIRED kyusu_batch_proposal
+        PASS_REGULAR_EXPRESSION "\"operation\":\"entity.describe\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
+endif()
+
 # The transport, protocol, and channel layers. Their own target because they
 # need no world, no graphics, and no content: the fuzz and impairment suites run
 # in a fraction of a second and are the ones worth running on every change.

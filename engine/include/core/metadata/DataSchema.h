@@ -4,6 +4,7 @@
 #include <core/json/JsonValue.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -145,6 +146,28 @@ struct DataValidationError
 // ordered list, so this is a linear scan by design.
 [[nodiscard]] const DataFieldSchema* FindChild(const DataFieldSchema& parent,
                                                std::string_view key);
+
+struct DataValueRules
+{
+    bool AllowUnknownFields = false;
+    // An absent member takes its declared default before it is checked.
+    bool FillDefaults = false;
+    // Asset, data asset, tag and entity fields: empty to accept, otherwise why
+    // not. Unset accepts their text forms (an asset path or {id, path}, a tag
+    // name, sixteen hex digits) as data assets author them.
+    std::function<std::string(const JsonValue& value, const DataFieldSchema& field)> CheckReference;
+};
+
+// Checks `value` against `field`, where null means the member was left out.
+// When `out` is given it receives the value as checked, with defaults filled
+// under FillDefaults; a member left out with no default to fill stays out, so
+// `out` satisfies the schema it was checked against.
+[[nodiscard]] bool NormalizeDataValue(const JsonValue* value,
+                                      const DataFieldSchema& field,
+                                      std::string_view path,
+                                      const DataValueRules& rules,
+                                      JsonValue* out,
+                                      std::vector<DataValidationError>& errors);
 
 [[nodiscard]] bool ValidateDataAgainstSchema(const JsonValue& value,
                                              const DataSchema& schema,

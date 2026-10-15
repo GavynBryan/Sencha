@@ -44,7 +44,7 @@ void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorVie
 
     std::vector<ColoredVertex> vertices;
     vertices.reserve(scene.GetEntityCount() * 24);
-    ForEachVisibleBrush(scene, /*skipLocked*/ false,
+    ForEachVisibleBrush(scene, /*skipLocked*/ false, BrushRoleFilter::All,
         [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
         {
             if (std::find(skip.begin(), skip.end(), id) != skip.end())

@@ -5,6 +5,7 @@
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
@@ -65,12 +66,29 @@ private:
     bool Captured = false;
 };
 
-// Builds the reparent, or nullptr when nothing would change. Filters the input
-// down to what the gesture means: entities already under `newParent` drop out
-// as no-ops, an entity whose ancestor is also in the set drops out because it
-// rides along with that ancestor, and any target that would create a cycle
-// (the parent is the entity itself or one of its descendants) disqualifies the
-// whole gesture rather than half-applying it.
+enum class ReparentRefusal : std::uint8_t
+{
+    None,
+    // The parent is one of the entities or inside one's branch.
+    Cycle,
+    // A placed scene's member takes its place in the structure from the source.
+    PlacementMember,
+};
+
+// What a reparent of `entities` under `newParent` moves: entities already
+// under it drop out as no-ops (unless the reparent is also a reorder), and an
+// entity whose ancestor is also in the set rides along with that ancestor. A
+// refusal disqualifies the whole set rather than half-applying it.
+struct ReparentTargets
+{
+    std::vector<EntityId> Entities;
+    ReparentRefusal       Refusal = ReparentRefusal::None;
+};
+[[nodiscard]] ReparentTargets ResolveReparentTargets(std::span<const EntityId> entities, EntityId newParent,
+                                                     const EditorScene& scene, const EditorDocument& document,
+                                                     bool reorder = false);
+
+// The reparent of ResolveReparentTargets, or nullptr when it moves nothing or refuses.
 [[nodiscard]] std::unique_ptr<ICommand> MakeReparentEntitiesCommand(
     std::span<const EntityId> entities, EntityId newParent,
     ReparentTransformRule rule, EditorScene& scene, EditorDocument& document,

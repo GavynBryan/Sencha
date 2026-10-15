@@ -15,7 +15,7 @@
 
 std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window, ProjectSession& session,
                                                ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
-                                               NoticeQueue& notices)
+                                               NoticeQueue& notices, EditorOperations& operations)
 {
     std::vector<WorkspaceKind> kinds;
     // Every workspace that shows data documents reads them the same way.
@@ -29,10 +29,10 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         // A level can be authored without a project; its materials then come
         // from beside the level file.
         .RequiresProject = false,
-        .Create = [&engine, &window, &session, &actions, &prompts, &problems, &notices] {
+        .Create = [&engine, &window, &session, &actions, &prompts, &problems, &notices, &operations] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
                                                     session.Materials(), session.Documents(), actions, prompts,
-                                                    problems, notices, session.Pictures());
+                                                    problems, notices, session.Pictures(), operations);
         },
         .Opens = { { ".sscene" }, { ".sworld" } },
         .Creates = { NewLevelAction(), NewWorldAction() },

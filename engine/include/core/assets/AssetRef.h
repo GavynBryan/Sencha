@@ -136,3 +136,12 @@ struct AssetRef
         return Type != AssetType::Unknown && (Id.IsValid() || !Path.empty());
     }
 };
+
+// Whether two references name the same asset: by id when both carry one,
+// otherwise by path. Two empty references name nothing, so never the same.
+[[nodiscard]] inline bool SameAsset(const AssetRef& a, const AssetRef& b)
+{
+    if (a.Id.IsValid() && b.Id.IsValid())
+        return a.Id == b.Id;
+    return !a.Path.empty() && a.Path == b.Path;
+}

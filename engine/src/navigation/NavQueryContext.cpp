@@ -3,6 +3,7 @@
 #include "NavQueryContextBackend.h"
 
 #include <DetourAlloc.h>
+#include <DetourNode.h>
 
 #include <algorithm>
 #include <bit>
@@ -25,7 +26,9 @@ namespace
 NavQueryContext::Backend::Backend(const NavQueryContextConfig& config)
     : Config(config)
 {
-    Config.MaxNodes = std::max<std::uint32_t>(Config.MaxNodes, 16);
+    // Detour's node pool indexes with 16 bits and refuses a larger pool, which
+    // would fail every query as if its search had run out.
+    Config.MaxNodes = std::clamp<std::uint32_t>(Config.MaxNodes, 16, DT_NULL_IDX);
     Config.MaxCorridor = std::max<std::uint32_t>(Config.MaxCorridor, 16);
     Query = dtAllocNavMeshQuery();
     Nodes.resize(Config.MaxNodes);

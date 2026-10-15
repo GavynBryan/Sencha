@@ -2,14 +2,15 @@
 
 #include <core/metadata/DataSchema.h>
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-// Builders for the authoring schemas of the animation data subtypes, so every
-// animation asset states its fields the same way.
-namespace AnimSchema
+// Builders for DataFieldSchema trees, so every schema states its fields the
+// same way: data subtypes, authored contracts and editor operations.
+namespace DataField
 {
     inline DataFieldSchema Field(std::string key, DataFieldKind kind, std::string display,
                                  std::string summary, bool required = true)
@@ -32,6 +33,15 @@ namespace AnimSchema
         return field;
     }
 
+    inline DataFieldSchema Vector(std::string key, std::string display, std::string summary,
+                                  std::uint32_t length = 3, bool required = true)
+    {
+        DataFieldSchema field = Field(std::move(key), DataFieldKind::Vector, std::move(display),
+                                      std::move(summary), required);
+        field.VectorLength = length;
+        return field;
+    }
+
     inline DataFieldSchema DataRef(std::string key, std::string display, std::string summary,
                                    std::string_view subtype, bool required = false)
     {
@@ -47,6 +57,16 @@ namespace AnimSchema
         DataFieldSchema field = Field(std::move(key), DataFieldKind::Array, std::move(display),
                                       std::move(summary), required);
         field.Children.push_back(std::move(element));
+        return field;
+    }
+
+    // Present or null; `required` says whether the member may be left out.
+    inline DataFieldSchema Optional(std::string key, std::string display, std::string summary,
+                                    DataFieldSchema value, bool required = false)
+    {
+        DataFieldSchema field = Field(std::move(key), DataFieldKind::Optional, std::move(display),
+                                      std::move(summary), required);
+        field.Children.push_back(std::move(value));
         return field;
     }
 

@@ -2,6 +2,7 @@
 #include "brush/BrushWorkCounters.h"
 
 #include "EditorScene.h"
+#include "SceneBrushWalk.h"
 #include "brush/BrushLightmapCharts.h"
 #include "brush/BrushTessellation.h"
 #include "brush/FaceMaterial.h"
@@ -91,6 +92,8 @@ std::vector<CookBrushGeometry> CollectCookBrushes(const EditorScene& scene,
             failures->push_back(CookBrushFailure{ entity, evaluated->FailedModifier });
         for (const BrushPiece& piece : evaluated->Pieces)
         {
+            if (!Admits(BrushRoleFilter::Solids, evaluated->Meshes[piece.MeshIndex].Role))
+                continue;
             CookBrushGeometry brush = CollectBrushGeometry(
                 *piece.Mesh, PieceWorldTransform(*transform, piece), levelDefault, charts,
                 chartConeDegrees, luxelSize);

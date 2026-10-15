@@ -44,6 +44,7 @@ struct BrushPlacementKey
     std::uint64_t PlacementRevision = 0; // BrushRecord::PlacementRevision
     std::uint32_t MaxPieces = 0;         // the interactive policy the evaluation ran under
     Transform3f   World;                 // WorldTransform after RefreshDerivedTransforms; exact compare
+    BrushRole     Role = BrushRole::Solid;
 
     bool operator==(const BrushPlacementKey&) const = default;
 };

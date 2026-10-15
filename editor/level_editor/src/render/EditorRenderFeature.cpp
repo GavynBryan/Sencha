@@ -119,12 +119,12 @@ void EditorRenderFeature::RegisterCVars(ConsoleRegistry& console)
                            .Source = { "editor" } });
 }
 
-void EditorRenderFeature::DrawPlacementGhost(const FrameContext& frame, const EditorViewport& viewport,
-                                             const CameraRenderData& camera, const SceneSourceStage& ghost)
+void EditorRenderFeature::DrawStage(const FrameContext& frame, const EditorViewport& viewport,
+                                    const CameraRenderData& camera, const DocumentStage& stage, const Vec4& tint)
 {
     // Solid, lit by the focus scene, depth-tested and depth-writing; its own
     // lights and casters are never gathered (docs/editor/placement.md).
-    const SceneRenderQueueBuilder& queues = *ghost.Queues();
+    const SceneRenderQueueBuilder& queues = *stage.Queues();
     for (const RenderQueue* queue : { &queues.BrushQueue(), &queues.MeshQueue() })
         Forward.Draw(frame, MeshForwardPass::DrawContext{ .Camera = camera,
                                                           .Lights = QueueBuilder->Lights(),
@@ -132,8 +132,8 @@ void EditorRenderFeature::DrawPlacementGhost(const FrameContext& frame, const Ed
                                                           .Meshes = *MeshCache,
                                                           .Materials = *MaterialStore,
                                                           .SkinnedMeshes = SkinnedMeshCacheRef,
-                                                          .Tint = EditorTheme::PlacementGhostTint });
-    Visuals.DrawViewport(frame, viewport, camera, ghost.Scene(), EditorTheme::PlacementGhostTint);
+                                                          .Tint = tint });
+    Visuals.DrawViewport(frame, viewport, camera, stage.Scene(), tint);
 }
 
 void EditorRenderFeature::SweepBrushBakes()
@@ -194,6 +194,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
+    , Volumes(InstancedFill, InstancedLines)
     , ZoneBounds(WideLines)
     , ZoneGraph(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
@@ -277,6 +278,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
         Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
                            *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
         Ghost.emplace(RuntimeAssetsRef, *LoggingRef);
+        Drafts.emplace(RuntimeAssetsRef, *LoggingRef);
     }
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
@@ -369,6 +371,12 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
             Ghost->Update(Placement, previewPolicy,
                           static_cast<std::size_t>(std::max<std::int64_t>(
                               1, ReadCVarInt(Console, kPreparedPrefabs, kPreparedPrefabsDefault))));
+        }
+
+        if (Drafts)
+        {
+            const ShownDraft shown = DraftSource ? DraftSource() : ShownDraft{};
+            Drafts->Update(shown.Draft, shown.Base, previewPolicy);
         }
 
         // Context zones build their own queues so they render real materials.
@@ -764,9 +772,21 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         else
             Meshes.DrawViewport(local, viewport, camera, scene);
         if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
-            MaterialPath && ghost != nullptr && ghost->Queues() != nullptr)
-            DrawPlacementGhost(local, viewport, camera, *ghost);
+            MaterialPath && ghost != nullptr && ghost->Staged().Queues() != nullptr)
+            DrawStage(local, viewport, camera, ghost->Staged(), EditorTheme::PlacementGhostTint);
+        if (MaterialPath && Drafts)
+        {
+            if (const DocumentStage* added = Drafts->Added(); added != nullptr && added->Queues() != nullptr)
+            {
+                DrawStage(local, viewport, camera, *added, EditorTheme::DraftAddedTint);
+                Volumes.DrawViewport(local, viewport, camera, added->Queues()->BrushDraws());
+            }
+            if (const DocumentStage* removed = Drafts->Removed(); removed != nullptr && removed->Queues() != nullptr)
+                DrawStage(local, viewport, camera, *removed, EditorTheme::DraftRemovedTint);
+        }
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        if (QueueBuilder)
+            Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws());
         IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)

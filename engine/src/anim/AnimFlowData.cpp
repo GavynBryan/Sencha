@@ -1,6 +1,6 @@
 #include <anim/AnimFlowData.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -14,10 +14,10 @@ namespace
 
     DataSchema MakeSchema()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::Enum;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::Enum;
+        using DataField::Field;
+        using DataField::Record;
         const auto optional = [](DataFieldSchema field) {
             field.Required = false;
             return field;

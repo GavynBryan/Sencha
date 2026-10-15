@@ -7,6 +7,7 @@
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "document/tools/BrushTool.h"
+#include "document/tools/SpaceTool.h"
 #include "document/tools/EdgeCutTool.h"
 #include "document/tools/ClipTool.h"
 #include "document/tools/PlaceTool.h"
@@ -56,7 +57,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     // first so the tool context can hold it.
     WorldDocument& world = inputs.World;
     Sink = std::make_unique<BrushManipulationSink>(
-        document.GetScene(), document, commands, inputs.Selection, inputs.DuplicateRemap);
+        document.GetScene(), document, commands, inputs.Level, inputs.Selection, inputs.DuplicateRemap);
     if (inputs.OnDuplicateCommitted)
         Sink->SetDuplicateObserver(inputs.OnDuplicateCommitted);
 
@@ -79,7 +80,8 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     {
         Tools = std::make_unique<ToolRegistry>(*Context);
         Tools->Register(std::make_unique<SelectTool>());
-        Tools->Register(std::make_unique<BrushTool>());
+        Tools->Register(std::make_unique<BrushTool>(inputs.Level));
+        Tools->Register(std::make_unique<SpaceTool>(inputs.Level));
         Tools->Register(std::make_unique<EdgeCutTool>());
         Tools->Register(std::make_unique<FaceCarveTool>());
         Tools->Register(std::make_unique<PlaceTool>());

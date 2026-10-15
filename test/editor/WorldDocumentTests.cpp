@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -299,6 +300,47 @@ TEST_F(WorldDocumentTest, MissingSidecarYieldsDefaults)
     // Defaults: the start zone focused, nothing else open.
     EXPECT_EQ(reloaded.FocusZone(), reloaded.Manifest().StartZone);
     EXPECT_FALSE(reloaded.IsZoneOpen(second));
+}
+
+TEST_F(WorldDocumentTest, AWorldOpenedWithItsUserStateIgnoredNeitherReadsNorWritesTheSidecar)
+{
+    ZoneId second{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        ASSERT_TRUE(world.SetFocusZone(second));
+        ASSERT_TRUE(world.SaveWorld());
+    }
+    const std::string sidecar = WorldPath() + ".user.json";
+    std::ifstream before(sidecar);
+    const std::string written((std::istreambuf_iterator<char>(before)), std::istreambuf_iterator<char>());
+    ASSERT_FALSE(written.empty());
+
+    {
+        WorldDocument tool(Logging, WorldDocument::UserState::Ignored);
+        ASSERT_TRUE(tool.LoadWorld(WorldPath()));
+        // The person's focus is not read: the tool starts at the start zone,
+        // which is not the focus the sidecar records.
+        EXPECT_EQ(tool.FocusZone(), tool.Manifest().StartZone);
+        EXPECT_NE(tool.FocusZone(), second);
+    }
+
+    // Nor written: closing with a different focus left the file as it was.
+    std::ifstream after(sidecar);
+    const std::string kept((std::istreambuf_iterator<char>(after)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(kept, written);
+}
+
+TEST_F(WorldDocumentTest, ZonesTheWorldScenesDocksReachAreReachable)
+{
+    // Every zone of the template world is joined to the start zone by docks
+    // authored in its world scene, which the manifest itself does not carry.
+    WorldDocument world(Logging, WorldDocument::UserState::Ignored);
+    ASSERT_TRUE(world.LoadWorld(std::string(SENCHA_REPO_ROOT) + "/templates/fps/assets/traversal3.sworld"));
+    for (const ContentRiskRecord& record : world.ValidationRecords())
+        EXPECT_NE(record.RuleId, "partition.graph.unreachable") << record.Message;
 }
 
 TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)

@@ -3,7 +3,9 @@
 #include "project/Project.h"
 
 #include <app/Engine.h>
+#include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
 #include <core/logging/Logger.h>
 
 #include <SDL3/SDL.h>
@@ -12,6 +14,12 @@
 #include <optional>
 #include <span>
 #include <system_error>
+
+namespace
+{
+constexpr std::string_view kHostPortCVar = "editor.pie.host_port";
+constexpr std::int64_t kDefaultHostPort = 27500;
+} // namespace
 
 PieDriver::PieDriver(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets)
     : Engine_(engine)
@@ -120,7 +128,8 @@ void PieDriver::PlayHosted(const std::string& map)
     if (!PreparePlay(map, startupArgs, label, app))
         return;
 
-    const std::string port = std::to_string(HostPort);
+    const std::string port =
+        std::to_string(ReadCVarInt(&Engine_.Console().Registry(), kHostPortCVar, kDefaultHostPort));
 
     // The authority: the same content, no window, nobody playing in it. Its
     // output goes to the terminal the editor was started from, which is where
@@ -203,11 +212,11 @@ std::string PieDriver::ResolveHostAppPath() const
     return (baseDir / "app").string();
 }
 
-void PieDriver::RegisterCommands(ConsoleRegistry& registry)
+void PieDriver::RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner)
 {
     ConsoleCommandMetadata play;
     play.Name = "play";
-    play.Owner = "editor";
+    play.Owner = std::string(commandOwner);
     play.Usage = "play [map]";
     play.Help = "Launch the project in the app host (PIE); map defaults to the last cooked level.";
     play.Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
@@ -218,7 +227,7 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
 
     ConsoleCommandMetadata playHosted;
     playHosted.Name = "playserver";
-    playHosted.Owner = "editor";
+    playHosted.Owner = std::string(commandOwner);
     playHosted.Usage = "playserver [map]";
     playHosted.Help = "Launch the project as a dedicated host plus a client joined "
                       "to it; map defaults to the last cooked level.";
@@ -229,24 +238,21 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
     registry.RegisterCommand(std::move(playHosted));
 
     registry.RegisterCVar({
-        .Name = "editor.pie.host_port",
+        .Name = std::string(kHostPortCVar),
         .Owner = "editor",
         .Type = CVarType::Int,
-        .DefaultValue = static_cast<std::int64_t>(HostPort),
-        .CurrentValue = static_cast<std::int64_t>(HostPort),
+        .DefaultValue = kDefaultHostPort,
+        .CurrentValue = kDefaultHostPort,
         .Flags = CVarFlags::Archive,
         .Help = "UDP port a hosted play session's authority binds.",
         .Source = { "editor" },
         .Min = 1.0,
         .Max = 65535.0,
-        .OnChange = [this](const CVarChangeContext& ctx) {
-            HostPort = static_cast<int>(std::get<std::int64_t>(ctx.NewValue));
-        },
     });
 
     ConsoleCommandMetadata stop;
     stop.Name = "stop";
-    stop.Owner = "editor";
+    stop.Owner = std::string(commandOwner);
     stop.Usage = "stop";
     stop.Help = "Stop the running PIE session.";
     stop.Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
@@ -266,7 +272,7 @@ void PieDriver::RegisterCommands(ConsoleRegistry& registry)
 
     ConsoleCommandMetadata project;
     project.Name = "project";
-    project.Owner = "editor";
+    project.Owner = std::string(commandOwner);
     project.Usage = "project <info|save|new <dir> [name]>";
     project.Help = "Inspect, save, or create a project descriptor (.senchaproj).";
     project.Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {

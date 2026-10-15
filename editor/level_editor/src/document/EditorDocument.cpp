@@ -1,6 +1,9 @@
 #include "EditorDocument.h"
+#include "LevelConventions.h"
 
 #include <assets/runtime/ContentVocabulary.h>
+
+#include <atomic>
 
 #include "brush/BrushMeshSerialization.h"
 #include "brush/BrushModifierSerialization.h"
@@ -157,6 +160,19 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     InstallEditorModuleVocabulary(world);
     for (const std::string& error : AuthoredInstallationErrors(world))
         Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);
+}
+
+std::uint64_t NextDocumentInstance()
+{
+    static std::atomic<std::uint64_t> next{ 1 };
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
+void EditorDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
+{
+    const LevelConventions conventions = LevelConventionsFrom(FindLevelConventions(roots).Values);
+    Scene.SetOpenFaceMaterial(conventions.OpenFaceMaterial.value_or(AssetRef{}));
+    Projection.SetContentRoots(std::move(roots));
 }
 
 void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
@@ -406,17 +422,17 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
 
     if (parsed->BrushMeshes.IsObject() && !parsed->BrushMeshes.Members.empty())
     {
-        std::string modifierErrors;
+        std::string sidecarProblems;
         BrushMeshStore& store = Scene.GetBrushMeshStore();
-        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes), store, &modifierErrors);
+        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes), store, &sidecarProblems);
         std::vector<BrushId> loaded;
         for (const auto& [id, record] : store.All())
             loaded.push_back(BrushId{ id });
         for (const BrushId id : loaded)
             store.Set(id, CurrentMaterials(*store.FindRecord(id)));
-        if (!modifierErrors.empty())
+        if (!sidecarProblems.empty())
             Logging.GetLogger<EditorDocument>().Warn(
-                "brush sidecar: modifier entries skipped:\n{}", modifierErrors);
+                "brush sidecar: entries skipped:\n{}", sidecarProblems);
     }
 
     if (const Json5Value* material = parsed->Settings.Find("default_material"))
@@ -440,6 +456,9 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
     // mutation: whatever it reports lands in the diagnostics, never in Dirty.
     Projection.Reset();
     Projection.Rebuild();
+
+    // A cook or a script can read world placements before any frame draws.
+    Scene.RefreshDerivedTransforms();
 
     // The document was replaced wholesale, so whatever divergence the previous
     // contents had from disk went with them. Written directly because OnEdited
@@ -572,6 +591,38 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
     return entity;
 }
 
+void EditorDocument::OverwriteEntity(EntityId entity, const EntitySnapshot& snapshot)
+{
+    SceneSerializationContext context(Logging, Assets);
+    for (const auto& serializer : EditorSceneSerializers().Entries())
+    {
+        const JsonValue* recorded =
+            snapshot.Components.IsObject() ? snapshot.Components.Find(serializer->JsonKey()) : nullptr;
+        if (recorded != nullptr)
+        {
+            serializer->RegisterStorage(Registry_);
+            JsonReadArchive archive(*recorded);
+            (void)serializer->Load(archive, entity, Registry_, context);
+        }
+        else if (serializer->HasComponent(entity, Registry_) && serializer->IsRemovable())
+        {
+            (void)serializer->Remove(entity, Registry_);
+        }
+    }
+
+    if (snapshot.Brush)
+        Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Brush);
+
+    EntityId parent;
+    if (snapshot.ParentId.IsValid())
+        if (const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>())
+            parent = index->TryResolve(snapshot.ParentId);
+    (void)Scene.SetParent(entity, parent);
+
+    Scene.SetEntityVisible(entity, !snapshot.Hidden);
+    Scene.SetEntityLocked(entity, snapshot.Locked);
+}
+
 EntityId EditorDocument::DuplicateEntity(EntityId source)
 {
     return RestoreEntity(CaptureEntity(source), /*freshMesh*/ true);
@@ -670,6 +721,8 @@ bool EditorDocument::IsExternallyModified() const
 void EditorDocument::MarkDirty(bool dirty)
 {
     Dirty = dirty;
+    if (dirty)
+        ++Revision_;
     if (dirty && OnEdited)
         OnEdited();
 }

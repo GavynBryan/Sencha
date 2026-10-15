@@ -18,6 +18,8 @@
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
+#include "document/SpaceWalls.h"
+#include "document/commands/ApplyChangeSetCommand.h"
 #include "document/commands/DeleteEntityCommand.h"
 #include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DeferredCreateBrushCommand.h"
@@ -77,7 +79,23 @@ EditorWorkspace::EditorWorkspace(LoggingProvider& logging, CommandStack& command
             [this] { ElementEdit.Cancel(Commands); },
         }),
     };
+    // Every edit to the level leaves its spaces' walls current in the same undo step.
+    Commands.SetExecuteFollowUp([this]() -> std::unique_ptr<ICommand> {
+        EditorDocument& document = ActiveDocument();
+        document.GetScene().RefreshDerivedTransforms();
+        EntityChangeRecorder recorder(document);
+        RebuildStaleSpaceWalls(document, recorder);
+        EntityChangeSet walls = recorder.Finish();
+        if (walls.Empty())
+            return nullptr;
+        return std::make_unique<ApplyChangeSetCommand>(document, std::move(walls), ChangeSetSide::After);
+    });
     Build();
+}
+
+EditorWorkspace::~EditorWorkspace()
+{
+    Commands.SetExecuteFollowUp({});
 }
 
 std::shared_ptr<const EditorWorkspace::PendingEditHooks> EditorWorkspace::RegisterPendingEdit(PendingEditHooks hooks)
@@ -119,6 +137,7 @@ void EditorWorkspace::BuildInteractionState()
     Interaction.Rebuild(
         WorkspaceInteractionInputs{
             World,
+            Level,
             LevelSelection,
             Selection,
             Picking,
@@ -171,7 +190,7 @@ void EditorWorkspace::BindSelectionToActiveDocument()
 {
     EditorDocument& document = ActiveDocument();
     Selection.BindDocument(&document.GetScene().GetRegistry().Components);
-    document.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+    document.SetHandleObserver([this] { Selection.RetargetToDocument(); });
 }
 
 void EditorWorkspace::ResetInteractionState()
