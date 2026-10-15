@@ -13,22 +13,20 @@
 #include "resources/ActiveResources.h"
 #include "tools/ToolContext.h"
 
+#include <math/Angle.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <format>
-#include <numbers>
 
 namespace
 {
 constexpr std::array<std::string_view, 3> kTurnSteps = { "15", "45", "90" };
-constexpr std::array<double, 3> kTurnStepDegrees = { 15.0, 45.0, 90.0 };
+constexpr std::array<float, 3> kTurnStepDegrees = { 15.0f, 45.0f, 90.0f };
 constexpr ResourceRole kRoles[] = { { .Role = "Prefab", .Type = AssetType::Scene, .Primary = true } };
 
-[[nodiscard]] float Degrees(float radians) { return radians * 180.0f / std::numbers::pi_v<float>; }
-[[nodiscard]] float Radians(double degrees) { return static_cast<float>(degrees) * std::numbers::pi_v<float> / 180.0f; }
 } // namespace
 
 ITool::Shortcut PlaceTool::GetShortcut() const { return { SDLK_P, {} }; }
@@ -165,7 +163,7 @@ std::unique_ptr<IInteraction> PlaceTool::BeginDrag(ToolContext& ctx, EditorViewp
 {
     if (!ctx.Placement.BeginTurn())
         return nullptr;
-    return std::make_unique<PlaceTurnInteraction>(Radians(kTurnStepDegrees[TurnStep]), RestingYaw);
+    return std::make_unique<PlaceTurnInteraction>(ToRadians(kTurnStepDegrees[TurnStep]), RestingYaw);
 }
 
 std::unique_ptr<IInteraction> PlaceTool::TakeHandedGesture(ToolContext& ctx)
@@ -180,7 +178,7 @@ std::unique_ptr<IInteraction> PlaceTool::TakeHandedGesture(ToolContext& ctx)
 
 std::vector<PropertyNode> PlaceTool::Parameters(const ToolContext&) const
 {
-    return { NumberProperty("yaw", "Yaw", std::round(Degrees(RestingYaw)), 0.0, 359.0, 1.0,
+    return { NumberProperty("yaw", "Yaw", std::round(ToDegrees(RestingYaw)), 0.0, 359.0, 1.0,
                             "Degrees the next placement turns about its up axis; dragging from the spot turns it"),
              ChoiceProperty("turn_step", "Turn step", kTurnSteps, TurnStep,
                             "Degrees a drag turns by between stops while snapping is on") };
@@ -193,7 +191,7 @@ PropertyEditResult PlaceTool::SetParameter(ToolContext& ctx, std::string_view ke
         const std::optional<double> degrees = ParseNumber(value, 0.0, 359.0);
         if (!degrees.has_value())
             return PropertyEditResult::Refused;
-        RestingYaw = NormalizedYaw(Radians(*degrees));
+        RestingYaw = NormalizedYaw(ToRadians(static_cast<float>(*degrees)));
         Reaim(ctx);
         return PropertyEditResult::Applied;
     }
@@ -215,7 +213,7 @@ std::string PlaceTool::Hint(const ToolContext& ctx) const
         return "Can't place this: " + pending->Refusal;
     if (ctx.Placement.Phase() == PlacementPhase::Turning)
         return ctx.Placement.TurnToward().has_value()
-                   ? std::format("Release to place it facing {:.0f}°", Degrees(pending->Yaw))
+                   ? std::format("Release to place it facing {:.0f}°", ToDegrees(pending->Yaw))
                    : "Drag away from the spot, in a view that looks onto it, to turn it";
     if (!Subject(ctx).has_value())
         return "Pick a prefab to place";

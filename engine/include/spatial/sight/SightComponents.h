@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/ComponentAnnotations.h>
+#include <math/Angle.h>
 #include <math/Vec.h>
 
 // An eye on the entity: where it sits, how far it reaches, and how wide it
@@ -18,7 +19,7 @@ SightSensor
     SENCHA_DEGREES
     SENCHA_LABEL("Half angle")
     SENCHA_TOOLTIP("Angle from straight ahead to the edge of the view. 180 sees all around.")
-    float HalfAngle = 1.0471976f;
+    float HalfAngle = ToRadians(60.0f);
 
     SENCHA_FIELD("eye_offset")
     SENCHA_LABEL("Eye offset")

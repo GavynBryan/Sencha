@@ -4,6 +4,8 @@
 #include "brush/BrushMesh.h"
 #include "brush/BrushOps.h"
 
+#include <math/Angle.h>
+
 #include <array>
 #include <cmath>
 
@@ -35,7 +37,7 @@ namespace
     BrushMesh MakeSoftStrip()
     {
         BrushMesh mesh;
-        const float a = 15.0f * 3.14159265f / 180.0f;
+        const float a = ToRadians(15.0f);
         Vec3d p{ 0, 0, 0 };
         mesh.Vertices.push_back(BrushVertex{ { 0, 0, 0 } });
         mesh.Vertices.push_back(BrushVertex{ { 0, 0, 1 } });

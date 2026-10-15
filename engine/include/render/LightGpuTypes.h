@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math/Angle.h>
 #include <math/Mat.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Sphere.h>
@@ -117,9 +118,7 @@ struct PointShadowView
 [[nodiscard]] inline Mat4 MakeSpotShadowProjection(
     float outerAngleDegrees, float nearPlane, float farPlane)
 {
-    constexpr float degreesToRadians = 0.01745329251994329577f;
-    const float fov = std::clamp(outerAngleDegrees * 2.0f, 0.02f, 179.8f)
-                    * degreesToRadians;
+    const float fov = ToRadians(std::clamp(outerAngleDegrees * 2.0f, 0.02f, 179.8f));
     const float tanHalfFov = std::tan(fov * 0.5f);
     Mat4 result;
     result[0][0] = 1.0f / tanHalfFov;
@@ -135,9 +134,7 @@ struct PointShadowView
     const SpotLightComponent& light,
     float globalSoftness)
 {
-    constexpr float degreesToRadians = 0.01745329251994329577f;
-    const float outerAngle = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f)
-                           * degreesToRadians;
+    const float outerAngle = ToRadians(std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f));
     const float nearPlane = std::max(0.05f, light.Range * 0.02f);
     const Transform3f lightTransform(
         worldTransform.Position, worldTransform.Rotation,
@@ -228,9 +225,7 @@ struct PointShadowView
     const Vec<3>& position, const Vec<3>& direction,
     float range, float outerAngleDegrees)
 {
-    constexpr float degreesToRadians = 0.01745329251994329577f;
-    const float angle = std::clamp(outerAngleDegrees, 0.01f, 89.9f)
-                      * degreesToRadians;
+    const float angle = ToRadians(std::clamp(outerAngleDegrees, 0.01f, 89.9f));
     const float halfRange = range * 0.5f;
     const float coneRadius = range * std::tan(angle);
     const float radius = std::sqrt(halfRange * halfRange + coneRadius * coneRadius);
@@ -256,11 +251,10 @@ struct PointShadowView
     const Vec<3>& worldPosition, const Vec<3>& worldDirection,
     const SpotLightComponent& light)
 {
-    constexpr float degreesToRadians = 0.01745329251994329577f;
     const float outer = std::clamp(light.OuterAngleDegrees, 0.01f, 89.9f);
     const float inner = std::clamp(light.InnerAngleDegrees, 0.0f, outer);
-    const float cosInner = std::cos(inner * degreesToRadians);
-    const float cosOuter = std::cos(outer * degreesToRadians);
+    const float cosInner = std::cos(ToRadians(inner));
+    const float cosOuter = std::cos(ToRadians(outer));
     const float scale = 1.0f / std::max(cosInner - cosOuter, 1.0e-4f);
 
     GpuLight result;

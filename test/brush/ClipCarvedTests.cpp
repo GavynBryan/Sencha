@@ -9,8 +9,9 @@
 
 #include <gtest/gtest.h>
 
+#include <math/Angle.h>
+
 #include <cmath>
-#include <numbers>
 #include <set>
 #include <string>
 
@@ -339,7 +340,7 @@ TEST(ClipCarved, EveryCutThroughAPiercedDoorwayCloses)
     // through an arch vertex, a slight diagonal, and the ring planes.
     const auto vertical = [](float x) { return Plane::FromNormalAndPoint({ 1, 0, 0 }, { x, 0, 0 }); };
     const auto horizontal = [](float y) { return Plane::FromNormalAndPoint({ 0, 1, 0 }, { 0, y, 0 }); };
-    const float tilt = 3.0f * std::numbers::pi_v<float> / 180.0f;
+    const float tilt = ToRadians(3.0f);
     for (const CarveMode mode : { CarveMode::Polygon, CarveMode::Quad })
         for (const int segments : { 4, 8 })
         {

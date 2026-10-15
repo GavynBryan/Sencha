@@ -12,6 +12,7 @@
 #include "viewport/EditorViewport.h"
 #include "viewport/ViewportProjection.h"
 
+#include <math/Angle.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Ray3d.h>
 
@@ -413,7 +414,7 @@ private:
     double Snapped(ToolContext& ctx, const EditorViewport& viewport) const
     {
         const double step =
-            viewport.GetGrid(ctx.Grid).SnapEnabled ? kSnapDegrees * kPi / 180.0 : 0.0;
+            viewport.GetGrid(ctx.Grid).SnapEnabled ? ToRadians(kSnapDegrees) : 0.0;
         return GizmoMath::SnapAngle(Accumulated, step);
     }
 
@@ -425,7 +426,7 @@ private:
         readout.From = Pivot;
         readout.To = Pivot + dir * radius;
         char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "%.0f°", radians * 180.0 / kPi);
+        std::snprintf(buffer, sizeof(buffer), "%.0f°", ToDegrees(radians));
         readout.Text = buffer;
         readout.Viewport = viewport.Id;
     }

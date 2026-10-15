@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <math/Angle.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -12,7 +13,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <numbers>
 #include <random>
 #include <span>
 #include <string>
@@ -117,8 +117,7 @@ float Radius(const UiVertex& vertex)
 // Degrees clockwise from straight up.
 float Bearing(const UiVertex& vertex)
 {
-    const float degrees =
-        std::atan2(vertex.Position.X - 50.0f, -(vertex.Position.Y - 50.0f)) * 180.0f / std::numbers::pi_v<float>;
+    const float degrees = ToDegrees(std::atan2(vertex.Position.X - 50.0f, -(vertex.Position.Y - 50.0f)));
     return degrees < 0.0f ? degrees + 360.0f : degrees;
 }
 

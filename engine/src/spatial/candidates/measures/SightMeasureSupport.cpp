@@ -1,6 +1,7 @@
 #include "SightMeasureSupport.h"
 
 #include <ecs/World.h>
+#include <math/Angle.h>
 #include <spatial/sight/SightPlacement.h>
 #include <world/transform/TransformComponents.h>
 
@@ -18,7 +19,7 @@ namespace candidate_operation
     {
         SightArguments sight;
         sight.Slot = slot;
-        sight.HalfAngle = FloatOr(arguments, "half_angle_degrees", 180.0f) * std::numbers::pi_v<float> / 180.0f;
+        sight.HalfAngle = ToRadians(FloatOr(arguments, "half_angle_degrees", 180.0f));
         sight.Range = FloatOr(arguments, "range", std::numeric_limits<float>::infinity());
         sight.EyeHeight = FloatOr(arguments, "eye_height", 1.6f);
         sight.TargetHeight = FloatOr(arguments, "target_height", 1.0f);

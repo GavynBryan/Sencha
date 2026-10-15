@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <math/Angle.h>
 #include <math/geometry/3d/Frustum.h>
 #include <cmath>
 
@@ -7,7 +8,7 @@ static Mat4 MakeTestVP()
 {
 	// Looking down -Z from origin, standard perspective
 	Mat4 view = Mat4::MakeLookAt(Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 0.0f, -1.0f), Vec3d(0.0f, 1.0f, 0.0f));
-	float fov = 90.0f * (3.14159265358979f / 180.0f); // 90 degrees
+	float fov = ToRadians(90.0f);
 	Mat4 proj = Mat4::MakePerspective(fov, 1.0f, 0.1f, 100.0f);
 	return proj * view;
 }

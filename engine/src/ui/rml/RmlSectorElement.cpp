@@ -2,6 +2,8 @@
 
 #include "../SectorMesh.h"
 
+#include <math/Angle.h>
+
 #include <RmlUi/Core/ComputedValues.h>
 #include <RmlUi/Core/ElementInstancer.h>
 #include <RmlUi/Core/Factory.h>
@@ -11,11 +13,9 @@
 #include <RmlUi/Core/StyleSheetSpecification.h>
 
 #include <algorithm>
-#include <numbers>
 
 namespace
 {
-constexpr float kRadians = std::numbers::pi_v<float> / 180.0f;
 // One pixel of antialiasing across every edge.
 constexpr float kFeather = 1.0f;
 
@@ -100,8 +100,8 @@ void RmlSectorElement::Generate(Rml::Vector2f size)
         .Center = { size.x * 0.5f, size.y * 0.5f },
         .Outer = outer,
         .Inner = std::clamp(GetAttribute<float>("inner", 0.0f), 0.0f, 1.0f) * outer,
-        .Start = GetAttribute<float>("start", 0.0f) * kRadians,
-        .Sweep = std::clamp(GetAttribute<float>("sweep", 360.0f), 0.0f, 360.0f) * kRadians,
+        .Start = ToRadians(GetAttribute<float>("start", 0.0f)),
+        .Sweep = ToRadians(std::clamp(GetAttribute<float>("sweep", 360.0f), 0.0f, 360.0f)),
     };
     const float opacity = GetComputedValues().opacity();
     const auto colour = [this](Rml::PropertyId property_id) {

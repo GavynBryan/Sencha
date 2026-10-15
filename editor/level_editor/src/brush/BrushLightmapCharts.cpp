@@ -1,5 +1,7 @@
 #include "BrushLightmapCharts.h"
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -125,7 +127,7 @@ BrushChartSet BuildBrushLightmapCharts(const BrushMesh& mesh,
         neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
     }
 
-    const float coneCosine = std::cos(coneDegrees * 3.14159265358979323846f / 180.0f);
+    const float coneCosine = std::cos(ToRadians(coneDegrees));
     const float luxel = std::max(luxelSize, 1e-4f);
 
     // Grow charts: seed at the lowest unassigned face, BFS across soft

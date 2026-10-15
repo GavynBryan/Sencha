@@ -1,5 +1,7 @@
 #include "../CandidateOperationSupport.h"
 
+#include <math/Angle.h>
+
 #include <cmath>
 #include <numbers>
 
@@ -27,8 +29,8 @@ namespace candidate_operation
             state.PointsPerRing = StepCountOr(arguments, "points_per_ring", 8, subject, errors);
             state.OuterRadius = FiniteFloatOr(arguments, "outer_radius", 0.0f, subject, errors);
             state.InnerRadius = FiniteFloatOr(arguments, "inner_radius", state.OuterRadius, subject, errors);
-            state.AngleOffset = FiniteFloatOr(arguments, "angle_offset_degrees", 0.0f, subject, errors)
-                * std::numbers::pi_v<float> / 180.0f;
+            state.AngleOffset =
+                ToRadians(FiniteFloatOr(arguments, "angle_offset_degrees", 0.0f, subject, errors));
             state.Projected = ReadProjection(arguments);
             if (state.InnerRadius > state.OuterRadius)
                 errors.push_back(std::string(subject) + ": inner_radius exceeds outer_radius");

@@ -2,6 +2,7 @@
 
 #include <core/metadata/EnumSchema.h>
 #include <ecs/ComponentAnnotations.h>
+#include <math/Angle.h>
 
 #include <array>
 
@@ -50,7 +51,7 @@ CameraComponent
     SENCHA_LABEL("Field of view")
     SENCHA_TOOLTIP("Vertical angle the camera takes in. Ignored by an "
                    "orthographic camera.")
-    float FovYRadians = 1.22173048f;
+    float FovYRadians = ToRadians(70.0f);
 
     SENCHA_FIELD("near_plane")
     float NearPlane = 0.1f;

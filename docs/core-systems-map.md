@@ -637,7 +637,9 @@ New component:
    every engine one.
 3. If it is authored, add `SENCHA_SCHEMA("<name>")` and tag each authored
    member with `SENCHA_FIELD("<snake_case key>")`. A member initializer is the
-   field's default; a member without one is required. Untagged members are
+   field's default; a member without one is required. An initializer may be
+   any expression, so a `SENCHA_DEGREES` angle, stored in radians, states its
+   default as `ToRadians(60.0f)` from `<math/Angle.h>`. Untagged members are
    invisible to the schema, so adding one never changes the scene format or
    the wire layout. `SENCHA_SCENE_CHUNK("XXXX")` makes it persist into scenes,
    `SENCHA_REPLICATED` puts it on the wire.

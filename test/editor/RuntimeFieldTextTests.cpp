@@ -3,6 +3,7 @@
 #include "authoring/RuntimeFieldText.h"
 
 #include <core/text/InlineString.h>
+#include <math/Angle.h>
 #include <math/Quat.h>
 
 #include <cstddef>
@@ -429,8 +430,8 @@ TEST(RuntimeFieldText, ARotationReadsAndWritesAsPitchYawRollInDegrees)
 
     ASSERT_TRUE(ParseRuntimeField(field, "10, 90, -20", &turned));
     const Quatf stored(turned.Rotation[0], turned.Rotation[1], turned.Rotation[2], turned.Rotation[3]);
-    const float degree = std::numbers::pi_v<float> / 180.0f;
-    EXPECT_NEAR(std::abs(stored.Dot(Quatf::FromPitchYawRoll(10 * degree, 90 * degree, -20 * degree))), 1.0f, 1e-5f);
+    const Quatf expected = Quatf::FromPitchYawRoll(ToRadians(10.0f), ToRadians(90.0f), ToRadians(-20.0f));
+    EXPECT_NEAR(std::abs(stored.Dot(expected)), 1.0f, 1e-5f);
     EXPECT_EQ(FormatRuntimeFieldElement(field, &turned, 1), "90");
 
     ASSERT_TRUE(OffsetRuntimeFieldElement(field, 1, 15.0, &turned));

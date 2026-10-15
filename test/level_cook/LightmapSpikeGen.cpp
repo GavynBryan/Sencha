@@ -16,6 +16,7 @@
 #include <core/assets/AssetRef.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <math/Angle.h>
 #include <render/LightComponentTypes.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -44,7 +45,7 @@ namespace
             for (std::size_t i = 0; i < loop.size(); ++i)
                 edgeFaces[BrushSoftEdgeKey(loop[i], loop[(i + 1) % loop.size()])].push_back(f);
         }
-        const float minCos = std::cos(maxDegrees * 3.14159265f / 180.0f);
+        const float minCos = std::cos(ToRadians(maxDegrees));
         for (const auto& [edge, faces] : edgeFaces)
         {
             if (faces.size() != 2)

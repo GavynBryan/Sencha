@@ -1,13 +1,13 @@
 #include "FaceMaterial.h"
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
 namespace
 {
-    constexpr float kPi = 3.14159265358979323846f;
-
     // Avoid divide-by-zero from a zeroed scale; texel density of 0 is meaningless.
     float SafeScale(float s)
     {
@@ -79,7 +79,7 @@ namespace
     // ProjectUv dots against.
     void RotatedAxes(const UvProjection& p, Vec3d& u, Vec3d& v)
     {
-        const float theta = p.Rotation * (3.14159265358979323846f / 180.0f);
+        const float theta = ToRadians(p.Rotation);
         const float c = std::cos(theta);
         const float s = std::sin(theta);
         u = p.AxisU * c + p.AxisV * s;
@@ -108,7 +108,7 @@ Vec2d ProjectUv(const UvProjection& p, Vec3d localPos)
 {
     // Rotate the (U,V) basis in its own plane by p.Rotation (standard texture
     // rotation): U' = cosθ·U + sinθ·V, V' = -sinθ·U + cosθ·V.
-    const float theta = p.Rotation * (kPi / 180.0f);
+    const float theta = ToRadians(p.Rotation);
     const float c = std::cos(theta);
     const float s = std::sin(theta);
     const Vec3d u = p.AxisU * c + p.AxisV * s;
