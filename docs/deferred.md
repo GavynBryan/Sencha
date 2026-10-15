@@ -442,3 +442,15 @@ do the work and delete the entry.
   frame already orders scans by observer and sense.
 - **Trigger:** the first game that needs an NPC to react to a sound, or the
   roadmap's data-authored enemy gate if its encounter includes one.
+
+## Sight candidate selection
+
+- **What:** a spatial candidate query for sight. Every sensor is tested
+  against every target for range and cone each tick, O(sensors x targets)
+  before any ray; the per-observer ray cap bounds rays, not this.
+- **Where:** `SightScan::Run` in `engine/src/perception/SightScan.cpp`, which
+  gathers targets once per tick in id order.
+- **Trigger:** `SightStats::Candidates` in a representative encounter putting
+  the perception system over its ~1 ms share of the fixed tick, measured with
+  `frame.trace.output`. Distance-ordered ray grants belong with it if far
+  targets in view crowd out near ones.

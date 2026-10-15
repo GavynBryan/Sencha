@@ -110,3 +110,18 @@ TEST(CandidateCompile, SlotsResolveByNameForBinding)
     EXPECT_EQ(evaluation.FindSlot("allies"), std::optional<std::uint8_t>(2));
     EXPECT_FALSE(evaluation.FindSlot("enemies").has_value());
 }
+
+TEST(CandidateCompile, AnEvaluationHoldsAtMostTheCriteriaARejectionIndexCanName)
+{
+    const auto withCriteria = [](std::uint32_t count) {
+        std::string json = R"({ "generators": [{ "generator": "candidates.generator.points", "arguments": { "slot": "querier" } }], "criteria": [)";
+        for (std::uint32_t index = 0; index < count; ++index)
+            json += std::string(index == 0 ? "" : ",")
+                + R"({ "measure": "candidates.measure.height", "arguments": { "slot": "querier" }, "score": { "curve": { "shape": "linear", "low": 0, "high": 1 } } })";
+        return json + "] }";
+    };
+
+    CandidateHarness harness;
+    (void)harness.CompileDesc(withCriteria(kMaxCandidateCriteria));
+    EXPECT_TRUE(Mentions(harness.CompileErrors(withCriteria(kMaxCandidateCriteria + 1)), "at most 255 criteria"));
+}

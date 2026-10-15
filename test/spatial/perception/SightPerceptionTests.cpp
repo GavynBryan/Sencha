@@ -22,7 +22,7 @@ TEST(SightPerception, SeesATargetInRangeAndNotOnceItLeaves)
 
     harness.Step();
     ASSERT_TRUE(harness.Sees(eye, target));
-    const Observation& seen = *harness.Frame().Find(eye, target);
+    const Observation& seen = *harness.Seen(eye, target);
     EXPECT_EQ(seen.Tick, harness.Tick);
     EXPECT_FLOAT_EQ(seen.Confidence, 1.0f);
     EXPECT_NEAR(seen.Position.Z, -10.0f, 1e-4f);
@@ -115,7 +115,7 @@ TEST(SightPerception, TheEyeAndSampleOffsetsFollowTheEntity)
 
     harness.Step();
     ASSERT_TRUE(harness.Sees(eye, target));
-    EXPECT_NEAR(harness.Frame().Find(eye, target)->Position.Y, 3.0f, 1e-4f);
+    EXPECT_NEAR(harness.Seen(eye, target)->Position.Y, 3.0f, 1e-4f);
 }
 
 TEST(SightPerception, AnUnusableSensorSeesNothingAndIsCounted)
@@ -269,4 +269,27 @@ TEST(SightPerception, ASelectedObserverIsTracedCandidateByCandidate)
         { visible, SightOutcome::Seen }, { behind, SightOutcome::OutsideCone }, { far, SightOutcome::OutOfRange } };
     EXPECT_EQ(rows, expected);
     (void)other;
+}
+
+TEST(SightPerception, TargetsBeyondTheRayCapTakeTheirTurnOnLaterTicks)
+{
+    PerceptionHarness harness;
+    harness.SetCVar("perception.sight.rays_per_observer", CVarValue{ std::int64_t{ 2 } });
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    std::vector<EntityId> targets;
+    for (int i = 0; i < 5; ++i)
+        targets.push_back(harness.Target(Vec3d(static_cast<float>(i) - 2.0f, 0, -8)));
+
+    // Five in view and two rays a tick: every target is seen within three ticks,
+    // and the lowest ids do not take every ray.
+    std::vector<int> timesSeen(targets.size(), 0);
+    for (int tick = 0; tick < 3; ++tick)
+    {
+        harness.Step();
+        EXPECT_EQ(harness.Frame().CoverageOf(eye), ScanCoverage::Partial);
+        for (std::size_t t = 0; t < targets.size(); ++t)
+            timesSeen[t] += harness.Sees(eye, targets[t]) ? 1 : 0;
+    }
+    for (std::size_t t = 0; t < targets.size(); ++t)
+        EXPECT_GE(timesSeen[t], 1) << "target " << t << " was never given a ray";
 }

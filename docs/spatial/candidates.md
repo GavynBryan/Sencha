@@ -213,6 +213,8 @@ other callers need the same geometry.
 
 - **Pure function.** A run's output is a pure function of its inputs on one build: the bound definition, the context and seed, the limits, and world state as of the snapshot.
 - **No hidden order.** Nothing keys on addresses or unordered iteration. Entity candidates sort by id. The reachable set is a sorted array.
+- **Reachable set per limits.** A run builds the reachable set for the radius and cost limit its consumer asks with, and rebuilds it when a later consumer asks with others, so a generator's limits never stand in for a criterion's.
+- **Sizes.** An evaluation holds at most 255 generators and 255 criteria; a rejection index is a byte and 0xFF means not rejected. Compilation refuses more.
 - **No replication.** Results are never replicated. A run belongs wherever its caller has authority. A client may evaluate for presentation, but must not feed the result into authoritative state.
 
 ## Status and trace

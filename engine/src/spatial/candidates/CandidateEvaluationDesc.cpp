@@ -184,6 +184,11 @@ namespace
         const JsonValue* criteria = data.Find("criteria");
         if (criteria == nullptr)
             return true;
+        if (criteria->AsArray().size() > kMaxCandidateCriteria)
+        {
+            errors.push_back(std::format("an evaluation declares at most {} criteria", kMaxCandidateCriteria));
+            return false;
+        }
         bool ok = true;
         for (std::size_t index = 0; index < criteria->AsArray().size(); ++index)
         {

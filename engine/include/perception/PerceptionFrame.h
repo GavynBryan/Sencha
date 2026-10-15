@@ -36,6 +36,8 @@ public:
     [[nodiscard]] std::span<const SenseScan> Scans() const { return ScanRows; }
     [[nodiscard]] std::span<const SenseScan> ScansOf(EntityId observer) const;
     [[nodiscard]] std::span<const Observation> ObservationsOf(const SenseScan& scan) const;
+    // The observer's scan with that sense this tick, or null.
+    [[nodiscard]] const SenseScan* ScanOf(EntityId observer, GameplayTagId sense) const;
 
     // NotEvaluated when the observer was not scanned with that sense.
     [[nodiscard]] ScanCoverage CoverageOf(EntityId observer, GameplayTagId sense) const;
@@ -43,8 +45,8 @@ public:
     // had was Complete.
     [[nodiscard]] ScanCoverage CoverageOf(EntityId observer) const;
 
-    // The observation of `subject` by `observer` with any sense, or null.
-    [[nodiscard]] const Observation* Find(EntityId observer, EntityId subject) const;
+    // The observation of `subject` by `observer` with `sense`, or null.
+    [[nodiscard]] const Observation* Find(EntityId observer, GameplayTagId sense, EntityId subject) const;
 
 private:
     static constexpr std::uint32_t kNoOpenScan = std::numeric_limits<std::uint32_t>::max();

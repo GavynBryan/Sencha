@@ -67,12 +67,18 @@ std::span<const Observation> PerceptionFrame::ObservationsOf(const SenseScan& sc
     return std::span<const Observation>(Rows).subspan(scan.First, scan.Count);
 }
 
-ScanCoverage PerceptionFrame::CoverageOf(EntityId observer, GameplayTagId sense) const
+const SenseScan* PerceptionFrame::ScanOf(EntityId observer, GameplayTagId sense) const
 {
     for (const SenseScan& scan : ScansOf(observer))
         if (scan.Sense == sense)
-            return scan.Coverage;
-    return ScanCoverage::NotEvaluated;
+            return &scan;
+    return nullptr;
+}
+
+ScanCoverage PerceptionFrame::CoverageOf(EntityId observer, GameplayTagId sense) const
+{
+    const SenseScan* scan = ScanOf(observer, sense);
+    return scan != nullptr ? scan->Coverage : ScanCoverage::NotEvaluated;
 }
 
 ScanCoverage PerceptionFrame::CoverageOf(EntityId observer) const
@@ -86,11 +92,13 @@ ScanCoverage PerceptionFrame::CoverageOf(EntityId observer) const
     return ScanCoverage::Complete;
 }
 
-const Observation* PerceptionFrame::Find(EntityId observer, EntityId subject) const
+const Observation* PerceptionFrame::Find(EntityId observer, GameplayTagId sense, EntityId subject) const
 {
-    for (const SenseScan& scan : ScansOf(observer))
-        for (const Observation& observation : ObservationsOf(scan))
-            if (observation.Subject == subject)
-                return &observation;
+    const SenseScan* scan = ScanOf(observer, sense);
+    if (scan == nullptr)
+        return nullptr;
+    for (const Observation& observation : ObservationsOf(*scan))
+        if (observation.Subject == subject)
+            return &observation;
     return nullptr;
 }

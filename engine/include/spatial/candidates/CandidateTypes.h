@@ -130,6 +130,12 @@ struct CandidateContext
     std::uint64_t Tick = 0;
 };
 
+// A candidate's generator and rejecting criterion are stored in a byte, and
+// 0xFF means "not rejected", so 255 of each is the most an evaluation holds.
+inline constexpr std::uint32_t kMaxCandidateGenerators = 255;
+inline constexpr std::uint32_t kMaxCandidateCriteria = 255;
+inline constexpr std::uint8_t kCandidateNotRejected = 0xFF;
+
 // Capacities a scratch is sized for.
 struct CandidateLimits
 {

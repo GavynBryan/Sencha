@@ -17,8 +17,6 @@ namespace
     // Extents for projecting a candidate a generator left unprojected.
     const Vec3d kCandidateProjectionExtents(1.0f, 2.0f, 1.0f);
 
-    constexpr std::uint8_t kAlive = 0xFF;
-
     [[nodiscard]] CandidatePoint FromEntity(const World& world, const CandidatePoint& point)
     {
         if (!point.Entity.IsValid() || !world.IsAlive(point.Entity))
@@ -137,7 +135,7 @@ bool CandidateRun::Append(const Vec3d& position, EntityId entity, const NavLocat
     Scratch.Navs[row] = nav;
     Scratch.NavTried[row] = nav.IsValid() ? 1 : 0;
     Scratch.Generators[row] = CurrentGenerator;
-    Scratch.RejectedBy[row] = kAlive;
+    Scratch.RejectedBy[row] = kCandidateNotRejected;
     Scratch.RejectStatus[row] = CandidateMeasureStatus::Ok;
     Scratch.Scores[row] = 0.0f;
     return true;
@@ -252,9 +250,12 @@ CandidateMeasureStatus CandidateRun::CandidateNav(std::uint32_t row, NavLocation
 
 std::optional<std::span<const NavReachableRegion>> CandidateRun::ReachableRegions(float radius, float maxCost)
 {
-    if (!ReachableBuilt)
+    const ReachableSearch search{ radius, maxCost };
+    if (ReachableBuiltFor != search)
     {
-        ReachableBuilt = true;
+        ReachableBuiltFor = search;
+        ReachableAvailable = false;
+        Scratch.ReachableByRef.clear();
         const std::optional<NavLocation> start = QuerierNav();
         if (ZoneNav != nullptr && start)
         {

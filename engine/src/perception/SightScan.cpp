@@ -47,7 +47,10 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
                     PerceptionFrame& frame, SightStats& stats, std::vector<SightTraceRow>& trace)
 {
     if (!world.IsRegistered<SightSensor>() || !world.IsRegistered<SightTarget>())
+    {
+        Cursors.clear();
         return;
+    }
     Gather(world, partitions);
     stats.Sensors = static_cast<std::uint32_t>(Placed.size());
     stats.Targets = static_cast<std::uint32_t>(PlacedTargets.size());
@@ -66,21 +69,32 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
         const EntityId ignore[] = { observer.Entity };
         const PhysicsQueryFilter filter{ .IgnoreEntities = ignore };
 
-        frame.BeginScan(observer.Entity, settings.Sense);
-        std::uint32_t rays = 0;
-        ScanCoverage coverage = ScanCoverage::Complete;
-        for (const PlacedTarget& target : PlacedTargets)
+        Geometry.clear();
+        InView.clear();
+        for (std::uint32_t index = 0; index < PlacedTargets.size(); ++index)
         {
+            const PlacedTarget& target = PlacedTargets[index];
+            Geometry.push_back(target.Entity == observer.Entity ? SightOutcome::OutOfRange
+                                                                : TestSightGeometry(eye, target.Sample));
+            if (target.Entity != observer.Entity && Geometry.back() == SightOutcome::Seen)
+                InView.push_back(index);
+        }
+        GrantRays(observer.Entity, settings.RaysPerObserver);
+
+        frame.BeginScan(observer.Entity, settings.Sense);
+        ScanCoverage coverage = ScanCoverage::Complete;
+        for (std::uint32_t index = 0; index < PlacedTargets.size(); ++index)
+        {
+            const PlacedTarget& target = PlacedTargets[index];
             if (target.Entity == observer.Entity)
                 continue;
             ++stats.Candidates;
 
-            SightResult result{ .Outcome = TestSightGeometry(eye, target.Sample) };
+            SightResult result{ .Outcome = Geometry[index] };
             if (result.Outcome == SightOutcome::Seen)
             {
-                if (rays < settings.RaysPerObserver)
+                if (Granted[index] != 0)
                 {
-                    ++rays;
                     result = TestSight(physics, eye, target.Sample, target.Entity, filter);
                     stats.Raycasts += result.CastRay ? 1u : 0u;
                 }
@@ -113,4 +127,36 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
         frame.EndScan(coverage);
         stats.PartialScans += coverage == ScanCoverage::Partial ? 1u : 0u;
     }
+    std::swap(Cursors, NextCursors);
+    NextCursors.clear();
+}
+
+void SightScan::GrantRays(EntityId observer, std::uint32_t raysPerObserver)
+{
+    Granted.assign(PlacedTargets.size(), 0);
+    if (InView.size() <= raysPerObserver)
+    {
+        for (const std::uint32_t index : InView)
+            Granted[index] = 1;
+        return;
+    }
+
+    // Rays go round the in-view targets in id order, starting after the last
+    // one this observer tested, so each is tested within ceil(in view / rays)
+    // ticks while the set holds still.
+    const auto cursor = std::ranges::lower_bound(Cursors, observer, {}, &RayCursor::Observer);
+    std::size_t first = 0;
+    if (cursor != Cursors.end() && cursor->Observer == observer)
+    {
+        const auto after = std::ranges::upper_bound(InView, cursor->LastTested, {},
+                                                    [this](std::uint32_t index) { return PlacedTargets[index].Entity; });
+        first = after == InView.end() ? 0 : static_cast<std::size_t>(after - InView.begin());
+    }
+    std::uint32_t last = 0;
+    for (std::uint32_t granted = 0; granted < raysPerObserver; ++granted)
+    {
+        last = InView[(first + granted) % InView.size()];
+        Granted[last] = 1;
+    }
+    NextCursors.push_back({ observer, PlacedTargets[last].Entity });
 }

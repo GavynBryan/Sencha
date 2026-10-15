@@ -11,8 +11,6 @@
 
 namespace
 {
-    constexpr std::uint8_t kAlive = 0xFF;
-
     [[nodiscard]] bool Applies(CandidateAppliesTo appliesTo, EntityId entity)
     {
         switch (appliesTo)
@@ -63,8 +61,8 @@ bool CandidateEvaluator::Fits(const CandidateEvaluation& evaluation, const Candi
 {
     const CandidateLimits& limits = scratch.Limits();
     const CandidateBudgets& budgets = evaluation.Budgets();
-    return budgets.Candidates <= limits.MaxCandidates && evaluation.Criteria().size() <= limits.MaxCriteria
-        && budgets.ReachableRegions <= limits.MaxReachableRegions && evaluation.Generators().size() <= kAlive;
+    return budgets.Candidates <= limits.MaxCandidates && evaluation.Criteria().size() <= std::min(limits.MaxCriteria, kMaxCandidateCriteria)
+        && budgets.ReachableRegions <= limits.MaxReachableRegions && evaluation.Generators().size() <= kMaxCandidateGenerators;
 }
 
 bool CandidateEvaluator::SlotsBound(const CandidateEvaluation& evaluation, const CandidateContext& context)
@@ -227,7 +225,7 @@ void CandidateEvaluator::Score(CandidateRun& run)
     const std::size_t capacity = scratch.Limits().MaxCandidates;
 
     // Summed in authored order, so identical inputs give bit-identical scores.
-    std::array<std::uint32_t, 256> scored{};
+    std::array<std::uint32_t, kMaxCandidateCriteria> scored{};
     std::size_t scoredCount = 0;
     float weightSum = 0.0f;
     for (std::uint32_t index = 0; index < criteria.size(); ++index)
@@ -360,7 +358,7 @@ void CandidateEvaluator::FillTrace(CandidateRun& run,
         traced.Order = row;
         traced.RejectedBy = scratch.RejectedBy[row];
         traced.RejectStatus = scratch.RejectStatus[row];
-        const bool survived = scratch.RejectedBy[row] == kAlive;
+        const bool survived = scratch.RejectedBy[row] == kCandidateNotRejected;
         traced.Outcome = survived ? CandidateTraceOutcome::RankedNotReturned : CandidateTraceOutcome::Rejected;
         traced.Score = survived ? scratch.Scores[row] : 0.0f;
 

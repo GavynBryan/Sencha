@@ -32,7 +32,8 @@ TEST(PerceptionFrame, ScansAreOrderedByObserverThenSenseWhateverOrderPassesRan)
     EXPECT_EQ(frame.Scans()[1].Sense, kHearing);
     EXPECT_EQ(frame.Scans()[2].Observer, kHigh);
 
-    const Observation* heard = frame.Find(kLow, kSubject);
+    EXPECT_EQ(frame.Find(kLow, kSight, kSubject), nullptr);
+    const Observation* heard = frame.Find(kLow, kHearing, kSubject);
     ASSERT_NE(heard, nullptr);
     EXPECT_EQ(heard->Sense, kHearing);
     EXPECT_EQ(heard->Tick, 4u);
@@ -69,7 +70,7 @@ TEST(PerceptionFrame, BeginForgetsTheLastTick)
     frame.Begin(2);
     frame.Publish();
     EXPECT_TRUE(frame.Scans().empty());
-    EXPECT_EQ(frame.Find(kLow, kSubject), nullptr);
+    EXPECT_EQ(frame.Find(kLow, kSight, kSubject), nullptr);
 }
 
 TEST(PerceptionFrame, ConfidenceIsClampedToTheUnitInterval)
@@ -80,5 +81,5 @@ TEST(PerceptionFrame, ConfidenceIsClampedToTheUnitInterval)
     frame.Add(kSubject, Vec3d::Zero(), 3.0f);
     frame.EndScan(ScanCoverage::Complete);
     frame.Publish();
-    EXPECT_FLOAT_EQ(frame.Find(kLow, kSubject)->Confidence, 1.0f);
+    EXPECT_FLOAT_EQ(frame.Find(kLow, kSight, kSubject)->Confidence, 1.0f);
 }

@@ -526,3 +526,30 @@ TEST(CandidateScenario, EntityPositionsComeFromTheirWorldTransform)
     EXPECT_FLOAT_EQ(harness.Returned()[0].Position.Z, 4.0f);
     EXPECT_NEAR(trace.Value(0, 0).Value, 4.0f, 1e-4f);
 }
+
+// Each consumer of the reachable set gets the set for its own limits: a
+// permissive generator does not let a stricter criterion accept the far side.
+TEST(CandidateScenario, EachReachableConsumerUsesItsOwnCostLimit)
+{
+    CandidateHarness harness;
+    harness.AttachZone(kRoom, Floor(30.0f));
+    const auto evaluation = [&](bool strict) {
+        return harness.Compile(std::format(R"({{
+            "generators": [{{ "generator": "candidates.generator.reachable",
+                              "arguments": {{ "radius": 30, "max_cost": 100, "spacing": 3 }} }}],
+            "criteria": [{}],
+            "selection": {{ "mode": "all_qualified" }}
+        }})", strict ? R"({ "measure": "candidates.measure.reachable", "arguments": { "max_cost": 6 }, "require": { "expect": true } })"
+                     : R"({ "measure": "candidates.measure.reachable", "arguments": { "max_cost": 100 }, "require": { "expect": true } })"));
+    };
+    const CandidateContext context = QuerierAt(harness, kRoom, Vec3d(15, 0, 15));
+
+    ASSERT_EQ(harness.Run(evaluation(false), context).Status, CandidateRunStatus::Success);
+    const std::size_t permissive = harness.Returned().size();
+    const CandidateRunStatus strict = harness.Run(evaluation(true), context).Status;
+    ASSERT_TRUE(strict == CandidateRunStatus::Success || strict == CandidateRunStatus::NoneQualified);
+    const std::size_t kept = strict == CandidateRunStatus::Success ? harness.Returned().size() : 0u;
+    EXPECT_LT(kept, permissive);
+    for (std::size_t index = 0; index < kept; ++index)
+        EXPECT_LE((harness.Returned()[index].Position - Vec3d(15, 0, 15)).Magnitude(), 12.0f);
+}

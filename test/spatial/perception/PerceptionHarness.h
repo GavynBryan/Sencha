@@ -9,6 +9,7 @@
 #include <math/Quat.h>
 #include <perception/PerceptionFrame.h>
 #include <perception/PerceptionSystem.h>
+#include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -101,6 +102,11 @@ struct PerceptionHarness
     [[nodiscard]] const PerceptionFrame& Frame() const { return *Entities.TryGetResource<PerceptionFrame>(); }
     [[nodiscard]] bool Sees(EntityId observer, EntityId subject) const
     {
-        return Frame().Find(observer, subject) != nullptr;
+        return Seen(observer, subject) != nullptr;
+    }
+    [[nodiscard]] const Observation* Seen(EntityId observer, EntityId subject) const
+    {
+        const PerceptionSenses* senses = Entities.TryGetResource<PerceptionSenses>();
+        return senses != nullptr ? Frame().Find(observer, senses->Sight, subject) : nullptr;
     }
 };

@@ -10,8 +10,8 @@ class World;
 
 inline constexpr std::string_view kSightSenseTag = "perception.sense.sight";
 
-// Answer true when seen this tick. False only when every scan the observer had
-// this tick was complete; otherwise Unavailable, never false.
+// Sight only. True when seen this tick; false only when the observer's sight
+// scan this tick was complete; otherwise Unavailable, never false.
 inline constexpr std::string_view kSeesQuery = "perception.sees";
 inline constexpr std::string_view kSeesTaggedQuery = "perception.sees_tagged";
 // Unavailable when nothing matching was seen.

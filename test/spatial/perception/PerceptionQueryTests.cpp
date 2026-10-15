@@ -126,3 +126,38 @@ TEST(PerceptionQueries, NearestAnswersUnavailableWhenNothingMatchingWasSeen)
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_FALSE(seen);
 }
+
+TEST(PerceptionQueries, TheSightQueriesIgnoreEveryOtherSense)
+{
+    QueryHarness harness;
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    const EntityId subject = harness.Target(Vec3d(0, 0, 5));
+    harness.Tag(subject, "faction.hostile");
+    const GameplayTagId sight = harness.Entities.GetResource<PerceptionSenses>().Sight;
+    const GameplayTagId hearing = *harness.Entities.GetResource<GameplayTagRegistry>().RegisterTag("test.sense.hearing");
+
+    // Heard but not seen, by a hearing scan that did not finish, beside a sight
+    // scan that did.
+    PerceptionFrame& frame = harness.Entities.GetResource<PerceptionFrame>();
+    frame.Begin(1);
+    frame.BeginScan(eye, sight);
+    frame.EndScan(ScanCoverage::Complete);
+    frame.BeginScan(eye, hearing);
+    frame.Add(subject, Vec3d(0, 0, 5), 0.5f);
+    frame.EndScan(ScanCoverage::Partial);
+    frame.Publish();
+
+    AuthoredValue answer;
+    bool seen = true;
+    ASSERT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(subject) }, answer),
+              AuthoredQueryStatus::Value);
+    ASSERT_TRUE(answer.TryGetBool(seen));
+    EXPECT_FALSE(seen);
+    ASSERT_EQ(harness.Ask(kSeesTaggedQuery, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
+              AuthoredQueryStatus::Value);
+    ASSERT_TRUE(answer.TryGetBool(seen));
+    EXPECT_FALSE(seen);
+    EXPECT_EQ(harness.Ask(kNearestSeenTaggedQuery,
+                          { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
+              AuthoredQueryStatus::Unavailable);
+}

@@ -48,7 +48,16 @@ private:
         Vec3d Sample;
     };
 
+    // Where an observer's last capped scan stopped, so the next one resumes
+    // after it instead of spending its rays on the same lowest ids again.
+    struct RayCursor
+    {
+        EntityId Observer;
+        EntityId LastTested;
+    };
+
     void Gather(const World& world, const StoragePartitionSet& partitions);
+    void GrantRays(EntityId observer, std::uint32_t raysPerObserver);
 
     const PhysicsWorld& Physics;
     const World* QueriedWorld = nullptr;
@@ -57,4 +66,9 @@ private:
     std::vector<PlacedObserver> Placed;
     std::vector<PlacedTarget> PlacedTargets;
     std::vector<EntityId> ObserverIds;
+    std::vector<SightOutcome> Geometry;
+    std::vector<std::uint32_t> InView;
+    std::vector<std::uint8_t> Granted;
+    std::vector<RayCursor> Cursors;
+    std::vector<RayCursor> NextCursors;
 };

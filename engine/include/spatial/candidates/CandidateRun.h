@@ -132,7 +132,15 @@ private:
 
     std::optional<NavLocation> QuerierLocation;
     bool QuerierProjected = false;
-    bool ReachableBuilt = false;
+    struct ReachableSearch
+    {
+        float Radius = 0.0f;
+        float MaxCost = 0.0f;
+        bool operator==(const ReachableSearch&) const = default;
+    };
+    // The constraints the reachable set was last built for; a consumer asking
+    // with others rebuilds it.
+    std::optional<ReachableSearch> ReachableBuiltFor;
     bool ReachableAvailable = false;
     std::uint32_t ExactNavSearches = 0;
     std::uint32_t Raycasts = 0;

@@ -36,19 +36,30 @@ namespace
         return definition;
     }
 
-    // Not seen is an answer only when the scan that would have seen it finished.
-    AuthoredQueryStatus AnswerUnseen(const PerceptionFrame& frame, EntityId observer, AuthoredValue& result)
-    {
-        if (frame.CoverageOf(observer) != ScanCoverage::Complete)
-            return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Bool(false);
-        return AuthoredQueryStatus::Value;
-    }
-
     bool SubjectCarries(const World& world, const GameplayTagRegistry& tags, EntityId subject, GameplayTagId tag)
     {
         const GameplayTagContainer* container = world.TryGet<GameplayTagContainer>(subject);
         return container != nullptr && container->HasDescendantOf(tags, tag);
+    }
+
+    // The observer's sight scan this tick, or Unavailable: these queries answer
+    // for sight alone, whatever other senses report.
+    AuthoredQueryStatus SightScanOf(const World& world, EntityId observer, const PerceptionFrame*& frame,
+                                    const SenseScan*& scan)
+    {
+        frame = world.TryGetResource<PerceptionFrame>();
+        const PerceptionSenses* senses = world.TryGetResource<PerceptionSenses>();
+        scan = frame != nullptr && senses != nullptr ? frame->ScanOf(observer, senses->Sight) : nullptr;
+        return scan != nullptr ? AuthoredQueryStatus::Value : AuthoredQueryStatus::Unavailable;
+    }
+
+    // Not seen is an answer only when the sight scan that would have seen it finished.
+    AuthoredQueryStatus AnswerUnseen(const SenseScan& scan, AuthoredValue& result)
+    {
+        if (scan.Coverage != ScanCoverage::Complete)
+            return AuthoredQueryStatus::Unavailable;
+        result = AuthoredValue::Bool(false);
+        return AuthoredQueryStatus::Value;
     }
 
     AuthoredQueryStatus Sees(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
@@ -57,13 +68,19 @@ namespace
         EntityId subject;
         if (!arguments[0].TryGetEntity(observer) || !arguments[1].TryGetEntity(subject))
             return AuthoredQueryStatus::InvalidArguments;
-        const PerceptionFrame* frame = world.TryGetResource<PerceptionFrame>();
-        if (frame == nullptr)
+        const PerceptionFrame* frame = nullptr;
+        const SenseScan* scan = nullptr;
+        if (SightScanOf(world, observer, frame, scan) != AuthoredQueryStatus::Value)
             return AuthoredQueryStatus::Unavailable;
-        if (frame->Find(observer, subject) == nullptr)
-            return AnswerUnseen(*frame, observer, result);
-        result = AuthoredValue::Bool(true);
-        return AuthoredQueryStatus::Value;
+        for (const Observation& observation : frame->ObservationsOf(*scan))
+        {
+            if (observation.Subject == subject)
+            {
+                result = AuthoredValue::Bool(true);
+                return AuthoredQueryStatus::Value;
+            }
+        }
+        return AnswerUnseen(*scan, result);
     }
 
     AuthoredQueryStatus SeesTagged(const World& world, std::span<const AuthoredValue> arguments,
@@ -73,22 +90,20 @@ namespace
         GameplayTagId tag;
         if (!arguments[0].TryGetEntity(observer) || !arguments[1].TryGetTag(tag))
             return AuthoredQueryStatus::InvalidArguments;
-        const PerceptionFrame* frame = world.TryGetResource<PerceptionFrame>();
+        const PerceptionFrame* frame = nullptr;
+        const SenseScan* scan = nullptr;
         const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
-        if (frame == nullptr || tags == nullptr)
+        if (tags == nullptr || SightScanOf(world, observer, frame, scan) != AuthoredQueryStatus::Value)
             return AuthoredQueryStatus::Unavailable;
-        for (const SenseScan& scan : frame->ScansOf(observer))
+        for (const Observation& observation : frame->ObservationsOf(*scan))
         {
-            for (const Observation& observation : frame->ObservationsOf(scan))
+            if (SubjectCarries(world, *tags, observation.Subject, tag))
             {
-                if (SubjectCarries(world, *tags, observation.Subject, tag))
-                {
-                    result = AuthoredValue::Bool(true);
-                    return AuthoredQueryStatus::Value;
-                }
+                result = AuthoredValue::Bool(true);
+                return AuthoredQueryStatus::Value;
             }
         }
-        return AnswerUnseen(*frame, observer, result);
+        return AnswerUnseen(*scan, result);
     }
 
     AuthoredQueryStatus NearestSeenTagged(const World& world, std::span<const AuthoredValue> arguments,
@@ -98,26 +113,25 @@ namespace
         GameplayTagId tag;
         if (!arguments[0].TryGetEntity(observer) || !arguments[1].TryGetTag(tag))
             return AuthoredQueryStatus::InvalidArguments;
-        const PerceptionFrame* frame = world.TryGetResource<PerceptionFrame>();
+        const PerceptionFrame* frame = nullptr;
+        const SenseScan* scan = nullptr;
         const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
         const WorldTransform* from = world.TryGet<WorldTransform>(observer);
-        if (frame == nullptr || tags == nullptr || from == nullptr)
+        if (tags == nullptr || from == nullptr
+            || SightScanOf(world, observer, frame, scan) != AuthoredQueryStatus::Value)
             return AuthoredQueryStatus::Unavailable;
 
         EntityId nearest;
         float nearestDistance = std::numeric_limits<float>::infinity();
-        for (const SenseScan& scan : frame->ScansOf(observer))
+        for (const Observation& observation : frame->ObservationsOf(*scan))
         {
-            for (const Observation& observation : frame->ObservationsOf(scan))
+            if (!observation.Subject.IsValid() || !SubjectCarries(world, *tags, observation.Subject, tag))
+                continue;
+            const float distance = (observation.Position - from->Value.Position).SqrMagnitude();
+            if (distance < nearestDistance || (distance == nearestDistance && observation.Subject < nearest))
             {
-                if (!observation.Subject.IsValid() || !SubjectCarries(world, *tags, observation.Subject, tag))
-                    continue;
-                const float distance = (observation.Position - from->Value.Position).SqrMagnitude();
-                if (distance < nearestDistance || (distance == nearestDistance && observation.Subject < nearest))
-                {
-                    nearest = observation.Subject;
-                    nearestDistance = distance;
-                }
+                nearest = observation.Subject;
+                nearestDistance = distance;
             }
         }
         if (!nearest.IsValid())
@@ -151,15 +165,15 @@ bool InstallPerceptionVocabulary(World& world)
         return false;
     AuthoredQueryRegistrationScope scope(*registry, "engine");
     (void)scope.Declare(Declaration(kSeesQuery, "Sees",
-                              "Whether the observer saw the subject this tick. Unavailable when its scan "
-                              "did not finish.",
+                              "Whether the observer saw the subject this tick, by sight alone. Unavailable "
+                              "when its sight scan did not finish.",
                               DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Bool));
     (void)scope.Declare(Declaration(kSeesTaggedQuery, "Sees tagged",
                               "Whether the observer saw anything carrying the tag, or a tag beneath it, "
-                              "this tick. Unavailable when its scan did not finish.",
+                              "this tick, by sight alone. Unavailable when its sight scan did not finish.",
                               DataFieldKind::GameplayTag, "tag", "Tag", DataFieldKind::Bool));
     (void)scope.Declare(Declaration(kNearestSeenTaggedQuery, "Nearest seen tagged",
-                              "The closest thing carrying the tag that the observer saw this tick.",
+                              "The closest thing carrying the tag that the observer saw this tick, by sight alone.",
                               DataFieldKind::GameplayTag, "tag", "Tag", DataFieldKind::Entity));
     return scope.Commit();
 }

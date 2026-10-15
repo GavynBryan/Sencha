@@ -113,8 +113,10 @@ editors validate them without a running game:
 | `perception.sees_tagged` | observer, tag | bool |
 | `perception.nearest_seen_tagged` | observer, tag | entity |
 
-"Seen" answers true. It answers false only when every scan of that observer
-this tick is `Complete`. A partial or missing scan answers `Unavailable`,
+They answer for sight alone: another sense's observations and coverage never
+change them, and queries spanning senses will be separate names. "Seen"
+answers true. It answers false only when the observer's sight scan this tick
+is `Complete`. A partial or missing scan answers `Unavailable`,
 which the authored contract already defines as "does not apply here", never
 false. `nearest_seen_tagged` answers `Unavailable` when nothing matching was
 seen. "Tagged" matches the subject's `GameplayTagContainer` hierarchically.
