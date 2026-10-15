@@ -16,6 +16,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
+#include <math/Angle.h>
 #include <navigation/NavLinkComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -25,7 +26,6 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <numbers>
 #include <string>
 #include <vector>
 
@@ -80,7 +80,7 @@ namespace
             const EntityId entity = scene.CreateEntity(Vec3d{ x, 0, 0 });
             Transform3f frame = Transform3f::Identity();
             frame.Position = Vec3d{ x, 0, 0 };
-            frame.Rotation = Quatf::FromAxisAngle(Vec3d{ 1, 0, 0 }, 0.5f * std::numbers::pi_v<float>);
+            frame.Rotation = Quatf::FromAxisAngle(Vec3d{ 1, 0, 0 }, ToRadians(90.0f));
             scene.SetWorldTransform(entity, frame);
             WorldDock dock;
             dock.Id = World.MintDockId();

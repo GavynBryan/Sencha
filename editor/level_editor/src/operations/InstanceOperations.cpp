@@ -10,9 +10,9 @@
 
 #include <core/identity/Id.h>
 #include <core/metadata/DataSchemaFields.h>
+#include <math/Angle.h>
 #include <math/Quat.h>
 
-#include <numbers>
 #include <string>
 
 namespace
@@ -40,7 +40,7 @@ namespace
                 Transform3f placement = Transform3f::Identity();
                 placement.Position = PointFromJson(*arguments.Find("at"));
                 const float degrees = static_cast<float>(arguments.Find("turn")->AsNumber());
-                placement.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), degrees * std::numbers::pi_v<float> / 180.0f);
+                placement.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), ToRadians(degrees));
                 std::string error;
                 const SceneInstanceId placed = document.PlaceSceneInstance(source, placement, {}, &error);
                 if (!placed.IsValid())

@@ -17,12 +17,12 @@
 #include "viewport/ViewportProjection.h"
 
 #include <core/metadata/DataSchemaFields.h>
+#include <math/Angle.h>
 #include <math/geometry/3d/Aabb3d.h>
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
-#include <numbers>
 #include <optional>
 #include <string>
 
@@ -86,7 +86,7 @@ namespace
     JsonValue CameraJson(const EditorViewport& view, const Ray3d& aim)
     {
         const Vec3d forward = aim.Direction.Normalized();
-        const double pitch = std::asin(std::clamp(static_cast<double>(forward.Y), -1.0, 1.0)) * 180.0 / std::numbers::pi;
+        const double pitch = ToDegrees(std::asin(std::clamp(static_cast<double>(forward.Y), -1.0, 1.0)));
         return JsonValue(JsonValue::Object{
             { "view", JsonValue(ViewName(view.Orientation)) },
             { "position", PointJson(EyeOf(view, aim)) },
