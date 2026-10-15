@@ -499,3 +499,19 @@ do the work and delete the entry.
   knows the groups a guess would pay.
 - **Trigger:** the first HUD that shows a predicted pawn's ammo or energy, which is
   what reads the overlay.
+
+## Locomotion facts for a pawn this machine only receives
+
+- **What:** a remote pawn's locomotion animation reads facts its machine is not
+  sent: velocity and support state are owner-only fields of `KinematicState` and
+  `SupportState`, and only tags declared `replicate_to_all` reach it. Its
+  locomotion selection therefore runs on stale facts (plan D18). Ability cues,
+  presentation animation and authoritative animation requests do reach it, and are
+  what AbilityKit's remote acceptance covers; remote locomotion quality is not
+  claimed.
+- **Where:** the facts' replication policy in
+  `engine/include/movement/components/CharacterFacts.h`, and the fact providers that
+  read them (`docs/gameplay/animation.md`, "Facts").
+- **Trigger:** the first remote pawn whose locomotion must read right on another
+  machine, such as Loss Function's deathmatch, which also decides whether facts are
+  sent, derived on the receiver from interpolated motion, or both.

@@ -33,6 +33,9 @@
 
 #include <AllocationCounter.h>
 
+#include <core/logging/ILogSink.h>
+#include <core/logging/LoggingProvider.h>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -380,6 +383,27 @@ constexpr std::string_view kAutomatic = R"({
             { "key": "o_pay", "op": "commit", "groups": ["g_round"] },
             { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "port": "pulse" } } } ] },
         "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
+}
+
+TEST_F(AbilityRuntime, AGrantBoundToAnUnknownActionIsReported)
+{
+    std::vector<std::string> lines;
+    struct Captured : ILogSink
+    {
+        std::vector<std::string>* Lines = nullptr;
+        void Write(LogLevel, std::string_view, std::string_view message) override { Lines->emplace_back(message); }
+    };
+    LoggingProvider logging;
+    logging.AddSink<Captured>().Lines = &lines;
+    Host.Logging = &logging;
+    const AbilityId primary = Define("asset://abilities/primary.sdata", kInstant);
+    Grant(Actor(), primary, AbilityBindingDecl{ .Action = "Input.PrimaryFrie" });
+    Steps(3);
+    ASSERT_EQ(std::ranges::count_if(lines, [](const std::string& line) {
+                  return line.find("Input.PrimaryFrie") != std::string::npos;
+              }),
+              1)
+        << "named once, when the bindings were resolved, not every tick";
 }
 
 TEST_F(AbilityRuntime, ThreePressesOfAnInstantAbilityActivateThreeTimes)

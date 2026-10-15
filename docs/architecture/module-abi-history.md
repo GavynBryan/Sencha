@@ -385,3 +385,8 @@ joins the kit's components and `ActiveAbilities`' derived set;
 (`AbilityLeases.h`), `IsAbilityRecordShadowed` and `AbilityCueOccurrence` are new;
 `AbilityPresentationState` gains the guessed-cue memory and departed records; the
 ability pass runs on a client for its predicted pawn.
+
+**Engine teardown.** `Engine` declares its `BackRouter` before the pause menu and
+options page that lease consumers from it, so they hand their leases back to a
+live router at shutdown; a windowed host with a pause menu aborted on exit
+("pure virtual method called"). The member order is part of the layout.

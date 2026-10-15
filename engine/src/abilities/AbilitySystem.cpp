@@ -11,6 +11,7 @@
 #include <abilities/AbilityRequestQueue.h>
 #include <app/GameContexts.h>
 #include <core/console/ConsoleRegistry.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <effects/ActiveEffect.h>
@@ -60,7 +61,7 @@ namespace
     }
 
     // A press: a toggle it ends, else the bindings it starts (docs/gameplay/abilitykit.md,
-    // "Input").
+    // "Grants and input").
     void Press(AbilityPass& pass, const AbilityActor& actor, const AbilityGrantEntries& entries,
                const GameplayTagRegistry* tags, std::uint8_t action, std::uint8_t edge)
     {
@@ -296,6 +297,9 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     AbilityPassScratch& scratch = world.HasResource<AbilityPassScratch>() ? world.GetResource<AbilityPassScratch>()
                                                                           : world.AddResource<AbilityPassScratch>(world);
     RefreshBindings(world, *entries, scratch.Problems);
+    if (host.Logging != nullptr)
+        for (const std::string& problem : scratch.Problems)
+            host.Logging->GetLogger<AbilitySystem>().Warn("{}", problem);
     if (authority)
         SyncEffectGrants(world, partitions, scratch);
 

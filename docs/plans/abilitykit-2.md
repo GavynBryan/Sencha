@@ -1,6 +1,6 @@
 # AbilityKit 2: phased abilities, input binding, and the Ability Workbench
 
-Status: **Approved (revision 3, 2026-10-13). Implementation in progress; see §17.**
+Status: **Approved (revision 3, 2026-10-13). Implemented (2026-10-15); see §17.**
 Branch `claude/abilitykit-2` (worktree `../Sencha-abilitykit`) on `origin/main` at
 fc94909a.
 
@@ -1761,3 +1761,40 @@ Deviations from the plan's wording, each for a stated reason:
 - **Deviation: owned tags and pending costs are not predicted.** The owner reads
   the authority's tags; the pending-cost overlay waits for its HUD
   (`docs/deferred.md`).
+
+### 17.11 Stage 10 — finish
+
+- **Loss Function.** `../loss-function-sencha-abilitykit`, a copy of the arena
+  template as the templates README prescribes, builds against an SDK installed from
+  this branch and carries the old project's Data Garden level and textures; the old
+  `../loss-function-sencha` (not under version control, built against the July ABI)
+  is left untouched. Its six abilities -- CTX Primary, Automatic and Charge, Vector
+  Lunge and Tether, Overclock -- and three CTX mode toggles are content: they
+  declare and resolve with no problem in Kyusu, all nine grants bind on the spawned
+  pawn, and a windowed run on the arena room exits cleanly. The grep gate holds: the
+  module names no ability, and the engine has no Overclock symbol.
+- **Measurements.** `scripts/bench_abilities.sh` (profile preset): 5,976 bytes per
+  actor with grants; the pass at 256 actors 0.060 ms idle and 0.117 ms with every
+  actor firing, presenting them 0.015 ms; 344 B/s per firing actor per peer
+  (Stage 9).
+- **Docs.** `abilitykit.md` rewritten around what exists (rules, vocabulary, frame
+  order, the runtime, animation, presentation, replication, prediction, authoring,
+  the Loss Function worked example, costs); `input.md`, `movement.md`,
+  `authored-api.md`, `animation.md` and the networking plan updated; D18 recorded in
+  `docs/deferred.md`, "Locomotion facts for a pawn this machine only receives".
+- **Found and fixed on the way:** a windowed host with a pause menu aborted on exit
+  ("pure virtual method called": the back router died before the pause menu and
+  options page that lease from it; pre-existing on `origin/main`), and unresolved
+  grant bindings were collected but never reported (`AbilityHost::Logging`, with a
+  regression test).
+- **Deviation: the CTX charge drops its `anim.hold`.** The Loss Function pawn has no
+  rig, so the charge pose lease would be refused and end the activation; the
+  normative fixture keeps it.
+- **Deviation: the tether anchors at the struck point.** Level geometry is not an
+  entity, so the content tethers to the hit's point; an entity anchor and
+  `target_lost` are exercised by the 8d grapple test.
+- **Owner walkthroughs owed:** play the six abilities in the real game (`app` with
+  the module and a local player, keys in the copy's README); author Primary,
+  Automatic and Charge from recipes in Kyusu and preview them (Stage 6); the
+  Workbench stage with the Timed Movement recipe; a two-machine session (`+host`,
+  `connect`) to see remote presentation and owner prediction live.

@@ -310,6 +310,12 @@ steps, as every provider's pull rule asks.
 - **Mode:** a locomotion mode requested for the lease's scope; released, the
   character is asked back to free if it is still in the leased mode.
 
+A timed burst and a tether complete (`VerbDefinition::Completes`): the burst when
+its time is up, the tether when its anchor entity ends, so a phase holding one can
+wait on `on: complete` (`docs/gameplay/abilitykit.md`, "Ability definitions"). A
+client predicts the three leases for its own pawn when the ability's prediction
+level is `simulation`; replay then steps them as it does the live tick.
+
 `StepHeldMotion` steps bursts and tethers for one step of the character's time.
 `HeldMotionSystem` calls it for undilated characters after root motion and
 before composition, and frees a mode whose holder is gone; `StepCharacterTick`

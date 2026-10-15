@@ -1371,7 +1371,8 @@ int Engine::Run(Game& game)
                               AbilityHost{ .Verbs = VerbDispatcherState.get(),
                                            .Queries = QueryDispatcherState.get(),
                                            .Console = &console.Registry(),
-                                           .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None });
+                                           .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                           .Logging = &LoggingState });
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its

@@ -347,7 +347,8 @@ that silently never fires.
 **AbilityKit.** Abilities read the tick's ordered edges themselves, through the
 action each grant is bound to (`docs/gameplay/abilitykit.md`, "Grants and input"),
 so a charge while held and a loose on release are one ability's phases rather than
-two actions. The resolve pass publishes the vocabulary those bindings resolve
+two actions. A client's predicted pass reads the same edges for its own pawn, on
+the pawn's command timeline (`abilitykit.md`, "Prediction"). The resolve pass publishes the vocabulary those bindings resolve
 against as `InputActionVocabulary`. Which moment a plain action fires on is still
 settled here, in the mapping.
 

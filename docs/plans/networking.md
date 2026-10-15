@@ -846,10 +846,11 @@ the replication split:
   codec). Late or lost cues are dropped by design; anything a client must not miss
   is, by definition, state.
 
-`ICueSink` stays the game-facing surface; the net layer is one more producer on the
-client and one consumer on the authority. AbilityKit itself remains
-replication-free, honoring its own exclusion (`abilitykit.md:71`): the framework's
-components replicate generically like any other data.
+*Landed differently with AbilityKit 2 (2026-10).* No event channel carries cues:
+an ability's records and a bounded cue log replicate as component state through
+codecs, and each machine presents what it receives (`abilitykit.md`,
+"Presentation" and "Replication", with the loss bounds stated there). Tags,
+attributes and grants go to the owner, tags declared `replicate_to_all` to everyone.
 
 ### 6.5 Client apply and interpolation
 
@@ -1226,6 +1227,12 @@ Replay reads tuning and attributes as of now rather than as of the replayed tick
 a mid-window tuning change replays with the new coefficients and the next reconcile
 absorbs it. Motion impulses are not replayed; they arrive as replicated velocity at
 the ack.
+
+*AbilityKit 2 (2026-10)* predicts the owner's own activations rather than their
+effects: a client runs its guesses for its pawn at each ability's prediction level,
+and `AbilityPredictionJournal` (a `PredictionJournal`, the shape the animation
+journal now shares) confirms, ends or refuses them after each snapshot
+(`abilitykit.md`, "Prediction"). Costs are validated, never paid, on the client.
 
 Deferred with recorded triggers: server-side lag compensation for hit validation
 (trigger: a target game ships hitscan combat at internet latency), projectile

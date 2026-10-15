@@ -585,10 +585,11 @@ private:
 #ifdef SENCHA_ENABLE_UI
     std::unique_ptr<UiService> UiState;
     std::unique_ptr<CVarArchive> SettingsStore;
+    // Before its consumers, which hand their leases back to it as they go.
+    BackRouter BackRouterInstance;
     std::unique_ptr<PauseMenu> PauseMenuState;
     PauseState PauseStateInstance;
     OptionsPage OptionsState;
-    BackRouter BackRouterInstance;
     UiSurfaceId ShellSurface;
 #endif
 #ifdef SENCHA_ENABLE_VULKAN

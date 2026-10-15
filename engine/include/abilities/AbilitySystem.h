@@ -5,6 +5,7 @@
 #include <cstdint>
 
 class AuthoredQueryDispatcher;
+class LoggingProvider;
 class ConsoleRegistry;
 class StoragePartitionSet;
 class VerbDispatcher;
@@ -22,6 +23,9 @@ struct AbilityHost
     ConsoleRegistry* Console = nullptr;
     // Whether this host presents what abilities do: it runs the presenter.
     bool Presents = false;
+    // Where a grant whose binding names something this World does not know is
+    // reported, once each time the bindings are resolved; null reports nothing.
+    LoggingProvider* Logging = nullptr;
 };
 
 struct AbilitySettings

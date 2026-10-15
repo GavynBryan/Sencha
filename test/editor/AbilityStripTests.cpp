@@ -8,7 +8,10 @@
 #include "data/JsonObjectEdit.h"
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <app/Game.h>
+#include <authored/WorldVocabulary.h>
 #include <core/json/JsonParser.h>
+#include <ecs/World.h>
 
 #include <gtest/gtest.h>
 
@@ -117,6 +120,35 @@ TEST(AbilityPalette, EveryNameAnOpCanRunIsOfferedWithItsBadges)
     EXPECT_EQ(ReadMemberString(AbilityPaletteOp("query:physics.trace"), "op"), "query");
     EXPECT_TRUE(AbilityPaletteOp("verb:").IsObject());
     EXPECT_TRUE(AbilityPaletteOp("nothing").IsNull());
+}
+
+// A module declares an operation through its vocabulary hook, and that is all it
+// takes for authors to find it: no editor code names it.
+TEST(AbilityPalette, ModuleOperationsAppearInThePalette)
+{
+    class GrappleGame final : public Game
+    {
+    public:
+        void OnRegisterVocabulary(World& world) override
+        {
+            VerbRegistrationScope scope(*FindVerbRegistry(world), "grapple");
+            VerbDefinition pull;
+            pull.Name = "grapple.pull";
+            pull.Kind = VerbKind::Lease;
+            pull.Prediction = AuthoredPrediction::Simulation;
+            (void)scope.Declare(std::move(pull));
+            (void)scope.Commit();
+        }
+    };
+    VocabularyCatalog names;
+    GrappleGame game;
+    names.InstallModuleVocabulary(game);
+    const std::vector<AbilityPaletteEntry> entries = AbilityPaletteOf(names);
+    const auto pull = std::ranges::find(entries, std::string("lease:grapple.pull"), &AbilityPaletteEntry::Key);
+    ASSERT_NE(pull, entries.end());
+    EXPECT_EQ(pull->Group, "Leases");
+    EXPECT_EQ(pull->Badges, "gameplay \xC2\xB7 simulation");
+    EXPECT_EQ(ReadMemberString(AbilityPaletteOp("lease:grapple.pull"), "lease"), "grapple.pull");
 }
 
 TEST(AbilityPalette, ANewOpGoesWhereItWasAskedForAndALeaseOnlyWhereItIsHeld)
