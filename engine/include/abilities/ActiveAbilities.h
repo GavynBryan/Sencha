@@ -1,9 +1,12 @@
 #pragma once
 
 #include <abilities/AbilityCapacity.h>
+#include <abilities/AbilityCueLog.h>
+#include <abilities/AbilityPresentationState.h>
 #include <abilities/AbilityGrantId.h>
 #include <abilities/AbilityId.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <input/InputActionSource.h>
@@ -13,6 +16,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 
 enum class AbilityEndReason : std::uint8_t
@@ -119,6 +123,15 @@ struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
 static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
               "ActiveAbilities must be trivially copyable to live in ECS chunks");
 
+// Wherever records are, they are presented: on a machine that only receives them,
+// the actor's cue log and what this machine has shown of both come with them.
+template<>
+struct ComponentTraits<ActiveAbilities>
+{
+    using DerivedComponents = std::tuple<AbilityCueLog, AbilityPresentationState>;
+};
+
 #if !defined(SENCHA_CODEGEN)
 #  include <abilities/ActiveAbilities.sencha.h>
+#  include <abilities/ActiveAbilitiesWire.h>
 #endif

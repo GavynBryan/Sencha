@@ -492,6 +492,35 @@ presents each new log entry once, each record's new pulses as one occurrence wit
 sustained leases as its phase changes. A log overrun is counted in
 `Overwritten`, and the cues lost to it are not presented.
 
+## Replication
+
+What presents an ability travels to every machine that sees the actor:
+`ActiveAbilities` and `AbilityCueLog` have codecs (`ActiveAbilitiesWire.h`,
+`AbilityCueLogWire.h`). A record sends its activation key, start order, state,
+phase and its clock, end reason and element, pulse count and last hit; grants,
+leases, owned tags and the trigger stay with the authority. Ids cross by name: an
+ability by `AbilityRegistry::WireKey` (its path's `NameWireKey`), a tag by
+`WireTag`, an entity as a wire entity. Each record is split into runs by how often
+they change, so a pulse resends only its count and hit, and the hit is sent at
+`kAbilityHitPointBits` and `kAbilityHitNormalBits` (about three centimetres and a
+degree). A receiving machine gets the cue log and presentation state with the
+records (`ActiveAbilities` derives both), and presents them with the same
+`AbilityPresentationSystem` and the same first-sight rule.
+
+The loss bounds, each pinned by `test/runtime/AbilityReplicationTests.cpp`:
+
+- a record that began and ended between publishes still presents, through its
+  linger (`LingerTicks`, four publishes at the defaults);
+- a record's last pulses are lost only if every publish of its linger is;
+- a discrete cue is lost only if eight newer ones are logged before a publish
+  that carries it arrives;
+- an older state applied after a newer one presents nothing again, and a log's
+  serial wraps without losing order.
+
+One firing actor costs a peer 344 B/s at the default cadence with its aim
+sweeping, every pulse landing somewhere new (`CueBandwidthPerFiringActorIsMeasured`
+fails above 360).
+
 ## Rollout
 
 Each stage is independently testable and buildable with physics/animation

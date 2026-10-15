@@ -48,4 +48,5 @@ std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry);
 
 #if !defined(SENCHA_CODEGEN)
 #  include <abilities/AbilityCueLog.sencha.h>
+#  include <abilities/AbilityCueLogWire.h>
 #endif

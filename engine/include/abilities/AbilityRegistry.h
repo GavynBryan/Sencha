@@ -37,6 +37,10 @@ public:
     // Moves each time `id` is defined or undefined, so a running activation can
     // tell that the definition it was started from has gone.
     [[nodiscard]] std::uint32_t Revision(AbilityId id) const;
+    // Its name's wire key, which names the same ability on every machine; zero for
+    // an unknown id. A key two names share finds nothing.
+    [[nodiscard]] std::uint32_t WireKey(AbilityId id) const;
+    [[nodiscard]] AbilityId FindByWireKey(std::uint32_t key) const;
     [[nodiscard]] std::size_t Size() const;
 
     // Moves whenever a definition is defined or undefined.
@@ -53,5 +57,6 @@ private:
 
     std::vector<Entry> Abilities;
     std::unordered_map<std::string, AbilityId> IdsByName;
+    std::unordered_map<std::uint32_t, AbilityId> IdsByWireKey;
     std::uint64_t Generation_ = 0;
 };

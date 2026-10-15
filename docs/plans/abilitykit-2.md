@@ -1691,3 +1691,21 @@ Deviations from the plan's wording, each for a stated reason:
   `docs/deferred.md`, "Ending an ability on an authored event".
 - **Stage 8 is complete.** Owner check owed: the Workbench's stage with the Timed
   Movement recipe, and a cue presentation driving `audio.play` in a real shell.
+
+### 17.10 Stage 9 — network
+
+- **9a delivered: presentation travels.** Codecs for `ActiveAbilities` and
+  `AbilityCueLog`; ability ids cross by `NameWireKey` of their path and tags by
+  their wire key, through a shared `WireTag`/`LocalTag` the animation codec now uses
+  too. `ActiveAbilities` derives the cue log and presentation state, so a machine
+  that only receives records presents them. A first-sight bug in 8b's presenter
+  (a log far along its serials compared from zero) is fixed with its regression.
+  Tests (§15.5): records in the client's own names, `ShortActivationPresentsRemotelyThroughLinger`,
+  `AutomaticShotCountArrivesUnderLoss`, `PulseCountLossBoundIsExact` (both sides of
+  the bound), `RingLossBoundIsExact`, `OutOfOrderSnapshotsDoNotDuplicateOrRewind`,
+  `SequenceWrapPresentsInOrder`, `LateJoinerSeesSustainedButNoOldShots`, and
+  `CueBandwidthPerFiringActorIsMeasured` at 344 B/s against the 360 budget.
+- **Deviation: the normal is three quantized axes, not octahedral.** The point is
+  the plan's 6 B (16 bits per axis over the replicated position range); the normal
+  is 8 bits per axis, a byte more than the plan's 2 B, so each is one quantized
+  field with no codec of its own.

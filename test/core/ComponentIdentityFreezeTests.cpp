@@ -172,9 +172,9 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving
-// it is a deliberate act with a reason, never a side effect: the last move gave
-// each held animation request its holder's lease key, what a release matches by.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xE0D05F962FD83B72ULL;
+// it is a deliberate act with a reason, never a side effect: the last move sent
+// abilities' records and cue logs to every machine that presents them.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x74E3F307A70C9C47ULL;
 
 struct EngineVocabulary
 {

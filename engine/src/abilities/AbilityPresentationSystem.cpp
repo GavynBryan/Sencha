@@ -145,6 +145,9 @@ private:
             Once(entry.Cue, { .Actor = actor, .Target = entry.Target, .Point = entry.Point, .Normal = entry.Normal,
                               .Seed = entry.Seq, .Count = 1 });
         }
+        // First sight takes the log as it stands, so serials far along compare from there.
+        if (first)
+            state.CueSeen = static_cast<std::uint16_t>(log.NextSeq - 1);
     }
 
     void Record(EntityId actor, const AbilityRecord& record, AbilityPresentationState::Shown& shown, bool first)

@@ -2,6 +2,8 @@
 
 #include "AnimRigBinder.h"
 
+#include <core/hash/Fnv1a.h>
+
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimRigTimingIdentity.h>
 #include <anim/AnimationClipCache.h>
@@ -22,13 +24,7 @@ namespace
 
 std::uint32_t AnimStableKey(std::string_view text)
 {
-    std::uint32_t hash = 2166136261u;
-    for (const char c : text)
-    {
-        hash ^= static_cast<std::uint8_t>(c);
-        hash *= 16777619u;
-    }
-    return hash;
+    return Fnv1a32(text);
 }
 
 const GameplayTagRegistry* AnimRigBinder::Tags() const

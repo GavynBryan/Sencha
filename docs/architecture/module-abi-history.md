@@ -348,3 +348,12 @@ are new; `CollectAnimEvents` takes the presentation set beside the simulation's.
 contract), `LeaseStep` gains `Probe`, and `VerbDispatcher::LeaseHolds` is new;
 `movement.burst` and `movement.tether` complete. `AbilityTransitionTrigger` gains
 `Complete` and `AbilityConditionKind` gains `TargetLost`.
+
+**Ability replication.** `ActiveAbilities` and `AbilityCueLog` replicate through
+codecs (`ActiveAbilitiesWire.h`, `AbilityCueLogWire.h`, precisions in
+`AbilityWirePrecision.h`), which moves the replication table hash.
+`ActiveAbilities` derives `AbilityCueLog` and `AbilityPresentationState`.
+`AbilityRegistry` gains `WireKey` and `FindByWireKey`; `Fnv1a32` and `NameWireKey`
+join `core/hash/Fnv1a.h`, which the tag registry and `AnimStableKey` now use; and
+`WireTag`/`LocalTag` (`gameplay_tags/GameplayTagWire.h`) are what codecs translate
+tags with.

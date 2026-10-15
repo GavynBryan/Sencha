@@ -1,5 +1,7 @@
 #include <abilities/AbilityRegistry.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <utility>
 
 AbilityRegistry::AbilityRegistry()
@@ -17,6 +19,8 @@ AbilityId AbilityRegistry::Reserve(std::string_view name)
     const AbilityId id{ static_cast<std::uint32_t>(Abilities.size()) };
     Abilities.push_back(Entry{ std::string(name), nullptr, 0 });
     IdsByName.emplace(Abilities.back().Name, id);
+    if (const auto [key, inserted] = IdsByWireKey.emplace(NameWireKey(name), id); !inserted)
+        key->second = AbilityId{};
     return id;
 }
 
@@ -69,4 +73,15 @@ bool AbilityRegistry::IsKnown(AbilityId id) const
 std::size_t AbilityRegistry::Size() const
 {
     return Abilities.size() - 1;
+}
+
+std::uint32_t AbilityRegistry::WireKey(AbilityId id) const
+{
+    return IsKnown(id) ? NameWireKey(Abilities[id.Value].Name) : 0u;
+}
+
+AbilityId AbilityRegistry::FindByWireKey(std::uint32_t key) const
+{
+    const auto it = IdsByWireKey.find(key);
+    return it != IdsByWireKey.end() ? it->second : AbilityId{};
 }

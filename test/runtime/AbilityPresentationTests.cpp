@@ -271,6 +271,15 @@ TEST_F(AbilityPresentation, AnActorSeenForTheFirstTimeShowsOnlyRecentCues)
     EXPECT_EQ(Showings.Calls.size(), 1u) << "and new ones show";
 }
 
+TEST_F(AbilityPresentation, ALogFarAlongItsSerialsPresentsItsNextCue)
+{
+    Grant(kShot);
+    Entities.TryGet<AbilityCueLog>(Actor)->NextSeq = 0x9000;
+    Step();
+    Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    EXPECT_EQ(Showings.Calls.size(), 1u) << "first sight starts from where the log is, not from serial zero";
+}
+
 TEST_F(AbilityPresentation, AGameplayOperationIsNeverPartOfAPresentation)
 {
     const std::vector<std::string> errors = Present(R"({ "cues": [
