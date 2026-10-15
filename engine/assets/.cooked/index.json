@@ -1,19 +1,17 @@
 {
-  "version": 10,
+  "version": 9,
   "sources": [
     {
       "source": "ui/fonts/Inter-Regular.ttf",
-      "id": "0bddd1697d473b3b",
       "input_fingerprint": "c694bb143377f2be",
       "cook_identity": "9ef2365382486487",
       "size": "411640",
-      "mtime": "-4645575662228810138",
+      "mtime": "-4647983522765763054",
       "meta_size": "0",
       "meta_mtime": "0",
       "artifacts": [
         {
           "path": "asset://ui/fonts/Inter-Regular.ttf",
-          "id": "0bddd1697d473b3b",
           "file": ".cooked/ui/fonts/Inter-Regular.ttf.sfont",
           "type": "Font",
           "hash": "50409bd6468ed112"
@@ -22,24 +20,22 @@
     },
     {
       "source": "ui/options.rml",
-      "id": "4e04b212c46b917f",
       "input_fingerprint": "0d2a3b3e37af3303",
       "cook_identity": "4765341e77032c66",
       "size": "2089",
-      "mtime": "-4645575662228810138",
+      "mtime": "-4647983522765280915",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "ui/pause.rcss",
           "size": "5181",
-          "mtime": "-4645575662228810138"
+          "mtime": "-4647983522765233262"
         }
       ],
       "artifacts": [
         {
           "path": "asset://ui/options.rml",
-          "id": "4e04b212c46b917f",
           "file": ".cooked/ui/options.rml.sui",
           "type": "UiPackage",
           "hash": "c9eed56b0e77b0f4"
@@ -48,24 +44,22 @@
     },
     {
       "source": "ui/pause.rml",
-      "id": "4f551472817cd9dd",
       "input_fingerprint": "8b194a6c8321dfe4",
       "cook_identity": "4765341e77032c66",
       "size": "1252",
-      "mtime": "-4645575662228810138",
+      "mtime": "-4647983522765210207",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "ui/pause.rcss",
           "size": "5181",
-          "mtime": "-4645575662228810138"
+          "mtime": "-4647983522765233262"
         }
       ],
       "artifacts": [
         {
           "path": "asset://ui/pause.rml",
-          "id": "4f551472817cd9dd",
           "file": ".cooked/ui/pause.rml.sui",
           "type": "UiPackage",
           "hash": "29cff0444238b024"
