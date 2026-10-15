@@ -108,6 +108,10 @@ surface and proposes unshelled spaces for them. It is a heuristic: look at
    author=claude`, then tell the designer the file, what it proposes and what
    to look at.
 
+Leave what the designer should look at, or what you could not decide, as a
+note: `note.add text='...' subject=@Name` (or `at=[...]`); `notes.list` shows
+the open ones, including theirs to you.
+
 A refused step fails the draft. Fix the cause, `draft.resume`, and carry on;
 the refused step is not kept. `draft.diff` shows the steps and what changed.
 

@@ -1203,6 +1203,12 @@ and world states, and annotate levels that were built by hand.
   has its own. Narrow ways between rooms separate them; a way at least twice
   `core_depth` across joins them into one room. On `traversal3`, `room_2` is
   proposed as one room in a draft and accepted.
+- Notes are the `note` component of section 2.1 (text up to 255 characters,
+  author, open or resolved), declared editor-only so the cook strips it. A
+  note about an entity is parented to it and follows it. `note.add`,
+  `note.resolve` and `notes.list` are ordinary operations, so a note can be
+  part of a proposal. Kyusu shows a note as an entity with its component;
+  nothing draws notes in the viewport yet.
 
 ### Not on the critical path
 

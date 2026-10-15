@@ -107,6 +107,7 @@ sencha_generate_component_metadata(level_authoring
     HEADERS
         src/document/BrushComponents.h
         src/document/EntityNameComponent.h
+        src/document/NoteComponent.h
         src/document/SpaceComponents.h
 )
 

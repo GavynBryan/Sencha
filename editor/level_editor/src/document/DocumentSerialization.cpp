@@ -4,6 +4,7 @@
 
 #include "EditorScene.h"
 #include "EntityNameComponent.h"
+#include "NoteComponent.h"
 #include "SpaceComponents.h"
 
 #include <core/serialization/Archive.h>
@@ -90,6 +91,7 @@ void RegisterDocumentSerializers()
     RegisterEditorOnlyComponent<Space>(serializers);
     RegisterEditorOnlyComponent<Shell>(serializers);
     RegisterEditorOnlyComponent<Opening>(serializers);
+    RegisterEditorOnlyComponent<Note>(serializers);
 }
 
 namespace
