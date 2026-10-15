@@ -677,10 +677,13 @@ All of it is pure functions over plain values, tested headless.
 - **Corner reached.** An on-route agent reaches a corner when either holds:
   - the planar distance is at most `nav.agent.corner_radius` and the vertical
     gap is within the profile height; or
-  - it has crossed the plane through the corner perpendicular to the next
-    segment (`dot(p - c, next) >= 0`), **and** its planar distance to that next
+  - it has crossed the plane through the corner that bisects the turn there
+    (its normal is the sum of the incoming and outgoing directions, or the
+    incoming direction for a U-turn), **and** its planar distance to the next
     segment is within `nav.agent.deviation`, with the vertical gap within the
-    profile height.
+    profile height. A plane perpendicular to the next segment alone would contain
+    the incoming segment at a right-angle turn, so an agent short of the corner
+    would already count as past it.
 
   The plane test handles overshoot, and speeds whose step exceeds the radius,
   without orbiting. The proximity condition stops a knockback or teleport that

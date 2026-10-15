@@ -458,3 +458,9 @@ writes.
 
 **Navigation.** `kNavMaxTraversalKinds` names the per-zone cap on distinct
 traversal kinds (64, unchanged).
+
+**Navigation agents.** `NavAgent` (authored: build profile name and policy
+asset), with derived `NavAgentRequest` and `NavAgentProgress`, joins
+`NavigationComponents`. `RequestNavigation`, `CancelNavigation` and
+`ReadNavigation` (`navigation/NavAgentRequests.h`) are the request API;
+`navigation/NavRouteFollowing.h` holds the path-following geometry.
