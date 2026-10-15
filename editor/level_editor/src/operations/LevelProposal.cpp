@@ -1,9 +1,14 @@
 #include "LevelProposal.h"
 
 #include "document/EntityChangeSet.h"
+#include "operations/OperationReference.h"
 
+#include <core/hash/ContentHash.h>
+
+#include <algorithm>
 #include <charconv>
 #include <format>
+#include <span>
 
 namespace
 {
@@ -26,7 +31,16 @@ namespace
     }
 }
 
-LevelProposal ProposalOf(const LevelDraft& draft, std::string author)
+std::uint64_t ContractDigest(const EditorOperationCatalog& catalog, std::string_view operation)
+{
+    const EditorOperationDefinition* definition = catalog.Get(catalog.Find(operation));
+    if (definition == nullptr)
+        return 0;
+    const std::string contract = OperationContract(*definition);
+    return HashBytes64(std::as_bytes(std::span(contract)));
+}
+
+LevelProposal ProposalOf(const LevelDraft& draft, std::string author, const EditorOperationCatalog& catalog)
 {
     LevelProposal proposal;
     proposal.Label = draft.Label;
@@ -40,6 +54,10 @@ LevelProposal ProposalOf(const LevelDraft& draft, std::string author)
     for (const EntityRead& read : draft.Changes.Reads)
         proposal.BaseDigests.emplace_back(read.Id, read.Digest);
     proposal.Steps = draft.Steps;
+    for (const LevelDraftStep& step : draft.Steps)
+        if (std::ranges::find(proposal.Contracts, step.Operation, &std::pair<std::string, std::uint64_t>::first)
+            == proposal.Contracts.end())
+            proposal.Contracts.emplace_back(step.Operation, ContractDigest(catalog, step.Operation));
     return proposal;
 }
 
@@ -48,6 +66,9 @@ JsonValue LevelProposalToJson(const LevelProposal& proposal)
     JsonValue::Object digests;
     for (const auto& [id, digest] : proposal.BaseDigests)
         digests.emplace_back(PersistentEntityIdToString(id), JsonValue(std::format("{:016x}", digest)));
+    JsonValue::Object contracts;
+    for (const auto& [operation, digest] : proposal.Contracts)
+        contracts.emplace_back(operation, JsonValue(std::format("{:016x}", digest)));
     JsonValue::Array steps;
     for (const LevelDraftStep& step : proposal.Steps)
         steps.push_back(JsonValue(JsonValue::Object{
@@ -65,6 +86,7 @@ JsonValue LevelProposalToJson(const LevelProposal& proposal)
             { "document", JsonValue(proposal.BasePath) },
             { "digests", JsonValue(std::move(digests)) },
         }) },
+        { "contracts", JsonValue(std::move(contracts)) },
         { "operations", JsonValue(std::move(steps)) },
     });
 }
@@ -103,6 +125,15 @@ std::optional<LevelProposal> LevelProposalFromJson(const JsonValue& json, std::s
             if (!id || !digest)
                 return fail("base digest '" + key + "' is malformed");
             proposal.BaseDigests.emplace_back(*id, *digest);
+        }
+
+    if (const JsonValue* contracts = json.Find("contracts"); contracts != nullptr && contracts->IsObject())
+        for (const auto& [operation, value] : contracts->AsObject())
+        {
+            const std::optional<std::uint64_t> digest = value.IsString() ? DigestFromText(value.AsString()) : std::nullopt;
+            if (!digest)
+                return fail("contract '" + operation + "' is malformed");
+            proposal.Contracts.emplace_back(operation, *digest);
         }
 
     const JsonValue* operations = json.Find("operations");

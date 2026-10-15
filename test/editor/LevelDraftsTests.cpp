@@ -276,6 +276,27 @@ namespace
         EXPECT_EQ(opened.Find("state")->AsString(), "open");
     }
 
+    TEST_F(LevelProposalTest, OpeningNamesTheOperationsWhoseContractChangedSince)
+    {
+        Ok("draft.begin", R"({"label": "Rename the hall"})");
+        Ok("entity.rename", RenameHall("Atrium"));
+        Ok("draft.save", PathArgument("hall.sproposal"));
+        Ok("draft.discard");
+        EXPECT_TRUE(Ok("draft.open", PathArgument("hall.sproposal")).Find("changed_operations")->AsArray().empty());
+        Ok("draft.discard");
+
+        std::string error;
+        std::optional<LevelProposal> proposal = LevelProposalFromJson(*JsonParseFile(File("hall.sproposal")), error);
+        ASSERT_TRUE(proposal.has_value()) << error;
+        ASSERT_EQ(proposal->Contracts.size(), 1u);
+        proposal->Contracts.front().second ^= 1;
+        std::ofstream(File("hall.sproposal")) << JsonStringify(LevelProposalToJson(*proposal));
+        const JsonValue opened = Ok("draft.open", PathArgument("hall.sproposal"));
+        ASSERT_EQ(opened.Find("changed_operations")->AsArray().size(), 1u);
+        EXPECT_EQ(opened.Find("changed_operations")->AsArray().front().AsString(), "entity.rename");
+        EXPECT_EQ(opened.Find("state")->AsString(), "open") << "a changed contract warns; the replay still runs";
+    }
+
     TEST_F(LevelProposalTest, AProposalForAnotherLevelIsRefused)
     {
         LevelProposal proposal;
@@ -295,6 +316,8 @@ namespace
         const JsonValue opened = Ok("draft.open", PathArgument("gone.sproposal"));
         EXPECT_EQ(opened.Find("state")->AsString(), "failed");
         EXPECT_FALSE(opened.Find("failure")->AsString().empty());
+        EXPECT_TRUE(opened.Find("changed_operations")->AsArray().empty())
+            << "a file that records no contracts warns of none";
     }
 
     TEST(LevelProposalJson, OnlyAVersionOneProposalReads)

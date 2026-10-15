@@ -877,8 +877,7 @@ of the real model, with spaces included from the start.
   `plan.section`; `<project>/.proposals/` (D8) is the convention clients and
   the tray follow. `draft.open` refuses a proposal for another level, names the
   entities changed since it was written (`moved_since`), and leaves the draft
-  `failed` at a step that no longer applies. The operation registry version
-  (R8) is not recorded yet; that is measured in M2.
+  `failed` at a step that no longer applies. R8 is handled in M2 (below).
 - The closed `Solid | Volume` distinction is a `volume` tag component on the
   brush entity rather than a role field: a two-valued role is a marker, and
   markers are tags. Nothing about the `brush` component's format changes.
@@ -1115,6 +1114,13 @@ conflict instead.
   new parent), the change set keeps their digests, and accept refuses with
   `draft.conflict` when one moved. A proposal file lists them among its base
   digests, so `moved_since` names them too; the file's shape is unchanged.
+- R8: a proposal file records a digest of each operation's contract (its
+  reference entry: description, parameters, answer keys) under `contracts`,
+  rather than one registry version, so an unrelated operation added since
+  does not taint every proposal. `draft.open` names the operations whose
+  contract changed in `changed_operations` and replays anyway. A file
+  without `contracts` opens as before; the key is optional and the version
+  stays 1.
 - M2 acceptance, headless (`AimedProposalTests`): the camera faces a wall,
   `view.context`'s aim proposes a doorway there in a draft, a designer edit to
   another room leaves accept succeeding, and a designer edit to that wall

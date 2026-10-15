@@ -91,17 +91,21 @@ std::string OperationReference(const EditorOperationCatalog& catalog)
         std::ranges::sort(definitions, {}, &EditorOperationDefinition::Name);
         out += "\n## " + (category.empty() ? std::string("Other") : category) + "\n\n";
         for (const EditorOperationDefinition* definition : definitions)
-        {
-            out += "- `" + definition->Name + "` "
-                + (definition->Kind == EditorOperationKind::Mutation ? "mutation" : "query") + " — "
-                + definition->Description + "\n";
-            AppendParameters(out, definition->Parameters);
-            std::string answers;
-            for (const DataFieldSchema& field : definition->Result.Children)
-                answers += (answers.empty() ? "" : ", ") + field.Key;
-            if (!answers.empty())
-                out += "  - answers: " + answers + "\n";
-        }
+            out += OperationContract(*definition);
     }
+    return out;
+}
+
+std::string OperationContract(const EditorOperationDefinition& definition)
+{
+    std::string out = "- `" + definition.Name + "` "
+        + (definition.Kind == EditorOperationKind::Mutation ? "mutation" : "query") + " — " + definition.Description
+        + "\n";
+    AppendParameters(out, definition.Parameters);
+    std::string answers;
+    for (const DataFieldSchema& field : definition.Result.Children)
+        answers += (answers.empty() ? "" : ", ") + field.Key;
+    if (!answers.empty())
+        out += "  - answers: " + answers + "\n";
     return out;
 }
