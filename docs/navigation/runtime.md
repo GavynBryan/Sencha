@@ -150,6 +150,22 @@ carries the agent's policy and transient constraints:
 A heuristic search is used only when it is admissible: a usable link cheaper than
 walking its own span (a teleport) makes the search fall back to Dijkstra.
 
+## Tooling access
+
+`navigation/tooling/NavMeshSnapshot.h` hands a tool one profile's walkable
+surface as plain data: polygon outlines with their `NavRegion` and area tag,
+portals (the stretch of edge two polygons share, clamped at tile seams as the
+search clamps it), and borders (edges where walkable surface ends). Polygons
+come in tile-coordinate order, so two snapshots of one mesh are identical.
+
+It is for tools that draw or measure the mesh, such as Kyusu's level analysis
+and the planned navigation overlay. It allocates in proportion to the mesh,
+holds no state, and adds nothing to `.snav`. It is compiled only with
+`SENCHA_ENABLE_COOK`, and it sits outside the module ABI fingerprint, which
+covers only the top level of `navigation/`. Questions about travel (reachable,
+cost, route) stay with the queries: a snapshot's regions lead back into them,
+and no tool searches the snapshot's graph itself.
+
 ## Link state
 
 `NavLinkState { Link, Enabled, CostScale }` is ordinary gameplay data on whatever

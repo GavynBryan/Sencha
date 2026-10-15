@@ -146,6 +146,10 @@ if(NOT SENCHA_ENABLE_COOK)
         "[/\\\\]include[/\\\\]assets[/\\\\]cook[/\\\\]"
         "[/\\\\]src[/\\\\]assets[/\\\\]hotreload[/\\\\]"
         "[/\\\\]include[/\\\\]assets[/\\\\]hotreload[/\\\\]"
+        # Tools' access to a navigation mesh's polygons: the editor reads it,
+        # a shipped runtime has no use for it.
+        "[/\\\\]src[/\\\\]navigation[/\\\\]tooling[/\\\\]"
+        "[/\\\\]include[/\\\\]navigation[/\\\\]tooling[/\\\\]"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")

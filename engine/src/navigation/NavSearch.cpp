@@ -10,21 +10,10 @@ namespace
     // Slightly under the true bound, so rounding never makes it inadmissible.
     constexpr float kHeuristicScale = 0.999f;
 
-    // Midpoint of the edge a polygon link crosses, clamped to the part the
-    // neighbour shares at a tile border.
-    void SharedEdgeMidpoint(const dtMeshTile* tile, const dtPoly* poly, const dtLink& link,
-                            float* mid)
+    void SharedEdgeMidpoint(const dtMeshTile* tile, const dtPoly* poly, const dtLink& link, float* mid)
     {
-        const float* a = &tile->verts[poly->verts[link.edge] * 3];
-        const float* b = &tile->verts[poly->verts[(link.edge + 1) % poly->vertCount] * 3];
-        float from = 0.0f;
-        float to = 1.0f;
-        if (link.side != 0xff && (link.bmin != 0 || link.bmax != 255))
-        {
-            from = static_cast<float>(link.bmin) / 255.0f;
-            to = static_cast<float>(link.bmax) / 255.0f;
-        }
-        dtVlerp(mid, a, b, (from + to) * 0.5f);
+        const NavEdgeSpan span = SharedEdgeSpan(tile, poly, link);
+        dtVlerp(mid, span.From, span.To, (span.Start + span.End) * 0.5f);
     }
 }
 
@@ -104,7 +93,7 @@ bool NavSearch::ReportRegion(const NavSearchNode& node)
     region.Region = NavRegion{ Plan.Zone->Zone, Plan.Zone->Generation, Plan.ProfileIndex, 0,
                                node.Polygon };
     region.EntryCost = node.Cost;
-    region.Area = area < Plan.Zone->AreaTags.size() ? Plan.Zone->AreaTags[area] : GameplayTagId{};
+    region.Area = AreaTagOf(*Plan.Zone, area);
     return FloodOut->Push(region);
 }
 

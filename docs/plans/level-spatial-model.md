@@ -1158,6 +1158,17 @@ and world states, and annotate levels that were built by hand.
 - A crossing without a dock is reported, and `dock.place_at` proposes one.
 - Proposed spaces for the unannotated `room_2` are accepted through a draft.
 
+**Progress notes (in flight):**
+- The engine boundary (owner approved 2026-10-14): `SnapshotNavMesh`
+  (`engine/include/navigation/tooling/NavMeshSnapshot.h`) gives one profile's
+  polygons, portals and borders as plain data. It is compiled only with
+  `SENCHA_ENABLE_COOK` and sits outside the ABI fingerprint, and nothing at
+  runtime calls it. Only `spatial.crossing_without_dock` and the space
+  proposals need it. The space graph maps `NavCollectReachable`'s regions to
+  spaces, and opening crossings use `NavRaycast`, so reachability is still
+  searched only by the navigation module. The tile-seam clamp and the
+  area-tag lookup are shared with the search rather than copied.
+
 ### Not on the critical path
 
 Recorded in `docs/deferred.md` with triggers:
