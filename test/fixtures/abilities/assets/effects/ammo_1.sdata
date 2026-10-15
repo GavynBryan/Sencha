@@ -1,0 +1,9 @@
+{
+  "id": "6a51d2e0b3c48f17",
+  "type": "effect.definition",
+  "version": 1,
+  "data": {
+    "duration": "instant",
+    "modifiers": [ { "key": "m_ammo", "attribute": "Ammo", "op": "add", "magnitude": -1 } ]
+  }
+}

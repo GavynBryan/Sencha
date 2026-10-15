@@ -61,7 +61,9 @@ public:
     bool TakeHeldInput(const InputEvent& event);
 
     // A sheet's rows presented, and how many; nothing while a field of it is held.
-    std::optional<std::size_t> Present(SheetId sheet, std::span<const PropertySection> sections, bool everything);
+    // The row of the property `focus` is marked and scrolled to when it changes.
+    std::optional<std::size_t> Present(SheetId sheet, std::span<const PropertySection> sections, bool everything,
+                                       std::string_view focus = {});
     // What a sheet showed has gone; anything held, typed or dragged in it
     // applied to that, and ends unapplied.
     void MovedOn(SheetId sheet);
@@ -92,6 +94,7 @@ private:
     SheetPanelsHost Host;
     UiScreenHandle Screen;
     std::array<PropertySheet, 2> Sheets;
+    std::array<std::optional<std::size_t>, 2> ScrolledTo;
     NumberScrub Scrub;
 
     UiModelPropertyId TypingId;

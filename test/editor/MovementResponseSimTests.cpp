@@ -16,6 +16,7 @@
 #include <movement/MovementProfileRuntime.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementTags.h>
+#include <time/ActorTime.h>
 
 #include <core/json/JsonParser.h>
 
@@ -90,6 +91,8 @@ namespace
             WorldState.RegisterComponent<MotionAxisOverride>();
             WorldState.RegisterComponent<MotionImpulse>();
             WorldState.RegisterComponent<MotionRequest>();
+            WorldState.RegisterComponent<ActorTime>();
+            WorldState.RegisterComponent<ActorTimeDilated>();
             WorldState.RegisterComponent<CharacterMovement>();
 
             Tags = &WorldState.AddResource<GameplayTagRegistry>();

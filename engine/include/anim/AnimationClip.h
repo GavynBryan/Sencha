@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredClassification.h>
 #include <authored/VerbBinding.h>
 
 #include <cstdint>
@@ -48,18 +49,6 @@ struct AnimationJointTrack
     std::vector<float> Values;
 };
 
-// Where an event may be produced. Neither scope is an authority claim: a
-// mutating verb still checks IsSimulationAuthority and its instigator.
-enum class AnimEventScope : uint8_t
-{
-    // On whichever machine presents the pose.
-    Cosmetic = 0,
-    // Only in a World with simulation authority, never on a client.
-    Gameplay = 1,
-};
-
-[[nodiscard]] std::string_view AnimEventScopeName(AnimEventScope scope);
-
 // Anything larger belongs in gameplay state, a fact, or a binding constant.
 inline constexpr std::size_t kAnimEventMaxInputs = 4;
 inline constexpr std::size_t kAnimClipMaxEvents = 256;
@@ -76,7 +65,7 @@ struct AnimationClipEvent
     float Time = 0.0f;
     // Resolved per World through the rig's bindings.
     std::string Binding;
-    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    AuthoredScope Scope = AuthoredScope::Cosmetic;
     // Cosmetic only; absent uses the playing behavior's threshold.
     std::optional<float> MinWeight;
     // By input name. Constants and tags only: asset and entity references belong

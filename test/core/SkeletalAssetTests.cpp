@@ -232,7 +232,7 @@ namespace
         release.Key = 2;
         release.Time = 0.5f;
         release.Binding = "ability.release";
-        release.Scope = AnimEventScope::Gameplay;
+        release.Scope = AuthoredScope::Gameplay;
         clip.Events = { step, release };
         return clip;
     }
@@ -253,7 +253,7 @@ TEST(AnimationClipSerializer, EventsRoundTrip)
     EXPECT_EQ(step.Name, "Left foot");
     EXPECT_FLOAT_EQ(step.Time, 0.25f);
     EXPECT_EQ(step.Binding, "anim.footstep");
-    EXPECT_EQ(step.Scope, AnimEventScope::Cosmetic);
+    EXPECT_EQ(step.Scope, AuthoredScope::Cosmetic);
     ASSERT_TRUE(step.MinWeight.has_value());
     EXPECT_FLOAT_EQ(*step.MinWeight, 0.4f);
     ASSERT_EQ(step.Inputs.size(), 2u);
@@ -267,7 +267,7 @@ TEST(AnimationClipSerializer, EventsRoundTrip)
 
     const AnimationClipEvent& release = loaded.Events[1];
     EXPECT_EQ(release.Key, 2u);
-    EXPECT_EQ(release.Scope, AnimEventScope::Gameplay);
+    EXPECT_EQ(release.Scope, AuthoredScope::Gameplay);
     EXPECT_FALSE(release.MinWeight.has_value());
     EXPECT_TRUE(release.Inputs.empty());
 }

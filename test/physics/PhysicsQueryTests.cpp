@@ -169,3 +169,37 @@ TEST(PhysicsQueries, FilteredRaycastPassesThroughIgnoredEntities)
 
     EXPECT_FALSE(hit.Hit);
 }
+
+// A trace from inside a body does not report the body it starts in when told to
+// pass through it, and does without the filter.
+TEST(PhysicsQueries, AnIgnoredEntityIsNotHit)
+{
+    PhysicsWorld world;
+    AddBoxAtOrigin(world);
+    PhysicsQueries queries(world);
+
+    BodyDesc floor;
+    floor.Shape = CollisionShape::MakeBox(Vec3d(5.0f, 0.5f, 5.0f));
+    floor.Position = Vec3d(0.0f, -5.0f, 0.0f);
+    floor.Motion = BodyMotion::Static;
+    floor.Layer = CollisionLayer::Static;
+    const EntityId floorEntity{ 10, 1 };
+    floor.UserData = PackEntity(floorEntity);
+    (void)world.AddBody(floor);
+
+    const EntityId ignored[] = { kBoxEntity };
+    EXPECT_EQ(queries.Raycast(kAbove, kDown, 20.0f).Entity, kBoxEntity);
+    const RaycastHit passed = queries.Raycast(kAbove, kDown, 20.0f, PhysicsQueryFilter{ .IgnoreEntities = ignored });
+    ASSERT_TRUE(passed.Hit);
+    EXPECT_EQ(passed.Entity, floorEntity);
+
+    std::vector<EntityId> hits;
+    queries.OverlapShape(CollisionShape::MakeSphere(2.0f), Vec3d::Zero(), Quatf::Identity(), hits,
+                         PhysicsQueryFilter{ .IgnoreEntities = ignored });
+    EXPECT_TRUE(hits.empty());
+
+    const ShapeSweepHit swept = queries.SweepShape(CollisionShape::MakeSphere(0.25f), kAbove, Quatf::Identity(), kDown,
+                                                   20.0f, PhysicsQueryFilter{ .IgnoreEntities = ignored });
+    ASSERT_TRUE(swept.Hit);
+    EXPECT_EQ(swept.Entity, floorEntity);
+}

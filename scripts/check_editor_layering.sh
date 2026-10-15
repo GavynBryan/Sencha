@@ -96,7 +96,7 @@ fi
 # E. No workspace tree includes another's headers. An include resolves against
 # its own tree or editor_common first; one that only another tree can satisfy
 # is a reach across workspaces.
-WORKSPACES="level_editor material_editor ui_preview data_editor animation_editor project_browser"
+WORKSPACES="level_editor material_editor ui_preview data_editor animation_editor ability_editor project_browser"
 for ws in $WORKSPACES; do
     own="$ROOT/editor/$ws/src"
     [ -d "$own" ] || continue

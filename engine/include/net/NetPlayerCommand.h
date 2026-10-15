@@ -58,6 +58,9 @@ struct NetCommandRecord
     float Pitch = 0.0f;
     std::uint8_t ActionCount = 0;
     std::array<InputActionValue, kNetMaxCommandActions> Actions{};
+    // The tick's action transitions in order; every edge names an action below
+    // ActionCount.
+    InputActionEdgeList Edges;
 
     [[nodiscard]] std::span<const InputActionValue> Values() const
     {

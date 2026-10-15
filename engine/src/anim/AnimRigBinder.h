@@ -94,6 +94,9 @@ struct AnimRigBinder
     // A mix plays its heaviest sample's marks, so its samples share one gameplay track:
     // which sample is heaviest must never decide what gameplay hears.
     void ValidateBlendspaceGameplayEvents();
+    // After events: a presentation layer is request-keyed, and nothing a presentation
+    // request can make it play moves a body or fires a gameplay event.
+    void ValidatePresentationLayers();
 };
 
 // How two flows would read one request anchor differently, or empty when they agree.

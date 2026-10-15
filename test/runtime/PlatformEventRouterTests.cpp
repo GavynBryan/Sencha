@@ -71,10 +71,14 @@ TEST(PlatformEventRouter, AKeyReleasedWhileASurfaceClaimsDoesNotStickDown)
 
     EXPECT_FALSE(frame.IsKeyDown(SDL_SCANCODE_W))
         << "the release edge must survive a surface claiming the event";
-    EXPECT_NE(std::find(frame.KeysReleased.begin(), frame.KeysReleased.end(),
-                        static_cast<uint32_t>(SDL_SCANCODE_W)),
-              frame.KeysReleased.end())
-        << "and must be reported as a release edge, not merely cleared";
+    const auto log = frame.TransitionLog();
+    EXPECT_NE(std::find_if(log.begin(), log.end(),
+                           [](const InputTransition& t) {
+                               return t.Control == InputControl{ InputControlSource::Key, SDL_SCANCODE_W } && !t.Down
+                                   && !t.Synthetic;
+                           }),
+              log.end())
+        << "and must be reported as a release the player made, not merely cleared";
 }
 
 TEST(PlatformEventRouter, AClaimHidesTheEventFromLaterConsumersOnly)

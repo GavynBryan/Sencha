@@ -277,3 +277,167 @@ generation). Its layout is unchanged.
 **Engine vocabulary.** `InstallEngineVocabulary(World&)` declares the engine's
 verbs and the `perception.*` queries; a host that called `DeclareEngineVerbs`
 alone sees no perception queries.
+
+## v28
+
+AbilityKit 2 (`docs/plans/abilitykit-2.md`); this entry gathers every stage of
+that epic, which bumped the version once.
+
+**Effects.** `ApplyEffect` takes the `FixedSimTime` it is applied on and an
+optional `LeaseOwner`; `TickEffects` drops its delta (one call is one tick's
+lifetime pass); `RemoveEffect` and `RemoveEffectsOwnedBy` are new.
+`ActiveEffect` counts whole ticks and records its owner, application sequence and
+granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
+`EffectRegistry::Register` refuses a definition granting more than
+`kEffectGrantedTagCapacity` tags.
+
+**Abilities.** `TryActivateAbility` and `ProcessAbilityActivations` take a
+`FixedSimTime`.
+
+**Physics queries.** `SweepShape` and `OverlapShape` gain filtered overloads
+taking `PhysicsQueryFilter`, as `Raycast` did in v27.
+
+**Input edges.** `InputFrame` logs button transitions in order
+(`TransitionLog`, `SetButton`, `ClearTransitions`) in place of its six edge vectors;
+`ConsumeKeyPressed` is gone. `InputActionFlags` gains `Interrupted`;
+`InputActionView` and `InputActionTickRecord` carry the pass's ordered
+`InputActionEdge` list. `InputEdgeLatch` is replaced by `InputMotionLatch` and
+`InputEdgeAttribution`, and `AccumulateInputFrame` by `AttributeInputFrame`.
+`NetCommandRecord` and `PawnCommandTick` carry edges; net protocol 7.
+
+**Content vocabulary.** `DataFieldKind::StableKey` is appended (with
+`IsValidStableKey`). `gameplay.attribute_declarations` and `effect.definition` are
+engine data subtypes; `EffectRegistry::Define` is new.
+`assets/runtime/ContentTagDeclarations.h` is now `ContentVocabulary.h`, adding
+`DeclareContentVocabulary`, `RefreshContentVocabulary` and
+`ReleaseContentVocabulary`.
+
+**Catalogs.** `VerbDefinition` gains `Kind` (`VerbKind::Instant` or `Lease`),
+`Scope` and `Prediction` (`authored/AuthoredClassification.h`), all part of the
+contract. `VerbInvocation` carries `Owner` (`ecs/LeaseOwner.h`, which replaces
+`EffectOwner`) and `Step`; `VerbInvocationSource` carries `Scope`.
+`VerbAdmission` appends `ScopeMismatch` and `KindMismatch`, and `VerbTraceEvent`
+appends `Released`. `VerbDispatcher::AcquireLease` and `ReleaseLease` are new.
+`AnimEventScope` is now `AuthoredScope`, with the same values.
+`InstallEngineVocabulary` also declares every engine domain's verbs and leases
+and the physics queries.
+`ApplyEffect` takes a scale, recorded on `ActiveEffect`. `AnimRequest::Owner` and
+`AnimRequestDesc::Owner` are `LeaseOwner`s, which moves the replication table
+hash (the record's local size; the wire record is unchanged). `Engine`'s members
+changed.
+
+**Phased abilities.** The single-shot kit is gone: `AbilitySet`,
+`AbilityActivation`, `AbilityActivationQueue`, `AbilityActivationSystem`,
+`AbilityAnimation`, `AbilityAnimationLeases`, `TryActivateAbility`,
+`ProcessAbilityActivations` and `AbilityRegistry::Register`. Abilities are the
+`ability.definition` data subtype (`AbilityDeclaration`, `CompileAbilityDeclaration`,
+`ResolveAbilityDeclaration`, `AbilityDefinition`); `AbilityRegistry` names them by
+asset path (`Reserve`, `Define`, `Undefine`, `Revision`, `Generation`). New
+components `AbilityGrants`, `ActiveAbilities`, `AbilityLocals` (kit),
+`ActorTime` (time) and `AimOrigin` (controller); new resources
+`AbilityGrantEntries`, `AbilityRequestQueue`, `AbilityTrace` and
+`InputActionVocabulary`. `AbilitySystem` and `ActorTimeSystem` replace the
+activation system, and `RegisterAbilityKitSystems` takes an `AbilityHost` and is
+called by the engine for every host, not by games. `ability.activate`,
+`ability.cancel`, `ability.grant` and `ability.revoke` join the engine vocabulary.
+`VerbTraceRing` is built on `core/containers/BoundedRing.h`.
+`CompileAuthoredConstant` and `ParseVerbBindingArgument` are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
+`AbilitySet`. `EffectDeclaration` gains `GrantedAbilities`; `AbilityEffectGrants`,
+`DeclareEffectGrants`, `ParseAbilityGrantEntries` and `AbilityGrantEntriesSchema`
+are new.
+
+**Actor time.** `ActorTimeLeases` (time) with `AcquireActorTimeLease`,
+`ReleaseActorTimeLeases`, `PruneActorTimeHistory`, `ActorScaleAt` and
+`ActorScaleLimits`; `ActorTicksAdvanced`, `ActorTicksSince`; `ActorTimeSystem` takes a
+console and `AdvanceActorTime` a tick. The `time.scale` lease joins the engine
+vocabulary. `EffectDefinition` and `ActiveEffect` gain a `TimeDomain`, and
+`EffectDefinition` a `TimeScale`. `ActorTimeDilated` (time) is new, `CharacterMovement` derives
+`ActorTime`, and `StepScaledCharacterTick` and `DilatedCharacterStepSystem` are new;
+the bulk movement queries and the character drive exclude dilated characters.
+`AnimPlayback` gains `TimeScale`, `RetimedTick` and `RetimedSeconds`, with
+`RetimeAnimPlayback` and `RestartAnimPlayback`; `ActorScaleOnTick` and
+`ActorScaleValue` (time) are new; a root-motion sample's velocity is per second of
+actor time. `AuthoredPredictionName`, `EffectiveAbilityBinding` and `abilities/AbilityValueNames.h`
+(the port, local-type and hit-field names) are new. `EngineVocabularyBindings` (`app/EngineVocabularyBindings.h`) is new and holds
+the engine's domain operations and their bindings, the perception query bindings
+among them, in place of `Engine`'s own members;
+`AbilityEndReasonName` and `AbilityRefusalName` are defined.
+
+**Held motion.** `movement/components/HeldMotion.h` (`MotionBursts`, `TetherSession`,
+`LocomotionModeLease`) joins `CharacterMovement`'s derived set, so every character's
+archetype gains them; `LocomotionModeId` moved to `movement/LocomotionModeId.h`.
+`StepHeldMotion`, `HeldMotionSystem` and the `movement.burst`, `movement.tether` and
+`movement.mode` leases (`MovementVerbs.h`) are new, and the replay kernel resumes the
+burst and tether slots.
+
+**Ability presentation.** `AbilityCueLog` (`sencha.ability_cue_log`) and
+`AbilityPresentationState` (`sencha.ability_presentation_state`) join the
+`AbilityGrants` derived set; `AbilityRecord` gains `LastPoint`, `LastNormal` and
+`LastTarget`, and `AbilityOp` gains `Pulsed`. The `cue.presentation` data type
+(`CuePresentationData.h`), `CuePresentationLibrary`, `AbilityPresentationSystem` and
+`AbilityHost::Presents` are new, as are the `audio.play` verb and `audio.loop` lease
+(`audio/AudioVerbs.h`), which join the engine vocabulary.
+
+**Presentation layers.** `AnimRigLayer` and `AnimBoundLayer` gain `Presentation`;
+`AnimPresentationRequests` (`sencha.anim_presentation_requests`) joins
+`AnimationComponents`, composed under the new `AnimRigPart::Presentation`;
+`AnimLayerRequests` and the `anim.present` verb (`AnimRequestOperations::Present`)
+are new; `CollectAnimEvents` takes the presentation set beside the simulation's.
+
+**Completion and lost targets.** `VerbDefinition` gains `Completes` (part of the
+contract), `LeaseStep` gains `Probe`, and `VerbDispatcher::LeaseHolds` is new;
+`movement.burst` and `movement.tether` complete. `AbilityTransitionTrigger` gains
+`Complete` and `AbilityConditionKind` gains `TargetLost`.
+
+**Ability replication.** `ActiveAbilities` and `AbilityCueLog` replicate through
+codecs (`ActiveAbilitiesWire.h`, `AbilityCueLogWire.h`, precisions in
+`AbilityWirePrecision.h`), which moves the replication table hash.
+`ActiveAbilities` derives `AbilityCueLog` and `AbilityPresentationState`.
+`AbilityRegistry` gains `WireKey` and `FindByWireKey`; `Fnv1a32` and `NameWireKey`
+join `core/hash/Fnv1a.h`, which the tag registry and `AnimStableKey` now use; and
+`WireTag`/`LocalTag` (`gameplay_tags/GameplayTagWire.h`) are what codecs translate
+tags with.
+
+**Received impulses.** `AnimRequest` gains the local-only `Received` and
+`Observed`; `NoteAnimImpulsesObserved` and `kAnimReceivedImpulseTicks` are new.
+
+**Owner state and shared tags.** `GameplayTagContainer`, `AttributeSet`,
+`AbilityGrants` and `ActorTimeLeases` replicate through codecs
+(`GameplayTagContainerWire.h`, `AttributeSetWire.h`, `AbilityGrantsWire.h`,
+`ActorTimeLeasesWire.h`), moving the replication table hash.
+`GameplayTagRegistry::SetReplicatedToAll`/`IsReplicatedToAll`,
+`AttributeRegistry::WireKey`/`FindByWireKey` and
+`AbilityGrantEntries::FindByWireKey` are new; `GameplayTagDeclarations` gains
+`ReplicatedToAll`, read from an optional `replicate_to_all` list.
+
+**Activation identity.** `AbilityRecord` gains `Identity` and
+`AbilityActivationIdentity` is new; lease owner keys, `AbilityCueEntry::Activation`
+and `AbilityPresentationState`'s shown records use it instead of `Sequence`, and the
+record's wire form no longer carries `Sequence`.
+
+**Prediction journal.** `PredictionJournal<T>` (`prediction/PredictionJournal.h`)
+holds a client's guesses until the authority decides them; `AnimRequestJournal`
+keeps its guesses in one.
+
+**Ability prediction.** `AbilityRecord` gains `Predicted`; `AbilityPredictedCues`
+joins the kit's components and `ActiveAbilities`' derived set;
+`AbilityPredictionJournal`, `AbilityLeaseOwner`, `ReleaseAbilityLeases`
+(`AbilityLeases.h`), `IsAbilityRecordShadowed` and `AbilityCueOccurrence` are new;
+`AbilityPresentationState` gains the guessed-cue memory and departed records; the
+ability pass runs on a client for its predicted pawn.
+
+**Review of the merged kit.** `ActiveAbilities`, `AbilityLocals` and
+`AbilityPresentationState` hold `kAbilitySlotCapacity` records: the authority's
+`kAbilityRecordCapacity`, then `kAbilityGuessCapacity` guess slots
+(`AbilityCapacity.h`). `AbilityActivationIdentity` takes the grant's id, which the
+record's wire form now carries; `AbilityCueEntry` gains `Ordinal`, which the cue
+log's wire form carries and `AbilityCueOccurrence` hashes with the target. The
+replication table hash moves. `AbilityGrantEntries` rebuilds when the tag registry
+grows, and a binding whose context names an unregistered tag is unbound.
+`AbilityRefusal` appends `PredictionFull`; `AbilityPredictionJournal::Track` and
+`Full` are new, and `Note` only updates guesses the journal already tracks.
+
+**Engine teardown.** `Engine` declares its `BackRouter` before the pause menu and
+options page that lease consumers from it, so they hand their leases back to a
+live router at shutdown; a windowed host with a pause menu aborted on exit
+("pure virtual method called"). The member order is part of the layout.

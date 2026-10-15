@@ -8,8 +8,9 @@
 #include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
+#include <abilities/AbilityGrantEntries.h>
+#include <abilities/AbilityGrants.h>
 #include <abilities/AbilityRegistry.h>
-#include <abilities/AbilitySet.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -302,12 +303,12 @@ namespace
     //=========================================================================
     // Abilities
     //=========================================================================
-    class AbilitySetEditorAdapter final : public IEditorComponentAdapter
+    class AbilityGrantsEditorAdapter final : public IEditorComponentAdapter
     {
     public:
         ComponentTypeId Type() const override
         {
-            return ResolveComponentTypeId<AbilitySet>();
+            return ResolveComponentTypeId<AbilityGrants>();
         }
 
         bool AuthorsInspectorRows() const override { return true; }
@@ -315,7 +316,7 @@ namespace
         std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
         {
             const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-            const AbilitySet* held = world.TryGet<AbilitySet>(context.Entity);
+            const AbilityGrants* held = world.TryGet<AbilityGrants>(context.Entity);
             const auto* registry = world.TryGetResource<AbilityRegistry>();
             if (held == nullptr)
                 return {};
@@ -325,15 +326,19 @@ namespace
             PropertyNode abilities = GroupProperty("abilities", "Abilities");
             std::vector<std::string> offered;
             ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
-                if (!held->Has(id))
+                if (registry->Get(id) != nullptr)
                     offered.emplace_back(registry->GetName(id));
             });
             if (!offered.empty())
                 abilities.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Ability", .Choices = std::move(offered) });
             for (std::uint8_t i = 0; i < held->Count; ++i)
             {
-                const AbilityId id = held->Abilities[i];
-                PropertyNode row = NoteProperty("ability:" + std::to_string(id.Value), DisplayName(registry->GetName(id)), "");
+                const AbilityGrant& grant = held->Entries[i];
+                const AbilityDefinition* definition = registry->Get(grant.Ability);
+                const std::string name = definition != nullptr ? definition->DisplayName
+                                                               : std::string(registry->GetName(grant.Ability));
+                PropertyNode row = NoteProperty("grant:" + std::to_string(grant.Id.Value), name,
+                                                definition != nullptr ? "" : "This ability is not declared here.");
                 row.Descriptor.Verbs.push_back({ .Id = "revoke", .Label = "Revoke" });
                 abilities.Children.push_back(std::move(row));
             }
@@ -346,25 +351,22 @@ namespace
                                         std::string_view verb, std::string_view choice) const override
         {
             World& world = context.Scene.GetRegistry().Components;
-            const AbilitySet* held = std::as_const(world).TryGet<AbilitySet>(context.Entity);
+            const AbilityGrants* held = std::as_const(world).TryGet<AbilityGrants>(context.Entity);
             const auto* registry = world.TryGetResource<AbilityRegistry>();
-            if (held == nullptr || registry == nullptr)
+            auto* entries = world.TryGetResource<AbilityGrantEntries>();
+            if (held == nullptr || registry == nullptr || entries == nullptr)
                 return PropertyEditResult::Gone;
-            AbilitySet working = *held;
+            AbilityGrants working = *held;
             VocabularyEdit edit;
             if (key == "abilities" && verb == "grant")
             {
-                std::optional<AbilityId> chosen;
-                ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
-                    if (registry->GetName(id) == choice)
-                        chosen = id;
-                });
-                if (!chosen.has_value())
+                const AbilityId chosen = registry->Find(choice);
+                if (!chosen.IsValid())
                     return PropertyEditResult::Refused;
-                edit = GrantAbility(working, *registry, *chosen);
+                edit = AddAbilityGrant(working, *entries, *registry, chosen);
             }
-            else if (const std::optional<std::uint32_t> id = EntryOf(key, "ability:"); id.has_value() && verb == "revoke")
-                edit = RevokeAbility(working, AbilityId{ *id });
+            else if (const std::optional<std::uint32_t> id = EntryOf(key, "grant:"); id.has_value() && verb == "revoke")
+                edit = RemoveAbilityGrant(working, AbilityGrantId{ *id });
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
@@ -439,9 +441,9 @@ std::unique_ptr<IEditorComponentAdapter> MakeAttributeSetEditorAdapter()
     return std::make_unique<AttributeSetEditorAdapter>();
 }
 
-std::unique_ptr<IEditorComponentAdapter> MakeAbilitySetEditorAdapter()
+std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter()
 {
-    return std::make_unique<AbilitySetEditorAdapter>();
+    return std::make_unique<AbilityGrantsEditorAdapter>();
 }
 
 std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter()

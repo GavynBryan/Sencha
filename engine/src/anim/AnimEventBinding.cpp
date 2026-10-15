@@ -8,6 +8,22 @@
 #include <algorithm>
 #include <format>
 
+namespace
+{
+    // Why an event of `scope` cannot invoke the binding's verb, or empty when it can.
+    std::string_view EventVerbProblem(const VerbRegistry* verbs, const CompiledVerbBinding& binding, AuthoredScope scope)
+    {
+        const VerbDefinition* verb = verbs != nullptr ? verbs->Get(binding.Verb) : nullptr;
+        if (verb == nullptr)
+            return {};
+        if (verb->Kind != VerbKind::Instant)
+            return "is a lease, which an event cannot hold";
+        if (scope == AuthoredScope::Cosmetic && verb->Scope != AuthoredScope::Cosmetic)
+            return "changes gameplay, which a cosmetic event may not";
+        return {};
+    }
+}
+
 void AnimRigBinder::BindEvents(const AnimRigData& rig)
 {
     VerbBindingEnvironment environment = MakeVerbBindingEnvironment(WorldRef);
@@ -55,6 +71,12 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
             return event;
         }
         bool resolved = true;
+        if (const std::string_view problem = EventVerbProblem(environment.Verbs, *binding, decl.Scope); !problem.empty())
+        {
+            Warning("anim.event.scope_mismatch", asset, field,
+                    std::format("{} {} names binding '{}', whose verb {}.", owner, field, decl.Binding, problem));
+            resolved = false;
+        }
         const AuthoredValue value = AuthoredValue::Tag(tag);
         for (const VerbCompiledInput& input : binding->Inputs)
         {
@@ -127,6 +149,13 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
             // One value per binding input, in the binding's order, converted
             // now so a crossing only copies them.
             bool resolved = true;
+            if (const std::string_view problem = EventVerbProblem(environment.Verbs, *binding, event.Scope);
+                !problem.empty())
+            {
+                Warning("anim.event.scope_mismatch", content.Path, field,
+                        std::format("Event {} names binding '{}', whose verb {}.", event.Key, event.Binding, problem));
+                resolved = false;
+            }
             bound.Inputs.resize(binding->Inputs.size());
             for (std::size_t i = 0; i < binding->Inputs.size(); ++i)
             {
@@ -175,7 +204,7 @@ void AnimRigBinder::ValidateBlendspaceGameplayEvents()
         if (content < 0 || static_cast<std::size_t>(content) >= Out.Contents.size())
             return track;
         for (const AnimBoundEvent& event : Out.Contents[static_cast<std::size_t>(content)].Events)
-            if (event.Scope == AnimEventScope::Gameplay)
+            if (event.Scope == AuthoredScope::Gameplay)
                 track.emplace_back(event.Time, event.Binding);
         std::ranges::sort(track);
         return track;

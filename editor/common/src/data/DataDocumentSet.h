@@ -49,8 +49,10 @@ public:
     [[nodiscard]] const DataDocumentStore& Store() const { return Documents_; }
 
     DataDocument* OpenOrFocus(std::string_view virtualPath, std::string& error);
-    // Writes the subtype's required members to a new file under the content root, then opens it.
-    DataDocument* Create(std::string_view subtype, std::string_view relativePath, std::string& error);
+    // Writes `data`, or the subtype's required members, to a new file under the
+    // content root, then opens it.
+    DataDocument* Create(std::string_view subtype, std::string_view relativePath, std::string& error,
+                         const JsonValue* data = nullptr);
     // Drops the tab. The document closes with it when no other workspace shows
     // it, refused, saved or discarded as `disposition` says.
     [[nodiscard]] bool Close(std::size_t index, DirtyDisposition disposition, std::string& error);

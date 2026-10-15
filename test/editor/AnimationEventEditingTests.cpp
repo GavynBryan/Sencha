@@ -48,10 +48,12 @@ namespace
         VerbRegistrationScope scope(InstallVerbRegistry(world), "test");
         VerbDefinition footstep;
         footstep.Name = "test.footstep";
+        footstep.Scope = AuthoredScope::Cosmetic;
         footstep.Arguments.Children = { Arg("Surface", DataFieldKind::GameplayTag), Arg("Volume", DataFieldKind::Float) };
         (void)scope.Declare(std::move(footstep));
         VerbDefinition count;
         count.Name = "test.count";
+        count.Scope = AuthoredScope::Cosmetic;
         count.Arguments.Children = { Arg("Amount", DataFieldKind::Int), Arg("Scale", DataFieldKind::Float) };
         (void)scope.Declare(std::move(count));
         (void)scope.Commit();
@@ -378,12 +380,12 @@ TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
     EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.7f);
 
     EXPECT_EQ(card.CommitEdit("scope", "Gameplay"), PropertyEditResult::Applied);
-    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Gameplay);
+    EXPECT_EQ(events->Find(key)->Scope, AuthoredScope::Gameplay);
     EXPECT_FALSE(events->Find(key)->MinWeight.has_value()) << "a gameplay event has no weight threshold";
     EXPECT_EQ(FindProperty(card.Nodes(), "own_weight"), nullptr);
 
     workspace.Sources.Undo();
-    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Cosmetic);
+    EXPECT_EQ(events->Find(key)->Scope, AuthoredScope::Cosmetic);
     EXPECT_EQ(events->Find(key)->MinWeight, 0.3f);
     workspace.Sources.Undo();
     EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.25f) << "the drag was one step";

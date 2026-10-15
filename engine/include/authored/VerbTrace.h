@@ -1,6 +1,7 @@
 #pragma once
 
 #include <authored/VerbInvocation.h>
+#include <core/containers/BoundedRing.h>
 
 #include <cstddef>
 #include <vector>
@@ -34,6 +35,8 @@ enum class VerbTraceEvent : std::uint8_t
     // A deferred operation could not run one: the target had gone, authority
     // had moved, or the operation gave up on it.
     Abandoned,
+    // A lease's owner let it go.
+    Released,
 };
 
 struct VerbTraceRecord
@@ -51,24 +54,21 @@ struct VerbTraceRecord
 class VerbTraceRing
 {
 public:
-    explicit VerbTraceRing(std::size_t capacity);
+    explicit VerbTraceRing(std::size_t capacity)
+        : Ring(capacity)
+    {
+    }
 
-    void Record(const VerbTraceRecord& record);
+    void Record(const VerbTraceRecord& record) { Ring.Push(record); }
 
     // Oldest first, which is the order a causality chain reads in.
-    [[nodiscard]] std::vector<VerbTraceRecord> Snapshot() const;
+    [[nodiscard]] std::vector<VerbTraceRecord> Snapshot() const { return Ring.Snapshot(); }
 
-    [[nodiscard]] std::size_t Capacity() const { return Entries.size(); }
+    [[nodiscard]] std::size_t Capacity() const { return Ring.Capacity(); }
+    [[nodiscard]] std::size_t DroppedCount() const { return Ring.DroppedCount(); }
 
-    // Records overwritten because the ring wrapped. A history that quietly lost
-    // its beginning is one that explains the wrong thing.
-    [[nodiscard]] std::size_t DroppedCount() const { return Dropped; }
-
-    void Clear();
+    void Clear() { Ring.Clear(); }
 
 private:
-    std::vector<VerbTraceRecord> Entries;
-    std::size_t Next = 0;
-    std::size_t Live = 0;
-    std::size_t Dropped = 0;
+    BoundedRing<VerbTraceRecord> Ring;
 };

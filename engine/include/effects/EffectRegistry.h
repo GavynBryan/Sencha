@@ -13,8 +13,7 @@
 // EffectRegistry
 //
 // Authored effect definitions keyed by name/id, installed as a world resource —
-// the same data-driven shape as AttributeRegistry / GameplayTagRegistry. (An
-// EffectId can be backed by a loaded asset; the indirection is already in place.)
+// the same data-driven shape as AttributeRegistry / GameplayTagRegistry.
 //=============================================================================
 class EffectRegistry
 {
@@ -22,8 +21,14 @@ public:
     EffectRegistry();
 
     // Registers a definition by name. Re-registering an existing name returns the
-    // existing id and keeps the first definition. Invalid id for an empty name.
+    // existing id and keeps the first definition. Invalid id for an empty name, or
+    // for a definition granting more tags than an active effect can record.
     EffectId Register(std::string_view name, EffectDefinition definition);
+
+    // Registers `definition` under `name`, or replaces the definition an existing
+    // name holds and keeps its id: what content declaring and reloading uses.
+    // Invalid id under the same conditions as Register.
+    EffectId Define(std::string_view name, EffectDefinition definition);
 
     [[nodiscard]] EffectId Find(std::string_view name) const;
     [[nodiscard]] const EffectDefinition* Get(EffectId id) const; // nullptr if unknown

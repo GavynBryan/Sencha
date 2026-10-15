@@ -22,9 +22,9 @@ struct AnimRequestDesc
     // The command whose processing issues it; RequestAnimation fills in the tick it is
     // issued on when a producer names none.
     AnimTick Command = 0;
-    // The entity whose lifetime bounds a Held request: its producer cancels the request
-    // when this ends, and one left held past it is reported as orphaned.
-    EntityId Owner;
+    // The holder of a Held request: its producer cancels the request when the holder's
+    // entity ends, and one left held past it is reported as orphaned.
+    LeaseOwner Owner;
     InvocationId Cause;
     // A client's guess ahead of the authority: it never replaces, supersedes or
     // deduplicates against a record the authority wrote.
@@ -66,6 +66,12 @@ struct AnimRequestResult
 
 // Live, or cancelled with a tail that has not ended.
 [[nodiscard]] bool IsAnimRequestRetained(const AnimRequest& request, AnimTick now);
+
+// How long a received Impulse waits to be observed before it is too old to play.
+inline constexpr AnimTick kAnimReceivedImpulseTicks = 30;
+
+// After a tick's resolution: every received Impulse live this tick has been observed.
+void NoteAnimImpulsesObserved(AnimRequestSet& set, AnimTick now);
 
 void PruneAnimRequests(AnimRequestSet& set, AnimTick now, AnimDecisionLog* log);
 

@@ -58,4 +58,5 @@ static_assert(std::is_trivially_copyable_v<AttributeSet>,
 
 #if !defined(SENCHA_CODEGEN)
 #  include <attributes/AttributeSet.sencha.h>
+#  include <attributes/AttributeSetWire.h>
 #endif

@@ -64,4 +64,5 @@ static_assert(std::is_trivially_copyable_v<GameplayTagContainer>,
 
 #if !defined(SENCHA_CODEGEN)
 #  include <gameplay_tags/GameplayTagContainer.sencha.h>
+#  include <gameplay_tags/GameplayTagContainerWire.h>
 #endif

@@ -408,6 +408,127 @@ do the work and delete the entry.
 - **Trigger:** the Entity card gaining the setting, or the first prefab meant
   to hang on a wall or a ceiling.
 
+## A trigger pulled and released inside one frame
+
+- **What:** a gamepad trigger bound as a button is judged against its threshold
+  once per rendered frame, on the frame's resting position, so a pull and release
+  that both happen between two frames produces no edge. Button transitions are
+  logged in order and never lose a tap; analog positions are not.
+- **Where:** `UpdateAnalogThresholds` in `engine/src/input/InputActionResolve.cpp`
+  reads `InputFrame::GamepadAxes`, which holds positions only. An axis event log
+  beside `InputFrame::Transitions` would let attribution replay crossings in order.
+- **Trigger:** a measured lost trigger tap (a semi-automatic weapon on a trigger
+  that drops shots at the frame rates players run).
+
+## Leases and cosmetic verbs through the generated authored API
+
+- **What:** `SENCHA_VERB` declares an instant gameplay verb that only the authority
+  runs. It has no way to declare a lease (`VerbKind::Lease`, with its release
+  half), a cosmetic verb, or a prediction class, so a game declares those by hand
+  as the engine's own are (`engine/src/effects/EffectVerbs.cpp`).
+- **Where:** the annotations are `engine/include/authored/AuthoredAnnotations.h`;
+  the generator is `tools/component-codegen/ComponentCodegen.cpp`; what it emits
+  is read by `AuthoredVocabularyScope` and `BindAuthoredApi`
+  (`engine/include/authored/AuthoredApi.h`).
+- **Trigger:** the first game module that declares a lease, a cosmetic verb or a
+  predicted verb. The Loss Function module (AbilityKit 2, Stage 10) is the known
+  candidate, if any of its abilities needs an operation the engine does not offer.
+
+## An animation hold whose holder is gone
+
+- **What:** an `anim.hold` lease whose owner's entity ends without releasing it is
+  reported as orphaned and stays held, the existing rule for any Held request a
+  producer forgot. Plan §11 asks lease providers to end such holds themselves (the
+  pull rule), as effects already do.
+- **Where:** `AnimRequestOperations::Hold` (`engine/src/anim/AnimRequestVerbs.cpp`)
+  and the orphan report in `NoteAnimRequestOutcomes`
+  (`engine/src/anim/AnimContentSystem.cpp`).
+- **Trigger:** an ability that holds animation on an entity other than the actor
+  running it. An actor's own holds die with it, so CTX Charge and every Stage 10
+  ability are covered; the first ability that poses another entity is not.
+
+## Dilating a character in a game-defined locomotion mode
+
+- **What:** a dilated character is stepped through `StepScaledCharacterTick`, which
+  implements only the free mode; a character in a mode a game registers keeps the
+  bulk path and runs at simulation speed whatever its scale.
+- **Where:** `engine/src/movement/CharacterTickStep.cpp` (`CharacterTickModeSupported`)
+  and `DilatedCharacterStepSystem`.
+- **Trigger:** the first game mode whose characters are time-scaled, which will also
+  need that mode's kernel shared with replay.
+
+## Dilated characters meeting characters, and bodies striking them
+
+- **What:** the AbilityKit plan's actor-time interactions include two characters at
+  different scales colliding and an undilated body striking a dilated character
+  (`CharactersAtDifferentScalesCollideConsistently`,
+  `BodyStrikingADilatedCharacterUsesSimulationRate`). Neither happens at any scale
+  today: the character mover sets up no character-versus-character collision and
+  gives a character no inner body, so characters pass through each other and rigid
+  bodies pass through characters.
+- **Where:** `engine/src/physics/CharacterMover.cpp` (`CharacterMover::Move`, the
+  `CharacterVirtual` settings) and `test/runtime/ActorTimeInteractionTests.cpp`.
+- **Trigger:** characters gaining an inner body or character-versus-character
+  collision; the two tests are written with that change, against dilated characters
+  as well as undilated ones.
+
+## Ending an ability on an authored event
+
+- **What:** `cancel_on` entries that end a running activation when an authored
+  event is published from a source the entry names (the plan's "authored event
+  from a source filter", `docs/plans/abilitykit-2.md` §3.5). Conditions,
+  `target_lost` and the always-on triggers are delivered; this one is not.
+- **Where:** `AbilityPass::Sweep` (`engine/src/abilities/AbilityPass.cpp`) and the
+  condition kinds in `abilities/AbilityDeclaration.h`; events come through
+  `AuthoredEventDispatcher`, which drains once per fixed tick after fixed logic.
+- **Why not now:** the drain runs after the ability pass and is not journaled or
+  replicated, so whether such a cancel is seen the next tick, is authority-only, or
+  is predicted from a client's own events is a design choice no consumer has made;
+  no planned content (the normative charge, CTX modes, Vector abilities, Overclock)
+  ends on an event.
+- **Trigger:** the first ability content that must end when an event is published
+  (a stagger announced by a hit, an interrupt published by a script), which also
+  decides the timing and prediction rule above.
+
+## Showing a predicted commit's costs as pending
+
+- **What:** plan §5.2 has a client show what a guess would pay as a display overlay
+  keyed by activation, cost group and pulse, cleared when the authority's word
+  arrives. A guess validates its commit and pays nothing; no overlay is kept.
+- **Where:** `AbilityPass::Commit` (`engine/src/abilities/AbilityCommit.cpp`), which
+  knows the groups a guess would pay.
+- **Trigger:** the first HUD that shows a predicted pawn's ammo or energy, which is
+  what reads the overlay.
+
+## Guess slots on actors no machine predicts
+
+- **What:** `ActiveAbilities` and `AbilityLocals` carry `kAbilityGuessCapacity`
+  guess slots on every actor with grants, but only the pawn a client predicts ever
+  fills them. On the authority, and for every other actor, they stay empty: 2,912
+  bytes per actor ("Costs" in `docs/gameplay/abilitykit.md`).
+- **Where:** `engine/include/abilities/AbilityCapacity.h`, the record arrays in
+  `ActiveAbilities.h` and `AbilityLocals.h`, `AbilityPass::ClaimSlot` and the
+  journal's `FreeGuessSlot` (`engine/src/abilities/AbilityPredictionJournal.cpp`).
+- **Trigger:** a measured memory or chunk-occupancy cost from ability actors, such
+  as an encounter whose actor count puts the per-actor bytes over a memory budget.
+  The change moves guesses into storage only the predicted pawn carries.
+
+## Locomotion facts for a pawn this machine only receives
+
+- **What:** a remote pawn's locomotion animation reads facts its machine is not
+  sent: velocity and support state are owner-only fields of `KinematicState` and
+  `SupportState`, and only tags declared `replicate_to_all` reach it. Its
+  locomotion selection therefore runs on stale facts (plan D18). Ability cues,
+  presentation animation and authoritative animation requests do reach it, and are
+  what AbilityKit's remote acceptance covers; remote locomotion quality is not
+  claimed.
+- **Where:** the facts' replication policy in
+  `engine/include/movement/components/CharacterFacts.h`, and the fact providers that
+  read them (`docs/gameplay/animation.md`, "Facts").
+- **Trigger:** the first remote pawn whose locomotion must read right on another
+  machine, such as Loss Function's deathmatch, which also decides whether facts are
+  sent, derived on the receiver from interpolated motion, or both.
+
 ## Spatial queries
 
 - **Parallel candidate evaluation.**

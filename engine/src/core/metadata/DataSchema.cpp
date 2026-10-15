@@ -55,6 +55,41 @@ namespace
         return valid;
     }
 
+    // An array of records whose elements carry a StableKey: no two may share one.
+    bool ValidateKeysUnique(const JsonValue& array,
+                            const DataFieldSchema& element,
+                            std::string_view path,
+                            std::vector<DataValidationError>& errors)
+    {
+        if (element.Kind != DataFieldKind::Record)
+            return true;
+        bool valid = true;
+        for (const DataFieldSchema& member : element.Children)
+        {
+            if (member.Kind != DataFieldKind::StableKey)
+                continue;
+            const JsonValue::Array& values = array.AsArray();
+            for (size_t index = 0; index < values.size(); ++index)
+            {
+                const JsonValue* key = values[index].IsObject() ? values[index].Find(member.Key) : nullptr;
+                if (key == nullptr || !key->IsString())
+                    continue;
+                for (size_t earlier = 0; earlier < index; ++earlier)
+                {
+                    const JsonValue* other = values[earlier].IsObject() ? values[earlier].Find(member.Key) : nullptr;
+                    if (other != nullptr && other->IsString() && other->AsString() == key->AsString())
+                    {
+                        AddError(errors, ChildPath(std::format("{}[{}]", path, index), member.Key),
+                                 std::format("key '{}' is already used by element {}", key->AsString(), earlier));
+                        valid = false;
+                        break;
+                    }
+                }
+            }
+        }
+        return valid;
+    }
+
     bool ValidateField(const JsonValue& value,
                        const DataFieldSchema& field,
                        std::string_view path,
@@ -219,7 +254,7 @@ namespace
                 valid = ValidateField(value.AsArray()[index], field.Children.front(),
                                       elementPath, allowUnknownFields, errors) && valid;
             }
-            return valid;
+            return ValidateKeysUnique(value, field.Children.front(), path, errors) && valid;
         }
 
         case DataFieldKind::Optional:
@@ -251,6 +286,14 @@ namespace
             if (value.AsString().empty())
             {
                 AddError(errors, path, "gameplay tag cannot be empty");
+                return false;
+            }
+            return true;
+
+        case DataFieldKind::StableKey:
+            if (!value.IsString() || !IsValidStableKey(value.AsString()))
+            {
+                AddError(errors, path, "expected a key of up to 64 letters, digits, '_' or '-'");
                 return false;
             }
             return true;
@@ -360,4 +403,13 @@ const DataSchema* DataSchemaRegistry::Find(std::string_view typeName) const
 std::span<const DataSchema> DataSchemaRegistry::Entries() const
 {
     return Schemas;
+}
+
+bool IsValidStableKey(std::string_view text)
+{
+    if (text.empty() || text.size() > 64)
+        return false;
+    return std::ranges::all_of(text, [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    });
 }

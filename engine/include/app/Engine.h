@@ -74,7 +74,7 @@ struct PlatformServices;
 class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
-class AnimRequestOperations;
+class EngineVocabularyBindings;
 class RuntimeResumeOperation;
 class ApplicationQuitOperation;
 
@@ -594,10 +594,11 @@ private:
 #ifdef SENCHA_ENABLE_UI
     std::unique_ptr<UiService> UiState;
     std::unique_ptr<CVarArchive> SettingsStore;
+    // Before its consumers, which hand their leases back to it as they go.
+    BackRouter BackRouterInstance;
     std::unique_ptr<PauseMenu> PauseMenuState;
     PauseState PauseStateInstance;
     OptionsPage OptionsState;
-    BackRouter BackRouterInstance;
     UiSurfaceId ShellSurface;
 #endif
 #ifdef SENCHA_ENABLE_VULKAN
@@ -652,14 +653,11 @@ private:
     // state: the authored records stay in the asset the lease holds.
     VerbBindingSet ShellBindingSet;
     DataAssetCacheHandle ShellBindingLease;
-    std::unique_ptr<AnimRequestOperations> AnimationOperations;
-    VerbBindingToken AnimRequestBinding;
-    VerbBindingToken AnimCancelBinding;
+    std::unique_ptr<EngineVocabularyBindings> VocabularyBindings;
     std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
     VerbBindingToken ResumeBinding;
     VerbBindingToken QuitBinding;
-    std::vector<AuthoredQueryBindingToken> PerceptionQueryBindings;
     // Declared after the services it connects and the world it publishes into,
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.

@@ -57,8 +57,8 @@
             }
           ]
         },
-        "AbilitySet": {
-          "abilities": []
+        "AbilityGrants": {
+          "grants": []
         }
       }
     }

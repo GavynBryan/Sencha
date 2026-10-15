@@ -2,7 +2,7 @@
 
 #include "data/DataDocumentSet.h"
 
-#include <assets/runtime/ContentTagDeclarations.h>
+#include <assets/runtime/ContentVocabulary.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <ecs/World.h>

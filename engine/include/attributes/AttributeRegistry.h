@@ -33,6 +33,10 @@ public:
     [[nodiscard]] AttributeId FindAttribute(std::string_view name) const;
     [[nodiscard]] std::string_view GetName(AttributeId id) const;
     [[nodiscard]] bool IsKnown(AttributeId id) const;
+    // Its name's wire key, which names the same attribute on every machine; zero
+    // for an unknown id. A key two names share finds nothing.
+    [[nodiscard]] std::uint32_t WireKey(AttributeId id) const;
+    [[nodiscard]] AttributeId FindByWireKey(std::uint32_t key) const;
 
     [[nodiscard]] float Min(AttributeId id) const;
     [[nodiscard]] float Max(AttributeId id) const;
@@ -55,4 +59,5 @@ private:
 
     std::vector<AttributeDef> Attrs;                       // [0] is a dummy: id 0 is invalid
     std::unordered_map<std::string, AttributeId> IdsByName;
+    std::unordered_map<std::uint32_t, AttributeId> IdsByWireKey;
 };

@@ -258,7 +258,7 @@ TEST(AnimBlendspaceBinding, SamplesShareTheirGameplayEvents)
     step.Key = 1;
     step.Time = 0.5f;
     step.Binding = "game.step";
-    step.Scope = AnimEventScope::Gameplay;
+    step.Scope = AuthoredScope::Gameplay;
     fx.Clip("asset://anim/walk.sanim", 1.0f, { step });
     fx.Clip("asset://anim/run.sanim", 0.5f);
     (void)fx.Load("asset://anim/g.facts.sdata", kAnimFactSchemaType,

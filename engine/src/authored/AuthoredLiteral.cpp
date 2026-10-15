@@ -287,6 +287,8 @@ bool CompileAuthoredLiteral(const JsonValue& value,
         Fail(errors, subject, path,
              "an entity argument is written as {\"entity\": ...}");
         return false;
+    case DataFieldKind::StableKey:
+        break;
     }
 
     Fail(errors, subject, path, "the field declares a shape no literal can satisfy");

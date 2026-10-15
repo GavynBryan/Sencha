@@ -166,14 +166,12 @@ protected:
 
     void PressKey(std::uint16_t scancode)
     {
-        Input.SetKeyHeld(scancode, true);
-        Input.KeysPressed.push_back(scancode);
+        Input.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(scancode) }, true);
     }
 
     void ReleaseKey(std::uint16_t scancode)
     {
-        Input.SetKeyHeld(scancode, false);
-        Input.KeysReleased.push_back(scancode);
+        Input.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(scancode) }, false);
     }
 
     // One rendered frame: the frame-level pass, then `ticks` fixed ticks.

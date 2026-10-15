@@ -67,6 +67,8 @@ isolated preview World at the scenario's fixed tick rate, using the runtime's
 own binding, fact gathering, derivations and request lifecycle. The editor
 replaces only gameplay: each gathered fact reads a scenario-owned input, and
 named scenario participants issue requests through the normal request API.
+The session runs on the shared preview clock (`docs/editor/fixed-tick-preview.md`):
+stepping, playing at a speed, rewinding by replay and branching the scenario.
 
 - The **Facts** lens's card (`AnimationFactProperties`) lists every slot of
   the bound layout. Gathered facts take typed inputs (bool, float, int, tag by

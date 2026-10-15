@@ -88,6 +88,8 @@ struct AnimBoundLayer
     GameplayTagId Idle;
     // Per skeleton joint, 1 where the layer applies; empty when unmasked.
     std::vector<std::uint8_t> Mask;
+    // Reads AnimPresentationRequests, never the simulation's requests.
+    bool Presentation = false;
     [[nodiscard]] bool Masked() const { return !Mask.empty(); }
     [[nodiscard]] bool Covers(std::size_t joint) const { return Mask.empty() || (joint < Mask.size() && Mask[joint] != 0); }
 };
@@ -99,7 +101,7 @@ struct AnimBoundEvent
     std::uint32_t Key = 0;
     // Normalized clip time.
     float Time = 0.0f;
-    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    AuthoredScope Scope = AuthoredScope::Cosmetic;
     std::optional<float> MinWeight;
     VerbBindingKey Binding;
     std::string BindingText;

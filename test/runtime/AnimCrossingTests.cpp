@@ -125,3 +125,46 @@ TEST(AnimCrossing, AClipShorterThanATickLoopsWithinItsCap)
                     [&](std::size_t) { ++crossed; });
     EXPECT_EQ(crossed, 10u);
 }
+
+TEST(AnimCrossing, AChangeOfScaleReanchorsWithoutAJump)
+{
+    AnimPlayback clip = Clip(0, 10.0f);
+    const double before = AnimElapsedSeconds(clip, 5, kTick);
+    RetimeAnimPlayback(clip, 6, kTick, 0.5f);
+    EXPECT_EQ(AnimElapsedSeconds(clip, 5, kTick), before) << "the tick already played keeps its time";
+    EXPECT_NEAR(AnimElapsedSeconds(clip, 6, kTick), 0.55, 1e-9) << "the tick before 6 played at half speed";
+    EXPECT_NEAR(AnimElapsedSeconds(clip, 8, kTick), 0.65, 1e-9);
+    EXPECT_EQ(clip.StartTick, 0u) << "still the same instance";
+    EXPECT_EQ(clip.OffsetSeconds, 0.0f);
+    EXPECT_EQ(AnimPlaybackEndTick(clip, kTick), 5u + 190u) << "9.5 s left at 0.05 s a tick";
+}
+
+TEST(AnimCrossing, PassesAcrossChangesOfScaleCrossEachMarkOnce)
+{
+    std::vector<double> marks;
+    for (int i = 0; i < 200; ++i)
+        marks.push_back(0.013 * i);
+    AnimPlayback clip = Clip(0, 3.0f);
+    const float scales[] = { 1.0f, 0.5f, 2.0f, 0.25f, 1.5f, 1.0f, 3.0f };
+    std::vector<std::size_t> seen;
+    for (AnimTick now = 0; now < 40; ++now)
+    {
+        RetimeAnimPlayback(clip, now, kTick, scales[(now / 6) % std::size(scales)]);
+        for (const Crossed& crossed :
+             Cross(clip, now == 0 ? kAnimNoTick : now - 1, AnimPlaybackEntry::Start, now, marks))
+            seen.push_back(crossed.Mark);
+    }
+    const double reached = AnimElapsedSeconds(clip, 39, kTick);
+    std::vector<std::size_t> expected;
+    for (std::size_t i = 0; i < marks.size() && marks[i] <= reached; ++i)
+        expected.push_back(i);
+    EXPECT_EQ(seen, expected);
+}
+
+TEST(AnimCrossing, ARestartForgetsTheAnchorAndKeepsTheScale)
+{
+    AnimPlayback clip = Clip(0, 10.0f);
+    RetimeAnimPlayback(clip, 6, kTick, 0.5f);
+    RestartAnimPlayback(clip, 20, 1.0f);
+    EXPECT_NEAR(AnimElapsedSeconds(clip, 22, kTick), 1.1, 1e-9);
+}

@@ -2,28 +2,35 @@
 
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
+#include <ecs/LeaseOwner.h>
+#include <effects/EffectDefinition.h>
 #include <effects/EffectId.h>
+#include <gameplay_tags/GameplayTagId.h>
 
+#include <cstdint>
+#include <limits>
 #include <type_traits>
 
-//=============================================================================
-// ActiveEffect
-//
-// One applied Duration/Infinite effect, living on its OWN entity and referencing
-// the target by EntityId (the effects-as-entities model). Spawned by ApplyEffect,
-// ticked and expired by TickEffects, folded into target attributes by
-// FoldActiveEffects. Stacking is just multiple ActiveEffect entities on the same
-// target; their modifiers fold additively and their granted tags ref-count.
-//
-// Runtime-only state: not scene-serialized (persistence is the streaming
-// overlay's job). Trivially copyable so it lives in chunks.
-//=============================================================================
+inline constexpr std::uint8_t kEffectGrantedTagCapacity = 8;
+inline constexpr std::uint32_t kEffectNeverEnds = std::numeric_limits<std::uint32_t>::max();
+
+// One applied Duration/Infinite effect, on its own entity in the persistent
+// partition. Its timing and lifetime rules: docs/gameplay/abilitykit.md, "Effects".
 struct SENCHA_COMPONENT("sencha.active_effect") ActiveEffect
 {
     EntityId Target;
     EffectId Def;
-    float TimeRemaining = 0.0f; // seconds; negative = infinite
-    float PeriodTimer = 0.0f;   // counts down to the next periodic application
+    LeaseOwner Owner;
+    float Scale = 1.0f;
+    EffectTimeDomain TimeDomain = EffectTimeDomain::Target;
+    // Application order within this World: the fold's tie-break.
+    std::uint64_t Sequence = 0;
+    std::uint32_t RemainingTicks = kEffectNeverEnds;
+    std::uint32_t PeriodTicks = 0;
+    std::uint32_t TicksToPeriod = 0;
+    // The tags this instance actually granted, so ending it never needs the definition.
+    GameplayTagId GrantedTags[kEffectGrantedTagCapacity] = {};
+    std::uint8_t GrantedTagCount = 0;
 };
 
 static_assert(std::is_trivially_copyable_v<ActiveEffect>,

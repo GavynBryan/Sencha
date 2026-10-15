@@ -19,6 +19,8 @@ const char* VerbAdmissionName(VerbAdmission admission)
     case VerbAdmission::QueueFull: return "queue full";
     case VerbAdmission::Reentrant: return "reentrant dispatch";
     case VerbAdmission::UnresolvedReference: return "unresolved reference";
+    case VerbAdmission::ScopeMismatch: return "scope mismatch";
+    case VerbAdmission::KindMismatch: return "kind mismatch";
     }
     return "unknown";
 }
@@ -113,22 +115,105 @@ void VerbDispatcher::RecordTrace(VerbTraceEvent event,
     });
 }
 
-VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
-                                            std::span<const AuthoredValue> inputs,
-                                            const VerbInvocationSource& source)
+VerbInvocation VerbDispatcher::Begin(VerbId verb, const VerbInvocationSource& source)
 {
     // Every attempt takes its own id, accepted or not, so a refusal in the
     // trace can never share a number with an execution that came later. An
     // operation that queues work has the id to put in the record it queues;
     // the accepted sequence simply has gaps where refusals were.
     VerbInvocation invocation;
-    invocation.Verb = binding.Verb;
+    invocation.Verb = verb;
     invocation.Id = InvocationId{ ++NextInvocation };
     invocation.Parent = source.Parent;
-    invocation.Binding = binding.Key;
     invocation.Producer = source.Producer;
     invocation.Instigator = source.Instigator;
     invocation.Tick = source.Tick;
+    return invocation;
+}
+
+VerbAdmission VerbDispatcher::Call(Implementation& entry, const VerbInvocation& invocation)
+{
+    // Scoped rather than a pair of assignments: an implementation that throws
+    // would otherwise leave the dispatcher permanently refusing every later
+    // request as reentrant.
+    struct DispatchScope
+    {
+        explicit DispatchScope(bool& flag) : Flag(flag) { Flag = true; }
+        ~DispatchScope() { Flag = false; }
+        bool& Flag;
+    };
+
+    const DispatchScope scope(Dispatching);
+    return entry.Invoke(entry.Target, invocation);
+}
+
+VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
+                                            std::span<const AuthoredValue> inputs,
+                                            const VerbInvocationSource& source)
+{
+    return Dispatch(binding, inputs, source, {}, LeaseStep::None);
+}
+
+VerbInvocationResult VerbDispatcher::AcquireLease(const CompiledVerbBinding& binding,
+                                                  std::span<const AuthoredValue> inputs,
+                                                  const LeaseOwner& owner,
+                                                  const VerbInvocationSource& source)
+{
+    return Dispatch(binding, inputs, source, owner, LeaseStep::Acquire);
+}
+
+VerbAdmission VerbDispatcher::ReleaseLease(VerbId lease, const LeaseOwner& owner, const VerbInvocationSource& source)
+{
+    VerbInvocation invocation = Begin(lease, source);
+    invocation.Owner = owner;
+    invocation.Step = LeaseStep::Release;
+
+    const VerbDefinition* definition = Verbs.IsLive(lease) ? Verbs.Get(lease) : nullptr;
+    VerbAdmission status = VerbAdmission::Accepted;
+    Implementation* entry = Find(lease);
+    if (Dispatching)
+        status = VerbAdmission::Reentrant;
+    else if (definition == nullptr || entry == nullptr || entry->Revision != Verbs.Revision(lease))
+        status = VerbAdmission::Unavailable;
+    else if (definition->Kind != VerbKind::Lease)
+        status = VerbAdmission::KindMismatch;
+    else if (!owner.IsSet())
+        status = VerbAdmission::InvalidArguments;
+    else
+        status = Call(*entry, invocation);
+
+    RecordTrace(status == VerbAdmission::Accepted ? VerbTraceEvent::Released : VerbTraceEvent::Rejected, status,
+                invocation);
+    return status;
+}
+
+bool VerbDispatcher::LeaseHolds(VerbId lease, const LeaseOwner& owner)
+{
+    const VerbDefinition* definition = Verbs.IsLive(lease) ? Verbs.Get(lease) : nullptr;
+    if (definition == nullptr || definition->Kind != VerbKind::Lease || !owner.IsSet())
+        return false;
+    if (!definition->Completes || Dispatching)
+        return true;
+    Implementation* entry = Find(lease);
+    if (entry == nullptr || entry->Revision != Verbs.Revision(lease))
+        return false;
+    VerbInvocation invocation;
+    invocation.Verb = lease;
+    invocation.Owner = owner;
+    invocation.Step = LeaseStep::Probe;
+    return Call(*entry, invocation) == VerbAdmission::Accepted;
+}
+
+VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding,
+                                              std::span<const AuthoredValue> inputs,
+                                              const VerbInvocationSource& source,
+                                              const LeaseOwner& owner,
+                                              LeaseStep step)
+{
+    VerbInvocation invocation = Begin(binding.Verb, source);
+    invocation.Binding = binding.Key;
+    invocation.Owner = owner;
+    invocation.Step = step;
 
     const auto reject = [&](VerbAdmission status) {
         RecordTrace(VerbTraceEvent::Rejected, status, invocation);
@@ -143,6 +228,14 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
         return reject(VerbAdmission::UnresolvedBinding);
     if (!Verbs.IsLive(binding.Verb) || Verbs.Revision(binding.Verb) != binding.Revision)
         return reject(VerbAdmission::StaleBinding);
+
+    const VerbDefinition& definition = *Verbs.Get(binding.Verb);
+    if ((definition.Kind == VerbKind::Lease) != (step == LeaseStep::Acquire))
+        return reject(VerbAdmission::KindMismatch);
+    if (step == LeaseStep::Acquire && !owner.IsSet())
+        return reject(VerbAdmission::InvalidArguments);
+    if (source.Scope == AuthoredScope::Cosmetic && definition.Scope != AuthoredScope::Cosmetic)
+        return reject(VerbAdmission::ScopeMismatch);
 
     Implementation* entry = Find(binding.Verb);
     // An implementation bound against an older contract is not offered a newer
@@ -205,22 +298,7 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
     }
 
     invocation.Arguments = &Scratch;
-
-    // Scoped rather than a pair of assignments: an implementation that throws
-    // would otherwise leave the dispatcher permanently refusing every later
-    // request as reentrant.
-    struct DispatchScope
-    {
-        explicit DispatchScope(bool& flag) : Flag(flag) { Flag = true; }
-        ~DispatchScope() { Flag = false; }
-        bool& Flag;
-    };
-
-    VerbAdmission status = VerbAdmission::Refused;
-    {
-        const DispatchScope scope(Dispatching);
-        status = entry->Invoke(entry->Target, invocation);
-    }
+    const VerbAdmission status = Call(*entry, invocation);
 
     if (status != VerbAdmission::Accepted)
         return reject(status);

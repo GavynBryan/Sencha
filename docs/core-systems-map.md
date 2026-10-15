@@ -151,6 +151,21 @@ frame runs its fixed ticks before presentation-rate systems, so a
 presentation-rate system must not write simulation state: with a variable tick
 count its writes land outside the simulation's own cadence.
 
+Within the simulation an actor can run on its own clock. `ActorTime` advances
+by the actor's scale every tick (`time/ActorTime.h`), and the scale is the
+product of the `ActorTimeLeases` in force on that tick. A lease taken during tick
+T counts from T + 1; one released during T counts through T. Ended leases are kept
+for `kActorTimeHistoryTicks`, in room of their own so history never refuses a new
+lease, which lets a replayed tick recompute the scale it had. The factors are
+multiplied in ascending order with Q16 rounding at each step, so machines that hold
+the same leases reach the same scale whoever holds them, and the result is clamped
+to `time.actor_scale_min` and `time.actor_scale_max` (at most 4). A lease whose
+holder's entity is gone ends the tick after. Dilation never changes the tick
+cadence: it changes how far an actor's own timers move per tick. Effects count in
+their target's time unless authored `time_domain: simulation`, and ability phases in
+their actor's unless authored `simulation`. Abilities scale time through the
+`time.scale` lease; an effect does through `time_scale`.
+
 Because a frame renders between ticks, an entity that opts into
 `WorldTransformHistory` keeps its last two simulated poses and renders the
 blend at `PresentationTime::Alpha`. Mesh and shadow-caster extraction and the
@@ -161,12 +176,11 @@ a spawn, a streamed-in entity, a teleport (`RequestTransformHistorySnap`, which
 `CharacterMoverPool::SetPosition` calls), or a frame-wide temporal
 discontinuity.
 
-Input edges follow from the same rule. They are drained after the first fixed
-tick of a frame, so ticks after the first see held state only, and a frame that
-runs no tick keeps them for the next one rather than dropping the press.
-Anything that reads an edge outside that drain — an engine-level window or
-pause key in `PumpPlatform` — must consume it with `InputFrame::ConsumeKeyPressed`,
-or it will act on the same press again on the next zero-tick frame.
+Input edges follow from the same rule. A frame's ordered transitions are
+attributed to actions once, before its ticks, and the first tick of the frame
+takes them all; later ticks of a catch-up burst see held state only, and a frame
+that runs no tick keeps them for the next one rather than dropping the press
+(`docs/gameplay/input.md`, "Frame and tick semantics").
 Per-frame accumulated values such as `InputFrame::MouseDeltaX` are
 presentation-rate inputs: consuming one per fixed tick would apply it several
 times on a catch-up frame and not at all on a short one. Gameplay does not face

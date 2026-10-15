@@ -87,7 +87,11 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "sencha.physics.mover_link",            0xAC0202E5DE0803D2ull },
     { "sencha.gameplay_tag_container",        0x8AD70174123D7D06ull },
     { "sencha.attribute_set",                 0xCBAB285D411E9BC8ull },
-    { "sencha.ability_set",                   0x398F71246E3983A2ull },
+    { "sencha.ability_grants",                0xED200FDB07495669ull },
+    { "sencha.active_abilities",              0x2429C868EFBEF956ull },
+    { "sencha.ability_locals",                0x0594651A45B4FB4Eull },
+    { "sencha.actor_time",                    0x779CF32D6039B666ull },
+    { "sencha.aim_origin",                    0x15FDEA7DFC8BE3DDull },
     { "sencha.active_effect",                 0xE29C7992C1DB0669ull },
     { "sencha.movement_intent",               0x0F43CD9973AE4EB3ull },
     { "sencha.jump_state",                    0x13238ECE2DCCCF73ull },
@@ -118,7 +122,8 @@ constexpr FrozenComponent kFrozenComponents[] = {
 };
 
 constexpr FrozenSerializer kFrozenSerializers[] = {
-    { "AbilitySet",          0x398F71246E3983A2ull, MakeFourCC('A','B','L','S'), 0x836F1C5BF9C32295ull },
+    { "AbilityGrants",       0xED200FDB07495669ull, MakeFourCC('A','B','G','R'), 0x2BD2B28870E6133Aull },
+    { "AimOrigin",           0x15FDEA7DFC8BE3DDull, MakeFourCC('A','I','M','O'), 0xCB6817E050F1E919ull },
     { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F'), 0x141188942D7459D8ull },
     { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R'), 0x0DB13B4D4DCFF19Cull },
     { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P'), 0xD7974DBF9F9CAD02ull },
@@ -168,8 +173,8 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 
 // The wire contract: two builds refuse each other unless these agree. Moving
 // it is a deliberate act with a reason, never a side effect: the last move gave
-// each animation request the command that issued it, what predictions match by.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0x26EC8C622F9FAEB2ULL;
+// an ability record its guess slots and its grant, and a cue entry its ordinal.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0xDA4F12343CAC4DF9ULL;
 
 struct EngineVocabulary
 {

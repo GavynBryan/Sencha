@@ -15,7 +15,7 @@ SDL events
        └─ InputActionResolveSystem                      the only gameplay-path reader of InputFrame
             ├─ PreSimulate  (1× per frame) → InputActionState::Frame()
             └─ FixedLogic   (1× per tick)  → InputActionState::Tick()
-                 └─ game systems → MovementIntent, AbilityActivationQueue
+                 └─ game systems → MovementIntent; AbilitySystem walks the edges
 ```
 
 `InputFrame` (`input/InputFrame.h`) stays what it was: a platform-agnostic
@@ -181,9 +181,9 @@ void FpsSteeringSystem::FixedLogic(FixedLogicContext& ctx)
 
 `Fired()` is what single-phase gameplay reads: it answers under the action's own
 `fire` mode, so a designer retuning a button does not need the consumer to
-change. `Held()`, `Pressed()`, and `Released()` remain for gameplay built out of
-several phases — charge while held, loose on release — where no one mode
-describes what the consumer wants.
+change. Gameplay built out of several moments — charge while held, loose on
+release, one shot per press of a semi-automatic weapon — walks `Edges` in order;
+`Held()`, `Pressed()`, `Released()` and `Interrupted()` summarize them.
 
 `Tick()` is this tick's record; `Frame()` is the presentation snapshot, which is
 what a camera or a menu wants. Which clock a reader is on also decides how it is
@@ -256,29 +256,59 @@ deactivate it; there is no separate "consume everything" flag.
 ## Frame and tick semantics
 
 A rendered frame may run zero, one, or several fixed ticks against one sample of
-input. The mapper keeps a separate latch per clock, which settles every case:
+input. Once per frame, after contexts settle, the mapper turns the frame's button
+transitions into **action edges** and hands the same edges to both clocks; each
+clock keeps what it has not consumed, along with its share of pointer motion.
+
+### Edges
+
+The platform layer logs every button transition in the order it arrived
+(`InputFrame::TransitionLog`, 64 per frame). The mapper replays that log under the
+frame's contexts and claims and records, in order, each time an action rises or
+falls:
+
+| Edge | When |
+|---|---|
+| `Press` | a transition the player made raised the action |
+| `Release` | a transition the player made lowered it, or a trigger came back under its threshold |
+| `InterruptedRelease` | the action fell for any other reason: a context left or was suspended, a higher context claimed the control, the profile was lost, or focus was (the platform's synthetic releases) |
+
+Every pass carries its edges as an ordered list across all actions
+(`InputActionView::Edges`, at most 32), so a re-press while held, two taps in one
+frame, and which of two actions went first all survive. A rise nobody pressed for
+— a context returning over a key still down — holds the action silently; the
+player's next key-up is then a `Release` with no `Press` before it. A genuine
+key-up in the same frame a context leaves is attributed after the context change,
+so it reads as interrupted: ambiguity resolves toward cancelling.
+
+The per-action flags summarize the list: `Pressed`, `Released` (any fall),
+`Interrupted` (an interrupted fall), `Held` (the action's state now), and `Fired`
+under the action's mode. A `Released`-mode action fires only on a genuine
+`Release`, never on an interruption, so a charge does not loose because a menu
+opened.
+
+If more edges arrive than a pass can carry, the rest are dropped and the list is
+marked `Overflowed`. The summary stays true regardless: a pass whose kept edges end
+held while the action is really up publishes an interrupted fall, and one whose
+kept edges end up while the action is down holds it with no press. An overflow
+therefore never invents a press or a release the player made, and never leaves an
+action held that is not.
 
 | Situation | Behaviour |
 |---|---|
-| Zero ticks | The presentation snapshot still resolves. The simulation latch keeps the edges and motion until a tick runs, so nothing is dropped. |
-| One tick | The tick consumes everything latched since the previous tick. |
-| Catch-up burst | The first tick consumes the latch, including the full accumulated motion. Later ticks see held state, no press edges, and no motion — a press fires once, not once per tick. |
-| Tap inside one frame | Pressed and Released arrive together on the next tick, with the action never reading as held. |
+| Zero ticks | The presentation clock still resolves. The simulation clock keeps the edges and motion until a tick runs, so nothing is dropped. |
+| One tick | The tick takes every edge since the previous tick. |
+| Catch-up burst | The first tick takes the edges; motion is shared out across the burst's ticks. Later ticks see held state and no edges — a press fires once, not once per tick. |
+| Tap inside one frame | `Press` then `Release` on the next tick, the action never reading as held. |
 | Context activated over a held key | Held, never a synthesised press. |
-| Context deactivated while holding | The action releases; it cannot stay held. |
-| Second control pressed while the action is held | No second press. Edges describe the action, not the binding that moved: with jump on Space, a pad button, and a trigger, joining one to another is not a new press, and letting one go while another still holds it is not a release. |
-| The profile stops resolving | Every held action releases once and then reads as zero, on both clocks. Actions cannot outlive the bindings that produced them. |
-| Focus loss, or the console taking input | The capture layer releases held device state, so actions release through the ordinary path instead of sticking down. |
+| Context deactivated while holding | `InterruptedRelease`; the action cannot stay held. |
+| Second control pressed while the action is held | No second press. Edges describe the action, not the binding that moved. |
+| The profile stops resolving | Every held action falls interrupted once and then reads as zero, on both clocks. |
+| Focus loss | The capture layer releases held device state as synthetic transitions, which arrive as interruptions. |
+| Simulation resumed after a pause | Input made during the pause is dropped from the simulation clock; interruptions are kept. |
 
-Context changes are applied at the frame boundary, before the first tick, so
-every tick of one frame resolves against the same set.
-
-`Fired()` is a mode-selected copy of one of those edges, decided where the mode
-is known, so it inherits every row above rather than adding rules of its own: a
-`pressed` action fires once per press however many ticks the frame ran, a
-`released` action fires once when the control comes up — including the once it
-owes when the profile stops resolving underneath it — and a `held` action fires
-every pass the control is down, which is the repetition that mode means.
+Console and UI capture do not release anything: a surface consuming input reports
+itself in `InputFrame::UiCapture`, and contexts decide what gameplay hears.
 
 ## Hot reload
 
@@ -314,23 +344,24 @@ that silently never fires.
 
 ## Boundaries this leaves open
 
-**AbilityKit.** A game bridges actions to `AbilityActivationQueue` in its own
-system, which is what keeps one activation path for players and AI (abilitykit
-D-I). Which moment an action fires on is settled here, in the mapping, not
-there. What remains for the AbilityKit stage is binding an ability definition
-directly to an action id, and abilities whose shape spans several moments —
-charge while held then loose on release, tap versus hold, timed sequences. Those
-need more than one moment and so read the raw edges; the tick records already
-carry the edges and tick stamps they will need.
+**AbilityKit.** Abilities read the tick's ordered edges themselves, through the
+action each grant is bound to (`docs/gameplay/abilitykit.md`, "Grants and input"),
+so a charge while held and a loose on release are one ability's phases rather than
+two actions. A client's predicted pass reads the same edges for its own pawn, on
+the pawn's command timeline (`abilitykit.md`, "Prediction"). The resolve pass publishes the vocabulary those bindings resolve
+against as `InputActionVocabulary`. Which moment a plain action fires on is still
+settled here, in the mapping.
 
 **The application shell.** Which actions open and drive a menu, and what a pause
 does to the contexts underneath it, are in [pause.md](pause.md). The mapper's
 only part in it is that the shell reads actions like anything else does.
 
 **Networking.** Tick records are flat, tick-stamped, action-indexed value arrays
-with no strings, pointers, or platform types. A command builder projects the
-actions a game replicates out of a record by index. This ticket supplies that
-shape and nothing else: no schema, no redundancy window, no replication.
+plus the ordered edge list, with no strings, pointers, or platform types. The
+player command (`net/NetPlayerCommand.h`) carries each tick's values and edges for
+up to 32 actions, newest first with a redundancy window; when the authority sheds
+backlog it concatenates the shed ticks' edges in order rather than merging them,
+and a starved tick repeats held state with no edges.
 
 Note that accumulated view angles are *not* in the record. The mapper produces
 per-tick look displacement; the entity's `LookOrientation` holds the running

@@ -22,7 +22,7 @@
 #include <anim/AnimPoseComposition.h>
 #include <anim/SkinningPalette.h>
 #include <assets/data/DataAssetSubtype.h>
-#include <assets/runtime/ContentTagDeclarations.h>
+#include <assets/runtime/ContentVocabulary.h>
 #include "authoring/AnimationClipPlayerMigration.h"
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <assets/runtime/RuntimeAssets.h>

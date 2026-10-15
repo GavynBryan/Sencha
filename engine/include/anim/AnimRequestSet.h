@@ -4,6 +4,7 @@
 #include <authored/VerbId.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
+#include <ecs/LeaseOwner.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
@@ -46,9 +47,9 @@ struct AnimRequest
     // prediction and the authority's record are matched by.
     AnimTick Command = 0;
 
-    // Local only, never replicated: the entity whose lifetime bounds a Held request,
-    // and the invocation that asked for it.
-    EntityId Owner;
+    // Local only, never replicated: the holder whose entity's lifetime bounds a Held
+    // request, and the invocation that asked for it.
+    LeaseOwner Owner;
     InvocationId Cause;
 
     std::uint8_t Layers = kAnimAllLayers;
@@ -62,6 +63,11 @@ struct AnimRequest
     // Issued here ahead of the authority (AnimRequestJournal). Never replicated, so
     // the authority's set arriving clears it.
     bool Predicted = false;
+    // Local only: it arrived from the wire for an entity this machine does not
+    // simulate, whose start tick had passed by then, so an Impulse is observed on
+    // the first tick this machine looks instead; and whether it has been.
+    bool Received = false;
+    bool Observed = false;
 
     [[nodiscard]] bool IsCancelled() const { return CancelReason != AnimCancelReason::None; }
 };

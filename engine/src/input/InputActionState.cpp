@@ -11,6 +11,9 @@ void InputActionState::Configure(std::size_t actionCount)
     TickSampledValues.assign(actionCount, InputActionValue{});
     RingValues.assign(actionCount * kHistoryCapacity, InputActionValue{});
     RingTicks.assign(kHistoryCapacity, 0);
+    for (InputActionEdgeList& edges : RingEdges)
+        edges.Clear();
+    FrameEdges.Clear();
     Newest = 0;
     Recorded = 0;
     NewestTick = 0;
@@ -23,7 +26,7 @@ std::span<InputActionValue> InputActionState::FrameStorage()
 
 InputActionView InputActionState::Frame() const
 {
-    return InputActionView{ FrameValues };
+    return InputActionView{ FrameValues, FrameEdges.View() };
 }
 
 std::span<InputActionValue> InputActionState::BeginTick(std::uint64_t tick)
@@ -35,6 +38,7 @@ std::span<InputActionValue> InputActionState::BeginTick(std::uint64_t tick)
     if (Recorded < kHistoryCapacity)
         ++Recorded;
     RingTicks[Newest] = tick;
+    RingEdges[Newest].Clear();
     NewestTick = tick;
     return std::span<InputActionValue>(RingValues).subspan(Newest * Actions, Actions);
 }
@@ -44,7 +48,8 @@ InputActionView InputActionState::Tick() const
     if (Actions == 0 || Recorded == 0)
         return InputActionView{};
     return InputActionView{
-        std::span<const InputActionValue>(RingValues).subspan(Newest * Actions, Actions)
+        std::span<const InputActionValue>(RingValues).subspan(Newest * Actions, Actions),
+        RingEdges[Newest].View(),
     };
 }
 
@@ -76,6 +81,7 @@ InputActionTickRecord InputActionState::History(std::size_t indexFromNewest) con
     const std::size_t slot = (Newest + kHistoryCapacity - indexFromNewest) % kHistoryCapacity;
     return InputActionTickRecord{
         RingTicks[slot],
-        std::span<const InputActionValue>(RingValues).subspan(slot * Actions, Actions)
+        std::span<const InputActionValue>(RingValues).subspan(slot * Actions, Actions),
+        &RingEdges[slot],
     };
 }

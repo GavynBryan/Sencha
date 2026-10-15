@@ -1,13 +1,12 @@
 #pragma once
 
 #include "AnimationPreviewScene.h"
-#include "render/DisplayedTargets.h"
 #include "render/EditorWideLinePipeline.h"
+#include "render/StagePicture.h"
 #include "viewport/OrbitCamera.h"
 
 #include <render/ui/UiDrawFrame.h>
 
-#include <optional>
 #include <vector>
 
 #include <render/feature/SkinnedPoseRenderFeature.h>
@@ -34,14 +33,12 @@ public:
     [[nodiscard]] CameraRenderData ViewCamera(float aspect) const { return Camera.BuildRenderData(aspect); }
 
 private:
-    void Record(const FrameContext& frame, const RenderTargetView& target);
+    void Record(const RenderScope& rendering, VkExtent2D extent);
 
     RuntimeAssets& Assets;
     AnimationPreviewScene& Scene;
     SkinnedPoseRenderFeature Skinning;
-    DisplayedTargets Targets;
-    RenderTargetId Target;
-    std::optional<UiHostImageId> Image;
+    StagePicture Picture;
     EditorWideLinePipeline WideLines;
     std::vector<EditorLineSegment> Strokes;
     LightBindings Lighting;

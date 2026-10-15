@@ -1,5 +1,7 @@
 #include <attributes/AttributeRegistry.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <algorithm>
 
 AttributeRegistry::AttributeRegistry()
@@ -22,6 +24,8 @@ AttributeId AttributeRegistry::RegisterAttribute(std::string_view name,
     const AttributeId id{ static_cast<std::uint32_t>(Attrs.size()) };
     Attrs.push_back(AttributeDef{ std::string(name), min, max, defaultBase });
     IdsByName.emplace(Attrs.back().Name, id);
+    if (const auto [key, inserted] = IdsByWireKey.emplace(NameWireKey(name), id); !inserted)
+        key->second = AttributeId{};
     return id;
 }
 
@@ -67,4 +71,15 @@ float AttributeRegistry::Clamp(AttributeId id, float value) const
 std::size_t AttributeRegistry::Size() const
 {
     return Attrs.size() - 1;
+}
+
+std::uint32_t AttributeRegistry::WireKey(AttributeId id) const
+{
+    return IsKnown(id) ? NameWireKey(Attrs[id.Value].Name) : 0u;
+}
+
+AttributeId AttributeRegistry::FindByWireKey(std::uint32_t key) const
+{
+    const auto it = IdsByWireKey.find(key);
+    return it != IdsByWireKey.end() ? it->second : AttributeId{};
 }

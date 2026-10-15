@@ -42,10 +42,12 @@ public:
                                               const DataSchemaRegistry& schemas,
                                               std::string* error = nullptr);
 
+    // A new document holding `data`, or its schema's required members without it.
     static std::unique_ptr<DataDocument> Create(const std::filesystem::path& file,
                                                 std::string virtualPath,
                                                 const DataAssetTypeRegistration& type,
-                                                const DataSchema& schema);
+                                                const DataSchema& schema,
+                                                const JsonValue* data = nullptr);
 
     DataDocument(const DataDocument&) = delete;
     DataDocument& operator=(const DataDocument&) = delete;
@@ -148,3 +150,6 @@ private:
 };
 
 [[nodiscard]] JsonValue CreateDefaultDataValue(const DataFieldSchema& field);
+// Gives every StableKey field under `value` a fresh key, for a copy that must not
+// share identities with the element it was copied from.
+void RemintStableKeys(JsonValue& value, const DataFieldSchema& field);

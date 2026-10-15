@@ -3,6 +3,9 @@
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityRegistry.h>
+#include <movement/DilatedCharacterStepSystem.h>
+#include <physics/PhysicsStepSystem.h>
+#include <time/TimeComponentRegistration.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <ecs/World.h>
@@ -19,6 +22,7 @@
 #include <movement/RootMotionSource.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
+#include <movement/HeldMotionStep.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
@@ -42,6 +46,8 @@ namespace
 
 void RegisterMovementComponents(ComponentRegistrar& registrar)
 {
+    // A character steps on its own clock.
+    RegisterTimeComponents(registrar);
     RegisterAbilityKitComponents(registrar);
     registrar.AddAll<MovementComponents>();
 
@@ -106,20 +112,23 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
     schedule.Register<RootMotionSystem>();
+    schedule.Register<HeldMotionSystem>();
     schedule.Register<MotionCompositionSystem>();
+    schedule.Register<DilatedCharacterStepSystem>(*schedule.Get<FreeLocomotionSystem>(),
+                                                 schedule.Get<PhysicsStepSystem>());
 
     // The tick reads as one sentence: project last step's physical facts onto
     // tags, collect and apply mode transitions, resolve this tick's
     // coefficients from the profile, run locomotion, let actions contribute,
     // then compose the single motor request.
     schedule.After<ModeRequestCollectionSystem, SupportTagProjectionSystem>();
-    schedule.After<AbilityActivationSystem, SupportTagProjectionSystem>();
-    schedule.After<ModeRequestCollectionSystem, AbilityActivationSystem>();
+    schedule.After<AbilitySystem, SupportTagProjectionSystem>();
+    schedule.After<ModeRequestCollectionSystem, AbilitySystem>();
     schedule.After<LocomotionModeTransitionSystem, ModeRequestCollectionSystem>();
 
     // Tuning resolution reads the mode chosen this tick and the attributes
     // effects have already resolved, so it follows both.
-    schedule.After<AttributeResolveSystem, AbilityActivationSystem>();
+    schedule.After<AttributeResolveSystem, AbilitySystem>();
     schedule.After<MovementTuningResolutionSystem, LocomotionModeTransitionSystem>();
     schedule.After<MovementTuningResolutionSystem, AttributeResolveSystem>();
 
@@ -131,7 +140,11 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // A source carrying the character replaces what locomotion and actions
     // asked for across the ground, so it writes after them.
     schedule.After<RootMotionSystem, JumpExecutionSystem>();
-    schedule.After<MotionCompositionSystem, RootMotionSystem>();
+    // What an ability holds the character to replaces all of that.
+    schedule.After<HeldMotionSystem, RootMotionSystem>();
+    schedule.After<MotionCompositionSystem, HeldMotionSystem>();
+    // A dilated character is stepped whole, after the bulk systems it is excluded from.
+    schedule.After<DilatedCharacterStepSystem, MotionCompositionSystem>();
     // Root motion reads what animation resolved this tick. Declared by whichever of
     // the two registers second, so neither has to come first.
     if (schedule.Get<AnimContentSystem>() != nullptr)

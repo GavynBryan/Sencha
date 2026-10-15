@@ -112,7 +112,7 @@ PersistentEntityId EditorScene::MintPersistentId()
 {
     while (true)
     {
-        const uint64_t value = IdRng_() & ~PersistentEntityIdRuntimeBit;
+        const uint64_t value = IdRng_.Next() & ~PersistentEntityIdRuntimeBit;
         if (value != 0 && TakenIds_.insert(value).second)
             return PersistentEntityId{ value };
     }

@@ -10,7 +10,10 @@ namespace
     // sits from the newest one in the same command.
     constexpr std::uint8_t kActionCountBits = 6;
     constexpr std::uint8_t kTickDeltaBits = 8;
-    constexpr std::uint8_t kFlagBits = 4;
+    constexpr std::uint8_t kFlagBits = 5;
+    constexpr std::uint8_t kEdgeCountBits = 6;
+    constexpr std::uint8_t kEdgeActionBits = 5;
+    constexpr std::uint8_t kEdgeKindBits = 2;
     constexpr std::uint64_t kMaxTickDelta = 255;
 
     // Yaw travels at full width: it is a running total with no bound the input
@@ -23,6 +26,10 @@ namespace
 
     static_assert(kNetMaxCommandActions <= (1u << kActionCountBits),
                   "the action cap has to be expressible in the count field");
+    static_assert(kNetMaxCommandActions <= (1u << kEdgeActionBits),
+                  "every action an edge can name has to fit its field");
+    static_assert(InputActionEdgeList::Capacity < (1u << kEdgeCountBits),
+                  "a full edge list has to be expressible in the count field");
 
     void WritePitch(float pitch, NetBitWriter& writer)
     {
@@ -65,6 +72,10 @@ namespace
             if (HasAxis(record.Actions[index]))
                 bits += 64;
         }
+        bits += kEdgeCountBits;
+        for (const InputActionEdge& edge : record.Edges.View())
+            if (edge.Action < actionCount)
+                bits += kEdgeActionBits + kEdgeKindBits;
         return bits + 1;
     }
 
@@ -90,6 +101,19 @@ namespace
                 writer.WriteFloat(value.X);
                 writer.WriteFloat(value.Y);
             }
+        }
+
+        std::uint32_t edges = 0;
+        for (const InputActionEdge& edge : record.Edges.View())
+            if (edge.Action < actionCount)
+                ++edges;
+        writer.WriteBits(edges, kEdgeCountBits);
+        for (const InputActionEdge& edge : record.Edges.View())
+        {
+            if (edge.Action >= actionCount)
+                continue;
+            writer.WriteBits(edge.Action, kEdgeActionBits);
+            writer.WriteBits(static_cast<std::uint32_t>(edge.Kind), kEdgeKindBits);
         }
     }
 
@@ -127,6 +151,21 @@ namespace
             }
             record.Actions[index] = value;
         }
+
+        std::uint32_t edges = 0;
+        if (!reader.ReadBits(kEdgeCountBits, edges) || edges > InputActionEdgeList::Capacity)
+            return false;
+        record.Edges.Clear();
+        for (std::uint32_t index = 0; index < edges; ++index)
+        {
+            std::uint32_t action = 0;
+            std::uint32_t kind = 0;
+            if (!reader.ReadBits(kEdgeActionBits, action) || !reader.ReadBits(kEdgeKindBits, kind))
+                return false;
+            if (action >= actionCount || kind > static_cast<std::uint32_t>(InputEdgeKind::InterruptedRelease))
+                return false;
+            record.Edges.Append({ static_cast<std::uint8_t>(action), static_cast<InputEdgeKind>(kind) });
+        }
         return true;
     }
 
@@ -153,15 +192,22 @@ namespace
 
     // What a collapsed tick keeps. Levels and axes come from the newest record
     // of the batch -- they are states, and the newest state is the true one --
-    // but the edges are OR'd forward, because a press that lived only in a
-    // shed tick is a request the player made exactly once and shedding backlog
-    // must not be how it disappears.
+    // but the edges carry forward, in order, ahead of the newer record's own,
+    // because a press that lived only in a shed tick is a request the player
+    // made exactly once and shedding backlog must not be how it disappears.
     void CarryEdges(const NetCommandRecord& older, NetCommandRecord& newer)
     {
         constexpr std::uint8_t edgeMask =
             static_cast<std::uint8_t>(InputActionFlags::Pressed)
             | static_cast<std::uint8_t>(InputActionFlags::Released)
-            | static_cast<std::uint8_t>(InputActionFlags::Fired);
+            | static_cast<std::uint8_t>(InputActionFlags::Fired)
+            | static_cast<std::uint8_t>(InputActionFlags::Interrupted);
+
+        InputActionEdgeList carried = older.Edges;
+        for (const InputActionEdge& edge : newer.Edges.View())
+            carried.Append(edge);
+        carried.Overflowed = carried.Overflowed || newer.Edges.Overflowed;
+        newer.Edges = carried;
 
         const std::uint8_t count = std::min(older.ActionCount, newer.ActionCount);
         for (std::uint8_t index = 0; index < count; ++index)
@@ -442,6 +488,7 @@ bool NetPeerCommandBuffer::Next(NetCommandRecord& out)
     ++Starved;
     for (std::uint8_t index = 0; index < Last.ActionCount; ++index)
         ClearEdges(Last.Actions[index]);
+    Last.Edges.Clear();
     out = Last;
     return true;
 }

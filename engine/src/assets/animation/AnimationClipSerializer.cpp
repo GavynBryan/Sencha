@@ -288,10 +288,10 @@ bool LoadSanimFromBytes(std::span<const std::byte> bytes,
         float minWeight = 0.0f;
         if (!cursor.Read(event.Key) || !cursor.Read(event.Time) || !cursor.Read(scope) || !cursor.Read(hasMinWeight)
             || !cursor.Read(inputCount) || !cursor.Read(minWeight) || !cursor.ReadLengthPrefixed(event.Name)
-            || !cursor.ReadLengthPrefixed(event.Binding) || scope > static_cast<uint8_t>(AnimEventScope::Gameplay)
+            || !cursor.ReadLengthPrefixed(event.Binding) || scope > static_cast<uint8_t>(AuthoredScope::Gameplay)
             || hasMinWeight > 1 || inputCount > kAnimEventMaxInputs)
             return failEvents();
-        event.Scope = static_cast<AnimEventScope>(scope);
+        event.Scope = static_cast<AuthoredScope>(scope);
         if (hasMinWeight != 0)
             event.MinWeight = minWeight;
         event.Inputs.resize(inputCount);

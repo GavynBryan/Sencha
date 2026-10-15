@@ -83,8 +83,8 @@ namespace
         // Only events that decide something: a cosmetic one may differ.
         void Event(const std::optional<AnimBoundEvent>& event)
         {
-            Plain(event.has_value() && event->Scope == AnimEventScope::Gameplay);
-            if (event.has_value() && event->Scope == AnimEventScope::Gameplay)
+            Plain(event.has_value() && event->Scope == AuthoredScope::Gameplay);
+            if (event.has_value() && event->Scope == AuthoredScope::Gameplay)
                 Text(event->BindingText);
         }
     };
@@ -198,7 +198,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const AnimationClip
         h.Plain(content.Blendspace);
         for (const AnimBoundEvent& event : content.Events)
         {
-            if (event.Scope != AnimEventScope::Gameplay)
+            if (event.Scope != AuthoredScope::Gameplay)
                 continue;
             h.Plain(event.Time);
             h.Text(event.BindingText);

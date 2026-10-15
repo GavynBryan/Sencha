@@ -45,7 +45,7 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 | # | System | Does |
 |---|--------|------|
 | 1 | `SupportTagProjectionSystem` | Mirrors last step's `SupportState` onto the `movement.grounded` tag. |
-| 2 | `AbilityActivationSystem` (AbilityKit) | Activates abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
+| 2 | `AbilitySystem` (AbilityKit) | Runs abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
 | 3 | `ModeRequestCollectionSystem` | Consumes granted `movement.request.*` tags into the arbitrated transition mailbox. |
 | 4 | `LocomotionModeTransitionSystem` | Applies at most one mode transition per entity: exit old session, enter new, move the active tag. |
 | 5 | `AttributeResolveSystem`, then `MovementTuningResolutionSystem` | Resolves this tick's `ResolvedMovementTuning` from the profile layers against the current facts, mode, and tags. |
@@ -289,6 +289,69 @@ writes back position, achieved velocity, and support.
 Config knobs (`CharacterMoverConfig`): capsule radius/height, slope limit,
 step height, ground-snap distance, skin width, push mass.
 
+## Held motion
+
+What an ability holds a character to while it lasts is a slot on the character,
+owned by the lease's holder (`movement/components/HeldMotion.h`, every character
+carries them): two `MotionBursts` slots, one `TetherSession`, one
+`LocomotionModeLease`. The leases `movement.burst`, `movement.tether` and
+`movement.mode` (`MovementVerbs.h`) fill a slot on acquire and empty it on
+release; a slot whose holder's entity is gone empties when the character next
+steps, as every provider's pull rule asks.
+
+- **Burst:** a velocity, held or for a number of seconds of the character's time.
+  The live bursts' velocities are summed and forced into the planar channel (and
+  the up channel when one rises), over locomotion, jump and root motion. When it
+  ends, the character keeps what it was moving at and slows as locomotion says.
+- **Tether:** a rope to an anchor entity (followed while it lives; the tether ends
+  when it does) or a point. Longer than its length, it forces a pull toward the
+  anchor at its speed, never past taut in one step, so the character arrives at
+  the rope's length.
+- **Mode:** a locomotion mode requested for the lease's scope; released, the
+  character is asked back to free if it is still in the leased mode.
+
+A timed burst and a tether complete (`VerbDefinition::Completes`): the burst when
+its time is up, the tether when its anchor entity ends, so a phase holding one can
+wait on `on: complete` (`docs/gameplay/abilitykit.md`, "Ability definitions"). A
+client predicts the three leases for its own pawn when the ability's prediction
+level is `simulation`; replay then steps them as it does the live tick.
+
+`StepHeldMotion` steps bursts and tethers for one step of the character's time.
+`HeldMotionSystem` calls it for undilated characters after root motion and
+before composition, and frees a mode whose holder is gone; `StepCharacterTick`
+calls it inside every step, so a dilated character and replay step held motion
+exactly as the live tick does, and the burst and tether slots are among the
+components replay resumes.
+
+## Dilated characters
+
+A character owns a clock (`ActorTime`, derived from `CharacterMovement`); its
+scale comes from the leases on it (`docs/core-systems-map.md`, frame contract).
+While the scale is not one the clock marks the character `ActorTimeDilated`, and
+the bulk systems -- free locomotion, jump, root motion and the motor's drive --
+leave it to `DilatedCharacterStepSystem`, which steps it whole through
+`StepScaledCharacterTick`, the kernel replay runs:
+
+- **Slowed** (scale below one): one complete step of `dt × scale`.
+- **Hastened** (above one): `ceil(scale)` complete steps of `dt × scale / n`, so no
+  sweep carries it further than an undilated tick would; stair stepping, ground
+  snapping and pushes behave as at normal speed, at a cost that grows with `n`
+  (bounded by the hard maximum of four).
+- **Carried:** the ground's carry is divided by the scale, so a dilated character on
+  a moving platform rides it at the platform's speed.
+- **Gravity** applies in the character's time: a slowed character falls slower.
+- **Root motion** is sampled once a tick at the simulation's tick length; its
+  velocity is per second of the character's time and each substep takes its share
+  of the tick's turn (`docs/gameplay/animation.md`, "Playback time").
+- **Rigid bodies** run at simulation rate: a dilated character pushes one through
+  its sweeps, with the velocity it crosses the simulation at.
+- **Replay** computes each replayed tick's scale from the lease history on the pawn,
+  so a dilation the client never predicted is applied from the tick it took effect
+  and ended on the tick it ended.
+
+Only modes `StepCharacterTick` implements are stepped dilated; a character in a
+game-defined mode runs at simulation speed (`docs/deferred.md`).
+
 ## Extension recipes
 
 ### Adding a locomotion mode
@@ -345,7 +408,9 @@ and stage candidates — never inside a locomotion system's inner loop.
 `PhysicsQueries` (`engine/include/physics/PhysicsQueries.h`) is the read-only
 raycast/sweep/overlap surface; reach it from a game module via
 `ctx.Schedule.Get<PhysicsStepSystem>()->GetSimulation()` (the template already
-uses `Schedule.Get` for the shape cache). A detection system running in
+uses `Schedule.Get` for the shape cache). A `PhysicsQueryFilter` names an entity
+whose bodies a query passes through, so a trace from inside a caster does not
+report the caster. A detection system running in
 `FixedLogic` queries last tick's physics state; stage the candidate and let the
 next transition tick convert it. Keep detection work proportional to
 characters that could actually enter the mode (gate on airborne, on speed, on

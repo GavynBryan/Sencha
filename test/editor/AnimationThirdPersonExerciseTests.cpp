@@ -80,7 +80,7 @@ namespace
             done.Key = 2;
             done.Time = 0.91f;
             done.Binding = "weapon.reload_done";
-            done.Scope = AnimEventScope::Gameplay;
+            done.Scope = AuthoredScope::Gameplay;
             Clip("asset://tp/reload.sanim", 1.0f, { magOut, done });
 
             Load("asset://tp/character.facts.sdata", kAnimFactSchemaType,
@@ -160,6 +160,7 @@ namespace
             {
                 VerbDefinition verb;
                 verb.Name = name;
+                verb.Scope = AuthoredScope::Cosmetic;
                 (void)scope.Declare(std::move(verb));
             }
             (void)scope.Commit();

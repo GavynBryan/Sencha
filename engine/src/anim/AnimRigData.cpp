@@ -54,6 +54,13 @@ namespace
                                          kAnimSelectorType));
         layer.Children.push_back(Field("idle", DataFieldKind::GameplayTag, "Idle behavior",
                                        "Played when nothing is selected or requested.", false));
+        DataFieldSchema presentation =
+            Field("presentation", DataFieldKind::Bool, "Presentation",
+                  "Plays only what this machine presents (anim.present): a reaction no body or gameplay "
+                  "event depends on. Request-keyed, with no root motion or gameplay events.",
+                  false);
+        presentation.Default = false;
+        layer.Children.push_back(std::move(presentation));
         DataFieldSchema maskOp = Field({}, DataFieldKind::Record, "Mask step", {}, true);
         maskOp.Children.push_back(Field("joint", DataFieldKind::String, "Joint",
                                         "A joint of the rig's skeleton, by name.", true));
@@ -168,6 +175,9 @@ namespace
                                                             : AnimLayerMode::Override;
             if (const JsonValue* weight = layers[i].Find("weight"))
                 layer.Weight = static_cast<float>(weight->AsNumber());
+            if (const JsonValue* presentation = layers[i].Find("presentation");
+                presentation != nullptr && presentation->IsBool())
+                layer.Presentation = presentation->AsBool();
             if (const JsonValue* selector = layers[i].Find("selector");
                 selector != nullptr && selector->IsString() && !selector->AsString().empty())
             {

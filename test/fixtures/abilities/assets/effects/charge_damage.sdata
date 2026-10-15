@@ -1,0 +1,9 @@
+{
+  "id": "c2f80b19d64e7a35",
+  "type": "effect.definition",
+  "version": 1,
+  "data": {
+    "duration": "instant",
+    "modifiers": [ { "key": "m_health", "attribute": "Health", "op": "add", "magnitude": -40 } ]
+  }
+}

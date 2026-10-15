@@ -5,6 +5,7 @@
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowState.h>
 #include <anim/AnimPoseState.h>
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigComposition.h>
@@ -26,6 +27,7 @@ using AnimationComponents = ComponentSet<
     AnimRigComposition,
     AnimPoseConsumer,
     AnimRequestSet,
+    AnimPresentationRequests,
     AnimFacts,
     AnimFactsLarge,
     AnimFactHistory,

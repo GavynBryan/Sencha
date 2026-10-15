@@ -2,6 +2,8 @@
 
 #include "AnimRigBinder.h"
 
+#include <core/hash/Fnv1a.h>
+
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimRigTimingIdentity.h>
 #include <anim/AnimationClipCache.h>
@@ -22,13 +24,7 @@ namespace
 
 std::uint32_t AnimStableKey(std::string_view text)
 {
-    std::uint32_t hash = 2166136261u;
-    for (const char c : text)
-    {
-        hash ^= static_cast<std::uint8_t>(c);
-        hash *= 16777619u;
-    }
-    return hash;
+    return Fnv1a32(text);
 }
 
 const GameplayTagRegistry* AnimRigBinder::Tags() const
@@ -313,6 +309,7 @@ void AnimRigBinder::BindLayers(const AnimRigData& rig)
         layer.Name = tags != nullptr ? tags->FindTag(layer.NameText) : GameplayTagId{};
         layer.Mode = rig.Layers[i].Mode;
         layer.Weight = rig.Layers[i].Weight;
+        layer.Presentation = rig.Layers[i].Presentation;
         if (!rig.Layers[i].Idle.empty())
         {
             if (std::optional<GameplayTagId> idle = ResolveTag(
@@ -385,7 +382,7 @@ namespace
 {
     bool IsGameplay(const std::optional<AnimBoundEvent>& event)
     {
-        return event.has_value() && event->Scope == AnimEventScope::Gameplay;
+        return event.has_value() && event->Scope == AuthoredScope::Gameplay;
     }
 
     // Conservative: anything the binding could not see into counts as reaching gameplay.
@@ -401,7 +398,7 @@ namespace
             if (content.IsClip() && !content.Clip.IsValid())
                 return true;
             for (const AnimBoundEvent& event : content.Events)
-                if (event.Scope == AnimEventScope::Gameplay)
+                if (event.Scope == AuthoredScope::Gameplay)
                     return true;
         }
         return false;
@@ -445,6 +442,7 @@ namespace
         binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
         binder.ValidateBlendspaceGameplayEvents();
+        binder.ValidatePresentationLayers();
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         bound.DrivesGameplay = !bound.Valid || ReachesGameplay(bound);
         bound.TimingIdentity = AnimRigTimingIdentity(bound, clips, world.TryGetResource<GameplayTagRegistry>());

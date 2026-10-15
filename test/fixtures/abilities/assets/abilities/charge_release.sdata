@@ -1,0 +1,62 @@
+{
+  "id": "4b1e0c7d9a2f6e83",
+  "type": "ability.definition",
+  "version": 1,
+  "data": {
+    "display": { "name": "Charge shot", "category": "Weapon" },
+    "input_default": { "action": "Input.PrimaryFire", "policy": "press_release",
+                       "consume": "exclusive", "when_blocked": "consume", "priority": 100,
+                       "on_interrupt": "cancel" },
+    "activation": [
+      { "key": "act_free", "tags": { "none": ["State.Stunned", "Weapon.Reloading", "Cooldown.Charge"] } } ],
+    "continuation": [
+      { "key": "cont_mode", "tags": { "all": ["Weapon.CTX.Mode.Charge"] } } ],
+    "cancel_on": [
+      { "key": "x_dead", "tags": { "any": ["State.Dead"] } } ],
+    "owned_tags": ["Weapon.Firing"],
+    "instances": 1,
+    "locals": [
+      { "key": "l_charge", "name": "Charge", "type": "float" },
+      { "key": "l_hit", "name": "Hit", "type": "hit" } ],
+    "costs": [
+      { "key": "g_shot", "name": "Shot", "when": "commit", "repeat": "once",
+        "effects": [ { "data": "asset://effects/ammo_1.sdata" } ] } ],
+    "cooldown": { "effect": { "data": "asset://effects/charge_cooldown.sdata" },
+                  "start": "on_commit", "group": "g_shot" },
+    "phases": [
+      { "key": "p_charge", "name": "Charge",
+        "timing": { "domain": "actor", "progress_ticks": 60 },
+        "hold": [
+          { "key": "o_charge_anim", "lease": "anim.hold",
+            "arguments": { "target": { "port": "actor" }, "intent": { "tag": "weapon.charge" } } } ],
+        "present": [ { "key": "pr_glow", "cue": "cue.charge_glow" } ],
+        "exit": [
+          { "key": "o_capture", "op": "set", "local": "l_charge", "from": { "port": "phase.progress" } } ],
+        "then": [
+          { "key": "t_fire", "on": "release",
+            "when": { "key": "w_min", "phase_ticks": { "at_least": 6 } }, "to": "p_fire" },
+          { "key": "t_early", "on": "release", "to": "p_recover" } ] },
+      { "key": "p_fire", "name": "Fire",
+        "enter": [
+          { "key": "o_commit", "op": "commit", "groups": ["g_shot"], "on_fail": "end" },
+          { "key": "o_trace", "op": "query", "query": "physics.trace", "into": "l_hit",
+            "arguments": { "origin": { "port": "aim.origin" }, "direction": { "port": "aim.direction" },
+                           "range": { "const": 80.0 }, "ignore": { "port": "actor" } } },
+          { "key": "o_damage", "op": "invoke", "verb": "effect.apply",
+            "when": { "key": "w_recipient",
+                      "entity": { "of": { "local": "l_hit", "field": "entity" },
+                                  "has": ["sencha.attribute_set"] } },
+            "arguments": { "target": { "local": "l_hit", "field": "entity" },
+                           "effect": { "data": "asset://effects/charge_damage.sdata" },
+                           "scale": { "local": "l_charge" } } },
+          { "key": "o_release_cue", "op": "cue", "cue": "cue.charge_release" },
+          { "key": "o_impact_cue", "op": "cue", "cue": "cue.impact",
+            "when": { "key": "w_struck", "hit": "l_hit" },
+            "at": { "local": "l_hit" } } ],
+        "then": [ { "key": "t_recover", "to": "p_recover" } ] },
+      { "key": "p_recover", "name": "Recover", "timing": { "domain": "actor" },
+        "then": [ { "key": "t_done", "on": "timeout", "ticks": 20, "to": "end" } ] } ],
+    "prediction": "simulation",
+    "lifetime": { "on_reload": "cancel" }
+  }
+}

@@ -1,6 +1,6 @@
 #include "input/InputActionSetAuthoring.h"
 
-#include "JsonObjectEdit.h"
+#include "data/JsonObjectEdit.h"
 
 #include "data/DataDocument.h"
 #include "data/DataPath.h"

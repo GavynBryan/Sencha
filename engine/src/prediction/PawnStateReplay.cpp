@@ -3,6 +3,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <movement/CharacterTickStep.h>
+#include <time/ActorTimeSystem.h>
 #include <net/ClientPrediction.h>
 #include <net/ReplicationLayout.h>
 #include <physics/CharacterMoverPool.h>
@@ -98,8 +99,9 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
                 request.AckTick, [&](const PawnCommandTick& command) {
                     // The predicted pawn lives on the command timeline, so a command's
                     // tick is the tick its animation and root motion ran on live.
-                    StepCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
-                                      request.FixedDeltaSeconds, request.Gravity, request.UpAxis);
+                    StepScaledCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
+                                            request.FixedDeltaSeconds, ActorScaleOnTick(world, pawn, command.Tick),
+                                            request.Gravity, request.UpAxis);
                     ++replayed;
                 });
 

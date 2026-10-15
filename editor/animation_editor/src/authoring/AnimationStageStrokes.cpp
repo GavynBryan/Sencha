@@ -3,6 +3,7 @@
 #include "authoring/AnimationPreviewSession.h"
 
 #include "EditorTheme.h"
+#include "render/LineShapes.h"
 
 #include <anim/Skeleton.h>
 
@@ -37,17 +38,8 @@ void AppendPathStrokes(const AnimationPreviewSession& session, std::optional<Ani
     };
     if (session.Scenario().Movement.has_value())
         for (const AnimationScenarioWall& wall : session.Scenario().Movement->Walls)
-        {
-            const Vec3d c = wall.Center;
-            const Vec3d h = wall.HalfExtents;
-            const auto corner = [&](int i) {
-                return Vec3d(c.X + ((i & 1) ? h.X : -h.X), c.Y + ((i & 2) ? h.Y : -h.Y), c.Z + ((i & 4) ? h.Z : -h.Z));
-            };
-            for (int i = 0; i < 8; ++i)
-                for (const int bit : { 1, 2, 4 })
-                    if ((i & bit) == 0)
-                        line(corner(i), corner(i | bit), EditorTheme::AnimationWall, kWallWidth);
-        }
+            AppendBoxEdges(out, Aabb3d::FromCenterHalfExtent(wall.Center, wall.HalfExtents), EditorTheme::AnimationWall,
+                           kWallWidth);
 
     const Vec3d feet(0.0f, session.SubjectHeight() * 0.5f, 0.0f);
     std::optional<Vec3d> previous;

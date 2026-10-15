@@ -14,6 +14,10 @@
 #include <authored/VerbBindingData.h>
 #include <spatial/candidates/CandidateEvaluationData.h>
 #include <core/logging/LoggingProvider.h>
+#include <attributes/AttributeDeclarations.h>
+#include <abilities/AbilityDefinitionData.h>
+#include <abilities/CuePresentationData.h>
+#include <effects/EffectDefinitionData.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
@@ -106,6 +110,10 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAnimBlendOverrides(DataTypes, DataSchemas);
     RegisterAnimBlendspaceData(DataTypes, DataSchemas);
     RegisterGameplayTagDeclarations(DataTypes, DataSchemas);
+    RegisterAttributeDeclarations(DataTypes, DataSchemas);
+    RegisterEffectDefinitionData(DataTypes, DataSchemas);
+    RegisterAbilityDefinitionData(DataTypes, DataSchemas);
+    RegisterCuePresentationData(DataTypes, DataSchemas);
     RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
 
     // A reference store is its own stager and store, so it takes the mesh

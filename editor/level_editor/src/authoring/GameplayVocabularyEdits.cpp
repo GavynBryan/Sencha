@@ -1,7 +1,10 @@
 #include "GameplayVocabularyEdits.h"
 
+#include "identity/RandomKey.h"
+
+#include <abilities/AbilityGrantEntries.h>
+#include <abilities/AbilityGrants.h>
 #include <abilities/AbilityRegistry.h>
-#include <abilities/AbilitySet.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -114,25 +117,25 @@ VocabularyEdit RemoveAttribute(AttributeSet& set, AttributeId id)
     return set.Remove(id) ? Applied() : Unchanged();
 }
 
-VocabularyEdit GrantAbility(AbilitySet& set,
-                            const AbilityRegistry& registry,
-                            AbilityId id)
+VocabularyEdit AddAbilityGrant(AbilityGrants& grants,
+                               AbilityGrantEntries& entries,
+                               const AbilityRegistry& registry,
+                               AbilityId id)
 {
-    if (!registry.IsKnown(id))
-        return Refused("No ability with that id is registered here.");
-    if (set.Has(id))
-        return Refused("This entity already carries that ability.");
-    if (set.Size() >= AbilitySet::Capacity)
-        return Refused("An entity holds at most "
-                       + std::to_string(AbilitySet::Capacity) + " abilities.");
-
-    set.Grant(id);
+    if (registry.Get(id) == nullptr)
+        return Refused("No ability with that id is declared here.");
+    if (grants.Count >= kAbilityGrantCapacity)
+        return Refused("An entity holds at most " + std::to_string(kAbilityGrantCapacity) + " grants.");
+    const std::uint16_t entry = entries.Intern({ MintStableKey(), id, {} });
+    if (entry == kAbilityNoGrantEntry)
+        return Refused("This document holds as many grant entries as it can.");
+    (void)GrantAbility(grants, id, AbilityGrantKind::Authored, entry);
     return Applied();
 }
 
-VocabularyEdit RevokeAbility(AbilitySet& set, AbilityId id)
+VocabularyEdit RemoveAbilityGrant(AbilityGrants& grants, AbilityGrantId id)
 {
-    return set.Revoke(id) ? Applied() : Unchanged();
+    return RevokeAbilityGrant(grants, id) ? Applied() : Unchanged();
 }
 
 VocabularyEdit SetLocomotionMode(CharacterMovement& movement,

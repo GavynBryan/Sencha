@@ -81,6 +81,7 @@ the only thing that adds or removes these parts.
 | `AnimSelectorState` | has a layer with a selector |
 | `AnimFlowState` | plays a flow |
 | `AnimPoseState` | has a skeleton, the machine presents a pose, and something consumes it |
+| `AnimPresentationRequests` | has a presentation layer and the machine presents a pose |
 
 A pose consumer carries `AnimPoseConsumer`; `SkinnedMesh` brings it, so a skinned
 mesh beside a rig is posed and a rig nobody draws is not. A rig still loading,
@@ -214,7 +215,8 @@ authority issues on the tick the animated entity is simulating, a client predict
 only for the entity it predicts, and cancels are the authority's. The ability
 kit asks through it (`docs/gameplay/abilitykit.md`, "Animation"), and so do the
 engine's authored verbs `anim.request` and `anim.cancel`, for level logic,
-scripted gameplay, AI and props. The rules:
+scripted gameplay, AI and props, and the `anim.hold` lease, whose Held request
+carries its holder as `Owner` and ends when that holder releases it. The rules:
 
 - expired Fixed and Impulse records, and cancelled records whose tail has
   ended, are pruned before any insert;
@@ -242,6 +244,30 @@ held.
 The rules are pure over the component data. The World overloads find the
 components, validate the intent against the entity's rig and write the
 decision log.
+
+### Presentation layers
+
+A reaction only a viewer needs -- a flinch where a shot struck, a recoil kick on
+a remote pawn -- cannot be an ordinary request, since only the authority and a
+predicting client write those. A rig layer declared `presentation: true` is
+request-keyed by a second set, `AnimPresentationRequests`, which holds an ordinary
+`AnimRequestSet` and is written by the cosmetic `anim.present` verb wherever
+something presents a pose, on that machine alone: it has no codec, no journal
+and no prediction, and the authority's set never sees it. `AnimLayerRequests`
+names the set each layer reads, so content resolution, slot-row predicates and
+event attribution on a presentation layer read only what was presented, and
+every other layer only what the simulation asked for. A presented request is
+`impulse` or `fixed`; it is pruned like any other. What a presentation layer
+plays leaves no anchor or tail in either set and never counts as playing a
+simulation request.
+
+The binder makes the separation hold (`anim.rig.presentation_layer`): a
+presentation layer takes no selector, and nothing a presented request can make
+it play -- its idle, and every behavior an intent names -- may carry root motion
+or fire a gameplay-scope event, through its lifecycle, its clips or a flow's
+sections. A rig with a presentation layer therefore keeps root motion and
+gameplay events off its intents; root motion reads only the first layer and the
+simulation's set in any case.
 
 ## Predicates
 
@@ -431,6 +457,21 @@ Content time itself is a function of ticks, so a zone that wakes shows its
 content where the ticks put it, not where it stopped; only the marks it passed
 while asleep are skipped.
 
+**Actor time.** A playback also carries the scale of its actor's time
+(`TimeScale`; see `docs/core-systems-map.md`). Content resolution reads the
+entity's scale on each tick from its time leases (`ActorScaleOnTick`) and, when it
+differs, `RetimeAnimPlayback` re-anchors the playback at the tick before: that tick
+played at the new scale, as the actor's clock counts it, so the next pass crosses
+exactly where the last one stopped. The anchor is kept beside `StartTick` and
+`OffsetSeconds` rather than replacing them, so the instance stays the same one to
+the event pass and the pose pass; `RestartAnimPlayback` starts a new instance and
+drops the anchor. A blendspace's phase, a flow's sections and the pose pass's
+phase rate all advance by `rate × scale`. Root motion re-anchors its own copy the
+same way, borrowing the layer's anchor while the layer plays the carrying request,
+and reports velocity per second of actor time, which is what a dilated character's
+step sweeps through. A request read before its layer plays it is timed from its
+start at the current scale.
+
 ## Events
 
 After content resolution each layer's content time has advanced by one tick,
@@ -464,7 +505,10 @@ event track: the weights never decide what gameplay hears.
 
 Scope gates production, not authority. A gameplay event is produced only in a
 World with simulation authority, a cosmetic one only where a pose is
-presented. Neither makes the invocation authoritative; the verb decides.
+presented. Neither makes the invocation authoritative; the verb decides. An
+event's scope is the authored API's `AuthoredScope`, passed with every
+invocation, so a cosmetic event can only invoke a cosmetic verb
+(`docs/gameplay/authored-api.md`, "Verb kinds and classification").
 
 ## Pose
 
@@ -572,6 +616,16 @@ for the same intent and command, and refused otherwise, and either way the guess
 is taken down. What is still undecided is issued again on top. A refused guess
 starts selection over from the authority's word. Past its capacity the journal
 predicts nothing more, so every guess on a set is one it will take down.
+
+An Impulse is live for the tick it starts on, which has passed by the time a
+machine that only receives the entity hears of it. A record the wire delivers for
+an entity this machine does not predict is marked `Received`, and a received
+Impulse is observed once instead: live on the first tick this machine resolves
+the entity after it arrives, marked `Observed` by content resolution
+(`NoteAnimImpulsesObserved`), and never live again. The codec keeps that mark
+across snapshots of the same record. One that waits longer than
+`kAnimReceivedImpulseTicks` is too old to play. The authority and a predicting
+client keep the tick rule, so neither plays an Impulse twice.
 
 Nothing in animation is rewound: content follows the set it is given, and a
 corrected start restarts content where the authority put it. Cancels and anchors

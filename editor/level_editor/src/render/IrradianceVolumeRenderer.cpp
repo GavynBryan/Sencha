@@ -1,7 +1,7 @@
 #include "IrradianceVolumeRenderer.h"
 
 #include "EditorTheme.h"
-#include "OverlayBoxEdges.h"
+#include "render/LineShapes.h"
 
 #include "document/EditorScene.h"
 #include "selection/SelectionService.h"

@@ -207,7 +207,7 @@ namespace
                 AnimLifecycleDecl decl;
                 decl.Binding = text(record, "binding").value_or(std::string{});
                 if (std::optional<std::string> scope = text(record, "scope"))
-                    decl.Scope = static_cast<AnimEventScope>(IndexOf(kScopeNames, *scope));
+                    decl.Scope = static_cast<AuthoredScope>(IndexOf(kScopeNames, *scope));
                 return decl;
             };
             behavior.OnEntered = lifecycle("on_entered");

@@ -36,7 +36,15 @@ enum class DataFieldKind : uint8_t
     // renumbering would still silently repoint every schema built against an
     // older header in a module that was not rebuilt.
     Entity,
+    // The stable identity of an element within its asset: what selection, undo
+    // and references hold on to, so reordering never repoints them. Up to 64 of
+    // [A-Za-z0-9_-]; editors mint 16 hex digits. Unique among an array's
+    // elements; wider uniqueness is the subtype compiler's to check.
+    StableKey,
 };
+
+// Whether `text` can be a StableKey value.
+[[nodiscard]] bool IsValidStableKey(std::string_view text);
 
 using DataDefaultValue = std::variant<std::monostate, bool, int64_t, double, std::string>;
 

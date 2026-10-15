@@ -82,8 +82,7 @@ std::uint32_t GamepadDeviceSet::FoldButtons() const
 void GamepadDeviceSet::PublishButtons(InputFrame& frame, std::uint32_t before) const
 {
     // Only the bits the fold moved. The frame owns held state and may have had
-    // it cleared from under us, so each edge is guarded against what the frame
-    // currently says, the same way the keyboard path guards its own.
+    // it cleared from under us; SetButton logs only a real change against it.
     const std::uint32_t after = FoldButtons();
     std::uint32_t changed = before ^ after;
     while (changed != 0)
@@ -92,11 +91,7 @@ void GamepadDeviceSet::PublishButtons(InputFrame& frame, std::uint32_t before) c
         changed &= changed - 1;
 
         const bool down = (after & (std::uint32_t{ 1 } << bit)) != 0;
-        if (down && !frame.IsGamepadButtonDown(bit))
-            frame.GamepadButtonsPressed.push_back(bit);
-        else if (!down && frame.IsGamepadButtonDown(bit))
-            frame.GamepadButtonsReleased.push_back(bit);
-        frame.SetGamepadButtonHeld(bit, down);
+        frame.SetButton({ InputControlSource::GamepadButton, static_cast<std::uint16_t>(bit) }, down);
     }
 }
 

@@ -38,6 +38,8 @@ struct ShapeSweepHit
     Vec3d Normal = Vec3d::Zero();
 };
 
+// What a filtered query passes through. Ignoring the caster keeps a trace from
+// inside it from reporting it.
 struct PhysicsQueryFilter
 {
     bool IncludeTriggers = false;
@@ -70,6 +72,15 @@ public:
         const Vec3d& direction,
         float maxDistance) const;
 
+    // As above, skipping bodies the filter rejects.
+    [[nodiscard]] ShapeSweepHit SweepShape(
+        const CollisionShape& shape,
+        const Vec3d& origin,
+        const Quatf& rotation,
+        const Vec3d& direction,
+        float maxDistance,
+        const PhysicsQueryFilter& filter) const;
+
     // Entities whose bodies overlap shape placed at (position, rotation). Each
     // entity appears once. Cleared before filling.
     void OverlapShape(
@@ -77,6 +88,14 @@ public:
         const Vec3d& position,
         const Quatf& rotation,
         std::vector<EntityId>& out) const;
+
+    // As above, skipping bodies the filter rejects.
+    void OverlapShape(
+        const CollisionShape& shape,
+        const Vec3d& position,
+        const Quatf& rotation,
+        std::vector<EntityId>& out,
+        const PhysicsQueryFilter& filter) const;
 
 private:
     const PhysicsWorld* Simulation;

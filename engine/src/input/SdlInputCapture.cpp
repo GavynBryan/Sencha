@@ -29,48 +29,21 @@ bool SdlInputCapture::Accept(InputFrame& frame, const SDL_Event& event)
         return true;
 
     case SDL_EVENT_KEY_DOWN:
-    {
-        const uint32_t scancode = static_cast<uint32_t>(event.key.scancode);
-        if (!event.key.repeat && !frame.IsKeyDown(scancode))
-        {
-            frame.KeysPressed.push_back(scancode);
-        }
-        frame.SetKeyHeld(scancode, true);
+        if (!event.key.repeat)
+            frame.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(event.key.scancode) }, true);
         return true;
-    }
 
     case SDL_EVENT_KEY_UP:
-    {
-        const uint32_t scancode = static_cast<uint32_t>(event.key.scancode);
-        if (frame.IsKeyDown(scancode))
-        {
-            frame.KeysReleased.push_back(scancode);
-        }
-        frame.SetKeyHeld(scancode, false);
+        frame.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(event.key.scancode) }, false);
         return true;
-    }
 
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    {
-        const uint32_t button = static_cast<uint32_t>(event.button.button);
-        if (!frame.IsMouseButtonDown(button))
-        {
-            frame.MouseButtonsPressed.push_back(button);
-        }
-        frame.SetMouseButtonHeld(button, true);
+        frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(event.button.button) }, true);
         return true;
-    }
 
     case SDL_EVENT_MOUSE_BUTTON_UP:
-    {
-        const uint32_t button = static_cast<uint32_t>(event.button.button);
-        if (frame.IsMouseButtonDown(button))
-        {
-            frame.MouseButtonsReleased.push_back(button);
-        }
-        frame.SetMouseButtonHeld(button, false);
+        frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(event.button.button) }, false);
         return true;
-    }
 
     case SDL_EVENT_MOUSE_MOTION:
         frame.MouseDeltaX += event.motion.xrel;

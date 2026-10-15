@@ -59,6 +59,18 @@ struct Archetype
         {
             RowsPerChunk = static_cast<uint32_t>(ChunkSizeBytes / rowByteSize);
             if (RowsPerChunk == 0) RowsPerChunk = 1;
+            // Each column starts aligned for its type, and the padding that costs is
+            // not in the row size: give up rows until the padded layout fits.
+            const auto layoutEnd = [&](uint32_t rows) {
+                size_t end = 0;
+                for (const auto& comp : components)
+                    if (comp.Size > 0)
+                        end = ((end + comp.Alignment - 1) & ~(comp.Alignment - 1)) + comp.Size * rows;
+                end = (end + alignof(EntityIndex) - 1) & ~(alignof(EntityIndex) - 1);
+                return end + sizeof(EntityIndex) * rows;
+            };
+            while (RowsPerChunk > 1 && layoutEnd(RowsPerChunk) > ChunkSizeBytes)
+                --RowsPerChunk;
         }
 
         size_t offset = 0;

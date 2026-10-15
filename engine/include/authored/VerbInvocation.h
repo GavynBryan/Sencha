@@ -1,8 +1,10 @@
 #pragma once
 
+#include <authored/AuthoredClassification.h>
 #include <authored/AuthoredValue.h>
 #include <authored/VerbId.h>
 #include <ecs/EntityId.h>
+#include <ecs/LeaseOwner.h>
 
 #include <cstdint>
 
@@ -48,6 +50,20 @@ enum class VerbAdmission : std::uint8_t
     // right now. A one-shot request against an absent target is refused, not
     // held for a later incarnation.
     UnresolvedReference,
+    // A cosmetic producer named a gameplay verb.
+    ScopeMismatch,
+    // A lease was invoked as an instant verb, or an instant verb acquired as a lease.
+    KindMismatch,
+};
+
+// Which half of a lease a call is; None for an instant verb.
+enum class LeaseStep : std::uint8_t
+{
+    None,
+    Acquire,
+    Release,
+    // Accepted while the owner's hold goes on; sent only to a lease that Completes.
+    Probe,
 };
 
 [[nodiscard]] const char* VerbAdmissionName(VerbAdmission admission);
@@ -87,6 +103,11 @@ struct VerbInvocation
     // its "already applied" on, so a replayed tick does not admit twice.
     std::uint64_t Tick = 0;
 
+    // A lease's holder, and whether this call acquires or releases it. A release
+    // carries no arguments: the implementation ends whatever the owner holds.
+    LeaseOwner Owner;
+    LeaseStep Step = LeaseStep::None;
+
     // Borrowed for exactly the duration of this call. An implementation that
     // defers copies what it needs, or keeps its own owning copy; it never
     // stores this pointer.
@@ -111,8 +132,9 @@ struct VerbInvocationResult
 // ingress, before Invoke. What crosses this boundary is already local.
 struct VerbInvocationSource
 {
-    InvocationId Parent;
-    EntityId Producer;
-    EntityId Instigator;
+    InvocationId Parent{};
+    EntityId Producer{};
+    EntityId Instigator{};
     std::uint64_t Tick = 0;
+    AuthoredScope Scope = AuthoredScope::Gameplay;
 };

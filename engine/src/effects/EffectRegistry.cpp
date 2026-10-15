@@ -1,5 +1,7 @@
 #include <effects/EffectRegistry.h>
 
+#include <effects/ActiveEffect.h>
+
 #include <utility>
 
 EffectRegistry::EffectRegistry()
@@ -9,7 +11,7 @@ EffectRegistry::EffectRegistry()
 
 EffectId EffectRegistry::Register(std::string_view name, EffectDefinition definition)
 {
-    if (name.empty())
+    if (name.empty() || definition.GrantedTags.size() > kEffectGrantedTagCapacity)
         return EffectId{};
 
     auto existing = IdsByName.find(std::string(name));
@@ -20,6 +22,17 @@ EffectId EffectRegistry::Register(std::string_view name, EffectDefinition defini
     Effects.push_back(Entry{ std::string(name), std::move(definition) });
     IdsByName.emplace(Effects.back().Name, id);
     return id;
+}
+
+EffectId EffectRegistry::Define(std::string_view name, EffectDefinition definition)
+{
+    if (name.empty() || definition.GrantedTags.size() > kEffectGrantedTagCapacity)
+        return EffectId{};
+    const EffectId existing = Find(name);
+    if (!existing.IsValid())
+        return Register(name, std::move(definition));
+    Effects[existing.Value].Def = std::move(definition);
+    return existing;
 }
 
 EffectId EffectRegistry::Find(std::string_view name) const

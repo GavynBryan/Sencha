@@ -64,18 +64,19 @@ BoundInputProfile SingleContext(std::vector<InputActionType> types,
     return profile;
 }
 
-// Drives one resolve pass end to end, the way the frame loop does: fold the
-// frame into the latches, then resolve the clock under test.
+// Drives one resolve pass end to end, the way the frame loop does: attribute the
+// frame's transitions to both clocks, then resolve the clock under test.
 struct Harness
 {
     BoundInputProfile Profile;
-    InputDeviceSnapshot Devices;
+    InputEdgeAttribution Attribution;
     InputClockState Presentation;
     InputClockState Simulation;
     InputFrame Frame;
     std::vector<std::uint8_t> Active;
     std::vector<InputActionValue> Values;
     std::vector<InputActionValue> SampledValues;
+    InputActionEdgeList Edges;
 
     explicit Harness(BoundInputProfile profile)
         : Profile(std::move(profile))
@@ -84,17 +85,8 @@ struct Harness
         Values.assign(Profile.ActionCount(), InputActionValue{});
     }
 
-    void PressKey(std::uint16_t scancode)
-    {
-        Frame.SetKeyHeld(scancode, true);
-        Frame.KeysPressed.push_back(scancode);
-    }
-
-    void ReleaseKey(std::uint16_t scancode)
-    {
-        Frame.SetKeyHeld(scancode, false);
-        Frame.KeysReleased.push_back(scancode);
-    }
+    void PressKey(std::uint16_t scancode) { Frame.SetButton(Key(scancode), true); }
+    void ReleaseKey(std::uint16_t scancode) { Frame.SetButton(Key(scancode), false); }
 
     void BeginFrame()
     {
@@ -103,14 +95,14 @@ struct Harness
         Frame.MouseWheelY = 0.0f;
     }
 
-    // One rendered frame's fold into both clocks.
-    void Accumulate() { AccumulateInputFrame(Frame, Devices, Presentation, Simulation); }
+    // One rendered frame's transitions into both clocks, under the contexts
+    // active now.
+    void Accumulate() { AttributeInputFrame(Frame, &Profile, Active, Attribution, Presentation, Simulation); }
 
     const InputActionValue& ResolveTick(std::uint32_t action = 0)
     {
         SampledValues.assign(Profile.ActionCount(), InputActionValue{});
-        ResolveInputActions(Profile, Active, Devices, Simulation, Values, 1,
-                            SampledValues);
+        ResolveInputActions(Profile, Active, Attribution, Simulation, Values, Edges, 1, SampledValues);
         return Values[action];
     }
 
@@ -120,15 +112,18 @@ struct Harness
     const InputActionValue& ResolveTickOfBurst(std::uint32_t ticksLeft,
                                                std::uint32_t action = 0)
     {
-        ResolveInputActions(Profile, Active, Devices, Simulation, Values, ticksLeft);
+        ResolveInputActions(Profile, Active, Attribution, Simulation, Values, Edges, ticksLeft);
         return Values[action];
     }
 
     const InputActionValue& ResolveFrameClock(std::uint32_t action = 0)
     {
-        ResolveInputActions(Profile, Active, Devices, Presentation, Values);
+        ResolveInputActions(Profile, Active, Attribution, Presentation, Values, Edges);
         return Values[action];
     }
+
+    void ReleaseSimulation() { ReleaseInputActions(Simulation, Values, Edges); }
+    void ReleasePresentation() { ReleaseInputActions(Presentation, Values, Edges); }
 };
 }
 
@@ -419,8 +414,7 @@ TEST(InputResolve, MultipleBindingsFeedOneAction)
                                   { DirectBinding(0, Key(kKeySpace)),
                                     DirectBinding(0, InputControl{ InputControlSource::MouseButton, SDL_BUTTON_LEFT }) }));
 
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
-    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, true);
     harness.Accumulate();
 
     const InputActionValue value = harness.ResolveTick();
@@ -453,8 +447,7 @@ TEST(InputResolve, ASecondControlJoiningAHeldActionIsNotANewPress)
     // The other hand joins in on a control bound to the same action. Edges
     // belong to the action, and the action never came up.
     harness.BeginFrame();
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
-    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, true);
     harness.Accumulate();
 
     const InputActionValue value = harness.ResolveTick();
@@ -467,8 +460,7 @@ TEST(InputResolve, ReleasingOneOfTwoHeldControlsDoesNotReleaseTheAction)
     Harness harness(TwoControlsOneAction());
 
     harness.PressKey(kKeySpace);
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
-    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, true);
     harness.Accumulate();
     ASSERT_TRUE(harness.ResolveTick().IsHeld());
 
@@ -483,8 +475,7 @@ TEST(InputResolve, ReleasingOneOfTwoHeldControlsDoesNotReleaseTheAction)
 
     // The last one lets go, and now the action really did come up.
     harness.BeginFrame();
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, false);
-    harness.Frame.MouseButtonsReleased.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, false);
     harness.Accumulate();
 
     const InputActionValue released = harness.ResolveTick();
@@ -502,14 +493,15 @@ TEST(InputResolve, LosingEveryBindingReleasesWhatWasHeld)
     ASSERT_TRUE(harness.ResolveTick().IsHeld());
 
     // What the resolve system publishes when no profile can be bound: the
-    // action falls, and it owes the release for falling.
-    ReleaseInputActions(harness.Simulation, harness.Values);
+    // action falls, interrupted, and owes the release for falling.
+    harness.ReleaseSimulation();
     EXPECT_FALSE(harness.Values[0].IsHeld());
     EXPECT_TRUE(harness.Values[0].WasReleased());
+    EXPECT_TRUE(harness.Values[0].WasInterrupted());
     EXPECT_FLOAT_EQ(harness.Values[0].X, 0.0f);
 
     // And it only owes it once.
-    ReleaseInputActions(harness.Simulation, harness.Values);
+    harness.ReleaseSimulation();
     EXPECT_FALSE(harness.Values[0].WasReleased());
 }
 
@@ -868,8 +860,7 @@ TEST(InputResolveGamepad, ButtonsCarryEdgesLikeAnyOtherControl)
                                   { DirectBinding(0, PadButton(GamepadButton::South)) }));
 
     const auto south = static_cast<std::uint32_t>(GamepadButton::South);
-    harness.Frame.SetGamepadButtonHeld(south, true);
-    harness.Frame.GamepadButtonsPressed.push_back(south);
+    harness.Frame.SetButton({ InputControlSource::GamepadButton, static_cast<std::uint16_t>(south) }, true);
     harness.Accumulate();
 
     const InputActionValue pressed = harness.ResolveTick();
@@ -877,8 +868,7 @@ TEST(InputResolveGamepad, ButtonsCarryEdgesLikeAnyOtherControl)
     EXPECT_TRUE(pressed.IsHeld());
 
     harness.BeginFrame();
-    harness.Frame.SetGamepadButtonHeld(south, false);
-    harness.Frame.GamepadButtonsReleased.push_back(south);
+    harness.Frame.SetButton({ InputControlSource::GamepadButton, static_cast<std::uint16_t>(south) }, false);
     harness.Accumulate();
     EXPECT_TRUE(harness.ResolveTick().WasReleased());
 }
@@ -911,7 +901,8 @@ TEST(InputResolveGamepad, ReleaseAllHeldClearsPadStateToo)
 
     EXPECT_FALSE(frame.IsGamepadButtonDown(static_cast<std::uint32_t>(GamepadButton::South)));
     EXPECT_FLOAT_EQ(frame.GetGamepadAxis(GamepadAxis::LeftX), 0.0f);
-    EXPECT_EQ(frame.GamepadButtonsReleased.size(), 1u);
+    ASSERT_EQ(frame.TransitionLog().size(), 1u);
+    EXPECT_TRUE(frame.TransitionLog()[0].Synthetic) << "the device never sent this release";
 }
 
 TEST(InputControlNames, ParsesGamepadControls)
@@ -1264,7 +1255,7 @@ TEST(InputResolveFireMode, ActivatingAContextOverAHeldKeyFiresHoldButNotPress)
     }
 }
 
-TEST(InputResolveFireMode, DeactivatingAContextFiresAReleaseMode)
+TEST(InputResolveFireMode, DeactivatingAContextInterruptsWithoutFiringAReleaseMode)
 {
     Harness harness = FireHarness(InputActionFireMode::Released);
 
@@ -1275,8 +1266,10 @@ TEST(InputResolveFireMode, DeactivatingAContextFiresAReleaseMode)
     harness.Active = { 0 };
     harness.BeginFrame();
     harness.Accumulate();
-    EXPECT_TRUE(harness.ResolveTick().WasFired())
-        << "the binding going away is still the action coming up";
+    const InputActionValue fell = harness.ResolveTick();
+    EXPECT_TRUE(fell.WasReleased()) << "the binding going away is still the action coming up";
+    EXPECT_TRUE(fell.WasInterrupted());
+    EXPECT_FALSE(fell.WasFired()) << "a charge shot must not fire because a menu opened";
 }
 
 TEST(InputResolveFireMode, ASecondControlJoiningAHeldActionDoesNotRefirePress)
@@ -1297,7 +1290,7 @@ TEST(InputResolveFireMode, ASecondControlJoiningAHeldActionDoesNotRefirePress)
         << "an edge-driven ability would fire twice";
 }
 
-TEST(InputResolveFireMode, LosingTheProfileFiresAReleaseModeExactlyOnce)
+TEST(InputResolveFireMode, LosingTheProfileInterruptsAReleaseModeExactlyOnce)
 {
     Harness harness = FireHarness(InputActionFireMode::Released);
 
@@ -1305,15 +1298,13 @@ TEST(InputResolveFireMode, LosingTheProfileFiresAReleaseModeExactlyOnce)
     harness.Accumulate();
     ASSERT_TRUE(harness.ResolveTick().IsHeld());
 
-    // No profile to consult here: the mode the release fires under is carried
-    // by the clock, because the profile that declared it is what went away.
-    ReleaseInputActions(harness.Simulation, harness.Values);
+    harness.ReleaseSimulation();
     EXPECT_TRUE(harness.Values[0].WasReleased());
-    EXPECT_TRUE(harness.Values[0].WasFired());
+    EXPECT_TRUE(harness.Values[0].WasInterrupted());
+    EXPECT_FALSE(harness.Values[0].WasFired()) << "the player let go of nothing";
 
-    ReleaseInputActions(harness.Simulation, harness.Values);
+    harness.ReleaseSimulation();
     EXPECT_FALSE(harness.Values[0].WasReleased()) << "the release is owed once, not every pass";
-    EXPECT_FALSE(harness.Values[0].WasFired());
 }
 
 TEST(InputResolveFireMode, LosingTheProfileDoesNotFireAPressMode)
@@ -1324,7 +1315,7 @@ TEST(InputResolveFireMode, LosingTheProfileDoesNotFireAPressMode)
     harness.Accumulate();
     ASSERT_TRUE(harness.ResolveTick().IsHeld());
 
-    ReleaseInputActions(harness.Simulation, harness.Values);
+    harness.ReleaseSimulation();
     EXPECT_TRUE(harness.Values[0].WasReleased());
     EXPECT_FALSE(harness.Values[0].WasFired())
         << "losing the bindings is not the player pressing anything";
@@ -1398,12 +1389,10 @@ TEST(InputResolve, APressMadeWhileSuspendedStillFiresOnTheFirstTick)
     // not keep it out of here: the router folds every event into the snapshot
     // before offering it to any consumer, which is the contract that stops a
     // claimed key-up from sticking a key down forever.
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
-    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, true);
     harness.Accumulate();
     harness.BeginFrame();
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, false);
-    harness.Frame.MouseButtonsReleased.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, false);
     harness.Accumulate();
 
     EXPECT_TRUE(harness.ResolveTick().WasPressed())
@@ -1428,11 +1417,10 @@ TEST(InputResolve, ClearingTheSimulationLatchDiscardsExactlyWhatResumingMustNotR
         harness.Accumulate();
     }
     harness.BeginFrame();
-    harness.Frame.SetMouseButtonHeld(SDL_BUTTON_LEFT, true);
-    harness.Frame.MouseButtonsPressed.push_back(SDL_BUTTON_LEFT);
+    harness.Frame.SetButton({ InputControlSource::MouseButton, static_cast<std::uint16_t>(SDL_BUTTON_LEFT) }, true);
     harness.Accumulate();
 
-    harness.Simulation.Latch.Clear();
+    DiscardSuspendedInput(harness.Simulation);
 
     EXPECT_FLOAT_EQ(harness.ResolveTick(0).X, 0.0f) << "menu travel reached the simulation";
     EXPECT_FALSE(harness.Values[1].WasPressed()) << "the menu's click reached the simulation";
@@ -1444,4 +1432,262 @@ TEST(InputResolve, ClearingTheSimulationLatchDiscardsExactlyWhatResumingMustNotR
     // And the presentation clock kept everything, which is what lets the menu
     // it was aimed at keep working.
     EXPECT_GT(harness.ResolveFrameClock(0).X, 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Ordered edges: every transition, in order, across actions
+// ---------------------------------------------------------------------------
+
+namespace
+{
+std::vector<InputActionEdge> EdgesOf(const InputActionEdgeList& list)
+{
+    return { list.View().begin(), list.View().end() };
+}
+
+InputActionEdge Edge(std::uint8_t action, InputEdgeKind kind)
+{
+    return InputActionEdge{ action, kind };
+}
+
+BoundInputProfile TwoButtons()
+{
+    return SingleContext({ InputActionType::Digital, InputActionType::Digital },
+                         { DirectBinding(0, Key(kKeySpace)), DirectBinding(1, Key(kKeyW)) });
+}
+}
+
+TEST(InputEdges, ReTapWhileHeldIsAReleaseThenAPress)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    ASSERT_TRUE(harness.ResolveTick().IsHeld());
+
+    harness.BeginFrame();
+    harness.ReleaseKey(kKeySpace);
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(0, InputEdgeKind::Release), Edge(0, InputEdgeKind::Press) }));
+    EXPECT_TRUE(value.IsHeld());
+    EXPECT_TRUE(value.WasPressed()) << "the second shot of a semi-automatic weapon";
+}
+
+TEST(InputEdges, TwoTapsInOneWindowAreFourEdges)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    for (int tap = 0; tap < 2; ++tap)
+    {
+        harness.PressKey(kKeySpace);
+        harness.ReleaseKey(kKeySpace);
+    }
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(0, InputEdgeKind::Press), Edge(0, InputEdgeKind::Release),
+                            Edge(0, InputEdgeKind::Press), Edge(0, InputEdgeKind::Release) }));
+}
+
+TEST(InputEdges, OrderAcrossActionsIsKept)
+{
+    Harness harness(TwoButtons());
+    harness.PressKey(kKeyW);
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(1, InputEdgeKind::Press), Edge(0, InputEdgeKind::Press) }));
+}
+
+TEST(InputEdges, TapsAcrossZeroTickFramesAllReachTheNextTick)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        harness.BeginFrame();
+        harness.PressKey(kKeySpace);
+        harness.ReleaseKey(kKeySpace);
+        harness.Accumulate();
+    }
+    harness.ResolveTick();
+    EXPECT_EQ(harness.Edges.Count, 6u) << "three taps across three frames that ran no tick";
+}
+
+TEST(InputEdges, ACatchUpBurstPutsEveryEdgeOnItsFirstTick)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    harness.PressKey(kKeySpace);
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTickOfBurst(2);
+    EXPECT_EQ(harness.Edges.Count, 2u);
+    harness.ResolveTickOfBurst(1);
+    EXPECT_EQ(harness.Edges.Count, 0u) << "a burst replays no transition";
+}
+
+TEST(InputEdges, TwoControlsOnOneActionMakeOnePressAndOneRelease)
+{
+    Harness harness(TwoControlsOneAction());
+    const InputControl mouse{ InputControlSource::MouseButton, SDL_BUTTON_LEFT };
+    harness.PressKey(kKeySpace);
+    harness.Frame.SetButton(mouse, true);
+    harness.ReleaseKey(kKeySpace);
+    harness.Frame.SetButton(mouse, false);
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(0, InputEdgeKind::Press), Edge(0, InputEdgeKind::Release) }));
+}
+
+TEST(InputEdges, AnInterruptionKeepsItsPlaceAmongTheGenuineEdges)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    // The context goes away under the held key, the player lets go, the context
+    // comes back, and the player taps: all before the simulation runs again.
+    harness.Active = { 0 };
+    harness.BeginFrame();
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+    harness.Active = { 1 };
+    harness.BeginFrame();
+    harness.PressKey(kKeySpace);
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(0, InputEdgeKind::InterruptedRelease), Edge(0, InputEdgeKind::Press),
+                            Edge(0, InputEdgeKind::Release) }));
+    EXPECT_TRUE(value.WasInterrupted());
+    EXPECT_TRUE(value.WasFired()) << "the tap after the interruption is still the player's press";
+}
+
+TEST(InputEdges, AKeyUpInTheFrameAContextLeavesIsAnInterruption)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) },
+                                  { InputActionFireMode::Released }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    harness.Active = { 0 };
+    harness.BeginFrame();
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges), (std::vector{ Edge(0, InputEdgeKind::InterruptedRelease) }));
+    EXPECT_FALSE(value.WasFired()) << "ambiguity resolves toward cancelling, never toward firing";
+}
+
+TEST(InputEdges, FocusLossIsAnInterruption)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) },
+                                  { InputActionFireMode::Released }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    harness.BeginFrame();
+    harness.Frame.ReleaseAllHeld();
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges), (std::vector{ Edge(0, InputEdgeKind::InterruptedRelease) }));
+    EXPECT_FALSE(value.WasFired());
+}
+
+TEST(InputEdges, AGenuinePressThenAnInterruptionKeepBoth)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    harness.PressKey(kKeySpace);
+    harness.Frame.ReleaseAllHeld();
+    harness.Accumulate();
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges),
+              (std::vector{ Edge(0, InputEdgeKind::Press), Edge(0, InputEdgeKind::InterruptedRelease) }));
+    EXPECT_TRUE(value.WasPressed()) << "the click was genuine; what followed it was not";
+}
+
+// Past capacity nothing more is kept, and what is kept never invents a press or a
+// release the player made; the summary flags and the reconciliation keep the
+// clock's held state true either way.
+TEST(InputEdges, AnOverflowNeverInventsAStartOrAReleaseAndNeverStrandsAHold)
+{
+    // Window starts held; seventeen release-press pairs and a final release.
+    // Thirty-two edges survive, ending held, while the action is really up.
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) },
+                                  { InputActionFireMode::Released }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    harness.BeginFrame();
+    for (int pair = 0; pair < 17; ++pair)
+    {
+        harness.ReleaseKey(kKeySpace);
+        harness.PressKey(kKeySpace);
+    }
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+
+    const InputActionValue value = harness.ResolveTick();
+    EXPECT_TRUE(harness.Edges.Overflowed);
+    EXPECT_FALSE(value.IsHeld());
+    EXPECT_TRUE(value.WasReleased());
+    EXPECT_TRUE(value.WasInterrupted()) << "the fall the list could not carry is owed as an interruption";
+
+    // The next pass starts from the truth: nothing is held, nothing is owed.
+    harness.BeginFrame();
+    harness.Accumulate();
+    const InputActionValue after = harness.ResolveTick();
+    EXPECT_EQ(harness.Edges.Count, 0u);
+    EXPECT_FALSE(after.WasReleased());
+
+    // The other way round: the surviving edges end up while the key is down.
+    // That is held with no press, and starts nothing.
+    Harness held(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    for (int pair = 0; pair < 16; ++pair)
+    {
+        held.PressKey(kKeySpace);
+        held.ReleaseKey(kKeySpace);
+    }
+    held.PressKey(kKeySpace);
+    held.Accumulate();
+    const InputActionValue down = held.ResolveTick();
+    EXPECT_TRUE(down.IsHeld());
+    ASSERT_EQ(held.Edges.Count, InputActionEdgeList::Capacity);
+    EXPECT_EQ(held.Edges.Edges[InputActionEdgeList::Capacity - 1].Kind, InputEdgeKind::Release)
+        << "the press that did not fit is not invented";
+}
+
+// A context returning over a key still down holds the action without a press, so
+// the player's next key-up is a release with no press before it in the list.
+TEST(InputEdges, AContextReturningOverAHeldKeyHoldsWithoutAPress)
+{
+    Harness harness(SingleContext({ InputActionType::Digital }, { DirectBinding(0, Key(kKeySpace)) }));
+    harness.PressKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+
+    harness.Active = { 0 };
+    harness.BeginFrame();
+    harness.Accumulate();
+    harness.Active = { 1 };
+    harness.BeginFrame();
+    harness.Accumulate();
+    const InputActionValue regained = harness.ResolveTick();
+    EXPECT_TRUE(regained.IsHeld());
+    EXPECT_FALSE(regained.WasPressed());
+    EXPECT_EQ(EdgesOf(harness.Edges), (std::vector{ Edge(0, InputEdgeKind::InterruptedRelease) }));
+
+    harness.BeginFrame();
+    harness.ReleaseKey(kKeySpace);
+    harness.Accumulate();
+    harness.ResolveTick();
+    EXPECT_EQ(EdgesOf(harness.Edges), (std::vector{ Edge(0, InputEdgeKind::Release) }));
 }

@@ -48,6 +48,14 @@ inline constexpr Vec4 AnimationBone{ 0.19f, 0.58f, 1.0f, 0.65f };
 inline constexpr Vec4 AnimationTrail{ 0.1f, 0.65f, 0.22f, 1.0f };
 inline constexpr Vec4 AnimationOvershoot{ 0.8f, 0.08f, 0.06f, 1.0f };
 inline constexpr Vec4 AnimationWall{ 0.4f, 0.46f, 0.58f, 0.8f };
+// An ability's stage: the floor, the pawn, where it went and aims, the targets
+// placed for it, and what its hits struck.
+inline constexpr Vec4 AbilityFloor{ 0.16f, 0.2f, 0.27f, 0.6f };
+inline constexpr Vec4 AbilityPawn{ 0.19f, 0.58f, 1.0f, 0.9f };
+inline constexpr Vec4 AbilityTrail{ 0.1f, 0.65f, 0.22f, 1.0f };
+inline constexpr Vec4 AbilityAim{ 0.95f, 0.75f, 0.2f, 0.9f };
+inline constexpr Vec4 AbilityTarget{ 0.4f, 0.46f, 0.58f, 0.8f };
+inline constexpr Vec4 AbilityHit{ 1.0f, 0.32f, 0.28f, 1.0f };
 // The ground an authored document is previewed on: the panel well, linear.
 inline constexpr Vec4 DocumentGround{ 0.00335f, 0.00478f, 0.0075f, 1.0f };
 // Irradiance probe volumes: the authored bounds box, and the lattice points a

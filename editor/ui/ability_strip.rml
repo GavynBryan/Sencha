@@ -1,0 +1,61 @@
+<rml>
+<head>
+    <title>Ability Strip</title>
+    <link type="text/rcss" href="ability_strip.rcss"/>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="ability_strip">
+    <!-- An ability's phases left to right as cards, each holding its op lists
+         and where it goes next. A card's head or a row picks its element; one
+         dragged onto another moves there, the innermost target taking it.
+         Placed in window pixels by the host. -->
+    <div id="strip" data-style-left="left" data-style-top="top" data-style-width="width" data-style-height="height">
+        <div id="strip_empty" class="theme-dim" data-if="cards.size == 0">{{empty}}</div>
+        <div id="cards" data-if="cards.size > 0">
+            <div class="card theme-plate" data-for="card : cards" data-attr-id="'card:' + card.key"
+                 data-class-selected="card.selected" data-class-holding="card.expanded"
+                 data-event-dragdrop="strip_drop(card.key)">
+                <div class="card_head" data-event-click="strip_pick(card.key)"
+                     data-event-dragstart="strip_carry(card.key)" data-event-dragend="strip_put()">
+                    <span class="card_name">{{card.label}}</span>
+                    <span class="lamp theme-lamp" data-if="card.parts[1] != ''"
+                          data-class-fault="card.parts[1] == 'error'" data-class-warn="card.parts[1] == 'warning'"></span>
+                </div>
+                <span class="card_clock theme-dim">{{card.detail}}</span>
+                <div class="slot_view" data-for="slot : slots">
+                    <div class="slot" data-if="slot.value == card.key">
+                        <div class="slot_head theme-dim" data-event-dragdrop="strip_drop(slot.key)">
+                            <span class="slot_title">{{slot.label}}</span>
+                            <span class="slot_add glyph" data-if="slot.detail == ''" data-event-click="strip_add(slot.key)">&#xf067;</span>
+                        </div>
+                        <div class="op_view" data-for="op : ops">
+                            <div class="op theme-row" data-if="op.value == slot.key" data-attr-id="'op:' + op.key"
+                                 data-class-selected="op.selected" data-event-click="strip_pick(op.key)"
+                                 data-event-dragstart="strip_carry(op.key)" data-event-dragend="strip_put()"
+                                 data-event-dragdrop="strip_drop(op.key)">
+                                <span class="op_kind theme-dim">{{op.detail}}</span>
+                                <span class="op_label">{{op.label}}</span>
+                                <span class="lamp theme-lamp" data-if="op.parts[1] != ''"
+                                      data-class-fault="op.parts[1] == 'error'" data-class-warn="op.parts[1] == 'warning'"></span>
+                                <span class="guard theme-segment" data-if="op.parts[0] != ''">when {{op.parts[0]}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slot_head theme-dim"><span class="slot_title">THEN</span></div>
+                <div class="link_view" data-for="link : links">
+                    <div class="link theme-row" data-if="link.value == card.key" data-class-selected="link.selected"
+                         data-event-click="strip_pick(link.key)">
+                        <span class="link_label">{{link.label}}</span>
+                        <span class="lamp theme-lamp" data-if="link.parts[1] != ''"
+                              data-class-fault="link.parts[1] == 'error'" data-class-warn="link.parts[1] == 'warning'"></span>
+                        <span class="guard theme-segment" data-if="link.parts[0] != ''">when {{link.parts[0]}}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card add theme-key" data-event-click="strip_add_phase()"><span class="add_label">+ PHASE</span></div>
+        </div>
+    </div>
+</body>
+</rml>

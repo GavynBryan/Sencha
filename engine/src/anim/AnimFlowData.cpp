@@ -195,7 +195,7 @@ namespace
             decl.Binding = Text(record, "binding");
             if (decl.Binding.empty())
                 return fail(std::format("$.data.{}.binding", key), "A lifecycle event names its binding.");
-            decl.Scope = Text(record, "scope") == "gameplay" ? AnimEventScope::Gameplay : AnimEventScope::Cosmetic;
+            decl.Scope = Text(record, "scope") == "gameplay" ? AuthoredScope::Gameplay : AuthoredScope::Cosmetic;
             *out = std::move(decl);
         }
 

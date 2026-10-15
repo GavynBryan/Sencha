@@ -1,5 +1,6 @@
 #pragma once
 
+#include <abilities/AbilityGrantId.h>
 #include <abilities/AbilityId.h>
 #include <attributes/AttributeId.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -8,10 +9,11 @@
 #include <string>
 #include <string_view>
 
-struct AbilitySet;
+struct AbilityGrants;
 struct AttributeSet;
 struct CharacterMovement;
 struct GameplayTagContainer;
+class AbilityGrantEntries;
 class AbilityRegistry;
 class AttributeRegistry;
 class GameplayTagRegistry;
@@ -75,11 +77,13 @@ struct VocabularyEdit
 
 [[nodiscard]] VocabularyEdit RemoveAttribute(AttributeSet& set, AttributeId id);
 
-[[nodiscard]] VocabularyEdit GrantAbility(AbilitySet& set,
-                                          const AbilityRegistry& registry,
-                                          AbilityId id);
+// Grant an ability under a freshly minted key, inheriting its default binding.
+[[nodiscard]] VocabularyEdit AddAbilityGrant(AbilityGrants& grants,
+                                             AbilityGrantEntries& entries,
+                                             const AbilityRegistry& registry,
+                                             AbilityId id);
 
-[[nodiscard]] VocabularyEdit RevokeAbility(AbilitySet& set, AbilityId id);
+[[nodiscard]] VocabularyEdit RemoveAbilityGrant(AbilityGrants& grants, AbilityGrantId id);
 
 // Put the character in the named mode. An empty or unknown name is the free
 // mode, which is what the scene form already means by an absent mode.

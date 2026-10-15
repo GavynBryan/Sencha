@@ -5,8 +5,5 @@
 
 void EffectLifetimeSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    TickEffects(
-        ctx.Entities,
-        static_cast<float>(ctx.Time.DeltaSeconds),
-        ctx.Partitions);
+    TickEffects(ctx.Entities, ctx.Partitions);
 }

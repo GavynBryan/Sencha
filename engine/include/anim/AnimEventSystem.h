@@ -5,6 +5,7 @@
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimEventCursor.h>
 #include <anim/AnimFlowState.h>
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
@@ -64,12 +65,12 @@ struct AnimPendingEvents
     std::uint32_t GameplayRefused = 0;
     std::uint32_t CosmeticRefused = 0;
 
-    [[nodiscard]] std::vector<AnimPendingEvent>& Queue(AnimEventScope scope)
+    [[nodiscard]] std::vector<AnimPendingEvent>& Queue(AuthoredScope scope)
     {
-        return scope == AnimEventScope::Gameplay ? Gameplay : Cosmetic;
+        return scope == AuthoredScope::Gameplay ? Gameplay : Cosmetic;
     }
     // False, and counted, when the scope's queue is full.
-    [[nodiscard]] bool Admit(AnimEventScope scope);
+    [[nodiscard]] bool Admit(AuthoredScope scope);
     void Clear();
 };
 
@@ -84,8 +85,8 @@ struct AnimEventGates
 // Queues what crossed at tick `now`; a crossing its queue refuses is recorded as
 // QueueFull. Shared with the preview.
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
-                       const AnimSelectorState* selection, const AnimRequestSet* requests,
-                       const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
+                       const AnimSelectorState* selection, const AnimRequestSet* simulationRequests,
+                       const AnimPresentationRequests* presentedRequests, const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
                        AnimTick now, double tickSeconds, AnimEventGates gates, AnimPendingEvents& pending,
                        AnimDecisionLog* log);
 
@@ -101,8 +102,8 @@ public:
     // Collects and drains one tick outside a schedule: the preview and tests.
     void Run(World& world, AnimTick now, double tickSeconds);
 
-    void SetCapacity(AnimEventScope scope, std::size_t capacity);
-    [[nodiscard]] std::size_t GetCapacity(AnimEventScope scope) const;
+    void SetCapacity(AuthoredScope scope, std::size_t capacity);
+    [[nodiscard]] std::size_t GetCapacity(AuthoredScope scope) const;
     // Crossings refused since the system started, by scope.
     [[nodiscard]] std::uint64_t RefusedGameplay() const { return TotalGameplayRefused; }
     [[nodiscard]] std::uint64_t RefusedCosmetic() const { return TotalCosmeticRefused; }

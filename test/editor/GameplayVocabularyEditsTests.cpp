@@ -5,9 +5,9 @@
 
 #include "authoring/GameplayVocabularyEdits.h"
 
-#include <abilities/AbilityDefinition.h>
+#include <abilities/AbilityGrantEntries.h>
+#include <abilities/AbilityGrants.h>
 #include <abilities/AbilityRegistry.h>
-#include <abilities/AbilitySet.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -154,39 +154,38 @@ TEST(GameplayVocabularyEdits, RemovingAnAttributeIsIdempotent)
     EXPECT_TRUE(set.Empty());
 }
 
-TEST(GameplayVocabularyEdits, AbilitiesAreGrantedOnlyOnceAndOnlyIfRegistered)
+TEST(GameplayVocabularyEdits, AGrantIsAddedUnderAFreshKeyOnlyForADeclaredAbility)
 {
     AbilityRegistry registry;
-    const AbilityId dash = registry.Register("Dash", AbilityDefinition{});
-    AbilitySet set{};
+    AbilityGrantEntries entries;
+    const AbilityId dash = registry.Define("asset://abilities/dash.sdata", AbilityDefinition{});
+    const AbilityId undeclared = registry.Reserve("asset://abilities/missing.sdata");
+    AbilityGrants grants{};
 
-    EXPECT_TRUE(GrantAbility(set, registry, dash).Changed);
-    EXPECT_TRUE(set.Has(dash));
+    ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed);
+    ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed)
+        << "a second grant of one ability is a second binding of it";
+    ASSERT_EQ(grants.Count, 2);
+    EXPECT_NE(entries.Find(grants.Entries[0].Entry)->Key, entries.Find(grants.Entries[1].Entry)->Key);
+    EXPECT_FALSE(AddAbilityGrant(grants, entries, registry, undeclared).Changed);
 
-    EXPECT_FALSE(GrantAbility(set, registry, dash).Changed);
-    EXPECT_FALSE(GrantAbility(set, registry, dash).Error.empty());
-    EXPECT_FALSE(GrantAbility(set, registry, AbilityId{ 99 }).Changed);
-
-    EXPECT_TRUE(RevokeAbility(set, dash).Changed);
-    EXPECT_FALSE(RevokeAbility(set, dash).Changed);
+    EXPECT_TRUE(RemoveAbilityGrant(grants, grants.Entries[0].Id).Changed);
+    EXPECT_FALSE(RemoveAbilityGrant(grants, AbilityGrantId{ 99 }).Changed);
 }
 
-TEST(GameplayVocabularyEdits, AFullAbilitySetRefusesRatherThanSilentlyDropping)
+TEST(GameplayVocabularyEdits, AFullGrantListRefusesRatherThanSilentlyDropping)
 {
     AbilityRegistry registry;
-    AbilitySet set{};
-    for (int i = 0; i < AbilitySet::Capacity; ++i)
-    {
-        const AbilityId id = registry.Register("Fill" + std::to_string(i),
-                                               AbilityDefinition{});
-        ASSERT_TRUE(GrantAbility(set, registry, id).Changed);
-    }
+    AbilityGrantEntries entries;
+    const AbilityId dash = registry.Define("asset://abilities/dash.sdata", AbilityDefinition{});
+    AbilityGrants grants{};
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed);
 
-    const AbilityId extra = registry.Register("Extra", AbilityDefinition{});
-    const VocabularyEdit overflow = GrantAbility(set, registry, extra);
+    const VocabularyEdit overflow = AddAbilityGrant(grants, entries, registry, dash);
     EXPECT_FALSE(overflow.Changed);
     EXPECT_FALSE(overflow.Error.empty());
-    EXPECT_EQ(set.Size(), AbilitySet::Capacity);
+    EXPECT_EQ(grants.Count, kAbilityGrantCapacity);
 }
 
 TEST(GameplayVocabularyEdits, AnUnknownLocomotionModeNameIsTheFreeMode)

@@ -1,41 +1,68 @@
 #include <abilities/AbilityRegistry.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <utility>
 
 AbilityRegistry::AbilityRegistry()
 {
-    Abilities.push_back(Entry{}); // index 0 reserved so a zero id is invalid
+    Abilities.push_back(Entry{});
 }
 
-AbilityId AbilityRegistry::Register(std::string_view name, AbilityDefinition definition)
+AbilityId AbilityRegistry::Reserve(std::string_view name)
 {
     if (name.empty())
         return AbilityId{};
-
-    auto existing = IdsByName.find(std::string(name));
-    if (existing != IdsByName.end())
+    if (const auto existing = IdsByName.find(std::string(name)); existing != IdsByName.end())
         return existing->second;
 
     const AbilityId id{ static_cast<std::uint32_t>(Abilities.size()) };
-    Abilities.push_back(Entry{ std::string(name), std::move(definition) });
+    Abilities.push_back(Entry{ std::string(name), nullptr, 0 });
     IdsByName.emplace(Abilities.back().Name, id);
+    if (const auto [key, inserted] = IdsByWireKey.emplace(NameWireKey(name), id); !inserted)
+        key->second = AbilityId{};
     return id;
+}
+
+AbilityId AbilityRegistry::Define(std::string_view name, AbilityDefinition definition)
+{
+    const AbilityId id = Reserve(name);
+    if (!id.IsValid())
+        return id;
+    Abilities[id.Value].Definition = std::make_unique<const AbilityDefinition>(std::move(definition));
+    ++Abilities[id.Value].Revision;
+    ++Generation_;
+    return id;
+}
+
+void AbilityRegistry::Undefine(AbilityId id)
+{
+    if (!IsKnown(id) || Abilities[id.Value].Definition == nullptr)
+        return;
+    Abilities[id.Value].Definition = nullptr;
+    ++Abilities[id.Value].Revision;
+    ++Generation_;
 }
 
 AbilityId AbilityRegistry::Find(std::string_view name) const
 {
-    auto it = IdsByName.find(std::string(name));
+    const auto it = IdsByName.find(std::string(name));
     return it == IdsByName.end() ? AbilityId{} : it->second;
 }
 
 const AbilityDefinition* AbilityRegistry::Get(AbilityId id) const
 {
-    return IsKnown(id) ? &Abilities[id.Value].Def : nullptr;
+    return IsKnown(id) ? Abilities[id.Value].Definition.get() : nullptr;
 }
 
 std::string_view AbilityRegistry::GetName(AbilityId id) const
 {
     return IsKnown(id) ? std::string_view(Abilities[id.Value].Name) : std::string_view{};
+}
+
+std::uint32_t AbilityRegistry::Revision(AbilityId id) const
+{
+    return IsKnown(id) ? Abilities[id.Value].Revision : 0;
 }
 
 bool AbilityRegistry::IsKnown(AbilityId id) const
@@ -46,4 +73,15 @@ bool AbilityRegistry::IsKnown(AbilityId id) const
 std::size_t AbilityRegistry::Size() const
 {
     return Abilities.size() - 1;
+}
+
+std::uint32_t AbilityRegistry::WireKey(AbilityId id) const
+{
+    return IsKnown(id) ? NameWireKey(Abilities[id.Value].Name) : 0u;
+}
+
+AbilityId AbilityRegistry::FindByWireKey(std::uint32_t key) const
+{
+    const auto it = IdsByWireKey.find(key);
+    return it != IdsByWireKey.end() ? it->second : AbilityId{};
 }

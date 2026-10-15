@@ -5,8 +5,6 @@
 // leaves the host to retract it -- the in-tree analog of a shipped game.so,
 // exercised without running the game.
 
-#include <abilities/AbilityDefinition.h>
-#include <abilities/AbilityRegistry.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
 #include <attributes/AttributeRegistry.h>
@@ -31,9 +29,10 @@
 // same strings the module registers.
 inline constexpr std::string_view kGrappleTag = "Spike.Grappling";
 inline constexpr std::string_view kGrappleAttribute = "GrappleRange";
-inline constexpr std::string_view kGrappleAbility = "Grapple";
 inline constexpr std::string_view kGrappleMode = "spike.mode.grapple";
 inline constexpr std::string_view kGrappleVerb = "spike.grapple.fire";
+inline constexpr std::string_view kGrappleTetherLease = "spike.grapple.tether";
+inline constexpr std::string_view kGrappleInRangeQuery = "spike.grapple.in_range";
 
 // A purely game-defined component — the engine has never heard of it.
 struct GrappleHook
@@ -79,8 +78,6 @@ namespace
                 (void)tags->RegisterTag(kGrappleTag);
             if (auto* attributes = world.TryGetResource<AttributeRegistry>())
                 (void)attributes->RegisterAttribute(kGrappleAttribute, 0.0f, 50.0f, 12.0f);
-            if (auto* abilities = world.TryGetResource<AbilityRegistry>())
-                (void)abilities->Register(kGrappleAbility, AbilityDefinition{});
             // A mode is movement's vocabulary, and movement is this game's to
             // opt into: the hook installs that vocabulary itself, so the same
             // declaration lands in the runtime World and in an editor's, with
@@ -106,7 +103,29 @@ namespace
                 range.Required = false;
                 fire.Arguments.Children.push_back(std::move(range));
                 (void)scope.Declare(std::move(fire));
-                (void)scope.Commit();
+
+                // A held operation and a predicate, as an ability's phase would
+                // hold and guard them.
+                VerbDefinition tether;
+                tether.Name = std::string(kGrappleTetherLease);
+                tether.DisplayName = "Hold tether";
+                tether.Kind = VerbKind::Lease;
+                tether.Prediction = AuthoredPrediction::Simulation;
+                (void)scope.Declare(std::move(tether));
+
+                AuthoredQueryRegistry* queries = FindAuthoredQueryRegistry(world);
+                if (queries == nullptr)
+                {
+                    (void)scope.Commit();
+                    return;
+                }
+                AuthoredQueryRegistrationScope queryScope(*queries, "spike");
+                AuthoredQueryDefinition inRange;
+                inRange.Name = std::string(kGrappleInRangeQuery);
+                inRange.DisplayName = "Anchor in range";
+                inRange.Result.Kind = DataFieldKind::Bool;
+                (void)queryScope.Declare(std::move(inRange));
+                (void)CommitTogether(scope, queryScope);
             }
         }
     };

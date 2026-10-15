@@ -13,6 +13,7 @@
 class AssetRegistry;
 class DataAssetCache;
 class Game;
+struct RuntimeAssets;
 
 //=============================================================================
 // VocabularyCatalog
@@ -40,8 +41,14 @@ public:
     // the module's runtime is never started. Errors the module's declarations
     // produced are kept for Errors().
     void InstallModuleVocabulary(Game& game);
+    // The tags, attributes, effects and abilities the mounted content declares,
+    // as every editor document gets them.
+    void DeclareContent(RuntimeAssets& assets);
 
     [[nodiscard]] const VerbRegistry& Verbs() const;
+    [[nodiscard]] const AuthoredQueryRegistry& Queries() const;
+    // Every registry named here, for resolving content against what it names.
+    [[nodiscard]] const World& Names() const { return Metadata; }
     [[nodiscard]] std::span<const std::string> Errors() const { return Diagnostics; }
 
     struct VerbRow
@@ -51,8 +58,11 @@ public:
         std::string Category;
         std::string Provider;
         std::size_t ArgumentCount = 0;
+        VerbKind Kind = VerbKind::Instant;
+        AuthoredScope Scope = AuthoredScope::Gameplay;
+        AuthoredPrediction Prediction = AuthoredPrediction::AuthorityOnly;
     };
-    // Every live verb, in catalog order.
+    // Every live verb and lease, in catalog order.
     [[nodiscard]] std::vector<VerbRow> ListVerbs() const;
 
     struct QueryRow

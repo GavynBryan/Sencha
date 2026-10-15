@@ -5,74 +5,6 @@
 
 namespace
 {
-// Controls a higher-priority context has already taken for this pass. A claimed
-// control reads as absent to every context below, which is how one context
-// shadows another's binding without any explicit block rule.
-struct InputControlClaims
-{
-    std::array<std::uint64_t, kInputScancodeCount / 64> Keys{};
-    std::uint64_t MouseButtons = 0;
-    std::uint32_t GamepadButtons = 0;
-    std::uint8_t Triggers = 0;
-    std::uint8_t Sticks = 0;
-    bool Motion = false;
-    bool Wheel = false;
-
-    void Add(InputControl control)
-    {
-        switch (control.Source)
-        {
-        case InputControlSource::Key:
-            if (control.Index < kInputScancodeCount)
-                Keys[control.Index / 64] |= std::uint64_t{ 1 } << (control.Index % 64);
-            break;
-        case InputControlSource::MouseButton:
-            if (control.Index < 64)
-                MouseButtons |= std::uint64_t{ 1 } << control.Index;
-            break;
-        case InputControlSource::GamepadButton:
-            if (control.Index < 32)
-                GamepadButtons |= std::uint32_t{ 1 } << control.Index;
-            break;
-        case InputControlSource::GamepadTrigger:
-            if (control.Index < 8)
-                Triggers |= static_cast<std::uint8_t>(1u << control.Index);
-            break;
-        case InputControlSource::GamepadStick:
-            if (control.Index < 8)
-                Sticks |= static_cast<std::uint8_t>(1u << control.Index);
-            break;
-        case InputControlSource::MouseMotion: Motion = true; break;
-        case InputControlSource::MouseWheel:  Wheel = true; break;
-        case InputControlSource::None:        break;
-        }
-    }
-
-    [[nodiscard]] bool Has(InputControl control) const
-    {
-        switch (control.Source)
-        {
-        case InputControlSource::Key:
-            return control.Index < kInputScancodeCount
-                && (Keys[control.Index / 64] & (std::uint64_t{ 1 } << (control.Index % 64))) != 0;
-        case InputControlSource::MouseButton:
-            return control.Index < 64
-                && (MouseButtons & (std::uint64_t{ 1 } << control.Index)) != 0;
-        case InputControlSource::GamepadButton:
-            return control.Index < 32
-                && (GamepadButtons & (std::uint32_t{ 1 } << control.Index)) != 0;
-        case InputControlSource::GamepadTrigger:
-            return control.Index < 8 && (Triggers & (1u << control.Index)) != 0;
-        case InputControlSource::GamepadStick:
-            return control.Index < 8 && (Sticks & (1u << control.Index)) != 0;
-        case InputControlSource::MouseMotion: return Motion;
-        case InputControlSource::MouseWheel:  return Wheel;
-        case InputControlSource::None:        return false;
-        }
-        return false;
-    }
-};
-
 // Stick and trigger positions come from the device rather than from a latch:
 // an axis holds its value until the stick moves, so every tick of a catch-up
 // frame reads the same position rather than sharing one displacement.
@@ -142,18 +74,50 @@ void ClampToUnitCircle(float& x, float& y)
     y *= scale;
 }
 
-// Threshold state for one binding, carried between passes of one clock.
-constexpr std::uint8_t kAnalogAbove = 1 << 0;
-constexpr std::uint8_t kAnalogPressed = 1 << 1;
-constexpr std::uint8_t kAnalogReleased = 1 << 2;
-
 // Whether this binding turns an analog control into a button, which is the one
-// case with no device edge behind it.
+// case with no device transition behind it.
 bool IsAnalogButton(const InputBinding& binding, InputActionType actionType)
 {
     return binding.Kind == InputBindingKind::Direct
         && actionType == InputActionType::Digital
         && binding.Controls[kBindingNegativeX].Source == InputControlSource::GamepadTrigger;
+}
+
+bool IsButtonSource(InputControlSource source)
+{
+    return source == InputControlSource::Key || source == InputControlSource::MouseButton
+        || source == InputControlSource::GamepadButton;
+}
+
+// The one rule for whether a binding holds its action, used by attribution and
+// by resolution alike so the edges and the held flag cannot disagree.
+bool BindingHeld(const InputBinding& binding,
+                 bool analogButton,
+                 bool analogAbove,
+                 const InputDeviceSnapshot& devices,
+                 const InputControlClaims& claims)
+{
+    switch (binding.Kind)
+    {
+    case InputBindingKind::Direct:
+    {
+        const InputControl control = binding.Controls[kBindingNegativeX];
+        if (!control.IsValid() || claims.Has(control))
+            return false;
+        if (analogButton)
+            return analogAbove;
+        return IsButtonSource(control.Source) && devices.IsHeld(control);
+    }
+    case InputBindingKind::AxisPair:
+        return ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeX]),
+                          ButtonActive(devices, claims, binding.Controls[kBindingPositiveX])) != 0.0f;
+    case InputBindingKind::Cardinal:
+        return ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeX]),
+                          ButtonActive(devices, claims, binding.Controls[kBindingPositiveX])) != 0.0f
+            || ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeY]),
+                          ButtonActive(devices, claims, binding.Controls[kBindingPositiveY])) != 0.0f;
+    }
+    return false;
 }
 
 struct BindingContribution
@@ -165,19 +129,17 @@ struct BindingContribution
     // differs is what a time-integrating consumer must do with it.
     bool Sampled = false;
     bool Held = false;
-    bool Pressed = false;
-    bool Released = false;
 };
 
 BindingContribution EvaluateBinding(const InputBinding& binding,
                                     const InputDeviceSnapshot& devices,
-                                    const InputEdgeLatch& latch,
                                     const InputMotionDelta& motion,
                                     const InputControlClaims& claims,
                                     bool analogButton,
-                                    std::uint8_t analogState)
+                                    bool analogAbove)
 {
     BindingContribution result;
+    result.Held = BindingHeld(binding, analogButton, analogAbove, devices, claims);
 
     switch (binding.Kind)
     {
@@ -192,9 +154,6 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
         // applies to it.
         if (analogButton)
         {
-            result.Held = (analogState & kAnalogAbove) != 0;
-            result.Pressed = (analogState & kAnalogPressed) != 0;
-            result.Released = (analogState & kAnalogReleased) != 0;
             result.X = result.Held ? 1.0f : 0.0f;
             return result;
         }
@@ -214,55 +173,26 @@ BindingContribution EvaluateBinding(const InputBinding& binding,
             result.Sampled = true;
             break;
         default:
-            result.Held = devices.IsHeld(control);
             result.X = result.Held ? 1.0f : 0.0f;
             result.Sampled = true;
             break;
         }
-
-        result.Pressed = latch.WasPressed(control);
-        result.Released = latch.WasReleased(control);
         break;
     }
 
     case InputBindingKind::AxisPair:
-    {
-        const InputControl negative = binding.Controls[kBindingNegativeX];
-        const InputControl positive = binding.Controls[kBindingPositiveX];
-        result.X = ButtonAxis(ButtonActive(devices, claims, negative),
-                              ButtonActive(devices, claims, positive));
+        result.X = ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeX]),
+                              ButtonActive(devices, claims, binding.Controls[kBindingPositiveX]));
         result.Sampled = true;
-        result.Held = result.X != 0.0f;
-        result.Pressed = (!claims.Has(negative) && latch.WasPressed(negative))
-                      || (!claims.Has(positive) && latch.WasPressed(positive));
-        result.Released = (!claims.Has(negative) && latch.WasReleased(negative))
-                       || (!claims.Has(positive) && latch.WasReleased(positive));
         break;
-    }
 
     case InputBindingKind::Cardinal:
-    {
-        const InputControl negativeX = binding.Controls[kBindingNegativeX];
-        const InputControl positiveX = binding.Controls[kBindingPositiveX];
-        const InputControl negativeY = binding.Controls[kBindingNegativeY];
-        const InputControl positiveY = binding.Controls[kBindingPositiveY];
-        result.X = ButtonAxis(ButtonActive(devices, claims, negativeX),
-                              ButtonActive(devices, claims, positiveX));
-        result.Y = ButtonAxis(ButtonActive(devices, claims, negativeY),
-                              ButtonActive(devices, claims, positiveY));
+        result.X = ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeX]),
+                              ButtonActive(devices, claims, binding.Controls[kBindingPositiveX]));
+        result.Y = ButtonAxis(ButtonActive(devices, claims, binding.Controls[kBindingNegativeY]),
+                              ButtonActive(devices, claims, binding.Controls[kBindingPositiveY]));
         result.Sampled = true;
-        result.Held = result.X != 0.0f || result.Y != 0.0f;
-
-        const InputControl all[kInputBindingControlCount] = { negativeX, positiveX, negativeY, positiveY };
-        for (InputControl control : all)
-        {
-            if (claims.Has(control))
-                continue;
-            result.Pressed = result.Pressed || latch.WasPressed(control);
-            result.Released = result.Released || latch.WasReleased(control);
-        }
         break;
-    }
     }
 
     const InputControlSource directSource = binding.Controls[kBindingNegativeX].Source;
@@ -305,127 +235,296 @@ void ClaimBindingControls(const InputBinding& binding, InputControlClaims& claim
             claims.Add(binding.Controls[i]);
     }
 }
+
+bool ContextIsActive(std::span<const std::uint8_t> contextActive, std::size_t context)
+{
+    return context < contextActive.size() && contextActive[context] != 0;
 }
 
-void InputEdgeLatch::Accumulate(const InputFrame& frame)
+// The claims each context sees: everything the active contexts above it bind.
+// Claiming after the whole context, not per binding, so two bindings in one
+// context can share a control.
+void BuildContextClaims(const BoundInputProfile& profile,
+                        std::span<const std::uint8_t> contextActive,
+                        std::vector<InputControlClaims>& claimsByContext)
 {
-    for (std::uint32_t scancode : frame.KeysPressed)
+    claimsByContext.resize(profile.Contexts.size());
+    InputControlClaims claims;
+    for (std::size_t contextIndex = 0; contextIndex < profile.Contexts.size(); ++contextIndex)
     {
-        if (scancode < kInputScancodeCount)
-            KeysPressed[scancode / 64] |= std::uint64_t{ 1 } << (scancode % 64);
+        claimsByContext[contextIndex] = claims;
+        if (!ContextIsActive(contextActive, contextIndex))
+            continue;
+        const InputContextDefinition& context = profile.Contexts[contextIndex];
+        const std::uint32_t end = context.FirstBinding + context.BindingCount;
+        for (std::uint32_t i = context.FirstBinding; i < end && i < profile.Bindings.size(); ++i)
+            ClaimBindingControls(profile.Bindings[i], claims);
     }
-    for (std::uint32_t scancode : frame.KeysReleased)
+}
+
+// Which actions the attributed devices hold, into `held`.
+void EvaluateActionsHeld(const BoundInputProfile& profile,
+                         std::span<const std::uint8_t> contextActive,
+                         const InputEdgeAttribution& attribution,
+                         std::vector<std::uint8_t>& held)
+{
+    const std::size_t actionCount = profile.ActionTypes.size();
+    held.assign(actionCount, 0);
+    for (std::size_t contextIndex = 0; contextIndex < profile.Contexts.size(); ++contextIndex)
     {
-        if (scancode < kInputScancodeCount)
-            KeysReleased[scancode / 64] |= std::uint64_t{ 1 } << (scancode % 64);
+        if (!ContextIsActive(contextActive, contextIndex))
+            continue;
+        const InputContextDefinition& context = profile.Contexts[contextIndex];
+        const InputControlClaims& claims = attribution.ContextClaims[contextIndex];
+        const std::uint32_t end = context.FirstBinding + context.BindingCount;
+        for (std::uint32_t i = context.FirstBinding; i < end && i < profile.Bindings.size(); ++i)
+        {
+            const InputBinding& binding = profile.Bindings[i];
+            if (binding.ActionIndex >= actionCount || held[binding.ActionIndex] != 0)
+                continue;
+            const bool analogButton = IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]);
+            if (BindingHeld(binding, analogButton, attribution.AnalogAbove[i] != 0, attribution.Devices, claims))
+                held[binding.ActionIndex] = 1;
+        }
     }
-    for (std::uint32_t button : frame.MouseButtonsPressed)
+}
+
+// How a change in what is held reaches the edges: a device transition is the
+// player; anything else that moves an action is not.
+enum class HeldChangeCause : std::uint8_t
+{
+    Player,
+    Interruption,
+};
+
+void AppendEdge(InputClockState& presentation, InputClockState& simulation, std::size_t action, InputEdgeKind kind)
+{
+    if (action > 0xFF)
+        return;
+    const InputActionEdge edge{ static_cast<std::uint8_t>(action), kind };
+    presentation.Pending.Append(edge);
+    simulation.Pending.Append(edge);
+}
+
+// Compares the actions now held with the ones attributed so far and publishes
+// the difference. A rise the player did not cause is no press: activating a
+// context over a held key must not fire what the player happened to be holding.
+void PublishHeldChanges(InputEdgeAttribution& attribution,
+                        const std::vector<std::uint8_t>& held,
+                        HeldChangeCause cause,
+                        InputClockState& presentation,
+                        InputClockState& simulation)
+{
+    for (std::size_t action = 0; action < held.size(); ++action)
     {
-        if (button < 64)
-            MouseButtonsPressed |= std::uint64_t{ 1 } << button;
+        const bool was = attribution.ActionHeld[action] != 0;
+        const bool now = held[action] != 0;
+        if (was == now)
+            continue;
+        attribution.ActionHeld[action] = now ? 1 : 0;
+        if (now && cause == HeldChangeCause::Player)
+            AppendEdge(presentation, simulation, action, InputEdgeKind::Press);
+        else if (!now)
+            AppendEdge(presentation, simulation, action,
+                       cause == HeldChangeCause::Player ? InputEdgeKind::Release
+                                                        : InputEdgeKind::InterruptedRelease);
     }
-    for (std::uint32_t button : frame.MouseButtonsReleased)
+}
+
+void UpdateAnalogThresholds(const BoundInputProfile& profile, InputEdgeAttribution& attribution)
+{
+    attribution.AnalogAbove.resize(profile.Bindings.size(), 0);
+    for (std::size_t i = 0; i < profile.Bindings.size(); ++i)
     {
-        if (button < 64)
-            MouseButtonsReleased |= std::uint64_t{ 1 } << button;
+        const InputBinding& binding = profile.Bindings[i];
+        if (binding.ActionIndex >= profile.ActionTypes.size()
+            || !IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]))
+        {
+            attribution.AnalogAbove[i] = 0;
+            continue;
+        }
+        float value = 0.0f;
+        float unused = 0.0f;
+        ReadGamepadAxes(attribution.Devices, binding.Controls[kBindingNegativeX], value, unused);
+        attribution.AnalogAbove[i] = value >= binding.Threshold ? 1 : 0;
     }
-    for (std::uint32_t button : frame.GamepadButtonsPressed)
+}
+
+// Walks a pass's edges from the held state the previous pass left, turning them
+// into the summary flags; then whatever the walk leaves held that the devices do
+// not is owed an interrupted fall. Edges never invent a press.
+void SummarizeEdges(std::span<InputActionValue> out,
+                    std::span<const InputActionFireMode> fireModes,
+                    std::span<const InputActionType> types,
+                    std::vector<std::uint8_t>& walked,
+                    InputActionEdgeList& edges)
+{
+    for (const InputActionEdge& edge : edges.View())
     {
-        if (button < 32)
-            GamepadButtonsPressed |= std::uint32_t{ 1 } << button;
-    }
-    for (std::uint32_t button : frame.GamepadButtonsReleased)
-    {
-        if (button < 32)
-            GamepadButtonsReleased |= std::uint32_t{ 1 } << button;
+        if (edge.Action >= out.size())
+            continue;
+        InputActionValue& value = out[edge.Action];
+        const bool digital = edge.Action < types.size() && types[edge.Action] == InputActionType::Digital;
+        const InputActionFireMode mode =
+            edge.Action < fireModes.size() ? fireModes[edge.Action] : InputActionFireMode::Held;
+        switch (edge.Kind)
+        {
+        case InputEdgeKind::Press:
+            value.Flags |= InputActionFlags::Pressed;
+            if (digital && mode == InputActionFireMode::Pressed)
+                value.Flags |= InputActionFlags::Fired;
+            walked[edge.Action] = 1;
+            break;
+        case InputEdgeKind::Release:
+            value.Flags |= InputActionFlags::Released;
+            if (digital && mode == InputActionFireMode::Released)
+                value.Flags |= InputActionFlags::Fired;
+            walked[edge.Action] = 0;
+            break;
+        case InputEdgeKind::InterruptedRelease:
+            value.Flags |= InputActionFlags::Released | InputActionFlags::Interrupted;
+            walked[edge.Action] = 0;
+            break;
+        }
     }
 
-    MotionX += frame.MouseDeltaX;
-    MotionY += frame.MouseDeltaY;
+    for (std::size_t action = 0; action < out.size(); ++action)
+    {
+        if (walked[action] == 0 || out[action].IsHeld())
+            continue;
+        out[action].Flags |= InputActionFlags::Released | InputActionFlags::Interrupted;
+        edges.Append({ static_cast<std::uint8_t>(action), InputEdgeKind::InterruptedRelease });
+    }
+}
+} // namespace
+
+void InputControlClaims::Add(InputControl control)
+{
+    switch (control.Source)
+    {
+    case InputControlSource::Key:
+        if (control.Index < kInputScancodeCount)
+            Keys[control.Index / 64] |= std::uint64_t{ 1 } << (control.Index % 64);
+        break;
+    case InputControlSource::MouseButton:
+        if (control.Index < 64)
+            MouseButtons |= std::uint64_t{ 1 } << control.Index;
+        break;
+    case InputControlSource::GamepadButton:
+        if (control.Index < 32)
+            GamepadButtons |= std::uint32_t{ 1 } << control.Index;
+        break;
+    case InputControlSource::GamepadTrigger:
+        if (control.Index < 8)
+            Triggers |= static_cast<std::uint8_t>(1u << control.Index);
+        break;
+    case InputControlSource::GamepadStick:
+        if (control.Index < 8)
+            Sticks |= static_cast<std::uint8_t>(1u << control.Index);
+        break;
+    case InputControlSource::MouseMotion: Motion = true; break;
+    case InputControlSource::MouseWheel:  Wheel = true; break;
+    case InputControlSource::None:        break;
+    }
+}
+
+bool InputControlClaims::Has(InputControl control) const
+{
+    switch (control.Source)
+    {
+    case InputControlSource::Key:
+        return control.Index < kInputScancodeCount
+            && (Keys[control.Index / 64] & (std::uint64_t{ 1 } << (control.Index % 64))) != 0;
+    case InputControlSource::MouseButton:
+        return control.Index < 64
+            && (MouseButtons & (std::uint64_t{ 1 } << control.Index)) != 0;
+    case InputControlSource::GamepadButton:
+        return control.Index < 32
+            && (GamepadButtons & (std::uint32_t{ 1 } << control.Index)) != 0;
+    case InputControlSource::GamepadTrigger:
+        return control.Index < 8 && (Triggers & (1u << control.Index)) != 0;
+    case InputControlSource::GamepadStick:
+        return control.Index < 8 && (Sticks & (1u << control.Index)) != 0;
+    case InputControlSource::MouseMotion: return Motion;
+    case InputControlSource::MouseWheel:  return Wheel;
+    case InputControlSource::None:        return false;
+    }
+    return false;
+}
+
+void InputMotionLatch::Accumulate(const InputFrame& frame)
+{
+    X += frame.MouseDeltaX;
+    Y += frame.MouseDeltaY;
     Wheel += frame.MouseWheelY;
 }
 
-void InputEdgeLatch::Clear()
+void InputMotionLatch::Clear()
 {
-    KeysPressed.fill(0);
-    KeysReleased.fill(0);
-    MouseButtonsPressed = 0;
-    MouseButtonsReleased = 0;
-    GamepadButtonsPressed = 0;
-    GamepadButtonsReleased = 0;
-    MotionX = 0.0f;
-    MotionY = 0.0f;
+    X = 0.0f;
+    Y = 0.0f;
     Wheel = 0.0f;
 }
 
-InputMotionDelta InputEdgeLatch::Share(std::uint32_t shares) const
+InputMotionDelta InputMotionLatch::Share(std::uint32_t shares) const
 {
     if (shares <= 1)
-        return InputMotionDelta{ .X = MotionX, .Y = MotionY, .Wheel = Wheel };
+        return InputMotionDelta{ .X = X, .Y = Y, .Wheel = Wheel };
 
     const float scale = 1.0f / static_cast<float>(shares);
-    return InputMotionDelta{
-        .X = MotionX * scale,
-        .Y = MotionY * scale,
-        .Wheel = Wheel * scale,
-    };
+    return InputMotionDelta{ .X = X * scale, .Y = Y * scale, .Wheel = Wheel * scale };
 }
 
-void InputEdgeLatch::Consume(const InputMotionDelta& taken)
+void InputMotionLatch::Consume(const InputMotionDelta& taken)
 {
-    KeysPressed.fill(0);
-    KeysReleased.fill(0);
-    MouseButtonsPressed = 0;
-    MouseButtonsReleased = 0;
-    GamepadButtonsPressed = 0;
-    GamepadButtonsReleased = 0;
-    MotionX -= taken.X;
-    MotionY -= taken.Y;
+    X -= taken.X;
+    Y -= taken.Y;
     Wheel -= taken.Wheel;
-}
-
-bool InputEdgeLatch::WasPressed(InputControl control) const
-{
-    switch (control.Source)
-    {
-    case InputControlSource::Key:
-        return control.Index < kInputScancodeCount
-            && (KeysPressed[control.Index / 64] & (std::uint64_t{ 1 } << (control.Index % 64))) != 0;
-    case InputControlSource::MouseButton:
-        return control.Index < 64
-            && (MouseButtonsPressed & (std::uint64_t{ 1 } << control.Index)) != 0;
-    case InputControlSource::GamepadButton:
-        return control.Index < 32
-            && (GamepadButtonsPressed & (std::uint32_t{ 1 } << control.Index)) != 0;
-    default:
-        return false;
-    }
-}
-
-bool InputEdgeLatch::WasReleased(InputControl control) const
-{
-    switch (control.Source)
-    {
-    case InputControlSource::Key:
-        return control.Index < kInputScancodeCount
-            && (KeysReleased[control.Index / 64] & (std::uint64_t{ 1 } << (control.Index % 64))) != 0;
-    case InputControlSource::MouseButton:
-        return control.Index < 64
-            && (MouseButtonsReleased & (std::uint64_t{ 1 } << control.Index)) != 0;
-    case InputControlSource::GamepadButton:
-        return control.Index < 32
-            && (GamepadButtonsReleased & (std::uint32_t{ 1 } << control.Index)) != 0;
-    default:
-        return false;
-    }
 }
 
 void InputDeviceSnapshot::CaptureFrom(const InputFrame& frame)
 {
+    CaptureButtonsFrom(frame);
+    GamepadAxes = frame.GamepadAxes;
+}
+
+void InputDeviceSnapshot::CaptureButtonsFrom(const InputFrame& frame)
+{
     KeysHeld = frame.KeyHeld;
     MouseButtonsHeld = frame.MouseHeld[0];
     GamepadButtonsHeld = frame.GamepadButtonsHeld;
-    GamepadAxes = frame.GamepadAxes;
+}
+
+void InputDeviceSnapshot::Apply(const InputTransition& transition)
+{
+    const InputControl control = transition.Control;
+    switch (control.Source)
+    {
+    case InputControlSource::Key:
+        if (control.Index < kInputScancodeCount)
+        {
+            const std::uint64_t bit = std::uint64_t{ 1 } << (control.Index % 64);
+            std::uint64_t& word = KeysHeld[control.Index / 64];
+            word = transition.Down ? (word | bit) : (word & ~bit);
+        }
+        break;
+    case InputControlSource::MouseButton:
+        if (control.Index < 64)
+        {
+            const std::uint64_t bit = std::uint64_t{ 1 } << control.Index;
+            MouseButtonsHeld = transition.Down ? (MouseButtonsHeld | bit) : (MouseButtonsHeld & ~bit);
+        }
+        break;
+    case InputControlSource::GamepadButton:
+        if (control.Index < 32)
+        {
+            const std::uint32_t bit = std::uint32_t{ 1 } << control.Index;
+            GamepadButtonsHeld = transition.Down ? (GamepadButtonsHeld | bit) : (GamepadButtonsHeld & ~bit);
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 bool InputDeviceSnapshot::IsHeld(InputControl control) const
@@ -452,26 +551,66 @@ float InputDeviceSnapshot::Axis(GamepadAxis axis) const
     return index < GamepadAxes.size() ? GamepadAxes[index] : 0.0f;
 }
 
-void AccumulateInputFrame(InputFrame& frame,
-                          InputDeviceSnapshot& devices,
-                          InputClockState& presentationClock,
-                          InputClockState& simulationClock)
+void AttributeInputFrame(InputFrame& frame,
+                         const BoundInputProfile* profile,
+                         std::span<const std::uint8_t> contextActive,
+                         InputEdgeAttribution& attribution,
+                         InputClockState& presentationClock,
+                         InputClockState& simulationClock)
 {
-    devices.CaptureFrom(frame);
-    presentationClock.Latch.Accumulate(frame);
-    simulationClock.Latch.Accumulate(frame);
+    presentationClock.Motion.Accumulate(frame);
+    simulationClock.Motion.Accumulate(frame);
 
-    // The latches now own these transitions. Leaving them on the frame would
-    // hand the presentation clock the same press again next frame, since the
-    // frame only drops them when a fixed tick runs.
-    frame.ClearEdges();
+    if (profile == nullptr)
+    {
+        for (std::size_t action = 0; action < attribution.ActionHeld.size(); ++action)
+            if (attribution.ActionHeld[action] != 0)
+                AppendEdge(presentationClock, simulationClock, action, InputEdgeKind::InterruptedRelease);
+        attribution.ActionHeld.clear();
+        attribution.AnalogAbove.clear();
+        attribution.Devices.CaptureFrom(frame);
+        frame.ClearTransitions();
+        return;
+    }
+
+    attribution.ActionHeld.resize(profile->ActionTypes.size(), 0);
+    attribution.AnalogAbove.resize(profile->Bindings.size(), 0);
+    BuildContextClaims(*profile, contextActive, attribution.ContextClaims);
+    std::vector<std::uint8_t>& held = attribution.Scratch;
+
+    // In order: what this frame's contexts did to what was already held, then
+    // each transition as it arrived, then the triggers' resting positions, then
+    // whatever the log could not carry, against the frame's real buttons.
+    EvaluateActionsHeld(*profile, contextActive, attribution, held);
+    PublishHeldChanges(attribution, held, HeldChangeCause::Interruption, presentationClock, simulationClock);
+
+    for (const InputTransition& transition : frame.TransitionLog())
+    {
+        attribution.Devices.Apply(transition);
+        EvaluateActionsHeld(*profile, contextActive, attribution, held);
+        PublishHeldChanges(attribution, held,
+                           transition.Synthetic ? HeldChangeCause::Interruption : HeldChangeCause::Player,
+                           presentationClock, simulationClock);
+    }
+
+    attribution.Devices.GamepadAxes = frame.GamepadAxes;
+    UpdateAnalogThresholds(*profile, attribution);
+    EvaluateActionsHeld(*profile, contextActive, attribution, held);
+    PublishHeldChanges(attribution, held, HeldChangeCause::Player, presentationClock, simulationClock);
+
+    attribution.Devices.CaptureButtonsFrom(frame);
+    EvaluateActionsHeld(*profile, contextActive, attribution, held);
+    PublishHeldChanges(attribution, held, HeldChangeCause::Interruption, presentationClock, simulationClock);
+
+    frame.ClearTransitions();
 }
 
 void ResolveInputActions(const BoundInputProfile& profile,
                          std::span<const std::uint8_t> contextActive,
-                         const InputDeviceSnapshot& devices,
+                         const InputEdgeAttribution& attribution,
                          InputClockState& clock,
                          std::span<InputActionValue> out,
+                         InputActionEdgeList& outEdges,
                          std::uint32_t displacementShares,
                          std::span<InputActionValue> outSampled)
 {
@@ -483,54 +622,22 @@ void ResolveInputActions(const BoundInputProfile& profile,
     // Read once, before any binding sees it, so every binding in this pass
     // resolves against the same displacement and the drain below subtracts
     // exactly what was handed out.
-    const InputMotionDelta motion = clock.Latch.Share(displacementShares);
+    const InputMotionDelta motion = clock.Motion.Share(displacementShares);
 
     for (std::size_t i = 0; i < actionCount; ++i)
         out[i] = InputActionValue{};
     if (trackSampled)
         for (std::size_t i = 0; i < actionCount; ++i)
             outSampled[i] = InputActionValue{};
-    if (clock.HeldPrevious.size() != actionCount)
-        clock.HeldPrevious.assign(actionCount, 0);
-    if (clock.FiresOnRelease.size() != actionCount)
-        clock.FiresOnRelease.assign(actionCount, 0);
+    clock.HeldPrevious.resize(actionCount, 0);
 
-    // Analog thresholds first, for every binding whether or not its context is
-    // active: the crossing is a fact about the control, so a context switched on
-    // over an already-pulled trigger reads as held rather than as a fresh press.
-    if (clock.AnalogState.size() != profile.Bindings.size())
-        clock.AnalogState.assign(profile.Bindings.size(), 0);
-    for (std::size_t i = 0; i < profile.Bindings.size(); ++i)
-    {
-        const InputBinding& binding = profile.Bindings[i];
-        if (binding.ActionIndex >= actionCount
-            || !IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]))
-        {
-            clock.AnalogState[i] = 0;
-            continue;
-        }
-
-        float value = 0.0f;
-        float unused = 0.0f;
-        ReadGamepadAxes(devices, binding.Controls[kBindingNegativeX], value, unused);
-
-        const bool above = value >= binding.Threshold;
-        const bool wasAbove = (clock.AnalogState[i] & kAnalogAbove) != 0;
-        std::uint8_t state = above ? kAnalogAbove : std::uint8_t{ 0 };
-        if (above && !wasAbove)
-            state |= kAnalogPressed;
-        else if (!above && wasAbove)
-            state |= kAnalogReleased;
-        clock.AnalogState[i] = state;
-    }
-
-    InputControlClaims claims;
     for (std::size_t contextIndex = 0; contextIndex < profile.Contexts.size(); ++contextIndex)
     {
-        if (contextIndex >= contextActive.size() || contextActive[contextIndex] == 0)
+        if (!ContextIsActive(contextActive, contextIndex) || contextIndex >= attribution.ContextClaims.size())
             continue;
 
         const InputContextDefinition& context = profile.Contexts[contextIndex];
+        const InputControlClaims& claims = attribution.ContextClaims[contextIndex];
         const std::uint32_t end = context.FirstBinding + context.BindingCount;
         for (std::uint32_t i = context.FirstBinding; i < end && i < profile.Bindings.size(); ++i)
         {
@@ -538,11 +645,10 @@ void ResolveInputActions(const BoundInputProfile& profile,
             if (binding.ActionIndex >= actionCount)
                 continue;
 
-            const bool analogButton =
-                IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]);
-            const BindingContribution contribution = EvaluateBinding(
-                binding, devices, clock.Latch, motion, claims, analogButton,
-                clock.AnalogState[i]);
+            const bool analogButton = IsAnalogButton(binding, profile.ActionTypes[binding.ActionIndex]);
+            const bool analogAbove = i < attribution.AnalogAbove.size() && attribution.AnalogAbove[i] != 0;
+            const BindingContribution contribution =
+                EvaluateBinding(binding, attribution.Devices, motion, claims, analogButton, analogAbove);
             InputActionValue& value = out[binding.ActionIndex];
 
             if (profile.ActionTypes[binding.ActionIndex] != InputActionType::Digital)
@@ -557,84 +663,50 @@ void ResolveInputActions(const BoundInputProfile& profile,
             }
             if (contribution.Held)
                 value.Flags |= InputActionFlags::Held;
-            if (contribution.Pressed)
-                value.Flags |= InputActionFlags::Pressed;
-            if (contribution.Released)
-                value.Flags |= InputActionFlags::Released;
         }
-
-        // Claiming after the whole context, not per binding, so two bindings in
-        // one context can share a control.
-        for (std::uint32_t i = context.FirstBinding; i < end && i < profile.Bindings.size(); ++i)
-            ClaimBindingControls(profile.Bindings[i], claims);
     }
 
-    // Edges describe the action, not the bindings under it. Up to here the
-    // flags mean "some binding saw a device transition"; here that becomes
-    // "the action went down" or "the action came up", which is the only thing
-    // a consumer can act on. Two controls bound to one action would otherwise
-    // report a second press when the second control joins one already held,
-    // and a release when either lets go while the other still holds it.
+    // An axis action carries a magnitude rather than a moment, so it never fires.
     for (std::size_t i = 0; i < actionCount; ++i)
     {
         InputActionValue& value = out[i];
-        const bool held = value.IsHeld();
-        const bool wasHeld = clock.HeldPrevious[i] != 0;
-        const bool sawPress = value.WasPressed();
-        const bool sawRelease = value.WasReleased();
-
-        InputActionFlags flags = held ? InputActionFlags::Held : InputActionFlags::None;
-
-        // A press only ever comes from a device transition. Activating a
-        // context over an already-held key must not look like a new press, or
-        // opening a menu would fire whatever the player happened to be holding.
-        if (sawPress && !wasHeld)
-            flags |= InputActionFlags::Pressed;
-
-        // A release comes from the action falling, whatever made it fall: a
-        // control let go, or the binding that drove it going away. `sawRelease`
-        // covers the tap that began and ended inside one window, where the
-        // action was never observed held at all.
-        if (!held && (wasHeld || sawRelease))
-            flags |= InputActionFlags::Released;
-
-        // An axis action carries a magnitude rather than a moment, so it never
-        // fires however its bindings behaved.
-        const InputActionFireMode fire = profile.ActionFireModes[i];
-        const bool digital = profile.ActionTypes[i] == InputActionType::Digital;
-        if (digital)
-        {
-            if (HasFlag(flags, FireFlagOf(fire)))
-                flags |= InputActionFlags::Fired;
-            value.X = held ? 1.0f : 0.0f;
-        }
-
-        value.Flags = flags;
-        clock.HeldPrevious[i] = held ? 1 : 0;
-        clock.FiresOnRelease[i] =
-            held && digital && fire == InputActionFireMode::Released ? 1 : 0;
+        if (profile.ActionTypes[i] != InputActionType::Digital)
+            continue;
+        value.X = value.IsHeld() ? 1.0f : 0.0f;
+        if (value.IsHeld() && profile.ActionFireModes[i] == InputActionFireMode::Held)
+            value.Flags |= InputActionFlags::Fired;
     }
 
-    clock.Latch.Consume(motion);
+    outEdges = clock.Pending;
+    clock.Pending.Clear();
+    SummarizeEdges(out.first(actionCount), profile.ActionFireModes, profile.ActionTypes, clock.HeldPrevious, outEdges);
+    for (std::size_t i = 0; i < actionCount; ++i)
+        clock.HeldPrevious[i] = out[i].IsHeld() ? 1 : 0;
+
+    clock.Motion.Consume(motion);
 }
 
-void ReleaseInputActions(InputClockState& clock, std::span<InputActionValue> out)
+void ReleaseInputActions(InputClockState& clock,
+                         std::span<InputActionValue> out,
+                         InputActionEdgeList& outEdges)
 {
-    for (std::size_t i = 0; i < out.size(); ++i)
-    {
-        const bool wasHeld = i < clock.HeldPrevious.size() && clock.HeldPrevious[i] != 0;
-        out[i] = InputActionValue{};
-        if (!wasHeld)
-            continue;
+    for (InputActionValue& value : out)
+        value = InputActionValue{};
+    clock.HeldPrevious.resize(out.size(), 0);
 
-        out[i].Flags |= InputActionFlags::Released;
-        // The mode is carried rather than looked up: the profile that declared
-        // it is exactly what has gone away.
-        if (i < clock.FiresOnRelease.size() && clock.FiresOnRelease[i] != 0)
-            out[i].Flags |= InputActionFlags::Fired;
-    }
-
+    // The profile that knew each action's fire mode is gone, so nothing fires.
+    outEdges = clock.Pending;
+    clock.Pending.Clear();
+    SummarizeEdges(out, {}, {}, clock.HeldPrevious, outEdges);
     std::fill(clock.HeldPrevious.begin(), clock.HeldPrevious.end(), std::uint8_t{ 0 });
-    std::fill(clock.FiresOnRelease.begin(), clock.FiresOnRelease.end(), std::uint8_t{ 0 });
-    std::fill(clock.AnalogState.begin(), clock.AnalogState.end(), std::uint8_t{ 0 });
+}
+
+void DiscardSuspendedInput(InputClockState& clock)
+{
+    clock.Motion.Clear();
+    const InputActionEdgeList pending = clock.Pending;
+    clock.Pending.Clear();
+    for (const InputActionEdge& edge : pending.View())
+        if (edge.Kind == InputEdgeKind::InterruptedRelease)
+            clock.Pending.Append(edge);
 }

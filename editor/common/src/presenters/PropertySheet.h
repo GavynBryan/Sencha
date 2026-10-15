@@ -66,6 +66,10 @@ public:
     [[nodiscard]] std::optional<std::size_t> IndexOf(std::string_view key) const;
     // A group row opened or closed.
     void Fold(std::size_t index);
+    // The property `key` brought forward from the next presentation on: its row
+    // marked and every group holding it open, until another key or none is asked for.
+    void Focus(std::string key) { FocusKey = std::move(key); }
+    [[nodiscard]] std::optional<std::size_t> FocusedRow() const { return Focused; }
     // What an asset row may be set to.
     [[nodiscard]] std::vector<std::string> CandidatesOf(std::span<const PropertySection> sections,
                                                         std::size_t index) const;
@@ -121,6 +125,7 @@ private:
     void Settle();
 
     [[nodiscard]] bool FoldedNow(const PropertyNode& node) const;
+    [[nodiscard]] static bool Holds(std::span<const PropertyNode> nodes, std::string_view key);
 
     std::vector<Presented> Rows;
     enum class HoldKind : std::uint8_t { Nothing, Field, Number };
@@ -140,4 +145,6 @@ private:
     // their new values, not a person changing one.
     std::vector<std::string> LaidOut;
     bool Settling = false;
+    std::string FocusKey;
+    std::optional<std::size_t> Focused;
 };

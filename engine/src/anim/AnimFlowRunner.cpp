@@ -55,7 +55,8 @@ namespace
             Layer.Clip = SectionClip(index);
             // A section plays its clip once, forward; its loops are new starts.
             Layer.Playback = AnimPlayback{ .StartTick = start, .OffsetSeconds = 0.0f, .Rate = 1.0f,
-                                           .DurationSeconds = ClipDuration(*Tick.Rig, Layer.Clip), .Cyclic = false };
+                                           .DurationSeconds = ClipDuration(*Tick.Rig, Layer.Clip), .Cyclic = false,
+                                           .TimeScale = Layer.Playback.TimeScale };
             if (reason != AnimChangeReason::SectionLooped)
                 Outcome.SectionChanged = true;
             if (Log == nullptr)

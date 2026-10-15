@@ -47,6 +47,7 @@
     gap: 8dp;
 }
 
+.setting.theme-focused { border-width: 1dp; }
 .setting_label { display: block; width: 84dp; font-size: 11dp; word-break: break-word; }
 .setting_control { display: block; flex: 1; height: 20dp; }
 .asset_name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

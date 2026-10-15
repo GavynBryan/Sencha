@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <type_traits>
 
 //=============================================================================
@@ -52,4 +53,25 @@ void HashFnv1aValue(std::uint64_t& hash, const T& value)
     requires std::is_trivially_copyable_v<T>
 {
     HashFnv1aBytes(hash, &value, sizeof(T));
+}
+
+// FNV-1a 32 over text, one shot. Unlike the digests above this is a contract: a
+// name's key is the same in every process and build, which is what lets a name
+// stand for a registration-order id across a wire (GameplayTagRegistry::WireKey).
+constexpr std::uint32_t Fnv1a32(std::string_view text)
+{
+    std::uint32_t hash = 2166136261u;
+    for (const char c : text)
+    {
+        hash ^= static_cast<std::uint8_t>(c);
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+// A name's key on a wire, where zero is reserved for "none".
+constexpr std::uint32_t NameWireKey(std::string_view name)
+{
+    const std::uint32_t hash = Fnv1a32(name);
+    return hash == 0 ? 1u : hash;
 }

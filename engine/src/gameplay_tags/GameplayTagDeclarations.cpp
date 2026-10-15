@@ -20,6 +20,18 @@ namespace
         tags.Kind = DataFieldKind::Array;
         tags.Children.push_back(std::move(tag));
 
+        DataFieldSchema shown;
+        shown.Kind = DataFieldKind::GameplayTag;
+        shown.DisplayName = "Tag";
+        DataFieldSchema replicated;
+        replicated.Key = "replicate_to_all";
+        replicated.DisplayName = "Shown to everyone";
+        replicated.Summary = "Tags an actor shows to every machine that sees it, not only its owner: what other "
+                             "players' presentation reads, such as a weapon firing.";
+        replicated.Kind = DataFieldKind::Array;
+        replicated.Required = false;
+        replicated.Children.push_back(std::move(shown));
+
         DataSchema schema;
         schema.TypeName = std::string(kGameplayTagDeclarationsType);
         schema.DisplayName = "Gameplay tag declarations";
@@ -27,6 +39,7 @@ namespace
                              "game module declares.";
         schema.Root.Kind = DataFieldKind::Record;
         schema.Root.Children.push_back(std::move(tags));
+        schema.Root.Children.push_back(std::move(replicated));
         return schema;
     }
 
@@ -48,6 +61,20 @@ namespace
                 return { {}, {}, std::format("$.data.tags[{}] '{}' is declared twice.", i, name.AsString()) };
             value->Tags.push_back(name.AsString());
         }
+        if (const JsonValue* replicated = data.Find("replicate_to_all"); replicated != nullptr)
+        {
+            if (!replicated->IsArray())
+                return { {}, {}, "$.data.replicate_to_all A list of tag names." };
+            for (std::size_t i = 0; i < replicated->AsArray().size(); ++i)
+            {
+                const JsonValue& name = replicated->AsArray()[i];
+                GameplayTagError error;
+                if (!name.IsString() || !syntax.RegisterTag(name.AsString(), &error))
+                    return { {}, {}, std::format("$.data.replicate_to_all[{}] {}", i,
+                                                 name.IsString() ? error.Message : std::string("A tag is a name.")) };
+                value->ReplicatedToAll.push_back(name.AsString());
+            }
+        }
         return { std::move(value), {}, {} };
     }
 }
@@ -67,6 +94,14 @@ void DeclareGameplayTags(const GameplayTagDeclarations& declarations, GameplayTa
     {
         GameplayTagError error;
         if (!tags.RegisterTag(name, &error))
+            errors.push_back(std::format("'{}': {}", name, error.Message));
+    }
+    for (const std::string& name : declarations.ReplicatedToAll)
+    {
+        GameplayTagError error;
+        if (const std::optional<GameplayTagId> tag = tags.RegisterTag(name, &error))
+            tags.SetReplicatedToAll(*tag, true);
+        else
             errors.push_back(std::format("'{}': {}", name, error.Message));
     }
 }

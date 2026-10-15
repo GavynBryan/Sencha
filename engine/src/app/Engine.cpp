@@ -3,10 +3,8 @@
 #include <render/feature/UiRenderFeature.h>
 #endif
 #include <app/OptionsPage.h>
-#include <app/EngineVerbs.h>
 #include <app/EngineVocabulary.h>
 #include <perception/PerceptionSystem.h>
-#include <perception/PerceptionVocabulary.h>
 #include <app/PauseMenu.h>
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
@@ -14,7 +12,7 @@
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
-#include <anim/AnimRequestVerbs.h>
+#include <physics/PhysicsStepSystem.h>
 #include <anim/AnimationRegistration.h>
 #include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
@@ -25,6 +23,8 @@
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+
+#include <app/EngineVocabularyBindings.h>
 
 #include <app/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
@@ -1115,7 +1115,7 @@ int Engine::Run(Game& game)
         // too, so a name a module declares lands here exactly as it does there.
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
-        InstallAbilityKitVocabulary(entities);
+        RegisterAbilityKit(entities);
         InstallAnimationVocabulary(entities);
         // The engine's character facts read movement's components; a game without
         // movement has no entity they answer for.
@@ -1373,20 +1373,24 @@ int Engine::Run(Game& game)
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
 
-    // Animation requests from authored content go through the same door an ability's do.
-    {
-        AnimationOperations = std::make_unique<AnimRequestOperations>(RuntimeWorldState->Entities(),
-                                                                      RuntimeLoop.GetSimulationClock());
-        const VerbRegistry& verbs = RuntimeWorldState->Entities().GetResource<VerbRegistry>();
-        AnimRequestBinding =
-            VerbDispatcherState->Bind<&InvokeAnimRequest>(verbs.Find(kAnimRequestVerb), *AnimationOperations);
-        AnimCancelBinding =
-            VerbDispatcherState->Bind<&InvokeAnimCancel>(verbs.Find(kAnimCancelVerb), *AnimationOperations);
-    }
+    // The engine domains' operations. Animation requests from authored content go
+    // through the same door an ability's do.
+    VocabularyBindings = std::make_unique<EngineVocabularyBindings>(
+        RuntimeWorldState->Entities(), RuntimeLoop.GetSimulationClock(), *VerbDispatcherState);
+
+    // Every host runs abilities: an actor granted one runs it in a process whose
+    // game registered nothing for it. Before the game's hook, so movement and a
+    // game's own systems order against these.
+    RegisterAbilityKitSystems(EngineSystems,
+                              AbilityHost{ .Verbs = VerbDispatcherState.get(),
+                                           .Queries = QueryDispatcherState.get(),
+                                           .Console = &console.Registry(),
+                                           .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                           .Logging = &LoggingState });
 
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
-    PerceptionQueryBindings = BindPerceptionQueries(*QueryDispatcherState, RuntimeWorldState->Entities());
+    VocabularyBindings->BindPerception(*QueryDispatcherState);
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its
@@ -1403,6 +1407,8 @@ int Engine::Run(Game& game)
     // After the game's systems, which is where physics is registered if at all.
     {
         const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
+        if (physics != nullptr)
+            VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
         CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
             *RuntimeWorldState, ContentState->Assets().CandidateOperations,
             physics != nullptr ? &physics->GetSimulation() : nullptr, QueryDispatcherState.get());
@@ -1499,12 +1505,9 @@ int Engine::Run(Game& game)
     // The game's own hook ran above, which is where it gave back its tokens.
     ResumeBinding.Reset();
     QuitBinding.Reset();
-    AnimRequestBinding.Reset();
-    AnimCancelBinding.Reset();
-    PerceptionQueryBindings.clear();
+    VocabularyBindings.reset();
     ResumeOperation.reset();
     QuitOperation.reset();
-    AnimationOperations.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)
         PauseMenuState->SetVerbBindings(nullptr, nullptr);

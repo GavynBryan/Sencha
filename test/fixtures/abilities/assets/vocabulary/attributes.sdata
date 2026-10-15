@@ -1,0 +1,10 @@
+{
+  "id": "5f2c8e1a7b046d93",
+  "type": "gameplay.attribute_declarations",
+  "version": 1,
+  "data": {
+    "attributes": [
+      { "key": "a_health", "name": "Health", "min": 0, "max": 100, "default": 100 },
+      { "key": "a_ammo", "name": "Ammo", "min": 0, "max": 30, "default": 30 } ]
+  }
+}

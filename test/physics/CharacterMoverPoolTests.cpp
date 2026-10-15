@@ -12,6 +12,7 @@
 #include <movement/components/MovementTuning.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
+#include <time/ActorTime.h>
 #include <world/transform/TransformComponents.h>
 
 namespace
@@ -37,6 +38,7 @@ void SetUpPhysics(World& world)
     world.RegisterComponent<MotionRequest>();
     world.RegisterComponent<KinematicState>();
     world.RegisterComponent<SupportState>();
+    world.RegisterComponent<ActorTimeDilated>();
 }
 
 EntityId SpawnCharacterIn(

@@ -15,7 +15,7 @@
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimTrace.h>
 #include <anim/AnimWorldReport.h>
-#include <abilities/AbilityActivationSystem.h>
+#include <abilities/AbilitySystem.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonFormat.h>
@@ -239,8 +239,8 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
     // edges when they register second.
     if (schedule.Get<RootMotionSystem>() != nullptr)
         schedule.After<RootMotionSystem, AnimContentSystem>();
-    if (schedule.Get<AbilityActivationSystem>() != nullptr)
-        schedule.After<AnimSelectSystem, AbilityActivationSystem>();
+    if (schedule.Get<AbilitySystem>() != nullptr)
+        schedule.After<AnimSelectSystem, AbilitySystem>();
 
     // Posing runs in the post-fixed phase, after movement has moved what it
     // poses; nothing in the fixed phase reads it.
@@ -249,7 +249,7 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
 
     if (host.Console != nullptr)
     {
-        const auto capacityCVar = [&](AnimEventScope scope, const char* name, const char* help) {
+        const auto capacityCVar = [&](AuthoredScope scope, const char* name, const char* help) {
             const auto capacity = static_cast<std::int64_t>(eventSystem.GetCapacity(scope));
             (void)host.Console->RegisterCVar({
                 .Name = name,
@@ -267,10 +267,10 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
                 },
             });
         };
-        capacityCVar(AnimEventScope::Gameplay, "anim.events.gameplay_capacity",
+        capacityCVar(AuthoredScope::Gameplay, "anim.events.gameplay_capacity",
                      "How many gameplay animation events one tick may offer to their bindings. Cosmetic events "
                      "never use this room. A crossing past it is logged as an error and recorded as refused.");
-        capacityCVar(AnimEventScope::Cosmetic, "anim.events.cosmetic_capacity",
+        capacityCVar(AuthoredScope::Cosmetic, "anim.events.cosmetic_capacity",
                      "How many cosmetic animation events one tick may offer to their bindings. A crossing past it "
                      "is counted and recorded as refused: the bound on presentation traffic.");
     }

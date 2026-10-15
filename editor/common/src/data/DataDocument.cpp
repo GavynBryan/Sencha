@@ -1,5 +1,7 @@
 #include "data/DataDocument.h"
 
+#include "identity/RandomKey.h"
+
 #include "commands/ICommand.h"
 
 #include <core/json/JsonFormat.h>
@@ -111,12 +113,13 @@ std::unique_ptr<DataDocument> DataDocument::Create(
     const std::filesystem::path& file,
     std::string virtualPath,
     const DataAssetTypeRegistration& type,
-    const DataSchema& schema)
+    const DataSchema& schema,
+    const JsonValue* data)
 {
     JsonValue::Object envelope;
     envelope.emplace_back("type", JsonValue(type.Name));
     envelope.emplace_back("version", JsonValue(static_cast<double>(type.CurrentVersion)));
-    envelope.emplace_back("data", CreateDefaultDataValue(schema.Root));
+    envelope.emplace_back("data", data != nullptr ? *data : CreateDefaultDataValue(schema.Root));
 
     auto document = std::unique_ptr<DataDocument>(
         new DataDocument(file, std::move(virtualPath), JsonValue(std::move(envelope))));
@@ -477,6 +480,35 @@ void DataDocument::RefreshDirty()
     Dirty = JsonFormat(WorkingRoot) != SavedText;
 }
 
+void RemintStableKeys(JsonValue& value, const DataFieldSchema& field)
+{
+    switch (field.Kind)
+    {
+    case DataFieldKind::StableKey:
+        value = JsonValue(MintStableKey());
+        return;
+    case DataFieldKind::Record:
+        if (!value.IsObject())
+            return;
+        for (const DataFieldSchema& child : field.Children)
+            if (JsonValue* member = value.Find(child.Key))
+                RemintStableKeys(*member, child);
+        return;
+    case DataFieldKind::Array:
+        if (!value.IsArray() || field.Children.size() != 1)
+            return;
+        for (JsonValue& element : value.AsArray())
+            RemintStableKeys(element, field.Children.front());
+        return;
+    case DataFieldKind::Optional:
+        if (!value.IsNull() && field.Children.size() == 1)
+            RemintStableKeys(value, field.Children.front());
+        return;
+    default:
+        return;
+    }
+}
+
 JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
 {
     if (HasExplicitDefault(field.Default))
@@ -499,6 +531,8 @@ JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
     // chosen yet.
     case DataFieldKind::Entity:
         return JsonValue("");
+    case DataFieldKind::StableKey:
+        return JsonValue(MintStableKey());
     case DataFieldKind::Enum:
         return field.EnumChoices.empty()
             ? JsonValue("")

@@ -135,7 +135,7 @@ AnimLayerPlayback AnimPlaybackOf(const AnimBoundRig& rig, const AnimLayerContent
     if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
         playback.PhaseRate = BlendspaceRate(
             rig, rig.Blendspaces[static_cast<std::size_t>(rig.Contents[layer.Content].Blendspace)],
-            layer.Coordinates) * layer.Playback.Rate;
+            layer.Coordinates) * layer.Playback.Rate * layer.Playback.TimeScale;
     return playback;
 }
 

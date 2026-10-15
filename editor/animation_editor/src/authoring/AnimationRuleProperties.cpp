@@ -195,7 +195,7 @@ std::vector<PropertyNode> AnimationRuleProperties::BehaviorNodes() const
             policy.Children.push_back(NoteProperty(
                 key, label,
                 bound->has_value() ? std::format("{} ({}){}", (*bound)->BindingText,
-                                                 AnimEventScopeName((*bound)->Scope),
+                                                 AuthoredScopeName((*bound)->Scope),
                                                  (*bound)->Resolved ? "" : ", unresolved")
                                    : std::string("nothing")));
         PropertyNode declared = NoteProperty("behavior.declared", "Declared in", behavior->DeclaredIn);

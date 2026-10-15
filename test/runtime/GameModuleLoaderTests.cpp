@@ -233,7 +233,6 @@ TEST(GameModuleLoader, ModuleDeclaresItsGameplayVocabularyIntoAnyWorld)
         ASSERT_TRUE(range.IsValid());
         EXPECT_FLOAT_EQ(attributes.DefaultBase(range), 12.0f);
         EXPECT_FLOAT_EQ(attributes.Max(range), 50.0f);
-        EXPECT_TRUE(world.TryGetResource<AbilityRegistry>()->Find("Grapple").IsValid());
         EXPECT_NE(world.TryGetResource<LocomotionModeRegistry>()->Find("spike.mode.grapple"),
                   nullptr);
 
@@ -264,6 +263,24 @@ TEST(GameModuleLoader, ModuleDeclaresItsGameplayVocabularyIntoAnyWorld)
         m.Instance->OnRegisterVocabulary(world);
         EXPECT_EQ(verbs.Find("spike.grapple.fire"), fire);
         EXPECT_EQ(verbs.Revision(fire), revision);
+    }
+
+    // A module's lease and predicate land beside its verb, classified as declared.
+    {
+        World world;
+        RegisterMovement(world);
+        InstallAuthoredVocabulary(world);
+        m.Instance->OnRegisterVocabulary(world);
+        const VerbRegistry& verbs = *FindVerbRegistry(world);
+        const VerbDefinition* tether = verbs.Get(verbs.Find("spike.grapple.tether"));
+        ASSERT_NE(tether, nullptr);
+        EXPECT_EQ(tether->Kind, VerbKind::Lease);
+        EXPECT_EQ(tether->Prediction, AuthoredPrediction::Simulation);
+        const AuthoredQueryRegistry& queries = *FindAuthoredQueryRegistry(world);
+        const AuthoredQueryDefinition* inRange = queries.Get(queries.Find("spike.grapple.in_range"));
+        ASSERT_NE(inRange, nullptr);
+        EXPECT_EQ(inRange->Result.Kind, DataFieldKind::Bool);
+        EXPECT_TRUE(AuthoredInstallationErrors(world).empty());
     }
 
     loader.Unload(m);

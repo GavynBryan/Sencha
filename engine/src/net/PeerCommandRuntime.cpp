@@ -1,5 +1,6 @@
 #include <net/PeerCommandRuntime.h>
 
+#include <abilities/AbilitySystem.h>
 #include <app/EngineSchedule.h>
 #include <controller/AimFacingSystem.h>
 #include <controller/LookOrientation.h>
@@ -78,6 +79,10 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
             storage[index] =
                 index < copied ? record.Actions[index] : InputActionValue{};
         }
+        InputActionEdgeList& edges = state.TickEdgeStorage();
+        for (const InputActionEdge& edge : record.Edges.View())
+            if (edge.Action < copied)
+                edges.Append(edge);
     }
 
     if (!world.IsRegistered<NetOwner>() || !world.IsRegistered<LookOrientation>())
@@ -153,6 +158,7 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
         record.ActionCount = source.ActionCount;
         for (std::uint8_t action = 0; action < record.ActionCount; ++action)
             record.Actions[action] = source.Actions[action];
+        record.Edges = source.Edges;
     }
     command.RecordCount = static_cast<std::uint8_t>(window);
 
@@ -220,6 +226,10 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
     schedule.Register<PeerCommandFeedSystem>(commands);
     schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
     schedule.Register<PawnCommandCaptureSystem>(prediction, clock);
+
+    // The authority's ability pass walks a peer's input edges in the tick they arrive.
+    if (schedule.Has<AbilitySystem>())
+        schedule.After<AbilitySystem, PeerCommandFeedSystem>();
 
     // Where a body that faces its aim sits between the two things that write a
     // pose. Declared here rather than in controller, which has no business

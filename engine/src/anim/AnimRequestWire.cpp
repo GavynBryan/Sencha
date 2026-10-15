@@ -1,7 +1,7 @@
 #include <anim/AnimRequestWire.h>
 
-#include <ecs/World.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
+#include <gameplay_tags/GameplayTagWire.h>
+#include <world/SimulationTimeline.h>
 
 #include <array>
 
@@ -17,26 +17,20 @@ namespace
         return { &wire.R0, &wire.R1, &wire.R2, &wire.R3, &wire.R4, &wire.R5, &wire.R6, &wire.R7 };
     }
 
-    const GameplayTagRegistry* TagsOf(const ReplicationWireContext& context)
+    std::uint32_t TagToWire(const ReplicationWireContext& context, std::uint32_t id)
     {
-        return context.Entities != nullptr ? context.Entities->TryGetResource<GameplayTagRegistry>() : nullptr;
+        return WireTag(context, GameplayTagId{ id });
     }
 
-    std::uint32_t TagToWire(const GameplayTagRegistry* tags, std::uint32_t id)
+    std::uint32_t TagFromWire(const ReplicationWireContext& context, std::uint32_t key)
     {
-        return tags != nullptr ? tags->WireKey(GameplayTagId{ id }) : 0u;
-    }
-
-    std::uint32_t TagFromWire(const GameplayTagRegistry* tags, std::uint32_t key)
-    {
-        return tags != nullptr && key != 0 ? tags->FindByWireKey(key).Value : 0u;
+        return LocalTag(context, key).Value;
     }
 }
 
 void ReplicationCodec<AnimRequestSet>::ToWire(const ReplicationWireContext& context, const AnimRequestSet& set,
                                               AnimRequestSetWire& wire)
 {
-    const GameplayTagRegistry* tags = TagsOf(context);
     const auto records = RecordsOf(wire);
     for (std::size_t i = 0; i < kAnimRequestCapacity; ++i)
     {
@@ -54,13 +48,13 @@ void ReplicationCodec<AnimRequestSet>::ToWire(const ReplicationWireContext& cont
         out.Ticks.Values[4] = request.AnchorSectionStartTick;
         out.Ticks.Values[5] = request.Command;
         out.Words.Values[0] = request.Id.Sequence;
-        out.Words.Values[1] = TagToWire(tags, request.Intent.Value);
-        out.Words.Values[2] = TagToWire(tags, request.SourceTag.Value);
+        out.Words.Values[1] = TagToWire(context, request.Intent.Value);
+        out.Words.Values[2] = TagToWire(context, request.SourceTag.Value);
         out.Words.Values[3] = request.FixedTicks;
         for (std::size_t p = 0; p < kAnimRequestParams; ++p)
         {
             const bool tag = (request.TagParams & (1u << p)) != 0;
-            out.Words.Values[4 + p] = tag ? TagToWire(tags, request.Params[p]) : request.Params[p];
+            out.Words.Values[4 + p] = tag ? TagToWire(context, request.Params[p]) : request.Params[p];
         }
         out.Words.Values[8] = static_cast<std::uint32_t>(request.Layers)
                             | static_cast<std::uint32_t>(request.Lifetime) << 8
@@ -75,12 +69,15 @@ void ReplicationCodec<AnimRequestSet>::ToWire(const ReplicationWireContext& cont
 void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& context, const AnimRequestSetWire& wire,
                                                 AnimRequestSet& set)
 {
-    const GameplayTagRegistry* tags = TagsOf(context);
+    // An entity this machine predicts runs on its own timeline, where a start tick
+    // is still ahead; every other one is behind the records it receives.
+    const bool received = context.Entities == nullptr || !IsLocallyPredicted(*context.Entities, context.Entity);
     const auto records = RecordsOf(wire);
     for (std::size_t i = 0; i < kAnimRequestCapacity; ++i)
     {
         const AnimRequestWireRecord& in = *records[i];
         AnimRequest& request = set.Records[i];
+        const AnimRequest before = request;
         request = AnimRequest{};
         if ((in.Words.Values[9] & 1u) == 0)
             continue;
@@ -92,20 +89,23 @@ void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& co
         request.AnchorSectionStartTick = in.Ticks.Values[4];
         request.Command = in.Ticks.Values[5];
         request.Id.Sequence = in.Words.Values[0];
-        request.Intent = GameplayTagId{ TagFromWire(tags, in.Words.Values[1]) };
-        request.SourceTag = GameplayTagId{ TagFromWire(tags, in.Words.Values[2]) };
+        request.Intent = GameplayTagId{ TagFromWire(context, in.Words.Values[1]) };
+        request.SourceTag = GameplayTagId{ TagFromWire(context, in.Words.Values[2]) };
         request.FixedTicks = in.Words.Values[3];
         request.TagParams = static_cast<std::uint8_t>(in.Words.Values[9] >> 8);
         for (std::size_t p = 0; p < kAnimRequestParams; ++p)
         {
             const bool tag = (request.TagParams & (1u << p)) != 0;
-            request.Params[p] = tag ? TagFromWire(tags, in.Words.Values[4 + p]) : in.Words.Values[4 + p];
+            request.Params[p] = tag ? TagFromWire(context, in.Words.Values[4 + p]) : in.Words.Values[4 + p];
         }
         const std::uint32_t shape = in.Words.Values[8];
         request.Layers = static_cast<std::uint8_t>(shape);
         request.Lifetime = static_cast<AnimRequestLifetime>(static_cast<std::uint8_t>(shape >> 8));
         request.CancelReason = static_cast<AnimCancelReason>(static_cast<std::uint8_t>(shape >> 16));
         request.AnchorSection = static_cast<std::uint8_t>(shape >> 24);
+        request.Received = received;
+        request.Observed = received && before.Received && before.Observed && before.Id == request.Id
+                        && before.StartTick == request.StartTick;
     }
     set.NextSequence = wire.NextSequence;
     set.RigTiming = wire.RigTiming;

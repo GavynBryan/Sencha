@@ -1,5 +1,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <core/hash/Fnv1a.h>
+
 #include <cctype>
 
 namespace
@@ -166,6 +168,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
             .Name = path,
             .Parent = parent,
             .Children = {},
+            .ReplicatedToAll = false,
         });
         IdsByName.emplace(Tags.back().Name, current);
         const auto [key, inserted] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
@@ -183,13 +186,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
 
 std::uint32_t GameplayTagRegistry::WireKeyOf(std::string_view name)
 {
-    std::uint32_t hash = 2166136261u;
-    for (const char c : name)
-    {
-        hash ^= static_cast<std::uint8_t>(c);
-        hash *= 16777619u;
-    }
-    return hash == 0 ? 1u : hash;
+    return NameWireKey(name);
 }
 
 std::uint32_t GameplayTagRegistry::WireKey(GameplayTagId id) const
@@ -201,4 +198,15 @@ GameplayTagId GameplayTagRegistry::FindByWireKey(std::uint32_t key) const
 {
     const auto it = IdsByWireKey.find(key);
     return it != IdsByWireKey.end() ? it->second : GameplayTagId{};
+}
+
+void GameplayTagRegistry::SetReplicatedToAll(GameplayTagId id, bool replicated)
+{
+    if (IsKnown(id))
+        Tags[id.Value].ReplicatedToAll = replicated;
+}
+
+bool GameplayTagRegistry::IsReplicatedToAll(GameplayTagId id) const
+{
+    return IsKnown(id) && Tags[id.Value].ReplicatedToAll;
 }

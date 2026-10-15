@@ -17,7 +17,7 @@
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
 
-#include <abilities/AbilitySet.h>
+#include <abilities/AbilityGrants.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <core/logging/LoggingProvider.h>
@@ -124,13 +124,13 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     EXPECT_TRUE(adapters.Register(MakeWorldDockEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeGameplayTagEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeAttributeSetEditorAdapter()));
-    EXPECT_TRUE(adapters.Register(MakeAbilitySetEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeAbilityGrantsEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeCharacterMovementEditorAdapter()));
 
     for (const ComponentTypeId type : {
              ResolveComponentTypeId<GameplayTagContainer>(),
              ResolveComponentTypeId<AttributeSet>(),
-             ResolveComponentTypeId<AbilitySet>(),
+             ResolveComponentTypeId<AbilityGrants>(),
              ResolveComponentTypeId<CharacterMovement>(),
          })
     {

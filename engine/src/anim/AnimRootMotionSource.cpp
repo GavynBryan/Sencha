@@ -8,6 +8,7 @@
 #include <anim/AnimationClipCache.h>
 #include <ecs/World.h>
 #include <movement/RootMotionSource.h>
+#include <time/ActorTimeSystem.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -84,6 +85,15 @@ namespace
                                                         .Rate = carrier->Policy.Rate,
                                                         .DurationSeconds = clip->DurationSeconds,
                                                         .Cyclic = carrier->Policy.Kind == AnimBehaviorKind::Cyclic } };
+        // The layer playing this instance knows where a change of its actor's scale left it.
+        const AnimPlayback& playing = base.Playback;
+        if (base.Request == carrying->Id && playing.StartTick == out.Time.StartTick
+            && playing.OffsetSeconds == out.Time.OffsetSeconds)
+        {
+            out.Time.TimeScale = playing.TimeScale;
+            out.Time.RetimedTick = playing.RetimedTick;
+            out.Time.RetimedSeconds = playing.RetimedSeconds;
+        }
         return true;
     }
 }
@@ -113,6 +123,8 @@ bool SampleAnimRootMotion(World& world, EntityId entity, std::uint64_t tick, dou
     if (!carried || !playback.Clip->Root.has_value())
         return false;
 
+    RetimeAnimPlayback(playback.Time, tick, tickSeconds,
+                       static_cast<float>(ActorScaleValue(ActorScaleOnTick(world, entity, tick))));
     // The tick covers the step from the one before; nothing before the clip
     // began carries anyone. Played backwards the clip carries nothing: a
     // root curve says where it goes forwards.
@@ -126,7 +138,8 @@ bool SampleAnimRootMotion(World& world, EntityId entity, std::uint64_t tick, dou
         reader.IsRegistered<LocalTransform>() ? reader.TryGet<LocalTransform>(entity) : nullptr;
     const Vec3d local{ delta.X, 0.0f, delta.Z };
     const Vec3d moved = transform != nullptr ? transform->Value.Rotation.RotateVector(local) : local;
-    out.PlanarVelocity = moved * static_cast<float>(1.0 / tickSeconds);
+    // Per second of the actor's time, which a dilated step sweeps through.
+    out.PlanarVelocity = moved * static_cast<float>(1.0 / (tickSeconds * playback.Time.TimeScale));
     out.TurnRadians = delta.Yaw;
     return true;
 }
