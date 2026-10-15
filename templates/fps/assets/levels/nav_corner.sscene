@@ -1,0 +1,2047 @@
+{
+  format_version: 1,
+  settings: {
+    default_material: {
+      id: "3654820ec38aab53",
+      path: "asset://materials/dev/gray.smat",
+    },
+  },
+  entities: [
+    {
+      id: "6ff5780e4215503a",
+      components: {
+        Transform: {
+          local: {
+            position: [1.5, 1, 1.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        name: {
+          value: "Walker",
+        },
+        CharacterController: {},
+        StaticMesh: {
+          mesh: "asset://meshes/dev/cube.smesh",
+          materials: ["asset://materials/dev/red.smat"],
+        },
+        MovementTuning: {
+          profile: "asset://data/player_movement.sdata",
+        },
+        CharacterMovement: {
+          mode: "movement.mode.free",
+        },
+        GameplayTags: {
+          tags: [],
+        },
+        Attributes: {
+          attributes: [{ name: "MoveSpeed", base: 3.0 }],
+        },
+        AbilityGrants: {
+          grants: [],
+        },
+        "Nav Agent": {
+          profile: "navigation.profile.humanoid",
+        },
+      },
+    },
+    {
+      id: "322233fd114d85f9",
+      components: {
+        Transform: {
+          local: {
+            position: [10.5, 1, -7.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        name: {
+          value: "Player Start",
+        },
+        player_start: {},
+      },
+    },
+    {
+      id: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [6, 1.5, 1.5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 2,
+        },
+        name: {
+          value: "West Hall",
+        },
+        volume: {},
+        space: {},
+        shell: {
+          thickness: 0.25,
+        },
+      },
+    },
+    {
+      id: "73b0ff5ddd1ba4fa",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 3,
+        },
+        name: {
+          value: "West Hall north wall",
+        },
+        generated_wall: {
+          slot: 0,
+          built: 1501589152,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "298c50f2689c0963",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 4,
+        },
+        name: {
+          value: "West Hall north wall outside",
+        },
+        generated_wall: {
+          slot: 2,
+          built: 2447859529,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "4d5d8e00ff72101e",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 5,
+        },
+        name: {
+          value: "West Hall south wall",
+        },
+        generated_wall: {
+          slot: 65536,
+          built: 3234599791,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "7b38c4b6ded926ae",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 6,
+        },
+        name: {
+          value: "West Hall south wall outside",
+        },
+        generated_wall: {
+          slot: 65538,
+          built: 2927963565,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "5ba78ae510a90451",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 7,
+        },
+        name: {
+          value: "West Hall floor",
+        },
+        generated_wall: {
+          slot: 131072,
+          built: 3691877187,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "6e0e1bf557756049",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 8,
+        },
+        name: {
+          value: "West Hall floor outside",
+        },
+        generated_wall: {
+          slot: 131074,
+          built: 3185519167,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "274572b94f1044f6",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 9,
+        },
+        name: {
+          value: "West Hall ceiling",
+        },
+        generated_wall: {
+          slot: 196608,
+          built: 4048343346,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "31bc1f50663c910c",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 10,
+        },
+        name: {
+          value: "West Hall ceiling outside",
+        },
+        generated_wall: {
+          slot: 196610,
+          built: 1753365367,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "316a2a2848e13e57",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 11,
+        },
+        name: {
+          value: "West Hall west wall",
+        },
+        generated_wall: {
+          slot: 262144,
+          built: 2571209833,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "037c7c39766854d4",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 12,
+        },
+        name: {
+          value: "West Hall west wall outside",
+        },
+        generated_wall: {
+          slot: 262146,
+          built: 1297783527,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "4c80d7445aaff2a9",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 13,
+        },
+        name: {
+          value: "West Hall east wall",
+        },
+        generated_wall: {
+          slot: 327680,
+          built: 1013986739,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "7861c80040498848",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 14,
+        },
+        name: {
+          value: "West Hall east wall outside",
+        },
+        generated_wall: {
+          slot: 327682,
+          built: 3966739775,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [10.5, 1.5, -4.625],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 15,
+        },
+        name: {
+          value: "North Arm",
+        },
+        volume: {},
+        space: {},
+        shell: {
+          thickness: 0.25,
+        },
+      },
+    },
+    {
+      id: "38621738cbf25c33",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 16,
+        },
+        name: {
+          value: "North Arm north wall",
+        },
+        generated_wall: {
+          slot: 0,
+          built: 1003503900,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "5ca7f06dfd17fe3b",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 17,
+        },
+        name: {
+          value: "North Arm north wall outside",
+        },
+        generated_wall: {
+          slot: 2,
+          built: 179355922,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "5ea30845794762cd",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 18,
+        },
+        name: {
+          value: "North Arm south wall",
+        },
+        generated_wall: {
+          slot: 65536,
+          built: 1164413647,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "55bf7cc9be464b84",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 19,
+        },
+        name: {
+          value: "West Hall north wall 1",
+        },
+        generated_wall: {
+          slot: 65537,
+          built: 2912740641,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "29bbb3d97b4e83b8",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 20,
+        },
+        name: {
+          value: "North Arm south wall outside",
+        },
+        generated_wall: {
+          slot: 65538,
+          built: 2680539622,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "69c03d2cd8fc8e3d",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 21,
+        },
+        name: {
+          value: "North Arm floor",
+        },
+        generated_wall: {
+          slot: 131072,
+          built: 4010851424,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "1a403487d3eff5c6",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 22,
+        },
+        name: {
+          value: "North Arm floor outside",
+        },
+        generated_wall: {
+          slot: 131074,
+          built: 59769986,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "00b5dbc253a3c9f0",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 23,
+        },
+        name: {
+          value: "North Arm ceiling",
+        },
+        generated_wall: {
+          slot: 196608,
+          built: 2425732391,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "4bcf8672b68fc580",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 24,
+        },
+        name: {
+          value: "North Arm ceiling outside",
+        },
+        generated_wall: {
+          slot: 196610,
+          built: 686113893,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "4823b809a60fb5bc",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 25,
+        },
+        name: {
+          value: "North Arm west wall",
+        },
+        generated_wall: {
+          slot: 262144,
+          built: 2955527649,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "5e404e6278ccb73f",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 26,
+        },
+        name: {
+          value: "North Arm west wall outside",
+        },
+        generated_wall: {
+          slot: 262146,
+          built: 3276872090,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "570ac4a33e0ea84e",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 27,
+        },
+        name: {
+          value: "North Arm east wall",
+        },
+        generated_wall: {
+          slot: 327680,
+          built: 4092022010,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "71fb90bdcc86cc09",
+      parent: "47db2438bed3557d",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        brush: {
+          id: 28,
+        },
+        name: {
+          value: "North Arm east wall outside",
+        },
+        generated_wall: {
+          slot: 327682,
+          built: 2349604574,
+          state: "generated",
+        },
+      },
+    },
+    {
+      id: "1367937a9ac6c6ea",
+      parent: "540fbbc87894c0b2",
+      components: {
+        Transform: {
+          local: {
+            position: [4.5, -1.5, -1.625],
+            rotation: [0, 1, 0, 0],
+            scale: [1, 1, 1],
+          },
+        },
+        name: {
+          value: "Corner",
+        },
+        opening: {
+          width: 2.5999999046325684,
+          height: 2.4000000953674316,
+          shape: "rectangle",
+          arch_rise: 0.5,
+        },
+      },
+    },
+  ],
+  instances: [],
+  brush_meshes: {
+    "2": {
+      vertices: [
+        [-6, -1.5, -1.5],
+        [6, -1.5, -1.5],
+        [6, 1.5, -1.5],
+        [-6, 1.5, -1.5],
+        [-6, -1.5, 1.5],
+        [6, -1.5, 1.5],
+        [6, 1.5, 1.5],
+        [-6, 1.5, 1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "3": {
+      vertices: [
+        [-6, -1.5, -1.5],
+        [3, -1.5, -1.5],
+        [3, 1.5, -1.5],
+        [-6, 1.5, -1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "4": {
+      vertices: [
+        [-6.25, 1.5, -1.75],
+        [3, 1.5, -1.75],
+        [3, -1.5, -1.75],
+        [-6.25, -1.5, -1.75],
+        [-6, 1.5, -1.5],
+        [3, 1.5, -1.5],
+        [3, -1.5, -1.5],
+        [-6, -1.5, -1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "5": {
+      vertices: [
+        [-6, 1.5, 1.5],
+        [6, 1.5, 1.5],
+        [6, -1.5, 1.5],
+        [-6, -1.5, 1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "6": {
+      vertices: [
+        [-6.25, -1.5, 1.749999761581421],
+        [6.25, -1.5, 1.749999761581421],
+        [6.25, 1.5, 1.749999761581421],
+        [-6.25, 1.5, 1.749999761581421],
+        [-6, -1.5, 1.5],
+        [6, -1.5, 1.5],
+        [6, 1.5, 1.5],
+        [-6, 1.5, 1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "7": {
+      vertices: [
+        [-6.25, -1.5, 1.75],
+        [6.25, -1.5, 1.75],
+        [6.25, -1.5, -1.75],
+        [-6.25, -1.5, -1.75],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "8": {
+      vertices: [
+        [-6.25, -1.75, -1.75],
+        [6.25, -1.75, -1.75],
+        [6.25, -1.75, 1.75],
+        [-6.25, -1.75, 1.75],
+        [-6.25, -1.5, -1.75],
+        [6.25, -1.5, -1.75],
+        [6.25, -1.5, 1.75],
+        [-6.25, -1.5, 1.75],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "9": {
+      vertices: [
+        [-6.25, 1.5, -1.75],
+        [6.25, 1.5, -1.75],
+        [6.25, 1.5, 1.75],
+        [-6.25, 1.5, 1.75],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "10": {
+      vertices: [
+        [-6.25, 1.75, 1.75],
+        [6.25, 1.75, 1.75],
+        [6.25, 1.75, -1.75],
+        [-6.25, 1.75, -1.75],
+        [-6.25, 1.5, 1.75],
+        [6.25, 1.5, 1.75],
+        [6.25, 1.5, -1.75],
+        [-6.25, 1.5, -1.75],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "11": {
+      vertices: [
+        [-6, -1.5, -1.5],
+        [-6, 1.5, -1.5],
+        [-6, 1.5, 1.5],
+        [-6, -1.5, 1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "12": {
+      vertices: [
+        [-6.25, -1.5, 1.749999761581421],
+        [-6.25, 1.5, 1.749999761581421],
+        [-6.25, 1.5, -1.75],
+        [-6.25, -1.5, -1.75],
+        [-6, -1.5, 1.5],
+        [-6, 1.5, 1.5],
+        [-6, 1.5, -1.5],
+        [-6, -1.5, -1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "13": {
+      vertices: [
+        [6, -1.5, 1.5],
+        [6, 1.5, 1.5],
+        [6, 1.5, -1.5],
+        [6, -1.5, -1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "14": {
+      vertices: [
+        [6.25, -1.5, -1.750000238418579],
+        [6.25, 1.5, -1.750000238418579],
+        [6.25, 1.5, 1.750000238418579],
+        [6.25, -1.5, 1.750000238418579],
+        [6, -1.5, -1.5],
+        [6, 1.5, -1.5],
+        [6, 1.5, 1.5],
+        [6, -1.5, 1.5],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "15": {
+      vertices: [
+        [-1.5, -1.5, -4.375],
+        [1.5, -1.5, -4.375],
+        [1.5, 1.5, -4.375],
+        [-1.5, 1.5, -4.375],
+        [-1.5, -1.5, 4.375],
+        [1.5, -1.5, 4.375],
+        [1.5, 1.5, 4.375],
+        [-1.5, 1.5, 4.375],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [3, 2, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 6, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 7, 3, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 2, 6, 5],
+        },
+      ],
+    },
+    "16": {
+      vertices: [
+        [-1.5, -1.5, -4.375],
+        [1.5, -1.5, -4.375],
+        [1.5, 1.5, -4.375],
+        [-1.5, 1.5, -4.375],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "17": {
+      vertices: [
+        [-1.7500009536743164, 1.5, -4.625],
+        [1.75, 1.5, -4.625],
+        [1.75, -1.5, -4.625],
+        [-1.7500009536743164, -1.5, -4.625],
+        [-1.5, 1.5, -4.375],
+        [1.5, 1.5, -4.375],
+        [1.5, -1.5, -4.375],
+        [-1.5, -1.5, -4.375],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "18": {
+      vertices: [
+        [-1.5, 1.5, 4.375],
+        [1.5, 1.5, 4.375],
+        [1.5, -1.5, 4.375],
+        [1.3000001907348633, -1.5, 4.375],
+        [1.3000001907348633, 0.9000000953674316, 4.375],
+        [-1.3000001907348633, 0.9000000953674316, 4.375],
+        [-1.3000001907348633, -1.5, 4.375],
+        [-1.5, -1.5, 4.375],
+        [1.3000001907348633, 0.9000000953674316, 4.625],
+        [-1.3000001907348633, 0.9000000953674316, 4.625],
+        [-1.3000001907348633, -1.5, 4.625],
+        [1.3000001907348633, -1.5, 4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3, 4, 5, 6, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [8, 9, 5, 4],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [9, 10, 6, 5],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [11, 8, 4, 3],
+        },
+      ],
+    },
+    "19": {
+      vertices: [
+        [-1.7500009536743164, -1.5, 4.625],
+        [-1.3000001907348633, -1.5, 4.625],
+        [-1.3000001907348633, 0.9000000953674316, 4.625],
+        [1.3000001907348633, 0.9000000953674316, 4.625],
+        [1.3000001907348633, -1.5, 4.625],
+        [1.75, -1.5, 4.625],
+        [1.75, 1.5, 4.625],
+        [-1.7500009536743164, 1.5, 4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3, 4, 5, 6, 7],
+        },
+      ],
+    },
+    "20": {
+      vertices: [
+        [1.5, -1.5, 4.375],
+        [1.5, 1.5, 4.375],
+        [1.75, 1.5, 4.625],
+        [1.75, -1.5, 4.625],
+        [-1.5, 1.5, 4.375],
+        [-1.7500009536743164, 1.5, 4.625],
+        [-1.5, -1.5, 4.375],
+        [-1.7500009536743164, -1.5, 4.625],
+        [-1.3000001907348633, -1.5, 4.375],
+        [-1.3000001907348633, -1.5, 4.625],
+        [1.3000001907348633, -1.5, 4.375],
+        [1.3000001907348633, -1.5, 4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [1, 4, 5, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 6, 7, 5],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 8, 9, 7],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [10, 0, 3, 11],
+        },
+      ],
+    },
+    "21": {
+      vertices: [
+        [-1.75, -1.5, 4.625],
+        [1.75, -1.5, 4.625],
+        [1.75, -1.5, -4.625],
+        [-1.75, -1.5, -4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "22": {
+      vertices: [
+        [-1.75, -1.75, -4.625],
+        [1.75, -1.75, -4.625],
+        [1.75, -1.75, 4.625],
+        [-1.75, -1.75, 4.625],
+        [-1.75, -1.5, -4.625],
+        [1.75, -1.5, -4.625],
+        [1.75, -1.5, 4.625],
+        [-1.75, -1.5, 4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "23": {
+      vertices: [
+        [-1.75, 1.5, -4.625],
+        [1.75, 1.5, -4.625],
+        [1.75, 1.5, 4.625],
+        [-1.75, 1.5, 4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "24": {
+      vertices: [
+        [-1.75, 1.75, 4.625],
+        [1.75, 1.75, 4.625],
+        [1.75, 1.75, -4.625],
+        [-1.75, 1.75, -4.625],
+        [-1.75, 1.5, 4.625],
+        [1.75, 1.5, 4.625],
+        [1.75, 1.5, -4.625],
+        [-1.75, 1.5, -4.625],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [1, 0, 0],
+            axis_v: [0, 0, 1],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "25": {
+      vertices: [
+        [-1.5, -1.5, -4.375],
+        [-1.5, 1.5, -4.375],
+        [-1.5, 1.5, 4.374999523162842],
+        [-1.5, -1.5, 4.374999523162842],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "26": {
+      vertices: [
+        [-1.75, -1.5, 4.624999523162842],
+        [-1.75, 1.5, 4.624999523162842],
+        [-1.75, 1.5, -4.624999046325684],
+        [-1.75, -1.5, -4.624999046325684],
+        [-1.5, -1.5, 4.374999523162842],
+        [-1.5, 1.5, 4.374999523162842],
+        [-1.5, 1.5, -4.375],
+        [-1.5, -1.5, -4.375],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+    "27": {
+      vertices: [
+        [1.5, -1.5, 4.374999523162842],
+        [1.5, 1.5, 4.374999523162842],
+        [1.5, 1.5, -4.375],
+        [1.5, -1.5, -4.375],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+      ],
+    },
+    "28": {
+      vertices: [
+        [1.75, -1.5, -4.625],
+        [1.75, 1.5, -4.625],
+        [1.75, 1.5, 4.625],
+        [1.75, -1.5, 4.625],
+        [1.5, -1.5, -4.375],
+        [1.5, 1.5, -4.375],
+        [1.5, 1.5, 4.374999523162842],
+        [1.5, -1.5, 4.374999523162842],
+      ],
+      faces: [
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [0, 1, 2, 3],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [4, 5, 1, 0],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [5, 6, 2, 1],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [6, 7, 3, 2],
+        },
+        {
+          uv: {
+            axis_u: [0, 0, 1],
+            axis_v: [0, 1, 0],
+            scale: [2, 2],
+            offset: [0, 0],
+            rotation: 0,
+            world_aligned: true,
+          },
+          loop: [7, 4, 0, 3],
+        },
+      ],
+    },
+  },
+  id: "16f5127ca49c6d53",
+}
