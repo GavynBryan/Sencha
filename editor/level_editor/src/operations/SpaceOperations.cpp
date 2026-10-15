@@ -3,10 +3,12 @@
 #include "DiagnosticRecords.h"
 #include "EntityRecords.h"
 #include "LevelJson.h"
+#include "LevelNavigation.h"
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
 #include "SpaceDiagnostics.h"
 #include "SpaceEdits.h"
+#include "SpaceProposals.h"
 #include "SpaceRelations.h"
 
 #include "document/EditorDocument.h"
@@ -19,6 +21,7 @@
 #include "document/commands/RenameEntityCommand.h"
 
 #include <core/metadata/DataSchemaFields.h>
+#include <navigation/tooling/NavMeshSnapshot.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -472,6 +475,90 @@ namespace
     }
 }
 
+namespace
+{
+    EditorOperationEntry Propose(LevelTarget& level)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "space.propose";
+        entry.Definition.Kind = EditorOperationKind::Mutation;
+        entry.Definition.Category = "Space";
+        entry.Definition.Description =
+            "Proposes spaces for walkable surface no space holds yet, read off the level's navigation: a room "
+            "wherever the floor runs at least core_depth from any edge, a passage for the walkable surface "
+            "left between. A heuristic: run it in a draft and check the plan before accepting. The spaces are "
+            "made without generated walls, since the level already has its own.";
+        DataFieldSchema depth = DataField::Field("core_depth", DataFieldKind::Float, {},
+                                                 "metres from the edge of walkable surface a room's middle reaches", false);
+        depth.Default = 1.0;
+        depth.Numeric.Minimum = 0.25;
+        entry.Definition.Parameters = DataField::Record({}, {}, {}, {
+            std::move(depth),
+            DataField::Optional("height", {}, "metres from floor to ceiling; the project's space height when absent",
+                                DataField::Field({}, DataFieldKind::Float, {}, {})),
+            DataField::Optional("profile", {}, "navigation profile; the first one when absent",
+                                DataField::Field({}, DataFieldKind::String, {}, {})),
+        });
+        entry.Definition.Result = MutationResultSchema({
+            DataField::ArrayOf("proposed", {}, {},
+                DataField::Record({}, {}, {}, {
+                    EntityNameSchema("space", {}),
+                    DataField::Enum("kind", {}, {}, { { "room", "Room", {} }, { "passage", "Passage", {} } }),
+                    DataField::Field("area", DataFieldKind::Float, {}, "square metres of walkable surface"),
+                }),
+                true),
+        });
+        entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
+            return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
+                EditorOperationOutcome refusal;
+                const std::unique_ptr<LevelNavigation> navigation = BuildLevelNavigation(document, arguments, refusal);
+                if (navigation == nullptr)
+                    return refusal;
+                const NavMeshSnapshot snapshot = SnapshotNavMesh(navigation->Navigation, navigation->ProfileIndex);
+                EditorScene& scene = document.GetScene();
+                std::vector<std::uint32_t> unheld;
+                for (std::uint32_t index = 0; index < snapshot.Polygons.size(); ++index)
+                {
+                    const NavSnapshotPolygon& polygon = snapshot.Polygons[index];
+                    Vec3d centre = Vec3d::Zero();
+                    for (std::uint32_t v = 0; v < polygon.VertexCount; ++v)
+                        centre = centre + snapshot.Vertices[polygon.FirstVertex + v];
+                    centre = centre * (1.0f / static_cast<float>(polygon.VertexCount));
+                    if (!SpaceContaining(scene, centre + Vec3d{ 0, 0.1f, 0 }))
+                        unheld.push_back(index);
+                }
+
+                SpaceProposalSettings settings;
+                settings.CoreDepth = static_cast<float>(arguments.Find("core_depth")->AsNumber());
+                settings.Inset = navigation->File.Profiles[navigation->ProfileIndex].Build.Radius;
+                const LevelConventions conventions = ConventionsOf(document);
+                const float height = NumberOf(arguments, "height").value_or(conventions.SpaceHeight);
+
+                JsonValue::Array proposed;
+                for (const ProposedSpace& space : ProposeSpaces(snapshot, unheld, settings))
+                {
+                    NewSpace wanted;
+                    wanted.Name = scene.NextEntityName(space.Kind == ProposedSpaceKind::Room ? "Room" : "Passage");
+                    wanted.Min = space.Min;
+                    wanted.Max = Vec3d{ space.Max.X, space.Min.Y + height, space.Max.Z };
+                    wanted.Shelled = false;
+                    EntityId made;
+                    if (EditorOperationOutcome refused = CreateSpace(document, recorder, wanted, made);
+                        refused.Status != EditorOperationStatus::Ok)
+                        return refused;
+                    proposed.push_back(JsonValue(JsonValue::Object{
+                        { "space", EntityNameJson(document, made) },
+                        { "kind", JsonValue(space.Kind == ProposedSpaceKind::Room ? "room" : "passage") },
+                        { "area", MetresJson(space.Area) },
+                    }));
+                }
+                return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "proposed", JsonValue(std::move(proposed)) } }));
+            });
+        };
+        return entry;
+    }
+}
+
 std::vector<EditorOperationEntry> SpaceOperations(LevelTarget& level)
 {
     std::vector<EditorOperationEntry> entries;
@@ -483,5 +570,6 @@ std::vector<EditorOperationEntry> SpaceOperations(LevelTarget& level)
     entries.push_back(Detach(level));
     entries.push_back(Diagnostics(level));
     entries.push_back(Deps(level));
+    entries.push_back(Propose(level));
     return entries;
 }

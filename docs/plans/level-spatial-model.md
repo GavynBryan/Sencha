@@ -1189,6 +1189,20 @@ and world states, and annotate levels that were built by hand.
   proposal like any other edit. It builds the dock through the editor's
   `WorldDockRecipe` (dock id minted, the zone beyond found as the dock tool
   finds it) and sizes it to the crossing or the opening.
+- `space.propose` reads spaces off the navigation of a level built without
+  them, and is labelled a heuristic wherever it answers. The method
+  (`SpaceProposals`): the walkable polygons no space holds are rasterized onto
+  a 0.25 m grid, one layer per floor height (floors under a metre apart are
+  one). Each cell is measured to the nearest cell that isn't walkable. Cells
+  at least `core_depth` (1 m) deep are room cores, one room per connected
+  core. Each core grows back by that depth, one cell in any of eight
+  directions per step, so a rectangular floor comes back a rectangle. What is
+  left over and walkable is a passage. A room or passage becomes a box space
+  over its cells, widened by the agent radius to reach the walls behind the
+  edge of walkable surface, and made without generated walls, since the level
+  has its own. Narrow ways between rooms separate them; a way at least twice
+  `core_depth` across joins them into one room. On `traversal3`, `room_2` is
+  proposed as one room in a draft and accepted.
 
 ### Not on the critical path
 

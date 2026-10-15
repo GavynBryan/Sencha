@@ -71,6 +71,12 @@ of 0 makes a doorway. Faces are named by the direction they look (`north`,
 `view.select subjects=[...] frame=true` hands a selection back;
 `view.frame subjects=[...]` turns the view onto something without selecting it.
 
+## Levels built without spaces
+
+`space.propose` (in a draft) reads rooms and passages off the walkable
+surface and proposes unshelled spaces for them. It is a heuristic: look at
+`plan.section` before accepting, and rename what it called Room and Passage.
+
 ## Loop
 
 1. Look: `conventions.get`, `level.summary`, `world.summary` for a world,

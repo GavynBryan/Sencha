@@ -2,6 +2,8 @@
 // its navigation, a door being what makes two rooms one walk, and a link of an
 // unknown kind what makes a connection depend on an assumption.
 
+#include "NavigationSettingsFixture.h"
+
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
@@ -29,13 +31,6 @@ namespace
 {
     namespace fs = std::filesystem;
 
-    constexpr std::string_view kSettings = R"({
-        "type": "navigation.settings", "version": 1,
-        "data": {
-            "profiles": [ { "tag": "navigation.profile.humanoid", "radius": 0.3,
-                            "height": 1.8, "max_slope_degrees": 45, "max_climb": 0.35,
-                            "cell_size": 0.2, "cell_height": 0.1, "tile_cells": 40 } ],
-            "areas": [] } })";
 
     class SpaceGraphTest : public ::testing::Test
     {
@@ -47,8 +42,7 @@ namespace
             Root = fs::temp_directory_path()
                 / ("sencha_space_graph_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
             fs::remove_all(Root);
-            fs::create_directories(Root / "data");
-            std::ofstream(Root / "data/navigation.sdata", std::ios::trunc) << kSettings;
+            WriteTestNavigationSettings(Root);
             World.SetContentRoots({ Root });
             std::vector<std::string> errors;
             ASSERT_TRUE(Operations.Register("level", LevelOperations(Level, Operations), errors));
