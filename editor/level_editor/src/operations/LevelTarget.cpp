@@ -47,10 +47,22 @@ namespace
                                                "the level draft " + draft.Id + " copies is no longer open");
     }
 
+    std::string FailureText(const LevelDraftFailure& failure)
+    {
+        return failure.Operation + " at step " + std::to_string(failure.Step) + ": " + failure.Message;
+    }
+
     EditorOperationOutcome RefuseFailed(const LevelDraft& draft)
     {
         return EditorOperationOutcome::Refused(
-            "draft.failed", "draft " + draft.Id + " failed (" + draft.Failure + "); resume or discard it");
+            "draft.failed", "draft " + draft.Id + " failed (" + FailureText(draft.Failure) + "); "
+                + (draft.Unreplayed.empty() ? "resume" : "rebase") + " or discard it");
+    }
+
+    void Fail(LevelDraft& draft, std::size_t step, std::string_view operation, const EditorOperationOutcome& outcome)
+    {
+        draft.State = LevelDraftState::Failed;
+        draft.Failure = { step, std::string(operation), outcome.Code, outcome.Message };
     }
 }
 
@@ -112,11 +124,7 @@ EditorOperationOutcome LevelTarget::Run(LevelDraft* draft, std::string_view oper
         ApplyEntityChangeSet(document, changes, ChangeSetSide::Before);
         document.GetScene().RefreshDerivedTransforms();
         if (draft != nullptr)
-        {
-            draft->State = LevelDraftState::Failed;
-            draft->Failure = std::string(operation) + " at step " + std::to_string(draft->Steps.size() + 1)
-                + ": " + outcome.Message;
-        }
+            Fail(*draft, draft->Steps.size() + 1, operation, outcome);
         return outcome;
     }
 
@@ -240,6 +248,40 @@ std::vector<std::string> LevelTarget::DropOrphanedDrafts()
     return dropped;
 }
 
+bool LevelTarget::ReplayInto(LevelDraft& draft, std::span<const LevelDraftStep> steps, const Replay& replay)
+{
+    LevelDraft* const writing = Writing;
+    Writing = &draft;
+    for (std::size_t step = 0; step < steps.size(); ++step)
+    {
+        const std::size_t recorded = draft.Steps.size();
+        EditorOperationOutcome replayed = replay(steps[step]);
+        if (replayed.Status == EditorOperationStatus::Ok && draft.Steps.size() == recorded)
+            replayed = EditorOperationOutcome::Refused("proposal.not_level_edit",
+                                                       "the step answered without editing the draft");
+        if (replayed.Status != EditorOperationStatus::Ok)
+        {
+            Fail(draft, step + 1, steps[step].Operation, replayed);
+            draft.Unreplayed.assign(steps.begin() + static_cast<std::ptrdiff_t>(step), steps.end());
+            Writing = writing;
+            return false;
+        }
+    }
+    Writing = writing;
+    return true;
+}
+
+EditorOperationOutcome LevelTarget::ResumeDraft(LevelDraft& draft)
+{
+    if (!draft.Unreplayed.empty())
+        return EditorOperationOutcome::Refused(
+            "draft.incomplete", "draft " + draft.Id + " never replayed " + std::to_string(draft.Unreplayed.size())
+                + " of its proposal's steps (" + FailureText(draft.Failure) + "); rebase or discard it");
+    draft.State = LevelDraftState::Open;
+    draft.Failure = {};
+    return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "draft", JsonValue(draft.Id) } }));
+}
+
 EditorOperationOutcome LevelTarget::RebaseDraft(LevelDraft& draft, const Replay& replay)
 {
     EditorDocument* level = FindBase(draft);
@@ -252,23 +294,19 @@ EditorOperationOutcome LevelTarget::RebaseDraft(LevelDraft& draft, const Replay&
     fresh->Id = draft.Id;
     fresh->OpenedFrom = draft.OpenedFrom;
 
-    LevelDraft* const writing = Writing;
-    Writing = fresh.get();
-    for (std::size_t step = 0; step < draft.Steps.size(); ++step)
+    std::vector<LevelDraftStep> steps = draft.Steps;
+    steps.insert(steps.end(), draft.Unreplayed.begin(), draft.Unreplayed.end());
+    if (!ReplayInto(*fresh, steps, replay))
     {
-        const EditorOperationOutcome replayed = replay(draft.Steps[step]);
-        if (replayed.Status != EditorOperationStatus::Ok)
-        {
-            Writing = writing;
-            return EditorOperationOutcome::Refused(
-                "draft.rebase_failed",
-                "step " + std::to_string(step + 1) + " (" + draft.Steps[step].Operation + ") no longer applies: "
-                    + replayed.Message,
-                JsonValue(JsonValue::Object{ { "step", JsonValue(static_cast<double>(step + 1)) },
-                                             { "code", JsonValue(replayed.Code) } }));
-        }
+        const LevelDraftFailure& failure = fresh->Failure;
+        return EditorOperationOutcome::Refused(
+            "draft.rebase_failed",
+            "step " + std::to_string(failure.Step) + " (" + failure.Operation + ") no longer applies: "
+                + failure.Message,
+            JsonValue(JsonValue::Object{ { "step", JsonValue(static_cast<double>(failure.Step)) },
+                                         { "operation", JsonValue(failure.Operation) },
+                                         { "code", JsonValue(failure.Code) } }));
     }
-    Writing = writing;
     draft = std::move(*fresh);
     return EditorOperationOutcome::Ok(JsonValue(ChangeSummary(draft.Changes)));
 }

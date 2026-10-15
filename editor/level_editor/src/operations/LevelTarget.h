@@ -28,6 +28,15 @@ struct LevelDraftStep
     JsonValue Arguments;
 };
 
+// The step a failed draft was refused at, counted from 1, and what refused it.
+struct LevelDraftFailure
+{
+    std::size_t Step = 0;
+    std::string Operation;
+    std::string Code;
+    std::string Message;
+};
+
 // A proposal being written: a copy of a level that mutations edit instead of
 // the level, the steps that edited it, and what they changed.
 struct LevelDraft
@@ -45,8 +54,11 @@ struct LevelDraft
     std::unique_ptr<EditorDocument> Document;
     EntityChangeSet Changes;
     std::vector<LevelDraftStep> Steps;
+    // The steps of a replayed proposal after the refused one: until a rebase
+    // replays them, the draft is not the proposal and stays failed.
+    std::vector<LevelDraftStep> Unreplayed;
     LevelDraftState State = LevelDraftState::Open;
-    std::string Failure;
+    LevelDraftFailure Failure;
 };
 
 // The level the level operations read and write: the draft being written, or
@@ -98,8 +110,14 @@ public:
     void DiscardDraft(LevelDraft& draft);
     // Drops every draft whose level is no longer open, and says which by label.
     std::vector<std::string> DropOrphanedDrafts();
-    // Replays the draft's steps through `replay` on a fresh copy of its level.
+    // Replays `steps` into `draft`, which is written meanwhile. The first refused
+    // step fails the draft, and it and every step after it are kept unreplayed.
+    bool ReplayInto(LevelDraft& draft, std::span<const LevelDraftStep> steps, const Replay& replay);
+    // Replays the draft's steps, unreplayed ones included, on a fresh copy of
+    // its level, which replaces the draft only when every step applies.
     [[nodiscard]] EditorOperationOutcome RebaseDraft(LevelDraft& draft, const Replay& replay);
+    // Lets a failed draft take steps again; refused while steps are unreplayed.
+    [[nodiscard]] EditorOperationOutcome ResumeDraft(LevelDraft& draft);
 
 private:
     [[nodiscard]] EditorOperationOutcome Run(LevelDraft* draft, std::string_view operation,

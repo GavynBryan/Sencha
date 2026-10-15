@@ -120,6 +120,9 @@ the open ones, including theirs to you.
 
 A refused step fails the draft. Fix the cause, `draft.resume`, and carry on;
 the refused step is not kept. `draft.diff` shows the steps and what changed.
+A proposal opened with `draft.open` that stops partway stays failed, its
+`failure` naming the step, operation and code: it cannot be accepted or
+resumed, and `draft.rebase` replays the rest once the level allows it.
 
 ## The designer's side, in Kyusu
 

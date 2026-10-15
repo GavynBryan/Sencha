@@ -315,9 +315,97 @@ namespace
         std::ofstream(File("gone.sproposal")) << JsonStringify(LevelProposalToJson(proposal));
         const JsonValue opened = Ok("draft.open", PathArgument("gone.sproposal"));
         EXPECT_EQ(opened.Find("state")->AsString(), "failed");
-        EXPECT_FALSE(opened.Find("failure")->AsString().empty());
+        EXPECT_EQ(opened.Find("failure")->Find("code")->AsString(), "subject.not_found");
         EXPECT_TRUE(opened.Find("changed_operations")->AsArray().empty())
             << "a file that records no contracts warns of none";
+    }
+
+    class ProposalReplayTest : public LevelProposalTest
+    {
+    protected:
+        // A proposal renaming the hall, then taking `then`, then renaming it again.
+        JsonValue OpenWith(std::string_view operation, std::string_view arguments)
+        {
+            LevelProposal proposal;
+            proposal.Label = "Three steps";
+            proposal.Steps.push_back({ "entity.rename", *JsonParse(RenameHall("Atrium")) });
+            proposal.Steps.push_back({ std::string(operation), *JsonParse(arguments) });
+            proposal.Steps.push_back({ "entity.rename", *JsonParse(RenameHall("Lobby")) });
+            std::ofstream(File("three.sproposal")) << JsonStringify(LevelProposalToJson(proposal));
+            return Ok("draft.open", PathArgument("three.sproposal"));
+        }
+
+        // A failed replay holds what the first step made, cannot be accepted,
+        // resumed or saved short, and never reaches the level.
+        void ExpectStoppedAtStepTwo(const JsonValue& opened, std::string_view operation, std::string_view code)
+        {
+            EXPECT_EQ(opened.Find("state")->AsString(), "failed");
+            const JsonValue& failure = *opened.Find("failure");
+            ASSERT_TRUE(failure.IsObject()) << JsonStringify(opened);
+            EXPECT_EQ(failure.Find("step")->AsNumber(), 2.0);
+            EXPECT_EQ(failure.Find("operation")->AsString(), operation);
+            EXPECT_EQ(failure.Find("code")->AsString(), code);
+            EXPECT_FALSE(failure.Find("message")->AsString().empty());
+            EXPECT_EQ(failure.Find("unreplayed")->AsNumber(), 2.0);
+
+            ASSERT_EQ(Level.Drafts().size(), 1u);
+            EXPECT_EQ(Level.WritingDraft()->Steps.size(), 1u);
+            EXPECT_EQ(Code(Call("draft.accept")), "draft.failed");
+            EXPECT_EQ(Code(Call("draft.resume")), "draft.incomplete");
+            EXPECT_EQ(Code(Call("draft.save", PathArgument("short.sproposal"))), "draft.incomplete");
+            EXPECT_EQ(Code(Call("entity.rename", RenameHall("Elsewhere"))), "draft.failed");
+            EXPECT_EQ(Name(Hall), "Hall") << "nothing reached the level";
+            EXPECT_FALSE(Commands.CanUndo());
+        }
+    };
+
+    TEST_F(ProposalReplayTest, AStepWithArgumentsItsOperationRefusesFailsTheDraft)
+    {
+        const JsonValue opened = OpenWith("entity.rename", R"({"subject": "@Hall"})");
+        ExpectStoppedAtStepTwo(opened, "entity.rename", "operation.invalid_arguments");
+    }
+
+    TEST_F(ProposalReplayTest, AStepItsOperationRefusesFailsTheDraft)
+    {
+        const JsonValue opened = OpenWith("entity.rename", R"({"subject": "@Gone", "name": "X"})");
+        ExpectStoppedAtStepTwo(opened, "entity.rename", "subject.not_found");
+    }
+
+    TEST_F(ProposalReplayTest, ADraftOperationIsNoStepOfAProposal)
+    {
+        ExpectStoppedAtStepTwo(OpenWith("draft.accept", "{}"), "draft.accept", "proposal.not_level_edit");
+        Ok("draft.discard");
+        ExpectStoppedAtStepTwo(OpenWith("draft.discard", "{}"), "draft.discard", "proposal.not_level_edit");
+        Ok("draft.discard");
+        ExpectStoppedAtStepTwo(OpenWith("level.summary", "{}"), "level.summary", "proposal.not_level_edit");
+    }
+
+    TEST_F(ProposalReplayTest, ARebaseReplaysTheRestOnceTheLevelLetsIt)
+    {
+        const JsonValue opened = OpenWith("entity.rename", R"({"subject": "@Shed", "name": "Barn"})");
+        ExpectStoppedAtStepTwo(opened, "entity.rename", "subject.not_found");
+
+        const JsonValue refused = Call("draft.rebase");
+        EXPECT_EQ(Code(refused), "draft.rebase_failed");
+        EXPECT_EQ(refused.Find("detail")->Find("step")->AsNumber(), 2.0);
+        EXPECT_EQ(refused.Find("detail")->Find("operation")->AsString(), "entity.rename");
+        EXPECT_EQ(refused.Find("detail")->Find("code")->AsString(), "subject.not_found");
+        EXPECT_EQ(Level.WritingDraft()->Unreplayed.size(), 2u) << "a refused rebase leaves the draft as it was";
+
+        const EntityId shed = Brush(Vec3d{ 10, 0, 0 }, "Shed");
+        Ok("draft.rebase");
+        const JsonValue diff = Ok("draft.diff");
+        EXPECT_EQ(diff.Find("state")->AsString(), "open");
+        EXPECT_TRUE(diff.Find("failure")->IsNull());
+        EXPECT_EQ(diff.Find("steps")->AsArray().size(), 3u);
+        Ok("draft.accept");
+        EXPECT_EQ(Name(Hall), "Lobby");
+        EXPECT_EQ(Name(shed), "Barn");
+        Commands.Undo();
+        EXPECT_EQ(Name(Hall), "Hall");
+        EXPECT_EQ(Name(shed), "Shed");
+        Commands.Redo();
+        EXPECT_EQ(Name(Hall), "Lobby");
     }
 
     TEST(LevelProposalJson, OnlyAVersionOneProposalReads)

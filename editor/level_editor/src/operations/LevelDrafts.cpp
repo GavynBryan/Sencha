@@ -19,6 +19,8 @@
 
 namespace
 {
+    constexpr std::string_view kDraftCategory = "Draft";
+
     DataFieldSchema Text(std::string key, std::string summary)
     {
         return DataField::Field(std::move(key), DataFieldKind::String, {}, std::move(summary));
@@ -45,6 +47,33 @@ namespace
         return state == LevelDraftState::Open ? "open" : "failed";
     }
 
+    DataFieldSchema FailureField()
+    {
+        return DataField::Optional("failure", {}, "the refused step, while failed",
+            DataField::Record({}, {}, {}, {
+                DataField::Field("step", DataFieldKind::Int, {}, "counted from 1"),
+                Text("operation", {}),
+                Text("code", "why it was refused"),
+                Text("message", {}),
+                DataField::Field("unreplayed", DataFieldKind::Int, {},
+                                 "proposal steps never replayed, the refused one included; a rebase replays them"),
+            }),
+            true);
+    }
+
+    JsonValue FailureJson(const LevelDraft& draft)
+    {
+        if (draft.State != LevelDraftState::Failed)
+            return JsonValue{};
+        return JsonValue(JsonValue::Object{
+            { "step", JsonValue(static_cast<double>(draft.Failure.Step)) },
+            { "operation", JsonValue(draft.Failure.Operation) },
+            { "code", JsonValue(draft.Failure.Code) },
+            { "message", JsonValue(draft.Failure.Message) },
+            { "unreplayed", JsonValue(static_cast<double>(draft.Unreplayed.size())) },
+        });
+    }
+
     DataFieldSchema StateField()
     {
         return DataField::Enum("state", {}, {},
@@ -67,8 +96,15 @@ namespace
         return EditorOperationOutcome::Refused("draft.unknown", "there is no draft '" + named->AsString() + "'");
     }
 
+    // A proposal's steps are level edits; a draft operation among them would
+    // act on the draft being replayed.
     EditorOperationOutcome ReplayStep(EditorOperations& operations, const LevelDraftStep& step)
     {
+        const EditorOperationCatalog& catalog = operations.Catalog();
+        const EditorOperationDefinition* definition = catalog.Get(catalog.Find(step.Operation));
+        if (definition != nullptr && definition->Category == kDraftCategory)
+            return EditorOperationOutcome::Refused("proposal.not_level_edit",
+                                                   step.Operation + " is not a step a proposal can take");
         const JsonValue answer = operations.Invoke(step.Operation, step.Arguments);
         const auto text = [&answer](std::string_view key) {
             const JsonValue* value = answer.Find(key);
@@ -96,7 +132,7 @@ namespace
         EditorOperationEntry entry;
         entry.Definition.Name = std::move(name);
         entry.Definition.Kind = kind;
-        entry.Definition.Category = "Draft";
+        entry.Definition.Category = std::string(kDraftCategory);
         entry.Definition.Description = std::move(description);
         entry.Definition.Parameters = std::move(parameters);
         entry.Definition.Result = std::move(result);
@@ -239,8 +275,7 @@ namespace
             Text("rationale", {}),
             Text("base", "the copied level's asset path"),
             StateField(),
-            DataField::Optional("failure", {}, "the refused step",
-                                DataField::Field({}, DataFieldKind::String, {}, {}), true),
+            FailureField(),
             DataField::ArrayOf("steps", {}, {},
                 DataField::Record({}, {}, {}, {
                     Text("operation", {}),
@@ -265,8 +300,7 @@ namespace
                 data.emplace_back("rationale", JsonValue(draft.Rationale));
                 data.emplace_back("base", JsonValue(draft.BasePath));
                 data.emplace_back("state", JsonValue(StateName(draft.State)));
-                data.emplace_back("failure",
-                                  draft.State == LevelDraftState::Failed ? JsonValue(draft.Failure) : JsonValue{});
+                data.emplace_back("failure", FailureJson(draft));
                 data.emplace_back("steps", JsonValue(std::move(steps)));
                 return EditorOperationOutcome::Ok(JsonValue(std::move(data)));
             }));
@@ -315,13 +349,10 @@ namespace
     {
         return Entry(
             "draft.resume", EditorOperationKind::Mutation,
-            "Lets a failed draft take steps again, from what the steps before the refused one made.",
+            "Lets a failed draft take steps again, from what the steps before the refused one made. Refused "
+            "for a proposal whose replay stopped short; rebase or discard that.",
             DraftOnly(), DataField::Record({}, {}, {}, { Text("draft", {}) }),
-            WithDraft(level, [](LevelDraft& draft) {
-                draft.State = LevelDraftState::Open;
-                draft.Failure.clear();
-                return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "draft", JsonValue(draft.Id) } }));
-            }));
+            WithDraft(level, [&level](LevelDraft& draft) { return level.ResumeDraft(draft); }));
     }
 
     EditorOperationEntry Rebase(LevelTarget& level, EditorOperations& operations)
@@ -329,7 +360,8 @@ namespace
         return Entry(
             "draft.rebase", EditorOperationKind::Mutation,
             "Replays a draft's steps on a fresh copy of its level, taking in everything that changed "
-            "there since. Refused, leaving the draft as it was, when a step no longer applies.",
+            "there since, and the steps of a proposal whose replay stopped short. Refused, leaving the "
+            "draft as it was, when a step does not apply.",
             DraftOnly(), ChangeSummarySchema(),
             WithDraft(level, [&level, &operations](LevelDraft& draft) {
                 return level.RebaseDraft(draft, [&operations](const LevelDraftStep& step) {
@@ -360,6 +392,9 @@ namespace
                 if (auto* refused = std::get_if<EditorOperationOutcome>(&picked))
                     return std::move(*refused);
                 const LevelDraft& draft = *std::get<LevelDraft*>(picked);
+                if (!draft.Unreplayed.empty())
+                    return EditorOperationOutcome::Refused(
+                        "draft.incomplete", "draft " + draft.Id + " holds only part of the proposal it replayed");
                 const JsonValue* author = arguments.Find("author");
                 const std::string text = JsonStringify(
                     LevelProposalToJson(ProposalOf(draft,
@@ -410,8 +445,7 @@ namespace
                 Text("rationale", {}),
                 Text("author", {}),
                 StateField(),
-                DataField::Optional("failure", {}, "the refused step",
-                                    DataField::Field({}, DataFieldKind::String, {}, {}), true),
+                FailureField(),
                 DataField::ArrayOf("moved_since", {}, "entities the level changed since it was written",
                                    DataField::Field({}, DataFieldKind::Entity, {}, {}), true),
                 DataField::ArrayOf("changed_operations", {},
@@ -437,9 +471,9 @@ namespace
                 if (draft == nullptr)
                     return EditorOperationOutcome::Refused("draft.copy_failed", error);
                 draft->OpenedFrom = path;
-                for (const LevelDraftStep& step : proposal->Steps)
-                    if (ReplayStep(operations, step).Status != EditorOperationStatus::Ok)
-                        break;
+                (void)level.ReplayInto(*draft, proposal->Steps, [&operations](const LevelDraftStep& step) {
+                    return ReplayStep(operations, step);
+                });
 
                 JsonValue::Object data = ChangeSummary(draft->Changes);
                 data.emplace_back("draft", JsonValue(draft->Id));
@@ -447,8 +481,7 @@ namespace
                 data.emplace_back("rationale", JsonValue(draft->Rationale));
                 data.emplace_back("author", JsonValue(proposal->Author));
                 data.emplace_back("state", JsonValue(StateName(draft->State)));
-                data.emplace_back("failure",
-                                  draft->State == LevelDraftState::Failed ? JsonValue(draft->Failure) : JsonValue{});
+                data.emplace_back("failure", FailureJson(*draft));
                 data.emplace_back("moved_since", JsonValue(moved));
                 data.emplace_back("changed_operations", JsonValue(ChangedOperations(operations.Catalog(), *proposal)));
                 return EditorOperationOutcome::Ok(JsonValue(std::move(data)));
