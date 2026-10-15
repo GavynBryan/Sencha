@@ -45,14 +45,18 @@ hands work on as a proposal file. `view.*` needs a running Kyusu.
 - Every answer is `{operation, status: ok|refused|error, code, message, data}`.
   A refusal's `code` says why (`subject.ambiguous` lists `candidates` in
   `detail`); the script carries on. A mutation's `data` lists what it
-  `created`, `modified` and `deleted`.
+  `created`, `modified` and `deleted`, and counts the wall brushes spaces
+  rebuilt for it in `walls`.
 
 ## Frame
 
 Metres, +Y up, north is -Z, east is +X. A space is a volume of air between
-`min` and `max` (`min.y` is its floor); its walls are generated outward by the
-wall thickness and are not entities of their own. Rooms exactly one wall
-thickness apart share that wall. A door is placed by a point in or near a wall
+`min` and `max` (`min.y` is its floor). Its walls stand outward by the wall
+thickness as wall brushes under the space (kind `wall`): each wall's room
+side ("Hall north wall") and its outside ("Hall north wall outside") apart.
+The space rebuilds them whenever it or a door in them changes, in the same
+undo step; `level.summary` leaves them out and `deps` counts them. Rooms
+exactly one wall thickness apart share that wall. A door is placed by a point in or near a wall
 (`opening.create at=[...]`), and the wall decides which room owns it; a sill
 of 0 makes a doorway. Faces are named by the direction they look (`north`,
 `up`, ...) or by a point on them, never by index.
@@ -61,8 +65,8 @@ of 0 makes a doorway. Faces are named by the direction they look (`north`,
 
 `view.context` answers them from the running editor:
 - `aim`: the first solid surface at the middle of the view: `point`, `normal`,
-  the `entity` it belongs to (a generated wall answers as its space), and the
-  space it `facing_into`. "Here" on a wall is `aim.point`: a door there is
+  the `entity` it belongs to (a wall brush answers as itself), and the
+  space it is `facing_into`. "Here" on a wall is `aim.point`: a door there is
   `opening.create at=<aim.point>`.
 - `selection`: what "this" means, with face indices when faces are selected.
 - `camera`: the eye, `facing` as a compass bearing, `pitch`; `in_space`, and
@@ -136,8 +140,10 @@ what they do as they do it: `selection`, `saved`, `draft.accepted`,
   exactly one wall thickness (0.25 by default) between rooms that share a
   wall, or more to keep both walls.
 - `brush.*` reshapes solid brushes only; a space's faces move with
-  `space.resize_face`, and a door in a generated wall is `opening.create`,
-  not `brush.carve`.
+  `space.resize_face`, and a door in a wall is `opening.create`, not
+  `brush.carve`. Reshaping a wall brush by hand keeps it: the space stops
+  rebuilding that wall (`wall.kept_stale` once the space moves on) until
+  `shell.rebuild` takes it back. Painting it does not.
 - An entity means its branch: deleting or copying a space takes its doors.
 - `nav.reachable` needs the project's navigation settings; `nav.unavailable`
   means it has none.

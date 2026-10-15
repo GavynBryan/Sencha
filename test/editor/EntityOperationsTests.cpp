@@ -74,6 +74,7 @@ TEST_F(EntityOperationsTest, DeletingASpaceTakesItsDoorAndUndoBringsBothBack)
     EXPECT_FALSE(Exists("Door")) << "the door is under the hall";
     EXPECT_TRUE(Exists("Shed"));
     EXPECT_EQ(deleted.Find("deleted")->AsArray().size(), 2u) << JsonStringify(deleted);
+    EXPECT_EQ(deleted.Find("walls")->Find("deleted")->AsNumber(), 12.0) << "and its walls, counted";
 
     Commands.Undo();
     EXPECT_TRUE(Exists("Hall"));

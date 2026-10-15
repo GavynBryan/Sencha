@@ -6,6 +6,7 @@
 #include "document/BrushComponents.h"
 #include "document/BrushCookInput.h"
 #include "document/SpaceComponents.h"
+#include "document/SpaceWalls.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
 #include "operations/LevelSubjects.h"
@@ -77,16 +78,17 @@ TEST_F(SpaceOperationsTest, ASpaceIsANamedWalledVolume)
     const JsonValue made = Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
     EXPECT_EQ(made.Find("space")->Find("name")->AsString(), "Hall");
     EXPECT_EQ(made.Find("created")->AsArray().size(), 1u);
+    EXPECT_EQ(made.Find("walls")->Find("created")->AsNumber(), 12.0) << "six walls, each a room side and an outside";
     const EntityId hall = Find("Hall");
     ASSERT_TRUE(hall.IsValid());
     const World& components = Scene().GetRegistry().Components;
     EXPECT_TRUE(components.HasComponent<BrushVolume>(hall));
     EXPECT_TRUE(components.HasComponent<Space>(hall));
     EXPECT_FLOAT_EQ(components.TryGet<Shell>(hall)->Thickness, 0.25f);
-    EXPECT_EQ(Walls(), 6u);
+    EXPECT_EQ(Walls(), 12u);
 
     Ok("space.create", R"({"name": "Yard", "min": [20, 0, 0], "max": [24, 3, 4], "shell": false})");
-    EXPECT_EQ(Walls(), 6u) << "a space without a shell has no walls";
+    EXPECT_EQ(Walls(), 12u) << "a space without a shell has no walls";
 }
 
 TEST_F(SpaceOperationsTest, ATakenNameOrAFlatBoxIsRefused)
@@ -101,8 +103,10 @@ TEST_F(SpaceOperationsTest, ADoorBetweenAHallAndACorridorIsCutOnceAndSeenThrough
     Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
     Ok("space.create", R"({"name": "Corridor", "min": [8.25, 0, 2], "max": [14, 3, 4]})");
     // The hall's east wall is three slabs, the stretch it shares with the
-    // corridor's end and one either side; the shared stretch is built once.
-    EXPECT_EQ(Walls(), 13u);
+    // corridor's end and one either side; the shared stretch is built once,
+    // with a side for each room, and every other slab is a room side and an
+    // outside.
+    EXPECT_EQ(Walls(), 27u);
 
     const JsonValue door = Ok("opening.create", R"({"at": [8.1, 1, 3]})");
     EXPECT_EQ(door.Find("space")->Find("name")->AsString(), "Hall");
@@ -138,7 +142,7 @@ TEST_F(SpaceOperationsTest, ARoomAndItsDoorAreProposedInADraftAndAcceptedAsOneSt
     EXPECT_EQ(accepted.Find("created")->AsArray().size(), 3u);
     EXPECT_TRUE(Find("Hall").IsValid());
     EXPECT_TRUE(Find("Hall door").IsValid());
-    EXPECT_EQ(Walls(), 13u);
+    EXPECT_EQ(Walls(), 27u);
     Commands.Undo();
     EXPECT_FALSE(Find("Corridor").IsValid());
     EXPECT_FALSE(Commands.CanUndo());
@@ -228,6 +232,19 @@ TEST_F(CarryTest, AFacePushedOutCarriesItsWalls)
     EXPECT_NEAR(VolumeOf("Hall").Min.Z, -2.0f, 1e-3f);
     EXPECT_EQ(Code(Call("space.resize_face", R"({"subject": "@Hall", "face": "north", "distance": -20})")),
               "space.resize_invalid");
+}
+
+TEST_F(CarryTest, ThePushedWallMovesInTheSameUndoStep)
+{
+    const auto northWallZ = [this] { return Scene().EvaluatedWorldBounds(Find("Hall north wall"))->Max.Z; };
+    const float before = northWallZ();
+    const JsonValue pushed = Ok("space.resize_face", R"({"subject": "@Hall", "face": "north", "distance": 2})");
+    EXPECT_GT(pushed.Find("walls")->Find("modified")->AsNumber(), 0.0);
+    EXPECT_NEAR(northWallZ(), before - 2.0f, 1e-3f);
+    Commands.Undo();
+    Scene().RefreshDerivedTransforms();
+    EXPECT_NEAR(northWallZ(), before, 1e-3f) << "one undo puts the space and its walls back";
+    EXPECT_FALSE(SpaceWallsStale(Scene(), Find("Hall")));
 }
 
 TEST_F(CarryTest, AnOpeningSlidesAlongItsWall)
@@ -409,10 +426,10 @@ TEST_F(SpaceOperationsTest, TheSpaceToolMakesTheSpaceTheOperationWould)
     const EntityId made = Find("Space");
     ASSERT_TRUE(made.IsValid());
     EXPECT_TRUE(Scene().GetRegistry().Components.HasComponent<Shell>(made));
-    EXPECT_EQ(Walls(), 6u);
+    EXPECT_EQ(Walls(), 12u);
     const JsonValue described = Ok("entity.describe", R"({"subject": "@Space"})");
-    EXPECT_NEAR(described.Find("entity")->Find("max")->AsArray()[1].AsNumber(), 3.25, 1e-3)
-        << "the project's space height, under its generated ceiling";
+    EXPECT_NEAR(described.Find("entity")->Find("max")->AsArray()[1].AsNumber(), 3.0, 1e-3)
+        << "the project's space height";
     EXPECT_EQ(Workspace.Selection.GetSelection().size(), 1u);
 
     tool->Create(tools.GetContext(), Vec3d{ 20, 0, 0 }, Vec3d{ 24, 0, 4 });

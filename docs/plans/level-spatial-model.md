@@ -2,8 +2,9 @@
 
 Status: **revision 3, approved 2026-10-11, with decisions D1 to D8 as
 recommended in section 10. Implementation starts with M0. Amended 2026-10-15
-by D9 (section 5.8): generated walls are real brushes, not derived pieces.** Revision 1 was
-discussed in conversation; its review is dispositioned in section 11. The
+by D9 (section 5.8): generated walls are real brushes, not derived
+pieces.** Revision 1 was discussed in conversation; its review is
+dispositioned in section 11. The
 second review, including where this plan pushes back on it, is dispositioned
 in section 12. Section 6.7 draws on the decision records of SINR's room-logic
 editor (`../sinr-2d/sinr/docs/decisions/`).

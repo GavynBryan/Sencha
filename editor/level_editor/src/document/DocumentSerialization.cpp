@@ -90,6 +90,7 @@ void RegisterDocumentSerializers()
     RegisterEditorOnlyComponent<BrushVolume>(serializers);
     RegisterEditorOnlyComponent<Space>(serializers);
     RegisterEditorOnlyComponent<Shell>(serializers);
+    RegisterEditorOnlyComponent<GeneratedWall>(serializers);
     RegisterEditorOnlyComponent<Opening>(serializers);
     RegisterEditorOnlyComponent<Note>(serializers);
 }

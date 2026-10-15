@@ -578,17 +578,17 @@ do the work and delete the entry.
 
 ## Shell neighbour lookup
 
-- **What:** a shelled space finds the spaces it may share a wall with by
-  visiting every shelled volume and measuring its bounds, and it does so each
-  time its placement key is made, which is per frame. That is
-  O(spaces x volume vertices) per space per frame.
-- **Where:** `NeighboursOf` in
-  `editor/level_editor/src/document/VolumeEvaluations.cpp`, reached through
-  `VolumeEvaluationInputs` from `MakeBrushPlacementKey`.
-- **Trigger:** a level with more than about a hundred shelled spaces, or a
-  frame profile in which `VolumeEvaluationInputs` shows. The fix is a retained
-  per-scene index of shelled volumes' world bounds, invalidated by their
-  placement keys.
+- **What:** a shelled space finds the spaces and openings near it by visiting
+  every entity and measuring bounds, and every space does so each time the
+  level checks for stale walls, which is after every edit. That is
+  O(spaces x entities x volume vertices) per edit.
+- **Where:** `NeighboursOf` and `OpeningsNear` in
+  `editor/level_editor/src/document/SpaceWalls.cpp`, reached through
+  `SpaceShellInputs` from `RebuildStaleSpaceWalls`.
+- **Trigger:** a level with more than about a hundred shelled spaces, or an
+  edit whose profile shows `SpaceShellInputs`. The fix is a retained
+  per-scene index of shelled volumes' and openings' world bounds,
+  invalidated by their placement keys.
 
 ## Tool commits through the level target
 

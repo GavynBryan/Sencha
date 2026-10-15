@@ -181,3 +181,37 @@ TEST(CommandStack, ClearDropsScopeWithoutCancel)
     EXPECT_FALSE(stack.HasPendingEdit());
     EXPECT_FALSE(stack.CanUndo());
 }
+
+TEST(CommandStack, AFollowUpJoinsTheStepOfTheCommandBeforeIt)
+{
+    CommandStack stack;
+    int executes = 0, undos = 0, followUps = 0, followUpUndos = 0, asked = 0;
+    stack.SetExecuteFollowUp([&]() -> std::unique_ptr<ICommand> {
+        ++asked;
+        ++followUps; // a follow-up arrives already applied
+        return std::make_unique<CountingCommand>(followUps, followUpUndos);
+    });
+    stack.Execute(std::make_unique<CountingCommand>(executes, undos));
+    EXPECT_EQ(asked, 1);
+    EXPECT_EQ(followUps, 1) << "not executed again by the stack";
+
+    stack.Undo();
+    EXPECT_EQ(undos, 1);
+    EXPECT_EQ(followUpUndos, 1);
+    EXPECT_FALSE(stack.CanUndo()) << "one step";
+    stack.Redo();
+    EXPECT_EQ(executes, 2);
+    EXPECT_EQ(followUps, 2);
+    EXPECT_EQ(asked, 1) << "undo and redo never ask";
+}
+
+TEST(CommandStack, NoFollowUpLeavesTheCommandAlone)
+{
+    CommandStack stack;
+    int executes = 0, undos = 0;
+    stack.SetExecuteFollowUp([]() -> std::unique_ptr<ICommand> { return nullptr; });
+    stack.Execute(std::make_unique<CountingCommand>(executes, undos));
+    stack.Undo();
+    EXPECT_EQ(undos, 1);
+    EXPECT_FALSE(stack.CanUndo());
+}

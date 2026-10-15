@@ -256,18 +256,6 @@ public:
     // The material that marks a volume face as open: it gets no wall.
     [[nodiscard]] const AssetRef& OpenFaceMaterial() const { return OpenFaceMaterial_; }
     void SetOpenFaceMaterial(AssetRef material) { OpenFaceMaterial_ = std::move(material); }
-    [[nodiscard]] std::span<const ShellProblem> ShellProblems(EntityId entity) const
-    {
-        return Volumes_.ShellProblems(entity);
-    }
-    [[nodiscard]] std::span<const PersistentEntityId> ShellOpenings(EntityId entity) const
-    {
-        return Volumes_.ShellOpenings(entity);
-    }
-    [[nodiscard]] std::span<const PersistentEntityId> ShellSharedWith(EntityId entity) const
-    {
-        return Volumes_.ShellSharedWith(entity);
-    }
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).

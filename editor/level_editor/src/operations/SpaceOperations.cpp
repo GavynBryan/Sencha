@@ -18,6 +18,7 @@
 #include "document/LevelConventions.h"
 #include "document/NavigationCookInput.h"
 #include "document/SpaceComponents.h"
+#include "document/SpaceWalls.h"
 #include "document/commands/RenameEntityCommand.h"
 
 #include <core/metadata/DataSchemaFields.h>
@@ -330,15 +331,15 @@ namespace
         entry.Definition.Name = "deps";
         entry.Definition.Category = "Space";
         entry.Definition.Description =
-            "What follows from an entity and would change with it. For a space: how many walls it "
-            "generates, the openings cutting them, the spaces it shares a wall with, and the spaces its "
+            "What follows from an entity and would change with it. For a space: how many wall brushes it "
+            "built, the openings cutting them, the spaces it shares a wall with, and the spaces its "
             "doors lead into. For an opening: the spaces whose walls it cuts and the spaces it joins.";
         entry.Definition.Parameters = DataField::Record({}, {}, {}, {
             DataField::Field("subject", DataFieldKind::String, {}, "an entity id or '@<name>'"),
         });
         entry.Definition.Result = DataField::Record({}, {}, {}, {
             EntityNameSchema("subject", {}),
-            DataField::Field("walls", DataFieldKind::Int, {}, "generated walls"),
+            DataField::Field("walls", DataFieldKind::Int, {}, "the wall brushes it built"),
             DataField::ArrayOf("cut_by", {}, "openings cutting its walls", EntityNameSchema({}, {}), true),
             DataField::ArrayOf("shares_walls_with", {}, {}, EntityNameSchema({}, {}), true),
             DataField::ArrayOf("leads_to", {}, "spaces its openings lead into", EntityNameSchema({}, {}), true),
@@ -356,24 +357,23 @@ namespace
 
             std::int64_t walls = 0;
             JsonValue::Array cutBy, sharesWith, leadsTo, cuts, joins;
-            if (const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity);
-                evaluated != nullptr && components.HasComponent<Shell>(entity))
+            const std::optional<SpaceShell> shell = BuildSpaceShell(scene, entity);
+            const std::vector<PersistentEntityId> cutting = shell ? shell->Openings : std::vector<PersistentEntityId>{};
+            if (shell)
             {
-                for (const BrushPiece& piece : evaluated->Pieces)
-                    walls += evaluated->Meshes[piece.MeshIndex].Role == BrushRole::Solid ? 1 : 0;
-                for (const PersistentEntityId id : scene.ShellOpenings(entity))
+                walls = static_cast<std::int64_t>(SpaceWalls(scene, entity).size());
+                for (const PersistentEntityId id : shell->Openings)
                     Note(cutBy, document, id);
-                for (const PersistentEntityId id : scene.ShellSharedWith(entity))
+                for (const PersistentEntityId id : shell->SharedWith)
                     Note(sharesWith, document, id);
             }
             // Every opening in its walls or of its own leads to whichever side is not it.
-            const std::span<const PersistentEntityId> cutting = scene.ShellOpenings(entity);
             for (const EntityId other : scene.GetAllEntities())
             {
                 if (!components.HasComponent<Opening>(other))
                     continue;
                 const std::optional<EntityId> owner = OwnerOf(scene, other);
-                const bool inItsWalls = std::find(cutting.begin(), cutting.end(), scene.PersistentIdOf(other)) != cutting.end();
+                const bool inItsWalls = std::ranges::find(cutting, scene.PersistentIdOf(other)) != cutting.end();
                 if (!owner || (*owner != entity && !inItsWalls))
                     continue;
                 const std::optional<FarSide> far = FarSideOf(scene, *owner, other);
@@ -387,13 +387,9 @@ namespace
             {
                 const PersistentEntityId self = scene.PersistentIdOf(entity);
                 for (const EntityId other : scene.GetAllEntities())
-                {
-                    if (!components.HasComponent<Shell>(other) || scene.TryGetBrushPieces(other) == nullptr)
-                        continue;
-                    const std::span<const PersistentEntityId> openings = scene.ShellOpenings(other);
-                    if (std::find(openings.begin(), openings.end(), self) != openings.end())
+                    if (const std::optional<SpaceShell> walled = BuildSpaceShell(scene, other);
+                        walled && std::ranges::find(walled->Openings, self) != walled->Openings.end())
                         Note(cuts, document, other);
-                }
                 if (const std::optional<EntityId> owner = OwnerOf(scene, entity))
                 {
                     Note(joins, document, *owner);
@@ -422,9 +418,9 @@ namespace
         entry.Definition.Kind = EditorOperationKind::Mutation;
         entry.Definition.Category = "Space";
         entry.Definition.Description =
-            "Turns a space's generated walls, openings already cut, into ordinary brushes under the space, "
-            "and stops generating them. The space, its name and its openings stay; the walls can then be "
-            "edited by hand. Undo brings the shell back.";
+            "Stops a space building its walls: its wall brushes stay as they stand, openings already cut, "
+            "as ordinary brushes under the space. The space, its name and its openings stay. Undo brings the "
+            "shell back.";
         entry.Definition.Parameters = DataField::Record({}, {}, {}, {
             DataField::Field("subject", DataFieldKind::String, {}, "a space's id or '@<name>'"),
         });
@@ -437,37 +433,51 @@ namespace
                 EditorScene& scene = document.GetScene();
                 const EntityId space = subject.Entities.front();
                 World& components = scene.GetRegistry().Components;
-                if (!components.HasComponent<Shell>(space))
+                const std::optional<SpaceShell> shell = BuildSpaceShell(scene, space);
+                if (!shell)
                     return EditorOperationOutcome::Refused("shell.none", "it has no shell to detach");
-                for (const ShellProblem& problem : scene.ShellProblems(space))
+                for (const ShellProblem& problem : shell->Result.Problems)
                     if (problem.Kind == ShellProblemKind::OpenVolume || problem.Kind == ShellProblemKind::NonPlanarFace
                         || problem.Kind == ShellProblemKind::InvertedSlab)
                         return EditorOperationOutcome::Refused("shell.refused",
                                                                "its shell is refused, so there are no walls: "
                                                                    + problem.Message);
-
-                const BrushEvaluated* evaluated = scene.TryGetBrushPieces(space);
-                if (evaluated == nullptr)
-                    return EditorOperationOutcome::Refused("shell.none", "it is not a brush");
-                std::vector<BrushMesh> walls;
-                for (const BrushPiece& piece : evaluated->Pieces)
-                    if (evaluated->Meshes[piece.MeshIndex].Role == BrushRole::Solid)
-                        walls.push_back(*piece.Mesh);
-
-                const auto* spaceName = components.TryGet<EntityNameComponent>(space);
-                const std::string base = (spaceName != nullptr ? std::string(spaceName->Value.View()) : "Space")
-                    + " wall";
                 recorder.Touch(space);
                 components.RemoveComponent<Shell>(space);
-                for (BrushMesh& wall : walls)
+                for (const EntityId wall : SpaceWalls(scene, space))
                 {
-                    const EntityId brush = scene.CreateBrushFromMesh(Transform3f::Identity(), std::move(wall));
-                    (void)scene.SetParent(brush, space);
-                    if (auto rename = MakeRenameEntityCommand(brush, scene.NextEntityName(base), scene, document))
-                        rename->Execute();
-                    recorder.Created(brush);
+                    recorder.Touch(wall);
+                    components.RemoveComponent<GeneratedWall>(wall);
                 }
                 document.MarkDirty();
+                return EditorOperationOutcome::Ok({});
+            });
+        };
+        return entry;
+    }
+
+    EditorOperationEntry Rebuild(LevelTarget& level)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "shell.rebuild";
+        entry.Definition.Kind = EditorOperationKind::Mutation;
+        entry.Definition.Category = "Space";
+        entry.Definition.Description =
+            "Rebuilds a space's walls from its volume, taking back the wall brushes edited by hand and kept, "
+            "as one undoable step. Paint on the walls stays.";
+        entry.Definition.Parameters = DataField::Record({}, {}, {}, {
+            DataField::Field("subject", DataFieldKind::String, {}, "a space's id or '@<name>'"),
+        });
+        entry.Definition.Result = MutationResultSchema();
+        entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
+            return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
+                const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
+                if (!subject.Resolved())
+                    return SubjectRefusal(subject);
+                const EntityId space = subject.Entities.front();
+                if (!BuildSpaceShell(document.GetScene(), space))
+                    return EditorOperationOutcome::Refused("shell.none", "it has no shell to rebuild");
+                RebuildSpaceWalls(document, recorder, space, true);
                 return EditorOperationOutcome::Ok({});
             });
         };
@@ -568,6 +578,7 @@ std::vector<EditorOperationEntry> SpaceOperations(LevelTarget& level)
     entries.push_back(ResizeFace(level));
     entries.push_back(MoveOpening(level));
     entries.push_back(Detach(level));
+    entries.push_back(Rebuild(level));
     entries.push_back(Diagnostics(level));
     entries.push_back(Deps(level));
     entries.push_back(Propose(level));

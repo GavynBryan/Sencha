@@ -130,8 +130,8 @@ namespace
                 DataField::Vector("point", {}, "where the aim meets the surface"),
                 DataField::Vector("normal", {}, "the surface's outward normal"),
                 DataField::Field("distance", DataFieldKind::Float, {}, "metres from the eye"),
-                OptionalEntitySchema("entity", "what the surface belongs to: a space for its generated walls"),
-                DataField::Field("kind", DataFieldKind::String, {}, "space, opening, volume, brush or entity"),
+                OptionalEntitySchema("entity", "what the surface belongs to"),
+                DataField::Field("kind", DataFieldKind::String, {}, "space, opening, wall, volume, brush or entity"),
                 OptionalEntitySchema("facing_into", "the space whose air the surface faces"),
             }),
             true);

@@ -75,8 +75,8 @@ TEST_F(ViewOperationsTest, TheAimFindsTheWallAheadAndADoorGoesWhereItLands)
 
     const JsonValue& aim = *context.Find("aim");
     ASSERT_TRUE(aim.IsObject()) << JsonStringify(context);
-    EXPECT_EQ(NameIn(aim, "entity"), "Hall") << "a generated wall belongs to its space";
-    EXPECT_EQ(aim.Find("kind")->AsString(), "space");
+    EXPECT_EQ(NameIn(aim, "entity"), "Hall north wall");
+    EXPECT_EQ(aim.Find("kind")->AsString(), "wall");
     EXPECT_EQ(NameIn(aim, "facing_into"), "Hall");
     EXPECT_NEAR(aim.Find("point")->AsArray()[2].AsNumber(), 0.0, 1e-3) << "the north wall's inner face";
     EXPECT_NEAR(aim.Find("normal")->AsArray()[2].AsNumber(), 1.0, 1e-3);

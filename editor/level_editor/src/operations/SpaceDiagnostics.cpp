@@ -4,6 +4,7 @@
 
 #include "document/EditorScene.h"
 #include "document/SpaceComponents.h"
+#include "document/SpaceWalls.h"
 
 #include <world/registry/Registry.h>
 
@@ -44,6 +45,32 @@ namespace
         return { rule.Severity, ContentRiskSourceKind::Entity, scene.PersistentIdOf(entity).Value, rule.Id,
                  std::move(message) };
     }
+
+    // Walls built from something other than the space as it stands: none at
+    // all for a level saved before its space was walled, and a kept wall the
+    // space has changed under since.
+    void WallDiagnostics(const EditorScene& scene, EntityId space, const SpaceShell& shell,
+                         std::vector<ContentRiskRecord>& records)
+    {
+        const World& components = scene.GetRegistry().Components;
+        bool stale = false;
+        for (const EntityId wall : SpaceWalls(scene, space))
+        {
+            const GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
+            if (built.From == shell.Inputs)
+                continue;
+            if (built.State == WallState::Kept)
+                records.push_back(About(scene, wall, { "wall.kept_stale", ContentRiskSeverity::Warning },
+                                        "edited by hand and kept, and its space has changed since; "
+                                        "shell.rebuild takes it back"));
+            else
+                stale = true;
+        }
+        if (stale || (SpaceWalls(scene, space).empty() && !shell.Result.Refused && !shell.Result.Slabs.empty()))
+            records.push_back(About(scene, space, { "shell.stale", ContentRiskSeverity::Warning },
+                                    "its walls were built from something else; the next edit to the level, or "
+                                    "shell.rebuild, builds them again"));
+    }
 }
 
 std::vector<ContentRiskRecord> SpaceDiagnostics(const EditorScene& scene, const std::optional<OpeningClearance>& clearance)
@@ -52,19 +79,18 @@ std::vector<ContentRiskRecord> SpaceDiagnostics(const EditorScene& scene, const 
     const World& components = scene.GetRegistry().Components;
     for (const EntityId entity : scene.GetAllEntities())
     {
-        if (components.HasComponent<Shell>(entity) && scene.RoleOf(entity) == BrushRole::Volume)
+        if (const std::optional<SpaceShell> shell = BuildSpaceShell(scene, entity))
         {
-            (void)scene.TryGetBrushPieces(entity);
-            const std::span<const PersistentEntityId> openings = scene.ShellOpenings(entity);
-            for (const ShellProblem& problem : scene.ShellProblems(entity))
+            for (const ShellProblem& problem : shell->Result.Problems)
             {
                 const Rule rule = RuleFor(problem.Kind);
-                if (problem.Kind == ShellProblemKind::OpeningRefused && problem.Element < openings.size())
-                    records.push_back({ rule.Severity, ContentRiskSourceKind::Entity, openings[problem.Element].Value,
-                                        rule.Id, problem.Message });
+                if (problem.Kind == ShellProblemKind::OpeningRefused && problem.Element < shell->Openings.size())
+                    records.push_back({ rule.Severity, ContentRiskSourceKind::Entity,
+                                        shell->Openings[problem.Element].Value, rule.Id, problem.Message });
                 else
                     records.push_back(About(scene, entity, rule, problem.Message));
             }
+            WallDiagnostics(scene, entity, *shell, records);
         }
 
         const Opening* opening = components.TryGet<Opening>(entity);

@@ -6,12 +6,15 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
+#include "document/SpaceWalls.h"
 #include "document/WorldDocument.h"
 #include "document/commands/ApplyChangeSetCommand.h"
 
 #include <core/metadata/DataSchemaFields.h>
 
 #include <algorithm>
+#include <array>
 #include <string>
 
 namespace
@@ -98,6 +101,11 @@ EditorOperationOutcome LevelTarget::Run(LevelDraft* draft, std::string_view oper
     const std::uint64_t before = document.Revision();
     EntityChangeRecorder recorder(document);
     EditorOperationOutcome outcome = edit(document, recorder);
+    if (outcome.Status == EditorOperationStatus::Ok)
+    {
+        document.GetScene().RefreshDerivedTransforms();
+        RebuildStaleSpaceWalls(document, recorder);
+    }
     EntityChangeSet changes = recorder.Finish();
     if (outcome.Status != EditorOperationStatus::Ok)
     {
@@ -265,11 +273,23 @@ EditorOperationOutcome LevelTarget::RebaseDraft(LevelDraft& draft, const Replay&
     return EditorOperationOutcome::Ok(JsonValue(ChangeSummary(draft.Changes)));
 }
 
+bool ChangesGeneratedWall(const EntityChange& change)
+{
+    const EntitySnapshot& shown = change.After ? *change.After : *change.Before;
+    return shown.Components.IsObject() && shown.Components.Find(TypeSchema<GeneratedWall>::Name) != nullptr;
+}
+
 JsonValue::Object ChangeSummary(const EntityChangeSet& changes)
 {
     JsonValue::Array created, modified, deleted;
+    std::array<double, 3> walls{};
     for (const EntityChange& change : changes.Changes)
     {
+        if (ChangesGeneratedWall(change))
+        {
+            walls[!change.Before ? 0 : !change.After ? 2 : 1] += 1;
+            continue;
+        }
         const EntitySnapshot& shown = change.After ? *change.After : *change.Before;
         JsonValue entry(JsonValue::Object{
             { "id", JsonValue(PersistentEntityIdToString(change.Id)) },
@@ -296,6 +316,11 @@ JsonValue::Object ChangeSummary(const EntityChangeSet& changes)
         { "created", JsonValue(std::move(created)) },
         { "modified", JsonValue(std::move(modified)) },
         { "deleted", JsonValue(std::move(deleted)) },
+        { "walls", JsonValue(JsonValue::Object{
+                       { "created", JsonValue(walls[0]) },
+                       { "modified", JsonValue(walls[1]) },
+                       { "deleted", JsonValue(walls[2]) },
+                   }) },
     };
 }
 
@@ -309,6 +334,11 @@ DataFieldSchema ChangeSummarySchema(std::vector<DataFieldSchema> extra)
         DataField::ArrayOf("created", {}, {}, touched, true),
         DataField::ArrayOf("modified", {}, {}, touched, true),
         DataField::ArrayOf("deleted", {}, {}, touched, true),
+        DataField::Record("walls", {}, "wall brushes the spaces built, counted rather than listed", {
+            DataField::Field("created", DataFieldKind::Int, {}, {}),
+            DataField::Field("modified", DataFieldKind::Int, {}, {}),
+            DataField::Field("deleted", DataFieldKind::Int, {}, {}),
+        }),
     };
     for (DataFieldSchema& field : extra)
         members.push_back(std::move(field));

@@ -7,6 +7,7 @@
 #include <ecs/ComponentAnnotations.h>
 
 #include <array>
+#include <cstdint>
 
 // The spatial model: docs/plans/level-spatial-model.md, section 2. All three
 // are authoring facts; the level cook strips them.
@@ -20,8 +21,8 @@ Space
 {
 };
 
-// Walls generated around the volume, one slab per face outward by Thickness.
-// Never saved: they are derived from the volume whenever it changes.
+// Walls built around the volume, one slab per face outward by Thickness, as
+// wall brushes the space parents (GeneratedWall).
 struct SENCHA_COMPONENT("shell")
        SENCHA_SCHEMA("shell")
        SENCHA_SCENE_CHUNK("SHEL")
@@ -64,6 +65,44 @@ Opening
     SENCHA_LABEL("Arch rise")
     SENCHA_TOOLTIP("The fraction of the height the arch springs over, 0 to 1. Arches only.")
     float ArchRise = CarveShapeParams{}.ArchRise;
+};
+
+enum class WallState : std::uint8_t
+{
+    Generated,
+    Kept,
+};
+
+template <>
+struct EnumSchema<WallState>
+{
+    static constexpr std::array Values = {
+        EnumValue{ WallState::Generated, "generated" },
+        EnumValue{ WallState::Kept, "kept" },
+    };
+};
+
+// A wall brush its parent space built (document/SpaceWalls.h). A kept wall
+// was edited by hand and is no longer rebuilt.
+struct SENCHA_COMPONENT("generated_wall")
+       SENCHA_SCHEMA("generated_wall")
+       SENCHA_SCENE_CHUNK("GWAL")
+GeneratedWall
+{
+    SENCHA_FIELD("slot")
+    SENCHA_TOOLTIP("Which face of the space, which piece of it, and which side.")
+    std::uint32_t Slot = 0;
+
+    SENCHA_FIELD("built")
+    SENCHA_TOOLTIP("The wall's shape and placement as built; any other means it was edited.")
+    std::uint32_t Built = 0;
+
+    SENCHA_FIELD("from")
+    SENCHA_TOOLTIP("What the space's walls were built from; any other means they are stale.")
+    std::uint32_t From = 0;
+
+    SENCHA_FIELD("state")
+    WallState State = WallState::Generated;
 };
 
 #if !defined(SENCHA_CODEGEN)

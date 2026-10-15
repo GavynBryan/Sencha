@@ -29,6 +29,7 @@ namespace
                       { "space", "Space", "a named region of air: a volume brush tagged space" },
                       { "volume", "Volume", "a brush enclosing air, not geometry" },
                       { "opening", "Opening", "a cut through generated walls" },
+                      { "wall", "Wall", "a wall brush a space built, under that space" },
                       { "entity", "Entity", "anything else" } });
     }
 
@@ -51,6 +52,8 @@ std::string_view EntityKind(const EditorScene& scene, EntityId entity)
         return "space";
     if (components.HasComponent<Opening>(entity))
         return "opening";
+    if (components.HasComponent<GeneratedWall>(entity))
+        return "wall";
     if (scene.TryGetBrush(entity) == nullptr)
         return "entity";
     return scene.RoleOf(entity) == BrushRole::Volume ? "volume" : "brush";

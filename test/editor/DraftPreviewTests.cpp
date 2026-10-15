@@ -80,8 +80,10 @@ TEST_F(DraftPreviewTest, ItStagesWhatTheDraftAddsChangesAndDeletes)
     Ok("shell.detach", R"({"subject": "@Shed"})");
     Show();
 
-    EXPECT_EQ(Names(Preview.Added()), (std::set<std::string>{ "Corridor", "Door", "Shed", "Shed wall", "Shed wall 1",
-                                                               "Shed wall 2", "Shed wall 3", "Shed wall 4", "Shed wall 5" }));
+    const std::set<std::string> added = Names(Preview.Added());
+    for (const std::string_view name : { "Corridor", "Corridor north wall", "Door", "Shed", "Shed north wall" })
+        EXPECT_TRUE(added.contains(std::string(name))) << name << " is staged";
+    EXPECT_FALSE(added.contains("Hall")) << "the hall is unchanged; only its walls the corridor meets are";
     EXPECT_TRUE(Names(Preview.Removed()).empty()) << "the draft deletes nothing";
 
     const Transform3f* door = WorldOf(Preview.Added(), "Door");

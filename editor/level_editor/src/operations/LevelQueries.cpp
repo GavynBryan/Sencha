@@ -91,12 +91,14 @@ namespace
         entry.Definition.Name = "level.summary";
         entry.Definition.Category = "Level";
         entry.Definition.Description =
-            "Counts, overall bounds and one line per entity of the focus level.";
+            "Counts, overall bounds and one line per entity of the focus level, leaving out the wall brushes "
+            "spaces built (deps on a space counts them).";
         entry.Definition.Parameters = Root({ Limit(200) });
         entry.Definition.Result = Root({
             DataField::Field("document", DataFieldKind::String, {}, "the level's asset path"),
             DataField::Field("entity_count", DataFieldKind::Int, {}, {}),
-            DataField::Field("brush_count", DataFieldKind::Int, {}, "solid brushes"),
+            DataField::Field("brush_count", DataFieldKind::Int, {}, "solid brushes, not counting walls"),
+            DataField::Field("wall_count", DataFieldKind::Int, {}, "wall brushes spaces built"),
             Bounds("min"),
             Bounds("max"),
             DataField::ArrayOf("entities", {}, {}, EntityRecordSchema(), true),
@@ -108,14 +110,21 @@ namespace
             const std::size_t limit = LimitFrom(arguments);
             std::optional<Aabb3d> overall;
             std::int64_t brushes = 0;
+            std::int64_t walls = 0;
+            std::size_t listable = 0;
             JsonValue::Array entities;
             for (const EntityId entity : scene.GetAllEntities())
             {
-                if (scene.TryGetBrush(entity) != nullptr && scene.RoleOf(entity) == BrushRole::Solid)
-                    ++brushes;
                 if (const std::optional<Aabb3d> bounds = SpatialExtent(scene, entity))
                     overall = overall ? overall->ExpandedToInclude(*bounds) : *bounds;
-                if (entities.size() < limit)
+                if (scene.GetRegistry().Components.HasComponent<GeneratedWall>(entity))
+                {
+                    ++walls;
+                    continue;
+                }
+                if (scene.TryGetBrush(entity) != nullptr && scene.RoleOf(entity) == BrushRole::Solid)
+                    ++brushes;
+                if (++listable <= limit)
                     entities.push_back(EntityRecordJson(document, entity));
             }
             const std::size_t count = scene.GetAllEntities().size();
@@ -123,10 +132,11 @@ namespace
                 { "document", JsonValue(document.SourceAssetPath()) },
                 { "entity_count", JsonValue(static_cast<double>(count)) },
                 { "brush_count", JsonValue(static_cast<double>(brushes)) },
+                { "wall_count", JsonValue(static_cast<double>(walls)) },
                 { "min", overall ? PointJson(overall->Min) : JsonValue{} },
                 { "max", overall ? PointJson(overall->Max) : JsonValue{} },
                 { "entities", JsonValue(std::move(entities)) },
-                { "truncated", JsonValue(count > limit) },
+                { "truncated", JsonValue(listable > limit) },
             }));
         };
         return entry;

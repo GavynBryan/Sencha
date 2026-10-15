@@ -38,6 +38,9 @@ class EditorWorkspace
 {
 public:
     EditorWorkspace(LoggingProvider& logging, CommandStack& commands);
+    ~EditorWorkspace();
+    EditorWorkspace(const EditorWorkspace&) = delete;
+    EditorWorkspace& operator=(const EditorWorkspace&) = delete;
 
     // The document all editing binds: the focus zone's document in world mode,
     // the single anonymous document in legacy mode. Long-lived objects resolve

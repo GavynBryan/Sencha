@@ -22,27 +22,6 @@ namespace
     {
         return std::to_string(count) + " " + std::string(what);
     }
-
-    // What the draft would change, and how many more or fewer problems the
-    // level would have for it.
-    std::string Summary(LevelTarget& level, const LevelDraft& draft)
-    {
-        std::size_t added = 0, changed = 0, removed = 0;
-        for (const EntityChange& change : draft.Changes.Changes)
-            (!change.Before ? added : !change.After ? removed : changed) += 1;
-        std::string summary = draft.Label + " · " + Counted(added, "new") + ", " + Counted(changed, "changed") + ", "
-            + Counted(removed, "removed");
-        if (draft.State == LevelDraftState::Failed)
-            return summary + " · failed";
-        if (const EditorDocument* base = level.BaseOf(draft))
-        {
-            const long delta = static_cast<long>(SpaceDiagnostics(draft.Document->GetScene(), std::nullopt).size())
-                - static_cast<long>(SpaceDiagnostics(base->GetScene(), std::nullopt).size());
-            if (delta != 0)
-                summary += " · " + std::string(delta > 0 ? "+" : "") + std::to_string(delta) + " problems";
-        }
-        return summary;
-    }
 }
 
 ProposalTray::ProposalTray(LevelTarget& level, EditorOperations& operations, NoticeQueue& notices,
@@ -87,7 +66,7 @@ ExplorerPage ProposalTray::Explore(const ExplorerQuery& query)
     {
         if (!draft->OpenedFrom.empty())
             open.push_back(std::filesystem::path(draft->OpenedFrom).lexically_normal().string());
-        const std::string label = Summary(Level, *draft);
+        const std::string label = Summary(*draft);
         if (matches(label) && CountOnPage(page, query))
             page.Items.push_back({ .Key = std::string(kDraftKey) + draft->Id, .Label = label,
                                    .Current = draft.get() == Level.PreviewedDraft() });
@@ -149,4 +128,36 @@ void ProposalTray::Settle(std::string_view operation, std::string_view done)
         Notices.Post(message->AsString(), NoticeTone::Warning, NoticeClockNow());
     else
         Notices.Post(std::string(done) + " '" + label + "'", NoticeTone::Done, NoticeClockNow());
+}
+
+long ProposalTray::ProblemDelta(const LevelDraft& draft, const EditorDocument& base)
+{
+    const auto same = [&](const CountedDelta& counted) {
+        return counted.DraftRevision == draft.Document->Revision() && counted.BaseInstance == base.Instance()
+            && counted.BaseRevision == base.Revision();
+    };
+    if (const auto found = Deltas.find(draft.Id); found != Deltas.end() && same(found->second))
+        return found->second.Delta;
+    const long delta = static_cast<long>(SpaceDiagnostics(draft.Document->GetScene(), std::nullopt).size())
+        - static_cast<long>(SpaceDiagnostics(base.GetScene(), std::nullopt).size());
+    Deltas[draft.Id] = { draft.Document->Revision(), base.Instance(), base.Revision(), delta };
+    return delta;
+}
+
+// What the draft would change, and how many more or fewer problems the level
+// would have for it.
+std::string ProposalTray::Summary(const LevelDraft& draft)
+{
+    std::size_t added = 0, changed = 0, removed = 0;
+    for (const EntityChange& change : draft.Changes.Changes)
+        if (!ChangesGeneratedWall(change))
+            (!change.Before ? added : !change.After ? removed : changed) += 1;
+    std::string summary = draft.Label + " · " + Counted(added, "new") + ", " + Counted(changed, "changed") + ", "
+        + Counted(removed, "removed");
+    if (draft.State == LevelDraftState::Failed)
+        return summary + " · failed";
+    if (const EditorDocument* base = Level.BaseOf(draft))
+        if (const long delta = ProblemDelta(draft, *base); delta != 0)
+            summary += " · " + std::string(delta > 0 ? "+" : "") + std::to_string(delta) + " problems";
+    return summary;
 }

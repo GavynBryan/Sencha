@@ -116,9 +116,11 @@ private:
     std::uint32_t DraftsBegun = 0;
 };
 
-// The entities a change set created, modified and deleted, by id and name,
-// and its schema followed by `extra`.
+// The entities a change set created, modified and deleted, by id and name, the
+// wall brushes spaces built counted apart, and its schema followed by `extra`.
 [[nodiscard]] JsonValue::Object ChangeSummary(const EntityChangeSet& changes);
+// Whether the change is to a wall brush a space built, as it now stands.
+[[nodiscard]] bool ChangesGeneratedWall(const EntityChange& change);
 [[nodiscard]] DataFieldSchema ChangeSummarySchema(std::vector<DataFieldSchema> extra = {});
 
 // What every mutation's answer adds: created, modified and deleted entities and

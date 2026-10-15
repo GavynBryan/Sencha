@@ -14,7 +14,7 @@ struct SelectableRef;
 
 // How the level's operations name entities in their answers.
 
-// space, opening, volume, brush or entity.
+// space, opening, wall, volume, brush or entity.
 [[nodiscard]] std::string_view EntityKind(const EditorScene& scene, EntityId entity);
 
 // {id, name}: enough to name an entity back in a later request.
