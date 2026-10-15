@@ -60,7 +60,7 @@ struct ZoneNavigation::Backend
     std::vector<GameplayTagId> AreaTags;
     // Sorted by id.
     std::vector<NavLinkInfo> Links;
-    // Distinct bound traversal kinds (at most 64, one capability bit each), and
+    // Distinct bound traversal kinds (at most kNavMaxTraversalKinds), and
     // each link's index into them.
     std::vector<GameplayTagId> TraversalKinds;
     std::vector<std::uint8_t> LinkKindIndex;

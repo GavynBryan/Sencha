@@ -53,6 +53,10 @@ struct SENCHA_COMPONENT("sencha.motion_request") MotionRequest
     float GravityScale = 1.0f;
     // Turned about UpAxis as the character moves.
     float TurnRadians = 0.0f;
+    // An action, root motion or held motion replaced the locomotion mode's
+    // planar velocity, so the character went where it was carried rather than
+    // where its intent asked.
+    bool PlanarOverridden = false;
 };
 
 static_assert(std::is_trivially_copyable_v<MotionRequest>);

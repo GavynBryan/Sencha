@@ -169,6 +169,23 @@ TEST(MotionCompositionTest, ComposesRelativeChannelsSupportAndImpulse)
     EXPECT_FLOAT_EQ(request.GravityScale, 0.5f);
 }
 
+TEST(MotionCompositionTest, RecordsWhetherAnActionReplacedThePlanarChannel)
+{
+    const LocomotionOutput locomotion{ .Velocity = Vec3d(3.0f, 0.0f, 0.0f) };
+
+    MotionAxisOverride jumpOnly;
+    jumpOnly.HasUp = true;
+    jumpOnly.UpVelocity = 5.0f;
+    EXPECT_FALSE(ComposeMotion(locomotion, nullptr, jumpOnly, MotionImpulse{}).PlanarOverridden);
+    EXPECT_FALSE(ComposeMotion(locomotion, nullptr, MotionAxisOverride{}, MotionImpulse{ .DeltaVelocity = Vec3d(9.0f, 0.0f, 0.0f) })
+                     .PlanarOverridden);
+
+    MotionAxisOverride carried;
+    carried.HasPlanar = true;
+    carried.PlanarVelocity = Vec3d(0.0f, 0.0f, 0.0f);
+    EXPECT_TRUE(ComposeMotion(locomotion, nullptr, carried, MotionImpulse{}).PlanarOverridden);
+}
+
 TEST(MotionCompositionTest, SystemConsumesTransientContributionsOnce)
 {
     World world;

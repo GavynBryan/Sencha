@@ -2,7 +2,9 @@
 
 #include <ecs/EntityId.h>
 
+#include <optional>
 #include <string>
+#include <string_view>
 
 // Entity identity is generational, so text that names an entity names both
 // halves: printing the index alone lets a recycled slot read as the entity it
@@ -12,3 +14,7 @@
 // diagnostics that render text, not on every translation unit that handles an
 // entity.
 void AppendEntityText(std::string& out, EntityId entity);
+
+// The inverse: "index:generation" with nothing else. Says nothing about whether
+// the entity is alive; the caller checks that against its world.
+[[nodiscard]] std::optional<EntityId> ParseEntityText(std::string_view text);

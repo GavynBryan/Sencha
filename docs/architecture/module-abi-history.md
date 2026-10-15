@@ -441,3 +441,20 @@ grows, and a binding whose context names an unregistered tag is unbound.
 options page that lease consumers from it, so they hand their leases back to a
 live router at shutdown; a windowed host with a pause menu aborted on exit
 ("pure virtual method called"). The member order is part of the layout.
+
+## v29
+
+Navigation agents (`docs/plans/navigation-agent.md`); this entry gathers every
+stage of that plan, which bumps the version once.
+
+**Movement.** `MotionRequest` gains `PlanarOverridden`, set by `ComposeMotion`
+when an action, root motion or held motion replaced the locomotion mode's
+planar velocity. A dilated character's step now writes its last composed
+request back to the component.
+
+**World.** `RuntimeWorld::ZoneOf` names the zone whose partition holds an
+entity. `ParseEntityText` (`ecs/EntityText.h`) reads what `AppendEntityText`
+writes.
+
+**Navigation.** `kNavMaxTraversalKinds` names the per-zone cap on distinct
+traversal kinds (64, unchanged).

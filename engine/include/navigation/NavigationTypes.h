@@ -110,6 +110,9 @@ struct NavLinkCostOverride
     float Cost = 0.0f;
 };
 
+// Distinct traversal kinds one zone binds; a link of any further kind is unusable.
+inline constexpr std::size_t kNavMaxTraversalKinds = 64;
+
 // Everything that shapes one query besides its endpoints. The spans are
 // caller-owned transient constraints: navigation reads them during the query
 // and keeps nothing, so an agent's memory of failed links stays with the agent.
