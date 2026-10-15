@@ -1176,6 +1176,19 @@ and world states, and annotate levels that were built by hand.
   through is a `NavRaycast` from a metre on one side to a metre on the other.
   The scenario (held, denied, unknown kinds, and the in-memory navigation)
   moved out of `nav.reachable` into `LevelNavigation`, which both use.
+- `world.crossings` reads a zone's walkable borders from its snapshot. A
+  stretch of border lying along one of the zone's vertical bound faces (within
+  the agent radius and two cells), with one zone beyond, is a crossing. The
+  parts docks between the two zones cover are taken away, and so are pieces too
+  narrow to walk through. When the zone beyond is open, `confirmed` says whether
+  its own walkable border meets the stretch. On the template `traversal3` it
+  finds the shared floor between Zone 1 and Room 2 running 4.65 m past each
+  end of their 6 m dock.
+- `dock.place_at` writes the world scene, so the client focuses it first
+  (`world.focus target=world`); in a draft of the world scene the dock is a
+  proposal like any other edit. It builds the dock through the editor's
+  `WorldDockRecipe` (dock id minted, the zone beyond found as the dock tool
+  finds it) and sizes it to the crossing or the opening.
 
 ### Not on the critical path
 

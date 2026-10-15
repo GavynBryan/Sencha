@@ -10,6 +10,7 @@
 #include "LevelQueries.h"
 #include "MaterialOperations.h"
 #include "SpaceOperations.h"
+#include "WorldCrossings.h"
 
 #include <iterator>
 
@@ -31,6 +32,7 @@ std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOper
     Append(entries, MaterialOperations(level));
     Append(entries, ComponentOperations(level));
     Append(entries, InstanceOperations(level));
+    Append(entries, WorldCrossingOperations(level));
     Append(entries, LevelDraftOperations(level, operations));
     Append(entries, LevelChangeOperations(level));
     return entries;

@@ -241,7 +241,7 @@ void LevelWorkspace::BuildOperations()
     });
     std::vector<std::string> errors;
     if (!Operations.Register(std::string(kLevelOperations), LevelOperations(Workspace->Level, Operations), errors)
-        || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors)
+        || !Operations.Register(std::string(kWorldOperations), WorldOperations(Workspace->World), errors)
         || !Operations.Register(std::string(kViewOperations), ViewOperations({ Workspace->World, Workspace->Layout, Workspace->Selection, Workspace->Commands }), errors))
         for (const std::string& error : errors)
             EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);

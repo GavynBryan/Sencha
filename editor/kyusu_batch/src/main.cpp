@@ -7,6 +7,7 @@
 #include "operations/OperationReference.h"
 #include "operations/OperationScript.h"
 #include "operations/ViewOperations.h"
+#include "operations/WorldFocus.h"
 #include "operations/WorldQueries.h"
 #include "project/Project.h"
 #include "workspace/EditorWorkspace.h"
@@ -83,21 +84,10 @@ namespace
     {
         std::vector<std::string> errors;
         if (operations.Register("level", LevelOperations(level, operations), errors)
-            && operations.Register("world", WorldQueryOperations(world), errors))
+            && operations.Register("world", WorldOperations(world), errors))
             return true;
         for (const std::string& error : errors)
             std::fprintf(stderr, "kyusu_batch: %s\n", error.c_str());
-        return false;
-    }
-
-    // By id first, then by name.
-    bool FocusZone(WorldDocument& world, const std::string& zone)
-    {
-        if (const std::optional<ZoneId> id = ZoneIdFromString(zone))
-            return world.SetFocusZone(*id);
-        for (const ZoneHeader& header : world.Manifest().Zones)
-            if (header.Name == zone)
-                return world.SetFocusZone(header.Id);
         return false;
     }
 }
@@ -150,10 +140,14 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "kyusu_batch: could not open '%s'\n", opened.c_str());
         return kCouldNotStart;
     }
-    if (!options.Zone.empty() && !FocusZone(world, options.Zone))
+    if (!options.Zone.empty())
     {
-        std::fprintf(stderr, "kyusu_batch: the world has no zone '%s'\n", options.Zone.c_str());
-        return kCouldNotStart;
+        const std::optional<ZoneId> zone = ZoneNamed(world.Manifest(), options.Zone);
+        if (!zone || !world.SetFocusZone(*zone))
+        {
+            std::fprintf(stderr, "kyusu_batch: the world has no zone '%s'\n", options.Zone.c_str());
+            return kCouldNotStart;
+        }
     }
 
     CommandStack commands;

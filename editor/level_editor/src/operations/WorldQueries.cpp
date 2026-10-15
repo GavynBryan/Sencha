@@ -3,6 +3,7 @@
 #include "DiagnosticRecords.h"
 #include "LevelJson.h"
 #include "LevelSubjects.h"
+#include "WorldFocus.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
@@ -137,5 +138,13 @@ std::vector<EditorOperationEntry> WorldQueryOperations(const WorldDocument& worl
     std::vector<EditorOperationEntry> entries;
     entries.push_back(Summary(world));
     entries.push_back(Diagnostics(world));
+    return entries;
+}
+
+std::vector<EditorOperationEntry> WorldOperations(WorldDocument& world)
+{
+    std::vector<EditorOperationEntry> entries = WorldQueryOperations(world);
+    for (EditorOperationEntry& entry : WorldFocusOperations(world))
+        entries.push_back(std::move(entry));
     return entries;
 }

@@ -11,3 +11,6 @@ class WorldDocument;
 // reports). The executors read `world` on each call, so it must outlive their
 // registration.
 [[nodiscard]] std::vector<EditorOperationEntry> WorldQueryOperations(const WorldDocument& world);
+
+// The world's queries and world.focus, as the hosts register them.
+[[nodiscard]] std::vector<EditorOperationEntry> WorldOperations(WorldDocument& world);

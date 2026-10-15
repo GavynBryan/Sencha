@@ -88,8 +88,11 @@ of 0 makes a doorway. Faces are named by the direction they look (`north`,
    `component.set` for a field `entity.describe` shows.
 4. Check: `level.diagnostics` must come back empty or be explained;
    `nav.reachable from=[...] to=[...]` between rooms, with points just above a
-   floor; `measure.clearance` in corridors; `deps subject=@Name`; the plan
-   again.
+   floor; `space.graph` for every room at once (pass `held=[...]` and
+   `denied=[...]` for a scenario); `measure.clearance` in corridors;
+   `deps subject=@Name`; the plan again. In a world, `world.crossings` lists
+   floor that runs into the next zone with no dock; `world.focus target=world`
+   and `dock.place_at` (in a draft) propose one.
 5. Hand it over. Live: tell the designer what the draft proposes; they accept
    in Kyusu (Ctrl+Enter in the Proposals tray) or ask you to `draft.accept`.
    Before accepting, `changes.since mark=<mark>` says what they changed
