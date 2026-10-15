@@ -29,6 +29,7 @@
 #include <string_view>
 #include <type_traits>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -256,6 +257,10 @@ public:
     // The material that marks a volume face as open: it gets no wall.
     [[nodiscard]] const AssetRef& OpenFaceMaterial() const { return OpenFaceMaterial_; }
     void SetOpenFaceMaterial(AssetRef material) { OpenFaceMaterial_ = std::move(material); }
+    // The shell inputs a space's walls were last found to match (SpaceWalls.h).
+    // Derived and never saved, so a loaded level checks its walls once.
+    [[nodiscard]] std::uint32_t CheckedWallInputs(EntityId space) const;
+    void SetCheckedWallInputs(EntityId space, std::uint32_t inputs);
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).
@@ -269,6 +274,7 @@ private:
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
     mutable VolumeEvaluations Volumes_;
+    std::unordered_map<std::uint64_t, std::uint32_t> CheckedWallInputs_;
     AssetRef OpenFaceMaterial_;
     BrushEvaluationPolicy InteractivePolicy_ = BrushEvaluationPolicy::Interactive(4096);
     BrushPlacementFacts PlacementFacts_{ *this }; // after the store and policy it reads

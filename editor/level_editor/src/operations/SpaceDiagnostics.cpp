@@ -46,29 +46,20 @@ namespace
                  std::move(message) };
     }
 
-    // Walls built from something other than the space as it stands: none at
-    // all for a level saved before its space was walled, and a kept wall the
+    // Walls that are not what the space as it stands calls for: none at all
+    // for a level saved before its space was walled, and a kept wall the
     // space has changed under since.
     void WallDiagnostics(const EditorScene& scene, EntityId space, const SpaceShell& shell,
                          std::vector<ContentRiskRecord>& records)
     {
-        const World& components = scene.GetRegistry().Components;
-        bool stale = false;
-        for (const EntityId wall : SpaceWalls(scene, space))
-        {
-            const GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
-            if (built.From == shell.Inputs)
-                continue;
-            if (built.State == WallState::Kept)
-                records.push_back(About(scene, wall, { "wall.kept_stale", ContentRiskSeverity::Warning },
-                                        "edited by hand and kept, and its space has changed since; "
-                                        "shell.rebuild takes it back"));
-            else
-                stale = true;
-        }
-        if (stale || (SpaceWalls(scene, space).empty() && !shell.Result.Refused && !shell.Result.Slabs.empty()))
+        const SpaceWallDrift drift = CompareSpaceWalls(scene, space, shell);
+        for (const EntityId wall : drift.KeptBehind)
+            records.push_back(About(scene, wall, { "wall.kept_stale", ContentRiskSeverity::Warning },
+                                    "reshaped by hand and kept, and its space has changed since; "
+                                    "shell.rebuild takes it back"));
+        if (drift.Stale)
             records.push_back(About(scene, space, { "shell.stale", ContentRiskSeverity::Warning },
-                                    "its walls were built from something else; the next edit to the level, or "
+                                    "its walls are not what it calls for; the next edit to the level, or "
                                     "shell.rebuild, builds them again"));
     }
 }

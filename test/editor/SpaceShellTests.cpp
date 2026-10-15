@@ -161,13 +161,13 @@ TEST_F(SpaceShellTest, MovingOrThickeningTheSpaceRewritesTheSameWalls)
     const std::vector<EntityId> walls = SpaceWalls(Scene(), room);
 
     Scene().GetRegistry().Components.TryGet<LocalTransform>(room)->Value.Position.X = 10.0f;
-    Scene().RefreshDerivedTransforms();
-    EXPECT_TRUE(SpaceWallsStale(Scene(), room));
     Rebuild();
     ExpectNear(CookedBounds().Min, { 5.75f, -0.25f, -3.25f });
 
     Scene().GetRegistry().Components.TryGet<Shell>(room)->Thickness = 0.5f;
+    EXPECT_TRUE(SpaceWallsStale(Scene(), room));
     Rebuild();
+    EXPECT_FALSE(SpaceWallsStale(Scene(), room));
     ExpectNear(CookedBounds().Min, { 5.5f, -0.5f, -3.5f });
     EXPECT_EQ(SpaceWalls(Scene(), room), walls) << "a rebuild rewrites each slot's brush, never mints new ones";
 }

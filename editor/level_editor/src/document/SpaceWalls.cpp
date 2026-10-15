@@ -133,18 +133,21 @@ namespace
         return std::max<std::uint32_t>(static_cast<std::uint32_t>(hash ^ (hash >> 32)), 1);
     }
 
+    std::uint32_t ShapeDigest(const BrushMesh& mesh, const Transform3f& local)
+    {
+        std::uint64_t hash = kFnv1aOffsetBasis;
+        HashShape(hash, mesh);
+        HashFnv1aValue(hash, local.Position);
+        HashFnv1aValue(hash, local.Rotation);
+        HashFnv1aValue(hash, local.Scale);
+        return Fold(hash);
+    }
+
     std::uint32_t WallDigest(const EditorScene& scene, EntityId wall)
     {
         const BrushRecord* record = RecordOf(scene, wall);
         const Transform3f* local = scene.TryGetLocalTransform(wall);
-        if (record == nullptr || local == nullptr)
-            return 0;
-        std::uint64_t hash = kFnv1aOffsetBasis;
-        HashShape(hash, record->Mesh);
-        HashFnv1aValue(hash, local->Position);
-        HashFnv1aValue(hash, local->Rotation);
-        HashFnv1aValue(hash, local->Scale);
-        return Fold(hash);
+        return record != nullptr && local != nullptr ? ShapeDigest(record->Mesh, *local) : 0;
     }
 
     std::uint32_t Slot(std::uint32_t face, std::uint32_t piece, ShellSide side)
@@ -208,10 +211,42 @@ namespace
         }
     }
 
-    void Rewrite(EditorScene& scene, EntityId wall, BrushMesh mesh)
+    // One wall brush the shell calls for, in the space's frame.
+    struct PlannedWall
     {
-        scene.SetTransform(wall, Transform3f::Identity());
-        scene.SetBrushMesh(wall, std::move(mesh));
+        std::uint32_t Slot = 0;
+        std::uint32_t Slab = 0;
+        ShellSide     Side = ShellSide::Room;
+        BrushMesh     Mesh;
+        std::uint32_t Digest = 0;
+    };
+
+    std::vector<PlannedWall> PlanWalls(const EditorScene& scene, EntityId space, const SpaceShell& shell)
+    {
+        // A face split among neighbours gives several slabs; each is a piece of it.
+        std::vector<std::uint32_t> pieces(shell.Result.Slabs.size());
+        std::map<std::uint32_t, std::uint32_t> perFace;
+        for (std::size_t slab = 0; slab < shell.Result.Slabs.size(); ++slab)
+            pieces[slab] = perFace[shell.Result.Slabs[slab].SourceFace]++;
+
+        const Transform3f world = *scene.TryGetWorldTransform(space);
+        std::vector<PlannedWall> planned;
+        for (ShellSurface& surface : ShellSurfaces(shell.Result))
+        {
+            for (BrushVertex& vertex : surface.Mesh.Vertices)
+                vertex.Position = world.InverseTransformPoint(vertex.Position);
+            (void)BrushValidateAndRepair(surface.Mesh, 0.0f);
+            const std::uint32_t digest = ShapeDigest(surface.Mesh, Transform3f::Identity());
+            planned.push_back({ Slot(shell.Result.Slabs[surface.Slab].SourceFace, pieces[surface.Slab], surface.Side),
+                                surface.Slab, surface.Side, std::move(surface.Mesh), digest });
+        }
+        return planned;
+    }
+
+    const PlannedWall* PlannedAt(const std::vector<PlannedWall>& planned, std::uint32_t slot)
+    {
+        const auto found = std::ranges::find(planned, slot, &PlannedWall::Slot);
+        return found != planned.end() ? &*found : nullptr;
     }
 }
 
@@ -298,17 +333,34 @@ std::vector<EntityId> SpaceWalls(const EditorScene& scene, EntityId space)
     return walls;
 }
 
+SpaceWallDrift CompareSpaceWalls(const EditorScene& scene, EntityId space, const SpaceShell& shell)
+{
+    const std::vector<PlannedWall> planned = PlanWalls(scene, space, shell);
+    const World& components = scene.GetRegistry().Components;
+    SpaceWallDrift drift;
+    std::size_t matched = 0;
+    for (const EntityId wall : SpaceWalls(scene, space))
+    {
+        const GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
+        const PlannedWall* plan = PlannedAt(planned, built.Slot);
+        matched += plan != nullptr ? 1 : 0;
+        // A wall reshaped by hand is kept from the next rebuild on.
+        if (built.State == WallState::Kept || WallDigest(scene, wall) != built.Built)
+        {
+            if (plan == nullptr || plan->Digest != built.Built)
+                drift.KeptBehind.push_back(wall);
+        }
+        else if (plan == nullptr || plan->Digest != built.Built)
+            drift.Stale = true;
+    }
+    drift.Stale = drift.Stale || matched != planned.size();
+    return drift;
+}
+
 bool SpaceWallsStale(const EditorScene& scene, EntityId space)
 {
-    const std::uint32_t inputs = SpaceShellInputs(scene, space);
-    if (inputs == 0)
-        return false;
-    const std::vector<EntityId> walls = SpaceWalls(scene, space);
-    const World& components = scene.GetRegistry().Components;
-    return walls.empty() || std::ranges::any_of(walls, [&](EntityId wall) {
-        const GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
-        return built.State == WallState::Generated && built.From != inputs;
-    });
+    const std::optional<SpaceShell> shell = BuildSpaceShell(scene, space);
+    return shell && CompareSpaceWalls(scene, space, *shell).Stale;
 }
 
 void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder, EntityId space, bool reclaim)
@@ -322,49 +374,41 @@ void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder,
     for (const EntityId wall : SpaceWalls(scene, space))
         unclaimed[components.TryGet<GeneratedWall>(wall)->Slot] = wall;
 
-    // A face split among neighbours gives several slabs; each is a piece of it.
-    std::vector<std::uint32_t> pieces(shell->Result.Slabs.size());
-    std::map<std::uint32_t, std::uint32_t> perFace;
-    for (std::size_t slab = 0; slab < shell->Result.Slabs.size(); ++slab)
-        pieces[slab] = perFace[shell->Result.Slabs[slab].SourceFace]++;
-
-    const Transform3f world = *scene.TryGetWorldTransform(space);
-    for (ShellSurface& surface : ShellSurfaces(shell->Result))
+    bool wrote = false;
+    for (PlannedWall& plan : PlanWalls(scene, space, *shell))
     {
-        const ShellSlab& slab = shell->Result.Slabs[surface.Slab];
-        const std::uint32_t slot = Slot(slab.SourceFace, pieces[surface.Slab], surface.Side);
-        for (BrushVertex& vertex : surface.Mesh.Vertices)
-            vertex.Position = world.InverseTransformPoint(vertex.Position);
-        (void)BrushValidateAndRepair(surface.Mesh, 0.0f);
-
-        EntityId wall;
-        if (const auto found = unclaimed.find(slot); found != unclaimed.end())
+        const auto found = unclaimed.find(plan.Slot);
+        if (found == unclaimed.end())
         {
-            wall = found->second;
-            unclaimed.erase(found);
-            GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
-            if (!reclaim && built.State == WallState::Generated && WallDigest(scene, wall) != built.Built)
-            {
-                recorder.Touch(wall);
-                built.State = WallState::Kept;
-            }
-            if (!reclaim && built.State == WallState::Kept)
-                continue;
-            CarryPaint(*scene.TryGetBrushMesh(wall), surface.Mesh);
-            recorder.Touch(wall);
-            Rewrite(scene, wall, std::move(surface.Mesh));
-        }
-        else
-        {
-            wall = scene.CreateBrushFromMesh(Transform3f::Identity(), std::move(surface.Mesh));
+            const EntityId wall = scene.CreateBrushFromMesh(Transform3f::Identity(), std::move(plan.Mesh));
             (void)scene.SetParent(wall, space);
-            components.TryGet<EntityNameComponent>(wall)->Value =
-                InlineString<64>(scene.NextEntityName(WallName(scene, *shell, space, slab, surface.Side)));
-            components.AddComponent(wall, GeneratedWall{});
+            components.TryGet<EntityNameComponent>(wall)->Value = InlineString<64>(
+                scene.NextEntityName(WallName(scene, *shell, space, shell->Result.Slabs[plan.Slab], plan.Side)));
+            components.AddComponent(wall, GeneratedWall{ plan.Slot, plan.Digest, WallState::Generated });
             recorder.Created(wall);
+            wrote = true;
+            continue;
         }
-        *components.TryGet<GeneratedWall>(wall) = GeneratedWall{ slot, WallDigest(scene, wall), shell->Inputs,
-                                                                 WallState::Generated };
+        const EntityId wall = found->second;
+        unclaimed.erase(found);
+        GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
+        const bool reshaped = WallDigest(scene, wall) != built.Built;
+        if (!reclaim && built.State == WallState::Generated && reshaped)
+        {
+            recorder.Touch(wall);
+            built.State = WallState::Kept;
+            wrote = true;
+        }
+        if (!reclaim && built.State == WallState::Kept)
+            continue;
+        if (built.State == WallState::Generated && !reshaped && built.Built == plan.Digest)
+            continue;
+        recorder.Touch(wall);
+        CarryPaint(*scene.TryGetBrushMesh(wall), plan.Mesh);
+        scene.SetTransform(wall, Transform3f::Identity());
+        scene.SetBrushMesh(wall, std::move(plan.Mesh));
+        built = GeneratedWall{ plan.Slot, plan.Digest, WallState::Generated };
+        wrote = true;
     }
 
     for (const auto& [slot, wall] : unclaimed)
@@ -373,17 +417,23 @@ void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder,
             continue;
         recorder.Touch(wall);
         scene.DestroyEntity(wall);
+        wrote = true;
     }
+    scene.SetCheckedWallInputs(space, shell->Inputs);
+    if (!wrote)
+        return;
     scene.RefreshDerivedTransforms();
     document.MarkDirty();
 }
 
 void RebuildStaleSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder)
 {
-    std::vector<EntityId> stale;
-    for (const EntityId entity : document.GetScene().GetAllEntities())
-        if (SpaceWallsStale(document.GetScene(), entity))
-            stale.push_back(entity);
-    for (const EntityId space : stale)
+    std::vector<EntityId> moved;
+    const EditorScene& scene = document.GetScene();
+    for (const EntityId entity : scene.GetAllEntities())
+        if (const std::uint32_t inputs = SpaceShellInputs(scene, entity);
+            inputs != 0 && inputs != scene.CheckedWallInputs(entity))
+            moved.push_back(entity);
+    for (const EntityId space : moved)
         RebuildSpaceWalls(document, recorder, space);
 }

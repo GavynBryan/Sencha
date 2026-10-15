@@ -109,6 +109,8 @@ TEST_F(SpaceOperationsTest, ADoorBetweenAHallAndACorridorIsCutOnceAndSeenThrough
     EXPECT_EQ(Walls(), 27u);
 
     const JsonValue door = Ok("opening.create", R"({"at": [8.1, 1, 3]})");
+    EXPECT_EQ(door.Find("walls")->Find("modified")->AsNumber(), 3.0)
+        << "only the shared wall it cuts: a side for each room and its outside";
     EXPECT_EQ(door.Find("space")->Find("name")->AsString(), "Hall");
     EXPECT_EQ(door.Find("opening")->Find("name")->AsString(), "Hall door");
     Scene().RefreshDerivedTransforms();

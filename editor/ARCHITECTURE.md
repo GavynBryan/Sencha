@@ -281,8 +281,8 @@ that opens a project in a new process).
   `BrushVolume` (the `volume` tag, in `BrushComponents.h`: a brush enclosing
   air, never geometry), and in `SpaceComponents.h` `Space`, `Shell` (walls
   built around the volume), `GeneratedWall` (a wall brush its parent space
-  built: its slot, its digest as built, what it was built from, and whether
-  it was kept after a hand edit) and `Opening` (a cut through walls). All are
+  built: its slot, its shape's digest as built, and whether it was kept
+  after a hand edit) and `Opening` (a cut through walls). All are
   declared editor-only. `NoteComponent.h` holds `Note` (text, author, open
   or resolved), a remark parented to what it is about, editor-only too.
   `EditorScene::RoleOf` says whether a brush entity is a volume;
@@ -295,11 +295,12 @@ that opens a project in a new process).
   `CutOpenings` in the world against the shelled volumes and openings near
   it, `ShellSurfaces` splits each slab into a room side, a neighbour's side
   and an outside, and `RebuildSpaceWalls` matches them to wall brushes by
-  slot, rewriting, creating and deleting, leaving a hand-edited wall kept
-  and carrying paint across by plane. `SpaceShellInputs` hashes what the
-  walls are built from; `RebuildStaleSpaceWalls` rebuilds every space whose
-  generated walls were built from other inputs, and the level target runs
-  it inside every mutation so the walls land in the same change set, and
+  slot, writing only the walls that differ from what was built, leaving a
+  hand-reshaped wall kept and carrying paint across by plane.
+  `SpaceShellInputs` hashes what the walls are built from, never saved;
+  `RebuildStaleSpaceWalls` checks every space whose hash moved since
+  `EditorScene::CheckedWallInputs`, and the level target runs it inside
+  every mutation so the walls land in the same change set, and
   `EditorWorkspace` runs it as the command stack's execute follow-up, so a
   face drag, a delete or an inspector edit carries its walls in its own undo
   step.

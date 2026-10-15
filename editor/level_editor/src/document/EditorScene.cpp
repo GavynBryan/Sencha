@@ -482,6 +482,7 @@ void EditorScene::Clear()
     BrushMeshes.Clear();
     Volumes_.Clear();
     PlacementFacts_.Clear();
+    CheckedWallInputs_.clear();
     HiddenEntities.clear();
     LockedEntities.clear();
 }
@@ -668,6 +669,17 @@ bool EditorScene::IsEntityVisible(EntityId entity) const
 {
     const std::uint64_t key = FlagKeyOf(entity);
     return key == 0 || !HiddenEntities.contains(key);
+}
+
+std::uint32_t EditorScene::CheckedWallInputs(EntityId space) const
+{
+    const auto found = CheckedWallInputs_.find((static_cast<std::uint64_t>(space.Index) << 32) | space.Generation);
+    return found != CheckedWallInputs_.end() ? found->second : 0;
+}
+
+void EditorScene::SetCheckedWallInputs(EntityId space, std::uint32_t inputs)
+{
+    CheckedWallInputs_[(static_cast<std::uint64_t>(space.Index) << 32) | space.Generation] = inputs;
 }
 
 BrushRole EditorScene::RoleOf(EntityId entity) const

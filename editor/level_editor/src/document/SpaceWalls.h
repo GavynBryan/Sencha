@@ -33,22 +33,32 @@ struct SpaceShell
 [[nodiscard]] std::optional<SpaceShell> BuildSpaceShell(const EditorScene& scene, EntityId space);
 
 // The hash of everything a space's walls are built from: its volume, shell
-// and placement, the shelled volumes and openings near it, and the open-face
-// material. Zero for anything but a shelled space.
+// and placement, and the shelled volumes and openings near it. Zero for
+// anything but a shelled space. Never saved: it only tells a rebuild which
+// spaces to look at again (EditorScene::CheckedWallInputs).
 [[nodiscard]] std::uint32_t SpaceShellInputs(const EditorScene& scene, EntityId space);
 
 // The wall brushes `space` built, generated and kept.
 [[nodiscard]] std::vector<EntityId> SpaceWalls(const EditorScene& scene, EntityId space);
 
-// Whether the space's walls were built from other inputs than it has now.
+// How a space's wall brushes stand against what its shell calls for now: stale
+// when a rebuild would change them, and the kept walls the shell has moved on
+// from since they were kept.
+struct SpaceWallDrift
+{
+    bool                  Stale = false;
+    std::vector<EntityId> KeptBehind;
+};
+[[nodiscard]] SpaceWallDrift CompareSpaceWalls(const EditorScene& scene, EntityId space, const SpaceShell& shell);
 [[nodiscard]] bool SpaceWallsStale(const EditorScene& scene, EntityId space);
 
-// Writes `space`'s walls: each slot's brush rewritten while it is still what
-// was built, created where missing, deleted where the slot is gone. A brush
-// edited by hand becomes kept and is left alone, unless `reclaim`, which
-// rebuilds kept slots too.
+// Writes `space`'s walls where they differ from what its shell calls for: each
+// slot's brush rewritten while it is still what was built, created where
+// missing, deleted where the slot is gone. A brush reshaped by hand becomes
+// kept and is left alone, unless `reclaim`, which rebuilds kept slots too.
 void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder, EntityId space,
                        bool reclaim = false);
 
-// RebuildSpaceWalls for every shelled space whose walls are stale.
+// RebuildSpaceWalls for every shelled space whose inputs moved since its walls
+// were last checked.
 void RebuildStaleSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder);

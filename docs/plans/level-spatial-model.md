@@ -540,7 +540,8 @@ the revision 3 design, kept for the record.*
 ### 5.6 Invalidation and evaluation
 
 *Under D9 (5.8) the inputs hash below decides when a space's wall brushes are
-rebuilt, and the cook sees ordinary brushes; nothing is evaluated per frame.*
+checked against its shell, and the cook sees ordinary brushes; nothing is
+evaluated per frame.*
 
 - **Inputs:** the volume's mesh and world transform, `shell`, the volumes
   within `thickness` plus tolerance (found by bounds broadphase), and the
@@ -588,16 +589,19 @@ materials as before; a face painted with the open-face material still gets
 nothing.
 
 **Identity.** Each wall brush carries the editor-only `generated_wall`
-component: its slot (volume face, piece of that face, side), the digest of
-the brush as built, and the shell inputs it was built from. The parent is
-the space that built it. The slot is what a rebuild matches on, so a resize
-or move rewrites the same entities.
+component: its slot (volume face, piece of that face, side) and the digest
+of its shape and placement as built. The parent is the space that built it.
+The slot is what a rebuild matches on, so a resize or move rewrites the same
+entities.
 
-**Rebuilding.** A space whose shell inputs (5.6's hash) differ from the hash
-it last built from is rebuilt: each slot's brush is rewritten if it still is
-what was built, created if missing, and deleted if the slot is gone. One
-function does this (`RebuildSpaceWalls`), and it runs in the same undo step
-as the edit that made a space stale:
+**Rebuilding.** A space whose shell inputs (5.6's hash) moved since its
+walls were last checked is checked again: each slot's brush is rewritten
+where what the shell now calls for differs from what was built, created if
+missing, and deleted if the slot is gone, so a door rewrites only the wall it
+cuts. The hash is never saved; the scene remembers the last one it checked
+against, and a loaded level checks each space once. One function does this
+(`RebuildSpaceWalls`), and it runs in the same undo step as the edit that
+moved a space's inputs:
 - every level-target mutation calls it before finishing, drafts included,
   so a proposal's walls are in its change set and in its ghost;
 - every other command on the level (a face drag or bounds handle on a

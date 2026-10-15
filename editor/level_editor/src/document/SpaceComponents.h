@@ -83,7 +83,7 @@ struct EnumSchema<WallState>
 };
 
 // A wall brush its parent space built (document/SpaceWalls.h). A kept wall
-// was edited by hand and is no longer rebuilt.
+// was reshaped by hand and is no longer rebuilt.
 struct SENCHA_COMPONENT("generated_wall")
        SENCHA_SCHEMA("generated_wall")
        SENCHA_SCENE_CHUNK("GWAL")
@@ -94,12 +94,8 @@ GeneratedWall
     std::uint32_t Slot = 0;
 
     SENCHA_FIELD("built")
-    SENCHA_TOOLTIP("The wall's shape and placement as built; any other means it was edited.")
+    SENCHA_TOOLTIP("The wall's shape and placement as built; any other means it was reshaped by hand.")
     std::uint32_t Built = 0;
-
-    SENCHA_FIELD("from")
-    SENCHA_TOOLTIP("What the space's walls were built from; any other means they are stale.")
-    std::uint32_t From = 0;
 
     SENCHA_FIELD("state")
     WallState State = WallState::Generated;
