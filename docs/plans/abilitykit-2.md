@@ -1715,3 +1715,19 @@ Deviations from the plan's wording, each for a stated reason:
   bounded by `kAnimReceivedImpulseTicks`. The authority and a predicting client keep
   the start-tick rule. `ImpulseRequestPresentsRemotely` (which fails without the
   change) shows the remote playing the wave once and returning to idle.
+- **9c delivered: owner state and shared tags.** Codecs send `AbilityGrants`,
+  `AttributeSet` and `GameplayTagContainer` to the owner and `ActorTimeLeases` to
+  everyone; tags declared replicated to all go to every machine. Tests:
+  `TheOwnerIsSentItsActorsGrantsAttributesAndTags` (attributes, tags and grant
+  entries in the client's own numbering), `TaggedFiringReplicatesToRemotes`
+  (present while firing and gone after), `ARemoteActorRunsAtTheScaleItsLeasesSay`,
+  and the declaration's `replicate_to_all`.
+- **Deviation: `replicate_to_all` is a list beside `tags`, not a field per tag.**
+  The declaration stays a list of names, which every existing asset already is.
+- **Deviation: `ActorTime` is not sent.** Its local clock moves every tick, which
+  would cost every ability actor eight bytes a publish to every peer, and every
+  machine computes it from the replicated leases. The owner's actor clock is a
+  prediction concern and is settled with the prediction journal.
+- **Deviation: a grant names its entry, not its override.** The owner binds a grant
+  to the entry it interned for the same key and ability (its prefab's); one it has
+  not interned is held but bound to no input.

@@ -507,6 +507,17 @@ degree). A receiving machine gets the cue log and presentation state with the
 records (`ActiveAbilities` derives both), and presents them with the same
 `AbilityPresentationSystem` and the same first-sight rule.
 
+The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
+(each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
+key, found in the owner's own interned entries; a grant whose entry the owner has
+not interned is held but bound to no input), `AttributeSet` (attributes by name)
+and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
+`gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
+machine instead, at most `kGameplayTagSharedCapacity` at once and without their
+stack counts: what other players' presentation reads, such as `Weapon.Firing`.
+`ActorTimeLeases` go to everyone, so a remote machine animates a dilated actor at
+its scale; each machine runs the actor clock from them.
+
 The loss bounds, each pinned by `test/runtime/AbilityReplicationTests.cpp`:
 
 - a record that began and ended between publishes still presents, through its

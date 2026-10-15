@@ -71,4 +71,5 @@ void PruneActorTimeHistory(ActorTimeLeases& leases, std::uint64_t tick);
 
 #if !defined(SENCHA_CODEGEN)
 #  include <time/ActorTimeLeases.sencha.h>
+#  include <time/ActorTimeLeasesWire.h>
 #endif

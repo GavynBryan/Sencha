@@ -360,3 +360,12 @@ tags with.
 
 **Received impulses.** `AnimRequest` gains the local-only `Received` and
 `Observed`; `NoteAnimImpulsesObserved` and `kAnimReceivedImpulseTicks` are new.
+
+**Owner state and shared tags.** `GameplayTagContainer`, `AttributeSet`,
+`AbilityGrants` and `ActorTimeLeases` replicate through codecs
+(`GameplayTagContainerWire.h`, `AttributeSetWire.h`, `AbilityGrantsWire.h`,
+`ActorTimeLeasesWire.h`), moving the replication table hash.
+`GameplayTagRegistry::SetReplicatedToAll`/`IsReplicatedToAll`,
+`AttributeRegistry::WireKey`/`FindByWireKey` and
+`AbilityGrantEntries::FindByWireKey` are new; `GameplayTagDeclarations` gains
+`ReplicatedToAll`, read from an optional `replicate_to_all` list.

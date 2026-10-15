@@ -148,10 +148,11 @@ void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload rel
         declare(assets, world, held->back(), errors);
     }
 }
-} // namespace
 
-void CollectContentTags(RuntimeAssets& assets, std::vector<std::string>& names, std::vector<std::string>& errors)
+// Every content tag declaration, merged.
+GameplayTagDeclarations ContentTagDeclarations(RuntimeAssets& assets, std::vector<std::string>& errors)
 {
+    GameplayTagDeclarations all;
     for (const std::string& path : PathsOfSubtype(assets, kGameplayTagDeclarationsType))
     {
         // Held only while its names are read: a registered name outlives it.
@@ -163,15 +164,24 @@ void CollectContentTags(RuntimeAssets& assets, std::vector<std::string>& names, 
             errors.push_back(std::format("{} did not load as {}", path, kGameplayTagDeclarationsType));
             continue;
         }
-        names.insert(names.end(), declarations->Tags.begin(), declarations->Tags.end());
+        all.Tags.insert(all.Tags.end(), declarations->Tags.begin(), declarations->Tags.end());
+        all.ReplicatedToAll.insert(all.ReplicatedToAll.end(), declarations->ReplicatedToAll.begin(),
+                                   declarations->ReplicatedToAll.end());
     }
+    return all;
+}
+} // namespace
+
+void CollectContentTags(RuntimeAssets& assets, std::vector<std::string>& names, std::vector<std::string>& errors)
+{
+    const GameplayTagDeclarations all = ContentTagDeclarations(assets, errors);
+    names.insert(names.end(), all.Tags.begin(), all.Tags.end());
+    names.insert(names.end(), all.ReplicatedToAll.begin(), all.ReplicatedToAll.end());
 }
 
 void DeclareContentTags(RuntimeAssets& assets, GameplayTagRegistry& tags, std::vector<std::string>& errors)
 {
-    GameplayTagDeclarations all;
-    CollectContentTags(assets, all.Tags, errors);
-    DeclareGameplayTags(all, tags, errors);
+    DeclareGameplayTags(ContentTagDeclarations(assets, errors), tags, errors);
 }
 
 void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabularyReload reload,

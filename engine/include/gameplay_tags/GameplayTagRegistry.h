@@ -44,12 +44,19 @@ public:
     // Invalid when no tag has the key, or when two registered names share it.
     [[nodiscard]] GameplayTagId FindByWireKey(std::uint32_t key) const;
 
+    // Whether an actor holding the tag shows it to every machine that sees the
+    // actor, not only to its owner: what remote presentation reads, such as a
+    // weapon firing. Exact: a descendant is not marked by its parent.
+    void SetReplicatedToAll(GameplayTagId id, bool replicated);
+    [[nodiscard]] bool IsReplicatedToAll(GameplayTagId id) const;
+
 private:
     struct TagRecord
     {
         std::string Name;
         GameplayTagId Parent;
         std::vector<GameplayTagId> Children;
+        bool ReplicatedToAll = false;
     };
 
     [[nodiscard]] bool IsKnown(GameplayTagId id) const;

@@ -70,4 +70,5 @@ bool RevokeAbilityGrant(AbilityGrants& grants, AbilityGrantId id);
 
 #if !defined(SENCHA_CODEGEN)
 #  include <abilities/AbilityGrants.sencha.h>
+#  include <abilities/AbilityGrantsWire.h>
 #endif

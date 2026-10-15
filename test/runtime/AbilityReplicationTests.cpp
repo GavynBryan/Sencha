@@ -23,6 +23,9 @@
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
 #include <net/NetReplicationComponents.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+#include <time/ActorTimeLeases.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationRuntime.h>
 #include <net/ReplicationSnapshot.h>
@@ -98,10 +101,17 @@ struct Machine
         RegisterAbilityKit(Entities);
         InstallAuthoredVocabulary(Entities);
         GameplayTagRegistry& tags = Entities.GetResource<GameplayTagRegistry>();
+        AttributeRegistry& attributes = Entities.GetResource<AttributeRegistry>();
         for (const char* name : ownTags)
+        {
             (void)tags.RegisterTag(name);
-        for (const char* name : { "cue.shot", "cue.muzzle", "cue.glow" })
+            (void)attributes.RegisterAttribute(name);
+        }
+        for (const char* name : { "cue.shot", "cue.muzzle", "cue.glow", "State.Charged" })
             (void)tags.RegisterTag(name);
+        if (const std::optional<GameplayTagId> firing = tags.RegisterTag("Weapon.Firing"))
+            tags.SetReplicatedToAll(*firing, true);
+        (void)attributes.RegisterAttribute("Energy", 0.0f, 100.0f, 100.0f);
         {
             VerbRegistrationScope verbs(*FindVerbRegistry(Entities), "test");
             VerbDefinition show;
@@ -197,12 +207,15 @@ protected:
         Authority.Entities.AddComponent<LookOrientation>(Actor, LookOrientation{});
         Authority.Entities.AddComponent<InputActionSourceRef>(Actor, InputActionSourceRef{});
         Authority.Entities.AddComponent<AbilityGrants>(Actor, AbilityGrants{});
+        Authority.Entities.AddComponent<NetOwner>(Actor, NetOwner{ .Peer = kOwner });
+        Authority.Entities.AddComponent<AttributeSet>(Actor, AttributeSet{});
     }
 
     void Grant(std::string_view json, std::string_view path)
     {
         const AbilityId ability = Authority.Define(json, path);
-        (void)Client.Define(json, path);
+        // The client's own copy of the grant entry, as its prefab interns one.
+        (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ "g", Client.Define(json, path), {} });
         const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
         (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, entry);
     }
@@ -242,6 +255,7 @@ protected:
         write.Peer = &Peer;
         write.Tick = Now;
         write.Sequence = Peer.NextSnapshotSequence();
+        write.OwnerPeer = ClientPeer;
         const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
         EXPECT_TRUE(written.Ok);
         return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(written.BytesWritten) };
@@ -343,6 +357,9 @@ protected:
     EntityId Actor;
     std::uint64_t Now = 0;
     bool Held[2] = {};
+    static constexpr std::uint32_t kOwner = 1;
+    // Which peer the client is: the actor's owner, or anyone else.
+    std::uint32_t ClientPeer = 2;
 };
 }
 
@@ -510,4 +527,64 @@ TEST_F(AbilityReplication, CueBandwidthPerFiringActorIsMeasured)
     RecordProperty("cue_bytes_per_second", static_cast<int>(perSecond));
     std::cout << "ability bytes per second for one firing actor, to one peer: " << perSecond << "\n";
     EXPECT_LE(perSecond, 360u) << "the presentation budget per firing actor per peer";
+}
+
+constexpr std::string_view kCharging = R"({
+    "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+    "owned_tags": [ "Weapon.Firing", "State.Charged" ],
+    "phases": [ { "key": "p_fire", "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
+
+TEST_F(AbilityReplication, TheOwnerIsSentItsActorsGrantsAttributesAndTags)
+{
+    ClientPeer = kOwner;
+    Grant(kCharging, "asset://abilities/charging.sdata");
+    const AttributeId energy = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+    (void)Authority.Entities.TryGet<AttributeSet>(Actor)->Add(energy, 70.0f);
+    Step({ { kFire, InputEdgeKind::Press } });
+    (void)Publish();
+
+    const World& client = Client.Entities;
+    const AbilityGrants& grants = *client.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Ability, (*client.TryGetResource<AbilityRegistry>()).Find("asset://abilities/charging.sdata"));
+    EXPECT_NE(grants.Entries[0].Entry, kAbilityNoGrantEntry) << "bound to the client's own entry for the same grant";
+    const AttributeId clientEnergy = (*client.TryGetResource<AttributeRegistry>()).FindAttribute("Energy");
+    ASSERT_NE(clientEnergy, energy) << "the machines must number attributes differently for this to prove anything";
+    EXPECT_FLOAT_EQ(client.TryGet<AttributeSet>(Remote())->GetCurrent(clientEnergy), 70.0f);
+    const GameplayTagContainer& tags = *client.TryGet<GameplayTagContainer>(Remote());
+    const GameplayTagRegistry& names = (*client.TryGetResource<GameplayTagRegistry>());
+    EXPECT_TRUE(tags.HasExact(names.FindTag("State.Charged")));
+    EXPECT_TRUE(tags.HasExact(names.FindTag("Weapon.Firing")));
+}
+
+TEST_F(AbilityReplication, TaggedFiringReplicatesToRemotes)
+{
+    Grant(kCharging, "asset://abilities/charging.sdata");
+    Step({ { kFire, InputEdgeKind::Press } });
+    (void)Publish();
+    const World& client = Client.Entities;
+    const GameplayTagRegistry& names = (*client.TryGetResource<GameplayTagRegistry>());
+    const GameplayTagContainer* tags = client.TryGet<GameplayTagContainer>(Remote());
+    ASSERT_NE(tags, nullptr);
+    EXPECT_TRUE(tags->HasExact(names.FindTag("Weapon.Firing"))) << "declared replicated to all";
+    EXPECT_FALSE(tags->HasExact(names.FindTag("State.Charged"))) << "the owner's alone";
+    const AbilityGrants* grants = client.TryGet<AbilityGrants>(Remote());
+    EXPECT_TRUE(grants == nullptr || grants->Count == 0) << "grants are the owner's";
+
+    Step({ { kFire, InputEdgeKind::Release } });
+    Run(2);
+    EXPECT_FALSE(client.TryGet<GameplayTagContainer>(Remote())->HasExact(names.FindTag("Weapon.Firing")))
+        << "and it goes when the firing does";
+}
+
+TEST_F(AbilityReplication, ARemoteActorRunsAtTheScaleItsLeasesSay)
+{
+    Step();
+    (void)Publish();
+    Authority.Entities.AddComponent<ActorTimeLeases>(Actor, ActorTimeLeases{});
+    ActorTimeLeases& leases = *Authority.Entities.TryGet<ActorTimeLeases>(Actor);
+    ASSERT_TRUE(AcquireActorTimeLease(leases, LeaseOwner{ .Entity = Actor, .Key = 7 }, kActorTimeOne / 2, Now));
+    Run(4);
+    EXPECT_EQ(ActorScaleOnTick(Client.Entities, Remote(), Now), kActorTimeOne / 2)
+        << "a dilated actor animates at its scale wherever it is seen";
 }

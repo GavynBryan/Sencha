@@ -168,6 +168,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
             .Name = path,
             .Parent = parent,
             .Children = {},
+            .ReplicatedToAll = false,
         });
         IdsByName.emplace(Tags.back().Name, current);
         const auto [key, inserted] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
@@ -197,4 +198,15 @@ GameplayTagId GameplayTagRegistry::FindByWireKey(std::uint32_t key) const
 {
     const auto it = IdsByWireKey.find(key);
     return it != IdsByWireKey.end() ? it->second : GameplayTagId{};
+}
+
+void GameplayTagRegistry::SetReplicatedToAll(GameplayTagId id, bool replicated)
+{
+    if (IsKnown(id))
+        Tags[id.Value].ReplicatedToAll = replicated;
+}
+
+bool GameplayTagRegistry::IsReplicatedToAll(GameplayTagId id) const
+{
+    return IsKnown(id) && Tags[id.Value].ReplicatedToAll;
 }

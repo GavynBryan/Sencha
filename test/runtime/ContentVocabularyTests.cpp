@@ -75,6 +75,23 @@ TEST(ContentVocabulary, EveryDeclaredNameIsRegisteredInPathOrder)
     EXPECT_EQ(tags.FindTag("Anim.Walk"), walk);
 }
 
+TEST(ContentVocabulary, ATagDeclaredReplicatedToAllIsMarkedSo)
+{
+    Content content;
+    content.Write("a/weapon.tags.sdata", R"({ "type": "gameplay.tag_declarations", "version": 1,
+        "data": { "tags": [ "State.Charged" ], "replicate_to_all": [ "Weapon.Firing" ] } })");
+    content.Scan();
+
+    GameplayTagRegistry tags;
+    std::vector<std::string> errors;
+    DeclareContentTags(content.Assets, tags, errors);
+    EXPECT_TRUE(errors.empty()) << errors.front();
+    ASSERT_TRUE(tags.FindTag("Weapon.Firing").IsValid()) << "declared by being listed";
+    EXPECT_TRUE(tags.IsReplicatedToAll(tags.FindTag("Weapon.Firing")));
+    EXPECT_FALSE(tags.IsReplicatedToAll(tags.FindTag("State.Charged")));
+    EXPECT_FALSE(tags.IsReplicatedToAll(tags.FindTag("Weapon"))) << "a parent is not marked by its child";
+}
+
 TEST(ContentVocabulary, AMalformedDeclarationIsReported)
 {
     Content content;

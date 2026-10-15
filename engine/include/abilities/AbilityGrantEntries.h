@@ -51,6 +51,9 @@ public:
     std::uint16_t Intern(AbilityGrantEntry entry);
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
+    // The first entry for `ability` whose key's NameWireKey is `key`, as another
+    // machine names the grant; kAbilityNoGrantEntry when this World interned none.
+    [[nodiscard]] std::uint16_t FindByWireKey(std::uint32_t key, AbilityId ability) const;
     [[nodiscard]] const AbilityEffectiveBinding* Binding(std::uint16_t index) const;
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
 
