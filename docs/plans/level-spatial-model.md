@@ -1168,6 +1168,14 @@ and world states, and annotate levels that were built by hand.
   spaces, and opening crossings use `NavRaycast`, so reachability is still
   searched only by the navigation module. The tile-seam clamp and the
   area-tag lookup are shared with the search rather than copied.
+- `space.graph` maps each navigation polygon to the space holding a point
+  just above it, floods from a polygon in each space with the sure and then
+  the possible capabilities, and reports a connection as `reached` or
+  `depends_on`. A flood that runs out of search nodes sets `complete: false`
+  rather than reporting connections missing. Whether an opening is walked
+  through is a `NavRaycast` from a metre on one side to a metre on the other.
+  The scenario (held, denied, unknown kinds, and the in-memory navigation)
+  moved out of `nav.reachable` into `LevelNavigation`, which both use.
 
 ### Not on the critical path
 

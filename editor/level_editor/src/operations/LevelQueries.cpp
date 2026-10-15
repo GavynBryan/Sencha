@@ -5,6 +5,7 @@
 #include "LevelClearance.h"
 #include "LevelJson.h"
 #include "LevelReachability.h"
+#include "SpaceGraph.h"
 #include "LevelSubjects.h"
 
 #include "brush/BrushMeshStore.h"
@@ -479,6 +480,7 @@ std::vector<EditorOperationEntry> LevelQueryOperations(const LevelTarget& level)
     entries.push_back(Near(level));
     entries.push_back(PlanSection(level));
     entries.push_back(ReachabilityOperation(level));
+    entries.push_back(SpaceGraphOperation(level));
     entries.push_back(ClearanceOperation(level));
     entries.push_back(Conventions(level));
     return entries;
