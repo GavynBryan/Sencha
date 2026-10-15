@@ -46,7 +46,7 @@ bool AbilityPass::Live(const AbilityActor& actor, std::size_t slot) const
 
 LeaseOwner AbilityPass::OwnerOf(const AbilityActor& actor, std::size_t slot, std::uint8_t op) const
 {
-    return LeaseOwner{ .Entity = actor.Entity, .Key = (actor.Record(slot).Sequence << 8) | op };
+    return LeaseOwner{ .Entity = actor.Entity, .Key = (actor.Record(slot).Identity & ~std::uint64_t{ 0xFF }) | op };
 }
 
 int AbilityPass::ClaimSlot(const AbilityActor& actor)
@@ -129,6 +129,7 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     record.TriggerSource = actor.Source;
     record.Instigator = instigator.IsValid() ? instigator : actor.Entity;
     record.Sequence = active.NextSequence++;
+    record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability));
     actor.Locals(slot) = AbilityRecordLocals{};
 
     (void)Commit(actor, slot, definition, definition.StartGroups);
@@ -465,7 +466,7 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
             running.LastTarget = place.Target;
         }
         else if (AbilityCueLog* log = Entities.TryGet<AbilityCueLog>(actor.Entity))
-            (void)AppendAbilityCue(*log, { .Cue = op.Cue, .Activation = running.Sequence, .Op = index,
+            (void)AppendAbilityCue(*log, { .Cue = op.Cue, .Activation = running.Identity, .Op = index,
                                            .Tick = Now.TickIndex, .Point = place.Point, .Normal = place.Normal,
                                            .Target = place.Target });
         Trace(traced);

@@ -432,7 +432,10 @@ transitions in one tick ends it `StepBudget`. So three presses of an instant
 ability in one tick are three activations. An activation's key is the command
 tick, the ability, and the press's place in the tick's edges (or the request's
 place in the queue): two machines that admit differently still name the same
-press the same way.
+press the same way. `AbilityActivationIdentity` folds the key, with the ability by
+its wire key, into the one number every machine names the activation by: what its
+leases' owner keys, its presentation and its cue entries are keyed by. The record's
+`Sequence` is only this machine's start order.
 
 **Admission** checks the definition, the activation conditions, `instances`, the
 four live records, and that the start costs and an `on_start` cooldown can be
@@ -496,8 +499,9 @@ sustained leases as its phase changes. A log overrun is counted in
 
 What presents an ability travels to every machine that sees the actor:
 `ActiveAbilities` and `AbilityCueLog` have codecs (`ActiveAbilitiesWire.h`,
-`AbilityCueLogWire.h`). A record sends its activation key, start order, state,
-phase and its clock, end reason and element, pulse count and last hit; grants,
+`AbilityCueLogWire.h`). A record sends its activation key, state, phase and its
+clock, end reason and element, pulse count and last hit, and the receiver computes
+its identity from the key; grants,
 leases, owned tags and the trigger stay with the authority. Ids cross by name: an
 ability by `AbilityRegistry::WireKey` (its path's `NameWireKey`), a tag by
 `WireTag`, an entity as a wire entity. Each record is split into runs by how often

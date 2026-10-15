@@ -1731,3 +1731,8 @@ Deviations from the plan's wording, each for a stated reason:
 - **Deviation: a grant names its entry, not its override.** The owner binds a grant
   to the entry it interned for the same key and ability (its prefab's); one it has
   not interned is held but bound to no input.
+- **9d, identity.** An activation is named on every machine by
+  `AbilityActivationIdentity` (its key with the ability by wire key), computed by the
+  authority at start and by a receiver from the key it is sent, so a client's guess
+  and the authority's record of one press are the same activation; lease owner
+  keys, cue entries and the presenter use it. `SameTickStartsGetDistinctKeys`.

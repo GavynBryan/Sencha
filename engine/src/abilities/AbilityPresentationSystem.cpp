@@ -152,7 +152,7 @@ private:
 
     void Record(EntityId actor, const AbilityRecord& record, AbilityPresentationState::Shown& shown, bool first)
     {
-        if (record.State == AbilityRecordState::Free || shown.Activation != record.Sequence)
+        if (record.State == AbilityRecordState::Free || shown.Activation != record.Identity)
         {
             if (shown.SustainedPhase != kAbilityNotSustained)
                 if (const AbilityDefinition* gone = Abilities->Get(shown.Ability);
@@ -161,7 +161,7 @@ private:
             shown = {};
             if (record.State == AbilityRecordState::Free)
                 return;
-            shown.Activation = record.Sequence;
+            shown.Activation = record.Identity;
             shown.Ability = record.Key.Ability;
             shown.Pulses = first ? record.Pulse : 0;
         }

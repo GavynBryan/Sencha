@@ -16,7 +16,7 @@ struct AbilityCueEntry
     // Serial order on this actor; zero is an empty entry.
     std::uint16_t Seq = 0;
     GameplayTagId Cue;
-    // The activation's start order on the actor and the op that made it.
+    // The activation's identity (AbilityActivationIdentity) and the op that made it.
     std::uint64_t Activation = 0;
     std::uint16_t Op = 0;
     std::uint64_t Tick = 0;

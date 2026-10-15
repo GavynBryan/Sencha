@@ -369,3 +369,8 @@ tags with.
 `AttributeRegistry::WireKey`/`FindByWireKey` and
 `AbilityGrantEntries::FindByWireKey` are new; `GameplayTagDeclarations` gains
 `ReplicatedToAll`, read from an optional `replicate_to_all` list.
+
+**Activation identity.** `AbilityRecord` gains `Identity` and
+`AbilityActivationIdentity` is new; lease owner keys, `AbilityCueEntry::Activation`
+and `AbilityPresentationState`'s shown records use it instead of `Sequence`, and the
+record's wire form no longer carries `Sequence`.

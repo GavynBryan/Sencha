@@ -23,7 +23,7 @@ struct SENCHA_COMPONENT("sencha.ability_presentation_state") AbilityPresentation
 {
     struct Shown
     {
-        // The record's start order on the actor; zero for an empty slot.
+        // The record's identity (AbilityActivationIdentity); zero for an empty slot.
         std::uint64_t Activation = 0;
         AbilityId Ability;
         std::uint32_t Pulses = 0;

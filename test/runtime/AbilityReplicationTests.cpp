@@ -37,6 +37,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <initializer_list>
 #include <memory>
 #include <numeric>
@@ -587,4 +588,26 @@ TEST_F(AbilityReplication, ARemoteActorRunsAtTheScaleItsLeasesSay)
     Run(4);
     EXPECT_EQ(ActorScaleOnTick(Client.Entities, Remote(), Now), kActorTimeOne / 2)
         << "a dilated actor animates at its scale wherever it is seen";
+}
+
+TEST_F(AbilityReplication, SameTickStartsGetDistinctKeys)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    Step();
+    (void)Publish();
+    Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release },
+           { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    (void)Publish();
+    const ActiveAbilities& here = *static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor);
+    std::vector<std::uint64_t> identities;
+    for (const AbilityRecord& record : here.Records)
+        if (record.State != AbilityRecordState::Free)
+            identities.push_back(record.Identity);
+    ASSERT_EQ(identities.size(), 2u) << "two presses in one tick are two activations";
+    EXPECT_NE(identities[0], identities[1]) << "named apart by where each press was in the tick";
+    for (const std::uint64_t identity : identities)
+        EXPECT_TRUE(std::ranges::any_of(RemoteRecords().Records,
+                                        [&](const AbilityRecord& record) { return record.Identity == identity; }))
+            << "and the client names each the same way, in its own ability ids";
+    EXPECT_EQ(Client.Showings.Counts.size(), 2u) << "both shots shown";
 }

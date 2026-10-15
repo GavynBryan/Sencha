@@ -1,5 +1,7 @@
 #include <abilities/ActiveAbilities.h>
 
+#include <core/hash/Fnv1a.h>
+
 std::string_view AbilityEndReasonName(AbilityEndReason reason)
 {
     switch (reason)
@@ -25,4 +27,13 @@ std::string_view AbilityEndReasonName(AbilityEndReason reason)
     case AbilityEndReason::CapacityExceeded: return "capacity exceeded";
     }
     return "unknown";
+}
+
+std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey)
+{
+    std::uint64_t hash = kFnv1aOffsetBasis;
+    HashFnv1aValue(hash, key.CommandTick);
+    HashFnv1aValue(hash, abilityWireKey);
+    HashFnv1aValue(hash, key.Origin);
+    return hash == 0 ? 1u : hash;
 }

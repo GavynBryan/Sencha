@@ -14,10 +14,10 @@
 // the authority. One run per rate of change, so a pulse resends only the count
 // and the hit (docs/gameplay/abilitykit.md, "Replication").
 
-// CommandTick, Sequence, PhaseStart, EndTick: at its start, each phase and its end.
+// CommandTick, PhaseStart, EndTick: at its start, each phase and its end.
 struct ActiveAbilityWireTicks
 {
-    std::uint64_t Values[4] = {};
+    std::uint64_t Values[3] = {};
 };
 
 // The ability's wire key; Origin | State << 8 | Phase << 16 | EndReason << 24;
@@ -55,7 +55,7 @@ struct PackedScalarGroup<ActiveAbilityWireWords>
 template <>
 struct PackedScalarGroup<ActiveAbilityWireTicks>
 {
-    static constexpr std::size_t Count = 4;
+    static constexpr std::size_t Count = 3;
     using Component = std::uint64_t;
 };
 

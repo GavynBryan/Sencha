@@ -36,15 +36,14 @@ void ReplicationCodec<ActiveAbilities>::ToWire(const ReplicationWireContext& con
         if (record.State == AbilityRecordState::Free)
             continue;
         out.Ticks.Values[0] = record.Key.CommandTick;
-        out.Ticks.Values[1] = record.Sequence;
         out.Words.Values[0] = abilities != nullptr ? abilities->WireKey(record.Key.Ability) : 0u;
         out.Words.Values[1] = static_cast<std::uint32_t>(record.Key.Origin)
                             | static_cast<std::uint32_t>(record.State) << 8
                             | static_cast<std::uint32_t>(record.Phase) << 16
                             | static_cast<std::uint32_t>(record.EndReason) << 24;
         out.Words.Values[2] = record.EndElement;
-        out.Ticks.Values[2] = record.PhaseStart;
-        out.Ticks.Values[3] = record.EndTick;
+        out.Ticks.Values[1] = record.PhaseStart;
+        out.Ticks.Values[2] = record.EndTick;
         out.Pulse = record.Pulse;
         out.LastPoint = record.LastPoint;
         out.LastNormal = record.LastNormal;
@@ -67,14 +66,14 @@ void ReplicationCodec<ActiveAbilities>::FromWire(const ReplicationWireContext& c
             continue;
         record.State = state;
         record.Key.CommandTick = in.Ticks.Values[0];
-        record.Sequence = in.Ticks.Values[1];
         record.Key.Ability = abilities != nullptr ? abilities->FindByWireKey(in.Words.Values[0]) : AbilityId{};
         record.Key.Origin = static_cast<std::uint8_t>(in.Words.Values[1]);
         record.Phase = static_cast<std::uint8_t>(in.Words.Values[1] >> 16);
         record.EndReason = static_cast<AbilityEndReason>(static_cast<std::uint8_t>(in.Words.Values[1] >> 24));
         record.EndElement = static_cast<std::uint16_t>(in.Words.Values[2]);
-        record.PhaseStart = in.Ticks.Values[2];
-        record.EndTick = in.Ticks.Values[3];
+        record.PhaseStart = in.Ticks.Values[1];
+        record.EndTick = in.Ticks.Values[2];
+        record.Identity = AbilityActivationIdentity(record.Key, in.Words.Values[0]);
         record.Pulse = in.Pulse;
         record.LastPoint = in.LastPoint;
         record.LastNormal = in.LastNormal;

@@ -59,6 +59,10 @@ struct AbilityActivationKey
 };
 
 inline constexpr std::uint8_t kAbilityRequestOrigin = 0x80;
+
+// The activation as every machine names it: its key with the ability by name, so
+// a client's guess and the authority's record of one press are the same activation.
+[[nodiscard]] std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey);
 inline constexpr std::uint8_t kAbilityNoTrigger = 0xFF;
 
 enum class AbilityRecordState : std::uint8_t
@@ -107,8 +111,10 @@ struct AbilityRecord
     Vec3d LastPoint = Vec3d::Zero();
     Vec3d LastNormal = Vec3d::Zero();
     EntityId LastTarget;
-    // Start order on this actor: what lingering eviction and lease owners key on.
+    // Start order on this machine, which lingering eviction keys on.
     std::uint64_t Sequence = 0;
+    // AbilityActivationIdentity: what its leases, presentation and cues are keyed by.
+    std::uint64_t Identity = 0;
 };
 
 // What an actor is running, and what it ran recently enough to still present.
