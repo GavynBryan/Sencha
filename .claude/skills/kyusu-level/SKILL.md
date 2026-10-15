@@ -137,8 +137,9 @@ what they do as they do it: `selection`, `saved`, `draft.accepted`,
 
 ## Pitfalls
 
-- Space names are unique, so `@Name` always resolves; a copy takes the next
-  free name ("Hall 1").
+- Space names are unique, so `@Name` always resolves: no entity may take a
+  space's name, nor a space another entity's (`space.name_taken`). A copy
+  takes the next free name ("Hall 1").
 - Shelled spaces that overlap lose their walls (`space.overlap`). Leave
   exactly one wall thickness (0.25 by default) between rooms that share a
   wall, or more to keep both walls.

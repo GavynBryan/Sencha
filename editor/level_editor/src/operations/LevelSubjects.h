@@ -5,6 +5,7 @@
 #include <core/json/JsonValue.h>
 #include <ecs/EntityId.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,3 +44,9 @@ struct SubjectResolution
 
 // Empty when the entity carries no authored name.
 [[nodiscard]] std::string EntityNameText(const EditorDocument& document, EntityId entity);
+
+// Why `entity` (invalid for one not made yet) may not be called `name`, already
+// normalized: too long to hold, or shared with another entity where either is
+// a space, since a space is always reachable as @<name>. Nullopt when it may.
+[[nodiscard]] std::optional<EditorOperationOutcome> RefuseEntityName(const EditorDocument& document, EntityId entity,
+                                                                     bool asSpace, std::string_view name);

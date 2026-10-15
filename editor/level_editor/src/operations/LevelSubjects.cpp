@@ -3,6 +3,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
 
 #include <core/identity/Id.h>
 #include <world/identity/PersistentIdComponent.h>
@@ -109,4 +110,25 @@ EditorOperationOutcome SubjectRefusal(const SubjectResolution& subject)
         detail = JsonValue(JsonValue::Object{ { "candidates", JsonValue(std::move(candidates)) } });
     }
     return EditorOperationOutcome::Refused(subject.Code, subject.Message, std::move(detail));
+}
+
+std::optional<EditorOperationOutcome> RefuseEntityName(const EditorDocument& document, EntityId entity, bool asSpace,
+                                                       std::string_view name)
+{
+    constexpr std::size_t kLongest = sizeof(EntityNameComponent::Value) - 1;
+    if (name.size() > kLongest)
+        return EditorOperationOutcome::Refused("entity.name_invalid",
+                                               "a name is at most " + std::to_string(kLongest) + " characters");
+    if (name.empty())
+        return std::nullopt;
+    const EditorScene& scene = document.GetScene();
+    const World& components = scene.GetRegistry().Components;
+    for (const EntityId other : scene.GetAllEntities())
+        if (other != entity && EntityNameText(document, other) == name
+            && (asSpace || components.HasComponent<Space>(other)))
+            return EditorOperationOutcome::Refused(
+                "space.name_taken", "'" + std::string(name) + "' is already the name of "
+                    + (components.HasComponent<Space>(other) ? "a space" : "another entity")
+                    + ", and a space's name must name only it");
+    return std::nullopt;
 }

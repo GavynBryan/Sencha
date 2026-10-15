@@ -60,6 +60,10 @@ namespace
         entry.Definition.Result = MutationResultSchema({ EntityNameSchema("brush", "the brush made") });
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
+                const JsonValue* wanted = arguments.Find("name");
+                const std::string given = wanted != nullptr ? NormalizedEntityName(wanted->AsString()) : std::string{};
+                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, false, given))
+                    return std::move(*refused);
                 const Vec3d a = PointFromJson(*arguments.Find("min"));
                 const Vec3d b = PointFromJson(*arguments.Find("max"));
                 const Vec3d low{ std::min(a.X, b.X), std::min(a.Y, b.Y), std::min(a.Z, b.Z) };
@@ -73,8 +77,8 @@ namespace
                 BrushMesh mesh = *scene.TryGetBrushMesh(brush);
                 PaintByConvention(mesh, ConventionsOf(document));
                 scene.SetBrushMesh(brush, std::move(mesh));
-                if (const JsonValue* wanted = arguments.Find("name"); wanted != nullptr && !wanted->AsString().empty())
-                    if (auto rename = MakeRenameEntityCommand(brush, wanted->AsString(), scene, document))
+                if (!given.empty())
+                    if (auto rename = MakeRenameEntityCommand(brush, given, scene, document))
                         rename->Execute();
                 recorder.Created(brush);
                 document.MarkDirty();

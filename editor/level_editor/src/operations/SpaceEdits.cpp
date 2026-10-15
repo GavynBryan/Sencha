@@ -42,10 +42,11 @@ LevelConventions ConventionsOf(const EditorDocument& document)
 EditorOperationOutcome CreateSpace(EditorDocument& document, EntityChangeRecorder& recorder, const NewSpace& space,
                                    EntityId& created)
 {
-    if (space.Name.empty())
+    const std::string name = NormalizedEntityName(space.Name);
+    if (name.empty())
         return EditorOperationOutcome::Refused("space.name_invalid", "a space needs a name");
-    if (ResolveEntitySubject(document, "@" + space.Name).Resolved())
-        return EditorOperationOutcome::Refused("space.name_taken", "something is already called '" + space.Name + "'");
+    if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, true, name))
+        return std::move(*refused);
     const Vec3d size = space.Max - space.Min;
     if (size.X < kSmallest || size.Y < kSmallest || size.Z < kSmallest)
         return EditorOperationOutcome::Refused("space.too_small", "max must exceed min by at least 0.1 m on every axis");
@@ -61,7 +62,7 @@ EditorOperationOutcome CreateSpace(EditorDocument& document, EntityChangeRecorde
     components.AddComponent(created, Space{});
     if (space.Shelled)
         components.AddComponent(created, Shell{ .Thickness = space.Thickness.value_or(conventions.ShellThickness) });
-    if (auto rename = MakeRenameEntityCommand(created, space.Name, scene, document))
+    if (auto rename = MakeRenameEntityCommand(created, name, scene, document))
         rename->Execute();
     recorder.Created(created);
     document.MarkDirty();

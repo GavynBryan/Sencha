@@ -57,6 +57,16 @@ private:
     EditorDocument& Document;
 };
 
+// The name `text` gives an entity: trimmed of surrounding spaces and tabs.
+// Empty clears the name.
+[[nodiscard]] inline std::string NormalizedEntityName(std::string_view text)
+{
+    const auto first = text.find_first_not_of(" \t");
+    if (first == std::string_view::npos)
+        return {};
+    return std::string(text.substr(first, text.find_last_not_of(" \t") - first + 1));
+}
+
 // Builds the rename, or nullptr when it would change nothing. A whitespace-only
 // or empty new name clears the component.
 [[nodiscard]] inline std::unique_ptr<ICommand> MakeRenameEntityCommand(
@@ -71,10 +81,8 @@ private:
         before = std::string(existing->Value.View());
 
     std::optional<std::string> after;
-    const auto trimmedBegin = newName.find_first_not_of(" \t");
-    if (trimmedBegin != std::string_view::npos)
-        after = std::string(newName.substr(trimmedBegin,
-            newName.find_last_not_of(" \t") - trimmedBegin + 1));
+    if (std::string trimmed = NormalizedEntityName(newName); !trimmed.empty())
+        after = std::move(trimmed);
 
     if (before == after)
         return nullptr;

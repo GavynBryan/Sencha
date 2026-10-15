@@ -119,7 +119,9 @@ TEST_F(EntityOperationsTest, AReparentKeepsTheWorldPlacementAndRefusesACycle)
 
 TEST_F(EntityOperationsTest, AnAmbiguousNameRefusesWithItsCandidates)
 {
-    Ok("entity.rename", R"({"subject": "@Shed", "name": "Door"})");
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Shed", "name": "Door"})")), "space.name_taken")
+        << "a space may not share a name";
+    Ok("brush.box", R"({"min": [40, 0, 0], "max": [41, 1, 1], "name": "Door"})");
     const JsonValue answer = Call("entity.delete", R"({"subjects": ["@Door"]})");
     EXPECT_EQ(Code(answer), "subject.ambiguous");
     EXPECT_EQ(answer.Find("detail")->Find("candidates")->AsArray().size(), 2u);

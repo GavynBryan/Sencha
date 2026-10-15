@@ -5,6 +5,8 @@
 
 #include "document/EditorDocument.h"
 #include "document/EntityChangeSet.h"
+#include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -111,6 +113,13 @@ namespace
                     return EditorOperationOutcome::Refused("component.value_invalid",
                                                            "'" + field + "' holds " + std::string(KindName(*target))
                                                                + (target->IsArray() ? " of " + std::to_string(target->AsArray().size()) : ""));
+                if (key == TypeSchema<EntityNameComponent>::Name && value->IsString())
+                {
+                    const bool space = document.GetScene().GetRegistry().Components.HasComponent<Space>(entity);
+                    if (std::optional<EditorOperationOutcome> refused =
+                            RefuseEntityName(document, entity, space, value->AsString()))
+                        return std::move(*refused);
+                }
                 *target = *value;
                 recorder.Touch(entity);
                 document.OverwriteEntity(entity, snapshot);

@@ -3,12 +3,15 @@
 #include "SpaceRelations.h"
 
 #include "document/EditorScene.h"
+#include "document/EntityNameComponent.h"
 #include "document/SpaceComponents.h"
 #include "document/SpaceWalls.h"
 
 #include <world/registry/Registry.h>
 
 #include <string>
+#include <string_view>
+#include <unordered_map>
 
 namespace
 {
@@ -68,6 +71,17 @@ std::vector<ContentRiskRecord> SpaceDiagnostics(const EditorScene& scene, const 
 {
     std::vector<ContentRiskRecord> records;
     const World& components = scene.GetRegistry().Components;
+    // Operations keep a space's name its own; an inspector edit or a hand-edited file may not.
+    std::unordered_map<std::string_view, std::size_t> named;
+    for (const EntityId entity : scene.GetAllEntities())
+        if (const auto* name = components.TryGet<EntityNameComponent>(entity))
+            ++named[name->Value.View()];
+    for (const EntityId entity : scene.GetAllEntities())
+        if (const auto* name = components.TryGet<EntityNameComponent>(entity);
+            name != nullptr && components.HasComponent<Space>(entity) && named[name->Value.View()] > 1)
+            records.push_back(About(scene, entity, { "space.name_shared", ContentRiskSeverity::Warning },
+                                    "another entity is also called '" + std::string(name->Value.View())
+                                        + "', so @" + std::string(name->Value.View()) + " names neither"));
     for (const EntityId entity : scene.GetAllEntities())
     {
         if (const std::optional<SpaceShell> shell = BuildSpaceShell(scene, entity))

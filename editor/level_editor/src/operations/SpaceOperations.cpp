@@ -115,6 +115,11 @@ namespace
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 EditorScene& scene = document.GetScene();
+                const JsonValue* given = arguments.Find("name");
+                const std::string chosen = given != nullptr && given->IsString() ? NormalizedEntityName(given->AsString())
+                                                                                 : std::string{};
+                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, EntityId{}, false, chosen))
+                    return std::move(*refused);
                 const std::optional<WallHit> wall = WallAt(scene, PointFromJson(*arguments.Find("at")));
                 if (!wall)
                     return EditorOperationOutcome::Refused("opening.no_wall",
@@ -140,12 +145,9 @@ namespace
                 (void)scene.SetParent(entity, wall->Space);
                 scene.SetWorldTransform(entity, frame);
 
-                const JsonValue* given = arguments.Find("name");
                 const std::string spaceName = EntityNameText(document, wall->Space);
                 Rename(document, entity,
-                       given != nullptr && given->IsString()
-                           ? given->AsString()
-                           : scene.NextEntityName(spaceName + (sill > 0.0f ? " window" : " door")));
+                       !chosen.empty() ? chosen : scene.NextEntityName(spaceName + (sill > 0.0f ? " window" : " door")));
                 recorder.Created(entity);
                 document.MarkDirty();
                 return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{

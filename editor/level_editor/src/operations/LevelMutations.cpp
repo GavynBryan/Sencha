@@ -11,6 +11,7 @@
 #include "document/EntityBranches.h"
 #include "document/EntityChangeSet.h"
 #include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
 #include "document/commands/RenameEntityCommand.h"
 #include "document/commands/ReparentEntitiesCommand.h"
 
@@ -23,8 +24,6 @@
 
 namespace
 {
-    constexpr std::size_t kLongestName = sizeof(EntityNameComponent::Value) - 1;
-
     EditorOperationEntry Rename(LevelTarget& target)
     {
         EditorOperationEntry entry;
@@ -44,12 +43,13 @@ namespace
                     ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
                     return SubjectRefusal(subject);
-                const std::string& newName = arguments.Find("name")->AsString();
-                if (newName.size() > kLongestName)
-                    return EditorOperationOutcome::Refused(
-                        "entity.name_invalid", "a name is at most " + std::to_string(kLongestName) + " characters");
-
                 const EntityId entity = subject.Entities.front();
+                const std::string newName = NormalizedEntityName(arguments.Find("name")->AsString());
+                const bool space = document.GetScene().GetRegistry().Components.HasComponent<Space>(entity);
+                if (space && newName.empty())
+                    return EditorOperationOutcome::Refused("space.name_invalid", "a space needs a name");
+                if (std::optional<EditorOperationOutcome> refused = RefuseEntityName(document, entity, space, newName))
+                    return std::move(*refused);
                 recorder.Touch(entity);
                 if (auto rename = MakeRenameEntityCommand(entity, newName, document.GetScene(), document))
                     rename->Execute();

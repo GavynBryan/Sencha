@@ -5,6 +5,7 @@
 
 #include "document/BrushComponents.h"
 #include "document/BrushCookInput.h"
+#include "document/EntityNameComponent.h"
 #include "document/SpaceComponents.h"
 #include "document/SpaceWalls.h"
 #include "operations/EditorOperations.h"
@@ -89,6 +90,50 @@ TEST_F(SpaceOperationsTest, ASpaceIsANamedWalledVolume)
 
     Ok("space.create", R"({"name": "Yard", "min": [20, 0, 0], "max": [24, 3, 4], "shell": false})");
     EXPECT_EQ(Walls(), 12u) << "a space without a shell has no walls";
+}
+
+TEST_F(SpaceOperationsTest, ASpaceKeepsItsNameToItselfWhicheverWayANameArrives)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("space.create", R"({"name": "  Atrium\t", "min": [20, 0, 0], "max": [24, 3, 4]})");
+    const EntityId atrium = Find("Atrium");
+    ASSERT_TRUE(atrium.IsValid()) << "a created space's name is trimmed like a renamed one";
+    Ok("brush.box", R"({"min": [40, 0, 0], "max": [41, 1, 1], "name": "Crate"})");
+
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Atrium", "name": "Hall"})")), "space.name_taken");
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Atrium", "name": " Hall "})")), "space.name_taken");
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Crate", "name": "Hall"})")), "space.name_taken")
+        << "an ordinary entity may not take a space's name";
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Atrium", "name": "Crate"})")), "space.name_taken")
+        << "nor a space an ordinary entity's";
+    EXPECT_EQ(Code(Call("entity.rename", R"({"subject": "@Atrium", "name": "  "})")), "space.name_invalid");
+    EXPECT_EQ(Code(Call("space.create", R"({"name": " Hall", "min": [50, 0, 0], "max": [52, 3, 2]})")), "space.name_taken");
+    EXPECT_EQ(Code(Call("space.create", R"({"name": "Crate", "min": [50, 0, 0], "max": [52, 3, 2]})")), "space.name_taken");
+    EXPECT_EQ(Code(Call("brush.box", R"({"min": [60, 0, 0], "max": [61, 1, 1], "name": "Hall"})")), "space.name_taken");
+    EXPECT_EQ(Code(Call("component.set", R"({"subject": "@Atrium", "component": "name", "field": "value", "value": "\"Hall\""})")),
+              "space.name_taken");
+
+    Ok("entity.rename", R"({"subject": "@Atrium", "name": " Atrium "})");
+    EXPECT_EQ(Find("Atrium"), atrium) << "renaming a space to its own name is no clash";
+    Ok("brush.box", R"({"min": [70, 0, 0], "max": [71, 1, 1], "name": "Crate"})");
+    EXPECT_FALSE(Find("Crate").IsValid()) << "ordinary entities still share names as before";
+    EXPECT_TRUE(Find("Hall").IsValid());
+    EXPECT_EQ(Find("Atrium"), atrium);
+}
+
+TEST_F(SpaceOperationsTest, ASpaceSharingItsNameIsDiagnosed)
+{
+    const std::string hall =
+        Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})").Find("space")->Find("id")->AsString();
+    const EntityId stray = AddBrush({ 20, 0, 0 });
+    // The inspector writes names without the operations' check.
+    Scene().GetRegistry().Components.TryGet<EntityNameComponent>(stray)->Value = InlineString<64>("Hall");
+    const JsonValue answer = Ok("level.diagnostics", "{}");
+    bool reported = false;
+    for (const JsonValue& record : answer.Find("records")->AsArray())
+        reported = reported
+            || (record.Find("rule")->AsString() == "space.name_shared" && record.Find("source")->AsString() == hall);
+    EXPECT_TRUE(reported) << JsonStringify(answer);
 }
 
 TEST_F(SpaceOperationsTest, ATakenNameOrAFlatBoxIsRefused)
