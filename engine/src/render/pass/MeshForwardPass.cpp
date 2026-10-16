@@ -199,9 +199,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     // falls back to the rebuild inside EnsurePipelines.
     if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
     {
-        FrameContext prewarm{};
-        prewarm.TargetFormat = services.Swapchain->GetFormat();
-        prewarm.DepthFormat = services.DepthFormat;
+        const FrameContext prewarm = SwapchainScopeFormats(services);
         if (prewarm.TargetFormat != VK_FORMAT_UNDEFINED
             && prewarm.DepthFormat != VK_FORMAT_UNDEFINED)
         {
@@ -224,7 +222,7 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
     };
 
     return OpaquePipelines.Ensure(
-        AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+        frame.AttachmentFormats(),
         [&](std::size_t index) {
             GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
             desc.FragmentShader = FragmentShader;
@@ -233,7 +231,7 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
             desc.ColorBlend = { ColorBlendAttachmentDesc{} };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
-        desc.StencilFormat = frame.StencilFormat;
+            desc.StencilFormat = frame.StencilFormat;
 
             // Read the axes as bits. The old test for unlit was "index is at
             // or past UnlitBack", which stops being true the moment a third
@@ -268,7 +266,7 @@ bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
     };
 
     return TransparentPipelines.Ensure(
-        AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+        frame.AttachmentFormats(),
         [&](std::size_t index) {
             GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
             desc.FragmentShader = FragmentShader;
@@ -289,7 +287,7 @@ bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
             desc.ColorBlend = { blend };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
-        desc.StencilFormat = frame.StencilFormat;
+            desc.StencilFormat = frame.StencilFormat;
 
             const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
             const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
@@ -364,7 +362,7 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         return pipeline;
     };
 
-    const AttachmentFormatKey key{ frame.TargetFormat, frame.DepthFormat };
+    const AttachmentFormatKey key = frame.AttachmentFormats();
     return overdraw ? OverdrawPipelines.Ensure(key, build)
                     : DebugPipelines.Ensure(key, build);
 }

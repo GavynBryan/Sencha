@@ -444,6 +444,16 @@ live router at shutdown; a windowed host with a pause menu aborted on exit
 
 ## v29
 
+A render feature batch commits whole or not at all.
+`Renderer::CommitStagedFeatures` takes no failed-id list: a Setup that returns
+false withdraws every feature of the batch already set up, last first, so false
+means nothing staged in it is registered. `Renderer::AddFeature` takes a
+`FeatureRegistration` in place of a `RenderFeatureScope`, and commits that one
+feature alone, leaving anything another host staged untouched; a named feature
+is checked against the registered ids and its dependencies as a staged one is.
+
+## v30
+
 Navigation agents (`docs/plans/navigation-agent.md`); this entry gathers every
 stage of that plan, which bumps the version once.
 

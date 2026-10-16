@@ -489,22 +489,12 @@ void LevelWorkspace::BuildViewportRendering()
         const LevelDraft* draft = level.PreviewedDraft();
         return EditorRenderFeature::ShownDraft{ draft, draft != nullptr ? level.BaseOf(*draft) : nullptr };
     });
-    // Staged, not added: the commit happens at the end of BuildUi, once the UI
-    // feature this one depends on has been staged too. The pointer is good only
-    // if the commit reports the id succeeded.
-    Renderer& renderer = engine.Graphics().MainRenderer;
-    RenderFeature = renderer.StageFeature(
-        std::move(renderFeature),
-        FeatureRegistration{ .Id = kEditorRenderFeatureId });
-    // Committed before any panel is built against it, so a feature that fails
-    // to set up leaves nothing holding its caches.
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-    {
+    // Set up before any panel is built against it, so a feature that fails to
+    // set up leaves nothing holding its caches.
+    RenderFeature = AttachRenderFeature(engine, std::move(renderFeature), kEditorRenderFeatureId);
+    if (RenderFeature == nullptr)
         std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
                              "viewports will not draw\n");
-        RenderFeature = nullptr;
-    }
 }
 
 void LevelWorkspace::BuildUi()
@@ -512,7 +502,7 @@ void LevelWorkspace::BuildUi()
     Engine& engine = *EnginePtr;
 
 
-    // The views show what the render feature draws, and staging hands back
+    // The views show what the render feature draws, and attaching hands back
     // nothing when the renderer never came up: an editor with no views is what
     // a dead renderer means anyway.
     if (RenderFeature != nullptr)

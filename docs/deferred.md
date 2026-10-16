@@ -688,3 +688,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   - *Where:* `engine/src/navigation/NavAgentConsole.cpp`; it needs the physics
     world's `PhysicsQueries::Raycast`.
   - *Trigger:* the first hands-on session that wants it.
+
+## Engine-scope borrowers of the run scope
+
+- **What:** a few engine-scope objects keep pointers into run-scope owners
+  between the end of `Engine::Run` and `Engine::Shutdown`. The default render
+  pipeline's features hold the content stack's mesh and material caches, and
+  scheduled systems (input mapping, verb relays, navigation agents) hold its
+  `DataAssetCache`. None dereferences them after the run; ASan runs of every exit
+  path are clean. The shell and the authored UI feature were the cases that did,
+  and are now released by `Run` (`docs/architecture/engine-lifetime.md`).
+- **Where:** `DefaultRenderPipeline` (`engine/src/app/DefaultRenderPipeline.cpp`),
+  `RegisterInputSystems`, `RegisterVerbRelaySystem`, and the systems
+  `EngineSchedule::Shutdown` tears down in `Engine::Shutdown`.
+- **Trigger:** the first teardown hook in any of them that touches what it
+  borrows. That makes the borrow a real use-after-free, so the borrower is
+  released in `Run`'s teardown in that change.

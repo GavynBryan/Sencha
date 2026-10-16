@@ -349,10 +349,23 @@ bool Engine::Initialize()
 #endif
 }
 
+bool Engine::RunScopeReleased() const
+{
+    bool released = !ContentState.has_value() && !LevelState.has_value()
+        && VocabularyBindings == nullptr && ResumeOperation == nullptr
+        && QuitOperation == nullptr;
+#ifdef SENCHA_ENABLE_UI
+    released = released && PauseMenuState == nullptr && UiState == nullptr
+        && SettingsStore == nullptr && !ShellSurface.IsValid();
+#endif
+    return released;
+}
+
 void Engine::Shutdown()
 {
     if (!Initialized)
         return;
+    assert(RunScopeReleased() && "Engine::Shutdown: Run returned with its run scope alive");
 
     // Systems may retain references into the simulation. Shut them down while
     // the unified world and backend services are still alive, then join task
@@ -1433,14 +1446,15 @@ int Engine::Run(Game& game)
     // Over the scene, under the debug overlay, and after whatever the game added
     // to ApplicationUi in OnStart, so authored surfaces draw over a host's own UI;
     // its id lets a later feature order against it.
+    UiRenderFeature* uiFeature = nullptr;
     if (UiState != nullptr && UiState->IsReady() && GraphicsState != nullptr)
     {
         RuntimeAssets& assets = ContentState->Assets();
         Renderer& renderer = GraphicsState->MainRenderer;
-        (void)renderer.StageFeature(
+        uiFeature = renderer.AddFeature(
             std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()),
             FeatureRegistration{ .Id = kUiRenderFeatureId });
-        if (!renderer.CommitStagedFeatures())
+        if (uiFeature == nullptr)
             LoggingState.GetLogger<Engine>().Error("the authored UI render feature did not register");
     }
 #endif
@@ -1483,12 +1497,6 @@ int Engine::Run(Game& game)
 #endif
     }
 
-    // Before the game's hook, so a setting it changes during teardown is not
-    // what decides whether the file is written -- and before anything the store
-    // borrows goes away. A run that changed nothing writes nothing.
-    if (SettingsStore != nullptr)
-        (void)SettingsStore->Save(Console().Registry());
-
     // Admission closes before anything is torn down, the game's own hook
     // included: from here no producer can hand an operation a request it will
     // not live to run. The dispatcher itself stays until Engine::Shutdown has
@@ -1498,6 +1506,18 @@ int Engine::Run(Game& game)
         VerbDispatcherState->CloseAdmission();
     if (EventDispatcherState != nullptr)
         EventDispatcherState->CloseAdmission();
+
+#ifdef SENCHA_ENABLE_UI
+    // A page's Closed commit may read state the game frees in its hook, and the
+    // options page saves settings itself, so pages close before both.
+    if (PauseMenuState != nullptr && PauseMenuState->IsOpen())
+        PauseMenuState->Close();
+#endif
+    // Before the game's hook, so a setting it changes during teardown is not
+    // what decides whether the file is written. A run that changed nothing
+    // writes nothing.
+    if (SettingsStore != nullptr)
+        (void)SettingsStore->Save(Console().Registry());
 
     GameShutdownContext shutdown{
         .Config = Configuration,
@@ -1512,8 +1532,12 @@ int Engine::Run(Game& game)
     ResumeOperation.reset();
     QuitOperation.reset();
 #ifdef SENCHA_ENABLE_UI
-    if (PauseMenuState != nullptr)
-        PauseMenuState->SetVerbBindings(nullptr, nullptr);
+    // Composed by this run, so dismantled by it, while the UI service its
+    // screens live in is still up.
+    PauseMenuState.reset();
+    if (UiState != nullptr && ShellSurface.IsValid())
+        UiState->DestroySurface(ShellSurface);
+    ShellSurface = {};
 #endif
     ShellBindingSet.Clear();
     // Before the content stack: these leases reference a cache inside it, and
@@ -1522,6 +1546,16 @@ int Engine::Run(Game& game)
     DisconnectVerbRelays(RuntimeWorldState->Entities());
     VerbDispatcherState->SetDataAssets(nullptr);
 
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
+    // The renderer outlives this run; the service and textures this feature
+    // draws from do not.
+    if (uiFeature != nullptr && !GraphicsState->MainRenderer.RemoveFeature(uiFeature))
+    {
+        std::fputs("[engine] the authored UI render feature could not be removed; a feature "
+                   "depending on it outlived the game's OnShutdown\n", stderr);
+        std::abort();
+    }
+#endif
 #ifdef SENCHA_ENABLE_UI
     // Before the content stack goes. A screen holds asset leases, and a lease
     // outliving the cache it references detaches from a destroyed owner.

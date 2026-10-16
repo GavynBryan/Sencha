@@ -25,6 +25,8 @@
 
 #include <gtest/gtest.h>
 
+#include <DeviceTestSupport.h>
+
 #include <assets/texture/Image.h>
 #include <assets/texture/ImageLoader.h>
 
@@ -59,14 +61,6 @@ struct GoldenScene
 [[nodiscard]] std::filesystem::path ReferenceDir()
 {
     return std::filesystem::path(SENCHA_GOLDEN_REFERENCE_DIR);
-}
-
-[[nodiscard]] bool DisplayAvailable()
-{
-    const char* display = std::getenv("DISPLAY");
-    const char* wayland = std::getenv("WAYLAND_DISPLAY");
-    return (display != nullptr && display[0] != '\0')
-        || (wayland != nullptr && wayland[0] != '\0');
 }
 
 // The runtime loads only cooked scenes, and .cooked/ is gitignored -- nothing

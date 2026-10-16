@@ -139,6 +139,8 @@ private:
     PromptQueue::Asker CloseAsker;
     std::unique_ptr<WorkspaceHost> Workspaces;
     std::unique_ptr<ThemeSheet> Theme;
+    // Owned by the renderer: the main window's content layer.
+    UiRenderFeature* MainContentUi = nullptr;
     struct DetachedWindow
     {
         PresentationId Presentation;
