@@ -22,20 +22,26 @@ member destruction is a use-after-free, not a style problem.
 
 ## Run's teardown order
 
-1. Settings are saved; verb and event admission closes.
-2. `Game::OnShutdown` -- the game gives back its own leases and tokens.
-3. The shell's bindings and operations, then the shell itself. Destroying
-   `PauseMenu` closes any page still open, so a page's `Closed` commit runs
-   against a live settings store and its screen closes through a live
-   `UiService`. The shell's surface is destroyed with it.
-4. The authored UI render feature is removed from the renderer
+1. Verb and event admission closes.
+2. Any shell page still open closes, and its `Closed` commit runs. A page's
+   commit may read state the game frees in its hook, and the options page saves
+   settings itself, so this comes before both.
+3. Settings are saved. This comes before the game's hook, so a setting the game
+   changes while tearing down is never persisted.
+4. `Game::OnShutdown` -- the game gives back its own leases and tokens, and
+   removes any render feature it added that borrows the UI service or the
+   content stack (Kyusu's content layers, for one).
+5. The shell's bindings and operations, then the shell and its surface.
+6. The authored UI render feature is removed from the renderer
    (`Renderer::RemoveFeature` drains the GPU first). The renderer outlives the
-   run; the service and texture cache that feature draws from do not.
-5. `UiService::Shutdown`, while the asset caches its screens lease from live.
-6. Task lanes stop; the level unloads; the content stack disconnects, the game's
+   run; the service and texture cache that feature draws from do not. A feature
+   still declaring a dependency on it makes the removal fail, and the run aborts
+   rather than free what that feature still draws through.
+7. `UiService::Shutdown`, while the asset caches its screens lease from live.
+8. Task lanes stop; the level unloads; the content stack disconnects, the game's
    data-asset subtypes are withdrawn while the module is mapped, and the stack is
    destroyed; then the UI service and settings store.
-7. The game's serializers and component schema entries are retracted, still
+9. The game's serializers and component schema entries are retracted, still
    inside the module's mapping.
 
 `Engine::Shutdown` then shuts down systems, the dispatchers, the network
