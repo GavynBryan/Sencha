@@ -26,6 +26,8 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace
 {
@@ -115,7 +117,7 @@ namespace
         SolidColorFeature* Fill(PresentationId presentation, Rgb color)
         {
             return Render().AddFeature(std::make_unique<SolidColorFeature>(color),
-                                       RenderFeatureScope::For(presentation));
+                                       FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) });
         }
 
         // Pumps the window system the way the engine's platform phase does,
@@ -235,7 +237,8 @@ TEST_F(PresentationTest, AWindowIsDestroyedOnlyOnceNothingRecordsIntoIt)
     ASSERT_TRUE(d.Presentation.IsValid());
     EXPECT_EQ(Frames().FindPresentation(b.Presentation), nullptr) << "B's id never names D";
     EXPECT_FALSE(Render().CaptureFrame(b.Presentation, (Output / "stale.png").string(), 0));
-    EXPECT_EQ(Render().AddFeature(std::make_unique<SolidColorFeature>(kWhite), RenderFeatureScope::For(b.Presentation)),
+    EXPECT_EQ(Render().AddFeature(std::make_unique<SolidColorFeature>(kWhite),
+                                  FeatureRegistration{ .Scope = RenderFeatureScope::For(b.Presentation) }),
               nullptr);
     Fill(d.Presentation, kWhite);
     EXPECT_EQ(Capture(d.Presentation, "d"), kWhite);
@@ -279,4 +282,84 @@ TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto
     ASSERT_TRUE(centre.has_value());
     EXPECT_GT((*centre)[1], 200) << "the sky drew";
     EXPECT_LT((*centre)[0], 50);
+}
+
+namespace
+{
+    // Sets up or refuses as told, and records when the renderer tears it down.
+    class LifecycleFeature final : public IRenderFeature
+    {
+    public:
+        LifecycleFeature(std::string_view name, bool setsUp, std::vector<std::string_view>& tornDown)
+            : Name(name), SetsUp(setsUp), TornDown(tornDown) {}
+        [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+        [[nodiscard]] bool Setup(const RenderFeatureServices&) override { return SetsUp; }
+        void OnDraw(const RenderFrame&) override {}
+        void Teardown() override { TornDown.push_back(Name); }
+
+    private:
+        std::string_view Name;
+        bool SetsUp;
+        std::vector<std::string_view>& TornDown;
+    };
+
+    constexpr std::array<std::string_view, 1> kOnProvider{ "test_provider" };
+}
+
+TEST_F(PresentationTest, ABatchWithAFeatureThatFailsSetupRegistersNoneOfIt)
+{
+    std::vector<std::string_view> tornDown;
+    Render().StageFeature(std::make_unique<LifecycleFeature>("provider", true, tornDown),
+                          FeatureRegistration{ .Id = "test_provider" });
+    Render().StageFeature(std::make_unique<LifecycleFeature>("independent", true, tornDown),
+                          FeatureRegistration{ .Id = "test_independent" });
+    Render().StageFeature(std::make_unique<LifecycleFeature>("refused", false, tornDown),
+                          FeatureRegistration{ .Id = "test_refused", .DependsOn = kOnProvider });
+
+    EXPECT_FALSE(Render().CommitStagedFeatures());
+    EXPECT_EQ(tornDown, (std::vector<std::string_view>{ "refused", "independent", "provider" }))
+        << "what set up before the refusal is withdrawn, last set up first";
+
+    IRenderFeature* again = Render().AddFeature(std::make_unique<LifecycleFeature>("again", true, tornDown),
+                                                FeatureRegistration{ .Id = "test_independent" });
+    ASSERT_NE(again, nullptr) << "a withdrawn feature's id is free again";
+    EXPECT_TRUE(Render().RemoveFeature(again));
+}
+
+TEST_F(PresentationTest, AddingAFeatureLeavesAnotherHostsStagedBatchAlone)
+{
+    std::vector<std::string_view> tornDown;
+    Render().StageFeature(std::make_unique<LifecycleFeature>("staged", false, tornDown),
+                          FeatureRegistration{ .Id = "test_staged" });
+
+    IRenderFeature* added = Render().AddFeature(std::make_unique<LifecycleFeature>("added", true, tornDown),
+                                                FeatureRegistration{ .Id = "test_added" });
+    ASSERT_NE(added, nullptr) << "a feature added alone neither commits nor fails with a batch staged elsewhere";
+    EXPECT_TRUE(tornDown.empty());
+
+    EXPECT_FALSE(Render().CommitStagedFeatures());
+    EXPECT_EQ(tornDown, (std::vector<std::string_view>{ "staged" }));
+    EXPECT_TRUE(Render().RemoveFeature(added));
+}
+
+TEST_F(PresentationTest, AFeatureAddedByNameIsCheckedAgainstWhatIsRegistered)
+{
+    std::vector<std::string_view> tornDown;
+    IRenderFeature* provider = Render().AddFeature(std::make_unique<LifecycleFeature>("provider", true, tornDown),
+                                                   FeatureRegistration{ .Id = "test_provider" });
+    ASSERT_NE(provider, nullptr);
+    EXPECT_EQ(Render().AddFeature(std::make_unique<LifecycleFeature>("duplicate", true, tornDown),
+                                  FeatureRegistration{ .Id = "test_provider" }),
+              nullptr);
+    constexpr std::array<std::string_view, 1> onMissing{ "test_missing" };
+    EXPECT_EQ(Render().AddFeature(std::make_unique<LifecycleFeature>("orphan", true, tornDown),
+                                  FeatureRegistration{ .Id = "test_orphan", .DependsOn = onMissing }),
+              nullptr);
+
+    IRenderFeature* consumer = Render().AddFeature(std::make_unique<LifecycleFeature>("consumer", true, tornDown),
+                                                   FeatureRegistration{ .Id = "test_consumer", .DependsOn = kOnProvider });
+    ASSERT_NE(consumer, nullptr);
+    EXPECT_FALSE(Render().RemoveFeature(provider)) << "a consumer still borrows from it";
+    EXPECT_TRUE(Render().RemoveFeature(consumer));
+    EXPECT_TRUE(Render().RemoveFeature(provider));
 }

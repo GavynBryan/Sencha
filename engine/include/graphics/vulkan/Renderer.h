@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -180,23 +181,23 @@ public:
     // features are expected to cache their own service pointers in Setup() and
     // are driven each frame through the Renderer's internal phase buckets.
     //
-    // A feature with no declared dependencies: a batch of one, committed
-    // immediately. Hosts whose features depend on each other stage them and
-    // commit the batch instead.
+    // A batch of one, committed alone: what another host has staged stays
+    // staged. A named feature is checked as a staged one is -- its id must be
+    // new and its dependencies registered -- and an unnamed one has no edges.
     template <typename T>
-    T* AddFeature(std::unique_ptr<T> feature, RenderFeatureScope scope = {})
+    T* AddFeature(std::unique_ptr<T> feature, const FeatureRegistration& registration = {})
     {
         static_assert(std::is_base_of_v<IRenderFeature, T>,
                       "T must derive from IRenderFeature");
         if (!Valid || !feature) return nullptr;
         return static_cast<T*>(AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()),
-                                              FeatureRegistration{ .Scope = scope }));
+                                              registration));
     }
 
     // Hold a feature and its declared dependencies until CommitStagedFeatures.
     // Returns the pointer the feature will have if the batch commits, so a host
     // can wire panels and callbacks against it -- but the pointer is only good
-    // once the commit reports the id succeeded.
+    // once the commit returns true.
     //
     // Setup does NOT run here: it runs at commit time, in resolved order, which
     // is what lets one feature's Setup depend on another's having already run.
@@ -210,22 +211,12 @@ public:
             std::unique_ptr<IRenderFeature>(feature.release()), registration));
     }
 
-    // Resolves the staged batch, runs each Setup in dependency order, and
-    // registers what succeeded. Returns false when the batch as a whole could
-    // not be ordered -- a duplicate id, an unknown dependency, or a cycle -- in
-    // which case nothing is registered and the staged features are destroyed.
-    //
-    // A feature whose Setup returns false is skipped along with everything that
-    // declared a dependency on it. That is degradation, not a broken graph, so
-    // the rest of the batch still commits.
-    //
-    // Either way, every id whose feature is gone lands in `failedIds` if given,
-    // including all of them on a graph fault. One reading, one action: a host
-    // nulls what it staged and cached. The pointers StageFeature handed back
-    // are dangling by the time this returns, so ignoring both the result and
-    // the list leaves them dereferenceable-looking and dead.
-    [[nodiscard]] bool CommitStagedFeatures(
-        std::vector<std::string_view>* failedIds = nullptr);
+    // Resolves the staged batch and runs each Setup in dependency order. The
+    // batch commits whole or not at all: a graph fault -- a duplicate id, an
+    // unknown dependency, a cycle -- registers nothing, and a Setup that returns
+    // false tears down, in reverse order, every member already set up. False
+    // means every pointer StageFeature handed back for this batch is dead.
+    [[nodiscard]] bool CommitStagedFeatures();
 
     // Tears down a registered feature and drops it, with the GPU drained first.
     // Legal only for a feature nothing else declares a dependency on -- removing
@@ -313,10 +304,17 @@ private:
 
     IRenderFeature* StageFeatureImpl(std::unique_ptr<IRenderFeature> feature,
                                      const FeatureRegistration& registration);
-    // Validates phase, runs Setup(), pushes into OwnedFeatures/PhaseBuckets.
-    // Returns the raw pointer on success, nullptr on failure.
     IRenderFeature* AddFeatureImpl(std::unique_ptr<IRenderFeature> feature,
                                    const FeatureRegistration& registration);
+    [[nodiscard]] bool CommitBatch(std::vector<std::unique_ptr<IRenderFeature>>& features,
+                                   std::span<const FeatureRegistration> registrations);
+    // Validates phase and scope, runs Setup(), and appends to the registered
+    // features. Nullptr when the feature is refused or its Setup fails.
+    IRenderFeature* SetUpAndRegister(std::unique_ptr<IRenderFeature> feature,
+                                     const FeatureRegistration& registration);
+    void TearDownRegisteredFrom(std::size_t first);
+    void TearDownRegisteredAt(std::size_t index);
+    void WaitForDeviceIdle();
 
     void RecordOffscreenPhase(const VulkanFrame& frame);
     void RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation);

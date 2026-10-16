@@ -154,8 +154,7 @@ Renderer::~Renderer()
     // the caches own the VkDevice objects, and the device service outlives us.
     // Features destroy some Vulkan objects directly (descriptor pools,
     // samplers), so no submitted frame may still be executing when they do.
-    if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(Services.Device->GetDevice());
+    WaitForDeviceIdle();
     // After the wait, so a capture recorded on the last frame still reaches
     // disk instead of being dropped on the way out.
     ImageCapture.Teardown();
@@ -187,11 +186,19 @@ IRenderFeature* Renderer::StageFeatureImpl(std::unique_ptr<IRenderFeature> featu
     return raw;
 }
 
-bool Renderer::CommitStagedFeatures(std::vector<std::string_view>* failedIds)
+bool Renderer::CommitStagedFeatures()
 {
-    if (failedIds != nullptr)
-        failedIds->clear();
-    if (StagedFeatures.empty())
+    std::vector<std::unique_ptr<IRenderFeature>> features = std::move(StagedFeatures);
+    const std::vector<FeatureRegistration> registrations = std::move(StagedRegistrations);
+    StagedFeatures.clear();
+    StagedRegistrations.clear();
+    return CommitBatch(features, registrations);
+}
+
+bool Renderer::CommitBatch(std::vector<std::unique_ptr<IRenderFeature>>& features,
+                           std::span<const FeatureRegistration> registrations)
+{
+    if (features.empty())
         return true;
 
     std::vector<std::string_view> registeredIds;
@@ -201,7 +208,7 @@ bool Renderer::CommitStagedFeatures(std::vector<std::string_view>* failedIds)
 
     std::vector<std::size_t> order;
     std::vector<FeatureOrderProblem> problems;
-    if (!ResolveFeatureOrder(StagedRegistrations, registeredIds, order, problems))
+    if (!ResolveFeatureOrder(registrations, registeredIds, order, problems))
     {
         for (const FeatureOrderProblem& problem : problems)
         {
@@ -217,47 +224,24 @@ bool Renderer::CommitStagedFeatures(std::vector<std::string_view>* failedIds)
                           problem.Id, ToString(problem.Fault));
             }
         }
-        // Every staged id is reported, not none: the batch failing as a whole
-        // destroys all of them, so a host reading only the list would see an
-        // empty one and keep pointers to features that no longer exist.
-        if (failedIds != nullptr)
-            for (const FeatureRegistration& registration : StagedRegistrations)
-                failedIds->push_back(registration.Id);
-        StagedFeatures.clear();
-        StagedRegistrations.clear();
         return false;
     }
 
     // Setup runs here, in resolved order: one feature's Setup may build the
     // state another's reads, which is exactly what the declared edges encode.
-    std::vector<std::string_view> failed;
+    const std::size_t firstOfBatch = OwnedFeatures.size();
     for (const std::size_t index : order)
     {
-        const FeatureRegistration& registration = StagedRegistrations[index];
-        const bool dependencyFailed = std::any_of(
-            registration.DependsOn.begin(), registration.DependsOn.end(),
-            [&](std::string_view dependency)
-            {
-                return std::find(failed.begin(), failed.end(), dependency) != failed.end();
-            });
-        if (dependencyFailed)
+        if (SetUpAndRegister(std::move(features[index]), registrations[index]) == nullptr)
         {
-            // Skipped rather than set up against something that is not there:
-            // a consumer whose producer failed would read state nobody built.
-            Log.Error("Renderer feature '{}' skipped: a feature it depends on "
-                      "failed to set up", registration.Id);
-            failed.push_back(registration.Id);
-            continue;
+            if (const std::size_t setUp = OwnedFeatures.size() - firstOfBatch; setUp != 0)
+                Log.Error("Renderer feature '{}' did not register; the {} set up before it "
+                          "in its batch are withdrawn", registrations[index].Id, setUp);
+            TearDownRegisteredFrom(firstOfBatch);
+            return false;
         }
-        if (AddFeatureImpl(std::move(StagedFeatures[index]), registration) == nullptr)
-            failed.push_back(registration.Id);
     }
-
-    StagedFeatures.clear();
-    StagedRegistrations.clear();
-    if (failedIds != nullptr)
-        *failedIds = failed;
-    return failed.empty();
+    return true;
 }
 
 bool Renderer::RemoveFeature(IRenderFeature* feature)
@@ -294,16 +278,8 @@ bool Renderer::RemoveFeature(IRenderFeature* feature)
 
     // The feature is about to destroy Vulkan objects it owns, and frames that
     // recorded it may still be executing.
-    if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(Services.Device->GetDevice());
-
-    feature->Teardown();
-    for (auto& bucket : PhaseBuckets)
-    {
-        std::erase_if(bucket, [feature](const BucketEntry& entry) { return entry.Feature == feature; });
-    }
-    OwnedFeatures.erase(owned);
-    RegisteredOrder.erase(RegisteredOrder.begin() + static_cast<std::ptrdiff_t>(index));
+    WaitForDeviceIdle();
+    TearDownRegisteredAt(index);
     return true;
 }
 
@@ -311,12 +287,23 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
                                          const FeatureRegistration& registration)
 {
     if (!Valid || feature == nullptr) return nullptr;
+    if (registration.Id.empty() && registration.DependsOn.empty())
+        return SetUpAndRegister(std::move(feature), registration);
 
+    IRenderFeature* raw = feature.get();
+    std::vector<std::unique_ptr<IRenderFeature>> batch;
+    batch.push_back(std::move(feature));
+    return CommitBatch(batch, std::span<const FeatureRegistration>(&registration, 1)) ? raw : nullptr;
+}
+
+IRenderFeature* Renderer::SetUpAndRegister(std::unique_ptr<IRenderFeature> feature,
+                                           const FeatureRegistration& registration)
+{
     const RenderPhase phase = feature->GetPhase();
     const size_t phaseIdx = static_cast<size_t>(phase);
     if (phaseIdx >= static_cast<size_t>(RenderPhase::Count))
     {
-        Log.Error("Renderer::AddFeature: feature reports invalid phase ({})",
+        Log.Error("Renderer feature reports invalid phase ({})",
                   static_cast<int>(phase));
         return nullptr;
     }
@@ -329,7 +316,7 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
                                                         presentation != nullptr, scope);
     if (fault != FeatureScopeFault::None)
     {
-        Log.Error("Renderer::AddFeature: feature '{}' {}; not registered", registration.Id,
+        Log.Error("Renderer feature '{}' {}; not registered", registration.Id,
                   fault == FeatureScopeFault::SwapchainPhaseNeedsPresentation
                       ? "records in a swapchain phase but is scoped Global"
                       : "names a presentation that does not exist");
@@ -355,7 +342,7 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
     featureServices.Backend = backend;
     if (!feature->Setup(featureServices))
     {
-        Log.Error("Renderer::AddFeature: feature setup failed; not registered");
+        Log.Error("Renderer feature '{}' setup failed; not registered", registration.Id);
         feature->Teardown();
         return nullptr;
     }
@@ -367,6 +354,32 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
     registered.Scope = scope;
     RegisteredOrder.push_back(registered);
     return raw;
+}
+
+void Renderer::TearDownRegisteredFrom(std::size_t first)
+{
+    // A Setup may have submitted uploads that are still executing.
+    WaitForDeviceIdle();
+    while (OwnedFeatures.size() > first)
+        TearDownRegisteredAt(OwnedFeatures.size() - 1);
+}
+
+void Renderer::TearDownRegisteredAt(std::size_t index)
+{
+    IRenderFeature* feature = OwnedFeatures[index].get();
+    feature->Teardown();
+    for (auto& bucket : PhaseBuckets)
+    {
+        std::erase_if(bucket, [feature](const BucketEntry& entry) { return entry.Feature == feature; });
+    }
+    OwnedFeatures.erase(OwnedFeatures.begin() + static_cast<std::ptrdiff_t>(index));
+    RegisteredOrder.erase(RegisteredOrder.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+void Renderer::WaitForDeviceIdle()
+{
+    if (Services.Device != nullptr && Services.Device->GetDevice() != VK_NULL_HANDLE)
+        vkDeviceWaitIdle(Services.Device->GetDevice());
 }
 
 RenderFrameResult Renderer::DrawFrameScheduled()

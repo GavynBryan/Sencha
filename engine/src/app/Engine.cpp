@@ -1448,15 +1448,11 @@ int Engine::Run(Game& game)
     {
         RuntimeAssets& assets = ContentState->Assets();
         Renderer& renderer = GraphicsState->MainRenderer;
-        uiFeature = renderer.StageFeature(
+        uiFeature = renderer.AddFeature(
             std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()),
             FeatureRegistration{ .Id = kUiRenderFeatureId });
-        std::vector<std::string_view> failed;
-        if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-        {
-            uiFeature = nullptr;
+        if (uiFeature == nullptr)
             LoggingState.GetLogger<Engine>().Error("the authored UI render feature did not register");
-        }
     }
 #endif
 
