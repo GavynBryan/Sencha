@@ -16,25 +16,28 @@
 //=============================================================================
 enum class FramePhase : int
 {
-    PumpPlatform = 0,
-    ResolveLifecycle = 1,
-    RebuildGraphics = 2,
-    DrainAsyncTasks = 3,
+    // Blocks until the GPU has a frame slot free. First, so a frame that has to
+    // wait does so before it samples input rather than holding stale input.
+    AwaitFrameSlot = 0,
+    PumpPlatform = 1,
+    ResolveLifecycle = 2,
+    RebuildGraphics = 3,
+    DrainAsyncTasks = 4,
     // Before ZoneResidency, so a zone grant that arrives this frame reaches
     // residency processing in the same frame rather than the next one, and
     // before ScheduleTicks, because the tick budget consumes the clock-sync
     // estimate this phase updates.
-    PumpNet = 4,
-    ZoneResidency = 5,
-    ScheduleTicks = 6,
-    Simulate = 7,
+    PumpNet = 5,
+    ZoneResidency = 6,
+    ScheduleTicks = 7,
+    Simulate = 8,
     // After the ticks, so a snapshot leaves in the frame that produced it, and
     // before presentation has consumed anything.
-    FlushNet = 8,
-    Update = 9,
-    ExtractRender = 10,
-    Render = 11,
-    EndFrame = 12,
+    FlushNet = 9,
+    Update = 10,
+    ExtractRender = 11,
+    Render = 12,
+    EndFrame = 13,
     Count,
 };
 

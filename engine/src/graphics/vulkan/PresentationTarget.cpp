@@ -28,7 +28,7 @@ PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr
     }
 
     Chain = std::make_unique<VulkanSwapchainService>(*services.Logging, *services.Device, *services.PhysicalDevice,
-                                                     *Surface, *services.Queues, window.GetExtent());
+                                                     *Surface, *services.Queues, window.GetExtent(), framesInFlight);
     if (!Chain->IsValid())
         return;
     if (desc.DepthStencil)

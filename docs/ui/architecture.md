@@ -140,16 +140,16 @@ bucket separately under `render.profile.mode gpu`.
 
 ## 5. Frame ordering
 
-No new `FramePhase`. The existing twelve cover it.
+No new `FramePhase`. The existing ones cover it.
 
 | Phase | UI work |
 |---|---|
-| `PumpPlatform` (0) | The device snapshot is folded first; surfaces are then offered the event in z-order (§6). |
+| `PumpPlatform` (1) | The device snapshot is folded first; surfaces are then offered the event in z-order (§6). |
 | `PreSimulate` | The shell's own actions -- `ui.back`, `ui.accept`, the four directions -- resolve like any other mapped action, so they honour remapping and controller profiles. No document names a gamepad button. The engine declares them and merges them into every profile; see `docs/gameplay/pause.md`. A pause recognised here cancels this frame's remaining fixed ticks. |
-| `Simulate` (7) | RmlUi is not involved. Fixed simulation never reads document state. |
-| `Update` (9) | Host controllers run first, draining actions and publishing model values; the engine then calls the UI runtime's update **explicitly**, applying dirty values, processing the screen stack and navigation, and laying out. An action taken this frame is visible this frame, by mechanism -- not by having registered a system later than somebody else. |
-| `ExtractRender` (10) | The runtime renders against the recording adapter and publishes an immutable `UiDrawFrame`. No GPU work. |
-| `Render` (11) | `UiRenderFeature::OnDraw`, in the `ApplicationUi` bucket. |
+| `Simulate` (8) | RmlUi is not involved. Fixed simulation never reads document state. |
+| `Update` (10) | Host controllers run first, draining actions and publishing model values; the engine then calls the UI runtime's update **explicitly**, applying dirty values, processing the screen stack and navigation, and laying out. An action taken this frame is visible this frame, by mechanism -- not by having registered a system later than somebody else. |
+| `ExtractRender` (11) | The runtime renders against the recording adapter and publishes an immutable `UiDrawFrame`. No GPU work. |
+| `Render` (12) | `UiRenderFeature::OnDraw`, in the `ApplicationUi` bucket. |
 
 ## 6. Input
 

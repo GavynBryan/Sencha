@@ -1072,6 +1072,10 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         }
     });
 
+    // A failed wait leaves the slot unwaited, so the Render phase's BeginFrame
+    // meets the same failure and reports it.
+    driver.Register(FramePhase::AwaitFrameSlot, [&frames](PhaseContext&) { (void)frames.AwaitFrameSlot(); });
+
     driver.Register(FramePhase::ResolveLifecycle, [&windows, &frames, windowId](PhaseContext& ctx) {
         WindowExtent resizedExtent;
         if (windows.ConsumeResize(windowId, &resizedExtent))

@@ -387,6 +387,37 @@ TEST(FrameDriver, FirstTickSeesInputEdges)
     EXPECT_TRUE(driver.GetInputFrame().IsKeyDown(kTestScancode));
 }
 
+// A frame that has to wait for the GPU must do so before it samples input,
+// or the wait ages the input it acts on. That holds for frames that render
+// and for lifecycle-only frames alike.
+TEST(FrameDriver, TheFrameSlotWaitPrecedesInputEveryFrame)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
+    FrameDriver driver(runtime);
+
+    std::vector<FramePhase> order;
+    for (FramePhase phase : { FramePhase::AwaitFrameSlot, FramePhase::PumpPlatform, FramePhase::Render })
+        driver.Register(phase, [&order, phase](PhaseContext&) { order.push_back(phase); });
+    driver.Register(FramePhase::ResolveLifecycle, [](PhaseContext& ctx) {
+        ctx.Runtime->ResolveLifecycleTransitions();
+    });
+
+    clock.Advance(0.0);
+    driver.StepOnce();
+    ASSERT_EQ(order.size(), 3u);
+    EXPECT_EQ(order[0], FramePhase::AwaitFrameSlot);
+    EXPECT_EQ(order[1], FramePhase::PumpPlatform);
+
+    order.clear();
+    runtime.NotifyMinimized();
+    clock.Advance(0.016);
+    driver.StepOnce();
+    ASSERT_EQ(order.size(), 2u);
+    EXPECT_EQ(order[0], FramePhase::AwaitFrameSlot);
+    EXPECT_EQ(order[1], FramePhase::PumpPlatform);
+}
+
 TEST(FrameDriver, EdgesPersistAcrossZeroTickFramesUntilFirstTick)
 {
     RuntimeFrameLoop runtime;

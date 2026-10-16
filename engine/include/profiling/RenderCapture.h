@@ -24,9 +24,9 @@ class RenderCapture
 {
 public:
 	static constexpr std::size_t kDefaultCapacityFrames = 4096;
-	// 9: the frame's waits (frame and image fences, present wait, limiter),
-	// present latency, the locked delta and the swapchain image count join
-	// the fixed set.
+	// 9: the frame's waits (frame and image fences, limiter), present and
+	// frame latency, the locked delta and the swapchain image count join the
+	// fixed set.
 	static constexpr std::uint32_t kSchemaVersion = 9;
 
 	struct FrameRecord

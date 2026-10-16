@@ -2,15 +2,16 @@
 
 ## Phase placement
 
-The renderer occupies two of the eleven `FramePhase` slots
-(`engine/include/runtime/FrameDriver.h`). Registration for both lives in
+The renderer occupies four of the `FramePhase` slots
+(`engine/include/runtime/FrameDriver.h`). Registration for all of them lives in
 `engine/src/app/EngineFramePhases.cpp`.
 
 | Phase | Renderer work |
 |---|---|
-| `RebuildGraphics` (2) | `VulkanFrameService::RebuildPresentation` for the primary when the frame loop says so, then `RebuildStaleSecondaries` |
-| `ExtractRender` (10) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
-| `Render` (11) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
+| `AwaitFrameSlot` (0) | `VulkanFrameService::AwaitFrameSlot`: wait this frame slot's fence, advance retirement and the deletion queue |
+| `RebuildGraphics` (3) | `VulkanFrameService::RebuildPresentation` for the primary when the frame loop says so, then `RebuildStaleSecondaries` |
+| `ExtractRender` (11) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
+| `Render` (12) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
 
 Lifecycle-only frames (resize, minimize, swapchain rebuild) skip extract and
 render but still pump platform events and stamp telemetry. A minimized primary
@@ -55,12 +56,14 @@ caster as new. `CasterRecordsWereBuilt` carries that state.
 the whole submission path.
 
 ```
+AwaitFrameSlot                                               [FramePhase 0, before input]
+  wait on this slot's in-flight fence (if it was submitted)
+  VulkanDeletionQueueService::AdvanceFrame
 DrawFrameScheduled
   VulkanFrameService::BeginFrame
-    wait on this slot's in-flight fence (if it was submitted)
-    VulkanDeletionQueueService::AdvanceFrame
+    AwaitFrameSlot, if the frame phase did not already
     destroy retired presentations, then run their callbacks
-    vkWaitForPresentKHR on the primary's previous presentId  [if present_wait]
+    note which of the primary's presents reached the display [vkWaitForPresentKHR, timeout 0]
     for each acquirable presentation:
       vkAcquireNextImageKHR                                  [signals its ImageAvailable]
       wait on the acquired image's last-recorded fence
@@ -99,8 +102,8 @@ swapchain rendering scope is open around them.
 |---|---|---|---|
 | `ImageAvailable` semaphore | one per frame in flight, per presentation | `vkAcquireNextImageKHR` | the frame's `vkQueueSubmit`, at `ALL_COMMANDS` |
 | `RenderFinished` semaphore | one per **swapchain image**, per presentation | that frame's submit | `vkQueuePresentKHR` |
-| `InFlightFence` | one per frame in flight | that frame's submit | next `BeginFrame` for the same slot, and by any frame acquiring an image it last rendered |
-| `presentId` | monotonic, primary only | `VK_KHR_present_id` | `vkWaitForPresentKHR` at the next `BeginFrame` for that slot |
+| `InFlightFence` | one per frame in flight | that frame's submit | next `AwaitFrameSlot` for the same slot, and by any frame acquiring an image it last rendered |
+| `presentId` | monotonic, primary only | `VK_KHR_present_id` | polled, never waited, by `vkWaitForPresentKHR` with a zero timeout at each `BeginFrame` |
 
 `RenderFinished` is per image, not per frame slot. A per-slot signal semaphore
 would be waited by a present for an image another slot is still using when the
@@ -111,26 +114,74 @@ swapchain is rebuilt, so a recorded fence never describes a dead chain.
 
 ## Pacing
 
-Two mechanisms, in order of preference:
+Five concerns, each with one owner, none waiting on another's events:
 
-1. **`VK_KHR_present_wait`.** Requested as an optional device extension along
-   with `VK_KHR_present_id` (`GraphicsServices::BuildPolicy`). When present,
-   `BeginFrame` blocks on the presentation of this slot's previous frame. That
-   is the true vsync anchor: without it the GPU queues ahead and the frame
-   cadence goes lumpy.
-2. **Acquire-based pacing.** The fallback when the extension is absent
-   (macOS/MoltenVK, older drivers). `ChooseImageCount` therefore requests
-   `minImageCount` exactly, usually 2, so `vkAcquireNextImageKHR` itself blocks
-   on vsync. Requesting `minImageCount + 1` creates a third image that lets the
-   GPU queue an extra frame and produces missed-vsync microstutter.
+| Concern | Owner | What bounds it |
+|---|---|---|
+| Simulation time | `RuntimeFrameLoop` (`FixedStepScheduler`, `FrameCadenceLock`) | wall time; ticks never depend on how frames present |
+| CPU frame production | `FrameDriver` phases | the waits below |
+| GPU execution | `VulkanFrameService::AwaitFrameSlot` | frames in flight: the CPU is at most `graphics.framesInFlight` frames ahead of GPU completion |
+| Presentation | the swapchain: present mode and image count | in display-paced modes, `vkAcquireNextImageKHR` blocks only while every image the application may own is queued for display |
+| Frame-rate limit | `FramePacer` (`r.target_fps`, 0 = off) | a sleep then spin at the end of the frame |
 
-`vkWaitForPresentKHR` is skipped when the recorded presentId belongs to a
-retired swapchain generation, because waiting on a dead swapchain is undefined.
+**Nothing paces a frame on a display event.** `VK_KHR_present_id` and
+`VK_KHR_present_wait` are used to observe when a present reaches the display,
+which yields `present_latency_ms` (queued to displayed) and `frame_latency_ms`
+(frame start, which is just before input is sampled, to displayed). Each is
+observed when a later frame begins, so it reads late by up to one frame
+interval. Gating a frame on the display of present *N - k* caps throughput at
+*k* frames per (presentation latency + frame production time), and
+presentation latency belongs to the platform, not the engine: on a composited
+Wayland desktop presenting across GPUs it measured 20 to 28 ms, three to four
+refreshes at 144 Hz, where a directly scanned-out fullscreen surface needs about
+one. The gate this replaced waited on *N - 2* before every frame, in every
+present mode, and ran that machine at two thirds of its refresh rate in FIFO and
+at the same rate in IMMEDIATE and MAILBOX.
+
+**Display-paced and unpaced modes.** FIFO and FIFO_RELAXED are display-paced:
+the presentation engine consumes one image per refresh, and acquire is its
+backpressure. That is the WSI's contract, not a timing trick, and it blocks only
+when the display is the bottleneck. MAILBOX and IMMEDIATE never wait for the
+display; GPU backpressure and the optional limit bound them.
+
+**Image count.** `SwapchainImageCount` (`graphics/FramesInFlight.h`) asks for
+`minImageCount + framesInFlight - 1`. The presentation engine may hold
+`minImageCount` images at once, so this lets the application own one image per
+frame in flight. Asking for `minImageCount` exactly, as the engine used to, lets
+the application own one image: the next frame cannot begin recording until the
+display hands back the image the last one used, so recording, GPU execution and
+display run in series and any frame longer than the time the display leaves
+drops to half refresh.
+
+**Latency bound.** Frames queued ahead of the display are bounded by the frames
+in flight and the swapchain's images; nothing is unbounded. The GPU wait comes
+before the frame samples input (`FramePhase::AwaitFrameSlot` is phase 0), so it
+does not age the input. Acquire still runs inside `Render`, after input, so in a
+display-bound FIFO frame the input is older than the frame start by at most the
+acquire wait, one refresh interval.
+
+**Frame time smoothness** belongs to the time domain, not to presentation. The
+loop's measured deltas carry scheduler and compositor noise however frames are
+paced; `FrameCadenceLock` removes it before simulation consumes the delta
+(`time.cadence_lock`). Starving the swapchain of images to make acquire the
+"vsync anchor" removed no noise; it serialized the pipeline.
+
+**Frame-rate limit with vsync.** `r.target_fps` limits frame starts. In FIFO a
+limit at or above the refresh rate is moot. A limit below it produces frames at
+the limit, which a fixed-refresh display shows for one or two refreshes each, so
+a 120 limit on a 144 Hz panel presents an uneven 5-in-6 cadence. That is the
+arithmetic of a fixed refresh rate, not a scheduling fault; choose a divisor of
+the refresh rate, or no limit, when vsync is on.
 
 Present mode selection: FIFO by default, overridable per process with the
 `SENCHA_PRESENT_MODE` environment variable (`IMMEDIATE`, `MAILBOX`, `FIFO`,
-`FIFO_RELAXED`). Benchmarks force `IMMEDIATE` so measured frame times reflect
-work and not the vsync interval.
+`FIFO_RELAXED`).
+
+Benchmarks: `scripts/frame_pacing_stats.py` reduces `render.capture.output`
+captures to the frame interval distribution (median, p95, p99, share of
+intervals on one refresh period), throughput, the median of each wait, and the
+two latencies. `docs/plans/evidence/frame-pacing/README.md` records
+the measurements behind this section.
 
 ## Swapchain lifecycle
 
@@ -206,8 +257,9 @@ After `DrawFrameScheduled` returns, the `Render` phase pushes one
 `TimingFrameSample` through `TimingSampler::PushRenderFrame`, carrying:
 
 - `RendererFrameTiming`: seconds spent recording, seconds for the whole call.
-- `VulkanFrameTiming`: acquire, submit, present, and present-wait seconds, plus
-  image index and swapchain generation.
+- `VulkanFrameTiming`: frame-fence, acquire, image-fence, submit and present
+  seconds, the present and frame latency of the newest present seen displayed,
+  plus image index and swapchain generation.
 - `SwapchainState`: extent, format, color space, present mode, image counts,
   generation, and the cumulative recreate count.
 - The `RenderFrameResult`.

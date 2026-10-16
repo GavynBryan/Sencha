@@ -1,5 +1,6 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 
+#include <graphics/FramesInFlight.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 #include <graphics/vulkan/VulkanQueueService.h>
@@ -31,12 +32,14 @@ VulkanSwapchainService::VulkanSwapchainService(
     VulkanPhysicalDeviceService& physicalDevice,
     VulkanSurfaceService& surface,
     VulkanQueueService& queues,
-    WindowExtent desiredExtent)
+    WindowExtent desiredExtent,
+    uint32_t framesInFlight)
     : Log(logging.GetLogger<VulkanSwapchainService>())
     , PhysicalDevice(physicalDevice.GetPhysicalDevice())
     , Device(device.GetDevice())
     , Surface(surface.GetSurface())
     , Queues(queues)
+    , FramesInFlight(framesInFlight)
 {
     if (!device.IsValid())
     {
@@ -318,23 +321,6 @@ VkExtent2D VulkanSwapchainService::ChooseExtent(
     return chosen;
 }
 
-uint32_t VulkanSwapchainService::ChooseImageCount(
-    const VkSurfaceCapabilitiesKHR& capabilities) const
-{
-    // With FIFO present mode we want the minimum image count (usually 2) so
-    // that vkAcquireNextImageKHR blocks on vsync and acts as our pacing anchor.
-    // Requesting minImageCount+1 creates a third image that lets the GPU queue
-    // an additional frame, which desynchronizes CPU submission from vsync and
-    // produces missed-vsync microstutter (32ms+1ms frame pairs).
-    uint32_t imageCount = capabilities.minImageCount;
-    if (capabilities.maxImageCount > 0)
-    {
-        imageCount = std::min(imageCount, capabilities.maxImageCount);
-    }
-
-    return imageCount;
-}
-
 bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent,
                                              VkSwapchainKHR oldSwapchain)
 {
@@ -355,7 +341,8 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent,
     const auto presentMode = ChoosePresentMode(support.PresentModes);
     const auto compositeAlpha = ChooseCompositeAlpha(support.Capabilities.supportedCompositeAlpha);
     const auto extent = ChooseExtent(support.Capabilities, desiredExtent);
-    const auto imageCount = ChooseImageCount(support.Capabilities);
+    const auto imageCount = SwapchainImageCount(support.Capabilities.minImageCount,
+                                                support.Capabilities.maxImageCount, FramesInFlight);
 
     if (extent.width == 0 || extent.height == 0)
     {

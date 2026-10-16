@@ -7,6 +7,7 @@
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -69,11 +70,12 @@ struct VulkanFrame
 struct VulkanFrameTiming
 {
     double FrameFenceWaitSeconds = 0.0;
-    double PresentWaitSeconds = 0.0;
-    // Queue-to-display time of the newest present this frame saw displayed;
-    // negative when it saw none. Seen at frame start, so it can run late by up
-    // to one frame interval unless the frame waited on that present.
+    // For the newest present this frame saw displayed: from its queueing, and
+    // from the start of the frame that produced it. Negative when the frame
+    // saw none. Observed when a frame begins, so either can read late by up to
+    // one frame interval.
     double PresentLatencySeconds = -1.0;
+    double FrameLatencySeconds = -1.0;
     double AcquireSeconds = 0.0;
     double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
@@ -140,6 +142,10 @@ public:
     // Whether a presentation besides the primary could be shown this frame.
     [[nodiscard]] bool AnySecondaryVisible();
 
+    // Blocks until the frame slot about to be used has finished on the GPU,
+    // which bounds how far the CPU runs ahead. Call before the frame samples
+    // input, so the wait does not age it; BeginFrame waits itself otherwise.
+    VulkanFrameStatus AwaitFrameSlot();
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     // DeviceLost or Failed when the frame broke; otherwise the primary's
     // outcome, acquire and present together. Another presentation that went
@@ -193,6 +199,7 @@ private:
     uint64_t NextPresentId = 1;
     GpuFrameRetirement Retirement;
     PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
+    std::chrono::steady_clock::time_point FrameStartedAt{};
     bool PresentWaitEnabled = false;
     bool Valid = false;
     VulkanFrameTiming LastTiming;
@@ -202,7 +209,9 @@ private:
     bool CreateFrameData(uint32_t framesInFlight);
     void DestroyFrameData();
     void DestroyRetiredPresentations();
-    void WaitForPrimaryPresent();
+    // Present wait is used to observe, never to throttle: pacing a frame on a
+    // display event would build the presentation path's latency into the frame
+    // interval (docs/renderer/frame.md, Pacing).
     void ObservePrimaryPresents();
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();

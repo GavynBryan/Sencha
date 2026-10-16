@@ -57,10 +57,10 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
         sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
     sample.FrameFenceWaitSeconds = vulkanTiming.FrameFenceWaitSeconds;
-    sample.PresentWaitSeconds = vulkanTiming.PresentWaitSeconds;
     sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
     sample.ImageFenceWaitSeconds = vulkanTiming.ImageFenceWaitSeconds;
     sample.PresentLatencySeconds = vulkanTiming.PresentLatencySeconds;
+    sample.FrameLatencySeconds = vulkanTiming.FrameLatencySeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;
     sample.PresentSeconds = vulkanTiming.PresentSeconds;
     sample.TotalFrameSeconds = rendererTiming.TotalSeconds;

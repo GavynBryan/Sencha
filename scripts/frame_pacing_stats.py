@@ -23,7 +23,6 @@ import statistics as st
 SPANS = [
     ("busy", "busy_ms"),
     ("fence", "frame_fence_wait_ms"),
-    ("pres_wait", "present_wait_ms"),
     ("acquire", "acquire_ms"),
     ("img_fence", "image_fence_wait_ms"),
     ("record", "render_record_ms"),
@@ -32,6 +31,7 @@ SPANS = [
     ("limiter", "limiter_wait_ms"),
     ("gpu", "Phase_MainColor_gpu_ms"),
     ("pres_lat", "present_latency_ms"),
+    ("frame_lat", "frame_latency_ms"),
 ]
 
 
@@ -45,7 +45,7 @@ def percentile(sorted_vals, q):
     return sorted_vals[lo] * (hi - idx) + sorted_vals[hi] * (idx - lo)
 
 
-WAITS = ["frame_fence_wait_ms", "present_wait_ms", "acquire_ms", "image_fence_wait_ms"]
+WAITS = ["frame_fence_wait_ms", "acquire_ms", "image_fence_wait_ms"]
 
 
 def attach_busy(frames):

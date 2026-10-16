@@ -4,6 +4,7 @@ const char* ToString(FramePhase phase)
 {
     switch (phase)
     {
+    case FramePhase::AwaitFrameSlot: return "AwaitFrameSlot";
     case FramePhase::PumpPlatform: return "PumpPlatform";
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
@@ -70,6 +71,7 @@ void FrameDriver::StepOnce()
 
     if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
+    InvokePhase(FramePhase::AwaitFrameSlot, ctx);
     InvokePhase(FramePhase::PumpPlatform, ctx);
 
     // One stop condition. Everything that can end a run -- a window closed, a
