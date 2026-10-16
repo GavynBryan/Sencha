@@ -21,10 +21,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace
 {
@@ -110,21 +113,21 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     if (SkinnedMeshes != nullptr)
         SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
 
-    graphics.MainRenderer.StageFeature(
+    IRenderFeature* meshFeature = graphics.MainRenderer.StageFeature(
         std::make_unique<MeshRenderFeature>(
             Queue, *Meshes, *Materials, Camera, Lights, bindings,
             SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
         FeatureRegistration{ .Id = kMesh, .DependsOn = kMeshDeps });
 
-    graphics.MainRenderer.StageFeature(
+    IRenderFeature* linesFeature = graphics.MainRenderer.StageFeature(
         std::make_unique<DebugLineRenderFeature>(Camera, DebugLines),
         FeatureRegistration{ .Id = "runtime_debug_lines", .DependsOn = kDebugLineDeps });
 
-    graphics.MainRenderer.StageFeature(
+    IRenderFeature* skyFeature = graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),
         FeatureRegistration{ .Id = kSky });
 
-    graphics.MainRenderer.StageFeature(
+    IRenderFeature* shadowFeature = graphics.MainRenderer.StageFeature(
         std::make_unique<ShadowRenderFeature>(
             bindings, Lights, ShadowCasters, *Meshes, Residency),
         FeatureRegistration{ .Id = kShadow,
@@ -132,15 +135,42 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
                                  ? std::span<const std::string_view>(kShadowDeps)
                                  : std::span<const std::string_view>{} });
 
+    IRenderFeature* poseFeature = nullptr;
     if (SkinnedMeshes != nullptr)
     {
-        graphics.MainRenderer.StageFeature(
+        poseFeature = graphics.MainRenderer.StageFeature(
             std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses, *SkinnedMeshes),
             FeatureRegistration{ .Id = kPose });
     }
 
-    if (!graphics.MainRenderer.CommitStagedFeatures())
+    std::vector<std::string_view> failed;
+    const bool batchComplete = graphics.MainRenderer.CommitStagedFeatures(&failed);
+    if (!batchComplete || meshFeature == nullptr || linesFeature == nullptr
+        || skyFeature == nullptr || shadowFeature == nullptr
+        || (SkinnedMeshes != nullptr && poseFeature == nullptr))
+    {
+        // Commit is intentionally partially successful. Roll back only our own
+        // registered features, consumers before providers, before their caches
+        // can be destroyed during a failed content startup.
+        const auto removeIfRegistered = [&](IRenderFeature* feature, std::string_view id) {
+            if (feature == nullptr
+                || std::find(failed.begin(), failed.end(), id) != failed.end())
+                return;
+            if (!graphics.MainRenderer.RemoveFeature(feature))
+            {
+                std::fprintf(stderr, "[engine] default render feature '%.*s' could not "
+                                     "be withdrawn after partial setup\\n",
+                             static_cast<int>(id.size()), id.data());
+                std::abort();
+            }
+        };
+        removeIfRegistered(linesFeature, "runtime_debug_lines");
+        removeIfRegistered(meshFeature, kMesh);
+        removeIfRegistered(shadowFeature, kShadow);
+        removeIfRegistered(poseFeature, kPose);
+        removeIfRegistered(skyFeature, kSky);
         return false;
+    }
 
     // Probe residency shares the lighting set: it swaps binding-2 slots as
     // zones stream and hands headers to extraction. Uploads only ever happen
