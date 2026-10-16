@@ -68,10 +68,16 @@ struct VulkanFrame
 
 struct VulkanFrameTiming
 {
+    double FrameFenceWaitSeconds = 0.0;
+    double PresentWaitSeconds = 0.0;
+    // Queue-to-display time of the newest present this frame saw displayed;
+    // negative when it saw none. Seen at frame start, so it can run late by up
+    // to one frame interval unless the frame waited on that present.
+    double PresentLatencySeconds = -1.0;
     double AcquireSeconds = 0.0;
+    double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
-    double PresentWaitSeconds = 0.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
 };
@@ -105,6 +111,7 @@ public:
     VulkanFrameService& operator=(VulkanFrameService&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return Valid; }
+    [[nodiscard]] bool IsPresentWaitEnabled() const { return PresentWaitEnabled; }
     [[nodiscard]] uint32_t GetFramesInFlight() const
     {
         return static_cast<uint32_t>(Frames.size());
@@ -196,6 +203,7 @@ private:
     void DestroyFrameData();
     void DestroyRetiredPresentations();
     void WaitForPrimaryPresent();
+    void ObservePrimaryPresents();
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();
 };

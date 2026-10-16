@@ -41,10 +41,10 @@ void FramePacer::SetTargetFps(double fps)
     NextDeadline = Clock::now();
 }
 
-void FramePacer::Wait()
+double FramePacer::Wait()
 {
     if (!Enabled)
-        return;
+        return 0.0;
 
     NextDeadline += FrameBudget;
     const auto now = Clock::now();
@@ -52,7 +52,7 @@ void FramePacer::Wait()
     {
         // Overshot the budget — resync rather than let error accumulate.
         NextDeadline = now;
-        return;
+        return 0.0;
     }
 
     constexpr auto spinMargin = std::chrono::microseconds(500);
@@ -65,6 +65,7 @@ void FramePacer::Wait()
     {
         // Short spin for sub-millisecond accuracy.
     }
+    return std::chrono::duration<double>(Clock::now() - now).count();
 }
 
 void FramePacer::Resync()
@@ -72,14 +73,13 @@ void FramePacer::Resync()
     NextDeadline = Clock::now();
 }
 
-void FramePacer::WaitForLifecycleIdle()
+double FramePacer::WaitForLifecycleIdle()
 {
     if (Enabled)
-    {
-        Wait();
-        return;
-    }
+        return Wait();
 
+    const auto start = Clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     Resync();
+    return std::chrono::duration<double>(Clock::now() - start).count();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/PresentHistory.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanDepthTarget.h>
@@ -72,13 +73,9 @@ public:
     [[nodiscard]] VkSemaphore AcquireSemaphore(std::uint32_t frameSlot) const { return ImageAvailable[frameSlot]; }
     [[nodiscard]] ImageState* Image(std::uint32_t imageIndex);
 
-    // Present-wait bookkeeping, per frame slot, for the pacing presentation.
-    struct PresentRecord
-    {
-        std::uint64_t Id = 0;
-        std::uint64_t SwapchainGeneration = 0;
-    };
-    [[nodiscard]] PresentRecord& LastPresent(std::uint32_t frameSlot) { return Presents[frameSlot]; }
+    // The presents this swapchain has queued with a present id, until seen
+    // displayed. Rebuilding the swapchain clears it.
+    [[nodiscard]] PresentHistory& Presents() { return PresentLog; }
 
     // Null for a presentation declared without one.
     [[nodiscard]] VulkanDepthTarget* Depth() { return DepthAttachment.get(); }
@@ -101,7 +98,7 @@ private:
     std::unique_ptr<VulkanSwapchainService> Chain;
     std::unique_ptr<VulkanDepthTarget> DepthAttachment;
     std::vector<VkSemaphore> ImageAvailable;
-    std::vector<PresentRecord> Presents;
+    PresentHistory PresentLog;
     std::vector<ImageState> Images;
     bool RebuildPending = false;
     bool Valid = false;

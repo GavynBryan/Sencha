@@ -1,10 +1,11 @@
 #include <runtime/RuntimeFrameLoop.h>
 
-RuntimeFrameSnapshot RuntimeFrameLoop::BeginFrame()
+RuntimeFrameSnapshot RuntimeFrameLoop::BeginFrame(double limiterWaitSeconds)
 {
     const FrameClock frameClock = WallClock.Advance();
     Current = {};
     Current.WallTime = frameClock;
+    Current.LimiterWaitSeconds = limiterWaitSeconds;
     Current.TickDtSeconds = SimulationClock.GetFixedDt();
     Current.State = State;
     Current.DiscontinuityReason = PendingDiscontinuityReason;

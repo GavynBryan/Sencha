@@ -40,6 +40,8 @@ public:
     // Live rather than latched: dragging a window between displays changes it,
     // and a retained document re-flows where a baked atlas cannot.
     [[nodiscard]] float GetDisplayScale() const;
+    // The refresh rate of the display the window is on; 0 when unknown.
+    [[nodiscard]] float GetDisplayRefreshHz() const;
     void SetSize(uint32_t width, uint32_t height);
 
     [[nodiscard]] bool IsResizable() const;

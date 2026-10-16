@@ -165,6 +165,14 @@ float SdlWindow::GetDisplayScale() const
     return scale > 0.0f ? scale : 1.0f;
 }
 
+float SdlWindow::GetDisplayRefreshHz() const
+{
+    if (!Window)
+        return 0.0f;
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(Window));
+    return mode != nullptr ? mode->refresh_rate : 0.0f;
+}
+
 void SdlWindow::SetSize(uint32_t width, uint32_t height)
 {
     if (Window)

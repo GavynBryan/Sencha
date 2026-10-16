@@ -61,7 +61,7 @@ void FrameDriver::DrainInputEdgesForFirstTick()
 
 void FrameDriver::StepOnce()
 {
-    Runtime.BeginFrame();
+    Runtime.BeginFrame(LimiterWaitSeconds);
     EdgesDrainedThisFrame = false;
 
     PhaseContext ctx;
@@ -80,7 +80,7 @@ void FrameDriver::StepOnce()
         InvokePhase(FramePhase::EndFrame, ctx);
         if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
         Runtime.EndFrame();
-        Pacer.WaitForLifecycleIdle();
+        LimiterWaitSeconds = Pacer.WaitForLifecycleIdle();
         return;
     }
 
@@ -131,10 +131,7 @@ void FrameDriver::StepOnce()
 
     Runtime.EndFrame();
 
-    if (lifecycleOnly)
-        Pacer.WaitForLifecycleIdle();
-    else
-        Pacer.Wait();
+    LimiterWaitSeconds = lifecycleOnly ? Pacer.WaitForLifecycleIdle() : Pacer.Wait();
 }
 
 void FrameDriver::Run()

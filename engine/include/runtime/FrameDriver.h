@@ -88,5 +88,6 @@ private:
     ChromeJsonFrameTrace* Trace = nullptr;
     std::function<bool()> ShouldExitPredicate;
     std::vector<FramePhaseCallback> Phases[static_cast<int>(FramePhase::Count)];
+    double LimiterWaitSeconds = 0.0;
     bool EdgesDrainedThisFrame = false;
 };

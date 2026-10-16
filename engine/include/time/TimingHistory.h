@@ -19,10 +19,20 @@ struct TimingFrameSample
     double InterpolationAlpha = 0.0;
     double EventPollSeconds = 0.0;
     double RenderRecordSeconds = 0.0;
+    // The waits a frame can block in, in the order it meets them. Together with
+    // the work spans they account for the whole frame interval.
+    double FrameFenceWaitSeconds = 0.0;
+    double PresentWaitSeconds = 0.0;
     double AcquireSeconds = 0.0;
+    double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
     double TotalFrameSeconds = 0.0;
+    // The frame-rate limiter's hold that ended the interval RawDtSeconds measures.
+    double LimiterWaitSeconds = 0.0;
+    // Queue-to-display time of the newest present the frame saw displayed;
+    // negative when it saw none (see VulkanFrameTiming).
+    double PresentLatencySeconds = -1.0;
     uint32_t FixedTicks = 0;
     // Ticks this frame owed but the catch-up cap refused. Sustained non-zero
     // values mean simulation cannot keep up with wall time.

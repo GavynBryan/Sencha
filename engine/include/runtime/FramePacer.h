@@ -24,8 +24,8 @@ public:
     [[nodiscard]] double GetTargetFps() const { return TargetFps; }
 
     // Call once per frame AFTER the frame's work is complete. Will sleep
-    // then spin until the next frame's deadline.
-    void Wait();
+    // then spin until the next frame's deadline. Returns the seconds held.
+    double Wait();
 
     // Reset after a lifecycle stall so we don't try to catch up hundreds
     // of frames of backlog.
@@ -33,7 +33,7 @@ public:
 
     // Lifecycle-only frames have no present/vsync wait. Idle briefly even when
     // the normal FPS cap is disabled so resize/minimize paths do not spin.
-    void WaitForLifecycleIdle();
+    double WaitForLifecycleIdle();
 
 private:
     Clock::time_point NextDeadline{};

@@ -1598,6 +1598,9 @@ void Engine::PublishCaptureEnvironment()
              + std::to_string(VK_API_VERSION_PATCH(packed));
     };
 
+    const SdlWindow* window = PlatformState != nullptr ? PlatformState->Windows.GetPrimaryWindow() : nullptr;
+    const float refreshHz = window != nullptr ? window->GetDisplayRefreshHz() : 0.0f;
+
     RenderCaptureStore.SetEnvironment({
         { "gpu_name", device.deviceName },
         { "gpu_vendor_id", std::to_string(device.vendorID) },
@@ -1614,6 +1617,8 @@ void Engine::PublishCaptureEnvironment()
         { "build_sha", SENCHA_BUILD_SHA },
         { "build_type", SENCHA_BUILD_TYPE },
         { "map", ConsoleState != nullptr ? ConsoleState->CurrentMap() : std::string{} },
+        { "present_wait", GraphicsState->Frames.IsPresentWaitEnabled() ? "true" : "false" },
+        { "display_refresh_hz", std::to_string(refreshHz) },
     });
 #endif
 }

@@ -14,6 +14,7 @@ namespace
             .TickDtSeconds = frame.TickDtSeconds,
             .PresentationDtSeconds = frame.Presentation.DeltaSeconds,
             .InterpolationAlpha = frame.Presentation.Alpha,
+            .LimiterWaitSeconds = frame.LimiterWaitSeconds,
             .FixedTicks = frame.FixedTicks,
             .TicksDropped = frame.TicksDropped,
             .LifecycleState = static_cast<int>(frame.State),
@@ -55,7 +56,11 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
     if (cpuScopes != nullptr)
         sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
+    sample.FrameFenceWaitSeconds = vulkanTiming.FrameFenceWaitSeconds;
+    sample.PresentWaitSeconds = vulkanTiming.PresentWaitSeconds;
     sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
+    sample.ImageFenceWaitSeconds = vulkanTiming.ImageFenceWaitSeconds;
+    sample.PresentLatencySeconds = vulkanTiming.PresentLatencySeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;
     sample.PresentSeconds = vulkanTiming.PresentSeconds;
     sample.TotalFrameSeconds = rendererTiming.TotalSeconds;

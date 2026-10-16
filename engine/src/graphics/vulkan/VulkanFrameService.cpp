@@ -204,24 +204,35 @@ void VulkanFrameService::DestroyRetiredPresentations()
 
 void VulkanFrameService::WaitForPrimaryPresent()
 {
-    // Block on the prior cycle's presentation of this frame slot. This is the
-    // true vsync anchor — without it the GPU can queue ahead, making frame
-    // cadence lumpy. Skip when the presentId belongs to a retired swapchain
-    // (vkWaitForPresentKHR on a dead swapchain is undefined).
     PresentationTarget* primary = Presentations.Find(Primary);
     if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr)
         return;
-    PresentationTarget::PresentRecord& last = primary->LastPresent(CurrentFrame);
-    if (last.Id == 0 || last.SwapchainGeneration != primary->Swapchain().GetGeneration())
+    // A rebuilt chain clears its history, so the id always names a live present.
+    const std::uint64_t target = primary->Presents().IdBehindNext(GetFramesInFlight());
+    if (target == 0)
         return;
     const auto waitStart = ProfileClock::now();
-    const VkResult result = WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), last.Id,
+    const VkResult result = WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), target,
                                              std::numeric_limits<uint64_t>::max());
     LastTiming.PresentWaitSeconds = SecondsSince(waitStart);
     // OUT_OF_DATE and SUBOPTIMAL are benign here; the acquire surfaces them.
     if (result == VK_ERROR_DEVICE_LOST)
         Log.Error("vkWaitForPresentKHR failed: device lost");
-    last.Id = 0;
+}
+
+void VulkanFrameService::ObservePrimaryPresents()
+{
+    PresentationTarget* primary = Presentations.Find(Primary);
+    if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr)
+        return;
+    PresentHistory& presents = primary->Presents();
+    while (const std::uint64_t oldest = presents.OldestPending())
+    {
+        if (WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), oldest, 0) != VK_SUCCESS)
+            break;
+        if (const std::optional<double> latency = presents.Displayed(oldest, ProfileClock::now()))
+            LastTiming.PresentLatencySeconds = *latency;
+    }
 }
 
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
@@ -262,8 +273,10 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
         }
         if (image->InFlightFence != VK_NULL_HANDLE)
         {
+            const auto fenceStart = ProfileClock::now();
             const VkResult waitResult = vkWaitForFences(Device, 1, &image->InFlightFence, VK_TRUE,
                                                         std::numeric_limits<uint64_t>::max());
+            LastTiming.ImageFenceWaitSeconds += SecondsSince(fenceStart);
             if (waitResult != VK_SUCCESS)
             {
                 Log.Error("Waiting for swapchain image fence failed with code {}", static_cast<int>(waitResult));
@@ -297,8 +310,11 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
 {
     frame = {};
     Acquired.clear();
-    LastTiming.AcquireSeconds = 0.0;
+    LastTiming.FrameFenceWaitSeconds = 0.0;
     LastTiming.PresentWaitSeconds = 0.0;
+    LastTiming.PresentLatencySeconds = -1.0;
+    LastTiming.AcquireSeconds = 0.0;
+    LastTiming.ImageFenceWaitSeconds = 0.0;
     LastTiming.ImageIndex = 0;
 
     if (!Valid)
@@ -307,8 +323,10 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     FrameData& current = Frames[CurrentFrame];
     if (current.Submitted)
     {
+        const auto fenceStart = ProfileClock::now();
         const VkResult waitResult = vkWaitForFences(Device, 1, &current.InFlightFence, VK_TRUE,
                                                     std::numeric_limits<uint64_t>::max());
+        LastTiming.FrameFenceWaitSeconds = SecondsSince(fenceStart);
         if (waitResult == VK_ERROR_DEVICE_LOST)
         {
             Log.Error("vkWaitForFences failed: device lost");
@@ -330,6 +348,7 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     }
     DestroyRetiredPresentations();
     WaitForPrimaryPresent();
+    ObservePrimaryPresents();
 
     const VulkanFrameStatus acquired = AcquirePresentations(frame);
     if (acquired != VulkanFrameStatus::Ready)
@@ -485,10 +504,9 @@ SurfaceOutcome VulkanFrameService::EndFrame(const VulkanFrame& frame)
         primaryOutcome = outcome;
         // Only a presented frame has an id worth waiting on; an out-of-date
         // chain is retiring.
-        PresentationTarget::PresentRecord& record = presentation.Target->LastPresent(frame.FrameIndex);
         const bool presented = outcome == SurfaceOutcome::Ok || outcome == SurfaceOutcome::Suboptimal;
-        record.Id = presented ? primaryPresentId : 0;
-        record.SwapchainGeneration = presentation.Target->Swapchain().GetGeneration();
+        if (presented && primaryPresentId != 0)
+            presentation.Target->Presents().Queued(primaryPresentId, presentStart);
     }
     return primaryOutcome;
 }
