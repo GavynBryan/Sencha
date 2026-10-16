@@ -1,6 +1,5 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 
-#include <graphics/FramesInFlight.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/PresentationTarget.h>
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
@@ -63,8 +62,8 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     }
     Primary = Presentations.Adopt(std::move(primary));
 
-    // Present wait observes when a present reaches the display, which holds a
-    // display-paced primary to its queued-present bound.
+    // Present wait observes when a present reaches the display; it estimates
+    // latency and never paces a frame.
     for (const auto* ext : services.Device->GetEnabledDeviceExtensions())
     {
         if (ext && std::strcmp(ext, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
@@ -223,33 +222,6 @@ void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& d
     LastTiming.FrameLatencySeconds = displayed.LatencyFromFrameStart;
 }
 
-void VulkanFrameService::HoldForDisplay()
-{
-    PresentationTarget* primary = Presentations.Find(Primary);
-    if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr
-        || primary->Availability() != PresentationAvailability::Acquirable
-        || !IsDisplayPaced(primary->Swapchain().GetPresentMode()))
-        return;
-    const float refreshHz = primary->Window().GetDisplayRefreshHz();
-    if (refreshHz <= 0.0f)
-        return;
-
-    PresentHistory& presents = primary->Presents();
-    const std::optional<PresentHistory::DisplayHold> hold =
-        presents.HoldToQueue(MaxQueuedPresents(GetFramesInFlight()), 1.0 / static_cast<double>(refreshHz));
-    if (!hold)
-        return;
-    const auto waitStart = ProfileClock::now();
-    const VkResult result = WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), hold->Awaited,
-                                             static_cast<uint64_t>(hold->Timeout.count()));
-    const auto released = ProfileClock::now();
-    LastTiming.PresentWaitSeconds = std::chrono::duration<double>(released - waitStart).count();
-    if (result != VK_SUCCESS)
-        return;
-    if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(hold->Awaited, released))
-        RecordLatency(*displayed);
-}
-
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
 {
     VulkanFrameStatus status = VulkanFrameStatus::Ready;
@@ -324,10 +296,6 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
 VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
 {
     LastTiming.FrameFenceWaitSeconds = 0.0;
-    LastTiming.PresentWaitSeconds = 0.0;
-    LastTiming.PresentLatencySeconds = -1.0;
-    LastTiming.FrameLatencySeconds = -1.0;
-    LastTiming.QueuedPresents = 0;
     if (!Valid)
         return VulkanFrameStatus::Error;
 
@@ -357,8 +325,6 @@ VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
             Retirement.RetiredThrough, current.SubmittedFrameNumber);
         Deps.DeletionQueue->AdvanceFrame();
     }
-    HoldForDisplay();
-    ObservePrimaryPresents();
     CurrentFrameStartedAt = ProfileClock::now();
     return VulkanFrameStatus::Ready;
 }
@@ -370,6 +336,9 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
     LastTiming.AcquireSeconds = 0.0;
     LastTiming.ImageFenceWaitSeconds = 0.0;
     LastTiming.ImageIndex = 0;
+    LastTiming.PresentLatencySeconds = -1.0;
+    LastTiming.FrameLatencySeconds = -1.0;
+    LastTiming.QueuedPresents = 0;
 
     if (!Valid)
         return VulkanFrameStatus::Error;
@@ -381,6 +350,7 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
             return awaited;
     }
     DestroyRetiredPresentations();
+    ObservePrimaryPresents();
 
     const VulkanFrameStatus acquired = AcquirePresentations(frame);
     if (acquired != VulkanFrameStatus::Ready)

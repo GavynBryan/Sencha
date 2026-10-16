@@ -72,7 +72,7 @@ struct VulkanFrameTiming
     double FrameFenceWaitSeconds = 0.0;
     double PresentWaitSeconds = 0.0;
     // Newest present seen displayed, from its queueing and from its frame's
-    // start; negative if none. Seen at frame begin: up to one frame late.
+    // start; negative if none. Polled just before acquire: up to one frame late.
     double PresentLatencySeconds = -1.0;
     double FrameLatencySeconds = -1.0;
     double AcquireSeconds = 0.0;
@@ -81,7 +81,7 @@ struct VulkanFrameTiming
     double PresentSeconds = 0.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
-    // Presents waiting for the display when the frame began, after any hold.
+    // Presents not yet seen displayed when the frame acquired.
     uint32_t QueuedPresents = 0;
 };
 
@@ -143,9 +143,8 @@ public:
     // Whether a presentation besides the primary could be shown this frame.
     [[nodiscard]] bool AnySecondaryVisible();
 
-    // Blocks until the frame slot about to be used has finished on the GPU and,
-    // in a display-paced mode, until no more than MaxQueuedPresents wait for
-    // the display. Call before the frame samples input; BeginFrame waits otherwise.
+    // Blocks until the frame slot about to be used has finished on the GPU.
+    // Call before the frame samples input; BeginFrame waits otherwise.
     VulkanFrameStatus AwaitFrameSlot();
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     // DeviceLost or Failed when the frame broke; otherwise the primary's
@@ -211,7 +210,6 @@ private:
     void DestroyFrameData();
     void DestroyRetiredPresentations();
     void ObservePrimaryPresents();
-    void HoldForDisplay();
     void RecordLatency(const PresentHistory::DisplayedPresent& displayed);
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();

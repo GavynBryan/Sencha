@@ -33,20 +33,13 @@ inline constexpr std::uint32_t kMaxFramesInFlight = 4;
     return requested;
 }
 
-// Presents a display-paced frame may find waiting for the display when it
-// begins: one per frame in flight, the depth that keeps the display fed
-// without queueing latency (docs/renderer/frame.md, Pacing).
-[[nodiscard]] constexpr std::uint32_t MaxQueuedPresents(std::uint32_t framesInFlight)
-{
-    return ClampFramesInFlight(framesInFlight);
-}
-
-// The image on the display, the presents queued behind it and the one being
-// recorded, so acquire never binds before the queue does. `maxImages` 0 is unbounded.
+// Room for the CPU to run up to F presents ahead with one image recorded,
+// assuming the display holds one; a display that holds more costs acquire
+// wait (docs/renderer/frame.md, Pacing). `maxImages` 0 is unbounded.
 [[nodiscard]] constexpr std::uint32_t SwapchainImageCount(std::uint32_t minImages, std::uint32_t maxImages,
                                                           std::uint32_t framesInFlight)
 {
-    const std::uint32_t needed = 1 + MaxQueuedPresents(framesInFlight) + 1;
+    const std::uint32_t needed = ClampFramesInFlight(framesInFlight) + 2;
     const std::uint32_t wanted = needed > minImages ? needed : minImages;
     return maxImages != 0 && wanted > maxImages ? maxImages : wanted;
 }

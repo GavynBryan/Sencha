@@ -2,16 +2,8 @@
 
 #include <graphics/FramesInFlight.h>
 
-TEST(MaxQueuedPresents, IsOnePerFrameInFlight)
-{
-    for (std::uint32_t frames = kMinFramesInFlight; frames <= kMaxFramesInFlight; ++frames)
-        EXPECT_EQ(MaxQueuedPresents(frames), frames);
-    EXPECT_EQ(MaxQueuedPresents(0), kMinFramesInFlight);
-}
-
-// One image on the display, one per present allowed to queue behind it, and
-// the one being recorded: fewer and acquire binds before the queue bound does.
-TEST(SwapchainImageCount, HoldsTheDisplayedImageTheQueueAndTheOneRecording)
+// One image on the display, F presents ahead of it and the one being recorded.
+TEST(SwapchainImageCount, HoldsTheDisplayedImageFPresentsAndTheOneRecording)
 {
     for (std::uint32_t frames = kMinFramesInFlight; frames <= kMaxFramesInFlight; ++frames)
         EXPECT_EQ(SwapchainImageCount(2, 0, frames), frames + 2) << "frames " << frames;

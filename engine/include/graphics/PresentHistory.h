@@ -22,18 +22,6 @@ public:
     [[nodiscard]] std::uint64_t OldestPending() const;
     [[nodiscard]] std::size_t PendingCount() const { return Count; }
 
-    struct DisplayHold
-    {
-        std::uint64_t Awaited = 0;
-        // A display that stops taking frames (hidden, locked) must not hold the loop.
-        std::chrono::nanoseconds Timeout{};
-    };
-
-    // The present a frame must see displayed so that at most `maxQueued`
-    // presents wait for the display when it begins; none until the chain has
-    // queued more than that, or without a refresh period.
-    [[nodiscard]] std::optional<DisplayHold> HoldToQueue(std::uint32_t maxQueued, double refreshSeconds) const;
-
     struct DisplayedPresent
     {
         double LatencyFromQueue = 0.0;
@@ -54,6 +42,4 @@ private:
     std::array<Entry, kTracked> Ring{};
     std::size_t Head = 0;
     std::size_t Count = 0;
-    std::uint64_t FirstId = 0;
-    std::uint64_t NewestId = 0;
 };
