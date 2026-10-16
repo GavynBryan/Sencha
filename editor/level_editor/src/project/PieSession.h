@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -29,15 +30,19 @@ public:
                 const std::vector<std::string>& startupArgs,
                 std::string* error);
 
-    void Stop();
+    // Asks the child to quit (SIGTERM, which the runtime takes as an ordinary
+    // exit) and waits up to `grace` for it, then kills it.
+    void Stop(std::chrono::milliseconds grace = kStopGrace);
     [[nodiscard]] bool IsRunning();
 
     // A one-shot description if the child ended abnormally (non-zero exit or a
-    // signal other than the SIGTERM Stop sends) since the last call. Clean exits
-    // and user-initiated stops report nothing. Poll this beside IsRunning so an
+    // signal other than the SIGTERM Stop sends) since the last call, including
+    // during a stop, or had to be killed. Poll this beside IsRunning so an
     // instant post-launch death (bad content, failed device init) surfaces
     // instead of the Play button just going dark.
     [[nodiscard]] std::optional<std::string> TakeExitReport();
+
+    static constexpr std::chrono::milliseconds kStopGrace{ 5000 };
 
 private:
     void RecordExit(int status);

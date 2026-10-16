@@ -55,7 +55,11 @@ exit there. A headless host installs its own handlers (`app/main.cpp`), which
 stop the loop without consulting the exit gate.
 
 Kyusu's Play stop (`PieSession::Stop`) sends SIGTERM, so a stopped session runs
-the same teardown as a quit.
+the same teardown as a quit. It waits `PieSession::kStopGrace` for the child,
+then kills it; a game holding the exit open past that is killed. A child that
+dies by any signal other than SIGTERM, exits non-zero, or has to be killed is
+reported through `TakeExitReport`, so a crash during a stop is shown rather than
+swallowed.
 
 ## Diagnosing a teardown crash
 
