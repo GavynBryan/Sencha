@@ -645,5 +645,5 @@ do the work and delete the entry.
   `RegisterInputSystems`, `RegisterVerbRelaySystem`, and the systems
   `EngineSchedule::Shutdown` tears down in `Engine::Shutdown`.
 - **Trigger:** the first teardown hook in any of them that touches what it
-  borrows, or a second `Run` per `Initialize`. Either one makes the borrow a real
-  use-after-free, so the borrower is released in `Run`'s teardown in that change.
+  borrows. That makes the borrow a real use-after-free, so the borrower is
+  released in `Run`'s teardown in that change.
