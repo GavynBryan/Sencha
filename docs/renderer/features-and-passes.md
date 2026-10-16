@@ -20,15 +20,25 @@ public:
 | Hook | When | Contract |
 |---|---|---|
 | `GetPhase` | any time | one feature, one phase, constant for its lifetime |
-| `Setup` | at `AddFeature`, or at `CommitStagedFeatures` for a staged batch -- there in dependency order, so a feature's Setup can build what another's reads | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: it is torn down and not registered, and anything declaring a dependency on it is skipped too |
+| `Setup` | at `AddFeature`, or at `CommitStagedFeatures` for a staged batch -- there in dependency order, so a feature's Setup can build what another's reads | cache what the feature needs, create up-front GPU resources. Returning `false` means the feature is unusable: it is torn down and not registered, and the rest of its batch is withdrawn with it |
 | `OnDraw` | once per frame, in phase order, in resolved dependency order within a phase | record commands, through the passes the feature drives. For `MainColor` the command stream is already inside the swapchain rendering scope. Other phases open their own |
 | `Teardown` | at `RemoveFeature`, or in `~Renderer` in reverse resolved order, after the device is idle | release everything the feature still holds, including state borrowed from the host -- a host removes the feature while that state is still alive |
 
 Order between features is declared, not implied by the call order: a host stages
 features with the ids they depend on and commits the batch, and the resolver
 produces setup, recording, and teardown order from those edges. Ties break by
-staging index. A graph fault -- unknown id, duplicate, cycle -- refuses the whole
-batch rather than registering part of it.
+staging index. A batch commits whole or not at all. A graph fault -- unknown id,
+duplicate, cycle -- registers nothing, and a Setup that returns `false` tears
+down, in reverse, every member of the batch already set up. So a host reads one
+bool: true and every pointer `StageFeature` returned is live, false and none is.
+A host can therefore never hold a pointer to a feature the renderer has dropped,
+nor lose track of one it still runs.
+
+`AddFeature` is a batch of one, committed alone: anything another host has
+staged and not yet committed stays staged, and neither succeeds nor fails with
+it. A feature added with an id is checked like a staged one -- the id must be new
+and every dependency already registered -- so another feature can order against
+it, and `RemoveFeature` refuses to remove it while one does.
 
 Degradation versus failure is a real distinction here. `ShadowRenderFeature::Setup`
 returns `true` even when `LightBindings::Setup` fails, because the frame still

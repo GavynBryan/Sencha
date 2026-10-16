@@ -351,6 +351,7 @@ if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
     add_subdirectory(fixtures/render_host)
     add_executable(render_golden_tests ${RENDER_GOLDEN_TEST_SOURCES})
     target_link_libraries(render_golden_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_include_directories(render_golden_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     target_compile_definitions(render_golden_tests PRIVATE
         # The bundled host, not the bare target: `app` discovers its game module
         # as game<ext> beside itself, and only the bundle directory has one.
@@ -373,6 +374,7 @@ file(GLOB_RECURSE PRESENTATION_TEST_SOURCES CONFIGURE_DEPENDS
 if(PRESENTATION_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
     add_executable(presentation_tests ${PRESENTATION_TEST_SOURCES})
     target_link_libraries(presentation_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_include_directories(presentation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     list(APPEND SENCHA_TEST_TARGETS presentation_tests)
 endif()
 

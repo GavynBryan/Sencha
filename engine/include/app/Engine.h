@@ -569,6 +569,10 @@ private:
     // and freeing one afterwards runs a destructor that is no longer there.
     void RetractGameComponents();
 
+    // The run scope: what Run releases itself, before it returns, rather than
+    // leaving to Shutdown. See docs/architecture/engine-lifetime.md.
+    [[nodiscard]] bool RunScopeReleased() const;
+
     // Everything session-transient, in one place, so creating and destroying a
     // session cannot reset two different lists of it.
     void ResetNetSessionState();

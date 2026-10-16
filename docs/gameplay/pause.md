@@ -269,9 +269,16 @@ engine.OnExitRequested = [](Engine::ExitSource source) {
 
 A deferred request is pending, and further requests coalesce into it rather than
 re-entering the handler — so holding Alt+F4 with a confirmation up cannot stack
-one dialog per event. A renderer that failed and a signal the process was sent do
-not reach the gate: those are notifications that this is ending, not requests,
-and a veto there would be a hang.
+one dialog per event. A renderer that failed and a signal a headless host was
+sent do not reach the gate: those are notifications that this is ending, not
+requests, and a veto there would be a hang. A windowed host is different only
+because SDL turns SIGTERM and SIGINT into a quit event, which arrives as
+`ExitSource::WindowClose`; Kyusu's Stop is one of those.
+
+However the run ends, the shell is dismantled by `Engine::Run` after
+`Game::OnShutdown` and before the UI service, so a page still open at exit is
+closed, and its `Closed` commit runs, while everything it touches is alive. See
+`docs/architecture/engine-lifetime.md`.
 
 The command is platform-neutral; the label is the host's. A desktop says "Exit to
 Desktop"; a host that cannot terminate passes no label and gets no entry, rather
