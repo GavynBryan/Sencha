@@ -45,7 +45,9 @@ mkdir -p "$out"
 manifest="$out/manifest.tsv"
 [ -f "$manifest" ] || printf 'capture\tmode\tsize\tlimit\tdevice\trun\tload_before\tcompilers_before\tload_after\tcompilers_after\texit\n' >"$manifest"
 
-compilers() { pgrep -c -f 'cc1plus|clang\+\+|rustc' || true; }
+# By process name: a full-command-line match would count any shell whose
+# command mentions a compiler, this script's caller included.
+compilers() { pgrep -c -x 'cc1plus|cc1|clang|clang\+\+|rustc' || true; }
 load1() { cut -d' ' -f1 /proc/loadavg; }
 
 wait_for_quiet() {
