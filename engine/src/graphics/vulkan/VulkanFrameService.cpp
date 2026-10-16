@@ -225,6 +225,8 @@ void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& d
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
 {
     VulkanFrameStatus status = VulkanFrameStatus::Ready;
+    const AcquireDeadline deadline = AcquireDeadline::ForDisplay(
+        ProfileClock::now(), Presentations.Find(Primary)->Window().GetDisplayRefreshHz());
     Presentations.ForEach([&](PresentationId id, PresentationTarget& target) {
         if (status != VulkanFrameStatus::Ready || target.Availability() != PresentationAvailability::Acquirable)
             return;
@@ -232,7 +234,7 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
         uint32_t imageIndex = 0;
         const auto acquireStart = ProfileClock::now();
         const VkResult result = vkAcquireNextImageKHR(Device, target.Swapchain().GetSwapchain(),
-                                                      std::numeric_limits<uint64_t>::max(),
+                                                      deadline.TimeoutAt(acquireStart),
                                                       target.AcquireSemaphore(CurrentFrame), VK_NULL_HANDLE,
                                                       &imageIndex);
         LastTiming.AcquireSeconds += SecondsSince(acquireStart);
@@ -250,6 +252,9 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
             target.MarkNeedsRebuild();
             return;
         }
+        // Neither result signals the semaphore, so the slot reuses it as is.
+        if (outcome == SurfaceOutcome::NotReady)
+            return;
 
         PresentationTarget::ImageState* image = target.Image(imageIndex);
         if (image == nullptr)

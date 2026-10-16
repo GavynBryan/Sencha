@@ -2,6 +2,7 @@
 
 #include <graphics/FramesInFlight.h>
 #include <graphics/PresentHistory.h>
+#include <graphics/vulkan/PresentationFramePlan.h>
 
 #include <algorithm>
 #include <chrono>
@@ -32,9 +33,10 @@ namespace
     };
 
     // The frame service against a FIFO display, in microseconds. A frame waits
-    // for its slot's fence, simulates, then acquires in BeginFrame. The display
-    // shows one present per refresh and returns an image once `DisplayHolds`
-    // later presents have been shown.
+    // for its slot's fence, simulates, then acquires in BeginFrame until the
+    // acquire deadline, skipping render and present if no image came back. The
+    // display shows one present per refresh and returns an image once
+    // `DisplayHolds` later presents have been shown.
     struct Pipeline
     {
         std::uint32_t FramesInFlight = 2;
@@ -49,6 +51,8 @@ namespace
         // Present wait reports presents shown in this span `LateUs` late.
         Span Late{};
         std::int64_t LateUs = 0;
+        // Frames starting earlier are the display filling up, and not measured.
+        std::int64_t MeasureFromUs = Refreshes(100);
     };
 
     struct Outcome
@@ -58,10 +62,9 @@ namespace
         std::int64_t MaxAcquireToShownUs = 0;
         double MaxLatencyEstimateSeconds = 0.0;
         double PresentsPerSecond = 0.0;
+        std::uint64_t FramesSkipped = 0;
+        std::uint64_t FramesBegunDuringStall = 0;
     };
-
-    // Before the display shows its first frame nothing occupies it.
-    constexpr std::uint64_t kSettled = 100;
 
     Outcome Simulate(const Pipeline& p)
     {
@@ -75,6 +78,7 @@ namespace
         Outcome outcome;
         std::int64_t cpuFreeUs = 0;
         std::uint64_t presents = 0;
+        std::uint64_t firstMeasured = 0;
 
         // Present wait for `id` completes once it or any later present is reported.
         const auto reportedAt = [&](std::uint64_t id) {
@@ -90,6 +94,8 @@ namespace
             if (presents >= p.FramesInFlight)
                 startUs = std::max(startUs, gpuDoneUs[presents + 1 - p.FramesInFlight]);
             outcome.StartUs.push_back(startUs);
+            outcome.FramesBegunDuringStall += p.Stall.Contains(startUs) ? 1 : 0;
+            const bool measured = startUs >= p.MeasureFromUs;
             const std::int64_t acquireStartUs = startUs + p.SimulateUs;
 
             while (const std::uint64_t oldest = history.OldestPending())
@@ -97,12 +103,24 @@ namespace
                 if (reportedAt(oldest) > acquireStartUs)
                     break;
                 const auto displayed = history.Displayed(oldest, At(acquireStartUs));
-                if (displayed && frame >= kSettled)
+                if (displayed && measured)
                     outcome.MaxLatencyEstimateSeconds = std::max(outcome.MaxLatencyEstimateSeconds,
                                                                  displayed->LatencyFromFrameStart);
             }
 
             const auto image = std::ranges::min_element(imageFreeUs);
+            const AcquireDeadline deadline = AcquireDeadline::ForDisplay(At(acquireStartUs), kRefreshHz);
+            const auto timeoutUs = static_cast<std::int64_t>(deadline.TimeoutAt(At(acquireStartUs)) / 1000);
+            if (*image > acquireStartUs + timeoutUs)
+            {
+                cpuFreeUs = acquireStartUs + timeoutUs;
+                if (measured)
+                {
+                    ++outcome.FramesSkipped;
+                    outcome.MaxAcquireWaitUs = std::max(outcome.MaxAcquireWaitUs, timeoutUs);
+                }
+                continue;
+            }
             const std::int64_t acquiredUs = std::max(acquireStartUs, *image);
             const auto imageIndex = static_cast<std::uint32_t>(image - imageFreeUs.begin());
             *image = kNever;
@@ -123,13 +141,14 @@ namespace
                 imageFreeUs[imageOf[id - p.DisplayHolds]] = shown;
             history.Queued(id, At(submittedUs), At(startUs));
 
-            if (frame < kSettled)
+            if (!measured)
                 continue;
+            firstMeasured = firstMeasured == 0 ? id : firstMeasured;
             outcome.MaxAcquireWaitUs = std::max(outcome.MaxAcquireWaitUs, acquiredUs - acquireStartUs);
             outcome.MaxAcquireToShownUs = std::max(outcome.MaxAcquireToShownUs, shown - acquiredUs);
         }
-        outcome.PresentsPerSecond = static_cast<double>(presents - kSettled) * 1.0e6
-            / static_cast<double>(shownUs[presents] - shownUs[kSettled]);
+        outcome.PresentsPerSecond = static_cast<double>(presents - firstMeasured) * 1.0e6
+            / static_cast<double>(shownUs[presents] - shownUs[firstMeasured]);
         return outcome;
     }
 
@@ -183,4 +202,24 @@ TEST(DisplayQueue, WithinTheBudgetEveryRefreshIsFedFromTheImages)
             }
         }
     }
+}
+
+// A display that returns no image costs each frame at most the acquire
+// deadline: the loop keeps simulating through the stall, and once the display
+// resumes every refresh is fed again from the images.
+TEST(DisplayQueue, ADisplayThatReturnsNoImageCostsAFrameAtMostTheDeadline)
+{
+    const Span stall{ .FromUs = 2'000'000, .Us = 100'000 };
+    const std::int64_t deadlineUs = Refreshes(kAcquireDeadlineRefreshes);
+    const Pipeline stalled{ .PathUs = Refreshes(0.9), .Stall = stall };
+    const Outcome run = Simulate(stalled);
+    EXPECT_LE(run.MaxAcquireWaitUs, deadlineUs + 1);
+    EXPECT_GT(run.FramesSkipped, 0u);
+    EXPECT_GE(run.FramesBegunDuringStall, static_cast<std::uint64_t>(stall.Us / (deadlineUs + stalled.SimulateUs)));
+
+    Pipeline resumed = stalled;
+    resumed.MeasureFromUs = stall.FromUs + stall.Us + Refreshes(10);
+    const Outcome after = Simulate(resumed);
+    EXPECT_NEAR(after.PresentsPerSecond, kRefreshHz, 0.01);
+    EXPECT_EQ(after.FramesSkipped, 0u);
 }

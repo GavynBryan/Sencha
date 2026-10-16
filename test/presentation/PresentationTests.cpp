@@ -8,6 +8,7 @@
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
+#include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/PresentationTarget.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
@@ -175,6 +176,32 @@ namespace
             return Rgb{ image->Pixels[pixel], image->Pixels[pixel + 1], image->Pixels[pixel + 2] };
         }
 
+        // Takes every image `presentation`'s swapchain will hand out, so the
+        // frame's own acquire for it returns none.
+        int HoldEveryImage(PresentationId presentation)
+        {
+            const VkDevice device = Graphics->Device.GetDevice();
+            const VkSwapchainKHR chain = Frames().FindPresentation(presentation)->Swapchain().GetSwapchain();
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkFence acquired = VK_NULL_HANDLE;
+            if (vkCreateFence(device, &fenceInfo, nullptr, &acquired) != VK_SUCCESS)
+                return 0;
+            int held = 0;
+            constexpr std::uint64_t kTimeoutNs = 100'000'000;
+            std::uint32_t index = 0;
+            for (VkResult result = vkAcquireNextImageKHR(device, chain, kTimeoutNs, VK_NULL_HANDLE, acquired, &index);
+                 result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR;
+                 result = vkAcquireNextImageKHR(device, chain, kTimeoutNs, VK_NULL_HANDLE, acquired, &index))
+            {
+                vkWaitForFences(device, 1, &acquired, VK_TRUE, kTimeoutNs);
+                vkResetFences(device, 1, &acquired);
+                ++held;
+            }
+            vkDestroyFence(device, acquired, nullptr);
+            return held;
+        }
+
         bool DestroyAndWait(Window window)
         {
             bool windowGone = false;
@@ -283,4 +310,49 @@ TEST_F(PresentationTest, WindowsGoInAnyOrder)
     const Window e = Open("E");
     Fill(e.Presentation, kGreen);
     Frames(2);
+}
+
+// Two windows whose swapchains return no image cost a frame no more than its
+// acquire deadline together, and the primary and a window acquiring after them
+// still render. A skipped acquire signals nothing, so the same frame slots
+// acquire with the same semaphores again without a validation error, and once
+// rebuilt the stalled windows render again.
+TEST_F(PresentationTest, StalledWindowsTogetherCostAFrameAtMostTheAcquireDeadline)
+{
+    const float refreshHz = Frames().FindPresentation(Render().PrimaryPresentation())->Window().GetDisplayRefreshHz();
+    if (refreshHz <= 0.0f)
+        GTEST_SKIP() << "the display reports no refresh rate, so a frame's acquires have no deadline";
+    const Window b = Open("B");
+    const Window c = Open("C");
+    const Window d = Open("D");
+    SolidColorFeature* red = Fill(Render().PrimaryPresentation(), kRed);
+    SolidColorFeature* green = Fill(b.Presentation, kGreen);
+    SolidColorFeature* blue = Fill(c.Presentation, kBlue);
+    SolidColorFeature* white = Fill(d.Presentation, kWhite);
+    Frames(3);
+    ASSERT_GT(HoldEveryImage(b.Presentation), 0);
+    ASSERT_GT(HoldEveryImage(c.Presentation), 0);
+
+    const double deadlineSeconds = kAcquireDeadlineRefreshes / static_cast<double>(refreshHz);
+    const double timerSlackSeconds = 0.5 / static_cast<double>(refreshHz);
+    const int greenBefore = green->Draws;
+    const int blueBefore = blue->Draws;
+    for (std::uint32_t frame = 0; frame < 2 * Frames().GetFramesInFlight(); ++frame)
+    {
+        const int redBefore = red->Draws;
+        const int whiteBefore = white->Draws;
+        EXPECT_EQ(Frame(), RenderFrameResult::Presented);
+        EXPECT_GT(red->Draws, redBefore);
+        EXPECT_GT(white->Draws, whiteBefore) << "D acquires after both stalled windows";
+        EXPECT_LE(Frames().GetLastTiming().AcquireSeconds, deadlineSeconds + timerSlackSeconds);
+    }
+    EXPECT_EQ(green->Draws, greenBefore);
+    EXPECT_EQ(blue->Draws, blueBefore);
+
+    for (const Window& stalled : { b, c })
+        ASSERT_TRUE(Frames().RebuildPresentation(stalled.Presentation,
+                                                 Platform->Windows.GetWindow(stalled.WindowId)->GetExtent()));
+    Frames(3);
+    EXPECT_GT(green->Draws, greenBefore);
+    EXPECT_GT(blue->Draws, blueBefore);
 }

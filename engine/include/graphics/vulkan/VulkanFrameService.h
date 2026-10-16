@@ -43,6 +43,9 @@ enum class RenderFrameResult
     SurfaceSuboptimal,
     SkippedMinimized,
     Failed,
+    // The primary returned no image by the frame's acquire deadline; the
+    // frame simulated but did not render or present it.
+    SkippedNotReady,
 };
 
 // One presentation this frame records into.

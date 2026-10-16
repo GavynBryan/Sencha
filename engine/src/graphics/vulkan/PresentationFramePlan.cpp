@@ -1,6 +1,7 @@
 #include <graphics/vulkan/PresentationFramePlan.h>
 
 #include <algorithm>
+#include <limits>
 
 PresentationAvailability ClassifyPresentation(bool minimized, WindowExtent extent, bool needsRebuild)
 {
@@ -28,6 +29,8 @@ SurfaceOutcome ClassifySurfaceResult(VkResult result)
     {
     case VK_SUCCESS: return SurfaceOutcome::Ok;
     case VK_SUBOPTIMAL_KHR: return SurfaceOutcome::Suboptimal;
+    case VK_TIMEOUT:
+    case VK_NOT_READY: return SurfaceOutcome::NotReady;
     case VK_ERROR_OUT_OF_DATE_KHR: return SurfaceOutcome::OutOfDate;
     case VK_ERROR_DEVICE_LOST: return SurfaceOutcome::DeviceLost;
     default: return SurfaceOutcome::Failed;
@@ -47,5 +50,25 @@ RenderFrameResult SummarizeFrame(SurfaceOutcome primary, std::size_t presentatio
         return RenderFrameResult::SwapchainOutOfDate;
     if (primary == SurfaceOutcome::Suboptimal)
         return RenderFrameResult::SurfaceSuboptimal;
+    if (primary == SurfaceOutcome::NotReady)
+        return RenderFrameResult::SkippedNotReady;
     return presentationsRecorded == 0 ? RenderFrameResult::SkippedMinimized : RenderFrameResult::Presented;
+}
+
+AcquireDeadline AcquireDeadline::ForDisplay(Clock::time_point start, float refreshHz)
+{
+    AcquireDeadline deadline;
+    if (refreshHz > 0.0f)
+        deadline.End = start + std::chrono::duration_cast<Clock::duration>(
+                                   std::chrono::duration<double>(kAcquireDeadlineRefreshes / static_cast<double>(refreshHz)));
+    return deadline;
+}
+
+std::uint64_t AcquireDeadline::TimeoutAt(Clock::time_point now) const
+{
+    if (!End)
+        return std::numeric_limits<std::uint64_t>::max();
+    if (now >= *End)
+        return 0;
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(*End - now).count());
 }
