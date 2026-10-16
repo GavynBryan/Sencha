@@ -4,26 +4,18 @@ Work deliberately left for later. Each entry names what was deferred, where the
 code lives, and the concrete trigger that makes it due. When a trigger lands,
 do the work and delete the entry.
 
-## Frame-pacing validation on a display
+## Frame-pacing queued-present maximum above the bound
 
-- **What:** the display-dependent validation of the fixed queued-present bound
-  (`ad070a48`). The bound is pinned by the deterministic `DisplayQueueTests`
-  model, and the fresh-boot short-run comparison is in
-  `docs/plans/evidence/frame-pacing/README.md`. These have not run yet:
-  - two sustained sessions of about 5 minutes: NVIDIA fullscreen FIFO with
-    `r.target_fps 120`, and Intel 1920x1080 window FIFO;
-  - one stall-injection run (`app.frame_delay_ms`, a 40 ms frame every 144);
-  - one resize/minimize/restore/fullscreen-toggle run;
-  - the 11 window tests (GoldenImage, PresentationTest), which the
-    displayless suite skips.
-- **Where:** the run script was kept outside the tree at
-  `.git/worktrees/Sencha-frame-pacing/frame-pacing-validation-block.sh`. It
-  takes about 14 minutes, and needs an unlocked desktop with no keyboard or
-  mouse use while it runs: a focus loss pauses the game and stops fixed ticks.
-  Run `vkcube` on the discrete GPU first; a degraded driver invalidates the run.
-- **Trigger:** before `claude/frame-pacing` merges. Record the results in the
-  evidence README's "Sustained sessions, stall injection and transitions"
-  section, then delete this entry.
+- **What:** in the 5-minute Intel window run and the transitions run, the
+  capture's maximum queued presents reached 6, against the bound of F = 2 held
+  at frame begin (`docs/plans/evidence/frame-pacing/README.md`). It is unknown
+  whether the hold timed out (F + 2 refreshes) during a display stall and acquire
+  then allowed more, or whether the capture counts presents whose completion
+  present wait had not yet observed.
+- **Where:** the hold in `AwaitFrameSlot` and the queued-present count in the
+  render capture (`VulkanFrameService`, `PresentHistory`).
+- **Trigger:** before `claude/frame-pacing` merges. Find which frames reported
+  6 in `/tmp/fp-s/runs` (or a rerun), then either fix the bound or the count.
 
 ## Animation decision log depth
 

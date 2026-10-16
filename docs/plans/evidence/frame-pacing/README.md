@@ -151,7 +151,22 @@ learned depth and the extra image, and are withdrawn.
 
 ## Sustained sessions, stall injection and transitions
 
-Not yet run; see "Frame-pacing validation on a display" in `docs/deferred.md`.
+Run 2026-10-16, Release build of `ad070a48`. Another worktree was compiling
+throughout (load 5 to 10), and `vkcube` took 12.6 s against a healthy 10.2, so
+these timings were taken under contention.
+
+| run | fps | median ms | p99 ms | max ms | on one refresh | max queued | latency p99 ms (estimate) | fixed ticks/s |
+|---|---|---|---|---|---|---|---|---|
+| NVIDIA fullscreen FIFO, limit 120, 5 min | 120.0 | 8.33 | 8.34 | 25.5 | 100% | 2 | 16.7 | 60.0 |
+| Intel 1908x1042 window FIFO, 5 min | 143.7 | 6.94 | 7.90 | 92.7 | 99% | 6 | 21.8 | 60.0 |
+| Stall: NVIDIA 720p FIFO, 40 ms frame every 144 | 138.0 | 6.94 | 14.87 | 53.4 | 94% | 2 | 48.0 | 60.0 |
+| Transitions: resize, minimize, restore, fullscreen on/off | 122.3 | 6.96 | 32.75 | 88.3 | 92% | 6 | 164.7 | 59.7 |
+
+- The transitions run exited 0 with no validation errors. Its latency p99
+  includes the minimized interval, when presents are not displayed.
+- The 11 window tests (GoldenImage, PresentationTest) pass.
+- "Max queued" reached 6 in the Intel and transitions runs, which exceeds the
+  F = 2 bound held at frame begin. This is unexplained; see `docs/deferred.md`.
 
 ## Full matrix
 
