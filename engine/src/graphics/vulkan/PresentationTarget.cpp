@@ -7,7 +7,7 @@
 
 PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr<VulkanSurfaceService> surface,
                                        SdlWindow& window, const PresentationDesc& desc,
-                                       std::uint32_t framesInFlight)
+                                       SwapchainImageDemand imageDemand)
     : Log(services.Logging->GetLogger<PresentationTarget>())
     , Device(services.Device->GetDevice())
     , OwnerWindow(&window)
@@ -28,7 +28,7 @@ PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr
     }
 
     Chain = std::make_unique<VulkanSwapchainService>(*services.Logging, *services.Device, *services.PhysicalDevice,
-                                                     *Surface, *services.Queues, window.GetExtent(), framesInFlight);
+                                                     *Surface, *services.Queues, window.GetExtent(), imageDemand);
     if (!Chain->IsValid())
         return;
     if (desc.DepthStencil)
@@ -36,7 +36,7 @@ PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    ImageAvailable.assign(framesInFlight, VK_NULL_HANDLE);
+    ImageAvailable.assign(imageDemand.FramesInFlight, VK_NULL_HANDLE);
     for (VkSemaphore& semaphore : ImageAvailable)
     {
         if (vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS)

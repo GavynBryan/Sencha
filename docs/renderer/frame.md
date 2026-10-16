@@ -176,14 +176,29 @@ early waits. MAILBOX and IMMEDIATE replace or tear instead; nothing in them
 waits for the display, and GPU backpressure and the optional frame-rate limit
 bound them.
 
-**Image count.** `SwapchainImageCount` (`graphics/FramesInFlight.h`) asks for
-`minImageCount + framesInFlight - 1`. The presentation engine may hold
-`minImageCount` images at once, so this lets the application own one image per
-frame in flight. Asking for `minImageCount` exactly, as the engine used to, lets
-the application own one image: the next frame cannot begin recording until the
-display hands back the image the last one used, so recording, GPU execution and
-display run in series and any frame longer than the time the display leaves
-drops to half refresh.
+**Image count.** `SwapchainImageCount` (`graphics/FramesInFlight.h`) starts
+from the fewest images that let the application own one per frame in flight
+while the presentation engine holds `minImageCount - 1`:
+`minImageCount + framesInFlight - 1`. Asking for `minImageCount` exactly, as
+the engine used to, lets the application own one image: the next frame cannot
+begin recording until the display hands back the image the last one used, so
+recording, GPU execution and display run in series and any frame longer than
+the time the display leaves drops to half refresh.
+
+Where nothing else bounds the display queue, a display-paced chain the display
+queue limit does not hold (no present wait, or any presentation but the
+primary), that is all a chain gets: every image beyond it is one more present
+queued ahead of the display. Measured on the laptop with the hold off, each
+extra image added one refresh, 6.9 ms, of queue-to-display latency on both
+GPUs. Where the limit holds the chain, or the mode does not queue (MAILBOX,
+IMMEDIATE), images bound throughput only, and the chain gets one more, capped
+by `maxImageCount`, because a path that keeps an image past its replacement
+otherwise stalls acquire with a frame slot free. On the laptop's discrete GPU
+fullscreen it took FIFO from 88 to 102 to 105 fps and IMMEDIATE from 94 to
+108; further images added nothing beyond run-to-run spread, and windowed sizes
+and the integrated GPU did not move. The cost is an image of memory per chain,
+about 8 MB at 1080p, and no latency, since the limit, not the images, bounds
+the queue.
 
 **Latency bound.** Frames ahead of the display are bounded by the display
 queue limit, the frames in flight and the swapchain's images. Both waits that

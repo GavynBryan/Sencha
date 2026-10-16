@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <graphics/FramesInFlight.h>
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
 
@@ -40,7 +41,7 @@ public:
                            VulkanSurfaceService& surface,
                            VulkanQueueService& queues,
                            WindowExtent desiredExtent,
-                           uint32_t framesInFlight);
+                           SwapchainImageDemand imageDemand);
     ~VulkanSwapchainService();
 
     VulkanSwapchainService(const VulkanSwapchainService&) = delete;
@@ -95,7 +96,7 @@ private:
     VkExtent2D Extent{};
     uint32_t LastMinImageCount = 0;
     uint32_t LastMaxImageCount = 0;
-    uint32_t FramesInFlight = 1;
+    SwapchainImageDemand ImageDemand;
     uint64_t Generation = 0;
     uint64_t RecreateCount = 0;
 

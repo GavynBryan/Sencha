@@ -55,18 +55,8 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     if (!CreateFrameData(std::max(framesInFlight, 1u)))
         return;
 
-    std::unique_ptr<PresentationTarget> primary = MakeTarget(std::move(primarySurface), primaryWindow, PresentationDesc{});
-    if (primary == nullptr)
-    {
-        Log.Error("Cannot create Vulkan frame service: the primary window cannot be presented to");
-        return;
-    }
-    Primary = Presentations.Adopt(std::move(primary));
-
-    // Resolve VK_KHR_present_wait if the device picked it up. This is the
-    // only reliable way to block the CPU on a specific vsync — without it
-    // we fall back to acquire-based pacing, which desynchronizes on drivers
-    // that queue up multiple images.
+    // Present wait is what lets the display queue limit hold the primary's
+    // frames, which decides how many images its swapchain asks for.
     for (const auto* ext : services.Device->GetEnabledDeviceExtensions())
     {
         if (ext && std::strcmp(ext, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
@@ -87,6 +77,15 @@ VulkanFrameService::VulkanFrameService(const Services& services,
         }
     }
 
+    std::unique_ptr<PresentationTarget> primary =
+        MakeTarget(std::move(primarySurface), primaryWindow, PresentationDesc{}, PresentWaitEnabled);
+    if (primary == nullptr)
+    {
+        Log.Error("Cannot create Vulkan frame service: the primary window cannot be presented to");
+        return;
+    }
+    Primary = Presentations.Adopt(std::move(primary));
+
     Valid = true;
     Log.Info("Vulkan frame service created: frames in flight {} present_wait {}",
              Frames.size(), PresentWaitEnabled ? "on" : "off");
@@ -98,7 +97,8 @@ VulkanFrameService::~VulkanFrameService()
 }
 
 std::unique_ptr<PresentationTarget> VulkanFrameService::MakeTarget(std::unique_ptr<VulkanSurfaceService> surface,
-                                                                   SdlWindow& window, const PresentationDesc& desc)
+                                                                   SdlWindow& window, const PresentationDesc& desc,
+                                                                   bool displayQueueLimited)
 {
     const PresentationTarget::Services targetServices{
         .Logging = Deps.Logging,
@@ -107,8 +107,11 @@ std::unique_ptr<PresentationTarget> VulkanFrameService::MakeTarget(std::unique_p
         .Queues = Deps.Queues,
         .Images = Deps.Images,
     };
-    auto target = std::make_unique<PresentationTarget>(targetServices, std::move(surface), window, desc,
-                                                       static_cast<uint32_t>(Frames.size()));
+    const SwapchainImageDemand imageDemand{
+        .FramesInFlight = static_cast<uint32_t>(Frames.size()),
+        .DisplayQueueLimited = displayQueueLimited,
+    };
+    auto target = std::make_unique<PresentationTarget>(targetServices, std::move(surface), window, desc, imageDemand);
     return target->IsValid() ? std::move(target) : nullptr;
 }
 
@@ -127,7 +130,8 @@ PresentationId VulkanFrameService::CreatePresentation(SdlWindow& window, const P
     if (!Valid)
         return {};
     auto surface = std::make_unique<VulkanSurfaceService>(*Deps.Logging, *Deps.Instance, window);
-    std::unique_ptr<PresentationTarget> target = MakeTarget(std::move(surface), window, desc);
+    // Only the primary is held to the display queue limit.
+    std::unique_ptr<PresentationTarget> target = MakeTarget(std::move(surface), window, desc, false);
     if (target == nullptr)
         return {};
     return Presentations.Adopt(std::move(target));

@@ -208,7 +208,8 @@ private:
     VulkanFrameTiming LastTiming;
 
     [[nodiscard]] std::unique_ptr<PresentationTarget> MakeTarget(std::unique_ptr<VulkanSurfaceService> surface,
-                                                                 SdlWindow& window, const PresentationDesc& desc);
+                                                                 SdlWindow& window, const PresentationDesc& desc,
+                                                                 bool displayQueueLimited);
     bool CreateFrameData(uint32_t framesInFlight);
     void DestroyFrameData();
     void DestroyRetiredPresentations();
