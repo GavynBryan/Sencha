@@ -3,15 +3,18 @@
 
 Per capture: the frame interval distribution (raw_dt: the wall time between
 successive frame starts, which is what a player sees as frame rate), the
-throughput it implies, how the interval sits against the display period, and
-the median of every CPU-side wait and work span, so a slow run says where its
-time went. GPU spans are reported when the capture was taken at mode gpu or
-above.
+throughput it implies, how the interval sits against the display period, the
+long-then-short interval pairs that read as microstutter, the deepest display
+queue and the worst frame latency, and the median of every CPU-side wait and
+work span, so a slow run says where its time went. GPU spans are reported when
+the capture was taken at mode gpu or above. --series prints one row per window
+of a long session instead.
 
 Fields a capture does not carry (an older build) print as "-".
 
 Usage:
   frame_pacing_stats.py [--warmup 120] [--refresh-hz 144] [--pool] [--json out.json] cap.json ...
+  frame_pacing_stats.py --series 30 cap.json
 """
 
 import argparse
@@ -25,7 +28,7 @@ SPANS = [
     ("busy", "busy_ms"),
     ("fence", "frame_fence_wait_ms"),
     ("pres_wait", "present_wait_ms"),
-    ("depth", "display_queue_depth_count"),
+    ("queued", "queued_presents_count"),
     ("acquire", "acquire_ms"),
     ("img_fence", "image_fence_wait_ms"),
     ("record", "render_record_ms"),
@@ -109,12 +112,39 @@ def reduce_frames(path, frames, env, refresh_hz):
         row["on_one_period_pct"] = 100.0 * sum(
             1 for d in dts if abs(d - period) <= period * 0.25) / len(dts)
         row["periods_median"] = row["median_ms"] / period
+        # A frame shown late, then one rushed in behind it: the 2-then-0
+        # refresh pair a display queue that starves and refills produces.
+        ordered = [f["raw_dt_ms"] for f in frames if f.get("raw_dt_ms", 0) > 0]
+        row["long_short_pct"] = 100.0 * sum(
+            1 for a, b in zip(ordered, ordered[1:]) if a >= 1.5 * period and b <= 0.5 * period
+        ) / max(len(ordered) - 1, 1)
+    queued = [f["queued_presents_count"] for f in frames if "queued_presents_count" in f]
+    row["queued_max"] = max(queued) if queued else None
+    lat = sorted(f["frame_latency_ms"] for f in frames if f.get("frame_latency_ms", -1) >= 0)
+    row["frame_lat_p99"] = percentile(lat, 99) if lat else None
     return row
 
 
 def fmt(v, width=7, prec=2):
     return f"{'-':>{width}}" if v is None or (isinstance(v, float) and math.isnan(v)) \
         else f"{v:>{width}.{prec}f}"
+
+
+def print_series(path, warmup, window_s, refresh_hz):
+    frames, env = load_frames(path, warmup)
+    print(f"{'t_s':>6}{'n':>7}{'fps':>8}{'p99':>7}{'max':>7}{'@1T%':>6}{'q_max':>6}"
+          f"{'acq':>7}{'pres_lat':>9}{'frame_lat':>10}{'lat_p99':>8}")
+    start, elapsed, bucket = 0.0, 0.0, []
+    for f in frames:
+        bucket.append(f)
+        elapsed += f.get("raw_dt_ms", 0) / 1000.0
+        if elapsed - start >= window_s or f is frames[-1]:
+            r = reduce_frames(path, bucket, env, refresh_hz)
+            print(f"{start:>6.0f}{r['frames']:>7}{fmt(r['fps'], 8, 1)}{fmt(r['p99_ms'])}{fmt(r['max_ms'])}"
+                  f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r['queued_max'], 6, 0)}"
+                  f"{fmt(r['spans']['acquire'])}{fmt(r['spans']['pres_lat'], 9)}"
+                  f"{fmt(r['spans']['frame_lat'], 10)}{fmt(r['frame_lat_p99'], 8)}")
+            start, bucket = elapsed, []
 
 
 def main():
@@ -126,8 +156,14 @@ def main():
     ap.add_argument("--json", default=None)
     ap.add_argument("--pool", action="store_true",
                     help="pool repeated runs (names ending _rN) into one row per cell")
+    ap.add_argument("--series", type=float, default=0.0,
+                    help="seconds per row: one capture as a time series")
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
+    if args.series:
+        for p in args.files:
+            print_series(p, args.warmup, args.series, args.refresh_hz)
+        return
 
     cells = {}
     for p in sorted(args.files):
@@ -137,7 +173,7 @@ def main():
         cell[0].extend(frames)
     rows = [reduce_frames(key, frames, env, args.refresh_hz) for key, (frames, env) in cells.items()]
     head = (f"{'capture':<28}{'mode':>10}{'img':>4}{'extent':>11}{'n':>6}{'fps':>8}"
-            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}{'tick/s':>7}"
+            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}{'LS%':>6}{'tick/s':>7}{'q_max':>6}{'lat_p99':>8}"
             + "".join(f"{label:>10}" for label, _ in SPANS))
     print(head)
     print("-" * len(head))
@@ -146,7 +182,8 @@ def main():
         print(f"{name:<28}{str(r['present_mode']):>10}{str(r['images'] or '-'):>4}"
               f"{str(r['extent']):>11}{r['frames']:>6}{fmt(r['fps'], 8, 1)}"
               f"{fmt(r['median_ms'])}{fmt(r['p95_ms'])}{fmt(r['p99_ms'])}{fmt(r['max_ms'])}"
-              f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r['ticks_per_s'], 7, 1)}"
+              f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r.get('long_short_pct'), 6, 1)}"
+              f"{fmt(r['ticks_per_s'], 7, 1)}{fmt(r['queued_max'], 6, 0)}{fmt(r['frame_lat_p99'], 8)}"
               + "".join(fmt(r["spans"][label], 10) for label, _ in SPANS))
     if args.json:
         with open(args.json, "w") as f:

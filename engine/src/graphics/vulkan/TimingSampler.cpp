@@ -68,7 +68,7 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
     sample.RenderResult = static_cast<int>(renderResult);
     sample.Presented = renderResult == RenderFrameResult::Presented;
     sample.SwapchainImageIndex = vulkanTiming.ImageIndex;
-    sample.DisplayQueueDepth = vulkanTiming.DisplayQueueDepth;
+    sample.QueuedPresents = vulkanTiming.QueuedPresents;
     history.Push(sample);
 }
 

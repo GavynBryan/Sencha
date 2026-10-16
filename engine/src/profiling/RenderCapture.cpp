@@ -3,6 +3,7 @@
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 
+#include <algorithm>
 #include <sstream>
 
 namespace
@@ -62,7 +63,7 @@ namespace
 			{ "swapchain_height_px", static_cast<double>(timing.SwapchainHeight) },
 			{ "present_mode_enum", static_cast<double>(timing.PresentMode) },
 			{ "swapchain_image_count", static_cast<double>(timing.SwapchainImageCount) },
-			{ "display_queue_depth_count", static_cast<double>(timing.DisplayQueueDepth) },
+			{ "queued_presents_count", static_cast<double>(timing.QueuedPresents) },
 			{ "visible_objects_count", static_cast<double>(stats.VisibleObjects) },
 			{ "draw_calls_count", static_cast<double>(stats.DrawCalls) },
 			{ "submitted_triangles_count", static_cast<double>(stats.SubmittedTriangles) },
@@ -155,8 +156,9 @@ namespace
 
 void RenderCapture::Start(std::size_t frameLimit)
 {
-	if (Records.empty())
-		Records.resize(kDefaultCapacityFrames);
+	const std::size_t capacity = std::clamp(frameLimit, kDefaultCapacityFrames, kMaxCapacityFrames);
+	if (Records.size() < capacity)
+		Records.resize(capacity);
 	Head = 0;
 	Count = 0;
 	RemainingFrames = frameLimit;

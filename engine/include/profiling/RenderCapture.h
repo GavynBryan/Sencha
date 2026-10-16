@@ -24,8 +24,10 @@ class RenderCapture
 {
 public:
 	static constexpr std::size_t kDefaultCapacityFrames = 4096;
+	// A longer frame limit grows the ring to keep every frame, up to this.
+	static constexpr std::size_t kMaxCapacityFrames = std::size_t{ 1 } << 18;
 	// 9: fence, present and limiter waits, present and frame latency, the
-	// locked delta, swapchain image count and display queue depth.
+	// locked delta, swapchain image count and queued presents.
 	static constexpr std::uint32_t kSchemaVersion = 9;
 
 	struct FrameRecord

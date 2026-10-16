@@ -1,5 +1,6 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 
+#include <graphics/FramesInFlight.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 #include <graphics/vulkan/VulkanQueueService.h>
@@ -32,13 +33,13 @@ VulkanSwapchainService::VulkanSwapchainService(
     VulkanSurfaceService& surface,
     VulkanQueueService& queues,
     WindowExtent desiredExtent,
-    SwapchainImageDemand imageDemand)
+    std::uint32_t framesInFlight)
     : Log(logging.GetLogger<VulkanSwapchainService>())
     , PhysicalDevice(physicalDevice.GetPhysicalDevice())
     , Device(device.GetDevice())
     , Surface(surface.GetSurface())
     , Queues(queues)
-    , ImageDemand(imageDemand)
+    , FramesInFlight(framesInFlight)
 {
     if (!device.IsValid())
     {
@@ -341,8 +342,7 @@ bool VulkanSwapchainService::CreateSwapchain(WindowExtent desiredExtent,
     const auto compositeAlpha = ChooseCompositeAlpha(support.Capabilities.supportedCompositeAlpha);
     const auto extent = ChooseExtent(support.Capabilities, desiredExtent);
     const auto imageCount = SwapchainImageCount(support.Capabilities.minImageCount,
-                                                support.Capabilities.maxImageCount, ImageDemand.FramesInFlight,
-                                                IsDisplayPaced(presentMode) && !ImageDemand.DisplayQueueLimited);
+                                                support.Capabilities.maxImageCount, FramesInFlight);
 
     if (extent.width == 0 || extent.height == 0)
     {

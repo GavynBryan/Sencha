@@ -1,5 +1,6 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 
+#include <graphics/FramesInFlight.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/PresentationTarget.h>
 #include <graphics/vulkan/VulkanDeletionQueueService.h>
@@ -36,7 +37,6 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     : Log(services.Logging->GetLogger<VulkanFrameService>())
     , Deps(services)
     , Device(services.Device->GetDevice())
-    , QueueLimit(std::max(framesInFlight, 1u), static_cast<std::uint32_t>(PresentHistory::kTracked - 1))
 {
     if (!services.Device->IsValid())
     {
@@ -55,8 +55,16 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     if (!CreateFrameData(std::max(framesInFlight, 1u)))
         return;
 
-    // Present wait is what lets the display queue limit hold the primary's
-    // frames, which decides how many images its swapchain asks for.
+    std::unique_ptr<PresentationTarget> primary = MakeTarget(std::move(primarySurface), primaryWindow, PresentationDesc{});
+    if (primary == nullptr)
+    {
+        Log.Error("Cannot create Vulkan frame service: the primary window cannot be presented to");
+        return;
+    }
+    Primary = Presentations.Adopt(std::move(primary));
+
+    // Present wait observes when a present reaches the display, which holds a
+    // display-paced primary to its queued-present bound.
     for (const auto* ext : services.Device->GetEnabledDeviceExtensions())
     {
         if (ext && std::strcmp(ext, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
@@ -77,15 +85,6 @@ VulkanFrameService::VulkanFrameService(const Services& services,
         }
     }
 
-    std::unique_ptr<PresentationTarget> primary =
-        MakeTarget(std::move(primarySurface), primaryWindow, PresentationDesc{}, PresentWaitEnabled);
-    if (primary == nullptr)
-    {
-        Log.Error("Cannot create Vulkan frame service: the primary window cannot be presented to");
-        return;
-    }
-    Primary = Presentations.Adopt(std::move(primary));
-
     Valid = true;
     Log.Info("Vulkan frame service created: frames in flight {} present_wait {}",
              Frames.size(), PresentWaitEnabled ? "on" : "off");
@@ -97,8 +96,7 @@ VulkanFrameService::~VulkanFrameService()
 }
 
 std::unique_ptr<PresentationTarget> VulkanFrameService::MakeTarget(std::unique_ptr<VulkanSurfaceService> surface,
-                                                                   SdlWindow& window, const PresentationDesc& desc,
-                                                                   bool displayQueueLimited)
+                                                                   SdlWindow& window, const PresentationDesc& desc)
 {
     const PresentationTarget::Services targetServices{
         .Logging = Deps.Logging,
@@ -107,11 +105,8 @@ std::unique_ptr<PresentationTarget> VulkanFrameService::MakeTarget(std::unique_p
         .Queues = Deps.Queues,
         .Images = Deps.Images,
     };
-    const SwapchainImageDemand imageDemand{
-        .FramesInFlight = static_cast<uint32_t>(Frames.size()),
-        .DisplayQueueLimited = displayQueueLimited,
-    };
-    auto target = std::make_unique<PresentationTarget>(targetServices, std::move(surface), window, desc, imageDemand);
+    auto target = std::make_unique<PresentationTarget>(targetServices, std::move(surface), window, desc,
+                                                       static_cast<uint32_t>(Frames.size()));
     return target->IsValid() ? std::move(target) : nullptr;
 }
 
@@ -130,8 +125,7 @@ PresentationId VulkanFrameService::CreatePresentation(SdlWindow& window, const P
     if (!Valid)
         return {};
     auto surface = std::make_unique<VulkanSurfaceService>(*Deps.Logging, *Deps.Instance, window);
-    // Only the primary is held to the display queue limit.
-    std::unique_ptr<PresentationTarget> target = MakeTarget(std::move(surface), window, desc, false);
+    std::unique_ptr<PresentationTarget> target = MakeTarget(std::move(surface), window, desc);
     if (target == nullptr)
         return {};
     return Presentations.Adopt(std::move(target));
@@ -158,13 +152,7 @@ bool VulkanFrameService::RetirePresentation(PresentationId id, std::function<voi
 bool VulkanFrameService::RebuildPresentation(PresentationId id, WindowExtent extent)
 {
     PresentationTarget* target = Presentations.Find(id);
-    if (target == nullptr || !target->Rebuild(extent))
-        return false;
-    // A new chain may take another presentation path (a fullscreen surface
-    // scanned out directly, a window composited), so its depth is relearned.
-    if (id == Primary)
-        QueueLimit.Reset();
-    return true;
+    return target != nullptr && target->Rebuild(extent);
 }
 
 void VulkanFrameService::RebuildStaleSecondaries()
@@ -226,6 +214,7 @@ void VulkanFrameService::ObservePrimaryPresents()
         if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(oldest, ProfileClock::now()))
             RecordLatency(*displayed);
     }
+    LastTiming.QueuedPresents = static_cast<uint32_t>(presents.PendingCount());
 }
 
 void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& displayed)
@@ -234,44 +223,31 @@ void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& d
     LastTiming.FrameLatencySeconds = displayed.LatencyFromFrameStart;
 }
 
-bool VulkanFrameService::HoldForDisplay()
+void VulkanFrameService::HoldForDisplay()
 {
     PresentationTarget* primary = Presentations.Find(Primary);
     if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr
         || primary->Availability() != PresentationAvailability::Acquirable
         || !IsDisplayPaced(primary->Swapchain().GetPresentMode()))
-        return false;
+        return;
     const float refreshHz = primary->Window().GetDisplayRefreshHz();
     if (refreshHz <= 0.0f)
-        return false;
-    const double refreshSeconds = 1.0 / static_cast<double>(refreshHz);
+        return;
 
     PresentHistory& presents = primary->Presents();
-    const std::optional<DisplayQueueLimit::Hold> hold = QueueLimit.HoldFor(presents, refreshSeconds);
-    const VkSwapchainKHR chain = primary->Swapchain().GetSwapchain();
-    if (!hold || WaitForPresentFn(Device, chain, hold->Awaited, 0) == VK_SUCCESS)
-        return false;
-
+    const std::optional<PresentHistory::DisplayHold> hold =
+        presents.HoldToQueue(MaxQueuedPresents(GetFramesInFlight()), 1.0 / static_cast<double>(refreshHz));
+    if (!hold)
+        return;
     const auto waitStart = ProfileClock::now();
-    const VkResult result =
-        WaitForPresentFn(Device, chain, hold->Awaited, static_cast<uint64_t>(hold->Timeout.count()));
+    const VkResult result = WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), hold->Awaited,
+                                             static_cast<uint64_t>(hold->Timeout.count()));
     const auto released = ProfileClock::now();
     LastTiming.PresentWaitSeconds = std::chrono::duration<double>(released - waitStart).count();
     if (result != VK_SUCCESS)
-        return false;
-
+        return;
     if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(hold->Awaited, released))
-    {
         RecordLatency(*displayed);
-        QueueLimit.Displayed(DisplayQueueLimit::Observation{
-                                 .Id = hold->Awaited,
-                                 .DisplayedAt = released,
-                                 .HeldForDisplay = displayed->HeldForDisplay,
-                                 .ProductionSeconds = displayed->ProductionSeconds,
-                             },
-                             refreshSeconds);
-    }
-    return true;
 }
 
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
@@ -351,6 +327,7 @@ VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
     LastTiming.PresentWaitSeconds = 0.0;
     LastTiming.PresentLatencySeconds = -1.0;
     LastTiming.FrameLatencySeconds = -1.0;
+    LastTiming.QueuedPresents = 0;
     if (!Valid)
         return VulkanFrameStatus::Error;
 
@@ -380,9 +357,9 @@ VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
             Retirement.RetiredThrough, current.SubmittedFrameNumber);
         Deps.DeletionQueue->AdvanceFrame();
     }
-    const bool held = HoldForDisplay();
-    CurrentFrameStart = PresentHistory::Frame{ .StartedAt = ProfileClock::now(), .HeldForDisplay = held };
-    LastTiming.DisplayQueueDepth = QueueLimit.Depth();
+    HoldForDisplay();
+    ObservePrimaryPresents();
+    CurrentFrameStartedAt = ProfileClock::now();
     return VulkanFrameStatus::Ready;
 }
 
@@ -404,7 +381,6 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
             return awaited;
     }
     DestroyRetiredPresentations();
-    ObservePrimaryPresents();
 
     const VulkanFrameStatus acquired = AcquirePresentations(frame);
     if (acquired != VulkanFrameStatus::Ready)
@@ -562,7 +538,7 @@ SurfaceOutcome VulkanFrameService::EndFrame(const VulkanFrame& frame)
         // chain is retiring.
         const bool presented = outcome == SurfaceOutcome::Ok || outcome == SurfaceOutcome::Suboptimal;
         if (presented && primaryPresentId != 0)
-            presentation.Target->Presents().Queued(primaryPresentId, presentStart, CurrentFrameStart);
+            presentation.Target->Presents().Queued(primaryPresentId, presentStart, CurrentFrameStartedAt);
     }
     return primaryOutcome;
 }

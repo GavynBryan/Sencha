@@ -13,34 +13,31 @@ class PresentHistory
 public:
     using Clock = std::chrono::steady_clock;
 
-    // Pending presents are bounded by the presentation path's depth; a chain
-    // that queues more loses the oldest timestamps, never the ordering.
+    // A chain that queues more loses the oldest timestamps, never the ordering.
     static constexpr std::size_t kTracked = 16;
 
-    struct Frame
-    {
-        // When the frame that produced the present began, after any wait.
-        Clock::time_point StartedAt{};
-        // Whether that frame began only once an earlier present was displayed.
-        bool HeldForDisplay = false;
-    };
-
-    void Queued(std::uint64_t id, Clock::time_point queuedAt, const Frame& frame);
+    void Queued(std::uint64_t id, Clock::time_point queuedAt, Clock::time_point frameStartedAt);
     void Clear();
 
-    // The id queued `depth` presents before the one about to be queued, or 0
-    // when this chain has none.
-    [[nodiscard]] std::uint64_t IdBehindNext(std::uint32_t depth) const;
     [[nodiscard]] std::uint64_t OldestPending() const;
     [[nodiscard]] std::size_t PendingCount() const { return Count; }
+
+    struct DisplayHold
+    {
+        std::uint64_t Awaited = 0;
+        // A display that stops taking frames (hidden, locked) must not hold the loop.
+        std::chrono::nanoseconds Timeout{};
+    };
+
+    // The present a frame must see displayed so that at most `maxQueued`
+    // presents wait for the display when it begins; none until the chain has
+    // queued more than that, or without a refresh period.
+    [[nodiscard]] std::optional<DisplayHold> HoldToQueue(std::uint32_t maxQueued, double refreshSeconds) const;
 
     struct DisplayedPresent
     {
         double LatencyFromQueue = 0.0;
         double LatencyFromFrameStart = 0.0;
-        // From the frame's start to its present being queued.
-        double ProductionSeconds = 0.0;
-        bool HeldForDisplay = false;
     };
 
     // Retires every present through `id`; what is known of `id` if it was pending.
@@ -51,7 +48,7 @@ private:
     {
         std::uint64_t Id = 0;
         Clock::time_point QueuedAt{};
-        Frame Producer;
+        Clock::time_point FrameStartedAt{};
     };
 
     std::array<Entry, kTracked> Ring{};

@@ -45,8 +45,8 @@ struct TimingFrameSample
     uint64_t SwapchainRecreateCount = 0;
     uint32_t SwapchainImageIndex = 0;
     uint32_t SwapchainImageCount = 0;
-    // Presents allowed to wait for the display when a display-paced frame begins.
-    uint32_t DisplayQueueDepth = 0;
+    // See VulkanFrameTiming.
+    uint32_t QueuedPresents = 0;
     // The drawable size this frame rendered at. Per frame rather than in the
     // capture envelope because a resize mid-capture changes it.
     uint32_t SwapchainWidth = 0;

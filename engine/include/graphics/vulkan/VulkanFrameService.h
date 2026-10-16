@@ -2,14 +2,12 @@
 
 #include <core/handle/HandlePool.h>
 #include <core/logging/LoggingProvider.h>
-#include <graphics/DisplayQueueLimit.h>
 #include <graphics/GpuFrameRetirement.h>
 #include <graphics/PresentHistory.h>
 #include <graphics/PresentationId.h>
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
 
-#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -83,7 +81,8 @@ struct VulkanFrameTiming
     double PresentSeconds = 0.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
-    uint32_t DisplayQueueDepth = 0;
+    // Presents waiting for the display when the frame began, after any hold.
+    uint32_t QueuedPresents = 0;
 };
 
 // The frame slots -- one command buffer and fence per frame in flight -- and
@@ -145,8 +144,8 @@ public:
     [[nodiscard]] bool AnySecondaryVisible();
 
     // Blocks until the frame slot about to be used has finished on the GPU and,
-    // in a display-paced mode, until the display queue is within its limit.
-    // Call before the frame samples input; BeginFrame waits itself otherwise.
+    // in a display-paced mode, until no more than MaxQueuedPresents wait for
+    // the display. Call before the frame samples input; BeginFrame waits otherwise.
     VulkanFrameStatus AwaitFrameSlot();
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     // DeviceLost or Failed when the frame broke; otherwise the primary's
@@ -201,20 +200,18 @@ private:
     uint64_t NextPresentId = 1;
     GpuFrameRetirement Retirement;
     PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
-    PresentHistory::Frame CurrentFrameStart;
-    DisplayQueueLimit QueueLimit;
+    PresentHistory::Clock::time_point CurrentFrameStartedAt{};
     bool PresentWaitEnabled = false;
     bool Valid = false;
     VulkanFrameTiming LastTiming;
 
     [[nodiscard]] std::unique_ptr<PresentationTarget> MakeTarget(std::unique_ptr<VulkanSurfaceService> surface,
-                                                                 SdlWindow& window, const PresentationDesc& desc,
-                                                                 bool displayQueueLimited);
+                                                                 SdlWindow& window, const PresentationDesc& desc);
     bool CreateFrameData(uint32_t framesInFlight);
     void DestroyFrameData();
     void DestroyRetiredPresentations();
     void ObservePrimaryPresents();
-    bool HoldForDisplay();
+    void HoldForDisplay();
     void RecordLatency(const PresentHistory::DisplayedPresent& displayed);
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();

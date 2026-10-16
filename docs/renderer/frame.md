@@ -8,7 +8,7 @@ The renderer occupies four of the `FramePhase` slots
 
 | Phase | Renderer work |
 |---|---|
-| `AwaitFrameSlot` (0) | `VulkanFrameService::AwaitFrameSlot`: wait this frame slot's fence, advance retirement and the deletion queue, then hold to the display queue limit |
+| `AwaitFrameSlot` (0) | `VulkanFrameService::AwaitFrameSlot`: wait this frame slot's fence, advance retirement and the deletion queue, then hold to the queued-present bound |
 | `RebuildGraphics` (3) | `VulkanFrameService::RebuildPresentation` for the primary when the frame loop says so, then `RebuildStaleSecondaries` |
 | `ExtractRender` (11) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
 | `Render` (12) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
@@ -59,12 +59,12 @@ the whole submission path.
 AwaitFrameSlot                                               [FramePhase 0, before input]
   wait on this slot's in-flight fence (if it was submitted)
   VulkanDeletionQueueService::AdvanceFrame
-  display-paced primary: wait until present N - depth is displayed [vkWaitForPresentKHR, bounded]
+  display-paced primary: wait until at most F presents are queued [vkWaitForPresentKHR, bounded]
+  note which of the primary's presents reached the display   [vkWaitForPresentKHR, timeout 0]
 DrawFrameScheduled
   VulkanFrameService::BeginFrame
     AwaitFrameSlot, if the frame phase did not already
     destroy retired presentations, then run their callbacks
-    note which of the primary's presents reached the display [vkWaitForPresentKHR, timeout 0]
     for each acquirable presentation:
       vkAcquireNextImageKHR                                  [signals its ImageAvailable]
       wait on the acquired image's last-recorded fence
@@ -104,7 +104,7 @@ swapchain rendering scope is open around them.
 | `ImageAvailable` semaphore | one per frame in flight, per presentation | `vkAcquireNextImageKHR` | the frame's `vkQueueSubmit`, at `ALL_COMMANDS` |
 | `RenderFinished` semaphore | one per **swapchain image**, per presentation | that frame's submit | `vkQueuePresentKHR` |
 | `InFlightFence` | one per frame in flight | that frame's submit | next `AwaitFrameSlot` for the same slot, and by any frame acquiring an image it last rendered |
-| `presentId` | monotonic, primary only | `VK_KHR_present_id` | `AwaitFrameSlot`, for present *N - depth* in a display-paced mode; polled with a zero timeout at each `BeginFrame` |
+| `presentId` | monotonic, primary only | `VK_KHR_present_id` | `AwaitFrameSlot`: waited for present *N - 1 - F* in a display-paced mode, then every pending one polled with a zero timeout |
 
 `RenderFinished` is per image, not per frame slot. A per-slot signal semaphore
 would be waited by a present for an image another slot is still using when the
@@ -121,103 +121,94 @@ Five concerns, each with one owner, none waiting on another's events:
 |---|---|---|
 | Simulation time | `RuntimeFrameLoop` (`FixedStepScheduler`, `FrameCadenceLock`) | wall time; ticks never depend on how frames present |
 | CPU frame production | `FrameDriver` phases | the waits below |
-| GPU execution | `VulkanFrameService::AwaitFrameSlot` | frames in flight: the CPU is at most `graphics.framesInFlight` frames ahead of GPU completion |
-| Presentation | the swapchain (present mode, image count) and `DisplayQueueLimit` | in display-paced modes, how many presents may wait for the display when a frame begins; acquire, only once every image the application may own is queued |
+| GPU execution | `VulkanFrameService::AwaitFrameSlot` | the slot fence: frames in flight |
+| Presentation | `VulkanFrameService::AwaitFrameSlot` (display-paced primary) or acquire | presents queued for the display |
 | Frame-rate limit | `FramePacer` (`r.target_fps`, 0 = off) | a sleep then spin at the end of the frame |
+
+### Four quantities
+
+With *F* frames in flight (`graphics.framesInFlight`, default 2, clamped to
+1..4 by `graphics/FramesInFlight.h`):
+
+1. **GPU frames in flight, at most *F*.** One fence per slot. Frame *N* waits
+   the fence of frame *N - F* in `AwaitFrameSlot`, before input, so the CPU is
+   never more than *F* frames ahead of GPU completion and CPU and GPU overlap
+   by up to *F* frames.
+2. **Presents queued but not yet displayed, at most *F* when a frame begins**
+   (`MaxQueuedPresents`). This is a different count from (1): a present whose
+   GPU work finished long ago still waits its turn for a refresh. In a
+   display-paced mode (FIFO, FIFO_RELAXED) with present wait, the primary's
+   frame *N* waits in `AwaitFrameSlot`, before input, until present
+   *N - 1 - F* is displayed. That is the only display wait in the frame.
+3. **Images the application owns while recording: one.** A frame acquires in
+   `BeginFrame` and presents in `EndFrame`; frames do not hold images across
+   each other.
+4. **Swapchain images: `max(F + 2, minImageCount)`, capped by
+   `maxImageCount`** (`SwapchainImageCount`). That is one on the display, *F*
+   queued behind it and one being recorded. Acquire therefore never waits
+   while (2) holds, and without the hold it bounds the queue to the same *F*.
+
+### Why *F* presents
+
+A frame's CPU and GPU work may span up to *F* refreshes: at one frame per
+refresh, frame *N + F* waits for frame *N*'s fence, so (1) already allows it
+that long. The presentation engine then needs up to one more refresh to latch
+the finished image, more on a composited desktop than for a surface scanned out
+directly. A frame started when present *N - 1 - F* is displayed has *F + 1*
+refreshes before its own refresh comes up, which is exactly that budget. Holding
+one present shallower takes the presentation refresh away and starves the
+display; holding one deeper adds a refresh of latency and buys nothing.
+`DisplayQueueTests` checks both directions against a FIFO model of the
+pipeline: one present shallower, the depth the engine used before, feeds a
+path that takes most of a refresh only two refreshes in three. The bound is a count
+of presents, not of milliseconds, so it holds at any refresh rate and is not
+tuned to a machine (measurements: `docs/plans/evidence/frame-pacing/README.md`).
+
+### Latency bound
+
+When the display paces the loop, frame *N* begins (and samples input) right
+after present *N - 1 - F* is displayed and is itself displayed *F + 1*
+refreshes later: input to display is *F + 1* refreshes, 20.8 ms at 144 Hz and
+50 ms at 60 Hz with the default *F = 2*. `graphics.framesInFlight 1` gives two
+refreshes at the cost of serializing CPU and GPU work. When a frame-rate limit
+below the refresh rate paces the loop the queue stays near empty and latency is
+the frame's own production and presentation path.
+
+If the display cannot keep up, because the presentation path takes longer than
+its refresh or the compositor stalls, the hold keeps the queue at *F* and the
+frame rate falls instead: frames are not queued to buy throughput. The hold
+waits at most *F + 2* refreshes, so a display that never reports a present
+displayed (a hidden or locked window) slows the loop rather than stopping it,
+provided the presentation engine keeps returning images: acquire has no
+timeout.
+
+### Where the hold does not apply
+
+Without `VK_KHR_present_wait`, without a known refresh rate, for secondary
+presentations, and in MAILBOX and IMMEDIATE, nothing holds a frame for the
+display. In FIFO the image count then bounds the queue to the same *F*, but the
+wait moves into acquire, after input, and ages the input by its length.
+MAILBOX and IMMEDIATE do not queue: GPU backpressure and the optional
+frame-rate limit bound them. The capture reports `present_wait_ms`,
+`acquire_ms`, `queued_presents_count` (presents not yet seen displayed when the
+frame began, after the hold) and `present_latency_ms` / `frame_latency_ms`.
 
 **Observing the display.** `VK_KHR_present_id` and `VK_KHR_present_wait` say
 when a present reaches the display. `PresentHistory` keeps each primary
 present from queueing until it is seen displayed, which yields
 `present_latency_ms` (queued to displayed) and `frame_latency_ms` (frame start,
-just before input is sampled, to displayed). A present seen by the zero-timeout
-poll in `BeginFrame` reads late by up to one frame interval; one the frame
-waited for is exact.
-
-**The display queue limit.** In a display-paced mode a frame that begins while
-more presents wait for the display than the display needs only adds latency:
-it will wait in the queue. `AwaitFrameSlot` therefore holds a frame, before it
-samples input, until present *N - depth* has been displayed. The right depth is
-the presentation path's latency in refreshes plus the frame's production time,
-and that latency belongs to the platform: about one refresh for a surface
-scanned out directly, two on a composited desktop, three to four on a laptop
-whose discrete GPU presents through the integrated one. A fixed depth is wrong
-somewhere. The engine used one, 2, before every frame and in every present
-mode: on that laptop it held FIFO at two thirds of 144 Hz, and IMMEDIATE and
-MAILBOX at the same rate.
-
-`DisplayQueueLimit` learns the depth. The latency of a present held to the
-limit measures the limit, not the path, so it cannot be read off the latency;
-it can be read off starvation. When the display shows a frame for two refreshes
-although the next frame was released by the limit and produced within one, the
-limit released it too late. Two such refreshes within a second are a pattern,
-not a hitch, and deepen the limit by one. Nothing makes it shallower: probing
-downward would starve the display on purpose. It starts at the frames in
-flight, is capped by what `PresentHistory` can track, and restarts when the
-primary swapchain is rebuilt, since a new chain may take another path
-(fullscreen scanout, a composited window). A frame produced in more than a
-refresh is the application's limit and never deepens it. The wait is bounded
-by the depth plus one refresh, so a display that stops taking frames, hidden or
-locked, cannot hold the loop. Without present wait, or without a known refresh
-rate, there is no limit and acquire alone applies. The capture reports the
-depth each frame (`display_queue_depth_count`) and the wait
-(`present_wait_ms`).
-
-The starvation test cannot tell a too-shallow limit from a disturbance that
-starves two refreshes on its own: a window's first presents, a compositor
-stall, a loaded machine. Measured, the limit deepens past need in the first
-frames of most runs and creeps over a session (from 2 to 7 in three minutes,
-13.7 to 34.9 ms of queue-to-display latency, on the laptop's Intel path), and
-a depth the swapchain's images cannot queue moves the binding wait into
-acquire and present, after input. `docs/deferred.md` records the open choice.
-
-**Display-paced and unpaced modes.** FIFO and FIFO_RELAXED are display-paced:
-the presentation engine consumes one image per refresh, so a present queued
-early waits. MAILBOX and IMMEDIATE replace or tear instead; nothing in them
-waits for the display, and GPU backpressure and the optional frame-rate limit
-bound them.
-
-**Image count.** `SwapchainImageCount` (`graphics/FramesInFlight.h`) starts
-from the fewest images that let the application own one per frame in flight
-while the presentation engine holds `minImageCount - 1`:
-`minImageCount + framesInFlight - 1`. Asking for `minImageCount` exactly, as
-the engine used to, lets the application own one image: the next frame cannot
-begin recording until the display hands back the image the last one used, so
-recording, GPU execution and display run in series and any frame longer than
-the time the display leaves drops to half refresh.
-
-Where nothing else bounds the display queue, a display-paced chain the display
-queue limit does not hold (no present wait, or any presentation but the
-primary), that is all a chain gets: every image beyond it is one more present
-queued ahead of the display. Measured on the laptop with the hold off, each
-extra image added one refresh, 6.9 ms, of queue-to-display latency on both
-GPUs. Where the limit holds the chain, or the mode does not queue (MAILBOX,
-IMMEDIATE), images bound throughput only, and the chain gets one more, capped
-by `maxImageCount`, because a path that keeps an image past its replacement
-otherwise stalls acquire with a frame slot free. On the laptop's discrete GPU
-fullscreen it took FIFO from 88 to 102 to 105 fps and IMMEDIATE from 94 to
-108; further images added nothing beyond run-to-run spread, and windowed sizes
-and the integrated GPU did not move. The cost is an image of memory per chain,
-about 8 MB at 1080p, and no latency, since the limit, not the images, bounds
-the queue.
-
-**Latency bound.** Frames ahead of the display are bounded by the display
-queue limit, the frames in flight and the swapchain's images. Both waits that
-throttle a frame in steady state, the GPU slot and the display queue, come
-before it samples input (`FramePhase::AwaitFrameSlot` is phase 0), so neither
-ages the input. Acquire runs inside `Render`, after input, and blocks when the
-presentation engine still holds every image the application may own. Where
-the limit binds that is rare, but a path that returns images slower than the
-display takes them makes acquire the binding wait, and that wait does age the
-input: on the laptop's discrete GPU at 1080p, acquire waits about 13 ms of a
-14 ms frame (`docs/plans/evidence/frame-pacing/README.md`).
+just before input is sampled, to displayed). Both are estimates of display
+time: present wait completes when the presentation engine reports the present,
+not when light leaves the panel. A present seen by the zero-timeout poll reads
+late by up to one frame interval; one the frame waited for is exact.
 
 **Frame time smoothness** belongs to the time domain. The loop's measured
 deltas carry scheduler and compositor noise however frames are paced;
 `FrameCadenceLock` removes it before simulation consumes the delta
 (`time.cadence_lock`). Starving the swapchain of images to make acquire the
-"vsync anchor" removed no noise; it serialized the pipeline. A limit-bound
-loop is released by display events one refresh apart, which is the steadiest
-cadence the loop can measure.
+"vsync anchor", as the engine once did, removed no noise; it serialized the
+pipeline. A hold-bound loop is released by display events one refresh apart,
+which is the steadiest cadence the loop can measure.
 
 **Frame-rate limit with vsync.** `r.target_fps` limits frame starts. In FIFO a
 limit at or above the refresh rate is moot. A limit below it produces frames at
@@ -232,9 +223,12 @@ Present mode selection: FIFO by default, overridable per process with the
 
 Benchmarks: `scripts/frame_pacing_stats.py` reduces `render.capture.output`
 captures to the frame interval distribution (median, p95, p99, share of
-intervals on one refresh period), throughput, the median of each wait, and the
-two latencies; `scripts/bench_frame_pacing.sh` runs a matrix of present modes,
-window sizes, limits and adapters against one build.
+intervals on one refresh period, long-then-short pairs), throughput, the
+deepest queue, the median of each wait, and the two latencies, or with
+`--series` a long session as a time series; `scripts/bench_frame_pacing.sh`
+runs a matrix of present modes, window sizes, limits and adapters against one
+build. A capture armed for a bounded run (`app.exit_after_frames`) keeps every
+frame.
 `docs/plans/evidence/frame-pacing/README.md` records the measurements behind
 this section.
 
@@ -314,7 +308,7 @@ After `DrawFrameScheduled` returns, the `Render` phase pushes one
 - `RendererFrameTiming`: seconds spent recording, seconds for the whole call.
 - `VulkanFrameTiming`: frame-fence, present-wait, acquire, image-fence, submit
   and present seconds, the present and frame latency of the newest present
-  seen displayed, the display queue depth, image index and swapchain generation.
+  seen displayed, the presents queued at frame start, image index and swapchain generation.
 - `SwapchainState`: extent, format, color space, present mode, image counts,
   generation, and the cumulative recreate count.
 - The `RenderFrameResult`.

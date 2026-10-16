@@ -43,7 +43,7 @@ public:
     };
 
     PresentationTarget(const Services& services, std::unique_ptr<VulkanSurfaceService> surface,
-                       SdlWindow& window, const PresentationDesc& desc, SwapchainImageDemand imageDemand);
+                       SdlWindow& window, const PresentationDesc& desc, std::uint32_t framesInFlight);
     // The device must be done with every frame that used this presentation.
     ~PresentationTarget();
 

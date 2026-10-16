@@ -33,24 +33,20 @@ inline constexpr std::uint32_t kMaxFramesInFlight = 4;
     return requested;
 }
 
-// What a swapchain's image count answers to besides the surface's limits.
-struct SwapchainImageDemand
+// Presents a display-paced frame may find waiting for the display when it
+// begins: one per frame in flight, the depth that keeps the display fed
+// without queueing latency (docs/renderer/frame.md, Pacing).
+[[nodiscard]] constexpr std::uint32_t MaxQueuedPresents(std::uint32_t framesInFlight)
 {
-    std::uint32_t FramesInFlight = 1;
-    // A display queue limit holds this chain's frames, so its images bound
-    // throughput rather than how long a frame waits for the display.
-    bool DisplayQueueLimited = false;
-};
+    return ClampFramesInFlight(framesInFlight);
+}
 
-// `minImages + framesInFlight - 1` lets the application own one image per
-// frame in flight while the presentation engine holds `minImages - 1`. Where
-// nothing else bounds the display queue that is all a chain gets; elsewhere it
-// gets one more (docs/renderer/frame.md, Image count). `maxImages` 0 is unbounded.
+// The image on the display, the presents queued behind it and the one being
+// recorded, so acquire never binds before the queue does. `maxImages` 0 is unbounded.
 [[nodiscard]] constexpr std::uint32_t SwapchainImageCount(std::uint32_t minImages, std::uint32_t maxImages,
-                                                          std::uint32_t framesInFlight, bool imagesBoundTheQueue)
+                                                          std::uint32_t framesInFlight)
 {
-    constexpr std::uint32_t kImagesBeyondTheFewest = 1;
-    const std::uint32_t fewest = minImages + ClampFramesInFlight(framesInFlight) - 1;
-    const std::uint32_t wanted = imagesBoundTheQueue ? fewest : fewest + kImagesBeyondTheFewest;
+    const std::uint32_t needed = 1 + MaxQueuedPresents(framesInFlight) + 1;
+    const std::uint32_t wanted = needed > minImages ? needed : minImages;
     return maxImages != 0 && wanted > maxImages ? maxImages : wanted;
 }
