@@ -228,7 +228,8 @@ deepest queue, the median of each wait, and the two latencies, or with
 `--series` a long session as a time series; `scripts/bench_frame_pacing.sh`
 runs a matrix of present modes, window sizes, limits and adapters against one
 build. A capture armed for a bounded run (`app.exit_after_frames`) keeps every
-frame.
+frame. `app.frame_delay_ms` and `app.frame_delay_period` hold chosen frames
+after their input, to reproduce hitches and slow frames.
 `docs/plans/evidence/frame-pacing/README.md` records the measurements behind
 this section.
 

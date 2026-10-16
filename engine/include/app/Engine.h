@@ -675,10 +675,12 @@ private:
     std::unique_ptr<FrameDriver> FrameDriverInstance;
     std::unique_ptr<NetSession> NetState;
     TimingHistory TimingData;
-    // Run-control state, written by app.exit_after_frames / frame.trace.output.
-    // Zero and empty leave both facilities inert; the trace store is allocated
-    // only for a run that armed an output path.
+    // Run-control state, written by app.exit_after_frames / frame.trace.output
+    // / app.frame_delay_ms. Zero and empty leave each facility inert; the trace
+    // store is allocated only for a run that armed an output path.
     std::uint64_t ExitAfterFrames = 0;
+    double FrameDelayMs = 0.0;
+    std::uint64_t FrameDelayPeriod = 1;
     std::string FrameTraceOutputPath;
     std::unique_ptr<ChromeJsonFrameTrace> FrameTraceStore;
     // Written by render.capture.output; the render capture is flushed here at

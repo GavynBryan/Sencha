@@ -1453,11 +1453,11 @@ int Engine::Run(Game& game)
             FrameDriverInstance->SetTrace(FrameTraceStore.get());
         }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-        // Arm the render capture for the whole run; records only append once the
-        // mode latch makes Capture active (render.profile.mode capture), so this
-        // is inert unless both the path and the mode are set.
+        // Arm the render capture for the whole run, every frame of a bounded one;
+        // records only append once the mode latch makes Capture active
+        // (render.profile.mode capture), so this is inert unless both are set.
         if (!RenderCaptureOutputPath.empty())
-            RenderCaptureStore.Start(0);
+            RenderCaptureStore.Start(ExitAfterFrames);
 #endif
         FrameDriverInstance->Run();
         if (FrameTraceStore != nullptr
@@ -1708,7 +1708,7 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     EngineConsoleBuiltins::RegisterFramePacingCVars(
         registry, Configuration.Runtime, FrameDriverInstance);
     EngineConsoleBuiltins::RegisterRunControlCVars(
-        registry, ExitAfterFrames, FrameTraceOutputPath);
+        registry, ExitAfterFrames, FrameTraceOutputPath, FrameDelayMs, FrameDelayPeriod);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     EngineConsoleBuiltins::RegisterProfilingCVars(registry, PendingProfileMode);
     EngineConsoleBuiltins::RegisterCaptureCommands(

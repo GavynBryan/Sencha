@@ -26,6 +26,10 @@
 #   SENCHA_BENCH_SIZES   1280x720, 1920x1080, fullscreen  default "1280x720"
 #   SENCHA_BENCH_LIMITS  r.target_fps values      default "0"
 #   SENCHA_BENCH_DEVICES adapter indices, "auto" for scoring  default "auto"
+#
+# SENCHA_BENCH_ARGS adds host arguments to every run, for example
+# "+set app.frame_delay_ms 40 +set app.frame_delay_period 144" to inject a
+# hitch once a second.
 set -euo pipefail
 
 bin=$(realpath "$1")
@@ -39,6 +43,9 @@ modes=${SENCHA_BENCH_MODES:-"FIFO IMMEDIATE"}
 sizes=${SENCHA_BENCH_SIZES:-"1280x720"}
 limits=${SENCHA_BENCH_LIMITS:-"0"}
 devices=${SENCHA_BENCH_DEVICES:-"auto"}
+read -r -a extra_args <<<"${SENCHA_BENCH_ARGS:-}"
+# Long sessions get time for their frames at 30 fps or slower.
+run_timeout=$(( frames / 30 > 120 ? frames / 30 + 60 : 180 ))
 max_load=${SENCHA_BENCH_MAX_LOAD-3}
 
 mkdir -p "$out"
@@ -80,10 +87,10 @@ for run in $(seq 1 "$runs"); do
         cd "$project"
         env SENCHA_PRESENT_MODE="$mode" SENCHA_VALIDATION="${SENCHA_VALIDATION:-0}" \
             "${size_env[@]}" "${device_env[@]}" LD_LIBRARY_PATH="$bin" \
-            timeout 180 "$bin/app" --game "$bin/game.so" --settings none \
+            timeout "$run_timeout" "$bin/app" --game "$bin/game.so" --settings none \
             +set app.exit_after_frames "$frames" \
             +set r.target_fps "$limit" \
-            "${window[@]}" \
+            "${window[@]}" "${extra_args[@]}" \
             +set render.profile.mode capture \
             +set render.capture.output "$out/$name.json" \
             +map "$map" >"$out/$name.log" 2>&1

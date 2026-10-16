@@ -349,7 +349,9 @@ namespace EngineConsoleBuiltins
 
     void RegisterRunControlCVars(ConsoleRegistry& registry,
                                  std::uint64_t& exitAfterFrames,
-                                 std::string& frameTraceOutput)
+                                 std::string& frameTraceOutput,
+                                 double& frameDelayMs,
+                                 std::uint64_t& frameDelayPeriod)
     {
         registry.RegisterCVar({
             .Name = "app.exit_after_frames",
@@ -382,6 +384,40 @@ namespace EngineConsoleBuiltins
             .Source = { "engine defaults" },
             .OnChange = [&frameTraceOutput](const CVarChangeContext& ctx) {
                 frameTraceOutput = std::get<std::string>(ctx.NewValue);
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "app.frame_delay_ms",
+            .Owner = "engine",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.0,
+            .CurrentValue = 0.0,
+            .Flags = CVarFlags::Transient,
+            .Help = "Hold a frame this long after its input, as slow frame work "
+                    "would, every app.frame_delay_period frames. 0 is off. For "
+                    "reproducing hitches and slow frames in pacing measurements.",
+            .Source = { "engine defaults" },
+            .Min = 0.0,
+            .OnChange = [&frameDelayMs](const CVarChangeContext& ctx) {
+                frameDelayMs = std::get<double>(ctx.NewValue);
+            },
+        });
+
+        registry.RegisterCVar({
+            .Name = "app.frame_delay_period",
+            .Owner = "engine",
+            .Type = CVarType::Int,
+            .DefaultValue = std::int64_t{ 1 },
+            .CurrentValue = std::int64_t{ 1 },
+            .Flags = CVarFlags::Transient,
+            .Help = "Frames between delayed frames for app.frame_delay_ms; 1 "
+                    "delays every frame.",
+            .Source = { "engine defaults" },
+            .Min = 1.0,
+            .OnChange = [&frameDelayPeriod](const CVarChangeContext& ctx) {
+                const std::int64_t period = std::get<std::int64_t>(ctx.NewValue);
+                frameDelayPeriod = period > 1 ? static_cast<std::uint64_t>(period) : 1;
             },
         });
     }
