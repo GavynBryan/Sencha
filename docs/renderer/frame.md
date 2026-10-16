@@ -162,6 +162,14 @@ rate, there is no limit and acquire alone applies. The capture reports the
 depth each frame (`display_queue_depth_count`) and the wait
 (`present_wait_ms`).
 
+The starvation test cannot tell a too-shallow limit from a disturbance that
+starves two refreshes on its own: a window's first presents, a compositor
+stall, a loaded machine. Measured, the limit deepens past need in the first
+frames of most runs and creeps over a session (from 2 to 7 in three minutes,
+13.7 to 34.9 ms of queue-to-display latency, on the laptop's Intel path), and
+a depth the swapchain's images cannot queue moves the binding wait into
+acquire and present, after input. `docs/deferred.md` records the open choice.
+
 **Display-paced and unpaced modes.** FIFO and FIFO_RELAXED are display-paced:
 the presentation engine consumes one image per refresh, so a present queued
 early waits. MAILBOX and IMMEDIATE replace or tear instead; nothing in them
@@ -181,8 +189,12 @@ drops to half refresh.
 queue limit, the frames in flight and the swapchain's images. Both waits that
 throttle a frame in steady state, the GPU slot and the display queue, come
 before it samples input (`FramePhase::AwaitFrameSlot` is phase 0), so neither
-ages the input. Acquire runs inside `Render`, after input; it blocks only when
-the limit has not bound, by at most one refresh interval.
+ages the input. Acquire runs inside `Render`, after input, and blocks when the
+presentation engine still holds every image the application may own. Where
+the limit binds that is rare, but a path that returns images slower than the
+display takes them makes acquire the binding wait, and that wait does age the
+input: on the laptop's discrete GPU at 1080p, acquire waits about 13 ms of a
+14 ms frame (`docs/plans/evidence/frame-pacing/README.md`).
 
 **Frame time smoothness** belongs to the time domain. The loop's measured
 deltas carry scheduler and compositor noise however frames are paced;

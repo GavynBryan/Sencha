@@ -631,3 +631,20 @@ do the work and delete the entry.
   than walking docks itself, keeping its sure and possible scenarios, gate
   assumptions and one-way drops; world links get positions through the same
   work (`navigation-core.md`, section 7) and stop being unconsidered.
+
+## Display queue limit that can come back down
+
+- **What:** `DisplayQueueLimit` only deepens, on two starved refreshes within a
+  second, so startup presents, compositor stalls and load spikes deepen it past
+  what the presentation path needs, and it stays there until the swapchain is
+  rebuilt (measurements: `docs/plans/evidence/frame-pacing/README.md`). Making
+  it shallower again means either probing a shallower depth, which risks a
+  skipped refresh per failed probe, or reading when presents can be shown from
+  a display-timing extension (`VK_EXT_present_timing`), which this machine's
+  drivers do not offer. Choosing between a rare deliberate skip and latency
+  that creeps is a product decision.
+- **Where:** `engine/include/graphics/DisplayQueueLimit.h`,
+  `engine/src/graphics/DisplayQueueLimit.cpp`,
+  `VulkanFrameService::HoldForDisplay`.
+- **Trigger:** the owner choosing between probing and display timing, or a
+  driver on a target machine exposing `VK_EXT_present_timing`.
