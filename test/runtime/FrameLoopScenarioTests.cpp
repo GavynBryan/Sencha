@@ -418,6 +418,47 @@ TEST(FrameDriver, TheFrameSlotWaitPrecedesInputEveryFrame)
     EXPECT_EQ(order[1], FramePhase::PumpPlatform);
 }
 
+// Simulated time follows wall time alone: however a frame's waits for the GPU
+// and the display fall, a span runs the same whole ticks.
+TEST(FrameDriver, TicksFollowWallTimeHoweverFramesWaitForTheDisplay)
+{
+    constexpr double kRefresh = 1.0 / 144.0;
+    constexpr double kSpan = kRefresh * 1440;
+
+    const auto ticksOver = [](const std::vector<double>& waitPattern) {
+        RuntimeFrameLoop runtime;
+        ScriptedFrameClock clock(runtime);
+        FrameDriver driver(runtime);
+        double waited = 0.0;
+        std::size_t frame = 0;
+        int ticks = 0;
+        const auto spanDone = [&] { return waited >= kSpan - 1e-9; };
+        driver.Register(FramePhase::AwaitFrameSlot, [&](PhaseContext&) {
+            if (spanDone())
+                return;
+            const double wait = waitPattern[frame++ % waitPattern.size()];
+            clock.Advance(wait);
+            waited += wait;
+        });
+        driver.Register(FramePhase::ScheduleTicks, [](PhaseContext& ctx) { ctx.Runtime->ScheduleFixedTicks(); });
+        driver.Register(FramePhase::Simulate, [&](PhaseContext&) { ++ticks; });
+
+        clock.Advance(0.0);
+        while (!spanDone())
+            driver.StepOnce();
+        // The last wait reaches simulation through the next frame's delta.
+        driver.StepOnce();
+        return ticks;
+    };
+
+    const double fixedDt = RuntimeFrameLoop{}.GetSimulationClock().GetFixedDt();
+    const int everyRefresh = ticksOver({ kRefresh });
+    EXPECT_NEAR(everyRefresh, kSpan / fixedDt, 1.0);
+    EXPECT_EQ(ticksOver({ 2 * kRefresh, 0.0 }), everyRefresh);
+    EXPECT_EQ(ticksOver({ 0.5 * kRefresh, 1.5 * kRefresh }), everyRefresh);
+    EXPECT_EQ(ticksOver({ 0.0, 0.0, 3 * kRefresh }), everyRefresh);
+}
+
 TEST(FrameDriver, EdgesPersistAcrossZeroTickFramesUntilFirstTick)
 {
     RuntimeFrameLoop runtime;

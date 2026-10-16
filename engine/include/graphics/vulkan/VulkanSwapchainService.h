@@ -24,6 +24,13 @@ struct SwapchainState
     VkColorSpaceKHR ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 };
 
+// Modes in which the presentation engine shows one image per refresh, so a
+// present queued too early waits for the display instead of replacing one.
+[[nodiscard]] constexpr bool IsDisplayPaced(VkPresentModeKHR mode)
+{
+    return mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+}
+
 class VulkanSwapchainService
 {
 public:

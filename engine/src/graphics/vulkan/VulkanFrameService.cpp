@@ -24,13 +24,6 @@ namespace
         return std::chrono::duration<double>(ProfileClock::now() - start).count();
     }
 
-    // Modes in which the presentation engine shows one image per refresh, so a
-    // present queued too early waits for the display instead of replacing one.
-    bool IsDisplayPaced(VkPresentModeKHR mode)
-    {
-        return mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-    }
-
     VulkanFrameStatus FatalStatus(SurfaceOutcome outcome)
     {
         return outcome == SurfaceOutcome::DeviceLost ? VulkanFrameStatus::DeviceLost : VulkanFrameStatus::Error;
@@ -250,27 +243,24 @@ bool VulkanFrameService::HoldForDisplay()
     const double refreshSeconds = 1.0 / static_cast<double>(refreshHz);
 
     PresentHistory& presents = primary->Presents();
-    const std::uint64_t awaited = presents.IdBehindNext(QueueLimit.Depth());
+    const std::optional<DisplayQueueLimit::Hold> hold = QueueLimit.HoldFor(presents, refreshSeconds);
     const VkSwapchainKHR chain = primary->Swapchain().GetSwapchain();
-    if (awaited == 0 || WaitForPresentFn(Device, chain, awaited, 0) == VK_SUCCESS)
+    if (!hold || WaitForPresentFn(Device, chain, hold->Awaited, 0) == VK_SUCCESS)
         return false;
 
-    // A display that stops taking frames -- hidden, locked -- must not hold the
-    // loop: past the depth plus one refresh the present is not coming soon.
-    const auto timeout = std::chrono::duration<double>(refreshSeconds * (QueueLimit.Depth() + 1));
     const auto waitStart = ProfileClock::now();
-    const VkResult result = WaitForPresentFn(
-        Device, chain, awaited, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count()));
+    const VkResult result =
+        WaitForPresentFn(Device, chain, hold->Awaited, static_cast<uint64_t>(hold->Timeout.count()));
     const auto released = ProfileClock::now();
     LastTiming.PresentWaitSeconds = std::chrono::duration<double>(released - waitStart).count();
     if (result != VK_SUCCESS)
         return false;
 
-    if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(awaited, released))
+    if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(hold->Awaited, released))
     {
         RecordLatency(*displayed);
         QueueLimit.Displayed(DisplayQueueLimit::Observation{
-                                 .Id = awaited,
+                                 .Id = hold->Awaited,
                                  .DisplayedAt = released,
                                  .HeldForDisplay = displayed->HeldForDisplay,
                                  .ProductionSeconds = displayed->ProductionSeconds,

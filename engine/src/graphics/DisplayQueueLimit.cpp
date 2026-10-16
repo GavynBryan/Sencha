@@ -16,6 +16,17 @@ void DisplayQueueLimit::Reset()
     LastStarvedAt.reset();
 }
 
+std::optional<DisplayQueueLimit::Hold> DisplayQueueLimit::HoldFor(const PresentHistory& presents,
+                                                                  double refreshSeconds) const
+{
+    const std::uint64_t awaited = presents.IdBehindNext(Current);
+    if (awaited == 0 || refreshSeconds <= 0.0)
+        return std::nullopt;
+    // Past the depth plus one refresh the awaited present is not coming soon.
+    const std::chrono::duration<double> timeout{ refreshSeconds * (Current + 1) };
+    return Hold{ .Awaited = awaited, .Timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout) };
+}
+
 void DisplayQueueLimit::Displayed(const Observation& present, double refreshSeconds)
 {
     const bool follows = LastId != 0 && present.Id == LastId + 1;

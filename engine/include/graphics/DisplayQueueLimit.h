@@ -1,5 +1,7 @@
 #pragma once
 
+#include <graphics/PresentHistory.h>
+
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -19,6 +21,17 @@ public:
 
     [[nodiscard]] std::uint32_t Depth() const { return Current; }
     void Reset();
+
+    struct Hold
+    {
+        std::uint64_t Awaited = 0;
+        // A display that stops taking frames (hidden, locked) must not hold the loop.
+        std::chrono::nanoseconds Timeout{};
+    };
+
+    // The present a display-paced frame must see displayed before it begins;
+    // none until the chain has queued `Depth()` presents or without a refresh rate.
+    [[nodiscard]] std::optional<Hold> HoldFor(const PresentHistory& presents, double refreshSeconds) const;
 
     struct Observation
     {

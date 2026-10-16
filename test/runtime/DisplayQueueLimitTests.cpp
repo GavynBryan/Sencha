@@ -2,10 +2,12 @@
 
 #include <graphics/DisplayQueueLimit.h>
 #include <graphics/PresentHistory.h>
+#include <graphics/vulkan/VulkanSwapchainService.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace
@@ -61,7 +63,8 @@ namespace
         {
             std::int64_t startUs = previousQueuedUs;
             bool held = false;
-            const std::uint64_t awaited = history.IdBehindNext(limit.Depth());
+            const std::optional<DisplayQueueLimit::Hold> hold = limit.HoldFor(history, kRefreshSeconds);
+            const std::uint64_t awaited = hold ? hold->Awaited : 0;
             if (awaited != 0 && displayedUs[awaited] > startUs)
             {
                 startUs = displayedUs[awaited];
@@ -93,6 +96,53 @@ namespace
         settled.FramesPerSecond = static_cast<double>(kFrames - kSettledFrom) * 1.0e6
             / static_cast<double>(displayedUs[kFrames] - displayedUs[kSettledFrom]);
         return settled;
+    }
+}
+
+// The old pacing held every frame on the display in every present mode. Only
+// a mode that shows one image per refresh may hold a frame for the display.
+TEST(DisplayQueueLimit, OnlyDisplayPacedModesHoldAFrame)
+{
+    EXPECT_TRUE(IsDisplayPaced(VK_PRESENT_MODE_FIFO_KHR));
+    EXPECT_TRUE(IsDisplayPaced(VK_PRESENT_MODE_FIFO_RELAXED_KHR));
+    EXPECT_FALSE(IsDisplayPaced(VK_PRESENT_MODE_MAILBOX_KHR));
+    EXPECT_FALSE(IsDisplayPaced(VK_PRESENT_MODE_IMMEDIATE_KHR));
+}
+
+TEST(DisplayQueueLimit, HoldsForThePresentDepthBehindTheNext)
+{
+    DisplayQueueLimit limit(2, 15);
+    PresentHistory history;
+    EXPECT_FALSE(limit.HoldFor(history, kRefreshSeconds).has_value());
+
+    history.Queued(1, At(0), {});
+    EXPECT_FALSE(limit.HoldFor(history, kRefreshSeconds).has_value());
+
+    history.Queued(2, At(kRefreshUs), {});
+    history.Queued(3, At(2 * kRefreshUs), {});
+    const std::optional<DisplayQueueLimit::Hold> hold = limit.HoldFor(history, kRefreshSeconds);
+    ASSERT_TRUE(hold.has_value());
+    EXPECT_EQ(hold->Awaited, 2u);
+
+    EXPECT_FALSE(limit.HoldFor(history, 0.0).has_value());
+}
+
+// A hidden or locked display stops showing presents; the frame loop must keep
+// running, so the hold gives up a refresh after the queue should have drained.
+TEST(DisplayQueueLimit, TheHoldIsBoundedByTheDepthPlusOneRefresh)
+{
+    PresentHistory history;
+    for (std::uint64_t id = 1; id <= 15; ++id)
+        history.Queued(id, At(static_cast<std::int64_t>(id) * kRefreshUs), {});
+
+    for (const std::uint32_t depth : { 1u, 2u, 4u, 15u })
+    {
+        DisplayQueueLimit limit(depth, 15);
+        const std::optional<DisplayQueueLimit::Hold> hold = limit.HoldFor(history, kRefreshSeconds);
+        ASSERT_TRUE(hold.has_value()) << "depth " << depth;
+        const auto expected = std::chrono::duration_cast<std::chrono::nanoseconds>(Micros(kRefreshUs * (depth + 1)));
+        EXPECT_NEAR(static_cast<double>(hold->Timeout.count()), static_cast<double>(expected.count()), 1000.0)
+            << "depth " << depth;
     }
 }
 
