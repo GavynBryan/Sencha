@@ -5,7 +5,6 @@
 
 #include <assets/texture/ImageLoader.h>
 #include <core/config/EngineConfig.h>
-#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/PresentationTarget.h>
@@ -13,7 +12,11 @@
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <platform/WindowCreateInfo.h>
+#include <render/RenderLight.h>
+#include <render/extract/Camera.h>
+#include <render/feature/SkyRenderFeature.h>
 
+#include <DeviceTestSupport.h>
 #include <SDL3/SDL.h>
 #include <gtest/gtest.h>
 
@@ -26,30 +29,6 @@
 
 namespace
 {
-    bool DisplayAvailable()
-    {
-        const char* display = std::getenv("DISPLAY");
-        const char* wayland = std::getenv("WAYLAND_DISPLAY");
-        return (display != nullptr && display[0] != '\0') || (wayland != nullptr && wayland[0] != '\0');
-    }
-
-    class ValidationErrorCount : public ILogSink
-    {
-    public:
-        explicit ValidationErrorCount(std::atomic<int>& count) : Count(count) {}
-        void Write(LogLevel level, std::string_view, std::string_view message) override
-        {
-            if (level >= LogLevel::Error && message.starts_with("[Vulkan]"))
-            {
-                ++Count;
-                ADD_FAILURE() << message;
-            }
-        }
-
-    private:
-        std::atomic<int>& Count;
-    };
-
     using Rgb = std::array<std::uint8_t, 3>;
 
     // Clears its presentation's colour attachment and does nothing else.
@@ -283,4 +262,21 @@ TEST_F(PresentationTest, WindowsGoInAnyOrder)
     const Window e = Open("E");
     Fill(e.Presentation, kGreen);
     Frames(2);
+}
+
+TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto)
+{
+    // Built at Setup, before any frame: the stencil aspect the swapchain scope
+    // binds has to be in the formats it was compiled against.
+    CameraRenderData camera;
+    RenderLightSet lights;
+    lights.AmbientSky = Vec<3>(0.0f, 1.0f, 0.0f);
+    lights.AmbientGround = Vec<3>(0.0f, 1.0f, 0.0f);
+    lights.TonemapEnabled = false;
+    ASSERT_NE(Render().AddFeature(std::make_unique<SkyRenderFeature>(camera, lights)), nullptr);
+
+    const std::optional<Rgb> centre = Capture(Render().PrimaryPresentation(), "sky");
+    ASSERT_TRUE(centre.has_value());
+    EXPECT_GT((*centre)[1], 200) << "the sky drew";
+    EXPECT_LT((*centre)[0], 50);
 }

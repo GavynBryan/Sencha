@@ -7,6 +7,7 @@
 #include <graphics/PresentationId.h>
 #include <graphics/vulkan/FeatureRegistrationOrder.h>
 #include <graphics/vulkan/FrameImageCapture.h>
+#include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/UiTextureResidency.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
@@ -126,7 +127,16 @@ struct FrameContext
     // renderer may still be reading stamps it from here and frees it once this
     // reports it retired, rather than counting frames itself.
     GpuFrameRetirement Retirement;
+
+    [[nodiscard]] AttachmentFormatKey AttachmentFormats() const
+    {
+        return { TargetFormat, DepthFormat, StencilFormat };
+    }
 };
+
+// The attachment formats the swapchain scope binds, for a pass compiling its
+// pipelines at load rather than on the first frame that records them.
+[[nodiscard]] FrameContext SwapchainScopeFormats(const RendererServices& services);
 
 struct RendererFrameTiming
 {

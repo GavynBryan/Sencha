@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <graphics/vulkan/PipelineVariantSet.h>
+#include <graphics/vulkan/Renderer.h>
 #include <render/pass/ShadowDepthPass.h>
 
 #include <vector>
@@ -181,6 +182,30 @@ TEST(PipelineVariantSet, DistinguishesFamiliesByEveryFieldOfTheKey)
     const AttachmentFormatKey sameColorOtherDepth{ kSwapchain.Color, VK_FORMAT_D16_UNORM };
     EXPECT_TRUE(set.Ensure(sameColorOtherDepth, std::ref(build)));
     EXPECT_EQ(build.Requested.size(), 1u);
+    build.Requested.clear();
+
+    // Same colour and depth, with the stencil aspect bound: a pipeline compiled
+    // without it does not match a scope that binds it.
+    const AttachmentFormatKey withStencil{ kSwapchain.Color, VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                           VK_FORMAT_D32_SFLOAT_S8_UINT };
+    const AttachmentFormatKey withoutStencil{ kSwapchain.Color, VK_FORMAT_D32_SFLOAT_S8_UINT };
+    EXPECT_TRUE(set.Ensure(withoutStencil, std::ref(build)));
+    build.Requested.clear();
+    EXPECT_TRUE(set.Ensure(withStencil, std::ref(build)));
+    EXPECT_EQ(build.Requested.size(), 1u);
+}
+
+TEST(SwapchainScopeFormats, ALoadTimeBuildKeysOnTheFormatsTheScopeBinds)
+{
+    RendererServices services;
+    services.DepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+    services.StencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+    FrameContext scope;
+    scope.DepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+    scope.StencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+    EXPECT_EQ(SwapchainScopeFormats(services).AttachmentFormats(), scope.AttachmentFormats());
 }
 
 TEST(ShadowDepthBias, SeparatesFamiliesByExactBiasValue)

@@ -36,6 +36,7 @@ struct AttachmentFormatKey
 {
     VkFormat Color = VK_FORMAT_UNDEFINED;
     VkFormat Depth = VK_FORMAT_UNDEFINED;
+    VkFormat Stencil = VK_FORMAT_UNDEFINED;
 
     friend bool operator==(AttachmentFormatKey, AttachmentFormatKey) = default;
 };

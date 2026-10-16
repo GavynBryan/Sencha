@@ -467,6 +467,16 @@ FrameContext Renderer::MakeCaptureContext(const VulkanFrame& frame,
     return context;
 }
 
+FrameContext SwapchainScopeFormats(const RendererServices& services)
+{
+    FrameContext formats;
+    formats.TargetFormat =
+        services.Swapchain != nullptr ? services.Swapchain->GetFormat() : VK_FORMAT_UNDEFINED;
+    formats.DepthFormat = services.DepthFormat;
+    formats.StencilFormat = services.StencilFormat;
+    return formats;
+}
+
 RendererServices Renderer::MakeSwapchainServices(const PresentationTarget& target) const
 {
     RendererServices services = Services;
