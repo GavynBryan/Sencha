@@ -151,7 +151,11 @@ namespace
             if (primary.ExtentChanged() && primary.Availability() == PresentationAvailability::Acquirable)
                 Frames().RebuildPresentation(Frames().PrimaryPresentation(), primary.Window().GetExtent());
             Frames().RebuildStaleSecondaries();
-            return Render().DrawFrameScheduled();
+            const RenderFrameResult result = Render().DrawFrameScheduled();
+            Frames().ForEachPresentation([](PresentationId, PresentationTarget& target) {
+                EXPECT_EQ(target.ImageLedger().Held(), 0u) << "a frame presents every image it acquires";
+            });
+            return result;
         }
 
         void Frames(int count)
@@ -344,7 +348,7 @@ TEST_F(PresentationTest, StalledWindowsTogetherCostAFrameAtMostTheAcquireDeadlin
         EXPECT_EQ(Frame(), RenderFrameResult::Presented);
         EXPECT_GT(red->Draws, redBefore);
         EXPECT_GT(white->Draws, whiteBefore) << "D acquires after both stalled windows";
-        EXPECT_LE(Frames().GetLastTiming().AcquireSeconds, deadlineSeconds + timerSlackSeconds);
+        EXPECT_LE(Frames().GetLastTiming().AcquireWaitSeconds, deadlineSeconds + timerSlackSeconds);
     }
     EXPECT_EQ(green->Draws, greenBefore);
     EXPECT_EQ(blue->Draws, blueBefore);

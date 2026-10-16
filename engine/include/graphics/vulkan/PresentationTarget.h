@@ -2,6 +2,7 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <graphics/PresentHistory.h>
+#include <graphics/SwapchainImageLedger.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanDepthTarget.h>
@@ -74,6 +75,8 @@ public:
     [[nodiscard]] ImageState* Image(std::uint32_t imageIndex);
 
     [[nodiscard]] PresentHistory& Presents() { return PresentLog; }
+    [[nodiscard]] SwapchainImageLedger& ImageLedger() { return ImageUses; }
+    [[nodiscard]] const SwapchainImageLedger& ImageLedger() const { return ImageUses; }
 
     // Null for a presentation declared without one.
     [[nodiscard]] VulkanDepthTarget* Depth() { return DepthAttachment.get(); }
@@ -97,6 +100,7 @@ private:
     std::unique_ptr<VulkanDepthTarget> DepthAttachment;
     std::vector<VkSemaphore> ImageAvailable;
     PresentHistory PresentLog;
+    SwapchainImageLedger ImageUses;
     std::vector<ImageState> Images;
     bool RebuildPending = false;
     bool Valid = false;

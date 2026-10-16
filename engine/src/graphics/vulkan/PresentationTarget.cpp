@@ -97,6 +97,7 @@ bool PresentationTarget::CreateImageState()
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     Images.assign(Chain->GetImageCount(), ImageState{});
+    ImageUses.Reset(Chain->GetImageCount());
     for (ImageState& image : Images)
     {
         if (vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &image.RenderFinished) != VK_SUCCESS)

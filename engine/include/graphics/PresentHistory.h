@@ -20,7 +20,7 @@ public:
     void Clear();
 
     [[nodiscard]] std::uint64_t OldestPending() const;
-    [[nodiscard]] std::size_t PendingCount() const { return Count; }
+    [[nodiscard]] bool SeenDisplayed(std::uint64_t id) const { return id <= DisplayedThrough; }
 
     struct DisplayedPresent
     {
@@ -42,4 +42,5 @@ private:
     std::array<Entry, kTracked> Ring{};
     std::size_t Head = 0;
     std::size_t Count = 0;
+    std::uint64_t DisplayedThrough = 0;
 };

@@ -136,11 +136,18 @@ void TimingPanel::Draw()
                 fps,
                 latest->PresentMode,
                 latest->SwapchainImageCount);
-    ImGui::Text("Acquire: %.3f ms  Submit: %.3f ms  Present: %.3f ms  Render record: %.3f ms",
-                Ms(latest->AcquireSeconds),
+    ImGui::Text("Frame slot: %.3f ms  Acquire: %.3f ms  Submit: %.3f ms  Present: %.3f ms  Render record: %.3f ms",
+                Ms(latest->FrameSlotWaitSeconds),
+                Ms(latest->AcquireWaitSeconds),
                 Ms(latest->SubmitSeconds),
                 Ms(latest->PresentSeconds),
                 Ms(latest->RenderRecordSeconds));
+    const auto estimateMs = [](double seconds) { return seconds < 0.0 ? -1.0f : Ms(seconds); };
+    ImGui::Text("Presents outstanding <= %d  Late present wait: %u  Latency estimate: present %.2f ms  frame %.2f ms",
+                latest->PresentsOutstandingMax,
+                latest->PresentWaitLate,
+                estimateMs(latest->PresentLatencyEstimateSeconds),
+                estimateMs(latest->FrameLatencyEstimateSeconds));
     ImGui::Text("Lifecycle: %s  Discontinuity: %s  Render result: %d",
                 LifecycleName(latest->LifecycleState),
                 DiscontinuityName(latest->TemporalDiscontinuityReason),
@@ -195,7 +202,7 @@ void TimingPanel::FillSeries()
         PresentationDt[i] = Ms(sample.PresentationDtSeconds);
         Alpha[i] = static_cast<float>(sample.InterpolationAlpha);
         FixedTicks[i] = static_cast<float>(sample.FixedTicks);
-        Acquire[i] = Ms(sample.AcquireSeconds);
+        Acquire[i] = Ms(sample.AcquireWaitSeconds);
         Present[i] = Ms(sample.PresentSeconds);
         SwapchainEvents[i] = sample.SwapchainRecreated ? 1.0f : 0.0f;
         PresentationResetEvents[i] = sample.PresentationReset ? 1.0f : 0.0f;

@@ -23,6 +23,7 @@ void PresentHistory::Clear()
 {
     Head = 0;
     Count = 0;
+    DisplayedThrough = 0;
 }
 
 std::uint64_t PresentHistory::OldestPending() const
@@ -33,6 +34,8 @@ std::uint64_t PresentHistory::OldestPending() const
 std::optional<PresentHistory::DisplayedPresent> PresentHistory::Displayed(std::uint64_t id, Clock::time_point now)
 {
     std::optional<DisplayedPresent> displayed;
+    if (id > DisplayedThrough)
+        DisplayedThrough = id;
     while (Count > 0 && Ring[Head].Id <= id)
     {
         const Entry& entry = Ring[Head];

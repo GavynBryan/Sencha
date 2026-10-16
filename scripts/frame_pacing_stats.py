@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Reduce render captures (render.capture.output) to frame-pacing statistics.
 
-Per capture: the frame interval distribution (raw_dt: the wall time between
-successive frame starts, which is what a player sees as frame rate), the
-throughput it implies, how the interval sits against the display period, the
-long-then-short interval pairs that read as microstutter, the deepest display
-queue and the worst frame latency, and the median of every CPU-side wait and
-work span, so a slow run says where its time went. GPU spans are reported when
-the capture was taken at mode gpu or above. --series prints one row per window
-of a long session instead.
+Per capture: the interval between presented frames (the wall time between the
+starts of successive frames that presented, which is what a player sees as
+frame rate), the throughput it implies, how the interval sits against the
+display period, the long-then-short interval pairs that read as microstutter,
+the frames that did not present, the most presents outstanding (an upper
+bound), late present-wait completions, the worst frame latency estimate, and
+the median of every CPU-side wait and work span, so a slow run says where its
+time went. GPU spans are reported when the capture was taken at mode gpu or
+above. --series prints one row per window of a long session instead.
 
 Fields a capture does not carry (an older build) print as "-".
 
@@ -26,18 +27,16 @@ import statistics as st
 # (label, capture key) for the per-frame spans worth a median.
 SPANS = [
     ("busy", "busy_ms"),
-    ("fence", "frame_fence_wait_ms"),
-    ("pres_wait", "present_wait_ms"),
-    ("queued", "queued_presents_count"),
-    ("acquire", "acquire_ms"),
+    ("slot", "frame_slot_wait_ms"),
+    ("acquire", "acquire_wait_ms"),
     ("img_fence", "image_fence_wait_ms"),
     ("record", "render_record_ms"),
     ("submit", "submit_ms"),
     ("present", "present_ms"),
     ("limiter", "limiter_wait_ms"),
     ("gpu", "Phase_MainColor_gpu_ms"),
-    ("pres_lat", "present_latency_ms"),
-    ("frame_lat", "frame_latency_ms"),
+    ("pres_lat", "present_latency_estimate_ms"),
+    ("frame_lat", "frame_latency_estimate_ms"),
 ]
 
 
@@ -51,7 +50,7 @@ def percentile(sorted_vals, q):
     return sorted_vals[lo] * (hi - idx) + sorted_vals[hi] * (idx - lo)
 
 
-WAITS = ["frame_fence_wait_ms", "present_wait_ms", "acquire_ms", "image_fence_wait_ms"]
+WAITS = ["frame_slot_wait_ms", "acquire_wait_ms", "image_fence_wait_ms"]
 
 
 def attach_busy(frames):
@@ -68,18 +67,29 @@ def median_of(frames, key):
 
 
 def load_frames(path, warmup):
+    """Every frame after the warm-up. A presented frame's presented_dt_ms spans
+    back to the previous presented frame's start, through any frame between
+    them that did not present (a skipped acquire, a minimized window)."""
     with open(path) as f:
         data = json.load(f)
-    frames = [f for f in data.get("frames", [])[warmup:] if f.get("presented_bool", 1)]
+    frames = data.get("frames", [])[warmup:]
     attach_busy(frames)
+    since_presented = 0.0
+    for f in frames:
+        since_presented += f.get("raw_dt_ms", 0)
+        if f.get("presented_bool", 1):
+            f["presented_dt_ms"] = since_presented
+            since_presented = 0.0
     return frames, data.get("environment", {})
 
 
-def reduce_frames(path, frames, env, refresh_hz):
-    dts = sorted(f["raw_dt_ms"] for f in frames if f.get("raw_dt_ms", 0) > 0)
+def reduce_frames(path, all_frames, env, refresh_hz):
+    frames = [f for f in all_frames if "presented_dt_ms" in f]
+    dts = sorted(f["presented_dt_ms"] for f in frames if f["presented_dt_ms"] > 0)
     row = {
         "path": path,
         "frames": len(dts),
+        "not_presented": len(all_frames) - len(frames),
         "gpu": env.get("gpu_name", "?"),
         "build": env.get("build_type", "?"),
         "refresh_hz": refresh_hz or float(env.get("display_refresh_hz", "0") or 0),
@@ -93,8 +103,8 @@ def reduce_frames(path, frames, env, refresh_hz):
         "fps": 1000.0 * len(dts) / sum(dts) if dts else float("nan"),
         # Fixed ticks per second of wall time: the simulation rate, which must
         # not move with the frame rate.
-        "ticks_per_s": 1000.0 * sum(f.get("fixed_ticks_count", 0) for f in frames)
-                       / sum(f["raw_dt_ms"] for f in frames) if frames else float("nan"),
+        "ticks_per_s": 1000.0 * sum(f.get("fixed_ticks_count", 0) for f in all_frames)
+                       / sum(f.get("raw_dt_ms", 0) for f in all_frames) if all_frames else float("nan"),
         "spans": {label: median_of(frames, key) for label, key in SPANS},
     }
     if frames:
@@ -114,13 +124,15 @@ def reduce_frames(path, frames, env, refresh_hz):
         row["periods_median"] = row["median_ms"] / period
         # A frame shown late, then one rushed in behind it: the 2-then-0
         # refresh pair a display queue that starves and refills produces.
-        ordered = [f["raw_dt_ms"] for f in frames if f.get("raw_dt_ms", 0) > 0]
+        ordered = [f["presented_dt_ms"] for f in frames if f["presented_dt_ms"] > 0]
         row["long_short_pct"] = 100.0 * sum(
             1 for a, b in zip(ordered, ordered[1:]) if a >= 1.5 * period and b <= 0.5 * period
         ) / max(len(ordered) - 1, 1)
-    queued = [f["queued_presents_count"] for f in frames if "queued_presents_count" in f]
-    row["queued_max"] = max(queued) if queued else None
-    lat = sorted(f["frame_latency_ms"] for f in frames if f.get("frame_latency_ms", -1) >= 0)
+    outstanding = [f["presents_outstanding_max"] for f in frames if f.get("presents_outstanding_max", -1) >= 0]
+    row["outstanding_max"] = max(outstanding) if outstanding else None
+    row["late_waits"] = sum(f.get("present_wait_late_count", 0) for f in frames) \
+        if any("present_wait_late_count" in f for f in frames) else None
+    lat = sorted(f["frame_latency_estimate_ms"] for f in frames if f.get("frame_latency_estimate_ms", -1) >= 0)
     row["frame_lat_p99"] = percentile(lat, 99) if lat else None
     return row
 
@@ -132,7 +144,7 @@ def fmt(v, width=7, prec=2):
 
 def print_series(path, warmup, window_s, refresh_hz):
     frames, env = load_frames(path, warmup)
-    print(f"{'t_s':>6}{'n':>7}{'fps':>8}{'p99':>7}{'max':>7}{'@1T%':>6}{'q_max':>6}"
+    print(f"{'t_s':>6}{'n':>7}{'skip':>6}{'fps':>8}{'p99':>7}{'max':>7}{'@1T%':>6}{'out':>5}{'late':>6}"
           f"{'acq':>7}{'pres_lat':>9}{'frame_lat':>10}{'lat_p99':>8}")
     start, elapsed, bucket = 0.0, 0.0, []
     for f in frames:
@@ -140,8 +152,9 @@ def print_series(path, warmup, window_s, refresh_hz):
         elapsed += f.get("raw_dt_ms", 0) / 1000.0
         if elapsed - start >= window_s or f is frames[-1]:
             r = reduce_frames(path, bucket, env, refresh_hz)
-            print(f"{start:>6.0f}{r['frames']:>7}{fmt(r['fps'], 8, 1)}{fmt(r['p99_ms'])}{fmt(r['max_ms'])}"
-                  f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r['queued_max'], 6, 0)}"
+            print(f"{start:>6.0f}{r['frames']:>7}{r['not_presented']:>6}{fmt(r['fps'], 8, 1)}{fmt(r['p99_ms'])}"
+                  f"{fmt(r['max_ms'])}{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r['outstanding_max'], 5, 0)}"
+                  f"{fmt(r['late_waits'], 6, 0)}"
                   f"{fmt(r['spans']['acquire'])}{fmt(r['spans']['pres_lat'], 9)}"
                   f"{fmt(r['spans']['frame_lat'], 10)}{fmt(r['frame_lat_p99'], 8)}")
             start, bucket = elapsed, []
@@ -172,18 +185,20 @@ def main():
         cell = cells.setdefault(key, ([], env))
         cell[0].extend(frames)
     rows = [reduce_frames(key, frames, env, args.refresh_hz) for key, (frames, env) in cells.items()]
-    head = (f"{'capture':<28}{'mode':>10}{'img':>4}{'extent':>11}{'n':>6}{'fps':>8}"
-            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}{'LS%':>6}{'tick/s':>7}{'q_max':>6}{'lat_p99':>8}"
+    head = (f"{'capture':<28}{'mode':>10}{'img':>4}{'extent':>11}{'n':>6}{'skip':>6}{'fps':>8}"
+            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}{'LS%':>6}{'tick/s':>7}{'out':>5}{'late':>6}"
+            f"{'lat_p99':>8}"
             + "".join(f"{label:>10}" for label, _ in SPANS))
     print(head)
     print("-" * len(head))
     for r in rows:
         name = r["path"].split("/")[-1][:27]
         print(f"{name:<28}{str(r['present_mode']):>10}{str(r['images'] or '-'):>4}"
-              f"{str(r['extent']):>11}{r['frames']:>6}{fmt(r['fps'], 8, 1)}"
+              f"{str(r['extent']):>11}{r['frames']:>6}{r['not_presented']:>6}{fmt(r['fps'], 8, 1)}"
               f"{fmt(r['median_ms'])}{fmt(r['p95_ms'])}{fmt(r['p99_ms'])}{fmt(r['max_ms'])}"
               f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r.get('long_short_pct'), 6, 1)}"
-              f"{fmt(r['ticks_per_s'], 7, 1)}{fmt(r['queued_max'], 6, 0)}{fmt(r['frame_lat_p99'], 8)}"
+              f"{fmt(r['ticks_per_s'], 7, 1)}{fmt(r['outstanding_max'], 5, 0)}{fmt(r['late_waits'], 6, 0)}"
+              f"{fmt(r['frame_lat_p99'], 8)}"
               + "".join(fmt(r["spans"][label], 10) for label, _ in SPANS))
     if args.json:
         with open(args.json, "w") as f:

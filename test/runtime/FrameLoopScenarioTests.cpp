@@ -418,6 +418,42 @@ TEST(FrameDriver, TheFrameSlotWaitPrecedesInputEveryFrame)
     EXPECT_EQ(order[1], FramePhase::PumpPlatform);
 }
 
+// Only the Render phase acquires a swapchain image, and it presents what it
+// acquired before it returns. A frame that exits, resizes or is minimized must
+// never reach it, so no frame leaves an image held.
+TEST(FrameDriver, ExitResizeAndMinimizeFramesNeverReachRender)
+{
+    RuntimeFrameLoop runtime;
+    runtime.SetResizeSettleSeconds(0.0);
+    ScriptedFrameClock clock(runtime);
+    FrameDriver driver(runtime);
+    int renders = 0;
+    bool exiting = false;
+    driver.Register(FramePhase::ResolveLifecycle, [](PhaseContext& ctx) { ctx.Runtime->ResolveLifecycleTransitions(); });
+    driver.Register(FramePhase::Render, [&](PhaseContext&) { ++renders; });
+    driver.SetShouldExit([&] { return exiting; });
+
+    clock.Advance(0.0);
+    driver.StepOnce();
+    ASSERT_EQ(renders, 1);
+
+    runtime.NotifyResize(WindowExtent{ 1280, 720 });
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_TRUE(runtime.GetCurrentFrame().LifecycleOnly);
+    EXPECT_EQ(renders, 1) << "resize";
+
+    runtime.NotifyMinimized();
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_EQ(renders, 1) << "minimize";
+
+    exiting = true;
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_EQ(renders, 1) << "exit";
+}
+
 // Simulated time follows wall time alone: however a frame's waits for the GPU
 // and the display fall, a span runs the same whole ticks.
 TEST(FrameDriver, TicksFollowWallTimeHoweverFramesWaitForTheDisplay)

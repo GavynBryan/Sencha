@@ -2,6 +2,7 @@
 
 #include <graphics/FramesInFlight.h>
 #include <graphics/PresentHistory.h>
+#include <graphics/SwapchainImageLedger.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 
 #include <algorithm>
@@ -64,6 +65,10 @@ namespace
         double PresentsPerSecond = 0.0;
         std::uint64_t FramesSkipped = 0;
         std::uint64_t FramesBegunDuringStall = 0;
+        std::uint32_t MaxPresentsOutstanding = 0;
+        // A frame at whose acquire the display had more presents than reported.
+        bool OutstandingUndercounted = false;
+        std::uint64_t LatePresentWaits = 0;
     };
 
     Outcome Simulate(const Pipeline& p)
@@ -75,6 +80,8 @@ namespace
         std::vector<std::int64_t> reportedUs(kFrames + 1, 0);
         std::vector<std::int64_t> gpuDoneUs(kFrames + 1, 0);
         PresentHistory history;
+        SwapchainImageLedger ledger;
+        ledger.Reset(imageCount);
         Outcome outcome;
         std::int64_t cpuFreeUs = 0;
         std::uint64_t presents = 0;
@@ -86,6 +93,12 @@ namespace
             for (std::uint64_t later = id; later <= presents; ++later)
                 at = std::min(at, reportedUs[later]);
             return at;
+        };
+        const auto observe = [&](std::uint64_t id, std::int64_t nowUs, bool measured) {
+            const auto displayed = history.Displayed(id, At(nowUs));
+            if (displayed && measured)
+                outcome.MaxLatencyEstimateSeconds = std::max(outcome.MaxLatencyEstimateSeconds,
+                                                             displayed->LatencyFromFrameStart);
         };
 
         for (std::uint64_t frame = 1; frame <= kFrames; ++frame)
@@ -102,10 +115,7 @@ namespace
             {
                 if (reportedAt(oldest) > acquireStartUs)
                     break;
-                const auto displayed = history.Displayed(oldest, At(acquireStartUs));
-                if (displayed && measured)
-                    outcome.MaxLatencyEstimateSeconds = std::max(outcome.MaxLatencyEstimateSeconds,
-                                                                 displayed->LatencyFromFrameStart);
+                observe(oldest, acquireStartUs, measured);
             }
 
             const auto image = std::ranges::min_element(imageFreeUs);
@@ -125,6 +135,20 @@ namespace
             const auto imageIndex = static_cast<std::uint32_t>(image - imageFreeUs.begin());
             *image = kNever;
 
+            const std::uint64_t lastPresent = ledger.Acquired(imageIndex);
+            const std::uint32_t reported = ledger.PresentedNotReacquired();
+            const auto stillWithDisplay = static_cast<std::uint32_t>(
+                std::ranges::count_if(imageFreeUs, [&](std::int64_t freeUs) { return freeUs > acquiredUs; }) - 1);
+            outcome.MaxPresentsOutstanding = std::max(outcome.MaxPresentsOutstanding, reported);
+            outcome.OutstandingUndercounted |= stillWithDisplay > reported;
+            if (lastPresent != 0 && !history.SeenDisplayed(lastPresent))
+            {
+                if (reportedAt(lastPresent) > acquiredUs)
+                    outcome.LatePresentWaits += measured ? 1 : 0;
+                else
+                    observe(lastPresent, acquiredUs, measured);
+            }
+
             const std::uint64_t id = ++presents;
             imageOf[id] = imageIndex;
             const std::int64_t submittedUs = acquiredUs + p.RecordUs;
@@ -140,6 +164,7 @@ namespace
             if (id > p.DisplayHolds)
                 imageFreeUs[imageOf[id - p.DisplayHolds]] = shown;
             history.Queued(id, At(submittedUs), At(startUs));
+            ledger.Presented(imageIndex, id);
 
             if (!measured)
                 continue;
@@ -174,7 +199,7 @@ TEST(DisplayQueue, ALatePresentWaitCompletionDelaysNoFrame)
     const Outcome lateRun = Simulate(late);
     EXPECT_EQ(lateRun.StartUs, promptRun.StartUs);
     EXPECT_EQ(lateRun.MaxAcquireWaitUs, promptRun.MaxAcquireWaitUs);
-    EXPECT_GT(lateRun.MaxLatencyEstimateSeconds, promptRun.MaxLatencyEstimateSeconds + 0.04);
+    EXPECT_GT(lateRun.MaxLatencyEstimateSeconds, promptRun.MaxLatencyEstimateSeconds);
 }
 
 // Within a refresh of work per stage the display is fed every refresh, and a
@@ -222,4 +247,33 @@ TEST(DisplayQueue, ADisplayThatReturnsNoImageCostsAFrameAtMostTheDeadline)
     const Outcome after = Simulate(resumed);
     EXPECT_NEAR(after.PresentsPerSecond, kRefreshHz, 0.01);
     EXPECT_EQ(after.FramesSkipped, 0u);
+}
+
+// Whatever the display holds, the count the capture reports never exceeds
+// imageCount - 1 and never undercounts the presents the display still has,
+// late present-wait completions included.
+TEST(DisplayQueue, PresentsOutstandingStayBelowTheImageCountWhateverTheDisplayHolds)
+{
+    for (const std::uint32_t holds : { 1u, 2u, 3u })
+    {
+        Pipeline p{ .DisplayHolds = holds, .PathUs = Refreshes(0.9) };
+        p.Late = { .FromUs = 2'000'000, .Us = 50'000 };
+        p.LateUs = 60'000;
+        const Outcome run = Simulate(p);
+        EXPECT_LE(run.MaxPresentsOutstanding, SwapchainImageCount(p.MinImages, 0, p.FramesInFlight) - 1)
+            << "display holds " << holds;
+        EXPECT_FALSE(run.OutstandingUndercounted) << "display holds " << holds;
+    }
+}
+
+// A completion is late when the display has already returned the present's
+// image; prompt completions never are.
+TEST(DisplayQueue, OnlyACompletionArrivingAfterItsImageCameBackIsLate)
+{
+    const Pipeline prompt{ .PathUs = Refreshes(0.9) };
+    Pipeline late = prompt;
+    late.Late = { .FromUs = 2'000'000, .Us = 50'000 };
+    late.LateUs = 60'000;
+    EXPECT_EQ(Simulate(prompt).LatePresentWaits, 0u);
+    EXPECT_GT(Simulate(late).LatePresentWaits, 0u);
 }

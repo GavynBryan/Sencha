@@ -56,19 +56,19 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
     if (cpuScopes != nullptr)
         sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
-    sample.FrameFenceWaitSeconds = vulkanTiming.FrameFenceWaitSeconds;
-    sample.PresentWaitSeconds = vulkanTiming.PresentWaitSeconds;
-    sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
+    sample.FrameSlotWaitSeconds = vulkanTiming.FrameSlotWaitSeconds;
+    sample.AcquireWaitSeconds = vulkanTiming.AcquireWaitSeconds;
     sample.ImageFenceWaitSeconds = vulkanTiming.ImageFenceWaitSeconds;
-    sample.PresentLatencySeconds = vulkanTiming.PresentLatencySeconds;
-    sample.FrameLatencySeconds = vulkanTiming.FrameLatencySeconds;
+    sample.PresentLatencyEstimateSeconds = vulkanTiming.PresentLatencyEstimateSeconds;
+    sample.FrameLatencyEstimateSeconds = vulkanTiming.FrameLatencyEstimateSeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;
     sample.PresentSeconds = vulkanTiming.PresentSeconds;
     sample.TotalFrameSeconds = rendererTiming.TotalSeconds;
     sample.RenderResult = static_cast<int>(renderResult);
     sample.Presented = renderResult == RenderFrameResult::Presented;
     sample.SwapchainImageIndex = vulkanTiming.ImageIndex;
-    sample.QueuedPresents = vulkanTiming.QueuedPresents;
+    sample.PresentsOutstandingMax = vulkanTiming.PresentsOutstandingMax;
+    sample.PresentWaitLate = vulkanTiming.PresentWaitLate;
     history.Push(sample);
 }
 

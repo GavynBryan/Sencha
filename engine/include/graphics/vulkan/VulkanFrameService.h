@@ -72,20 +72,22 @@ struct VulkanFrame
 
 struct VulkanFrameTiming
 {
-    double FrameFenceWaitSeconds = 0.0;
-    double PresentWaitSeconds = 0.0;
-    // Newest present seen displayed, from its queueing and from its frame's
-    // start; negative if none. Polled just before acquire: up to one frame late.
-    double PresentLatencySeconds = -1.0;
-    double FrameLatencySeconds = -1.0;
-    double AcquireSeconds = 0.0;
+    double FrameSlotWaitSeconds = 0.0;
+    double AcquireWaitSeconds = 0.0;
     double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
+    // Newest present seen displayed, from its queueing and from its frame's
+    // start; negative if none. Estimates (docs/renderer/frame.md, Pacing).
+    double PresentLatencyEstimateSeconds = -1.0;
+    double FrameLatencyEstimateSeconds = -1.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
-    // Presents not yet seen displayed when the frame acquired.
-    uint32_t QueuedPresents = 0;
+    // The primary's images presented and not yet acquired again, counted at
+    // its acquire; -1 when it acquired none.
+    int32_t PresentsOutstandingMax = -1;
+    // 1 when the primary acquired an image whose last present wait had not completed.
+    uint32_t PresentWaitLate = 0;
 };
 
 // The frame slots -- one command buffer and fence per frame in flight -- and
@@ -214,6 +216,8 @@ private:
     void DestroyRetiredPresentations();
     void ObservePrimaryPresents();
     void RecordLatency(const PresentHistory::DisplayedPresent& displayed);
+    [[nodiscard]] bool IsPresentWaitLate(PresentationTarget& primary, std::uint64_t presentId);
+    [[nodiscard]] bool AnyImageHeld();
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();
 };
