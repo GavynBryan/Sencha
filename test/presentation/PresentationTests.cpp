@@ -316,11 +316,9 @@ TEST_F(PresentationTest, WindowsGoInAnyOrder)
     Frames(2);
 }
 
-// Two windows whose swapchains return no image cost a frame no more than its
-// acquire deadline together, and the primary and a window acquiring after them
-// still render. A skipped acquire signals nothing, so the same frame slots
-// acquire with the same semaphores again without a validation error, and once
-// rebuilt the stalled windows render again.
+// Two stalled windows cost a frame at most the acquire deadline together while
+// the others render. A timed-out acquire signals nothing, so each slot reuses its
+// semaphore without a validation error, and rebuilt windows render again.
 TEST_F(PresentationTest, StalledWindowsTogetherCostAFrameAtMostTheAcquireDeadline)
 {
     const float refreshHz = Frames().FindPresentation(Render().PrimaryPresentation())->Window().GetDisplayRefreshHz();

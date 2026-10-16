@@ -20,9 +20,8 @@ VulkanBootstrapPolicy GraphicsServices::BuildPolicy(const EngineConfig& config,
     policy.RequiredInstanceExtensions = windows.GetRequiredVulkanInstanceExtensions();
     policy.RequiredDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
-    // present_id + present_wait let us block the CPU on a specific vsync.
-    // Optional because macOS/MoltenVK and older drivers lack it; VulkanFrameService
-    // falls back to acquire-based pacing.
+    // present_id + present_wait report when a present reaches the display, for
+    // latency estimates only. Optional because macOS/MoltenVK and older drivers lack them.
     policy.OptionalDeviceExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
     policy.OptionalDeviceExtensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
     return policy;

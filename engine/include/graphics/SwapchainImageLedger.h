@@ -3,10 +3,9 @@
 #include <cstdint>
 #include <vector>
 
-// One swapchain's images as the application has used them: held from acquire
-// to present, then presented until acquired again. Only an acquire proves the
-// display let an image go, so the presented ones bound from above the presents
-// the display may still have. A rebuilt chain starts over.
+// A swapchain's images as the application used them: held from acquire to
+// present, then presented until acquired again. Only an acquire proves the
+// display let one go, so presented images bound the presents it may still have.
 class SwapchainImageLedger
 {
 public:

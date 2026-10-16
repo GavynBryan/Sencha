@@ -65,7 +65,6 @@ class AcquireDeadline
 public:
     using Clock = std::chrono::steady_clock;
 
-    // No deadline without a refresh rate.
     [[nodiscard]] static AcquireDeadline ForDisplay(Clock::time_point start, float refreshHz);
 
     // vkAcquireNextImageKHR's timeout for an acquire starting at `now`: what is

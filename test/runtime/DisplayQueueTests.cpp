@@ -33,11 +33,9 @@ namespace
         [[nodiscard]] bool Contains(std::int64_t us) const { return Us > 0 && us >= FromUs && us < FromUs + Us; }
     };
 
-    // The frame service against a FIFO display, in microseconds. A frame waits
-    // for its slot's fence, simulates, then acquires in BeginFrame until the
-    // acquire deadline, skipping render and present if no image came back. The
-    // display shows one present per refresh and returns an image once
-    // `DisplayHolds` later presents have been shown.
+    // The frame service against a FIFO display, in microseconds: slot fence,
+    // simulation, then acquire until the deadline. The display shows a present per
+    // refresh and returns an image once `DisplayHolds` later ones are shown.
     struct Pipeline
     {
         std::uint32_t FramesInFlight = 2;
@@ -52,7 +50,6 @@ namespace
         // Present wait reports presents shown in this span `LateUs` late.
         Span Late{};
         std::int64_t LateUs = 0;
-        // Frames starting earlier are the display filling up, and not measured.
         std::int64_t MeasureFromUs = Refreshes(100);
     };
 
@@ -66,7 +63,6 @@ namespace
         std::uint64_t FramesSkipped = 0;
         std::uint64_t FramesBegunDuringStall = 0;
         std::uint32_t MaxPresentsOutstanding = 0;
-        // A frame at whose acquire the display had more presents than reported.
         bool OutstandingUndercounted = false;
         std::uint64_t LatePresentWaits = 0;
     };
