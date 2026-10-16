@@ -4,6 +4,7 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
@@ -14,9 +15,11 @@ IRenderFeature* AttachRenderFeature(Engine& engine, std::unique_ptr<IRenderFeatu
     Renderer& renderer = engine.Graphics().MainRenderer;
     IRenderFeature* staged = renderer.StageFeature(std::move(feature), FeatureRegistration{ .Id = id });
     std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-        return nullptr;
-    return staged;
+    const bool complete = renderer.CommitStagedFeatures(&failed);
+    if (!complete)
+        std::fprintf(stderr, "[editor] one or more render features failed to register\n");
+    return staged != nullptr && std::find(failed.begin(), failed.end(), id) == failed.end()
+        ? staged : nullptr;
 }
 
 void DetachRenderFeature(Engine& engine, IRenderFeature*& feature)

@@ -185,12 +185,23 @@ void KyusuApp::OnStart(GameStartupContext&)
     if (UiService* authored = engine.TryUi())
     {
         Renderer& renderer = graphics.MainRenderer;
-        (void)renderer.StageFeature(std::make_unique<UiRenderFeature>(*authored, engine.Content().Assets().Textures.get(),
-                                                                      0, kContentUiLayer),
-                                    FeatureRegistration{ .Id = kContentUiFeatureId });
+        MainContentUiFeature = renderer.StageFeature(
+            std::make_unique<UiRenderFeature>(
+                *authored, engine.Content().Assets().Textures.get(), 0, kContentUiLayer),
+            FeatureRegistration{ .Id = kContentUiFeatureId });
         std::vector<std::string_view> failed;
-        if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+        const bool complete = renderer.CommitStagedFeatures(&failed);
+        if (MainContentUiFeature == nullptr
+            || std::find(failed.begin(), failed.end(), kContentUiFeatureId) != failed.end())
+        {
+            MainContentUiFeature = nullptr;
             std::fprintf(stderr, "[kyusu] the content layer failed to set up; views will not show\n");
+        }
+        else if (!complete)
+        {
+            std::fprintf(stderr, "[kyusu] another staged render feature failed; "
+                                 "the content layer remains registered\n");
+        }
     }
 
     Workspaces->SetWindowOpener([this](const WorkspaceKind& kind) { return OpenDetachedWindow(kind); });
@@ -725,6 +736,7 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
         Workspaces->CloseAll();
     }
     Workspaces.reset();
+    DetachRenderFeature(GetEngine(), MainContentUiFeature);
     // Both read the journal the session is about to take with it.
     CloseAsker = {};
     SaveFollowUp.reset();

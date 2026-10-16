@@ -69,7 +69,7 @@ namespace
         {
             if (!DisplayAvailable())
                 GTEST_SKIP() << "no display; presentations need a window system";
-            setenv("SENCHA_PRESENT_MODE", "IMMEDIATE", 1);
+            ASSERT_TRUE(SetImmediatePresentationForTest());
             Logging.AddSink<ValidationErrorCount>(ValidationErrors);
             Config.Graphics.EnableValidation = true;
             Config.Window.Width = 320;
@@ -279,4 +279,52 @@ TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto
     ASSERT_TRUE(centre.has_value());
     EXPECT_GT((*centre)[1], 200) << "the sky drew";
     EXPECT_LT((*centre)[0], 50);
+}
+
+namespace
+{
+    class RefusedSetupFeature final : public IRenderFeature
+    {
+    public:
+        [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+        [[nodiscard]] bool Setup(const RenderFeatureServices&) override { return false; }
+        void OnDraw(const RenderFrame&) override {}
+    };
+}
+
+TEST_F(PresentationTest, PartialBatchSuccessRetainsTheRegisteredFeature)
+{
+    Renderer& renderer = Render();
+    SolidColorFeature* valid = renderer.StageFeature(
+        std::make_unique<SolidColorFeature>(kRed),
+        FeatureRegistration{ .Id = "test_valid" });
+    ASSERT_NE(valid, nullptr);
+    renderer.StageFeature(std::make_unique<RefusedSetupFeature>(),
+                          FeatureRegistration{ .Id = "test_refused" });
+
+    std::vector<std::string_view> failed;
+    EXPECT_FALSE(renderer.CommitStagedFeatures(&failed));
+    ASSERT_EQ(failed.size(), 1u);
+    EXPECT_EQ(failed.front(), "test_refused");
+    EXPECT_TRUE(renderer.RemoveFeature(valid))
+        << "the successful feature must remain registered despite batch failure";
+}
+
+TEST_F(PresentationTest, RegisteredDependentsBlockProviderRemoval)
+{
+    Renderer& renderer = Render();
+    IRenderFeature* producer = renderer.StageFeature(
+        std::make_unique<SolidColorFeature>(kRed),
+        FeatureRegistration{ .Id = "test_provider" });
+    constexpr std::array<std::string_view, 1> dependencies{ "test_provider" };
+    IRenderFeature* consumer = renderer.StageFeature(
+        std::make_unique<SolidColorFeature>(kGreen),
+        FeatureRegistration{ .Id = "test_consumer", .DependsOn = dependencies });
+    ASSERT_TRUE(renderer.CommitStagedFeatures());
+    ASSERT_NE(producer, nullptr);
+    ASSERT_NE(consumer, nullptr);
+
+    EXPECT_FALSE(renderer.RemoveFeature(producer));
+    EXPECT_TRUE(renderer.RemoveFeature(consumer));
+    EXPECT_TRUE(renderer.RemoveFeature(producer));
 }

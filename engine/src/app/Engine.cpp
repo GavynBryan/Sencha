@@ -86,6 +86,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -1452,10 +1453,17 @@ int Engine::Run(Game& game)
             std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()),
             FeatureRegistration{ .Id = kUiRenderFeatureId });
         std::vector<std::string_view> failed;
-        if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+        const bool batchComplete = renderer.CommitStagedFeatures(&failed);
+        if (uiFeature == nullptr
+            || std::find(failed.begin(), failed.end(), kUiRenderFeatureId) != failed.end())
         {
             uiFeature = nullptr;
             LoggingState.GetLogger<Engine>().Error("the authored UI render feature did not register");
+        }
+        else if (!batchComplete)
+        {
+            LoggingState.GetLogger<Engine>().Error(
+                "a different staged render feature failed; authored UI remains registered");
         }
     }
 #endif
@@ -1498,12 +1506,6 @@ int Engine::Run(Game& game)
 #endif
     }
 
-    // Before the game's hook, so a setting it changes during teardown is not
-    // what decides whether the file is written -- and before anything the store
-    // borrows goes away. A run that changed nothing writes nothing.
-    if (SettingsStore != nullptr)
-        (void)SettingsStore->Save(Console().Registry());
-
     // Admission closes before anything is torn down, the game's own hook
     // included: from here no producer can hand an operation a request it will
     // not live to run. The dispatcher itself stays until Engine::Shutdown has
@@ -1513,6 +1515,18 @@ int Engine::Run(Game& game)
         VerbDispatcherState->CloseAdmission();
     if (EventDispatcherState != nullptr)
         EventDispatcherState->CloseAdmission();
+
+#ifdef SENCHA_ENABLE_UI
+    // Closed page callbacks may borrow game-owned resources. Commit them before
+    // OnShutdown destroys those resources, and before the archived settings save.
+    // The shell object itself stays alive until its normal run-scope teardown.
+    if (PauseMenuState != nullptr && PauseMenuState->IsOpen())
+        PauseMenuState->Close();
+#endif
+    // OnShutdown-only cvar changes must not become persisted settings. Saving
+    // after the remaining pages close is the last ordinary archive commit.
+    if (SettingsStore != nullptr)
+        (void)SettingsStore->Save(Console().Registry());
 
     GameShutdownContext shutdown{
         .Config = Configuration,
@@ -1527,8 +1541,7 @@ int Engine::Run(Game& game)
     ResumeOperation.reset();
     QuitOperation.reset();
 #ifdef SENCHA_ENABLE_UI
-    // Composed by this run, so dismantled by it: its open pages close through
-    // the UI service, and their commits reach the settings store, while both live.
+    // Pages were closed and committed before the archive save and game hook.
     PauseMenuState.reset();
     if (UiState != nullptr && ShellSurface.IsValid())
         UiState->DestroySurface(ShellSurface);
@@ -1545,7 +1558,13 @@ int Engine::Run(Game& game)
     // The renderer outlives this run; the service and textures this feature
     // draws from do not.
     if (uiFeature != nullptr && !GraphicsState->MainRenderer.RemoveFeature(uiFeature))
-        LoggingState.GetLogger<Engine>().Error("the authored UI render feature could not be removed");
+    {
+        LoggingState.GetLogger<Engine>().Error(
+            "the authored UI render feature still has dependents at shutdown");
+        std::fputs("[engine] authored UI feature could not be detached before its borrowed "
+                   "resources are destroyed\n", stderr);
+        std::abort();
+    }
 #endif
 #ifdef SENCHA_ENABLE_UI
     // Before the content stack goes. A screen holds asset leases, and a lease

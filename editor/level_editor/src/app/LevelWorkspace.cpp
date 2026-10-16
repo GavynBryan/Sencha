@@ -499,11 +499,18 @@ void LevelWorkspace::BuildViewportRendering()
     // Committed before any panel is built against it, so a feature that fails
     // to set up leaves nothing holding its caches.
     std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+    const bool complete = renderer.CommitStagedFeatures(&failed);
+    if (RenderFeature == nullptr
+        || std::find(failed.begin(), failed.end(), kEditorRenderFeatureId) != failed.end())
     {
         std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
                              "viewports will not draw\n");
         RenderFeature = nullptr;
+    }
+    else if (!complete)
+    {
+        std::fprintf(stderr, "[editor] another staged render feature failed; "
+                             "the viewport remains registered\n");
     }
 }
 

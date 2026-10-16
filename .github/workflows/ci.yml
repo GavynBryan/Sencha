@@ -42,9 +42,14 @@ jobs:
             clang-tidy \
             glslc \
             libclang-dev \
+            libfontconfig1-dev \
+            libfreetype-dev \
             libvulkan-dev \
+            mesa-vulkan-drivers \
             llvm-dev \
-            ninja-build
+            ninja-build \
+            xauth \
+            xvfb
 
       - name: Build and install SDL3
         id: sdl
@@ -89,7 +94,7 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          ctest --preset ci 2>&1 | tee test-ci.log
+          xvfb-run -a ctest --preset ci 2>&1 | tee test-ci.log
 
       - name: Upload failed test log
         if: failure()

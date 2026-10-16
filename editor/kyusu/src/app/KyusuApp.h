@@ -27,6 +27,7 @@
 
 class SdlWindow;
 class UiRenderFeature;
+class IRenderFeature;
 class IWorkspace;
 class ProjectSession;
 class WorkspaceHost;
@@ -133,6 +134,9 @@ private:
     // Declared before the workspaces so it is destroyed after them: the module
     // stays mapped while any document holds code it compiled.
     std::unique_ptr<ProjectSession> Session;
+    // The primary window's content UI pass borrows the engine's run-scoped
+    // UI service and textures; withdraw it before those resources go away.
+    IRenderFeature* MainContentUiFeature = nullptr;
     // Over the session's journal, so gone before it.
     std::unique_ptr<DocumentExitHold> ExitHold;
     std::unique_ptr<DocumentSaveFollowUp> SaveFollowUp;

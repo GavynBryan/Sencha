@@ -4,6 +4,8 @@
 
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
+#include <core/console/CVarArchive.h>
+#include <core/console/ConsoleService.h>
 #include <app/Game.h>
 #include <app/GameContexts.h>
 #include <app/PauseMenu.h>
@@ -16,6 +18,10 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
 #include <string>
 
 namespace
@@ -51,6 +57,8 @@ namespace
             ctx.Config.Debug.ConsoleLogging = false;
             ctx.Config.Runtime.ApplicationShell = true;
             ctx.Config.Runtime.ContentRoots = {};
+            if (ProbeArchiveBoundary)
+                ctx.Config.Console.SettingsRoot = SettingsRoot.string();
         }
 
         void OnRegisterSystems(SystemRegisterContext& ctx) override
@@ -61,6 +69,21 @@ namespace
         void OnStart(GameStartupContext&) override
         {
             GetEngine().Logging().AddSink<ValidationErrorCount>(ValidationErrors);
+            if (ProbeArchiveBoundary)
+                (void)GetEngine().Console().Registry().SetCVar(
+                    "input.look_sensitivity", CVarValue{ 1.25 },
+                    { "test" }, ConsolePhase::EngineReady);
+        }
+
+        void OnShutdown(GameShutdownContext&) override
+        {
+            if (Shell == ShellAtExit::PageOverRoot)
+                EXPECT_EQ(PageClosedCount, 1) << "page callbacks must finish before the game hook";
+            CloseOwner.reset();
+            if (ProbeArchiveBoundary)
+                (void)GetEngine().Console().Registry().SetCVar(
+                    "input.look_sensitivity", CVarValue{ 3.5 },
+                    { "test" }, ConsolePhase::EngineReady);
         }
 
         void OpenShell()
@@ -85,8 +108,13 @@ namespace
             page.Desc.RowLists = { "rows" };
             page.Desc.Actions = { "options_activate" };
             page.Closed = [this] {
+                EXPECT_NE(CloseOwner, nullptr) << "page closed after its game-owned state died";
                 ++PageClosedCount;
                 PageClosedBeforeRunReturned = !RunReturned;
+                if (ProbeArchiveBoundary)
+                    (void)GetEngine().Console().Registry().SetCVar(
+                        "input.look_sensitivity", CVarValue{ 2.5 },
+                        { "test" }, ConsolePhase::EngineReady);
             };
             menu->Push(std::move(page));
             ASSERT_EQ(menu->Depth(), 2u);
@@ -95,6 +123,9 @@ namespace
         void Exit() { GetEngine().RequestExit(Engine::ExitSource::Menu); }
 
         ShellAtExit Shell;
+        bool ProbeArchiveBoundary = false;
+        std::filesystem::path SettingsRoot;
+        std::unique_ptr<int> CloseOwner = std::make_unique<int>(7);
         std::atomic<int> ValidationErrors{ 0 };
         bool RunReturned = false;
         int PageClosedCount = 0;
@@ -117,7 +148,7 @@ namespace
         {
             if (!DisplayAvailable())
                 GTEST_SKIP() << "no display; the application shell needs a window";
-            setenv("SENCHA_PRESENT_MODE", "IMMEDIATE", 1);
+            ASSERT_TRUE(SetImmediatePresentationForTest());
             SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
         }
 
@@ -176,3 +207,32 @@ INSTANTIATE_TEST_SUITE_P(ShellStates, EngineShutdownTest,
                              }
                              return std::string("Unknown");
                          });
+
+TEST(EngineShutdownSettings, OpenOptionsPageCommitsBeforeGameShutdown)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the application shell needs a window";
+    ASSERT_TRUE(SetImmediatePresentationForTest());
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    const auto root = std::filesystem::temp_directory_path()
+        / "sencha-shutdown-archive-boundary";
+    std::filesystem::remove_all(root);
+    ShutdownGame game(ShellAtExit::PageOverRoot);
+    game.ProbeArchiveBoundary = true;
+    game.SettingsRoot = root;
+    Engine engine(ConfigFor(game));
+    ASSERT_EQ(engine.Run(game), 0);
+    engine.Shutdown();
+
+    const auto file = CVarArchive::FileFor(root, "Engine Shutdown Test");
+    std::ifstream input(file);
+    ASSERT_TRUE(input.is_open()) << file.string();
+    const std::string contents{
+        std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
+    EXPECT_NE(contents.find("2.5"), std::string::npos)
+        << "page close must commit its last archived cvar";
+    EXPECT_EQ(contents.find("3.5"), std::string::npos)
+        << "game shutdown mutation must not be persisted by a late page callback";
+    std::filesystem::remove_all(root);
+}

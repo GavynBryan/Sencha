@@ -22,20 +22,22 @@ member destruction is a use-after-free, not a style problem.
 
 ## Run's teardown order
 
-1. Settings are saved; verb and event admission closes.
-2. `Game::OnShutdown` -- the game gives back its own leases and tokens.
-3. The shell's bindings and operations, then the shell itself. Destroying
-   `PauseMenu` closes any page still open, so a page's `Closed` commit runs
-   against a live settings store and its screen closes through a live
-   `UiService`. The shell's surface is destroyed with it.
-4. The authored UI render feature is removed from the renderer
-   (`Renderer::RemoveFeature` drains the GPU first). The renderer outlives the
-   run; the service and texture cache that feature draws from do not.
-5. `UiService::Shutdown`, while the asset caches its screens lease from live.
-6. Task lanes stop; the level unloads; the content stack disconnects, the game's
+1. Verb and event admission closes; open pause pages close while their
+   game-owned callback state still lives; their `Closed` commits finish.
+2. Settings are saved after page commits, but before `Game::OnShutdown`,
+   so shutdown-only cvar writes do not reach the archive.
+3. `Game::OnShutdown` -- the game releases its render features, leases and
+   tokens while their providers are still live.
+4. The shell's bindings and operations, then the shell and its surface go.
+5. The authored UI render feature is removed from the renderer
+   (`Renderer::RemoveFeature` drains the GPU first). A dependent feature
+   left registered is an owner-lifetime violation: shutdown terminates rather
+   than releasing the UI service and texture cache beneath a live borrower.
+6. `UiService::Shutdown`, while the asset caches its screens lease from live.
+7. Task lanes stop; the level unloads; the content stack disconnects, the game's
    data-asset subtypes are withdrawn while the module is mapped, and the stack is
    destroyed; then the UI service and settings store.
-7. The game's serializers and component schema entries are retracted, still
+8. The game's serializers and component schema entries are retracted, still
    inside the module's mapping.
 
 `Engine::Shutdown` then shuts down systems, the dispatchers, the network
