@@ -4,6 +4,7 @@ const char* ToString(FramePhase phase)
 {
     switch (phase)
     {
+    case FramePhase::AwaitFrameSlot: return "AwaitFrameSlot";
     case FramePhase::PumpPlatform: return "PumpPlatform";
     case FramePhase::ResolveLifecycle: return "ResolveLifecycle";
     case FramePhase::RebuildGraphics: return "RebuildGraphics";
@@ -61,7 +62,7 @@ void FrameDriver::DrainInputEdgesForFirstTick()
 
 void FrameDriver::StepOnce()
 {
-    Runtime.BeginFrame();
+    Runtime.BeginFrame(LimiterWaitSeconds);
     EdgesDrainedThisFrame = false;
 
     PhaseContext ctx;
@@ -70,6 +71,7 @@ void FrameDriver::StepOnce()
 
     if (Trace) Trace->BeginFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
 
+    InvokePhase(FramePhase::AwaitFrameSlot, ctx);
     InvokePhase(FramePhase::PumpPlatform, ctx);
 
     // One stop condition. Everything that can end a run -- a window closed, a
@@ -80,7 +82,7 @@ void FrameDriver::StepOnce()
         InvokePhase(FramePhase::EndFrame, ctx);
         if (Trace) Trace->EndFrame(Runtime.GetCurrentFrame().WallTime.FrameIndex);
         Runtime.EndFrame();
-        Pacer.WaitForLifecycleIdle();
+        LimiterWaitSeconds = Pacer.WaitForLifecycleIdle();
         return;
     }
 
@@ -131,10 +133,7 @@ void FrameDriver::StepOnce()
 
     Runtime.EndFrame();
 
-    if (lifecycleOnly)
-        Pacer.WaitForLifecycleIdle();
-    else
-        Pacer.Wait();
+    LimiterWaitSeconds = lifecycleOnly ? Pacer.WaitForLifecycleIdle() : Pacer.Wait();
 }
 
 void FrameDriver::Run()

@@ -166,6 +166,20 @@ TEST(RenderCapture, RecordsOnlyWhileArmedAndStopsAtTheFrameLimit)
     EXPECT_EQ(capture.Size(), 1u);
 }
 
+// A bounded run arms the capture with its length; a sustained session must
+// come back whole, not as the last ring's worth of frames.
+TEST(RenderCapture, AFrameLimitBeyondTheDefaultRingKeepsEveryFrame)
+{
+    RenderCapture capture;
+    const RenderCapture::FrameRecord record = MakeRecord(1);
+    constexpr std::size_t kLimit = RenderCapture::kDefaultCapacityFrames + 100;
+    capture.Start(kLimit);
+    for (std::size_t frame = 0; frame < kLimit; ++frame)
+        capture.Append(record.Timing, record.Stats);
+    EXPECT_EQ(capture.Size(), kLimit);
+    EXPECT_FALSE(capture.IsRecording());
+}
+
 TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
 {
     RenderCapture capture;
@@ -184,9 +198,9 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_TRUE(parsed.has_value()) << error.Message;
     const JsonValue& root = *parsed;
     ASSERT_NE(root.Find("schema_version"), nullptr);
-    // Last moved by the authored UI's draw, triangle and texture-upload
-    // columns joining the frame record (v8).
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 8.0);
+    // Last moved by the frame waits, display latency estimates, image count,
+    // presents outstanding and late present wait joining the frame record (v10).
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 10.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);

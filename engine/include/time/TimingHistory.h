@@ -19,10 +19,17 @@ struct TimingFrameSample
     double InterpolationAlpha = 0.0;
     double EventPollSeconds = 0.0;
     double RenderRecordSeconds = 0.0;
-    double AcquireSeconds = 0.0;
+    double FrameSlotWaitSeconds = 0.0;
+    double AcquireWaitSeconds = 0.0;
+    double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
     double TotalFrameSeconds = 0.0;
+    // The frame-rate limiter's hold that ended the interval RawDtSeconds measures.
+    double LimiterWaitSeconds = 0.0;
+    // See VulkanFrameTiming; negative when the frame saw no present displayed.
+    double PresentLatencyEstimateSeconds = -1.0;
+    double FrameLatencyEstimateSeconds = -1.0;
     uint32_t FixedTicks = 0;
     // Ticks this frame owed but the catch-up cap refused. Sustained non-zero
     // values mean simulation cannot keep up with wall time.
@@ -37,6 +44,9 @@ struct TimingFrameSample
     uint64_t SwapchainRecreateCount = 0;
     uint32_t SwapchainImageIndex = 0;
     uint32_t SwapchainImageCount = 0;
+    // See VulkanFrameTiming.
+    int32_t PresentsOutstandingMax = -1;
+    uint32_t PresentWaitLate = 0;
     // The drawable size this frame rendered at. Per frame rather than in the
     // capture envelope because a resize mid-capture changes it.
     uint32_t SwapchainWidth = 0;

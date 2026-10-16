@@ -76,6 +76,9 @@ struct RuntimeFrameSnapshot
     // Whole ticks this frame's elapsed time covered but the per-frame cap
     // refused to run. Non-zero means simulated time fell behind wall time.
     uint32_t TicksDropped = 0;
+    // How long the frame-rate limiter held between the previous frame and this
+    // one: part of WallTime's measured delta that no frame work explains.
+    double LimiterWaitSeconds = 0.0;
     RuntimeFrameState State = RuntimeFrameState::Running;
     TemporalDiscontinuityReason DiscontinuityReason = TemporalDiscontinuityReason::None;
     RuntimeFrameEventFlags Events = RuntimeFrameEventFlags::None;
@@ -85,7 +88,7 @@ struct RuntimeFrameSnapshot
 class RuntimeFrameLoop
 {
 public:
-    RuntimeFrameSnapshot BeginFrame();
+    RuntimeFrameSnapshot BeginFrame(double limiterWaitSeconds = 0.0);
     void NotifyResize(WindowExtent extent);
     void SetSurfaceExtent(WindowExtent extent) { DesiredExtent = extent; }
     void NotifyMinimized();

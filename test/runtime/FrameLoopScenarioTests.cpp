@@ -387,6 +387,114 @@ TEST(FrameDriver, FirstTickSeesInputEdges)
     EXPECT_TRUE(driver.GetInputFrame().IsKeyDown(kTestScancode));
 }
 
+// A frame that has to wait for the GPU must do so before it samples input,
+// or the wait ages the input it acts on. That holds for frames that render
+// and for lifecycle-only frames alike.
+TEST(FrameDriver, TheFrameSlotWaitPrecedesInputEveryFrame)
+{
+    RuntimeFrameLoop runtime;
+    ScriptedFrameClock clock(runtime);
+    FrameDriver driver(runtime);
+
+    std::vector<FramePhase> order;
+    for (FramePhase phase : { FramePhase::AwaitFrameSlot, FramePhase::PumpPlatform, FramePhase::Render })
+        driver.Register(phase, [&order, phase](PhaseContext&) { order.push_back(phase); });
+    driver.Register(FramePhase::ResolveLifecycle, [](PhaseContext& ctx) {
+        ctx.Runtime->ResolveLifecycleTransitions();
+    });
+
+    clock.Advance(0.0);
+    driver.StepOnce();
+    ASSERT_EQ(order.size(), 3u);
+    EXPECT_EQ(order[0], FramePhase::AwaitFrameSlot);
+    EXPECT_EQ(order[1], FramePhase::PumpPlatform);
+
+    order.clear();
+    runtime.NotifyMinimized();
+    clock.Advance(0.016);
+    driver.StepOnce();
+    ASSERT_EQ(order.size(), 2u);
+    EXPECT_EQ(order[0], FramePhase::AwaitFrameSlot);
+    EXPECT_EQ(order[1], FramePhase::PumpPlatform);
+}
+
+// Only the Render phase acquires a swapchain image, and it presents what it
+// acquired before it returns. A frame that exits, resizes or is minimized must
+// never reach it, so no frame leaves an image held.
+TEST(FrameDriver, ExitResizeAndMinimizeFramesNeverReachRender)
+{
+    RuntimeFrameLoop runtime;
+    runtime.SetResizeSettleSeconds(0.0);
+    ScriptedFrameClock clock(runtime);
+    FrameDriver driver(runtime);
+    int renders = 0;
+    bool exiting = false;
+    driver.Register(FramePhase::ResolveLifecycle, [](PhaseContext& ctx) { ctx.Runtime->ResolveLifecycleTransitions(); });
+    driver.Register(FramePhase::Render, [&](PhaseContext&) { ++renders; });
+    driver.SetShouldExit([&] { return exiting; });
+
+    clock.Advance(0.0);
+    driver.StepOnce();
+    ASSERT_EQ(renders, 1);
+
+    runtime.NotifyResize(WindowExtent{ 1280, 720 });
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_TRUE(runtime.GetCurrentFrame().LifecycleOnly);
+    EXPECT_EQ(renders, 1) << "resize";
+
+    runtime.NotifyMinimized();
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_EQ(renders, 1) << "minimize";
+
+    exiting = true;
+    clock.Advance(0.007);
+    driver.StepOnce();
+    EXPECT_EQ(renders, 1) << "exit";
+}
+
+// Simulated time follows wall time alone: however a frame's waits for the GPU
+// and the display fall, a span runs the same whole ticks.
+TEST(FrameDriver, TicksFollowWallTimeHoweverFramesWaitForTheDisplay)
+{
+    constexpr double kRefresh = 1.0 / 144.0;
+    constexpr double kSpan = kRefresh * 1440;
+
+    const auto ticksOver = [](const std::vector<double>& waitPattern) {
+        RuntimeFrameLoop runtime;
+        ScriptedFrameClock clock(runtime);
+        FrameDriver driver(runtime);
+        double waited = 0.0;
+        std::size_t frame = 0;
+        int ticks = 0;
+        const auto spanDone = [&] { return waited >= kSpan - 1e-9; };
+        driver.Register(FramePhase::AwaitFrameSlot, [&](PhaseContext&) {
+            if (spanDone())
+                return;
+            const double wait = waitPattern[frame++ % waitPattern.size()];
+            clock.Advance(wait);
+            waited += wait;
+        });
+        driver.Register(FramePhase::ScheduleTicks, [](PhaseContext& ctx) { ctx.Runtime->ScheduleFixedTicks(); });
+        driver.Register(FramePhase::Simulate, [&](PhaseContext&) { ++ticks; });
+
+        clock.Advance(0.0);
+        while (!spanDone())
+            driver.StepOnce();
+        // The last wait reaches simulation through the next frame's delta.
+        driver.StepOnce();
+        return ticks;
+    };
+
+    const double fixedDt = RuntimeFrameLoop{}.GetSimulationClock().GetFixedDt();
+    const int everyRefresh = ticksOver({ kRefresh });
+    EXPECT_NEAR(everyRefresh, kSpan / fixedDt, 1.0);
+    EXPECT_EQ(ticksOver({ 2 * kRefresh, 0.0 }), everyRefresh);
+    EXPECT_EQ(ticksOver({ 0.5 * kRefresh, 1.5 * kRefresh }), everyRefresh);
+    EXPECT_EQ(ticksOver({ 0.0, 0.0, 3 * kRefresh }), everyRefresh);
+}
+
 TEST(FrameDriver, EdgesPersistAcrossZeroTickFramesUntilFirstTick)
 {
     RuntimeFrameLoop runtime;

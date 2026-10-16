@@ -11,6 +11,7 @@
 #include <platform/SdlWindow.h>
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -62,10 +63,8 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     }
     Primary = Presentations.Adopt(std::move(primary));
 
-    // Resolve VK_KHR_present_wait if the device picked it up. This is the
-    // only reliable way to block the CPU on a specific vsync — without it
-    // we fall back to acquire-based pacing, which desynchronizes on drivers
-    // that queue up multiple images.
+    // Present wait observes when a present reaches the display; it estimates
+    // latency and never paces a frame.
     for (const auto* ext : services.Device->GetEnabledDeviceExtensions())
     {
         if (ext && std::strcmp(ext, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0)
@@ -202,31 +201,53 @@ void VulkanFrameService::DestroyRetiredPresentations()
     }
 }
 
-void VulkanFrameService::WaitForPrimaryPresent()
+void VulkanFrameService::ObservePrimaryPresents()
 {
-    // Block on the prior cycle's presentation of this frame slot. This is the
-    // true vsync anchor — without it the GPU can queue ahead, making frame
-    // cadence lumpy. Skip when the presentId belongs to a retired swapchain
-    // (vkWaitForPresentKHR on a dead swapchain is undefined).
     PresentationTarget* primary = Presentations.Find(Primary);
     if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr)
         return;
-    PresentationTarget::PresentRecord& last = primary->LastPresent(CurrentFrame);
-    if (last.Id == 0 || last.SwapchainGeneration != primary->Swapchain().GetGeneration())
-        return;
-    const auto waitStart = ProfileClock::now();
-    const VkResult result = WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), last.Id,
-                                             std::numeric_limits<uint64_t>::max());
-    LastTiming.PresentWaitSeconds = SecondsSince(waitStart);
-    // OUT_OF_DATE and SUBOPTIMAL are benign here; the acquire surfaces them.
-    if (result == VK_ERROR_DEVICE_LOST)
-        Log.Error("vkWaitForPresentKHR failed: device lost");
-    last.Id = 0;
+    PresentHistory& presents = primary->Presents();
+    while (const std::uint64_t oldest = presents.OldestPending())
+    {
+        if (WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), oldest, 0) != VK_SUCCESS)
+            break;
+        if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(oldest, ProfileClock::now()))
+            RecordLatency(*displayed);
+    }
+}
+
+void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& displayed)
+{
+    LastTiming.PresentLatencyEstimateSeconds = displayed.LatencyFromQueue;
+    LastTiming.FrameLatencyEstimateSeconds = displayed.LatencyFromFrameStart;
+}
+
+// The image is back, so the display is done with its last present; a present
+// wait still pending for it completes late.
+bool VulkanFrameService::IsPresentWaitLate(PresentationTarget& primary, std::uint64_t presentId)
+{
+    PresentHistory& presents = primary.Presents();
+    if (!PresentWaitEnabled || WaitForPresentFn == nullptr || presentId == 0 || presents.SeenDisplayed(presentId))
+        return false;
+    if (WaitForPresentFn(Device, primary.Swapchain().GetSwapchain(), presentId, 0) != VK_SUCCESS)
+        return true;
+    if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(presentId, ProfileClock::now()))
+        RecordLatency(*displayed);
+    return false;
+}
+
+bool VulkanFrameService::AnyImageHeld()
+{
+    bool held = false;
+    Presentations.ForEach([&](PresentationId, PresentationTarget& target) { held |= target.ImageLedger().Held() > 0; });
+    return held;
 }
 
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
 {
     VulkanFrameStatus status = VulkanFrameStatus::Ready;
+    const AcquireDeadline deadline = AcquireDeadline::ForDisplay(
+        ProfileClock::now(), Presentations.Find(Primary)->Window().GetDisplayRefreshHz());
     Presentations.ForEach([&](PresentationId id, PresentationTarget& target) {
         if (status != VulkanFrameStatus::Ready || target.Availability() != PresentationAvailability::Acquirable)
             return;
@@ -234,10 +255,10 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
         uint32_t imageIndex = 0;
         const auto acquireStart = ProfileClock::now();
         const VkResult result = vkAcquireNextImageKHR(Device, target.Swapchain().GetSwapchain(),
-                                                      std::numeric_limits<uint64_t>::max(),
+                                                      deadline.TimeoutAt(acquireStart),
                                                       target.AcquireSemaphore(CurrentFrame), VK_NULL_HANDLE,
                                                       &imageIndex);
-        LastTiming.AcquireSeconds += SecondsSince(acquireStart);
+        LastTiming.AcquireWaitSeconds += SecondsSince(acquireStart);
         const SurfaceOutcome outcome = ClassifySurfaceResult(result);
         if (id == Primary)
             frame.PrimaryAcquire = outcome;
@@ -252,6 +273,9 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
             target.MarkNeedsRebuild();
             return;
         }
+        // Neither result signals the semaphore, so the slot reuses it as is.
+        if (outcome == SurfaceOutcome::NotReady)
+            return;
 
         PresentationTarget::ImageState* image = target.Image(imageIndex);
         if (image == nullptr)
@@ -260,10 +284,18 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
             status = VulkanFrameStatus::Error;
             return;
         }
+        const std::uint64_t lastPresent = target.ImageLedger().Acquired(imageIndex);
+        if (id == Primary)
+        {
+            LastTiming.PresentsOutstandingMax = static_cast<int32_t>(target.ImageLedger().PresentedNotReacquired());
+            LastTiming.PresentWaitLate = IsPresentWaitLate(target, lastPresent) ? 1 : 0;
+        }
         if (image->InFlightFence != VK_NULL_HANDLE)
         {
+            const auto fenceStart = ProfileClock::now();
             const VkResult waitResult = vkWaitForFences(Device, 1, &image->InFlightFence, VK_TRUE,
                                                         std::numeric_limits<uint64_t>::max());
+            LastTiming.ImageFenceWaitSeconds += SecondsSince(fenceStart);
             if (waitResult != VK_SUCCESS)
             {
                 Log.Error("Waiting for swapchain image fence failed with code {}", static_cast<int>(waitResult));
@@ -293,22 +325,19 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
     return status;
 }
 
-VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
+VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
 {
-    frame = {};
-    Acquired.clear();
-    LastTiming.AcquireSeconds = 0.0;
-    LastTiming.PresentWaitSeconds = 0.0;
-    LastTiming.ImageIndex = 0;
-
+    LastTiming.FrameSlotWaitSeconds = 0.0;
     if (!Valid)
         return VulkanFrameStatus::Error;
 
     FrameData& current = Frames[CurrentFrame];
     if (current.Submitted)
     {
+        const auto fenceStart = ProfileClock::now();
         const VkResult waitResult = vkWaitForFences(Device, 1, &current.InFlightFence, VK_TRUE,
                                                     std::numeric_limits<uint64_t>::max());
+        LastTiming.FrameSlotWaitSeconds = SecondsSince(fenceStart);
         if (waitResult == VK_ERROR_DEVICE_LOST)
         {
             Log.Error("vkWaitForFences failed: device lost");
@@ -328,8 +357,34 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
             Retirement.RetiredThrough, current.SubmittedFrameNumber);
         Deps.DeletionQueue->AdvanceFrame();
     }
+    CurrentFrameStartedAt = ProfileClock::now();
+    return VulkanFrameStatus::Ready;
+}
+
+VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
+{
+    frame = {};
+    Acquired.clear();
+    LastTiming.AcquireWaitSeconds = 0.0;
+    LastTiming.ImageFenceWaitSeconds = 0.0;
+    LastTiming.ImageIndex = 0;
+    LastTiming.PresentLatencyEstimateSeconds = -1.0;
+    LastTiming.FrameLatencyEstimateSeconds = -1.0;
+    LastTiming.PresentsOutstandingMax = -1;
+    LastTiming.PresentWaitLate = 0;
+
+    if (!Valid)
+        return VulkanFrameStatus::Error;
+
+    FrameData& current = Frames[CurrentFrame];
+    if (current.Submitted)
+    {
+        if (const VulkanFrameStatus awaited = AwaitFrameSlot(); awaited != VulkanFrameStatus::Ready)
+            return awaited;
+    }
     DestroyRetiredPresentations();
-    WaitForPrimaryPresent();
+    assert(!AnyImageHeld() && "a frame presents every image it acquires");
+    ObservePrimaryPresents();
 
     const VulkanFrameStatus acquired = AcquirePresentations(frame);
     if (acquired != VulkanFrameStatus::Ready)
@@ -480,15 +535,16 @@ SurfaceOutcome VulkanFrameService::EndFrame(const VulkanFrame& frame)
         if (outcome == SurfaceOutcome::OutOfDate || outcome == SurfaceOutcome::Suboptimal)
             presentation.Target->MarkNeedsRebuild();
 
+        // Only a presented frame has an id worth observing; an out-of-date
+        // chain is retiring. Either way the present released the image.
+        const bool presented = outcome == SurfaceOutcome::Ok || outcome == SurfaceOutcome::Suboptimal;
+        const bool observed = presented && presentation.Id == Primary && primaryPresentId != 0;
+        presentation.Target->ImageLedger().Presented(presentation.ImageIndex, observed ? primaryPresentId : 0);
         if (presentation.Id != Primary)
             continue;
         primaryOutcome = outcome;
-        // Only a presented frame has an id worth waiting on; an out-of-date
-        // chain is retiring.
-        PresentationTarget::PresentRecord& record = presentation.Target->LastPresent(frame.FrameIndex);
-        const bool presented = outcome == SurfaceOutcome::Ok || outcome == SurfaceOutcome::Suboptimal;
-        record.Id = presented ? primaryPresentId : 0;
-        record.SwapchainGeneration = presentation.Target->Swapchain().GetGeneration();
+        if (observed)
+            presentation.Target->Presents().Queued(primaryPresentId, presentStart, CurrentFrameStartedAt);
     }
     return primaryOutcome;
 }

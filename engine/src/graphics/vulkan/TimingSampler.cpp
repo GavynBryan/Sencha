@@ -14,6 +14,7 @@ namespace
             .TickDtSeconds = frame.TickDtSeconds,
             .PresentationDtSeconds = frame.Presentation.DeltaSeconds,
             .InterpolationAlpha = frame.Presentation.Alpha,
+            .LimiterWaitSeconds = frame.LimiterWaitSeconds,
             .FixedTicks = frame.FixedTicks,
             .TicksDropped = frame.TicksDropped,
             .LifecycleState = static_cast<int>(frame.State),
@@ -55,13 +56,19 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
     if (cpuScopes != nullptr)
         sample.CpuScopes = *cpuScopes;
     sample.RenderRecordSeconds = rendererTiming.RecordSeconds;
-    sample.AcquireSeconds = vulkanTiming.AcquireSeconds;
+    sample.FrameSlotWaitSeconds = vulkanTiming.FrameSlotWaitSeconds;
+    sample.AcquireWaitSeconds = vulkanTiming.AcquireWaitSeconds;
+    sample.ImageFenceWaitSeconds = vulkanTiming.ImageFenceWaitSeconds;
+    sample.PresentLatencyEstimateSeconds = vulkanTiming.PresentLatencyEstimateSeconds;
+    sample.FrameLatencyEstimateSeconds = vulkanTiming.FrameLatencyEstimateSeconds;
     sample.SubmitSeconds = vulkanTiming.SubmitSeconds;
     sample.PresentSeconds = vulkanTiming.PresentSeconds;
     sample.TotalFrameSeconds = rendererTiming.TotalSeconds;
     sample.RenderResult = static_cast<int>(renderResult);
     sample.Presented = renderResult == RenderFrameResult::Presented;
     sample.SwapchainImageIndex = vulkanTiming.ImageIndex;
+    sample.PresentsOutstandingMax = vulkanTiming.PresentsOutstandingMax;
+    sample.PresentWaitLate = vulkanTiming.PresentWaitLate;
     history.Push(sample);
 }
 

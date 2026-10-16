@@ -3,6 +3,7 @@
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 
+#include <algorithm>
 #include <sstream>
 
 namespace
@@ -43,17 +44,26 @@ namespace
 		std::vector<FrameFields> fields{
 			{ "frame_index_count", static_cast<double>(stats.FrameIndex) },
 			{ "raw_dt_ms", timing.RawDtSeconds * kToMs },
+			{ "locked_dt_ms", timing.LockedDtSeconds * kToMs },
 			{ "presentation_dt_ms", timing.PresentationDtSeconds * kToMs },
 			{ "render_record_ms", timing.RenderRecordSeconds * kToMs },
-			{ "acquire_ms", timing.AcquireSeconds * kToMs },
+			{ "frame_slot_wait_ms", timing.FrameSlotWaitSeconds * kToMs },
+			{ "acquire_wait_ms", timing.AcquireWaitSeconds * kToMs },
+			{ "image_fence_wait_ms", timing.ImageFenceWaitSeconds * kToMs },
 			{ "submit_ms", timing.SubmitSeconds * kToMs },
 			{ "present_ms", timing.PresentSeconds * kToMs },
 			{ "total_frame_ms", timing.TotalFrameSeconds * kToMs },
+			{ "limiter_wait_ms", timing.LimiterWaitSeconds * kToMs },
+			{ "present_latency_estimate_ms", timing.PresentLatencyEstimateSeconds < 0.0 ? -1.0 : timing.PresentLatencyEstimateSeconds * kToMs },
+			{ "frame_latency_estimate_ms", timing.FrameLatencyEstimateSeconds < 0.0 ? -1.0 : timing.FrameLatencyEstimateSeconds * kToMs },
 			{ "fixed_ticks_count", static_cast<double>(timing.FixedTicks) },
 			{ "presented_bool", timing.Presented ? 1.0 : 0.0 },
 			{ "swapchain_width_px", static_cast<double>(timing.SwapchainWidth) },
 			{ "swapchain_height_px", static_cast<double>(timing.SwapchainHeight) },
 			{ "present_mode_enum", static_cast<double>(timing.PresentMode) },
+			{ "swapchain_image_count", static_cast<double>(timing.SwapchainImageCount) },
+			{ "presents_outstanding_max", static_cast<double>(timing.PresentsOutstandingMax) },
+			{ "present_wait_late_count", static_cast<double>(timing.PresentWaitLate) },
 			{ "visible_objects_count", static_cast<double>(stats.VisibleObjects) },
 			{ "draw_calls_count", static_cast<double>(stats.DrawCalls) },
 			{ "submitted_triangles_count", static_cast<double>(stats.SubmittedTriangles) },
@@ -146,8 +156,9 @@ namespace
 
 void RenderCapture::Start(std::size_t frameLimit)
 {
-	if (Records.empty())
-		Records.resize(kDefaultCapacityFrames);
+	const std::size_t capacity = std::clamp(frameLimit, kDefaultCapacityFrames, kMaxCapacityFrames);
+	if (Records.size() < capacity)
+		Records.resize(capacity);
 	Head = 0;
 	Count = 0;
 	RemainingFrames = frameLimit;

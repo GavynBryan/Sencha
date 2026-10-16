@@ -3,6 +3,7 @@
 #include <core/handle/HandlePool.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/GpuFrameRetirement.h>
+#include <graphics/PresentHistory.h>
 #include <graphics/PresentationId.h>
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
@@ -42,6 +43,9 @@ enum class RenderFrameResult
     SurfaceSuboptimal,
     SkippedMinimized,
     Failed,
+    // The primary returned no image by the frame's acquire deadline; the
+    // frame simulated but did not render or present it.
+    SkippedNotReady,
 };
 
 // One presentation this frame records into.
@@ -68,12 +72,22 @@ struct VulkanFrame
 
 struct VulkanFrameTiming
 {
-    double AcquireSeconds = 0.0;
+    double FrameSlotWaitSeconds = 0.0;
+    double AcquireWaitSeconds = 0.0;
+    double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
     double PresentSeconds = 0.0;
-    double PresentWaitSeconds = 0.0;
+    // Newest present seen displayed, from its queueing and from its frame's
+    // start; negative if none. Estimates (docs/renderer/frame.md, Pacing).
+    double PresentLatencyEstimateSeconds = -1.0;
+    double FrameLatencyEstimateSeconds = -1.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
+    // The primary's images presented and not yet acquired again, counted at
+    // its acquire; -1 when it acquired none.
+    int32_t PresentsOutstandingMax = -1;
+    // 1 when the primary acquired an image whose last present wait had not completed.
+    uint32_t PresentWaitLate = 0;
 };
 
 // The frame slots -- one command buffer and fence per frame in flight -- and
@@ -105,6 +119,7 @@ public:
     VulkanFrameService& operator=(VulkanFrameService&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return Valid; }
+    [[nodiscard]] bool IsPresentWaitEnabled() const { return PresentWaitEnabled; }
     [[nodiscard]] uint32_t GetFramesInFlight() const
     {
         return static_cast<uint32_t>(Frames.size());
@@ -133,6 +148,9 @@ public:
     // Whether a presentation besides the primary could be shown this frame.
     [[nodiscard]] bool AnySecondaryVisible();
 
+    // Blocks until the frame slot about to be used has finished on the GPU.
+    // Call before the frame samples input; BeginFrame waits otherwise.
+    VulkanFrameStatus AwaitFrameSlot();
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     // DeviceLost or Failed when the frame broke; otherwise the primary's
     // outcome, acquire and present together. Another presentation that went
@@ -186,6 +204,7 @@ private:
     uint64_t NextPresentId = 1;
     GpuFrameRetirement Retirement;
     PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
+    PresentHistory::Clock::time_point CurrentFrameStartedAt{};
     bool PresentWaitEnabled = false;
     bool Valid = false;
     VulkanFrameTiming LastTiming;
@@ -195,7 +214,10 @@ private:
     bool CreateFrameData(uint32_t framesInFlight);
     void DestroyFrameData();
     void DestroyRetiredPresentations();
-    void WaitForPrimaryPresent();
+    void ObservePrimaryPresents();
+    void RecordLatency(const PresentHistory::DisplayedPresent& displayed);
+    [[nodiscard]] bool IsPresentWaitLate(PresentationTarget& primary, std::uint64_t presentId);
+    [[nodiscard]] bool AnyImageHeld();
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();
 };

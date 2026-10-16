@@ -16,25 +16,28 @@
 //=============================================================================
 enum class FramePhase : int
 {
-    PumpPlatform = 0,
-    ResolveLifecycle = 1,
-    RebuildGraphics = 2,
-    DrainAsyncTasks = 3,
+    // Blocks until the GPU has a frame slot free and the display queue is within
+    // its limit. First, so a frame that waits does so before sampling input.
+    AwaitFrameSlot = 0,
+    PumpPlatform = 1,
+    ResolveLifecycle = 2,
+    RebuildGraphics = 3,
+    DrainAsyncTasks = 4,
     // Before ZoneResidency, so a zone grant that arrives this frame reaches
     // residency processing in the same frame rather than the next one, and
     // before ScheduleTicks, because the tick budget consumes the clock-sync
     // estimate this phase updates.
-    PumpNet = 4,
-    ZoneResidency = 5,
-    ScheduleTicks = 6,
-    Simulate = 7,
+    PumpNet = 5,
+    ZoneResidency = 6,
+    ScheduleTicks = 7,
+    Simulate = 8,
     // After the ticks, so a snapshot leaves in the frame that produced it, and
     // before presentation has consumed anything.
-    FlushNet = 8,
-    Update = 9,
-    ExtractRender = 10,
-    Render = 11,
-    EndFrame = 12,
+    FlushNet = 9,
+    Update = 10,
+    ExtractRender = 11,
+    Render = 12,
+    EndFrame = 13,
     Count,
 };
 
@@ -88,5 +91,6 @@ private:
     ChromeJsonFrameTrace* Trace = nullptr;
     std::function<bool()> ShouldExitPredicate;
     std::vector<FramePhaseCallback> Phases[static_cast<int>(FramePhase::Count)];
+    double LimiterWaitSeconds = 0.0;
     bool EdgesDrainedThisFrame = false;
 };

@@ -35,12 +35,14 @@ namespace EngineConsoleBuiltins
                                   EngineRuntimeConfig& runtimeConfig,
                                   std::unique_ptr<FrameDriver>& frameDriver);
 
-    // Bounded-run and frame-tracing controls. Both are inert at their defaults
-    // (0 frames, empty path) and add no per-frame cost when unset, so they stay
-    // out of the profiling gate and exist in every build.
+    // Bounded-run, frame-tracing and frame-delay controls. Each is inert at its
+    // default (0 frames, empty path, 0 ms), so they stay out of the profiling
+    // gate and exist in every build.
     void RegisterRunControlCVars(ConsoleRegistry& registry,
                                  std::uint64_t& exitAfterFrames,
-                                 std::string& frameTraceOutput);
+                                 std::string& frameTraceOutput,
+                                 double& frameDelayMs,
+                                 std::uint64_t& frameDelayPeriod);
 
     // The settings a player changes, as opposed to the knobs a developer does.
     //

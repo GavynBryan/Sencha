@@ -4,8 +4,10 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <platform/WindowTypes.h>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -38,6 +40,8 @@ enum class SurfaceOutcome : std::uint8_t
 {
     Ok,
     Suboptimal,
+    // No image by the acquire deadline: this presentation skips the frame.
+    NotReady,
     OutOfDate,
     DeviceLost,
     Failed,
@@ -51,3 +55,22 @@ enum class SurfaceOutcome : std::uint8_t
 // stays with that presentation. A frame that recorded no presentation at all
 // is a skipped one, like a minimized single window.
 [[nodiscard]] RenderFrameResult SummarizeFrame(SurfaceOutcome primary, std::size_t presentationsRecorded);
+
+// Every acquire of one frame shares one deadline, so presentations that return
+// no image cost the frame at most this together (docs/renderer/frame.md, Pacing).
+inline constexpr std::uint32_t kAcquireDeadlineRefreshes = 2;
+
+class AcquireDeadline
+{
+public:
+    using Clock = std::chrono::steady_clock;
+
+    [[nodiscard]] static AcquireDeadline ForDisplay(Clock::time_point start, float refreshHz);
+
+    // vkAcquireNextImageKHR's timeout for an acquire starting at `now`: what is
+    // left of the deadline, zero once it has passed, UINT64_MAX without one.
+    [[nodiscard]] std::uint64_t TimeoutAt(Clock::time_point now) const;
+
+private:
+    std::optional<Clock::time_point> End;
+};

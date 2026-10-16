@@ -114,6 +114,7 @@ compile time, not by runtime type lookup.
 
 | Phase | What happens |
 | ----- | ------------ |
+| `AwaitFrameSlot` | Before input is sampled: wait for the GPU to finish the frame slot this frame will use. The display's wait is acquire, in `Render` (`docs/renderer/frame.md`, Pacing). |
 | `PumpPlatform` | Begin input frame, poll SDL, let `Game::OnPlatformEvent` consume events, update `InputFrame`, apply pointer capture and discard the motion a capture change teleported, route graceful exit requests. |
 | `ResolveLifecycle` | Apply window resize/minimize/restore to `RuntimeFrameLoop`. |
 | `RebuildGraphics` | Recreate swapchain/frame/render resources when needed. |
@@ -588,7 +589,7 @@ Runtime knobs in `EngineRuntimeConfig`:
 | `AsyncTaskThreadCount` | Dedicated async task threads. Engine config requires at least one. |
 | `AsyncCommitBudgetMs` | Soft owner-thread commit budget. First ready commit always runs. |
 | `FixedTickRate` | Simulation tick rate. |
-| `TargetFps` | Optional wall-frame pacing cap. |
+| `TargetFps` | Optional frame-rate limit (`r.target_fps`); see `docs/renderer/frame.md`, Pacing. |
 
 ## Dependency Directions
 

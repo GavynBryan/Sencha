@@ -1467,11 +1467,11 @@ int Engine::Run(Game& game)
             FrameDriverInstance->SetTrace(FrameTraceStore.get());
         }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-        // Arm the render capture for the whole run; records only append once the
-        // mode latch makes Capture active (render.profile.mode capture), so this
-        // is inert unless both the path and the mode are set.
+        // Arm the render capture for the whole run, every frame of a bounded one;
+        // records only append once the mode latch makes Capture active
+        // (render.profile.mode capture), so this is inert unless both are set.
         if (!RenderCaptureOutputPath.empty())
-            RenderCaptureStore.Start(0);
+            RenderCaptureStore.Start(ExitAfterFrames);
 #endif
         FrameDriverInstance->Run();
         if (FrameTraceStore != nullptr
@@ -1632,6 +1632,9 @@ void Engine::PublishCaptureEnvironment()
              + std::to_string(VK_API_VERSION_PATCH(packed));
     };
 
+    const SdlWindow* window = PlatformState != nullptr ? PlatformState->Windows.GetPrimaryWindow() : nullptr;
+    const float refreshHz = window != nullptr ? window->GetDisplayRefreshHz() : 0.0f;
+
     RenderCaptureStore.SetEnvironment({
         { "gpu_name", device.deviceName },
         { "gpu_vendor_id", std::to_string(device.vendorID) },
@@ -1648,6 +1651,8 @@ void Engine::PublishCaptureEnvironment()
         { "build_sha", SENCHA_BUILD_SHA },
         { "build_type", SENCHA_BUILD_TYPE },
         { "map", ConsoleState != nullptr ? ConsoleState->CurrentMap() : std::string{} },
+        { "present_wait", GraphicsState->Frames.IsPresentWaitEnabled() ? "true" : "false" },
+        { "display_refresh_hz", std::to_string(refreshHz) },
     });
 #endif
 }
@@ -1737,7 +1742,7 @@ void Engine::RegisterEngineConsoleBuiltins(ConsoleService& console, DebugService
     EngineConsoleBuiltins::RegisterFramePacingCVars(
         registry, Configuration.Runtime, FrameDriverInstance);
     EngineConsoleBuiltins::RegisterRunControlCVars(
-        registry, ExitAfterFrames, FrameTraceOutputPath);
+        registry, ExitAfterFrames, FrameTraceOutputPath, FrameDelayMs, FrameDelayPeriod);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     EngineConsoleBuiltins::RegisterProfilingCVars(registry, PendingProfileMode);
     EngineConsoleBuiltins::RegisterCaptureCommands(

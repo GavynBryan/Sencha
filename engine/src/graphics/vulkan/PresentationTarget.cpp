@@ -28,7 +28,7 @@ PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr
     }
 
     Chain = std::make_unique<VulkanSwapchainService>(*services.Logging, *services.Device, *services.PhysicalDevice,
-                                                     *Surface, *services.Queues, window.GetExtent());
+                                                     *Surface, *services.Queues, window.GetExtent(), framesInFlight);
     if (!Chain->IsValid())
         return;
     if (desc.DepthStencil)
@@ -37,7 +37,6 @@ PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     ImageAvailable.assign(framesInFlight, VK_NULL_HANDLE);
-    Presents.assign(framesInFlight, PresentRecord{});
     for (VkSemaphore& semaphore : ImageAvailable)
     {
         if (vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS)
@@ -81,8 +80,7 @@ bool PresentationTarget::Rebuild(WindowExtent extent)
     // The recreate idled the device, so nothing is still using the old
     // chain's per-image objects.
     DestroyImageState();
-    for (PresentRecord& present : Presents)
-        present = {};
+    PresentLog.Clear();
     DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     RebuildPending = false;
     Valid = CreateImageState();
@@ -99,6 +97,7 @@ bool PresentationTarget::CreateImageState()
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     Images.assign(Chain->GetImageCount(), ImageState{});
+    ImageUses.Reset(Chain->GetImageCount());
     for (ImageState& image : Images)
     {
         if (vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &image.RenderFinished) != VK_SUCCESS)

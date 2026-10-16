@@ -39,6 +39,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <chrono>
+#include <thread>
+
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
@@ -118,6 +121,11 @@ void Engine::RegisterFramePhases(Game& game)
 
     RegisterSimulationFramePhases();
     RegisterNetFramePhases();
+
+    FrameDriverInstance->Register(FramePhase::Update, [this](PhaseContext& ctx) {
+        if (FrameDelayMs > 0.0 && ctx.Runtime->GetCurrentFrame().WallTime.FrameIndex % FrameDelayPeriod == 0)
+            std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(FrameDelayMs));
+    });
 
     FramePhasesRegistered = true;
 }
@@ -1071,6 +1079,10 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             engine.RequestExit(Engine::ExitSource::WindowClose);
         }
     });
+
+    // A failed wait leaves the slot unwaited, so the Render phase's BeginFrame
+    // meets the same failure and reports it.
+    driver.Register(FramePhase::AwaitFrameSlot, [&frames](PhaseContext&) { (void)frames.AwaitFrameSlot(); });
 
     driver.Register(FramePhase::ResolveLifecycle, [&windows, &frames, windowId](PhaseContext& ctx) {
         WindowExtent resizedExtent;

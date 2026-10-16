@@ -32,7 +32,8 @@ public:
                            VulkanPhysicalDeviceService& physicalDevice,
                            VulkanSurfaceService& surface,
                            VulkanQueueService& queues,
-                           WindowExtent desiredExtent);
+                           WindowExtent desiredExtent,
+                           std::uint32_t framesInFlight);
     ~VulkanSwapchainService();
 
     VulkanSwapchainService(const VulkanSwapchainService&) = delete;
@@ -87,6 +88,7 @@ private:
     VkExtent2D Extent{};
     uint32_t LastMinImageCount = 0;
     uint32_t LastMaxImageCount = 0;
+    uint32_t FramesInFlight = 1;
     uint64_t Generation = 0;
     uint64_t RecreateCount = 0;
 
@@ -101,7 +103,6 @@ private:
     [[nodiscard]] VkExtent2D ChooseExtent(
         const VkSurfaceCapabilitiesKHR& capabilities,
         WindowExtent desiredExtent) const;
-    [[nodiscard]] uint32_t ChooseImageCount(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
     // `oldSwapchain` lets the driver reuse the outgoing chain's resources; it
     // is retired by this call whether or not creation succeeds, so the caller
