@@ -253,3 +253,26 @@ Two runs per cell, pooled.
   comparison against `main` also changes the image count.
 - A locked session, and a window on another virtual desktop.
 - Debug builds after the simplification.
+
+## Plan B validation (2d31fbac), 2026-10-16
+
+Release build on a quiet machine (load 0.15 at start). FIFO throughout. `acquire`, `slot` and fps are exact.
+`pres_lat` and `frame_lat` are estimates from present-wait completion. "late" counts frames whose previous
+present wait had not completed when its image was acquired again; on Intel that is every frame, so the
+latency estimates there are inflated by late completions.
+
+| run | fps | p99 ms | max ms | on one refresh | acquire ms (after input) | late frames | frame_lat est ms |
+|---|---|---|---|---|---|---|---|
+| Intel 1908x1042 window, uncapped, 2 min | 144.0 | 7.82 | 10.35 | 100% | 6.79 | 17070 of 17070 | 41.7 |
+| NVIDIA fullscreen, `r.target_fps 120`, 2 min | 120.0 | 8.34 | 8.44 | 100% | 0.01 | 0 | 8.4 |
+| Stall: NVIDIA 720p, 40 ms frame every 144 | 142.6 | 8.50 | 40.5 | 96% | 6.78 | 2596 | 41.9 |
+| Transitions, Release | 125.6 | 33.08 | 81.2 | 94% | 6.80 | — | — |
+| Transitions, Debug (validation and held-image assert on) | 126.6 | 33.94 | 37.0 | 94% | 6.37 | — | — |
+
+- The 28 ms hold-timeout hitches are gone: the Intel 2-minute run's longest frame is 10.35 ms (92.7 ms before).
+- Both transition runs exited 0. The Debug run tripped no assertion. Its only Vulkan messages were the
+  known stencil-format VUID (fixed on `claude/shutdown-crash`, not merged here) and loader noise.
+- The 12 display tests pass.
+- Uncapped FIFO: acquire, after input, waits 6.8 ms of a 6.94 ms refresh. Under the plan's rule, that is
+  the latency cost that makes the follow-up (wait for the display after lifecycle, then read input) worth
+  doing. Capped below refresh, the limiter is the wait and acquire costs nothing.
