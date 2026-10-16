@@ -2,7 +2,9 @@
 
 #include <core/handle/HandlePool.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/DisplayQueueLimit.h>
 #include <graphics/GpuFrameRetirement.h>
+#include <graphics/PresentHistory.h>
 #include <graphics/PresentationId.h>
 #include <platform/WindowTypes.h>
 #include <vulkan/vulkan.h>
@@ -70,10 +72,9 @@ struct VulkanFrame
 struct VulkanFrameTiming
 {
     double FrameFenceWaitSeconds = 0.0;
-    // For the newest present this frame saw displayed: from its queueing, and
-    // from the start of the frame that produced it. Negative when the frame
-    // saw none. Observed when a frame begins, so either can read late by up to
-    // one frame interval.
+    double PresentWaitSeconds = 0.0;
+    // Newest present seen displayed, from its queueing and from its frame's
+    // start; negative if none. Seen at frame begin: up to one frame late.
     double PresentLatencySeconds = -1.0;
     double FrameLatencySeconds = -1.0;
     double AcquireSeconds = 0.0;
@@ -82,6 +83,7 @@ struct VulkanFrameTiming
     double PresentSeconds = 0.0;
     uint32_t ImageIndex = 0;
     uint64_t SwapchainGeneration = 0;
+    uint32_t DisplayQueueDepth = 0;
 };
 
 // The frame slots -- one command buffer and fence per frame in flight -- and
@@ -142,9 +144,9 @@ public:
     // Whether a presentation besides the primary could be shown this frame.
     [[nodiscard]] bool AnySecondaryVisible();
 
-    // Blocks until the frame slot about to be used has finished on the GPU,
-    // which bounds how far the CPU runs ahead. Call before the frame samples
-    // input, so the wait does not age it; BeginFrame waits itself otherwise.
+    // Blocks until the frame slot about to be used has finished on the GPU and,
+    // in a display-paced mode, until the display queue is within its limit.
+    // Call before the frame samples input; BeginFrame waits itself otherwise.
     VulkanFrameStatus AwaitFrameSlot();
     VulkanFrameStatus BeginFrame(VulkanFrame& frame);
     // DeviceLost or Failed when the frame broke; otherwise the primary's
@@ -199,7 +201,8 @@ private:
     uint64_t NextPresentId = 1;
     GpuFrameRetirement Retirement;
     PFN_vkWaitForPresentKHR WaitForPresentFn = nullptr;
-    std::chrono::steady_clock::time_point FrameStartedAt{};
+    PresentHistory::Frame CurrentFrameStart;
+    DisplayQueueLimit QueueLimit;
     bool PresentWaitEnabled = false;
     bool Valid = false;
     VulkanFrameTiming LastTiming;
@@ -209,10 +212,9 @@ private:
     bool CreateFrameData(uint32_t framesInFlight);
     void DestroyFrameData();
     void DestroyRetiredPresentations();
-    // Present wait is used to observe, never to throttle: pacing a frame on a
-    // display event would build the presentation path's latency into the frame
-    // interval (docs/renderer/frame.md, Pacing).
     void ObservePrimaryPresents();
+    bool HoldForDisplay();
+    void RecordLatency(const PresentHistory::DisplayedPresent& displayed);
     VulkanFrameStatus AcquirePresentations(VulkanFrame& frame);
     void AdvanceFrame();
 };

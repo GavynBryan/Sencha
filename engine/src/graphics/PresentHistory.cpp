@@ -1,13 +1,24 @@
 #include <graphics/PresentHistory.h>
 
-void PresentHistory::Queued(std::uint64_t id, Clock::time_point queuedAt, Clock::time_point frameStartedAt)
+namespace
 {
-    if (Count == kCapacity)
+    double SecondsBetween(PresentHistory::Clock::time_point from, PresentHistory::Clock::time_point to)
     {
-        Head = (Head + 1) % kCapacity;
+        return std::chrono::duration<double>(to - from).count();
+    }
+}
+
+void PresentHistory::Queued(std::uint64_t id, Clock::time_point queuedAt, const Frame& frame)
+{
+    if (FirstId == 0)
+        FirstId = id;
+    NewestId = id;
+    if (Count == kTracked)
+    {
+        Head = (Head + 1) % kTracked;
         --Count;
     }
-    Ring[(Head + Count) % kCapacity] = Entry{ .Id = id, .QueuedAt = queuedAt, .FrameStartedAt = frameStartedAt };
+    Ring[(Head + Count) % kTracked] = Entry{ .Id = id, .QueuedAt = queuedAt, .Producer = frame };
     ++Count;
 }
 
@@ -15,6 +26,15 @@ void PresentHistory::Clear()
 {
     Head = 0;
     Count = 0;
+    FirstId = 0;
+    NewestId = 0;
+}
+
+std::uint64_t PresentHistory::IdBehindNext(std::uint32_t depth) const
+{
+    if (depth == 0 || NewestId == 0 || NewestId + 1 < FirstId + depth)
+        return 0;
+    return NewestId + 1 - depth;
 }
 
 std::uint64_t PresentHistory::OldestPending() const
@@ -22,18 +42,21 @@ std::uint64_t PresentHistory::OldestPending() const
     return Count == 0 ? 0 : Ring[Head].Id;
 }
 
-std::optional<PresentHistory::Latency> PresentHistory::Displayed(std::uint64_t id, Clock::time_point now)
+std::optional<PresentHistory::DisplayedPresent> PresentHistory::Displayed(std::uint64_t id, Clock::time_point now)
 {
-    std::optional<Latency> latency;
+    std::optional<DisplayedPresent> displayed;
     while (Count > 0 && Ring[Head].Id <= id)
     {
-        if (Ring[Head].Id == id)
-            latency = Latency{
-                .FromQueue = std::chrono::duration<double>(now - Ring[Head].QueuedAt).count(),
-                .FromFrameStart = std::chrono::duration<double>(now - Ring[Head].FrameStartedAt).count(),
+        const Entry& entry = Ring[Head];
+        if (entry.Id == id)
+            displayed = DisplayedPresent{
+                .LatencyFromQueue = SecondsBetween(entry.QueuedAt, now),
+                .LatencyFromFrameStart = SecondsBetween(entry.Producer.StartedAt, now),
+                .ProductionSeconds = SecondsBetween(entry.Producer.StartedAt, entry.QueuedAt),
+                .HeldForDisplay = entry.Producer.HeldForDisplay,
             };
-        Head = (Head + 1) % kCapacity;
+        Head = (Head + 1) % kTracked;
         --Count;
     }
-    return latency;
+    return displayed;
 }

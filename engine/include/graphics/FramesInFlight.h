@@ -33,12 +33,8 @@ inline constexpr std::uint32_t kMaxFramesInFlight = 4;
     return requested;
 }
 
-// How many images to ask a swapchain for. The presentation engine may hold
-// `minImages` at once, so a chain of `minImages + n - 1` lets the application
-// own n images concurrently: one per frame in flight. Fewer serializes
-// recording behind display, because the next frame cannot start until the
-// display gives back the only image the application can hold. `maxImages` of
-// zero means the surface sets no upper bound.
+// Enough images that the application owns one per frame in flight beyond the
+// `minImages` the presentation engine may hold; `maxImages` 0 is unbounded.
 [[nodiscard]] constexpr std::uint32_t SwapchainImageCount(std::uint32_t minImages, std::uint32_t maxImages,
                                                           std::uint32_t framesInFlight)
 {

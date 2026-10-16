@@ -6,46 +6,57 @@
 #include <cstdint>
 #include <optional>
 
-// The presents one swapchain has queued, in order, with when each was queued
-// and when its frame began, until each is seen displayed. Present ids rise per
-// present, so seeing one displayed retires every earlier one. Cleared when the
-// swapchain is rebuilt: an id belongs to its chain.
+// One swapchain's presents, from queueing until seen displayed. Ids rise per
+// present, so a displayed id retires every earlier one; a rebuilt chain clears it.
 class PresentHistory
 {
 public:
     using Clock = std::chrono::steady_clock;
 
-    // `frameStartedAt` is when the frame that produced the present began.
-    void Queued(std::uint64_t id, Clock::time_point queuedAt, Clock::time_point frameStartedAt);
+    // Pending presents are bounded by the presentation path's depth; a chain
+    // that queues more loses the oldest timestamps, never the ordering.
+    static constexpr std::size_t kTracked = 16;
+
+    struct Frame
+    {
+        // When the frame that produced the present began, after any wait.
+        Clock::time_point StartedAt{};
+        // Whether that frame began only once an earlier present was displayed.
+        bool HeldForDisplay = false;
+    };
+
+    void Queued(std::uint64_t id, Clock::time_point queuedAt, const Frame& frame);
     void Clear();
 
-    // The oldest present not yet seen displayed, or 0.
+    // The id queued `depth` presents before the one about to be queued, or 0
+    // when this chain has none.
+    [[nodiscard]] std::uint64_t IdBehindNext(std::uint32_t depth) const;
     [[nodiscard]] std::uint64_t OldestPending() const;
     [[nodiscard]] std::size_t PendingCount() const { return Count; }
 
-    struct Latency
+    struct DisplayedPresent
     {
-        double FromQueue = 0.0;
-        double FromFrameStart = 0.0;
+        double LatencyFromQueue = 0.0;
+        double LatencyFromFrameStart = 0.0;
+        // From the frame's start to its present being queued.
+        double ProductionSeconds = 0.0;
+        bool HeldForDisplay = false;
     };
 
-    // Every present up to and including `id` has been displayed by `now`.
-    // Returns `id`'s latency when it was still pending.
-    std::optional<Latency> Displayed(std::uint64_t id, Clock::time_point now);
+    // Retires every present through `id`; what is known of `id` if it was pending.
+    std::optional<DisplayedPresent> Displayed(std::uint64_t id, Clock::time_point now);
 
 private:
     struct Entry
     {
         std::uint64_t Id = 0;
         Clock::time_point QueuedAt{};
-        Clock::time_point FrameStartedAt{};
+        Frame Producer;
     };
 
-    // Pending presents are bounded by the swapchain's images; a chain that
-    // somehow queues more loses the oldest timestamps, never the ordering.
-    static constexpr std::size_t kCapacity = 16;
-
-    std::array<Entry, kCapacity> Ring{};
+    std::array<Entry, kTracked> Ring{};
     std::size_t Head = 0;
     std::size_t Count = 0;
+    std::uint64_t FirstId = 0;
+    std::uint64_t NewestId = 0;
 };

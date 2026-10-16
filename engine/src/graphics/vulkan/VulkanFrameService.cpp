@@ -24,6 +24,13 @@ namespace
         return std::chrono::duration<double>(ProfileClock::now() - start).count();
     }
 
+    // Modes in which the presentation engine shows one image per refresh, so a
+    // present queued too early waits for the display instead of replacing one.
+    bool IsDisplayPaced(VkPresentModeKHR mode)
+    {
+        return mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    }
+
     VulkanFrameStatus FatalStatus(SurfaceOutcome outcome)
     {
         return outcome == SurfaceOutcome::DeviceLost ? VulkanFrameStatus::DeviceLost : VulkanFrameStatus::Error;
@@ -36,6 +43,7 @@ VulkanFrameService::VulkanFrameService(const Services& services,
     : Log(services.Logging->GetLogger<VulkanFrameService>())
     , Deps(services)
     , Device(services.Device->GetDevice())
+    , QueueLimit(std::max(framesInFlight, 1u), static_cast<std::uint32_t>(PresentHistory::kTracked - 1))
 {
     if (!services.Device->IsValid())
     {
@@ -153,7 +161,13 @@ bool VulkanFrameService::RetirePresentation(PresentationId id, std::function<voi
 bool VulkanFrameService::RebuildPresentation(PresentationId id, WindowExtent extent)
 {
     PresentationTarget* target = Presentations.Find(id);
-    return target != nullptr && target->Rebuild(extent);
+    if (target == nullptr || !target->Rebuild(extent))
+        return false;
+    // A new chain may take another presentation path (a fullscreen surface
+    // scanned out directly, a window composited), so its depth is relearned.
+    if (id == Primary)
+        QueueLimit.Reset();
+    return true;
 }
 
 void VulkanFrameService::RebuildStaleSecondaries()
@@ -212,12 +226,58 @@ void VulkanFrameService::ObservePrimaryPresents()
     {
         if (WaitForPresentFn(Device, primary->Swapchain().GetSwapchain(), oldest, 0) != VK_SUCCESS)
             break;
-        if (const std::optional<PresentHistory::Latency> latency = presents.Displayed(oldest, ProfileClock::now()))
-        {
-            LastTiming.PresentLatencySeconds = latency->FromQueue;
-            LastTiming.FrameLatencySeconds = latency->FromFrameStart;
-        }
+        if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(oldest, ProfileClock::now()))
+            RecordLatency(*displayed);
     }
+}
+
+void VulkanFrameService::RecordLatency(const PresentHistory::DisplayedPresent& displayed)
+{
+    LastTiming.PresentLatencySeconds = displayed.LatencyFromQueue;
+    LastTiming.FrameLatencySeconds = displayed.LatencyFromFrameStart;
+}
+
+bool VulkanFrameService::HoldForDisplay()
+{
+    PresentationTarget* primary = Presentations.Find(Primary);
+    if (!PresentWaitEnabled || WaitForPresentFn == nullptr || primary == nullptr
+        || primary->Availability() != PresentationAvailability::Acquirable
+        || !IsDisplayPaced(primary->Swapchain().GetPresentMode()))
+        return false;
+    const float refreshHz = primary->Window().GetDisplayRefreshHz();
+    if (refreshHz <= 0.0f)
+        return false;
+    const double refreshSeconds = 1.0 / static_cast<double>(refreshHz);
+
+    PresentHistory& presents = primary->Presents();
+    const std::uint64_t awaited = presents.IdBehindNext(QueueLimit.Depth());
+    const VkSwapchainKHR chain = primary->Swapchain().GetSwapchain();
+    if (awaited == 0 || WaitForPresentFn(Device, chain, awaited, 0) == VK_SUCCESS)
+        return false;
+
+    // A display that stops taking frames -- hidden, locked -- must not hold the
+    // loop: past the depth plus one refresh the present is not coming soon.
+    const auto timeout = std::chrono::duration<double>(refreshSeconds * (QueueLimit.Depth() + 1));
+    const auto waitStart = ProfileClock::now();
+    const VkResult result = WaitForPresentFn(
+        Device, chain, awaited, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count()));
+    const auto released = ProfileClock::now();
+    LastTiming.PresentWaitSeconds = std::chrono::duration<double>(released - waitStart).count();
+    if (result != VK_SUCCESS)
+        return false;
+
+    if (const std::optional<PresentHistory::DisplayedPresent> displayed = presents.Displayed(awaited, released))
+    {
+        RecordLatency(*displayed);
+        QueueLimit.Displayed(DisplayQueueLimit::Observation{
+                                 .Id = awaited,
+                                 .DisplayedAt = released,
+                                 .HeldForDisplay = displayed->HeldForDisplay,
+                                 .ProductionSeconds = displayed->ProductionSeconds,
+                             },
+                             refreshSeconds);
+    }
+    return true;
 }
 
 VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
@@ -294,6 +354,9 @@ VulkanFrameStatus VulkanFrameService::AcquirePresentations(VulkanFrame& frame)
 VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
 {
     LastTiming.FrameFenceWaitSeconds = 0.0;
+    LastTiming.PresentWaitSeconds = 0.0;
+    LastTiming.PresentLatencySeconds = -1.0;
+    LastTiming.FrameLatencySeconds = -1.0;
     if (!Valid)
         return VulkanFrameStatus::Error;
 
@@ -323,7 +386,9 @@ VulkanFrameStatus VulkanFrameService::AwaitFrameSlot()
             Retirement.RetiredThrough, current.SubmittedFrameNumber);
         Deps.DeletionQueue->AdvanceFrame();
     }
-    FrameStartedAt = ProfileClock::now();
+    const bool held = HoldForDisplay();
+    CurrentFrameStart = PresentHistory::Frame{ .StartedAt = ProfileClock::now(), .HeldForDisplay = held };
+    LastTiming.DisplayQueueDepth = QueueLimit.Depth();
     return VulkanFrameStatus::Ready;
 }
 
@@ -331,8 +396,6 @@ VulkanFrameStatus VulkanFrameService::BeginFrame(VulkanFrame& frame)
 {
     frame = {};
     Acquired.clear();
-    LastTiming.PresentLatencySeconds = -1.0;
-    LastTiming.FrameLatencySeconds = -1.0;
     LastTiming.AcquireSeconds = 0.0;
     LastTiming.ImageFenceWaitSeconds = 0.0;
     LastTiming.ImageIndex = 0;
@@ -505,7 +568,7 @@ SurfaceOutcome VulkanFrameService::EndFrame(const VulkanFrame& frame)
         // chain is retiring.
         const bool presented = outcome == SurfaceOutcome::Ok || outcome == SurfaceOutcome::Suboptimal;
         if (presented && primaryPresentId != 0)
-            presentation.Target->Presents().Queued(primaryPresentId, presentStart, FrameStartedAt);
+            presentation.Target->Presents().Queued(primaryPresentId, presentStart, CurrentFrameStart);
     }
     return primaryOutcome;
 }

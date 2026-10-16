@@ -73,8 +73,6 @@ public:
     [[nodiscard]] VkSemaphore AcquireSemaphore(std::uint32_t frameSlot) const { return ImageAvailable[frameSlot]; }
     [[nodiscard]] ImageState* Image(std::uint32_t imageIndex);
 
-    // The presents this swapchain has queued with a present id, until seen
-    // displayed. Rebuilding the swapchain clears it.
     [[nodiscard]] PresentHistory& Presents() { return PresentLog; }
 
     // Null for a presentation declared without one.

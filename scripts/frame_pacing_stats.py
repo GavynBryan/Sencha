@@ -11,18 +11,21 @@ above.
 Fields a capture does not carry (an older build) print as "-".
 
 Usage:
-  frame_pacing_stats.py [--warmup 120] [--refresh-hz 144] [--json out.json] cap.json ...
+  frame_pacing_stats.py [--warmup 120] [--refresh-hz 144] [--pool] [--json out.json] cap.json ...
 """
 
 import argparse
 import json
 import math
+import re
 import statistics as st
 
 # (label, capture key) for the per-frame spans worth a median.
 SPANS = [
     ("busy", "busy_ms"),
     ("fence", "frame_fence_wait_ms"),
+    ("pres_wait", "present_wait_ms"),
+    ("depth", "display_queue_depth_count"),
     ("acquire", "acquire_ms"),
     ("img_fence", "image_fence_wait_ms"),
     ("record", "render_record_ms"),
@@ -45,7 +48,7 @@ def percentile(sorted_vals, q):
     return sorted_vals[lo] * (hi - idx) + sorted_vals[hi] * (idx - lo)
 
 
-WAITS = ["frame_fence_wait_ms", "acquire_ms", "image_fence_wait_ms"]
+WAITS = ["frame_fence_wait_ms", "present_wait_ms", "acquire_ms", "image_fence_wait_ms"]
 
 
 def attach_busy(frames):
@@ -61,12 +64,15 @@ def median_of(frames, key):
     return st.median(vals) if vals else None
 
 
-def reduce_file(path, warmup, refresh_hz):
+def load_frames(path, warmup):
     with open(path) as f:
         data = json.load(f)
     frames = [f for f in data.get("frames", [])[warmup:] if f.get("presented_bool", 1)]
     attach_busy(frames)
-    env = data.get("environment", {})
+    return frames, data.get("environment", {})
+
+
+def reduce_frames(path, frames, env, refresh_hz):
     dts = sorted(f["raw_dt_ms"] for f in frames if f.get("raw_dt_ms", 0) > 0)
     row = {
         "path": path,
@@ -82,6 +88,10 @@ def reduce_file(path, warmup, refresh_hz):
         "p99_ms": percentile(dts, 99),
         "max_ms": dts[-1] if dts else float("nan"),
         "fps": 1000.0 * len(dts) / sum(dts) if dts else float("nan"),
+        # Fixed ticks per second of wall time: the simulation rate, which must
+        # not move with the frame rate.
+        "ticks_per_s": 1000.0 * sum(f.get("fixed_ticks_count", 0) for f in frames)
+                       / sum(f["raw_dt_ms"] for f in frames) if frames else float("nan"),
         "spans": {label: median_of(frames, key) for label, key in SPANS},
     }
     if frames:
@@ -114,12 +124,20 @@ def main():
     ap.add_argument("--refresh-hz", type=float, default=0.0,
                     help="display refresh; defaults to the capture's environment")
     ap.add_argument("--json", default=None)
+    ap.add_argument("--pool", action="store_true",
+                    help="pool repeated runs (names ending _rN) into one row per cell")
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
 
-    rows = [reduce_file(p, args.warmup, args.refresh_hz) for p in args.files]
+    cells = {}
+    for p in sorted(args.files):
+        frames, env = load_frames(p, args.warmup)
+        key = re.sub(r"_r\d+(\.json)?$", "", p) if args.pool else p
+        cell = cells.setdefault(key, ([], env))
+        cell[0].extend(frames)
+    rows = [reduce_frames(key, frames, env, args.refresh_hz) for key, (frames, env) in cells.items()]
     head = (f"{'capture':<28}{'mode':>10}{'img':>4}{'extent':>11}{'n':>6}{'fps':>8}"
-            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}"
+            f"{'med':>7}{'p95':>7}{'p99':>7}{'max':>7}{'@1T%':>6}{'tick/s':>7}"
             + "".join(f"{label:>10}" for label, _ in SPANS))
     print(head)
     print("-" * len(head))
@@ -128,7 +146,7 @@ def main():
         print(f"{name:<28}{str(r['present_mode']):>10}{str(r['images'] or '-'):>4}"
               f"{str(r['extent']):>11}{r['frames']:>6}{fmt(r['fps'], 8, 1)}"
               f"{fmt(r['median_ms'])}{fmt(r['p95_ms'])}{fmt(r['p99_ms'])}{fmt(r['max_ms'])}"
-              f"{fmt(r.get('on_one_period_pct'), 6, 0)}"
+              f"{fmt(r.get('on_one_period_pct'), 6, 0)}{fmt(r['ticks_per_s'], 7, 1)}"
               + "".join(fmt(r["spans"][label], 10) for label, _ in SPANS))
     if args.json:
         with open(args.json, "w") as f:

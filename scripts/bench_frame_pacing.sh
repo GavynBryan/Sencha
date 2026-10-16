@@ -91,4 +91,7 @@ for run in $(seq 1 "$runs"); do
     echo "  $name exit=$status load=$before_load->$(load1)"
 done; done; done; done; done
 
-python3 "$(dirname "$0")/frame_pacing_stats.py" "$out"/*.json | tee "$out/summary.txt"
+# Captures from builds that predate the refresh rate in their environment need
+# it named: SENCHA_BENCH_REFRESH_HZ.
+python3 "$(dirname "$0")/frame_pacing_stats.py" ${SENCHA_BENCH_REFRESH_HZ:+--refresh-hz "$SENCHA_BENCH_REFRESH_HZ"} \
+    "$out"/*.json | tee "$out/summary.txt"

@@ -45,9 +45,9 @@ and the reason each is required.
 - `samplerAnisotropy`, `textureCompressionBC`, `imageCubeArray`
 - `VK_KHR_swapchain`
 
-`VK_KHR_present_id` and `VK_KHR_present_wait` are optional. Pacing never
-depends on them; without them the timing sample reports no present or frame
-latency.
+`VK_KHR_present_id` and `VK_KHR_present_wait` are optional. Without them a
+display-paced frame has no display queue limit, so acquire alone bounds it,
+and the timing sample reports no present or frame latency.
 
 A no-Vulkan or headless build is not supported. The render layer includes Vulkan
 headers unconditionally.

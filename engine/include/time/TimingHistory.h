@@ -19,9 +19,8 @@ struct TimingFrameSample
     double InterpolationAlpha = 0.0;
     double EventPollSeconds = 0.0;
     double RenderRecordSeconds = 0.0;
-    // The waits a frame can block in, in the order it meets them. Together with
-    // the work spans they account for the whole frame interval.
     double FrameFenceWaitSeconds = 0.0;
+    double PresentWaitSeconds = 0.0;
     double AcquireSeconds = 0.0;
     double ImageFenceWaitSeconds = 0.0;
     double SubmitSeconds = 0.0;
@@ -29,8 +28,7 @@ struct TimingFrameSample
     double TotalFrameSeconds = 0.0;
     // The frame-rate limiter's hold that ended the interval RawDtSeconds measures.
     double LimiterWaitSeconds = 0.0;
-    // For the newest present the frame saw displayed, from its queueing and
-    // from its frame's start; negative when it saw none (see VulkanFrameTiming).
+    // See VulkanFrameTiming; negative when the frame saw no present displayed.
     double PresentLatencySeconds = -1.0;
     double FrameLatencySeconds = -1.0;
     uint32_t FixedTicks = 0;
@@ -47,6 +45,8 @@ struct TimingFrameSample
     uint64_t SwapchainRecreateCount = 0;
     uint32_t SwapchainImageIndex = 0;
     uint32_t SwapchainImageCount = 0;
+    // Presents allowed to wait for the display when a display-paced frame begins.
+    uint32_t DisplayQueueDepth = 0;
     // The drawable size this frame rendered at. Per frame rather than in the
     // capture envelope because a resize mid-capture changes it.
     uint32_t SwapchainWidth = 0;

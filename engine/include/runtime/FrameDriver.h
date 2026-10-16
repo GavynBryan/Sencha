@@ -16,8 +16,8 @@
 //=============================================================================
 enum class FramePhase : int
 {
-    // Blocks until the GPU has a frame slot free. First, so a frame that has to
-    // wait does so before it samples input rather than holding stale input.
+    // Blocks until the GPU has a frame slot free and the display queue is within
+    // its limit. First, so a frame that waits does so before sampling input.
     AwaitFrameSlot = 0,
     PumpPlatform = 1,
     ResolveLifecycle = 2,
