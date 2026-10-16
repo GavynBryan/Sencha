@@ -4,6 +4,26 @@ Measurements behind `docs/renderer/frame.md` (Pacing): why the engine held a
 near-empty map at a fraction of the display's refresh rate, what fixed it, and
 why the fix needs no adaptive display queue.
 
+## The hold removed
+
+Every table below measured a build that held a display-paced frame, before
+input, until present wait reported a present *F* back displayed. The 5-minute
+Intel window run of `ad070a48` (`/tmp/fp-s/runs/sustained`) shows why that hold
+is gone. In 8 of 43,111 frames the hold ran out its 27.8 ms timeout, five of
+them in a row, which gave frame intervals of 28, 28, 28, 93 and 28 ms. In four
+of those five frames acquire then returned within 0.03 ms: the display had
+already given the images back and present wait was reporting late. (The fifth
+waited 64 ms in acquire.) The capture's queued-present count, the presents
+present wait had not yet reported, climbed to 6 against 4 images, a number the
+API cannot produce.
+
+The hold, its bound and the queued-present count are deleted. Acquire is the
+only display wait, every acquire of a frame shares a two-refresh deadline,
+present wait only estimates latency, and the capture reports presents
+outstanding as an upper bound from the images (`frame.md`, Pacing). The
+sections below are kept as the measurements of the hold build; the plan-B build
+has not been measured yet.
+
 ## Machine and method
 
 - Laptop: RTX 4060 Laptop GPU plus Intel Raptor Lake-P graphics, KWin 6.6.5
@@ -166,7 +186,8 @@ these timings were taken under contention.
   includes the minimized interval, when presents are not displayed.
 - The 11 window tests (GoldenImage, PresentationTest) pass.
 - "Max queued" reached 6 in the Intel and transitions runs, which exceeds the
-  F = 2 bound held at frame begin. This is unexplained; see `docs/deferred.md`.
+  F = 2 bound held at frame begin: late present-wait reports (see "The hold
+  removed").
 
 ## Full matrix
 

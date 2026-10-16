@@ -4,19 +4,6 @@ Work deliberately left for later. Each entry names what was deferred, where the
 code lives, and the concrete trigger that makes it due. When a trigger lands,
 do the work and delete the entry.
 
-## Frame-pacing queued-present maximum above the bound
-
-- **What:** in the 5-minute Intel window run and the transitions run, the
-  capture's maximum queued presents reached 6, against the bound of F = 2 held
-  at frame begin (`docs/plans/evidence/frame-pacing/README.md`). It is unknown
-  whether the hold timed out (F + 2 refreshes) during a display stall and acquire
-  then allowed more, or whether the capture counts presents whose completion
-  present wait had not yet observed.
-- **Where:** the hold in `AwaitFrameSlot` and the queued-present count in the
-  render capture (`VulkanFrameService`, `PresentHistory`).
-- **Trigger:** before `claude/frame-pacing` merges. Find which frames reported
-  6 in `/tmp/fp-s/runs` (or a rerun), then either fix the bound or the count.
-
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision

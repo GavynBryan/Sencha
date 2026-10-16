@@ -114,7 +114,7 @@ compile time, not by runtime type lookup.
 
 | Phase | What happens |
 | ----- | ------------ |
-| `AwaitFrameSlot` | Before input is sampled: wait for the GPU to finish the frame slot this frame will use, and in a display-paced mode until no more than one present per frame in flight waits for the display (`docs/renderer/frame.md`, Pacing). |
+| `AwaitFrameSlot` | Before input is sampled: wait for the GPU to finish the frame slot this frame will use. The display's wait is acquire, in `Render` (`docs/renderer/frame.md`, Pacing). |
 | `PumpPlatform` | Begin input frame, poll SDL, let `Game::OnPlatformEvent` consume events, update `InputFrame`, apply pointer capture and discard the motion a capture change teleported, route graceful exit requests. |
 | `ResolveLifecycle` | Apply window resize/minimize/restore to `RuntimeFrameLoop`. |
 | `RebuildGraphics` | Recreate swapchain/frame/render resources when needed. |
