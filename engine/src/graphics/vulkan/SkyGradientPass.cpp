@@ -58,12 +58,7 @@ void SkyGradientPass::Setup(const RendererServices& services)
     // Compile against the swapchain's formats at load. A host rendering into
     // some other target rebuilds once through the variant set.
     if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
-    {
-        FrameContext prewarm{};
-        prewarm.TargetFormat = services.Swapchain->GetFormat();
-        prewarm.DepthFormat = services.DepthFormat;
-        (void)EnsurePipeline(prewarm);
-    }
+        (void)EnsurePipeline(SwapchainScopeFormats(services));
 }
 
 bool SkyGradientPass::EnsurePipeline(const FrameContext& frame)
@@ -72,7 +67,7 @@ bool SkyGradientPass::EnsurePipeline(const FrameContext& frame)
         return false;
 
     return Pipeline.Ensure(
-        AttachmentFormatKey{ frame.TargetFormat, frame.DepthFormat },
+        frame.AttachmentFormats(),
         [&](std::size_t) {
             GraphicsPipelineDesc desc{};
             desc.VertexShader = VertexShader;
@@ -87,7 +82,7 @@ bool SkyGradientPass::EnsurePipeline(const FrameContext& frame)
             desc.ColorBlend = { ColorBlendAttachmentDesc{} };
             desc.ColorFormats = { frame.TargetFormat };
             desc.DepthFormat = frame.DepthFormat;
-        desc.StencilFormat = frame.StencilFormat;
+            desc.StencilFormat = frame.StencilFormat;
 
             const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
             if (pipeline != VK_NULL_HANDLE)

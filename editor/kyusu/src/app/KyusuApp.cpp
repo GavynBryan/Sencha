@@ -184,12 +184,11 @@ void KyusuApp::OnStart(GameStartupContext&)
     // content, then the shell.
     if (UiService* authored = engine.TryUi())
     {
-        Renderer& renderer = graphics.MainRenderer;
-        (void)renderer.StageFeature(std::make_unique<UiRenderFeature>(*authored, engine.Content().Assets().Textures.get(),
-                                                                      0, kContentUiLayer),
-                                    FeatureRegistration{ .Id = kContentUiFeatureId });
-        std::vector<std::string_view> failed;
-        if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+        MainContentUi = AttachRenderFeature(
+            engine,
+            std::make_unique<UiRenderFeature>(*authored, engine.Content().Assets().Textures.get(), 0, kContentUiLayer),
+            kContentUiFeatureId);
+        if (MainContentUi == nullptr)
             std::fprintf(stderr, "[kyusu] the content layer failed to set up; views will not show\n");
     }
 
@@ -244,10 +243,10 @@ PresentationId KyusuApp::OpenWindow(std::string title, ShellRole role)
     UiService& ui = *engine.TryUi();
     UiRenderFeature* contentFeature = graphics.MainRenderer.AddFeature(
         std::make_unique<UiRenderFeature>(ui, engine.Content().Assets().Textures.get(), window.GetId(), kContentUiLayer),
-        RenderFeatureScope::For(presentation));
+        FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) });
     UiRenderFeature* uiFeature = graphics.MainRenderer.AddFeature(
         std::make_unique<UiRenderFeature>(ui, engine.Content().Assets().Textures.get(), window.GetId()),
-        RenderFeatureScope::For(presentation));
+        FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) });
     auto actions = std::make_unique<WindowActions>();
     actions->Application = actions->Stack.Push(ApplicationActions, ActionRank::Application);
     std::unique_ptr<ShellWindow> windowShell = MakeShell(
@@ -725,6 +724,8 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
         Workspaces->CloseAll();
     }
     Workspaces.reset();
+    // The engine's UI service and texture cache it draws from end with the run.
+    DetachRenderFeature(GetEngine(), MainContentUi);
     // Both read the journal the session is about to take with it.
     CloseAsker = {};
     SaveFollowUp.reset();

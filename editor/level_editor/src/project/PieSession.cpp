@@ -2,6 +2,8 @@
 
 #include "project/ProcessLaunch.h"
 
+#include <string>
+#include <thread>
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -40,17 +42,36 @@ bool PieSession::Launch(const std::string& appPath,
     return true;
 }
 
-void PieSession::Stop()
+void PieSession::Stop(std::chrono::milliseconds grace)
 {
 #if defined(__unix__) || defined(__APPLE__)
     if (ChildPid <= 0)
         return;
-    kill(static_cast<pid_t>(ChildPid), SIGTERM);
-    waitpid(static_cast<pid_t>(ChildPid), nullptr, 0);
+    const auto child = static_cast<pid_t>(ChildPid);
+    kill(child, SIGTERM);
+
+    const auto deadline = std::chrono::steady_clock::now() + grace;
+    int status = 0;
+    pid_t reaped = waitpid(child, &status, WNOHANG);
+    while (reaped == 0 && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        reaped = waitpid(child, &status, WNOHANG);
+    }
+
+    if (reaped == 0)
+    {
+        kill(child, SIGKILL);
+        waitpid(child, nullptr, 0);
+        PendingExitReport = "runtime did not stop within "
+            + std::to_string(grace.count()) + " ms and was killed";
+    }
+    else if (reaped > 0 && !(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM))
+    {
+        RecordExit(status);
+    }
 #endif
-    // A user-initiated stop is not a failure: drop any pending report.
     ChildPid = -1;
-    PendingExitReport.reset();
 }
 
 bool PieSession::IsRunning()

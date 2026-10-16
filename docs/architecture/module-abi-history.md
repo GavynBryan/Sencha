@@ -441,3 +441,13 @@ grows, and a binding whose context names an unregistered tag is unbound.
 options page that lease consumers from it, so they hand their leases back to a
 live router at shutdown; a windowed host with a pause menu aborted on exit
 ("pure virtual method called"). The member order is part of the layout.
+
+## v29
+
+A render feature batch commits whole or not at all.
+`Renderer::CommitStagedFeatures` takes no failed-id list: a Setup that returns
+false withdraws every feature of the batch already set up, last first, so false
+means nothing staged in it is registered. `Renderer::AddFeature` takes a
+`FeatureRegistration` in place of a `RenderFeatureScope`, and commits that one
+feature alone, leaving anything another host staged untouched; a named feature
+is checked against the registered ids and its dependencies as a staged one is.

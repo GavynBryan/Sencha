@@ -5,7 +5,6 @@
 
 #include <assets/texture/ImageLoader.h>
 #include <core/config/EngineConfig.h>
-#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
@@ -14,7 +13,11 @@
 #include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
 #include <platform/WindowCreateInfo.h>
+#include <render/RenderLight.h>
+#include <render/extract/Camera.h>
+#include <render/feature/SkyRenderFeature.h>
 
+#include <DeviceTestSupport.h>
 #include <SDL3/SDL.h>
 #include <gtest/gtest.h>
 
@@ -24,33 +27,11 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace
 {
-    bool DisplayAvailable()
-    {
-        const char* display = std::getenv("DISPLAY");
-        const char* wayland = std::getenv("WAYLAND_DISPLAY");
-        return (display != nullptr && display[0] != '\0') || (wayland != nullptr && wayland[0] != '\0');
-    }
-
-    class ValidationErrorCount : public ILogSink
-    {
-    public:
-        explicit ValidationErrorCount(std::atomic<int>& count) : Count(count) {}
-        void Write(LogLevel level, std::string_view, std::string_view message) override
-        {
-            if (level >= LogLevel::Error && message.starts_with("[Vulkan]"))
-            {
-                ++Count;
-                ADD_FAILURE() << message;
-            }
-        }
-
-    private:
-        std::atomic<int>& Count;
-    };
-
     using Rgb = std::array<std::uint8_t, 3>;
 
     // Clears its presentation's colour attachment and does nothing else.
@@ -137,7 +118,7 @@ namespace
         SolidColorFeature* Fill(PresentationId presentation, Rgb color)
         {
             return Render().AddFeature(std::make_unique<SolidColorFeature>(color),
-                                       RenderFeatureScope::For(presentation));
+                                       FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) });
         }
 
         // Pumps the window system the way the engine's platform phase does,
@@ -287,7 +268,8 @@ TEST_F(PresentationTest, AWindowIsDestroyedOnlyOnceNothingRecordsIntoIt)
     ASSERT_TRUE(d.Presentation.IsValid());
     EXPECT_EQ(Frames().FindPresentation(b.Presentation), nullptr) << "B's id never names D";
     EXPECT_FALSE(Render().CaptureFrame(b.Presentation, (Output / "stale.png").string(), 0));
-    EXPECT_EQ(Render().AddFeature(std::make_unique<SolidColorFeature>(kWhite), RenderFeatureScope::For(b.Presentation)),
+    EXPECT_EQ(Render().AddFeature(std::make_unique<SolidColorFeature>(kWhite),
+                                  FeatureRegistration{ .Scope = RenderFeatureScope::For(b.Presentation) }),
               nullptr);
     Fill(d.Presentation, kWhite);
     EXPECT_EQ(Capture(d.Presentation, "d"), kWhite);
@@ -357,4 +339,101 @@ TEST_F(PresentationTest, StalledWindowsTogetherCostAFrameAtMostTheAcquireDeadlin
     Frames(3);
     EXPECT_GT(green->Draws, greenBefore);
     EXPECT_GT(blue->Draws, blueBefore);
+}
+
+TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto)
+{
+    // Built at Setup, before any frame: the stencil aspect the swapchain scope
+    // binds has to be in the formats it was compiled against.
+    CameraRenderData camera;
+    RenderLightSet lights;
+    lights.AmbientSky = Vec<3>(0.0f, 1.0f, 0.0f);
+    lights.AmbientGround = Vec<3>(0.0f, 1.0f, 0.0f);
+    lights.TonemapEnabled = false;
+    ASSERT_NE(Render().AddFeature(std::make_unique<SkyRenderFeature>(camera, lights)), nullptr);
+
+    const std::optional<Rgb> centre = Capture(Render().PrimaryPresentation(), "sky");
+    ASSERT_TRUE(centre.has_value());
+    EXPECT_GT((*centre)[1], 200) << "the sky drew";
+    EXPECT_LT((*centre)[0], 50);
+}
+
+namespace
+{
+    // Sets up or refuses as told, and records when the renderer tears it down.
+    class LifecycleFeature final : public IRenderFeature
+    {
+    public:
+        LifecycleFeature(std::string_view name, bool setsUp, std::vector<std::string_view>& tornDown)
+            : Name(name), SetsUp(setsUp), TornDown(tornDown) {}
+        [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::MainColor; }
+        [[nodiscard]] bool Setup(const RenderFeatureServices&) override { return SetsUp; }
+        void OnDraw(const RenderFrame&) override {}
+        void Teardown() override { TornDown.push_back(Name); }
+
+    private:
+        std::string_view Name;
+        bool SetsUp;
+        std::vector<std::string_view>& TornDown;
+    };
+
+    constexpr std::array<std::string_view, 1> kOnProvider{ "test_provider" };
+}
+
+TEST_F(PresentationTest, ABatchWithAFeatureThatFailsSetupRegistersNoneOfIt)
+{
+    std::vector<std::string_view> tornDown;
+    Render().StageFeature(std::make_unique<LifecycleFeature>("provider", true, tornDown),
+                          FeatureRegistration{ .Id = "test_provider" });
+    Render().StageFeature(std::make_unique<LifecycleFeature>("independent", true, tornDown),
+                          FeatureRegistration{ .Id = "test_independent" });
+    Render().StageFeature(std::make_unique<LifecycleFeature>("refused", false, tornDown),
+                          FeatureRegistration{ .Id = "test_refused", .DependsOn = kOnProvider });
+
+    EXPECT_FALSE(Render().CommitStagedFeatures());
+    EXPECT_EQ(tornDown, (std::vector<std::string_view>{ "refused", "independent", "provider" }))
+        << "what set up before the refusal is withdrawn, last set up first";
+
+    IRenderFeature* again = Render().AddFeature(std::make_unique<LifecycleFeature>("again", true, tornDown),
+                                                FeatureRegistration{ .Id = "test_independent" });
+    ASSERT_NE(again, nullptr) << "a withdrawn feature's id is free again";
+    EXPECT_TRUE(Render().RemoveFeature(again));
+}
+
+TEST_F(PresentationTest, AddingAFeatureLeavesAnotherHostsStagedBatchAlone)
+{
+    std::vector<std::string_view> tornDown;
+    Render().StageFeature(std::make_unique<LifecycleFeature>("staged", false, tornDown),
+                          FeatureRegistration{ .Id = "test_staged" });
+
+    IRenderFeature* added = Render().AddFeature(std::make_unique<LifecycleFeature>("added", true, tornDown),
+                                                FeatureRegistration{ .Id = "test_added" });
+    ASSERT_NE(added, nullptr) << "a feature added alone neither commits nor fails with a batch staged elsewhere";
+    EXPECT_TRUE(tornDown.empty());
+
+    EXPECT_FALSE(Render().CommitStagedFeatures());
+    EXPECT_EQ(tornDown, (std::vector<std::string_view>{ "staged" }));
+    EXPECT_TRUE(Render().RemoveFeature(added));
+}
+
+TEST_F(PresentationTest, AFeatureAddedByNameIsCheckedAgainstWhatIsRegistered)
+{
+    std::vector<std::string_view> tornDown;
+    IRenderFeature* provider = Render().AddFeature(std::make_unique<LifecycleFeature>("provider", true, tornDown),
+                                                   FeatureRegistration{ .Id = "test_provider" });
+    ASSERT_NE(provider, nullptr);
+    EXPECT_EQ(Render().AddFeature(std::make_unique<LifecycleFeature>("duplicate", true, tornDown),
+                                  FeatureRegistration{ .Id = "test_provider" }),
+              nullptr);
+    constexpr std::array<std::string_view, 1> onMissing{ "test_missing" };
+    EXPECT_EQ(Render().AddFeature(std::make_unique<LifecycleFeature>("orphan", true, tornDown),
+                                  FeatureRegistration{ .Id = "test_orphan", .DependsOn = onMissing }),
+              nullptr);
+
+    IRenderFeature* consumer = Render().AddFeature(std::make_unique<LifecycleFeature>("consumer", true, tornDown),
+                                                   FeatureRegistration{ .Id = "test_consumer", .DependsOn = kOnProvider });
+    ASSERT_NE(consumer, nullptr);
+    EXPECT_FALSE(Render().RemoveFeature(provider)) << "a consumer still borrows from it";
+    EXPECT_TRUE(Render().RemoveFeature(consumer));
+    EXPECT_TRUE(Render().RemoveFeature(provider));
 }
