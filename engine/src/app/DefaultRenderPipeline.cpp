@@ -159,7 +159,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
             if (!graphics.MainRenderer.RemoveFeature(feature))
             {
                 std::fprintf(stderr, "[engine] default render feature '%.*s' could not "
-                                     "be withdrawn after partial setup\\n",
+                                     "be withdrawn after partial setup\n",
                              static_cast<int>(id.size()), id.data());
                 std::abort();
             }
