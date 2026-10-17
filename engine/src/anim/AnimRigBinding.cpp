@@ -326,6 +326,12 @@ void AnimRigBinder::BindLayers(const AnimRigData& rig)
     }
 }
 
+RigSocketIndex AnimBoundRig::FindSocket(std::string_view name) const
+{
+    const auto found = SocketsByName.find(name);
+    return found != SocketsByName.end() ? found->second : RigSocketIndex{};
+}
+
 int AnimBoundRig::FindSlot(std::string_view name) const
 {
     for (std::size_t i = 0; i < Slots.size(); ++i)
@@ -431,7 +437,12 @@ namespace
         }
         binder.BindRequests(*rig);
         binder.BindLayers(*rig);
-        binder.BindMasks(*rig);
+        const SkeletonData* skeleton = binder.BindSkeleton(*rig);
+        const SkeletonJointNames jointNames = skeleton != nullptr && AnimRigNamesJoints(*rig)
+                                                  ? SkeletonJointNames(*skeleton)
+                                                  : SkeletonJointNames{};
+        binder.BindMasks(*rig, skeleton, jointNames);
+        binder.BindSockets(*rig, skeleton, jointNames);
         // Behaviors before selectors and slot maps, which name them.
         binder.BindBehaviors(*rig);
         binder.BindBlendOverrides(*rig);

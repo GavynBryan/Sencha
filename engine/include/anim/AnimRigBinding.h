@@ -12,10 +12,12 @@
 #include <anim/SkeletonHandle.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbBindingSet.h>
+#include <core/hash/TransparentStringHash.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -291,6 +293,23 @@ struct AnimBoundBlendOverride
     std::uint32_t Index = 0;
 };
 
+// A socket's place in one binding of its rig. Never persisted: a rebind may renumber.
+struct RigSocketIndex
+{
+    static constexpr std::uint16_t kNone = 0xFFFF;
+    std::uint16_t Value = kNone;
+
+    [[nodiscard]] bool IsValid() const { return Value != kNone; }
+    friend bool operator==(RigSocketIndex, RigSocketIndex) = default;
+};
+
+struct AnimBoundSocket
+{
+    std::string Name;
+    std::uint16_t Joint = 0;
+    Transform3f Offset;
+};
+
 // A World resource set by the `anim.blend.override_cap` cvar.
 struct AnimRigLimits
 {
@@ -307,6 +326,10 @@ struct AnimBoundRig
     std::string SkeletonPath;
     SkeletonHandle Skeleton;
     std::uint32_t JointCount = 0;
+
+    // Only the sockets whose joint resolved; the rest are diagnosed and absent.
+    std::vector<AnimBoundSocket> Sockets;
+    std::unordered_map<std::string, RigSocketIndex, TransparentStringHash, std::equal_to<>> SocketsByName;
 
     bool HasFacts = false;
     AnimFactCapacity Capacity = AnimFactCapacity::Small;
@@ -344,6 +367,7 @@ struct AnimBoundRig
     bool DrivesGameplay = true;
 
     [[nodiscard]] int FindSlot(std::string_view name) const;
+    [[nodiscard]] RigSocketIndex FindSocket(std::string_view name) const;
     [[nodiscard]] const AnimBoundIntent* FindIntent(GameplayTagId intent) const;
     [[nodiscard]] const AnimBoundBehavior* FindBehavior(GameplayTagId behavior) const;
     [[nodiscard]] int FindBehaviorIndex(GameplayTagId behavior) const;

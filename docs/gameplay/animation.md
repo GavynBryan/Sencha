@@ -155,6 +155,32 @@ binding generation it was taken against, and remaps by authored identity (a
 rule's name, a row's id, a section's tag) or resets when that generation moves.
 Nothing is remapped by position.
 
+### Sockets
+
+A socket is a named place on the rig's skeleton: a joint and an offset in that
+joint's space (`position` in metres, `rotation` as pitch, yaw and roll in
+degrees). Content names sockets with plain strings, `"hand_r"`, and nothing is
+registered beforehand. A socket name is local to its rig; two rigs may both
+have a `hand_r` that names different joints.
+
+```json
+"sockets": [ { "name": "hand_r", "joint": "mixamorig:RightHand", "position": [0.02, 0, 0.08] } ]
+```
+
+Binding resolves each socket's joint once, through the same name lookup bone
+masks use, where a name two joints share names neither. The bound rig keeps the
+sockets that resolved (`AnimBoundRig::Sockets`) and a string-keyed index of
+them; `FindSocket(name)` answers a `RigSocketIndex` in average constant time,
+comparing the whole name, so two names never resolve to one socket. A socket
+whose joint is unknown or ambiguous, or whose rig names no skeleton, is a
+located warning and is left out: nothing can attach to it, and the rig still
+plays. Names are 1 to `kAnimSocketNameMaxLength` characters and unique within
+the rig, which compile refuses otherwise.
+
+A `RigSocketIndex` belongs to one binding. A rebind bumps the rig's
+`Generation`, and whoever holds an index looks the name up again. Joints and
+sockets are data in the skeleton and the bound rig, never entities.
+
 ## Facts
 
 A fact snapshot is one 32-bit value per declared slot, gathered once per tick

@@ -647,3 +647,12 @@ do the work and delete the entry.
 - **Trigger:** the first teardown hook in any of them that touches what it
   borrows. That makes the borrow a real use-after-free, so the borrower is
   released in `Run`'s teardown in that change.
+
+## Rig sockets composed by name
+
+- **What:** a derived rig should add or patch a socket by its `name`. `main`
+  has no data composition, so `sockets` is a whole list today.
+- **Where:** the `sockets` array in `MakeSchema`, `engine/src/anim/AnimRigData.cpp`.
+- **Trigger:** `claude/composition` (data composition with array merge keys)
+  merging. Then set the array's merge key to `name` and add a composition test
+  that patches one socket of a base rig.
