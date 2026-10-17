@@ -11,6 +11,7 @@
 #include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <math/Angle.h>
 
 #include <algorithm>
 #include <format>
@@ -81,6 +82,21 @@ namespace
         layers.Editor.TitleKey = "name";
         layers.Children.push_back(std::move(layer));
 
+        DataFieldSchema socket = Field({}, DataFieldKind::Record, "Socket", {}, true);
+        socket.Children.push_back(Field("name", DataFieldKind::String, "Name",
+                                        "What attachments name this socket by, e.g. hand_r.", true));
+        socket.Children.push_back(Field("joint", DataFieldKind::String, "Joint",
+                                        "A joint of the rig's skeleton, by name.", true));
+        socket.Children.push_back(DataField::Vector("position", "Offset",
+                                                    "Metres from the joint, in the joint's space.", 3, false));
+        socket.Children.push_back(DataField::Vector("rotation", "Turn",
+                                                    "Pitch, yaw and roll from the joint, in degrees.", 3, false));
+        DataFieldSchema sockets = Field("sockets", DataFieldKind::Array, "Sockets",
+                                        "Named places on the skeleton that things attach to.", false);
+        sockets.Editor.Widget = "cards";
+        sockets.Editor.TitleKey = "name";
+        sockets.Children.push_back(std::move(socket));
+
         DataSchema schema;
         schema.TypeName = std::string(kAnimRigType);
         schema.DisplayName = "Animation rig";
@@ -94,6 +110,7 @@ namespace
                     kAnimRequestSchemaType),
             std::move(capacity),
             std::move(layers),
+            std::move(sockets),
             DataField::ArrayOf("behaviors", "Behavior sets",
                                 "In order; a later set overrides an earlier one by tag.",
                                 DataRef({}, "Behavior set", {}, kAnimBehaviorSetType, true)),
@@ -116,6 +133,14 @@ namespace
                                     })),
         };
         return schema;
+    }
+
+    // Shape-checked against the schema before compile, so three numbers.
+    Vec3d ReadSocketVector(const JsonValue& value)
+    {
+        const JsonValue::Array& xyz = value.AsArray();
+        return Vec3d(static_cast<float>(xyz[0].AsNumber()), static_cast<float>(xyz[1].AsNumber()),
+                     static_cast<float>(xyz[2].AsNumber()));
     }
 
     DataAssetCompileResult Compile(const JsonValue& data)
@@ -247,6 +272,42 @@ namespace
                 }
                 result.Dependencies.push_back(AssetRef{ AssetType::Data, extension.SelectorPath });
                 rig->Extensions.push_back(std::move(extension));
+            }
+        }
+
+        if (const JsonValue* sockets = data.Find("sockets"); sockets != nullptr && sockets->IsArray())
+        {
+            for (std::size_t i = 0; i < sockets->AsArray().size(); ++i)
+            {
+                const JsonValue& entry = sockets->AsArray()[i];
+                const std::string path = std::format("$.data.sockets[{}]", i);
+                AnimRigSocket socket{ entry.Find("name")->AsString(), entry.Find("joint")->AsString(), {} };
+                if (socket.Name.empty() || socket.Name.size() > kAnimSocketNameMaxLength)
+                {
+                    result.Error = std::format("{}.name A socket's name is 1 to {} characters.", path,
+                                               kAnimSocketNameMaxLength);
+                    return result;
+                }
+                if (std::any_of(rig->Sockets.begin(), rig->Sockets.end(),
+                                [&](const AnimRigSocket& other) { return other.Name == socket.Name; }))
+                {
+                    result.Error = std::format("{}.name Two sockets are named '{}'.", path, socket.Name);
+                    return result;
+                }
+                if (socket.Joint.empty())
+                {
+                    result.Error = path + ".joint A socket names a joint.";
+                    return result;
+                }
+                if (const JsonValue* value = entry.Find("position"))
+                    socket.Offset.Position = ReadSocketVector(*value);
+                if (const JsonValue* value = entry.Find("rotation"))
+                {
+                    const Vec3d degrees = ReadSocketVector(*value);
+                    socket.Offset.Rotation = Quat<float>::FromPitchYawRoll(
+                        ToRadians(degrees.X), ToRadians(degrees.Y), ToRadians(degrees.Z));
+                }
+                rig->Sockets.push_back(std::move(socket));
             }
         }
 

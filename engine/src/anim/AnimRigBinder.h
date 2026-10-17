@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SkeletonJointNames.h"
+
 #include <anim/AnimRigBinding.h>
 
 #include <format>
@@ -69,8 +71,12 @@ struct AnimRigBinder
     void BindProviders();
     void BindRequests(const AnimRigData& rig);
     void BindLayers(const AnimRigData& rig);
-    // After layers: the rig's skeleton and each layer's bone mask over it.
-    void BindMasks(const AnimRigData& rig);
+    // The skeleton masks and sockets name joints of; null when the rig names none
+    // or it is not loaded.
+    [[nodiscard]] const SkeletonData* BindSkeleton(const AnimRigData& rig);
+    // After layers: each layer's bone mask over the skeleton.
+    void BindMasks(const AnimRigData& rig, const SkeletonData* skeleton, const SkeletonJointNames& jointNames);
+    void BindSockets(const AnimRigData& rig, const SkeletonData* skeleton, const SkeletonJointNames& jointNames);
     // After slot maps: every clip the rig plays is keyed to its skeleton.
     void ValidateClipSkeletons();
     void BindBehaviors(const AnimRigData& rig);
@@ -98,6 +104,9 @@ struct AnimRigBinder
     // request can make it play moves a body or fires a gameplay event.
     void ValidatePresentationLayers();
 };
+
+// Whether a mask or a socket names a joint, so binding needs the skeleton's names.
+[[nodiscard]] bool AnimRigNamesJoints(const AnimRigData& rig);
 
 // How two flows would read one request anchor differently, or empty when they agree.
 [[nodiscard]] std::string AnimFlowAnchorDifference(const AnimBoundRig& rig, const AnimBoundFlow& a,

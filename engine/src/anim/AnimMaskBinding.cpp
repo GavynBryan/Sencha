@@ -3,50 +3,43 @@
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 
+#include <algorithm>
 #include <format>
-#include <unordered_map>
 
-void AnimRigBinder::BindMasks(const AnimRigData& rig)
+bool AnimRigNamesJoints(const AnimRigData& rig)
 {
-    bool masked = false;
-    for (const AnimRigLayer& layer : rig.Layers)
-        masked = masked || !layer.Mask.empty();
+    return !rig.Sockets.empty() || std::any_of(rig.Layers.begin(), rig.Layers.end(),
+                                               [](const AnimRigLayer& layer) { return !layer.Mask.empty(); });
+}
 
-    const SkeletonData* skeleton = nullptr;
-    if (!rig.SkeletonPath.empty())
+const SkeletonData* AnimRigBinder::BindSkeleton(const AnimRigData& rig)
+{
+    if (rig.SkeletonPath.empty())
+        return nullptr;
+
+    Out.SkeletonPath = rig.SkeletonPath;
+    if (Skeletons != nullptr)
+        Out.Skeleton = Skeletons->Find(rig.SkeletonPath);
+    const SkeletonData* skeleton = Out.Skeleton.IsValid() ? Skeletons->Get(Out.Skeleton) : nullptr;
+    if (skeleton == nullptr)
     {
-        Out.SkeletonPath = rig.SkeletonPath;
-        if (Skeletons != nullptr)
-            Out.Skeleton = Skeletons->Find(rig.SkeletonPath);
-        skeleton = Out.Skeleton.IsValid() ? Skeletons->Get(Out.Skeleton) : nullptr;
-        if (skeleton == nullptr)
-        {
-            // Only masks need the joints at bind; without them the rig still
-            // plays, and says what it could not check.
-            const std::string message = std::format("'{}' is not loaded, so no joint can be named against it.",
-                                                    rig.SkeletonPath);
-            if (masked)
-                Error("anim.rig.skeleton_unavailable", Out.RigPath, "$.data.skeleton", message);
-            else
-                Warning("anim.rig.skeleton_unavailable", Out.RigPath, "$.data.skeleton", message);
-        }
+        // Only masks and sockets need the joints at bind; without them the rig
+        // still plays, and says what it could not check.
+        const std::string message = std::format("'{}' is not loaded, so no joint can be named against it.",
+                                                rig.SkeletonPath);
+        if (AnimRigNamesJoints(rig))
+            Error("anim.rig.skeleton_unavailable", Out.RigPath, "$.data.skeleton", message);
         else
-            Out.JointCount = static_cast<std::uint32_t>(skeleton->Joints.size());
+            Warning("anim.rig.skeleton_unavailable", Out.RigPath, "$.data.skeleton", message);
+        return nullptr;
     }
-    if (!masked)
-        return;
+    Out.JointCount = static_cast<std::uint32_t>(skeleton->Joints.size());
+    return skeleton;
+}
 
-    // A joint's name is its key; an ambiguous one cannot be named.
-    std::unordered_map<std::string_view, int> byName;
-    if (skeleton != nullptr)
-        for (std::size_t j = 0; j < skeleton->Joints.size(); ++j)
-        {
-            const std::string& name = skeleton->Joints[j].Name;
-            const auto [it, inserted] = byName.emplace(name, static_cast<int>(j));
-            if (!inserted)
-                it->second = -1;
-        }
-
+void AnimRigBinder::BindMasks(const AnimRigData& rig, const SkeletonData* skeleton,
+                              const SkeletonJointNames& jointNames)
+{
     for (std::size_t l = 0; l < rig.Layers.size() && l < Out.Layers.size(); ++l)
     {
         const std::vector<AnimMaskOp>& ops = rig.Layers[l].Mask;
@@ -75,16 +68,16 @@ void AnimRigBinder::BindMasks(const AnimRigData& rig)
         for (std::size_t m = 0; m < ops.size(); ++m)
         {
             const AnimMaskOp& op = ops[m];
-            const auto found = byName.find(op.Joint);
+            const SkeletonJointNames::Match found = jointNames.Find(op.Joint);
             const std::string at = std::format("{}[{}].joint", field, m);
-            if (found == byName.end())
+            if (found.Result == SkeletonJointNames::Status::Unknown)
             {
                 Error("anim.mask.joint_unknown", Out.RigPath, at,
                       std::format("'{}' has no joint named '{}'.", rig.SkeletonPath, op.Joint));
                 ok = false;
                 continue;
             }
-            if (found->second < 0)
+            if (found.Result == SkeletonJointNames::Status::Ambiguous)
             {
                 Error("anim.mask.joint_ambiguous", Out.RigPath, at,
                       std::format("'{}' has more than one joint named '{}'; reimport it so every joint has "
@@ -95,7 +88,7 @@ void AnimRigBinder::BindMasks(const AnimRigData& rig)
             }
             // Parents come before children, so one forward pass finds the
             // subtree: a joint is in it when its parent is.
-            const std::size_t root = static_cast<std::size_t>(found->second);
+            const std::size_t root = found.Joint;
             std::fill(touched.begin(), touched.end(), std::uint8_t{ 0 });
             touched[root] = 1;
             if (op.Subtree)

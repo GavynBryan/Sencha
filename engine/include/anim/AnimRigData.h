@@ -3,6 +3,7 @@
 #include <anim/AnimTypes.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
+#include <math/geometry/3d/Transform3d.h>
 
 #include <string>
 #include <string_view>
@@ -52,6 +53,17 @@ struct AnimRigExtension
     std::string SelectorPath;
 };
 
+// Short enough for a component to hold a socket's name as fixed inline text.
+inline constexpr std::size_t kAnimSocketNameMaxLength = 31;
+
+// A named place on the skeleton: a joint, and an offset in that joint's space.
+struct AnimRigSocket
+{
+    std::string Name;
+    std::string Joint;
+    Transform3f Offset;
+};
+
 struct AnimRigData
 {
     std::string SkeletonPath;
@@ -68,6 +80,7 @@ struct AnimRigData
     // A later asset replaces an earlier one's policy for the same pair.
     std::vector<std::string> BlendOverridePaths;
     std::vector<AnimRigExtension> Extensions;
+    std::vector<AnimRigSocket> Sockets;
 
     [[nodiscard]] bool HasFacts() const { return !FactSchemaPath.empty(); }
 };
