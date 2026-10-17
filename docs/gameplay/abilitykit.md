@@ -405,8 +405,11 @@ key, found in the owner's own interned entries; a grant whose entry the owner ha
 not interned is held but bound to no input), `AttributeSet` (attributes by name)
 and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
 `gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
-machine instead, at most `kGameplayTagSharedCapacity` at once and without their
-stack counts: what other players' presentation reads, such as `Weapon.Firing`.
+machine instead, without their stack counts: what other players' presentation
+reads, such as `Weapon.Firing`. The shared half holds as many tags as a
+container can (`kGameplayTagSharedCapacity`), so none is ever dropped, in runs
+of `kGameplayTagSharedRunLength`; a run still empty is not sent, so an actor
+showing eight tags or fewer costs what one run does.
 `ActorTimeLeases` go to everyone, so a remote machine animates a dilated actor at
 its scale; each machine runs the actor clock from them.
 
