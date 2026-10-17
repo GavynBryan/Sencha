@@ -550,6 +550,15 @@ each touching only its own components and slot, or inline in entity order when
 there are no workers. The inline order is the reference the parallel path must
 match.
 
+A slot's presented pose is its model-space pose between its last two ticks, at
+the share the entity is drawn at: the presentation alpha for an entity carrying
+`WorldTransformHistory`, else the last tick whole. `Slot::PresentedModel` builds
+it on first request and keeps it until the slot's `Revision` (moved by every
+posed tick and every reshape) or the blend changes, so a frame builds each
+presented pose once however many readers draw from it. Render extraction builds
+the skinned palette from it; anything else placed on a joint reads the same
+result, so it can never disagree with the skin.
+
 ## Root motion
 
 A root curve is data, and content time is a function of a request's start

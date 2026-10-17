@@ -184,9 +184,7 @@ private:
                         Without<WorldTransformHistory>>> CachedQuery;
     std::optional<Query<Read<WorldTransformHistory>,
                         Read<StaticMeshComponent>>> CachedInterpolatedQuery;
-    // Scratch for one instance's pose, reused across instances and frames.
-    std::vector<Transform3f> PoseScratch;
-    std::vector<Mat4> ModelScratch;
+    // Scratch for one instance's palette, reused across instances and frames.
     std::vector<Mat4> PaletteScratch;
     std::optional<Query<Read<WorldTransform>,
                         Read<SkinnedMeshComponent>,
