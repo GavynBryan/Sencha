@@ -75,9 +75,18 @@ Components (all POD, `engine/include/movement/MovementComponents.h`):
 | `LocomotionOutput` | the active mode's locomotion system | composition | Velocity plus up axis plus gravity scale. Exactly one writer per entity per tick. |
 | `MotionAxisOverride` | action producers via `MotionComposition.h` helpers | composition | One-tick mailbox; planar/up channels, first-write-wins, forced variants replace. |
 | `MotionImpulse` | `AddMotionImpulse` | composition | One-tick additive velocity (knockback, explosions). |
-| `MotionRequest` | `MotionCompositionSystem` only | `CharacterMoverPool` | The single composed motor request. |
+| `MotionRequest` | `MotionCompositionSystem` only (a dilated character's step writes its last step's) | `CharacterMoverPool`, path followers | The single composed motor request. `PlanarOverridden` records that an action, root motion or held motion replaced locomotion's planar velocity. |
 | `ModeTransitionRequest` | `RequestLocomotionMode` | transition system | The arbitrated transition mailbox. |
 | mode session components (`ClingSession`, …) | mode registry hooks | that mode's systems | Added on entry, removed on exit; see Modes. |
+
+**One producer per character per tick.** Nothing resets `MovementIntent` between
+ticks, so whoever stops producing must leave it at zero. The producer is chosen
+by the character's state, not by schedule order: a character tagged
+`movement.controlled` is steered by the game's input steering system; otherwise
+a navigation agent with a live order is steered by `NavAgentSystem`
+(`docs/navigation/runtime.md`, "Agents"), which writes zero once when the order
+ends. An NPC prefab copied from a pawn prefab keeps `movement.controlled`, and
+its orders then fail as `TakenOverByInput`.
 
 World resources: `LocomotionModeRegistry` (the open mode set), `MovementTags`
 (resolved `movement.*` tag ids), `MovementDefs` (the `MoveSpeed` attribute and

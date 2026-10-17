@@ -78,6 +78,9 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "Dock Gate Binding",                    0x9D8D4FD13397EBFCull },
     { "sencha.navigation.link",               0xCCCBA53DADE6C9F3ull },
     { "sencha.navigation.link_state",         0xC634FEDD79698D79ull },
+    { "sencha.navigation.agent",              0x775C60F13B8FA8C4ull },
+    { "sencha.navigation.agent_request",      0x6F37578BCE0A31B6ull },
+    { "sencha.navigation.agent_progress",     0x2A3EC3789676632Aull },
     { "Camera",                               0x54D1B2A64667E32Eull },
     { "sencha.camera_exclusion",              0x89656FFE274865DDull },
     { "sencha.physics.collider",              0x4956A40D955D2368ull },
@@ -136,6 +139,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "IrradianceVolume",    0xB477A83303BC3F19ull, MakeFourCC('I','R','V','L'), 0xCCA25403DBEC5178ull },
     { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K'), 0x02E7F865828EE5CBull },
     { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N'), 0x75C60F44DC220B00ull },
+    { "Nav Agent",           0x775C60F13B8FA8C4ull, MakeFourCC('N','A','G','T'), 0x2468E13CB665229Bull },
     { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0x9164FAFA468AD95Full },
     { "Nav Link State",      0xC634FEDD79698D79ull, MakeFourCC('N','L','S','T'), 0xF4222739CE2AEA8Eull },
     { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T'), 0x133C5B9C945CFC5Aull },
@@ -169,6 +173,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
         "persistent_id",
         "scene_instance",
         "sencha.movement_tuning_source",
+        "sencha.navigation.agent",
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving

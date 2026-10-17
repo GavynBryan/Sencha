@@ -180,3 +180,24 @@ TEST(RuntimeWorldMigration, PublishesOneExactMigrationJournalRecord)
     EXPECT_TRUE(
         runtime.Entities().PendingPartitionMoves().empty());
 }
+
+TEST(RuntimeWorldMigration, ZoneOfFollowsTheEntitysPartition)
+{
+    const WorldComponentSchema schema = MigrationSchema();
+    RuntimeWorld runtime(schema);
+    RuntimeZoneRecord& first = runtime.AttachZone(ZoneId{ 1 }, LiveZone());
+    (void)runtime.AttachZone(ZoneId{ 2 }, LiveZone());
+    FinishResidency(runtime);
+
+    const EntityId walker = runtime.Entities().CreateEntity(first.Partition);
+    EXPECT_EQ(runtime.ZoneOf(walker), ZoneId{ 1 });
+
+    ASSERT_TRUE(runtime.MoveEntityToZone(walker, ZoneId{ 2 }));
+    EXPECT_EQ(runtime.ZoneOf(walker), ZoneId{ 2 });
+
+    ASSERT_TRUE(runtime.MoveEntityToPersistent(walker));
+    EXPECT_FALSE(runtime.ZoneOf(walker).has_value());
+
+    runtime.Entities().DestroyEntity(walker);
+    EXPECT_FALSE(runtime.ZoneOf(walker).has_value());
+}

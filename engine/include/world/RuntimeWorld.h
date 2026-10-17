@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -104,6 +105,10 @@ public:
     [[nodiscard]] RuntimeZoneRecord* FindPartition(StoragePartitionId partition);
     [[nodiscard]] const RuntimeZoneRecord* FindPartition(
         StoragePartitionId partition) const;
+
+    // The zone whose partition holds a live entity; nullopt for a dead entity or
+    // one in the persistent partition, which belongs to no zone.
+    [[nodiscard]] std::optional<ZoneId> ZoneOf(EntityId entity) const;
 
     [[nodiscard]] bool IsZoneResident(ZoneId zone) const;
     [[nodiscard]] std::size_t ZoneCount() const;

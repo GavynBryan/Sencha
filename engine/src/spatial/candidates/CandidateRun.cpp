@@ -174,17 +174,6 @@ CandidateTaggedEntityQuery& CandidateRun::TaggedEntities()
     return *Evaluator.Tagged;
 }
 
-std::optional<ZoneId> CandidateRun::ZoneOf(EntityId entity) const
-{
-    if (!Entities().IsAlive(entity))
-        return std::nullopt;
-    const StoragePartitionId partition = Entities().GetEntityPartition(entity);
-    if (partition == PersistentStoragePartition)
-        return std::nullopt;
-    const RuntimeZoneRecord* record = RuntimeState.FindPartition(partition);
-    return record != nullptr ? std::optional<ZoneId>(record->Id) : std::nullopt;
-}
-
 const NavQueryRequest& CandidateRun::NavRequest() const
 {
     return Context.Navigation;
@@ -226,7 +215,7 @@ CandidateMeasureStatus CandidateRun::CandidateNav(std::uint32_t row, NavLocation
     const EntityId entity = Scratch.Entities[row];
     if (entity.IsValid())
     {
-        const std::optional<ZoneId> zone = ZoneOf(entity);
+        const std::optional<ZoneId> zone = RuntimeState.ZoneOf(entity);
         if (zone && *zone != QuerierZone())
             return CandidateMeasureStatus::OutsideZone;
     }

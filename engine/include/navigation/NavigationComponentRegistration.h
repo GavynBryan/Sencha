@@ -1,12 +1,14 @@
 #pragma once
 
+#include <navigation/NavAgent.h>
 #include <navigation/NavLinkComponent.h>
 #include <navigation/NavigationGeometry.h>
 #include <navigation/NavLinkState.h>
 #include <world/ComponentRegistrar.h>
 
 // How an agent may travel through a zone beyond its walkable surface.
-using NavigationComponents = ComponentSet<NavLink, NavLinkState, NavigationGeometry>;
+using NavigationComponents =
+    ComponentSet<NavLink, NavLinkState, NavigationGeometry, NavAgent, NavAgentRequest, NavAgentProgress>;
 
 inline void RegisterNavigationComponents(ComponentRegistrar& registrar)
 {

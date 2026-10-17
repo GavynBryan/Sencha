@@ -71,6 +71,27 @@ struct TypeSchema<SceneCodecMeshComponent>
     }
 };
 
+struct SceneCodecOptionalMaterialComponent
+{
+    MaterialHandle Material;
+};
+
+template <>
+struct TypeSchema<SceneCodecOptionalMaterialComponent>
+{
+    static constexpr std::string_view Name = "SceneCodecOptionalMaterial";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('T', 'O', 'M', 'T');
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("material", &SceneCodecOptionalMaterialComponent::Material)
+                .AsAsset(AssetType::Material)
+                .Optional(),
+        };
+    }
+};
+
 namespace
 {
     void RegisterMaterialAsset(AssetRegistry& registry, std::string_view path)
@@ -552,4 +573,29 @@ TEST(SceneFieldCodec, APresentTagComponentSurvivesTheSave)
     ASSERT_NE(second, nullptr);
     EXPECT_NE(first->Find("SceneCodecTag"), nullptr);
     EXPECT_EQ(second->Find("SceneCodecTag"), nullptr);
+}
+
+TEST(SceneFieldCodec, AnUnsetOptionalReferenceSavesAsAbsentAndLoadsBackUnset)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    MaterialCache materials;
+    MaterialAssetLoader materialLoader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
+    SceneSerializationContext context(logging, &assets);
+
+    JsonWriteArchive archive;
+    ASSERT_TRUE(SceneComponentSerialization::SaveFields(archive, SceneCodecOptionalMaterialComponent{}, context));
+    JsonValue json = archive.TakeValue();
+    EXPECT_EQ(json.Find("material"), nullptr);
+
+    JsonReadArchive reader(json);
+    SceneCodecOptionalMaterialComponent loaded;
+    ASSERT_TRUE(SceneComponentSerialization::LoadFields(reader, loaded, context));
+    EXPECT_FALSE(loaded.Material.IsValid());
+
+    JsonWriteArchive required;
+    EXPECT_FALSE(SceneComponentSerialization::SaveFields(required, SceneCodecMaterialComponent{}, context))
+        << "a required reference still refuses to save unset";
 }

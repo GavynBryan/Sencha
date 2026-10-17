@@ -1,0 +1,8 @@
+{
+  "id": "771decf618aca485",
+  "type": "gameplay.tag_declarations",
+  "version": 1,
+  "data": {
+    "tags": [ "navigation.profile.humanoid" ]
+  }
+}

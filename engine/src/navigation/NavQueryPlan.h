@@ -25,8 +25,9 @@ struct NavQueryPlan
     float CheapestAreaCost = 1.0f;
     // Bit k: the agent may cross links of traversal kind k.
     std::uint64_t CrossableKinds = 0;
-    float KindCostMultiplier[64] = {};
-    float KindCostAdd[64] = {};
+    static_assert(kNavMaxTraversalKinds <= 64, "one CrossableKinds bit per kind");
+    float KindCostMultiplier[kNavMaxTraversalKinds] = {};
+    float KindCostAdd[kNavMaxTraversalKinds] = {};
 
     [[nodiscard]] std::uint8_t AreaOf(std::uint64_t polygon) const;
     [[nodiscard]] bool IsCurrent(const NavLocation& location) const;

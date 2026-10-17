@@ -14,6 +14,7 @@
 #include <input/InputActionResolveSystem.h>
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
+#include <navigation/NavAgentRegistration.h>
 #include <participant/ParticipantLifecycle.h>
 #include <perception/PerceptionRegistration.h>
 #include <physics/PhysicsRegistration.h>
@@ -106,6 +107,11 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
     ctx.Schedule.After<FpsSteeringSystem, LookIntegrationSystem>();
     ctx.Schedule.After<FpsSteeringSystem, InputActionResolveSystem>();
     OrderMovementAfterInput<FpsSteeringSystem>(ctx.Schedule);
+
+    // Anything placed with a Nav Agent walks where it is sent (nav.agent.goto);
+    // the player's own pawn is steered by input instead.
+    RegisterNavigationAgents(ctx.Schedule, GetEngine().World(), &GetEngine().Jobs(),
+                             &Session().Assets().DataAssets, &GetEngine().Console().Registry());
 
     // Waits on content with no session, and on the authority with one: either
     // way its first act each frame is to ask where this player's pawn comes

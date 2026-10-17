@@ -632,6 +632,63 @@ do the work and delete the entry.
   assumptions and one-way drops; world links get positions through the same
   work (`navigation-core.md`, section 7) and stop being unconsidered.
 
+## Navigation agents
+
+From `docs/plans/navigation-agent.md` (section 11). The agents themselves are
+described in `docs/navigation/runtime.md`, "Agents".
+
+- **A traversal carried out by an ability or a lease.**
+  - *What:* an executor that starts an ability or acquires a lease for a
+    crossing and finishes when it does.
+  - *What's blocking it:* an `AbilityRequest` carries no position and is not
+    tied to the record it starts, and a lease that completes cannot say whether
+    it succeeded.
+  - *Where:* `navigation/NavTraversal.h`, `abilities/AbilityRequestQueue.h`,
+    `VerbDefinition::Completes`.
+  - *Trigger:* the first crossing that needs animation or an ability (a ladder,
+    a mantle, a door).
+- **Binding traversal kinds to executors from data.**
+  - *What:* today a game module calls `RegisterNavTraversal`.
+  - *Trigger:* the first content that binds a kind without module code, likely
+    the roadmap's data-authored enemy.
+- **`navigation.arrived` / `navigation.failed` authored events.**
+  - *What:* push delivery of an order's end; the queries answer it by polling.
+  - *Trigger:* the first push consumer (the script runtime or LevelFlow).
+- **Facing the direction of travel.**
+  - *What:* the follower writes no facing; `LookOrientation` with `AimFacing`
+    owns rotation.
+  - *Trigger:* the first NPC content whose body must face its motion, or a
+    third-person template, which needs the same thing for the player.
+- **Telling a change behind an agent from one ahead of it.**
+  - *What:* `NavValidateRoute` reports only that a dependency changed, so a
+    change to a tile already walked past stops the agent for a replan.
+  - *Where:* `NavValidateRoute` (`navigation/NavigationQuery.h`) and the sweep in
+    `NavAgentSystem.cpp`.
+  - *Trigger:* a measured stop or repath rate from changes behind agents in real
+    content.
+- **A parallel follow pass.**
+  - *What:* steering runs serially.
+  - *Trigger:* the follow pass measured over ~1 ms in a real encounter.
+- **Cross-zone orders.**
+  - *What:* an agent in the persistent partition fails with `NoZone`, and a
+    target in another zone fails with `DestinationInOtherZone`.
+  - *Trigger:* the cross-zone planner (roadmap Track A item 6).
+- **Navigation for a client-predicted pawn.**
+  - *What:* click-to-move for the local pawn. The authority re-derives a pawn's
+    intent from its actions, so the order itself would have to travel.
+  - *Trigger:* a game that navigates the local pawn.
+- **Partial routes.**
+  - *What:* "get as close as you can" to an unreachable point;
+    `NavStatus::Partial` is declared but nothing returns it.
+  - *Trigger:* a consumer that cannot use a reachable stand-in found with
+    `NavCollectReachable` or candidate evaluation.
+- **`nav.agent.goto <agent> aim`.**
+  - *What:* sending an agent to the point under the local player's aim.
+    `goto ... me` and explicit points exist.
+  - *Where:* `engine/src/navigation/NavAgentConsole.cpp`; it needs the physics
+    world's `PhysicsQueries::Raycast`.
+  - *Trigger:* the first hands-on session that wants it.
+
 ## Engine-scope borrowers of the run scope
 
 - **What:** a few engine-scope objects keep pointers into run-scope owners

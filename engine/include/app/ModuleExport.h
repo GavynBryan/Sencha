@@ -20,4 +20,4 @@
 
 // Bumped on a deliberate break of the game-module contract; the ABI fingerprint
 // catches the rest. What each version changed: docs/architecture/module-abi-history.md.
-#define SENCHA_GAME_ABI_VERSION 29u
+#define SENCHA_GAME_ABI_VERSION 30u

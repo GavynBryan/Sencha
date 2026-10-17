@@ -404,8 +404,8 @@ where practical, and there are no backend types.
   alive.
 - `PostFixed(ctx)` runs after every `FixedLogic` system, so the result never
   depends on the order of game systems. It rebuilds the overlay from all
-  `NavLinkState` components through a cached query over `Logic` plus the
-  persistent partition:
+  `NavLinkState` components through a cached query over every partition,
+  dormant zones included:
   - a link with no state component is enabled with scale 1;
   - a revision is bumped only when a link's effective value changes;
   - queries in tick T+1 see state written in tick T.

@@ -13,6 +13,7 @@
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
@@ -71,7 +72,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 18u);
+    ASSERT_EQ(verbs.size(), 21u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -88,10 +89,16 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[15].Name, kMovementModeLease);
     EXPECT_EQ(verbs[16].Name, kAudioPlayVerb);
     EXPECT_EQ(verbs[17].Name, kAudioLoopLease);
+    EXPECT_EQ(verbs[18].Name, kNavigationMoveToVerb);
+    EXPECT_EQ(verbs[19].Name, kNavigationApproachVerb);
+    EXPECT_EQ(verbs[20].Name, kNavigationStopVerb);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 5u);
+    ASSERT_EQ(queries.size(), 8u);
     EXPECT_EQ(queries[0].Name, kPhysicsTraceQuery);
     EXPECT_EQ(queries[1].Name, kPhysicsOverlapQuery);
+    EXPECT_EQ(queries[2].Name, kNavigationPhaseQuery);
+    EXPECT_EQ(queries[3].Name, kNavigationFailureQuery);
+    EXPECT_EQ(queries[4].Name, kNavigationRemainingQuery);
 }
 
 TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
@@ -99,13 +106,13 @@ TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    // After the physics queries, which the engine's own scope declares first.
-    ASSERT_EQ(queries.size(), 5u);
-    EXPECT_EQ(queries[2].Name, kSeesQuery);
-    EXPECT_EQ(queries[2].Provider, "engine");
-    EXPECT_EQ(queries[2].ArgumentCount, 2u);
-    EXPECT_EQ(queries[3].Name, kSeesTaggedQuery);
-    EXPECT_EQ(queries[4].Name, kNearestSeenTaggedQuery);
+    // After the physics and navigation queries, which the engine's own scope declares first.
+    ASSERT_EQ(queries.size(), 8u);
+    EXPECT_EQ(queries[5].Name, kSeesQuery);
+    EXPECT_EQ(queries[5].Provider, "engine");
+    EXPECT_EQ(queries[5].ArgumentCount, 2u);
+    EXPECT_EQ(queries[6].Name, kSeesTaggedQuery);
+    EXPECT_EQ(queries[7].Name, kNearestSeenTaggedQuery);
 }
 
 TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
@@ -117,10 +124,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 19u);
-    EXPECT_EQ(verbs[18].Name, kModuleVerb);
-    EXPECT_EQ(verbs[18].Provider, "spike");
-    EXPECT_EQ(verbs[18].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 22u);
+    EXPECT_EQ(verbs[21].Name, kModuleVerb);
+    EXPECT_EQ(verbs[21].Provider, "spike");
+    EXPECT_EQ(verbs[21].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -160,7 +167,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 18u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 21u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

@@ -12,6 +12,8 @@
 #include <movement/MovementRegistration.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/CharacterMovement.h>
+#include <movement/components/HeldMotion.h>
+#include <movement/components/MotionChannels.h>
 #include <abilities/AbilityKit.h>
 #include <assets/data/DataAssetCache.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -176,4 +178,20 @@ TEST(ActorTimeMovement, TheScheduleStepsADilatedCharacterExactlyOnceATick)
                                .Entities = world, .Partitions = partitions };
     schedule.RunFixedLogic(context);
     EXPECT_FALSE(world.HasComponent<ActorTimeDilated>(slowed)) << "back in the bulk path";
+}
+
+TEST(ActorTimeMovement, ADilatedStepRecordsWhetherItsPlanarMotionWasOverridden)
+{
+    Walkers walkers;
+    const EntityId walker = walkers.Walker();
+
+    walkers.Step(walker, kActorTimeOne / 2);
+    EXPECT_FALSE(std::as_const(walkers.Entities).TryGet<MotionRequest>(walker)->PlanarOverridden);
+
+    const EntityId holder = walkers.Entities.CreateEntity();
+    MotionBursts* bursts = walkers.Entities.TryGet<MotionBursts>(walker);
+    ASSERT_NE(bursts, nullptr);
+    bursts->Slots[0] = MotionBurst{ .Owner = LeaseOwner{ holder, 1 }, .Velocity = Vec3d(0.0f, 0.0f, 4.0f) };
+    walkers.Step(walker, kActorTimeOne / 2);
+    EXPECT_TRUE(std::as_const(walkers.Entities).TryGet<MotionRequest>(walker)->PlanarOverridden);
 }

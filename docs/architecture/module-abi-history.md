@@ -451,3 +451,37 @@ means nothing staged in it is registered. `Renderer::AddFeature` takes a
 `FeatureRegistration` in place of a `RenderFeatureScope`, and commits that one
 feature alone, leaving anything another host staged untouched; a named feature
 is checked against the registered ids and its dependencies as a staged one is.
+
+## v30
+
+Navigation agents (`docs/plans/navigation-agent.md`); this entry gathers every
+stage of that plan, which bumps the version once.
+
+**Movement.** `MotionRequest` gains `PlanarOverridden`, set by `ComposeMotion`
+when an action, root motion or held motion replaced the locomotion mode's
+planar velocity. A dilated character's step now writes its last composed
+request back to the component.
+
+**World.** `RuntimeWorld::ZoneOf` names the zone whose partition holds an
+entity. `ParseEntityText` (`ecs/EntityText.h`) reads what `AppendEntityText`
+writes.
+
+**Navigation.** `kNavMaxTraversalKinds` names the per-zone cap on distinct
+traversal kinds (64, unchanged).
+
+**Navigation agents.** `NavAgent` (authored: build profile name and policy
+asset), with derived `NavAgentRequest` and `NavAgentProgress`, joins
+`NavigationComponents`. `RequestNavigation`, `CancelNavigation` and
+`ReadNavigation` (`navigation/NavAgentRequests.h`) are the request API;
+`navigation/NavRouteFollowing.h` holds the path-following geometry.
+`NavAgentSystem` (`navigation/NavAgentSystem.h`), registered by
+`RegisterNavigationAgents`, follows them; `NavPlanQueue` and `NavRoutePlanner`
+(`navigation/NavRoutePlanning.h`) are its queue and planning batch.
+`navigation/NavTraversal.h` adds the traversal executor table
+(`NavTraversalExecutors`, `RegisterNavTraversal`) and the engine's walking and
+jumping executors.
+`navigation/NavigationVerbs.h` declares the `navigation.move_to`,
+`navigation.approach` and `navigation.stop` verbs and the `navigation.phase`,
+`navigation.failure` and `navigation.remaining` queries; `EngineVocabularyBindings`
+gains `BindNavigation`. `NavPlanarDirection` joins the path-following geometry,
+and the navigation enums gain `EnumSchema`s.

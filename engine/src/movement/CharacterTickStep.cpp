@@ -93,6 +93,10 @@ namespace
         StepHeldMotion(world, entity, overrides, dt, locomotion.UpAxis);
 
         const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides, MotionImpulse{});
+        // Bulk characters keep the request the motor drove; a stepped one keeps its
+        // last step's, so readers of the next tick see the same fact either way.
+        if (MotionRequest* stored = world.TryGet<MotionRequest>(entity))
+            *stored = motionRequest;
 
         if (movers != nullptr)
         {

@@ -51,7 +51,7 @@ namespace
         auto found = std::ranges::find(zone.TraversalKinds, kind);
         if (found != zone.TraversalKinds.end())
             return static_cast<std::uint8_t>(found - zone.TraversalKinds.begin());
-        if (zone.TraversalKinds.size() >= 64)
+        if (zone.TraversalKinds.size() >= kNavMaxTraversalKinds)
             return kUnboundTraversalKind;
         zone.TraversalKinds.push_back(kind);
         return static_cast<std::uint8_t>(zone.TraversalKinds.size() - 1);

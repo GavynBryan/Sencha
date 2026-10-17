@@ -192,6 +192,14 @@ const RuntimeZoneRecord* RuntimeWorld::FindPartition(
     return ZonesByPartition_[partition.Value].get();
 }
 
+std::optional<ZoneId> RuntimeWorld::ZoneOf(EntityId entity) const
+{
+    if (!Entities_.IsAlive(entity))
+        return std::nullopt;
+    const RuntimeZoneRecord* record = FindPartition(Entities_.GetEntityPartition(entity));
+    return record != nullptr ? std::optional<ZoneId>(record->Id) : std::nullopt;
+}
+
 bool RuntimeWorld::IsZoneResident(ZoneId zone) const
 {
     const RuntimeZoneRecord* record = FindZone(zone);

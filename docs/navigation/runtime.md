@@ -1,12 +1,13 @@
 # Navigation runtime
 
-Status: **current architecture** (2026-09). The navigation module lives in
+Status: **current architecture** (2026-10). The navigation module lives in
 `engine/include/navigation/` and `engine/src/navigation/`; the cook side is in
 `engine/src/assets/cook/Navigation*.cpp` and the Kyusu glue in
 `editor/level_editor/src/document/DocumentNavigationCook.cpp`. Tests are in
 `test/navigation/`, `test/level_cook/NavigationDocumentCookTests.cpp`, and
 `test/core/NavigationAllocationTests.cpp`. The plan that produced it, and the
-work still ahead, is `docs/plans/navigation-core.md`.
+work still ahead, is `docs/plans/navigation-core.md`; navigation agents (the
+"Agents" section) came from `docs/plans/navigation-agent.md`.
 
 Navigation answers where an agent can travel, what the trip costs, and which
 special traversals a route needs. It does not decide why an agent wants to go
@@ -205,6 +206,147 @@ Collider meshes (a `Collider` referencing a cooked shape) do not contribute yet 
 there is no backend-neutral copy of their triangles at runtime -- and are counted
 in `LastRebuildStats().SkippedMeshContributors` instead of being ignored.
 `Collider` has no authored form today, so contributors come from game code.
+
+## Agents
+
+A navigation agent is an entity that can be sent somewhere and walks there by
+itself. `NavAgent` (authored: a build profile name and an optional
+`navigation.policy` asset) brings two derived components: `NavAgentRequest`,
+its current order, and `NavAgentProgress`, what has become of it.
+`NavAgentSystem` does the rest. A game opts in with `RegisterNavigationAgents`
+after `RegisterMovementSystems`; an engine that registers it with no agents
+does no work.
+
+### Orders
+
+`RequestNavigation` (a point, or an entity to approach or follow) and
+`CancelNavigation` are the only writers of `NavAgentRequest`. Each order gets a
+fresh per-agent `NavRequestId`, and `NavAgentProgress::Request` names the order
+its other fields describe. `ReadNavigation(world, agent, id)` answers for one
+order: `Superseded` once another replaced it, so an old order's outcome is never
+read as a new one's. Content does the same through the `navigation.move_to`,
+`navigation.approach` and `navigation.stop` verbs and the `navigation.phase`,
+`navigation.failure` and `navigation.remaining` queries.
+
+`Phase` is `Planning`, `Moving`, `Traversing` or `Holding` (following an entity
+it has reached) while the order is live, and `Arrived`, `Failed` or `Cancelled`
+once it is over; a terminal phase stays until the next order. `Failure` says why
+an order failed, and `LastQuery` keeps the last search's own status apart from
+it: a crossing that fails with no way round is `TraversalFailed` with
+`LastQuery = NoPath`.
+
+### Who writes `MovementIntent`
+
+An agent's intent producer is chosen by its state. An entity tagged
+`movement.controlled` is steered by input, and an order on it fails with
+`TakenOverByInput`. Otherwise an agent with a live order is steered by
+`NavAgentSystem`; when the order ends, the follower writes zero intent once and
+stops, because nothing resets intent each tick. Traversal executors write only
+the intent the follower lends them.
+
+### One tick
+
+`NavAgentSystem` runs in FixedLogic, on the authority only, ordered as a
+movement producer (`OrderMovementAfterInput`) and after the game's decision
+systems (`OrderNavigationAfter<T>`). It reads last tick's transforms and facts
+and the navigation PostFixed published, in three passes:
+
+1. **Sweep.** Take up new orders; fail orders whose agent is now controlled,
+   zone-less, or whose target is gone; validate each standing route with
+   `NavValidateRoute`.
+2. **Plan.** Take up to `nav.agent.plans_per_tick` (16) entries from the
+   planning queue, gather each into a self-contained `NavPlanInput` on the
+   owner thread, plan them as one `JobSystem::ParallelFor` (each worker its own
+   `NavQueryContext`, each plan its own staging route), and commit in queue
+   order by swapping the staging route into the agent's route slot. Below
+   `nav.agent.parallel_min_batch` plans, or with no workers, the same
+   `PlanRoute` runs inline; that is the serial reference.
+3. **Follow.** Advance each agent along its route and write its intent; cross
+   links through executors; watch for deviation and for being stuck.
+
+Nothing changes a `ZoneNavigation` during FixedLogic (tiles and link state
+change in PostFixed, zones attach in the async commit and go in residency), so
+the planning batch reads navigation that cannot move under it. A job reads only
+its input and writes only its output, its staging route and its worker's
+context.
+
+### The planning queue
+
+`NavPlanQueue` holds at most one entry per agent, ordered by an order tick and
+then `EntityId`, so its order never depends on chunk layout. A **blocking**
+entry (a new order, an invalidated route, deviation, being stuck, a failed
+crossing: the agent stands still meanwhile) is ordered at the tick it is queued.
+A **refresh** (a moving target, with the route still valid and still walked) is
+ordered `nav.agent.refresh_defer_ticks` later, so it yields to blocking work
+queued after it but is never starved. A new order replaces the agent's entry at
+the back; a further trigger for the same order keeps its place.
+
+How many plans run each tick never depends on the worker count, so serial and
+parallel runs plan the same agents on the same ticks and produce the same
+outcome (`test/navigation/NavAgentDeterminismTests.cpp`). A host with no
+workers pays the serial cost of the same budget.
+
+### Following
+
+The path-following rules are pure functions in `NavRouteFollowing.h`:
+
+- **Corners.** An agent passes a corner within `nav.agent.corner_radius`, or
+  once it has crossed the plane that bisects the turn there while staying
+  within `nav.agent.deviation` of the next segment. Farther than that from the
+  segment it is following, it is **deviated**: it stops and replans from where
+  it is, which covers knockbacks and teleports.
+- **Arrival.** A point is reached at the route's end (the point projected onto
+  the mesh); an entity by standing near it. The last leg brakes within the
+  distance free-locomotion friction needs to stop the agent.
+- **Stuck.** Progress is measured over windows of the agent's own time
+  (`ActorTime`), counting only ticks its motion was its own
+  (`MotionRequest::PlanarOverridden` false): being carried or held by an ability
+  is never being stuck. A window short of `nav.agent.stuck_progress` of what the
+  steering asked for replans; `nav.agent.stuck_repaths` of those in a row fail
+  the order.
+- **Invalid routes are never walked.** A route whose tiles or links changed is
+  dropped on the tick the change is visible; only an agent mid-crossing finishes
+  its crossing first, unless the crossed link itself changed.
+
+### Crossing links
+
+A route's `Traverse` step is carried out by the executor registered for the
+link's traversal kind, or its nearest registered ancestor, in the World's
+`NavTraversalExecutors` (`RegisterNavTraversal`). An executor is a pair of
+function pointers: `Step`, called each tick until it reports `Succeeded` or
+`Failed`, and `Abort`, called when the order is replaced or ended mid-crossing.
+The follower enforces `nav.agent.traversal_timeout`.
+
+An agent may plan through a link only when one of its own gameplay tags is the
+link's kind or an ancestor of it, and an executor resolves for that kind; a
+crossing nobody can carry out is never planned, so no agent walks off a ledge
+waiting for one. A failed crossing puts its link on the agent's avoid-list for
+`nav.agent.avoid_seconds` and replans. The engine ships `NavTraverseByWalking`
+(drops and gaps a step crosses) and `NavTraverseByJumping`, and registers
+neither.
+
+### Route storage
+
+Routes live in the system's route slots, not in components: a slot is taken on
+an order and released when it ends, and `NavAgentProgress::RouteSlot` is honoured
+only while the slot's owner is that entity. When the world's structure changes,
+slots whose owner died or lost `NavAgent` are freed, zeroing a live owner's
+intent. Steady state allocates nothing in the follower; with workers, the one
+allocation a tick is `JobSystem`'s per-batch control block
+(`test/core/NavigationAllocationTests.cpp`).
+
+### Inspecting agents
+
+`nav.agent.debug.draw` draws every agent's remaining route and destination, and
+the selected agent's over the scene with its wish direction. The "Navigation
+agents" debug panel lists agents with their phase and failure; selecting one
+shows its order, route cursor, crossing, last search and stuck window
+(`NavAgentSystem::Inspect`). `nav.agent.list`, `nav.agent.goto <agent> <x> <y>
+<z>` (or `me`), `nav.agent.follow` and `nav.agent.stop` drive agents by hand.
+
+Measured costs, and why planning is batched rather than run in the background,
+are in `docs/plans/navigation-agent.md` and
+`docs/plans/evidence/navigation-route-cost/`.
 
 ## Diagnostics
 

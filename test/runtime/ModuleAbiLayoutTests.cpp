@@ -7,6 +7,7 @@
 
 #include <app/GameModuleAbi.h>  // GameModuleAbi
 #include <graphics/RenderFeature.h>  // RenderFeatureServices, RenderFrame
+#include <movement/components/MotionChannels.h>  // MotionRequest
 #include <navigation/NavigationTypes.h>  // NavLocation, NavRegion
 
 #include <gtest/gtest.h>
@@ -38,6 +39,15 @@ static_assert(sizeof(NavLocation) == 40, "NavLocation size changed");
 static_assert(offsetof(NavRegion, Ref) == 16, "NavRegion layout changed");
 static_assert(sizeof(NavRegion) == 24, "NavRegion size changed");
 static_assert(std::is_trivially_copyable_v<NavLocation>, "NavLocation must stay a plain value");
+
+// A game's movement producers and followers read the composed request at
+// compiled-in offsets.
+static_assert(offsetof(MotionRequest, Velocity) == 0, "MotionRequest layout changed");
+static_assert(offsetof(MotionRequest, UpAxis) == 12, "MotionRequest layout changed");
+static_assert(offsetof(MotionRequest, GravityScale) == 24, "MotionRequest layout changed");
+static_assert(offsetof(MotionRequest, TurnRadians) == 28, "MotionRequest layout changed");
+static_assert(offsetof(MotionRequest, PlanarOverridden) == 32, "MotionRequest layout changed");
+static_assert(sizeof(MotionRequest) == 36, "MotionRequest size changed");
 
 TEST(ModuleAbi, DescriptorLayoutIsFrozen)
 {

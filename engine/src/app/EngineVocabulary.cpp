@@ -6,6 +6,7 @@
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
@@ -41,7 +42,9 @@ bool InstallEngineVocabulary(World& world)
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
+    DeclareNavigationVerbs(scope);
     DeclarePhysicsQueries(queryScope);
+    DeclareNavigationQueries(queryScope);
 
     const bool engineDeclared = CommitTogether(scope, queryScope);
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);

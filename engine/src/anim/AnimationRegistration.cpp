@@ -19,13 +19,13 @@
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonFormat.h>
+#include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/RootMotionSource.h>
 #include <world/ComponentRegistrar.h>
 
 #include <algorithm>
-#include <charconv>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -62,17 +62,8 @@ namespace
     // "index:generation", as anim.trace lists it, naming a live entity with a rig.
     std::optional<EntityId> ParseAnimatedEntity(const World& world, std::string_view text)
     {
-        const std::size_t colon = text.find(':');
-        if (colon == std::string_view::npos)
-            return std::nullopt;
-        EntityId entity;
-        const auto parse = [](std::string_view part, std::uint32_t& out) {
-            const auto [end, error] = std::from_chars(part.data(), part.data() + part.size(), out);
-            return error == std::errc{} && end == part.data() + part.size();
-        };
-        if (!parse(text.substr(0, colon), entity.Index) || !parse(text.substr(colon + 1), entity.Generation))
-            return std::nullopt;
-        if (!world.IsRegistered<AnimRig>() || world.TryGet<AnimRig>(entity) == nullptr)
+        const std::optional<EntityId> entity = ParseEntityText(text);
+        if (!entity || !world.IsRegistered<AnimRig>() || world.TryGet<AnimRig>(*entity) == nullptr)
             return std::nullopt;
         return entity;
     }

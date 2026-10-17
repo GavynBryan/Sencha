@@ -1,0 +1,104 @@
+[batch] dispatch overhead workers=1: median 0.08 us (empty batch of 2)
+[batch] dispatch overhead workers=3: median 0.12 us (empty batch of 4)
+[batch] dispatch overhead workers=7: median 1.56 us (empty batch of 8)
+[batch] dispatch overhead workers=14: median 4.02 us (empty batch of 15)
+[batch] pillars random workers=0: n1=22us n2=49us n4=92us n8=198us n16=426us n32=809us n64=1569us n256=6518us
+[batch] pillars random workers=1: n1=21us n2=55us n4=65us n8=121us n16=233us n32=424us n64=881us n256=4811us [identical to serial]
+[batch] pillars random workers=3: n1=35us n2=60us n4=85us n8=125us n16=211us n32=375us n64=666us n256=2152us [identical to serial]
+[batch] pillars random workers=7: n1=27us n2=59us n4=73us n8=133us n16=159us n32=256us n64=437us n256=1460us [identical to serial]
+[batch] pillars random workers=14: n1=28us n2=69us n4=73us n8=103us n16=146us n32=200us n64=298us n256=1027us [identical to serial]
+[batch] maze random workers=0: n1=87us n2=199us n4=319us n8=627us n16=1213us n32=2439us n64=4620us n256=19634us
+[batch] maze random workers=1: n1=71us n2=133us n4=177us n8=396us n16=639us n32=1258us n64=2717us n256=10436us [identical to serial]
+[batch] maze random workers=3: n1=69us n2=144us n4=217us n8=277us n16=496us n32=892us n64=1765us n256=6170us [identical to serial]
+[batch] maze random workers=7: n1=77us n2=157us n4=179us n8=240us n16=357us n32=623us n64=1112us n256=4035us [identical to serial]
+[batch] maze random workers=14: n1=122us n2=156us n4=176us n8=236us n16=292us n32=466us n64=760us n256=3028us [identical to serial]
+[batch] maze converging workers=0: n1=167us n2=262us n4=403us n8=808us n16=1654us n32=3315us n64=6536us n256=26421us
+[batch] maze converging workers=1: n1=131us n2=169us n4=265us n8=472us n16=905us n32=1724us n64=3445us n256=14085us [identical to serial]
+[batch] maze converging workers=3: n1=136us n2=170us n4=212us n8=348us n16=713us n32=1316us n64=2342us n256=10164us [identical to serial]
+[batch] maze converging workers=7: n1=176us n2=270us n4=243us n8=306us n16=459us n32=823us n64=1444us n256=5869us [identical to serial]
+[batch] maze converging workers=14: n1=181us n2=213us n4=245us n8=295us n16=407us n32=787us n64=1360us n256=5113us [identical to serial]
+[policy] maze random | count 4                      workers= 0: ticks  64, tick median 313 us, tick max 577 us, max nodes/tick 5998
+[policy] maze random | count 4                      workers= 3: ticks  64, tick median 170 us, tick max 287 us, max nodes/tick 5998
+[policy] maze random | count 4                      workers= 7: ticks  64, tick median 164 us, tick max 294 us, max nodes/tick 5998
+[policy] maze random | count 4                      workers=14: ticks  64, tick median 180 us, tick max 638 us, max nodes/tick 5998
+[policy] maze random | count 16                     workers= 0: ticks  16, tick median 1247 us, tick max 1595 us, max nodes/tick 16733
+[policy] maze random | count 16                     workers= 3: ticks  16, tick median 446 us, tick max 645 us, max nodes/tick 16733
+[policy] maze random | count 16                     workers= 7: ticks  16, tick median 342 us, tick max 460 us, max nodes/tick 16733
+[policy] maze random | count 16                     workers=14: ticks  16, tick median 309 us, tick max 415 us, max nodes/tick 16733
+[policy] maze random | count 32                     workers= 0: ticks   8, tick median 2771 us, tick max 3219 us, max nodes/tick 32540
+[policy] maze random | count 32                     workers= 3: ticks   8, tick median 918 us, tick max 1153 us, max nodes/tick 32540
+[policy] maze random | count 32                     workers= 7: ticks   8, tick median 610 us, tick max 715 us, max nodes/tick 32540
+[policy] maze random | count 32                     workers=14: ticks   8, tick median 471 us, tick max 676 us, max nodes/tick 32540
+[policy] maze random | count 64                     workers= 0: ticks   4, tick median 5257 us, tick max 5469 us, max nodes/tick 57147
+[policy] maze random | count 64                     workers= 3: ticks   4, tick median 1680 us, tick max 1868 us, max nodes/tick 57147
+[policy] maze random | count 64                     workers= 7: ticks   4, tick median 1009 us, tick max 1069 us, max nodes/tick 57147
+[policy] maze random | count 64                     workers=14: ticks   4, tick median 792 us, tick max 815 us, max nodes/tick 57147
+[policy] maze random | nodes 8k, waves 8, cap 64    workers= 0: ticks  17, tick median 1164 us, tick max 1500 us, max nodes/tick 15807
+[policy] maze random | nodes 8k, waves 8, cap 64    workers= 3: ticks  17, tick median 503 us, tick max 684 us, max nodes/tick 15807
+[policy] maze random | nodes 8k, waves 8, cap 64    workers= 7: ticks  17, tick median 406 us, tick max 563 us, max nodes/tick 15807
+[policy] maze random | nodes 8k, waves 8, cap 64    workers=14: ticks  17, tick median 418 us, tick max 575 us, max nodes/tick 15807
+[policy] maze random | nodes 16k, waves 8, cap 64   workers= 0: ticks  11, tick median 1997 us, tick max 2536 us, max nodes/tick 23363
+[policy] maze random | nodes 16k, waves 8, cap 64   workers= 3: ticks  11, tick median 878 us, tick max 1120 us, max nodes/tick 23363
+[policy] maze random | nodes 16k, waves 8, cap 64   workers= 7: ticks  11, tick median 725 us, tick max 1052 us, max nodes/tick 23363
+[policy] maze random | nodes 16k, waves 8, cap 64   workers=14: ticks  11, tick median 661 us, tick max 896 us, max nodes/tick 23363
+[policy] maze random | nodes 32k, waves 16, cap 128 workers= 0: ticks   5, tick median 3997 us, tick max 4605 us, max nodes/tick 46483
+[policy] maze random | nodes 32k, waves 16, cap 128 workers= 3: ticks   5, tick median 1369 us, tick max 1670 us, max nodes/tick 46483
+[policy] maze random | nodes 32k, waves 16, cap 128 workers= 7: ticks   5, tick median 1092 us, tick max 1274 us, max nodes/tick 46483
+[policy] maze random | nodes 32k, waves 16, cap 128 workers=14: ticks   5, tick median 1012 us, tick max 1224 us, max nodes/tick 46483
+[policy] maze converging | count 4                      workers= 0: ticks  64, tick median 513 us, tick max 740 us, max nodes/tick 6862
+[policy] maze converging | count 4                      workers= 3: ticks  64, tick median 241 us, tick max 463 us, max nodes/tick 6862
+[policy] maze converging | count 4                      workers= 7: ticks  64, tick median 233 us, tick max 410 us, max nodes/tick 6862
+[policy] maze converging | count 4                      workers=14: ticks  64, tick median 222 us, tick max 342 us, max nodes/tick 6862
+[policy] maze converging | count 16                     workers= 0: ticks  16, tick median 1693 us, tick max 2049 us, max nodes/tick 21997
+[policy] maze converging | count 16                     workers= 3: ticks  16, tick median 648 us, tick max 948 us, max nodes/tick 21997
+[policy] maze converging | count 16                     workers= 7: ticks  16, tick median 450 us, tick max 606 us, max nodes/tick 21997
+[policy] maze converging | count 16                     workers=14: ticks  16, tick median 359 us, tick max 713 us, max nodes/tick 21997
+[policy] maze converging | count 32                     workers= 0: ticks   8, tick median 3349 us, tick max 3999 us, max nodes/tick 43065
+[policy] maze converging | count 32                     workers= 3: ticks   8, tick median 1082 us, tick max 1268 us, max nodes/tick 43065
+[policy] maze converging | count 32                     workers= 7: ticks   8, tick median 774 us, tick max 909 us, max nodes/tick 43065
+[policy] maze converging | count 32                     workers=14: ticks   8, tick median 562 us, tick max 880 us, max nodes/tick 43065
+[policy] maze converging | count 64                     workers= 0: ticks   4, tick median 6444 us, tick max 7663 us, max nodes/tick 83185
+[policy] maze converging | count 64                     workers= 3: ticks   4, tick median 2416 us, tick max 2788 us, max nodes/tick 83185
+[policy] maze converging | count 64                     workers= 7: ticks   4, tick median 1509 us, tick max 1739 us, max nodes/tick 83185
+[policy] maze converging | count 64                     workers=14: ticks   4, tick median 1127 us, tick max 1217 us, max nodes/tick 83185
+[policy] maze converging | nodes 8k, waves 8, cap 64    workers= 0: ticks  25, tick median 1041 us, tick max 2037 us, max nodes/tick 18277
+[policy] maze converging | nodes 8k, waves 8, cap 64    workers= 3: ticks  25, tick median 401 us, tick max 890 us, max nodes/tick 18277
+[policy] maze converging | nodes 8k, waves 8, cap 64    workers= 7: ticks  25, tick median 337 us, tick max 709 us, max nodes/tick 18277
+[policy] maze converging | nodes 8k, waves 8, cap 64    workers=14: ticks  25, tick median 289 us, tick max 593 us, max nodes/tick 18277
+[policy] maze converging | nodes 16k, waves 8, cap 64   workers= 0: ticks  15, tick median 1706 us, tick max 2462 us, max nodes/tick 26633
+[policy] maze converging | nodes 16k, waves 8, cap 64   workers= 3: ticks  15, tick median 710 us, tick max 1075 us, max nodes/tick 26633
+[policy] maze converging | nodes 16k, waves 8, cap 64   workers= 7: ticks  15, tick median 562 us, tick max 890 us, max nodes/tick 26633
+[policy] maze converging | nodes 16k, waves 8, cap 64   workers=14: ticks  15, tick median 569 us, tick max 1171 us, max nodes/tick 26633
+[policy] maze converging | nodes 32k, waves 16, cap 128 workers= 0: ticks   7, tick median 3703 us, tick max 4874 us, max nodes/tick 52034
+[policy] maze converging | nodes 32k, waves 16, cap 128 workers= 3: ticks   7, tick median 1303 us, tick max 1945 us, max nodes/tick 52034
+[policy] maze converging | nodes 32k, waves 16, cap 128 workers= 7: ticks   7, tick median 976 us, tick max 1324 us, max nodes/tick 52034
+[policy] maze converging | nodes 32k, waves 16, cap 128 workers=14: ticks   7, tick median 667 us, tick max 1016 us, max nodes/tick 52034
+[policy] pillars random | count 4                      workers= 0: ticks  64, tick median 99 us, tick max 283 us, max nodes/tick 2251
+[policy] pillars random | count 4                      workers= 3: ticks  64, tick median 66 us, tick max 182 us, max nodes/tick 2251
+[policy] pillars random | count 4                      workers= 7: ticks  64, tick median 55 us, tick max 125 us, max nodes/tick 2251
+[policy] pillars random | count 4                      workers=14: ticks  64, tick median 60 us, tick max 182 us, max nodes/tick 2251
+[policy] pillars random | count 16                     workers= 0: ticks  16, tick median 422 us, tick max 579 us, max nodes/tick 4592
+[policy] pillars random | count 16                     workers= 3: ticks  16, tick median 161 us, tick max 281 us, max nodes/tick 4592
+[policy] pillars random | count 16                     workers= 7: ticks  16, tick median 133 us, tick max 207 us, max nodes/tick 4592
+[policy] pillars random | count 16                     workers=14: ticks  16, tick median 122 us, tick max 205 us, max nodes/tick 4592
+[policy] pillars random | count 32                     workers= 0: ticks   8, tick median 905 us, tick max 1158 us, max nodes/tick 8452
+[policy] pillars random | count 32                     workers= 3: ticks   8, tick median 325 us, tick max 420 us, max nodes/tick 8452
+[policy] pillars random | count 32                     workers= 7: ticks   8, tick median 188 us, tick max 229 us, max nodes/tick 8452
+[policy] pillars random | count 32                     workers=14: ticks   8, tick median 167 us, tick max 236 us, max nodes/tick 8452
+[policy] pillars random | count 64                     workers= 0: ticks   4, tick median 1771 us, tick max 1949 us, max nodes/tick 13929
+[policy] pillars random | count 64                     workers= 3: ticks   4, tick median 594 us, tick max 638 us, max nodes/tick 13929
+[policy] pillars random | count 64                     workers= 7: ticks   4, tick median 316 us, tick max 354 us, max nodes/tick 13929
+[policy] pillars random | count 64                     workers=14: ticks   4, tick median 269 us, tick max 315 us, max nodes/tick 13929
+[policy] pillars random | nodes 8k, waves 8, cap 64    workers= 0: ticks   6, tick median 1152 us, tick max 1316 us, max nodes/tick 10249
+[policy] pillars random | nodes 8k, waves 8, cap 64    workers= 3: ticks   6, tick median 702 us, tick max 801 us, max nodes/tick 10249
+[policy] pillars random | nodes 8k, waves 8, cap 64    workers= 7: ticks   6, tick median 528 us, tick max 634 us, max nodes/tick 10249
+[policy] pillars random | nodes 8k, waves 8, cap 64    workers=14: ticks   6, tick median 508 us, tick max 610 us, max nodes/tick 10249
+[policy] pillars random | nodes 16k, waves 8, cap 64   workers= 0: ticks   4, tick median 1685 us, tick max 1786 us, max nodes/tick 13929
+[policy] pillars random | nodes 16k, waves 8, cap 64   workers= 3: ticks   4, tick median 895 us, tick max 1031 us, max nodes/tick 13929
+[policy] pillars random | nodes 16k, waves 8, cap 64   workers= 7: ticks   4, tick median 756 us, tick max 806 us, max nodes/tick 13929
+[policy] pillars random | nodes 16k, waves 8, cap 64   workers=14: ticks   4, tick median 756 us, tick max 769 us, max nodes/tick 13929
+[policy] pillars random | nodes 32k, waves 16, cap 128 workers= 0: ticks   2, tick median 3477 us, tick max 3477 us, max nodes/tick 27092
+[policy] pillars random | nodes 32k, waves 16, cap 128 workers= 3: ticks   2, tick median 1449 us, tick max 1449 us, max nodes/tick 27092
+[policy] pillars random | nodes 32k, waves 16, cap 128 workers= 7: ticks   2, tick median 1117 us, tick max 1117 us, max nodes/tick 27092
+[policy] pillars random | nodes 32k, waves 16, cap 128 workers=14: ticks   2, tick median 1014 us, tick max 1014 us, max nodes/tick 27092
+[       OK ] NavPlanningBatchProbe.Measure (9501 ms)

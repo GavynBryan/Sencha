@@ -11,11 +11,20 @@
 // counter-clockwise seen from outside like cooked brush faces.
 struct NavTestGeometry
 {
+    struct Box
+    {
+        Vec3d Min;
+        Vec3d Max;
+    };
+
     std::vector<Vec3d> Positions;
     std::vector<std::uint32_t> Indices;
+    // The boxes the triangles came from, so a test can collide with what it cooked.
+    std::vector<Box> Boxes;
 
     void AddBox(const Vec3d& min, const Vec3d& max)
     {
+        Boxes.push_back({ min, max });
         const Vec3d c[8] = {
             { min.X, min.Y, min.Z }, { max.X, min.Y, min.Z },
             { max.X, min.Y, max.Z }, { min.X, min.Y, max.Z },

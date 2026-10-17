@@ -70,7 +70,6 @@ public:
     // Built on first use, then kept by the evaluator.
     [[nodiscard]] CandidateTaggedEntityQuery& TaggedEntities();
     [[nodiscard]] const StoragePartitionSet& Partitions() const { return *PartitionSet; }
-    [[nodiscard]] std::optional<ZoneId> ZoneOf(EntityId entity) const;
 
     // -- Navigation -----------------------------------------------------------
     // Null when the querier's zone has no navigation.

@@ -109,6 +109,7 @@ MotionRequest ComposeMotion(const LocomotionOutput& locomotion,
 
     if (overrides.HasPlanar)
         relativePlanar = ProjectOntoPlane(overrides.PlanarVelocity, request.UpAxis);
+    request.PlanarOverridden = overrides.HasPlanar;
     if (overrides.HasUp)
         relativeUp = overrides.UpVelocity;
 
