@@ -4,6 +4,18 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagWire.h>
 
+std::uint32_t& GameplayTagWireShared::Key(std::size_t index)
+{
+    GameplayTagWireSharedRun* runs[] = { &R0, &R1, &R2, &R3 };
+    return runs[index / kGameplayTagSharedRunLength]->Keys[index % kGameplayTagSharedRunLength];
+}
+
+std::uint32_t GameplayTagWireShared::Key(std::size_t index) const
+{
+    const GameplayTagWireSharedRun* runs[] = { &R0, &R1, &R2, &R3 };
+    return runs[index / kGameplayTagSharedRunLength]->Keys[index % kGameplayTagSharedRunLength];
+}
+
 namespace
 {
 const GameplayTagRegistry* TagsOf(const ReplicationWireContext& context)
@@ -26,8 +38,7 @@ void ReplicationCodec<GameplayTagContainer>::ToWire(const ReplicationWireContext
             continue;
         if (registry != nullptr && registry->IsReplicatedToAll(tags.Tags[i]))
         {
-            if (shared < kGameplayTagSharedCapacity)
-                wire.Shared.Keys[shared++] = key;
+            wire.Shared.Key(shared++) = key;
             continue;
         }
         wire.Owned.Keys[owned] = key;
@@ -42,7 +53,7 @@ void ReplicationCodec<GameplayTagContainer>::FromWire(const ReplicationWireConte
     for (std::size_t i = 0; i < GameplayTagContainer::Capacity; ++i)
         if (const GameplayTagId tag = LocalTag(context, wire.Owned.Keys[i]); tag.IsValid() && wire.Owned.Counts[i] > 0)
             (void)tags.Grant(tag, static_cast<std::uint16_t>(wire.Owned.Counts[i]));
-    for (const std::uint32_t key : wire.Shared.Keys)
-        if (const GameplayTagId tag = LocalTag(context, key); tag.IsValid())
+    for (std::size_t i = 0; i < kGameplayTagSharedCapacity; ++i)
+        if (const GameplayTagId tag = LocalTag(context, wire.Shared.Key(i)); tag.IsValid())
             (void)tags.Grant(tag);
 }
