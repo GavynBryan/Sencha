@@ -525,6 +525,10 @@ if(TARGET runtime_tests AND TARGET app AND TARGET arena_game
     # Tells the cases apart: with the fixture wired a missing scene is a
     # failure, and without it they have no way to get one and skip instead.
     target_compile_definitions(runtime_tests PRIVATE SENCHA_TEST_HOST_MAP_COOKED=1)
+    if(TEST CookFpsTemplateContent)
+        set_property(TEST CookFpsTemplateContent APPEND PROPERTY
+            FIXTURES_SETUP ${SENCHA_HOST_MAP_FIXTURE})
+    endif()
 endif()
 
 # The fixture requirement lands on every runtime case rather than only the
