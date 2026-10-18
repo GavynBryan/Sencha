@@ -11,6 +11,7 @@ SensorOverlaps::SensorOverlaps(std::size_t capacity)
 
 void SensorOverlaps::Begin()
 {
+    Queries = {};
     Observed.clear();
     Published.clear();
     Overflow = false;

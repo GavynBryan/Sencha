@@ -8,6 +8,12 @@
 #include <span>
 #include <vector>
 
+struct SensorQueryCounts
+{
+    std::uint64_t Overlaps = 0;
+    std::uint64_t Casts = 0;
+};
+
 struct SensorPair
 {
     EntityId Sensor;
@@ -31,6 +37,8 @@ public:
     explicit SensorOverlaps(std::size_t capacity = 4096);
 
     void Begin();
+    void RecordQueries(bool cast) { ++Queries.Overlaps; Queries.Casts += cast ? 1 : 0; }
+    [[nodiscard]] SensorQueryCounts QueryCounts() const { return Queries; }
     [[nodiscard]] bool Observe(SensorPair pair, bool occupied);
     [[nodiscard]] bool Commit(std::uint64_t tick);
 
@@ -54,6 +62,7 @@ private:
         bool Occupied;
     };
 
+    SensorQueryCounts Queries;
     std::size_t Limit;
     std::vector<SensorPair> Active;
     std::vector<SensorPair> Next;

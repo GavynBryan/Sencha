@@ -44,6 +44,7 @@ void ObserveSensorShape(const JPH::PhysicsSystem& system, const JPH::Shape& shap
                         JPH::RMat44Arg end, const Vec3d& displacement,
                         EntityId activator, SensorOverlaps& observations)
 {
+    observations.RecordQueries(displacement.SqrMagnitude() > 1.0e-10f);
     const auto& query = system.GetNarrowPhaseQuery();
     SensorCollector<JPH::CollideShapeCollector> overlaps(system, activator, observations, true);
     query.CollideShape(&shape, JPH::Vec3::sReplicate(1.0f), end,
