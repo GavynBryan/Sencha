@@ -70,7 +70,10 @@ public:
     void RemoveBody(PhysicsBodyId id);
 
     [[nodiscard]] BodyTransform GetBodyTransform(PhysicsBodyId id) const;
+    // Continuous pose change: sensor observation sweeps from the previous sample.
     void SetBodyTransform(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
+    // Discontinuous relocation: reset sweep history; retain velocity and endpoint occupancy.
+    void TeleportBody(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
 
     [[nodiscard]] Vec3d GetLinearVelocity(PhysicsBodyId id) const;
     void SetLinearVelocity(PhysicsBodyId id, const Vec3d& velocity);
@@ -86,8 +89,6 @@ public:
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;
-    void ObserveBodySensors(PhysicsBodyId body, const Vec3d& previousPosition,
-                            SensorOverlaps& observations) const;
     void ObserveSensors(SensorOverlaps& observations);
 
     // --- Driven pose constraints -------------------------------------------
@@ -109,6 +110,8 @@ public:
 
 private:
     void DriveConstraints(float dt);
+    void ObserveBodySensors(PhysicsBodyId body, Vec3d& previousPosition,
+                            SensorOverlaps& observations) const;
 
     std::unique_ptr<PhysicsWorldImpl> Impl;
     const CollisionShapeCache* ShapeCache = nullptr;

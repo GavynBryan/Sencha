@@ -234,19 +234,17 @@ void RigidBodyBinding::SyncToPhysics(
         LastStructuralVersion = world.StructuralVersion(partitions);
     }
 
+    const World& readOnly = world;
     state.KinematicPush.ForEachChunkIn(partitions, [&](auto& view)
     {
-        const auto transforms = view.template Read<LocalTransform>();
         const auto bodies = view.template Read<RigidBody>();
         const auto links = view.template Read<PhysicsBodyLink>();
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
             if (bodies[index].Motion == BodyMotion::Kinematic)
             {
-                Simulation->SetBodyTransform(
-                    links[index].Body,
-                    transforms[index].Value.Position,
-                    transforms[index].Value.Rotation);
+                const BodyTransform wanted = ReadPose(readOnly, view.Entity(index));
+                Simulation->SetBodyTransform(links[index].Body, wanted.Position, wanted.Rotation);
             }
             else if (bodies[index].Motion == BodyMotion::Dynamic)
             {
@@ -264,7 +262,6 @@ void RigidBodyBinding::SyncToPhysics(
         }
     });
 
-    const World& readOnly = world;
     state.SensorPush.ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto colliders = view.template Read<Collider>();
@@ -272,6 +269,9 @@ void RigidBodyBinding::SyncToPhysics(
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
             if (!colliders[index].IsTrigger)
+                continue;
+            const auto* body = readOnly.TryGet<RigidBody>(view.Entity(index));
+            if (body != nullptr && body->Motion != BodyMotion::Static)
                 continue;
             const BodyTransform wanted = ReadPose(readOnly, view.Entity(index));
             const BodyTransform current = Simulation->GetBodyTransform(links[index].Body);

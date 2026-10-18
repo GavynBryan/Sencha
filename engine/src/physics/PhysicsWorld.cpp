@@ -43,7 +43,7 @@ void PhysicsWorld::SetShapeCache(const CollisionShapeCache* cache)
     ShapeCache = cache;
 }
 
-void PhysicsWorld::ObserveBodySensors(PhysicsBodyId id, const Vec3d& previousPosition,
+void PhysicsWorld::ObserveBodySensors(PhysicsBodyId id, Vec3d& previousPosition,
                                       SensorOverlaps& observations) const
 {
     JPH::ShapeRefC shape;
@@ -57,9 +57,11 @@ void PhysicsWorld::ObserveBodySensors(PhysicsBodyId id, const Vec3d& previousPos
         const JPH::Body& body = lock.GetBody();
         if (body.IsStatic() || body.IsSensor())
             return;
+        const Vec3d position = FromJphR(body.GetPosition());
+        displacement = position - previousPosition;
+        previousPosition = position;
         shape = body.GetShape();
         pose = body.GetCenterOfMassTransform();
-        displacement = FromJphR(body.GetPosition()) - previousPosition;
         entity = UnpackEntity(body.GetUserData());
     }
     ObserveSensorShape(Impl->System, *shape, pose, displacement, entity, observations);
@@ -70,7 +72,6 @@ void PhysicsWorld::ObserveSensors(SensorOverlaps& observations)
     for (auto& activator : Impl->SensorActivators)
     {
         ObserveBodySensors(activator.Body, activator.PreviousPosition, observations);
-        activator.PreviousPosition = GetBodyTransform(activator.Body).Position;
     }
 }
 
@@ -140,8 +141,7 @@ void PhysicsWorld::DriveConstraints(float dt)
             const Vec3d bodyCenterVelocity =
                 slot.Target.LinearVelocity
                 - slot.Target.AngularVelocity.Cross(desiredOffset);
-            bodies.SetPositionAndRotation(body, ToJphR(desiredPos), ToJph(desiredRot),
-                                          JPH::EActivation::Activate);
+            TeleportBody(slot.Follower, desiredPos, desiredRot);
             bodies.SetLinearVelocity(body, ToJph(bodyCenterVelocity));
             bodies.SetAngularVelocity(body, ToJph(slot.Target.AngularVelocity));
             slot.Telemetry = PhysicsConstraintTelemetry{};
@@ -278,6 +278,15 @@ void PhysicsWorld::SetBodyTransform(PhysicsBodyId id, const Vec3d& position, con
 {
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     bodies.SetPositionAndRotation(ToJph(id), ToJphR(position), ToJph(rotation), JPH::EActivation::Activate);
+}
+
+void PhysicsWorld::TeleportBody(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation)
+{
+    SetBodyTransform(id, position, rotation);
+    const auto activator = std::find_if(Impl->SensorActivators.begin(), Impl->SensorActivators.end(),
+        [id](const auto& candidate) { return candidate.Body == id; });
+    if (activator != Impl->SensorActivators.end())
+        activator->PreviousPosition = position;
 }
 
 Vec3d PhysicsWorld::GetLinearVelocity(PhysicsBodyId id) const

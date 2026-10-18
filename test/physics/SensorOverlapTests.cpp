@@ -11,6 +11,7 @@
 #include <physics/SensorOverlaps.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/Collider.h>
+#include <physics/components/RigidBody.h>
 #include <world/transform/TransformComponents.h>
 
 #include <array>
@@ -220,17 +221,17 @@ TEST(SensorPhysics, RigidBodyOverlapAndFastCrossingUseRetainedShape)
     ASSERT_TRUE(body.IsValid());
     SensorOverlaps overlaps;
     overlaps.Begin();
-    world.ObserveBodySensors(body, Vec3d::Zero(), overlaps);
+    world.ObserveSensors(overlaps);
     ASSERT_TRUE(overlaps.Commit(1));
     ExpectTransitions(overlaps, { SensorTransition::Enter });
     world.SetBodyTransform(body, Vec3d(5, 0, 0), Quatf::Identity());
     overlaps.Begin();
-    world.ObserveBodySensors(body, Vec3d::Zero(), overlaps);
+    world.ObserveSensors(overlaps);
     ASSERT_TRUE(overlaps.Commit(2));
     ExpectTransitions(overlaps, { SensorTransition::Exit });
     world.SetBodyTransform(body, Vec3d(-5, 0, 0), Quatf::Identity());
     overlaps.Begin();
-    world.ObserveBodySensors(body, Vec3d(5, 0, 0), overlaps);
+    world.ObserveSensors(overlaps);
     ASSERT_TRUE(overlaps.Commit(3));
     ExpectTransitions(overlaps, { SensorTransition::Enter, SensorTransition::Exit });
 }
@@ -270,7 +271,7 @@ TEST(SensorPhysics, SolidGeometryAndStaticBodiesDoNotProduceSensorPairs)
     SensorOverlaps overlaps;
     overlaps.Begin();
     mover.ObserveSensors(kActor, overlaps);
-    world.ObserveBodySensors(body, Vec3d::Zero(), overlaps);
+    world.ObserveSensors(overlaps);
     ASSERT_TRUE(overlaps.Commit(1));
     EXPECT_TRUE(overlaps.Occurrences().empty());
 }
@@ -387,3 +388,254 @@ TEST_F(SensorScheduleTest, SensorPoseUsesThisTicksParentTransform)
     ASSERT_EQ(departure.Occurrences().size(), 1u);
     EXPECT_EQ(departure.Occurrences()[0].Transition, SensorTransition::Exit);
 }
+
+namespace
+{
+PhysicsBodyId AddActor(PhysicsWorld& world, Vec3d position, BodyMotion motion = BodyMotion::Dynamic)
+{
+    BodyDesc desc;
+    desc.Position = position;
+    desc.Motion = motion;
+    desc.Shape = CollisionShape::MakeSphere(0.25f);
+    desc.GravityScale = 0;
+    desc.LinearDamping = 0;
+    desc.UserData = PackEntity(kActor);
+    return world.AddBody(desc);
+}
+
+void Sample(PhysicsWorld& world, SensorOverlaps& overlaps, std::uint64_t tick)
+{
+    overlaps.Begin();
+    world.ObserveSensors(overlaps);
+    ASSERT_TRUE(overlaps.Commit(tick));
+}
+}
+
+TEST(SensorPhysics, IntegratedDynamicTraversalPublishesLifecycle)
+{
+    PhysicsWorld world;
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    const auto actor = AddActor(world, Vec3d(-2, 0, 0));
+    world.SetLinearVelocity(actor, Vec3d(20, 0, 0));
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 0);
+    EXPECT_TRUE(overlaps.Occurrences().empty());
+    world.Step(0.1f);
+    Sample(world, overlaps, 1);
+    ExpectTransitions(overlaps, { SensorTransition::Enter });
+    world.SetLinearVelocity(actor, Vec3d::Zero());
+    world.Step(0.1f);
+    Sample(world, overlaps, 2);
+    ExpectTransitions(overlaps, { SensorTransition::Stay });
+    world.SetLinearVelocity(actor, Vec3d(20, 0, 0));
+    world.Step(0.1f);
+    Sample(world, overlaps, 3);
+    ExpectTransitions(overlaps, { SensorTransition::Exit });
+}
+
+TEST(SensorPhysics, DrivenPoseTeleportSkipsSpaceButKeepsDestinationOccupancy)
+{
+    PhysicsWorld world;
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    const auto actor = AddActor(world, Vec3d(-5, 0, 0));
+    DrivenPoseConstraintDesc desc;
+    desc.Follower = actor;
+    const auto constraint = world.AddDrivenPoseConstraint(desc);
+    ASSERT_TRUE(constraint.IsValid());
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 0);
+    for (auto [position, expected] : std::array{
+             std::pair{ Vec3d(5, 0, 0), std::vector<SensorTransition>{} },
+             std::pair{ Vec3d::Zero(), std::vector{ SensorTransition::Enter } },
+             std::pair{ Vec3d(-5, 0, 0), std::vector{ SensorTransition::Exit } } })
+    {
+        world.SetDrivenPoseTarget(constraint, {
+            .WorldFrame = { position, Quatf::Identity() }, .Teleported = true });
+        world.Step(1.0f / 60);
+        Sample(world, overlaps, 1);
+        ASSERT_EQ(overlaps.Occurrences().size(), expected.size());
+        for (std::size_t i = 0; i < expected.size(); ++i)
+            EXPECT_EQ(overlaps.Occurrences()[i].Transition, expected[i]);
+    }
+}
+
+TEST_F(SensorScheduleTest, DynamicSensorDoesNotFollowAuthoredPoseWrites)
+{
+    const auto sensor = Spawn(true);
+    Entities.AddComponent<RigidBody>(sensor, RigidBody{ .Motion = BodyMotion::Dynamic, .GravityScale = 0 });
+    const auto actor = Spawn(false);
+    ASSERT_EQ(Tick().Pairs().size(), 1u);
+    Entities.TryGet<LocalTransform>(sensor)->Value.Position = Vec3d(10, 0, 0);
+    const auto& overlaps = Tick();
+    ASSERT_EQ(overlaps.Occurrences().size(), 1u);
+    EXPECT_EQ(overlaps.Occurrences()[0].Pair, (SensorPair{ sensor, actor }));
+    EXPECT_EQ(overlaps.Occurrences()[0].Transition, SensorTransition::Stay);
+}
+
+TEST_F(SensorScheduleTest, ReusedActivatorIndexBeginsANewPair)
+{
+    const auto sensor = Spawn(true);
+    const auto first = Spawn(false);
+    ASSERT_EQ(Tick().Pairs().size(), 1u);
+    Entities.DestroyEntity(first);
+    const auto second = Spawn(false);
+    ASSERT_EQ(first.Index, second.Index);
+    ASSERT_NE(first.Generation, second.Generation);
+    const auto& overlaps = Tick();
+    ASSERT_EQ(overlaps.Occurrences().size(), 1u);
+    EXPECT_EQ(overlaps.Occurrences()[0].Pair, (SensorPair{ sensor, second }));
+    EXPECT_EQ(overlaps.Occurrences()[0].Transition, SensorTransition::Enter);
+}
+
+TEST_F(SensorScheduleTest, CharacterSnapAndReconciliationSkipCorrectedSpace)
+{
+    const auto sensor = Spawn(true);
+    Entities.TryGet<LocalTransform>(sensor)->Value.Position = Vec3d::Zero();
+    const auto actor = Spawn(false);
+    Entities.TryGet<LocalTransform>(actor)->Value.Position = Vec3d(-5, 0, 0);
+    EXPECT_TRUE(Tick().Pairs().empty());
+    auto& movers = Schedule.Get<PhysicsStepSystem>()->GetCharacterMovers();
+    ASSERT_TRUE(movers.SetPosition(Entities, actor, Vec3d(5, 0, 0)));
+    EXPECT_TRUE(Tick().Occurrences().empty());
+    ASSERT_TRUE(movers.RestorePosition(Entities, actor, Vec3d(-5, 0, 0)));
+    EXPECT_TRUE(Tick().Occurrences().empty());
+    ASSERT_TRUE(movers.RestorePosition(Entities, actor, Vec3d::Zero()));
+    const auto& arrival = Tick();
+    ASSERT_EQ(arrival.Occurrences().size(), 1u);
+    EXPECT_EQ(arrival.Occurrences()[0].Transition, SensorTransition::Enter);
+    ASSERT_TRUE(movers.SetPosition(Entities, actor, Vec3d(5, 0, 0)));
+    const auto& departure = Tick();
+    ASSERT_EQ(departure.Occurrences().size(), 1u);
+    EXPECT_EQ(departure.Occurrences()[0].Transition, SensorTransition::Exit);
+}
+
+TEST(SensorPhysics, BackendOverflowPreservesLastCompleteOccupancy)
+{
+    PhysicsWorld world;
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    ASSERT_TRUE(AddActor(world, Vec3d::Zero(), BodyMotion::Kinematic).IsValid());
+    BodyDesc desc;
+    desc.Position = Vec3d(5, 0, 0);
+    desc.Motion = BodyMotion::Kinematic;
+    desc.UserData = PackEntity({ 30, 4 });
+    const auto second = world.AddBody(desc);
+    SensorOverlaps overlaps(1);
+    Sample(world, overlaps, 0);
+    ExpectTransitions(overlaps, { SensorTransition::Enter });
+    world.SetBodyTransform(second, Vec3d::Zero(), Quatf::Identity());
+    overlaps.Begin();
+    world.ObserveSensors(overlaps);
+    EXPECT_FALSE(overlaps.Commit(1));
+    EXPECT_EQ(overlaps.OverflowCount(), 1u);
+    EXPECT_TRUE(overlaps.Occurrences().empty());
+    ASSERT_EQ(overlaps.Pairs().size(), 1u);
+    EXPECT_EQ(overlaps.Pairs()[0], kPair);
+}
+
+TEST(SensorPhysics, AddingASensorDoesNotSweepMovementFromAnEarlierSample)
+{
+    PhysicsWorld world;
+    const auto actor = AddActor(world, Vec3d(-5, 0, 0), BodyMotion::Kinematic);
+    world.SetBodyTransform(actor, Vec3d(5, 0, 0), Quatf::Identity());
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 0);
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    Sample(world, overlaps, 1);
+    EXPECT_TRUE(overlaps.Occurrences().empty());
+}
+
+TEST_F(SensorScheduleTest, ParentedKinematicSensorKeepsWorldPose)
+{
+    Entities.RegisterComponent<WorldTransform>();
+    Entities.RegisterComponent<Parent>();
+    const auto parent = Entities.CreateEntity();
+    Entities.AddComponent<LocalTransform>(parent, LocalTransform{});
+    Entities.AddComponent<WorldTransform>(parent, WorldTransform{});
+    const auto sensor = Spawn(true);
+    Entities.AddComponent<WorldTransform>(sensor, WorldTransform{});
+    Entities.AddComponent<Parent>(sensor, Parent{ parent });
+    Entities.AddComponent<RigidBody>(sensor, RigidBody{ .Motion = BodyMotion::Kinematic });
+    (void)Spawn(false);
+    ASSERT_EQ(Tick().Pairs().size(), 1u);
+    Entities.TryGet<LocalTransform>(parent)->Value.Position = Vec3d(10, 0, 0);
+    const auto& departure = Tick();
+    ASSERT_EQ(departure.Occurrences().size(), 1u);
+    EXPECT_EQ(departure.Occurrences()[0].Transition, SensorTransition::Exit);
+}
+
+TEST(SensorPhysics, BodyTeleportSkipsSpaceAndTransitionsAtDestination)
+{
+    for (const auto motion : { BodyMotion::Dynamic, BodyMotion::Kinematic })
+    {
+        PhysicsWorld world;
+        ASSERT_TRUE(AddSensor(world).IsValid());
+        const auto actor = AddActor(world, Vec3d(-5, 0, 0), motion);
+        SensorOverlaps overlaps;
+        Sample(world, overlaps, 0);
+        world.TeleportBody(actor, Vec3d(5, 0, 0), Quatf::Identity());
+        Sample(world, overlaps, 1);
+        EXPECT_TRUE(overlaps.Occurrences().empty());
+        world.TeleportBody(actor, Vec3d::Zero(), Quatf::Identity());
+        Sample(world, overlaps, 2);
+        ExpectTransitions(overlaps, { SensorTransition::Enter });
+        world.TeleportBody(actor, Vec3d(-5, 0, 0), Quatf::Identity());
+        Sample(world, overlaps, 3);
+        ExpectTransitions(overlaps, { SensorTransition::Exit });
+        world.SetBodyTransform(actor, Vec3d(5, 0, 0), Quatf::Identity());
+        Sample(world, overlaps, 4);
+        ExpectTransitions(overlaps, { SensorTransition::Enter, SensorTransition::Exit });
+    }
+}
+
+TEST(SensorPhysics, MovementAfterTeleportStillSweepsFromTheRelocatedPose)
+{
+    PhysicsWorld world;
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    const auto actor = AddActor(world, Vec3d(5, 0, 0));
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 0);
+    world.SetLinearVelocity(actor, Vec3d(100, 0, 0));
+    world.TeleportBody(actor, Vec3d(-5, 0, 0), Quatf::Identity());
+    EXPECT_EQ(world.GetLinearVelocity(actor), Vec3d(100, 0, 0));
+    world.Step(0.1f);
+    Sample(world, overlaps, 1);
+    ExpectTransitions(overlaps, { SensorTransition::Enter, SensorTransition::Exit });
+}
+
+TEST(SensorPhysics, DrivenPoseMovementAfterTeleportStillSweeps)
+{
+    PhysicsWorld world;
+    ASSERT_TRUE(AddSensor(world).IsValid());
+    const auto actor = AddActor(world, Vec3d(5, 0, 0));
+    DrivenPoseConstraintDesc desc;
+    desc.Follower = actor;
+    const auto constraint = world.AddDrivenPoseConstraint(desc);
+    DrivenPoseTarget target;
+    target.WorldFrame = { Vec3d(-5, 0, 0), Quatf::Identity() };
+    target.Teleported = true;
+    target.LinearVelocity = Vec3d(100, 0, 0);
+    world.SetDrivenPoseTarget(constraint, target);
+    world.Step(0.1f);
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 1);
+    ExpectTransitions(overlaps, { SensorTransition::Enter, SensorTransition::Exit });
+}
+
+TEST_F(SensorScheduleTest, KinematicAuthoredMovementKeepsFastCrossings)
+{
+    const auto sensor = Spawn(true);
+    const auto actor = Entities.CreateEntity();
+    LocalTransform transform;
+    transform.Value.Position = Vec3d(-5, 0, 0);
+    Entities.AddComponent<LocalTransform>(actor, transform);
+    Entities.AddComponent<Collider>(actor, Collider{});
+    Entities.AddComponent<RigidBody>(actor, RigidBody{ .Motion = BodyMotion::Kinematic });
+    EXPECT_TRUE(Tick().Occurrences().empty());
+    Entities.TryGet<LocalTransform>(actor)->Value.Position = Vec3d(5, 0, 0);
+    const auto& crossing = Tick();
+    ASSERT_EQ(crossing.Occurrences().size(), 2u);
+    EXPECT_EQ(crossing.Occurrences()[0].Pair, (SensorPair{ sensor, actor }));
+    EXPECT_EQ(crossing.Occurrences()[0].Transition, SensorTransition::Enter);
+    EXPECT_EQ(crossing.Occurrences()[1].Transition, SensorTransition::Exit);
+}
+
