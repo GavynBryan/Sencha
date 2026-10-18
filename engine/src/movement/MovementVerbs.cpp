@@ -4,16 +4,20 @@
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MotionComposition.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/HeldMotion.h>
+#include <world/SimulationAuthority.h>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <utility>
 
 namespace
 {
-VerbDefinition Lease(std::string_view name, std::string displayName, std::string description)
+VerbDefinition MovementVerb(std::string_view name, std::string displayName, std::string description)
 {
     VerbDefinition lease;
     lease.Name = std::string(name);
@@ -22,7 +26,7 @@ VerbDefinition Lease(std::string_view name, std::string displayName, std::string
     lease.Category = "Movement";
     lease.Kind = VerbKind::Lease;
     lease.Prediction = AuthoredPrediction::Simulation;
-    DataFieldSchema target = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character it holds.");
+    DataFieldSchema target = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character.");
     target.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
     lease.Arguments.Children.push_back(std::move(target));
     return lease;
@@ -60,7 +64,7 @@ void ForEachHeld(World& world, F&& release)
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope)
 {
-    VerbDefinition burst = Lease(kMovementBurstLease, "Burst of motion",
+    VerbDefinition burst = MovementVerb(kMovementBurstLease, "Burst of motion",
                                  "Drives the character at a velocity while held, or for a time.");
     DataFieldSchema direction =
         MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, as aim.direction gives it.");
@@ -75,7 +79,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     burst.Completes = true;
     (void)scope.Declare(std::move(burst));
 
-    VerbDefinition tether = Lease(kMovementTetherLease, "Tether",
+    VerbDefinition tether = MovementVerb(kMovementTetherLease, "Tether",
                                   "Pulls the character toward an anchor once it is farther away than the rope.");
     DataFieldSchema anchor = MakeDataField(DataFieldKind::Entity, "anchor", "Anchor", "An entity to follow; it ends the tether when it goes.");
     anchor.Required = false;
@@ -89,11 +93,59 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     tether.Completes = true;
     (void)scope.Declare(std::move(tether));
 
-    VerbDefinition mode = Lease(kMovementModeLease, "Locomotion mode",
+    VerbDefinition mode = MovementVerb(kMovementModeLease, "Locomotion mode",
                                 "Puts the character in a locomotion mode while held.");
     mode.Arguments.Children.push_back(
         MakeDataField(DataFieldKind::String, "mode", "Mode", "The mode's name, as movement.mode.<name>."));
     (void)scope.Declare(std::move(mode));
+
+    VerbDefinition velocity = MovementVerb(kMovementApplyVelocityVerb, "Apply velocity",
+                                    "Changes the character's world velocity once; subsequent ticks retain the achieved motion.");
+    velocity.Kind = VerbKind::Instant;
+    velocity.Prediction = AuthoredPrediction::AuthorityOnly;
+    DataFieldSchema way = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Normalized safely before applying speed.");
+    way.VectorLength = 3;
+    way.Editor.Widget = "direction";
+    velocity.Arguments.Children.push_back(std::move(way));
+    DataFieldSchema speed = Number("speed", "Speed", "Metres per second.", 10.0, 0.0);
+    speed.Numeric.Maximum = std::numeric_limits<float>::max();
+    velocity.Arguments.Children.push_back(std::move(speed));
+    DataFieldSchema operation = MakeDataField(DataFieldKind::Enum, "operation", "Operation");
+    operation.EnumChoices = { { "add", "Add", "Adds velocity to the composed motion." },
+                              { "replace", "Replace", "Replaces all world velocity, including support motion and earlier impulses." } };
+    operation.Required = false;
+    operation.Default = std::string("replace");
+    velocity.Arguments.Children.push_back(std::move(operation));
+    (void)scope.Declare(std::move(velocity));
+}
+
+VerbAdmission MovementOperations::ApplyVelocity(const VerbInvocation& invocation)
+{
+    if (!IsSimulationAuthority(*Entities))
+        return VerbAdmission::Refused;
+    EntityId target;
+    AuthoredVectorValue direction;
+    double speed = 0.0;
+    std::string_view operation;
+    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
+        || !invocation.Arguments->TryGetVector(1, direction) || direction.Length != 3
+        || !invocation.Arguments->TryGetFloat(2, speed)
+        || !invocation.Arguments->TryGetEnum(3, operation)
+        || !std::isfinite(speed) || speed < 0.0 || speed > std::numeric_limits<float>::max()
+        || (operation != "add" && operation != "replace") || !Entities->IsAlive(target))
+        return VerbAdmission::InvalidArguments;
+    const auto& d = direction.Components;
+    const double length = std::hypot(d[0], d[1], d[2]);
+    if (!std::isfinite(length) || length <= 1.0e-8)
+        return VerbAdmission::InvalidArguments;
+    if (!Entities->IsRegistered<CharacterMovement>() || !Entities->HasComponent<CharacterMovement>(target))
+        return VerbAdmission::Refused;
+    const Vec3d velocity(static_cast<float>(d[0] / length * speed),
+                         static_cast<float>(d[1] / length * speed),
+                         static_cast<float>(d[2] / length * speed));
+    const bool applied = operation == "add" ? AddMotionImpulse(*Entities, target, velocity)
+                                             : ReplaceMotionVelocity(*Entities, target, velocity);
+    return applied ? VerbAdmission::Accepted : VerbAdmission::Refused;
 }
 
 namespace

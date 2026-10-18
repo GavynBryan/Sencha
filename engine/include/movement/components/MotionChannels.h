@@ -37,11 +37,12 @@ struct SENCHA_COMPONENT("sencha.motion_axis_override") MotionAxisOverride
     bool HasTurn = false;
 };
 
-// Additive velocity from this tick's impulses (knockback, explosions). Applied
-// after the override channels, then cleared.
+// World-space velocity changes, applied after the relative channels and cleared.
 struct SENCHA_COMPONENT("sencha.motion_impulse") MotionImpulse
 {
     Vec3d DeltaVelocity = Vec3d::Zero();
+    Vec3d ReplacementVelocity = Vec3d::Zero();
+    bool HasReplacement = false;
 };
 
 // The single composed result the character motor consumes. Exactly one system
