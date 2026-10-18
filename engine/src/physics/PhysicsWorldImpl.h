@@ -53,6 +53,13 @@ struct DrivenPoseSlot
 
 struct PhysicsWorldImpl
 {
+    struct SensorActivator
+    {
+        PhysicsBodyId Body;
+        Vec3d PreviousPosition;
+    };
+
+    std::vector<SensorActivator> SensorActivators;
     JPH::TempAllocatorImpl Temp;
     JPH::JobSystemSingleThreaded Jobs;
     BroadPhaseLayerInterfaceImpl BroadPhaseLayers;

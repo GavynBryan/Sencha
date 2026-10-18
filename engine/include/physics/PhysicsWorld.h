@@ -15,6 +15,7 @@
 
 struct PhysicsWorldImpl;
 class CollisionShapeCache;
+class SensorOverlaps;
 
 struct PhysicsWorldConfig
 {
@@ -85,6 +86,9 @@ public:
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;
+    void ObserveBodySensors(PhysicsBodyId body, const Vec3d& previousPosition,
+                            SensorOverlaps& observations) const;
+    void ObserveSensors(SensorOverlaps& observations);
 
     // --- Driven pose constraints -------------------------------------------
     // Targets are refreshed for every live constraint before each step. An

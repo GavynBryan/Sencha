@@ -57,6 +57,7 @@ struct RigidBodyBinding::SceneState
         : Commands(world)
         , KinematicPush(world)
         , DynamicPull(world)
+        , SensorPush(world)
     {
     }
 
@@ -65,6 +66,7 @@ struct RigidBodyBinding::SceneState
         KinematicPush;
     Query<Write<LocalTransform>, Write<RigidBody>, Read<PhysicsBodyLink>>
         DynamicPull;
+    Query<Read<LocalTransform>, Read<Collider>, Read<PhysicsBodyLink>> SensorPush;
     StoragePartitionSet ActivePartitions;
 };
 
@@ -259,6 +261,22 @@ void RigidBodyBinding::SyncToPhysics(
                     Simulation->WakeBody(links[index].Body);
                 }
             }
+        }
+    });
+
+    const World& readOnly = world;
+    state.SensorPush.ForEachChunkIn(partitions, [&](auto& view)
+    {
+        const auto colliders = view.template Read<Collider>();
+        const auto links = view.template Read<PhysicsBodyLink>();
+        for (uint32_t index = 0; index < view.Count(); ++index)
+        {
+            if (!colliders[index].IsTrigger)
+                continue;
+            const BodyTransform wanted = ReadPose(readOnly, view.Entity(index));
+            const BodyTransform current = Simulation->GetBodyTransform(links[index].Body);
+            if (wanted.Position != current.Position || wanted.Rotation != current.Rotation)
+                Simulation->SetBodyTransform(links[index].Body, wanted.Position, wanted.Rotation);
         }
     });
 }

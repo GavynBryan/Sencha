@@ -9,6 +9,7 @@
 
 class CharacterMover;
 class PhysicsWorld;
+class SensorOverlaps;
 class StoragePartitionSet;
 class World;
 struct KinematicState;
@@ -41,6 +42,7 @@ public:
         World& world,
         StoragePartitionId partition);
     void EvictAll(World& world);
+    void ObserveSensors(SensorOverlaps& observations);
 
     // Advance one character one step from an explicit request, writing back the
     // same state Drive writes. Prediction replay re-runs the ticks a client has

@@ -3,14 +3,17 @@
 #include "CollisionShapeCacheImpl.h"
 #include "JoltStartup.h"
 #include "PhysicsWorldImpl.h"
+#include "SensorShapeQuery.h"
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/EActivation.h>
 
 #include <physics/CollisionShapeCache.h>
+#include <physics/RigidBodyBinding.h>
 
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 
 PhysicsWorld::PhysicsWorld(const PhysicsWorldConfig& config)
@@ -38,6 +41,37 @@ PhysicsWorld& PhysicsWorld::operator=(PhysicsWorld&&) noexcept = default;
 void PhysicsWorld::SetShapeCache(const CollisionShapeCache* cache)
 {
     ShapeCache = cache;
+}
+
+void PhysicsWorld::ObserveBodySensors(PhysicsBodyId id, const Vec3d& previousPosition,
+                                      SensorOverlaps& observations) const
+{
+    JPH::ShapeRefC shape;
+    JPH::RMat44 pose;
+    Vec3d displacement;
+    EntityId entity;
+    {
+        JPH::BodyLockRead lock(Impl->System.GetBodyLockInterface(), ToJph(id));
+        if (!lock.Succeeded())
+            return;
+        const JPH::Body& body = lock.GetBody();
+        if (body.IsStatic() || body.IsSensor())
+            return;
+        shape = body.GetShape();
+        pose = body.GetCenterOfMassTransform();
+        displacement = FromJphR(body.GetPosition()) - previousPosition;
+        entity = UnpackEntity(body.GetUserData());
+    }
+    ObserveSensorShape(Impl->System, *shape, pose, displacement, entity, observations);
+}
+
+void PhysicsWorld::ObserveSensors(SensorOverlaps& observations)
+{
+    for (auto& activator : Impl->SensorActivators)
+    {
+        ObserveBodySensors(activator.Body, activator.PreviousPosition, observations);
+        activator.PreviousPosition = GetBodyTransform(activator.Body).Position;
+    }
 }
 
 namespace
@@ -183,6 +217,8 @@ PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
 
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID id = bodies.CreateAndAddBody(settings, activation);
+    if (!id.IsInvalid() && desc.Motion != BodyMotion::Static && !desc.IsTrigger)
+        Impl->SensorActivators.push_back({ FromJph(id), desc.Position });
     return FromJph(id);
 }
 
@@ -190,6 +226,8 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
 {
     if (!id.IsValid())
         return;
+
+    std::erase_if(Impl->SensorActivators, [id](const auto& activator) { return activator.Body == id; });
 
     for (uint32_t i = 0; i < Impl->Constraints.size(); ++i)
     {

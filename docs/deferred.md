@@ -4,6 +4,24 @@ Work deliberately left for later. Each entry names what was deferred, where the
 code lives, and the concrete trigger that makes it due. When a trigger lands,
 do the work and delete the entry.
 
+## Continuous sensor trajectories
+
+- **What:** sensor observations query exact endpoint shapes and cast the linear
+  displacement using the final orientation. They do not reconstruct slides,
+  stair steps, multiple character substeps or angular motion. Moving sensors
+  are sampled at their new pose rather than swept through activators.
+- **Where:** `engine/src/physics/SensorShapeQuery.cpp`,
+  `CharacterMover::ObserveSensors` and `PhysicsWorld::ObserveBodySensors`;
+  the supported contract is in `docs/physics/sensor-overlaps.md`.
+- **Impact:** fast linear character/body crossings are covered; a curved path
+  can differ from its chord, and an angular or moving-volume crossing between
+  samples can be missed. Endpoint occupancy and ordinary Enter/Stay/Exit
+  remain exact. This is not a continuous-trajectory guarantee.
+- **Trigger:** content requiring detection along a curved, angular or moving
+  sensor trajectory, such as a fast sliding actor or a sweeping volume. That
+  consumer needs bounded motion-segment observation at the backend movement
+  boundary, retaining the same Jolt world and overlap lifecycle.
+
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision

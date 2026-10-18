@@ -1,6 +1,7 @@
 #include <physics/CharacterMover.h>
 
 #include "PhysicsWorldImpl.h"
+#include "SensorShapeQuery.h"
 
 #include <algorithm>
 
@@ -62,6 +63,7 @@ struct CharacterMoverImpl
     JPH::Ref<JPH::CharacterVirtual> Character;
     float StepHeight = 0.35f;
     float GroundSnapDistance = 0.25f;
+    Vec3d SensorPosition{};
 };
 
 CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& config, const Vec3d& position)
@@ -71,6 +73,7 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
     Impl->Temp = &world.Internal().Temp;
     Impl->StepHeight = std::max(0.0f, config.StepHeight);
     Impl->GroundSnapDistance = std::max(0.0f, config.GroundSnapDistance);
+    Impl->SensorPosition = position;
 
     const float radius = config.Radius;
     const float cylinderHalfHeight = std::max(0.0f, config.Height * 0.5f - radius);
@@ -153,9 +156,19 @@ Vec3d CharacterMover::GetPosition() const
 void CharacterMover::SetPosition(const Vec3d& position)
 {
     Impl->Character->SetPosition(ToJphR(position));
+    Impl->SensorPosition = position;
 }
 
 Vec3d CharacterMover::GetVelocity() const
 {
     return FromJph(Impl->Character->GetLinearVelocity());
+}
+
+void CharacterMover::ObserveSensors(EntityId entity, SensorOverlaps& observations)
+{
+    const auto& character = *Impl->Character;
+    const Vec3d position = GetPosition();
+    ObserveSensorShape(*Impl->System, *character.GetShape(), character.GetCenterOfMassTransform(),
+                       position - Impl->SensorPosition, entity, observations);
+    Impl->SensorPosition = position;
 }

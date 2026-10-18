@@ -116,6 +116,14 @@ size_t CharacterMoverPool::MoverCount() const
     return S ? S->Slots.size() - S->Free.size() : 0;
 }
 
+void CharacterMoverPool::ObserveSensors(SensorOverlaps& observations)
+{
+    if (S)
+        for (auto& slot : S->Slots)
+            if (slot.Mover)
+                slot.Mover->ObserveSensors(slot.Owner, observations);
+}
+
 bool CharacterMoverPool::Ready(const World& world) const
 {
     return world.IsRegistered<CharacterController>()
