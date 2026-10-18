@@ -5,6 +5,7 @@
 #include <gameplay_tags/GameplayTagContainerWire.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <net/ReplicationLayout.h>
+#include <net/ReplicationCodec.h>
 #include <net/ReplicationWireContext.h>
 
 #include <algorithm>
@@ -37,10 +38,10 @@ namespace
 
         [[nodiscard]] GameplayTagId Find(std::string_view name) const
         {
-            return Entities.GetResource<GameplayTagRegistry>().FindTag(name);
+            return Entities.TryGetResource<GameplayTagRegistry>()->FindTag(name);
         }
 
-        [[nodiscard]] ReplicationWireContext Context() const { return { .Entities = &Entities }; }
+        [[nodiscard]] ReplicationWireContext Context() const { return { .Entities = &Entities, .Entity = {} }; }
 
         World Entities;
     };
