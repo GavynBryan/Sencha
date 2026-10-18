@@ -74,7 +74,7 @@ Components (all POD, `engine/include/movement/MovementComponents.h`):
 | `ResolvedMovementTuning` | `MovementTuningResolutionSystem` only | locomotion, action producers | This tick's coefficients. Nothing else writes it. |
 | `LocomotionOutput` | the active mode's locomotion system | composition | Velocity plus up axis plus gravity scale. Exactly one writer per entity per tick. |
 | `MotionAxisOverride` | action producers via `MotionComposition.h` helpers | composition | One-tick mailbox; planar/up channels, first-write-wins, forced variants replace. |
-| `MotionImpulse` | `AddMotionImpulse` | composition | One-tick additive velocity (knockback, explosions). |
+| `MotionImpulse` | `AddMotionImpulse` / `ReplaceMotionVelocity` | composition | One-tick world velocity changes, applied after relative channels. |
 | `MotionRequest` | `MotionCompositionSystem` only (a dilated character's step writes its last step's) | `CharacterMoverPool`, path followers | The single composed motor request. `PlanarOverridden` records that an action, root motion or held motion replaced locomotion's planar velocity. |
 | `ModeTransitionRequest` | `RequestLocomotionMode` | transition system | The arbitrated transition mailbox. |
 | mode session components (`ClingSession`, …) | mode registry hooks | that mode's systems | Added on entry, removed on exit; see Modes. |
@@ -247,6 +247,9 @@ that compose over the active mode's output
   replace whatever claimed the channel (reactions, scripted takeovers).
 - `AddMotionImpulse` — additive velocity, applied after the channels
   (knockback, explosions).
+- `ReplaceMotionVelocity` — replaces the full composed world velocity,
+  including support inheritance and earlier additive contributions. Later
+  impulses still add to it.
 
 Channels are support-relative: overrides replace the *controllable* planar/up
 velocity, and the supporting surface's velocity is added afterward, so a jump
@@ -254,6 +257,42 @@ from a rising platform inherits the platform. The mailboxes are cleared by
 `MotionCompositionSystem` after composing; a producer scheduled after
 composition is a bug, and its value deliberately survives into the next tick
 rather than being silently dropped.
+
+### One-shot authored velocity
+
+`movement.apply_velocity` is an instant, authority-only gameplay verb. Its
+arguments are `target`, a three-component `direction`, `speed` in metres per
+second (default 10), and `operation` (`add` or `replace`, default `replace`).
+The implementation normalizes direction, rejects non-finite values, negative
+or unrepresentable speed, and directions whose length is at most 1e-8. A
+zero-speed replacement with a valid direction stops the character. A target
+must carry `CharacterMovement` and its derived motion mailbox.
+
+The verb writes through the same motion-composition mailbox as native action
+producers. Replace specifies every world velocity channel: it inherits no
+stale planar, vertical or platform velocity. Add retains the composed motion.
+Calls compose in invocation order: Replace discards earlier impulses, while
+an Add after Replace adds to that replacement. Relative overrides, held motion
+and locomotion run before the final world velocity change is applied.
+
+Physics publishes the achieved velocity into `KinematicState`, which
+locomotion uses on subsequent ticks. The launch therefore persists, subject
+to ordinary gravity, acceleration, friction, drag and contacts. This differs
+from `movement.burst`, which holds a requested velocity for a duration.
+
+Supported dilated characters leave their mailboxes for the dilated pass. It
+consumes a world velocity change on the first substep only; remaining substeps
+continue from achieved motion. A paused actor retains its pending change until
+its clock advances. Replay does not consume a live authoritative mailbox:
+the optional impulse passed to `StepScaledCharacterTick` belongs to its caller.
+
+Clients cannot invoke this verb to mutate motion. Existing authoritative
+kinematic snapshots and reconciliation carry the result; no RPC is added.
+There is no immediate local prediction of external velocity changes, so a
+networked activator observes an authoritative launch after snapshot latency.
+The transient `MotionImpulse` component layout and the scaled-step API changed;
+modules must rebuild against the engine's updated ABI fingerprint. No scene or
+replication format changes are needed for this transient mailbox.
 
 Jump is carried by `MovementIntent.Jump` rather than an ability
 (`JumpExecutionSystem.h`): a predicting client replays its own movement from

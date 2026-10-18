@@ -29,6 +29,8 @@ bool CharacterTickSubject(const World& world, EntityId entity)
 
 bool CharacterTickModeSupported(const World& world, EntityId entity)
 {
+    if (!world.IsRegistered<CharacterMovement>())
+        return false;
     // Read-only throughout: asking which rules a character moves under is not a
     // write, and mutable access would mark the whole chunk's column changed.
     const CharacterMovement* movement = world.TryGet<CharacterMovement>(entity);
@@ -62,7 +64,8 @@ namespace
     // `dt` actor seconds. `carry` scales what the ground carries the character by,
     // so a dilated character on a platform rides it at the platform's speed.
     void StepOnce(World& world, CharacterMoverPool* movers, EntityId entity, const MovementIntent& intent,
-                  const RootMotionSample* rootMotion, float dt, float carry, Vec3d gravity, Vec3d upAxis)
+                  const RootMotionSample* rootMotion, float dt, float carry, Vec3d gravity, Vec3d upAxis,
+                  const MotionImpulse* impulse)
     {
         KinematicState* motion = world.TryGet<KinematicState>(entity);
         SupportState* support = world.TryGet<SupportState>(entity);
@@ -92,7 +95,8 @@ namespace
             ApplyRootMotion(overrides, *rootMotion);
         StepHeldMotion(world, entity, overrides, dt, locomotion.UpAxis);
 
-        const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides, MotionImpulse{});
+        const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides,
+                                                          impulse != nullptr ? *impulse : MotionImpulse{});
         // Bulk characters keep the request the motor drove; a stepped one keeps its
         // last step's, so readers of the next tick see the same fact either way.
         if (MotionRequest* stored = world.TryGet<MotionRequest>(entity))
@@ -126,7 +130,8 @@ void StepScaledCharacterTick(World& world,
                              float fixedDeltaSeconds,
                              std::int64_t scaleQ16,
                              Vec3d gravity,
-                             Vec3d upAxis)
+                             Vec3d upAxis,
+                             const MotionImpulse* impulse)
 {
     if (!CharacterTickModeSupported(world, entity) || scaleQ16 <= 0)
         return;
@@ -140,7 +145,8 @@ void StepScaledCharacterTick(World& world,
     const bool carried = SampleRootMotion(world, entity, tick, fixedDeltaSeconds, rootMotion);
     rootMotion.TurnRadians /= static_cast<float>(substeps);
     for (int i = 0; i < substeps; ++i)
-        StepOnce(world, movers, entity, intent, carried ? &rootMotion : nullptr, step, carry, gravity, upAxis);
+        StepOnce(world, movers, entity, intent, carried ? &rootMotion : nullptr, step, carry, gravity, upAxis,
+                  i == 0 ? impulse : nullptr);
 }
 
 void StepCharacterTick(World& world,

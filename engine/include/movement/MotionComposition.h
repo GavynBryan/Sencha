@@ -21,6 +21,7 @@ struct SupportState;
 [[nodiscard]] bool ForceSetPlanarMotionOverride(World& world, EntityId entity, Vec3d velocity);
 [[nodiscard]] bool ForceSetUpMotionOverride(World& world, EntityId entity, float velocity);
 [[nodiscard]] bool AddMotionImpulse(World& world, EntityId entity, Vec3d deltaVelocity);
+[[nodiscard]] bool ReplaceMotionVelocity(World& world, EntityId entity, Vec3d velocity);
 
 [[nodiscard]] MotionRequest ComposeMotion(const LocomotionOutput& locomotion,
                                           const SupportState* support,

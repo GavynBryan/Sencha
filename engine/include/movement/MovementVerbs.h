@@ -16,6 +16,7 @@ inline constexpr std::string_view kMovementBurstLease = "movement.burst";
 inline constexpr std::string_view kMovementTetherLease = "movement.tether";
 // Put a character in a locomotion mode while held; letting go returns it to free.
 inline constexpr std::string_view kMovementModeLease = "movement.mode";
+inline constexpr std::string_view kMovementApplyVelocityVerb = "movement.apply_velocity";
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope);
 
@@ -33,6 +34,7 @@ public:
     VerbAdmission Burst(const VerbInvocation& invocation);
     VerbAdmission Tether(const VerbInvocation& invocation);
     VerbAdmission Mode(const VerbInvocation& invocation);
+    VerbAdmission ApplyVelocity(const VerbInvocation& invocation);
 
 private:
     // Whether `owner` still holds a slot of `T`, looked for on its own entity first.
@@ -57,4 +59,9 @@ inline VerbAdmission InvokeMovementTether(MovementOperations& operations, const 
 inline VerbAdmission InvokeMovementMode(MovementOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Mode(invocation);
+}
+
+inline VerbAdmission InvokeMovementApplyVelocity(MovementOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.ApplyVelocity(invocation);
 }

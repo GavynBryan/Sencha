@@ -9,6 +9,7 @@
 class CharacterMoverPool;
 class World;
 struct MovementIntent;
+struct MotionImpulse;
 
 //=============================================================================
 // CharacterTickStep
@@ -72,7 +73,8 @@ void StepScaledCharacterTick(World& world,
                              float fixedDeltaSeconds,
                              std::int64_t scaleQ16,
                              Vec3d gravity,
-                             Vec3d upAxis);
+                             Vec3d upAxis,
+                             const MotionImpulse* impulse = nullptr);
 
 // Whether re-running a tick puts this component back in step: either the tick
 // advances it forward, or it is the state the tick derives those from and

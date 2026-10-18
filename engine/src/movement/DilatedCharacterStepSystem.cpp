@@ -4,6 +4,7 @@
 #include <ecs/World.h>
 #include <movement/CharacterTickStep.h>
 #include <movement/FreeLocomotionSystem.h>
+#include <movement/components/MotionChannels.h>
 #include <physics/PhysicsStepSystem.h>
 #include <world/SimulationTimeline.h>
 
@@ -35,10 +36,16 @@ void DilatedCharacterStepSystem::FixedLogic(FixedLogicContext& ctx)
     for (const auto& [entity, intent] : Pending)
     {
         const ActorTime* time = world.TryGet<ActorTime>(entity);
-        if (time == nullptr)
+        if (time == nullptr || time->ScaleQ16 <= 0 || !CharacterTickModeSupported(world, entity))
             continue;
+        MotionImpulse impulse;
+        if (MotionImpulse* pending = world.TryGet<MotionImpulse>(entity))
+        {
+            impulse = *pending;
+            *pending = {};
+        }
         StepScaledCharacterTick(world, movers, entity, intent, SimulationTickOf(world, entity, ctx.Time.TickIndex),
                                 static_cast<float>(ctx.Time.DeltaSeconds), time->ScaleQ16, Locomotion->GetGravity(),
-                                Locomotion->GetUpAxis());
+                                Locomotion->GetUpAxis(), &impulse);
     }
 }

@@ -4,6 +4,8 @@
 #include <ecs/World.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/MotionChannels.h>
+#include <movement/CharacterTickStep.h>
+#include <time/ActorTime.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 
@@ -89,6 +91,19 @@ bool AddMotionImpulse(World& world, EntityId entity, Vec3d deltaVelocity)
     return true;
 }
 
+bool ReplaceMotionVelocity(World& world, EntityId entity, Vec3d velocity)
+{
+    if (!world.IsRegistered<MotionImpulse>())
+        return false;
+    MotionImpulse* impulses = world.TryGet<MotionImpulse>(entity);
+    if (impulses == nullptr)
+        return false;
+    impulses->ReplacementVelocity = velocity;
+    impulses->HasReplacement = true;
+    impulses->DeltaVelocity = Vec3d::Zero();
+    return true;
+}
+
 MotionRequest ComposeMotion(const LocomotionOutput& locomotion,
                             const SupportState* support,
                             const MotionAxisOverride& overrides,
@@ -121,6 +136,11 @@ MotionRequest ComposeMotion(const LocomotionOutput& locomotion,
         + request.UpAxis * relativeUp
         + supportVelocity
         + impulses.DeltaVelocity;
+    if (impulses.HasReplacement)
+    {
+        request.Velocity = impulses.ReplacementVelocity + impulses.DeltaVelocity;
+        request.PlanarOverridden = true;
+    }
     request.TurnRadians = overrides.HasTurn && std::isfinite(overrides.TurnRadians) ? overrides.TurnRadians : 0.0f;
     return request;
 }
@@ -156,6 +176,9 @@ void MotionCompositionSystem::StepImpl(World& world, const StoragePartitionSet* 
 
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
+            if (world.IsRegistered<ActorTimeDilated>() && world.HasComponent<ActorTimeDilated>(view.Entity(i))
+                && CharacterTickModeSupported(world, view.Entity(i)))
+                continue;
             const SupportState* support = hasSupport
                 ? std::as_const(world).TryGet<SupportState>(view.Entity(i))
                 : nullptr;
