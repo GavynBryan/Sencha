@@ -262,6 +262,8 @@ void RigidBodyBinding::SyncToPhysics(
         }
     });
 
+    if (Simulation->SensorCount() == 0)
+        return;
     state.SensorPush.ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto colliders = view.template Read<Collider>();

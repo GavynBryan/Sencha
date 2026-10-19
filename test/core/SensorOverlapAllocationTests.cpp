@@ -24,7 +24,7 @@ TEST(SensorOverlapAllocation, FullSamplesReuseReservedStorage)
     EXPECT_EQ(before, after);
 }
 
-TEST(SensorOverlapAllocation, CachedCharacterShapeQueriesDoNotAllocatePerSample)
+TEST(SensorOverlapAllocation, CachedBodyAndCharacterShapeQueriesDoNotAllocatePerSample)
 {
     PhysicsWorld physics;
     BodyDesc sensor;
@@ -33,15 +33,24 @@ TEST(SensorOverlapAllocation, CachedCharacterShapeQueriesDoNotAllocatePerSample)
     sensor.UserData = PackEntity({ 10, 1 });
     ASSERT_TRUE(physics.AddBody(sensor).IsValid());
     CharacterMover mover(physics, CharacterMoverConfig{}, Vec3d::Zero());
+    BodyDesc actor;
+    actor.Motion = BodyMotion::Kinematic;
+    actor.Position = Vec3d(3, 0, 0);
+    actor.UserData = PackEntity({ 30, 1 });
+    const auto body = physics.AddBody(actor);
+    ASSERT_TRUE(body.IsValid());
     SensorOverlaps overlaps;
     overlaps.Begin();
+    physics.ObserveSensors(overlaps);
     mover.ObserveSensors({ 20, 1 }, overlaps);
     ASSERT_TRUE(overlaps.Commit(0));
     const std::size_t before = AllocationCount();
     bool accepted = true;
     for (std::uint64_t tick = 1; tick <= 100; ++tick)
     {
+        physics.SetBodyTransform(body, Vec3d(tick % 2 == 0 ? 3.0f : -3.0f, 0, 0), Quatf::Identity());
         overlaps.Begin();
+        physics.ObserveSensors(overlaps);
         mover.ObserveSensors({ 20, 1 }, overlaps);
         accepted = overlaps.Commit(tick) && accepted;
     }

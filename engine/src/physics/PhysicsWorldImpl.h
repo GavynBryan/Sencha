@@ -60,6 +60,7 @@ struct PhysicsWorldImpl
     };
 
     std::vector<SensorActivator> SensorActivators;
+    uint32_t SensorCount = 0;
     JPH::TempAllocatorImpl Temp;
     JPH::JobSystemSingleThreaded Jobs;
     BroadPhaseLayerInterfaceImpl BroadPhaseLayers;

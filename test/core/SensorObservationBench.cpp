@@ -49,16 +49,24 @@ public:
         Entities.RegisterComponent<ActorTimeDilated>();
         Entities.AddResource<SensorOverlaps>(32768);
         Partitions.Add(StoragePartitionId::Default());
+        if (Case.Solids != 0)
+            for (std::uint32_t room = 0; room < 32; ++room)
+                Partitions.Add(StoragePartitionId{ static_cast<std::uint16_t>(room + 1) });
         for (std::uint32_t i = 0; i < Case.Sensors; ++i)
         {
-            auto entity = Spawn(Case.Dense ? Vec3d::Zero() : Site(i));
+            auto entity = Spawn(Case.Dense ? Vec3d::Zero() :
+                Case.Solids != 0 ? RoomCenter(i) : Site(i), i);
             Entities.AddComponent<Collider>(entity, Collider{
-                .Shape = CollisionShape::MakeBox(Case.Dense ? Vec3d(64, 4, 64) : Vec3d(1, 2, 1)),
+                .Shape = CollisionShape::MakeBox(Case.Dense ? Vec3d(64, 4, 64) :
+                    Case.Solids != 0 ? Vec3d(2, 2, 2) : Vec3d(1, 2, 1)),
                 .IsTrigger = true });
         }
         for (std::uint32_t i = 0; i < Case.Bodies + Case.Characters; ++i)
         {
-            const auto entity = Spawn(Site(i));
+            const auto room = i < Case.Bodies ? i / 8 : i - Case.Bodies;
+            const auto position = Case.Solids != 0 && i >= Case.Bodies
+                ? RoomCenter(room) : Site(i);
+            const auto entity = Spawn(position, room);
             if (i < Case.Bodies)
             {
                 Entities.AddComponent<Collider>(entity, Collider{ .Shape = CollisionShape::MakeSphere(0.25f) });
@@ -77,8 +85,28 @@ public:
         }
         for (std::uint32_t i = 0; i < Case.Solids; ++i)
         {
-            auto entity = Spawn(Site(i) + Vec3d(0, -4, 0));
-            Entities.AddComponent<Collider>(entity, Collider{});
+            const auto part = i % 32;
+            Vec3d offset;
+            Vec3d extents;
+            if (part == 0)
+            {
+                offset = Vec3d(0, -1.25f, 0);
+                extents = Vec3d(7.75f, 0.25f, 7.75f);
+            }
+            else if (part <= 4)
+            {
+                const float side = part % 2 == 0 ? -8.0f : 8.0f;
+                offset = part <= 2 ? Vec3d(side, 1, 0) : Vec3d(0, 1, side);
+                extents = part <= 2 ? Vec3d(0.25f, 2, 8) : Vec3d(8, 2, 0.25f);
+            }
+            else
+            {
+                offset = Vec3d(static_cast<float>(part % 7) * 2 - 6, 0,
+                               part % 2 == 0 ? -6.0f : 6.0f);
+                extents = Vec3d(0.25f, 0.5f, 0.25f);
+            }
+            const auto entity = Spawn(RoomCenter(i / 32) + offset, i / 32);
+            Entities.AddComponent<Collider>(entity, Collider{ .Shape = CollisionShape::MakeBox(extents) });
         }
     }
 
@@ -144,13 +172,21 @@ public:
     std::size_t SyncAllocations = 0;
 
 private:
-    static Vec3d Site(std::uint32_t i)
+    static Vec3d RoomCenter(std::uint32_t room)
     {
+        return Vec3d(static_cast<float>(room % 8) * 16, 0, static_cast<float>(room / 8) * 16);
+    }
+    Vec3d Site(std::uint32_t i) const
+    {
+        if (Case.Solids != 0)
+            return RoomCenter(i / 8) + Vec3d(static_cast<float>(i % 4) * 2 - 3, 0,
+                                           (i / 4) % 2 == 0 ? -2.0f : 2.0f);
         return Vec3d(static_cast<float>(i % 32) * 3, 0, static_cast<float>(i / 32) * 3);
     }
-    EntityId Spawn(Vec3d position)
+    EntityId Spawn(Vec3d position, std::uint32_t room = 0)
     {
-        const auto entity = Entities.CreateEntity();
+        const auto partition = Case.Solids != 0 ? StoragePartitionId{ static_cast<std::uint16_t>(room + 1) } : StoragePartitionId::Default();
+        const auto entity = Entities.CreateEntity(partition);
         LocalTransform transform;
         transform.Value.Position = position;
         Entities.AddComponent<LocalTransform>(entity, transform);
@@ -198,6 +234,9 @@ TEST(SensorObservationBench, Generate)
     for (int hz : { 60, 120 })
     for (const auto& scenario : scenarios)
     {
+        const char* filter = std::getenv("SENCHA_SENSOR_BENCH_CASE");
+        if (filter != nullptr && std::string_view(filter) != scenario.Name)
+            continue;
         Fixture fixture(scenario, 1.0 / hz);
         for (int i = 0; i < 180; ++i)
         {

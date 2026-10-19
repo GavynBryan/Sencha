@@ -22,6 +22,28 @@ do the work and delete the entry.
   consumer needs bounded motion-segment observation at the backend movement
   boundary, retaining the same Jolt world and overlap lifecycle.
 
+## Runtime collider configuration reconciliation
+
+- **What:** `RigidBodyBinding` captures `Collider.Shape`, `Mesh`, `IsTrigger`,
+  derived collision layer, and most `RigidBody` configuration when creating a
+  body. Value edits do not recreate or update that body, even if a structural
+  change causes another reconciliation pass. Only kinematic pose and dynamic
+  gravity scale have live push contracts today.
+- **Where:** `engine/src/physics/RigidBodyBinding.cpp` (`Reconcile`,
+  `SyncToPhysics`), `engine/include/physics/components/Collider.h`.
+- **Impact:** changing `IsTrigger` on a resident entity is unsupported; the ECS
+  value and Jolt sensor/layer can disagree. Configuration supplied before binding
+  a fresh simulation is honored. This observation PR does not promise live collider
+  editing and must not add a sensor-specific body recreation path.
+- **Trigger:** the first runtime collider configuration edit or live Kyusu
+  physics hot reload. Implement generic configuration reconciliation in
+  `RigidBodyBinding`: retain the applied configuration per owned body, detect
+  changed collider/body configuration with cached changed queries, update or
+  recreate through the existing binding owner, preserve supported dynamic state,
+  refresh dependent constraints and invalidate observation pairs without synthetic
+  teardown exits. Cover shape,
+  sensor/layer, motion, mass, mesh ownership, and residency together.
+
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision

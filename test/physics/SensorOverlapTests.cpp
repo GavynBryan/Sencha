@@ -639,3 +639,54 @@ TEST_F(SensorScheduleTest, KinematicAuthoredMovementKeepsFastCrossings)
     EXPECT_EQ(crossing.Occurrences()[1].Transition, SensorTransition::Exit);
 }
 
+TEST(SensorPhysics, EmptySensorSceneSkipsQueriesButAdvancesBodyAndCharacterHistory)
+{
+    PhysicsWorld world;
+    const auto actor = AddActor(world, Vec3d(-5, 0, 0), BodyMotion::Kinematic);
+    CharacterMover mover(world, CharacterMoverConfig{}, Vec3d(-5, 0, 1.5f));
+    CharacterMoveRequest move;
+    move.DeltaSeconds = 0.1f;
+    move.Velocity = Vec3d(100, 0, 0);
+    (void)mover.Move(move);
+    world.SetBodyTransform(actor, Vec3d(5, 0, 0), Quatf::Identity());
+    SensorOverlaps overlaps;
+    overlaps.Begin();
+    world.ObserveSensors(overlaps);
+    mover.ObserveSensors({ 30, 4 }, overlaps);
+    ASSERT_TRUE(overlaps.Commit(0));
+    EXPECT_EQ(overlaps.QueryCounts().Overlaps, 0u);
+    EXPECT_EQ(overlaps.QueryCounts().Casts, 0u);
+    const auto sensor = AddSensor(world);
+    ASSERT_TRUE(sensor.IsValid());
+    EXPECT_EQ(world.SensorCount(), 1u);
+    overlaps.Begin();
+    world.ObserveSensors(overlaps);
+    mover.ObserveSensors({ 30, 4 }, overlaps);
+    ASSERT_TRUE(overlaps.Commit(1));
+    EXPECT_EQ(overlaps.QueryCounts().Overlaps, 2u);
+    EXPECT_EQ(overlaps.QueryCounts().Casts, 0u);
+    EXPECT_TRUE(overlaps.Occurrences().empty());
+    world.RemoveBody(sensor);
+    EXPECT_EQ(world.SensorCount(), 0u);
+    Sample(world, overlaps, 2);
+    EXPECT_EQ(overlaps.QueryCounts().Overlaps, 0u);
+}
+
+TEST(SensorPhysics, SleepingBodyStillObservesRelocatedSensor)
+{
+    PhysicsWorld world;
+    const auto sensor = AddSensor(world, Vec3d(5, 0, 0));
+    const auto actor = AddActor(world, Vec3d::Zero());
+    for (int i = 0; i < 120; ++i)
+        world.Step(1.0f / 60);
+    ASSERT_FALSE(world.IsBodyActive(actor));
+    SensorOverlaps overlaps;
+    Sample(world, overlaps, 0);
+    EXPECT_TRUE(overlaps.Occurrences().empty());
+    world.SetBodyTransform(sensor, Vec3d::Zero(), Quatf::Identity());
+    Sample(world, overlaps, 1);
+    ExpectTransitions(overlaps, { SensorTransition::Enter });
+    world.SetBodyTransform(sensor, Vec3d(5, 0, 0), Quatf::Identity());
+    Sample(world, overlaps, 2);
+    ExpectTransitions(overlaps, { SensorTransition::Exit });
+}

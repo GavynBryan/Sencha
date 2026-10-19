@@ -72,7 +72,7 @@ public:
     [[nodiscard]] BodyTransform GetBodyTransform(PhysicsBodyId id) const;
     // Continuous pose change: sensor observation sweeps from the previous sample.
     void SetBodyTransform(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
-    // Discontinuous relocation: reset sweep history; retain velocity and endpoint occupancy.
+    // Discontinuous relocation: preserve velocity and reset the sensor sweep origin.
     void TeleportBody(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
 
     [[nodiscard]] Vec3d GetLinearVelocity(PhysicsBodyId id) const;
@@ -89,6 +89,7 @@ public:
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;
+    [[nodiscard]] uint32_t SensorCount() const;
     void ObserveSensors(SensorOverlaps& observations);
 
     // --- Driven pose constraints -------------------------------------------

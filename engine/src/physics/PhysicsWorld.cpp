@@ -60,11 +60,18 @@ void PhysicsWorld::ObserveBodySensors(PhysicsBodyId id, Vec3d& previousPosition,
         const Vec3d position = FromJphR(body.GetPosition());
         displacement = position - previousPosition;
         previousPosition = position;
+        if (Impl->SensorCount == 0)
+            return;
         shape = body.GetShape();
         pose = body.GetCenterOfMassTransform();
         entity = UnpackEntity(body.GetUserData());
     }
     ObserveSensorShape(Impl->System, *shape, pose, displacement, entity, observations);
+}
+
+uint32_t PhysicsWorld::SensorCount() const
+{
+    return Impl->SensorCount;
 }
 
 void PhysicsWorld::ObserveSensors(SensorOverlaps& observations)
@@ -217,6 +224,8 @@ PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
 
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID id = bodies.CreateAndAddBody(settings, activation);
+    if (!id.IsInvalid() && desc.IsTrigger && desc.Layer == CollisionLayer::Trigger)
+        ++Impl->SensorCount;
     if (!id.IsInvalid() && desc.Motion != BodyMotion::Static && !desc.IsTrigger)
         Impl->SensorActivators.push_back({ FromJph(id), desc.Position });
     return FromJph(id);
@@ -250,6 +259,9 @@ void PhysicsWorld::RemoveBody(PhysicsBodyId id)
         JPH::BodyLockRead lock(Impl->System.GetBodyLockInterface(), bid);
         if (lock.Succeeded())
         {
+            if (lock.GetBody().IsSensor()
+                && lock.GetBody().GetObjectLayer() == PhysicsObjectLayers::Trigger)
+                --Impl->SensorCount;
             bounds = lock.GetBody().GetWorldSpaceBounds();
             hadBounds = true;
         }

@@ -1,6 +1,6 @@
 #include "SensorShapeQuery.h"
 
-#include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
@@ -20,20 +20,22 @@ template<class Collector>
 class SensorCollector final : public Collector
 {
 public:
-    SensorCollector(const JPH::PhysicsSystem& system, EntityId activator,
-                    SensorOverlaps& observations, bool occupied)
-        : System(system), Activator(activator), Observations(observations), Occupied(occupied) {}
+    SensorCollector(EntityId activator, SensorOverlaps& observations, bool occupied)
+        : Activator(activator), Observations(observations), Occupied(occupied) {}
 
-    void AddHit(const typename Collector::ResultType& hit) override
+    void OnBody(const JPH::Body& body) override
     {
-        JPH::BodyLockRead lock(System.GetBodyLockInterface(), hit.mBodyID2);
-        if (lock.Succeeded() && lock.GetBody().IsSensor())
-            if (!Observations.Observe({ UnpackEntity(lock.GetBody().GetUserData()), Activator }, Occupied))
-                this->ForceEarlyOut();
+        Sensor = body.IsSensor() ? UnpackEntity(body.GetUserData()) : EntityId{};
+    }
+
+    void AddHit(const typename Collector::ResultType&) override
+    {
+        if (!Observations.Observe({ Sensor, Activator }, Occupied))
+            this->ForceEarlyOut();
     }
 
 private:
-    const JPH::PhysicsSystem& System;
+    EntityId Sensor;
     EntityId Activator;
     SensorOverlaps& Observations;
     bool Occupied;
@@ -45,15 +47,16 @@ void ObserveSensorShape(const JPH::PhysicsSystem& system, const JPH::Shape& shap
                         EntityId activator, SensorOverlaps& observations)
 {
     observations.RecordQueries(displacement.SqrMagnitude() > 1.0e-10f);
+    const JPH::SpecifiedBroadPhaseLayerFilter sensors(PhysicsBroadPhaseLayers::NonMoving);
     const auto& query = system.GetNarrowPhaseQuery();
-    SensorCollector<JPH::CollideShapeCollector> overlaps(system, activator, observations, true);
+    SensorCollector<JPH::CollideShapeCollector> overlaps(activator, observations, true);
     query.CollideShape(&shape, JPH::Vec3::sReplicate(1.0f), end,
-                       JPH::CollideShapeSettings{}, end.GetTranslation(), overlaps, {}, SensorLayers{});
+                       JPH::CollideShapeSettings{}, end.GetTranslation(), overlaps, sensors, SensorLayers{});
     if (displacement.SqrMagnitude() > 1.0e-10f)
     {
-        SensorCollector<JPH::CastShapeCollector> crossings(system, activator, observations, false);
+        SensorCollector<JPH::CastShapeCollector> crossings(activator, observations, false);
         const auto start = end.PostTranslated(-ToJph(displacement));
         const JPH::RShapeCast cast(&shape, JPH::Vec3::sReplicate(1.0f), start, ToJph(displacement));
-        query.CastShape(cast, JPH::ShapeCastSettings{}, start.GetTranslation(), crossings, {}, SensorLayers{});
+        query.CastShape(cast, JPH::ShapeCastSettings{}, start.GetTranslation(), crossings, sensors, SensorLayers{});
     }
 }
