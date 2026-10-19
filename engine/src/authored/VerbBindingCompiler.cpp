@@ -192,51 +192,27 @@ namespace
     }
 }
 
-bool CompileVerbBinding(const VerbBindingDesc& desc,
-                        const VerbBindingEnvironment& environment,
-                        CompiledVerbBinding& out,
-                        std::vector<std::string>& errors)
+bool CompileAuthoredArguments(std::string_view bindingKey, const DataFieldSchema& root,
+                              std::span<const std::string> inputNames,
+                              std::span<const VerbBindingArgument> arguments,
+                              const VerbBindingEnvironment& environment, AuthoredArguments& constants,
+                              std::vector<VerbCompiledInput>& compiledInputs, bool& referencesChecked,
+                              std::vector<std::string>& errors)
 {
-    if (environment.Verbs == nullptr)
-    {
-        Fail(errors, desc.Key, {}, "no catalog to resolve the verb name against");
-        return false;
-    }
-
-    for (std::size_t index = 0; index + 1 < desc.Inputs.size(); ++index)
+    constants.Resize(root.Children.size());
+    for (std::size_t index = 0; index + 1 < inputNames.size(); ++index)
     {
         // Positional supply means a repeated name has no answer to "which slot
         // did the producer mean".
-        const auto duplicate = std::ranges::find(desc.Inputs.begin() + index + 1,
-                                                 desc.Inputs.end(), desc.Inputs[index]);
-        if (duplicate != desc.Inputs.end())
+        const auto duplicate = std::ranges::find(inputNames.begin() + index + 1,
+                                                 inputNames.end(), inputNames[index]);
+        if (duplicate != inputNames.end())
         {
-            Fail(errors, desc.Key, {},
-                 std::format("input '{}' is declared twice", desc.Inputs[index]));
+            Fail(errors, bindingKey, {},
+                 std::format("input '{}' is declared twice", inputNames[index]));
             return false;
         }
     }
-
-    const VerbRegistry& registry = *environment.Verbs;
-    const VerbId verb = registry.Find(desc.VerbName);
-    const VerbDefinition* definition = registry.Get(verb);
-    if (definition == nullptr)
-    {
-        // The record survives: an unresolved binding is inspectable content, not
-        // a reason to lose what the author wrote.
-        Fail(errors, desc.Key, {},
-             std::format("'{}' is not a verb this World declares", desc.VerbName));
-        return false;
-    }
-
-    const DataFieldSchema& root = definition->Arguments;
-    CompiledVerbBinding compiled;
-    compiled.Catalog = registry.Catalog();
-    compiled.Verb = verb;
-    compiled.Revision = registry.Revision(verb);
-    compiled.Key = desc.KeyId.IsValid() ? desc.KeyId : MakeVerbBindingKey(desc.Key);
-    compiled.KeyText = desc.Key;
-    compiled.Constants = AuthoredArguments(root.Children.size());
 
     bool ok = true;
 
@@ -245,15 +221,15 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     // ambiguity that lets a caller smuggle a second target past validation.
     std::vector<bool> filled(root.Children.size(), false);
     std::vector<VerbCompiledInput> inputs;
-    inputs.reserve(desc.Inputs.size());
+    inputs.reserve(inputNames.size());
 
-    for (const VerbBindingArgument& argument : desc.Arguments)
+    for (const VerbBindingArgument& argument : arguments)
     {
         const DataFieldSchema* field = FindChild(root, argument.Key);
         if (field == nullptr)
         {
-            Fail(errors, desc.Key, argument.Key,
-                 std::format("'{}' declares no argument by this name", desc.VerbName));
+            Fail(errors, bindingKey, argument.Key,
+                 std::format("'{}' declares no argument by this name", bindingKey));
             ok = false;
             continue;
         }
@@ -262,7 +238,7 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
         const std::size_t slot = static_cast<std::size_t>(field - root.Children.data());
         if (filled[slot])
         {
-            Fail(errors, desc.Key, argument.Key, "the binding fills this argument twice");
+            Fail(errors, bindingKey, argument.Key, "the binding fills this argument twice");
             ok = false;
             continue;
         }
@@ -270,10 +246,10 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
 
         if (argument.Source == VerbArgumentSource::Input)
         {
-            const auto declared = std::ranges::find(desc.Inputs, argument.Text);
-            if (declared == desc.Inputs.end())
+            const auto declared = std::ranges::find(inputNames, argument.Text);
+            if (declared == inputNames.end())
             {
-                Fail(errors, desc.Key, argument.Key,
+                Fail(errors, bindingKey, argument.Key,
                      std::format("'{}' is not one of this binding's declared inputs",
                                  argument.Text));
                 ok = false;
@@ -299,16 +275,16 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
         AuthoredValue value;
         const bool compiledArgument =
             argument.Source == VerbArgumentSource::Literal
-                ? CompileAuthoredLiteral(argument.Literal, *field, BindingSubject(desc.Key),
+                ? CompileAuthoredLiteral(argument.Literal, *field, BindingSubject(bindingKey),
                                          argument.Key, value, errors)
-                : CompileReference(argument, *field, environment, desc.Key, value,
-                                   compiled.ReferencesChecked, errors);
+                : CompileReference(argument, *field, environment, bindingKey, value,
+                                   referencesChecked, errors);
         if (!compiledArgument)
         {
             ok = false;
             continue;
         }
-        compiled.Constants.Set(slot, std::move(value));
+        constants.Set(slot, std::move(value));
     }
 
     for (std::size_t slot = 0; slot < root.Children.size(); ++slot)
@@ -316,25 +292,25 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
         if (filled[slot])
             continue;
         AuthoredValue value;
-        if (!CompileAuthoredDefault(root.Children[slot], BindingSubject(desc.Key),
+        if (!CompileAuthoredDefault(root.Children[slot], BindingSubject(bindingKey),
                                     root.Children[slot].Key, value, errors))
         {
             ok = false;
             continue;
         }
-        compiled.Constants.Set(slot, std::move(value));
+        constants.Set(slot, std::move(value));
     }
 
     // Declared but unused inputs are refused rather than ignored: a producer
     // supplies values positionally, and a slot nothing reads would silently
     // shift every value after it.
-    for (const std::string& declared : desc.Inputs)
+    for (const std::string& declared : inputNames)
     {
         const bool used = std::ranges::any_of(
             inputs, [&declared](const VerbCompiledInput& input) { return input.Name == declared; });
         if (!used)
         {
-            Fail(errors, desc.Key, {},
+            Fail(errors, bindingKey, {},
                  std::format("input '{}' is declared but no argument reads it", declared));
             ok = false;
         }
@@ -347,13 +323,52 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     // values in the order the binding declared its inputs.
     std::vector<VerbCompiledInput> ordered;
     ordered.reserve(inputs.size());
-    for (const std::string& declared : desc.Inputs)
+    for (const std::string& declared : inputNames)
     {
         const auto it = std::ranges::find_if(
             inputs, [&declared](const VerbCompiledInput& input) { return input.Name == declared; });
         ordered.push_back(std::move(*it));
     }
-    compiled.Inputs = std::move(ordered);
+    compiledInputs = std::move(ordered);
+
+    return true;
+}
+
+bool CompileVerbBinding(const VerbBindingDesc& desc,
+                        const VerbBindingEnvironment& environment,
+                        CompiledVerbBinding& out,
+                        std::vector<std::string>& errors)
+{
+    if (environment.Verbs == nullptr)
+    {
+        Fail(errors, desc.Key, {}, "no catalog to resolve the verb name against");
+        return false;
+    }
+
+    const VerbRegistry& registry = *environment.Verbs;
+    const VerbId verb = registry.Find(desc.VerbName);
+    const VerbDefinition* definition = registry.Get(verb);
+    if (definition == nullptr)
+    {
+        // The record survives: an unresolved binding is inspectable content, not
+        // a reason to lose what the author wrote.
+        Fail(errors, desc.Key, {},
+             std::format("'{}' is not a verb this World declares", desc.VerbName));
+        return false;
+    }
+
+    const DataFieldSchema& root = definition->Arguments;
+    CompiledVerbBinding compiled;
+    compiled.Catalog = registry.Catalog();
+    compiled.Verb = verb;
+    compiled.Revision = registry.Revision(verb);
+    compiled.Key = desc.KeyId.IsValid() ? desc.KeyId : MakeVerbBindingKey(desc.Key);
+    compiled.KeyText = desc.Key;
+    compiled.Constants = AuthoredArguments(root.Children.size());
+
+    if (!CompileAuthoredArguments(desc.Key, root, desc.Inputs, desc.Arguments, environment,
+                                   compiled.Constants, compiled.Inputs, compiled.ReferencesChecked, errors))
+        return false;
 
     out = std::move(compiled);
     return true;
