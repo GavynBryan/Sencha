@@ -6,6 +6,7 @@
 #include <math/Vec.h>
 
 class PhysicsWorld;
+class SensorOverlaps;
 struct CharacterMoverImpl;
 
 //=============================================================================
@@ -106,6 +107,7 @@ public:
     [[nodiscard]] Vec3d GetPosition() const;
     void SetPosition(const Vec3d& position);
     [[nodiscard]] Vec3d GetVelocity() const;
+    void ObserveSensors(EntityId entity, SensorOverlaps& observations);
 
 private:
     std::unique_ptr<CharacterMoverImpl> Impl;

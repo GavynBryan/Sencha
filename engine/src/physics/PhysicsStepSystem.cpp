@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <world/RuntimeWorld.h>
+#include <world/transform/TransformPropagation.h>
 
 PhysicsStepSystem::PhysicsStepSystem()
     : Bodies(Simulation)
@@ -35,6 +36,9 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
 {
     const float dt = static_cast<float>(ctx.Time.DeltaSeconds);
 
+    if (ctx.Entities.IsRegistered<WorldTransform>())
+        PropagateTransforms(ctx.Entities, ctx.Partitions, TransformPropagationDomain::Simulation,
+                            ctx.Config.Runtime.TransformForceFullPropagation);
     Bodies.SyncToPhysics(ctx.Entities, ctx.Partitions);
     Simulation.Step(dt, CollisionSteps);
     Bodies.SyncFromPhysics(ctx.Entities, ctx.Partitions);

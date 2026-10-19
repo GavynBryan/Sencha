@@ -4,6 +4,46 @@ Work deliberately left for later. Each entry names what was deferred, where the
 code lives, and the concrete trigger that makes it due. When a trigger lands,
 do the work and delete the entry.
 
+## Continuous sensor trajectories
+
+- **What:** sensor observations query exact endpoint shapes and cast the linear
+  displacement using the final orientation. They do not reconstruct slides,
+  stair steps, multiple character substeps or angular motion. Moving sensors
+  are sampled at their new pose rather than swept through activators.
+- **Where:** `engine/src/physics/SensorShapeQuery.cpp`,
+  `CharacterMover::ObserveSensors` and `PhysicsWorld::ObserveBodySensors`;
+  the supported contract is in `docs/physics/sensor-overlaps.md`.
+- **Impact:** fast linear character/body crossings are covered; a curved path
+  can differ from its chord, and an angular or moving-volume crossing between
+  samples can be missed. Endpoint occupancy and ordinary Enter/Stay/Exit
+  remain exact. This is not a continuous-trajectory guarantee.
+- **Trigger:** content requiring detection along a curved, angular or moving
+  sensor trajectory, such as a fast sliding actor or a sweeping volume. That
+  consumer needs bounded motion-segment observation at the backend movement
+  boundary, retaining the same Jolt world and overlap lifecycle.
+
+## Runtime collider configuration reconciliation
+
+- **What:** `RigidBodyBinding` captures `Collider.Shape`, `Mesh`, `IsTrigger`,
+  derived collision layer, and most `RigidBody` configuration when creating a
+  body. Value edits do not recreate or update that body, even if a structural
+  change causes another reconciliation pass. Only kinematic pose and dynamic
+  gravity scale have live push contracts today.
+- **Where:** `engine/src/physics/RigidBodyBinding.cpp` (`Reconcile`,
+  `SyncToPhysics`), `engine/include/physics/components/Collider.h`.
+- **Impact:** changing `IsTrigger` on a resident entity is unsupported; the ECS
+  value and Jolt sensor/layer can disagree. Configuration supplied before binding
+  a fresh simulation is honored. This observation PR does not promise live collider
+  editing and must not add a sensor-specific body recreation path.
+- **Trigger:** the first runtime collider configuration edit or live Kyusu
+  physics hot reload. Implement generic configuration reconciliation in
+  `RigidBodyBinding`: retain the applied configuration per owned body, detect
+  changed collider/body configuration with cached changed queries, update or
+  recreate through the existing binding owner, preserve supported dynamic state,
+  refresh dependent constraints and invalidate observation pairs without synthetic
+  teardown exits. Cover shape,
+  sensor/layer, motion, mass, mesh ownership, and residency together.
+
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision

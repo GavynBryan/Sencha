@@ -15,6 +15,7 @@
 
 struct PhysicsWorldImpl;
 class CollisionShapeCache;
+class SensorOverlaps;
 
 struct PhysicsWorldConfig
 {
@@ -69,7 +70,10 @@ public:
     void RemoveBody(PhysicsBodyId id);
 
     [[nodiscard]] BodyTransform GetBodyTransform(PhysicsBodyId id) const;
+    // Continuous pose change: sensor observation sweeps from the previous sample.
     void SetBodyTransform(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
+    // Discontinuous relocation: preserve velocity and reset the sensor sweep origin.
+    void TeleportBody(PhysicsBodyId id, const Vec3d& position, const Quatf& rotation);
 
     [[nodiscard]] Vec3d GetLinearVelocity(PhysicsBodyId id) const;
     void SetLinearVelocity(PhysicsBodyId id, const Vec3d& velocity);
@@ -85,6 +89,8 @@ public:
 
     [[nodiscard]] uint64_t GetUserData(PhysicsBodyId id) const;
     [[nodiscard]] uint32_t BodyCount() const;
+    [[nodiscard]] uint32_t SensorCount() const;
+    void ObserveSensors(SensorOverlaps& observations);
 
     // --- Driven pose constraints -------------------------------------------
     // Targets are refreshed for every live constraint before each step. An
@@ -105,6 +111,8 @@ public:
 
 private:
     void DriveConstraints(float dt);
+    void ObserveBodySensors(PhysicsBodyId body, Vec3d& previousPosition,
+                            SensorOverlaps& observations) const;
 
     std::unique_ptr<PhysicsWorldImpl> Impl;
     const CollisionShapeCache* ShapeCache = nullptr;

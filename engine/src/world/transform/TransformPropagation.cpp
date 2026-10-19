@@ -8,6 +8,14 @@
 
 namespace
 {
+template<class QueryType>
+QueryType& PropagationQuery(World& world)
+{
+    if (auto* query = world.TryGetResource<QueryType>())
+        return *query;
+    return world.AddResource<QueryType>(world);
+}
+
 // An entity with no parent: its world transform is its local transform.
 template <typename View>
 void WriteWorldFromLocal(View& view)
@@ -42,7 +50,7 @@ void SweepUnparented(
 
     if (fullSweep)
     {
-        Unfiltered all(world);
+        auto& all = PropagationQuery<Unfiltered>(world);
         all.ForEachChunkIn(partitions, write);
         return;
     }
@@ -51,11 +59,11 @@ void SweepUnparented(
     // written while it was dormant, so it gets one unconditional sweep.
     if (!entering.Empty())
     {
-        Unfiltered resumed(world);
+        auto& resumed = PropagationQuery<Unfiltered>(world);
         resumed.ForEachChunkIn(entering, write);
     }
 
-    Filtered moved(world);
+    auto& moved = PropagationQuery<Filtered>(world);
     moved.ForEachChunkIn(partitions, write, lastSweepFrame - 1);
 }
 
@@ -117,7 +125,7 @@ bool TransformPropagationSystem::HierarchyChangedSince(uint32_t topologyFrame)
     // between a hierarchy edit and the sweep that must observe it;
     // TransformPropagation tests do.
     const uint32_t reference = topologyFrame > 0 ? topologyFrame - 1 : 0;
-    Query<Changed<Parent>> changed(Target);
+    auto& changed = PropagationQuery<Query<Changed<Parent>>>(Target);
     bool any = false;
     changed.ForEachChunk([&](auto&) { any = true; }, reference);
     return any;
@@ -140,7 +148,7 @@ void TransformPropagationSystem::RebuildTopology(
     work.Child.clear();
     work.Parent.clear();
 
-    Query<Read<Parent>, With<LocalTransform>, With<WorldTransform>> nodes(Target);
+    auto& nodes = PropagationQuery<Query<Read<Parent>, With<LocalTransform>, With<WorldTransform>>>(Target);
     nodes.ForEachChunk([&](auto& view)
     {
         const auto parents = view.template Read<Parent>();

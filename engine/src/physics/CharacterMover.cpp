@@ -1,6 +1,7 @@
 #include <physics/CharacterMover.h>
 
 #include "PhysicsWorldImpl.h"
+#include "SensorShapeQuery.h"
 
 #include <algorithm>
 
@@ -57,20 +58,20 @@ EntityId ResolveGroundEntity(const JPH::PhysicsSystem& system,
 
 struct CharacterMoverImpl
 {
-    JPH::PhysicsSystem* System = nullptr;
-    JPH::TempAllocator* Temp = nullptr;
+    PhysicsWorldImpl* Scene = nullptr;
     JPH::Ref<JPH::CharacterVirtual> Character;
     float StepHeight = 0.35f;
     float GroundSnapDistance = 0.25f;
+    Vec3d SensorPosition{};
 };
 
 CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& config, const Vec3d& position)
     : Impl(std::make_unique<CharacterMoverImpl>())
 {
-    Impl->System = &world.Internal().System;
-    Impl->Temp = &world.Internal().Temp;
+    Impl->Scene = &world.Internal();
     Impl->StepHeight = std::max(0.0f, config.StepHeight);
     Impl->GroundSnapDistance = std::max(0.0f, config.GroundSnapDistance);
+    Impl->SensorPosition = position;
 
     const float radius = config.Radius;
     const float cylinderHalfHeight = std::max(0.0f, config.Height * 0.5f - radius);
@@ -84,7 +85,7 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
     // Keep the character out of geometry by its own margin, like a body skin.
     settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -radius);
 
-    Impl->Character = new JPH::CharacterVirtual(settings, ToJphR(position), JPH::Quat::sIdentity(), 0, Impl->System);
+    Impl->Character = new JPH::CharacterVirtual(settings, ToJphR(position), JPH::Quat::sIdentity(), 0, &Impl->Scene->System);
 }
 
 CharacterMover::~CharacterMover() = default;
@@ -121,11 +122,11 @@ CharacterMoveResult CharacterMover::Move(const CharacterMoveRequest& request)
         request.DeltaSeconds,
         ToJph(gravity),
         updateSettings,
-        Impl->System->GetDefaultBroadPhaseLayerFilter(PhysicsObjectLayers::Character),
-        Impl->System->GetDefaultLayerFilter(PhysicsObjectLayers::Character),
+        Impl->Scene->System.GetDefaultBroadPhaseLayerFilter(PhysicsObjectLayers::Character),
+        Impl->Scene->System.GetDefaultLayerFilter(PhysicsObjectLayers::Character),
         {},
         {},
-        *Impl->Temp);
+        Impl->Scene->Temp);
 
     CharacterMoveResult result;
     result.Position = FromJphR(character.GetPosition());
@@ -136,7 +137,7 @@ CharacterMoveResult CharacterMover::Move(const CharacterMoveRequest& request)
     result.Support.Kind = ClassifySupport(character);
     if (result.Support.Kind != CharacterSupportKind::None)
     {
-        result.Support.Surface = ResolveGroundEntity(*Impl->System, character);
+        result.Support.Surface = ResolveGroundEntity(Impl->Scene->System, character);
         result.Support.ContactPoint = FromJphR(character.GetGroundPosition());
         result.Support.Normal = FromJph(character.GetGroundNormal());
         result.Support.Velocity = FromJph(character.GetGroundVelocity());
@@ -153,9 +154,20 @@ Vec3d CharacterMover::GetPosition() const
 void CharacterMover::SetPosition(const Vec3d& position)
 {
     Impl->Character->SetPosition(ToJphR(position));
+    Impl->SensorPosition = position;
 }
 
 Vec3d CharacterMover::GetVelocity() const
 {
     return FromJph(Impl->Character->GetLinearVelocity());
+}
+
+void CharacterMover::ObserveSensors(EntityId entity, SensorOverlaps& observations)
+{
+    const auto& character = *Impl->Character;
+    const Vec3d position = GetPosition();
+    if (Impl->Scene->SensorCount != 0)
+        ObserveSensorShape(Impl->Scene->System, *character.GetShape(), character.GetCenterOfMassTransform(),
+                           position - Impl->SensorPosition, entity, observations);
+    Impl->SensorPosition = position;
 }
