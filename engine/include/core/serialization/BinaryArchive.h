@@ -26,6 +26,7 @@ public:
     bool Ok() const override { return IsOk; }
     bool IsText() const override { return false; }
     void MarkInvalidField(std::string_view key) override;
+    IWriteArchive& Value(std::string_view key, const JsonValue& value) override;
 
 private:
     BinaryWriter& Writer;
@@ -59,6 +60,7 @@ public:
     bool IsText() const override { return false; }
     void MarkMissingField(std::string_view key) override;
     void MarkInvalidField(std::string_view key) override;
+    IReadArchive& Value(std::string_view key, JsonValue& value) override;
 
 private:
     BinaryReader& Reader;

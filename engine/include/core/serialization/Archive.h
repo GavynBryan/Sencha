@@ -41,6 +41,7 @@ struct IWriteArchive
     virtual bool Ok() const = 0;
     virtual bool IsText() const = 0;
     virtual void MarkInvalidField(std::string_view key) = 0;
+    virtual IWriteArchive& Value(std::string_view key, const JsonValue& value) = 0;
     virtual ~IWriteArchive() = default;
 
     template <typename FieldT, typename T>
@@ -75,6 +76,7 @@ struct IReadArchive
     virtual bool IsText() const = 0;
     virtual void MarkMissingField(std::string_view key) = 0;
     virtual void MarkInvalidField(std::string_view key) = 0;
+    virtual IReadArchive& Value(std::string_view key, JsonValue& value) = 0;
     virtual ~IReadArchive() = default;
 
     // Binary archives always return true from HasField, so default/optional handling
