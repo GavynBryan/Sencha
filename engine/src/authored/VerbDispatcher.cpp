@@ -1,7 +1,6 @@
 #include <authored/VerbDispatcher.h>
+#include <authored/AuthoredArgumentBinding.h>
 
-#include <assets/data/DataAssetCache.h>
-#include <world/identity/PersistentEntityIndex.h>
 
 #include <cassert>
 #include <utility>
@@ -244,58 +243,9 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
     if (entry == nullptr || entry->Revision != binding.Revision)
         return reject(VerbAdmission::Unavailable);
 
-    if (inputs.size() != binding.Inputs.size())
-        return reject(VerbAdmission::InvalidArguments);
-
-    Scratch.Resize(binding.Constants.Size());
-    for (std::size_t slot = 0; slot < binding.Constants.Size(); ++slot)
-    {
-        const AuthoredValue& constant = binding.Constants.At(slot);
-        PersistentEntityId identity;
-        if (!constant.TryGetPersistentEntity(identity))
-        {
-            Scratch.Set(slot, constant);
-            continue;
-        }
-        // The authored relationship, resolved now: whichever entity carries
-        // the identity at this moment, or nothing. A target that is absent
-        // refuses this request and does not wait for a later one.
-        const EntityId entity =
-            Entities != nullptr ? Entities->TryResolve(identity) : EntityId{};
-        if (!entity.IsValid())
-            return reject(VerbAdmission::UnresolvedReference);
-        Scratch.Set(slot, AuthoredValue::Entity(entity));
-    }
-
-    for (std::size_t index = 0; index < binding.Inputs.size(); ++index)
-    {
-        for (const VerbInputDestination& destination : binding.Inputs[index].Destinations)
-        {
-            if (!AuthoredValueSatisfiesField(inputs[index], destination.Expected))
-                return reject(VerbAdmission::InvalidArguments);
-            // A subtype the field declares is checked against the resident
-            // value, which is the one thing the kind check above cannot see.
-            const DataFieldSchema& expected =
-                destination.Expected.Kind == DataFieldKind::Optional
-                        && destination.Expected.Children.size() == 1
-                    ? destination.Expected.Children.front()
-                    : destination.Expected;
-            const AssetRef* reference = nullptr;
-            if (expected.Kind == DataFieldKind::DataAssetRef
-                && !expected.Reference.DataSubtype.empty()
-                && inputs[index].TryGetDataAsset(reference))
-            {
-                const DataAssetHandle resident =
-                    DataAssets != nullptr ? DataAssets->Find(reference->Path) : DataAssetHandle{};
-                if (!resident.IsValid()
-                    || DataAssets->GetSubtype(resident) != expected.Reference.DataSubtype)
-                {
-                    return reject(VerbAdmission::InvalidArguments);
-                }
-            }
-            Scratch.Set(destination.ArgumentSlot, inputs[index]);
-        }
-    }
+    const auto resolved = ResolveAuthoredArguments(binding.Constants, binding.Inputs, inputs, Entities, DataAssets, Scratch);
+    if (resolved != VerbAdmission::Accepted)
+        return reject(resolved);
 
     invocation.Arguments = &Scratch;
     const VerbAdmission status = Call(*entry, invocation);

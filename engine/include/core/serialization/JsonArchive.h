@@ -26,6 +26,7 @@ public:
     bool Ok() const override { return IsOk; }
     bool IsText() const override { return true; }
     void MarkInvalidField(std::string_view key) override;
+    IWriteArchive& Value(std::string_view key, const JsonValue& value) override;
 
     [[nodiscard]] JsonValue TakeValue();
 
@@ -72,6 +73,7 @@ public:
     bool IsText() const override { return true; }
     void MarkMissingField(std::string_view key) override;
     void MarkInvalidField(std::string_view key) override;
+    IReadArchive& Value(std::string_view key, JsonValue& value) override;
 
 private:
     struct Context

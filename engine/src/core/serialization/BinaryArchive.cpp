@@ -1,4 +1,6 @@
 #include <core/serialization/BinaryArchive.h>
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 
 #include <limits>
 #include <string>
@@ -140,4 +142,24 @@ void BinaryReadArchive::MarkMissingField(std::string_view)
 void BinaryReadArchive::MarkInvalidField(std::string_view)
 {
     IsOk = false;
+}
+
+IWriteArchive& BinaryWriteArchive::Value(std::string_view key, const JsonValue& value)
+{
+    const std::string text = JsonStringify(value);
+    return Field(key, std::string_view(text));
+}
+
+IReadArchive& BinaryReadArchive::Value(std::string_view key, JsonValue& value)
+{
+    std::string text;
+    Field(key, text);
+    if (!IsOk)
+        return *this;
+    auto parsed = JsonParse(text);
+    if (!parsed.has_value())
+        IsOk = false;
+    else
+        value = std::move(*parsed);
+    return *this;
 }

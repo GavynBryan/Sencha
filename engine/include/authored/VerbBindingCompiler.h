@@ -3,6 +3,7 @@
 #include <authored/VerbBinding.h>
 #include <authored/VerbRegistry.h>
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -47,6 +48,13 @@ struct VerbBindingEnvironment
     // fails the subtype check rather than passing it unseen.
     const DataAssetCache* DataAssets = nullptr;
 };
+
+[[nodiscard]] bool CompileAuthoredArguments(std::string_view bindingKey, const DataFieldSchema& root,
+                              std::span<const std::string> inputNames,
+                              std::span<const VerbBindingArgument> arguments,
+                              const VerbBindingEnvironment& environment, AuthoredArguments& constants,
+                              std::vector<VerbCompiledInput>& compiledInputs, bool& referencesChecked,
+                              std::vector<std::string>& errors);
 
 // Compiles one authored record against one catalog. False leaves `out`
 // unspecified and appends at least one located diagnostic.

@@ -271,3 +271,19 @@ const JsonValue* JsonReadArchive::TakeValue(std::string_view key)
         ++Stack.back().Index;
     return value;
 }
+
+IWriteArchive& JsonWriteArchive::Value(std::string_view key, const JsonValue& value)
+{
+    AddValue(key, value);
+    return *this;
+}
+
+IReadArchive& JsonReadArchive::Value(std::string_view key, JsonValue& value)
+{
+    const auto* source = TakeValue(key);
+    if (source == nullptr)
+        IsOk = false;
+    else
+        value = *source;
+    return *this;
+}
