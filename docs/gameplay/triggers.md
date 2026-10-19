@@ -175,7 +175,8 @@ separately in [the sensor review](../physics/sensor-overlap-review.md).
 Measured on an Intel Core i7-13620H (16 logical CPUs), GCC 15.2.1, the
 `profile` preset (`-O3`, `NDEBUG`, symbols and frame pointers), pinned to core 2.
 The build and other tests were idle during measurement.
-[Raw results](benchmarks/trigger-execution-profile.json) retain all samples.
+[Recorded metrics](benchmarks/trigger-execution-profile.json) contain the
+aggregated measurements.
 
 | Active triggers | Median ms | p95 ms | Worst ms | Warmed allocations |
 | ---: | ---: | ---: | ---: | ---: |
