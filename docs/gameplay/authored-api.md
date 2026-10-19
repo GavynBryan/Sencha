@@ -297,6 +297,20 @@ reloaded can retire and revive names or change a contract, and handles are
 what make that safe: anything resolved against the old contract stops
 matching instead of reading the new layout as the old one.
 
+## Scene-inline programs
+
+`CompileAuthoredQueryBinding` compiles Query calls with the same constant,
+reference, default and input-slot rules as Verb bindings. Both use
+`CompileAuthoredArguments`; both resolve typed input packs and persistent entity
+references through `ResolveAuthoredArguments`. This extends the common binding
+mechanism rather than adding a command dispatcher for each producer.
+
+Spatial triggers are the first scene-inline ordered consumer. Their World-owned
+programs, preparation phase, authority contract, serialization and execution
+limits are described in [triggers.md](triggers.md). Opening a scene without its
+game vocabulary preserves the inline values; unresolved active calls fail
+validation rather than disappearing.
+
 ## Queries
 
 `AuthoredQueryDispatcher::Evaluate(handle, arguments, result)` is synchronous

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "build": "release-codegen",
+  "metrics": [
+    { "name": "trigger.0.median", "unit": "ms", "value": 0.000135 },
+    { "name": "trigger.0.p95", "unit": "ms", "value": 0.000138 },
+    { "name": "trigger.0.worst", "unit": "ms", "value": 0.000146 },
+    { "name": "trigger.0.allocations", "unit": "count", "value": 0 },
+    { "name": "trigger.1.median", "unit": "ms", "value": 0.000593 },
+    { "name": "trigger.1.p95", "unit": "ms", "value": 0.000607 },
+    { "name": "trigger.1.worst", "unit": "ms", "value": 0.005041 },
+    { "name": "trigger.1.allocations", "unit": "count", "value": 0 },
+    { "name": "trigger.64.median", "unit": "ms", "value": 0.032077 },
+    { "name": "trigger.64.p95", "unit": "ms", "value": 0.033877 },
+    { "name": "trigger.64.worst", "unit": "ms", "value": 0.050855 },
+    { "name": "trigger.64.allocations", "unit": "count", "value": 0 },
+    { "name": "trigger.512.median", "unit": "ms", "value": 0.267701 },
+    { "name": "trigger.512.p95", "unit": "ms", "value": 0.27692 },
+    { "name": "trigger.512.worst", "unit": "ms", "value": 0.299894 },
+    { "name": "trigger.512.allocations", "unit": "count", "value": 0 },
+    { "name": "trigger.2048.median", "unit": "ms", "value": 1.15271 },
+    { "name": "trigger.2048.p95", "unit": "ms", "value": 1.25671 },
+    { "name": "trigger.2048.worst", "unit": "ms", "value": 1.85401 },
+    { "name": "trigger.2048.allocations", "unit": "count", "value": 0 }
+  ]
+}

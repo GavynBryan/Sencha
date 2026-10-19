@@ -43,6 +43,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/VerbRelay.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/Trigger.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementIntent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
