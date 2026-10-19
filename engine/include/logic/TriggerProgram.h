@@ -37,6 +37,8 @@ inline constexpr std::size_t kTriggerConditionLimit = 32;
 
 [[nodiscard]] JsonValue EmptyTriggerProgram();
 [[nodiscard]] bool ValidateTriggerActivation(const Trigger &trigger, std::vector<std::string> &errors);
+[[nodiscard]] bool CollectTriggerProgramDependencies(const JsonValue &source, std::vector<AssetRef> &dependencies,
+                                                     std::vector<std::string> &errors);
 [[nodiscard]] bool CompileTriggerProgram(const JsonValue &source, const VerbBindingEnvironment &environment,
                                          const AuthoredQueryRegistry *queries, CompiledTriggerProgram &out,
                                          std::vector<std::string> &errors);

@@ -3,6 +3,7 @@
 #include "BakeTriangleGather.h"
 #include "NavigationCookInput.h"
 #include "EditorDocument.h"
+#include "TriggerCookValidation.h"
 
 #include <core/assets/AssetPath.h>
 #include <assets/static_mesh/MeshLoader.h>
@@ -355,6 +356,15 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
             *error = std::move(message);
         return std::nullopt;
     };
+
+    std::vector<std::string> triggerErrors;
+    if (!ValidateTriggerProgramsForCook(document, assets, triggerErrors))
+    {
+        std::string message = "invalid trigger programs:";
+        for (const auto& diagnostic : triggerErrors)
+            message += "\n" + diagnostic;
+        return fail(std::move(message));
+    }
 
     auto data = std::make_unique<DocumentCookInput::Data>();
     DocumentCookRequest& request = data->Request;

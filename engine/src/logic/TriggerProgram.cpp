@@ -25,6 +25,16 @@ const auto &ContextInputs()
     }};
     return inputs;
 }
+bool ValidateVersion(const JsonValue &source, std::vector<std::string> &errors)
+{
+    const auto *version = source.Find("version");
+    if (!source.IsObject() || version == nullptr || !version->IsNumber() || version->AsNumber() != 1)
+    {
+        errors.emplace_back("trigger program version: expected version 1");
+        return false;
+    }
+    return true;
+}
 template <typename Desc>
 bool ParseArguments(const JsonValue &call, Desc &desc, std::vector<AssetRef> &dependencies,
                     std::vector<std::string> &errors)
@@ -140,16 +150,28 @@ bool ValidateTriggerActivation(const Trigger &trigger, std::vector<std::string> 
     return errors.size() == before;
 }
 
+bool CollectTriggerProgramDependencies(const JsonValue &source, std::vector<AssetRef> &dependencies,
+                                      std::vector<std::string> &errors)
+{
+    if (!ValidateVersion(source, errors))
+        return false;
+    const auto collect = [&](const JsonValue &call, const std::string &key)
+    {
+        VerbBindingDesc desc;
+        desc.Key = key;
+        return ParseArguments(call, desc, dependencies, errors);
+    };
+    const bool commands = Calls(source, "commands", kTriggerCommandLimit, collect, errors);
+    const bool conditions = Calls(source, "conditions", kTriggerConditionLimit, collect, errors);
+    return commands && conditions;
+}
+
 bool CompileTriggerProgram(const JsonValue &source, const VerbBindingEnvironment &environment,
                            const AuthoredQueryRegistry *queries, CompiledTriggerProgram &out,
                            std::vector<std::string> &errors)
 {
-    const auto *version = source.Find("version");
-    if (!source.IsObject() || version == nullptr || !version->IsNumber() || version->AsNumber() != 1)
-    {
-        errors.emplace_back("trigger program version: expected version 1");
+    if (!ValidateVersion(source, errors))
         return false;
-    }
     CompiledTriggerProgram result;
     bool ok = true;
     if (const auto *required = source.Find("require_components"))
