@@ -40,3 +40,13 @@ This creation/conversion milestone does not yet provide the orange lettered
 presentation, command inspector or direction affordance. Those remain required
 parts of the trigger authoring implementation; the complete bumper workflow
 must not be inferred from creation alone.
+
+Verification for this creation/conversion milestone: dev configure and the full
+development build passed with warnings treated as errors. All 15 focused
+creation/variant tests passed, including the actual pointer gesture and the
+scene document round-trip. The full serial CTest run with host socket/display
+access reported zero failures across 6,192 enabled entries in 336.16 seconds
+(17 opt-in generators skipped; one additional entry disabled). The sandboxed
+attempt could not host its networking fixture or produce its render captures
+and was stopped before this complete host run. Editor dependency, module ABI,
+physics isolation and render portability checks passed in the complete run.
