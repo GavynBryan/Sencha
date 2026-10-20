@@ -26,6 +26,7 @@ class ViewportLayout;
 class ViewportToolDispatcher;
 class LevelTarget;
 class WorldDocument;
+class EditorEntityRecipeRegistry;
 struct EntitySnapshot;
 struct PivotState;
 
@@ -44,6 +45,7 @@ struct WorkspaceInteractionInputs
     ViewportLayout& Layout;
     PivotState& Pivot;
     EditorAffordanceService& Affordances;
+    EditorEntityRecipeRegistry& CreationRecipes;
     ToolAuthoringSettings Settings;
     // Rewrites the minted identity a duplicated entity carries (world docks and
     // their links). Every duplicate route shares this one, so a gizmo-drag copy

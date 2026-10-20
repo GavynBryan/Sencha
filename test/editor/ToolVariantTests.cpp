@@ -54,11 +54,12 @@ TEST_F(ToolVariantTest, SelectsVariantsAreTheElementKindsAndReadTheLiveMode)
     EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Face);
 }
 
-TEST_F(ToolVariantTest, BrushsVariantsAreItsPrimitives)
+TEST_F(ToolVariantTest, BrushVariantsIncludePrimitivesAndConfiguredVolumes)
 {
     auto& brush = static_cast<BrushTool&>(ToolById("brush"));
     const std::span<const ITool::Variant> variants = brush.GetVariants();
-    ASSERT_EQ(variants.size(), 3u);
+    ASSERT_EQ(variants.size(), 4u);
+    EXPECT_EQ(variants[3].Label, "Trigger Volume");
     for (const ITool::Variant& variant : variants)
     {
         EXPECT_FALSE(variant.Label.empty());

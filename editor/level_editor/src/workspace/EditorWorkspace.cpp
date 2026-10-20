@@ -29,6 +29,7 @@
 #include "commands/CompositeCommand.h"
 #include "document/commands/SetBrushOriginCommand.h"
 #include "document/tools/BrushTool.h"
+#include "document/TriggerVolumeRecipe.h"
 #include "document/tools/EdgeCutTool.h"
 #include "document/tools/FaceCarveTool.h"
 #include "document/tools/SelectTool.h"
@@ -145,6 +146,7 @@ void EditorWorkspace::BuildInteractionState()
             Layout,
             Pivot,
             *Affordances,
+            CreationRecipes,
             ToolAuthoringSettings{ Grid, Resources },
             MakeDuplicateRemap(),
             // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
@@ -221,6 +223,7 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeAbilityGrantsEditorAdapter());
     Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
+    CreationRecipes.Register("trigger_volume", std::make_unique<TriggerVolumeRecipe>());
     Picking.SetEntityProxyProvider(
         [this](const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene)
         { return Affordances->Pick(viewport, point, ray, scene); });

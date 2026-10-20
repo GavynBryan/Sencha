@@ -10,6 +10,9 @@
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "document/EditorEntityRecipe.h"
+#include "document/DocumentSerialization.h"
+#include "document/EntityNameComponent.h"
 #include "document/EntityChangeSet.h"
 #include "document/interactions/BrushCreateDragInteraction.h"
 #include "document/interactions/BrushCreationPlane.h"
@@ -23,11 +26,14 @@
 #include "viewport/GridSettings.h"
 #include "viewport/Picking.h"
 
+#include <world/serialization/ComponentSerializerRegistry.h>
+
 #include <SDL3/SDL_keycode.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <span>
@@ -114,6 +120,7 @@ namespace
 
 BrushTool::BrushTool(LevelTarget& level)
     : Level(level)
+    , VariantMenu(kPrimitiveVariants.begin(), kPrimitiveVariants.end())
 {
 }
 
@@ -243,6 +250,32 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
     ApplyActiveMaterial(mesh, ctx.Resources.Active(AssetType::Material));
     PendingMaterial = ctx.Resources.Active(AssetType::Material);
     PendingEntity = ctx.Scene.CreateBrushFromMesh(transform, std::move(mesh));
+    if (ActiveCreation)
+    {
+        const auto& creation = CreationVariants[*ActiveCreation];
+        const EntitySnapshot defaults = creation.Recipe->Build({ .World = &Level.LevelWorld(),
+            .PlacementPoint = transform.Position, .PlacementNormal = transform.Up() });
+        bool valid = defaults.Components.IsObject() && !defaults.Brush.has_value();
+        if (valid)
+            for (const auto& [key, value] : defaults.Components.AsObject())
+            {
+                auto* serializer = EditorSceneSerializers().FindByJsonKey(key);
+                if (key == "brush" || key == "name" || serializer == nullptr || !serializer->IsRemovable()
+                    || !ctx.Document.RestoreComponent(PendingEntity, *serializer, value))
+                {
+                    valid = false;
+                    break;
+                }
+            }
+        if (!valid)
+        {
+            std::fprintf(stderr, "[editor] brush creation recipe '%s' could not be applied\n", creation.Id.c_str());
+            CancelPending(ctx);
+            return;
+        }
+        ctx.Scene.SetComponent(PendingEntity, EntityNameComponent{
+            InlineString<64>(ctx.Scene.NextEntityName(creation.NameBase)) });
+    }
     ctx.Preview.Clear();
     ctx.Selection.SetSelection({
         SelectableRef::EntitySelection(ctx.Scene.GetRegistry().Id, PendingEntity),
@@ -367,11 +400,13 @@ ITool::Shortcut BrushTool::GetShortcut() const { return { SDLK_B, {} }; }
 
 std::span<const ITool::Variant> BrushTool::GetVariants() const
 {
-    return kPrimitiveVariants;
+    return VariantMenu;
 }
 
 int BrushTool::GetActiveVariant(const ToolContext&) const
 {
+    if (ActiveCreation)
+        return static_cast<int>(kPrimitiveKinds.size() + *ActiveCreation);
     for (std::size_t i = 0; i < kPrimitiveKinds.size(); ++i)
         if (kPrimitiveKinds[i] == Creation.ActivePrimitive)
             return static_cast<int>(i);
@@ -381,14 +416,43 @@ int BrushTool::GetActiveVariant(const ToolContext&) const
 void BrushTool::SelectVariant(ToolContext&, std::size_t index)
 {
     if (index < kPrimitiveKinds.size())
+    {
+        ActiveCreation.reset();
         Creation.ActivePrimitive = kPrimitiveKinds[index];
+    }
+    else if (index - kPrimitiveKinds.size() < CreationVariants.size())
+    {
+        ActiveCreation = index - kPrimitiveKinds.size();
+        Creation.ActivePrimitive = CreationVariants[*ActiveCreation].Primitive;
+    }
 }
 
-std::vector<PropertyNode> BrushTool::Parameters(const ToolContext& ctx) const
+bool BrushTool::AddCreationVariant(std::string id, std::string label, std::string nameBase, BrushPrimitive primitive,
+                                  const IEditorEntityRecipe& recipe)
+{
+    if (FindCreationVariant(id))
+        return false;
+    CreationVariants.push_back({ std::move(id), std::move(label), std::move(nameBase), primitive, &recipe });
+    VariantMenu.push_back({ .Label = CreationVariants.back().Label, .Icon = IconId::Box });
+    return true;
+}
+
+std::optional<std::size_t> BrushTool::FindCreationVariant(std::string_view id) const
+{
+    for (std::size_t index = 0; index < CreationVariants.size(); ++index)
+        if (CreationVariants[index].Id == id)
+            return kPrimitiveKinds.size() + index;
+    return std::nullopt;
+}
+
+std::vector<PropertyNode> BrushTool::Parameters(const ToolContext&) const
 {
     std::vector<PropertyNode> nodes;
+    if (ActiveCreation)
+        nodes.push_back(NoteProperty("recipe", "Create", CreationVariants[*ActiveCreation].Label));
+    const auto primitive = std::ranges::find(kPrimitiveKinds, Creation.ActivePrimitive);
     nodes.push_back(ChoiceProperty("primitive", "Primitive", kPrimitiveNames,
-                                   static_cast<std::size_t>(std::max(0, GetActiveVariant(ctx)))));
+                                   primitive != kPrimitiveKinds.end() ? primitive - kPrimitiveKinds.begin() : 0));
     if (Creation.ActivePrimitive == BrushPrimitive::Cylinder)
         nodes.push_back(NumberProperty("sides", "Sides", Creation.CylinderSides, 3, 64, 1));
     if (Creation.ActivePrimitive == BrushPrimitive::Plane)
