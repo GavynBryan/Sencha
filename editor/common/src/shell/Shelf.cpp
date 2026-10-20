@@ -699,7 +699,8 @@ void Shelf::AskTrash()
     if (users.empty())
         return Trash(file->AssetPath);
     std::vector<std::string> items;
-    for (const std::string& user : users | std::views::take(kMostReferencesShown))
+    const auto shownUsers = users | std::views::take(kMostReferencesShown);
+    for (const std::string& user : shownUsers)
         items.emplace_back(PathLeaf(user));
     if (users.size() > kMostReferencesShown)
         items.push_back(std::format("and {} more", users.size() - kMostReferencesShown));
