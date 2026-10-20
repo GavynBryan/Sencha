@@ -150,6 +150,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "World Dock",          0xBC443581184484CEull, MakeFourCC('W','D','C','K'), 0xB1FD184554231B63ull },
     { "World Link",          0x9046133F6F99B85Dull, MakeFourCC('W','L','N','K'), 0x517CCD3AEDFC1313ull },
     { "ZoneLightmap",        0xC85ECD44D42C5D5Dull, MakeFourCC('Z','L','M','P'), 0x29077D04099615BEull },
+    { "collider",            0x4956A40D955D2368ull, MakeFourCC('C','L','D','R'), 0x0340E1EB868512F2ull },
     { "persistent_id",       0xBB21CC0122FC1DD8ull, MakeFourCC('P','S','I','D'), 0x1F8F8B8897EAC0E1ull },
     { "scene_instance",      0x17084CA474E1957Full, MakeFourCC('S','N','I','N'), 0x9A3576037AB80DDDull },
 };

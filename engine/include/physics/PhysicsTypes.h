@@ -2,9 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
-#include <math/Quat.h>
-#include <math/Vec.h>
+#include <math/MathSchemas.h>
 
 //=============================================================================
 // Physics public vocabulary
@@ -65,4 +65,24 @@ struct BodyTransform
 {
     Vec3d Position;
     Quatf Rotation;
+    bool operator==(const BodyTransform&) const = default;
 };
+
+template <> struct TypeSchema<BodyTransform>
+{
+    static constexpr std::string_view Name = "body_transform";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("position", &BodyTransform::Position).Default(Vec3d::Zero()),
+            MakeField("rotation", &BodyTransform::Rotation).Default(Quatf::Identity()),
+        };
+    }
+};
+
+[[nodiscard]] inline bool IsValidBodyTransform(const BodyTransform& pose)
+{
+    return std::isfinite(pose.Position.X) && std::isfinite(pose.Position.Y) && std::isfinite(pose.Position.Z)
+        && std::isfinite(pose.Rotation.LengthSquared())
+        && std::abs(pose.Rotation.LengthSquared() - 1.0f) <= 1e-4f;
+}

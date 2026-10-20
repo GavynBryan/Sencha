@@ -1,8 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
 
 #include <core/identity/StrongId.h>
+#include <core/metadata/EnumSchema.h>
+#include <core/metadata/Field.h>
+#include <core/metadata/TypeSchema.h>
 #include <math/Vec.h>
 
 // Handle into a CollisionShapeCache for a cooked triangle-mesh shape (static
@@ -26,6 +30,15 @@ enum class CollisionShapeType : uint8_t
     Capsule = 2,
 };
 
+template <> struct EnumSchema<CollisionShapeType>
+{
+    static constexpr std::array Values = {
+        EnumValue{ CollisionShapeType::Sphere, "Sphere" },
+        EnumValue{ CollisionShapeType::Box, "Box" },
+        EnumValue{ CollisionShapeType::Capsule, "Capsule" },
+    };
+};
+
 struct CollisionShape
 {
     CollisionShapeType Type = CollisionShapeType::Box;
@@ -36,6 +49,8 @@ struct CollisionShape
     Vec3d HalfExtents = Vec3d::One();
     float Radius = 0.5f;
     float HalfHeight = 0.5f;
+
+    bool operator==(const CollisionShape&) const = default;
 
     static CollisionShape MakeSphere(float radius)
     {
@@ -62,3 +77,19 @@ struct CollisionShape
         return s;
     }
 };
+
+template <> struct TypeSchema<CollisionShape>
+{
+    static constexpr std::string_view Name = "collision_shape";
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("type", &CollisionShape::Type).Default(CollisionShapeType::Box),
+            MakeField("half_extents", &CollisionShape::HalfExtents).Default(Vec3d::One()),
+            MakeField("radius", &CollisionShape::Radius).Default(0.5f),
+            MakeField("half_height", &CollisionShape::HalfHeight).Default(0.5f),
+        };
+    }
+};
+
+[[nodiscard]] bool IsValidCollisionShape(const CollisionShape& shape);

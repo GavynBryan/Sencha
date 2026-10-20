@@ -48,6 +48,7 @@ struct BodyDesc
     float GravityScale = 1.0f;
     float LinearDamping = 0.05f;
     float AngularDamping = 0.05f;
+    BodyTransform ShapePose{ Vec3d::Zero(), Quatf::Identity() };
 };
 
 class PhysicsWorld

@@ -8,6 +8,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/EActivation.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 
 #include <physics/CollisionShapeCache.h>
 #include <physics/RigidBodyBinding.h>
@@ -145,10 +146,12 @@ void PhysicsWorld::DriveConstraints(float dt)
 
         if (slot.Target.Teleported)
         {
+            TeleportBody(slot.Follower, desiredPos, desiredRot);
+            const Vec3d offsetFromCenter = slot.Target.WorldFrame.Position
+                - FromJphR(bodies.GetCenterOfMassPosition(body));
             const Vec3d bodyCenterVelocity =
                 slot.Target.LinearVelocity
-                - slot.Target.AngularVelocity.Cross(desiredOffset);
-            TeleportBody(slot.Follower, desiredPos, desiredRot);
+                - slot.Target.AngularVelocity.Cross(offsetFromCenter);
             bodies.SetLinearVelocity(body, ToJph(bodyCenterVelocity));
             bodies.SetAngularVelocity(body, ToJph(slot.Target.AngularVelocity));
             slot.Telemetry = PhysicsConstraintTelemetry{};
@@ -180,7 +183,8 @@ void PhysicsWorld::DriveConstraints(float dt)
         const Vec3d desiredFrameVelocity =
             closing + slot.Target.LinearVelocity;
         const Vec3d bodyCenterVelocity =
-            desiredFrameVelocity - angularVelocity.Cross(actualOffset);
+            desiredFrameVelocity - angularVelocity.Cross(
+                actualFramePosition - FromJphR(bodies.GetCenterOfMassPosition(body)));
 
         bodies.SetLinearVelocity(body, ToJph(bodyCenterVelocity));
         bodies.SetAngularVelocity(body, ToJph(angularVelocity));
@@ -194,13 +198,27 @@ void PhysicsWorld::DriveConstraints(float dt)
 
 PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
 {
+    if (!IsValidBodyTransform(desc.ShapePose))
+        return {};
     JPH::ShapeRefC shape;
-    if (desc.MeshShape.IsValid() && ShapeCache != nullptr)
+    if (desc.MeshShape.IsValid())
+    {
+        if (ShapeCache == nullptr)
+            return {};
         shape = ShapeCache->Internal().Resolve(desc.MeshShape);
+    }
     else
         shape = BuildShape(desc.Shape);
     if (shape == nullptr)
         return PhysicsBodyId{};
+    if (desc.ShapePose.Position != Vec3d::Zero() || desc.ShapePose.Rotation != Quatf::Identity())
+    {
+        const auto result = JPH::RotatedTranslatedShapeSettings(
+            ToJph(desc.ShapePose.Position), ToJph(desc.ShapePose.Rotation), shape).Create();
+        if (!result.IsValid())
+            return {};
+        shape = result.Get();
+    }
 
     JPH::BodyCreationSettings settings(
         shape,
