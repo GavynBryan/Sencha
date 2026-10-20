@@ -4,6 +4,8 @@
 #include "NavigationCookInput.h"
 #include "EditorDocument.h"
 #include "TriggerCookValidation.h"
+#include "TriggerSensorCook.h"
+#include "SceneCookProjection.h"
 
 #include <core/assets/AssetPath.h>
 #include <assets/static_mesh/MeshLoader.h>
@@ -211,101 +213,7 @@ std::vector<LightmapPlacement> CollectLightmapPlacements(
     return placements;
 }
 
-JsonValue* FindMutable(JsonValue& value, std::string_view key)
-{
-    if (!value.IsObject())
-        return nullptr;
-    for (auto& [field, child] : value.AsObject())
-        if (field == key)
-            return &child;
-    return nullptr;
-}
 
-JsonValue BuildPassthroughScene(const EditorDocument& document,
-                                LoggingProvider& logging,
-                                AssetSystem* assets,
-                                std::unordered_map<EntityIndex, std::uint32_t>& sceneIndices)
-{
-    SceneSerializationContext context(logging, assets);
-    JsonValue serialized =
-        SaveSceneJson(document.GetRegistry(), EditorSceneSerializers(), context);
-    const JsonValue* sourceEntities = serialized.Find("entities");
-    const JsonValue* sourceHierarchy = serialized.Find("hierarchy");
-    if (sourceEntities == nullptr || !sourceEntities->IsArray()
-        || sourceHierarchy == nullptr || !sourceHierarchy->IsArray())
-        return {};
-
-    const std::vector<EntityId> alive =
-        document.GetRegistry().Components.GetAliveEntities();
-    if (alive.size() != sourceEntities->AsArray().size())
-        return {};
-
-    std::vector<std::uint32_t> remap(alive.size(), UINT32_MAX);
-    JsonValue::Array entities;
-    for (std::size_t oldIndex = 0; oldIndex < alive.size(); ++oldIndex)
-    {
-        const EntityId entity = alive[oldIndex];
-        if (document.GetScene().TryGetBrush(entity) != nullptr)
-            continue;
-
-        remap[oldIndex] = static_cast<std::uint32_t>(entities.size());
-        sceneIndices.emplace(entity.Index, remap[oldIndex]);
-        JsonValue entityJson = sourceEntities->AsArray()[oldIndex];
-        if (JsonValue* components = FindMutable(entityJson, "components");
-            components != nullptr && components->IsObject())
-        {
-            // Editor-only components are absent from the runtime schema, and
-            // an unknown component key fails the zone import by design.
-            std::erase_if(components->AsObject(),
-                [](const auto& field) { return IsEditorOnlyComponent(field.first); });
-
-            // Navigation links are cooked into the zone's navigation file;
-            // the runtime reads them from there, never from the scene.
-            std::erase_if(components->AsObject(),
-                [](const auto& field) { return field.first == TypeSchema<NavLink>::Name; });
-
-            // Expanded placement members carry their instance identity into
-            // the cooked scene (locked decision D1): the placement id, and
-            // the source as its asset path -- the cook stamps it to a stable
-            // id exactly like every other ref.
-            if (const SceneInstanceId owner = document.SceneInstanceOwnerOf(entity);
-                owner.IsValid())
-            {
-                components->AsObject().push_back({ "scene_instance",
-                    JsonValue(JsonValue::Object{
-                        { "source", JsonValue(document.SceneInstanceSourceOf(entity)) },
-                        { "id", JsonValue(SceneInstanceIdToString(owner)) },
-                    }) });
-            }
-        }
-        entities.push_back(std::move(entityJson));
-    }
-
-    JsonValue::Array hierarchy;
-    for (const JsonValue& relation : sourceHierarchy->AsArray())
-    {
-        const JsonValue* child = relation.Find("child");
-        const JsonValue* parent = relation.Find("parent");
-        if (child == nullptr || !child->IsNumber()
-            || parent == nullptr || !parent->IsNumber())
-            continue;
-        const std::uint32_t oldChild = static_cast<std::uint32_t>(child->AsNumber());
-        const std::uint32_t oldParent = static_cast<std::uint32_t>(parent->AsNumber());
-        if (oldChild >= remap.size() || oldParent >= remap.size()
-            || remap[oldChild] == UINT32_MAX || remap[oldParent] == UINT32_MAX)
-            continue;
-        hierarchy.push_back(JsonValue(JsonValue::Object{
-            { "child", JsonValue(static_cast<double>(remap[oldChild])) },
-            { "parent", JsonValue(static_cast<double>(remap[oldParent])) },
-        }));
-    }
-
-    return JsonValue(JsonValue::Object{
-        { "version", JsonValue(1.0) },
-        { "entities", JsonValue(std::move(entities)) },
-        { "hierarchy", JsonValue(std::move(hierarchy)) },
-    });
-}
 } // namespace
 
 DocumentCookInput::DocumentCookInput(std::unique_ptr<Data> data)
@@ -358,9 +266,13 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     };
 
     std::vector<std::string> triggerErrors;
-    if (!ValidateTriggerProgramsForCook(document, assets, triggerErrors))
+    std::vector<EntityId> referencedEntities;
+    std::vector<CookTriggerSensor> sensors;
+    const bool validPrograms = ValidateTriggerProgramsForCook(document, assets, triggerErrors, &referencedEntities);
+    const bool validSensors = CollectTriggerSensors(document.GetScene(), sensors, triggerErrors);
+    if (!validPrograms || !validSensors)
     {
-        std::string message = "invalid trigger programs:";
+        std::string message = "invalid triggers:";
         for (const auto& diagnostic : triggerErrors)
             message += "\n" + diagnostic;
         return fail(std::move(message));
@@ -403,9 +315,9 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     snapshot.Halo.assign(halo.begin(), halo.end());
 
     AssetSystem* assetSystem = assets != nullptr ? &assets->Assets : nullptr;
-    std::unordered_map<EntityIndex, std::uint32_t> sceneIndices;
-    snapshot.PassthroughScene = BuildPassthroughScene(
-        document, logging, assetSystem, sceneIndices);
+    std::unordered_map<EntityId, std::uint32_t, EntityIdHash> sceneIndices;
+    snapshot.PassthroughScene = BuildRuntimeSceneProjection(
+        document, logging, assetSystem, sensors, referencedEntities, sceneIndices);
     if (!snapshot.PassthroughScene.IsObject())
         return fail("could not serialize passthrough scene");
 
@@ -447,7 +359,7 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
                                     assetsRoot, logging);
     for (LightmapPlacement& placement : snapshot.Placements)
     {
-        const auto found = sceneIndices.find(placement.Entity.Index);
+        const auto found = sceneIndices.find(placement.Entity);
         if (found == sceneIndices.end())
             return fail("placed mesh is missing from passthrough scene");
         placement.SceneEntityIndex = found->second;

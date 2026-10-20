@@ -19,3 +19,5 @@ struct BrushBox
 // Other geometry fails rather than substituting its bounding box.
 [[nodiscard]] std::optional<BrushBox> ExtractBrushBox(
     const BrushMesh& mesh, const Transform3f& transform, std::string& error);
+[[nodiscard]] std::optional<BrushBox> ExtractBrushBox(
+    const BrushMesh& mesh, const Mat4& transform, std::string& error);

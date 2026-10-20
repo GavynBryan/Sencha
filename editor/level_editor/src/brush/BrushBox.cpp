@@ -8,6 +8,12 @@
 std::optional<BrushBox> ExtractBrushBox(
     const BrushMesh& mesh, const Transform3f& transform, std::string& error)
 {
+    return ExtractBrushBox(mesh, transform.ToMat4(), error);
+}
+
+std::optional<BrushBox> ExtractBrushBox(
+    const BrushMesh& mesh, const Mat4& transform, std::string& error)
+{
     const auto fail = [&error](const char* message) -> std::optional<BrushBox>
     {
         error = message;

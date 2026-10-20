@@ -4,6 +4,7 @@
 #include "document/TriggerCookValidation.h"
 
 #include <authored/WorldVocabulary.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
@@ -11,6 +12,9 @@
 #include <world/registry/Registry.h>
 
 #include <gtest/gtest.h>
+
+#include <filesystem>
+#include <fstream>
 
 namespace
 {
@@ -104,4 +108,40 @@ TEST_F(TriggerCookValidationTest, ActivationConfigurationAndMissingAssetEnvironm
     EXPECT_FALSE(ValidateTriggerProgramsForCook(*Document, nullptr, Errors));
     ASSERT_FALSE(Errors.empty());
     EXPECT_NE(Errors[0].find("asset environment"), std::string::npos);
+}
+
+TEST_F(TriggerCookValidationTest, LoadsDataThroughAssetSystemForSubtypeCheckingAndReleasesItsLease)
+{
+    RuntimeAssets assets(Logging, EditorSceneSerializers());
+    int compiled = 0;
+    ASSERT_TRUE(assets.DataTypes.Register({ .Name = "test.trigger.config", .Compile = [&](const JsonValue&)
+    {
+        ++compiled;
+        DataAssetCompileResult result;
+        result.Value = std::make_shared<int>(7);
+        return result;
+    } }));
+    const auto path = std::filesystem::temp_directory_path() / "sencha_trigger_validation_config.sdata";
+    struct RemoveFile
+    {
+        std::filesystem::path Path;
+        ~RemoveFile() { std::error_code error; std::filesystem::remove(Path, error); }
+    } remove{ path };
+    std::ofstream(path) << R"({"type":"test.trigger.config","version":1,"data":{}})";
+    ASSERT_TRUE(RegisterAssetFile("asset://data/config.sdata", path, assets.Registry, assets.Assets.Kinds()));
+    auto& world = Document->GetScene().GetRegistry().Components;
+    VerbRegistrationScope scope(*FindVerbRegistry(world), "test.data");
+    VerbDefinition call;
+    call.Name = "test.data";
+    auto field = MakeDataField(DataFieldKind::DataAssetRef, "config", "Config");
+    field.Reference.DataSubtype = "test.trigger.config";
+    call.Arguments.Children.push_back(std::move(field));
+    (void)scope.Declare(std::move(call));
+    ASSERT_TRUE(scope.Commit());
+    Program(R"({"version":1,"commands":[{"verb":"test.data","arguments":{"config":{"data":"asset://data/config.sdata"}}}]})");
+    EXPECT_FALSE(assets.Assets.IsResident("asset://data/config.sdata", AssetType::Data));
+    ASSERT_TRUE(ValidateTriggerProgramsForCook(*Document, &assets, Errors));
+    EXPECT_TRUE(Errors.empty());
+    EXPECT_EQ(compiled, 1);
+    EXPECT_FALSE(assets.Assets.IsResident("asset://data/config.sdata", AssetType::Data));
 }
