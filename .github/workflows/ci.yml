@@ -38,12 +38,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
-            clang \
+            clang-18 \
             clang-tidy \
             glslc \
-            libclang-dev \
+            libclang-18-dev \
+            libfreetype-dev \
             libvulkan-dev \
-            llvm-dev \
+            llvm-18-dev \
             ninja-build
 
       - name: Build and install SDL3
@@ -57,6 +58,8 @@ jobs:
         run: >-
           cmake --preset ci
           -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}"
+          -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang
+          -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm
 
       - name: Build
         run: |
