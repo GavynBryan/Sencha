@@ -147,6 +147,7 @@ void RigidBodyBinding::Reconcile(
 
         BodyDesc desc;
         desc.Shape = collider.Shape;
+        desc.ShapePose = collider.ShapePose;
         desc.MeshShape = collider.Mesh;
         desc.Position = pose.Position;
         desc.Rotation = pose.Rotation;

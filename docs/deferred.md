@@ -24,7 +24,7 @@ do the work and delete the entry.
 
 ## Runtime collider configuration reconciliation
 
-- **What:** `RigidBodyBinding` captures `Collider.Shape`, `Mesh`, `IsTrigger`,
+- **What:** `RigidBodyBinding` captures `Collider.Shape`, `ShapePose`, `Mesh`, `IsTrigger`,
   derived collision layer, and most `RigidBody` configuration when creating a
   body. Value edits do not recreate or update that body, even if a structural
   change causes another reconciliation pass. Only kinematic pose and dynamic

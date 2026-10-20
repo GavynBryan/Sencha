@@ -117,6 +117,8 @@ inline JPH::EMotionType ToJph(BodyMotion motion)
 // degenerate descriptor; callers treat that as "no shape".
 inline JPH::ShapeRefC BuildShape(const CollisionShape& shape)
 {
+    if (!IsValidCollisionShape(shape))
+        return {};
     JPH::ShapeSettings::ShapeResult result;
     switch (shape.Type)
     {

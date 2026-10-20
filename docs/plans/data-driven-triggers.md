@@ -92,8 +92,10 @@ Continuous nonlinear sensor trajectories remain a recorded limitation in
 
 ## Collider integration boundary under review
 
-The next source change needs explicit SDK/format approval under CLAUDE.md.
-No collider layout or serializer change has been made yet.
+The user approved the collider SDK/scene-contract extension on 2026-10-19.
+The physical contract adds an identity-default shape pose to Collider/BodyDesc
+and a validated primitive scene schema. Brush sensor projection follows in the
+next review unit; no independent editable trigger shape is introduced.
 
 A volume's mesh can be offset or rotated relative to its entity. Changing the
 entity transform during cook would change trigger-relative directions, parent

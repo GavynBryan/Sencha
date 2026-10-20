@@ -13,7 +13,7 @@
 namespace
 {
     template<typename T>
-    DataFieldSchema Field(std::string key, std::string label, std::string summary = {})
+    DataFieldSchema QueryField(std::string key, std::string label, std::string summary = {})
     {
         DataFieldSchema field = MakeDataField(DataFieldKind::String, std::move(key), std::move(label),
                                               std::move(summary));
@@ -23,7 +23,7 @@ namespace
 
     DataFieldSchema IgnoreField()
     {
-        return Field<std::optional<EntityId>>("ignore", "Ignore", "An entity whose bodies the query passes through.");
+        return QueryField<std::optional<EntityId>>("ignore", "Ignore", "An entity whose bodies the query passes through.");
     }
 
     // Triggers count: an authored trace or overlap reports what is there. Views
@@ -49,17 +49,17 @@ void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope)
     trace.Description = "The first body a ray strikes.";
     trace.Category = "Physics";
     trace.Arguments.Children = {
-        Field<Vec3d>("origin", "Origin"),
-        Field<Vec3d>("direction", "Direction"),
-        Field<float>("range", "Range", "How far the ray reaches, in meters."),
+        QueryField<Vec3d>("origin", "Origin"),
+        QueryField<Vec3d>("direction", "Direction"),
+        QueryField<float>("range", "Range", "How far the ray reaches, in meters."),
         IgnoreField(),
     };
     trace.Result = AuthoredRecordRoot();
     trace.Result.Children = {
-        Field<bool>("hit", "Hit", "Whether the ray struck anything."),
-        Field<EntityId>("entity", "Entity", "What it struck, when an entity owns the body."),
-        Field<Vec3d>("point", "Point"),
-        Field<Vec3d>("normal", "Normal"),
+        QueryField<bool>("hit", "Hit", "Whether the ray struck anything."),
+        QueryField<EntityId>("entity", "Entity", "What it struck, when an entity owns the body."),
+        QueryField<Vec3d>("point", "Point"),
+        QueryField<Vec3d>("normal", "Normal"),
     };
     (void)scope.Declare(std::move(trace));
 
@@ -69,12 +69,12 @@ void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope)
     overlap.Description = "Every entity whose body overlaps a sphere.";
     overlap.Category = "Physics";
     overlap.Arguments.Children = {
-        Field<Vec3d>("position", "Position"),
-        Field<float>("radius", "Radius", "In meters."),
+        QueryField<Vec3d>("position", "Position"),
+        QueryField<float>("radius", "Radius", "In meters."),
         IgnoreField(),
     };
     overlap.Result = MakeDataField(DataFieldKind::Array, "entities", "Entities");
-    overlap.Result.Children = { Field<EntityId>("entity", "Entity") };
+    overlap.Result.Children = { QueryField<EntityId>("entity", "Entity") };
     (void)scope.Declare(std::move(overlap));
 }
 

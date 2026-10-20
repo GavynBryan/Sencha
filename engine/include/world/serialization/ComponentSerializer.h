@@ -9,6 +9,7 @@
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
+#include <world/serialization/SceneComponentValidation.h>
 
 #include <cassert>
 #include <cstddef>
@@ -247,8 +248,8 @@ public:
             if (!component)
                 return true;
 
-            return SceneComponentSerialization::SaveFields(archive, *component,
-                                                           context);
+            return SceneComponentValidation<Component>::Validate(*component, archive)
+                && SceneComponentSerialization::SaveFields(archive, *component, context);
         }
     }
 
@@ -273,6 +274,11 @@ public:
         if (!SceneComponentSerialization::LoadFields(archive, component, context))
         {
             // A partial load still acquired whatever it got through.
+            SceneComponentSerialization::ReleaseFields(component, context);
+            return false;
+        }
+        if (!SceneComponentValidation<Component>::Validate(component, archive))
+        {
             SceneComponentSerialization::ReleaseFields(component, context);
             return false;
         }
