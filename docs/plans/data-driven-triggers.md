@@ -2,7 +2,8 @@
 
 Status: implementation in progress. The complete authoring workflow is not
 delivered. The sensor foundation is merged in #176; generic movement remains in #177.
-The continuation implements compact Trigger components, inline program ownership,
+[Runtime PR #178](https://github.com/GavynBryan/Sencha/pull/178) implements
+compact Trigger components, inline program ownership,
 shared typed Verb/Query argument binding, authoritative execution and scene
 serialization. Trigger brush cooking, inspector and authored bumper demonstration
 remain required subsequent work.
@@ -62,10 +63,15 @@ Module fingerprint inputs now explicitly include archive headers.
 
 ## Remaining required work
 
-- Publish and review the verified runtime unit. The full dev build and serial
-  CTest passed (6,148 enabled entries, zero failures); inline program save/load,
-  actual `.smap` package import and module boundary checks are covered.
-- Cook validation and dependency preloading for scene-inline programs.
+- Review runtime PR #178. Its full dev build and serial CTest passed
+  (6,148 enabled entries, zero failures); inline program save/load, actual
+  `.smap` package import and module boundary checks are covered. Linux CI stops
+  during configuration on a missing LLVM-16 `libclangBasic.a`, before compiling.
+- Complete the cook unit on `codex/trigger-volume-cook`. Its prerequisite now validates
+  programs through the shared compiler before document collection, including
+  eligibility and required data preloads through AssetSystem. Unknown disabled
+  rows are retained. Geometry and program validation have focused tests; sensor
+  generation and full save/cook/load coverage are still required.
 - Brush-derived oriented sensor geometry, supported-shape diagnostics and
   `.smap` identity/reference preservation, excluded from solid/nav/render cooks.
 - Brush-first creation and safe conversion using existing transactions,
@@ -83,3 +89,55 @@ Module fingerprint inputs now explicitly include archive headers.
 
 Continuous nonlinear sensor trajectories remain a recorded limitation in
 `docs/deferred.md`; supported linear crossings have physics regression tests.
+
+## Collider integration boundary under review
+
+The next source change needs explicit SDK/format approval under CLAUDE.md.
+No collider layout or serializer change has been made yet.
+
+A volume's mesh can be offset or rotated relative to its entity. Changing the
+entity transform during cook would change trigger-relative directions, parent
+relationships and child transforms. A separately editable collider or hidden
+child entity would create another geometric authority. The general correction
+is a shape pose relative to the body's origin:
+
+- Add identity-default `BodyTransform ShapePose` to `Collider` and `BodyDesc`.
+  Its translation and rotation place the primitive or cached shape in body space.
+- Realize it through Jolt's existing rotated/translated shape decorator. Body
+  transform, driven attachment frames and teleport APIs retain their origin
+  semantics; the backend's center-of-mass transforms still drive queries.
+- Give inline Collider primitives a scene schema and serializer. Do not persist
+  process-local mesh cache handles. Unsupported mesh-backed authoring must report
+  an error until its existing cooked asset ownership path can represent it.
+- Derive dimensions and shape pose from evaluated brush geometry at cook time.
+  Preserve the entity's identity, transform and authored axes. Reject non-boxes,
+  multiple pieces and affine shear rather than approximating them.
+- Preserve runtime-bearing brush entities and required hierarchy ancestors in
+  passthrough projection; strip only editor geometry and metadata. Existing
+  solid render/collision/navigation collection remains restricted to Solid.
+- Test offset/rotation, parent movement, body-origin versus COM semantics,
+  sensor endpoint occupancy, teleport and scene/package round trips.
+
+`ExtractBrushBox` is the exact six-quad recognizer for this consumer. It verifies
+all corners, face adjacency and closure, and handles local geometry edits,
+rotation, scale and reflection. It has nine focused tests. Until the collider
+change lands, it is a tested prerequisite, not completed sensor cooking.
+
+The extension changes SDK layouts and adds a previously unavailable collider
+scene contract. Modules must rebuild; archive and existing scene scalar
+encodings need no migration. Collider configuration is still supplied before
+initial binding. Live resident collider edits remain the generic reconciliation
+work recorded in `docs/deferred.md`; a fresh play/cook binding honors the new
+configuration without a trigger-specific recreation path.
+
+Cook-prerequisite verification: the dev configure and full build passed with
+warnings as errors. Serial CTest reported zero failures across 6,165 enabled
+entries in 331.78 seconds (17 opt-in generators skipped; one additional test
+disabled). The focused CTest selection passed all 62 entries, including required
+fixtures, with its benchmark skipped. This does not establish the absent
+brush-to-sensor, inspector, or authored game demonstration paths.
+
+The remaining cook integration must also ensure disabled unknown invocation
+asset strings do not create executable dependencies: authoring must retain the
+rows, while runtime dependency publication must reflect executable commands.
+The generic `.smap` reference collector currently scans all nested asset strings.

@@ -51,7 +51,6 @@ std::shared_ptr<const TriggerPrograms::Program> TriggerPrograms::Resolve(EntityI
     auto *entry = Entries.Find(handle);
     if (entry == nullptr || entry->Owner != owner)
         return nullptr;
-    const auto *queries = FindAuthoredQueryRegistry(world);
     const auto stamp = Stamp::Of(world, environment);
     if (entry->Built && entry->BuiltAgainst == stamp)
         return entry->Compiled;
@@ -61,24 +60,36 @@ std::shared_ptr<const TriggerPrograms::Program> TriggerPrograms::Resolve(EntityI
     ++Rebuilds;
     auto program = std::make_shared<Program>();
     std::vector<std::string> errors;
-    bool ok = CompileTriggerProgram(entry->Source, environment, queries, *program, errors);
-    for (std::size_t i = 0; i < program->RequiredComponents.size(); ++i)
-    {
-        const auto id = world.GetComponentIdByType(program->RequiredComponents[i]);
-        if (id == InvalidComponentId)
-        {
-            errors.push_back(std::format("trigger require_components[{}]: unregistered component '{}'", i,
-                                         entry->Source.Find("require_components")->AsArray()[i].AsString()));
-            ok = false;
-        }
-        else
-            program->Eligibility.push_back(id);
-    }
+    const bool ok = CompileWorldTriggerProgram(entry->Source, world, environment, *program, errors);
     for (auto &error : errors)
         newErrors.push_back(std::format("trigger {}:{}: {}", owner.Index, owner.Generation, error));
     if (ok)
         entry->Compiled = std::move(program);
     return entry->Compiled;
+}
+bool CompileWorldTriggerProgram(const JsonValue &source, const World &world,
+                                const VerbBindingEnvironment &environment, TriggerPrograms::Program &out,
+                                std::vector<std::string> &errors)
+{
+    TriggerPrograms::Program program;
+    if (!CompileTriggerProgram(source, environment, FindAuthoredQueryRegistry(world), program, errors))
+        return false;
+    bool ok = true;
+    for (std::size_t i = 0; i < program.RequiredComponents.size(); ++i)
+    {
+        const auto id = world.GetComponentIdByType(program.RequiredComponents[i]);
+        if (id == InvalidComponentId)
+        {
+            errors.push_back(std::format("trigger require_components[{}]: unregistered component '{}'", i,
+                                         source.Find("require_components")->AsArray()[i].AsString()));
+            ok = false;
+        }
+        else
+            program.Eligibility.push_back(id);
+    }
+    if (ok)
+        out = std::move(program);
+    return ok;
 }
 TriggerPrograms::Stamp TriggerPrograms::Stamp::Of(const World &world, const VerbBindingEnvironment &environment)
 {

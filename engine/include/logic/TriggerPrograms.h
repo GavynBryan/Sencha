@@ -64,3 +64,6 @@ class TriggerPrograms
 [[nodiscard]] TriggerPrograms &TriggerProgramsOf(World &world);
 [[nodiscard]] bool SetTriggerProgram(World &world, EntityId trigger, JsonValue source);
 [[nodiscard]] const JsonValue *TriggerProgramSource(const World &world, EntityId trigger);
+[[nodiscard]] bool CompileWorldTriggerProgram(const JsonValue &source, const World &world,
+                                              const VerbBindingEnvironment &environment,
+                                              TriggerPrograms::Program &out, std::vector<std::string> &errors);

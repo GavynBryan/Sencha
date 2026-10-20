@@ -119,3 +119,41 @@ TEST_F(TriggerProgramTest, ActivationIntervalsMustBeFiniteAndValid)
     trigger.Cooldown = -1;
     EXPECT_FALSE(ValidateTriggerActivation(trigger, Errors));
 }
+
+TEST_F(TriggerProgramTest, DependenciesAreAvailableBeforeVocabularyOrSubtypeCompilation)
+{
+    const auto source = JsonParse(R"({"version":1,"commands":[{"verb":"game.unavailable","arguments":{
+        "definition":{"data":"asset://data/definition.sdata"},"effect":{"asset":"asset://effects/test.sdata"}}}],
+        "conditions":[{"query":"game.unavailable","arguments":{"rule":{"data":"asset://data/rule.sdata"}}}]})");
+    ASSERT_TRUE(source);
+    std::vector<AssetRef> dependencies;
+    ASSERT_TRUE(CollectTriggerProgramDependencies(*source, dependencies, Errors));
+    ASSERT_EQ(dependencies.size(), 3u);
+    EXPECT_EQ(dependencies[0].Type, AssetType::Data);
+    EXPECT_EQ(dependencies[0].Path, "asset://data/definition.sdata");
+    EXPECT_EQ(dependencies[1].Type, AssetType::Unknown);
+    EXPECT_EQ(dependencies[2].Path, "asset://data/rule.sdata");
+}
+
+TEST_F(TriggerProgramTest, DependencyCollectionSkipsDisabledUnknownCalls)
+{
+    const auto source = JsonParse(R"({"version":1,"commands":[{"enabled":false,"verb":"game.unknown",
+        "arguments":{"broken":{"new_source":{"asset":"asset://missing.sdata"}}}}]})");
+    ASSERT_TRUE(source);
+    std::vector<AssetRef> dependencies;
+    EXPECT_TRUE(CollectTriggerProgramDependencies(*source, dependencies, Errors));
+    EXPECT_TRUE(dependencies.empty());
+    EXPECT_TRUE(Errors.empty());
+}
+
+TEST_F(TriggerProgramTest, InvalidDependencyArgumentsKeepTheirRowAndArgumentLocation)
+{
+    const auto source = JsonParse(R"({"version":1,"conditions":[{"query":"game.rule",
+        "arguments":{"rule":{"data":17}}}]})");
+    ASSERT_TRUE(source);
+    std::vector<AssetRef> dependencies;
+    EXPECT_FALSE(CollectTriggerProgramDependencies(*source, dependencies, Errors));
+    ASSERT_FALSE(Errors.empty());
+    EXPECT_NE(Errors[0].find("conditions[0]"), std::string::npos);
+    EXPECT_NE(Errors[0].find("rule"), std::string::npos);
+}
