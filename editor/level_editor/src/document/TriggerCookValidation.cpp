@@ -7,12 +7,31 @@
 #include <core/identity/Id.h>
 #include <logic/TriggerPrograms.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/registry/Registry.h>
 
 #include <format>
+#include <algorithm>
+
+namespace
+{
+void CollectEntityTargets(const AuthoredValue& value, const PersistentEntityIndex& index, std::vector<EntityId>& out)
+{
+    PersistentEntityId id;
+    if (value.TryGetPersistentEntity(id))
+    {
+        const EntityId entity = index.TryResolve(id);
+        if (entity.IsValid() && std::ranges::find(out, entity) == out.end())
+            out.push_back(entity);
+    }
+    for (const auto& child : value.Children())
+        CollectEntityTargets(child, index, out);
+}
+}
 
 bool ValidateTriggerProgramsForCook(
-    const EditorDocument& document, RuntimeAssets* assets, std::vector<std::string>& errors)
+    const EditorDocument& document, RuntimeAssets* assets, std::vector<std::string>& errors,
+    std::vector<EntityId>* referencedEntities)
 {
     const World& world = document.GetRegistry().Components;
     if (!world.IsRegistered<Trigger>())
@@ -51,7 +70,18 @@ bool ValidateTriggerProgramsForCook(
                     leases.push_back(std::move(lease));
             }
             TriggerPrograms::Program program;
-            (void)CompileWorldTriggerProgram(*source, world, environment, program, located);
+            if (CompileWorldTriggerProgram(*source, world, environment, program, located) && referencedEntities != nullptr)
+            {
+                if (const auto* index = world.TryGetResource<PersistentEntityIndex>())
+                {
+                    for (const auto& command : program.Commands)
+                        for (const auto& value : command.Binding.Constants.Values())
+                            CollectEntityTargets(value, *index, *referencedEntities);
+                    for (const auto& condition : program.Conditions)
+                        for (const auto& value : condition.Binding.Constants.Values())
+                            CollectEntityTargets(value, *index, *referencedEntities);
+                }
+            }
         }
         const auto* identity = world.TryGet<PersistentIdComponent>(entity);
         const std::string owner = identity != nullptr

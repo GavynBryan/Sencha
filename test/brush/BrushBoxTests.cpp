@@ -117,3 +117,12 @@ TEST(BrushBox, SupportsThinBoxesWithoutMergingTheirCorners)
 {
     ExpectExactBox(BrushOps::MakeBox({ 0.0001f, 10, 100 }), Transform3f::Identity());
 }
+
+TEST(BrushBox, MatrixCompositionRejectsShearInsteadOfDroppingItDuringTrsComposition)
+{
+    const Transform3f scale{ {}, Quatf::Identity(), { 2, 1, 1 } };
+    const Transform3f placement{ {}, Quatf::FromAxisAngle(Vec3d::Up(), 0.7f), Vec3d::One() };
+    std::string error;
+    EXPECT_FALSE(ExtractBrushBox(BrushOps::MakeBox({ 1, 1, 1 }), scale.ToMat4() * placement.ToMat4(), error));
+    EXPECT_FALSE(error.empty());
+}

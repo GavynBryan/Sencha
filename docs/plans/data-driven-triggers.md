@@ -93,9 +93,9 @@ Continuous nonlinear sensor trajectories remain a recorded limitation in
 ## Collider integration boundary under review
 
 The user approved the collider SDK/scene-contract extension on 2026-10-19.
-The physical contract adds an identity-default shape pose to Collider/BodyDesc
-and a validated primitive scene schema. Brush sensor projection follows in the
-next review unit; no independent editable trigger shape is introduced.
+Implementation continues on `codex/trigger-sensor-cook`, stacked on #179.
+The shape pose, serializer validation, exact brush sensor generation and runtime
+scene projection are implemented; complete verification is in progress.
 
 A volume's mesh can be offset or rotated relative to its entity. Changing the
 entity transform during cook would change trigger-relative directions, parent
@@ -122,8 +122,8 @@ is a shape pose relative to the body's origin:
 
 `ExtractBrushBox` is the exact six-quad recognizer for this consumer. It verifies
 all corners, face adjacency and closure, and handles local geometry edits,
-rotation, scale and reflection. It has nine focused tests. Until the collider
-change lands, it is a tested prerequisite, not completed sensor cooking.
+rotation, scale and reflection. It has ten focused tests. It now feeds `CollectTriggerSensors`; matrix composition preserves shear for
+validation rather than dropping it through a TRS decomposition.
 
 The extension changes SDK layouts and adds a previously unavailable collider
 scene contract. Modules must rebuild; archive and existing scene scalar
@@ -139,7 +139,22 @@ disabled). The focused CTest selection passed all 62 entries, including required
 fixtures, with its benchmark skipped. This does not establish the absent
 brush-to-sensor, inspector, or authored game demonstration paths.
 
-The remaining cook integration must also ensure disabled unknown invocation
-asset strings do not create executable dependencies: authoring must retain the
-rows, while runtime dependency publication must reflect executable commands.
-The generic `.smap` reference collector currently scans all nested asset strings.
+Cook projection now removes disabled invocations from the runtime execution
+program before generic dependency collection. Authoring retains the original
+rows losslessly; `.smap` preloads only the executable subset. The integration
+test covers an unknown disabled command naming a missing material.
+
+The approved collider/cook extension passed full local verification: dev
+configure/build with warnings as errors and zero failures across 6,182 enabled
+serial CTest entries in 451.65 seconds (17 opt-in generators skipped; one
+additional test disabled). Native physics tests pass all 114 cases. The driven
+frame and distant-coordinate shape regressions were run against the prior
+calculations and failed for the intended reasons before verifying their fixes.
+The normal saved scene -> cook -> `.smap` -> package import -> CharacterVirtual
+overlap path is covered; this is not yet the Kyusu inspector or bumper demo.
+
+The independent CI repair is PR #180 (`codex/ci-clang-development`, based on
+main). Linux had selected incomplete Clang 16 CMake exports despite installing
+Clang 18 development libraries. The repair selects matching installed packages
+and configuration paths, and explicitly installs the required Freetype headers.
+Its remote build result remains separate from local feature verification.
