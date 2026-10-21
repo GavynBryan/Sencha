@@ -331,6 +331,8 @@ void LevelWorkspace::BuildSelectionSources()
     Handles = std::make_unique<PropertyHandles>(*Workspace, *Components);
     Entities = std::make_unique<EntityVerbs>(*Workspace, [this](const std::string& source) {
         return Files != nullptr && Files->OpenSceneSource(source);
+    }, [this](const std::string& problem) {
+        Notices.Post(problem, NoticeTone::Warning, NoticeClockNow());
     });
     Entities->Offer(Catalog, ActionHandlers);
     Entities->OfferZoneMoves(Catalog, ActionHandlers);

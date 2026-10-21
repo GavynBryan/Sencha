@@ -80,7 +80,10 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     {
         Tools = std::make_unique<ToolRegistry>(*Context);
         Tools->Register(std::make_unique<SelectTool>());
-        Tools->Register(std::make_unique<BrushTool>(inputs.Level));
+        auto brush = std::make_unique<BrushTool>(inputs.Level);
+        if (const auto* recipe = inputs.CreationRecipes.Find("trigger_volume"))
+            brush->AddCreationVariant("trigger_volume", "Trigger Volume", "Trigger", BrushPrimitive::Box, *recipe);
+        Tools->Register(std::move(brush));
         Tools->Register(std::make_unique<SpaceTool>(inputs.Level));
         Tools->Register(std::make_unique<EdgeCutTool>());
         Tools->Register(std::make_unique<FaceCarveTool>());

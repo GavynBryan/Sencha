@@ -10,6 +10,11 @@
 #include "document/commands/SetSceneOriginCommand.h"
 #include "document/commands/EntityFlagCommand.h"
 #include "workspace/EditorWorkspace.h"
+#include "document/tools/BrushTool.h"
+#include "operations/TriggerVolumeEdits.h"
+#include "tools/ToolRegistry.h"
+
+#include <logic/Trigger.h>
 
 #include <world/identity/PersistentIdComponent.h>
 
@@ -34,9 +39,11 @@ EntityId Primary(const EditorWorkspace& workspace)
 }
 } // namespace
 
-EntityVerbs::EntityVerbs(EditorWorkspace& workspace, std::function<bool(const std::string&)> openSource)
+EntityVerbs::EntityVerbs(EditorWorkspace& workspace, std::function<bool(const std::string&)> openSource,
+                         std::function<void(const std::string&)> reportProblem)
     : Workspace(workspace)
     , OpenSource(std::move(openSource))
+    , ReportProblem(std::move(reportProblem))
 {
 }
 
@@ -57,6 +64,33 @@ void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
                 w.Commands.Execute(std::make_unique<PlaceEntityCommand>(std::string{}, Transform3f::Identity(),
                                                                         document(), w.Selection));
             } });
+
+    offer({ .Id = "trigger.create", .Label = "Trigger Volume", .Category = "Create", .Icon = IconId::Box },
+          { .Invoke = [&w] {
+                auto& tools = *w.Interaction.Tools;
+                for (std::size_t index = 0; index < tools.GetTools().size(); ++index)
+                    if (tools.GetTools()[index]->GetId() == "brush")
+                    {
+                        const auto& brush = static_cast<const BrushTool&>(*tools.GetTools()[index]);
+                        if (const auto variant = brush.FindCreationVariant("trigger_volume"))
+                            (void)tools.SelectVariant(index, *variant);
+                        break;
+                    }
+            } });
+
+    for (const bool toTrigger : { true, false })
+        offer({ .Id = toTrigger ? "trigger.convert" : "trigger.make_solid",
+                .Label = toTrigger ? "Convert to Trigger Volume" : "Remove Empty Trigger and Make Solid" },
+              { .Invoke = [this, &w, toTrigger] {
+                    const auto selected = SelectedEntities(w);
+                    const auto outcome = w.Level.MutateLevel(
+                        [&](EditorDocument& doc, EntityChangeRecorder& recorder) {
+                            return ConvertTriggerVolumes(doc, recorder, selected, toTrigger);
+                        });
+                    if (outcome.Status != EditorOperationStatus::Ok && ReportProblem)
+                        ReportProblem(outcome.Message);
+                },
+                .Enabled = anySelected });
 
     // Everything selected but the primary goes under it: the primary is the
     // one picked last, as a parent is.
@@ -163,6 +197,11 @@ std::vector<std::string> EntityVerbs::Relevant() const
 {
     std::vector<std::string> verbs{ "entity.parent", "entity.unparent", "entity.visible", "entity.lock" };
     const EntityId primary = Primary(Workspace);
+    if (primary.IsValid() && Workspace.ActiveDocument().GetScene().TryGetBrush(primary) != nullptr)
+    {
+        const auto& world = Workspace.ActiveDocument().GetRegistry().Components;
+        verbs.emplace_back(world.HasComponent<Trigger>(primary) ? "trigger.make_solid" : "trigger.convert");
+    }
     if (primary.IsValid() && Workspace.World.FocusDocument().IsSceneInstanceRoot(primary))
     {
         verbs.emplace_back("scene.open_source");

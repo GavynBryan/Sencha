@@ -36,8 +36,8 @@ BakedBrushComponent
 };
 
 // A brush that encloses air rather than standing as geometry: what it means
-// comes from the other components on its entity (a space, say). Volumes never
-// cook, collide, light or block; Kyusu draws them translucent.
+// comes from its other components. Volumes do not contribute solid/render cells;
+// semantic cookers can consume their geometry. Kyusu draws them translucent.
 struct SENCHA_COMPONENT("volume")
        SENCHA_SCHEMA("volume")
        SENCHA_SCENE_CHUNK("VOLM")

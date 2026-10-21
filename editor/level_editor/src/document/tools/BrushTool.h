@@ -11,9 +11,13 @@
 #include <math/Quat.h>
 #include <math/Vec.h>
 
+#include <deque>
+#include <optional>
+#include <string>
 #include <vector>
 
 class LevelTarget;
+class IEditorEntityRecipe;
 
 class BrushTool : public ITool
 {
@@ -98,6 +102,9 @@ public:
     [[nodiscard]] std::span<const Variant> GetVariants() const override;
     [[nodiscard]] int GetActiveVariant(const ToolContext& ctx) const override;
     void SelectVariant(ToolContext& ctx, std::size_t index) override;
+    bool AddCreationVariant(std::string id, std::string label, std::string nameBase, BrushPrimitive primitive,
+                             const IEditorEntityRecipe& recipe);
+    [[nodiscard]] std::optional<std::size_t> FindCreationVariant(std::string_view id) const;
 
     // The primitive the next drag creates and its shape parameters. Owned here
     // because only this tool acts on them; the properties UI drives them and
@@ -117,4 +124,15 @@ private:
     EntityId PendingEntity = {};
     AssetRef PendingMaterial; // the active material the last rebuild stamped
     std::vector<SelectableRef> PendingPreviousSelection;
+    struct CreationVariant
+    {
+        std::string Id;
+        std::string Label;
+        std::string NameBase;
+        BrushPrimitive Primitive;
+        const IEditorEntityRecipe* Recipe;
+    };
+    std::deque<CreationVariant> CreationVariants;
+    std::vector<Variant> VariantMenu;
+    std::optional<std::size_t> ActiveCreation;
 };

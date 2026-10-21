@@ -21,7 +21,8 @@ class EntityVerbs
 public:
     // `openSource` opens the scene source an asset path names; false when it
     // cannot be found.
-    EntityVerbs(EditorWorkspace& workspace, std::function<bool(const std::string&)> openSource);
+    EntityVerbs(EditorWorkspace& workspace, std::function<bool(const std::string&)> openSource,
+                 std::function<void(const std::string&)> reportProblem = {});
 
     void Offer(ActionCatalog& catalog, ActionContext& context);
     // Per frame: offers a move for every zone the world has now and withdraws
@@ -34,5 +35,6 @@ public:
 private:
     EditorWorkspace& Workspace;
     std::function<bool(const std::string&)> OpenSource;
+    std::function<void(const std::string&)> ReportProblem;
     ActionFamily ZoneMoves;
 };
