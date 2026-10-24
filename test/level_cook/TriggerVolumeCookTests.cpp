@@ -185,3 +185,18 @@ TEST_F(TriggerVolumeCookTest, AVolumeWithoutASensorStaysAir)
     EXPECT_EQ(CookedEntity(*input, Entities(), room), nullptr);
     EXPECT_TRUE(input->Snapshot().Brushes.empty());
 }
+
+TEST_F(TriggerVolumeCookTest, AResizedTriggerVolumeCooksItsNewBox)
+{
+    const EntityId pad = TriggerVolume(Transform3f::Identity(), BrushOps::MakeBox(Vec3d(1.0f, 1.0f, 1.0f)), "pad");
+    Doc.GetScene().SetBrushHalfExtents(pad, Vec3d(3.0f, 0.5f, 2.0f));
+
+    const std::optional<DocumentCookInput> input = Cook();
+    ASSERT_TRUE(input.has_value());
+    const JsonValue* cooked = CookedEntity(*input, Entities(), pad);
+    ASSERT_NE(cooked, nullptr);
+    const Vec3d half = VectorOf(*cooked->Find("components")->Find("collider")->Find("shape")->Find("half_extents"));
+    EXPECT_NEAR(half.X, 3.0f, 1e-4f);
+    EXPECT_NEAR(half.Y, 0.5f, 1e-4f);
+    EXPECT_NEAR(half.Z, 2.0f, 1e-4f);
+}

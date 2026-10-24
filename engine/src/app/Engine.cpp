@@ -11,7 +11,7 @@
 #include <authored/WorldVocabulary.h>
 #include <logic/TriggerSystem.h>
 #include <logic/VerbRelaySystem.h>
-#include <movement/MotionComposition.h>
+#include <movement/FreeLocomotionSystem.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
 #include <physics/PhysicsStepSystem.h>
@@ -1428,10 +1428,12 @@ int Engine::Run(Game& game)
                              });
 
     game.OnRegisterSystems(registerSystems);
-    // A sequence's movement operations write the channels composition reads, so
-    // a launch lands on the step after the sample that saw the activator.
-    if (EngineSystems.Has<MotionCompositionSystem>())
-        EngineSystems.After<MotionCompositionSystem, TriggerSystem>();
+    // A sequence's movement operations write the channels the movement producers
+    // and composition read, so a launch lands on the step after the sample that
+    // saw the activator, and a jump, root motion or held burst that tick acts on
+    // it as on any earlier write.
+    if (EngineSystems.Has<FreeLocomotionSystem>())
+        EngineSystems.After<FreeLocomotionSystem, TriggerSystem>();
     // After the game's systems, which is where physics is registered if at all.
     {
         const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();

@@ -8,6 +8,7 @@
 #include <ecs/World.h>
 #include <movement/CharacterTickStep.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MotionComposition.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
 #include <movement/components/CharacterFacts.h>
@@ -194,4 +195,46 @@ TEST(ActorTimeMovement, ADilatedStepRecordsWhetherItsPlanarMotionWasOverridden)
     bursts->Slots[0] = MotionBurst{ .Owner = LeaseOwner{ holder, 1 }, .Velocity = Vec3d(0.0f, 0.0f, 4.0f) };
     walkers.Step(walker, kActorTimeOne / 2);
     EXPECT_TRUE(std::as_const(walkers.Entities).TryGet<MotionRequest>(walker)->PlanarOverridden);
+}
+
+TEST(ActorTimeMovement, WhatAProducerWritesReachesADilatedCharactersStep)
+{
+    EngineConfig config;
+    RuntimeFrameLoop runtime;
+    DataAssetCache dataAssets;
+    EngineSchedule schedule;
+    World world;
+    world.RegisterComponent<LocalTransform>();
+    RegisterMovement(world);
+    RegisterAbilityKitSystems(schedule);
+    RegisterMovementSystems(schedule, dataAssets);
+    schedule.Init();
+    StoragePartitionSet partitions;
+    partitions.Add(StoragePartitionId::Default());
+
+    const EntityId slowed = world.CreateEntity();
+    world.AddComponent<LocalTransform>(slowed, LocalTransform{});
+    world.AddComponent<CharacterMovement>(
+        slowed, CharacterMovement{ .Mode = world.GetResource<LocomotionModeRegistry>().FreeMode() });
+    world.AddComponent<ActorTimeLeases>(slowed, ActorTimeLeases{});
+    ASSERT_TRUE(AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(slowed), LeaseOwner{ .Entity = slowed },
+                                      kActorTimeOne / 2, 0));
+    const auto tick = [&](std::uint64_t index) {
+        FixedLogicContext context{ .Config = config, .Runtime = runtime,
+                                   .Time = FixedSimTime{ .DeltaSeconds = kDt, .TickIndex = index },
+                                   .Entities = world, .Partitions = partitions };
+        schedule.RunFixedLogic(context);
+    };
+    tick(0);
+    tick(1);
+    ASSERT_TRUE(world.HasComponent<ActorTimeDilated>(slowed));
+
+    // A reaction written before the tick, as a launch is: forced up, and a shove.
+    ASSERT_TRUE(ForceSetUpMotionOverride(world, slowed, 8.0f));
+    ASSERT_TRUE(AddMotionImpulse(world, slowed, Vec3d(3.0f, 0.0f, 0.0f)));
+    tick(2);
+    const Vec3d velocity = std::as_const(world).TryGet<MotionRequest>(slowed)->Velocity;
+    EXPECT_NEAR(velocity.Y, 8.0f, 1.0e-4f) << "the dilated step dropped a forced write";
+    EXPECT_GT(velocity.X, 2.9f) << "the dilated step dropped an impulse";
+    EXPECT_FALSE(std::as_const(world).TryGet<MotionAxisOverride>(slowed)->HasUp) << "the mailbox was left full";
 }

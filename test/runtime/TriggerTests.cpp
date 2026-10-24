@@ -21,6 +21,7 @@
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/ComponentRegistrar.h>
 #include <world/SimulationAuthority.h>
+#include <world/RuntimeWorld.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cmath>
@@ -103,6 +104,18 @@ private:
     GameplayTagId Red;
 };
 
+// A record answer: how far, and which way. Exercises a value read from a
+// query's member.
+class ReachQuery
+{
+public:
+    static AuthoredQueryStatus Evaluate(const ReachQuery&, std::span<const AuthoredValue>, AuthoredValue& result)
+    {
+        result = AuthoredValue::Record({ AuthoredValue::Float(4.5), AuthoredValue::Bool(true) });
+        return AuthoredQueryStatus::Value;
+    }
+};
+
 DataFieldSchema RecordArguments()
 {
     DataFieldSchema root = EmptyVerbArguments();
@@ -165,6 +178,12 @@ protected:
             red.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "target", "Target"));
             red.Result = MakeDataField(DataFieldKind::Bool, "result", "Red");
             (void)scope.Declare(std::move(red));
+            AuthoredQueryDefinition reach;
+            reach.Name = "test.reach";
+            reach.Result = AuthoredRecordRoot();
+            reach.Result.Children.push_back(MakeDataField(DataFieldKind::Float, "distance", "Distance"));
+            reach.Result.Children.push_back(MakeDataField(DataFieldKind::Bool, "clear", "Clear"));
+            (void)scope.Declare(std::move(reach));
             ASSERT_TRUE(scope.Commit());
         }
 
@@ -182,6 +201,8 @@ protected:
         Tokens.push_back(Dispatcher->Bind<&InvokeTriggerInteract>(Verbs->Find(kTriggerInteractVerb), *Operations));
         QueryToken = Queries->Bind<&RedQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.is_red"),
                                                        *RedAnswer);
+        ReachToken = Queries->Bind<&ReachQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.reach"),
+                                                         Reach);
 
         Overlaps = &WorldState.AddResource<SensorOverlaps>();
         Logic.Add(StoragePartitionId::Default());
@@ -194,6 +215,7 @@ protected:
     {
         Schedule.Shutdown();
         QueryToken.Reset();
+        ReachToken.Reset();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
     }
@@ -259,6 +281,8 @@ protected:
     std::unique_ptr<RedQuery> RedAnswer;
     std::vector<VerbBindingToken> Tokens;
     AuthoredQueryBindingToken QueryToken;
+    ReachQuery Reach;
+    AuthoredQueryBindingToken ReachToken;
     SensorOverlaps* Overlaps = nullptr;
     TriggerSystem* System = nullptr;
     std::uint64_t TickIndex = 0;
@@ -617,4 +641,59 @@ TEST_F(TriggerFixture, EntitiesAuthoredAlikeShareOneSequence)
     EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 1u) << "the replaced sequence was kept";
     WorldState.DestroyEntity(b);
     EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 0u);
+}
+
+TEST_F(TriggerFixture, AValueMayBeAQuerysAnswerOrOneMemberOfIt)
+{
+    const EntityId trigger = PlaceTrigger(R"({"commands": [
+        {"verb": "test.record", "arguments": {
+            "target": {"port": "activator"},
+            "amount": {"query": "test.reach", "member": "distance", "scale": 2}}}]})");
+    const EntityId activator = WorldState.CreateEntity();
+
+    Step({ { trigger, activator } });
+
+    ASSERT_EQ(Calls.size(), 1u);
+    EXPECT_DOUBLE_EQ(Calls[0].Amount, 9.0);
+    EXPECT_TRUE(TriggerSequencesOf(WorldState).Diagnostics(WorldState.TryGet<Trigger>(trigger)->Sequence).empty());
+}
+
+TEST_F(TriggerFixture, AnAnswerOfTheWrongKindIsRefusedWhenItCompiles)
+{
+    const EntityId trigger = PlaceTrigger(R"({"commands": [
+        {"verb": "test.record", "arguments": {
+            "target": {"port": "activator"},
+            "amount": {"query": "test.reach", "member": "clear"}}}]})");
+    const EntityId activator = WorldState.CreateEntity();
+
+    Step({ { trigger, activator } });
+
+    EXPECT_TRUE(Calls.empty());
+    EXPECT_EQ(System->Stats().Failed, 1u);
+    const auto diagnostics = TriggerSequencesOf(WorldState).Diagnostics(WorldState.TryGet<Trigger>(trigger)->Sequence);
+    ASSERT_EQ(diagnostics.size(), 1u);
+    EXPECT_NE(diagnostics[0].find("different kind"), std::string::npos) << diagnostics[0];
+}
+
+TEST_F(TriggerFixture, AZoneThatUnloadsTakesItsWaitingActivationsWithIt)
+{
+    System->SetCommandBudget(1);
+    const StoragePartitionId zone{ 3 };
+    Logic.Add(zone);
+    const EntityId first = PlaceTrigger(kRecordActivator, {}, zone);
+    const EntityId second = PlaceTrigger(kRecordActivator, {}, zone);
+    const EntityId activator = WorldState.CreateEntity();
+
+    Step({ { first, activator }, { second, activator } });
+    ASSERT_EQ(Calls.size(), 1u);
+    ASSERT_EQ(System->Pending(), 1u);
+
+    ZoneResidencyChange detaching;
+    detaching.Kind = ZoneResidencyChangeKind::Detaching;
+    detaching.Partition = zone;
+    ZoneResidencyContext residency{ .Config = Config, .Entities = WorldState, .Changes = { &detaching, 1 } };
+    Schedule.RunZoneResidency(residency);
+    EXPECT_EQ(System->Pending(), 0u);
+    Tick();
+    EXPECT_EQ(Calls.size(), 1u) << "an activation ran for a zone that had gone";
 }

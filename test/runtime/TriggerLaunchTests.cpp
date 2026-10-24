@@ -20,7 +20,7 @@
 #include <logic/TriggerSequences.h>
 #include <logic/TriggerSystem.h>
 #include <movement/LocomotionMode.h>
-#include <movement/MotionComposition.h>
+#include <movement/FreeLocomotionSystem.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementIntent.h>
 #include <movement/MovementRegistration.h>
@@ -88,7 +88,7 @@ struct LaunchHarness
         RegisterMovementSystems(Schedule, DataAssets);
         Triggers = &RegisterTriggerSystem(Schedule, world, *Verbs, Queries.get(), nullptr, &DataAssets,
                                           Console.Registry(), Logging);
-        Schedule.After<MotionCompositionSystem, TriggerSystem>();
+        Schedule.After<FreeLocomotionSystem, TriggerSystem>();
         Schedule.Init();
 
         BodyDesc floor;
