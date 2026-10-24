@@ -20,6 +20,7 @@ public:
     IWriteArchive& Field(std::string_view key, double value) override;
     IWriteArchive& Field(std::string_view key, std::uint32_t value) override;
     IWriteArchive& Field(std::string_view key, std::string_view value) override;
+    IWriteArchive& Subtree(std::string_view key, const JsonValue& value) override;
     IWriteArchive& BeginObject(std::string_view key) override;
     IWriteArchive& BeginArray(std::string_view key, std::size_t count) override;
     IWriteArchive& End() override;
@@ -49,6 +50,7 @@ public:
     IReadArchive& Field(std::string_view key, double& value) override;
     IReadArchive& Field(std::string_view key, std::uint32_t& value) override;
     IReadArchive& Field(std::string_view key, std::string& value) override;
+    IReadArchive& Subtree(std::string_view key, JsonValue& value) override;
     IReadArchive& BeginObject(std::string_view key) override;
     IReadArchive& BeginArray(std::string_view key, std::size_t& count) override;
     IReadArchive& End() override;

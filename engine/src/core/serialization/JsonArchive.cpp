@@ -40,6 +40,12 @@ IWriteArchive& JsonWriteArchive::Field(std::string_view key, std::string_view va
     return *this;
 }
 
+IWriteArchive& JsonWriteArchive::Subtree(std::string_view key, const JsonValue& value)
+{
+    AddValue(key, value);
+    return *this;
+}
+
 IWriteArchive& JsonWriteArchive::BeginObject(std::string_view key)
 {
     Stack.push_back(Context{ std::string(key), JsonValue(JsonValue::Object{}), false });
@@ -167,6 +173,18 @@ IReadArchive& JsonReadArchive::Field(std::string_view key, std::string& value)
     }
 
     value = json->AsString();
+    return *this;
+}
+
+IReadArchive& JsonReadArchive::Subtree(std::string_view key, JsonValue& value)
+{
+    const JsonValue* json = TakeValue(key);
+    if (!json)
+    {
+        IsOk = false;
+        return *this;
+    }
+    value = *json;
     return *this;
 }
 

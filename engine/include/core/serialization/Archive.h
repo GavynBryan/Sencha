@@ -35,6 +35,9 @@ struct IWriteArchive
     virtual IWriteArchive& Field(std::string_view key, double value) = 0;
     virtual IWriteArchive& Field(std::string_view key, std::uint32_t value) = 0;
     virtual IWriteArchive& Field(std::string_view key, std::string_view value) = 0;
+    // A value whose shape no schema fixes, written whole: authored data that
+    // only its consumer interprets.
+    virtual IWriteArchive& Subtree(std::string_view key, const JsonValue& value) = 0;
     virtual IWriteArchive& BeginObject(std::string_view key) = 0;
     virtual IWriteArchive& BeginArray(std::string_view key, std::size_t count) = 0;
     virtual IWriteArchive& End() = 0;
@@ -65,6 +68,7 @@ struct IReadArchive
     virtual IReadArchive& Field(std::string_view key, double& value) = 0;
     virtual IReadArchive& Field(std::string_view key, std::uint32_t& value) = 0;
     virtual IReadArchive& Field(std::string_view key, std::string& value) = 0;
+    virtual IReadArchive& Subtree(std::string_view key, JsonValue& value) = 0;
     virtual IReadArchive& BeginObject(std::string_view key) = 0;
     virtual IReadArchive& BeginArray(std::string_view key, std::size_t& count) = 0;
     virtual IReadArchive& End() = 0;
