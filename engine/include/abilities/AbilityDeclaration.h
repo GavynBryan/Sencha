@@ -1,6 +1,7 @@
 #pragma once
 
 #include <authored/VerbBinding.h>
+#include <gameplay_tags/GameplayTagQueryNames.h>
 
 #include <cstdint>
 #include <optional>
@@ -84,15 +85,7 @@ struct AbilityArgumentDecl
     AbilityValueDecl Value;
 };
 
-struct AbilityTagQueryDecl
-{
-    std::vector<std::string> All;
-    std::vector<std::string> Any;
-    std::vector<std::string> None;
-
-    [[nodiscard]] bool Empty() const { return All.empty() && Any.empty() && None.empty(); }
-    friend bool operator==(const AbilityTagQueryDecl&, const AbilityTagQueryDecl&) = default;
-};
+using AbilityTagQueryDecl = GameplayTagQueryNames;
 
 enum class AbilityCompare : std::uint8_t
 {

@@ -38,28 +38,6 @@ AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
     return merged;
 }
 
-GameplayTagQuery ResolveTagQuery(const AbilityTagQueryDecl& declared, const GameplayTagRegistry& tags,
-                                 std::vector<std::string>& missing)
-{
-    GameplayTagQuery query;
-    const auto add = [&](const std::vector<std::string>& names, auto addClause) {
-        for (const std::string& name : names)
-        {
-            const GameplayTagId tag = tags.FindTag(name);
-            if (!tag.IsValid())
-            {
-                missing.push_back(name);
-                continue;
-            }
-            (query.*addClause)(tag, GameplayTagMatchMode::Hierarchical);
-        }
-    };
-    add(declared.All, &GameplayTagQuery::AddAll);
-    add(declared.Any, &GameplayTagQuery::AddAny);
-    add(declared.None, &GameplayTagQuery::AddNone);
-    return query;
-}
-
 std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
 {
     const auto found = std::ranges::find(Entries, entry, &Slot::Entry);

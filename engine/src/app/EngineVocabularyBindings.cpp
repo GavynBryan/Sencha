@@ -4,6 +4,7 @@
 #include <anim/AnimRequestVerbs.h>
 #include <audio/AudioVerbs.h>
 #include <effects/EffectVerbs.h>
+#include <logic/TriggerVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
@@ -23,6 +24,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Movement(std::make_unique<MovementOperations>(entities))
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
+    , Triggers(std::make_unique<TriggerOperations>(entities))
 {
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeAnimRequest>(catalog.Find(kAnimRequestVerb), *Animation));
@@ -39,11 +41,15 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
+    Verbs.push_back(verbs.Bind<&InvokeMovementLaunch>(catalog.Find(kMovementLaunchVerb), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeNavigationMoveTo>(catalog.Find(kNavigationMoveToVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeNavigationApproach>(catalog.Find(kNavigationApproachVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokeTriggerEnable>(catalog.Find(kTriggerEnableVerb), *Triggers));
+    Verbs.push_back(verbs.Bind<&InvokeTriggerDisable>(catalog.Find(kTriggerDisableVerb), *Triggers));
+    Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Triggers));
 }
 
 EngineVocabularyBindings::~EngineVocabularyBindings()

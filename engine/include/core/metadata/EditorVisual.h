@@ -2,6 +2,7 @@
 
 #include <core/metadata/ComponentDefinition.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -22,10 +23,16 @@ struct EditorVisual
     enum class Kind : std::uint8_t
     {
         Mesh, // wireframe of a mesh asset, drawn at the entity transform
+        // The colours a volume brush carrying the component is drawn in: what
+        // the volume is for, told apart from volumes that are only air.
+        VolumeTint,
     };
 
     Kind VisualKind = Kind::Mesh;
-    std::string_view AssetPath; // logical asset name; the editor resolves it
+    std::string_view AssetPath; // Mesh: logical asset name; the editor resolves it
+    // VolumeTint: linear RGBA.
+    std::array<float, 4> Fill{};
+    std::array<float, 4> Edge{};
 };
 
 // Specialize for a component to give it an editor visual. Default: none.

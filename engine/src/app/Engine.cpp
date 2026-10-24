@@ -9,7 +9,9 @@
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
+#include <logic/TriggerSystem.h>
 #include <logic/VerbRelaySystem.h>
+#include <movement/MotionComposition.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
 #include <physics/PhysicsStepSystem.h>
@@ -1375,6 +1377,12 @@ int Engine::Run(Game& game)
                                   *VerbDispatcherState, ContentState->Assets().Registry,
                                   ContentState->Assets().DataAssets, console.Registry(),
                                   LoggingState);
+    // Triggers likewise: a scene whose volumes carry one runs it in a process
+    // whose game registered nothing. With no sensor sample to read, a tick costs
+    // a resource lookup.
+    (void)RegisterTriggerSystem(EngineSystems, RuntimeWorldState->Entities(), *VerbDispatcherState,
+                                QueryDispatcherState.get(), &ContentState->Assets().Registry,
+                                &ContentState->Assets().DataAssets, console.Registry(), LoggingState);
     // The shell's Back reader goes with the shell: a host that composes no
     // menu must not have Escape flipping a pause state nothing presents.
     if (Configuration.Runtime.ApplicationShell)
@@ -1420,6 +1428,10 @@ int Engine::Run(Game& game)
                              });
 
     game.OnRegisterSystems(registerSystems);
+    // A sequence's movement operations write the channels composition reads, so
+    // a launch lands on the step after the sample that saw the activator.
+    if (EngineSystems.Has<MotionCompositionSystem>())
+        EngineSystems.After<MotionCompositionSystem, TriggerSystem>();
     // After the game's systems, which is where physics is registered if at all.
     {
         const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();

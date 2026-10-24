@@ -16,12 +16,15 @@ inline constexpr std::string_view kMovementBurstLease = "movement.burst";
 inline constexpr std::string_view kMovementTetherLease = "movement.tether";
 // Put a character in a locomotion mode while held; letting go returns it to free.
 inline constexpr std::string_view kMovementModeLease = "movement.mode";
+// Set a character moving at a velocity once; it keeps that momentum afterwards.
+inline constexpr std::string_view kMovementLaunchVerb = "movement.launch";
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope);
 
-// The movement leases' provider: each holds one of a character's motion slots
-// (movement/components/HeldMotion.h) for its owner, and lets it go. A timed burst
-// completes when its time is up, and a tether when its anchor goes.
+// The movement operations' provider. Each lease holds one of a character's motion
+// slots (movement/components/HeldMotion.h) for its owner, and lets it go; a timed
+// burst completes when its time is up, and a tether when its anchor goes. A launch
+// is instant: it writes the forced motion channels for the coming composition.
 class MovementOperations
 {
 public:
@@ -33,6 +36,7 @@ public:
     VerbAdmission Burst(const VerbInvocation& invocation);
     VerbAdmission Tether(const VerbInvocation& invocation);
     VerbAdmission Mode(const VerbInvocation& invocation);
+    VerbAdmission Launch(const VerbInvocation& invocation);
 
 private:
     // Whether `owner` still holds a slot of `T`, looked for on its own entity first.
@@ -57,4 +61,9 @@ inline VerbAdmission InvokeMovementTether(MovementOperations& operations, const 
 inline VerbAdmission InvokeMovementMode(MovementOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Mode(invocation);
+}
+
+inline VerbAdmission InvokeMovementLaunch(MovementOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.Launch(invocation);
 }
