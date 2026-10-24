@@ -7,7 +7,7 @@
 #include <controller/ControllerComponentRegistration.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputComponentRegistration.h>
-#include <logic/VerbRelayRegistration.h>
+#include <logic/LogicRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <navigation/NavigationComponentRegistration.h>
 #include <net/NetComponentRegistration.h>

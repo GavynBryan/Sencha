@@ -3,6 +3,7 @@
 #include <attributes/AttributeSet.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <controller/Aim.h>
+#include <gameplay_tags/EntityMatch.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -233,18 +234,8 @@ bool AbilityPass::Holds(const AbilityActor& actor, std::size_t slot, const Abili
     }
     case AbilityConditionKind::Entity:
     {
-        const EntityId entity = EntityOf(actor, slot, condition.Subject);
-        if (!world.IsAlive(entity))
-            return false;
-        for (const ComponentId component : condition.Components)
-            if (!world.HasComponent(entity, component))
-                return false;
-        if (!condition.HasTags)
-            return true;
-        static const GameplayTagContainer kNoTags{};
-        const GameplayTagContainer* tags =
-            world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(entity) : nullptr;
-        return TagRegistry != nullptr && condition.Tags.Matches(tags != nullptr ? *tags : kNoTags, *TagRegistry);
+        return EntityMatches(world, EntityOf(actor, slot, condition.Subject), condition.Components,
+                             condition.HasTags ? &condition.Tags : nullptr, TagRegistry);
     }
     case AbilityConditionKind::PhaseTicks:
         return slot < kAbilitySlotCapacity

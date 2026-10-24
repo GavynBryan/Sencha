@@ -5,6 +5,7 @@
 #include <audio/AudioVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
+#include <logic/TriggerVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
@@ -43,6 +44,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
     DeclareNavigationVerbs(scope);
+    DeclareTriggerVerbs(scope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
 

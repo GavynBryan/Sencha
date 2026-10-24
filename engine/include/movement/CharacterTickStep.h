@@ -2,6 +2,7 @@
 
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
+#include <movement/components/MotionChannels.h>
 #include <math/Vec.h>
 
 #include <cstdint>
@@ -60,10 +61,18 @@ void StepCharacterTick(World& world,
                        Vec3d gravity,
                        Vec3d upAxis);
 
+// What action producers wrote into a character's motion mailboxes for this tick.
+struct CharacterTickContributions
+{
+    MotionAxisOverride Overrides{};
+    MotionImpulse Impulse{};
+};
+
 // The same tick for a character whose time runs at `scaleQ16`: slowed, one step of
 // the scaled time; hastened, as many complete steps as the scale rounds up to, so
 // no sweep carries it further than an undilated tick would. The ground's carry is
 // divided by the scale, so a platform moves it at the platform's own speed.
+// `contributions` join the first step, as composition folds them into a live tick.
 void StepScaledCharacterTick(World& world,
                              CharacterMoverPool* movers,
                              EntityId entity,
@@ -72,7 +81,8 @@ void StepScaledCharacterTick(World& world,
                              float fixedDeltaSeconds,
                              std::int64_t scaleQ16,
                              Vec3d gravity,
-                             Vec3d upAxis);
+                             Vec3d upAxis,
+                             const CharacterTickContributions* contributions = nullptr);
 
 // Whether re-running a tick puts this component back in step: either the tick
 // advances it forward, or it is the state the tick derives those from and

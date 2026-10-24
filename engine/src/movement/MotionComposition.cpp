@@ -3,7 +3,9 @@
 #include <app/GameContexts.h>
 #include <ecs/World.h>
 #include <movement/components/CharacterFacts.h>
+#include <movement/CharacterTickStep.h>
 #include <movement/components/MotionChannels.h>
+#include <time/ActorTime.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 
@@ -141,6 +143,7 @@ void MotionCompositionSystem::StepImpl(World& world, const StoragePartitionSet* 
     }
 
     const bool hasSupport = world.IsRegistered<SupportState>();
+    const bool dilation = world.IsRegistered<ActorTimeDilated>();
 
     Query<Write<MotionRequest>,
           Read<LocomotionOutput>,
@@ -156,6 +159,11 @@ void MotionCompositionSystem::StepImpl(World& world, const StoragePartitionSet* 
 
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
+            // A dilated character is composed inside its own scaled step, which
+            // takes these mailboxes; emptying them here would lose a reaction.
+            if (dilation && world.HasComponent<ActorTimeDilated>(view.Entity(i))
+                && CharacterTickModeSupported(world, view.Entity(i)))
+                continue;
             const SupportState* support = hasSupport
                 ? std::as_const(world).TryGet<SupportState>(view.Entity(i))
                 : nullptr;

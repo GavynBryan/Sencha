@@ -7,6 +7,8 @@
 #include <physics/PhysicsStepSystem.h>
 #include <world/SimulationTimeline.h>
 
+#include <utility>
+
 DilatedCharacterStepSystem::DilatedCharacterStepSystem(const FreeLocomotionSystem& locomotion,
                                                        PhysicsStepSystem* physics)
     : Locomotion(&locomotion)
@@ -37,8 +39,15 @@ void DilatedCharacterStepSystem::FixedLogic(FixedLogicContext& ctx)
         const ActorTime* time = world.TryGet<ActorTime>(entity);
         if (time == nullptr)
             continue;
+        // This step is the one composition left this character to, so it takes
+        // the mailboxes' contents and empties them, as composition would have.
+        CharacterTickContributions contributions;
+        if (MotionAxisOverride* overrides = world.TryGet<MotionAxisOverride>(entity))
+            contributions.Overrides = std::exchange(*overrides, MotionAxisOverride{});
+        if (MotionImpulse* impulse = world.TryGet<MotionImpulse>(entity))
+            contributions.Impulse = std::exchange(*impulse, MotionImpulse{});
         StepScaledCharacterTick(world, movers, entity, intent, SimulationTickOf(world, entity, ctx.Time.TickIndex),
                                 static_cast<float>(ctx.Time.DeltaSeconds), time->ScaleQ16, Locomotion->GetGravity(),
-                                Locomotion->GetUpAxis());
+                                Locomotion->GetUpAxis(), &contributions);
     }
 }

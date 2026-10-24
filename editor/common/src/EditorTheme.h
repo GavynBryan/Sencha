@@ -2,6 +2,8 @@
 
 #include <math/Vec.h>
 
+#include <array>
+
 // One place for the editor overlay's visual language — colors and screen-pixel
 // sizes — so gizmos, handles, selection highlights, and component visuals read as
 // one consistent UI instead of scattered literals. Pure data; included by both
@@ -35,6 +37,11 @@ inline constexpr Vec4 ContextZoneDim{ 0.45f, 0.45f, 0.50f, 1.0f };
 inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 // Volume brushes (spaces): air, so a faint teal wash over their faces and a
 // brighter edge, never a solid body.
+// A colour a component's editor metadata declares, linear RGBA.
+[[nodiscard]] constexpr Vec4 DeclaredColour(const std::array<float, 4>& rgba)
+{
+    return Vec4(rgba[0], rgba[1], rgba[2], rgba[3]);
+}
 inline constexpr Vec4 VolumeFill{ 0.10f, 0.55f, 0.60f, 0.12f };
 inline constexpr Vec4 VolumeEdge{ 0.25f, 0.85f, 0.90f, 1.0f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body

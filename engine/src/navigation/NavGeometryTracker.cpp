@@ -21,7 +21,9 @@ namespace
         const CollisionShape& shape = collider.Shape;
         mix(static_cast<std::uint64_t>(shape.Type));
         for (const float value : { shape.HalfExtents.X, shape.HalfExtents.Y, shape.HalfExtents.Z,
-                                   shape.Radius, shape.HalfHeight })
+                                   shape.Radius, shape.HalfHeight, shape.Center.X, shape.Center.Y,
+                                   shape.Center.Z, shape.Orientation.X, shape.Orientation.Y,
+                                   shape.Orientation.Z, shape.Orientation.W })
             mix(std::bit_cast<std::uint32_t>(value));
         return hash;
     }

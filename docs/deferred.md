@@ -734,12 +734,12 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** a few engine-scope objects keep pointers into run-scope owners
   between the end of `Engine::Run` and `Engine::Shutdown`. The default render
   pipeline's features hold the content stack's mesh and material caches, and
-  scheduled systems (input mapping, verb relays, navigation agents) hold its
-  `DataAssetCache`. None dereferences them after the run; ASan runs of every exit
+  scheduled systems (input mapping, verb relays, triggers, navigation agents)
+  hold its `DataAssetCache`; triggers hold its `AssetRegistry` too. None dereferences them after the run; ASan runs of every exit
   path are clean. The shell and the authored UI feature were the cases that did,
   and are now released by `Run` (`docs/architecture/engine-lifetime.md`).
 - **Where:** `DefaultRenderPipeline` (`engine/src/app/DefaultRenderPipeline.cpp`),
-  `RegisterInputSystems`, `RegisterVerbRelaySystem`, and the systems
+  `RegisterInputSystems`, `RegisterVerbRelaySystem`, `RegisterTriggerSystem`, and the systems
   `EngineSchedule::Shutdown` tears down in `Engine::Shutdown`.
 - **Trigger:** the first teardown hook in any of them that touches what it
   borrows. That makes the borrow a real use-after-free, so the borrower is
@@ -753,3 +753,49 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** `claude/composition` (data composition with array merge keys)
   merging. Then set the array's merge key to `name` and add a composition test
   that patches one socket of a base rig.
+
+## Trigger enable state across a zone unload
+
+- **What:** `trigger.enable` and `trigger.disable` write `Trigger::Enabled`. A
+  zone that streams out and back reloads its triggers as authored, so a trigger
+  disabled at runtime comes back enabled. A consumed once-trigger stays
+  consumed: that is entity destruction, which the zone state overlay records.
+- **Where:** `engine/src/logic/TriggerVerbs.cpp`; the overlay is
+  `engine/include/zone/ZoneStateStore.h`, which records destruction only.
+- **Trigger:** the zone state overlay capturing changed component fields, or
+  the first level that needs a disarmed trigger to stay disarmed after its zone
+  unloads.
+
+## Approach direction for triggers
+
+- **What:** a trigger cannot ask which way its activator crossed it (a one-way
+  gate). A sensor sample reports occupancy transitions, not a crossing
+  direction, and reading the activator's velocity afterwards would be a second,
+  movement-specific source of the same fact.
+- **Where:** `SensorOverlaps` (`engine/include/physics/SensorOverlaps.h`) and the
+  cast in `engine/src/physics/SensorShapeQuery.cpp`, which knows the
+  displacement that produced an Enter.
+- **Trigger:** the first content needing a one-way trigger. The direction
+  belongs on the sensor occurrence, and the trigger then gains an entity
+  condition over it.
+
+## Trigger inspector: query sources and picking entities
+
+- **What:** a sequence argument may be a query's answer (or one member of it),
+  and an entity named by identity; both run and are tested. The inspector
+  offers constants, ports and a typed identity, but no query source and no
+  picking an entity in the view.
+- **Where:** `editor/common/src/vocabulary/VerbSequenceRows.cpp` (the argument
+  sources) and `editor/level_editor/src/authoring/TriggerEditorAdapter.cpp`.
+- **Trigger:** a designer authoring a query-driven argument or pointing a
+  command at another placed entity, or the owner's walkthrough of trigger
+  authoring.
+
+## Turning a trigger's direction in the view
+
+- **What:** a trigger draws an arrow for every direction its commands are given;
+  the direction is edited in the inspector, not by dragging the arrow.
+- **Where:** `TriggerEditorAdapter::BuildViewport`; a dial or handle would
+  commit through the same `SetVerbSequenceValue` step.
+- **Trigger:** the owner's walkthrough of trigger authoring, or a designer
+  asking to aim a bumper in the view.

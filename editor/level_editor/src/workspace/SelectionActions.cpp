@@ -12,7 +12,12 @@
 #include "document/commands/DetachSharedBrushCommand.h"
 #include "document/commands/DuplicateEntitiesCommand.h"
 #include "document/commands/MergeBrushesCommand.h"
+#include "document/commands/RawComponentAddCommand.h"
 #include "document/commands/SeparateFacesCommand.h"
+#include "document/DocumentSerialization.h"
+
+#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/IComponentSerializer.h>
 #include "meshedit/IMeshEditTarget.h"
 #include "meshedit/MeshEditService.h"
 #include "selection/SelectionService.h"
@@ -242,6 +247,26 @@ void SelectionActions::RevertBaked()
         if (auto command = MakeRevertBakedBrushCommand(scene, document, Assets->Assets, entity))
             commands.push_back(std::move(command));
     }
+    ExecuteAsOneStep(std::move(commands));
+}
+
+void SelectionActions::AddComponentsToBrushes(std::span<const std::string_view> components)
+{
+    EditorDocument& document = World.FocusDocument();
+    EditorScene& scene = document.GetScene();
+    const ::World& world = scene.GetRegistry().Components;
+    std::vector<std::unique_ptr<ICommand>> commands;
+    for (const EntityId entity : SelectedBrushEntities())
+        for (const std::string_view key : components)
+        {
+            const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key);
+            const ComponentId id = serializer != nullptr ? world.GetComponentIdByType(serializer->TypeId())
+                                                         : InvalidComponentId;
+            if (id == InvalidComponentId || world.HasComponent(entity, id))
+                continue;
+            commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, serializer->DefaultBytes(),
+                                                                        scene, document));
+        }
     ExecuteAsOneStep(std::move(commands));
 }
 

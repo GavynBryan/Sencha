@@ -71,16 +71,22 @@ namespace
 
 void TriangulateCollider(const CollisionShape& shape, std::vector<Vec3d>& vertices)
 {
+    const std::size_t first = vertices.size();
     switch (shape.Type)
     {
     case CollisionShapeType::Box:
         TriangulateBox(shape.HalfExtents, vertices);
-        return;
+        break;
     case CollisionShapeType::Sphere:
         TriangulateRounded(shape.Radius, 0.0f, vertices);
-        return;
+        break;
     case CollisionShapeType::Capsule:
         TriangulateRounded(shape.Radius, shape.HalfHeight, vertices);
-        return;
+        break;
     }
+    if (shape.IsCentered())
+        return;
+    const Quatf orientation = shape.Orientation.Normalized();
+    for (std::size_t i = first; i < vertices.size(); ++i)
+        vertices[i] = orientation.RotateVector(vertices[i]) + shape.Center;
 }

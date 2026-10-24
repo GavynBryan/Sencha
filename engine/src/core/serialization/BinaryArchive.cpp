@@ -1,5 +1,8 @@
 #include <core/serialization/BinaryArchive.h>
 
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
+
 #include <limits>
 #include <string>
 
@@ -40,6 +43,11 @@ IWriteArchive& BinaryWriteArchive::Field(std::string_view, std::string_view valu
     if (size > 0)
         IsOk = IsOk && Writer.WriteBytes(value.data(), static_cast<std::streamsize>(size));
     return *this;
+}
+
+IWriteArchive& BinaryWriteArchive::Subtree(std::string_view key, const JsonValue& value)
+{
+    return Field(key, std::string_view(JsonStringify(value)));
 }
 
 IWriteArchive& BinaryWriteArchive::BeginObject(std::string_view)
@@ -96,6 +104,22 @@ IReadArchive& BinaryReadArchive::Field(std::string_view, std::string& value)
     value.resize(size);
     if (size > 0)
         IsOk = IsOk && Reader.ReadBytes(value.data(), static_cast<std::streamsize>(size));
+    return *this;
+}
+
+IReadArchive& BinaryReadArchive::Subtree(std::string_view key, JsonValue& value)
+{
+    std::string text;
+    Field(key, text);
+    if (!IsOk)
+        return *this;
+    std::optional<JsonValue> parsed = JsonParse(text);
+    if (!parsed)
+    {
+        IsOk = false;
+        return *this;
+    }
+    value = std::move(*parsed);
     return *this;
 }
 

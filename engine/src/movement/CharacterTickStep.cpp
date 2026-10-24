@@ -62,7 +62,8 @@ namespace
     // `dt` actor seconds. `carry` scales what the ground carries the character by,
     // so a dilated character on a platform rides it at the platform's speed.
     void StepOnce(World& world, CharacterMoverPool* movers, EntityId entity, const MovementIntent& intent,
-                  const RootMotionSample* rootMotion, float dt, float carry, Vec3d gravity, Vec3d upAxis)
+                  const RootMotionSample* rootMotion, float dt, float carry, Vec3d gravity, Vec3d upAxis,
+                  const CharacterTickContributions* contributions)
     {
         KinematicState* motion = world.TryGet<KinematicState>(entity);
         SupportState* support = world.TryGet<SupportState>(entity);
@@ -78,11 +79,13 @@ namespace
         // The mailboxes are rebuilt per step rather than read off the entity: the
         // live tick clears them during composition, so a step that inherited them
         // would apply a jump twice.
-        MotionAxisOverride overrides{};
+        // What producers wrote this tick joins first, as it does on the live tick;
+        // the jump only claims an up channel nothing has.
+        MotionAxisOverride overrides = contributions != nullptr ? contributions->Overrides : MotionAxisOverride{};
         if (JumpState* jump = world.TryGet<JumpState>(entity))
         {
             float up = 0.0f;
-            if (StepJump(carried, *tuning, intent.Jump, dt, *jump, up))
+            if (StepJump(carried, *tuning, intent.Jump, dt, *jump, up) && !overrides.HasUp)
             {
                 overrides.UpVelocity = up;
                 overrides.HasUp = true;
@@ -92,7 +95,9 @@ namespace
             ApplyRootMotion(overrides, *rootMotion);
         StepHeldMotion(world, entity, overrides, dt, locomotion.UpAxis);
 
-        const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides, MotionImpulse{});
+        const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides,
+                                                          contributions != nullptr ? contributions->Impulse
+                                                                                   : MotionImpulse{});
         // Bulk characters keep the request the motor drove; a stepped one keeps its
         // last step's, so readers of the next tick see the same fact either way.
         if (MotionRequest* stored = world.TryGet<MotionRequest>(entity))
@@ -126,7 +131,8 @@ void StepScaledCharacterTick(World& world,
                              float fixedDeltaSeconds,
                              std::int64_t scaleQ16,
                              Vec3d gravity,
-                             Vec3d upAxis)
+                             Vec3d upAxis,
+                             const CharacterTickContributions* contributions)
 {
     if (!CharacterTickModeSupported(world, entity) || scaleQ16 <= 0)
         return;
@@ -140,7 +146,8 @@ void StepScaledCharacterTick(World& world,
     const bool carried = SampleRootMotion(world, entity, tick, fixedDeltaSeconds, rootMotion);
     rootMotion.TurnRadians /= static_cast<float>(substeps);
     for (int i = 0; i < substeps; ++i)
-        StepOnce(world, movers, entity, intent, carried ? &rootMotion : nullptr, step, carry, gravity, upAxis);
+        StepOnce(world, movers, entity, intent, carried ? &rootMotion : nullptr, step, carry, gravity, upAxis,
+                 i == 0 ? contributions : nullptr);
 }
 
 void StepCharacterTick(World& world,

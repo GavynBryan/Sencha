@@ -85,5 +85,4 @@ private:
 [[nodiscard]] AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
                                                          const std::optional<AbilityBindingDecl>& fallback);
 
-[[nodiscard]] GameplayTagQuery ResolveTagQuery(const AbilityTagQueryDecl& declared, const GameplayTagRegistry& tags,
-                                               std::vector<std::string>& missing);
+

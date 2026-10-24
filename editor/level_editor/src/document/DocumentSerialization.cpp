@@ -106,6 +106,7 @@ void RegisterDocumentSerializers()
     RegisterEditorOnlyComponent<BakedBrushComponent>(serializers);
     RegisterEditorOnlyComponent<EntityNameComponent>(serializers);
     RegisterEditorOnlyComponent<BrushVolume>(serializers);
+    RegisterEditorOnlyComponent<VolumeSensor>(serializers);
     RegisterEditorOnlyComponent<Space>(serializers);
     RegisterEditorOnlyComponent<Shell>(serializers);
     RegisterMaintainedComponent<GeneratedWall>(serializers);

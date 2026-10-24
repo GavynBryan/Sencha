@@ -11,6 +11,7 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyID.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -132,5 +133,11 @@ inline JPH::ShapeRefC BuildShape(const CollisionShape& shape)
         result = JPH::CapsuleShapeSettings(shape.HalfHeight, shape.Radius).Create();
         break;
     }
-    return result.IsValid() ? result.Get() : JPH::ShapeRefC();
+    if (!result.IsValid())
+        return JPH::ShapeRefC();
+    if (shape.IsCentered())
+        return result.Get();
+    const JPH::ShapeSettings::ShapeResult posed =
+        JPH::RotatedTranslatedShapeSettings(ToJph(shape.Center), ToJph(shape.Orientation.Normalized()), result.Get()).Create();
+    return posed.IsValid() ? posed.Get() : JPH::ShapeRefC();
 }

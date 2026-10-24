@@ -1,5 +1,6 @@
 #include "../CandidateOperationSupport.h"
 
+#include <authored/AuthoredArgumentMatch.h>
 #include <authored/AuthoredLiteral.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/AuthoredQueryRegistry.h>
@@ -64,13 +65,18 @@ namespace candidate_operation
                 return nullptr;
             }
 
-            const std::vector<DataFieldSchema>& declared = definition.Arguments.Children;
+            std::vector<std::string_view> names;
+            for (const auto& [key, unused] : authored.Constants.AsObject())
+                names.push_back(key);
+            std::vector<std::string_view> undeclared;
+            const std::vector<AuthoredArgumentSlot> slots =
+                MatchAuthoredArguments(definition.Arguments, names, undeclared);
             bool ok = true;
             bool foundEntity = false;
-            bound.Constants.Resize(declared.size());
-            for (std::size_t slot = 0; slot < declared.size(); ++slot)
+            bound.Constants.Resize(slots.size());
+            for (std::size_t slot = 0; slot < slots.size(); ++slot)
             {
-                const DataFieldSchema& field = declared[slot];
+                const DataFieldSchema& field = *slots[slot].Field;
                 if (field.Key == authored.EntityArgument)
                 {
                     foundEntity = field.Kind == DataFieldKind::Entity;
@@ -78,9 +84,10 @@ namespace candidate_operation
                     continue;
                 }
                 AuthoredValue value;
-                const JsonValue* literal = authored.Constants.Find(field.Key);
-                ok = (literal != nullptr ? CompileAuthoredLiteral(*literal, field, subject, field.Key, value, errors)
-                                         : CompileAuthoredDefault(field, subject, field.Key, value, errors))
+                ok = (slots[slot].Given
+                          ? CompileAuthoredLiteral(authored.Constants.AsObject()[*slots[slot].Given].second, field,
+                                                   subject, field.Key, value, errors)
+                          : CompileAuthoredDefault(field, subject, field.Key, value, errors))
                     && ok;
                 bound.Constants.Set(slot, std::move(value));
             }
@@ -90,14 +97,10 @@ namespace candidate_operation
                                              authored.EntityArgument));
                 ok = false;
             }
-            for (const auto& [key, unused] : authored.Constants.AsObject())
+            for (const std::string_view name : undeclared)
             {
-                (void)unused;
-                if (FindChild(definition.Arguments, key) == nullptr)
-                {
-                    errors.push_back(std::format("{}: '{}' declares no argument '{}'", subject, authored.Query, key));
-                    ok = false;
-                }
+                errors.push_back(std::format("{}: '{}' declares no argument '{}'", subject, authored.Query, name));
+                ok = false;
             }
             if (!ok)
                 return nullptr;

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <core/identity/StrongId.h>
+#include <math/Quat.h>
 #include <math/Vec.h>
 
 // Handle into a CollisionShapeCache for a cooked triangle-mesh shape (static
@@ -36,6 +37,17 @@ struct CollisionShape
     Vec3d HalfExtents = Vec3d::One();
     float Radius = 0.5f;
     float HalfHeight = 0.5f;
+
+    // The primitive's pose in its body's frame.
+    Vec3d Center = Vec3d::Zero();
+    Quatf Orientation = Quatf::Identity();
+
+    friend bool operator==(const CollisionShape&, const CollisionShape&) = default;
+
+    [[nodiscard]] bool IsCentered() const
+    {
+        return Center == Vec3d::Zero() && Orientation == Quatf::Identity();
+    }
 
     static CollisionShape MakeSphere(float radius)
     {

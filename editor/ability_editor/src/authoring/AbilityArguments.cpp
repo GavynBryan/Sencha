@@ -5,6 +5,7 @@
 #include "data/DataPath.h"
 #include "data/JsonObjectEdit.h"
 #include "properties/SettingProperties.h"
+#include "vocabulary/AuthoredConstantText.h"
 #include "vocabulary/VocabularyCatalog.h"
 
 #include <abilities/AbilityValueNames.h>
@@ -35,10 +36,6 @@ std::string_view SourceName(AbilityArgumentSource source)
     return {};
 }
 
-const DataFieldSchema& Unwrapped(const DataFieldSchema& field)
-{
-    return field.Kind == DataFieldKind::Optional && field.Children.size() == 1 ? field.Children.front() : field;
-}
 
 bool Numeric(DataFieldKind kind)
 {
@@ -75,81 +72,9 @@ std::string LocalText(const JsonValue& data, const JsonValue& argument)
     return ReadMemberString(argument, "local");
 }
 
-std::string ConstantText(const JsonValue& argument)
-{
-    const JsonValue* held = argument.IsObject() ? FindMember(argument, "const") : &argument;
-    for (const std::string_view member : { "tag", "data", "asset" })
-        if (const JsonValue* named = FindMember(argument, member); named != nullptr && named->IsString())
-            return named->AsString();
-    if (held == nullptr)
-        return {};
-    if (held->IsNumber())
-        return NumberText(held->AsNumber());
-    if (held->IsBool())
-        return held->AsBool() ? "true" : "false";
-    if (held->IsString())
-        return held->AsString();
-    if (held->IsArray())
-    {
-        std::string text;
-        for (const JsonValue& component : held->AsArray())
-            text += std::format("{}{}", text.empty() ? "" : ", ", component.IsNumber() ? component.AsNumber() : 0.0);
-        return text;
-    }
-    return {};
-}
-
-// A constant of `field`'s kind as `text` writes it; none when it cannot be one.
-std::optional<JsonValue> Constant(const DataFieldSchema& field, std::string_view text)
-{
-    const DataFieldKind kind = Unwrapped(field).Kind;
-    const auto wrapped = [](std::string_view member, JsonValue value) {
-        return JsonValue(JsonValue::Object{ { std::string(member), std::move(value) } });
-    };
-    if (Numeric(kind))
-    {
-        const std::optional<double> number = ParseNumber(text, 0.0, -1.0);
-        return number ? std::optional(wrapped("const", JsonValue(*number))) : std::nullopt;
-    }
-    if (kind == DataFieldKind::Bool)
-    {
-        const std::optional<bool> on = ParseToggle(text);
-        return on ? std::optional(wrapped("const", JsonValue(*on))) : std::nullopt;
-    }
-    if (kind == DataFieldKind::Vector)
-    {
-        const std::optional<std::vector<double>> parts = ParseVector(text, Unwrapped(field).VectorLength);
-        if (!parts)
-            return std::nullopt;
-        JsonValue::Array components;
-        for (const double part : *parts)
-            components.emplace_back(part);
-        return wrapped("const", JsonValue(std::move(components)));
-    }
-    if (kind == DataFieldKind::GameplayTag)
-        return wrapped("tag", JsonValue(std::string(text)));
-    if (kind == DataFieldKind::DataAssetRef)
-        return wrapped("data", JsonValue(std::string(text)));
-    if (kind == DataFieldKind::AssetRef)
-        return wrapped("asset", JsonValue(std::string(text)));
-    return wrapped("const", JsonValue(std::string(text)));
-}
-
-JsonValue DefaultConstant(const DataFieldSchema& field)
-{
-    const DataFieldKind kind = Unwrapped(field).Kind;
-    if (Numeric(kind))
-        return *Constant(field, "0");
-    if (kind == DataFieldKind::Bool)
-        return *Constant(field, "false");
-    if (kind == DataFieldKind::Vector)
-        return *Constant(field, "0, 0, 0");
-    return *Constant(field, "");
-}
-
 JsonValue DefaultPort(const DataFieldSchema& field)
 {
-    const DataFieldKind kind = Unwrapped(field).Kind;
+    const DataFieldKind kind = UnwrappedField(field).Kind;
     const std::string_view port = kind == DataFieldKind::Vector ? "aim.origin"
                                 : Numeric(kind)                 ? "phase.progress"
                                                                 : "actor";
@@ -206,7 +131,7 @@ std::vector<AbilityArgumentSource> AbilityArgumentSources(const DataFieldSchema&
     std::vector<AbilityArgumentSource> sources;
     if (!field.Required)
         sources.push_back(AbilityArgumentSource::Unset);
-    const DataFieldKind kind = Unwrapped(field).Kind;
+    const DataFieldKind kind = UnwrappedField(field).Kind;
     if (kind != DataFieldKind::Entity)
         sources.push_back(AbilityArgumentSource::Constant);
     if (kind == DataFieldKind::Entity || kind == DataFieldKind::Vector || kind == DataFieldKind::Bool || Numeric(kind))
@@ -288,8 +213,8 @@ std::vector<PropertyNode> AbilityArgumentProperties::Nodes() const
         }
         else if (source == AbilityArgumentSource::Constant)
         {
-            PropertyNode constant = TextProperty(valueKey, "Value", ConstantText(*argument));
-            const DataFieldSchema& shown = Unwrapped(field);
+            PropertyNode constant = TextProperty(valueKey, "Value", AuthoredConstantText(*argument));
+            const DataFieldSchema& shown = UnwrappedField(field);
             if (shown.Kind == DataFieldKind::DataAssetRef)
             {
                 constant.Descriptor.Kind = PropertyKind::Asset;
@@ -330,7 +255,7 @@ PropertyEditResult AbilityArgumentProperties::CommitEdit(std::string_view key, s
         switch (source->first)
         {
         case AbilityArgumentSource::Unset: written = JsonValue(); break;
-        case AbilityArgumentSource::Constant: written = DefaultConstant(*field); break;
+        case AbilityArgumentSource::Constant: written = DefaultAuthoredConstant(*field); break;
         case AbilityArgumentSource::Port: written = DefaultPort(*field); break;
         case AbilityArgumentSource::Local:
         {
@@ -345,7 +270,7 @@ PropertyEditResult AbilityArgumentProperties::CommitEdit(std::string_view key, s
         switch (AbilityArgumentSourceOf(argument))
         {
         case AbilityArgumentSource::Unset: return PropertyEditResult::Gone;
-        case AbilityArgumentSource::Constant: written = Constant(*field, value); break;
+        case AbilityArgumentSource::Constant: written = AuthoredConstantFromText(*field, value); break;
         case AbilityArgumentSource::Port:
             if (FindAbilityNamed(kAbilityPortNames, value))
                 written = JsonValue(JsonValue::Object{ { "port", JsonValue(std::string(value)) } });
@@ -388,10 +313,10 @@ std::vector<std::string> AbilityArgumentProperties::Candidates(std::string_view 
     if (!parsed || parsed->Source || contract == nullptr)
         return {};
     const auto field = std::ranges::find(contract->Children, parsed->Name, &DataFieldSchema::Key);
-    if (field == contract->Children.end() || Unwrapped(*field).Kind != DataFieldKind::DataAssetRef)
+    if (field == contract->Children.end() || UnwrappedField(*field).Kind != DataFieldKind::DataAssetRef)
         return {};
     std::vector<std::string> paths;
-    for (const ProjectFile& file : Workbench.FilesOf(Unwrapped(*field).Reference.DataSubtype))
+    for (const ProjectFile& file : Workbench.FilesOf(UnwrappedField(*field).Reference.DataSubtype))
         paths.push_back(file.AssetPath);
     return paths;
 }

@@ -4,10 +4,14 @@
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MotionComposition.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/HeldMotion.h>
+#include <movement/components/MotionChannels.h>
+#include <world/SimulationAuthority.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -65,6 +69,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     DataFieldSchema direction =
         MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, as aim.direction gives it.");
     direction.VectorLength = 3;
+    direction.Editor.Widget = "direction";
     burst.Arguments.Children.push_back(std::move(direction));
     burst.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second of the character's time.", 10.0, 0.0));
     burst.Arguments.Children.push_back(Number("seconds", "Seconds", "How long; zero holds it until let go.", 0.0, 0.0));
@@ -94,6 +99,25 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     mode.Arguments.Children.push_back(
         MakeDataField(DataFieldKind::String, "mode", "Mode", "The mode's name, as movement.mode.<name>."));
     (void)scope.Declare(std::move(mode));
+
+    VerbDefinition launch;
+    launch.Name = std::string(kMovementLaunchVerb);
+    launch.DisplayName = "Launch";
+    launch.Description = "Sets the character moving at a velocity, whatever it was moving at; "
+                         "it keeps that momentum afterwards.";
+    launch.Category = "Movement";
+    DataFieldSchema launched = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character launched.");
+    launched.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
+    launch.Arguments.Children.push_back(std::move(launched));
+    DataFieldSchema heading = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, in world space.");
+    heading.VectorLength = 3;
+    heading.Editor.Widget = "direction";
+    launch.Arguments.Children.push_back(std::move(heading));
+    launch.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second along the direction.", 10.0, 0.0));
+    DataFieldSchema rise = Number("rise", "Rise", "Metres per second added straight up, along the character's up axis.",
+                                  0.0, 0.0);
+    launch.Arguments.Children.push_back(std::move(rise));
+    (void)scope.Declare(std::move(launch));
 }
 
 namespace
@@ -230,4 +254,36 @@ VerbAdmission MovementOperations::Mode(const VerbInvocation& invocation)
         return VerbAdmission::Refused;
     *lease = LocomotionModeLease{ .Owner = invocation.Owner, .Mode = mode->Id };
     return VerbAdmission::Accepted;
+}
+
+VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
+{
+    if (!IsSimulationAuthority(*Entities))
+        return VerbAdmission::Refused;
+    EntityId target;
+    AuthoredVectorValue direction;
+    double speed = 0.0;
+    double rise = 0.0;
+    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
+        || !invocation.Arguments->TryGetVector(1, direction) || direction.Length != 3
+        || !invocation.Arguments->TryGetFloat(2, speed) || !invocation.Arguments->TryGetFloat(3, rise)
+        || !std::isfinite(speed) || !std::isfinite(rise))
+        return VerbAdmission::InvalidArguments;
+    const Vec3d heading = VectorOf(direction);
+    const float length = heading.Magnitude();
+    if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0))
+        return VerbAdmission::InvalidArguments;
+    if (!Entities->IsAlive(target) || static_cast<const World&>(*Entities).TryGet<CharacterMovement>(target) == nullptr)
+        return VerbAdmission::Refused;
+
+    const LocomotionOutput* locomotion = Entities->IsRegistered<LocomotionOutput>()
+        ? static_cast<const World&>(*Entities).TryGet<LocomotionOutput>(target)
+        : nullptr;
+    const Vec3d up = locomotion != nullptr ? locomotion->UpAxis.Normalized() : Vec3d(0.0f, 1.0f, 0.0f);
+    const Vec3d velocity = (length > 1.0e-6f ? heading * (static_cast<float>(speed) / length) : Vec3d::Zero())
+        + up * static_cast<float>(rise);
+    const float upward = velocity.Dot(up);
+    const bool planar = ForceSetPlanarMotionOverride(*Entities, target, velocity - up * upward);
+    const bool vertical = ForceSetUpMotionOverride(*Entities, target, upward);
+    return planar && vertical ? VerbAdmission::Accepted : VerbAdmission::Refused;
 }

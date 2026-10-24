@@ -33,6 +33,12 @@
 #include <utility>
 #include <vector>
 #include "DocumentSerialization.h"
+#include "document/BrushComponents.h"
+#include "document/EntityNameComponent.h"
+#include "document/VolumeSensorCook.h"
+
+#include <core/serialization/JsonArchive.h>
+#include <format>
 
 namespace
 {
@@ -220,10 +226,32 @@ JsonValue* FindMutable(JsonValue& value, std::string_view key)
     return nullptr;
 }
 
+// A sensor volume reaches the level as its entity, carrying the collider its
+// box cooks to; every other brush is geometry the cells and collision carry.
+// A hidden one is left out, as a hidden brush is.
+bool PassesThrough(const EditorDocument& document, EntityId entity)
+{
+    const World& world = document.GetRegistry().Components;
+    if (document.GetScene().TryGetBrush(entity) == nullptr)
+        return true;
+    return world.IsRegistered<VolumeSensor>() && world.HasComponent<VolumeSensor>(entity)
+        && document.GetScene().IsEntityEffectivelyVisible(entity);
+}
+
+std::string NameForCook(const EditorDocument& document, EntityId entity)
+{
+    const World& world = document.GetRegistry().Components;
+    const EntityNameComponent* name =
+        world.IsRegistered<EntityNameComponent>() ? world.TryGet<EntityNameComponent>(entity) : nullptr;
+    return name != nullptr && !name->Value.View().empty() ? std::string(name->Value.View())
+                                                         : std::format("entity {}", entity.Index);
+}
+
 JsonValue BuildPassthroughScene(const EditorDocument& document,
                                 LoggingProvider& logging,
                                 AssetSystem* assets,
-                                std::unordered_map<EntityIndex, std::uint32_t>& sceneIndices)
+                                std::unordered_map<EntityIndex, std::uint32_t>& sceneIndices,
+                                std::vector<std::string>& refused)
 {
     SceneSerializationContext context(logging, assets);
     JsonValue serialized =
@@ -244,8 +272,20 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
     for (std::size_t oldIndex = 0; oldIndex < alive.size(); ++oldIndex)
     {
         const EntityId entity = alive[oldIndex];
-        if (document.GetScene().TryGetBrush(entity) != nullptr)
+        if (!PassesThrough(document, entity))
             continue;
+        std::optional<Collider> sensor;
+        if (document.GetScene().TryGetBrush(entity) != nullptr)
+        {
+            std::string reason;
+            sensor = CookVolumeSensor(document.GetScene(), entity, reason);
+            if (!sensor)
+            {
+                refused.push_back(std::format("sensor volume '{}' cannot cook: {}", NameForCook(document, entity),
+                                              reason));
+                continue;
+            }
+        }
 
         remap[oldIndex] = static_cast<std::uint32_t>(entities.size());
         sceneIndices.emplace(entity.Index, remap[oldIndex]);
@@ -262,6 +302,13 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
             // the runtime reads them from there, never from the scene.
             std::erase_if(components->AsObject(),
                 [](const auto& field) { return field.first == TypeSchema<NavLink>::Name; });
+
+            if (sensor)
+            {
+                JsonWriteArchive collider;
+                WriteArchiveValue(collider, {}, *sensor);
+                components->AsObject().push_back({ std::string(TypeSchema<Collider>::Name), collider.TakeValue() });
+            }
 
             // Expanded placement members carry their instance identity into
             // the cooked scene (locked decision D1): the placement id, and
@@ -394,8 +441,16 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
 
     AssetSystem* assetSystem = assets != nullptr ? &assets->Assets : nullptr;
     std::unordered_map<EntityIndex, std::uint32_t> sceneIndices;
+    std::vector<std::string> refused;
     snapshot.PassthroughScene = BuildPassthroughScene(
-        document, logging, assetSystem, sceneIndices);
+        document, logging, assetSystem, sceneIndices, refused);
+    if (!refused.empty())
+    {
+        std::string message;
+        for (const std::string& reason : refused)
+            message += (message.empty() ? "" : "; ") + reason;
+        return fail(message);
+    }
     if (!snapshot.PassthroughScene.IsObject())
         return fail("could not serialize passthrough scene");
 

@@ -1,0 +1,594 @@
+{
+  "id": "6f2b1c0d9e8a7b31",
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
+  "entities": [
+    {
+      "id": "6f2b1c0d9e8a7b32",
+      "components": {
+        "name": {
+          "value": "Player Start"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "rotation": [
+              0,
+              0.0,
+              0,
+              1.0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "player_start": {}
+      }
+    },
+    {
+      "id": "6f2b1c0d9e8a7b33",
+      "components": {
+        "name": {
+          "value": "Floor"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              -0.25,
+              0
+            ],
+            "rotation": [
+              0,
+              0.0,
+              0,
+              1.0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 1
+        }
+      }
+    },
+    {
+      "id": "6f2b1c0d9e8a7b34",
+      "components": {
+        "name": {
+          "value": "Bumper"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0.707106781,
+              0,
+              0.707106781
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "brush": {
+          "id": 2
+        },
+        "volume": {},
+        "volume_sensor": {},
+        "trigger": {
+          "activation": "enter",
+          "enabled": true,
+          "once": false,
+          "cooldown": 0.5,
+          "cooldown_scope": "activator",
+          "stay_interval": 0,
+          "sequence": {
+            "conditions": [
+              {
+                "entity": "activator",
+                "has": [
+                  "sencha.character_movement"
+                ]
+              }
+            ],
+            "commands": [
+              {
+                "verb": "movement.launch",
+                "arguments": {
+                  "target": {
+                    "port": "activator"
+                  },
+                  "direction": {
+                    "const": [
+                      0,
+                      0,
+                      1
+                    ],
+                    "frame": "trigger"
+                  },
+                  "speed": 8,
+                  "rise": 9
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "brush_meshes": {
+    "1": {
+      "vertices": [
+        [
+          -12,
+          -0.25,
+          -12
+        ],
+        [
+          12,
+          -0.25,
+          -12
+        ],
+        [
+          12,
+          0.25,
+          -12
+        ],
+        [
+          -12,
+          0.25,
+          -12
+        ],
+        [
+          -12,
+          -0.25,
+          12
+        ],
+        [
+          12,
+          -0.25,
+          12
+        ],
+        [
+          12,
+          0.25,
+          12
+        ],
+        [
+          -12,
+          0.25,
+          12
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    },
+    "2": {
+      "vertices": [
+        [
+          -1.5,
+          0.0,
+          -1.5
+        ],
+        [
+          1.5,
+          0.0,
+          -1.5
+        ],
+        [
+          1.5,
+          0.5,
+          -1.5
+        ],
+        [
+          -1.5,
+          0.5,
+          -1.5
+        ],
+        [
+          -1.5,
+          0.0,
+          1.5
+        ],
+        [
+          1.5,
+          0.0,
+          1.5
+        ],
+        [
+          1.5,
+          0.5,
+          1.5
+        ],
+        [
+          -1.5,
+          0.5,
+          1.5
+        ]
+      ],
+      "faces": [
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            3,
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            0,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              1,
+              0,
+              0
+            ],
+            "axis_v": [
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            7,
+            6,
+            2,
+            3
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            4,
+            7,
+            3,
+            0
+          ]
+        },
+        {
+          "uv": {
+            "axis_u": [
+              0,
+              0,
+              1
+            ],
+            "axis_v": [
+              0,
+              1,
+              0
+            ],
+            "scale": [
+              2,
+              2
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "rotation": 0,
+            "world_aligned": true
+          },
+          "loop": [
+            1,
+            2,
+            6,
+            5
+          ]
+        }
+      ]
+    }
+  }
+}

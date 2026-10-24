@@ -255,6 +255,18 @@ from a rising platform inherits the platform. The mailboxes are cleared by
 composition is a bug, and its value deliberately survives into the next tick
 rather than being silently dropped.
 
+### Launch
+
+`movement.launch {target, direction, speed = 10, rise = 0}` sets a character
+moving at `direction × speed` plus `rise` along its up axis, whatever it was
+moving at: a jump pad, a bumper. It force-writes both channels for the coming
+composition and nothing more, so from the next tick the character carries that
+momentum and locomotion slows it as it slows any other. It is neither a burst
+(a velocity held for a time, which a lease owns) nor an impulse (added to the
+approach velocity, so the outcome depends on how the character arrived): a
+launch is the same however the character came in. It is authority-only; a
+predicting client is corrected to it (`docs/gameplay/triggers.md`).
+
 Jump is carried by `MovementIntent.Jump` rather than an ability
 (`JumpExecutionSystem.h`): a predicting client replays its own movement from
 each tick's state and input, and the ability path spawned timed effect
@@ -357,6 +369,11 @@ leave it to `DilatedCharacterStepSystem`, which steps it whole through
 - **Replay** computes each replayed tick's scale from the lease history on the pawn,
   so a dilation the client never predicted is applied from the tick it took effect
   and ended on the tick it ended.
+
+What action producers wrote into a dilated character's override and impulse
+mailboxes this tick -- a launch, a knockback -- joins its first step, as
+composition folds them into a live tick: composition leaves those mailboxes to
+the dilated step, which takes and empties them.
 
 Only modes `StepCharacterTick` implements are stepped dilated; a character in a
 game-defined mode runs at simulation speed (`docs/deferred.md`).

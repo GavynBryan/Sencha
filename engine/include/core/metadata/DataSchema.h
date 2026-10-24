@@ -84,6 +84,8 @@ struct DataReferenceConstraints
 //   "compact" on a Record  -- absent optional members are offered through one
 //                             popup instead of a button each, for records with
 //                             many optional members.
+//   "direction" on a Vector -- a way to point rather than an amount; a surface
+//                             starting one offers forward, +Z, not zero.
 struct DataEditorHint
 {
     std::string Widget;
