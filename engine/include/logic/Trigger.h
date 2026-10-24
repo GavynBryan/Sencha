@@ -14,19 +14,9 @@
 
 class World;
 
-//=============================================================================
-// Trigger
-//
-// When an entity's sensor runs its sequence. The sensor -- a Collider with
-// IsTrigger -- reports what overlaps it (SensorOverlaps); this says which of
-// those reports activate the trigger and how often; the sequence it holds says
-// what then happens. Docs: docs/gameplay/triggers.md.
-//
-// The policy fields are authored values. What a trigger did at runtime --
-// cooldowns running, an activator inside since some tick -- is the
-// TriggerSystem's transient state, never written here, so a streamed-out zone
-// comes back armed as authored.
-//=============================================================================
+// When an entity's sensor runs its sequence: authored policy only. What a
+// trigger did at runtime is TriggerSystem's transient state, so a zone that
+// streams back comes back armed as authored. docs/gameplay/triggers.md.
 
 enum class TriggerActivation : std::uint8_t
 {

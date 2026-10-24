@@ -16,10 +16,9 @@ struct OrientedBox
     Vec3d HalfExtents = Vec3d::Zero();
 };
 
-// The box a brush mesh is, if it is exactly one: six four-sided faces in three
-// pairs, each pair parallel and every pair perpendicular to the others, every
-// corner on the box. `positions` are the mesh's vertices in the frame the box
-// is wanted in. Otherwise null, with `reason` saying what kept it from being one.
+// The box a brush mesh exactly is, from its vertices in the frame the box is
+// wanted in: six quads in three perpendicular parallel pairs, every corner on
+// it. Otherwise null, with `reason` saying what kept it from being one.
 [[nodiscard]] std::optional<OrientedBox> FitOrientedBox(const BrushMesh& mesh,
                                                         std::span<const Vec3d> positions,
                                                         std::string& reason);

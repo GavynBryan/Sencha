@@ -485,3 +485,29 @@ jumping executors.
 `navigation.failure` and `navigation.remaining` queries; `EngineVocabularyBindings`
 gains `BindNavigation`. `NavPlanarDirection` joins the path-following geometry,
 and the navigation enums gain `EnumSchema`s.
+
+## v31
+
+Triggers (`docs/gameplay/triggers.md`).
+
+**Physics.** `CollisionShape` gains `Center` and `Orientation`, its primitive's
+pose in its body's frame, and an equality operator. `Collider` gains a scene
+schema (`collider`, chunk `COLL`); its cooked-mesh handle is not persisted.
+`physics/CollisionShapeSchema.h` holds the shape's schema.
+
+**Serialization.** `IWriteArchive` and `IReadArchive` gain `Subtree`, a value
+whose shape no schema fixes, written whole; new vtable slots.
+
+**Metadata.** `EditorVisual` gains `Kind::VolumeTint` and its `Fill` and `Edge`
+colours.
+
+**Logic.** `Trigger` (`logic/Trigger.h`) joins `LogicComponents`, declared in
+`logic/LogicRegistration.h` (formerly `VerbRelayRegistration.h`), with its
+sequence store (`logic/TriggerSequences.h`, `logic/VerbSequence*.h`),
+`TriggerSystem` and the `trigger.*` verbs.
+
+**Movement.** `movement.launch` joins the engine vocabulary.
+`StepScaledCharacterTick` takes the tick's `CharacterTickContributions`.
+
+**Gameplay tags.** `GameplayTagQueryNames` and `ResolveTagQuery` move to
+`gameplay_tags/GameplayTagQueryNames.h`; `AbilityTagQueryDecl` names it.

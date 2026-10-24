@@ -18,9 +18,6 @@ using CollisionShapeHandle = StrongId<struct CollisionShapeTag, uint32_t>;
 // the backend shape when a body is created. Primitives are described inline;
 // cooked meshes (static brush collision) are referenced by handle and resolved
 // through CollisionShapeCache (added with the cook path).
-//
-// A primitive sits at Center, turned by Orientation, in its body's frame, so a
-// volume authored off its entity's origin keeps that entity's transform.
 //=============================================================================
 
 enum class CollisionShapeType : uint8_t
@@ -41,6 +38,7 @@ struct CollisionShape
     float Radius = 0.5f;
     float HalfHeight = 0.5f;
 
+    // The primitive's pose in its body's frame.
     Vec3d Center = Vec3d::Zero();
     Quatf Orientation = Quatf::Identity();
 

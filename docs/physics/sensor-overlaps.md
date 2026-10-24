@@ -6,6 +6,7 @@ sample in the World's `SensorOverlaps` resource. It never invokes gameplay
 callbacks. Fixed logic can consume that sample on the following tick, before
 movement composition and physics. Consumers must check authority, entity
 liveness and domain participation again before executing gameplay.
+`TriggerSystem` is the engine's consumer (`docs/gameplay/triggers.md`).
 
 The physics scene retains the non-static, non-sensor body candidates. The
 character mover pool retains `CharacterVirtual` candidates, which have no body
@@ -152,6 +153,11 @@ live in World resources and retain their archetype caches across sweeps; the
 additional input pass does not add repeated query-construction allocations. A static child sensor
 uses its parent's pose at that boundary; a parent's *subsequent* motion during
 physics is visible at the next input boundary, not swept during this tick.
+
+A collider's primitive sits at `CollisionShape::Center`, turned by
+`Orientation`, in its body's frame; a sensor drawn off its entity's origin
+keeps that entity's transform. Colliders persist in scenes (`collider`), which
+is how a cooked trigger volume carries its sensor.
 
 A static sensor follows the authored world pose. Kinematic bodies (including
 sensors) follow the existing kinematic push contract. Dynamic bodies (including

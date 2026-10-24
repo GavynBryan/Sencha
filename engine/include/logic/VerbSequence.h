@@ -14,18 +14,9 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// VerbSequence
-//
-// An authored response: conditions that must all hold, then verbs invoked in
-// order. Whatever runs one -- a trigger volume today -- offers it named ports
-// (the entity that walked in, the volume itself) and decides when it runs; the
-// sequence decides what happens. Docs: docs/gameplay/triggers.md.
-//
-// Two forms, as for verb bindings. The Desc types are what content says,
-// World-independent, read from the authored JSON. CompiledVerbSequence is what
-// one World made of it (VerbSequenceCompiler.h); VerbSequenceRunner runs that.
-//=============================================================================
+// An authored response: conditions, then verbs in order, reading the ports its
+// producer offers. Desc types are what content says, World-independent; the
+// Compiled ones are what one World made of it. docs/gameplay/triggers.md.
 
 // What a producer offers a sequence to read, by name.
 enum class SequencePortKind : std::uint8_t

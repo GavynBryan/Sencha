@@ -42,25 +42,9 @@ struct TriggerInteractions
     }
 };
 
-//=============================================================================
-// TriggerSystem
-//
-// Turns the physics step's sensor sample into trigger activations at the next
-// fixed-logic pass, and runs each activated trigger's sequence there -- before
-// movement composes, so a launch lands on the step that follows.
-//
-// Only the simulation authority runs a sequence; a client neither runs nor
-// remembers activations, and sees their effects through replication.
-//
-// An activation is admitted into a bounded queue and checked again when it is
-// run: both entities alive, in this tick's logic partitions, the trigger still
-// carrying an enabled Trigger, its cooldown elapsed. One the command budget does
-// not reach this tick waits for the next, in order. Commands that activate
-// triggers -- trigger.interact -- are answered at the next pass, never within
-// the pass that issued them, so no chain runs unbounded in one tick.
-//
-// Docs: docs/gameplay/triggers.md.
-//=============================================================================
+// Turns the physics step's sensor sample into activations at the next
+// fixed-logic pass and runs them there, on the authority only, bounded by a
+// queue and a command budget. docs/gameplay/triggers.md, "Runtime semantics".
 class TriggerSystem
 {
 public:

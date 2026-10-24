@@ -17,21 +17,9 @@ class AssetRegistry;
 class DataAssetCache;
 class World;
 
-//=============================================================================
-// VerbSequenceStore
-//
-// The sequences one producer's placed entities carry, held once each. A
-// component cannot own variable-length data, so it holds a handle here, and
-// entities authored alike share one entry. Entries are immutable: changing an
-// entity's sequence interns the new text and drops the old reference.
-//
-// The authored text is kept verbatim, so a sequence naming a verb this World
-// does not declare saves back exactly as it was written. What it compiled to is
-// derived state, rebuilt on the next Resolve after a catalog publishes or
-// retires anything or the tag vocabulary grows.
-//
-// Owner-thread only.
-//=============================================================================
+// One producer's sequences, interned and reference-counted by the components
+// that hold their handles; the authored text is kept verbatim and the compiled
+// form rebuilt when a catalog or the tags move. Owner-thread only.
 class VerbSequenceStore
 {
 public:

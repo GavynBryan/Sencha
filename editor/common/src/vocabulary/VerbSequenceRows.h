@@ -13,17 +13,9 @@
 #include <string_view>
 #include <vector>
 
-// An authored verb sequence ({"conditions": [...], "commands": [...]}) laid out
-// as properties, and the edits those properties make. Rows come from the
-// vocabulary: a command's arguments are its verb's contract, each from a
-// constant, one of the producer's ports, or an entity named by identity. Pure
-// over JSON, so whatever holds a sequence -- a trigger, a later producer --
-// edits it the same way and commits the result as one undoable step.
-//
-// Keys: "conditions" and "commands" are the lists; "c<i>" and "k<i>" their
-// entries; "k<i>.verb", "k<i>.on_failure", "k<i>.arg.<name>.source|value|frame",
-// "c<i>.entity|has|tags.all|tags.any|tags.none|query|expect",
-// "c<i>.arg.<name>.source|value".
+// An authored verb sequence as properties laid out from the vocabulary, and the
+// new sequence each edit makes. Pure over JSON, so any holder of a sequence
+// edits it alike; keys are listed in docs/gameplay/triggers.md, "Inspector keys".
 struct VerbSequenceVocabulary
 {
     const VerbRegistry* Verbs = nullptr;

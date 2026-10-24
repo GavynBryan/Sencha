@@ -7,10 +7,8 @@
 #include <string>
 #include <string_view>
 
-// A verb or query argument's constant as a person types and reads it, for any
-// editor that lays arguments out from their contract. The JSON is the
-// verb-binding wrapper ({const}, {tag}, {data}, {asset}); an entity is never a
-// typed constant.
+// A verb or query argument's constant as a person types and reads it, in the
+// verb-binding wrapper ({const}, {tag}, {data}, {asset}).
 
 // The field an optional argument wraps, or the field itself.
 [[nodiscard]] const DataFieldSchema& UnwrappedField(const DataFieldSchema& field);

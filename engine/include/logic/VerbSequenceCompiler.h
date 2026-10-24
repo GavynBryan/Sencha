@@ -21,10 +21,8 @@ struct VerbSequenceEnvironment
     std::span<const SequencePort> Ports;
 };
 
-// Compiles every element it can. One that does not resolve stays in `out`,
-// marked unresolved, and is reported in `diagnostics`: an unresolved condition
-// never holds, and an unresolved command fails when it is reached. Values are
-// checked against what the verb or query declares here, not first at a dispatch.
+// Compiles every element it can; one that does not resolve stays, unresolved
+// and reported: such a condition never holds, such a command fails when reached.
 void CompileVerbSequence(const VerbSequenceDesc& desc,
                          const VerbSequenceEnvironment& environment,
                          CompiledVerbSequence& out,
