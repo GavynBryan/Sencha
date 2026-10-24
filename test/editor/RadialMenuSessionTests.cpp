@@ -142,6 +142,26 @@ protected:
             sample(at);
         }
     }
+    // Whether the straight path, inside the rim, gets a wedge's width round
+    // from `entry`'s direction: past a neighbouring slot's.
+    [[nodiscard]] bool PassesNeighbourSlotDirection(Vec2d from, Vec2d to, int entry) const
+    {
+        const RadialMenu::Layout& layout = Wheel->GetLayout();
+        const float turn = 2.0f * std::numbers::pi_v<float>;
+        const Vec2d own = OnSlot(entry);
+        const float ownAngle = std::atan2(own.X - layout.Center.X, -(own.Y - layout.Center.Y));
+        for (int i = 0; i <= 64; ++i)
+        {
+            const float t = static_cast<float>(i) / 64.0f;
+            const Vec2d at{ from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t };
+            if (RadialMenu::RingAt(layout, at) != RadialMenu::Ring::Primary)
+                continue;
+            const float angle = std::atan2(at.X - layout.Center.X, -(at.Y - layout.Center.Y));
+            if (std::fabs(std::remainder(angle - ownAngle, turn)) >= turn / static_cast<float>(layout.Count))
+                return true;
+        }
+        return false;
+    }
     [[nodiscard]] std::size_t ReachedMoves() const
     {
         std::size_t n = 0;
@@ -476,10 +496,8 @@ TEST_F(RadialMenuSessionTest, AClickedWheelIsChosenFromByTheNextClick)
     EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Closed) << "no key to wait out";
 }
 
-// Cursor paths between entries and their variants. A fan is often wider than
-// its entry's wedge, so the straight line out to a flank variant crosses a
-// neighbour's wedge inside the rim; that crossing must not hand the pointer
-// to the neighbour, while a line between two entries goes by direction.
+// Cursor paths. A fan is often wider than its entry's wedge, so the line to a
+// flank variant crosses a neighbour's wedge, which must not take the pointer.
 TEST_F(RadialMenuSessionTest, AStraightPathFromAnEntryToAnyOfItsVariantsKeepsTheEntry)
 {
     for (const int count : { 3, 4, 5, 6, 8, 10, 12 })
@@ -503,13 +521,12 @@ TEST_F(RadialMenuSessionTest, AStraightPathFromAnEntryToAnyOfItsVariantsKeepsThe
                             if (lost < 0 && Wheel->GetHot() != parent)
                                 lost = Wheel->GetHot();
                         });
-                        // From the slot nothing intervenes. From deeper in the
-                        // petal the line to a far flank variant on a crowded
-                        // ring can run over the neighbour's slot, and a slot
-                        // is never stolen: that is the one handover allowed.
-                        const bool overSlot = lost >= 0 && !fromSlot &&
-                                              SegmentPassesOver(start, InVariant(parent, child), OnSlot(lost),
-                                                                Wheel->GetLayout().Button * 0.5f);
+                        // A far flank variant on a crowded ring can lie past a neighbour's slot,
+                        // or the line to it run over one: the handovers allowed.
+                        const bool overSlot = lost >= 0 &&
+                                              (PassesNeighbourSlotDirection(start, InVariant(parent, child), parent) ||
+                                               (!fromSlot && SegmentPassesOver(start, InVariant(parent, child), OnSlot(lost),
+                                                                               Wheel->GetLayout().Button * 0.5f)));
                         EXPECT_TRUE(lost == -1 || overSlot)
                             << count << " entries, " << variants << " variants: " << parent << " -> " << child
                             << (fromSlot ? " from the slot" : " from inside the petal") << " handed over to " << lost;
@@ -619,9 +636,7 @@ TEST_F(RadialMenuSessionTest, MovingBetweenVariantsKeepsTheEntryEvenThroughTheRi
 
 TEST_F(RadialMenuSessionTest, OvershootingAVariantKeepsIt)
 {
-    // The outer band runs to the edge of the screen in each variant's
-    // direction, so carrying on outward past the fan, off the wheel, loses
-    // nothing: along the line to the middle variant, or out from a flank one.
+    // The outer band runs to the screen's edge in each variant's direction.
     Menu.Configure(8, std::vector<int>(8, 5));
     const auto farOut = [this](Vec2d through) {
         const Vec2d centre = Wheel->GetLayout().Center;
@@ -640,9 +655,7 @@ TEST_F(RadialMenuSessionTest, OvershootingAVariantKeepsIt)
 
 TEST_F(RadialMenuSessionTest, AJumpReadsTheSameAsAGlide)
 {
-    // Fast motion skips whatever lies between two reports: a jump from the
-    // slot to the flank variant, or to a point over the neighbour's wedge on
-    // the way there, is read by the line it moved along.
+    // Fast motion skips what lies between reports; a jump is read by its line.
     Menu.Configure(8, std::vector<int>(8, 5));
     const Vec2d partWay = [&] {
         (void)Press(SDLK_Q);
@@ -687,9 +700,8 @@ TEST_F(RadialMenuSessionTest, HeadingForTheHubIsBrowsingAgain)
 
 TEST_F(RadialMenuSessionTest, AShakyHandOnTheWayToAVariantKeepsTheEntry)
 {
-    // The line is read from where the pointer set out, not from the last
-    // report, so a hand wavering across the line on the way out does not hand
-    // over on one bad report. Reports land on whole pixels, as a mouse's do.
+    // The line is read from where the pointer set out, not the last report.
+    // Reports land on whole pixels, as a mouse's do.
     constexpr float kTau = 2.0f * std::numbers::pi_v<float>;
     Menu.Configure(8, std::vector<int>(8, 5));
     for (int child = 0; child < 5; ++child)
@@ -723,9 +735,7 @@ TEST_F(RadialMenuSessionTest, AShakyHandOnTheWayToAVariantKeepsTheEntry)
 
 TEST_F(RadialMenuSessionTest, AStraightPathBackFromAVariantToItsEntryKeepsTheEntry)
 {
-    // The way back crosses the same neighbour's wedge the way out did: an
-    // entry's own wedge is as much its ground as its fan, so neither the
-    // neighbour nor its fan flashes up on the return.
+    // The way back crosses the neighbour's wedge too; it must not flash up.
     for (const int count : { 3, 4, 5, 6, 8, 10, 12 })
     {
         for (const int variants : { 1, 2, 3, 4, 5 })
@@ -748,10 +758,11 @@ TEST_F(RadialMenuSessionTest, AStraightPathBackFromAVariantToItsEntryKeepsTheEnt
                             if (flashed < 0 && Wheel->GetHot() != parent)
                                 flashed = Wheel->GetHot();
                         });
-                        // As on the way out, a line run over another slot is that slot's.
-                        const bool overSlot = flashed >= 0 && !toSlot &&
-                                              SegmentPassesOver(InVariant(parent, child), home, OnSlot(flashed),
-                                                                Wheel->GetLayout().Button * 0.5f);
+                        // The same handovers as on the way out.
+                        const bool overSlot = flashed >= 0 &&
+                                              (PassesNeighbourSlotDirection(InVariant(parent, child), home, parent) ||
+                                               (!toSlot && SegmentPassesOver(InVariant(parent, child), home, OnSlot(flashed),
+                                                                             Wheel->GetLayout().Button * 0.5f)));
                         EXPECT_TRUE(flashed == -1 || overSlot)
                             << count << " entries, " << variants << " variants: " << child << " back to " << parent
                             << (toSlot ? "'s slot" : "'s petal") << " flashed " << flashed;
@@ -763,4 +774,64 @@ TEST_F(RadialMenuSessionTest, AStraightPathBackFromAVariantToItsEntryKeepsTheEnt
             }
         }
     }
+}
+
+TEST_F(RadialMenuSessionTest, SweepingAroundTheRingAfterMovingOutReachesEveryNeighbour)
+{
+    // Near the rim a sweep to the neighbour runs like a dash to a flank
+    // variant; the neighbour's slot direction ends the hold, whatever the fan.
+    constexpr float kPi = std::numbers::pi_v<float>;
+    for (const int count : { 6, 8, 12 })
+    {
+        for (const int variants : { 3, 5, 18 })
+        {
+            Menu.Configure(count, std::vector<int>(static_cast<std::size_t>(count), variants));
+            for (const float side : { 1.0f, -1.0f })
+            {
+                for (const float out : { 0.25f, 0.5f, 0.8f })
+                {
+                    (void)Press(SDLK_Q);
+                    const RadialMenu::Layout& layout = Wheel->GetLayout();
+                    const float radius = layout.Radius + (layout.RimOuter() - layout.Radius) * out;
+                    const auto onRing = [&](float angle) {
+                        return Vec2d{ layout.Center.X + std::sin(angle) * radius, layout.Center.Y - std::cos(angle) * radius };
+                    };
+                    const float wedge = 2.0f * kPi / static_cast<float>(count);
+                    (void)Move(OnSlot(0));
+                    Glide(OnSlot(0), onRing(0.0f), [](Vec2d) {}, 6);
+                    const int neighbour = side > 0.0f ? 1 : count - 1;
+                    bool reached = false;
+                    for (float swept = 0.0f; swept <= wedge * 1.4f; swept += 0.01f)
+                    {
+                        (void)Move(onRing(side * swept));
+                        if (swept >= wedge)
+                            reached = reached || Wheel->GetHot() == neighbour;
+                        if (swept >= wedge + 0.02f)
+                        {
+                            EXPECT_NE(Wheel->GetHot(), 0) << count << " entries, " << variants << " variants, " << out
+                                                          << " out, swept " << swept * 180.0f / kPi;
+                        }
+                    }
+                    EXPECT_TRUE(reached) << count << " entries, " << variants << " variants, " << out << " out";
+                    (void)Release(SDLK_Q);
+                }
+            }
+        }
+    }
+}
+
+TEST_F(RadialMenuSessionTest, ReleasingOnTheWayToAVariantSelectsTheEntryAlone)
+{
+    // What is hot is what a release selects: part way out, over the
+    // neighbour's wedge, the entry is lit and its fan is up.
+    Menu.Configure(8, std::vector<int>(8, 5));
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    const Vec2d slot = OnSlot(0);
+    const Vec2d child = InVariant(0, 4);
+    Glide(slot, { slot.X + (child.X - slot.X) * 0.55f, slot.Y + (child.Y - slot.Y) * 0.55f }, [](Vec2d) {}, 8);
+    ASSERT_EQ(Wheel->GetHold(), RadialMenu::Hold::Transit);
+    ASSERT_EQ(RadialMenu::SectorAt(Wheel->GetLayout(), { slot.X + (child.X - slot.X) * 0.55f, slot.Y + (child.Y - slot.Y) * 0.55f }), 1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Menu.Selected.back(), std::make_pair(0, -1));
 }

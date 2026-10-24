@@ -207,14 +207,21 @@ out from (`RadialMenu::PickAt`). Inside the rim the hot entry keeps the
 pointer while the line from that starting point through the pointer reaches
 the entry's own ground — its fan, or from over another wedge its own wedge —
 before the hub or any other entry's slot, so the way out to a variant and the
-way back are both the entry's; the starting point moves with the pointer
-whenever that is not so. The line is
-read over the whole run rather than the last report, so a wavering hand does
-not hand over on one sample. A line aimed at another entry's slot, or back
-toward the hub, is ordinary browsing again, and a slot is never stolen. Nothing in this depends on time or on
-tuned angles: the hub, the slots and the fan are the layout's own, so a wheel
-with more entries or wider fans needs no new rule. Over the fan itself the
-entry holds until the pointer passes the fan's edge.
+way back are both the entry's. The starting point moves with the pointer
+whenever that is not so, and the line is read over the whole run rather than
+the last report, so a wavering hand does not hand over on one sample.
+
+The hold never reaches past a neighbouring slot's direction, a wedge's width
+round from the entry's own. Near the rim a sweep along the ring toward a
+neighbour runs the same way as a dash to a flank option, so the neighbour's
+slot settles it: every neighbour is hot by the time the pointer is level with
+its slot, however wide the fan, and a slot is never stolen. A flank option
+lying past a neighbour's slot, on a crowded ring, is reached by going out to
+the fan first, where the entry holds until the pointer passes the fan's edge.
+A line aimed at another entry's slot, or back toward the hub, is ordinary
+browsing again. Nothing in this depends on time or tuned angles: the hub, the
+slots and the fan are the layout's own, so a wheel with more entries or wider
+fans needs no new rule.
 
 **The Space wheel** is about what is under the pointer, or the selection when
 nothing is (`actions/ContextMenuModel`). Its hub reads out what the thing is and

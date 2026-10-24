@@ -5,10 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <numbers>
 #include <span>
-#include <utility>
 
 // Where a radial menu lands on screen, which sector a point is in, and which
 // entry a moving pointer means.
@@ -274,107 +272,21 @@ enum class Ring : std::uint8_t
     return SlotAt(FanRange(layout, parent, count), count, AngleAt(layout, point));
 }
 
-// How far along `heading` a ray from `origin`, inside the circle of `radius`
-// about the origin of both, leaves that circle.
-[[nodiscard]] inline float LeaveCircle(Vec2d origin, Vec2d heading, float radius)
-{
-    const float a = heading.Dot(heading);
-    const float b = origin.Dot(heading);
-    const float c = origin.Dot(origin) - radius * radius;
-    return (-b + std::sqrt(std::max(b * b - a * c, 0.0f))) / a;
-}
+// Whether a pointer inside the rim, come from `from` to `to`, is on its way
+// to `parent`'s fan of `count`: its line reaches the fan before the hub or
+// another entry's slot.
+[[nodiscard]] bool HeadsIntoFan(const Layout& layout, int parent, int count, Vec2d from, Vec2d to);
 
-// How far along `heading` a ray from `origin` first comes within `radius` of
-// `point`: 0 if it starts there, infinity if it never does.
-[[nodiscard]] inline float RayReachesDisc(Vec2d origin, Vec2d heading, Vec2d point, float radius)
-{
-    const Vec2d toPoint = point - origin;
-    const float a = heading.Dot(heading);
-    const float b = toPoint.Dot(heading);
-    const float c = toPoint.Dot(toPoint) - radius * radius;
-    if (c <= 0.0f)
-        return 0.0f;
-    const float discriminant = b * b - a * c;
-    if (b <= 0.0f || discriminant < 0.0f)
-        return std::numeric_limits<float>::infinity();
-    return (b - std::sqrt(discriminant)) / a;
-}
-
-// How far along `heading` a ray from `origin` meets the hub or a slot other
-// than `parent`'s, or infinity.
-[[nodiscard]] inline float FirstObstacleAlong(const Layout& layout, int parent, Vec2d origin, Vec2d heading)
-{
-    float nearest = RayReachesDisc(origin, heading, layout.Center, layout.Hub);
-    for (int entry = 0; entry < layout.Count; ++entry)
-        if (entry != parent)
-            nearest = std::min(nearest, RayReachesDisc(origin, heading, SlotCenter(layout, entry), layout.Button * 0.5f));
-    return nearest;
-}
-
-// How far along `heading` a ray from `origin`, outside `parent`'s wedge,
-// enters that wedge inside the rim, or infinity.
-[[nodiscard]] inline float RayEntersWedge(const Layout& layout, int parent, Vec2d origin, Vec2d heading)
-{
-    const Span span = SectorSpan(parent, layout.Count);
-    const Vec2d at = origin - layout.Center;
-    float nearest = std::numeric_limits<float>::infinity();
-    // Each edge's normal points clockwise, so the wedge lies along it from its
-    // first edge and against it from its last: only motion that way enters.
-    for (const auto [edge, inward] : { std::pair{ span.Begin, 1.0f }, std::pair{ span.End, -1.0f } })
-    {
-        const Vec2d along{ std::sin(edge), -std::cos(edge) };
-        const Vec2d normal{ std::cos(edge), std::sin(edge) };
-        const float closing = heading.Dot(normal);
-        if (closing * inward <= 0.0f)
-            continue;
-        const float t = -at.Dot(normal) / closing;
-        const float out = (at + heading * t).Dot(along);
-        if (t > 0.0f && out >= 0.0f && out <= layout.RimOuter())
-            nearest = std::min(nearest, t);
-    }
-    return nearest;
-}
-
-// Whether a pointer inside the rim, having come from `from` to `to`, is on
-// its way to `parent`'s fan: the line it moves along reaches the fan, between
-// the rim and the fan's own rim, before it meets the hub or another entry's
-// slot. The hub and every slot lie inside the rim, so a line past the rim has
-// nothing left to meet first.
-[[nodiscard]] inline bool HeadsIntoFan(const Layout& layout, int parent, int count, Vec2d from, Vec2d to)
-{
-    const Vec2d heading = to - from;
-    if (count <= 0 || parent < 0 || heading.Dot(heading) <= 0.0f || RingAt(layout, to) != Ring::Primary)
-        return false;
-    if (FirstObstacleAlong(layout, parent, to, heading) < std::numeric_limits<float>::infinity())
-        return false;
-
-    const Vec2d at = to - layout.Center;
-    const float rim = AngleAt(layout, to + heading * LeaveCircle(at, heading, layout.RimOuter()));
-    const float edge = AngleAt(layout, to + heading * LeaveCircle(at, heading, layout.OuterExtent()));
-    // Along a line the direction from the centre turns one way, through less than half a turn.
-    const float turned = std::remainder(edge - rim, 2.0f * std::numbers::pi_v<float>);
-    const Range crossed = turned >= 0.0f ? Range{ rim, turned } : Range{ edge, -turned };
-    const Range fan = FanRange(layout, parent, count);
-    return Covers(fan, rim) || Covers(crossed, fan.Begin);
-}
-
-// Whether a pointer over another entry's wedge, having come from `from` to
-// `to`, is on its way back to `parent`'s: the line enters `parent`'s wedge
-// before it meets the hub or another entry's slot.
-[[nodiscard]] inline bool HeadsIntoWedge(const Layout& layout, int parent, Vec2d from, Vec2d to)
-{
-    const Vec2d heading = to - from;
-    if (parent < 0 || heading.Dot(heading) <= 0.0f || RingAt(layout, to) != Ring::Primary)
-        return false;
-    return RayEntersWedge(layout, parent, to, heading) < FirstObstacleAlong(layout, parent, to, heading);
-}
+// Whether a pointer over another wedge, come from `from` to `to`, is on its way
+// back: its line enters `parent`'s wedge before the hub or another entry's slot.
+[[nodiscard]] bool HeadsIntoWedge(const Layout& layout, int parent, Vec2d from, Vec2d to);
 
 // How the pointer holds the entry it picks.
 enum class Hold : std::uint8_t
 {
     None,    // the hub: nothing
     Wedge,   // the entry's own direction
-    Transit, // inside the rim, on the way out to the entry's fan or back over another wedge to its own
+    Transit, // inside the rim, on the way out to the entry's fan or back to its wedge
     Variant, // one of the entry's variants
 };
 
@@ -385,36 +297,8 @@ struct Pick
     Hold By = Hold::None;
 };
 
-// What the pointer picks at `pointer`, given the entry it held (`hot`) and
-// where its way to that entry's ground began (`anchor`). `fans` is each
-// entry's variant count. Over the outer band the hot entry keeps the pointer
-// while it is over its own fan; past the fan's edge direction picks, and an
-// entry picked that way has a variant only where its own fan lies.
-[[nodiscard]] inline Pick PickAt(const Layout& layout, std::span<const int> fans, int hot, Vec2d anchor, Vec2d pointer)
-{
-    const auto fanOf = [fans](int entry)
-    { return entry >= 0 && entry < static_cast<int>(fans.size()) ? fans[static_cast<std::size_t>(entry)] : 0; };
-    switch (RingAt(layout, pointer))
-    {
-    case Ring::Hub:
-        return {};
-    case Ring::Primary:
-    {
-        const int sector = SectorAt(layout, pointer);
-        const bool homeward = hot >= 0 && (HeadsIntoFan(layout, hot, fanOf(hot), anchor, pointer) ||
-                                           (sector != hot && HeadsIntoWedge(layout, hot, anchor, pointer)));
-        if (homeward)
-            return { hot, -1, Hold::Transit };
-        return { sector, -1, sector >= 0 ? Hold::Wedge : Hold::None };
-    }
-    case Ring::Outer:
-    {
-        const bool overOwnFan = hot >= 0 && VariantAt(layout, hot, fanOf(hot), pointer) >= 0;
-        const int entry = overOwnFan ? hot : SectorAt(layout, pointer);
-        const int variant = VariantAt(layout, entry, fanOf(entry), pointer);
-        return { entry, variant, variant >= 0 ? Hold::Variant : Hold::Wedge };
-    }
-    }
-    return {};
-}
+// What the pointer picks at `pointer`, holding `hot` since `anchor`, where its
+// way to that entry's ground began; `fans` is each entry's variant count
+// (docs/editor/interaction-grammar.md, "A wheel's fans are reached in a straight line").
+[[nodiscard]] Pick PickAt(const Layout& layout, std::span<const int> fans, int hot, Vec2d anchor, Vec2d pointer);
 } // namespace RadialMenu
