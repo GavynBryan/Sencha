@@ -288,7 +288,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
         if (adapter != nullptr)
             group.Descriptor.Actions.assign(adapter->Actions().begin(), adapter->Actions().end());
-        if (adapter != nullptr && adapter->AuthorsInspectorRows())
+        if (adapter != nullptr && adapter->AuthorsInspectorRows() && !adapter->InspectorRowsFollowFields())
         {
             // An adapter's rows describe one object; several together have no
             // one stack or list to show.
@@ -414,6 +414,13 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         // asset handle must never travel through.
         if (overridden && !holdsAssets)
             group.Descriptor.Verbs.push_back({ .Id = "reset", .Label = "Reset Component to Source" });
+        if (adapter != nullptr && adapter->AuthorsInspectorRows() && holders.size() == 1)
+        {
+            std::vector<PropertyNode> authored = adapter->InspectorNodes(InspectorContext(holders.front()));
+            PrefixKeys(authored, key + kAdapterSeparator);
+            group.Children.insert(group.Children.end(), std::make_move_iterator(authored.begin()),
+                                  std::make_move_iterator(authored.end()));
+        }
         nodes.push_back(std::move(group));
     }
 

@@ -129,6 +129,10 @@ public:
     // the verbs that add, remove or reorder what it lists. Set and act are one
     // command each.
     [[nodiscard]] virtual bool AuthorsInspectorRows() const { return false; }
+    // The rows come after the component's own field rows rather than in place
+    // of them: what the schema holds is edited as every component's is, and
+    // the adapter adds what no field can say.
+    [[nodiscard]] virtual bool InspectorRowsFollowFields() const { return false; }
     [[nodiscard]] virtual std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext&) const
     {
         return {};

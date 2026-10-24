@@ -10,6 +10,8 @@
 
 #include <functional>
 #include <memory>
+#include <span>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -76,6 +78,11 @@ public:
     // source brush the level file kept.
     void Bake();
     void RevertBaked();
+
+    // Gives every selected brush each component it lacks of those named by
+    // scene key, at its defaults, as one undoable step: a brush made a trigger
+    // volume is given "volume", "volume_sensor" and "trigger" at once.
+    void AddComponentsToBrushes(std::span<const std::string_view> components);
 
     [[nodiscard]] bool HasBakedSelection() const;
     [[nodiscard]] bool HasInstancedSelection() const;

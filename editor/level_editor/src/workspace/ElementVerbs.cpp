@@ -8,6 +8,7 @@
 #include <SDL3/SDL_keycode.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 namespace
@@ -90,6 +91,13 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
           { .Invoke = [&w] { w.Actions.MakeUnique(); }, .Enabled = [&w] { return w.Actions.HasInstancedSelection(); } });
     offer({ .Id = "brush.merge", .Label = "Merge Brushes" },
           { .Invoke = [&w] { w.Actions.Merge(); }, .Enabled = brushes(2) });
+    offer({ .Id = "brush.trigger", .Label = "Make Trigger Volume" },
+          { .Invoke = [&w] {
+                static constexpr std::array<std::string_view, 3> kTriggerVolume = { "volume", "volume_sensor",
+                                                                                   "trigger" };
+                w.Actions.AddComponentsToBrushes(kTriggerVolume);
+            },
+            .Enabled = brushes(1) });
     offer({ .Id = "brush.bake", .Label = "Bake to Static Mesh" },
           { .Invoke = [&w] { w.Actions.Bake(); }, .Enabled = brushes(1) });
     offer({ .Id = "brush.revert", .Label = "Revert to Brush" },
@@ -171,7 +179,7 @@ std::vector<std::string> ElementVerbs::Relevant() const
         if (Selected(MeshElementKind::Object) == 0 && !Workspace.Actions.HasBakedSelection())
             return { DuplicateAction().Id, "edit.duplicate_instance", DeleteAction().Id };
         return { "brush.normals", DuplicateAction().Id, "edit.duplicate_instance", "brush.make_unique", "brush.merge",
-                 "brush.bake", "brush.revert", "brush.export", DeleteAction().Id };
+                 "brush.trigger", "brush.bake", "brush.revert", "brush.export", DeleteAction().Id };
     }
 }
 
