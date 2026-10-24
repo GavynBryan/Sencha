@@ -7,6 +7,10 @@
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <ecs/World.h>
+#include <logic/Trigger.h>
+#include <logic/TriggerSystem.h>
+#include <movement/components/CharacterFacts.h>
+#include <physics/components/Collider.h>
 #include <net/NetReplicationComponents.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
@@ -109,5 +113,52 @@ TEST(FpsTemplate, OnePlayerOneBodyLookedThroughFromInside)
     EXPECT_TRUE(seen.BodyTakesLocalLook) << "the driven body takes this machine's look input";
     EXPECT_TRUE(seen.CameraIsBodysChild) << "the view is the pawn prefab's camera child";
     EXPECT_TRUE(seen.CameraExcludesBody) << "looking out from inside the body excludes it";
+}
+
+// A bumper authored in Kyusu and cooked like any level: an invisible trigger
+// volume under the player start whose sequence launches whoever lands on it.
+// Nothing in the template or the engine names bumpers.
+namespace
+{
+    struct BumperProbe
+    {
+        Engine* Host = nullptr;
+        bool SensorCooked = false;
+        float HighestRise = 0.0f;
+        std::uint64_t Activations = 0;
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            const World& world = ctx.Entities;
+            if (world.IsRegistered<Trigger>() && world.IsRegistered<Collider>())
+                world.ForEachComponent<Trigger>([&](EntityId entity, const Trigger&) {
+                    const Collider* collider = world.TryGet<Collider>(entity);
+                    SensorCooked = SensorCooked || (collider != nullptr && collider->IsTrigger);
+                });
+            if (world.IsRegistered<ParticipantControl>() && world.IsRegistered<KinematicState>())
+                world.ForEachComponent<ParticipantControl>([&](EntityId, const ParticipantControl& control) {
+                    if (const KinematicState* motion = world.IsAlive(control.Body)
+                            ? world.TryGet<KinematicState>(control.Body)
+                            : nullptr)
+                        HighestRise = std::max(HighestRise, motion->Velocity.Y);
+                });
+            if (const TriggerSystem* triggers = Host->Schedule().Get<TriggerSystem>())
+                Activations = triggers->Stats().Activations;
+        }
+    };
+}
+
+TEST(FpsTemplate, ABumperAuthoredAsATriggerVolumeLaunchesThePawnThatLandsOnIt)
+{
+    TemplateModuleRun<BumperProbe> run(
+        TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets",
+        "levels/bumper", 240);
+    ASSERT_TRUE(run.Loaded());
+    ASSERT_EQ(run.Exit(), 0);
+
+    const BumperProbe& seen = run.Seen();
+    EXPECT_TRUE(seen.SensorCooked) << "the trigger volume did not cook to a sensor";
+    EXPECT_GE(seen.Activations, 1u) << "the pawn landed on the bumper and nothing activated";
+    EXPECT_GT(seen.HighestRise, 6.0f) << "the pawn was never launched";
 }
 #endif

@@ -418,7 +418,7 @@ if(TEMPLATE_TEST_SOURCES AND TARGET level_cook_tests)
         set_tests_properties(CookFpsTemplateContent PROPERTIES
             FIXTURES_SETUP TemplateContent
             ENVIRONMENT
-                "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
+                "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/bumper.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
     endif()
     foreach(_template platformer horror)
         if(TARGET ${_template}_game)
