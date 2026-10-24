@@ -60,10 +60,6 @@ std::string UnsensedReason(const World& world, const EditorScene& scene, EntityI
     return {};
 }
 
-Vec4 ColourOf(const std::array<float, 4>& rgba)
-{
-    return Vec4(rgba[0], rgba[1], rgba[2], rgba[3]);
-}
 
 class TriggerEditorAdapter final : public IEditorComponentAdapter
 {
@@ -113,7 +109,7 @@ public:
     {
         const World& world = context.Scene.GetRegistry().Components;
         const EditorVisual tint = *ComponentEditorVisual<Trigger>::Value;
-        const Vec4 colour = ColourOf(tint.Edge);
+        const Vec4 colour = EditorTheme::DeclaredColour(tint.Edge);
         const std::optional<Aabb3d> bounds = context.Scene.EvaluatedWorldBounds(context.Entity);
         const Vec3d centre = bounds ? bounds->Center() : context.Transform.Position;
         const Vec3d half = bounds ? bounds->HalfExtent() : Vec3d(0.5f, 0.5f, 0.5f);

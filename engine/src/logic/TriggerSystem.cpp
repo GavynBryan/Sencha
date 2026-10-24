@@ -187,9 +187,6 @@ void TriggerSystem::RunQueue(FixedLogicContext& ctx)
         const CompiledVerbSequence* sequence = &kEmptySequence;
         if (sequences != nullptr && trigger.Sequence.IsValid())
         {
-            // Held across the run: a command that ends the trigger releases its
-            // reference, and the sequence must outlive the commands it is running.
-            sequences->Store.Retain(trigger.Sequence);
             sequence = sequences->Store.Resolve(trigger.Sequence, world, Assets, DataAssets);
             if (sequences->Store.CompileCount() != ReportedCompiles)
             {
@@ -215,8 +212,6 @@ void TriggerSystem::RunQueue(FixedLogicContext& ctx)
         };
         const SequenceOutcome outcome = Runner.Run(*sequence, run);
         spent += std::max<std::size_t>(1, sequence->Commands.size());
-        if (sequences != nullptr && trigger.Sequence.IsValid())
-            sequences->Store.Release(trigger.Sequence);
 
         if (!outcome.Held)
         {

@@ -228,11 +228,14 @@ JsonValue* FindMutable(JsonValue& value, std::string_view key)
 
 // A sensor volume reaches the level as its entity, carrying the collider its
 // box cooks to; every other brush is geometry the cells and collision carry.
+// A hidden one is left out, as a hidden brush is.
 bool PassesThrough(const EditorDocument& document, EntityId entity)
 {
     const World& world = document.GetRegistry().Components;
-    return document.GetScene().TryGetBrush(entity) == nullptr
-        || (world.IsRegistered<VolumeSensor>() && world.HasComponent<VolumeSensor>(entity));
+    if (document.GetScene().TryGetBrush(entity) == nullptr)
+        return true;
+    return world.IsRegistered<VolumeSensor>() && world.HasComponent<VolumeSensor>(entity)
+        && document.GetScene().IsEntityEffectivelyVisible(entity);
 }
 
 std::string NameForCook(const EditorDocument& document, EntityId entity)

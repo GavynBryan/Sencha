@@ -82,8 +82,9 @@ exactly to the brush (`document/VolumeSensorCook.h`). The box is posed in the
 entity's body frame (its position and turn); its scale is baked into the box.
 A volume that is not exactly one box -- a cylinder, a dragged corner, modifiers
 that make several pieces, a non-uniform scale across a turn -- refuses the cook
-with its name and the reason. It is never approximated. Volumes are never
-geometry, so none of this draws, collides or blocks navigation.
+with its name and the reason. It is never approximated. A hidden trigger volume
+is left out of the cook, as a hidden brush is. Volumes are never geometry, so
+none of this draws, collides or blocks navigation.
 
 A trigger need not be a brush: any entity with a `Trigger` and a sensor
 collider (`Collider.IsTrigger`) works, as a prefab might carry one.
@@ -134,10 +135,18 @@ cannot be read, or when it never compiled. `on_failure: "stop"` ends the run
 there; the default continues. Outcomes are counted on `TriggerSystem::Stats()`.
 
 Compiling happens once per distinct sequence and again only when a verb or
-query catalog publishes or retires something or the tag vocabulary grows.
-Entities authored alike share one interned sequence; a trigger component holds
-a handle to it (components cannot own variable data), retained and released by
-its lifecycle hooks.
+query catalog publishes or retires something, the tag vocabulary grows, or a
+data asset the sequence names arrives or reloads.
+
+Components cannot own variable data, so a trigger holds a `VerbSequenceKey`:
+the hash of its sequence's authored text, in the World's store. A key is a
+value. The store keeps every entry it interned for the World's lifetime, so a
+component copied, snapshotted for undo, or restored from a prefab baseline byte
+for byte always resolves, and entities authored alike share one entry. The
+store grows with the distinct texts a World has seen -- in Kyusu, one per
+distinct text an edit produces. Saving a key the World never interned (bytes
+carried in from another World) fails loudly rather than writing an empty
+sequence.
 
 ### Bounds
 

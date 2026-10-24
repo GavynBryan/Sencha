@@ -1,5 +1,6 @@
 #include <logic/TriggerSerializer.h>
 
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/World.h>
 #include <logic/Trigger.h>
@@ -56,6 +57,15 @@ public:
             ((ok = SceneComponentSerialization::SaveField(archive, *trigger, field, context) && ok), ...);
         }, TypeSchema<Trigger>::Fields());
         const JsonValue* sequence = TriggerSequenceSource(world, entity);
+        // A key this World never interned came from bytes copied out of another
+        // World; saving it as empty would lose what was authored, so it fails.
+        if (sequence == nullptr && trigger->Sequence.IsValid())
+        {
+            context.Logging->GetLogger<SceneSerializationContext>().Error(
+                "Trigger: entity's sequence is not in this World's store; not saved");
+            archive.End();
+            return false;
+        }
         archive.Subtree(kSequenceKey, sequence != nullptr ? *sequence : EmptyVerbSequence());
         archive.End();
         return ok && archive.Ok();
@@ -91,14 +101,11 @@ public:
         if (!ok || !archive.Ok())
             return false;
 
-        // The load's reference holds the sequence across the add; the entity's
-        // copy takes its own through OnAdd.
-        VerbSequenceStore& store = TriggerSequencesOf(world);
-        trigger.Sequence = store.Intern(sequence);
-        const bool added = world.HasComponent<Trigger>(entity) ? world.InitializeComponent<Trigger>(entity, trigger)
-                                                                : (world.AddComponent<Trigger>(entity, trigger), true);
-        store.Release(trigger.Sequence);
-        return added;
+        trigger.Sequence = TriggerSequencesOf(world).Intern(sequence);
+        if (world.HasComponent<Trigger>(entity))
+            return world.InitializeComponent<Trigger>(entity, trigger);
+        world.AddComponent<Trigger>(entity, trigger);
+        return true;
     }
 
     bool Remove(EntityId entity, Registry& registry) const override

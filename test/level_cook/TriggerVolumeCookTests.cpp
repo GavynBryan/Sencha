@@ -200,3 +200,15 @@ TEST_F(TriggerVolumeCookTest, AResizedTriggerVolumeCooksItsNewBox)
     EXPECT_NEAR(half.Y, 0.5f, 1e-4f);
     EXPECT_NEAR(half.Z, 2.0f, 1e-4f);
 }
+
+TEST_F(TriggerVolumeCookTest, AHiddenTriggerVolumeIsLeftOutAsAHiddenBrushIs)
+{
+    // Not a box: cooked, it would refuse the level, so hiding it must keep it out.
+    const EntityId hidden =
+        TriggerVolume(Transform3f::Identity(), BrushOps::MakeCylinder(Vec3d(1, 1, 1), 1, 8), "hidden trigger");
+    Doc.GetScene().SetEntityVisible(hidden, false);
+    std::string error;
+    const std::optional<DocumentCookInput> input = Cook(&error);
+    ASSERT_TRUE(input.has_value()) << error;
+    EXPECT_EQ(CookedEntity(*input, Entities(), hidden), nullptr);
+}

@@ -69,6 +69,8 @@ TEST_F(VerbSequenceRowsTest, ALaunchIsAddedAimedAtTheActivatorAndGivenADirection
     // The target starts at the activator, the one port that can be a character.
     EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target")),
               R"({"port":"activator"})");
+    EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("direction")),
+              R"({"const":[0,0,1]})") << "a launch started with no way to go";
 
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.value", "0, 0, 1"));
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.frame", "trigger"));

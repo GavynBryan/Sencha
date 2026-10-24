@@ -92,7 +92,7 @@ TEST_F(TriggerAuthoringTest, ALaunchIsConfiguredInTheInspectorBesideThePolicyFie
     ASSERT_NE(Find(rows, "trigger:commands"), nullptr);
 
     ASSERT_EQ(Inspector->Act("trigger:commands", "add", "movement.launch"), PropertyEditResult::Applied);
-    ASSERT_EQ(Set("trigger:k0.arg.direction.value", "0, 0, 1"), PropertyEditResult::Applied);
+    ASSERT_EQ(Set("trigger:k0.arg.direction.value", "1, 0, 0"), PropertyEditResult::Applied);
     ASSERT_EQ(Set("trigger:k0.arg.direction.frame", "trigger"), PropertyEditResult::Applied);
     ASSERT_EQ(Set("trigger:k0.arg.speed.value", "12"), PropertyEditResult::Applied);
     ASSERT_EQ(Set("trigger:k0.arg.rise.value", "6"), PropertyEditResult::Applied);
@@ -151,4 +151,27 @@ TEST_F(TriggerAuthoringTest, TheConfiguredTriggerSavesAndLoads)
             EXPECT_EQ(JsonStringify(*TriggerSequenceSource(world, entity)), configured);
         }
     EXPECT_EQ(triggers, 1);
+}
+
+TEST_F(TriggerAuthoringTest, UndoingAPolicyEditAcrossASequenceEditKeepsTheSequence)
+{
+    const EntityId brush = AddBrush({ 0, 0.5, 0 }, { 1, 0.5, 1 });
+    SelectEntity(brush);
+    Workspace.Actions.AddComponentsToBrushes(kTriggerVolume);
+    ASSERT_EQ(Inspector->Act("trigger:commands", "add", "movement.launch"), PropertyEditResult::Applied);
+    const std::string withLaunch = Sequence(brush);
+    ASSERT_EQ(Set("trigger/cooldown", "2"), PropertyEditResult::Applied);
+    ASSERT_EQ(Set("trigger:k0.arg.speed.value", "9"), PropertyEditResult::Applied);
+    const std::string configured = Sequence(brush);
+
+    Workspace.Commands.Undo();
+    EXPECT_EQ(Sequence(brush), withLaunch);
+    Workspace.Commands.Undo();
+    EXPECT_EQ(Sequence(brush), withLaunch) << "undoing the cooldown restored a sequence that no longer resolves";
+    EXPECT_NE(Workspace.ActiveDocument().ToSceneText().find("movement.launch"), std::string::npos)
+        << "the level saved without the sequence";
+
+    Workspace.Commands.Redo();
+    Workspace.Commands.Redo();
+    EXPECT_EQ(Sequence(brush), configured);
 }

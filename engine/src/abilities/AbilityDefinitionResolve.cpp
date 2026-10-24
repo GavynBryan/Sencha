@@ -3,6 +3,7 @@
 #include <abilities/AbilityGrantEntries.h>
 #include <attributes/AttributeRegistry.h>
 #include <authored/AuthoredLiteral.h>
+#include <authored/AuthoredArgumentMatch.h>
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbRegistry.h>
 #include <authored/WorldVocabulary.h>
@@ -313,18 +314,22 @@ namespace
                                                  const std::vector<AbilityArgumentDecl>& arguments,
                                                  std::string_view key, const std::string& path)
         {
-            std::vector<AbilityValue> values;
+            std::vector<std::string_view> names;
             for (const AbilityArgumentDecl& argument : arguments)
-                if (FindChild(query.Arguments, argument.Name) == nullptr)
-                    Error("schema", key, path + ".arguments." + argument.Name,
-                          std::format("'{}' takes no argument '{}'", query.Name, argument.Name));
-            for (const DataFieldSchema& field : query.Arguments.Children)
+                names.push_back(argument.Name);
+            std::vector<std::string_view> undeclared;
+            const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(query.Arguments, names, undeclared);
+            for (const std::string_view name : undeclared)
+                Error("schema", key, path + ".arguments." + std::string(name),
+                      std::format("'{}' takes no argument '{}'", query.Name, name));
+            std::vector<AbilityValue> values;
+            for (const AuthoredArgumentSlot& slot : slots)
             {
+                const DataFieldSchema& field = *slot.Field;
                 AbilityValue value;
-                const auto given = std::ranges::find(arguments, field.Key, &AbilityArgumentDecl::Name);
                 std::vector<std::string> errors;
-                if (given != arguments.end())
-                    (void)Value(given->Value, field, key, path + ".arguments." + field.Key, value);
+                if (slot.Given)
+                    (void)Value(arguments[*slot.Given].Value, field, key, path + ".arguments." + field.Key, value);
                 else if (!CompileAuthoredDefault(field, std::format("ability '{}#{}'", Name, key), field.Key,
                                                  value.Constant, errors))
                     Error("schema", key, path, std::format("'{}' needs an argument '{}'", query.Name, field.Key));

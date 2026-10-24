@@ -21,10 +21,6 @@ struct VolumeTint
     Vec4 Edge;
 };
 
-Vec4 ColourOf(const std::array<float, 4>& rgba)
-{
-    return Vec4(rgba[0], rgba[1], rgba[2], rgba[3]);
-}
 
 void CollectVolumeTints(std::vector<VolumeTint>& out)
 {
@@ -33,7 +29,7 @@ void CollectVolumeTints(std::vector<VolumeTint>& out)
     {
         const std::optional<EditorVisual> visual = serializer->GetEditorVisual();
         if (visual && visual->VisualKind == EditorVisual::Kind::VolumeTint)
-            out.push_back({ serializer.get(), ColourOf(visual->Fill), ColourOf(visual->Edge) });
+            out.push_back({ serializer.get(), EditorTheme::DeclaredColour(visual->Fill), EditorTheme::DeclaredColour(visual->Edge) });
     }
 }
 } // namespace

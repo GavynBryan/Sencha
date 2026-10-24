@@ -69,6 +69,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     DataFieldSchema direction =
         MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, as aim.direction gives it.");
     direction.VectorLength = 3;
+    direction.Editor.Widget = "direction";
     burst.Arguments.Children.push_back(std::move(direction));
     burst.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second of the character's time.", 10.0, 0.0));
     burst.Arguments.Children.push_back(Number("seconds", "Seconds", "How long; zero holds it until let go.", 0.0, 0.0));
@@ -110,6 +111,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     launch.Arguments.Children.push_back(std::move(launched));
     DataFieldSchema heading = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, in world space.");
     heading.VectorLength = 3;
+    heading.Editor.Widget = "direction";
     launch.Arguments.Children.push_back(std::move(heading));
     launch.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second along the direction.", 10.0, 0.0));
     DataFieldSchema rise = Number("rise", "Rise", "Metres per second added straight up, along the character's up axis.",

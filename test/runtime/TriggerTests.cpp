@@ -7,7 +7,9 @@
 #include <authored/WorldVocabulary.h>
 #include <core/config/EngineConfig.h>
 #include <core/console/ConsoleRegistry.h>
+#include <assets/data/DataAssetCache.h>
 #include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
@@ -432,7 +434,6 @@ TEST_F(TriggerFixture, OnceEndsTheTriggerAfterItRuns)
 
     EXPECT_EQ(Calls.size(), 1u) << "a once trigger ran for a second activator in its own pass";
     EXPECT_FALSE(WorldState.IsAlive(trigger));
-    EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 0u) << "the consumed trigger's sequence was kept";
 }
 
 TEST_F(TriggerFixture, ATriggerCooldownHoldsEveryoneAndAnActivatorCooldownOnlyThatOne)
@@ -628,19 +629,52 @@ TEST_F(TriggerFixture, ActivationsPastTheBudgetWaitForTheNextPassInOrder)
         EXPECT_EQ(Calls[i].Target, activators[i]);
 }
 
-TEST_F(TriggerFixture, EntitiesAuthoredAlikeShareOneSequence)
+TEST_F(TriggerFixture, ASequenceKeyIsAValueThatSurvivesCopiesOfTheComponent)
 {
     const EntityId a = PlaceTrigger(kRecordActivator);
     const EntityId b = PlaceTrigger(kRecordActivator);
-    EXPECT_EQ(WorldState.TryGet<Trigger>(a)->Sequence, WorldState.TryGet<Trigger>(b)->Sequence);
+    EXPECT_EQ(WorldState.TryGet<Trigger>(a)->Sequence, WorldState.TryGet<Trigger>(b)->Sequence)
+        << "entities authored alike did not share one entry";
     EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 1u);
 
-    WorldState.DestroyEntity(a);
-    EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 1u);
-    ASSERT_TRUE(SetTriggerSequence(WorldState, b, EmptyVerbSequence()));
-    EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 1u) << "the replaced sequence was kept";
+    // The component's bytes, kept as an undo step keeps them, outlive a change
+    // to its sequence and the end of every other holder.
+    const Trigger kept = *WorldState.TryGet<Trigger>(a);
+    ASSERT_TRUE(SetTriggerSequence(WorldState, a, EmptyVerbSequence()));
     WorldState.DestroyEntity(b);
-    EXPECT_EQ(TriggerSequencesOf(WorldState).Size(), 0u);
+    *WorldState.TryGet<Trigger>(a) = kept;
+    const JsonValue* restored = TriggerSequenceSource(WorldState, a);
+    ASSERT_NE(restored, nullptr) << "a restored key resolved to nothing";
+    EXPECT_EQ(JsonStringify(*restored), JsonStringify(Json(kRecordActivator)));
+}
+
+TEST_F(TriggerFixture, ADataAssetThatArrivesLaterResolvesTheCommandNamingIt)
+{
+    {
+        VerbRegistrationScope scope(*Verbs, "data");
+        VerbDefinition use;
+        use.Name = "test.use";
+        DataFieldSchema thing = MakeDataField(DataFieldKind::DataAssetRef, "thing", "Thing");
+        thing.Reference.DataSubtype = "test.thing";
+        use.Arguments.Children.push_back(std::move(thing));
+        (void)scope.Declare(std::move(use));
+        ASSERT_TRUE(scope.Commit());
+    }
+    VerbSequenceStore& store = TriggerSequencesOf(WorldState);
+    const VerbSequenceKey key = store.Intern(Json(R"({"commands": [
+        {"verb": "test.use", "arguments": {"thing": {"data": "asset://data/thing.sdata"}}}]})"));
+    DataAssetCache cache;
+
+    const CompiledVerbSequence* before = store.Resolve(key, WorldState, nullptr, &cache);
+    ASSERT_NE(before, nullptr);
+    EXPECT_FALSE(before->Commands.front().Resolved) << "a command compiled against an asset that was not resident";
+
+    const DataAssetHandle thing =
+        cache.Register("asset://data/thing.sdata", "test.thing", std::make_shared<const int>(1));
+    ASSERT_TRUE(thing.IsValid());
+    const CompiledVerbSequence* after = store.Resolve(key, WorldState, nullptr, &cache);
+    ASSERT_NE(after, nullptr);
+    EXPECT_TRUE(after->Commands.front().Resolved) << "the asset arrived and the sequence did not compile again";
 }
 
 TEST_F(TriggerFixture, AValueMayBeAQuerysAnswerOrOneMemberOfIt)

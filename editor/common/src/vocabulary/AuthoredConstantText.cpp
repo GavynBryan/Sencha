@@ -85,6 +85,6 @@ JsonValue DefaultAuthoredConstant(const DataFieldSchema& field)
     if (kind == DataFieldKind::Bool)
         return *AuthoredConstantFromText(field, "false");
     if (kind == DataFieldKind::Vector)
-        return *AuthoredConstantFromText(field, "0, 0, 0");
+        return *AuthoredConstantFromText(field, UnwrappedField(field).Editor.Widget == "direction" ? "0, 0, 1" : "0, 0, 0");
     return *AuthoredConstantFromText(field, "");
 }

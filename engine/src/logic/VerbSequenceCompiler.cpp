@@ -1,5 +1,6 @@
 #include <logic/VerbSequenceCompiler.h>
 
+#include <authored/AuthoredArgumentMatch.h>
 #include <authored/AuthoredLiteral.h>
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbRegistry.h>
@@ -203,21 +204,22 @@ private:
     bool QueryArguments(const AuthoredQueryDefinition& query, const std::vector<SequenceArgumentDesc>& given,
                         std::string_view where, std::vector<CompiledSequenceValue>& out)
     {
-        bool ok = true;
+        std::vector<std::string_view> names;
         for (const SequenceArgumentDesc& argument : given)
-            if (std::ranges::none_of(query.Arguments.Children,
-                                     [&](const DataFieldSchema& field) { return field.Key == argument.Key; }))
-            {
-                Report(where, std::format("'{}' takes no argument '{}'", query.Name, argument.Key));
-                ok = false;
-            }
-        for (const DataFieldSchema& field : query.Arguments.Children)
+            names.push_back(argument.Key);
+        std::vector<std::string_view> undeclared;
+        const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(query.Arguments, names, undeclared);
+        for (const std::string_view name : undeclared)
+            Report(where, std::format("'{}' takes no argument '{}'", query.Name, name));
+        bool ok = undeclared.empty();
+        for (const AuthoredArgumentSlot& slot : slots)
         {
+            const DataFieldSchema& field = *slot.Field;
             CompiledSequenceValue value;
-            const auto argument = std::ranges::find(given, field.Key, &SequenceArgumentDesc::Key);
-            if (argument != given.end())
+            if (slot.Given)
             {
-                ok = Value(argument->Value, field, std::format("{} argument '{}'", where, field.Key), value) && ok;
+                ok = Value(given[*slot.Given].Value, field, std::format("{} argument '{}'", where, field.Key), value)
+                    && ok;
             }
             else
             {

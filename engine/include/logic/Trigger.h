@@ -3,9 +3,8 @@
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/EnumSchema.h>
 #include <ecs/ComponentAnnotations.h>
-#include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
-#include <logic/VerbSequenceHandle.h>
+#include <logic/VerbSequenceKey.h>
 
 #include <array>
 #include <cstdint>
@@ -92,7 +91,7 @@ Trigger
     float StayIntervalSeconds = 0.0f;
 
     // The scene form is the sequence's authored text; see TriggerSerializer.
-    VerbSequenceHandle Sequence{};
+    VerbSequenceKey Sequence{};
 };
 
 static_assert(std::is_trivially_copyable_v<Trigger>);
@@ -111,12 +110,4 @@ struct ComponentEditorVisual<Trigger>
         .Fill = { 0.85f, 0.32f, 0.02f, 0.16f },
         .Edge = { 1.0f, 0.45f, 0.05f, 0.95f },
     };
-};
-
-// A trigger holds one reference to its sequence for as long as it carries it.
-template <>
-struct ComponentTraits<Trigger>
-{
-    static void OnAdd(Trigger& trigger, World& world, EntityId entity);
-    static void OnRemove(const Trigger& trigger, World& world, EntityId entity);
 };

@@ -511,3 +511,10 @@ sequence store (`logic/TriggerSequences.h`, `logic/VerbSequence*.h`),
 
 **Gameplay tags.** `GameplayTagQueryNames` and `ResolveTagQuery` move to
 `gameplay_tags/GameplayTagQueryNames.h`; `AbilityTagQueryDecl` names it.
+`EntityMatches` (`gameplay_tags/EntityMatch.h`) is the entity condition
+abilities and sequences share.
+
+**Authored.** `MatchAuthoredArguments` (`authored/AuthoredArgumentMatch.h`)
+pairs a call's authored arguments with the ones declared; ability, candidate
+and sequence query calls compile through it. `DataEditorHint::Widget` gains
+`"direction"`.

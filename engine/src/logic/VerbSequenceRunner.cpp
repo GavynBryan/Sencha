@@ -1,8 +1,9 @@
 #include <logic/VerbSequenceRunner.h>
 
 #include <authored/AuthoredQueryDispatcher.h>
+#include <authored/AuthoredValueTraits.h>
 #include <ecs/World.h>
-#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/EntityMatch.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -14,22 +15,6 @@ namespace
 // names queries and never another value.
 constexpr std::uint32_t kQueryNestingLimit = 8;
 
-Vec3d VectorOf(const AuthoredVectorValue& value)
-{
-    return Vec3d(static_cast<float>(value.Components[0]), static_cast<float>(value.Components[1]),
-                 static_cast<float>(value.Components[2]));
-}
-
-AuthoredValue VectorValue(const Vec3d& vector)
-{
-    AuthoredVectorValue value;
-    value.Length = 3;
-    value.Components[0] = vector.X;
-    value.Components[1] = vector.Y;
-    value.Components[2] = vector.Z;
-    return AuthoredValue::Vector(value);
-}
-
 bool EntityAt(const SequenceRun& run, std::uint8_t port, EntityId& out)
 {
     return port < run.Ports.size() && run.Ports[port].TryGetEntity(out) && run.Entities.IsAlive(out);
@@ -38,14 +23,14 @@ bool EntityAt(const SequenceRun& run, std::uint8_t port, EntityId& out)
 bool TurnIntoWorld(const SequenceRun& run, std::uint8_t frame, AuthoredValue& value)
 {
     EntityId entity;
-    AuthoredVectorValue vector;
-    if (!EntityAt(run, frame, entity) || !value.TryGetVector(vector) || vector.Length != 3
+    Vec3d vector;
+    if (!EntityAt(run, frame, entity) || !AuthoredValueTraits<Vec3d>::Decode(value, vector)
         || !run.Entities.IsRegistered<WorldTransform>())
         return false;
     const WorldTransform* pose = run.Entities.TryGet<WorldTransform>(entity);
     if (pose == nullptr)
         return false;
-    value = VectorValue(pose->Value.Rotation.RotateVector(VectorOf(vector)));
+    value = AuthoredValueTraits<Vec3d>::Encode(pose->Value.Rotation.RotateVector(vector));
     return true;
 }
 
@@ -135,18 +120,9 @@ bool VerbSequenceRunner::HoldsCondition(const CompiledSequenceCondition& conditi
     }
 
     EntityId entity;
-    if (!EntityAt(run, condition.Port, entity))
-        return false;
-    if (std::ranges::any_of(condition.Components,
-                            [&](ComponentId component) { return !run.Entities.HasComponent(entity, component); }))
-        return false;
-    if (!condition.HasTags)
-        return true;
-    static const GameplayTagContainer kNoTags{};
-    const GameplayTagContainer* tags = run.Entities.IsRegistered<GameplayTagContainer>()
-        ? run.Entities.TryGet<GameplayTagContainer>(entity)
-        : nullptr;
-    return run.Tags != nullptr && condition.Tags.Matches(tags != nullptr ? *tags : kNoTags, *run.Tags);
+    return condition.Port < run.Ports.size() && run.Ports[condition.Port].TryGetEntity(entity)
+        && EntityMatches(run.Entities, entity, condition.Components, condition.HasTags ? &condition.Tags : nullptr,
+                         run.Tags);
 }
 
 bool VerbSequenceRunner::Holds(const CompiledVerbSequence& sequence, const SequenceRun& run)
