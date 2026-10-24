@@ -534,7 +534,7 @@ TEST_F(RadialMenuSessionTest, ALineBetweenTwoEntriesGoesByDirectionWhateverTheir
 {
     // Up to a fan that takes the whole turn: an entry's variants never claim a
     // line that runs to another entry's slot.
-    for (const int count : { 4, 6, 8, 12 })
+    for (const int count : { 3, 4, 6, 8, 12 })
     {
         for (const int variants : { 0, 3, 5, 9, 18 })
         {
@@ -717,6 +717,50 @@ TEST_F(RadialMenuSessionTest, AShakyHandOnTheWayToAVariantKeepsTheEntry)
             (void)Move(target);
             EXPECT_EQ(Wheel->GetHotVariant(), child);
             (void)Release(SDLK_Q);
+        }
+    }
+}
+
+TEST_F(RadialMenuSessionTest, AStraightPathBackFromAVariantToItsEntryKeepsTheEntry)
+{
+    // The way back crosses the same neighbour's wedge the way out did: an
+    // entry's own wedge is as much its ground as its fan, so neither the
+    // neighbour nor its fan flashes up on the return.
+    for (const int count : { 3, 4, 5, 6, 8, 10, 12 })
+    {
+        for (const int variants : { 1, 2, 3, 4, 5 })
+        {
+            Menu.Configure(count, std::vector<int>(static_cast<std::size_t>(count), variants));
+            for (int parent = 0; parent < count; ++parent)
+            {
+                for (int child = 0; child < variants; ++child)
+                {
+                    for (const bool toSlot : { true, false })
+                    {
+                        (void)Press(SDLK_Q);
+                        (void)Move(OnSlot(parent));
+                        (void)Move(InVariant(parent, child));
+                        ASSERT_EQ(Wheel->GetHot(), parent);
+                        ASSERT_EQ(Wheel->GetHotVariant(), child);
+                        const Vec2d home = toSlot ? OnSlot(parent) : InPetal(parent);
+                        int flashed = -1;
+                        Glide(InVariant(parent, child), home, [&](Vec2d) {
+                            if (flashed < 0 && Wheel->GetHot() != parent)
+                                flashed = Wheel->GetHot();
+                        });
+                        // As on the way out, a line run over another slot is that slot's.
+                        const bool overSlot = flashed >= 0 && !toSlot &&
+                                              SegmentPassesOver(InVariant(parent, child), home, OnSlot(flashed),
+                                                                Wheel->GetLayout().Button * 0.5f);
+                        EXPECT_TRUE(flashed == -1 || overSlot)
+                            << count << " entries, " << variants << " variants: " << child << " back to " << parent
+                            << (toSlot ? "'s slot" : "'s petal") << " flashed " << flashed;
+                        EXPECT_EQ(Wheel->GetHotVariant(), -1);
+                        (void)Release(SDLK_Q);
+                        EXPECT_EQ(Menu.Selected.back(), std::make_pair(parent, -1));
+                    }
+                }
+            }
         }
     }
 }

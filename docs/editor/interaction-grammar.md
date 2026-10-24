@@ -203,10 +203,12 @@ them as a fan outside the rim while it is hot, and the fan is usually wider
 than the entry's own wedge, so the line out to a flank option crosses a
 neighbour's wedge. The wheel reads which entry the pointer means from three
 things: what lies under it, the entry it last held, and where the pointer set
-out from (`RadialMenu::PickAt`). Inside the rim, over whichever wedge, the hot
-entry keeps the pointer while the line from that starting point through the
-pointer reaches the entry's fan before the hub or any other entry's slot; the
-starting point moves with the pointer whenever that is not so. The line is
+out from (`RadialMenu::PickAt`). Inside the rim the hot entry keeps the
+pointer while the line from that starting point through the pointer reaches
+the entry's own ground — its fan, or from over another wedge its own wedge —
+before the hub or any other entry's slot, so the way out to a variant and the
+way back are both the entry's; the starting point moves with the pointer
+whenever that is not so. The line is
 read over the whole run rather than the last report, so a wavering hand does
 not hand over on one sample. A line aimed at another entry's slot, or back
 toward the hub, is ordinary browsing again, and a slot is never stolen. Nothing in this depends on time or on

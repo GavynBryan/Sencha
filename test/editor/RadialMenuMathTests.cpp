@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <numbers>
 #include <vector>
 
@@ -341,4 +342,37 @@ TEST(RadialMenuIntent, TheCorridorFollowsTheLayoutNotFixedAngles)
             }
         }
     }
+}
+
+TEST(RadialMenuIntent, TheWayBackIsTheEntrysOwnWedgeReachedFirst)
+{
+    const IntentWheel w;
+    const Vec2d child = w.Variant(0, 4);
+    const Vec2d back = w.Toward(child, w.Slot(0), 0.35f);
+    ASSERT_EQ(RadialMenu::RingAt(w.Layout, back), RadialMenu::Ring::Primary);
+    ASSERT_EQ(RadialMenu::SectorAt(w.Layout, back), 1);
+    EXPECT_TRUE(RadialMenu::HeadsIntoWedge(w.Layout, 0, child, back));
+    const RadialMenu::Pick held = RadialMenu::PickAt(w.Layout, w.Fans, 0, child, back);
+    EXPECT_EQ(held.Entry, 0);
+    EXPECT_EQ(held.Variant, -1);
+    EXPECT_EQ(held.By, RadialMenu::Hold::Transit);
+
+    // In toward the neighbour's slot, or the hub: not the way back.
+    EXPECT_FALSE(RadialMenu::HeadsIntoWedge(w.Layout, 0, child, w.Toward(child, w.Slot(1), 0.35f)));
+    EXPECT_FALSE(RadialMenu::HeadsIntoWedge(w.Layout, 0, child, w.Toward(child, w.Layout.Center, 0.35f)));
+    // Leaving the wedge sideways does not count as returning to it, even a
+    // hair past its edge where the crossing lies just behind the pointer.
+    const RadialMenu::Span sector = RadialMenu::SectorSpan(0, 8);
+    const auto onRing = [&](float angle) {
+        return Vec2d{ w.Layout.Center.X + std::sin(angle) * w.Layout.Radius, w.Layout.Center.Y - std::cos(angle) * w.Layout.Radius };
+    };
+    for (const float past : { 1e-6f, 1e-3f, 0.05f })
+    {
+        const Vec2d before = onRing(sector.End - 0.05f);
+        const Vec2d after = onRing(sector.End + past);
+        ASSERT_EQ(RadialMenu::SectorAt(w.Layout, after), 1);
+        EXPECT_FALSE(RadialMenu::HeadsIntoWedge(w.Layout, 0, before, after)) << past;
+    }
+    EXPECT_FALSE(RadialMenu::HeadsIntoWedge(w.Layout, 0, back, back));
+    EXPECT_FALSE(RadialMenu::HeadsIntoWedge(w.Layout, -1, child, back));
 }

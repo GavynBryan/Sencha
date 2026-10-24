@@ -50,9 +50,9 @@ enum class RadialMenuGesture : std::uint8_t
 // centred on its own petal, while it is hot; a release selects the hot entry
 // with its hot variant, or -1. Which entry is hot is RadialMenu::PickAt's
 // rule over the pointer, the entry it held, and Anchor: the pointer's last
-// report before it set out for that entry's fan. A straight line out to any
-// variant keeps the entry, and a line toward another slot or the hub is
-// browsing again (docs/editor/interaction-grammar.md, "A wheel's fans are
+// report before it set out for that entry's ground. A straight line out to
+// any variant and back keeps the entry, and a line toward another slot or the
+// hub is browsing again (docs/editor/interaction-grammar.md, "A wheel's fans are
 // reached in a straight line").
 //
 // The hot sector starts empty at open and is set only by pointer motion: a
