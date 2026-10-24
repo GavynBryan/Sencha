@@ -6,8 +6,10 @@
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <span>
 
-// Where a radial menu lands on screen and which sector a point is in.
+// Where a radial menu lands on screen, which sector a point is in, and which
+// entry a moving pointer means.
 // Pure pixel math with no UI runtime, so the session that hit-tests the
 // wheel and the screen that draws it go through one rule rather than two
 // versions of it that drift apart.
@@ -96,6 +98,23 @@ struct Range
     float Width = 0.0f;
 };
 
+// How far clockwise `angle` lies past the start of `range`, within a turn.
+[[nodiscard]] inline float PastBegin(Range range, float angle)
+{
+    const float turn = 2.0f * std::numbers::pi_v<float>;
+    float from = angle - range.Begin;
+    while (from < 0.0f)
+        from += turn;
+    while (from >= turn)
+        from -= turn;
+    return from;
+}
+
+[[nodiscard]] inline bool Covers(Range range, float angle)
+{
+    return PastBegin(range, angle) < range.Width;
+}
+
 // Slot `index` of `count` laid evenly over `range`, in order clockwise.
 [[nodiscard]] inline Span SlotSpan(Range range, int index, int count)
 {
@@ -113,12 +132,7 @@ struct Range
 {
     if (count <= 0 || range.Width <= 0.0f)
         return -1;
-    const float turn = 2.0f * std::numbers::pi_v<float>;
-    float from = angle - range.Begin;
-    while (from < 0.0f)
-        from += turn;
-    while (from >= turn)
-        from -= turn;
+    const float from = PastBegin(range, angle);
     if (from >= range.Width)
         return -1;
     return std::min(static_cast<int>(std::floor(from / (range.Width / static_cast<float>(count)))), count - 1);
@@ -257,4 +271,34 @@ enum class Ring : std::uint8_t
         return -1;
     return SlotAt(FanRange(layout, parent, count), count, AngleAt(layout, point));
 }
+
+// Whether a pointer inside the rim, come from `from` to `to`, is on its way
+// to `parent`'s fan of `count`: its line reaches the fan before the hub or
+// another entry's slot.
+[[nodiscard]] bool HeadsIntoFan(const Layout& layout, int parent, int count, Vec2d from, Vec2d to);
+
+// Whether a pointer over another wedge, come from `from` to `to`, is on its way
+// back: its line enters `parent`'s wedge before the hub or another entry's slot.
+[[nodiscard]] bool HeadsIntoWedge(const Layout& layout, int parent, Vec2d from, Vec2d to);
+
+// How the pointer holds the entry it picks.
+enum class Hold : std::uint8_t
+{
+    None,    // the hub: nothing
+    Wedge,   // the entry's own direction
+    Transit, // inside the rim, on the way out to the entry's fan or back to its wedge
+    Variant, // one of the entry's variants
+};
+
+struct Pick
+{
+    int Entry = -1;
+    int Variant = -1;
+    Hold By = Hold::None;
+};
+
+// What the pointer picks at `pointer`, holding `hot` since `anchor`, where its
+// way to that entry's ground began; `fans` is each entry's variant count
+// (docs/editor/interaction-grammar.md, "A wheel's fans are reached in a straight line").
+[[nodiscard]] Pick PickAt(const Layout& layout, std::span<const int> fans, int hot, Vec2d anchor, Vec2d pointer);
 } // namespace RadialMenu

@@ -198,6 +198,31 @@ Interface comes in increasing commitment to a task:
 | Shelf | the project's content | Shift+Space, + on the rail, an editor with nothing open | opening something, Esc; pinned, it stays |
 | Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
+**A wheel's fans are reached in a straight line.** An entry with options shows
+them as a fan outside the rim while it is hot, and the fan is usually wider
+than the entry's own wedge, so the line out to a flank option crosses a
+neighbour's wedge. The wheel reads which entry the pointer means from three
+things: what lies under it, the entry it last held, and where the pointer set
+out from (`RadialMenu::PickAt`). Inside the rim the hot entry keeps the
+pointer while the line from that starting point through the pointer reaches
+the entry's own ground — its fan, or from over another wedge its own wedge —
+before the hub or any other entry's slot, so the way out to a variant and the
+way back are both the entry's. The starting point moves with the pointer
+whenever that is not so, and the line is read over the whole run rather than
+the last report, so a wavering hand does not hand over on one sample.
+
+The hold never reaches past a neighbouring slot's direction, a wedge's width
+round from the entry's own. Near the rim a sweep along the ring toward a
+neighbour runs the same way as a dash to a flank option, so the neighbour's
+slot settles it: every neighbour is hot by the time the pointer is level with
+its slot, however wide the fan, and a slot is never stolen. A flank option
+lying past a neighbour's slot, on a crowded ring, is reached by going out to
+the fan first, where the entry holds until the pointer passes the fan's edge.
+A line aimed at another entry's slot, or back toward the hub, is ordinary
+browsing again. Nothing in this depends on time or tuned angles: the hub, the
+slots and the fan are the layout's own, so a wheel with more entries or wider
+fans needs no new rule.
+
 **The Space wheel** is about what is under the pointer, or the selection when
 nothing is (`actions/ContextMenuModel`). Its hub reads out what the thing is and
 its values, so holding Space and letting go in the middle only looks. Its
