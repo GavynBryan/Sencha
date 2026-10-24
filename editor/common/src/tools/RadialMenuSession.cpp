@@ -112,12 +112,15 @@ void RadialMenuSession::OpenClicked(Vec2d pointer, PointerCapture& capture)
 void RadialMenuSession::Open(Vec2d pointer, PointerCapture& capture)
 {
     const int count = Menu.Count();
-    int maxVariants = 0;
+    FanSizes.clear();
     for (int i = 0; i < count; ++i)
-        maxVariants = std::max(maxVariants, VariantCount(i));
+        FanSizes.push_back(static_cast<int>(Menu.Variants(i).size()));
+    const int maxVariants = FanSizes.empty() ? 0 : *std::max_element(FanSizes.begin(), FanSizes.end());
     Layout = RadialMenu::Place(FrameProvider ? FrameProvider() : RadialMenu::Frame{}, pointer, count, maxVariants, Sizes);
     Hot = -1;
     HotVariant = -1;
+    Hold = RadialMenu::Hold::None;
+    Anchor = pointer;
     Phase = RadialMenuPhase::Open;
     capture.Acquire(PointerCaptureKind::Exclusive);
 }
@@ -128,43 +131,21 @@ void RadialMenuSession::Leave(RadialMenuPhase next, PointerCapture& capture)
         capture.Release();
     Hot = -1;
     HotVariant = -1;
+    Hold = RadialMenu::Hold::None;
     Phase = next;
 }
 
 void RadialMenuSession::Track(Vec2d pointer)
 {
-    switch (RadialMenu::RingAt(Layout, pointer))
-    {
-    case RadialMenu::Ring::Hub:
-        Hot = -1;
-        HotVariant = -1;
-        return;
-    case RadialMenu::Ring::Primary:
-        Hot = RadialMenu::SectorAt(Layout, pointer);
-        HotVariant = -1;
-        return;
-    case RadialMenu::Ring::Outer:
-        break;
-    }
-    // The hot entry keeps the pointer while it is over its own fan, which is
-    // what lets the pointer leave the parent's wedge for a child on its
-    // flank; past the fan's edge, direction picks the entry as it does
-    // inside, and an entry picked that way has a variant only where its own
-    // fan lies in that direction.
-    const bool held = Hot >= 0 && RadialMenu::VariantAt(Layout, Hot, VariantCount(Hot), pointer) >= 0;
-    if (!held)
-        Hot = RadialMenu::SectorAt(Layout, pointer);
-    HotVariant = Hot >= 0 ? RadialMenu::VariantAt(Layout, Hot, VariantCount(Hot), pointer) : -1;
+    const RadialMenu::Pick pick = RadialMenu::PickAt(Layout, FanSizes, Hot, Anchor, pointer);
+    Hot = pick.Entry;
+    HotVariant = pick.Variant;
+    Hold = pick.By;
+    if (Hold != RadialMenu::Hold::Transit)
+        Anchor = pointer;
 }
 
 void RadialMenuSession::Select(int index, int variant)
 {
     Menu.Select(index, variant);
-}
-
-int RadialMenuSession::VariantCount(int index) const
-{
-    if (index < 0 || index >= Menu.Count())
-        return 0;
-    return static_cast<int>(Menu.Variants(index).size());
 }

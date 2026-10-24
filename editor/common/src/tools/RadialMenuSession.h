@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 class PointerCapture;
 
@@ -46,14 +47,13 @@ enum class RadialMenuGesture : std::uint8_t
 // happens, so the gesture is never half-begun over a panel or a bar.
 //
 // An entry with variants shows them as a compact fan outside the rim,
-// centred on its own petal, while it is hot. Four states, two of them hovered and two committed:
-// the hot tool (Hot), the hot variant of it (HotVariant), the tool the
-// release activates (Hot at release), and the variant the release then
-// selects on it (HotVariant at release). A tool holds the pointer for as
-// long as the pointer is in its secondary region, the outer band over its
-// own fan, and no further: moving outward or diagonally from the tool into
-// its variants never loses it, and sweeping around the outer band past the
-// fan's edge hands over to the tool in that direction without going back in.
+// centred on its own petal, while it is hot; a release selects the hot entry
+// with its hot variant, or -1. Which entry is hot is RadialMenu::PickAt's
+// rule over the pointer, the entry it held, and Anchor: the pointer's last
+// report before it set out for that entry's fan. A straight line out to any
+// variant keeps the entry, and a line toward another slot or the hub is
+// browsing again (docs/editor/interaction-grammar.md, "A wheel's fans are
+// reached in a straight line").
 //
 // The hot sector starts empty at open and is set only by pointer motion: a
 // wheel shifted in from a window edge may open with the pointer already
@@ -82,6 +82,7 @@ public:
     [[nodiscard]] int GetHot() const { return Hot; }
     // The hot entry's variant under the pointer, or -1 (none, or the entry has none).
     [[nodiscard]] int GetHotVariant() const { return HotVariant; }
+    [[nodiscard]] RadialMenu::Hold GetHold() const { return Hold; }
 
 private:
     InputConsumed OnKeyDown(const KeyDownEvent& event, PointerCapture& capture);
@@ -90,7 +91,6 @@ private:
     void Leave(RadialMenuPhase next, PointerCapture& capture);
     void Track(Vec2d pointer);
     void Select(int index, int variant);
-    [[nodiscard]] int VariantCount(int index) const;
     [[nodiscard]] bool IsWheelKey(SDL_Keycode key) const { return key == Key.Key; }
 
     IRadialMenuModel& Menu;
@@ -101,6 +101,9 @@ private:
     RadialMenuPhase Phase = RadialMenuPhase::Closed;
     RadialMenuGesture Gesture = RadialMenuGesture::Held;
     RadialMenu::Layout Layout{};
+    std::vector<int> FanSizes;
     int Hot = -1;
     int HotVariant = -1;
+    RadialMenu::Hold Hold = RadialMenu::Hold::None;
+    Vec2d Anchor{};
 };

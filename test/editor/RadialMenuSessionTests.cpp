@@ -6,6 +6,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -41,6 +44,14 @@ public:
     int ActiveVariant(int) const override { return ActiveVariantOf; }
     void Select(int index, int variant) override { Selected.emplace_back(index, variant); }
 };
+
+bool SegmentPassesOver(Vec2d from, Vec2d to, Vec2d point, float radius)
+{
+    const Vec2d along = to - from;
+    const float t = std::clamp((point - from).Dot(along) / along.Dot(along), 0.0f, 1.0f);
+    const Vec2d miss = from + along * t - point;
+    return miss.Dot(miss) < radius * radius;
+}
 
 class RadialMenuSessionTest : public testing::Test
 {
@@ -109,6 +120,27 @@ protected:
     [[nodiscard]] Vec2d InVariant(int parent, int index) const
     {
         return RadialMenu::VariantSlotCenter(Wheel->GetLayout(), parent, index, static_cast<int>(Menu.VariantsOf[static_cast<std::size_t>(parent)].size()));
+    }
+    // Mid-way between the hub's edge and the slot: the inner part of the petal.
+    [[nodiscard]] Vec2d InPetal(int index) const
+    {
+        const RadialMenu::Layout& layout = Wheel->GetLayout();
+        const Vec2d slot = RadialMenu::SlotCenter(layout, index);
+        const float scale = (layout.Hub + layout.Radius) * 0.5f / layout.Radius;
+        return { layout.Center.X + (slot.X - layout.Center.X) * scale, layout.Center.Y + (slot.Y - layout.Center.Y) * scale };
+    }
+    // A straight cursor path, a move per step as a mouse reports it, calling
+    // `sample` with each position after the session has tracked it.
+    template <typename Sample>
+    void Glide(Vec2d from, Vec2d to, Sample&& sample, int steps = 32)
+    {
+        for (int step = 1; step <= steps; ++step)
+        {
+            const float t = static_cast<float>(step) / static_cast<float>(steps);
+            const Vec2d at{ from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t };
+            (void)Move(at);
+            sample(at);
+        }
     }
     [[nodiscard]] std::size_t ReachedMoves() const
     {
@@ -442,4 +474,249 @@ TEST_F(RadialMenuSessionTest, AClickedWheelIsChosenFromByTheNextClick)
     click({ 400.0f, 400.0f });
     clicks.Route(KeyDownEvent{ .Key = SDLK_ESCAPE, .Modifiers = {}, .Pointer = { 400.0f, 400.0f } });
     EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Closed) << "no key to wait out";
+}
+
+// Cursor paths between entries and their variants. A fan is often wider than
+// its entry's wedge, so the straight line out to a flank variant crosses a
+// neighbour's wedge inside the rim; that crossing must not hand the pointer
+// to the neighbour, while a line between two entries goes by direction.
+TEST_F(RadialMenuSessionTest, AStraightPathFromAnEntryToAnyOfItsVariantsKeepsTheEntry)
+{
+    for (const int count : { 3, 4, 5, 6, 8, 10, 12 })
+    {
+        for (const int variants : { 1, 2, 3, 4, 5 })
+        {
+            Menu.Configure(count, std::vector<int>(static_cast<std::size_t>(count), variants));
+            for (int parent = 0; parent < count; ++parent)
+            {
+                for (int child = 0; child < variants; ++child)
+                {
+                    (void)Press(SDLK_Q);
+                    bool endsOnVariant = false;
+                    for (const bool fromSlot : { true, false })
+                    {
+                        const Vec2d start = fromSlot ? OnSlot(parent) : InPetal(parent);
+                        (void)Move(start);
+                        ASSERT_EQ(Wheel->GetHot(), parent);
+                        int lost = -1;
+                        Glide(start, InVariant(parent, child), [&](Vec2d) {
+                            if (lost < 0 && Wheel->GetHot() != parent)
+                                lost = Wheel->GetHot();
+                        });
+                        // From the slot nothing intervenes. From deeper in the
+                        // petal the line to a far flank variant on a crowded
+                        // ring can run over the neighbour's slot, and a slot
+                        // is never stolen: that is the one handover allowed.
+                        const bool overSlot = lost >= 0 && !fromSlot &&
+                                              SegmentPassesOver(start, InVariant(parent, child), OnSlot(lost),
+                                                                Wheel->GetLayout().Button * 0.5f);
+                        EXPECT_TRUE(lost == -1 || overSlot)
+                            << count << " entries, " << variants << " variants: " << parent << " -> " << child
+                            << (fromSlot ? " from the slot" : " from inside the petal") << " handed over to " << lost;
+                        endsOnVariant = !overSlot;
+                        if (endsOnVariant)
+                        {
+                            EXPECT_EQ(Wheel->GetHotVariant(), child) << count << " entries, " << variants << " variants";
+                        }
+                    }
+                    (void)Release(SDLK_Q);
+                    if (endsOnVariant)
+                    {
+                        EXPECT_EQ(Menu.Selected.back(), std::make_pair(parent, child));
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_F(RadialMenuSessionTest, ALineBetweenTwoEntriesGoesByDirectionWhateverTheirFans)
+{
+    // Up to a fan that takes the whole turn: an entry's variants never claim a
+    // line that runs to another entry's slot.
+    for (const int count : { 4, 6, 8, 12 })
+    {
+        for (const int variants : { 0, 3, 5, 9, 18 })
+        {
+            Menu.Configure(count, std::vector<int>(static_cast<std::size_t>(count), variants));
+            for (int parent = 0; parent < count; ++parent)
+            {
+                for (const int other : { (parent + 1) % count, (parent + count - 1) % count, (parent + 2) % count })
+                {
+                    (void)Press(SDLK_Q);
+                    (void)Move(OnSlot(parent));
+                    int stuck = 0;
+                    Glide(OnSlot(parent), OnSlot(other), [&](Vec2d at) {
+                        const int under = RadialMenu::SectorAt(Wheel->GetLayout(), at);
+                        stuck += under >= 0 && Wheel->GetHot() != under ? 1 : 0;
+                    });
+                    EXPECT_EQ(stuck, 0) << count << " entries, " << variants << " variants: " << parent << " -> " << other;
+                    EXPECT_EQ(Wheel->GetHot(), other);
+                    (void)Release(SDLK_Q);
+                }
+            }
+        }
+    }
+}
+
+TEST_F(RadialMenuSessionTest, OutToAVariantAndBackInToAnotherEntry)
+{
+    Menu.Configure(8, std::vector<int>(8, 5));
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    Glide(OnSlot(0), InVariant(0, 4), [](Vec2d) {});
+    ASSERT_EQ(Wheel->GetHot(), 0);
+    ASSERT_EQ(Wheel->GetHotVariant(), 4);
+    // The variant lies in the neighbour's direction; heading in to the
+    // neighbour's slot is browsing again from the first step inside the rim.
+    Glide(InVariant(0, 4), OnSlot(1), [&](Vec2d at) {
+        if (RadialMenu::RingAt(Wheel->GetLayout(), at) == RadialMenu::Ring::Primary)
+        {
+            EXPECT_EQ(Wheel->GetHot(), RadialMenu::SectorAt(Wheel->GetLayout(), at));
+        }
+    });
+    EXPECT_EQ(Wheel->GetHot(), 1);
+    EXPECT_EQ(Wheel->GetHotVariant(), -1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Menu.Selected.back(), std::make_pair(1, -1));
+}
+
+TEST_F(RadialMenuSessionTest, OnTheWayToAVariantTurningForTheNeighbourHandsOver)
+{
+    Menu.Configure(8, std::vector<int>(8, 5));
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    // Part way out to the flank variant, inside the rim and over the
+    // neighbour's wedge: still the entry, its fan still up.
+    const Vec2d slot = OnSlot(0);
+    const Vec2d child = InVariant(0, 4);
+    const Vec2d partWay{ slot.X + (child.X - slot.X) * 0.55f, slot.Y + (child.Y - slot.Y) * 0.55f };
+    ASSERT_EQ(RadialMenu::SectorAt(Wheel->GetLayout(), partWay), 1);
+    ASSERT_EQ(RadialMenu::RingAt(Wheel->GetLayout(), partWay), RadialMenu::Ring::Primary);
+    Glide(slot, partWay, [](Vec2d) {}, 8);
+    EXPECT_EQ(Wheel->GetHot(), 0);
+    // Then to the neighbour's slot: its own entry.
+    (void)Move(OnSlot(1));
+    EXPECT_EQ(Wheel->GetHot(), 1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Menu.Selected.back(), std::make_pair(1, -1));
+}
+
+TEST_F(RadialMenuSessionTest, MovingBetweenVariantsKeepsTheEntryEvenThroughTheRim)
+{
+    Menu.Configure(8, std::vector<int>(8, 5));
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    (void)Move(InVariant(0, 0));
+    // Flank to flank: the chord dips inside the rim on the way across.
+    Glide(InVariant(0, 0), InVariant(0, 4), [&](Vec2d) { EXPECT_EQ(Wheel->GetHot(), 0); });
+    EXPECT_EQ(Wheel->GetHotVariant(), 4);
+    Glide(InVariant(0, 4), InVariant(0, 1), [&](Vec2d) { EXPECT_EQ(Wheel->GetHot(), 0); });
+    EXPECT_EQ(Wheel->GetHotVariant(), 1);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Menu.Selected.back(), std::make_pair(0, 1));
+}
+
+TEST_F(RadialMenuSessionTest, OvershootingAVariantKeepsIt)
+{
+    // The outer band runs to the edge of the screen in each variant's
+    // direction, so carrying on outward past the fan, off the wheel, loses
+    // nothing: along the line to the middle variant, or out from a flank one.
+    Menu.Configure(8, std::vector<int>(8, 5));
+    const auto farOut = [this](Vec2d through) {
+        const Vec2d centre = Wheel->GetLayout().Center;
+        return Vec2d{ centre.X + (through.X - centre.X) * 4.0f, centre.Y + (through.Y - centre.Y) * 4.0f };
+    };
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    Glide(OnSlot(0), farOut(InVariant(0, 2)), [&](Vec2d) { EXPECT_EQ(Wheel->GetHot(), 0); }, 64);
+    EXPECT_EQ(Wheel->GetHotVariant(), 2);
+    Glide(farOut(InVariant(0, 2)), InVariant(0, 4), [](Vec2d) {});
+    Glide(InVariant(0, 4), farOut(InVariant(0, 4)), [&](Vec2d) { EXPECT_EQ(Wheel->GetHot(), 0); }, 64);
+    EXPECT_EQ(Wheel->GetHotVariant(), 4);
+    (void)Release(SDLK_Q);
+    EXPECT_EQ(Menu.Selected.back(), std::make_pair(0, 4));
+}
+
+TEST_F(RadialMenuSessionTest, AJumpReadsTheSameAsAGlide)
+{
+    // Fast motion skips whatever lies between two reports: a jump from the
+    // slot to the flank variant, or to a point over the neighbour's wedge on
+    // the way there, is read by the line it moved along.
+    Menu.Configure(8, std::vector<int>(8, 5));
+    const Vec2d partWay = [&] {
+        (void)Press(SDLK_Q);
+        const Vec2d slot = OnSlot(0);
+        const Vec2d child = InVariant(0, 4);
+        return Vec2d{ slot.X + (child.X - slot.X) * 0.55f, slot.Y + (child.Y - slot.Y) * 0.55f };
+    }();
+    (void)Move(OnSlot(0));
+    (void)Move(partWay);
+    EXPECT_EQ(Wheel->GetHot(), 0);
+    (void)Move(InVariant(0, 4));
+    EXPECT_EQ(Wheel->GetHot(), 0);
+    EXPECT_EQ(Wheel->GetHotVariant(), 4);
+    (void)Release(SDLK_Q);
+
+    // With nothing hot yet, there is no fan to be on the way to: direction.
+    (void)Press(SDLK_Q);
+    (void)Move(partWay);
+    EXPECT_EQ(Wheel->GetHot(), 1);
+    (void)Release(SDLK_Q);
+}
+
+TEST_F(RadialMenuSessionTest, HeadingForTheHubIsBrowsingAgain)
+{
+    Menu.Configure(8, std::vector<int>(8, 18));
+    (void)Press(SDLK_Q);
+    (void)Move(OnSlot(0));
+    (void)Move(InVariant(0, 5));
+    ASSERT_EQ(Wheel->GetHot(), 0);
+    // Inward from a variant over another entry's wedge, aimed at the hub: the
+    // fan reaches all the way round, yet that wedge is its own entry's.
+    const Vec2d center = Wheel->GetLayout().Center;
+    Glide(InVariant(0, 5), center, [&](Vec2d at) {
+        if (RadialMenu::RingAt(Wheel->GetLayout(), at) == RadialMenu::Ring::Primary)
+        {
+            EXPECT_EQ(Wheel->GetHot(), RadialMenu::SectorAt(Wheel->GetLayout(), at));
+        }
+    });
+    EXPECT_EQ(Wheel->GetHot(), -1);
+    (void)Release(SDLK_Q);
+}
+
+TEST_F(RadialMenuSessionTest, AShakyHandOnTheWayToAVariantKeepsTheEntry)
+{
+    // The line is read from where the pointer set out, not from the last
+    // report, so a hand wavering across the line on the way out does not hand
+    // over on one bad report. Reports land on whole pixels, as a mouse's do.
+    constexpr float kTau = 2.0f * std::numbers::pi_v<float>;
+    Menu.Configure(8, std::vector<int>(8, 5));
+    for (int child = 0; child < 5; ++child)
+    {
+        for (const float phase : { 0.0f, 0.25f, 0.5f, 0.75f })
+        {
+            (void)Press(SDLK_Q);
+            const Vec2d slot = OnSlot(0);
+            const Vec2d target = InVariant(0, child);
+            const Vec2d along = target - slot;
+            const float length = std::sqrt(along.Dot(along));
+            const Vec2d across{ -along.Y / length, along.X / length };
+            (void)Move({ std::round(slot.X), std::round(slot.Y) });
+            const int reports = static_cast<int>(length); // about a pixel a report
+            bool held = true;
+            for (int i = 1; i <= reports; ++i)
+            {
+                const float t = static_cast<float>(i) / static_cast<float>(reports);
+                const float wobble = 2.5f * std::sin(kTau * (t * 3.0f + phase));
+                const Vec2d at = slot + along * t + across * wobble;
+                (void)Move({ std::round(at.X), std::round(at.Y) });
+                held = held && Wheel->GetHot() == 0;
+            }
+            EXPECT_TRUE(held) << "variant " << child << ", phase " << phase;
+            (void)Move(target);
+            EXPECT_EQ(Wheel->GetHotVariant(), child);
+            (void)Release(SDLK_Q);
+        }
+    }
 }

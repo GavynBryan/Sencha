@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <numbers>
+#include <vector>
 
 // The wheel's geometry is one rule for the session that hit-tests it and the
 // chrome that paints it: sector 0 straight up, clockwise, the hub selecting
@@ -236,4 +237,108 @@ TEST(RadialMenuMath, PlaceReservesTheOuterRingOnlyWhenAToolHasVariants)
     EXPECT_FLOAT_EQ(two.Seam, one.Seam * 2.0f);
     EXPECT_FLOAT_EQ(two.Rim, one.Rim * 2.0f);
     EXPECT_FLOAT_EQ(two.OuterRadius, one.OuterRadius * 2.0f);
+}
+
+// Pointer intent: which entry a pointer means, from where it is, the entry it
+// held, and where its way out to that entry's fan began. Eight entries, a
+// fan of five on each: the fan reaches past the entry's wedge on both sides.
+namespace
+{
+struct IntentWheel
+{
+    RadialMenu::Layout Layout = RadialMenu::Place(Frame(), { 800.0f, 450.0f }, 8, 5);
+    std::vector<int> Fans = std::vector<int>(8, 5);
+
+    [[nodiscard]] Vec2d Toward(Vec2d from, Vec2d to, float t) const
+    {
+        return { from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t };
+    }
+    [[nodiscard]] Vec2d Slot(int entry) const { return RadialMenu::SlotCenter(Layout, entry); }
+    [[nodiscard]] Vec2d Variant(int entry, int index) const { return RadialMenu::VariantSlotCenter(Layout, entry, index, 5); }
+};
+}
+
+TEST(RadialMenuIntent, EachHoldIsWhatThePointerStandsOnOrIsBoundFor)
+{
+    const IntentWheel w;
+    const Vec2d slot = w.Slot(0);
+    const Vec2d partWay = w.Toward(slot, w.Variant(0, 4), 0.55f);
+    ASSERT_EQ(RadialMenu::SectorAt(w.Layout, partWay), 1);
+
+    const RadialMenu::Pick hub = RadialMenu::PickAt(w.Layout, w.Fans, 0, slot, w.Layout.Center);
+    EXPECT_EQ(hub.Entry, -1);
+    EXPECT_EQ(hub.By, RadialMenu::Hold::None);
+
+    const RadialMenu::Pick wedge = RadialMenu::PickAt(w.Layout, w.Fans, -1, w.Layout.Center, slot);
+    EXPECT_EQ(wedge.Entry, 0);
+    EXPECT_EQ(wedge.By, RadialMenu::Hold::Wedge);
+
+    const RadialMenu::Pick transit = RadialMenu::PickAt(w.Layout, w.Fans, 0, slot, partWay);
+    EXPECT_EQ(transit.Entry, 0);
+    EXPECT_EQ(transit.Variant, -1);
+    EXPECT_EQ(transit.By, RadialMenu::Hold::Transit);
+
+    const RadialMenu::Pick variant = RadialMenu::PickAt(w.Layout, w.Fans, 0, partWay, w.Variant(0, 4));
+    EXPECT_EQ(variant.Entry, 0);
+    EXPECT_EQ(variant.Variant, 4);
+    EXPECT_EQ(variant.By, RadialMenu::Hold::Variant);
+
+    // The same point with nothing held, or a different entry held, is plain direction.
+    EXPECT_EQ(RadialMenu::PickAt(w.Layout, w.Fans, -1, slot, partWay).Entry, 1);
+    EXPECT_EQ(RadialMenu::PickAt(w.Layout, w.Fans, 2, w.Slot(2), partWay).By, RadialMenu::Hold::Wedge);
+}
+
+TEST(RadialMenuIntent, TheLineMustReachTheFanBeforeTheHubOrAnotherSlot)
+{
+    const IntentWheel w;
+    const Vec2d slot = w.Slot(0);
+    const Vec2d partWay = w.Toward(slot, w.Variant(0, 4), 0.55f);
+    EXPECT_TRUE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, slot, partWay));
+
+    // Toward the neighbour's slot: the slot comes first.
+    const Vec2d towardSlot = w.Toward(slot, w.Slot(1), 0.7f);
+    ASSERT_EQ(RadialMenu::SectorAt(w.Layout, towardSlot), 1);
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, slot, towardSlot));
+    // Standing on the neighbour's slot, whichever way the pointer came.
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, w.Toward(slot, partWay, 0.5f), w.Slot(1)));
+    // Back in from a variant, aimed at the hub.
+    const Vec2d inward = w.Toward(w.Variant(0, 4), w.Layout.Center, 0.4f);
+    ASSERT_EQ(RadialMenu::RingAt(w.Layout, inward), RadialMenu::Ring::Primary);
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, w.Variant(0, 4), inward));
+    // Nothing to reach, no motion, or already past the rim.
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 0, slot, partWay));
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, partWay, partWay));
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, slot, w.Variant(0, 4)));
+    // Away from this fan, out to the far side of the neighbour's.
+    EXPECT_FALSE(RadialMenu::HeadsIntoFan(w.Layout, 0, 5, slot, w.Toward(slot, w.Variant(2, 2), 0.3f)));
+}
+
+TEST(RadialMenuIntent, TheCorridorFollowsTheLayoutNotFixedAngles)
+{
+    // Scaled, offset, crowded or sparse: the line to every flank variant from
+    // the entry's slot is in transit wherever it crosses a neighbour's wedge.
+    for (const float scale : { 1.0f, 2.0f })
+    {
+        for (const int count : { 3, 7, 11 })
+        {
+            const RadialMenu::Layout layout =
+                RadialMenu::Place(Frame(scale, { 37.0f, 11.0f }, { 3237.0f, 1811.0f }), { 900.0f, 700.0f }, count, 5);
+            for (int entry = 0; entry < count; ++entry)
+            {
+                for (const int flank : { 0, 4 })
+                {
+                    const Vec2d slot = RadialMenu::SlotCenter(layout, entry);
+                    const Vec2d child = RadialMenu::VariantSlotCenter(layout, entry, flank, 5);
+                    for (float t = 0.05f; t < 1.0f; t += 0.05f)
+                    {
+                        const Vec2d at{ slot.X + (child.X - slot.X) * t, slot.Y + (child.Y - slot.Y) * t };
+                        if (RadialMenu::RingAt(layout, at) != RadialMenu::Ring::Primary || RadialMenu::SectorAt(layout, at) == entry)
+                            continue;
+                        EXPECT_TRUE(RadialMenu::HeadsIntoFan(layout, entry, 5, slot, at))
+                            << "scale " << scale << ", " << count << " entries, entry " << entry << " flank " << flank << " t " << t;
+                    }
+                }
+            }
+        }
+    }
 }

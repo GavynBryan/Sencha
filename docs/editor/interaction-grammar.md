@@ -198,6 +198,22 @@ Interface comes in increasing commitment to a task:
 | Shelf | the project's content | Shift+Space, + on the rail, an editor with nothing open | opening something, Esc; pinned, it stays |
 | Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
+**A wheel's fans are reached in a straight line.** An entry with options shows
+them as a fan outside the rim while it is hot, and the fan is usually wider
+than the entry's own wedge, so the line out to a flank option crosses a
+neighbour's wedge. The wheel reads which entry the pointer means from three
+things: what lies under it, the entry it last held, and where the pointer set
+out from (`RadialMenu::PickAt`). Inside the rim, over whichever wedge, the hot
+entry keeps the pointer while the line from that starting point through the
+pointer reaches the entry's fan before the hub or any other entry's slot; the
+starting point moves with the pointer whenever that is not so. The line is
+read over the whole run rather than the last report, so a wavering hand does
+not hand over on one sample. A line aimed at another entry's slot, or back
+toward the hub, is ordinary browsing again, and a slot is never stolen. Nothing in this depends on time or on
+tuned angles: the hub, the slots and the fan are the layout's own, so a wheel
+with more entries or wider fans needs no new rule. Over the fan itself the
+entry holds until the pointer passes the fan's edge.
+
 **The Space wheel** is about what is under the pointer, or the selection when
 nothing is (`actions/ContextMenuModel`). Its hub reads out what the thing is and
 its values, so holding Space and letting go in the middle only looks. Its
