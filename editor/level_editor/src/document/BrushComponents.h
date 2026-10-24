@@ -45,6 +45,17 @@ BrushVolume
 {
 };
 
+// A volume the cook turns into a physics sensor: its entity reaches the level
+// with a sensor collider fitted to the volume, so what overlaps it is reported
+// to whatever else the entity carries (a trigger, say). Only a volume that is
+// exactly a box cooks; anything else is refused by name.
+struct SENCHA_COMPONENT("volume_sensor")
+       SENCHA_SCHEMA("volume_sensor")
+       SENCHA_SCENE_CHUNK("VSNS")
+VolumeSensor
+{
+};
+
 #if !defined(SENCHA_CODEGEN)
 #  include "document/BrushComponents.sencha.h"
 #endif

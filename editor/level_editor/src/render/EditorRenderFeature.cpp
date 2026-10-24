@@ -786,7 +786,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         }
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
         if (QueueBuilder)
-            Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws());
+            Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws(), &scene.GetRegistry());
         IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
