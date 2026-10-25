@@ -1,5 +1,7 @@
 #include <render/extract/ShadowCasterExtractionSystem.h>
 
+#include <render/MeshOverrides.h>
+
 #include <world/transform/TransformHistory.h>
 
 #include <core/hash/Fnv1a.h>
@@ -130,6 +132,7 @@ void ShadowCasterExtractionSystem::Extract(
     const auto emitChunk = [&](auto& view, auto&& poseAt)
     {
         const auto renderers = view.template Read<StaticMeshComponent>();
+        const auto overrides = view.template TryRead<MeshOverrides>();
 
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
@@ -138,20 +141,27 @@ void ShadowCasterExtractionSystem::Extract(
                 continue;
 
             const GpuStaticMesh* mesh = meshes.Get(renderer.Mesh);
+            const std::vector<MaterialHandle>* authored = materialSets.Get(renderer.Materials);
+            if (mesh == nullptr || authored == nullptr)
+                continue;
+            const EffectiveMeshDraw drawn = ApplyMeshOverrides(
+                overrides.empty() ? nullptr : &overrides[i], renderer.Materials,
+                renderer.SectionMask, *mesh, authored->size());
             const std::vector<MaterialHandle>* sectionMaterials =
-                materialSets.Get(renderer.Materials);
-            if (mesh == nullptr || sectionMaterials == nullptr)
+                drawn.Materials == renderer.Materials ? authored : materialSets.Get(drawn.Materials);
+            if (sectionMaterials == nullptr)
                 continue;
 
-            const ShadowCasterGatherResult gathered = AppendShadowCasters(
-                renderer, *mesh, *sectionMaterials, materials,
-                poseAt(i).ToMat4(), casters);
+            const Mat4 worldMatrix = poseAt(i).ToMat4();
+            const ShadowCasterGatherResult gathered = AppendShadowCasterSections(
+                renderer.Mesh, *mesh, *sectionMaterials, materials, drawn.SectionMask, worldMatrix,
+                TransformAabb(mesh->LocalBounds, worldMatrix), casters);
             if (gathered.EffectiveSectionMask == 0 || !emitRecords)
                 continue;
 
             AppendShadowCasterRecord(
                 casters, RenderEntityKey{ .Entity = view.Entity(i) },
-                renderer.Mesh, renderer.Materials, gathered);
+                renderer.Mesh, drawn.Materials, gathered);
         }
     };
 

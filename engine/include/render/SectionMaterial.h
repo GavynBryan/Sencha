@@ -22,6 +22,14 @@
 //
 // Returns an invalid handle for an empty set or a section index past the mesh.
 //=============================================================================
+// The slot a section draws from, by the same fallback; zero for an empty set.
+[[nodiscard]] inline std::uint32_t ResolveSectionSlot(const GpuStaticMesh& mesh, std::uint32_t sectionIndex,
+                                                     std::size_t slotCount)
+{
+    const std::uint32_t slot = mesh.Sections[sectionIndex].MaterialSlot;
+    return slotCount == 0 || slot < slotCount ? slot : static_cast<std::uint32_t>(slotCount - 1);
+}
+
 [[nodiscard]] inline MaterialHandle ResolveSectionMaterial(
     const GpuStaticMesh& mesh,
     std::uint32_t sectionIndex,
@@ -30,6 +38,5 @@
     if (slotMaterials.empty() || sectionIndex >= mesh.Sections.size())
         return MaterialHandle{};
 
-    const std::uint32_t slot = mesh.Sections[sectionIndex].MaterialSlot;
-    return slot < slotMaterials.size() ? slotMaterials[slot] : slotMaterials.back();
+    return slotMaterials[ResolveSectionSlot(mesh, sectionIndex, slotMaterials.size())];
 }

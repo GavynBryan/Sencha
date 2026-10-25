@@ -68,6 +68,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/MeshOverrides.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <render/IrradianceVolumeComponent.h>
+#include <render/MeshOverrides.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
@@ -8,16 +9,17 @@
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <world/ComponentRegistrar.h>
 
-// What a zone draws: the meshes and the lights, plus the baked products a zone
-// carries for them. All authored, none replicated -- a light that never moves
-// is content both machines already loaded.
+// What a zone draws: meshes, lights, the baked products a zone carries for them,
+// and the overrides drawn over a mesh's authored look. None replicated: each
+// machine loads the content and presents its own overrides.
 using RenderComponents = ComponentSet<
     StaticMeshComponent,
     SkinnedMeshComponent,
     ZoneLightmapComponent,
     IrradianceVolumeComponent,
     PointLightComponent,
-    SpotLightComponent>;
+    SpotLightComponent,
+    MeshOverrides>;
 
 inline void RegisterRenderComponents(ComponentRegistrar& registrar)
 {

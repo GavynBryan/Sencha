@@ -1,4 +1,6 @@
 #include <render/extract/RenderExtractionSystem.h>
+
+#include <render/MeshOverrides.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
 #include <anim/AnimPosePool.h>
@@ -177,6 +179,7 @@ void RenderExtractionSystem::EmitStaticMeshes(
     const auto emitChunk = [&](auto& view, auto&& poseAt)
     {
         const auto renderers = view.template Read<StaticMeshComponent>();
+        const auto overrides = view.template TryRead<MeshOverrides>();
         const ZoneLightmapIndices lightmap =
             LookupZoneLightmap(LightmapTable, view.Partition());
 
@@ -190,13 +193,17 @@ void RenderExtractionSystem::EmitStaticMeshes(
                 continue;
 
             const GpuStaticMesh* mesh = caches.Meshes.Get(renderer.Mesh);
-            const std::vector<MaterialHandle>* sectionMaterials =
+            const std::vector<MaterialHandle>* authored =
                 caches.MaterialSets.Get(renderer.Materials);
-            if (mesh == nullptr || sectionMaterials == nullptr
-                || sectionMaterials->empty())
-            {
+            if (mesh == nullptr || authored == nullptr || authored->empty())
                 continue;
-            }
+            const EffectiveMeshDraw drawn = ApplyMeshOverrides(
+                overrides.empty() ? nullptr : &overrides[i], renderer.Materials,
+                renderer.SectionMask, *mesh, authored->size());
+            const std::vector<MaterialHandle>* sectionMaterials =
+                drawn.Materials == renderer.Materials ? authored : caches.MaterialSets.Get(drawn.Materials);
+            if (sectionMaterials == nullptr || sectionMaterials->empty())
+                continue;
 
             const Mat4 worldMatrix = poseAt(i).ToMat4();
             const Aabb3d worldBounds =
@@ -214,7 +221,7 @@ void RenderExtractionSystem::EmitStaticMeshes(
             instance.Mesh = renderer.Mesh;
             instance.WorldMatrix = worldMatrix;
             instance.WorldBounds = worldBounds;
-            instance.SectionMask = renderer.SectionMask;
+            instance.SectionMask = drawn.SectionMask;
             instance.CameraDepth = -cameraSpaceCenter.Z;
             instance.LightmapTextureIndex = lightmap.Lightmap;
             instance.AoTextureIndex = lightmap.Ao;
@@ -254,6 +261,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt, double poseAlpha)
     {
         const auto renderers = view.template Read<SkinnedMeshComponent>();
+        const auto overrides = view.template TryRead<MeshOverrides>();
 
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
@@ -265,13 +273,17 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
                 continue;
 
             const GpuStaticMesh* mesh = skinnedMeshes.Get(renderer.Mesh);
-            const std::vector<MaterialHandle>* sectionMaterials =
+            const std::vector<MaterialHandle>* authored =
                 caches.MaterialSets.Get(renderer.Materials);
-            if (mesh == nullptr || sectionMaterials == nullptr
-                || sectionMaterials->empty())
-            {
+            if (mesh == nullptr || authored == nullptr || authored->empty())
                 continue;
-            }
+            const EffectiveMeshDraw drawn = ApplyMeshOverrides(
+                overrides.empty() ? nullptr : &overrides[i], renderer.Materials,
+                renderer.SectionMask, *mesh, authored->size());
+            const std::vector<MaterialHandle>* sectionMaterials =
+                drawn.Materials == renderer.Materials ? authored : caches.MaterialSets.Get(drawn.Materials);
+            if (sectionMaterials == nullptr || sectionMaterials->empty())
+                continue;
 
             const Mat4 worldMatrix = poseAt(i).ToMat4();
             const Aabb3d worldBounds =
@@ -296,7 +308,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             instance.SkinnedMesh = renderer.Mesh;
             instance.WorldMatrix = worldMatrix;
             instance.WorldBounds = worldBounds;
-            instance.SectionMask = renderer.SectionMask;
+            instance.SectionMask = drawn.SectionMask;
             instance.CameraDepth = -cameraSpaceCenter.Z;
             instance.PoseSlot = poseSlot;
             EmitMeshSections(instance, *mesh, *sectionMaterials,

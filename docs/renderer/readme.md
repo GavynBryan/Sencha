@@ -50,6 +50,7 @@ Read in this order on a first pass.
 | [shadows.md](shadows.md) | Atlas allocation, the residency arbiter, update policies, caster diff invalidation, sampling and bias |
 | [baked-lighting.md](baked-lighting.md) | Lightmap atlas, AO plane, probe volumes, zone-scoped residency, shader sampling |
 | [resources.md](resources.md) | Meshes, materials, material sets, textures, bindless slots, ref-counting and hot reload |
+| [mesh-overrides.md](mesh-overrides.md) | Reversible hides and material substitutions from independent writers, and how extraction applies them |
 | [shaders.md](shaders.md) | GLSL layout, include topology, offline compile and embed, CPU/GPU struct contracts, specialization |
 | [instrumentation.md](instrumentation.md) | Profile mode ladder, counters, CPU and GPU scopes, capture export, debug views, the bench harness |
 | [golden-images.md](golden-images.md) | The pixel-level regression net: what it catches that headless tests cannot, and what to do when it fails |

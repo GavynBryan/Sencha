@@ -67,6 +67,18 @@ struct ChunkView
         return RawChunk->ColumnSpan<const T>(col);
     }
 
+    // T's column when this chunk's archetype has one, else empty: data a query
+    // reads where present without filtering on it. Read-only, and T need not be
+    // registered.
+    template <typename T>
+    std::span<const T> TryRead() const
+    {
+        if (!Owner->template IsRegistered<T>())
+            return {};
+        const uint32_t col = RawChunk->FindColumn(Owner->template GetComponentId<T>());
+        return col == UINT32_MAX ? std::span<const T>{} : RawChunk->ColumnSpan<const T>(col);
+    }
+
     // Returns mutable span.
     // Column version is bumped once per chunk by ForEachChunk when the callback
     // ends, by return or by throw. Conservative semantics: the bump happens

@@ -25,6 +25,7 @@
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+#include <render/MeshOverrideSystem.h>
 
 #include <app/EngineVocabularyBindings.h>
 
@@ -163,6 +164,8 @@ bool Engine::Initialize()
         ConsoleState->Registry(), *EngineSystems.Get<DefaultRenderPipeline>());
     EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
         &InstrumentationBundle);
+    if (Configuration.Window.GraphicsApi != WindowGraphicsApi::None)
+        EngineSystems.Register<MeshOverrideSystem>();
 
     // A process with nothing to present has nobody listening to it either, so
     // it holds no playback device. Mixing still exists as a service; it simply
