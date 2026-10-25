@@ -1,9 +1,10 @@
-// Finding an asset or a gameplay tag by name reads the name where it lies; a
+// Finding an asset, a gameplay tag or a rig socket by name reads the name where it lies; a
 // lookup that copied it into a key would allocate once the name outgrew the
 // small-string buffer.
 
 #include "AllocationCounter.h"
 
+#include <anim/AnimRigBinding.h>
 #include <anim/SkeletonCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -39,4 +40,18 @@ TEST(NameLookupAllocation, FindingATagByNameAllocatesNothing)
     const GameplayTagId found = tags.FindTag(kLongTag);
     EXPECT_EQ(AllocationCount() - before, 0u);
     EXPECT_EQ(found, *registered);
+}
+
+TEST(NameLookupAllocation, FindingASocketByNameAllocatesNothing)
+{
+    AnimBoundRig rig;
+    constexpr std::string_view kLongSocket = "weapon_attach_point_right_hand";
+    rig.SocketsByName.emplace(kLongSocket, RigSocketIndex{ 0 });
+    rig.Sockets.push_back(AnimBoundSocket{ std::string(kLongSocket), 3, {} });
+    const std::size_t before = AllocationCount();
+    const RigSocketIndex found = rig.FindSocket(kLongSocket);
+    const bool missing = rig.FindSocket("weapon_attach_point_left_hand").IsValid();
+    EXPECT_EQ(AllocationCount() - before, 0u);
+    EXPECT_EQ(found, RigSocketIndex{ 0 });
+    EXPECT_FALSE(missing);
 }
