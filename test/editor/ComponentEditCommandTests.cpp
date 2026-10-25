@@ -7,6 +7,7 @@
 
 #include "authoring/EditorComponentAdapter.h"
 #include "authoring/GameplayVocabularyAdapters.h"
+#include "authoring/ResponsesEditorAdapter.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
@@ -126,6 +127,7 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     EXPECT_TRUE(adapters.Register(MakeAttributeSetEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeAbilityGrantsEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeCharacterMovementEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeResponsesEditorAdapter()));
 
     for (const ComponentTypeId type : {
              ResolveComponentTypeId<GameplayTagContainer>(),

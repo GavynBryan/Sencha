@@ -11,6 +11,7 @@
 #include "document/WorldDocument.h"
 #include "document/commands/AssetFieldEditCommand.h"
 #include "document/commands/RawComponentAddCommand.h"
+#include "properties/PropertyTree.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentRemoveCommand.h"
 #include "properties/SettingProperties.h"
@@ -71,15 +72,6 @@ std::string FieldKey(std::string_view component, const RuntimeField& field)
 }
 
 constexpr char kAdapterSeparator = ':';
-
-void PrefixKeys(std::vector<PropertyNode>& nodes, const std::string& prefix)
-{
-    for (PropertyNode& node : nodes)
-    {
-        node.Key = prefix + node.Key;
-        PrefixKeys(node.Children, prefix);
-    }
-}
 
 bool Overridden(const RuntimeField& field, const std::byte* live, const std::vector<std::byte>& baseline)
 {
@@ -288,6 +280,9 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
         if (adapter != nullptr)
             group.Descriptor.Actions.assign(adapter->Actions().begin(), adapter->Actions().end());
+        if (adapter != nullptr && holders.size() == 1 && lacking == 0)
+            if (std::string label = adapter->InspectorLabel(InspectorContext(holders.front())); !label.empty())
+                group.Descriptor.Label = std::move(label);
         if (adapter != nullptr && adapter->AuthorsInspectorRows() && !adapter->InspectorRowsFollowFields())
         {
             // An adapter's rows describe one object; several together have no
@@ -295,7 +290,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             if (holders.size() == 1)
             {
                 group.Children = adapter->InspectorNodes(InspectorContext(holders.front()));
-                PrefixKeys(group.Children, key + kAdapterSeparator);
+                PrefixPropertyKeys(group.Children, key + kAdapterSeparator);
             }
             else
                 group.Children.push_back(NoteProperty(key + kAdapterSeparator + "together", "",
@@ -417,7 +412,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         if (adapter != nullptr && adapter->AuthorsInspectorRows() && holders.size() == 1)
         {
             std::vector<PropertyNode> authored = adapter->InspectorNodes(InspectorContext(holders.front()));
-            PrefixKeys(authored, key + kAdapterSeparator);
+            PrefixPropertyKeys(authored, key + kAdapterSeparator);
             group.Children.insert(group.Children.end(), std::make_move_iterator(authored.begin()),
                                   std::make_move_iterator(authored.end()));
         }
@@ -801,10 +796,16 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     World& world = document.GetScene().GetRegistry().Components;
     std::vector<std::unique_ptr<ICommand>> commands;
     const auto addTo = [&](const IComponentSerializer& serializer, ComponentId id) {
+        const IEditorComponentAdapter* adapter = Adapters.Find(serializer.TypeId());
         for (const EntityId entity : entities)
             if (!world.HasComponent(entity, id))
-                commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, serializer.DefaultBytes(),
+            {
+                std::vector<std::byte> added = serializer.DefaultBytes();
+                if (adapter != nullptr)
+                    adapter->PrepareAdded(InspectorContext(entity), added);
+                commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, std::move(added),
                                                                             document.GetScene(), document));
+            }
     };
     if (key == "components" && verb == "add")
     {

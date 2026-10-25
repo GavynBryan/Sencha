@@ -96,42 +96,43 @@
         },
         "volume": {},
         "volume_sensor": {},
-        "trigger": {
-          "activation": "enter",
-          "enabled": true,
-          "once": false,
-          "cooldown": 0.5,
-          "cooldown_scope": "activator",
-          "stay_interval": 0,
-          "sequence": {
-            "conditions": [
-              {
-                "entity": "activator",
-                "has": [
-                  "sencha.character_movement"
+        "responses": {
+          "bindings": {
+            "launch": {
+              "on": "sensor.enter",
+              "cooldown": 0.5,
+              "cooldown_scope": "instigator",
+              "sequence": {
+                "conditions": [
+                  {
+                    "entity": "activator",
+                    "has": [
+                      "sencha.character_movement"
+                    ]
+                  }
+                ],
+                "commands": [
+                  {
+                    "verb": "movement.launch",
+                    "arguments": {
+                      "target": {
+                        "port": "activator"
+                      },
+                      "direction": {
+                        "const": [
+                          0,
+                          0,
+                          1
+                        ],
+                        "frame": "self"
+                      },
+                      "speed": 8,
+                      "rise": 9
+                    }
+                  }
                 ]
               }
-            ],
-            "commands": [
-              {
-                "verb": "movement.launch",
-                "arguments": {
-                  "target": {
-                    "port": "activator"
-                  },
-                  "direction": {
-                    "const": [
-                      0,
-                      0,
-                      1
-                    ],
-                    "frame": "trigger"
-                  },
-                  "speed": 8,
-                  "rise": 9
-                }
-              }
-            ]
+            }
           }
         }
       }

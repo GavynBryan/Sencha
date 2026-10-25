@@ -26,6 +26,15 @@ const PropertyNode* FindProperty(const std::vector<PropertyNode>& nodes, std::st
     return nullptr;
 }
 
+void PrefixPropertyKeys(std::vector<PropertyNode>& nodes, std::string_view prefix)
+{
+    for (PropertyNode& node : nodes)
+    {
+        node.Key.insert(0, prefix);
+        PrefixPropertyKeys(node.Children, prefix);
+    }
+}
+
 std::optional<PropertyKeyIndex> ParsePropertyKeyIndex(std::string_view key, std::string_view prefix)
 {
     if (!key.starts_with(prefix))

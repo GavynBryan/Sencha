@@ -38,6 +38,10 @@ public:
     // The ECS-storable per-entity container (ability activation requirements).
     [[nodiscard]] bool Matches(const GameplayTagContainer& tags,
                                const GameplayTagRegistry& registry) const;
+    // One tag standing alone: what an occurrence carries to describe itself.
+    // An invalid tag is a set holding nothing.
+    [[nodiscard]] bool Matches(GameplayTagId tag,
+                               const GameplayTagRegistry& registry) const;
 
 private:
     std::vector<GameplayTagQueryClause> All;

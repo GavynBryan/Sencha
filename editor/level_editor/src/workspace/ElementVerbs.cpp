@@ -94,7 +94,7 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
     offer({ .Id = "brush.trigger", .Label = "Make Trigger Volume" },
           { .Invoke = [&w] {
                 static constexpr std::array<std::string_view, 3> kTriggerVolume = { "volume", "volume_sensor",
-                                                                                   "trigger" };
+                                                                                   "responses" };
                 w.Actions.AddComponentsToBrushes(kTriggerVolume);
             },
             .Enabled = brushes(1) });

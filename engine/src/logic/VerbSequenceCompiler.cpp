@@ -46,7 +46,19 @@ public:
         out.Kind = desc.Kind;
         out.Expect = desc.Expect;
         bool ok = true;
-        if (desc.Kind == SequenceConditionKind::Entity)
+        if (desc.Kind == SequenceConditionKind::Tag)
+        {
+            ok = PortOf(desc.Port, DataFieldKind::GameplayTag, "a gameplay tag", where, out.Port);
+            if (desc.Tags.Empty())
+            {
+                Report(where, "a tag condition names the tags it matches");
+                ok = false;
+            }
+            else
+                ok = Tags(desc.Tags, where, out.Tags) && ok;
+            out.HasTags = true;
+        }
+        else if (desc.Kind == SequenceConditionKind::Entity)
         {
             ok = EntityPort(desc.Port, where, out.Port);
             for (const std::string& identity : desc.Components)
@@ -64,14 +76,7 @@ public:
             }
             if (!desc.Tags.Empty())
             {
-                std::vector<std::string> missing;
-                if (Env.Bindings.Tags != nullptr)
-                    out.Tags = ResolveTagQuery(desc.Tags, *Env.Bindings.Tags, missing);
-                else
-                    Report(where, "this World has no gameplay tags");
-                for (const std::string& tag : missing)
-                    Report(where, std::format("no gameplay tag '{}'", tag));
-                ok = ok && Env.Bindings.Tags != nullptr && missing.empty();
+                ok = Tags(desc.Tags, where, out.Tags) && ok;
                 out.HasTags = true;
             }
         }
@@ -165,30 +170,49 @@ private:
         Diagnostics.push_back(std::format("{}: {}", where, message));
     }
 
-    bool Port(std::string_view name, std::string_view where, std::uint8_t& out, SequencePortKind& kind)
+    const SequencePort* Port(std::string_view name, std::string_view where, std::uint8_t& out)
     {
         const auto found = std::ranges::find(Env.Ports, name, &SequencePort::Name);
         if (found == Env.Ports.end())
         {
             Report(where, std::format("no port '{}'", name));
-            return false;
+            return nullptr;
         }
         out = static_cast<std::uint8_t>(found - Env.Ports.begin());
-        kind = found->Kind;
+        return &*found;
+    }
+
+    bool PortOf(std::string_view name, DataFieldKind kind, std::string_view noun, std::string_view where,
+                std::uint8_t& out)
+    {
+        const SequencePort* port = Port(name, where, out);
+        if (port == nullptr)
+            return false;
+        if (port->Kind != kind)
+        {
+            Report(where, std::format("port '{}' is not {}", name, noun));
+            return false;
+        }
         return true;
     }
 
     bool EntityPort(std::string_view name, std::string_view where, std::uint8_t& out)
     {
-        SequencePortKind kind = SequencePortKind::Entity;
-        if (!Port(name, where, out, kind))
-            return false;
-        if (kind != SequencePortKind::Entity)
+        return PortOf(name, DataFieldKind::Entity, "an entity", where, out);
+    }
+
+    bool Tags(const GameplayTagQueryNames& names, std::string_view where, GameplayTagQuery& out)
+    {
+        if (Env.Bindings.Tags == nullptr)
         {
-            Report(where, std::format("port '{}' is not an entity", name));
+            Report(where, "this World has no gameplay tags");
             return false;
         }
-        return true;
+        std::vector<std::string> missing;
+        out = ResolveTagQuery(names, *Env.Bindings.Tags, missing);
+        for (const std::string& tag : missing)
+            Report(where, std::format("no gameplay tag '{}'", tag));
+        return missing.empty();
     }
 
     const AuthoredQueryDefinition* FindQuery(const std::string& name, std::string_view where,
@@ -273,10 +297,10 @@ private:
         }
         case SequenceValueSource::Port:
         {
-            SequencePortKind kind = SequencePortKind::Entity;
-            if (!Port(desc.Name, where, out.Port, kind))
+            const SequencePort* port = Port(desc.Name, where, out.Port);
+            if (port == nullptr)
                 return false;
-            const bool fits = kind == SequencePortKind::Entity ? field.Kind == DataFieldKind::Entity : IsVector3(field);
+            const bool fits = SequencePortFits(*port, field);
             if (!fits)
                 Report(where, std::format("port '{}' is not the kind this argument takes", desc.Name));
             return fits;

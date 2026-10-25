@@ -172,6 +172,22 @@ bool ReadNames(const JsonValue* authored, std::string_view where, std::vector<st
     return true;
 }
 
+bool ReadTags(const JsonValue& authored, std::string_view where, GameplayTagQueryNames& out,
+              std::vector<std::string>& errors)
+{
+    const JsonValue* tags = authored.Find("tags");
+    if (tags == nullptr)
+        return true;
+    if (!tags->IsObject())
+    {
+        errors.push_back(std::format("{}: 'tags' is {{all, any, none}}", where));
+        return false;
+    }
+    bool ok = ReadNames(tags->Find("all"), std::format("{} tags 'all'", where), out.All, errors);
+    ok = ReadNames(tags->Find("any"), std::format("{} tags 'any'", where), out.Any, errors) && ok;
+    return ReadNames(tags->Find("none"), std::format("{} tags 'none'", where), out.None, errors) && ok;
+}
+
 bool ReadCondition(const JsonValue& authored, std::string_view where, SequenceConditionDesc& out,
                    std::vector<AssetRef>& dependencies, std::vector<std::string>& errors)
 {
@@ -192,18 +208,20 @@ bool ReadCondition(const JsonValue& authored, std::string_view where, SequenceCo
             return false;
         }
         bool ok = ReadNames(authored.Find("has"), std::format("{} 'has'", where), out.Components, errors);
-        if (const JsonValue* tags = authored.Find("tags"))
+        return ReadTags(authored, where, out.Tags, errors) && ok;
+    }
+    if (const JsonValue* port = authored.Find("tag"))
+    {
+        if (!OnlyMembers(authored, { "tag", "tags" }, where, errors))
+            return false;
+        out.Kind = SequenceConditionKind::Tag;
+        out.Port = port->IsString() ? port->AsString() : std::string();
+        if (out.Port.empty())
         {
-            if (!tags->IsObject())
-            {
-                errors.push_back(std::format("{}: 'tags' is {{all, any, none}}", where));
-                return false;
-            }
-            ok = ReadNames(tags->Find("all"), std::format("{} tags 'all'", where), out.Tags.All, errors) && ok;
-            ok = ReadNames(tags->Find("any"), std::format("{} tags 'any'", where), out.Tags.Any, errors) && ok;
-            ok = ReadNames(tags->Find("none"), std::format("{} tags 'none'", where), out.Tags.None, errors) && ok;
+            errors.push_back(std::format("{}: 'tag' names a gameplay-tag port", where));
+            return false;
         }
-        return ok;
+        return ReadTags(authored, where, out.Tags, errors);
     }
     if (const JsonValue* query = authored.Find("query"))
     {
@@ -228,7 +246,7 @@ bool ReadCondition(const JsonValue& authored, std::string_view where, SequenceCo
         return ReadArguments(authored.Find("arguments"), std::format("{} '{}'", where, out.Query), out.Arguments,
                              dependencies, errors);
     }
-    errors.push_back(std::format("{}: a condition is {{entity}} or {{query}}", where));
+    errors.push_back(std::format("{}: a condition is {{entity}}, {{tag}} or {{query}}", where));
     return false;
 }
 
@@ -302,6 +320,13 @@ bool ReadVerbSequence(const JsonValue& authored,
     ok = ReadList(authored, "conditions", "condition", out.Conditions, dependencies, errors, ReadCondition) && ok;
     ok = ReadList(authored, "commands", "command", out.Commands, dependencies, errors, ReadCommand) && ok;
     return ok;
+}
+
+bool SequencePortFits(const SequencePort& port, const DataFieldSchema& field)
+{
+    const DataFieldSchema& shown =
+        field.Kind == DataFieldKind::Optional && field.Children.size() == 1 ? field.Children.front() : field;
+    return port.Kind == shown.Kind && (shown.Kind != DataFieldKind::Vector || port.VectorLength == shown.VectorLength);
 }
 
 JsonValue EmptyVerbSequence()

@@ -74,3 +74,12 @@ struct CollisionShape
         return s;
     }
 };
+
+// The shape as an entity scaled by `scale` holds it: an authored collider is in
+// its entity's frame, so it grows and shrinks with the entity as its mesh does.
+// A box along its own axes takes each axis's scale exactly; a box turned against
+// a non-uniform scale takes the scale its own axes see, the nearest a box can
+// hold. A sphere takes the largest axis; a capsule its axis's scale for the
+// length and the largest of the others for the radius. Negative scale mirrors,
+// which a primitive cannot show, so only magnitudes count.
+[[nodiscard]] CollisionShape ScaledCollisionShape(const CollisionShape& shape, const Vec3d& scale);

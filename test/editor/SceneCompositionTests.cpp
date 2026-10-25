@@ -229,6 +229,58 @@ namespace
         EXPECT_EQ(pointLight->Find("range")->Number, 9.0);      // outer override applied
     }
 
+    // A prefab's behaviors are an object keyed by binding: an instance patches
+    // one binding and inherits the rest, as authored, unchanged.
+    TEST(SceneComposition, AnInstancePatchesOneResponseBindingAndInheritsTheRest)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/switch.sscene", R"({
+  format_version: 1,
+  entities: [
+    { id: '0000000000000001',
+      components: { responses: { bindings: {
+        shot: { on: 'game.struck', once: true,
+                sequence: { conditions: [], commands: [ { verb: 'game.open' } ] } },
+        use: { on: 'game.used', sequence: { conditions: [], commands: [ { verb: 'game.toggle' } ] } },
+      } } } },
+  ],
+})");
+
+        std::string error;
+        const auto root = ParseSceneSource(R"({
+  format_version: 1,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/switch.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201' },
+      patch: { '0000000000000001': { responses: { bindings: { shot: { cooldown: 2 } } } } } },
+    { id: '0000000000000300', source: 'asset://props/switch.sscene',
+      entity_ids: { '0000000000000001': '0000000000000401' } },
+  ],
+})", &error);
+        ASSERT_TRUE(root.has_value()) << error;
+
+        const auto result = ResolveSceneComposition(*root, sources, &error);
+        ASSERT_TRUE(result.has_value()) << error;
+        EXPECT_TRUE(result->DanglingOverrides.empty());
+        const ResolvedSceneEntity* patched = FindEntity(*result, 0x201);
+        const ResolvedSceneEntity* inherited = FindEntity(*result, 0x401);
+        ASSERT_NE(patched, nullptr);
+        ASSERT_NE(inherited, nullptr);
+
+        const Json5Value* bindings = patched->Components.Find("responses")->Find("bindings");
+        const Json5Value* shot = bindings->Find("shot");
+        EXPECT_EQ(shot->Find("cooldown")->Number, 2.0) << "the instance's override did not land";
+        EXPECT_NE(shot->Find("sequence"), nullptr) << "patching one member replaced the binding";
+        EXPECT_TRUE(shot->Find("once")->Boolean);
+        EXPECT_EQ(shot->Find("on")->Text, "game.struck");
+        ASSERT_NE(bindings->Find("use"), nullptr) << "patching one binding dropped another";
+        EXPECT_EQ(bindings->Find("use")->Find("on")->Text, "game.used");
+
+        const Json5Value* untouched = inherited->Components.Find("responses")->Find("bindings")->Find("shot");
+        EXPECT_EQ(untouched->Find("cooldown"), nullptr) << "one instance's override reached another";
+    }
+
     TEST(SceneComposition, StructuralOverridesAddRemoveAndSuppress)
     {
         MemorySources sources;

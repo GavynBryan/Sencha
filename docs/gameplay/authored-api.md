@@ -204,8 +204,8 @@ The same template, outside the World, holds a host's candidate-evaluation
 operations (`docs/spatial/candidates.md`); those catalogs are not part of the
 authored vocabulary. A literal written in authored data compiles against its
 field through `CompileAuthoredLiteral` (`authored/AuthoredLiteral.h`), shared by
-verb bindings and the candidate `authored_query` measure. A trigger's sequence
-(`docs/gameplay/triggers.md`) compiles each command into an ordinary verb
+verb bindings and the candidate `authored_query` measure. A response's sequence
+(`docs/gameplay/responses.md`) compiles each command into an ordinary verb
 binding whose inputs are its producer's ports. Consumers that rebuild
 when a catalog, the tag vocabulary or an asset moves compare
 `BindingDependencyStamp` values.
@@ -272,8 +272,8 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends |
 | `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
 | `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
-| `trigger.enable`, `trigger.disable {trigger}` | verb | gameplay / authority only | a trigger armed or disarmed (`docs/gameplay/triggers.md`) |
-| `trigger.interact {activator}` | verb | gameplay / authority only | every Interaction trigger the activator stands in, activated at the next trigger pass |
+| `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
+| `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
 | `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
 | `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
 | `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |

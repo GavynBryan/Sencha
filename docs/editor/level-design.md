@@ -181,7 +181,8 @@ graph. Selecting a row selects the entity; F frames it.
 | Choose material | cartridge → tray | M, Shift+RMB sample |
 | Apply material | tray (Enter / double-click) | Shift+T |
 | Place prefab | cartridge → tray → click world, or drag a tile into the world | P |
-| Make a trigger volume | select a brush → Space → Make Trigger Volume; its sequence in the Trigger group (`docs/gameplay/triggers.md`) | palette: "Make Trigger Volume" |
+| Make a trigger volume | select a brush → Space → Make Trigger Volume; its responses in the Trigger group (`docs/gameplay/responses.md`) | palette: "Make Trigger Volume" |
+| Make a mesh solid | select it → Add Component → Collider: a box around the mesh, drawn green (a sensor's cyan) where its body will be; Shape → Fit to Mesh refits it; a selected box resizes by its handles. Sizes are in the entity's frame and scale with it, as the mesh does | — |
 | Turn a placement | press on the spot, drag away, release | Esc cancels |
 | A choice or action on it | — | Space (hold over it, release on a petal) |
 | A value in the world | drag its handle, scroll over it | — |

@@ -5,10 +5,12 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <ecs/World.h>
-#include <logic/TriggerSequences.h>
+#include <logic/ResponseSet.h>
+#include <logic/ResponsesSystem.h>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <optional>
 #include <source_location>
 #include <string>
@@ -27,9 +29,12 @@ protected:
     {
         InstallAuthoredVocabulary(Names);
         ASSERT_TRUE(InstallEngineVocabulary(Names));
+        // A sensor volume's: the entity, then its activator.
+        VerbSequenceStore::PortsFor(kResponsePorts, Names, kSensorEnterEvent, PortNames, Ports);
         Vocabulary = VerbSequenceVocabulary{ .Verbs = FindVerbRegistry(Names),
                                              .Queries = FindAuthoredQueryRegistry(Names),
-                                             .Ports = kTriggerPorts };
+                                             .Ports = Ports,
+                                             .StartingPort = "activator" };
     }
 
     JsonValue Must(std::optional<JsonValue> edited, std::source_location where = std::source_location::current())
@@ -51,11 +56,13 @@ protected:
     }
 
     World Names;
+    std::vector<std::string> PortNames;
+    std::vector<SequencePort> Ports;
     VerbSequenceVocabulary Vocabulary;
 };
 } // namespace
 
-TEST_F(VerbSequenceRowsTest, ALaunchIsAddedAimedAtTheActivatorAndGivenADirectionInTheTriggersFrame)
+TEST_F(VerbSequenceRowsTest, ALaunchIsAddedAimedAtTheActivatorAndGivenADirectionInTheVolumesFrame)
 {
     JsonValue sequence = EmptyVerbSequence();
     const std::vector<PropertyNode> empty = VerbSequenceRows(sequence, Vocabulary, {});
@@ -66,24 +73,24 @@ TEST_F(VerbSequenceRowsTest, ALaunchIsAddedAimedAtTheActivatorAndGivenADirection
     EXPECT_EQ(std::ranges::find(offered, "movement.burst"), offered.end()) << "a lease was offered as a command";
 
     sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "movement.launch"));
-    // The target starts at the activator, the one port that can be a character.
+    // The target starts at the activator, whoever caused the occurrence.
     EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target")),
               R"({"port":"activator"})");
     EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("direction")),
               R"({"const":[0,0,1]})") << "a launch started with no way to go";
 
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.value", "0, 0, 1"));
-    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.frame", "trigger"));
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.frame", "self"));
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.speed.value", "14"));
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.direction.value", "1, 0, 0"));
     const JsonValue& direction = *sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("direction");
-    EXPECT_EQ(JsonStringify(direction), R"({"const":[1,0,0],"frame":"trigger"})")
+    EXPECT_EQ(JsonStringify(direction), R"({"const":[1,0,0],"frame":"self"})")
         << "retyping the direction dropped the frame it is given in";
 
     const std::vector<PropertyNode> rows = VerbSequenceRows(sequence, Vocabulary, {});
     const PropertyNode* frame = Find(rows, "k0.arg.direction.frame");
     ASSERT_NE(frame, nullptr);
-    EXPECT_EQ(frame->Value, "trigger");
+    EXPECT_EQ(frame->Value, "self");
     EXPECT_EQ(Find(rows, "k0.arg.speed.value")->Value, "14");
 }
 
@@ -100,19 +107,19 @@ TEST_F(VerbSequenceRowsTest, CommandsReorderAndAChangedVerbKeepsWhatItStillTakes
 {
     JsonValue sequence = EmptyVerbSequence();
     sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "movement.launch"));
-    sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "trigger.disable"));
+    sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "responses.disable"));
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k1.on_failure", "Stop"));
     sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "k1", "up", ""));
     const auto& commands = sequence.Find("commands")->AsArray();
     ASSERT_EQ(commands.size(), 2u);
-    EXPECT_EQ(commands[0].Find("verb")->AsString(), "trigger.disable");
+    EXPECT_EQ(commands[0].Find("verb")->AsString(), "responses.disable");
     EXPECT_EQ(commands[0].Find("on_failure")->AsString(), "stop");
 
-    // trigger.disable's argument is the trigger; switching to launch keeps no
-    // argument launch does not take, and starts the ones it requires.
+    // responses.disable's arguments are the entity and a binding; switching to
+    // launch keeps no argument launch does not take, and starts the ones it requires.
     sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.verb", "movement.launch"));
     const JsonValue& arguments = *sequence.Find("commands")->AsArray()[0].Find("arguments");
-    EXPECT_EQ(arguments.Find("trigger"), nullptr);
+    EXPECT_EQ(arguments.Find("entity"), nullptr);
     EXPECT_NE(arguments.Find("target"), nullptr);
 
     sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "k1", "remove", ""));
@@ -141,4 +148,31 @@ TEST_F(VerbSequenceRowsTest, WhatTheRowsDoNotTouchIsKept)
     const JsonValue moved = Must(SetVerbSequenceValue(*authored, Vocabulary, "k0.on_failure", "Stop"));
     EXPECT_NE(moved.Find("commands")->AsArray()[0].Find("note"), nullptr);
     EXPECT_NE(moved.Find("commands")->AsArray()[0].Find("arguments")->Find("anything"), nullptr);
+}
+
+TEST_F(VerbSequenceRowsTest, AnOccurrencesTagIsConditionedOnWhereItHasATagPort)
+{
+    const std::vector<PropertyNode> plain = VerbSequenceRows(EmptyVerbSequence(), Vocabulary, {});
+    const auto& choices = Find(plain, "conditions")->Descriptor.Verbs.front().Choices;
+    EXPECT_EQ(std::ranges::find(choices, "Tag is\xE2\x80\xA6"), choices.end())
+        << "a tag condition was offered where nothing carries a tag";
+
+    // A struck entity's: itself, then what struck it and with what.
+    const std::array<SequencePort, 3> struck = { {
+        { "self", DataFieldKind::Entity },
+        { "instigator", DataFieldKind::Entity },
+        { "attack", DataFieldKind::GameplayTag },
+    } };
+    const VerbSequenceVocabulary vocabulary{
+        .Verbs = Vocabulary.Verbs, .Queries = Vocabulary.Queries, .Ports = struck, .StartingPort = "instigator" };
+    JsonValue sequence = Must(ActOnVerbSequence(EmptyVerbSequence(), vocabulary, "conditions", "add", "Tag is\xE2\x80\xA6"));
+    sequence = Must(SetVerbSequenceValue(sequence, vocabulary, "c0.tags.any", "Attack.Charge, Attack.Rail"));
+    EXPECT_EQ(JsonStringify(sequence.Find("conditions")->AsArray()[0]),
+              R"({"tag":"attack","tags":{"any":["Attack.Charge","Attack.Rail"]}})");
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, vocabulary, "c0.tag", "instigator").has_value())
+        << "an entity port was accepted as a tag";
+
+    const std::vector<PropertyNode> rows = VerbSequenceRows(sequence, vocabulary, {});
+    ASSERT_NE(Find(rows, "c0.tag"), nullptr);
+    EXPECT_EQ(Find(rows, "c0.tag")->Value, "attack");
 }

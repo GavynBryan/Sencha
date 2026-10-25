@@ -24,6 +24,10 @@ struct AuthoredEventDefinition
 
     // The source entity travels beside the payload, not in it.
     DataFieldSchema Payload = AuthoredRecordRoot();
+
+    // The entity payload field naming who is responsible for the occurrence,
+    // or empty. A response's commands carry it as their instigator.
+    std::string Instigator;
 };
 
 struct AuthoredEventCatalogTraits
@@ -40,7 +44,7 @@ struct AuthoredEventCatalogTraits
     static bool ContractsMatch(const AuthoredEventDefinition& left,
                                const AuthoredEventDefinition& right)
     {
-        return AuthoredContractsMatch(left.Payload, right.Payload);
+        return AuthoredContractsMatch(left.Payload, right.Payload) && left.Instigator == right.Instigator;
     }
 };
 

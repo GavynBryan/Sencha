@@ -265,7 +265,7 @@ momentum and locomotion slows it as it slows any other. It is neither a burst
 (a velocity held for a time, which a lease owns) nor an impulse (added to the
 approach velocity, so the outcome depends on how the character arrived): a
 launch is the same however the character came in. It is authority-only; a
-predicting client is corrected to it (`docs/gameplay/triggers.md`).
+predicting client is corrected to it (`docs/gameplay/responses.md`).
 
 Jump is carried by `MovementIntent.Jump` rather than an ability
 (`JumpExecutionSystem.h`): a predicting client replays its own movement from

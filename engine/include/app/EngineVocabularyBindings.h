@@ -17,7 +17,7 @@ class MovementOperations;
 class NavigationOperations;
 class PhysicsQueries;
 class PhysicsWorld;
-class TriggerOperations;
+class ResponseOperations;
 class World;
 
 //=============================================================================
@@ -56,7 +56,7 @@ private:
     std::unique_ptr<MovementOperations> Movement;
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;
-    std::unique_ptr<TriggerOperations> Triggers;
+    std::unique_ptr<ResponseOperations> Responses;
     std::unique_ptr<PhysicsQueries> Physics;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;

@@ -57,6 +57,21 @@ namespace
     }
 }
 
+namespace
+{
+    // One tag read as a set, so a lone tag answers queries as a container does.
+    struct SingleTag
+    {
+        GameplayTagId Tag;
+
+        [[nodiscard]] bool HasExact(GameplayTagId tag) const { return Tag.IsValid() && Tag == tag; }
+        [[nodiscard]] bool HasDescendantOf(const GameplayTagRegistry& registry, GameplayTagId ancestor) const
+        {
+            return Tag.IsValid() && registry.IsDescendantOf(Tag, ancestor);
+        }
+    };
+}
+
 GameplayTagQuery& GameplayTagQuery::AddAll(GameplayTagId tag, GameplayTagMatchMode match)
 {
     All.push_back(GameplayTagQueryClause{ tag, match });
@@ -91,4 +106,10 @@ bool GameplayTagQuery::Matches(const GameplayTagContainer& tags,
                                const GameplayTagRegistry& registry) const
 {
     return MatchesQuery(tags, registry, All, Any, None);
+}
+
+bool GameplayTagQuery::Matches(GameplayTagId tag,
+                               const GameplayTagRegistry& registry) const
+{
+    return MatchesQuery(SingleTag{ tag }, registry, All, Any, None);
 }

@@ -49,6 +49,22 @@ BodyTransform ReadPose(const World& world, EntityId entity)
     return BodyTransform{ Vec3d::Zero(), Quatf::Identity() };
 }
 
+// The body carries no scale; its shape takes the entity's instead, read once
+// when the body is built.
+Vec3d ReadScale(const World& world, EntityId entity)
+{
+    if (world.IsRegistered<WorldTransform>())
+    {
+        if (const WorldTransform* transform =
+                world.TryGet<WorldTransform>(entity))
+            return transform->Value.Scale;
+    }
+    if (const LocalTransform* transform =
+            world.TryGet<LocalTransform>(entity))
+        return transform->Value.Scale;
+    return Vec3d::One();
+}
+
 } // namespace
 
 struct RigidBodyBinding::SceneState
@@ -146,7 +162,7 @@ void RigidBodyBinding::Reconcile(
         const BodyTransform pose = ReadPose(readOnly, entity);
 
         BodyDesc desc;
-        desc.Shape = collider.Shape;
+        desc.Shape = ScaledCollisionShape(collider.Shape, ReadScale(readOnly, entity));
         desc.MeshShape = collider.Mesh;
         desc.Position = pose.Position;
         desc.Rotation = pose.Rotation;

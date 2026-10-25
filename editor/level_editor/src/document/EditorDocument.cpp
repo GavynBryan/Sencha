@@ -179,6 +179,7 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
 {
     Assets = &assets.Assets;
     Catalog = &assets.Registry;
+    Meshes = assets.StaticMeshes.get();
     Projection.SetAssets(Assets);
 
     // Without the stores an authored handle would not hold its asset: the load

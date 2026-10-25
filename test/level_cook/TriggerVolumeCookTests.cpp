@@ -16,8 +16,8 @@
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
-#include <logic/Trigger.h>
-#include <logic/TriggerSequences.h>
+#include <logic/ResponseSet.h>
+#include <logic/Responses.h>
 #include <project/CookProfile.h>
 #include <world/identity/PersistentIdComponent.h>
 
@@ -36,6 +36,11 @@ namespace fs = std::filesystem;
 
 constexpr std::string_view kSequence = R"({"conditions": [], "commands": [
     {"verb": "movement.launch", "arguments": {"target": {"port": "activator"}, "speed": 12}}]})";
+
+std::string BindingsText()
+{
+    return R"({"enter": {"on": "sensor.enter", "sequence": )" + std::string(kSequence) + "}}";
+}
 
 class TriggerVolumeCookTest : public ::testing::Test
 {
@@ -68,12 +73,12 @@ protected:
         const EntityId entity = Doc.GetScene().CreateBrushFromMesh(transform, std::move(mesh));
         Entities().AddComponent(entity, BrushVolume{});
         Entities().AddComponent(entity, VolumeSensor{});
-        Entities().AddComponent(entity, Trigger{});
+        Entities().AddComponent(entity, Responses{});
         if (EntityNameComponent* named = Entities().TryGet<EntityNameComponent>(entity))
             named->Value = InlineString<64>(name);
         else
             Entities().AddComponent(entity, EntityNameComponent{ InlineString<64>(name) });
-        EXPECT_TRUE(SetTriggerSequence(Entities(), entity, *JsonParse(kSequence)));
+        EXPECT_TRUE(SetResponseBindings(Entities(), entity, *JsonParse(BindingsText())));
         return entity;
     }
 
@@ -146,19 +151,20 @@ TEST_F(TriggerVolumeCookTest, ATriggerVolumeCooksToItsEntityWithAFittedSensorAnd
     for (const char* editorOnly : { "brush", "volume", "volume_sensor", "name" })
         EXPECT_EQ(components.Find(editorOnly), nullptr) << editorOnly;
 
-    const JsonValue* trigger = components.Find("trigger");
-    ASSERT_NE(trigger, nullptr);
-    ASSERT_NE(trigger->Find("sequence"), nullptr);
-    EXPECT_EQ(JsonStringify(*trigger->Find("sequence")), JsonStringify(*JsonParse(kSequence)));
+    const JsonValue* responses = components.Find("responses");
+    ASSERT_NE(responses, nullptr);
+    ASSERT_NE(responses->Find("bindings"), nullptr);
+    EXPECT_EQ(JsonStringify(*responses->Find("bindings")), JsonStringify(*JsonParse(BindingsText())));
 
     const JsonValue* collider = components.Find("collider");
     ASSERT_NE(collider, nullptr);
     EXPECT_TRUE(collider->Find("is_trigger")->AsBool());
     const JsonValue& shape = *collider->Find("shape");
     EXPECT_EQ(shape.Find("type")->AsString(), "box");
-    // The entity's scale is in the box; its turn and position stay the body's.
+    // The box is in the entity's own frame; the body applies its scale, turn and
+    // position, so the scale is not in the box twice.
     const Vec3d half = VectorOf(*shape.Find("half_extents"));
-    EXPECT_NEAR(half.X, 2.0f, 1e-4f);
+    EXPECT_NEAR(half.X, 1.0f, 1e-4f);
     EXPECT_NEAR(half.Y, 0.25f, 1e-4f);
     EXPECT_NEAR(half.Z, 0.5f, 1e-4f);
     const Vec3d centre = VectorOf(*shape.Find("center"));
