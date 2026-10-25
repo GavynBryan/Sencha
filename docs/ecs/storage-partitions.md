@@ -38,9 +38,19 @@ A successful move:
 - appends one `EntityPartitionMove` record;
 - leaves source swap-move change semantics unchanged.
 
-Backends consume the migration journal to update their own secondary zone indices.
-The ECS reports the structural fact and remains unaware of physics, audio,
-navigation, or rendering object families.
+The journal has one consumer, `DispatchPartitionMoves` (`ecs/PartitionFollowers.h`),
+which `RuntimeWorld::FinalizeResidencyProcessing` runs every frame before it
+destroys a departing partition. It hands each batch of moves to the operations
+registered in the World's `PartitionFollowers` resource, and repeats while they
+move more. A follower keeps an entity's dependents in its partition (what is
+attached to a body, what a container holds) or updates a secondary zone index;
+the ECS reports the structural fact and remains unaware of physics, audio,
+navigation, rendering or gameplay object families. Because the journal is
+drained, it holds at most one frame's moves.
+
+A follower moves whatever must stay with the entity before the frame's
+departing partitions are destroyed: a body moved to the persistent partition
+out of a zone that unloads that frame keeps what follows it.
 
 Moving to the current partition is a no-op and emits no record.
 

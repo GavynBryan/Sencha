@@ -1,6 +1,7 @@
 #include <world/RuntimeWorld.h>
 
 #include <components/ActiveCameraService.h>
+#include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -335,6 +336,10 @@ void RuntimeWorld::FinalizeResidencyProcessing()
            && "FinalizeResidencyProcessing without a processing batch");
     assert(!FrameViewLive_
            && "FinalizeResidencyProcessing with a live FrameZoneView");
+
+    // Before any departing partition goes, so whatever follows an entity that
+    // moved out of one this frame leaves with it.
+    (void)DispatchPartitionMoves(Entities_);
 
     for (const ZoneResidencyChange& change : ProcessingChanges_)
     {
