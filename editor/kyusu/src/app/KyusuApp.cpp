@@ -308,6 +308,15 @@ void KyusuApp::PublishAdoptionProblems()
                                         + " was left behind by a file that moved, and no one file of its name can be it",
                              .Location = sidecar.generic_string() });
     Problems.Publish("assets", std::move(problems));
+    // A module that did not load leaves the editor open without the game's
+    // components, which reads as them having vanished: say so where it shows.
+    if (const std::string& failure = Session->ModuleError(); !failure.empty())
+    {
+        Problems.Publish("module", { { .Severity = ProblemSeverity::Error,
+                                       .Message = "The game module did not load, so its components are missing: "
+                                                  + failure } });
+        Notices.Post("The game module did not load; see Problems", NoticeTone::Failed, NoticeClockNow());
+    }
 }
 
 std::vector<std::filesystem::path> KyusuApp::OtherContentRoots() const
