@@ -78,7 +78,7 @@ namespace
             // attributes, and tuning would refuse to load.
             RegisterMovement(Runtime->Entities());
             Runtime->Entities().SetResource(Assets->Assets.Stores());
-            Spawner.emplace(*Runtime, Schema, Serializers, Logging);
+            Spawner.emplace(Schema, Serializers, Logging);
             Spawner->ConnectAssets(&Assets->Assets, &Assets->Scenes);
         }
 

@@ -871,3 +871,58 @@ described in `docs/navigation/runtime.md`, "Agents".
   on `claude/composition`, which `main` does not have yet.
 - **Trigger:** `claude/composition` merging. Register inventory's index as a
   partition follower and delete `MoveContents`.
+
+## Predicting a firer's own projectile
+
+- **What:** a client sees its own projectile only when the authority's arrives,
+  a round trip plus the interpolation delay after the input. Nothing guesses a
+  launch.
+- **Where:** `ProjectileSystem::Launch` (authority only) and `Present`; the
+  prediction pattern to follow is `PredictionJournal` beside
+  `docs/gameplay/abilitykit.md`, "Prediction".
+- **Trigger:** a game shipping projectile combat at internet latency. Guess the
+  launch in the predicted ability pass as a local, unreplicated copy of the
+  prefab flown on the command timeline; match it to the authority's projectile
+  by instigator and launch tick when that arrives, and retire the guess. The
+  guess strikes nothing.
+
+## Lag-compensated projectile contacts
+
+- **What:** a projectile's contacts are decided against the authority's present.
+  A target the firer saw at an interpolated, older pose is struck where the
+  authority has it now.
+- **Where:** `ProjectileSystem::Sweep` and `SweepCharacters`.
+- **Trigger:** the same as hitscan lag compensation in `docs/plans/networking.md`:
+  combat at internet latency where players notice. It needs a per-tick history of
+  character capsules and body poses to sweep against.
+
+## Bouncing and homing projectiles
+
+- **What:** a contact strikes, passes through or stops a projectile; nothing
+  reflects it or steers it.
+- **Where:** `ProjectileSystem::Fly`.
+- **Trigger:** a grenade that should skip off walls, or a seeker. A bounce is a
+  third contact outcome (reflect the velocity about the normal, scaled by a
+  restitution, while bounces remain) that strikes nothing; homing turns the
+  velocity toward a target entity by a rate.
+
+## Typed prefab arguments for projectile.launch
+
+- **What:** `projectile.launch` takes its prefab as a scene path string and
+  resolves it through the asset system per launch. A typed Scene asset argument
+  would give the editor a picker and the content stack a dependency.
+- **Where:** `projectile/ProjectileVerbs.cpp`; the gap is invocation-time loading
+  of a Scene-kinded argument (`assets/runtime/AssetSystem.cpp`, `LoadLease`).
+- **Trigger:** typed Scene arguments loading end to end, or a prefab picker in
+  the ability workbench.
+
+## Projectile poses on the wire every snapshot
+
+- **What:** a flying projectile's `LocalTransform` changes every tick, so it is
+  sent in every snapshot, though its path between contacts is fully described by
+  its launch state.
+- **Where:** `ProjectileFlight` and the replication change store.
+- **Trigger:** projectile counts where snapshot budget is the limit. Replicate the
+  segment (origin, velocity, start tick, gravity) once per contact and evaluate
+  the pose on the receiver, with the root's transform left out of replication
+  for those entities.

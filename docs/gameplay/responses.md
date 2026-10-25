@@ -35,12 +35,12 @@ and one archetype bit.
 A game declares its events in its vocabulary hook, as it declares verbs:
 
 ```cpp
-AuthoredEventDefinition impact;
-impact.Name = "lf.ctx.impact";
-impact.DisplayName = "Shot by CTX";
-impact.Payload.Children = { /* instigator: Entity, attack: GameplayTag, point, normal: Vector 3 */ };
-impact.Instigator = "instigator";   // the payload field that is who is responsible
-(void)events.Declare(std::move(impact));
+AuthoredEventDefinition stomped;
+stomped.Name = "game.stomped";
+stomped.DisplayName = "Stomped on";
+stomped.Payload.Children = { /* stomper: Entity, kind: GameplayTag, point: Vector 3 */ };
+stomped.Instigator = "stomper";   // the payload field that is who is responsible
+(void)events.Declare(std::move(stomped));
 ```
 
 The struct a producer delivers names the event and encodes its payload, as for
@@ -51,7 +51,9 @@ impact is a tag field the bindings' conditions read.
 
 The engine declares the sensor events: `sensor.enter`, `sensor.stay` (every
 sample inside, entry included), `sensor.exit` and `sensor.interact`, each
-carrying its `activator` as instigator.
+carrying its `activator` as instigator; and `projectile.hit`, delivered at what
+a projectile strikes, with its `instigator` and the projectile's `kind`
+(`docs/gameplay/projectiles.md`).
 
 ## Authoring in Kyusu
 

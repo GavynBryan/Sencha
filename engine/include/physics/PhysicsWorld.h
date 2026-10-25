@@ -65,6 +65,9 @@ public:
 
     void Step(float dt, int collisionSteps = 1);
 
+    // The acceleration every dynamic body falls with, before its gravity scale.
+    [[nodiscard]] Vec3d GetGravity() const;
+
     // --- Body interface ------------------------------------------------------
     [[nodiscard]] PhysicsBodyId AddBody(const BodyDesc& desc);
     void RemoveBody(PhysicsBodyId id);

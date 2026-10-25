@@ -14,6 +14,7 @@
 #include <net/ReplicationLayout.h>
 #include <participant/ParticipantComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
+#include <projectile/ProjectileRegistration.h>
 #include <render/RenderComponentRegistration.h>
 #include <spatial/sight/SightComponentRegistration.h>
 #include <time/TimeComponentRegistration.h>
@@ -46,7 +47,8 @@ namespace
         NetComponents,
         LogicComponents,
         AnimationComponents,
-        SightComponents>;
+        SightComponents,
+        ProjectileComponents>;
 
     static_assert(EngineComponentSets::Owned,
                   "a component is named by more than one feature's vocabulary");
@@ -98,6 +100,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
+    RegisterProjectileComponents(registrar);
 }
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
