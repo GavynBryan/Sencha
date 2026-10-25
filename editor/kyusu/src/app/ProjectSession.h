@@ -58,6 +58,9 @@ public:
     // and what it could not do.
     [[nodiscard]] const AssetAdoption& Adoption() const { return Adopted; }
     [[nodiscard]] std::span<const std::string> AdoptionErrors() const { return AdoptionFailures; }
+    // Why the project's game module did not load, or empty: without it the
+    // editor still opens, but none of the game's components are offered.
+    [[nodiscard]] const std::string& ModuleError() const { return ModuleFailure; }
     // Whether `file` is an asset, and so goes by an id (IsAssetFile).
     [[nodiscard]] bool IsAsset(const ProjectFile& file) const;
     // Moving, copying and trashing the project's files as journal steps; null
@@ -84,6 +87,7 @@ private:
     ReferenceIndex ContentReferences;
     AssetAdoption Adopted;
     std::vector<std::string> AdoptionFailures;
+    std::string ModuleFailure;
     std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
     AssetPictures::Registration MaterialPictureFiles;
     AssetPictures::Registration TexturePictureFiles;

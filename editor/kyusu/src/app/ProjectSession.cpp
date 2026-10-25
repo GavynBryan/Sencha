@@ -123,6 +123,7 @@ void ProjectSession::LoadModule(const std::string& modulePath)
     if (!GameModule.IsValid())
     {
         std::fprintf(stderr, "[kyusu] failed to load game module '%s': %s\n", modulePath.c_str(), error.c_str());
+        ModuleFailure = std::move(error);
         return;
     }
     // Workspaces borrow the module's registrations and never run its game, but
