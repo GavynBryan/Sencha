@@ -29,14 +29,13 @@ std::optional<Collider> CookVolumeSensor(const EditorScene& scene, EntityId enti
         return std::nullopt;
     }
 
-    // The body takes the entity's position and turn and no scale, so the box is
-    // fitted where the scaled, placed corners land in that frame.
+    // A collider is in its entity's frame and the body scales it with the
+    // entity, so the box is fitted where the placed corners land in that frame.
     const Transform3f placed = PieceWorldTransform(*world, piece);
-    const Quatf unturn = world->Rotation.Inverse();
     std::vector<Vec3d> corners;
     corners.reserve(mesh->Vertices.size());
     for (const BrushVertex& vertex : mesh->Vertices)
-        corners.push_back(unturn.RotateVector(placed.TransformPoint(vertex.Position) - world->Position));
+        corners.push_back(world->InverseTransformPoint(placed.TransformPoint(vertex.Position)));
 
     const std::optional<OrientedBox> box = FitOrientedBox(*mesh, corners, reason);
     if (!box)

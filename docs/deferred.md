@@ -28,7 +28,11 @@ do the work and delete the entry.
   derived collision layer, and most `RigidBody` configuration when creating a
   body. Value edits do not recreate or update that body, even if a structural
   change causes another reconciliation pass. Only kinematic pose and dynamic
-  gravity scale have live push contracts today.
+  gravity scale have live push contracts today. The entity's scale is read
+  into the shape (`ScaledCollisionShape`) at the same moment, so a resident
+  entity rescaled at runtime keeps the body it was built with, and a
+  `RigidBody` added to an entity whose static body already exists leaves it
+  static.
 - **Where:** `engine/src/physics/RigidBodyBinding.cpp` (`Reconcile`,
   `SyncToPhysics`), `engine/include/physics/components/Collider.h`.
 - **Impact:** changing `IsTrigger` on a resident entity is unsupported; the ECS
@@ -42,7 +46,7 @@ do the work and delete the entry.
   recreate through the existing binding owner, preserve supported dynamic state,
   refresh dependent constraints and invalidate observation pairs without synthetic
   teardown exits. Cover shape,
-  sensor/layer, motion, mass, mesh ownership, and residency together.
+  sensor/layer, motion, mass, mesh ownership, scale, and residency together.
 
 ## Animation decision log depth
 

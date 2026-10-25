@@ -101,6 +101,67 @@ TEST(RigidBodyBinding, DynamicEntityRestsOnStaticFloor)
     EXPECT_NEAR(rest->Value.Position.Y, 1.0f, 0.05f);
 }
 
+TEST(RigidBodyBinding, AColliderGrowsWithItsEntitysScale)
+{
+    PhysicsWorld physics;
+    World ecs;
+    SetUpPhysics(ecs);
+    RigidBodyBinding binding(physics);
+
+    // A unit box on an entity scaled to a 50 by 2 by 50 slab, as a mesh would be.
+    const EntityId floor = SpawnAt(ecs, Vec3d::Zero());
+    ecs.TryGet<LocalTransform>(floor)->Value.Scale = Vec3d(50.0f, 2.0f, 50.0f);
+    ecs.AddComponent<Collider>(
+        floor,
+        Collider{ CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)) });
+
+    // Twenty metres out: past the unscaled box, well inside the scaled one.
+    const EntityId ball = SpawnAt(ecs, Vec3d(20.0f, 5.0f, 0.0f));
+    ecs.AddComponent<Collider>(
+        ball,
+        Collider{ CollisionShape::MakeSphere(0.5f) });
+    ecs.AddComponent<RigidBody>(
+        ball,
+        RigidBody{
+            BodyMotion::Dynamic,
+            1.0f,
+            Vec3d::Zero(),
+            1.0f,
+        });
+
+    Tick(binding, ecs, physics, 240);
+
+    const LocalTransform* rest = ecs.TryGet<LocalTransform>(ball);
+    ASSERT_NE(rest, nullptr);
+    EXPECT_NEAR(rest->Value.Position.Y, 1.5f, 0.05f) << "the slab kept its unscaled size";
+}
+
+TEST(RigidBodyBinding, AScaledPrimitiveKeepsItsKind)
+{
+    CollisionShape box = CollisionShape::MakeBox(Vec3d(1.0f, 2.0f, 3.0f));
+    box.Center = Vec3d(1.0f, 1.0f, 1.0f);
+    const CollisionShape grown = ScaledCollisionShape(box, Vec3d(2.0f, -3.0f, 0.5f));
+    EXPECT_EQ(grown.HalfExtents, Vec3d(2.0f, 6.0f, 1.5f));
+    EXPECT_EQ(grown.Center, Vec3d(2.0f, -3.0f, 0.5f)) << "a mirrored centre is mirrored";
+
+    // Turned a quarter about Y, the box's X runs along the entity's Z.
+    box.Orientation = Quatf::FromAxisAngle(Vec3d(0, 1, 0), 1.5707963f);
+    const CollisionShape turned = ScaledCollisionShape(box, Vec3d(2.0f, 1.0f, 4.0f));
+    EXPECT_NEAR(turned.HalfExtents.X, 4.0f, 1e-4f);
+    EXPECT_NEAR(turned.HalfExtents.Y, 2.0f, 1e-4f);
+    EXPECT_NEAR(turned.HalfExtents.Z, 6.0f, 1e-4f);
+
+    const CollisionShape sphere = ScaledCollisionShape(CollisionShape::MakeSphere(0.5f), Vec3d(1.0f, 3.0f, 2.0f));
+    EXPECT_FLOAT_EQ(sphere.Radius, 1.5f);
+
+    const CollisionShape capsule =
+        ScaledCollisionShape(CollisionShape::MakeCapsule(0.5f, 1.0f), Vec3d(2.0f, 3.0f, 1.0f));
+    EXPECT_FLOAT_EQ(capsule.Radius, 1.0f);
+    EXPECT_FLOAT_EQ(capsule.HalfHeight, 3.0f);
+
+    EXPECT_EQ(ScaledCollisionShape(box, Vec3d::One()), box);
+}
+
 TEST(RigidBodyBinding, RemovingColliderRemovesBody)
 {
     PhysicsWorld physics;

@@ -161,9 +161,10 @@ TEST_F(TriggerVolumeCookTest, ATriggerVolumeCooksToItsEntityWithAFittedSensorAnd
     EXPECT_TRUE(collider->Find("is_trigger")->AsBool());
     const JsonValue& shape = *collider->Find("shape");
     EXPECT_EQ(shape.Find("type")->AsString(), "box");
-    // The entity's scale is in the box; its turn and position stay the body's.
+    // The box is in the entity's own frame; the body applies its scale, turn and
+    // position, so the scale is not in the box twice.
     const Vec3d half = VectorOf(*shape.Find("half_extents"));
-    EXPECT_NEAR(half.X, 2.0f, 1e-4f);
+    EXPECT_NEAR(half.X, 1.0f, 1e-4f);
     EXPECT_NEAR(half.Y, 0.25f, 1e-4f);
     EXPECT_NEAR(half.Z, 0.5f, 1e-4f);
     const Vec3d centre = VectorOf(*shape.Find("center"));

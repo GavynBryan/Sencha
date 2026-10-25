@@ -550,3 +550,8 @@ the event's contract. The engine declares the `sensor.*` events.
 **Gameplay tags.** `GameplayTagQuery::Matches` gains a single-tag overload.
 
 **Zone state.** `ZoneStateStore` gains per-entity component state records.
+
+**Physics.** A body's shape takes its entity's scale when the body is built
+(`ScaledCollisionShape`, `physics/CollisionShape.h`): an authored collider is
+in its entity's frame, as its mesh is. A trigger volume's cooked box is fitted
+unscaled accordingly.
