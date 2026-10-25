@@ -1371,7 +1371,11 @@ bool WriteCompanion(const std::string& path,
         << "#pragma once\n\n"
         << "#include <core/metadata/ComponentDefinition.h>\n"
         << "#include <core/metadata/Field.h>\n"
-        << "#include <core/serialization/FourCC.h>\n";
+        << "#include <core/serialization/FourCC.h>\n"
+        // A math member flattens through the schema traits MathSchemas
+        // specializes. Seen from every includer, so no translation unit can
+        // instantiate a component's fields without them.
+        << "#include <math/MathSchemas.h>\n";
     if (authored)
         out << "#include <authored/AuthoredApiDefinition.h>\n";
     out << "\n"
