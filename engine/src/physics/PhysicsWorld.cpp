@@ -325,6 +325,11 @@ void PhysicsWorld::SetAngularVelocity(PhysicsBodyId id, const Vec3d& velocity)
     bodies.SetAngularVelocity(ToJph(id), ToJph(velocity));
 }
 
+Vec3d PhysicsWorld::GetGravity() const
+{
+    return FromJph(Impl->System.GetGravity());
+}
+
 float PhysicsWorld::GetGravityScale(PhysicsBodyId id) const
 {
     const JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();

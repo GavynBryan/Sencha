@@ -10,6 +10,7 @@
 #include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
+#include <projectile/ProjectileVerbs.h>
 #include <time/ActorTimeVerbs.h>
 
 #include <string>
@@ -47,6 +48,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareAudioVerbs(scope);
     DeclareNavigationVerbs(scope);
     DeclareResponseVocabulary(scope, eventScope);
+    DeclareProjectileVocabulary(scope, eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
 
