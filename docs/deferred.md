@@ -860,3 +860,14 @@ described in `docs/navigation/runtime.md`, "Agents".
   (`engine/include/logic/ResponsesSystem.h`).
 - **Trigger:** a producer admitting thousands of responses a tick, or a memory
   budget pass over the simulation.
+
+## Inventory contents follow their container through partition followers
+
+- **What:** inventory moves a container's contents into the container's
+  partition itself (`MoveContents` in `engine/src/inventory/Inventory.cpp`), and
+  only when inventory places the container. A container moved by anyone else
+  (`RuntimeWorld::MoveEntityToPersistent`) leaves its contents behind.
+- **Where:** `ecs/PartitionFollowers.h` is the general mechanism; inventory lives
+  on `claude/composition`, which `main` does not have yet.
+- **Trigger:** `claude/composition` merging. Register inventory's index as a
+  partition follower and delete `MoveContents`.

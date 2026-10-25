@@ -1,3 +1,4 @@
+#include <ecs/PartitionFollowers.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 
@@ -200,4 +201,43 @@ TEST(RuntimeWorldMigration, ZoneOfFollowsTheEntitysPartition)
 
     runtime.Entities().DestroyEntity(walker);
     EXPECT_FALSE(runtime.ZoneOf(walker).has_value());
+}
+
+// An entity moved out of a zone that unloads in the same frame keeps what
+// follows it: residency processing dispatches the moves before it destroys
+// the departing partition.
+TEST(RuntimeWorldMigration, WhatFollowsAnEntityLeavesADepartingZoneWithIt)
+{
+    const WorldComponentSchema schema = MigrationSchema();
+    RuntimeWorld runtime(schema);
+    RuntimeZoneRecord& zone = runtime.AttachZone(ZoneId{ 1 }, LiveZone());
+    FinishResidency(runtime);
+
+    World& entities = runtime.Entities();
+    const EntityId body = entities.CreateEntity(zone.Partition);
+    const EntityId held = entities.CreateEntity(zone.Partition);
+    const EntityId left = entities.CreateEntity(zone.Partition);
+    struct Held
+    {
+        EntityId Body;
+        EntityId Item;
+    } link{ body, held };
+    (void)entities.AddResource<PartitionFollowers>().Register(
+        &link, [](void* context, World& world, std::span<const EntityPartitionMove> moves) {
+            const Held& pair = *static_cast<const Held*>(context);
+            for (const EntityPartitionMove& move : moves)
+                if (move.Entity == pair.Body)
+                    (void)world.MoveEntityToPartition(pair.Item, move.Current);
+        });
+
+    ASSERT_TRUE(runtime.MoveEntityToPersistent(body));
+    ASSERT_TRUE(runtime.RequestDetach(ZoneId{ 1 }));
+    runtime.FlushLifecycleRequests();
+    FinishResidency(runtime);
+
+    EXPECT_TRUE(entities.IsAlive(body));
+    EXPECT_TRUE(entities.IsAlive(held));
+    EXPECT_EQ(entities.GetEntityPartition(held), PersistentStoragePartition);
+    EXPECT_FALSE(entities.IsAlive(left)) << "the zone's own entities still unload";
+    EXPECT_TRUE(entities.PendingPartitionMoves().empty());
 }
