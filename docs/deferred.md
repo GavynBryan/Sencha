@@ -734,12 +734,12 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** a few engine-scope objects keep pointers into run-scope owners
   between the end of `Engine::Run` and `Engine::Shutdown`. The default render
   pipeline's features hold the content stack's mesh and material caches, and
-  scheduled systems (input mapping, verb relays, triggers, navigation agents)
-  hold its `DataAssetCache`; triggers hold its `AssetRegistry` too. None dereferences them after the run; ASan runs of every exit
+  scheduled systems (input mapping, verb relays, responses, navigation agents)
+  hold its `DataAssetCache`; responses hold its `AssetRegistry` too. None dereferences them after the run; ASan runs of every exit
   path are clean. The shell and the authored UI feature were the cases that did,
   and are now released by `Run` (`docs/architecture/engine-lifetime.md`).
 - **Where:** `DefaultRenderPipeline` (`engine/src/app/DefaultRenderPipeline.cpp`),
-  `RegisterInputSystems`, `RegisterVerbRelaySystem`, `RegisterTriggerSystem`, and the systems
+  `RegisterInputSystems`, `RegisterVerbRelaySystem`, `RegisterResponsesSystem`, and the systems
   `EngineSchedule::Shutdown` tears down in `Engine::Shutdown`.
 - **Trigger:** the first teardown hook in any of them that touches what it
   borrows. That makes the borrow a real use-after-free, so the borrower is
@@ -754,48 +754,92 @@ described in `docs/navigation/runtime.md`, "Agents".
   merging. Then set the array's merge key to `name` and add a composition test
   that patches one socket of a base rig.
 
-## Trigger enable state across a zone unload
+## Approach direction for sensor responses
 
-- **What:** `trigger.enable` and `trigger.disable` write `Trigger::Enabled`. A
-  zone that streams out and back reloads its triggers as authored, so a trigger
-  disabled at runtime comes back enabled. A consumed once-trigger stays
-  consumed: that is entity destruction, which the zone state overlay records.
-- **Where:** `engine/src/logic/TriggerVerbs.cpp`; the overlay is
-  `engine/include/zone/ZoneStateStore.h`, which records destruction only.
-- **Trigger:** the zone state overlay capturing changed component fields, or
-  the first level that needs a disarmed trigger to stay disarmed after its zone
-  unloads.
-
-## Approach direction for triggers
-
-- **What:** a trigger cannot ask which way its activator crossed it (a one-way
-  gate). A sensor sample reports occupancy transitions, not a crossing
+- **What:** a sensor response cannot ask which way its activator crossed the
+  volume (a one-way gate). A sensor sample reports occupancy transitions, not a crossing
   direction, and reading the activator's velocity afterwards would be a second,
   movement-specific source of the same fact.
 - **Where:** `SensorOverlaps` (`engine/include/physics/SensorOverlaps.h`) and the
   cast in `engine/src/physics/SensorShapeQuery.cpp`, which knows the
   displacement that produced an Enter.
 - **Trigger:** the first content needing a one-way trigger. The direction
-  belongs on the sensor occurrence, and the trigger then gains an entity
-  condition over it.
+  belongs on the sensor occurrence, as a vector field of the `sensor.*`
+  events' payload, which a response then reads as a port.
 
-## Trigger inspector: query sources and picking entities
+## Response inspector: query sources and picking entities
 
 - **What:** a sequence argument may be a query's answer (or one member of it),
   and an entity named by identity; both run and are tested. The inspector
   offers constants, ports and a typed identity, but no query source and no
   picking an entity in the view.
 - **Where:** `editor/common/src/vocabulary/VerbSequenceRows.cpp` (the argument
-  sources) and `editor/level_editor/src/authoring/TriggerEditorAdapter.cpp`.
+  sources) and `editor/level_editor/src/authoring/ResponsesEditorAdapter.cpp`.
 - **Trigger:** a designer authoring a query-driven argument or pointing a
-  command at another placed entity, or the owner's walkthrough of trigger
-  authoring.
+  command at another placed entity -- a switch that opens a remote door is the
+  first -- or the owner's walkthrough of response authoring.
 
 ## Turning a trigger's direction in the view
 
 - **What:** a trigger draws an arrow for every direction its commands are given;
   the direction is edited in the inspector, not by dragging the arrow.
-- **Where:** `TriggerEditorAdapter::BuildViewport`; a dial or handle would
+- **Where:** `ResponsesEditorAdapter::BuildViewport`; a dial or handle would
   commit through the same `SetVerbSequenceValue` step.
 - **Trigger:** the owner's walkthrough of trigger authoring, or a designer
   asking to aim a bumper in the view.
+
+## Retiring verb relays
+
+- **What:** a relay -- native code activating one binding a placed entity names
+  in a shared `authored.bindings` asset -- is what a response does when native
+  code delivers a game-declared event at the entity, plus conditions and
+  policy. Its only producer is the arena template's `award` console command.
+- **Where:** `engine/include/logic/VerbRelay*.h`, `engine/src/logic/VerbRelay*.cpp`,
+  `templates/arena/src/ArenaGame.cpp` and `templates/arena/assets/levels/arena_room.sscene`.
+- **Trigger:** the arena's award migrated to an `arena.award_requested` event
+  and a response on its score entity; then remove relays, their serializer and
+  `logic.relay.*`.
+
+## Skipping the encode of an unheard publish, and source-indexed subscribers
+
+- **What:** `AuthoredEventDispatcher::Publish` encodes, validates and queues
+  every occurrence whether or not anything subscribes, and delivery scans every
+  subscriber of the event to filter by source (`MatchingSubscribers`). Targeted
+  responses never go through it, so no frequent producer publishes today.
+- **Where:** `engine/src/authored/AuthoredEventDispatcher.cpp`, `Enqueue` and
+  `MatchingSubscribers`; `test/runtime/ResponsesDeliveryBench.cpp` measures
+  publish and drain beside delivery.
+- **Trigger:** LevelFlow, the first consumer with many source-filtered
+  subscriptions, or a producer that publishes a per-contact event globally.
+
+## Removing an inherited response binding
+
+- **What:** bindings are an object keyed by binding key, so a prefab instance
+  overrides one binding by patching `responses.bindings.<key>`. Version-1
+  composition reads `null` as a value, so an instance cannot remove a binding
+  it inherits; it can disable it (`"enabled": false`).
+- **Where:** `logic/ResponseSet.cpp` (reading bindings) and scene composition
+  (`editor/common/src/scene_source/SceneComposition.cpp`).
+- **Trigger:** `claude/composition`'s version-2 patches (where `null` removes)
+  merging, or a designer needing an instance without an inherited behavior.
+
+## Marking an event's instigator by annotation
+
+- **What:** `AuthoredEventDefinition::Instigator` names the payload field a
+  response's commands carry as their instigator. Events declared by hand set
+  it; `SENCHA_EVENT` has no annotation for it, so a generated event names none.
+- **Where:** the annotations in `engine/include/authored/AuthoredAnnotations.h`
+  and `sencha-component-codegen`.
+- **Trigger:** the first event declared through the generated API that a
+  response's cooldown or a verb's provenance needs to attribute.
+
+## Captured payload size
+
+- **What:** an admitted response captures its ports as `AuthoredValue`s, which
+  carry a string and a vector beside the scalar, so a three-value payload and
+  its entry measure 344 bytes (`ResponsesDeliveryBench`: 10,000 waiting
+  responses, 3,440,000 bytes). Warmed, nothing allocates.
+- **Where:** `ResponsesSystem::Activation` and `ResponsesSystem::Values`
+  (`engine/include/logic/ResponsesSystem.h`).
+- **Trigger:** a producer admitting thousands of responses a tick, or a memory
+  budget pass over the simulation.

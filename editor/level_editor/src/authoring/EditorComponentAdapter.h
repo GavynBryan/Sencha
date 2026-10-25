@@ -137,6 +137,9 @@ public:
     {
         return {};
     }
+    // What the component's heading says on this one entity, when the entity
+    // makes it a different tool -- empty for the component's own name.
+    [[nodiscard]] virtual std::string InspectorLabel(const EditorComponentInspectorContext&) const { return {}; }
     virtual PropertyEditResult SetInspectorValue(EditorComponentInspectorContext&, std::string_view /*key*/,
                                                  std::string_view /*value*/) const
     {

@@ -14,6 +14,7 @@ namespace
 {
 constexpr std::string_view kWorldFrame = "World";
 constexpr std::string_view kEntityCondition = "Entity has\xE2\x80\xA6";
+constexpr std::string_view kTagCondition = "Tag is\xE2\x80\xA6";
 constexpr std::array<std::string_view, 2> kFailurePolicies = { "Continue", "Stop" };
 
 enum class ArgumentSource : std::uint8_t
@@ -61,20 +62,36 @@ std::vector<std::string_view> PortsFor(const DataFieldSchema& field, std::span<c
     const DataFieldSchema& shown = UnwrappedField(field);
     std::vector<std::string_view> names;
     for (const SequencePort& port : ports)
-        if ((port.Kind == SequencePortKind::Entity && shown.Kind == DataFieldKind::Entity)
-            || (port.Kind == SequencePortKind::Vector && IsVector3(shown)))
+        if (SequencePortFits(port, shown))
+            names.push_back(port.Name);
+    return names;
+}
+
+std::vector<std::string_view> PortsOfKind(std::span<const SequencePort> ports, DataFieldKind kind)
+{
+    std::vector<std::string_view> names;
+    for (const SequencePort& port : ports)
+        if (port.Kind == kind)
             names.push_back(port.Name);
     return names;
 }
 
 std::vector<std::string_view> EntityPorts(std::span<const SequencePort> ports)
 {
-    std::vector<std::string_view> names;
-    for (const SequencePort& port : ports)
-        if (port.Kind == SequencePortKind::Entity)
-            names.push_back(port.Name);
-    return names;
+    return PortsOfKind(ports, DataFieldKind::Entity);
 }
+
+// The port a new value starts at: `preferred` when it fits, else the first that does.
+std::string_view StartingFrom(std::span<const std::string_view> fitting, std::string_view preferred)
+{
+    return std::ranges::find(fitting, preferred) != fitting.end() ? preferred : fitting.front();
+}
+
+std::vector<std::string_view> TagPorts(std::span<const SequencePort> ports)
+{
+    return PortsOfKind(ports, DataFieldKind::GameplayTag);
+}
+
 
 std::vector<ArgumentSource> SourcesFor(const DataFieldSchema& field, std::span<const SequencePort> ports,
                                        bool absent)
@@ -248,6 +265,16 @@ PropertyNode Movable(PropertyNode row, std::size_t index, std::size_t count)
     return row;
 }
 
+void TagClauseRows(const std::string& prefix, const JsonValue& condition, PropertyNode& row)
+{
+    const JsonValue* tags = FindMember(condition, "tags");
+    for (const std::string_view clause : { "all", "any", "none" })
+        row.Children.push_back(TextProperty(std::format("{}.tags.{}", prefix, clause),
+                                            std::format("Tags: {}", clause),
+                                            Joined(tags != nullptr ? FindMember(*tags, clause) : nullptr),
+                                            "Gameplay tag names, separated by commas."));
+}
+
 PropertyNode ConditionRow(const JsonValue& condition, std::size_t index, std::size_t count,
                           const VerbSequenceVocabulary& vocabulary)
 {
@@ -272,18 +299,24 @@ PropertyNode ConditionRow(const JsonValue& condition, std::size_t index, std::si
         return Movable(std::move(row), index, count);
     }
 
+    if (FindMember(condition, "tag") != nullptr)
+    {
+        const std::string port = ReadMemberString(condition, "tag");
+        PropertyNode row = GroupProperty(prefix, std::format("{} is", port));
+        const std::vector<std::string_view> ports = TagPorts(vocabulary.Ports);
+        row.Children.push_back(ChoiceProperty(prefix + ".tag", "Tag", ports, IndexOf(ports, port),
+                                              "Matches hierarchically: a tag counts as each of its parents."));
+        TagClauseRows(prefix, condition, row);
+        return Movable(std::move(row), index, count);
+    }
+
     const std::string port = ReadMemberString(condition, "entity");
     PropertyNode row = GroupProperty(prefix, std::format("{} has", port));
     const std::vector<std::string_view> ports = EntityPorts(vocabulary.Ports);
     row.Children.push_back(ChoiceProperty(prefix + ".entity", "Entity", ports, IndexOf(ports, port)));
     row.Children.push_back(TextProperty(prefix + ".has", "Components", Joined(FindMember(condition, "has")),
                                         "Component identities, separated by commas."));
-    const JsonValue* tags = FindMember(condition, "tags");
-    for (const std::string_view clause : { "all", "any", "none" })
-        row.Children.push_back(TextProperty(std::format("{}.tags.{}", prefix, clause),
-                                            std::format("Tags: {}", clause),
-                                            Joined(tags != nullptr ? FindMember(*tags, clause) : nullptr),
-                                            "Gameplay tag names, separated by commas."));
+    TagClauseRows(prefix, condition, row);
     return Movable(std::move(row), index, count);
 }
 
@@ -356,7 +389,8 @@ const DataFieldSchema* ContractOf(const JsonValue& entry, const VerbSequenceVoca
 
 // A command's arguments start where a designer most often wants them: an
 // entity from the first port that can be one, anything required at its default.
-JsonValue StartingArguments(const DataFieldSchema& contract, std::span<const SequencePort> ports)
+JsonValue StartingArguments(const DataFieldSchema& contract, std::span<const SequencePort> ports,
+                            std::string_view startingPort)
 {
     JsonValue::Object arguments;
     for (const DataFieldSchema& field : contract.Children)
@@ -365,7 +399,7 @@ JsonValue StartingArguments(const DataFieldSchema& contract, std::span<const Seq
             continue;
         const std::vector<std::string_view> fitting = PortsFor(field, ports);
         if (UnwrappedField(field).Kind == DataFieldKind::Entity && !fitting.empty())
-            arguments.emplace_back(field.Key, Port(fitting.front()));
+            arguments.emplace_back(field.Key, Port(StartingFrom(fitting, startingPort)));
         else if (UnwrappedField(field).Kind != DataFieldKind::Entity)
             arguments.emplace_back(field.Key, DefaultAuthoredConstant(field));
     }
@@ -449,6 +483,11 @@ std::vector<PropertyNode> VerbSequenceRows(const JsonValue& sequence, const Verb
     PropertyVerb addCondition{ .Id = "add", .Label = "Add Condition" };
     addCondition.Choices.emplace_back(kEntityCondition);
     addCondition.ChoiceNotes.emplace_back("An entity port carries components and gameplay tags.");
+    if (!TagPorts(vocabulary.Ports).empty())
+    {
+        addCondition.Choices.emplace_back(kTagCondition);
+        addCondition.ChoiceNotes.emplace_back("A tag the occurrence carries, such as the attack that made it.");
+    }
     for (const std::string& query : TruthQueries(vocabulary))
     {
         addCondition.Choices.push_back(query);
@@ -504,7 +543,7 @@ std::optional<JsonValue> SetVerbSequenceValue(const JsonValue& sequence, const V
             return std::ranges::none_of(verb->Arguments.Children,
                                         [&](const DataFieldSchema& field) { return field.Key == member.first; });
         });
-        const JsonValue starting = StartingArguments(verb->Arguments, vocabulary.Ports);
+        const JsonValue starting = StartingArguments(verb->Arguments, vocabulary.Ports, vocabulary.StartingPort);
         for (const auto& [name, initial] : starting.AsObject())
             if (FindMember(arguments, name) == nullptr)
                 SetMember(arguments, name, initial);
@@ -526,6 +565,14 @@ std::optional<JsonValue> SetVerbSequenceValue(const JsonValue& sequence, const V
         if (std::ranges::find(ports, value) == ports.end())
             return std::nullopt;
         SetMember(target, "entity", JsonValue(std::string(value)));
+        return edited;
+    }
+    if (rest == "tag")
+    {
+        const std::vector<std::string_view> ports = TagPorts(vocabulary.Ports);
+        if (std::ranges::find(ports, value) == ports.end())
+            return std::nullopt;
+        SetMember(target, "tag", JsonValue(std::string(value)));
         return edited;
     }
     if (rest == "has")
@@ -601,7 +648,7 @@ std::optional<JsonValue> ActOnVerbSequence(const JsonValue& sequence, const Verb
                 return std::nullopt;
             list.push_back(JsonValue(JsonValue::Object{
                 { "verb", JsonValue(std::string(choice)) },
-                { "arguments", StartingArguments(added->Arguments, vocabulary.Ports) } }));
+                { "arguments", StartingArguments(added->Arguments, vocabulary.Ports, vocabulary.StartingPort) } }));
             return edited;
         }
         if (choice == kEntityCondition)
@@ -609,8 +656,19 @@ std::optional<JsonValue> ActOnVerbSequence(const JsonValue& sequence, const Verb
             const std::vector<std::string_view> ports = EntityPorts(vocabulary.Ports);
             if (ports.empty())
                 return std::nullopt;
-            list.push_back(JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(ports.front())) },
-                                                        { "has", JsonValue(JsonValue::Array{}) } }));
+            list.push_back(JsonValue(JsonValue::Object{
+                { "entity", JsonValue(std::string(StartingFrom(ports, vocabulary.StartingPort))) },
+                { "has", JsonValue(JsonValue::Array{}) } }));
+            return edited;
+        }
+        if (choice == kTagCondition)
+        {
+            const std::vector<std::string_view> ports = TagPorts(vocabulary.Ports);
+            if (ports.empty())
+                return std::nullopt;
+            list.push_back(JsonValue(JsonValue::Object{
+                { "tag", JsonValue(std::string(ports.front())) },
+                { "tags", JsonValue(JsonValue::Object{ { "any", JsonValue(JsonValue::Array{}) } }) } }));
             return edited;
         }
         const AuthoredQueryDefinition* query = QueryNamed(vocabulary, choice);
@@ -618,7 +676,8 @@ std::optional<JsonValue> ActOnVerbSequence(const JsonValue& sequence, const Verb
             return std::nullopt;
         list.push_back(JsonValue(JsonValue::Object{ { "query", JsonValue(std::string(choice)) },
                                                     { "arguments", StartingArguments(query->Arguments,
-                                                                                     vocabulary.Ports) } }));
+                                                                                     vocabulary.Ports,
+                                                                                     vocabulary.StartingPort) } }));
         return edited;
     }
 

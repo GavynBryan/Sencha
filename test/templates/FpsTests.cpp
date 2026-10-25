@@ -7,8 +7,8 @@
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <ecs/World.h>
-#include <logic/Trigger.h>
-#include <logic/TriggerSystem.h>
+#include <logic/Responses.h>
+#include <logic/ResponsesSystem.h>
 #include <movement/components/CharacterFacts.h>
 #include <physics/components/Collider.h>
 #include <net/NetReplicationComponents.h>
@@ -130,8 +130,8 @@ namespace
         void FrameUpdate(FrameUpdateContext& ctx)
         {
             const World& world = ctx.Entities;
-            if (world.IsRegistered<Trigger>() && world.IsRegistered<Collider>())
-                world.ForEachComponent<Trigger>([&](EntityId entity, const Trigger&) {
+            if (world.IsRegistered<Responses>() && world.IsRegistered<Collider>())
+                world.ForEachComponent<Responses>([&](EntityId entity, const Responses&) {
                     const Collider* collider = world.TryGet<Collider>(entity);
                     SensorCooked = SensorCooked || (collider != nullptr && collider->IsTrigger);
                 });
@@ -142,7 +142,7 @@ namespace
                             : nullptr)
                         HighestRise = std::max(HighestRise, motion->Velocity.Y);
                 });
-            if (const TriggerSystem* triggers = Host->Schedule().Get<TriggerSystem>())
+            if (const ResponsesSystem* triggers = Host->Schedule().Get<ResponsesSystem>())
                 Activations = triggers->Stats().Activations;
         }
     };

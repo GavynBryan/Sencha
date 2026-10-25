@@ -119,6 +119,13 @@ bool VerbSequenceRunner::HoldsCondition(const CompiledSequenceCondition& conditi
             && truth == condition.Expect;
     }
 
+    if (condition.Kind == SequenceConditionKind::Tag)
+    {
+        GameplayTagId tag;
+        return condition.Port < run.Ports.size() && run.Ports[condition.Port].TryGetTag(tag) && run.Tags != nullptr
+            && condition.Tags.Matches(tag, *run.Tags);
+    }
+
     EntityId entity;
     return condition.Port < run.Ports.size() && run.Ports[condition.Port].TryGetEntity(entity)
         && EntityMatches(run.Entities, entity, condition.Components, condition.HasTags ? &condition.Tags : nullptr,

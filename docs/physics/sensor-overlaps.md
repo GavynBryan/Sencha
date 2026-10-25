@@ -6,7 +6,9 @@ sample in the World's `SensorOverlaps` resource. It never invokes gameplay
 callbacks. Fixed logic can consume that sample on the following tick, before
 movement composition and physics. Consumers must check authority, entity
 liveness and domain participation again before executing gameplay.
-`TriggerSystem` is the engine's consumer (`docs/gameplay/triggers.md`).
+`ResponsesSystem` is the engine's consumer: it delivers `sensor.enter`,
+`sensor.stay` and `sensor.exit` at each volume that has responses
+(`docs/gameplay/responses.md`).
 
 The physics scene retains the non-static, non-sensor body candidates. The
 character mover pool retains `CharacterVirtual` candidates, which have no body

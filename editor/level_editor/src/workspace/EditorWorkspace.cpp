@@ -15,7 +15,7 @@
 #include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/BrushModifierEditorAdapter.h"
 
-#include "authoring/TriggerEditorAdapter.h"
+#include "authoring/ResponsesEditorAdapter.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
@@ -221,7 +221,7 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
     Affordances->Registry().Register(MakeAbilityGrantsEditorAdapter());
     Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
-    Affordances->Registry().Register(MakeTriggerEditorAdapter());
+    Affordances->Registry().Register(MakeResponsesEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(
         [this](const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene)

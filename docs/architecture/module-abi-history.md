@@ -488,7 +488,7 @@ and the navigation enums gain `EnumSchema`s.
 
 ## v31
 
-Triggers (`docs/gameplay/triggers.md`).
+Triggers, since generalized into responses in v32 (`docs/gameplay/responses.md`).
 
 **Physics.** `CollisionShape` gains `Center` and `Orientation`, its primitive's
 pose in its body's frame, and an equality operator. `Collider` gains a scene
@@ -518,3 +518,35 @@ abilities and sequences share.
 pairs a call's authored arguments with the ones declared; ability, candidate
 and sequence query calls compile through it. `DataEditorHint::Widget` gains
 `"direction"`.
+
+## v32
+
+Responses (`docs/gameplay/responses.md`): an entity's authored answers to the
+occurrences delivered at it, generalized from v31's triggers.
+
+**Logic.** `Trigger`, `TriggerActivation`, `TriggerCooldownScope`,
+`TriggerSystem`, `TriggerSequences`, `TriggerSerializer` and
+`TriggerOperations` are removed. `Responses` (`logic/Responses.h`, scene key
+`responses`, chunk `RSPN`) takes `Trigger`'s place in `LogicComponents`: a
+content key into the World's `ResponseDefinitions` (`logic/ResponseSet.h`) and
+two state masks. `ResponsesSystem` (`logic/ResponsesSystem.h`) replaces
+`TriggerSystem`, with `Deliver<E>(subject, occurrence)` for native producers
+and `logic.responses.*` cvars in place of `logic.trigger.*`.
+`ResponseOperations` (`logic/ResponseVerbs.h`) declares `responses.enable` and
+`responses.disable` in place of `trigger.enable` and `trigger.disable`, and
+keeps `trigger.interact`; `EngineVocabularyBindings::Triggers` becomes
+`Responses`. `TriggerInteractions` becomes `SensorInteractions`, whose requests
+carry the tick they were made in.
+
+**Sequences.** `SequencePort` carries the `DataFieldKind` and vector length of
+the field it reads in place of `SequencePortKind`, which is removed.
+`SequenceConditionKind` gains `Tag`. `VerbSequenceStore::Intern` takes the event
+whose payload a sequence reads; `Revalidate` reads compile stamps once per pass,
+which now include the event catalog; `PortsFor` builds a sequence's ports.
+
+**Authored.** `AuthoredEventDefinition` gains `Instigator`, which takes part in
+the event's contract. The engine declares the `sensor.*` events.
+
+**Gameplay tags.** `GameplayTagQuery::Matches` gains a single-tag overload.
+
+**Zone state.** `ZoneStateStore` gains per-entity component state records.

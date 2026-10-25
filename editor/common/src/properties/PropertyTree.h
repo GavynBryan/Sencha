@@ -20,6 +20,9 @@ struct PropertyPlace
 [[nodiscard]] std::optional<PropertyPlace> FindPropertyNode(std::vector<PropertyNode>& nodes, std::string_view key);
 // The property keyed `key` anywhere in the tree, or null.
 [[nodiscard]] const PropertyNode* FindProperty(const std::vector<PropertyNode>& nodes, std::string_view key);
+// Every key in the tree with `prefix` put in front: rows built by one source,
+// nested under another that routes edits back by the prefix.
+void PrefixPropertyKeys(std::vector<PropertyNode>& nodes, std::string_view prefix);
 
 // A key that numbers one of several -- "walls.2.centre" after "walls." -- as
 // its number and what follows it, the leading dot dropped; nothing when the key

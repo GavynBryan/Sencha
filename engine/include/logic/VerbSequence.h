@@ -4,6 +4,7 @@
 #include <authored/AuthoredValue.h>
 #include <authored/VerbBinding.h>
 #include <core/json/JsonValue.h>
+#include <core/metadata/DataSchema.h>
 #include <ecs/ComponentId.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagQueryNames.h>
@@ -16,20 +17,20 @@
 
 // An authored response: conditions, then verbs in order, reading the ports its
 // producer offers. Desc types are what content says, World-independent; the
-// Compiled ones are what one World made of it. docs/gameplay/triggers.md.
+// Compiled ones are what one World made of it. docs/gameplay/responses.md.
 
-// What a producer offers a sequence to read, by name.
-enum class SequencePortKind : std::uint8_t
-{
-    Entity,
-    Vector,
-};
-
+// What a producer offers a sequence to read, by name, as the kind of field it
+// is: the producer's own fixed ports, then whatever its event's payload declares.
 struct SequencePort
 {
     std::string_view Name;
-    SequencePortKind Kind = SequencePortKind::Entity;
+    DataFieldKind Kind = DataFieldKind::Entity;
+    // For a vector.
+    std::uint32_t VectorLength = 0;
 };
+
+// Whether a value read from `port` is what `field` takes.
+[[nodiscard]] bool SequencePortFits(const SequencePort& port, const DataFieldSchema& field);
 
 inline constexpr std::uint8_t kNoSequencePort = 0xFF;
 
@@ -76,6 +77,8 @@ enum class SequenceConditionKind : std::uint8_t
     Entity,
     // A boolean query's answer is the one expected.
     Query,
+    // A gameplay-tag port's tag matches a tag query, hierarchically.
+    Tag,
 };
 
 struct SequenceConditionDesc

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <core/identity/Id.h>
+#include <ecs/ComponentTypeId.h>
 #include <zone/ZoneId.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 //=============================================================================
 // ZoneStateStore
@@ -89,15 +92,60 @@ public:
         return it != Zones_.end() ? it->second.Destroyed.size() : 0;
     }
 
+    // State a system captured for one component of one entity as its zone
+    // detached, in whatever form that system reads back when the zone next
+    // attaches. Like the destroyed set it is a deviation: the system forgets a
+    // record once the entity is back as authored, so memory follows change.
+    void RecordComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type,
+                              std::span<const std::byte> state)
+    {
+        std::vector<std::byte>& record = Zones_[zone].Components[ComponentStateKey{ id.Value, type.Value }];
+        record.assign(state.begin(), state.end());
+    }
+
+    void ForgetComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type)
+    {
+        if (const auto it = Zones_.find(zone); it != Zones_.end())
+            it->second.Components.erase(ComponentStateKey{ id.Value, type.Value });
+    }
+
+    // Empty when nothing was recorded.
+    [[nodiscard]] std::span<const std::byte> ComponentState(ZoneId zone, PersistentEntityId id,
+                                                            ComponentTypeId type) const
+    {
+        const auto it = Zones_.find(zone);
+        if (it == Zones_.end())
+            return {};
+        const auto found = it->second.Components.find(ComponentStateKey{ id.Value, type.Value });
+        return found != it->second.Components.end() ? std::span<const std::byte>(found->second)
+                                                    : std::span<const std::byte>();
+    }
+
     // Reset-to-authored: the next import of every zone replays the cooked
     // scene unmodified.
     void Clear() { Zones_.clear(); }
 
 private:
+    struct ComponentStateKey
+    {
+        std::uint64_t Entity = 0;
+        std::uint64_t Type = 0;
+        friend bool operator==(const ComponentStateKey&, const ComponentStateKey&) = default;
+    };
+
+    struct ComponentStateKeyHash
+    {
+        std::size_t operator()(const ComponentStateKey& key) const
+        {
+            return static_cast<std::size_t>(key.Entity * 1099511628211ull ^ key.Type);
+        }
+    };
+
     struct ZoneStateRecord
     {
         std::unordered_set<std::uint64_t> Authored;
         std::unordered_set<std::uint64_t> Destroyed;
+        std::unordered_map<ComponentStateKey, std::vector<std::byte>, ComponentStateKeyHash> Components;
     };
 
     std::unordered_map<ZoneId, ZoneStateRecord> Zones_;

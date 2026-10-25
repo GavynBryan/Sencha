@@ -5,7 +5,7 @@
 #include <audio/AudioVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
-#include <logic/TriggerVerbs.h>
+#include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
@@ -18,10 +18,12 @@ bool InstallEngineVocabulary(World& world)
 {
     VerbRegistry* verbs = FindVerbRegistry(world);
     AuthoredQueryRegistry* queries = FindAuthoredQueryRegistry(world);
-    if (verbs == nullptr || queries == nullptr)
+    AuthoredEventRegistry* events = FindAuthoredEventRegistry(world);
+    if (verbs == nullptr || queries == nullptr || events == nullptr)
         return false;
     VerbRegistrationScope scope(*verbs, "engine");
     AuthoredQueryRegistrationScope queryScope(*queries, "engine");
+    AuthoredEventRegistrationScope eventScope(*events, "engine");
 
     VerbDefinition resume;
     resume.Name = std::string(kRuntimeResumeVerb);
@@ -44,11 +46,11 @@ bool InstallEngineVocabulary(World& world)
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
     DeclareNavigationVerbs(scope);
-    DeclareTriggerVerbs(scope);
+    DeclareResponseVocabulary(scope, eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
 
-    const bool engineDeclared = CommitTogether(scope, queryScope);
+    const bool engineDeclared = CommitTogether(scope, queryScope, eventScope);
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);
     return engineDeclared && perceptionDeclared;
 }

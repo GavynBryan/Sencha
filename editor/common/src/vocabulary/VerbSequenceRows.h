@@ -15,12 +15,15 @@
 
 // An authored verb sequence as properties laid out from the vocabulary, and the
 // new sequence each edit makes. Pure over JSON, so any holder of a sequence
-// edits it alike; keys are listed in docs/gameplay/triggers.md, "Inspector keys".
+// edits it alike; keys are listed in docs/gameplay/responses.md, "Inspector keys".
 struct VerbSequenceVocabulary
 {
     const VerbRegistry* Verbs = nullptr;
     const AuthoredQueryRegistry* Queries = nullptr;
     std::span<const SequencePort> Ports;
+    // The entity port a new command or condition starts aimed at -- whoever
+    // caused the occurrence; empty for the first entity port.
+    std::string_view StartingPort;
 };
 
 [[nodiscard]] std::vector<PropertyNode> VerbSequenceRows(const JsonValue& sequence,

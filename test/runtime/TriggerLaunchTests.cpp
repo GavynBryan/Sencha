@@ -16,9 +16,9 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <logic/Trigger.h>
-#include <logic/TriggerSequences.h>
-#include <logic/TriggerSystem.h>
+#include <logic/ResponseSet.h>
+#include <logic/Responses.h>
+#include <logic/ResponsesSystem.h>
 #include <movement/LocomotionMode.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/MovementDefs.h>
@@ -41,20 +41,19 @@
 #include <numbers>
 #include <string_view>
 
-// A bumper as content builds one: a sensor box and a trigger whose sequence
-// names movement.launch, run through the real fixed tick -- the trigger pass,
+// A bumper as content builds one: a sensor box whose responses answer an entry
+// with movement.launch, run through the real fixed tick -- the response pass,
 // movement, the character mover, the sensor sample -- with nothing written for
 // bumpers anywhere in it.
 
 namespace
 {
-constexpr double kDt = 1.0 / 60.0;
 constexpr float kCapsuleCentre = 0.95f;
 
-// Forward along the trigger, eight up: the sequence a designer writes.
+// Forward along the volume, eight up: the sequence a designer writes.
 constexpr std::string_view kLaunch = R"({"commands": [{"verb": "movement.launch", "arguments": {
     "target": {"port": "activator"},
-    "direction": {"const": [0, 0, 1], "frame": "trigger"},
+    "direction": {"const": [0, 0, 1], "frame": "self"},
     "speed": 10, "rise": 8}}]})";
 
 struct LaunchHarness
@@ -70,8 +69,7 @@ struct LaunchHarness
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::unique_ptr<EngineVocabularyBindings> Bindings;
     EngineSchedule Schedule;
-    TriggerSystem* Triggers = nullptr;
-    std::uint64_t Tick = 0;
+    ResponsesSystem* Triggers = nullptr;
 
     LaunchHarness()
     {
@@ -86,9 +84,9 @@ struct LaunchHarness
         RegisterPhysics(Schedule);
         RegisterAbilityKitSystems(Schedule);
         RegisterMovementSystems(Schedule, DataAssets);
-        Triggers = &RegisterTriggerSystem(Schedule, world, *Verbs, Queries.get(), nullptr, &DataAssets,
-                                          Console.Registry(), Logging);
-        Schedule.After<FreeLocomotionSystem, TriggerSystem>();
+        Triggers = &RegisterResponsesSystem(Schedule, world, Loop.GetSimulationClock(), *Verbs, Queries.get(), nullptr,
+                                            &DataAssets, Console.Registry(), Logging);
+        Schedule.After<FreeLocomotionSystem, ResponsesSystem>();
         Schedule.Init();
 
         BodyDesc floor;
@@ -150,9 +148,10 @@ struct LaunchHarness
         collider.Shape.Center = centre;
         collider.IsTrigger = true;
         world.AddComponent<Collider>(bumper, collider);
-        world.AddComponent<Trigger>(bumper, Trigger{});
-        std::optional<JsonValue> parsed = JsonParse(sequence);
-        EXPECT_TRUE(parsed && SetTriggerSequence(world, bumper, *parsed));
+        world.AddComponent<Responses>(bumper, Responses{});
+        std::optional<JsonValue> parsed =
+            JsonParse(R"({"launch": {"on": "sensor.enter", "sequence": )" + std::string(sequence) + "}}");
+        EXPECT_TRUE(parsed && SetResponseBindings(world, bumper, *parsed));
         return bumper;
     }
 
@@ -160,7 +159,7 @@ struct LaunchHarness
     {
         World& world = Entities();
         const FrameZoneView& zones = Runtime.BuildFrameView();
-        const FixedSimTime time{ .DeltaSeconds = kDt, .TickIndex = Tick };
+        const FixedSimTime time = Loop.GetSimulationClock().BeginFixedTick();
         FixedLogicContext logic{ .Config = Config, .Runtime = Loop, .Time = time, .Entities = world,
                                  .Partitions = zones.Logic };
         Schedule.RunFixedLogic(logic);
@@ -168,7 +167,7 @@ struct LaunchHarness
         Schedule.RunPhysics(physics);
         PropagateTransforms(world, zones.Logic, TransformPropagationDomain::Simulation);
         Runtime.EndFrameView();
-        ++Tick;
+        Loop.GetSimulationClock().EndFixedTick();
     }
 
     Vec3d Velocity(EntityId character) { return std::as_const(Entities()).TryGet<KinematicState>(character)->Velocity; }
@@ -248,16 +247,16 @@ TEST(TriggerLaunch, AClientDoesNotLaunchWhatItSeesEnterABumper)
     EXPECT_EQ(harness.Triggers->Stats().Activations, 0u);
 }
 
-TEST(TriggerLaunch, TheLaunchCanBeReplacedByAnotherVerbWithoutTouchingTheTrigger)
+TEST(TriggerLaunch, TheLaunchCanBeReplacedByAnotherVerbWithoutTouchingTheVolume)
 {
     LaunchHarness harness;
     const EntityId walker = harness.Character(Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 0.0f, 1.0f));
     const EntityId bumper = harness.Bumper(Vec3d(0.0f, 0.0f, 2.0f), 0.0f, Vec3d(1.0f, 0.25f, 0.5f),
                                            Vec3d(0.0f, 0.25f, 0.0f), kLaunch);
-    // The same trigger, its sequence now another engine verb: it disarms itself.
-    std::optional<JsonValue> disarm = JsonParse(R"({"commands": [
-        {"verb": "trigger.disable", "arguments": {"trigger": {"port": "trigger"}}}]})");
-    ASSERT_TRUE(disarm && SetTriggerSequence(harness.Entities(), bumper, *disarm));
+    // The same volume, its response now another engine verb: it disarms itself.
+    std::optional<JsonValue> disarm = JsonParse(R"({"launch": {"on": "sensor.enter", "sequence": {"commands": [
+        {"verb": "responses.disable", "arguments": {"entity": {"port": "self"}, "binding": {"const": "launch"}}}]}}})");
+    ASSERT_TRUE(disarm && SetResponseBindings(harness.Entities(), bumper, *disarm));
 
     float highest = 0.0f;
     for (int i = 0; i < 120; ++i)
@@ -266,6 +265,6 @@ TEST(TriggerLaunch, TheLaunchCanBeReplacedByAnotherVerbWithoutTouchingTheTrigger
         highest = std::max(highest, harness.Velocity(walker).Y);
     }
     EXPECT_EQ(harness.Triggers->Stats().Activations, 1u);
-    EXPECT_FALSE(harness.Entities().TryGet<Trigger>(bumper)->Enabled);
+    EXPECT_EQ(harness.Entities().TryGet<Responses>(bumper)->Disabled, 1u);
     EXPECT_LT(highest, 1.0f);
 }

@@ -12,7 +12,8 @@
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
-#include <logic/TriggerVerbs.h>
+#include <logic/ResponseVerbs.h>
+#include <logic/ResponsesSystem.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
@@ -94,8 +95,8 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[19].Name, kNavigationMoveToVerb);
     EXPECT_EQ(verbs[20].Name, kNavigationApproachVerb);
     EXPECT_EQ(verbs[21].Name, kNavigationStopVerb);
-    EXPECT_EQ(verbs[22].Name, kTriggerEnableVerb);
-    EXPECT_EQ(verbs[23].Name, kTriggerDisableVerb);
+    EXPECT_EQ(verbs[22].Name, kResponsesEnableVerb);
+    EXPECT_EQ(verbs[23].Name, kResponsesDisableVerb);
     EXPECT_EQ(verbs[24].Name, kTriggerInteractVerb);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 8u);
@@ -230,9 +231,15 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(lit.Provider, "lamp");
     EXPECT_EQ(lit.ArgumentCount, 1u);
 
+    // The engine's sensor events come first; the module's follow them.
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
-    ASSERT_EQ(events.size(), 1u);
-    EXPECT_EQ(events[0].Name, "lamp.switched");
-    EXPECT_EQ(events[0].SourceComponent, "game.lamp");
-    EXPECT_EQ(events[0].PayloadCount, 0u);
+    ASSERT_EQ(events.size(), 5u);
+    EXPECT_EQ(events[0].Name, kSensorEnterEvent);
+    EXPECT_EQ(events[1].Name, kSensorStayEvent);
+    EXPECT_EQ(events[2].Name, kSensorExitEvent);
+    EXPECT_EQ(events[3].Name, kSensorInteractEvent);
+    EXPECT_EQ(events[0].PayloadCount, 1u);
+    EXPECT_EQ(events[4].Name, "lamp.switched");
+    EXPECT_EQ(events[4].SourceComponent, "game.lamp");
+    EXPECT_EQ(events[4].PayloadCount, 0u);
 }

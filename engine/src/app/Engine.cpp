@@ -9,7 +9,7 @@
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
-#include <logic/TriggerSystem.h>
+#include <logic/ResponsesSystem.h>
 #include <logic/VerbRelaySystem.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <abilities/AbilityKit.h>
@@ -1377,12 +1377,13 @@ int Engine::Run(Game& game)
                                   *VerbDispatcherState, ContentState->Assets().Registry,
                                   ContentState->Assets().DataAssets, console.Registry(),
                                   LoggingState);
-    // Triggers likewise: a scene whose volumes carry one runs it in a process
-    // whose game registered nothing. With no sensor sample to read, a tick costs
-    // a resource lookup.
-    (void)RegisterTriggerSystem(EngineSystems, RuntimeWorldState->Entities(), *VerbDispatcherState,
-                                QueryDispatcherState.get(), &ContentState->Assets().Registry,
-                                &ContentState->Assets().DataAssets, console.Registry(), LoggingState);
+    // Responses likewise: a scene whose entities carry them runs them in a
+    // process whose game registered nothing, and a game's own systems deliver
+    // to them through Schedule().Get<ResponsesSystem>(). With nothing waiting
+    // and no sensor sample to read, a tick costs a resource lookup.
+    (void)RegisterResponsesSystem(EngineSystems, RuntimeWorldState->Entities(), RuntimeLoop.GetSimulationClock(),
+                                  *VerbDispatcherState, QueryDispatcherState.get(), &ContentState->Assets().Registry,
+                                  &ContentState->Assets().DataAssets, console.Registry(), LoggingState);
     // The shell's Back reader goes with the shell: a host that composes no
     // menu must not have Escape flipping a pause state nothing presents.
     if (Configuration.Runtime.ApplicationShell)
@@ -1428,12 +1429,12 @@ int Engine::Run(Game& game)
                              });
 
     game.OnRegisterSystems(registerSystems);
-    // A sequence's movement operations write the channels the movement producers
+    // A response's movement operations write the channels the movement producers
     // and composition read, so a launch lands on the step after the sample that
     // saw the activator, and a jump, root motion or held burst that tick acts on
     // it as on any earlier write.
     if (EngineSystems.Has<FreeLocomotionSystem>())
-        EngineSystems.After<FreeLocomotionSystem, TriggerSystem>();
+        EngineSystems.After<FreeLocomotionSystem, ResponsesSystem>();
     // After the game's systems, which is where physics is registered if at all.
     {
         const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();

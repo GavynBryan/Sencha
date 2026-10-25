@@ -81,7 +81,7 @@ public:
 
     // Gives every selected brush each component it lacks of those named by
     // scene key, at its defaults, as one undoable step: a brush made a trigger
-    // volume is given "volume", "volume_sensor" and "trigger" at once.
+    // volume is given "volume", "volume_sensor" and "responses" at once.
     void AddComponentsToBrushes(std::span<const std::string_view> components);
 
     [[nodiscard]] bool HasBakedSelection() const;
