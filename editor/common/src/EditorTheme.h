@@ -44,6 +44,8 @@ inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 }
 inline constexpr Vec4 VolumeFill{ 0.10f, 0.55f, 0.60f, 0.12f };
 inline constexpr Vec4 VolumeEdge{ 0.25f, 0.85f, 0.90f, 1.0f };
+// A collider's shape: solid green; a sensor's draws as a volume does.
+inline constexpr Vec4 ColliderEdge{ 0.35f, 0.9f, 0.45f, 1.0f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 // Transition graph edges in the streaming preview: cyan lines between zone centers.
 inline constexpr Vec4 TransitionLine{ 0.25f, 0.75f, 0.95f, 1.0f };

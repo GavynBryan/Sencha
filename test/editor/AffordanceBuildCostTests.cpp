@@ -80,7 +80,9 @@ TEST_F(AffordanceBuildCostTest, WorkScalesWithAffordanceAuthorsNotRegisteredComp
     const std::size_t serializers = EditorSceneSerializers().Entries().size();
     EXPECT_GT(serializers, adapters);
     EXPECT_LT(authors, adapters) << "every adapter is in the per-entity loop";
-    EXPECT_LE(authors, 2u) << "affordance authors grew; re-check the per-entity inner loop";
+    // World docks, responses and colliders: each costs a visible entity one
+    // archetype check.
+    EXPECT_LE(authors, 3u) << "affordance authors grew; re-check the per-entity inner loop";
 }
 
 TEST_F(AffordanceBuildCostTest, BuildingIsProportionalToVisibleEntities)

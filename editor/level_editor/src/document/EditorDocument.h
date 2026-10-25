@@ -26,6 +26,7 @@
 class LoggingProvider;
 class AssetSystem;
 class AssetRegistry;
+class StaticMeshCache;
 struct RuntimeAssets;
 struct IComponentSerializer;
 
@@ -53,6 +54,9 @@ public:
     // refs (the inspector's asset-field picker). Null until SetAssetEnvironment.
     [[nodiscard]] AssetSystem* GetAssetSystem() const { return Assets; }
     [[nodiscard]] const AssetRegistry* GetAssetCatalog() const { return Catalog; }
+    // The meshes StaticMesh handles name, for tooling that reads their bounds.
+    // Null until SetAssetEnvironment, and in a host without meshes.
+    [[nodiscard]] const StaticMeshCache* GetStaticMeshes() const { return Meshes; }
 
     // Hands the document its registry identity (WorldDocument assigns each open
     // zone document a unique, never-reused RegistryId so a stale SelectableRef
@@ -304,6 +308,7 @@ private:
     LoggingProvider& Logging;
     AssetSystem* Assets = nullptr;
     AssetRegistry* Catalog = nullptr;
+    const StaticMeshCache* Meshes = nullptr;
 
     // Declared last: it names Registry_, Scene, Retained_ and Logging, so all
     // four have to exist before it is constructed.

@@ -12,6 +12,7 @@
 #include <math/geometry/3d/Ray3d.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -150,6 +151,10 @@ public:
     {
         return PropertyEditResult::Gone;
     }
+    // What the component starts as when added to this entity, written over its
+    // defaults in `added` (the component's bytes): a collider sized to the
+    // entity's mesh. Left alone, the component starts as its defaults.
+    virtual void PrepareAdded(const EditorComponentInspectorContext&, std::span<std::byte> /*added*/) const {}
     // Catalog actions about what this component makes of its entity, offered
     // on the component's heading: a brush's bake and export.
     [[nodiscard]] virtual std::span<const std::string_view> Actions() const { return {}; }

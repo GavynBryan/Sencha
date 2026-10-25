@@ -796,10 +796,16 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     World& world = document.GetScene().GetRegistry().Components;
     std::vector<std::unique_ptr<ICommand>> commands;
     const auto addTo = [&](const IComponentSerializer& serializer, ComponentId id) {
+        const IEditorComponentAdapter* adapter = Adapters.Find(serializer.TypeId());
         for (const EntityId entity : entities)
             if (!world.HasComponent(entity, id))
-                commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, serializer.DefaultBytes(),
+            {
+                std::vector<std::byte> added = serializer.DefaultBytes();
+                if (adapter != nullptr)
+                    adapter->PrepareAdded(InspectorContext(entity), added);
+                commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, std::move(added),
                                                                             document.GetScene(), document));
+            }
     };
     if (key == "components" && verb == "add")
     {

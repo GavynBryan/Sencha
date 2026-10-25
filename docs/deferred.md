@@ -48,6 +48,19 @@ do the work and delete the entry.
   teardown exits. Cover shape,
   sensor/layer, motion, mass, mesh ownership, scale, and residency together.
 
+## Authoring a rigid body in a scene
+
+- **What:** `RigidBody` declares no schema, so a level cannot say a collider's
+  body is kinematic or dynamic: every authored collider is static world
+  geometry unless code adds the component. Loss Function's `Sway` adds a
+  kinematic one to the entity it moves, before its first physics step.
+- **Where:** `engine/include/physics/components/RigidBody.h`; the Kyusu
+  collider rows in `editor/level_editor/src/authoring/ColliderEditorAdapter.cpp`.
+- **Trigger:** the first authored prop that falls, or a mover that is not a
+  game's own component. Give `RigidBody` a schema whose persisted fields are
+  motion, mass, gravity scale and damping (velocities stay runtime state), a
+  scene chunk, and a motion choice beside the collider's rows.
+
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision
