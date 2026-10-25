@@ -1,8 +1,11 @@
 #include <anim/AnimPosePool.h>
 
 #include <anim/AnimPoseState.h>
+#include <anim/AnimationClipSampling.h>
 #include <ecs/World.h>
 
+#include <algorithm>
+#include <cassert>
 #include <utility>
 
 std::uint32_t AnimPosePool::Allocate(EntityId owner)
@@ -46,6 +49,25 @@ void AnimPosePool::Slot::Shape(std::uint32_t joints, std::uint32_t layers)
     Previous.assign(joints, Transform3f{});
     HasCurrent = false;
     HasPrevious = false;
+    ++Revision;
+}
+
+std::span<const Mat4> AnimPosePool::Slot::PresentedModel(const SkeletonData& skeleton, float alpha) const
+{
+    assert(skeleton.Joints.size() == Current.size());
+    const float blend = std::clamp(alpha, 0.0f, 1.0f);
+    if (Presented.Built && Presented.Revision == Revision && Presented.Alpha == blend)
+        return Presented.Model;
+
+    Presented.Local.resize(Current.size());
+    for (std::size_t j = 0; j < Current.size(); ++j)
+        Presented.Local[j] = HasPrevious && blend < 1.0f ? Transform3f::Interpolate(Previous[j], Current[j], blend)
+                                                          : Current[j];
+    BuildPosedModelTransforms(skeleton, Presented.Local, Presented.Model);
+    Presented.Revision = Revision;
+    Presented.Alpha = blend;
+    Presented.Built = true;
+    return Presented.Model;
 }
 
 AnimPosePool::Slot* AnimPosePool::Find(std::uint32_t handle, EntityId owner)

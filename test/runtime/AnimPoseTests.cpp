@@ -190,6 +190,17 @@ TEST(AnimPose, ARiggedEntityIsPosedIntoItsSlotAndReleasesItOnDestroy)
     EXPECT_EQ(fx.Entities.GetResource<AnimPosePool>().LiveCount(), 0u);
 }
 
+// What is derived from a pose knows it is stale because each posed tick moves
+// the slot's revision.
+TEST(AnimPose, EachPosedTickMovesTheSlotRevision)
+{
+    PoseFixture fx(R"({ "in": "snap" })");
+    fx.Step();
+    const std::uint64_t first = fx.Pose(fx.Entity).Revision;
+    fx.Step();
+    EXPECT_GT(fx.Pose(fx.Entity).Revision, first);
+}
+
 // A slot is the entity's it was assigned to: a duplicate carrying its original's
 // pose state gets a slot of its own, and ending it leaves the original's alone.
 TEST(AnimPose, APoseSlotIsOnlyTheEntitysItWasAssignedTo)

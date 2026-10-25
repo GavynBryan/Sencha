@@ -1,8 +1,10 @@
 #pragma once
 
 #include <anim/AnimTypes.h>
+#include <anim/Skeleton.h>
 #include <anim/SkeletonHandle.h>
 #include <ecs/EntityId.h>
+#include <math/Mat.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Transform3d.h>
 
@@ -22,6 +24,17 @@ struct AnimJointOffset
     float Angle = 0.0f;
     float AngularSpeed = 0.0f;
     float AngleSeconds = 0.0f;
+};
+
+// A slot's pose as it is presented: model space, between its last two ticks.
+// Derived on first request and kept until the pose or the blend changes.
+struct AnimPresentedPose
+{
+    std::vector<Transform3f> Local;
+    std::vector<Mat4> Model;
+    std::uint64_t Revision = 0;
+    float Alpha = 0.0f;
+    bool Built = false;
 };
 
 // Slots are assigned and shaped on the owner thread. The pose pass then writes each
@@ -45,12 +58,21 @@ public:
         std::vector<Transform3f> Previous;
         // Current's tick; Previous, when HasPrevious, is the tick before.
         AnimTick Tick = 0;
+        // Moves whenever Current, Previous or the shape changes.
+        std::uint64_t Revision = 0;
+        // A cache over the pose, so readers of a const pool may fill it.
+        mutable AnimPresentedPose Presented;
         bool HasCurrent = false;
         bool HasPrevious = false;
         bool Live = false;
 
         // Clears the slot when the shape changes.
         void Shape(std::uint32_t joints, std::uint32_t layers);
+
+        // The model-space pose `alpha` of the way from Previous to Current, built at
+        // most once per pose and blend. A skinned palette and anything placed on a
+        // joint read this one result. Owner thread.
+        [[nodiscard]] std::span<const Mat4> PresentedModel(const SkeletonData& skeleton, float alpha) const;
 
         [[nodiscard]] std::span<AnimJointOffset> LayerOffsets(std::size_t layer)
         {

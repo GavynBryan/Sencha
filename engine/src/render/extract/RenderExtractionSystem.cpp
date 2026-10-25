@@ -3,7 +3,6 @@
 
 #include <anim/AnimPosePool.h>
 #include <anim/AnimPoseState.h>
-#include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 
 #include <world/transform/TransformHistory.h>
@@ -365,14 +364,8 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
         break;
     case SkinnedPoseMatch::Posed:
     {
-        PoseScratch.resize(slot->Current.size());
-        const float alpha = static_cast<float>(std::clamp(poseAlpha, 0.0, 1.0));
-        for (std::size_t j = 0; j < slot->Current.size(); ++j)
-            PoseScratch[j] = slot->HasPrevious && alpha < 1.0f
-                ? Transform3f::Interpolate(slot->Previous[j], slot->Current[j], alpha)
-                : slot->Current[j];
-        BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
-        BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
+        const std::span<const Mat4> model = slot->PresentedModel(*skeleton, static_cast<float>(poseAlpha));
+        BuildSkinningPalette(*skeleton, model, PaletteScratch);
         std::copy(PaletteScratch.begin(), PaletteScratch.end(), skinnedPoses.Palettes.begin() + paletteOffset);
         break;
     }

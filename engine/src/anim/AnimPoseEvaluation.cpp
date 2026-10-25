@@ -383,4 +383,5 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
     std::copy_n(scratch.Composed.begin(), std::min(scratch.Composed.size(), slot.Current.size()), slot.Current.begin());
     slot.HasCurrent = true;
     slot.Tick = now;
+    ++slot.Revision;
 }
