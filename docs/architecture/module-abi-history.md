@@ -595,3 +595,13 @@ runtime only) are a new `AttachmentComponents` set; `PresentedWith`
 **Registration.** `SystemRegisterContext` gains `Presents`.
 
 **ECS and math.** `World::ReplaceComponent<T>` and `Transform3d::FromMat4` are new.
+
+## v35
+
+`presentation.attach` (`attach/AttachmentVerbs.h`): a cosmetic lease holding a
+static mesh at a socket of its target, so an ability phase can show a prop from
+content alone. `EngineVocabularyBindings` gains the `AttachmentOperations`
+provider. `kAbilityMaxPhasePresents` and `kAbilityMaxSustainedPresentations`
+(`abilities/AbilityCapacity.h`) bound what a sustained presentation's lease key
+can name: an ability compile refuses a phase with more presents, and a cue
+presentation declaration reports a cue sustaining more.

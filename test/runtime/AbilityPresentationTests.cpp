@@ -11,21 +11,30 @@
 #include <abilities/CuePresentationLibrary.h>
 #include <app/EngineVocabulary.h>
 #include <app/EngineVocabularyBindings.h>
+#include <attach/Attachment.h>
 #include <audio/AudioVerbs.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
 #include <controller/LookOrientation.h>
+#include <core/assets/AssetStoreTable.h>
 #include <core/json/JsonParser.h>
 #include <input/InputActionRegistry.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
+#include <math/MathSchemas.h>
+#include <render/MaterialCache.h>
+#include <render/MaterialSetCache.h>
+#include <render/PresentedWith.h>
+#include <render/StaticMeshComponent.h>
 #include <time/ActorTimeSystem.h>
 #include <time/SimClock.h>
 #include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
+
+#include "CountedPathStore.h"
 
 #include <memory>
 
@@ -68,7 +77,19 @@ protected:
     AbilityPresentation()
     {
         RegisterAbilityKit(Entities);
-        Entities.RegisterComponent<LocalTransform>();
+        ComponentStorageTraits<LocalTransform>::Register(Entities);
+        Entities.RegisterComponent<StaticMeshComponent>();
+        Entities.RegisterComponent<PresentedWith>();
+        Entities.RegisterComponent<AttachmentSet>();
+        Entities.RegisterComponent<Attachment>();
+        InstallAttachments(Entities, nullptr);
+        PropMesh = Meshes.Add("asset://meshes/prop.smesh");
+        (void)Materials.Register("asset://materials/prop.smat", Material{});
+        AssetStoreTable stores;
+        stores.Add(AssetType::StaticMesh, AssetArity::Single, Meshes);
+        stores.Add(AssetType::Material, AssetArity::Single, Materials);
+        stores.Add(AssetType::Material, AssetArity::List, MaterialSets);
+        Entities.SetResource(stores);
         Entities.RegisterComponent<LookOrientation>();
         Entities.RegisterComponent<InputActionSourceRef>();
         InstallAuthoredVocabulary(Entities);
@@ -177,6 +198,11 @@ protected:
             Step({}, present);
     }
 
+    // Before the World, which releases what its entities hold into them as it goes.
+    CountedPathStore Meshes{ AssetType::StaticMesh };
+    MaterialCache Materials;
+    MaterialSetCache MaterialSets{ &Materials };
+    std::uint64_t PropMesh = 0;
     World Entities;
     InputActionRegistry Actions;
     FixedSimulationLoop Clock{ kTickSeconds };
@@ -235,6 +261,31 @@ TEST_F(AbilityPresentation, PulsesSinceTheLastLookAreOneOccurrenceWithTheirCount
     Steps(2);
     ASSERT_EQ(Showings.Calls.size(), 2u);
     EXPECT_EQ(Showings.Calls.back().first, 1);
+}
+
+// The ocarina: a prop shown for exactly as long as the phase that plays it,
+// from content alone.
+TEST_F(AbilityPresentation, APhaseHoldsAPropForExactlyAsLongAsItLasts)
+{
+    EXPECT_TRUE(Present(R"({ "cues": [ { "key": "k_prop", "cue": "cue.glow", "sustain": [
+        { "lease": "presentation.attach", "arguments": { "target": { "port": "actor" }, "socket": { "const": "" },
+          "mesh": { "asset": "asset://meshes/prop.smesh" }, "material": { "asset": "asset://materials/prop.smat" } } } ] } ] })",
+                        "asset://cues/prop.sdata")
+                    .empty());
+    const auto worn = [&] {
+        std::size_t count = 0;
+        ForEachAttachment(Entities, Actor, [&](EntityId, const Attachment&) { ++count; });
+        return count;
+    };
+    Grant(kGlowing);
+    Step({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(worn(), 1u);
+    EXPECT_GT(Meshes.Count(PropMesh), 0);
+    Steps(5);
+    EXPECT_EQ(worn(), 1u) << "held, not taken again every tick";
+    Step({ { kFire, InputEdgeKind::Release } });
+    EXPECT_EQ(worn(), 0u) << "gone when the phase ended";
+    EXPECT_EQ(Meshes.Count(PropMesh), 0);
 }
 
 TEST_F(AbilityPresentation, APresentEntryIsHeldWhileItsPhaseLasts)

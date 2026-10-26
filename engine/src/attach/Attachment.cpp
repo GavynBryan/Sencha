@@ -425,6 +425,11 @@ void PlaceAttachments(World& world, double presentationAlpha)
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const Attachment& attachment = attachments[i];
+            if (attachment.Owner.Holder.Entity.IsValid() && !reader.IsAlive(attachment.Owner.Holder.Entity))
+            {
+                runtime->PendingDestroy.push_back(view.Entity(i));
+                continue;
+            }
             if (attachment.Binding == AttachmentBinding::Origin || !reader.IsAlive(attachment.Root))
                 continue;
             const AnimPoseState* state = posed ? reader.TryGet<AnimPoseState>(attachment.Root) : nullptr;
@@ -458,6 +463,7 @@ void PlaceAttachments(World& world, double presentationAlpha)
         }
     });
 
+    DrainPendingDestroy(world);
     for (const EntityId entity : runtime->Rebind)
     {
         Attachment* attachment = world.TryGet<Attachment>(entity);

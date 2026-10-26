@@ -31,3 +31,8 @@ inline constexpr std::size_t kAbilityRequestCapacity = 32;
 // Discrete cues an actor keeps until the oldest is overwritten: a peer misses one
 // only if this many newer ones are made before a snapshot carrying it arrives.
 inline constexpr std::size_t kAbilityCueLogCapacity = 8;
+
+// A phase's presents, and a cue's sustained presentations, are numbered in eight
+// bits each where a sustained presentation names the lease it holds.
+inline constexpr std::size_t kAbilityMaxPhasePresents = 255;
+inline constexpr std::size_t kAbilityMaxSustainedPresentations = 255;

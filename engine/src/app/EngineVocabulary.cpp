@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
+#include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
@@ -45,6 +46,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
+    DeclareAttachmentVerbs(scope);
     DeclareNavigationVerbs(scope);
     DeclareResponseVocabulary(scope, eventScope);
     DeclarePhysicsQueries(queryScope);

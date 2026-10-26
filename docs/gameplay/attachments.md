@@ -75,10 +75,30 @@ list through `Attachment::Next`, with no capacity limit, and hooks keep it exact
 | The body: death, relevance loss, `DestroyPartition` | Its `AttachmentSet`'s `OnRemove` queues the whole list |
 | The body moves partition | A partition follower (`ecs/PartitionFollowers.h`) moves the list with it |
 | A writer | `DestroyAttachmentsOf(writer)` |
+| The owner's holder entity | `PlaceAttachments` ends it the frame the holder is gone |
 
 A hook only queues, since hooks may not destroy entities; `PlaceAttachments`
 destroys what is queued before it places anything, so nothing outlives its
 body by a frame.
+
+## From content
+
+`presentation.attach` is a cosmetic lease: while it is held, its target shows a
+static mesh with one material at a named socket (or at its origin, for an empty
+socket name). A phase's presented cue sustains it, so a prop is shown for
+exactly as long as the phase that plays it, on every machine that presents the
+phase, a late joiner included:
+
+```json
+{ "key": "k_ocarina", "cue": "cue.ocarina", "sustain": [ { "lease": "presentation.attach", "arguments": {
+    "target": { "port": "actor" }, "socket": { "const": "hand_l" },
+    "mesh": { "asset": "asset://meshes/ocarina.smesh" }, "material": { "asset": "asset://materials/ocarina.smat" } } } ] }
+```
+
+A refused acquire (no such socket, a mesh not resident) holds nothing, and its
+release is a no-op. Acquiring again for the same holder changes the prop in
+place. The prop's owner is the lease's holder, so it ends with the holder's
+entity as well as with its release.
 
 ## Rendering
 
