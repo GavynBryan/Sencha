@@ -25,6 +25,7 @@
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+#include <attach/Attachment.h>
 #include <render/MeshOverrideSystem.h>
 
 #include <app/EngineVocabularyBindings.h>
@@ -1363,6 +1364,7 @@ int Engine::Run(Game& game)
     SystemRegisterContext registerSystems{
         .Config = Configuration,
         .Schedule = EngineSystems,
+        .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
     };
     // Input mapping is the engine's, not an opt-in a game assembles.
     //
@@ -1419,6 +1421,10 @@ int Engine::Run(Game& game)
     // scans has an empty frame, which answers Unavailable.
     VocabularyBindings->BindPerception(*QueryDispatcherState);
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
+
+    // Only where a window presents: a server holds no attachments.
+    if (Configuration.Window.GraphicsApi != WindowGraphicsApi::None)
+        InstallAttachments(RuntimeWorldState->Entities(), &LoggingState.GetLogger<Attachment>());
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its

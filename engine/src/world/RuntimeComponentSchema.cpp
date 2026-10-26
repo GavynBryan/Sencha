@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityKit.h>
 #include <anim/AnimationRegistration.h>
+#include <attach/AttachmentComponentRegistration.h>
 #include <audio/AudioComponentRegistration.h>
 #include <camera/CameraComponentRegistration.h>
 #include <controller/ControllerComponentRegistration.h>
@@ -46,7 +47,8 @@ namespace
         NetComponents,
         LogicComponents,
         AnimationComponents,
-        SightComponents>;
+        SightComponents,
+        AttachmentComponents>;
 
     static_assert(EngineComponentSets::Owned,
                   "a component is named by more than one feature's vocabulary");
@@ -98,6 +100,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
+    RegisterAttachmentComponents(registrar);
 }
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)

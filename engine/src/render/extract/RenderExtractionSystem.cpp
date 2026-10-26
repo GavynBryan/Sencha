@@ -1,6 +1,7 @@
 #include <render/extract/RenderExtractionSystem.h>
 
 #include <render/MeshOverrides.h>
+#include <render/PresentedWith.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
 #include <anim/AnimPosePool.h>
@@ -180,6 +181,7 @@ void RenderExtractionSystem::EmitStaticMeshes(
     {
         const auto renderers = view.template Read<StaticMeshComponent>();
         const auto overrides = view.template TryRead<MeshOverrides>();
+        const auto presentedWith = view.template TryRead<PresentedWith>();
         const ZoneLightmapIndices lightmap =
             LookupZoneLightmap(LightmapTable, view.Partition());
 
@@ -189,7 +191,9 @@ void RenderExtractionSystem::EmitStaticMeshes(
             if (!renderer.Visible)
                 continue;
 
-            if (view.Entity(i) == camera.ExcludedEntity)
+            if (view.Entity(i) == camera.ExcludedEntity
+                || (!presentedWith.empty() && camera.ExcludedEntity.IsValid()
+                    && presentedWith[i].Root == camera.ExcludedEntity))
                 continue;
 
             const GpuStaticMesh* mesh = caches.Meshes.Get(renderer.Mesh);
@@ -262,6 +266,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     {
         const auto renderers = view.template Read<SkinnedMeshComponent>();
         const auto overrides = view.template TryRead<MeshOverrides>();
+        const auto presentedWith = view.template TryRead<PresentedWith>();
 
         for (uint32_t i = 0; i < view.Count(); ++i)
         {
@@ -269,7 +274,9 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             if (!renderer.Visible)
                 continue;
 
-            if (view.Entity(i) == camera.ExcludedEntity)
+            if (view.Entity(i) == camera.ExcludedEntity
+                || (!presentedWith.empty() && camera.ExcludedEntity.IsValid()
+                    && presentedWith[i].Root == camera.ExcludedEntity))
                 continue;
 
             const GpuStaticMesh* mesh = skinnedMeshes.Get(renderer.Mesh);

@@ -6,6 +6,7 @@
 #endif
 #include <abilities/AbilityPredictionJournal.h>
 #include <anim/AnimRequestJournal.h>
+#include <attach/Attachment.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlGamepadCapture.h>
@@ -1116,6 +1117,10 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
 
         const FrameZoneView& zones = *ctx.Zones;
         ::World& entities = *zones.Entities;
+
+        // Before propagation, so what is attached is composed onto the pose its
+        // body is drawn at in this same pass.
+        PlaceAttachments(entities, ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 
         PropagateTransforms(
             entities,

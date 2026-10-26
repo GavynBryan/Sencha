@@ -145,6 +145,25 @@ struct Transform3d
 		return result;
 	}
 
+	// ToMat4's inverse for a matrix without shear: each column's length is its
+	// axis scale. A sheared matrix keeps its translation exactly and the
+	// nearest rotation and scale.
+	static Transform3d FromMat4(const Mat<4, 4, T>& matrix)
+		requires std::floating_point<T>
+	{
+		Vec<3, T> axes[3];
+		Vec<3, T> scale;
+		for (int c = 0; c < 3; ++c)
+		{
+			axes[c] = Vec<3, T>(matrix.Data[0][c], matrix.Data[1][c], matrix.Data[2][c]);
+			scale[c] = axes[c].Magnitude();
+			if (scale[c] > T{0})
+				axes[c] = axes[c] / scale[c];
+		}
+		return Transform3d{ Vec<3, T>(matrix.Data[0][3], matrix.Data[1][3], matrix.Data[2][3]),
+		                    Quat<T>::FromBasis(axes[0], axes[1], axes[2]), scale };
+	}
+
 	Transform3d operator*(const Transform3d& other) const
 		requires std::floating_point<T>
 	{
