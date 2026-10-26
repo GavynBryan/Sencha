@@ -219,15 +219,22 @@ void AssetPreloader::OnAssetStaged(AssetType type,
 
     for (const AssetRef& declared : staging.Dependencies)
     {
-        if (!declared.IsValid())
+        if (declared.Path.empty() && !declared.Id.IsValid())
             continue;
 
-        const AssetRecord* record = Registry.Find(declared);
-        if (record == nullptr || record->Type != declared.Type)
+        // As the registry knows it, exactly as the synchronous load takes it: where
+        // the asset is now, which a reference by id may not have said, and its type
+        // when the compile could not say (a verb binding's asset, before any verb
+        // gives its kind).
+        const AssetRef current = Registry.Current(declared);
+        const AssetRecord* record = Registry.Find(current);
+        if (record == nullptr || record->Type != current.Type)
         {
-            const std::string reason =
-                std::format("'{}' declares '{}', which is in no mounted content root", path, declared.Path);
-            if (AssetLease standIn = Assets.FailLoad(declared.Path, declared.Type, reason); standIn.IsValid())
+            const std::string reason = record == nullptr
+                ? std::format("'{}' declares '{}', which is in no mounted content root", path, declared.Path)
+                : std::format("'{}' declares '{}' as a {} asset, but it is a {}", path, declared.Path,
+                              AssetTypeToString(current.Type), AssetTypeToString(record->Type));
+            if (AssetLease standIn = Assets.FailLoad(declared.Path, current.Type, reason); standIn.IsValid())
             {
                 residentDependencies.push_back(std::move(standIn));
                 continue;
@@ -235,8 +242,7 @@ void AssetPreloader::OnAssetStaged(AssetType type,
             FailLoad(type, path, reason);
             return;
         }
-        // Where the asset is now, which a reference by id may not have said.
-        const AssetRef dependency{ declared.Type, record->Path, record->Id };
+        const AssetRef dependency{ current.Type, record->Path, record->Id };
         if (!unique.insert(dependency.Path).second)
             continue;
 

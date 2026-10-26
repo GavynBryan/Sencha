@@ -2,6 +2,7 @@
 
 #include <authored/AuthoredValue.h>
 #include <controller/Aim.h>
+#include <core/assets/AssetRef.h>
 #include <ecs/World.h>
 #include <projectile/ProjectileHit.h>
 #include <projectile/ProjectileSystem.h>
@@ -47,9 +48,11 @@ void DeclareProjectileVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegi
     launch.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "instigator", "Instigator",
                                                       "Who launched it: never struck by it, and credited with "
                                                       "what it strikes."));
-    launch.Arguments.Children.push_back(MakeDataField(DataFieldKind::String, "projectile", "Projectile",
-                                                      "The prefab, as asset://<path>.sscene. Its root carries "
-                                                      "Projectile."));
+    DataFieldSchema projectile = MakeDataField(DataFieldKind::AssetRef, "projectile", "Projectile",
+                                               "The prefab: a scene whose root carries Projectile. Content that "
+                                               "names it holds it resident.");
+    projectile.Reference.AssetTypeFilter = AssetType::Scene;
+    launch.Arguments.Children.push_back(std::move(projectile));
     launch.Arguments.Children.push_back(Vector("origin", "Origin", "Where it starts. The instigator's aim when absent."));
     DataFieldSchema direction = Vector("direction", "Direction", "Which way it goes. The instigator's aim when absent.");
     direction.Editor.Widget = "direction";
@@ -91,17 +94,19 @@ VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocat
 {
     const AuthoredArguments* arguments = invocation.Arguments;
     EntityId instigator;
-    std::string_view path;
+    const AssetRef* projectile = nullptr;
     double spread = 0.0;
     double speedScale = 1.0;
     double magnitude = 0.0;
     double splashScale = 1.0;
-    if (arguments == nullptr || !arguments->TryGetEntity(0, instigator) || !arguments->TryGetString(1, path)
+    if (arguments == nullptr || !arguments->TryGetEntity(0, instigator) || !arguments->TryGetAsset(1, projectile)
         || !arguments->TryGetFloat(4, spread) || !arguments->TryGetFloat(5, speedScale)
         || !arguments->TryGetFloat(6, magnitude) || !arguments->TryGetFloat(7, splashScale))
         return VerbAdmission::InvalidArguments;
 
-    ProjectileLaunch launch{ .Prefab = system.PrefabOf(path),
+    // By the id the binding compiled to against the mounted assets; one compiled
+    // with nothing to check against still names its path.
+    ProjectileLaunch launch{ .Prefab = projectile->Id.IsValid() ? projectile->Id : system.PrefabOf(projectile->Path),
                              .Instigator = instigator,
                              .Tick = invocation.Tick,
                              .SpreadDegrees = static_cast<float>(spread),

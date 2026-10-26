@@ -85,7 +85,8 @@ namespace
                 referencesChecked = false;
             else
             {
-                const AssetRecord* record = environment.Assets->FindByPath(argument.Text);
+                // Found as the loads find it, so a moved asset is the same one here.
+                const AssetRecord* record = environment.Assets->Find(reference);
                 if (record == nullptr)
                 {
                     Fail(errors, bindingKey, argument.Key,
@@ -100,6 +101,9 @@ namespace
                                      AssetTypeToString(reference.Type)));
                     return false;
                 }
+                // The asset as it is now: its id, so the operation finds it without
+                // its path, and its kind where the verb names none.
+                reference = environment.Assets->Current(std::move(reference));
             }
             // A subtype is checked against the resident value when the host
             // can read one. A host that gives no cache is unchecked, like one

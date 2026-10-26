@@ -596,3 +596,51 @@ TEST_F(VerbBindingCompileTest, AnAssetReferenceIsCheckedAgainstWhatTheAssetActua
                 { Reference("Look", VerbArgumentSource::Asset, "asset://textures/hit.stex") }),
         Environment(), Compiled, Errors));
 }
+
+// A checked reference compiles to the asset as the registry knows it now -- its
+// id, so the operation finds it without its path; its kind, where the verb names
+// none; where it is, when it moved after the binding was written -- found as the
+// asset system's own loads find it.
+TEST_F(VerbBindingCompileTest, ACheckedAssetReferenceCompilesToTheAssetAsItIsNow)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.any", Record({ Field("Look", DataFieldKind::AssetRef) })));
+
+    LoggingProvider logging;
+    AssetRegistry assets(logging);
+    ASSERT_TRUE(assets.Register(AssetRecord{ .Type = AssetType::Material,
+                                             .SourceKind = AssetSourceKind::File,
+                                             .Path = "asset://materials/old.smat",
+                                             .FilePath = "old.smat" }));
+    const AssetId id = assets.FindByPath("asset://materials/old.smat")->Id;
+    ASSERT_TRUE(id.IsValid());
+    ASSERT_TRUE(assets.Unregister("asset://materials/old.smat"));
+    ASSERT_TRUE(assets.Register(AssetRecord{ .Type = AssetType::Material,
+                                             .SourceKind = AssetSourceKind::File,
+                                             .Path = "asset://materials/new.smat",
+                                             .FilePath = "new.smat",
+                                             .Id = id }));
+    VerbBindingEnvironment checked = Environment();
+    checked.Assets = &assets;
+
+    ASSERT_TRUE(CompileVerbBinding(
+        Binding("moved", "test.any",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://materials/old.smat") }),
+        checked, Compiled, Errors))
+        << (Errors.empty() ? std::string{} : Errors.front());
+    const AssetRef* look = nullptr;
+    ASSERT_TRUE(Compiled.Constants.TryGetAsset(0, look));
+    EXPECT_EQ(look->Id, id);
+    EXPECT_EQ(look->Type, AssetType::Material) << "the verb named no kind, so the asset's";
+    EXPECT_EQ(look->Path, "asset://materials/new.smat");
+    EXPECT_TRUE(Compiled.ReferencesChecked);
+
+    // Unchecked, it stays exactly as written.
+    ASSERT_TRUE(CompileVerbBinding(
+        Binding("unchecked", "test.any",
+                { Reference("Look", VerbArgumentSource::Asset, "asset://materials/old.smat") }),
+        Environment(), Compiled, Errors));
+    ASSERT_TRUE(Compiled.Constants.TryGetAsset(0, look));
+    EXPECT_FALSE(look->Id.IsValid());
+    EXPECT_EQ(look->Path, "asset://materials/old.smat");
+    EXPECT_FALSE(Compiled.ReferencesChecked);
+}

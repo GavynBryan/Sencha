@@ -17,6 +17,7 @@
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
+#include <core/assets/AssetRef.h>
 #include <core/config/EngineConfig.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonParser.h>
@@ -492,6 +493,36 @@ TEST_F(ProjectileFixture, ALaunchPastCapacityIsRefusedUntilOneEnds)
     EXPECT_TRUE(Launch(Vec3d(1.0f, 0.0f, 0.0f), 0.0f, &result).IsValid()) << "an ended one is no longer in flight";
 }
 
+// The limit a launch is refused at is the World's, beside the count it is compared
+// with, so whatever admits a launch before committing to it -- a phase's hold, ahead
+// of the cost and the cooldown -- predicts every outcome exactly, however many
+// instigators launch in the tick: each launch counts the moment it is made.
+TEST_F(ProjectileFixture, CapacityIsTheWorldsSoAnAdmissionAheadOfALaunchAgreesWithIt)
+{
+    EXPECT_EQ(ProjectileCapacity(WorldState), kProjectileDefaultCapacity);
+    System->SetCapacity(3);
+    EXPECT_EQ(ProjectileCapacity(WorldState), 3u);
+    EXPECT_EQ(System->GetCapacity(), 3u);
+
+    const EntityId other = WorldState.CreateEntity();
+    WorldState.AddComponent<LocalTransform>(other, LocalTransform{});
+    WorldState.AddComponent<WorldTransform>(other, WorldTransform{});
+    for (int shot = 0; shot < 5; ++shot)
+    {
+        const bool admitted = ProjectilesInFlight(WorldState) < ProjectileCapacity(WorldState);
+        ProjectileLaunchResult result{};
+        const EntityId launched = System->Launch(
+            ProjectileLaunch{ .Prefab = Prefab, .Instigator = shot % 2 == 0 ? Shooter : other,
+                              .Direction = Vec3d::Forward() },
+            &result);
+        EXPECT_EQ(launched.IsValid(), admitted) << "shot " << shot;
+        EXPECT_EQ(result, admitted ? ProjectileLaunchResult::Launched : ProjectileLaunchResult::Full) << "shot " << shot;
+    }
+    EXPECT_EQ(ProjectilesInFlight(WorldState), 3u);
+    const World empty;
+    EXPECT_EQ(ProjectileCapacity(empty), kProjectileDefaultCapacity) << "a World with no projectile system";
+}
+
 TEST_F(ProjectileFixture, APrefabWithoutAProjectileOrWithAnUnknownEffectDoesNotLaunch)
 {
     ProjectileLaunchResult result{};
@@ -541,11 +572,34 @@ TEST_F(ProjectileFixture, AnInstigatorsSeedIsItsOwnWhateverElseLaunchesThatTick)
     EXPECT_NE(alone.NextSeed(Shooter, 7), first) << "and the next tick's is its own";
 }
 
+// The prefab is a Scene asset argument. A binding compiled against the mounted
+// assets names it by id, and the verb launches it by that id, resolving no path.
+TEST_F(ProjectileFixture, TheLaunchVerbLaunchesTheCompiledPrefabByIdWithNoPathToResolve)
+{
+    AuthoredArguments arguments(8);
+    arguments.Set(0, AuthoredValue::Entity(Shooter));
+    arguments.Set(1, AuthoredValue::Asset(AssetRef{ AssetType::Scene, "asset://prefabs/not/mounted.smap", Prefab }));
+    arguments.Set(4, AuthoredValue::Float(0.0));
+    arguments.Set(5, AuthoredValue::Float(1.0));
+    arguments.Set(6, AuthoredValue::Float(0.0));
+    arguments.Set(7, AuthoredValue::Float(1.0));
+    VerbInvocation call;
+    call.Arguments = &arguments;
+    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::Accepted)
+        << "this host has no asset system: the id alone names the prefab";
+    EXPECT_EQ(ProjectilesInFlight(WorldState), 1u);
+
+    arguments.Set(1, AuthoredValue::String("asset://prefabs/not/mounted.smap"));
+    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::InvalidArguments)
+        << "a path string is not a prefab";
+}
+
 TEST_F(ProjectileFixture, TheLaunchVerbRefusesWhatItCannotResolve)
 {
     AuthoredArguments arguments(8);
     arguments.Set(0, AuthoredValue::Entity(Shooter));
-    arguments.Set(1, AuthoredValue::String("asset://prefabs/missing.sscene"));
+    // Compiled with nothing to check against, so it names only its path.
+    arguments.Set(1, AuthoredValue::Asset(AssetRef{ AssetType::Scene, "asset://prefabs/missing.smap" }));
     arguments.Set(4, AuthoredValue::Float(0.0));
     arguments.Set(5, AuthoredValue::Float(1.0));
     arguments.Set(6, AuthoredValue::Float(0.0));

@@ -41,12 +41,23 @@ prefab's own.
 
 ## Launching one
 
-From content, `projectile.launch`: the instigator, the prefab's scene path, then
-an optional origin and direction (the instigator's aim when absent), a spread in
-degrees, a speed scale, a magnitude, and a splash scale. From native code,
+From content, `projectile.launch`: the instigator, the prefab as a Scene asset
+(`{"asset": "asset://prefabs/<name>.smap"}`), then an optional origin and
+direction (the instigator's aim when absent), a spread in degrees, a speed scale,
+a magnitude, and a splash scale. From native code,
 `ProjectileSystem::Launch(ProjectileLaunch)`. Both are the authority's only, and
 both refuse rather than queue: at `projectile.capacity` in flight a launch is
 `Full`, and a prefab that is not a projectile is `Unresolved`.
+
+The prefab is a dependency of the content that names it
+(`docs/gameplay/authored-api.md`, "The value contract"): an ability or cue
+presentation naming a missing scene, or an asset of another kind, is reported when
+the content is declared, and the scene is resident for as long as that content is
+published, so no launch loads it. The binding names the prefab by id, so a launch
+resolves no path. The limit is the World's: `ProjectileCapacity` beside
+`ProjectilesInFlight`, so whatever admits a launch ahead of committing to it --
+a phase's hold, before its cost and cooldown -- compares exactly what the launch
+will.
 
 A launch builds the prefab in the instigator's partition, so a projectile lives
 and unloads with the zone it was fired in, places it at the origin facing its
@@ -143,4 +154,5 @@ struck. A client could not use it without second-guessing the authority.
 A flying projectile costs one shape sweep against the physics world and one
 capsule test per character per tick, plus a sweep per pass-through. A launch
 builds a cached prefab package -- a decode of resident data, no file read -- and
-the prefab is resolved once. Capacity is a cvar; the default is 256.
+the prefab is resolved once. Capacity is a cvar; the default is 256
+(`kProjectileDefaultCapacity`).

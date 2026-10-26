@@ -5,6 +5,7 @@
 
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/CuePresentationData.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <effects/EffectDefinitionData.h>
 
 #include <algorithm>
@@ -143,7 +144,7 @@ void AbilityWorkbench::Check()
     Found.clear();
     Compiled = {};
     if (const JsonValue* data = ability != nullptr ? ability->Data() : nullptr)
-        Found = CheckAbilityData(*data, ability->VirtualPath(), Catalog->Names(), Compiled);
+        Found = CheckAbilityData(*data, ability->VirtualPath(), Catalog->Names(), Compiled, &Assets.Registry);
 }
 
 const std::vector<AbilityDiagnostic>& AbilityWorkbench::Diagnostics()

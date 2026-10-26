@@ -65,11 +65,16 @@ struct SENCHA_COMPONENT("sencha.projectile_motion") ProjectileMotion
 static_assert(std::is_trivially_copyable_v<ProjectileMotion>,
               "ProjectileMotion must be trivially copyable to live in ECS chunks");
 
+inline constexpr std::size_t kProjectileDefaultCapacity = 256;
+
 // How many projectiles are in flight in a World, kept by ProjectileMotion's own
-// lifetime so a zone that unloads with projectiles in it gives their places back.
+// lifetime so a zone that unloads with projectiles in it gives their places back,
+// and how many may be (projectile.capacity): one limit, read alike by a launch
+// and by whatever admits one ahead of it.
 struct ProjectileCount
 {
     std::size_t InFlight = 0;
+    std::size_t Capacity = kProjectileDefaultCapacity;
 };
 
 #if !defined(SENCHA_CODEGEN)

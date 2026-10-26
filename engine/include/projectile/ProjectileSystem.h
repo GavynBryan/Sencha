@@ -88,6 +88,10 @@ enum class ProjectileLaunchResult : std::uint8_t
 
 // Projectiles in flight in `world`; zero in a World that has never launched one.
 [[nodiscard]] std::size_t ProjectilesInFlight(const World& world);
+// How many may be in flight in `world` at once (projectile.capacity): a launch
+// while ProjectilesInFlight is at it is Full. The default in a World with no
+// projectile system.
+[[nodiscard]] std::size_t ProjectileCapacity(const World& world);
 
 //=============================================================================
 // ProjectileSystem
@@ -143,8 +147,8 @@ public:
 
     // The most in flight at once, and the ticks an ended projectile is kept so
     // that its end reaches every peer (projectile.capacity, projectile.linger_ticks).
-    void SetCapacity(std::size_t capacity) { Capacity = capacity; }
-    [[nodiscard]] std::size_t GetCapacity() const { return Capacity; }
+    void SetCapacity(std::size_t capacity);
+    [[nodiscard]] std::size_t GetCapacity() const { return ProjectileCapacity(*Entities); }
     void SetLingerTicks(std::uint32_t ticks) { LingerTicks = ticks; }
     [[nodiscard]] std::uint32_t GetLingerTicks() const { return LingerTicks; }
 
@@ -186,7 +190,6 @@ private:
 
     World* Entities;
     Services Host;
-    std::size_t Capacity = 256;
     std::uint32_t LingerTicks = 8;
 
     std::optional<Query<Read<ProjectileMotion>>> Flying;
