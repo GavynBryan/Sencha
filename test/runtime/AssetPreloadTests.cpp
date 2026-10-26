@@ -4,10 +4,14 @@
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/audio_clip/AudioClipAssetLoader.h>
 #include <assets/audio_clip/AudioClipSerializer.h>
+#include <assets/data/DataAssetCache.h>
+#include <assets/data/DataAssetLoader.h>
+#include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/skeleton/SkeletonAssetLoader.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <audio/AudioClipCache.h>
+#include <authored/VerbBindingData.h>
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetManifest.h>
 #include <assets/runtime/AssetPreloader.h>
@@ -207,6 +211,43 @@ namespace
         std::filesystem::path File;
     };
 
+    // A verb-binding data asset whose one binding names `asset` through the
+    // `asset` source: a reference written before any verb says its kind, which
+    // the asset's compile therefore reports as a dependency of no type.
+    class TempBindingAsset
+    {
+    public:
+        TempBindingAsset(AssetRegistry& registry, std::string_view name, std::string_view asset)
+        {
+            File = TempAssetPath("sencha_preload_bindings", ".sdata");
+            Write(asset);
+            Path = "asset://data/test/" + std::string(name) + ".sdata";
+            EXPECT_TRUE(registry.Register(AssetRecord{
+                .Type = AssetType::Data,
+                .SourceKind = AssetSourceKind::File,
+                .Path = Path,
+                .FilePath = File.generic_string(),
+            }));
+        }
+
+        ~TempBindingAsset()
+        {
+            std::error_code ec;
+            std::filesystem::remove(File, ec);
+        }
+
+        void Write(std::string_view asset, std::string_view source = "asset") const
+        {
+            std::ofstream out(File, std::ios::trunc);
+            out << R"({ "type": "authored.bindings", "version": 1, "data": { "bindings": [ {
+                "key": "look", "verb": "test.look",
+                "arguments": { "Look": { ")" << source << R"(": ")" << asset << R"(" } } } ] } })";
+        }
+
+        std::string Path;
+        std::filesystem::path File;
+    };
+
     struct PreloadHarness
     {
         PreloadHarness()
@@ -215,6 +256,26 @@ namespace
             RegisterAssetKind(Assets, AssetType::Audio, AudioClipLoader, &AudioClips);
             RegisterAssetKind(Assets, AssetType::Skeleton, SkeletonLoader, &Skeletons);
             RegisterAssetKind(Assets, AssetType::AnimationClip, AnimationClipLoader, &AnimationClips);
+            RegisterVerbBindingData(DataTypes, DataSchemas);
+            RegisterAssetKind(Assets, AssetType::Data, DataLoader, &DataAssets);
+        }
+
+        // Rounds until the preload has nothing left to do.
+        void Settle(const AssetPreload& preload)
+        {
+            for (int round = 0; round < 8 && !preload.IsComplete(); ++round)
+            {
+                (void)Tasks.PumpWork();
+                (void)Tasks.DrainCompletions();
+            }
+        }
+
+        [[nodiscard]] std::string FailureOf(std::string_view path) const
+        {
+            for (const AssetSystem::LoadFailure& failure : Assets.LoadFailures())
+                if (failure.Path == path)
+                    return failure.Reason;
+            return {};
         }
 
         LoggingProvider Logging;
@@ -228,6 +289,11 @@ namespace
         AudioClipAssetLoader AudioClipLoader{ Logging, &AudioClips };
         SkeletonAssetLoader SkeletonLoader{ Logging, &Skeletons };
         AnimationClipAssetLoader AnimationClipLoader{ Logging, &AnimationClips, &Skeletons };
+        // After the stores its values lease from, so it lets go of them first.
+        DataAssetTypeRegistry DataTypes;
+        DataSchemaRegistry DataSchemas;
+        DataAssetCache DataAssets;
+        DataAssetLoader DataLoader{ Logging, &DataTypes, &DataSchemas, &DataAssets };
         AssetSystem Assets{ Logging, Registry };
         AssetPreloader Preloader{ Logging, Registry, Assets, Tasks };
     };
@@ -412,6 +478,139 @@ TEST(AssetPreload, DependencyOnAnUnregisteredPathFailsTheDependent)
     EXPECT_EQ(h.Tasks.DrainCompletions(), 1u);
     EXPECT_TRUE(preload->IsComplete());
     EXPECT_EQ(preload->FailureCount(), 1u);
+}
+
+// -- Dependencies of no stated kind -------------------------------------------
+//
+// A verb binding names an asset before any verb has said what kind it takes, so
+// its compile reports the dependency with no type. Both loads take such a
+// dependency as whatever is at its path -- the binding's own compile later checks
+// that kind against the verb -- and hold it as long as the asset naming it lives.
+
+TEST(AssetDependencies, AnUntypedDependencyLoadsSynchronouslyAndGoesWithItsDependent)
+{
+    PreloadHarness h;
+    TempMaterialAsset look(h.Registry, "look");
+    TempBindingAsset bindings(h.Registry, "uses_look", look.Path);
+    {
+        const AssetLease lease = h.Assets.LoadLease(bindings.Path, AssetType::Data);
+        ASSERT_TRUE(lease.IsValid()) << h.FailureOf(bindings.Path);
+        EXPECT_TRUE(h.Materials.Find(look.Path).IsValid()) << "held by the asset that names it";
+    }
+    EXPECT_FALSE(h.DataAssets.Find(bindings.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(look.Path).IsValid()) << "and let go of with it";
+}
+
+TEST(AssetDependencies, AnUntypedDependencyOnNothingFailsTheSynchronousLoadSayingWhich)
+{
+    PreloadHarness h;
+    TempBindingAsset bindings(h.Registry, "dangling", "asset://materials/test/nowhere.smat");
+    EXPECT_FALSE(h.Assets.LoadLease(bindings.Path, AssetType::Data).IsValid());
+    EXPECT_NE(h.FailureOf("asset://materials/test/nowhere.smat").find("in no mounted content root"),
+              std::string::npos);
+    EXPECT_NE(h.FailureOf(bindings.Path).find("asset://materials/test/nowhere.smat"), std::string::npos)
+        << h.FailureOf(bindings.Path);
+}
+
+TEST(AssetDependencies, AnUntypedDependencyIsPreloadedAndHeldRatherThanSkipped)
+{
+    PreloadHarness h;
+    TempMaterialAsset look(h.Registry, "look");
+    TempBindingAsset bindings(h.Registry, "uses_look", look.Path);
+
+    auto preload = h.Preloader.Begin(std::vector<std::string>{ bindings.Path });
+    h.Settle(*preload);
+    ASSERT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 0u);
+    EXPECT_TRUE(h.DataAssets.Find(bindings.Path).IsValid());
+    EXPECT_TRUE(h.Materials.Find(look.Path).IsValid());
+
+    preload->ReleaseAll();
+    EXPECT_FALSE(h.DataAssets.Find(bindings.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(look.Path).IsValid());
+}
+
+TEST(AssetDependencies, AnUntypedDependencyOnNothingFailsThePreloadRatherThanVanishing)
+{
+    PreloadHarness h;
+    TempBindingAsset bindings(h.Registry, "dangling", "asset://materials/test/nowhere.smat");
+
+    auto preload = h.Preloader.Begin(std::vector<std::string>{ bindings.Path });
+    h.Settle(*preload);
+    ASSERT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 1u);
+    EXPECT_FALSE(h.DataAssets.Find(bindings.Path).IsValid());
+    EXPECT_NE(h.FailureOf(bindings.Path).find("in no mounted content root"), std::string::npos)
+        << h.FailureOf(bindings.Path);
+}
+
+// A kind the reference does state is kept, so naming an asset of another kind
+// fails, and says both kinds.
+TEST(AssetDependencies, ADependencyOfTheWrongStatedKindFailsSayingBothKinds)
+{
+    PreloadHarness h;
+    TempMaterialAsset look(h.Registry, "look");
+    TempBindingAsset bindings(h.Registry, "misnamed", look.Path);
+    bindings.Write(look.Path, "data");
+
+    auto preload = h.Preloader.Begin(std::vector<std::string>{ bindings.Path });
+    h.Settle(*preload);
+    ASSERT_TRUE(preload->IsComplete());
+    EXPECT_EQ(preload->FailureCount(), 1u);
+    EXPECT_FALSE(h.Materials.Find(look.Path).IsValid());
+    EXPECT_NE(h.FailureOf(bindings.Path).find("as a Data asset, but it is a Material"), std::string::npos)
+        << h.FailureOf(bindings.Path);
+
+    EXPECT_FALSE(h.Assets.LoadLease(bindings.Path, AssetType::Data).IsValid()) << "the synchronous load agrees";
+}
+
+TEST(AssetDependencies, ACancelledPreloadLeavesNeitherAnAssetNorItsDependencyResident)
+{
+    PreloadHarness h;
+    TempMaterialAsset look(h.Registry, "look");
+    TempBindingAsset bindings(h.Registry, "uses_look", look.Path);
+
+    auto preload = h.Preloader.Begin(std::vector<std::string>{ bindings.Path });
+    // The bindings stage and wait on the material their compile named.
+    (void)h.Tasks.PumpWork();
+    (void)h.Tasks.DrainCompletions();
+    preload->Cancel();
+    for (int round = 0; round < 8; ++round)
+    {
+        (void)h.Tasks.PumpWork();
+        (void)h.Tasks.DrainCompletions();
+    }
+    EXPECT_EQ(preload->HeldHandleCount(), 0u);
+    EXPECT_FALSE(h.DataAssets.Find(bindings.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(look.Path).IsValid());
+}
+
+TEST(AssetDependencies, AReloadHoldsWhatItsContentNowNamesAndLetsGoOfTheRest)
+{
+    PreloadHarness h;
+    TempMaterialAsset before(h.Registry, "before");
+    TempMaterialAsset after(h.Registry, "after");
+    TempBindingAsset bindings(h.Registry, "look", before.Path);
+    const AssetLease lease = h.Assets.LoadLease(bindings.Path, AssetType::Data);
+    ASSERT_TRUE(lease.IsValid());
+    ASSERT_TRUE(h.Materials.Find(before.Path).IsValid());
+
+    bindings.Write(after.Path);
+    h.Assets.StageReload(*h.Registry.FindByPath(bindings.Path), h.Tasks);
+    (void)h.Tasks.PumpWork();
+    (void)h.Tasks.DrainCompletions();
+    EXPECT_TRUE(lease.IsValid()) << "reloaded in place, under the same lease";
+    EXPECT_TRUE(h.Materials.Find(after.Path).IsValid());
+    EXPECT_FALSE(h.Materials.Find(before.Path).IsValid());
+
+    // A reload naming nothing does not take: what loaded before stays, and why is said.
+    bindings.Write("asset://materials/test/nowhere.smat");
+    h.Assets.StageReload(*h.Registry.FindByPath(bindings.Path), h.Tasks);
+    (void)h.Tasks.PumpWork();
+    (void)h.Tasks.DrainCompletions();
+    EXPECT_TRUE(h.Materials.Find(after.Path).IsValid());
+    EXPECT_NE(h.FailureOf("asset://materials/test/nowhere.smat").find("in no mounted content root"),
+              std::string::npos);
 }
 
 TEST(AssetPreload, TwoPreloadsCoalesceOnOneLoad)
