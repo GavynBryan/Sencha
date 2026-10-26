@@ -577,3 +577,21 @@ empty where the chunk lacks it.
 `ApplyMeshOverrides`, `MeshOverrideContributions` and `MeshOverrideSystem` are
 new; `ResolveSectionSlot` (`render/SectionMaterial.h`) is the slot rule
 `ResolveSectionMaterial` now uses.
+
+## v34
+
+Attachments (`docs/gameplay/attachments.md`): entities worn at named rig
+sockets or at an entity's origin.
+
+**Components.** `AttachmentSet` and `Attachment` (`attach/AttachmentComponents.h`,
+runtime only) are a new `AttachmentComponents` set; `PresentedWith`
+(`render/PresentedWith.h`) joins `RenderComponents`.
+
+**Attach.** `AttachToSocket`, `AttachToOrigin`, `DestroyAttachment`,
+`DestroyAttachmentsOf`, `CreateMeshAttachment`, `UpdateMeshAttachment`,
+`FindAttachment`, `ForEachAttachment`, `InstallAttachments`,
+`AttachmentsInstalled` and `PlaceAttachments` (`attach/Attachment.h`) are new.
+
+**Registration.** `SystemRegisterContext` gains `Presents`.
+
+**ECS and math.** `World::ReplaceComponent<T>` and `Transform3d::FromMat4` are new.
