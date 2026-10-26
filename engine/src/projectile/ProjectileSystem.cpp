@@ -185,6 +185,12 @@ std::size_t ProjectilesInFlight(const World& world)
     return count != nullptr ? count->InFlight : 0;
 }
 
+std::size_t ProjectileCapacity(const World& world)
+{
+    const ProjectileCount* count = world.TryGetResource<ProjectileCount>();
+    return count != nullptr ? count->Capacity : kProjectileDefaultCapacity;
+}
+
 void ComponentTraits<ProjectileMotion>::OnAdd(ProjectileMotion&, World& world, EntityId)
 {
     if (ProjectileCount* count = world.TryGetResource<ProjectileCount>())
@@ -314,7 +320,7 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
         return refuse(ProjectileLaunchResult::Refused);
     if (launch.Instigator.IsValid() && !world.IsAlive(launch.Instigator))
         return refuse(ProjectileLaunchResult::Refused);
-    if (ProjectilesInFlight(world) >= Capacity)
+    if (ProjectilesInFlight(world) >= GetCapacity())
         return refuse(ProjectileLaunchResult::Full);
 
     const ProjectileDefinitions& definitions = world.GetResource<ProjectileDefinitions>();
@@ -803,14 +809,19 @@ void ProjectileSystem::Show(EntityId projectile, bool shown)
     apply(projectile);
 }
 
+void ProjectileSystem::SetCapacity(std::size_t capacity)
+{
+    Entities->GetResource<ProjectileCount>().Capacity = capacity;
+}
+
 void ProjectileSystem::RegisterConsole(ConsoleRegistry& console)
 {
     (void)console.RegisterCVar({
         .Name = "projectile.capacity",
         .Owner = "engine",
         .Type = CVarType::Int,
-        .DefaultValue = static_cast<std::int64_t>(Capacity),
-        .CurrentValue = static_cast<std::int64_t>(Capacity),
+        .DefaultValue = static_cast<std::int64_t>(kProjectileDefaultCapacity),
+        .CurrentValue = static_cast<std::int64_t>(GetCapacity()),
         .Flags = CVarFlags::None,
         .Help = "How many projectiles may be in flight at once. A launch past it is refused.",
         .Source = { "engine" },

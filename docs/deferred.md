@@ -906,16 +906,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   restitution, while bounces remain) that strikes nothing; homing turns the
   velocity toward a target entity by a rate.
 
-## Typed prefab arguments for projectile.launch
-
-- **What:** `projectile.launch` takes its prefab as a scene path string and
-  resolves it through the asset system per launch. A typed Scene asset argument
-  would give the editor a picker and the content stack a dependency.
-- **Where:** `projectile/ProjectileVerbs.cpp`; the gap is invocation-time loading
-  of a Scene-kinded argument (`assets/runtime/AssetSystem.cpp`, `LoadLease`).
-- **Trigger:** typed Scene arguments loading end to end, or a prefab picker in
-  the ability workbench.
-
 ## Projectile poses on the wire every snapshot
 
 - **What:** a flying projectile's `LocalTransform` changes every tick, so it is
