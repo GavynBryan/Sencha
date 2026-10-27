@@ -174,6 +174,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
         "scene_instance",
         "sencha.movement_tuning_source",
         "sencha.navigation.agent",
+        "sencha.mesh_overrides",
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving

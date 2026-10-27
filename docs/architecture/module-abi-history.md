@@ -579,3 +579,25 @@ before `AttributeResolveSystem`. The engine declares `projectile.launch`
 mirrored entity is drawn at, which `ReplicationInterpolationSystem` now reads.
 `NetPrefabSpawner` no longer takes the `RuntimeWorld` it never used: it builds
 into whichever World `Instantiate` is handed, as its schema describes it.
+
+## v34
+
+Reversible mesh overrides (`docs/renderer/mesh-overrides.md`) and the owner
+identity cosmetic changes are held by.
+
+**Components.** `MeshOverrides` (`render/MeshOverrides.h`, runtime only) joins
+`RenderComponents`. Every generated component companion now includes
+`math/MathSchemas.h`, so a component's math members flatten the same in every
+translation unit; the generator's output changed, which moves the fingerprint.
+
+**ECS.** `ChunkView::TryRead<T>()` reads a column a query does not filter on,
+empty where the chunk lacks it.
+
+**Presentation.** `PresentationWriterId`, `PresentationOwner`,
+`PresentationOwnerPrecedes`, `PresentationWriters` and
+`RegisterPresentationWriter` (`presentation/PresentationOwner.h`) are new.
+
+**Render.** `SetMeshOverride`, `ClearMeshOverride`, `ComposeMeshOverrides`,
+`ApplyMeshOverrides`, `MeshOverrideContributions` and `MeshOverrideSystem` are
+new; `ResolveSectionSlot` (`render/SectionMaterial.h`) is the slot rule
+`ResolveSectionMaterial` now uses.

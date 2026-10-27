@@ -5,6 +5,7 @@
 #include <core/metadata/ComponentDefinition.h>
 #include <core/metadata/Field.h>
 #include <core/serialization/FourCC.h>
+#include <math/MathSchemas.h>
 
 static_assert(kComponentCodegenFormatVersion == 2,
               "generated component metadata predates the headers reading it: "
