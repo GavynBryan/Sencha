@@ -13,6 +13,7 @@
 #include <vector>
 
 class World;
+struct VerbBindingEnvironment;
 
 // The cue presentations a World's content declares, compiled against its verbs
 // and leases and kept by cue. Only cosmetic operations are kept: a presentation
@@ -30,6 +31,10 @@ public:
     // that `world` does not, or an operation that is not cosmetic, is reported and left out.
     void Declare(std::string_view path, const CuePresentationDeclaration& declaration, const World& world,
                  std::vector<std::string>& errors);
+    // The same, compiled against `environment`: content's declarations give it the
+    // mounted assets, so an asset an operation names is checked to be there.
+    void Declare(std::string_view path, const CuePresentationDeclaration& declaration,
+                 const VerbBindingEnvironment& environment, std::vector<std::string>& errors);
     void Undeclare(std::string_view path);
 
     // Every asset's presentation of `cue`, in asset path order; null when none presents it.

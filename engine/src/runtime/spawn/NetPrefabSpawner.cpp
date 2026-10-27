@@ -5,7 +5,7 @@
 #include <assets/scene/ScenePackageBuild.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
-#include <world/RuntimeWorld.h>
+#include <ecs/World.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/scene/SceneInstanceGroup.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -19,12 +19,10 @@
 #include <utility>
 #include <vector>
 
-NetPrefabSpawner::NetPrefabSpawner(RuntimeWorld& world,
-                                   const WorldComponentSchema& schema,
+NetPrefabSpawner::NetPrefabSpawner(const WorldComponentSchema& schema,
                                    const ComponentSerializerRegistry& serializers,
                                    LoggingProvider& logging)
-    : WorldState(world)
-    , Schema(schema)
+    : Schema(schema)
     , Serializers(serializers)
     , Logging(logging)
 {

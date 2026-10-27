@@ -558,6 +558,30 @@ unscaled accordingly.
 
 ## v33
 
+Projectiles (`docs/gameplay/projectiles.md`): launched prefabs the authority flies
+and every machine draws.
+
+**Projectile.** New `ProjectileComponents`, registered with the engine's:
+`Projectile` (`projectile/Projectile.h`, scene key `Projectile`, chunk `PROJ`),
+authored on a prefab root;
+`ProjectileFlight` (`projectile/ProjectileState.h`), replicated through a codec
+for its instigator; and the authority-only `ProjectileMotion`, whose lifetime
+keeps the `ProjectileCount` resource. `ProjectileSystem`
+(`projectile/ProjectileSystem.h`) is registered by the engine after the game's
+systems when the game registered physics, ordered after `AbilitySystem` and
+before `AttributeResolveSystem`. The engine declares `projectile.launch`
+(`projectile/ProjectileVerbs.h`) and the `projectile.hit` event
+(`projectile/ProjectileHit.h`).
+
+**Physics.** `PhysicsWorld::GetGravity`.
+
+**Net.** `ReplicationInterpolation::PresentedAuthorityTick`, the authority tick a
+mirrored entity is drawn at, which `ReplicationInterpolationSystem` now reads.
+`NetPrefabSpawner` no longer takes the `RuntimeWorld` it never used: it builds
+into whichever World `Instantiate` is handed, as its schema describes it.
+
+## v34
+
 Reversible mesh overrides (`docs/renderer/mesh-overrides.md`) and the owner
 identity cosmetic changes are held by.
 

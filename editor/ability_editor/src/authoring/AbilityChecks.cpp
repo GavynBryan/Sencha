@@ -40,14 +40,18 @@ std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::stri
 }
 
 std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::string_view name, const World& names,
-                                                AbilityDeclaration& compiled)
+                                                AbilityDeclaration& compiled, const AssetRegistry* assets)
 {
     std::vector<AbilityDiagnostic> diagnostics;
     std::vector<AssetRef> dependencies;
     if (!CompileAbilityDeclaration(data, compiled, dependencies, diagnostics))
         return diagnostics;
     AbilityDefinition resolved;
-    (void)ResolveAbilityDeclaration(compiled, name, MakeAbilityResolveEnvironment(names), resolved, diagnostics);
+    AbilityResolveEnvironment environment = MakeAbilityResolveEnvironment(names);
+    // Only which assets exist: the working data's data assets are not loaded
+    // through the cache, so their subtypes are left to the runtime's check.
+    environment.Verbs.Assets = assets;
+    (void)ResolveAbilityDeclaration(compiled, name, environment, resolved, diagnostics);
     return diagnostics;
 }
 

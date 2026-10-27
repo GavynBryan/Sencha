@@ -110,6 +110,14 @@ public:
         return SnapshotInterval + Delay;
     }
 
+    // The authority tick a mirrored entity is drawn at on this machine's
+    // `localTick`: where the authority is now, less the flight the clock has
+    // measured, less the lag above. Anything else drawn alongside mirrored
+    // entities -- a projectile that should appear only while it existed --
+    // reads its timeline here. Zero before the clock has an estimate.
+    [[nodiscard]] std::uint64_t PresentedAuthorityTick(const NetTickEstimator& clock,
+                                                       std::uint64_t localTick) const;
+
     //-------------------------------------------------------------------------
     // The authority's own view, per entity
     //

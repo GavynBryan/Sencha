@@ -149,8 +149,12 @@ std::string DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetS
     } unwind{ Committing };
 
     out.reserve(staged.Dependencies.size());
-    for (const AssetRef& dependency : staged.Dependencies)
+    for (const AssetRef& declared : staged.Dependencies)
     {
+        // As the registry knows it: a reference the compile could not type (a
+        // verb binding's asset, before any verb says its kind) loads as what is
+        // at its path, and the binding's compile checks that kind against the verb.
+        const AssetRef dependency = assets.Current(declared);
         if (std::find(Committing.begin(), Committing.end(), dependency.Path) != Committing.end())
         {
             Log.Error("DataAssetLoader: dependency cycle between '{}' and '{}'",

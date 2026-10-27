@@ -15,6 +15,8 @@
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
 #include <physics/PhysicsStepSystem.h>
+#include <projectile/ProjectileSystem.h>
+#include <effects/AttributeResolveSystem.h>
 #include <anim/AnimationRegistration.h>
 #include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
@@ -1115,8 +1117,7 @@ int Engine::Run(Game& game)
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         Tasks(), LoggingState);
     NetPrefabState = std::make_unique<NetPrefabSpawner>(
-        *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
-        LoggingState);
+        RuntimeComponentSchemaState, SceneSerializerRegistry, LoggingState);
 
     // The authored vocabulary, before anything can resolve a name against it.
     //
@@ -1442,7 +1443,29 @@ int Engine::Run(Game& game)
     {
         const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
         if (physics != nullptr)
+        {
             VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
+            // Projectiles fly through the physics the game registered, so a game
+            // without physics launches none. After the ability pass, which is
+            // where most launches come from, so a projectile flies on the tick it
+            // is launched; before attributes resolve, so what it strikes that
+            // tick is resolved that tick.
+            ProjectileSystem& projectiles = RegisterProjectileSystem(
+                EngineSystems, RuntimeWorldState->Entities(),
+                ProjectileSystem::Services{ .Physics = &physics->GetSimulation(),
+                                            .Prefabs = NetPrefabState.get(),
+                                            .Assets = &ContentState->Assets().Assets,
+                                            .Responses = EngineSystems.Get<ResponsesSystem>(),
+                                            .Clock = &NetClockState,
+                                            .Interpolation = &InterpolationState,
+                                            .Console = &console.Registry(),
+                                            .Logging = &LoggingState });
+            if (EngineSystems.Has<AbilitySystem>())
+                EngineSystems.After<ProjectileSystem, AbilitySystem>();
+            if (EngineSystems.Has<AttributeResolveSystem>())
+                EngineSystems.After<AttributeResolveSystem, ProjectileSystem>();
+            VocabularyBindings->BindProjectiles(projectiles, *VerbDispatcherState);
+        }
         CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
             *RuntimeWorldState, ContentState->Assets().CandidateOperations,
             physics != nullptr ? &physics->GetSimulation() : nullptr, QueryDispatcherState.get());

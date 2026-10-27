@@ -60,7 +60,10 @@ public:
     // changed; until then, the same snapshot again.
     [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const;
     // `ref` as the registry knows its asset now: the asset's path when its id
-    // is known, else its id when its path is. Anything unknown stays as it was.
+    // is known, else its id when its path is, and its type when the reference
+    // could not state one -- a document can name an asset before anything has
+    // told it the kind. A type it does state is kept, so a mismatch stays for
+    // whoever asked for that type to see. Anything unknown stays as it was.
     [[nodiscard]] AssetRef Current(AssetRef ref) const;
     [[nodiscard]] bool Contains(std::string_view path) const;
 
