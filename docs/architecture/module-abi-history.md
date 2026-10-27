@@ -620,7 +620,7 @@ runtime only) are a new `AttachmentComponents` set; `PresentedWith`
 
 **ECS and math.** `World::ReplaceComponent<T>` and `Transform3d::FromMat4` are new.
 
-## v35
+## v36
 
 `presentation.attach` (`attach/AttachmentVerbs.h`): a cosmetic lease holding a
 static mesh at a socket of its target, so an ability phase can show a prop from
