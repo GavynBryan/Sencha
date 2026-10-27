@@ -8,6 +8,9 @@
 #include <core/logging/LoggingProvider.h>
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityKit.h>
+#include <abilities/AbilityRegistry.h>
+#include <abilities/CuePresentationLibrary.h>
+#include <authored/VerbRegistry.h>
 #include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
 #include <assets/data/DataAssetTypeRegistry.h>
@@ -20,7 +23,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
 
 namespace
@@ -298,4 +303,126 @@ TEST(ContentVocabulary, MalformedDeclarationsDoNotCompile)
     EXPECT_FALSE(compile(kAttributeDeclarationsType,
                          R"({ "attributes": [ { "key": "a", "name": "A" }, { "key": "b", "name": "A" } ] })").IsValid());
     EXPECT_TRUE(compile(kAttributeDeclarationsType, R"({ "attributes": [ { "key": "a", "name": "A" } ] })").IsValid());
+}
+
+namespace
+{
+    // A World whose verbs take an asset of one kind: `test.look` an ability invokes,
+    // `test.show` a cue presentation runs.
+    struct AssetVocabularyWorld : VocabularyWorld
+    {
+        explicit AssetVocabularyWorld(AssetType kind)
+        {
+            InstallAuthoredVocabulary(Entities);
+            (void)Entities.GetResource<GameplayTagRegistry>().RegisterTag("cue.look");
+            VerbRegistrationScope verbs(*FindVerbRegistry(Entities), "test");
+            for (const char* name : { "test.look", "test.show" })
+            {
+                VerbDefinition verb;
+                verb.Name = name;
+                if (std::string_view(name) == "test.show")
+                {
+                    verb.Scope = AuthoredScope::Cosmetic;
+                    verb.Prediction = AuthoredPrediction::Presentation;
+                }
+                DataFieldSchema look = MakeDataField(DataFieldKind::AssetRef, "look", "Look");
+                look.Reference.AssetTypeFilter = kind;
+                verb.Arguments.Children = { std::move(look) };
+                (void)verbs.Declare(std::move(verb));
+            }
+            EXPECT_TRUE(verbs.Commit());
+        }
+    };
+
+    std::string AbilityLooking(std::string_view asset)
+    {
+        return std::format(R"({{ "type": "ability.definition", "version": 1, "data": {{
+            "phases": [ {{ "key": "p_a",
+                "enter": [ {{ "key": "o_look", "op": "invoke", "verb": "test.look",
+                              "arguments": {{ "look": {{ "asset": "{}" }} }} }} ],
+                "then": [ {{ "key": "t_end", "to": "end" }} ] }} ] }} }})", asset);
+    }
+
+    bool Mentions(const std::vector<std::string>& errors, std::string_view text)
+    {
+        return std::ranges::any_of(errors, [&](const std::string& error) { return (error.find(text) != std::string::npos); });
+    }
+}
+
+// An asset an ability's operation names is a dependency of the ability's asset,
+// loaded with it, and checked when the ability is declared: there, and of the kind
+// the verb takes. The compiled reference names it by id.
+TEST(ContentVocabulary, AnAbilityHoldsTheAssetItNamesForAsLongAsItIsDeclared)
+{
+    Content content;
+    content.Write("b/look.smat", R"({"version": 2})");
+    content.Write("a/looks.sdata", AbilityLooking("asset://b/look.smat"));
+    content.Scan();
+    AssetVocabularyWorld world(AssetType::Material);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Watch, errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    const AbilityRegistry& abilities = world.Entities.GetResource<AbilityRegistry>();
+    const AbilityDefinition* looks = abilities.Get(abilities.Find("asset://a/looks.sdata"));
+    ASSERT_NE(looks, nullptr);
+    const CompiledVerbBinding& binding = looks->Ops.front().Binding;
+    EXPECT_TRUE(binding.ReferencesChecked) << "checked against the mounted assets";
+    const AssetRef* look = nullptr;
+    ASSERT_TRUE(binding.Constants.TryGetAsset(0, look));
+    EXPECT_EQ(look->Type, AssetType::Material);
+    EXPECT_EQ(look->Id, content.Assets.Registry.FindByPath("asset://b/look.smat")->Id)
+        << "so the operation finds it without its path";
+
+    EXPECT_TRUE(content.Assets.Materials.Find("asset://b/look.smat").IsValid())
+        << "resident before anything runs the ability";
+    ReleaseContentVocabulary(world.Entities);
+    EXPECT_FALSE(content.Assets.Materials.Find("asset://b/look.smat").IsValid())
+        << "and released with the content that named it";
+}
+
+TEST(ContentVocabulary, AnAbilityNamingAMissingAssetIsReportedWithTheAsset)
+{
+    Content content;
+    content.Write("a/looks.sdata", AbilityLooking("asset://b/nowhere.smat"));
+    content.Scan();
+    AssetVocabularyWorld world(AssetType::Material);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_TRUE((errors.front().find("asset://a/looks.sdata did not load as ability.definition") != std::string::npos))
+        << errors.front();
+    EXPECT_TRUE((errors.front().find("asset://b/nowhere.smat") != std::string::npos)) << errors.front();
+    const AbilityRegistry& abilities = world.Entities.GetResource<AbilityRegistry>();
+    EXPECT_EQ(abilities.Get(abilities.Find("asset://a/looks.sdata")), nullptr);
+}
+
+TEST(ContentVocabulary, AnAbilityNamingAnAssetOfAnotherKindIsReportedWithBothKinds)
+{
+    Content content;
+    content.Write("b/look.smat", R"({"version": 2})");
+    content.Write("a/looks.sdata", AbilityLooking("asset://b/look.smat"));
+    content.Scan();
+    AssetVocabularyWorld world(AssetType::Scene);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+    EXPECT_TRUE(Mentions(errors, "'asset://b/look.smat' is a Material asset; the verb wants Scene"))
+        << (errors.empty() ? std::string("no error") : errors.front());
+    const AbilityRegistry& abilities = world.Entities.GetResource<AbilityRegistry>();
+    EXPECT_EQ(abilities.Get(abilities.Find("asset://a/looks.sdata")), nullptr);
+}
+
+TEST(ContentVocabulary, ACuePresentationNamingAnAssetOfAnotherKindIsReported)
+{
+    Content content;
+    content.Write("b/look.smat", R"({"version": 2})");
+    content.Write("a/looks.sdata", R"({ "type": "cue.presentation", "version": 1, "data": { "cues": [
+        { "key": "c_look", "cue": "cue.look",
+          "once": [ { "verb": "test.show", "arguments": { "look": { "asset": "asset://b/look.smat" } } } ] } ] } })");
+    content.Scan();
+    AssetVocabularyWorld world(AssetType::Scene);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+    EXPECT_TRUE(Mentions(errors, "'asset://b/look.smat' is a Material asset; the verb wants Scene"))
+        << (errors.empty() ? std::string("no error") : errors.front());
 }

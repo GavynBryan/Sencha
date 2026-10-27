@@ -11,6 +11,8 @@
 #include "vocabulary/VocabularyCatalog.h"
 
 #include <abilities/AbilityDefinitionData.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/json/JsonParser.h>
 
 #include <gtest/gtest.h>
@@ -169,4 +171,39 @@ TEST(AbilityChecks, AProblemNamesItsElementAndKeepsItsPath)
     ASSERT_EQ(problems.size(), 1u);
     EXPECT_TRUE(problems.front().Message.starts_with("Fire \xE2\x80\xBA effect.aply: ")) << problems.front().Message;
     EXPECT_EQ(AbilityElementAt(data, problems.front().Location)->Key, "o_mark");
+}
+
+// Given the mounted assets, the Workbench checks an asset an operation names the
+// way the runtime does when it declares the content: there, and of the verb's kind.
+TEST(AbilityChecks, AnAssetAnOperationNamesIsCheckedAgainstTheMountedAssets)
+{
+    const JsonValue data = *JsonParse(R"({
+        "phases": [ { "key": "p_a",
+            "enter": [ { "key": "o_sound", "op": "invoke", "verb": "audio.play",
+                         "arguments": { "clip": { "asset": "asset://sounds/missing.sclip" } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const VocabularyCatalog names;
+    LoggingProvider logging;
+    AssetRegistry assets(logging);
+    ASSERT_TRUE(assets.Register(AssetRecord{ .Type = AssetType::Material,
+                                             .SourceKind = AssetSourceKind::File,
+                                             .Path = "asset://sounds/wrong.smat",
+                                             .FilePath = "wrong.smat" }));
+    const auto messages = [&](const JsonValue& ability, const AssetRegistry* mounted) {
+        AbilityDeclaration compiled;
+        std::string all;
+        for (const AbilityDiagnostic& diagnostic :
+             CheckAbilityData(ability, "asset://abilities/sound.sdata", names.Names(), compiled, mounted))
+            all += diagnostic.Message + "\n";
+        return all;
+    };
+
+    EXPECT_TRUE((messages(data, &assets).find("no asset at 'asset://sounds/missing.sclip'") != std::string::npos));
+    EXPECT_FALSE((messages(data, nullptr).find("no asset at") != std::string::npos)) << "nothing mounted, nothing to check against";
+
+    JsonValue wrong = data;
+    (void)SetAbilityElementMember(wrong, "o_sound", "arguments",
+                                  *JsonParse(R"({ "clip": { "asset": "asset://sounds/wrong.smat" } })"));
+    EXPECT_TRUE((messages(wrong, &assets).find("is a Material asset; the verb wants Audio") != std::string::npos))
+        << messages(wrong, &assets);
 }

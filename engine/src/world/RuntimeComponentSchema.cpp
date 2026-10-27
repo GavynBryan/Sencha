@@ -15,6 +15,7 @@
 #include <net/ReplicationLayout.h>
 #include <participant/ParticipantComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
+#include <projectile/ProjectileRegistration.h>
 #include <render/RenderComponentRegistration.h>
 #include <spatial/sight/SightComponentRegistration.h>
 #include <time/TimeComponentRegistration.h>
@@ -48,6 +49,7 @@ namespace
         LogicComponents,
         AnimationComponents,
         SightComponents,
+        ProjectileComponents,
         AttachmentComponents>;
 
     static_assert(EngineComponentSets::Owned,
@@ -100,6 +102,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
+    RegisterProjectileComponents(registrar);
     RegisterAttachmentComponents(registrar);
 }
 

@@ -127,6 +127,17 @@ with an `EnumSchema`, `EntityId`, `GameplayTagId`, `AssetRef`, floating-point
 - A default argument must be a constant a JSON document could spell — a bool,
   number, string or enum. An entity, tag, asset or vector parameter cannot have
   one, and an optional's only default is `std::nullopt`.
+- An asset argument is written `{"asset": ...}` (or `{"data": ...}` for a data
+  asset) and is a dependency of the asset that writes it: loaded with it, by the
+  synchronous and the asynchronous load alike, and held for as long as it is. A
+  definition that content declares — an ability, a cue presentation — is held
+  while its content is published, so what its operations name is resident before
+  any of them runs and is released when the content is. The document cannot know
+  the kind the verb takes, so the dependency loads as whatever is at its path;
+  the binding then compiles against the mounted assets, which requires the asset
+  to be there and of the kind the argument declares
+  (`DataReferenceConstraints::AssetTypeFilter`), and compiles the reference to the
+  asset as it is now: its id, its current path, and its kind.
 
 A declaration that breaks a rule is refused by the generator or by a
 `static_assert` in the companion, naming the header, line, declaration and

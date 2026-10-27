@@ -96,6 +96,10 @@ public:
     // travel to a stage on any thread.
     [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const { return Registry.PathsById(); }
 
+    // `ref` as the registry knows its asset now (AssetRegistry::Current): what a
+    // declared dependency is loaded as.
+    [[nodiscard]] AssetRef Current(AssetRef ref) const { return Registry.Current(std::move(ref)); }
+
     // The path a held token names. Empty when the kind is unregistered or the
     // token names nothing.
     [[nodiscard]] std::string_view GetPathForLease(AssetType type,

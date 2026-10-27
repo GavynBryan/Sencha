@@ -14,7 +14,6 @@
 class AssetSystem;
 class ComponentSerializerRegistry;
 class LoggingProvider;
-class RuntimeWorld;
 class SceneCache;
 class WorldComponentSchema;
 struct SceneSerializationContext;
@@ -40,8 +39,9 @@ struct SceneSerializationContext;
 class NetPrefabSpawner final : public INetPrefabSpawner
 {
 public:
-    NetPrefabSpawner(RuntimeWorld& world,
-                     const WorldComponentSchema& schema,
+    // Builds into whichever World Instantiate is handed, as the schema `schema`
+    // describes it.
+    NetPrefabSpawner(const WorldComponentSchema& schema,
                      const ComponentSerializerRegistry& serializers,
                      LoggingProvider& logging);
     ~NetPrefabSpawner() override;
@@ -81,7 +81,6 @@ private:
     // snapshot would otherwise fill the log with one problem.
     void RefuseOnce(AssetId scene, std::string_view reason);
 
-    RuntimeWorld& WorldState;
     const WorldComponentSchema& Schema;
     const ComponentSerializerRegistry& Serializers;
     LoggingProvider& Logging;

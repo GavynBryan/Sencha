@@ -236,6 +236,8 @@ AssetRef AssetRegistry::Current(AssetRef ref) const
     {
         ref.Path = found->Path;
         ref.Id = found->Id;
+        if (ref.Type == AssetType::Unknown)
+            ref.Type = found->Type;
     }
     return ref;
 }
