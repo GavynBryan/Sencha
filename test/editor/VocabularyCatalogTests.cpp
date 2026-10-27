@@ -76,7 +76,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 26u);
+    ASSERT_EQ(verbs.size(), 27u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -133,10 +133,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 27u);
-    EXPECT_EQ(verbs[26].Name, kModuleVerb);
-    EXPECT_EQ(verbs[26].Provider, "spike");
-    EXPECT_EQ(verbs[26].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 28u);
+    EXPECT_EQ(verbs[27].Name, kModuleVerb);
+    EXPECT_EQ(verbs[27].Provider, "spike");
+    EXPECT_EQ(verbs[27].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -176,7 +176,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 26u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 27u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)
