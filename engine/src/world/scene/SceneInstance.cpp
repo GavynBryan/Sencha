@@ -5,7 +5,14 @@
 #include <ecs/World.h>
 #include <world/scene/SceneInstanceIndex.h>
 
+#include <atomic>
 #include <string>
+
+SceneInstanceId MintRuntimeSceneInstanceId()
+{
+    static std::atomic<std::uint64_t> next{ 1 };
+    return SceneInstanceId{ SceneInstanceIdRuntimeBit | next.fetch_add(1, std::memory_order_relaxed) };
+}
 
 void ComponentTraits<SceneInstance>::OnAdd(SceneInstance& component, World& world,
                                            EntityId entity)

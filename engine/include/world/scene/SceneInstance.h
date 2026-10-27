@@ -35,6 +35,11 @@ using SceneInstanceId = StrongId<struct SceneInstanceIdTag, std::uint64_t>;
 // can never collide with editor-authored placement ids.
 inline constexpr std::uint64_t SceneInstanceIdRuntimeBit = 1ull << 63;
 
+// A runtime instance id no other spawn in this process has. Every spawner mints
+// from this one sequence: a counter per spawner gave the first projectile the
+// pawn's group, so despawning the projectile destroyed the pawn.
+[[nodiscard]] SceneInstanceId MintRuntimeSceneInstanceId();
+
 // The 16-hex-digit text form, the same spelling every scene-source id uses.
 [[nodiscard]] inline std::string SceneInstanceIdToString(SceneInstanceId id)
 {

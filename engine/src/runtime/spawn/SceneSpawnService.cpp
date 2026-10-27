@@ -112,8 +112,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
 {
     auto request = std::make_unique<Request>();
     request->Id = SceneSpawnId{ NextSpawnValue++ };
-    request->Instance =
-        SceneInstanceId{ SceneInstanceIdRuntimeBit | NextInstanceValue++ };
+    request->Instance = MintRuntimeSceneInstanceId();
     request->ScenePath = std::string(sceneAssetPath);
     request->Root = root;
     request->Partition = partition;
