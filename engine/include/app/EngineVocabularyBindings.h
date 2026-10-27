@@ -18,6 +18,7 @@ class MovementOperations;
 class NavigationOperations;
 class PhysicsQueries;
 class PhysicsWorld;
+class ProjectileSystem;
 class ResponseOperations;
 class World;
 
@@ -47,6 +48,9 @@ public:
 
     // physics.trace and physics.overlap answered from `physics`, which must outlive this.
     void BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries);
+
+    // projectile.launch, answered by `projectiles`, which must outlive this.
+    void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
 
 private:
     const World& Entities;

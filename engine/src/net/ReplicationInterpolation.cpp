@@ -150,6 +150,19 @@ void ReplicationInterpolation::Reset()
     InterpolatedTicks = 0;
 }
 
+std::uint64_t ReplicationInterpolation::PresentedAuthorityTick(const NetTickEstimator& clock,
+                                                              std::uint64_t localTick) const
+{
+    if (!clock.HasEstimate())
+        return 0;
+    const std::uint64_t authorityNow = clock.AuthorityTickAt(localTick);
+    // Flight is how long a datagram takes; the interval is how long the newest
+    // sample had already been waiting before one was sent; the margin is what
+    // is left over for jitter.
+    const auto behind = static_cast<std::uint64_t>(clock.FlightTicks()) + PresentationLagTicks();
+    return authorityNow > behind ? authorityNow - behind : 0;
+}
+
 void ReplicationInterpolationSystem::FixedLogic(FixedLogicContext& ctx)
 {
     if (Interpolation == nullptr || Prediction == nullptr || Clock == nullptr)
@@ -161,13 +174,7 @@ void ReplicationInterpolationSystem::FixedLogic(FixedLogicContext& ctx)
     if (!Clock->HasEstimate())
         return;
 
-    const std::uint64_t authorityNow = Clock->AuthorityTickAt(ctx.Time.TickIndex);
-    // Flight is how long a datagram takes; the interval is how long the newest
-    // sample had already been waiting before one was sent; the margin is what
-    // is left over for jitter.
-    const auto behind = static_cast<std::uint64_t>(Clock->FlightTicks())
-                      + Interpolation->PresentationLagTicks();
-    const std::uint64_t present = authorityNow > behind ? authorityNow - behind : 0;
+    const std::uint64_t present = Interpolation->PresentedAuthorityTick(*Clock, ctx.Time.TickIndex);
 
     Interpolation->Tracked(Scratch);
     for (const EntityId entity : Scratch)

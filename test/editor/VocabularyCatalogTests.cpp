@@ -14,6 +14,7 @@
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ResponseVerbs.h>
+#include <projectile/ProjectileHit.h>
 #include <logic/ResponsesSystem.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
@@ -233,15 +234,17 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(lit.Provider, "lamp");
     EXPECT_EQ(lit.ArgumentCount, 1u);
 
-    // The engine's sensor events come first; the module's follow them.
+    // The engine's sensor and projectile events come first; the module's follow them.
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
-    ASSERT_EQ(events.size(), 5u);
+    ASSERT_EQ(events.size(), 6u);
     EXPECT_EQ(events[0].Name, kSensorEnterEvent);
     EXPECT_EQ(events[1].Name, kSensorStayEvent);
     EXPECT_EQ(events[2].Name, kSensorExitEvent);
     EXPECT_EQ(events[3].Name, kSensorInteractEvent);
     EXPECT_EQ(events[0].PayloadCount, 1u);
-    EXPECT_EQ(events[4].Name, "lamp.switched");
-    EXPECT_EQ(events[4].SourceComponent, "game.lamp");
-    EXPECT_EQ(events[4].PayloadCount, 0u);
+    EXPECT_EQ(events[4].Name, kProjectileHitEvent);
+    EXPECT_EQ(events[4].PayloadCount, 5u);
+    EXPECT_EQ(events[5].Name, "lamp.switched");
+    EXPECT_EQ(events[5].SourceComponent, "game.lamp");
+    EXPECT_EQ(events[5].PayloadCount, 0u);
 }

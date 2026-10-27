@@ -9,6 +9,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <attributes/AttributeDeclarations.h>
 #include <attributes/AttributeRegistry.h>
+#include <authored/WorldVocabulary.h>
 #include <core/assets/AssetRegistry.h>
 #include <ecs/World.h>
 #include <effects/EffectDefinitionData.h>
@@ -58,6 +59,26 @@ const T* Compiled(RuntimeAssets& assets, const AssetLease& lease, std::string_vi
     return lease ? assets.DataAssets.TryGet<T>(HandleOf(lease), subtype) : nullptr;
 }
 
+// "<path> did not load as <subtype>", with why when the asset system recorded it:
+// a definition naming an asset that is missing, or of the wrong kind, says which.
+std::string NotLoaded(const RuntimeAssets& assets, std::string_view path, std::string_view subtype)
+{
+    for (const AssetSystem::LoadFailure& failure : assets.Assets.LoadFailures())
+        if (failure.Path == path)
+            return std::format("{} did not load as {}: {}", path, subtype, failure.Reason);
+    return std::format("{} did not load as {}", path, subtype);
+}
+
+// Content's verb bindings compile against the mounted assets, as they run: a
+// reference names an asset that is there, of the kind its verb takes.
+VerbBindingEnvironment BindingEnvironment(const RuntimeAssets& assets, const World& world)
+{
+    VerbBindingEnvironment environment = MakeVerbBindingEnvironment(world);
+    environment.Assets = &assets.Registry;
+    environment.DataAssets = &assets.DataAssets;
+    return environment;
+}
+
 void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
                    std::vector<std::string>& errors)
 {
@@ -67,7 +88,7 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     if (declaration == nullptr || effects == nullptr || attributes == nullptr || tags == nullptr)
     {
-        errors.push_back(std::format("{} did not load as {}", entry.Path, kEffectDefinitionType));
+        errors.push_back(NotLoaded(assets, entry.Path, kEffectDefinitionType));
         return;
     }
     entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
@@ -95,15 +116,16 @@ void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases
     AbilityRegistry* abilities = world.TryGetResource<AbilityRegistry>();
     if (declaration == nullptr || abilities == nullptr)
     {
-        errors.push_back(std::format("{} did not load as {}", entry.Path, kAbilityDefinitionType));
+        errors.push_back(NotLoaded(assets, entry.Path, kAbilityDefinitionType));
         return;
     }
     entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
 
     std::vector<AbilityDiagnostic> diagnostics;
     AbilityDefinition definition;
-    const bool resolved = ResolveAbilityDeclaration(*declaration, entry.Path, MakeAbilityResolveEnvironment(world),
-                                                    definition, diagnostics);
+    AbilityResolveEnvironment environment = MakeAbilityResolveEnvironment(world);
+    environment.Verbs = BindingEnvironment(assets, world);
+    const bool resolved = ResolveAbilityDeclaration(*declaration, entry.Path, environment, definition, diagnostics);
     for (const AbilityDiagnostic& diagnostic : diagnostics)
         if (diagnostic.Severity == AbilityDiagnosticSeverity::Error)
             errors.push_back(std::format("{}: {} {} {}: {}", entry.Path, diagnostic.Code, diagnostic.ElementKey,
@@ -122,11 +144,11 @@ void DeclareCuePresentation(RuntimeAssets& assets, World& world, ContentDefiniti
     CuePresentationLibrary* library = world.TryGetResource<CuePresentationLibrary>();
     if (declaration == nullptr || library == nullptr)
     {
-        errors.push_back(std::format("{} did not load as {}", entry.Path, kCuePresentationType));
+        errors.push_back(NotLoaded(assets, entry.Path, kCuePresentationType));
         return;
     }
     entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
-    library->Declare(entry.Path, *declaration, world, errors);
+    library->Declare(entry.Path, *declaration, BindingEnvironment(assets, world), errors);
 }
 
 using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);

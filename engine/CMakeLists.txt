@@ -66,6 +66,8 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/PhysicsBodyLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/RigidBody.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/projectile/Projectile.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/projectile/ProjectileState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/IrradianceVolumeComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/PointLightComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/SpotLightComponent.h"

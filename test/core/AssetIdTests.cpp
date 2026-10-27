@@ -154,6 +154,27 @@ TEST(AssetRegistryIds, AReferenceIsMadeCurrentByItsIdOrItsPath)
     EXPECT_EQ(unknown.Id, AssetId{ 9 });
 }
 
+// A reference that could not state its kind -- a verb binding's asset, written
+// before any verb says what it takes -- is given the kind of what is at its path.
+// One that does state a kind keeps it, wrong or not: the mismatch is the caller's
+// to see, never smoothed over here.
+TEST(AssetRegistryIds, AReferenceIsGivenOnlyAKindItCouldNotState)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://rock.smesh")));
+
+    const AssetRef untyped = registry.Current(AssetRef{ .Path = "asset://rock.smesh" });
+    EXPECT_EQ(untyped.Type, AssetType::StaticMesh);
+
+    const AssetRef stated = registry.Current(AssetRef{ AssetType::Material, "asset://rock.smesh" });
+    EXPECT_EQ(stated.Type, AssetType::Material) << "a stated kind is never replaced";
+
+    const AssetRef missing = registry.Current(AssetRef{ .Path = "asset://nowhere.smesh" });
+    EXPECT_EQ(missing.Type, AssetType::Unknown) << "nothing at the path, so still nothing to say";
+    EXPECT_FALSE(missing.IsValid());
+}
+
 // What was read before a move still finds the asset by the path it was at.
 TEST(AssetRegistryIds, APathAnAssetMovedFromStillFindsIt)
 {

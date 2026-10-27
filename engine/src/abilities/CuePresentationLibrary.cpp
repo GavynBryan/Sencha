@@ -42,12 +42,17 @@ bool Compile(const VerbBindingDesc& desc, VerbKind kind, const VerbBindingEnviro
 void CuePresentationLibrary::Declare(std::string_view path, const CuePresentationDeclaration& declaration,
                                      const World& world, std::vector<std::string>& errors)
 {
-    const VerbRegistry* verbs = FindVerbRegistry(world);
-    const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+    Declare(path, declaration, MakeVerbBindingEnvironment(world), errors);
+}
+
+void CuePresentationLibrary::Declare(std::string_view path, const CuePresentationDeclaration& declaration,
+                                     const VerbBindingEnvironment& environment, std::vector<std::string>& errors)
+{
+    const VerbRegistry* verbs = environment.Verbs;
+    const GameplayTagRegistry* tags = environment.Tags;
     std::vector<std::pair<GameplayTagId, Presentation>> compiled;
     if (verbs != nullptr && tags != nullptr)
     {
-        const VerbBindingEnvironment environment = MakeVerbBindingEnvironment(world);
         for (const CuePresentationEntry& entry : declaration.Entries)
         {
             const GameplayTagId cue = tags->FindTag(entry.Cue);

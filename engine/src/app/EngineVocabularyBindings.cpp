@@ -11,6 +11,8 @@
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
+#include <projectile/ProjectileSystem.h>
+#include <projectile/ProjectileVerbs.h>
 #include <time/ActorTimeVerbs.h>
 
 #include <utility>
@@ -71,6 +73,11 @@ void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
 {
     for (AuthoredQueryBindingToken& token : BindNavigationQueries(queries, Entities))
         Queries.push_back(std::move(token));
+}
+
+void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs)
+{
+    Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
 }
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)
