@@ -32,6 +32,13 @@ struct CameraRenderData
     // entity a viewer must not see is a property of where that viewer sits.
     // Shadow extraction ignores it, so an excluded entity still casts its shadow.
     EntityId ExcludedEntity;
+
+    // Whether this camera skips an entity drawn as part of `presentedWith` (its
+    // PresentedWith root, or invalid when it has none) as well as the excluded one.
+    [[nodiscard]] bool Excludes(EntityId entity, EntityId presentedWith) const
+    {
+        return ExcludedEntity.IsValid() && (entity == ExcludedEntity || presentedWith == ExcludedEntity);
+    }
 };
 
 //=============================================================================

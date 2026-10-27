@@ -191,9 +191,7 @@ void RenderExtractionSystem::EmitStaticMeshes(
             if (!renderer.Visible)
                 continue;
 
-            if (view.Entity(i) == camera.ExcludedEntity
-                || (!presentedWith.empty() && camera.ExcludedEntity.IsValid()
-                    && presentedWith[i].Root == camera.ExcludedEntity))
+            if (camera.Excludes(view.Entity(i), presentedWith.empty() ? EntityId{} : presentedWith[i].Root))
                 continue;
 
             const GpuStaticMesh* mesh = caches.Meshes.Get(renderer.Mesh);
@@ -274,9 +272,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             if (!renderer.Visible)
                 continue;
 
-            if (view.Entity(i) == camera.ExcludedEntity
-                || (!presentedWith.empty() && camera.ExcludedEntity.IsValid()
-                    && presentedWith[i].Root == camera.ExcludedEntity))
+            if (camera.Excludes(view.Entity(i), presentedWith.empty() ? EntityId{} : presentedWith[i].Root))
                 continue;
 
             const GpuStaticMesh* mesh = skinnedMeshes.Get(renderer.Mesh);

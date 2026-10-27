@@ -33,7 +33,6 @@ enum class AttachmentBinding : std::uint8_t
 struct SENCHA_COMPONENT("sencha.attachment_set") AttachmentSet
 {
     EntityId First;
-    std::uint16_t Count = 0;
 };
 
 struct SENCHA_COMPONENT("sencha.attachment") Attachment

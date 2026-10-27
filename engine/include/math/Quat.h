@@ -7,6 +7,7 @@
 #include <ostream>
 #include <type_traits>
 
+#include "Angle.h"
 #include "Mat.h"
 #include "Vec.h"
 
@@ -238,6 +239,13 @@ struct Quat
 	{
 		return FromAxisAngle(Vec<3, T>(T{0}, T{1}, T{0}), yaw) * FromAxisAngle(Vec<3, T>(T{1}, T{0}, T{0}), pitch)
 			* FromAxisAngle(Vec<3, T>(T{0}, T{0}, T{1}), roll);
+	}
+
+	// The same turn as authored content states it: (pitch, yaw, roll) in degrees.
+	static Quat FromPitchYawRollDegrees(const Vec<3, T>& degrees)
+		requires std::floating_point<T>
+	{
+		return FromPitchYawRoll(ToRadians(degrees.X), ToRadians(degrees.Y), ToRadians(degrees.Z));
 	}
 
 	// The inverse of FromPitchYawRoll, as (pitch, yaw, roll): pitch within

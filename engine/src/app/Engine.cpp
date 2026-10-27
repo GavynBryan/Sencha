@@ -101,6 +101,16 @@
 #include <string>
 #include <utility>
 
+namespace
+{
+    // A window presents what this process simulates: poses, attachments and
+    // presentation systems exist only then.
+    bool PresentsAWindow(const EngineConfig& config)
+    {
+        return config.Window.GraphicsApi != WindowGraphicsApi::None;
+    }
+}
+
 std::filesystem::path EngineContentRoot()
 {
     const auto usable = [](const std::filesystem::path& candidate) {
@@ -167,13 +177,13 @@ bool Engine::Initialize()
         ConsoleState->Registry(), *EngineSystems.Get<DefaultRenderPipeline>());
     EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
         &InstrumentationBundle);
-    if (Configuration.Window.GraphicsApi != WindowGraphicsApi::None)
+    if (PresentsAWindow(Configuration))
         EngineSystems.Register<MeshOverrideSystem>();
 
     // A process with nothing to present has nobody listening to it either, so
     // it holds no playback device. Mixing still exists as a service; it simply
     // has no output, the same shape as a machine whose device failed to open.
-    if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
+    if (!PresentsAWindow(Configuration))
         Configuration.Audio.EnablePlayback = false;
 
     AudioState = std::make_unique<AudioService>(logging, Configuration.Audio);
@@ -226,7 +236,7 @@ bool Engine::Initialize()
     // target the host configured; the app sets one for a dedicated host, and a
     // target of zero (the engine default, and what the tests want) runs the
     // loop as fast as it can.
-    if (Configuration.Window.GraphicsApi == WindowGraphicsApi::None)
+    if (!PresentsAWindow(Configuration))
     {
         FrameDriverInstance = std::make_unique<FrameDriver>(RuntimeLoop);
         FrameDriverInstance->SetTargetFps(Configuration.Runtime.TargetFps);
@@ -1365,7 +1375,7 @@ int Engine::Run(Game& game)
     SystemRegisterContext registerSystems{
         .Config = Configuration,
         .Schedule = EngineSystems,
-        .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+        .Presents = PresentsAWindow(Configuration),
     };
     // Input mapping is the engine's, not an opt-in a game assembles.
     //
@@ -1415,7 +1425,7 @@ int Engine::Run(Game& game)
                               AbilityHost{ .Verbs = VerbDispatcherState.get(),
                                            .Queries = QueryDispatcherState.get(),
                                            .Console = &console.Registry(),
-                                           .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                           .Presents = PresentsAWindow(Configuration),
                                            .Logging = &LoggingState });
 
     // Answered whether or not the game registers perception: a World nobody
@@ -1424,7 +1434,7 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
 
     // Only where a window presents: a server holds no attachments.
-    if (Configuration.Window.GraphicsApi != WindowGraphicsApi::None)
+    if (PresentsAWindow(Configuration))
         InstallAttachments(RuntimeWorldState->Entities(), &LoggingState.GetLogger<Attachment>());
 
     // Every host animates: an entity that names a rig plays it, in a process whose
@@ -1434,7 +1444,7 @@ int Engine::Run(Game& game)
                              AnimationHost{
                                  .Verbs = VerbDispatcherState.get(),
                                  .Console = &console.Registry(),
-                                 .PresentsPose = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                 .PresentsPose = PresentsAWindow(Configuration),
                                  .Jobs = &Jobs(),
                              });
 

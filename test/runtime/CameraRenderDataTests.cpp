@@ -159,3 +159,21 @@ TEST(CameraRenderDataExclusion, ACameraWithHistoryIsDrawnFromTheBlend)
         RenderExtent{ 640, 480 }, data, 0.5));
     EXPECT_EQ(data.Position, Vec3d(5.0f, 0.0f, 0.0f));
 }
+
+// A first-person camera hides its body and whatever is drawn as part of it;
+// a camera excluding nothing hides nothing, even what names no root.
+TEST(CameraRenderDataExclusion, ExcludesItsEntityAndWhatIsPresentedWithIt)
+{
+    CameraRenderData camera;
+    const EntityId body{ 3, 1 };
+    const EntityId rifle{ 4, 1 };
+    const EntityId other{ 5, 1 };
+    EXPECT_FALSE(camera.Excludes(rifle, EntityId{}));
+    EXPECT_FALSE(camera.Excludes(rifle, body));
+
+    camera.ExcludedEntity = body;
+    EXPECT_TRUE(camera.Excludes(body, EntityId{}));
+    EXPECT_TRUE(camera.Excludes(rifle, body));
+    EXPECT_FALSE(camera.Excludes(rifle, other));
+    EXPECT_FALSE(camera.Excludes(other, EntityId{}));
+}

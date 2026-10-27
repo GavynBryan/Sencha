@@ -21,3 +21,8 @@ IAssetStore* AssetStoreTable::Find(AssetType type, AssetArity arity) const
     const std::vector<IAssetStore*>& stores = StoresByArity[Index(arity)];
     return Index(type) < stores.size() ? stores[Index(type)] : nullptr;
 }
+
+IAssetListStore* AssetStoreTable::FindList(AssetType type) const
+{
+    return dynamic_cast<IAssetListStore*>(Find(type, AssetArity::List));
+}

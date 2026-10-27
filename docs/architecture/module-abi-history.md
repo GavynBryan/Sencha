@@ -611,14 +611,17 @@ sockets or at an entity's origin.
 runtime only) are a new `AttachmentComponents` set; `PresentedWith`
 (`render/PresentedWith.h`) joins `RenderComponents`.
 
-**Attach.** `AttachToSocket`, `AttachToOrigin`, `DestroyAttachment`,
+**Attach.** `AttachToSocket`, `AttachToOrigin`, `Detach`, `DestroyAttachment`,
 `DestroyAttachmentsOf`, `CreateMeshAttachment`, `UpdateMeshAttachment`,
 `FindAttachment`, `ForEachAttachment`, `InstallAttachments`,
 `AttachmentsInstalled` and `PlaceAttachments` (`attach/Attachment.h`) are new.
 
 **Registration.** `SystemRegisterContext` gains `Presents`.
 
-**ECS and math.** `World::ReplaceComponent<T>` and `Transform3d::FromMat4` are new.
+**ECS, assets and math.** `World::ReplaceComponent<T>` (the new value's `OnAdd`
+before the old value's `OnRemove`), `AssetStoreTable::FindList`,
+`Transform3d::FromMat4` and `Quat::FromPitchYawRollDegrees` are new;
+`CameraRenderData::Excludes` is the camera exclusion rule extraction applies.
 
 ## v36
 

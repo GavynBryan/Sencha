@@ -5,7 +5,6 @@
 #include <core/assets/AssetRef.h>
 #include <core/assets/AssetStoreTable.h>
 #include <ecs/World.h>
-#include <math/Angle.h>
 
 #include <algorithm>
 #include <array>
@@ -78,7 +77,11 @@ VerbAdmission AttachmentOperations::Attach(const VerbInvocation& invocation)
         Release(invocation.Owner);
         return VerbAdmission::Accepted;
     }
-    return Acquire(invocation);
+    // A refused acquire holds nothing, even for a holder that held a prop before it.
+    const VerbAdmission admission = Acquire(invocation);
+    if (admission != VerbAdmission::Accepted)
+        Release(invocation.Owner);
+    return admission;
 }
 
 VerbAdmission AttachmentOperations::Acquire(const VerbInvocation& invocation)
@@ -99,9 +102,7 @@ VerbAdmission AttachmentOperations::Acquire(const VerbInvocation& invocation)
     const AssetStoreTable* stores = Entities->TryGetResource<AssetStoreTable>();
     IAssetStore* meshes = stores != nullptr ? stores->Find(AssetType::StaticMesh, AssetArity::Single) : nullptr;
     IAssetStore* materials = stores != nullptr ? stores->Find(AssetType::Material, AssetArity::Single) : nullptr;
-    auto* sets = stores != nullptr
-                     ? dynamic_cast<IAssetListStore*>(stores->Find(AssetType::Material, AssetArity::List))
-                     : nullptr;
+    IAssetListStore* sets = stores != nullptr ? stores->FindList(AssetType::Material) : nullptr;
     if (meshes == nullptr || materials == nullptr || sets == nullptr)
         return VerbAdmission::Unavailable;
     // Leases for the length of this call: the attachment's mesh component
@@ -113,11 +114,8 @@ VerbAdmission AttachmentOperations::Acquire(const VerbInvocation& invocation)
     const std::array<std::uint64_t, 1> members{ material.OpaqueToken() };
     const AssetLease set = sets->InternList(members);
 
-    const Vec3d degrees = VectorArgument(*arguments, 5);
     const Transform3f offset(VectorArgument(*arguments, 4),
-                             Quat<float>::FromPitchYawRoll(ToRadians(degrees.X), ToRadians(degrees.Y),
-                                                           ToRadians(degrees.Z)),
-                             Vec3d::One());
+                             Quat<float>::FromPitchYawRollDegrees(VectorArgument(*arguments, 5)), Vec3d::One());
     const MeshAttachmentSpec spec{ .Root = target,
                                    .Socket = socket,
                                    .Mount = {},

@@ -30,6 +30,10 @@ EntityId crowbar = CreateMeshAttachment(world, { .Root = body, .Socket = "hand_r
   visibility, shadows. A mesh change goes through `World::ReplaceComponent`, so
   its asset leases stay balanced and the entity keeps its archetype.
 - Any number of attachments share one socket.
+- `Detach` makes an attachment an ordinary entity again, left where it is now,
+  still carrying whatever is mounted on it (which it then heads the list of).
+- Attaching an entity already worn by another body moves it, and everything
+  mounted on it, onto the new body's list and into its partition.
 
 An attached entity is moved into its body's storage partition, parented to its
 mount, and given `PresentedWith { Root }`. It must not be replicated or carry
@@ -102,9 +106,12 @@ entity as well as with its release.
 
 ## Rendering
 
-A camera excluding an entity also excludes every entity `PresentedWith` it, so
-a first-person player sees neither their body nor what it wears. Shadows ignore
-camera exclusion, as they do for the body.
+A camera excluding an entity also excludes every entity `PresentedWith` it
+(`CameraRenderData::Excludes`, the one rule static and skinned extraction
+share), so a first-person player sees neither their body nor what it wears.
+`PresentedWith` names the outermost body, so what a worn entity itself wears is
+hidden with that body too. Shadows ignore camera exclusion, as they do for the
+body.
 
 ## Where attachments exist
 

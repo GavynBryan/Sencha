@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <unordered_set>
 #include <vector>
 
 namespace
@@ -30,10 +29,9 @@ namespace
         std::vector<EntityId> PendingDestroy;
         PartitionFollowerId Follower;
         const World* QueryWorld = nullptr;
-        std::optional<Query<Write<LocalTransform>, Write<Attachment>>> Placed;
+        std::optional<Query<Write<LocalTransform>, Read<Attachment>>> Placed;
         std::vector<EntityId> Rebind;
         std::vector<Mat4> BindPose;
-        std::unordered_set<EntityId, EntityIdHash> ReportedLost;
     };
 
     AttachmentRuntime* RuntimeOf(World& world) { return world.TryGetResource<AttachmentRuntime>(); }
@@ -85,7 +83,6 @@ namespace
         if (set->First == entity)
         {
             set->First = next;
-            --set->Count;
             return;
         }
         for (EntityId at = set->First; at.IsValid() && world.IsAlive(at);)
@@ -96,7 +93,6 @@ namespace
             if (attachment->Next == entity)
             {
                 attachment->Next = next;
-                --set->Count;
                 return;
             }
             at = attachment->Next;
@@ -142,35 +138,44 @@ namespace
         }
     }
 
-    // Moves an attachment, and whatever is mounted on it, onto another root's list.
+    // Moves an attachment, and whatever is mounted on it, onto another root's
+    // list and into that root's partition.
     void Reroot(World& world, EntityId entity, EntityId root)
     {
-        Attachment& attachment = *world.TryGet<Attachment>(entity);
+        const Attachment& attachment = *world.TryGet<Attachment>(entity);
         const EntityId previous = attachment.Root;
         std::vector<EntityId> mounted;
         QueueMountedOn(world, previous, entity, mounted);
         Unlink(world, entity, previous, attachment.Next);
         if (world.TryGet<AttachmentSet>(root) == nullptr)
             world.AddComponent<AttachmentSet>(root);
+        if (world.GetEntityPartition(entity) != world.GetEntityPartition(root))
+            (void)world.MoveEntityToPartition(entity, world.GetEntityPartition(root));
+        // Read again: the add and the move both relocate rows.
         Attachment& moved = *world.TryGet<Attachment>(entity);
         AttachmentSet& set = *world.TryGet<AttachmentSet>(root);
         moved.Root = root;
         moved.Next = set.First;
         set.First = entity;
-        ++set.Count;
         if (PresentedWith* with = world.TryGet<PresentedWith>(entity))
-            with->Root = root;
+            with->Root = RootThrough(world, root);
         for (const EntityId child : mounted)
             Reroot(world, child, root);
     }
 
     template <typename T>
-    void Put(World& world, EntityId entity, const T& value)
+    void AddOrAssign(World& world, EntityId entity, const T& value)
     {
         if (T* existing = world.TryGet<T>(entity))
             *existing = value;
         else
             world.AddComponent<T>(entity, value);
+    }
+
+    // A socket belongs to the root's rig, so an attachment at one is mounted on the root.
+    EntityId MountOf(const MeshAttachmentSpec& spec)
+    {
+        return spec.Socket.empty() && spec.Mount.IsValid() ? spec.Mount : spec.Root;
     }
 
     // Shared by both kinds of attach once the binding is known.
@@ -185,25 +190,31 @@ namespace
         if (MountsOn(world, mount, attached))
             return AttachResult::MountCycle;
 
-        const Attachment* existing = world.TryGet<Attachment>(attached);
-        if (existing != nullptr && existing->Root != root)
+        bool rerooted = false;
+        if (const Attachment* existing = world.TryGet<Attachment>(attached); existing != nullptr && existing->Root != root)
+        {
             Reroot(world, attached, root);
-        existing = world.TryGet<Attachment>(attached);
-        const bool sameRoot = existing != nullptr;
+            rerooted = true;
+        }
+        const bool sameRoot = world.TryGet<Attachment>(attached) != nullptr;
 
         if (world.GetEntityPartition(attached) != world.GetEntityPartition(root))
             (void)world.MoveEntityToPartition(attached, world.GetEntityPartition(root));
         if (world.TryGet<LocalTransform>(attached) == nullptr)
             (void)ComponentStorageTraits<LocalTransform>::Add(world, attached, LocalTransform{});
-        Put(world, attached, Parent{ mount });
-        Put(world, attached, PresentedWith{ root });
+        AddOrAssign(world, attached, Parent{ mount });
+        // A body that is itself worn is excluded with the body wearing it.
+        AddOrAssign(world, attached, PresentedWith{ RootThrough(world, root) });
 
+        // Every structural step above may have moved the rows; nothing read
+        // before them is used after.
         fields.Root = root;
         fields.Mount = mount;
         if (sameRoot)
         {
-            fields.Next = existing->Next;
-            *world.TryGet<Attachment>(attached) = fields;
+            Attachment& current = *world.TryGet<Attachment>(attached);
+            fields.Next = current.Next;
+            current = fields;
         }
         else
         {
@@ -212,12 +223,11 @@ namespace
             AttachmentSet& set = *world.TryGet<AttachmentSet>(root);
             fields.Next = set.First;
             set.First = attached;
-            ++set.Count;
             world.AddComponent<Attachment>(attached, fields);
         }
         if (fields.Binding == AttachmentBinding::Origin)
             world.TryGet<LocalTransform>(attached)->Value = fields.Offset;
-        return sameRoot ? AttachResult::Updated : AttachResult::Attached;
+        return sameRoot && !rerooted ? AttachResult::Updated : AttachResult::Attached;
     }
 }
 
@@ -280,6 +290,30 @@ AttachResult AttachToOrigin(World& world, EntityId mount, EntityId attached, con
     return Link(world, RootThrough(world, mount), mount, attached, fields);
 }
 
+void Detach(World& world, EntityId attached)
+{
+    const Attachment* attachment = world.IsAlive(attached) ? world.TryGet<Attachment>(attached) : nullptr;
+    if (attachment == nullptr)
+        return;
+    const EntityId root = attachment->Root;
+    std::vector<EntityId> mounted;
+    QueueMountedOn(world, root, attached, mounted);
+    for (const EntityId child : mounted)
+        Reroot(world, child, attached);
+    // Its own hook unlinks it; what it carried is already off the old list.
+    world.RemoveComponent<Attachment>(attached);
+    world.RemoveComponent<PresentedWith>(attached);
+    if (world.TryGet<Parent>(attached) != nullptr)
+    {
+        const Transform3f pose = world.TryGet<WorldTransform>(attached)->Value;
+        world.RemoveComponent<Parent>(attached);
+        world.TryGet<LocalTransform>(attached)->Value = pose;
+    }
+    ForEachAttachment(world, attached, [&](EntityId child, const Attachment&) {
+        world.TryGet<PresentedWith>(child)->Root = attached;
+    });
+}
+
 void DestroyAttachment(World& world, EntityId attached)
 {
     if (!world.IsAlive(attached) || world.TryGet<Attachment>(attached) == nullptr)
@@ -325,7 +359,7 @@ EntityId CreateMeshAttachment(World& world, const MeshAttachmentSpec& spec, Atta
     mesh.AffectsBakedLighting = false;
     world.AddComponent<StaticMeshComponent>(entity, mesh);
 
-    const EntityId mount = spec.Mount.IsValid() ? spec.Mount : spec.Root;
+    const EntityId mount = MountOf(spec);
     const AttachResult attached = spec.Socket.empty()
                                       ? AttachToOrigin(world, mount, entity, spec.Placement)
                                       : AttachToSocket(world, spec.Root, spec.Socket, entity, spec.Placement);
@@ -346,7 +380,7 @@ AttachResult UpdateMeshAttachment(World& world, EntityId attached, const MeshAtt
     if (current == nullptr || drawn == nullptr)
         return AttachResult::NoRoot;
 
-    const EntityId mount = spec.Mount.IsValid() ? spec.Mount : spec.Root;
+    const EntityId mount = MountOf(spec);
     const bool placementChanged = current->Root != spec.Root || current->Mount != mount
                                || current->Socket.View() != spec.Socket || !(current->Offset == spec.Placement.Offset)
                                || !(current->Owner == spec.Placement.Owner);
@@ -421,7 +455,7 @@ void PlaceAttachments(World& world, double presentationAlpha)
     const World& reader = world;
     runtime->Placed->ForEachChunk([&](auto& view) {
         const auto locals = view.template Write<LocalTransform>();
-        const auto attachments = view.template Write<Attachment>();
+        const auto attachments = view.template Read<Attachment>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const Attachment& attachment = attachments[i];
@@ -474,8 +508,9 @@ void PlaceAttachments(World& world, double presentationAlpha)
         attachment->RigGeneration = rig->Generation;
         if (!index.IsValid())
         {
+            const bool wasBound = attachment->Binding == AttachmentBinding::Joint;
             attachment->Binding = AttachmentBinding::Lost;
-            if (runtime->Log != nullptr && runtime->ReportedLost.insert(entity).second)
+            if (runtime->Log != nullptr && wasBound)
                 runtime->Log->Warn("attachment_socket_lost: entity {}:{} stays where it was; its rig '{}' no longer "
                                    "has a socket named '{}'.",
                                    entity.Index, entity.Generation, rig->RigPath, attachment->Socket.View());
@@ -485,6 +520,5 @@ void PlaceAttachments(World& world, double presentationAlpha)
         attachment->Joint = rig->Sockets[index.Value].Joint;
         attachment->SocketOffset = rig->Sockets[index.Value].Offset;
         attachment->Skeleton = rig->Skeleton;
-        runtime->ReportedLost.erase(entity);
     }
 }

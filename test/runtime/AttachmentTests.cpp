@@ -14,8 +14,11 @@
 #include <render/PresentedWith.h>
 #include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformPropagation.h>
 #include <world/transform/TransformHistory.h>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <format>
@@ -134,7 +137,7 @@ TEST(Attachments, DestroyingAMountEndsWhatIsMountedOnIt)
     DestroyAttachment(fx.Entities, rifle);
     EXPECT_FALSE(fx.Entities.IsAlive(scope));
     EXPECT_TRUE(fx.Worn(fx.Body).empty());
-    EXPECT_EQ(reader.TryGet<AttachmentSet>(fx.Body)->Count, 0u);
+    EXPECT_FALSE(reader.TryGet<AttachmentSet>(fx.Body)->First.IsValid());
 }
 
 TEST(Attachments, AnAttachmentDestroyedByAnyoneLeavesTheList)
@@ -289,4 +292,101 @@ TEST(Attachments, ASteadyFrameAllocatesNothing)
     for (int frame = 0; frame < 10; ++frame)
         PlaceAttachments(fx.Entities, 0.1 * frame);
     EXPECT_EQ(AllocationCount() - before, 0u);
+}
+
+TEST(Attachments, HandingAnItemToABodyInAnotherZoneKeepsBothListsExact)
+{
+    AttachFixture fx;
+    const EntityId rifle = fx.Mesh("hand_r", Owner(1, 1));
+    const EntityId knife = fx.Mesh("hand_r", Owner(1, 2));
+    const EntityId torch = fx.Mesh("hand_r", Owner(1, 3));
+    const EntityId other = fx.MakeBody(kElsewhere);
+
+    ASSERT_EQ(AttachToSocket(fx.Entities, other, "hand_r", rifle, { .Offset = {}, .Owner = Owner(1, 1) }),
+              AttachResult::Attached);
+    EXPECT_EQ(fx.Worn(other), std::vector<EntityId>{ rifle });
+    const std::vector<EntityId> stays = fx.Worn(fx.Body);
+    EXPECT_EQ(stays.size(), 2u);
+    EXPECT_NE(std::find(stays.begin(), stays.end(), knife), stays.end());
+    EXPECT_NE(std::find(stays.begin(), stays.end(), torch), stays.end());
+    EXPECT_EQ(fx.Entities.GetEntityPartition(rifle), kElsewhere);
+
+    fx.Entities.DestroyEntity(other);
+    PlaceAttachments(fx.Entities, 1.0);
+    EXPECT_FALSE(fx.Entities.IsAlive(rifle));
+    EXPECT_TRUE(fx.Entities.IsAlive(knife)) << "what the first body wears is not the second's to end";
+    EXPECT_TRUE(fx.Entities.IsAlive(torch));
+}
+
+TEST(Attachments, HandingAnItemOverInOneZoneCarriesWhatIsMountedOnIt)
+{
+    AttachFixture fx;
+    const EntityId rifle = fx.Mesh("hand_r");
+    const EntityId scope = fx.Entities.CreateEntity(kZone);
+    ASSERT_EQ(AttachToOrigin(fx.Entities, rifle, scope), AttachResult::Attached);
+    const EntityId other = fx.MakeBody(kZone);
+    ASSERT_EQ(AttachToSocket(fx.Entities, other, "hand_r", rifle), AttachResult::Attached);
+    EXPECT_EQ(fx.Worn(other).size(), 2u);
+    EXPECT_TRUE(fx.Worn(fx.Body).empty());
+    const World& reader = fx.Entities;
+    EXPECT_EQ(reader.TryGet<Attachment>(scope)->Root, other);
+    EXPECT_EQ(reader.TryGet<PresentedWith>(scope)->Root, other);
+}
+
+TEST(Attachments, ChangingOnlyVisibilityKeepsWhatTheAttachmentAloneHolds)
+{
+    AttachFixture fx;
+    const std::array<MaterialHandle, 1> materials{ fx.PropMaterial };
+    const MaterialSetHandle set = fx.Sets.Acquire(materials);
+    MeshAttachmentSpec spec{ .Root = fx.Body, .Socket = "hand_r", .Mount = {}, .Placement = {},
+                             .Mesh = {}, .Materials = set, .Visible = true, .CastShadows = true };
+    const EntityId prop = CreateMeshAttachment(fx.Entities, spec);
+    ASSERT_TRUE(prop.IsValid());
+    fx.Sets.Release(set);
+    ASSERT_NE(fx.Sets.Get(set), nullptr) << "the attachment is now its only holder";
+
+    for (int cycle = 0; cycle < 100; ++cycle)
+    {
+        spec.Visible = cycle % 2 == 1;
+        ASSERT_EQ(UpdateMeshAttachment(fx.Entities, prop, spec), AttachResult::Updated);
+        ASSERT_NE(fx.Sets.Get(set), nullptr) << "cycle " << cycle;
+    }
+    DestroyAttachment(fx.Entities, prop);
+    EXPECT_EQ(fx.Sets.Get(set), nullptr) << "and it goes with the attachment";
+}
+
+TEST(Attachments, ASocketAttachmentIsMountedOnItsRootWhateverTheSpecSays)
+{
+    AttachFixture fx;
+    const EntityId other = fx.Entities.CreateEntity(kZone);
+    const EntityId prop = CreateMeshAttachment(
+        fx.Entities, { .Root = fx.Body, .Socket = "hand_r", .Mount = other, .Placement = {}, .Mesh = {},
+                       .Materials = {}, .Visible = true, .CastShadows = true });
+    ASSERT_TRUE(prop.IsValid());
+    const World& reader = fx.Entities;
+    EXPECT_EQ(reader.TryGet<Parent>(prop)->Entity, fx.Body);
+    EXPECT_EQ(reader.TryGet<Attachment>(prop)->Mount, fx.Body);
+}
+
+TEST(Attachments, DetachingLeavesAnOrdinaryEntityThatStillCarriesItsMounts)
+{
+    AttachFixture fx;
+    fx.Pose(fx.Body, Vec3d(1.0f, 0.0f, 0.0f), Vec3d(1.0f, 0.0f, 0.0f));
+    const EntityId rifle = fx.Mesh("hand_r");
+    const EntityId scope = fx.Entities.CreateEntity(kZone);
+    ASSERT_EQ(AttachToOrigin(fx.Entities, rifle, scope), AttachResult::Attached);
+    PlaceAttachments(fx.Entities, 1.0);
+    PropagateTransforms(fx.Entities);
+    const World& reader = fx.Entities;
+    const Transform3f where = reader.TryGet<WorldTransform>(rifle)->Value;
+
+    Detach(fx.Entities, rifle);
+    EXPECT_EQ(reader.TryGet<Attachment>(rifle), nullptr);
+    EXPECT_EQ(reader.TryGet<Parent>(rifle), nullptr);
+    EXPECT_EQ(reader.TryGet<PresentedWith>(rifle), nullptr);
+    EXPECT_EQ(fx.Local(rifle), where) << "left where it was";
+    EXPECT_TRUE(fx.Worn(fx.Body).empty());
+    EXPECT_EQ(fx.Worn(rifle), std::vector<EntityId>{ scope });
+    EXPECT_EQ(reader.TryGet<PresentedWith>(scope)->Root, rifle);
+    EXPECT_EQ(reader.TryGet<Parent>(scope)->Entity, rifle);
 }

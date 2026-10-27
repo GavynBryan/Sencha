@@ -127,3 +127,12 @@ TEST(PresentationAttachLease, AWorldThatPresentsNothingCannotHoldAProp)
     invocation.Arguments = &arguments;
     EXPECT_EQ(fx.Operations.Attach(invocation), VerbAdmission::Unavailable);
 }
+
+TEST(PresentationAttachLease, ARefusedReacquireTakesTheOldPropAway)
+{
+    VerbFixture fx;
+    const LeaseOwner owner{ .Entity = fx.Entities.CreateEntity(), .Key = 1 };
+    ASSERT_EQ(fx.Acquire(owner, fx.Prop(fx.Body, "hand_r")), VerbAdmission::Accepted);
+    EXPECT_EQ(fx.Acquire(owner, fx.Prop(fx.Body, "hand_l")), VerbAdmission::Refused);
+    EXPECT_TRUE(fx.Worn().empty()) << "a refused acquire holds nothing";
+}

@@ -27,6 +27,8 @@ class AssetStoreTable
 public:
     void Add(AssetType type, AssetArity arity, IAssetStore& store);
     [[nodiscard]] IAssetStore* Find(AssetType type, AssetArity arity) const;
+    // The store that interns lists of `type`, or null when none is.
+    [[nodiscard]] IAssetListStore* FindList(AssetType type) const;
 
 private:
     std::array<std::vector<IAssetStore*>, 2> StoresByArity;

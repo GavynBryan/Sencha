@@ -3,6 +3,7 @@
 // lasts, and a short activation shown through its linger -- only ever through
 // cosmetic operations.
 
+#include <abilities/AbilityCapacity.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityKit.h>
@@ -360,4 +361,16 @@ TEST_F(AbilityPresentation, AudioWithNoDeviceIsUnavailable)
     Grant(kShot);
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
     EXPECT_EQ(Showings.Calls.size(), 1u) << "the other presentations still ran";
+}
+
+TEST_F(AbilityPresentation, ACueSustainingMoreThanALeaseKeyCanNameIsReported)
+{
+    std::string bindings;
+    for (std::size_t i = 0; i <= kAbilityMaxSustainedPresentations; ++i)
+        bindings += std::string(i == 0 ? "" : ", ") + R"({ "lease": "test.glow" })";
+    const std::vector<std::string> errors = Present(
+        std::string(R"({ "cues": [ { "key": "k_many", "cue": "cue.glow", "sustain": [ )") + bindings + " ] } ] }",
+        "asset://cues/many.sdata");
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors.back().find("at most"), std::string::npos) << errors.back();
 }
