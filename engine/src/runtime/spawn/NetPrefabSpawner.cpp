@@ -124,7 +124,7 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
         return EntityId{};
     }
 
-    const SceneInstanceId instance{ SceneInstanceIdRuntimeBit | NextInstanceValue++ };
+    const SceneInstanceId instance = MintRuntimeSceneInstanceId();
     std::unique_ptr<EntityBuildPackage> package = build.TakePackage();
     if (package == nullptr)
     {

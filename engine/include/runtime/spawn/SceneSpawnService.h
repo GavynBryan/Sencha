@@ -155,5 +155,4 @@ private:
     // Live OwnedByRoot groups in publication order, which is spawn-id order.
     std::vector<SceneSpawnId> RootOwned;
     std::uint64_t NextSpawnValue = 1;
-    std::uint64_t NextInstanceValue = 1;
 };
