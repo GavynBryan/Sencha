@@ -116,3 +116,15 @@ TEST(SceneInstanceGroup, DestroyingAnInstanceTakesEveryMemberAndNoOtherGroup)
     DestroySceneInstance(world, kGroup);
     EXPECT_TRUE(world.IsAlive(bystander));
 }
+
+// Every spawner mints from one sequence. Two counters that each started at one
+// gave the first projectile the pawn's group, and despawning it took the pawn.
+TEST(SceneInstanceGroup, RuntimeInstanceIdsAreNeverReissued)
+{
+    const SceneInstanceId first = MintRuntimeSceneInstanceId();
+    const SceneInstanceId second = MintRuntimeSceneInstanceId();
+    EXPECT_TRUE(first.IsValid());
+    EXPECT_NE(first, second);
+    EXPECT_NE(first.Value & SceneInstanceIdRuntimeBit, 0u);
+    EXPECT_NE(second.Value & SceneInstanceIdRuntimeBit, 0u);
+}

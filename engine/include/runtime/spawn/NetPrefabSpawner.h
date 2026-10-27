@@ -90,5 +90,4 @@ private:
 
     std::unordered_map<AssetId, ResidentPrefab> Resident;
     std::unordered_set<AssetId> Refused;
-    std::uint32_t NextInstanceValue = 1;
 };
