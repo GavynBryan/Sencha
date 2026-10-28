@@ -601,3 +601,34 @@ empty where the chunk lacks it.
 `ApplyMeshOverrides`, `MeshOverrideContributions` and `MeshOverrideSystem` are
 new; `ResolveSectionSlot` (`render/SectionMaterial.h`) is the slot rule
 `ResolveSectionMaterial` now uses.
+
+## v35
+
+Attachments (`docs/gameplay/attachments.md`): entities worn at named rig
+sockets or at an entity's origin.
+
+**Components.** `AttachmentSet` and `Attachment` (`attach/AttachmentComponents.h`,
+runtime only) are a new `AttachmentComponents` set; `PresentedWith`
+(`render/PresentedWith.h`) joins `RenderComponents`.
+
+**Attach.** `AttachToSocket`, `AttachToOrigin`, `Detach`, `DestroyAttachment`,
+`DestroyAttachmentsOf`, `CreateMeshAttachment`, `UpdateMeshAttachment`,
+`FindAttachment`, `ForEachAttachment`, `InstallAttachments`,
+`AttachmentsInstalled` and `PlaceAttachments` (`attach/Attachment.h`) are new.
+
+**Registration.** `SystemRegisterContext` gains `Presents`.
+
+**ECS, assets and math.** `World::ReplaceComponent<T>` (the new value's `OnAdd`
+before the old value's `OnRemove`), `AssetStoreTable::FindList`,
+`Transform3d::FromMat4` and `Quat::FromPitchYawRollDegrees` are new;
+`CameraRenderData::Excludes` is the camera exclusion rule extraction applies.
+
+## v36
+
+`presentation.attach` (`attach/AttachmentVerbs.h`): a cosmetic lease holding a
+static mesh at a socket of its target, so an ability phase can show a prop from
+content alone. `EngineVocabularyBindings` gains the `AttachmentOperations`
+provider. `kAbilityMaxPhasePresents` and `kAbilityMaxSustainedPresentations`
+(`abilities/AbilityCapacity.h`) bound what a sustained presentation's lease key
+can name: an ability compile refuses a phase with more presents, and a cue
+presentation declaration reports a cue sustaining more.

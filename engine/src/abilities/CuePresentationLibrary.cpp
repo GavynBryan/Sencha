@@ -1,5 +1,7 @@
 #include <abilities/CuePresentationLibrary.h>
 
+#include <abilities/AbilityCapacity.h>
+
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
@@ -69,8 +71,16 @@ void CuePresentationLibrary::Declare(std::string_view path, const CuePresentatio
             compiled.emplace_back(cue, std::move(presentation));
         }
     }
+    std::vector<GameplayTagId> cues;
+    for (const auto& [cue, presentation] : compiled)
+        cues.push_back(cue);
     ByPath[std::string(path)] = std::move(compiled);
     Rebuild();
+    for (const GameplayTagId cue : cues)
+        if (const Presentation* merged = Find(cue); merged != nullptr && merged->Sustain.size() > kAbilityMaxSustainedPresentations)
+            errors.push_back(std::format("{}: a cue sustains at most {} presentations across every declaration; the "
+                                         "ones past it are never held",
+                                         path, kAbilityMaxSustainedPresentations));
 }
 
 void CuePresentationLibrary::Undeclare(std::string_view path)

@@ -22,8 +22,7 @@ namespace
     IAssetListStore* MaterialListStore(const World& world)
     {
         const AssetStoreTable* stores = world.TryGetResource<AssetStoreTable>();
-        return stores != nullptr ? dynamic_cast<IAssetListStore*>(stores->Find(AssetType::Material, AssetArity::List))
-                                 : nullptr;
+        return stores != nullptr ? stores->FindList(AssetType::Material) : nullptr;
     }
 
     // A contribution keeps every material it substitutes resident, so one that

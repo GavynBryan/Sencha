@@ -625,6 +625,9 @@ namespace
             phase.Exit = Ops(value, "exit", path);
             if (const JsonValue* present = value.Find("present"); present != nullptr && present->IsArray())
             {
+                if (present->AsArray().size() > kAbilityMaxPhasePresents)
+                    Error("schema", phase.Key, path + ".present",
+                          std::format("a phase presents at most {} cues", kAbilityMaxPhasePresents));
                 for (std::size_t i = 0; i < present->AsArray().size(); ++i)
                 {
                     const JsonValue& entry = present->AsArray()[i];

@@ -425,9 +425,7 @@ namespace
             return false;
         }
 
-        out.Position = Vec3d(m.Data[0][3], m.Data[1][3], m.Data[2][3]);
-        out.Rotation = Quat<float>::FromBasis(n0, n1, n2).Normalized();
-        out.Scale = scale;
+        out = Transform3f::FromMat4(m);
         return true;
     }
 

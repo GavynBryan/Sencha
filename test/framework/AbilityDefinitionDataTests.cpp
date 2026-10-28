@@ -1,6 +1,7 @@
 // The ability.definition compiler's World-free half: what it accepts, and every
 // structural problem it names with the element's key and path.
 
+#include <abilities/AbilityCapacity.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <core/json/JsonParser.h>
 
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -215,4 +217,23 @@ TEST(AbilityDefinitionData, AGuardInsideATopLevelAllCounts)
                                         "at": { "local": "l_hit", "field": "point" } } } ],
             "then": [ { "key": "t_1", "to": "end" } ] } ] })");
     EXPECT_TRUE(guarded.Ok) << guarded.Describe();
+}
+
+// A sustained presentation names its lease by the present's place in eight
+// bits, so a phase with more presents than that would have two share one.
+TEST(AbilityDefinitionData, APhasePresentsAtMostWhatALeaseKeyCanName)
+{
+    const auto phaseWith = [](std::size_t presents) {
+        std::string list;
+        for (std::size_t i = 0; i < presents; ++i)
+            list += std::format(R"({}{{ "key": "pr_{}", "cue": "cue.glow" }})", i == 0 ? "" : ", ", i);
+        return Compile(std::format(R"({{ "input_default": {{ "action": "Input.PrimaryFire", "policy": "press_release" }},
+            "phases": [ {{ "key": "p_on", "present": [ {} ],
+                           "then": [ {{ "key": "t_off", "on": "release", "to": "end" }} ] }} ] }})",
+                                   list));
+    };
+    EXPECT_TRUE(phaseWith(kAbilityMaxPhasePresents).Ok) << phaseWith(kAbilityMaxPhasePresents).Describe();
+    const Compiled over = phaseWith(kAbilityMaxPhasePresents + 1);
+    EXPECT_FALSE(over.Ok);
+    EXPECT_NE(over.Describe().find("present"), std::string::npos) << over.Describe();
 }

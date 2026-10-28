@@ -145,6 +145,30 @@ struct Transform3d
 		return result;
 	}
 
+	// ToMat4's inverse. Exact for a matrix ToMat4 can make; a mirrored one
+	// keeps its handedness in a negative X scale. Shear has no TRS form: the
+	// translation stays exact and the rotation is the nearest normalized one.
+	static Transform3d FromMat4(const Mat<4, 4, T>& matrix)
+		requires std::floating_point<T>
+	{
+		Vec<3, T> axes[3];
+		Vec<3, T> scale;
+		for (int c = 0; c < 3; ++c)
+		{
+			axes[c] = Vec<3, T>(matrix.Data[0][c], matrix.Data[1][c], matrix.Data[2][c]);
+			scale[c] = axes[c].Magnitude();
+			if (scale[c] > T{0})
+				axes[c] = axes[c] / scale[c];
+		}
+		if (axes[0].Cross(axes[1]).Dot(axes[2]) < T{0})
+		{
+			scale.X = -scale.X;
+			axes[0] = axes[0] * T{-1};
+		}
+		return Transform3d{ Vec<3, T>(matrix.Data[0][3], matrix.Data[1][3], matrix.Data[2][3]),
+		                    Quat<T>::FromBasis(axes[0], axes[1], axes[2]).Normalized(), scale };
+	}
+
 	Transform3d operator*(const Transform3d& other) const
 		requires std::floating_point<T>
 	{

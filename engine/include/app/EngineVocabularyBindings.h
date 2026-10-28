@@ -10,6 +10,7 @@
 class AbilityOperations;
 class ActorTimeOperations;
 class AnimRequestOperations;
+class AttachmentOperations;
 class AudioOperations;
 class EffectOperations;
 class FixedSimulationLoop;
@@ -60,6 +61,7 @@ private:
     std::unique_ptr<MovementOperations> Movement;
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;
+    std::unique_ptr<AttachmentOperations> Attachments;
     std::unique_ptr<ResponseOperations> Responses;
     std::unique_ptr<PhysicsQueries> Physics;
     std::vector<VerbBindingToken> Verbs;

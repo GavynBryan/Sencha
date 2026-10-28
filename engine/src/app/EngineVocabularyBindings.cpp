@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
+#include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ResponseVerbs.h>
@@ -26,6 +27,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Movement(std::make_unique<MovementOperations>(entities))
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
+    , Attachments(std::make_unique<AttachmentOperations>(entities))
     , Responses(std::make_unique<ResponseOperations>(entities, clock))
 {
     const VerbRegistry& catalog = verbs.Registry();
@@ -49,6 +51,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(catalog.Find(kPresentationAttachLease), *Attachments));
     Verbs.push_back(verbs.Bind<&InvokeResponsesEnable>(catalog.Find(kResponsesEnableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeResponsesDisable>(catalog.Find(kResponsesDisableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Responses));

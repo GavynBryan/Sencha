@@ -325,6 +325,36 @@ public:
         return true;
     }
 
+    // Overwrites T in place as an add and a remove would, so the handles it owns
+    // stay balanced and the entity keeps its archetype. The new value's OnAdd
+    // runs first, so a reference-counted handle both share is never freed
+    // between them. Returns false when it has no T.
+    template <typename T>
+    bool ReplaceComponent(EntityId entity, const T& value)
+    {
+        static_assert(!std::is_empty_v<T>, "a tag has no value to replace");
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "ReplaceComponent called while a query/lifecycle hook is active.");
+        T* slot = TryGet<T>(entity);
+        if (slot == nullptr)
+            return false;
+
+        const ComponentMeta& meta = ComponentMetas[GetComponentId<T>()];
+        const T previous = *slot;
+        *slot = value;
+        if (meta.OnAddHook != nullptr)
+        {
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnAddHook(slot, *this, entity);
+        }
+        if (meta.OnRemoveHook != nullptr)
+        {
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnRemoveHook(&previous, *this, entity);
+        }
+        return true;
+    }
+
     void DestroyEntity(EntityId entity)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0
