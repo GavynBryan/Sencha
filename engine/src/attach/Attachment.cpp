@@ -11,6 +11,7 @@
 #include <ecs/Query.h>
 #include <net/NetReplicationComponents.h>
 #include <render/PresentedWith.h>
+#include <render/extract/RenderExtractionSystem.h>
 #include <render/StaticMeshComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
@@ -58,6 +59,28 @@ namespace
     {
         const Attachment* attachment = world.TryGet<Attachment>(mount);
         return attachment != nullptr ? attachment->Root : mount;
+    }
+
+    // The body an entity is drawn as part of, through any number of worn bodies.
+    EntityId OutermostBody(const World& world, EntityId entity)
+    {
+        for (const Attachment* attachment = world.TryGet<Attachment>(entity); attachment != nullptr;
+             attachment = world.TryGet<Attachment>(entity))
+            entity = attachment->Root;
+        return entity;
+    }
+
+    // Everything `entity` wears, however deep, is drawn as part of `body`.
+    void PresentWearablesWith(World& world, EntityId entity, EntityId body)
+    {
+        std::vector<EntityId> worn;
+        ForEachAttachment(world, entity, [&](EntityId wearable, const Attachment&) { worn.push_back(wearable); });
+        for (const EntityId wearable : worn)
+        {
+            if (PresentedWith* with = world.TryGet<PresentedWith>(wearable))
+                with->Root = body;
+            PresentWearablesWith(world, wearable, body);
+        }
     }
 
     bool MountsOn(const World& world, EntityId mount, EntityId attached)
@@ -158,7 +181,7 @@ namespace
         moved.Next = set.First;
         set.First = entity;
         if (PresentedWith* with = world.TryGet<PresentedWith>(entity))
-            with->Root = RootThrough(world, root);
+            with->Root = OutermostBody(world, root);
         for (const EntityId child : mounted)
             Reroot(world, child, root);
     }
@@ -203,8 +226,11 @@ namespace
         if (world.TryGet<LocalTransform>(attached) == nullptr)
             (void)ComponentStorageTraits<LocalTransform>::Add(world, attached, LocalTransform{});
         AddOrAssign(world, attached, Parent{ mount });
-        // A body that is itself worn is excluded with the body wearing it.
-        AddOrAssign(world, attached, PresentedWith{ RootThrough(world, root) });
+        // A body that is itself worn is excluded with the body wearing it, and so
+        // is whatever it already wears.
+        const EntityId body = OutermostBody(world, root);
+        AddOrAssign(world, attached, PresentedWith{ body });
+        PresentWearablesWith(world, attached, body);
 
         // Every structural step above may have moved the rows; nothing read
         // before them is used after.
@@ -480,8 +506,7 @@ void PlaceAttachments(World& world, double presentationAlpha)
             const AnimPosePool::Slot* slot =
                 state != nullptr && pool != nullptr ? pool->Find(state->Slot, attachment.Root) : nullptr;
             Mat4 joint;
-            if (slot != nullptr && slot->HasCurrent && slot->Skeleton == attachment.Skeleton
-                && slot->Current.size() == skeleton->Joints.size())
+            if (MatchSkinnedPose(slot, attachment.Skeleton, skeleton->Joints.size()) == SkinnedPoseMatch::Posed)
             {
                 const bool history = interpolated && reader.HasComponent<WorldTransformHistory>(attachment.Root);
                 joint = slot->PresentedModel(*skeleton, history ? static_cast<float>(presentationAlpha) : 1.0f)

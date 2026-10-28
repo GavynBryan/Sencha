@@ -327,7 +327,7 @@ public:
 
     // Overwrites T in place as an add and a remove would, so the handles it owns
     // stay balanced and the entity keeps its archetype. The new value's OnAdd
-    // runs before the old one's OnRemove, so a handle both share is never freed
+    // runs first, so a reference-counted handle both share is never freed
     // between them. Returns false when it has no T.
     template <typename T>
     bool ReplaceComponent(EntityId entity, const T& value)

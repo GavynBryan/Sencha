@@ -390,3 +390,15 @@ TEST(Attachments, DetachingLeavesAnOrdinaryEntityThatStillCarriesItsMounts)
     EXPECT_EQ(reader.TryGet<PresentedWith>(scope)->Root, rifle);
     EXPECT_EQ(reader.TryGet<Parent>(scope)->Entity, rifle);
 }
+
+TEST(Attachments, WhatAWornBodyAlreadyWearsHidesWithTheBodyWearingIt)
+{
+    AttachFixture fx;
+    const EntityId pet = fx.MakeBody(kZone);
+    const EntityId hat = fx.Entities.CreateEntity(kZone);
+    ASSERT_EQ(AttachToOrigin(fx.Entities, pet, hat), AttachResult::Attached);
+    ASSERT_EQ(AttachToSocket(fx.Entities, fx.Body, "hand_r", pet), AttachResult::Attached);
+    const World& reader = fx.Entities;
+    EXPECT_EQ(reader.TryGet<PresentedWith>(pet)->Root, fx.Body);
+    EXPECT_EQ(reader.TryGet<PresentedWith>(hat)->Root, fx.Body) << "attached first, still hidden with the outer body";
+}

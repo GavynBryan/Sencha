@@ -40,7 +40,8 @@ struct AttachPlacement
 AttachResult AttachToSocket(World& world, EntityId root, std::string_view socket, EntityId attached,
                             const AttachPlacement& placement = {});
 AttachResult AttachToOrigin(World& world, EntityId mount, EntityId attached, const AttachPlacement& placement = {});
-// An ordinary entity again, where it is now, still carrying what is mounted on it.
+// An ordinary entity again, at its last propagated pose, still carrying what is
+// mounted on it.
 void Detach(World& world, EntityId attached);
 // Destroys the attachment and everything mounted on it.
 void DestroyAttachment(World& world, EntityId attached);
