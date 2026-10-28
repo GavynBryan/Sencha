@@ -6,6 +6,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <attributes/AttributeSet.h>
 #include <core/console/ConsoleRegistry.h>
+#include <core/hash/SplitMix64.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <effects/EffectRegistry.h>
@@ -71,15 +72,8 @@ Vec3d Scatter(const Vec3d& direction, float halfAngleDegrees, std::uint64_t seed
 {
     if (halfAngleDegrees <= 0.0f)
         return direction;
-    // SplitMix64: two well-mixed draws from one seed.
-    auto next = [&seed]() {
-        seed += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = seed;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        z ^= z >> 31;
-        return static_cast<float>(z >> 40) * (1.0f / 16777216.0f);
-    };
+    // Two well-mixed draws from one seed.
+    auto next = [&seed]() { return static_cast<float>(SplitMix64(seed) >> 40) * (1.0f / 16777216.0f); };
     const float maxAngle = std::min(halfAngleDegrees, 90.0f) * (kPi / 180.0f);
     // Uniform over the cap: cos(theta) uniform between cos(max) and one.
     const float cosTheta = 1.0f - next() * (1.0f - std::cos(maxAngle));

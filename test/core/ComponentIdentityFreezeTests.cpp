@@ -83,6 +83,7 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "sencha.navigation.agent_progress",     0x2A3EC3789676632Aull },
     { "Camera",                               0x54D1B2A64667E32Eull },
     { "sencha.camera_exclusion",              0x89656FFE274865DDull },
+    { "sencha.camera_subject",                0xDE0D3B8A97EE7B69ull },
     { "sencha.physics.collider",              0x4956A40D955D2368ull },
     { "sencha.physics.rigid_body",            0x9A16533E4A7370C4ull },
     { "sencha.physics.character_controller",  0x9F1D2CE24A903B74ull },

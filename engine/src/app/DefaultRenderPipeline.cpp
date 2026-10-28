@@ -1,6 +1,7 @@
 #include <app/DefaultRenderPipeline.h>
 
 #include <app/EngineConsoleBuiltins.h>
+#include <camera/CameraEffects.h>
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
 #include <render/RenderLightCVars.h>
@@ -231,6 +232,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         return;
 
     const EntityId cameraEntity = activeCamera->GetActive();
+    if (world.IsAlive(cameraEntity))
+        PresentCameraEffects(world, cameraEntity, ctx.Runtime.GetSimulationClock(), ctx.Presentation.Alpha);
     if (!world.IsAlive(cameraEntity)
         || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
         || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera,

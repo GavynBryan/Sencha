@@ -632,3 +632,26 @@ provider. `kAbilityMaxPhasePresents` and `kAbilityMaxSustainedPresentations`
 (`abilities/AbilityCapacity.h`) bound what a sustained presentation's lease key
 can name: an ability compile refuses a phase with more presents, and a cue
 presentation declaration reports a cue sustaining more.
+
+## v37
+
+Camera presentation effects (`docs/gameplay/camera.md`, "Camera shake and
+field-of-view scale").
+
+**Components.** `CameraSubject` (`camera/CameraSubject.h`, runtime only) joins
+`CameraComponents`: whose view a camera presents. `SetCameraSubject` sets it.
+
+**Camera.** `camera.shake` profiles (`CameraShakeProfile`,
+`CompileCameraShakeProfile`, `RegisterCameraShakeData`), the World resources
+`CameraShakeState` and `CameraFovScaleState`, the shared `CameraEnvelope`,
+`CameraEffectClock`, `CameraEffectTiming`, `CameraViewSubject` and
+`CameraViewIsOwnedBy`, and `PresentCameraEffects`, which render extraction runs
+for the camera it draws. The engine declares `camera.shake`,
+`camera.shake.hold`, `camera.fov_scale` and `camera.fov_scale.hold`.
+
+**App.** `EngineVocabularyBindings` holds the camera operations.
+
+**Authored.** `MakeCosmeticVerb` (`authored/VerbRegistry.h`) and
+`VerbDispatcher::GetDataAssets`.
+
+**Core.** `SplitMix64` (`core/hash/SplitMix64.h`).

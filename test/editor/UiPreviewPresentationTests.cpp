@@ -41,7 +41,8 @@ std::vector<UiElementInfo> Tree()
 
 ExplorerQuery Page(std::string filter = {})
 {
-    return { .Explorer = "outline", .Filter = std::move(filter), .First = 0, .Count = 50 };
+    // Room for the whole engine vocabulary, which grows with every engine verb.
+    return { .Explorer = "outline", .Filter = std::move(filter), .First = 0, .Count = 500 };
 }
 
 std::vector<std::string> Labels(const ExplorerPage& page)

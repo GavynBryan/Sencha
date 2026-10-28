@@ -1,5 +1,7 @@
 #include <world/RuntimeWorld.h>
 
+#include <camera/CameraFovScale.h>
+#include <camera/CameraShake.h>
 #include <components/ActiveCameraService.h>
 #include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
@@ -22,6 +24,10 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // Active-camera selection is simulation-scoped under one entity universe,
     // and component hooks must be able to reach World resources during teardown.
     Entities_.AddResource<ActiveCameraService>();
+    // What the active camera presents on top of its pose: local to this
+    // machine, never replicated, never read by the simulation.
+    Entities_.AddResource<CameraShakeState>();
+    Entities_.AddResource<CameraFovScaleState>();
 
     // Every driven world can resolve persistent identities; the identity
     // component's hooks maintain the index as zones import and detach.

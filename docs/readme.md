@@ -122,9 +122,9 @@ behavior.
   against: the hook sequence `Engine::Run` calls, what `RuntimeContent` and
   `LoadedLevel` own, the things the engine will not decide for a game, and the
   five starter templates under `templates/`.
-- `docs/gameplay/camera.md` is the engine's camera vocabulary — four things —
-  and the three template camera policies as worked examples of why the rest is
-  game code.
+- `docs/gameplay/camera.md` is the engine's camera vocabulary, its shake and
+  field-of-view presentation effects, and the three template camera policies as
+  worked examples of why the rest is game code.
 - `docs/gameplay/pause.md` is the application shell: the engine-owned `ui.*`
   action vocabulary, Back routing with pause as the fallback, what a pause does
   to input, the pointer and the simulation clock, and how a game changes the

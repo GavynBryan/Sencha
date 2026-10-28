@@ -37,6 +37,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraExclusion.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraSubject.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/AimOrigin.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
