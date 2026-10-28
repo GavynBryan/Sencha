@@ -5,8 +5,8 @@
 
 #include <string_view>
 
-class DataAssetCache;
 class FixedSimulationLoop;
+class VerbDispatcher;
 class World;
 
 // Shake the view once, by a camera.shake profile.
@@ -18,14 +18,15 @@ void DeclareCameraShakeVerbs(VerbRegistrationScope& scope);
 
 // The shake operations' provider, over the World's CameraShakeState. Cosmetic:
 // a presentation runs them on each machine that presents, and nothing in the
-// simulation reads what they do.
+// simulation reads what they do. Profiles are the data assets `verbs` checks
+// arguments against.
 class CameraShakeOperations
 {
 public:
-    CameraShakeOperations(World& world, const FixedSimulationLoop& clock, const DataAssetCache& profiles)
+    CameraShakeOperations(World& world, const FixedSimulationLoop& clock, const VerbDispatcher& verbs)
         : Entities(&world)
         , Clock(&clock)
-        , Profiles(&profiles)
+        , Verbs(&verbs)
     {
     }
 
@@ -37,7 +38,7 @@ private:
 
     World* Entities;
     const FixedSimulationLoop* Clock;
-    const DataAssetCache* Profiles;
+    const VerbDispatcher* Verbs;
 };
 
 inline VerbAdmission InvokeCameraShake(CameraShakeOperations& operations, const VerbInvocation& invocation)

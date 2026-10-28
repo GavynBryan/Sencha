@@ -11,7 +11,6 @@
 #include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <math/Angle.h>
 
 #include <algorithm>
 #include <format>
@@ -303,9 +302,7 @@ namespace
                     socket.Offset.Position = ReadSocketVector(*value);
                 if (const JsonValue* value = entry.Find("rotation"))
                 {
-                    const Vec3d degrees = ReadSocketVector(*value);
-                    socket.Offset.Rotation = Quat<float>::FromPitchYawRoll(
-                        ToRadians(degrees.X), ToRadians(degrees.Y), ToRadians(degrees.Z));
+                    socket.Offset.Rotation = Quat<float>::FromPitchYawRollDegrees(ReadSocketVector(*value));
                 }
                 rig->Sockets.push_back(std::move(socket));
             }

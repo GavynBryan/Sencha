@@ -307,3 +307,24 @@ TEST(LifecycleHookTeardown, MoveAssignmentDrainsTargetHooks)
 
     EXPECT_EQ(g_FirstRemoves, 1);
 }
+
+// Replacing a value in place is a remove and an add as far as what it owns is
+// concerned, with no move between archetypes.
+TEST_F(LifecycleHookTest, ReplaceComponentReleasesTheOldValueAndRetainsTheNew)
+{
+    auto& svc = world.AddResource<RefCountService>();
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent<RefHandle>(entity, { 2 });
+    world.AddComponent<PlainData>(entity, { 1.0f });
+    const uint64_t structural = world.StructuralVersion();
+
+    EXPECT_TRUE(world.ReplaceComponent<RefHandle>(entity, { 5 }));
+    EXPECT_EQ(svc.Counts[2], 0);
+    EXPECT_EQ(svc.Counts[5], 1);
+    EXPECT_EQ(world.TryGet<RefHandle>(entity)->Slot, 5);
+    EXPECT_EQ(world.StructuralVersion(), structural) << "no archetype move";
+
+    const EntityId bare = world.CreateEntity();
+    EXPECT_FALSE(world.ReplaceComponent<RefHandle>(bare, { 1 }));
+    EXPECT_EQ(svc.Counts[1], 0);
+}

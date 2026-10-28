@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <authored/AuthoredValue.h>
+#include <authored/VerbDispatcher.h>
 #include <camera/CameraExclusion.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraFovScaleVerbs.h>
@@ -416,7 +417,10 @@ TEST(CameraEffectVerbs, ShakeAndFieldOfViewStartFromTheirArgumentsAndHoldsLetGo)
     profile.Envelope = { .Attack = 0.0f, .Hold = 0.0f, .Release = 0.05f };
     (void)profiles.Register(kProfilePath, std::string(kCameraShakeType),
                             std::make_shared<CameraShakeProfile>(profile));
-    CameraShakeOperations shake(views.Entities, clock, profiles);
+    VerbRegistry catalog;
+    VerbDispatcher verbs(catalog);
+    verbs.SetDataAssets(&profiles);
+    CameraShakeOperations shake(views.Entities, clock, verbs);
     CameraFovScaleOperations fov(views.Entities, clock);
 
     AuthoredArguments shakeArguments(5);

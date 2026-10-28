@@ -1,5 +1,7 @@
 #include <abilities/AbilityPresentationSystem.h>
 
+#include <abilities/AbilityCapacity.h>
+
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/CuePresentationLibrary.h>
@@ -7,6 +9,7 @@
 #include <ecs/World.h>
 
 #include <algorithm>
+#include <cassert>
 #include <array>
 
 namespace
@@ -130,8 +133,16 @@ private:
     // present entry and the lease, so letting go names exactly what was taken.
     static LeaseOwner OwnerOf(EntityId actor, std::uint64_t activation, std::size_t present, std::size_t binding)
     {
+        assert(present < kAbilityMaxPhasePresents && binding < kAbilityMaxSustainedPresentations);
         return { .Entity = actor,
                  .Key = (activation & ~std::uint64_t{ 0xFFFF }) | (static_cast<std::uint64_t>(present) << 8) | binding };
+    }
+
+    // Past the count a lease key can name, two bindings would hold one lease;
+    // the library reports such a cue when it is declared.
+    static std::size_t SustainedCount(const CuePresentationLibrary::Presentation& presentation)
+    {
+        return std::min(presentation.Sustain.size(), kAbilityMaxSustainedPresentations);
     }
 
     void Sustain(EntityId actor, std::uint64_t activation, const AbilityPhase& phase, const Occurrence& occurrence)
@@ -140,7 +151,7 @@ private:
         {
             Once(phase.Present[present], occurrence);
             if (const CuePresentationLibrary::Presentation* presentation = Library->Find(phase.Present[present]))
-                for (std::size_t binding = 0; binding < presentation->Sustain.size(); ++binding)
+                for (std::size_t binding = 0; binding < SustainedCount(*presentation); ++binding)
                 {
                     Fill(presentation->Sustain[binding], occurrence);
                     (void)Verbs.AcquireLease(presentation->Sustain[binding], Inputs,
@@ -153,7 +164,7 @@ private:
     {
         for (std::size_t present = 0; present < phase.Present.size(); ++present)
             if (const CuePresentationLibrary::Presentation* presentation = Library->Find(phase.Present[present]))
-                for (std::size_t binding = 0; binding < presentation->Sustain.size(); ++binding)
+                for (std::size_t binding = 0; binding < SustainedCount(*presentation); ++binding)
                     (void)Verbs.ReleaseLease(presentation->Sustain[binding].Verb,
                                              OwnerOf(actor, activation, present, binding), Source(actor));
     }

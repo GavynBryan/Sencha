@@ -167,9 +167,10 @@ or a player set keeps it. Several multiply, the product held within
 
 ### Where they apply
 
-`CameraShakeSystem` and `CameraFovScaleSystem` (`FrameUpdate`, registered only
-where a window presents) advance the effects and sum them for the active
-camera. `CameraRenderDataSystem::Build` composes the shake into the pose it
+Render extraction advances the effects to the frame's presentation time and
+sums them for the camera it is about to draw (`PresentCameraEffects`,
+`camera/CameraEffects.h`), so nothing runs where no window presents.
+`CameraRenderDataSystem::Build` then composes the shake into the pose it
 draws from, in the camera's own space, and scales the field of view it projects
 with. The camera's transform is never written, so aiming, traces and anything
 else that reads it see the camera where the simulation put it. The frustum is

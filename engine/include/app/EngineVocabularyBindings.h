@@ -10,10 +10,10 @@
 class AbilityOperations;
 class ActorTimeOperations;
 class AnimRequestOperations;
+class AttachmentOperations;
 class AudioOperations;
 class CameraFovScaleOperations;
 class CameraShakeOperations;
-class DataAssetCache;
 class EffectOperations;
 class FixedSimulationLoop;
 class MovementOperations;
@@ -54,12 +54,8 @@ public:
     // projectile.launch, answered by `projectiles`, which must outlive this.
     void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
 
-    // camera.shake and its hold, reading profiles from `profiles`; the clock and
-    // the cache must outlive this.
-    void BindCameraShake(const FixedSimulationLoop& clock, const DataAssetCache& profiles, VerbDispatcher& verbs);
-
 private:
-    World& Entities;
+    const World& Entities;
     std::unique_ptr<AnimRequestOperations> Animation;
     std::unique_ptr<EffectOperations> Effects;
     std::unique_ptr<ActorTimeOperations> Time;
@@ -67,6 +63,7 @@ private:
     std::unique_ptr<MovementOperations> Movement;
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;
+    std::unique_ptr<AttachmentOperations> Attachments;
     std::unique_ptr<CameraFovScaleOperations> FovScale;
     std::unique_ptr<CameraShakeOperations> Shake;
     std::unique_ptr<ResponseOperations> Responses;

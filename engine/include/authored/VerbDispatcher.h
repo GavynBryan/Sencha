@@ -119,6 +119,8 @@ public:
     // means such an input is refused as InvalidArguments rather than accepted
     // unchecked: the schema promised a subtype, and nothing here can keep it.
     void SetDataAssets(const DataAssetCache* dataAssets) { DataAssets = dataAssets; }
+    // What data-asset arguments are checked against, for a provider that reads them.
+    [[nodiscard]] const DataAssetCache* GetDataAssets() const { return DataAssets; }
 
     // Stops admitting anything. The first half of shutdown: producers are
     // refused before implementations are removed, so nothing is accepted by an

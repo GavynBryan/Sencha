@@ -916,3 +916,24 @@ described in `docs/navigation/runtime.md`, "Agents".
   segment (origin, velocity, start tick, gravity) once per contact and evaluate
   the pose on the receiver, with the root's transform left out of replication
   for those entities.
+
+## Attachment placement over visible partitions only
+
+- **What:** `PlaceAttachments` walks every attachment in the World each frame.
+  Only the destroy drain and the holder check need the whole World; placement
+  itself is needed only where a zone is visible. An unposed root also rebuilds
+  its bind pose once per attachment per frame.
+- **Where:** `PlaceAttachments` in `engine/src/attach/Attachment.cpp`, called from
+  `FramePhase::ExtractRender` in `engine/src/app/EngineFramePhases.cpp`.
+- **Trigger:** a level with many dormant zones whose attachments show in a
+  frame profile, or a measured placement pass over the 0.25 ms budget.
+
+## One holder-death rule for lease providers
+
+- **What:** each lease provider ends what a dead holder held its own way:
+  `AudioOperations::Sweep`, the movement and effect holds, and attachments
+  through `PlaceAttachments`. A shared holds table could own that rule once.
+- **Where:** `engine/src/audio/AudioVerbs.cpp`, `engine/src/movement/MovementVerbs.cpp`,
+  `engine/src/effects/`, `engine/src/attach/`.
+- **Trigger:** a fourth lease provider that needs to end holds when its holder
+  dies.

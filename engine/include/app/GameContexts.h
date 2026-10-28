@@ -44,6 +44,9 @@ struct SystemRegisterContext
 {
     EngineConfig& Config;
     EngineSchedule& Schedule;
+    // A window presents what this process simulates, so its presentation
+    // systems belong here; a dedicated server registers none.
+    bool Presents = false;
 };
 
 struct PlatformEventContext

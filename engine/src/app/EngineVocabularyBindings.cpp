@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
+#include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
 #include <camera/CameraFovScaleVerbs.h>
 #include <camera/CameraShakeVerbs.h>
@@ -28,7 +29,9 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Movement(std::make_unique<MovementOperations>(entities))
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
+    , Attachments(std::make_unique<AttachmentOperations>(entities))
     , FovScale(std::make_unique<CameraFovScaleOperations>(entities, clock))
+    , Shake(std::make_unique<CameraShakeOperations>(entities, clock, verbs))
     , Responses(std::make_unique<ResponseOperations>(entities, clock))
 {
     const VerbRegistry& catalog = verbs.Registry();
@@ -52,8 +55,11 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(catalog.Find(kPresentationAttachLease), *Attachments));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(catalog.Find(kCameraFovScaleVerb), *FovScale));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(catalog.Find(kCameraFovScaleHoldLease), *FovScale));
+    Verbs.push_back(verbs.Bind<&InvokeCameraShake>(catalog.Find(kCameraShakeVerb), *Shake));
+    Verbs.push_back(verbs.Bind<&InvokeCameraShakeHold>(catalog.Find(kCameraShakeHoldLease), *Shake));
     Verbs.push_back(verbs.Bind<&InvokeResponsesEnable>(catalog.Find(kResponsesEnableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeResponsesDisable>(catalog.Find(kResponsesDisableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Responses));
@@ -80,14 +86,6 @@ void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
 void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs)
 {
     Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
-}
-
-void EngineVocabularyBindings::BindCameraShake(const FixedSimulationLoop& clock, const DataAssetCache& profiles,
-                                               VerbDispatcher& verbs)
-{
-    Shake = std::make_unique<CameraShakeOperations>(Entities, clock, profiles);
-    Verbs.push_back(verbs.Bind<&InvokeCameraShake>(verbs.Registry().Find(kCameraShakeVerb), *Shake));
-    Verbs.push_back(verbs.Bind<&InvokeCameraShakeHold>(verbs.Registry().Find(kCameraShakeHoldLease), *Shake));
 }
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)

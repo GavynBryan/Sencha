@@ -3,6 +3,7 @@
 #include <render/IrradianceVolumeComponent.h>
 #include <render/MeshOverrides.h>
 #include <render/PointLightComponent.h>
+#include <render/PresentedWith.h>
 #include <render/SpotLightComponent.h>
 #include <render/StaticMeshComponent.h>
 #include <render/ZoneLightmapComponent.h>
@@ -19,7 +20,8 @@ using RenderComponents = ComponentSet<
     IrradianceVolumeComponent,
     PointLightComponent,
     SpotLightComponent,
-    MeshOverrides>;
+    MeshOverrides,
+    PresentedWith>;
 
 inline void RegisterRenderComponents(ComponentRegistrar& registrar)
 {

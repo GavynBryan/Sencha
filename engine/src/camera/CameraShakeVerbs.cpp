@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <authored/AuthoredValue.h>
+#include <authored/VerbDispatcher.h>
 #include <camera/CameraEffectArguments.h>
 #include <camera/CameraShake.h>
 #include <core/assets/AssetRef.h>
@@ -75,10 +76,11 @@ VerbAdmission CameraShakeOperations::Start(const VerbInvocation& invocation, boo
         || !std::isfinite(scale) || scale < 0.0 || (held && !invocation.Owner.IsSet()))
         return VerbAdmission::InvalidArguments;
     CameraShakeState* state = Entities->TryGetResource<CameraShakeState>();
-    if (state == nullptr)
+    const DataAssetCache* profiles = Verbs->GetDataAssets();
+    if (state == nullptr || profiles == nullptr)
         return VerbAdmission::Unavailable;
     const CameraShakeProfile* profile =
-        Profiles->TryGet<CameraShakeProfile>(Profiles->Find(reference->Path), kCameraShakeType);
+        profiles->TryGet<CameraShakeProfile>(profiles->Find(reference->Path), kCameraShakeType);
     if (profile == nullptr)
         return VerbAdmission::Refused;
 

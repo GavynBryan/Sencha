@@ -604,6 +604,37 @@ new; `ResolveSectionSlot` (`render/SectionMaterial.h`) is the slot rule
 
 ## v35
 
+Attachments (`docs/gameplay/attachments.md`): entities worn at named rig
+sockets or at an entity's origin.
+
+**Components.** `AttachmentSet` and `Attachment` (`attach/AttachmentComponents.h`,
+runtime only) are a new `AttachmentComponents` set; `PresentedWith`
+(`render/PresentedWith.h`) joins `RenderComponents`.
+
+**Attach.** `AttachToSocket`, `AttachToOrigin`, `Detach`, `DestroyAttachment`,
+`DestroyAttachmentsOf`, `CreateMeshAttachment`, `UpdateMeshAttachment`,
+`FindAttachment`, `ForEachAttachment`, `InstallAttachments`,
+`AttachmentsInstalled` and `PlaceAttachments` (`attach/Attachment.h`) are new.
+
+**Registration.** `SystemRegisterContext` gains `Presents`.
+
+**ECS, assets and math.** `World::ReplaceComponent<T>` (the new value's `OnAdd`
+before the old value's `OnRemove`), `AssetStoreTable::FindList`,
+`Transform3d::FromMat4` and `Quat::FromPitchYawRollDegrees` are new;
+`CameraRenderData::Excludes` is the camera exclusion rule extraction applies.
+
+## v36
+
+`presentation.attach` (`attach/AttachmentVerbs.h`): a cosmetic lease holding a
+static mesh at a socket of its target, so an ability phase can show a prop from
+content alone. `EngineVocabularyBindings` gains the `AttachmentOperations`
+provider. `kAbilityMaxPhasePresents` and `kAbilityMaxSustainedPresentations`
+(`abilities/AbilityCapacity.h`) bound what a sustained presentation's lease key
+can name: an ability compile refuses a phase with more presents, and a cue
+presentation declaration reports a cue sustaining more.
+
+## v37
+
 Camera presentation effects (`docs/gameplay/camera.md`, "Camera shake and
 field-of-view scale").
 
@@ -614,14 +645,13 @@ field-of-view scale").
 `CompileCameraShakeProfile`, `RegisterCameraShakeData`), the World resources
 `CameraShakeState` and `CameraFovScaleState`, the shared `CameraEnvelope`,
 `CameraEffectClock`, `CameraEffectTiming`, `CameraViewSubject` and
-`CameraViewIsOwnedBy`, and the `FrameUpdate` systems `CameraShakeSystem` and
-`CameraFovScaleSystem`, registered by the engine where a window presents. The
-engine declares `camera.shake`, `camera.shake.hold`, `camera.fov_scale` and
-`camera.fov_scale.hold`.
+`CameraViewIsOwnedBy`, and `PresentCameraEffects`, which render extraction runs
+for the camera it draws. The engine declares `camera.shake`,
+`camera.shake.hold`, `camera.fov_scale` and `camera.fov_scale.hold`.
 
-**App.** `EngineVocabularyBindings` holds the camera operations and gains
-`BindCameraShake`; it now holds its World mutably.
+**App.** `EngineVocabularyBindings` holds the camera operations.
 
-**Authored.** `MakeCosmeticVerb` (`authored/VerbRegistry.h`).
+**Authored.** `MakeCosmeticVerb` (`authored/VerbRegistry.h`) and
+`VerbDispatcher::GetDataAssets`.
 
 **Core.** `SplitMix64` (`core/hash/SplitMix64.h`).
