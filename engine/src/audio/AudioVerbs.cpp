@@ -16,14 +16,7 @@ constexpr std::string_view kDefaultBus = "Sfx";
 
 VerbDefinition Cosmetic(std::string_view name, std::string displayName, std::string description, VerbKind kind)
 {
-    VerbDefinition verb;
-    verb.Name = std::string(name);
-    verb.DisplayName = std::move(displayName);
-    verb.Description = std::move(description);
-    verb.Category = "Audio";
-    verb.Kind = kind;
-    verb.Scope = AuthoredScope::Cosmetic;
-    verb.Prediction = AuthoredPrediction::Presentation;
+    VerbDefinition verb = MakeCosmeticVerb(name, std::move(displayName), std::move(description), "Audio", kind);
     DataFieldSchema clip = MakeDataField(DataFieldKind::AssetRef, "clip", "Clip", "The sound to play.");
     clip.Reference.AssetTypeFilter = AssetType::Audio;
     DataFieldSchema gain = MakeDataField(DataFieldKind::Float, "gain", "Gain", "Zero is silent, one is as recorded.");

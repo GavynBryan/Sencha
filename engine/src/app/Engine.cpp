@@ -28,6 +28,8 @@
 #endif
 #include <app/Engine.h>
 #include <render/MeshOverrideSystem.h>
+#include <camera/CameraFovScaleSystem.h>
+#include <camera/CameraShakeSystem.h>
 
 #include <app/EngineVocabularyBindings.h>
 
@@ -167,7 +169,11 @@ bool Engine::Initialize()
     EngineSystems.Get<DefaultRenderPipeline>()->SetInstrumentation(
         &InstrumentationBundle);
     if (Configuration.Window.GraphicsApi != WindowGraphicsApi::None)
+    {
         EngineSystems.Register<MeshOverrideSystem>();
+        EngineSystems.Register<CameraShakeSystem>();
+        EngineSystems.Register<CameraFovScaleSystem>();
+    }
 
     // A process with nothing to present has nobody listening to it either, so
     // it holds no playback device. Mixing still exists as a service; it simply
@@ -1405,6 +1411,8 @@ int Engine::Run(Game& game)
     // through the same door an ability's do.
     VocabularyBindings = std::make_unique<EngineVocabularyBindings>(
         RuntimeWorldState->Entities(), RuntimeLoop.GetSimulationClock(), *VerbDispatcherState);
+    VocabularyBindings->BindCameraShake(RuntimeLoop.GetSimulationClock(), ContentState->Assets().DataAssets,
+                                        *VerbDispatcherState);
 
     // Every host runs abilities: an actor granted one runs it in a process whose
     // game registered nothing for it. Before the game's hook, so movement and a

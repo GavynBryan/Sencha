@@ -17,6 +17,7 @@
 #include <attributes/AttributeDeclarations.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/CuePresentationData.h>
+#include <camera/CameraShakeProfile.h>
 #include <effects/EffectDefinitionData.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
@@ -114,6 +115,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterEffectDefinitionData(DataTypes, DataSchemas);
     RegisterAbilityDefinitionData(DataTypes, DataSchemas);
     RegisterCuePresentationData(DataTypes, DataSchemas);
+    RegisterCameraShakeData(DataTypes, DataSchemas);
     RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
 
     // A reference store is its own stager and store, so it takes the mesh

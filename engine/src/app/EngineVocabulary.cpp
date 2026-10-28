@@ -3,6 +3,8 @@
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <audio/AudioVerbs.h>
+#include <camera/CameraFovScaleVerbs.h>
+#include <camera/CameraShakeVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ResponseVerbs.h>
@@ -46,6 +48,8 @@ bool InstallEngineVocabulary(World& world)
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
+    DeclareCameraShakeVerbs(scope);
+    DeclareCameraFovScaleVerbs(scope);
     DeclareNavigationVerbs(scope);
     DeclareResponseVocabulary(scope, eventScope);
     DeclareProjectileVocabulary(scope, eventScope);

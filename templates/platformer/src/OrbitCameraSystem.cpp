@@ -3,6 +3,7 @@
 #include "PlatformerInputActions.h"
 
 #include <app/GameContexts.h>
+#include <camera/CameraSubject.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/logging/Logger.h>
@@ -51,6 +52,8 @@ void OrbitCameraSystem::FrameUpdate(FrameUpdateContext& ctx)
             world.AddComponent<CameraComponent>(Camera, CameraComponent{});
         }
         world.GetResource<ActiveCameraService>().SetActive(Body.IsValid() ? Camera : EntityId{});
+        // The boom presents the body's view, though it sits outside it.
+        SetCameraSubject(world, Camera, Body);
         if (Body.IsValid() && Log != nullptr)
             Log->Info("PlatformerGame: orbit camera following the player's body");
     }

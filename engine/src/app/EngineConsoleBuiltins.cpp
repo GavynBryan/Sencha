@@ -2,6 +2,8 @@
 
 #include <app/DefaultRenderPipeline.h>
 #include <audio/AudioService.h>
+#include <camera/CameraFovScale.h>
+#include <camera/CameraShake.h>
 #include <controller/LookOrientation.h>
 #include <ecs/World.h>
 #include <platform/SdlWindow.h>
@@ -467,6 +469,66 @@ namespace EngineConsoleBuiltins
                         ? world->GetResource<LookSensitivity>()
                         : world->AddResource<LookSensitivity>();
                     sensitivity.Scale = static_cast<float>(std::get<double>(ctx.NewValue));
+                },
+            });
+
+            // Each writes the World's settings, which every presented effect reads.
+            const auto shake = [world](auto write) {
+                return [world, write](const CVarChangeContext& ctx) {
+                    if (CameraShakeState* state = world->TryGetResource<CameraShakeState>())
+                        write(state->Settings, static_cast<float>(std::get<double>(ctx.NewValue)));
+                };
+            };
+            registry.RegisterCVar({
+                .Name = "camera.shake.scale",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = 1.0,
+                .Flags = CVarFlags::Archive,
+                .Help = "How strongly the view shakes. 0 never moves it, 1 is as the game authored.",
+                .Source = { "player settings" },
+                .Min = 0.0,
+                .Max = 1.0,
+                .OnChange = shake([](CameraShakeSettings& settings, float value) { settings.Scale = value; }),
+            });
+            registry.RegisterCVar({
+                .Name = "camera.shake.max_angle",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = static_cast<double>(CameraShakeSettings{}.MaxAngle),
+                .CurrentValue = static_cast<double>(CameraShakeSettings{}.MaxAngle),
+                .Help = "The most every shake together may turn the view about any one axis, in degrees.",
+                .Min = 0.0,
+                .Max = 45.0,
+                .OnChange = shake([](CameraShakeSettings& settings, float value) { settings.MaxAngle = value; }),
+            });
+            registry.RegisterCVar({
+                .Name = "camera.shake.max_offset",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = static_cast<double>(CameraShakeSettings{}.MaxOffset),
+                .CurrentValue = static_cast<double>(CameraShakeSettings{}.MaxOffset),
+                .Help = "The most every shake together may move the view along any one axis, in metres.",
+                .Min = 0.0,
+                .Max = 2.0,
+                .OnChange = shake([](CameraShakeSettings& settings, float value) { settings.MaxOffset = value; }),
+            });
+            registry.RegisterCVar({
+                .Name = "camera.fov_scale.intensity",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = 1.0,
+                .Flags = CVarFlags::Archive,
+                .Help = "How much the game may narrow or widen the view for effect. 0 keeps it as set, "
+                        "1 is as the game authored.",
+                .Source = { "player settings" },
+                .Min = 0.0,
+                .Max = 1.0,
+                .OnChange = [world](const CVarChangeContext& ctx) {
+                    if (CameraFovScaleState* state = world->TryGetResource<CameraFovScaleState>())
+                        state->Settings.Intensity = static_cast<float>(std::get<double>(ctx.NewValue));
                 },
             });
         }

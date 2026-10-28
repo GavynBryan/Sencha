@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <camera/CameraExclusion.h>
+#include <camera/CameraSubject.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
@@ -57,6 +58,7 @@ void PawnCameraSystem::FrameUpdate(FrameUpdateContext& ctx)
                 else
                     world.AddComponent<CameraExclusion>(Camera, CameraExclusion{ Body });
             }
+            SetCameraSubject(world, Camera, Body);
             if (Log != nullptr)
                 Log->Info("FpsGame: local player attached to its pawn");
         }

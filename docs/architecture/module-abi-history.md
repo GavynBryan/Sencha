@@ -601,3 +601,27 @@ empty where the chunk lacks it.
 `ApplyMeshOverrides`, `MeshOverrideContributions` and `MeshOverrideSystem` are
 new; `ResolveSectionSlot` (`render/SectionMaterial.h`) is the slot rule
 `ResolveSectionMaterial` now uses.
+
+## v35
+
+Camera presentation effects (`docs/gameplay/camera.md`, "Camera shake and
+field-of-view scale").
+
+**Components.** `CameraSubject` (`camera/CameraSubject.h`, runtime only) joins
+`CameraComponents`: whose view a camera presents. `SetCameraSubject` sets it.
+
+**Camera.** `camera.shake` profiles (`CameraShakeProfile`,
+`CompileCameraShakeProfile`, `RegisterCameraShakeData`), the World resources
+`CameraShakeState` and `CameraFovScaleState`, the shared `CameraEnvelope`,
+`CameraEffectClock`, `CameraEffectTiming`, `CameraViewSubject` and
+`CameraViewIsOwnedBy`, and the `FrameUpdate` systems `CameraShakeSystem` and
+`CameraFovScaleSystem`, registered by the engine where a window presents. The
+engine declares `camera.shake`, `camera.shake.hold`, `camera.fov_scale` and
+`camera.fov_scale.hold`.
+
+**App.** `EngineVocabularyBindings` holds the camera operations and gains
+`BindCameraShake`; it now holds its World mutably.
+
+**Authored.** `MakeCosmeticVerb` (`authored/VerbRegistry.h`).
+
+**Core.** `SplitMix64` (`core/hash/SplitMix64.h`).
