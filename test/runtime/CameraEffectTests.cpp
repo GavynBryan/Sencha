@@ -9,10 +9,12 @@
 #include <camera/CameraShake.h>
 #include <camera/CameraShakeVerbs.h>
 #include <camera/CameraSubject.h>
+#include <camera/PresentedView.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
+#include <render/CameraProjection.h>
 #include <render/extract/Camera.h>
 #include <time/SimClock.h>
 #include <world/transform/TransformComponents.h>
@@ -358,6 +360,64 @@ TEST(CameraShake, TheRenderedViewMovesWhileTheCameraStaysPut)
     views.Entities.GetResource<ActiveCameraService>().SetActive(other);
     ASSERT_TRUE(views.Build(data));
     EXPECT_EQ(data.View, placed.ToMat4().AffineInverse()) << "summed for one camera, it moves no other";
+}
+
+// What is laid over a frame reads the view the frame is drawn with: the same
+// shaken pose and scaled field of view, so a direction lands where it is drawn.
+TEST(PresentedView, IsTheViewTheFrameIsDrawnWith)
+{
+    Views views;
+    Transform3f placed;
+    placed.Position = Vec3d(1.0f, 2.0f, 3.0f);
+    views.Entities.TryGet<WorldTransform>(views.Camera)->Value = placed;
+    const CameraComponent& camera = *views.Entities.TryGet<CameraComponent>(views.Camera);
+    PresentedView still = PresentCameraView(views.Entities, views.Camera, camera, placed);
+    EXPECT_EQ(still.Pose.ToMat4(), placed.ToMat4());
+    EXPECT_FLOAT_EQ(still.FovYRadians, camera.FovYRadians);
+
+    CameraShakeProfile profile;
+    profile.Kick.Rotation = Vec3d(2.0f, 0.0f, 0.0f);
+    profile.Envelope.Hold = 1.0f;
+    views.Shake().Start(OnceAt(100, {}, profile), At(101));
+    (void)views.ShakeAt(At(110));
+    views.Fov().Start({ .Timing = CameraEffectTiming::Once({ .Hold = 1.0f }, 100, {}), .Scale = 0.5f }, At(101));
+    (void)views.FovAt(At(110));
+
+    CameraRenderData data;
+    ASSERT_TRUE(views.Build(data));
+    const PresentedView presented = PresentCameraView(views.Entities, views.Camera, camera, placed);
+    EXPECT_EQ(data.View, presented.Pose.ToMat4().AffineInverse());
+    EXPECT_FLOAT_EQ(presented.FovYRadians, camera.FovYRadians * 0.5f);
+    EXPECT_NEAR(data.Projection[1][1], -1.0f / std::tan(presented.FovYRadians * 0.5f), 1e-5f);
+
+    // The camera's own forward, where aiming points, through the drawn view:
+    // a view kicked up sees it below the centre, exactly where the frame's own
+    // projection of a far point along it lands.
+    const Vec3d aim = placed.Rotation.RotateVector(Vec3d::Forward());
+    const std::optional<Vec2d> lands =
+        ProjectDirectionToViewport(presented.Pose.Rotation, presented.FovYRadians, 1280.0f, 720.0f, aim);
+    ASSERT_TRUE(lands.has_value());
+    EXPECT_NEAR(lands->X, 640.0f, 1e-3f);
+    EXPECT_GT(lands->Y, 360.0f + 1.0f);
+    const Vec3d far = placed.Position + aim * 10000.0f;
+    const Vec4 clip = data.ViewProjection * Vec4{ far.X, far.Y, far.Z, 1.0f };
+    EXPECT_NEAR(lands->X, (clip.X / clip.W + 1.0f) * 0.5f * 1280.0f, 0.05f);
+    EXPECT_NEAR(lands->Y, (clip.Y / clip.W + 1.0f) * 0.5f * 720.0f, 0.05f);
+}
+
+TEST(PresentedView, ADirectionBehindTheViewLandsNowhere)
+{
+    const float fov = ToRadians(90.0f);
+    const std::optional<Vec2d> ahead = ProjectDirectionToViewport(Quatf::Identity(), fov, 200.0f, 100.0f, Vec3d::Forward());
+    ASSERT_TRUE(ahead.has_value());
+    EXPECT_NEAR(ahead->X, 100.0f, 1e-4f);
+    EXPECT_NEAR(ahead->Y, 50.0f, 1e-4f);
+    const std::optional<Vec2d> top =
+        ProjectDirectionToViewport(Quatf::Identity(), fov, 200.0f, 100.0f, (Vec3d::Forward() + Vec3d::Up()).Normalized());
+    ASSERT_TRUE(top.has_value());
+    EXPECT_NEAR(top->Y, 0.0f, 1e-3f) << "half the field of view up is the top edge";
+    EXPECT_FALSE(ProjectDirectionToViewport(Quatf::Identity(), fov, 200.0f, 100.0f, Vec3d::Backward()).has_value());
+    EXPECT_FALSE(ProjectDirectionToViewport(Quatf::Identity(), fov, 200.0f, 100.0f, Vec3d::Up()).has_value());
 }
 
 TEST(CameraFovScale, PulsesMultiplyTheCamerasOwnFieldOfView)

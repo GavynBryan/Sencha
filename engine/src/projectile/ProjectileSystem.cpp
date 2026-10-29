@@ -6,7 +6,6 @@
 #include <assets/runtime/AssetSystem.h>
 #include <attributes/AttributeSet.h>
 #include <core/console/ConsoleRegistry.h>
-#include <core/hash/SplitMix64.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <effects/EffectRegistry.h>
@@ -14,6 +13,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/ResponsesSystem.h>
+#include <math/geometry/3d/ConeScatter.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnPrefab.h>
 #include <net/NetTickEstimator.h>
@@ -64,25 +64,6 @@ Quatf Facing(const Vec3d& direction)
     if (axis.SqrMagnitude() > 1.0e-8f)
         return Quatf::FromAxisAngle(axis.Normalized(), std::acos(cosine));
     return cosine < 0.0f ? Quatf::FromAxisAngle(Vec3d::Up(), kPi) : Quatf::Identity();
-}
-
-// Scatters `direction` uniformly over the cone of `halfAngleDegrees` around it,
-// from `seed` alone, so every machine given the seed scatters it the same way.
-Vec3d Scatter(const Vec3d& direction, float halfAngleDegrees, std::uint64_t seed)
-{
-    if (halfAngleDegrees <= 0.0f)
-        return direction;
-    // Two well-mixed draws from one seed.
-    auto next = [&seed]() { return static_cast<float>(SplitMix64(seed) >> 40) * (1.0f / 16777216.0f); };
-    const float maxAngle = std::min(halfAngleDegrees, 90.0f) * (kPi / 180.0f);
-    // Uniform over the cap: cos(theta) uniform between cos(max) and one.
-    const float cosTheta = 1.0f - next() * (1.0f - std::cos(maxAngle));
-    const float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
-    const float phi = next() * 2.0f * kPi;
-    Vec3d right = direction.Cross(Vec3d::Up());
-    right = right.SqrMagnitude() < 1.0e-6f ? Vec3d::Right() : right.Normalized();
-    const Vec3d up = right.Cross(direction).Normalized();
-    return (direction * cosTheta + right * (std::cos(phi) * sinTheta) + up * (std::sin(phi) * sinTheta)).Normalized();
 }
 
 // Where a ray first enters a capsule standing upright about `centre`, as a
@@ -336,7 +317,7 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
     }
     const ResolvedProjectile& definition = world.GetResource<ProjectileDefinitions>().Entries[*index];
 
-    const Vec3d direction = Scatter(launch.Direction.Normalized(), launch.SpreadDegrees, launch.Seed);
+    const Vec3d direction = ScatterInCone(launch.Direction.Normalized(), launch.SpreadDegrees, launch.Seed);
     if (LocalTransform* local = world.TryGet<LocalTransform>(root))
     {
         local->Value.Position = launch.Origin;

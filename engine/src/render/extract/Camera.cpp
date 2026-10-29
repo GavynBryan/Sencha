@@ -1,8 +1,7 @@
 #include <render/extract/Camera.h>
 
 #include <camera/CameraExclusion.h>
-#include <camera/CameraFovScale.h>
-#include <camera/CameraShake.h>
+#include <camera/PresentedView.h>
 #include <render/CameraProjection.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
@@ -29,26 +28,6 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
         return false;
     }
 
-    const float aspect = static_cast<float>(targetExtent.Width)
-                       / static_cast<float>(targetExtent.Height);
-    // Presented effects scale the camera's own field of view, never replace it.
-    const CameraFovScaleState* fovScale = world.TryGetResource<CameraFovScaleState>();
-    const float fovY = std::clamp(camera->FovYRadians * (fovScale != nullptr ? fovScale->ScaleFor(entity) : 1.0f),
-                                  ToRadians(1.0f), ToRadians(179.0f));
-    Mat4 projection;
-    if (camera->Projection == ProjectionKind::Perspective)
-    {
-        projection = MakeVulkanPerspective(fovY, aspect, camera->NearPlane, camera->FarPlane);
-    }
-    else
-    {
-        const float halfHeight = camera->OrthographicHeight * 0.5f;
-        const float halfWidth = halfHeight * aspect;
-        projection = MakeVulkanOrthographic(
-            -halfWidth, halfWidth, -halfHeight, halfHeight,
-            camera->NearPlane, camera->FarPlane);
-    }
-
     // A camera that carries pose history is drawn from the same blend every
     // mesh is, so it cannot step against the world it looks at. A parented
     // camera gets the blend through propagation instead and has no history.
@@ -61,8 +40,24 @@ bool CameraRenderDataSystem::Build(const ActiveCameraService& activeCamera,
     // A shake moves the view, not the camera: its transform, and everything
     // that aims or traces from it, stays where the simulation put it. The
     // frustum below is built from the shaken view, so culling agrees with it.
-    const CameraShakeState* shake = world.TryGetResource<CameraShakeState>();
-    const Transform3f pose = shake != nullptr ? ApplyCameraShake(placed, shake->OffsetFor(entity)) : placed;
+    const PresentedView presented = PresentCameraView(world, entity, *camera, placed);
+    const Transform3f& pose = presented.Pose;
+
+    const float aspect = static_cast<float>(targetExtent.Width)
+                       / static_cast<float>(targetExtent.Height);
+    Mat4 projection;
+    if (camera->Projection == ProjectionKind::Perspective)
+    {
+        projection = MakeVulkanPerspective(presented.FovYRadians, aspect, camera->NearPlane, camera->FarPlane);
+    }
+    else
+    {
+        const float halfHeight = camera->OrthographicHeight * 0.5f;
+        const float halfWidth = halfHeight * aspect;
+        projection = MakeVulkanOrthographic(
+            -halfWidth, halfWidth, -halfHeight, halfHeight,
+            camera->NearPlane, camera->FarPlane);
+    }
 
     out.Entity = entity;
     out.View = pose.ToMat4().AffineInverse();

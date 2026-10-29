@@ -66,7 +66,9 @@ cone and chosen by the launch's seed alone; the verb seeds from the instigator,
 the tick and which of that instigator's launches this tick it is
 (`ProjectileSystem::NextSeed`), so two launches in one tick scatter apart, a
 replay of the same launches scatters the same way, and no other instigator's
-launches change it.
+launches change it. The cone itself is `ScatterInCone`
+(`math/geometry/3d/ConeScatter.h`), so a hitscan weapon's spread means exactly
+what a projectile's does.
 
 A projectile flies on the tick it is launched: the system runs after the ability
 pass, where most launches come from, and before attributes resolve, so what it
