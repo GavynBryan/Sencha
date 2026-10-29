@@ -177,3 +177,12 @@ else that reads it see the camera where the simulation put it. The frustum is
 built from the shaken view, so culling agrees with what is drawn. A child of the
 camera, such as a held weapon, keeps its place in the world while the view
 moves around it.
+
+That view is `PresentCameraView` (`camera/PresentedView.h`): the shaken pose and
+the scaled, clamped field of view, which `Build` draws from and anything laid
+over the frame reads too. Because aiming reads the unshaken camera, a reticle at
+the centre of the screen misreports the aim during a shake; one that follows it
+projects the camera's forward through the presented view with
+`ProjectDirectionToViewport` (`render/CameraProjection.h`). Effects are summed
+during render extraction, so a reader earlier in the frame sees the view the
+previous frame was drawn with.

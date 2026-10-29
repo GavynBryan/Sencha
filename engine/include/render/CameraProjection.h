@@ -1,8 +1,11 @@
 #pragma once
 
 #include <math/Mat.h>
+#include <math/Quat.h>
+#include <math/Vec.h>
 
 #include <cmath>
+#include <optional>
 
 //=============================================================================
 // Vulkan clip-space projections
@@ -59,6 +62,27 @@
     result[1][3] = (top + bottom) / (top - bottom);
     result[2][3] = nearPlane / (nearPlane - farPlane);
     return result;
+}
+
+// Where a world-space direction lands in a `width` by `height` pixel viewport,
+// origin top left, seen from a view facing `rotation` through a vertical field of
+// view: the projection a perspective camera draws with, taken to infinity, so
+// the view's position and its near and far planes play no part. Nullopt for a
+// direction at or behind the view's plane. What lays a reticle or a marker on
+// a frame where the frame's own camera would draw it.
+[[nodiscard]] inline std::optional<Vec2d> ProjectDirectionToViewport(const Quatf& rotation,
+                                                                     float fovYRadians,
+                                                                     float width,
+                                                                     float height,
+                                                                     const Vec3d& direction)
+{
+    const Vec3d local = rotation.Inverse().RotateVector(direction);
+    const Mat4 projection = MakeVulkanPerspective(fovYRadians, width / height, 1.0f, 2.0f);
+    // A direction is a point at infinity: w is zero, so depth never enters.
+    const Vec4 clip = projection * Vec4{ local.X, local.Y, local.Z, 0.0f };
+    if (!(clip.W > 1.0e-6f))
+        return std::nullopt;
+    return Vec2d{ (clip.X / clip.W + 1.0f) * 0.5f * width, (clip.Y / clip.W + 1.0f) * 0.5f * height };
 }
 
 // Maps a clip-space position back to the world-space *direction* it was seen
