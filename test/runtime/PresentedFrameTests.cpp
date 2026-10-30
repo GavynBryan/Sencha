@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
+#include <app/PresentationPhase.h>
 #include <camera/CameraEffects.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>
@@ -363,22 +364,17 @@ TEST(PresentedFrame, NothingToDrawIsAnInvalidFrame)
 
 namespace
 {
-struct Mover
-{
-    int* Order = nullptr;
-    int Ran = -1;
-    void FrameUpdate(FrameUpdateContext&) { Ran = (*Order)++; }
-};
-
+// What a PresentationUpdate system saw of the frame it ran in.
 struct Overlay
 {
-    int* Order = nullptr;
-    int Ran = -1;
-    std::uint64_t Saw = 0;
+    const PresentedFrame* Seen = nullptr;
+    PresentedFrame Copy;
+    int Runs = 0;
     void PresentationUpdate(PresentationUpdateContext& ctx)
     {
-        Ran = (*Order)++;
-        Saw = ctx.Frame.FrameIndex;
+        Seen = &ctx.Frame;
+        Copy = ctx.Frame;
+        ++Runs;
     }
 };
 
@@ -386,19 +382,22 @@ struct LaterOverlay
 {
     Overlay* First = nullptr;
     bool SawFirst = false;
-    void PresentationUpdate(PresentationUpdateContext&) { SawFirst = First->Ran >= 0; }
+    void PresentationUpdate(PresentationUpdateContext&) { SawFirst = First->Runs > 0; }
+};
+
+struct Mover
+{
+    int Runs = 0;
+    void FrameUpdate(FrameUpdateContext&) { ++Runs; }
 };
 } // namespace
 
-TEST(PresentationUpdate, IsItsOwnPhaseAndOrdersLikeTheOthers)
+TEST(PresentationPhase, OverlaysSeeThisFramesViewAndExtractionReusesIt)
 {
-    int order = 0;
     EngineSchedule schedule;
     Mover& mover = schedule.Register<Mover>();
     LaterOverlay& later = schedule.Register<LaterOverlay>();
     Overlay& overlay = schedule.Register<Overlay>();
-    mover.Order = &order;
-    overlay.Order = &order;
     later.First = &overlay;
     schedule.After<LaterOverlay, Overlay>();
     schedule.Init();
@@ -406,16 +405,63 @@ TEST(PresentationUpdate, IsItsOwnPhaseAndOrdersLikeTheOthers)
     Rig rig;
     EngineConfig config;
     RuntimeFrameLoop runtime;
-    PresentedFrame frame;
-    frame.FrameIndex = 12;
-    PresentationUpdateContext ctx{ .Config = config,
-                                   .Runtime = runtime,
-                                   .Presentation = Frame(12, 0.5),
-                                   .Frame = frame,
-                                   .Entities = rig.Entities,
-                                   .Partitions = rig.Visible };
-    schedule.RunPresentationUpdate(ctx);
-    EXPECT_EQ(mover.Ran, -1);
-    EXPECT_EQ(overlay.Saw, 12u);
+    // As FrameDriver orders a frame: presentation time is built after the
+    // ticks, right before the Update phase that runs the presentation step.
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        (void)runtime.BeginFrame();
+        (void)runtime.BuildPresentationFrame();
+    }
+    const PresentationTime now = runtime.GetCurrentFrame().Presentation;
+    ASSERT_GT(now.FrameIndex, 0u);
+
+    const PresentedFrame& published =
+        RunPresentationPhase(schedule, config, runtime, rig.Entities, rig.Visible, kExtent);
+
+    // The overlay ran against the published snapshot itself, already valid and
+    // already describing this frame, and only the presentation phase ran.
+    EXPECT_EQ(overlay.Runs, 1);
+    EXPECT_EQ(overlay.Seen, &published);
+    EXPECT_EQ(overlay.Seen, TryPresentedFrame(rig.Entities));
+    EXPECT_TRUE(overlay.Copy.Valid);
+    EXPECT_EQ(overlay.Copy.FrameIndex, now.FrameIndex);
     EXPECT_TRUE(later.SawFirst);
+    EXPECT_EQ(mover.Runs, 0);
+
+    // Extraction in the same frame draws that same publication rather than
+    // resolving another one the overlays never saw.
+    const std::uint64_t publication = published.Publication;
+    rig.PropagateForPresentation(now.Alpha);
+    const PresentedFrame& drawn =
+        EnsurePresentedFrame(rig.Entities, runtime.GetSimulationClock(), now, kExtent, rig.Visible);
+    EXPECT_EQ(drawn.Publication, publication);
+    ExpectSame(drawn.ViewProjection, overlay.Copy.ViewProjection);
+
+    // The next frame publishes again.
+    (void)runtime.BeginFrame();
+    (void)runtime.BuildPresentationFrame();
+    (void)RunPresentationPhase(schedule, config, runtime, rig.Entities, rig.Visible, kExtent);
+    EXPECT_EQ(overlay.Runs, 2);
+    EXPECT_EQ(overlay.Copy.Publication, publication + 1);
+    EXPECT_EQ(overlay.Copy.FrameIndex, runtime.GetCurrentFrame().Presentation.FrameIndex);
+}
+
+TEST(PresentationPhase, AHostThatDrawsNothingPublishesAnInvalidFrameAndPresentsNoEffects)
+{
+    EngineSchedule schedule;
+    Overlay& overlay = schedule.Register<Overlay>();
+    schedule.Init();
+
+    Rig rig;
+    rig.ShakeAndPulse();
+    for (int tick = 0; tick < 6; ++tick)
+        rig.Tick();
+    EngineConfig config;
+    RuntimeFrameLoop runtime;
+    (void)runtime.BeginFrame();
+    (void)runtime.BuildPresentationFrame();
+    (void)RunPresentationPhase(schedule, config, runtime, rig.Entities, rig.Visible, RenderExtent{});
+    EXPECT_EQ(overlay.Runs, 1);
+    EXPECT_FALSE(overlay.Copy.Valid);
+    EXPECT_EQ(rig.Entities.GetResource<CameraShakeState>().OffsetFor(rig.Camera).Rotation, Vec3d());
 }

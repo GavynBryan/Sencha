@@ -677,10 +677,17 @@ extraction (`docs/gameplay/camera.md`, "The presented frame").
 **App.** A `PresentationUpdate(PresentationUpdateContext&)` schedule phase
 (`EngineSchedule::RunPresentationUpdate`) runs after every FrameUpdate system
 and before UI layout, with the published `PresentedFrame` in its context.
+`RunPresentationPhase` (`app/PresentationPhase.h`) is that step: it publishes
+the frame, then runs the phase. The fingerprint now covers
+`camera/PresentedFrame.h`, `camera/PresentedView.h`,
+`render/CameraProjection.h` and `time/FrameClock.h`, which reach a module
+through the frame contexts.
 
 **Camera.** `camera/PresentedFrame.h`: the `PresentedFrame` snapshot,
 `ResolvePresentedFrame` (read-only), `PublishPresentedFrame`,
-`EnsurePresentedFrame`, `TryPresentedFrame` and `ProjectWorldPoint`.
+`EnsurePresentedFrame`, `TryPresentedFrame` and `ProjectWorldPoint`;
+`PresentedFrame::Publication` counts publications, so a frame resolved again
+after overlays laid out against it shows.
 `PresentCameraEffects` measures shake falloff from the camera's drawn pose.
 
 **Render.** `ProjectWorldPointToViewport`, `ViewportRect`, `ViewportPlacement`

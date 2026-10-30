@@ -9,7 +9,7 @@
 #include <attach/Attachment.h>
 #include <app/Engine.h>
 #include <app/Game.h>
-#include <camera/PresentedFrame.h>
+#include <app/PresentationPhase.h>
 #include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -857,18 +857,8 @@ void Engine::RegisterSimulationFramePhases()
             presentedExtent = RenderExtent{ swapchainExtent.width, swapchainExtent.height };
         }
 #endif
-        const PresentedFrame& presented = PublishPresentedFrame(
-            entities, ctx.Runtime->GetSimulationClock(), rf.Presentation, presentedExtent, zones.Visible);
-        PresentationUpdateContext presentation{
-            .Config = config,
-            .Runtime = *ctx.Runtime,
-            .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
-            .Presentation = rf.Presentation,
-            .Frame = presented,
-            .Entities = entities,
-            .Partitions = zones.Visible,
-        };
-        engine.Schedule().RunPresentationUpdate(presentation);
+        (void)RunPresentationPhase(engine.Schedule(), config, *ctx.Runtime, entities, zones.Visible,
+                                   presentedExtent);
 
 #ifdef SENCHA_ENABLE_UI
         // The window's size and display scale, every frame.

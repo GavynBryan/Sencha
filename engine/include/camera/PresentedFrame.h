@@ -46,6 +46,10 @@ struct PresentedFrame
     // PresentationTime::FrameIndex of the frame this describes.
     std::uint64_t FrameIndex = 0;
     double Alpha = 0.0;
+    // How many times a frame has been published into this World. Once a frame
+    // when the frame loop publishes and extraction reuses it; a frame that
+    // advanced it twice was resolved again after overlays laid out against it.
+    std::uint64_t Publication = 0;
 
     EntityId Camera;
     ProjectionKind Projection = ProjectionKind::Perspective;

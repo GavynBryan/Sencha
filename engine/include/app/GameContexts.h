@@ -170,6 +170,9 @@ struct FrameUpdateContext
 // interpolated transforms written into WorldTransform -- PresentationPoseOf
 // answers where an entity is drawn. Systems that drive simulation, consume
 // input or move things belong in FrameUpdate, which runs first.
+//
+// Partitions is the Visible set, the one extraction draws from, not
+// FrameUpdate's Logic set: what is laid over the frame is what is in it.
 struct PresentationUpdateContext
 {
     EngineConfig& Config;

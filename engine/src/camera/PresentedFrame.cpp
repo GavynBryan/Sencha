@@ -72,6 +72,7 @@ const PresentedFrame& PublishPresentedFrame(World& world,
     PresentedFrame resolved = ResolvePresentedFrame(world, camera, extent, presentation);
     if (resolved.Valid && !visible.Contains(world.GetEntityPartition(camera)))
         resolved.Valid = false;
+    resolved.Publication = published.Publication + 1;
     published = resolved;
     return published;
 }
