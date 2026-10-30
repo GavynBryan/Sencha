@@ -49,19 +49,10 @@
 #include <unordered_set>
 #include <vector>
 
-// A conventional Use, the way a game ships one: an input action in the game's
-// vocabulary, an ability granted to the pawn that binds that action to an
-// invoke of interact.use, and things in the world whose responses answer
-// interact.use. Every tick here is the real one -- the ability pass reading the
-// tick's edges, the verb casting through the physics world, the response pass --
-// and nothing in the engine names the action or the reach.
-
 namespace
 {
 constexpr float kEyeHeight = 1.6f;
 
-// What a response ran: which binding's `value`, for whom, and the entity its
-// optional `who` argument read.
 struct Mark
 {
     double Value = 0.0;
@@ -86,8 +77,6 @@ struct MarkingVerb
     }
 };
 
-// test.ready {target}: true unless `target` is one the test made unready. A query
-// condition, so judging it fills the runner's query scratch.
 struct ReadyQuery
 {
     std::unordered_set<EntityId, EntityIdHash> Unready;
@@ -111,8 +100,6 @@ struct CapturedLog : ILogSink
 InputActionEdge Press() { return { 0, InputEdgeKind::Press }; }
 InputActionEdge Release() { return { 0, InputEdgeKind::Release }; }
 
-// How a game authors its Use: the action it presses, how far it reaches, and
-// optionally a fixed direction instead of the pawn's aim.
 struct UseSetup
 {
     std::string Action = "use";
@@ -137,7 +124,6 @@ std::string UseAbility(const UseSetup& setup)
                        setup.Action, arguments);
 }
 
-// A binding answering interact.use by marking `value`, with `policy` spliced in.
 std::string UseBinding(double value, std::string_view policy = {}, std::string_view conditions = "[]")
 {
     return std::format(R"({{"use": {{"on": "interact.use"{}{}, "sequence": {{"conditions": {},
@@ -167,7 +153,6 @@ struct UseHarness
     AuthoredQueryBindingToken ReadyToken;
     EntityId Pawn;
     bool Held = false;
-    // Everything the systems log, captured before any of them takes a logger.
     std::vector<std::string> Logged;
 
     explicit UseHarness(const UseSetup& setup = {})
@@ -242,7 +227,6 @@ struct UseHarness
         world.AddComponent<WorldTransform>(entity, WorldTransform{ pose });
     }
 
-    // At the origin, eyes up, granted the Use ability the game authored.
     EntityId MakePawn(const UseSetup& setup)
     {
         World& world = Entities();
@@ -277,7 +261,6 @@ struct UseHarness
         look->Pitch = pitch;
     }
 
-    // Where the pawn's eyes look along `yaw`, `distance` away.
     Vec3d Ahead(float yaw, float distance)
     {
         const float yawBefore = std::as_const(Entities()).TryGet<LookOrientation>(Pawn)->Yaw;
@@ -287,7 +270,6 @@ struct UseHarness
         return aim.Origin + aim.Direction * distance;
     }
 
-    // A small solid box `at`, answering interact.use with `bindings`.
     EntityId Usable(Vec3d at, std::string_view bindings, bool trigger = false)
     {
         World& world = Entities();
@@ -303,7 +285,6 @@ struct UseHarness
         return usable;
     }
 
-    // A solid box with no responses at all.
     EntityId Wall(Vec3d at, Vec3d halfExtents)
     {
         World& world = Entities();
@@ -315,8 +296,6 @@ struct UseHarness
         return wall;
     }
 
-    // One fixed tick in the engine's order, with `edges` as the tick's input on
-    // the pawn's source; the action stays held from a press until a release.
     void Step(std::vector<InputActionEdge> edges = {})
     {
         World& world = Entities();
@@ -346,7 +325,6 @@ struct UseHarness
             Step();
     }
 
-    // Press and let go, then let the response pass that answers it run.
     void Use()
     {
         Step({ Press() });
@@ -371,9 +349,6 @@ struct UseHarness
     void BecomeClient() { Entities().SetResource(SimulationAuthority{ .Authoritative = false }); }
 };
 
-// The terminal straight ahead, the switch half a radian to the side, both two
-// metres away: both inside the reach, and both inside any volume an area use
-// would have broadcast to.
 struct TerminalAndSwitch
 {
     static constexpr float kSwitchYaw = 0.5f;
@@ -388,8 +363,6 @@ struct TerminalAndSwitch
     }
 };
 } // namespace
-
-// --- Discovery ---------------------------------------------------------------
 
 TEST(InteractUse, LookingAtOneOfTwoUsableThingsUsesOnlyThatOne)
 {
@@ -437,7 +410,6 @@ TEST(InteractUse, TriggerVolumesNeitherBlockTheRayNorAnswerIt)
 {
     UseHarness harness;
     const EntityId terminal = harness.Usable(harness.Ahead(0.0f, 2.0f), UseBinding(1));
-    // A volume between the pawn and the terminal that would answer, were it solid.
     (void)harness.Usable(harness.Ahead(0.0f, 1.0f), UseBinding(9), /*trigger*/ true);
     harness.Step();
 
@@ -473,8 +445,6 @@ TEST(InteractUse, FindingACandidateDeliversNothing)
     EXPECT_TRUE(harness.Marks.empty());
 }
 
-// --- Input ---------------------------------------------------------------------
-
 TEST(InteractUse, HoldingUseIsOneUse)
 {
     UseHarness harness;
@@ -490,8 +460,6 @@ TEST(InteractUse, HoldingUseIsOneUse)
     EXPECT_EQ(harness.Values(), (std::vector<double>{ 1, 1 })) << "a second press is a second use";
     (void)scene;
 }
-
-// --- Eligibility -----------------------------------------------------------------
 
 TEST(InteractUse, ADisabledBindingIsBlockedAndDoesNotRun)
 {
@@ -563,8 +531,7 @@ TEST(InteractUse, ABindingSwitchedOffAfterAdmissionDoesNotRun)
     const EntityId terminal = harness.Usable(harness.Ahead(0.0f, 2.0f), UseBinding(1));
     harness.Step();
 
-    // The press admits the occurrence; before the pass that would run it, the
-    // binding stops answering. Availability said yes; the pass still says no.
+    // Availability said yes; the pass still says no.
     harness.Step({ Press() });
     ASSERT_EQ(harness.Pass->Stats().Admitted, 1u);
     harness.Entities().TryGet<Responses>(terminal)->Disabled = 1u;
@@ -573,8 +540,6 @@ TEST(InteractUse, ABindingSwitchedOffAfterAdmissionDoesNotRun)
     EXPECT_TRUE(harness.Marks.empty());
     EXPECT_GE(harness.Pass->Stats().Gated, 1u);
 }
-
-// --- Authority -----------------------------------------------------------------
 
 TEST(InteractUse, OnlyTheAuthorityUses)
 {
@@ -586,7 +551,6 @@ TEST(InteractUse, OnlyTheAuthorityUses)
     EXPECT_TRUE(harness.Marks.empty());
     EXPECT_EQ(harness.Pass->Stats().Admitted, 0u);
 
-    // Asked directly, the verb refuses rather than delivering on a client.
     AuthoredArguments arguments;
     arguments.Resize(4);
     arguments.Set(0, AuthoredValue::Entity(harness.Pawn));
@@ -628,7 +592,6 @@ TEST(InteractUse, AClientDiscoversButNeverConfirms)
     UseHarness harness;
     const EntityId terminal = harness.Usable(harness.Ahead(0.0f, 2.0f), UseBinding(1, R"("once": true)"));
     harness.Step();
-    // What the authority knows and the client was never told: the binding has run.
     harness.Entities().TryGet<Responses>(terminal)->Consumed = 1u;
     harness.BecomeClient();
 
@@ -658,16 +621,11 @@ TEST(InteractUse, APressUsesTheAimHeldWhenItsTickRunsNotOneLookedUpBefore)
 {
     UseHarness harness;
     const TerminalAndSwitch scene(harness);
-    // A lookup made earlier -- what a prompt showed -- decides nothing: the press
-    // casts again with the aim held when its tick runs, here the switch's. No
-    // client is involved; the client half is AClientDiscoversButNeverConfirms.
     EXPECT_EQ(harness.Candidate().Target, scene.Terminal);
     harness.Look(TerminalAndSwitch::kSwitchYaw);
     harness.Use();
     EXPECT_EQ(harness.Values(), (std::vector<double>{ 2 }));
 }
-
-// --- Re-entrancy -------------------------------------------------------------------
 
 TEST(InteractUse, AResponseThatUsesSomethingElseRunsToItsEndAndTheOtherAnswersNextPass)
 {
@@ -675,12 +633,7 @@ TEST(InteractUse, AResponseThatUsesSomethingElseRunsToItsEndAndTheOtherAnswersNe
     const Vec3d switchAt = harness.Ahead(TerminalAndSwitch::kSwitchYaw, 2.0f);
     const Aim eyes = AimOf(harness.Entities(), harness.Pawn);
     const Vec3d toSwitch = (switchAt - eyes.Origin).Normalized();
-    // The terminal, used, uses the switch on its user's behalf -- from the
-    // user's eyes toward the switch -- and then marks what its own `self` port
-    // reads. Judging the switch's binding, which is conditioned on a query,
-    // happens while the terminal's run is between its commands: were judging to
-    // share the run's ports or runner, the second command would read the
-    // switch's ports instead of the terminal's.
+    // Judging the switch happens between the terminal's commands; it must not share the run's ports.
     const std::string terminalBindings = std::format(
         R"({{"use": {{"on": "interact.use", "sequence": {{"commands": [
             {{"verb": "interact.use", "arguments": {{"activator": {{"port": "activator"}}, "range": {{"const": 5}},
@@ -705,9 +658,6 @@ TEST(InteractUse, AResponseThatUsesSomethingElseRunsToItsEndAndTheOtherAnswersNe
     EXPECT_EQ(harness.Pass->Stats().Failed, 0u);
 }
 
-// A sequence is compiled by whichever asks for it first. When that is a lookup
-// rather than the pass, its diagnostics must still be reported -- not traded for
-// those of whatever the next pass happens to run.
 TEST(InteractUse, ASequenceFirstCompiledByALookupStillReportsItsDiagnostics)
 {
     UseHarness harness;
@@ -729,8 +679,6 @@ TEST(InteractUse, ASequenceFirstCompiledByALookupStillReportsItsDiagnostics)
     })) << "the broken sequence's diagnostics were never reported; logged:" << logged;
 }
 
-// --- Vocabulary ----------------------------------------------------------------------
-
 TEST(InteractUse, TheVerbAndTheOccurrenceShareANameInSeparateCatalogs)
 {
     UseHarness harness;
@@ -743,10 +691,6 @@ TEST(InteractUse, TheVerbAndTheOccurrenceShareANameInSeparateCatalogs)
     EXPECT_EQ(events->Get(events->Find(kInteractUseEvent))->Instigator, "activator");
 }
 
-// --- Two games -------------------------------------------------------------------------
-
-// Two games, one mechanism: each names its own action and reach in its own
-// data. The engine names neither.
 TEST(InteractUse, TwoGamesConfigureTheirOwnActionAndReach)
 {
     UseHarness shortReach({ .Action = "use", .Range = 2.5, .Direction = {} });
@@ -767,7 +711,6 @@ TEST(InteractUse, TwoGamesConfigureTheirOwnActionAndReach)
 
 TEST(InteractUse, AGameMayCastAlongItsOwnDirectionInsteadOfTheAim)
 {
-    // A game whose Use is not where the pawn looks: its ability names the ray.
     UseHarness facing({ .Action = "use", .Range = 3.0, .Direction = "[0, -1, 0]" });
     const EntityId below = facing.Usable(Vec3d(0.0f, kEyeHeight - 1.0f, 0.0f), UseBinding(7));
     (void)facing.Usable(facing.Ahead(0.0f, 2.0f), UseBinding(1));

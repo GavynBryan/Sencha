@@ -252,7 +252,6 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(events[0].PayloadCount, 1u);
     EXPECT_EQ(events[4].Name, kProjectileHitEvent);
     EXPECT_EQ(events[4].PayloadCount, 5u);
-    // interact.use is an event and a verb by one name, in their separate catalogs.
     EXPECT_EQ(events[5].Name, kInteractUseEvent);
     EXPECT_EQ(events[5].PayloadCount, 1u);
     EXPECT_EQ(events[6].Name, "lamp.switched");
