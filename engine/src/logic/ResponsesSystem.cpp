@@ -43,8 +43,6 @@ void EncodeSensorActivation(const void* published, AuthoredArguments& payload)
     payload.Set(0, AuthoredValue::Entity(static_cast<const SensorActivation*>(published)->Activator));
 }
 
-// A binding that does not respond, whatever is delivered: switched off, or a
-// once-binding that has run.
 bool SwitchedOff(const Responses& responses, std::uint32_t bit)
 {
     return ((responses.Disabled | responses.Consumed) & bit) != 0;
@@ -158,8 +156,6 @@ bool ResponsesSystem::Cooling(EntityId recipient, std::uint64_t keyHash, Respons
     return found != Cooldowns.end() && found->second > tick;
 }
 
-// Whoever asks first compiles a sequence -- the pass, or Availability -- so a
-// compile reports the diagnostics of the sequence it compiled, wherever it ran.
 const CompiledVerbSequence* ResponsesSystem::ResolveSequence(ResponseDefinitions& definitions, VerbSequenceKey sequence)
 {
     const CompiledVerbSequence* compiled = definitions.Sequences.Resolve(sequence, Entities, Assets, DataAssets);
@@ -172,10 +168,6 @@ const CompiledVerbSequence* ResponsesSystem::ResolveSequence(ResponseDefinitions
     return compiled;
 }
 
-// Admission's gates, then the pass's conditions, binding by binding as Admit
-// walks them; the first binding that would run answers Available. Runtime state
-// is judged only where it is held: a client's bits are the authored ones and it
-// keeps no cooldowns, so judging them would be judging what it never heard.
 ResponseAvailability ResponsesSystem::Judge(EntityId subject, AuthoredEventId event, const void* occurrence,
                                             EncodeFn encode)
 {

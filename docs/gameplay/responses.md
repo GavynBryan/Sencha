@@ -229,6 +229,14 @@ of a terminal is what is struck and the terminal is not used. When the struck
 entity's responses answer `interact.use`, the occurrence is delivered there with
 the activator as its instigator, and runs at the next pass like any other.
 
+The verb takes `activator`, `range`, and optionally `origin` and `direction`.
+It is refused on a client, for a dead activator, and when nothing in range
+answers (a zero range, or a target whose bindings are all blocked); a negative
+range or a zero-length direction is `InvalidArguments`. The verb and the
+occurrence share a name; verbs and events are separate catalogs, and a binding
+names one as `verb` and the other as `on`. `FindUseCandidate` is read-only, so
+a prompt and a press ask the same question.
+
 A game binds a press to it with an ability, the same way as any other press:
 an `ability.definition` whose `input_default` names the game's action and whose
 phase invokes `interact.use` with `activator: {port: actor}` and the game's

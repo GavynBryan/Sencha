@@ -92,7 +92,6 @@ VerbAdmission InteractUseOperations::Use(const VerbInvocation& invocation)
     const AuthoredArguments* arguments = invocation.Arguments;
     EntityId activator;
     double range = 0.0;
-    // Zero is a reach the schema allows; it reaches nothing, so it is refused below.
     if (arguments == nullptr || !arguments->TryGetEntity(0, activator) || !arguments->TryGetFloat(1, range)
         || !(range >= 0.0))
         return VerbAdmission::InvalidArguments;
@@ -111,8 +110,6 @@ VerbAdmission InteractUseOperations::Use(const VerbInvocation& invocation)
         return VerbAdmission::InvalidArguments;
     ray.Direction = ray.Direction / length;
 
-    // An early refusal, not the decision: admission and the pass judge the
-    // binding again, since it can stop answering between here and its run.
     const UseCandidate candidate = FindUseCandidate(*Responses, Physics, activator, ray, static_cast<float>(range));
     if (!candidate.Target.IsValid() || candidate.Availability.Readiness != ResponseReadiness::Available)
         return VerbAdmission::Refused;

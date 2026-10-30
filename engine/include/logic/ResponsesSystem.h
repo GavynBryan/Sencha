@@ -67,30 +67,16 @@ struct SensorInteractions
     }
 };
 
-// Whether an entity's responses would answer an occurrence, asked without
-// delivering it (docs/gameplay/responses.md, "Availability").
 enum class ResponseReadiness : std::uint8_t
 {
-    // No binding answers the event: the entity is not a candidate for it at all.
     Unanswered,
-    // A binding answers it, and something this process knows stops every one:
-    // disabled, consumed, cooling, or a condition read false.
     Blocked,
-    // A binding answers it, and nothing this process knows stops it.
     Available,
 };
 
 struct ResponseAvailability
 {
     ResponseReadiness Readiness = ResponseReadiness::Unanswered;
-    // Whether disabled, consumed and cooldown state was part of the answer: true
-    // on the authority, false on a client. A client holds the authored bindings
-    // but none of their runtime state -- its bits are what was authored and it
-    // keeps no cooldowns -- so it judges only the conditions, against its own
-    // copy of the World. There, Available means possible rather than eligible,
-    // and Blocked means a condition read false here, which the authority, with
-    // current state, may not agree with. Only the authority's answer is a
-    // verdict, and even that one is judged again when the occurrence runs.
     bool RuntimeStateKnown = false;
 };
 
@@ -125,11 +111,7 @@ public:
                      });
     }
 
-    // Whether `subject`'s responses would answer `occurrence` now, asked without
-    // delivering it: nothing is queued, counted, or changed. The gates are the
-    // ones admission and the pass apply, in their order; this never stands in
-    // for them, since a binding can stop answering before it runs. Safe to ask
-    // from inside a running response: it evaluates with its own runner and ports.
+    // Docs: gameplay/responses.md, "Availability".
     template<HasAuthoredEvent E>
     [[nodiscard]] ResponseAvailability Availability(EntityId subject, const E& occurrence)
     {
@@ -293,8 +275,6 @@ private:
     bool QueueFullReported = false;
     std::vector<bool> InvalidPayloadReported;
     Counters Counts;
-    // Availability's own: it may be asked while Runner is mid-run and RunPorts,
-    // Values and Scratch belong to the activation running.
     VerbSequenceRunner JudgeRunner;
     std::vector<AuthoredValue> JudgePorts;
     AuthoredArguments JudgeScratch;

@@ -56,8 +56,7 @@ public:
     // projectile.launch, answered by `projectiles`, which must outlive this.
     void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
 
-    // interact.use, cast through `physics` and delivered by `responses`, both of
-    // which must outlive this.
+    // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
 
 private:
