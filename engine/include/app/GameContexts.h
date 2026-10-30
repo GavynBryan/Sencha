@@ -24,6 +24,7 @@
 
 class Engine;
 class EngineSchedule;
+struct PresentedFrame;
 
 struct GameConfigureContext
 {
@@ -154,6 +155,17 @@ struct FrameUpdateContext
     InputFrame& Input;
     double WallDeltaSeconds = 0.0;
     PresentationTime Presentation;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
+};
+
+struct PresentationUpdateContext
+{
+    EngineConfig& Config;
+    RuntimeFrameLoop& Runtime;
+    double WallDeltaSeconds = 0.0;
+    PresentationTime Presentation;
+    const PresentedFrame& Frame;
     World& Entities;
     const StoragePartitionSet& Partitions;
 };

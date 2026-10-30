@@ -9,6 +9,7 @@
 #include <attach/Attachment.h>
 #include <app/Engine.h>
 #include <app/Game.h>
+#include <app/PresentationPhase.h>
 #include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -842,6 +843,17 @@ void Engine::RegisterSimulationFramePhases()
             .Partitions = zones.Logic,
         };
         engine.Schedule().RunFrameUpdate(update);
+
+        RenderExtent presentedExtent{};
+#ifdef SENCHA_ENABLE_VULKAN
+        if (engine.HasPresentation())
+        {
+            const VkExtent2D swapchainExtent = engine.Graphics().Frames.PrimarySwapchain().GetExtent();
+            presentedExtent = RenderExtent{ swapchainExtent.width, swapchainExtent.height };
+        }
+#endif
+        (void)RunPresentationPhase(engine.Schedule(), config, *ctx.Runtime, entities, zones.Visible,
+                                   presentedExtent);
 
 #ifdef SENCHA_ENABLE_UI
         // The window's size and display scale, every frame.

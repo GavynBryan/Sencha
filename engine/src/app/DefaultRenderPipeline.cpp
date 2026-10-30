@@ -1,7 +1,7 @@
 #include <app/DefaultRenderPipeline.h>
 
 #include <app/EngineConsoleBuiltins.h>
-#include <camera/CameraEffects.h>
+#include <camera/PresentedFrame.h>
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
 #include <render/RenderLightCVars.h>
@@ -231,16 +231,10 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     if (activeCamera == nullptr || !activeCamera->HasActive())
         return;
 
-    const EntityId cameraEntity = activeCamera->GetActive();
-    if (world.IsAlive(cameraEntity))
-        PresentCameraEffects(world, cameraEntity, ctx.Runtime.GetSimulationClock(), ctx.Presentation.Alpha);
-    if (!world.IsAlive(cameraEntity)
-        || !ctx.Partitions.Contains(world.GetEntityPartition(cameraEntity))
-        || !CameraRenderDataSystem::Build(*activeCamera, world, extent, Camera,
-                                          ctx.Presentation.Alpha))
-    {
+    const PresentedFrame& presented = EnsurePresentedFrame(
+        world, ctx.Runtime.GetSimulationClock(), ctx.Presentation, extent, ctx.Partitions);
+    if (!CameraRenderDataSystem::Build(presented, world, Camera))
         return;
-    }
 
     CpuScopeTimings* scopes =
         Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr;

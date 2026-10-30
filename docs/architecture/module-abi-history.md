@@ -668,3 +668,33 @@ responses would answer an occurrence without delivering it. `trigger.interact`
 and `sensor.interact` are unchanged.
 
 **App.** `EngineVocabularyBindings::BindInteraction` holds the use operations.
+
+## v39
+
+The frame's presented view, published once and shared by overlays and render
+extraction (`docs/gameplay/camera.md`, "The presented frame").
+
+**App.** A `PresentationUpdate(PresentationUpdateContext&)` schedule phase
+(`EngineSchedule::RunPresentationUpdate`) runs after every FrameUpdate system
+and before UI layout, with the published `PresentedFrame` in its context.
+`RunPresentationPhase` (`app/PresentationPhase.h`) is that step: it publishes
+the frame, then runs the phase. The fingerprint now covers
+`camera/PresentedFrame.h`, `camera/PresentedView.h`,
+`render/CameraProjection.h` and `time/FrameClock.h`, which reach a module
+through the frame contexts.
+
+**Camera.** `camera/PresentedFrame.h`: the `PresentedFrame` snapshot,
+`ResolvePresentedFrame` (read-only), `PublishPresentedFrame`,
+`EnsurePresentedFrame`, `TryPresentedFrame` and `ProjectWorldPoint`;
+`PresentedFrame::Publication` counts publications, so a frame resolved again
+after overlays laid out against it shows.
+`PresentCameraEffects` measures shake falloff from the camera's drawn pose.
+
+**Render.** `ProjectWorldPointToViewport`, `ViewportRect`, `ViewportPlacement`
+and `ViewportProjection` in `render/CameraProjection.h`.
+`CameraRenderDataSystem::Build(const PresentedFrame&, ...)`; the active-camera
+overload now resolves through it.
+
+**World.** `PresentationPoseOf` composes an entity's local transform onto its
+parent's drawn pose instead of returning its WorldTransform, so it is right
+before presentation propagation runs as well as after it.

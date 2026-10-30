@@ -433,6 +433,13 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # draws through the debug-line channels.
     "${SENCHA_ENGINE_INCLUDE_DIR}/perception/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/debug/DebugLines.h"
+    # The presented frame: PresentationUpdateContext hands a module the snapshot
+    # by reference, and it reads the view, the matrices and projection results
+    # by value. Every frame context carries a PresentationTime.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/PresentedFrame.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/PresentedView.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/CameraProjection.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/time/FrameClock.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

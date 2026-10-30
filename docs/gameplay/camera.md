@@ -167,10 +167,10 @@ or a player set keeps it. Several multiply, the product held within
 
 ### Where they apply
 
-Render extraction advances the effects to the frame's presentation time and
-sums them for the camera it is about to draw (`PresentCameraEffects`,
-`camera/CameraEffects.h`), so nothing runs where no window presents.
-`CameraRenderDataSystem::Build` then composes the shake into the pose it
+Publishing the frame's presented view (below) advances the effects to the
+frame's presentation time and sums them for the camera about to be drawn
+(`PresentCameraEffects`, `camera/CameraEffects.h`), so nothing runs where no
+window presents. `CameraRenderDataSystem::Build` then composes the shake into the pose it
 draws from, in the camera's own space, and scales the field of view it projects
 with. The camera's transform is never written, so aiming, traces and anything
 else that reads it see the camera where the simulation put it. The frustum is
@@ -183,6 +183,55 @@ the scaled, clamped field of view, which `Build` draws from and anything laid
 over the frame reads too. Because aiming reads the unshaken camera, a reticle at
 the centre of the screen misreports the aim during a shake; one that follows it
 projects the camera's forward through the presented view with
-`ProjectDirectionToViewport` (`render/CameraProjection.h`). Effects are summed
-during render extraction, so a reader earlier in the frame sees the view the
-previous frame was drawn with.
+`ProjectDirectionToViewport` (`render/CameraProjection.h`).
+
+## The presented frame
+
+Once a frame, after its ticks and every FrameUpdate system and before UI layout,
+the engine publishes `PresentedFrame` (`camera/PresentedFrame.h`): the active
+camera, its pose blended to presentation time (`Placed`), the presented view,
+the projection, the extent and the matrices. Render extraction draws the frame
+from that snapshot, and `PresentationUpdate` systems -- the schedule phase that
+runs right after it is published -- lay overlays out against the same one. So a
+marker, a leader line or a reticle placed there lands on the picture of its own
+frame, effects and interpolation included. Placed in FrameUpdate it would read
+the view of the frame before.
+
+```cpp
+void PresentationUpdate(PresentationUpdateContext& ctx)
+{
+    const ViewportRect window{ .Offset = {}, .Size = { width, height } };
+    const ViewportProjection at =
+        ProjectWorldPoint(ctx.Frame, window, PresentationPoseOf(ctx.Entities, target, ctx.Frame.Alpha).Position);
+    if (at.Placement == ViewportPlacement::Visible)
+        Place(marker, at.Position);
+}
+```
+
+`ProjectWorldPointToViewport` (`render/CameraProjection.h`) is the one
+world-to-overlay mapping: perspective and orthographic, a rectangle with an
+offset in the caller's own units, and a placement of `Visible`,
+`OutsideViewport` (in front of the camera, not drawn) or `BehindCamera`, with an
+`EdgeDirection` that points the right way even behind the camera.
+
+The snapshot is a copy, and publishing it writes nothing the simulation's side
+of the frame reads. `WorldTransform` is still written by presentation
+propagation during extraction, as before, so audio and gameplay see exactly what
+they saw before it existed. Where an entity is drawn comes from
+`PresentationPoseOf` (`world/transform/TransformHistory.h`), which composes it
+from the same inputs propagation will and is right at any point after the ticks.
+Joint attachments are the exception: they are placed during extraction, so an
+overlay that follows one reads its pose from the frame before.
+
+`PresentationUpdate` systems see the Visible partition set, the one extraction
+draws from, and a read-only `Frame`; anything that drives simulation or consumes
+input belongs in FrameUpdate. A host that draws nothing (empty extent) publishes
+an invalid frame and presents no camera effects. `PresentedFrame::Publication`
+counts publications into the World: one per frame unless extraction had to
+resolve again after overlays laid out. A viewport rectangle has the aspect of the
+view it shows, in the caller's own units (pixels or HUD layout units).
+
+A change after publication -- a UI action that switches the active camera --
+shows the next frame. Extraction publishes again only when the camera it would
+draw is no longer the one the snapshot holds, so the picture never shows a
+camera that is not active.

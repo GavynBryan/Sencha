@@ -12,16 +12,13 @@ struct CameraComponent;
 // laid over the frame -- a reticle, a marker -- reads the same view, so it agrees
 // with the picture rather than with the camera that aiming and traces read.
 //
-// PresentCameraEffects sums both effects during render extraction, so a reader
-// earlier in the frame sees the view the previous frame was drawn with.
+// Read it from PresentedFrame; the effects are summed when that is published.
 struct PresentedView
 {
     Transform3f Pose;
     float FovYRadians = 0.0f;
 };
 
-// `placed` is the camera's pose before its effects: its world pose, blended to
-// presentation time where it carries history.
 [[nodiscard]] PresentedView PresentCameraView(const World& world,
                                               EntityId camera,
                                               const CameraComponent& component,
