@@ -844,11 +844,6 @@ void Engine::RegisterSimulationFramePhases()
         };
         engine.Schedule().RunFrameUpdate(update);
 
-        // The view this frame is drawn with, once every system that moves the
-        // camera has run and before anything lays out against it. A snapshot:
-        // presentation propagation still writes WorldTransform during
-        // extraction, so nothing on the simulation's side of the frame -- the
-        // audio below included -- sees a pose it did not see before.
         RenderExtent presentedExtent{};
 #ifdef SENCHA_ENABLE_VULKAN
         if (engine.HasPresentation())

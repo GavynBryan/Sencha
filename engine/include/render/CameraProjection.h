@@ -87,10 +87,6 @@
     return Vec2d{ (clip.X / clip.W + 1.0f) * 0.5f * width, (clip.Y / clip.W + 1.0f) * 0.5f * height };
 }
 
-// A rectangle of the frame in the caller's own units, origin top left: the
-// pixels a viewport tile covers, or the layout units a HUD surface lays out in.
-// It must show the whole view the projection describes, so it has that view's
-// aspect; a HUD over the full window passes the window's size.
 struct ViewportRect
 {
     Vec2d Offset;
@@ -99,42 +95,21 @@ struct ViewportRect
 
 enum class ViewportPlacement : std::uint8_t
 {
-    // In front of the camera, inside the rectangle and between the near and far
-    // planes: where the frame draws the point.
     Visible,
-    // In front of the camera but not drawn: outside the rectangle, nearer than
-    // the near plane, or past the far one.
     OutsideViewport,
-    // On or behind the plane the camera looks out of.
     BehindCamera,
 };
 
 struct ViewportProjection
 {
     ViewportPlacement Placement = ViewportPlacement::BehindCamera;
-    // Where the point lands, in the rectangle's units with its offset applied,
-    // and as a fraction of it ([0, 1] across a visible point). Outside the
-    // rectangle for a point outside it. Zero behind the camera, where the
-    // projection mirrors and names no place on the frame.
     Vec2d Position;
     Vec2d Normalized;
-    // How far in front of the camera's plane the point is, in world units.
-    // Zero or negative behind it.
     float ViewDepth = 0.0f;
-    // Unit direction, in the rectangle's units, from its centre toward the point:
-    // where an edge marker for it would sit. Behind the camera it is the way to
-    // turn toward the point, not the mirrored projection. Zero for a point on
-    // the view's axis.
     Vec2d EdgeDirection;
 };
 
-// Where a world-space point lands in `viewport`, seen through the `view` and
-// `projection` a frame was drawn with. The one definition of world-to-overlay
-// placement: perspective and orthographic alike, in the clip-space convention
-// every pipeline uses, so a marker laid here sits on the pixels the point was
-// drawn on. Pass the presented camera's matrices (camera/PresentedFrame.h), not
-// ones built from the camera entity, or shake and field-of-view effects pull
-// the marker off the picture.
+// Pass the presented frame's matrices, not ones built from the camera entity.
 [[nodiscard]] inline ViewportProjection ProjectWorldPointToViewport(const Mat4& view,
                                                                     const Mat4& projection,
                                                                     const ViewportRect& viewport,
@@ -144,11 +119,9 @@ struct ViewportProjection
     const Vec4 clip = projection * inView;
 
     ViewportProjection result;
-    // Cameras look down -Z in view space; MakeVulkanPerspective's w is -z.
     result.ViewDepth = -inView.Z;
 
-    // Through |w|, so that behind a perspective camera the direction is the
-    // true one: dividing by the negative w is what mirrors the projection.
+    // |w|, not w: dividing by a negative w mirrors the projection behind the camera.
     const float w = std::max(std::abs(clip.W), 1.0e-6f);
     const Vec2d ndc{ clip.X / w, clip.Y / w };
     const Vec2d onScreen{ ndc.X * viewport.Size.X, ndc.Y * viewport.Size.Y };

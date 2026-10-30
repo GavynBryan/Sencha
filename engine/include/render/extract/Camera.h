@@ -53,16 +53,10 @@ struct PresentedFrame;
 class CameraRenderDataSystem
 {
 public:
-    // From the frame's published view (camera/PresentedFrame.h): the matrices
-    // are the snapshot's own, so what is drawn is what overlays laid out
-    // against. False for an invalid frame.
     [[nodiscard]] static bool Build(const PresentedFrame& frame,
                                     const World& world,
                                     CameraRenderData& out);
 
-    // Resolves the active camera's view on the spot, from the camera effects as
-    // last presented. For hosts and tests that draw a camera without a frame
-    // loop publishing one.
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
                                     const World& world,
                                     RenderExtent targetExtent,

@@ -231,9 +231,6 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
     if (activeCamera == nullptr || !activeCamera->HasActive())
         return;
 
-    // The view published before UI layout, so the frame draws exactly what
-    // overlays were placed against. Published here instead when this frame
-    // reached no publication point, or the active camera changed since.
     const PresentedFrame& presented = EnsurePresentedFrame(
         world, ctx.Runtime.GetSimulationClock(), ctx.Presentation, extent, ctx.Partitions);
     if (!CameraRenderDataSystem::Build(presented, world, Camera))

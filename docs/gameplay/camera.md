@@ -223,6 +223,14 @@ from the same inputs propagation will and is right at any point after the ticks.
 Joint attachments are the exception: they are placed during extraction, so an
 overlay that follows one reads its pose from the frame before.
 
+`PresentationUpdate` systems see the Visible partition set, the one extraction
+draws from, and a read-only `Frame`; anything that drives simulation or consumes
+input belongs in FrameUpdate. A host that draws nothing (empty extent) publishes
+an invalid frame and presents no camera effects. `PresentedFrame::Publication`
+counts publications into the World: one per frame unless extraction had to
+resolve again after overlays laid out. A viewport rectangle has the aspect of the
+view it shows, in the caller's own units (pixels or HUD layout units).
+
 A change after publication -- a UI action that switches the active camera --
 shows the next frame. Extraction publishes again only when the camera it would
 draw is no longer the one the snapshot holds, so the picture never shows a

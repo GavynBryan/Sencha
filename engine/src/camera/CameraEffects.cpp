@@ -11,8 +11,6 @@ void PresentCameraEffects(World& world, EntityId camera, const FixedSimulationLo
     const CameraEffectClock now{ .Tick = clock.GetTickIndex(),
                                  .Alpha = presentationAlpha,
                                  .TickSeconds = clock.GetFixedDt() };
-    // Falloff measures from where the camera is drawn, which presentation
-    // propagation has not written yet when this runs ahead of extraction.
     if (CameraShakeState* shake = world.TryGetResource<CameraShakeState>())
         shake->Update(world, camera, PresentationPoseOf(world, camera, presentationAlpha).Position, now);
     if (CameraFovScaleState* fov = world.TryGetResource<CameraFovScaleState>())

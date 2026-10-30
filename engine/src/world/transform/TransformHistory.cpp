@@ -52,8 +52,7 @@ void RequestTransformHistorySnap(World& world, EntityId entity)
 
 namespace
 {
-// Deeper than any authored rig. A chain that reaches it is a cycle, which
-// propagation refuses to order, so the walk stops rather than recursing on.
+// A chain this deep is a cycle, which propagation refuses to order.
 constexpr int kMaxPresentationDepth = 64;
 
 Transform3f PresentationPoseAt(const World& world, EntityId entity, double alpha, int depth)
@@ -65,10 +64,7 @@ Transform3f PresentationPoseAt(const World& world, EntityId entity, double alpha
         if (const WorldTransformHistory* history = world.TryGet<WorldTransformHistory>(entity))
             return ResolvePresentationPose(*history, alpha);
     }
-    // What presentation propagation composes: the parent as it is drawn, then
-    // this entity's own local transform. Read from the inputs rather than from
-    // WorldTransform, which holds whichever domain swept it last -- the tick's
-    // pose until this frame's presentation sweep has run.
+    // Composed from the inputs: WorldTransform holds whichever domain swept it last.
     const LocalTransform* local =
         world.IsRegistered<LocalTransform>() ? world.TryGet<LocalTransform>(entity) : nullptr;
     if (local != nullptr)

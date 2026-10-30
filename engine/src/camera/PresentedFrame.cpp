@@ -23,9 +23,6 @@ PresentedFrame ResolvePresentedFrame(const World& world,
     if (component == nullptr)
         return frame;
 
-    // Blended the way the camera is drawn: its own history when it carries one,
-    // otherwise its local transform on its parent's drawn pose, which is the
-    // pose presentation propagation is about to write for it.
     frame.Placed = PresentationPoseOf(world, camera, presentation.Alpha);
     frame.View = PresentCameraView(world, camera, *component, frame.Placed);
     frame.Projection = component->Projection;
@@ -64,8 +61,6 @@ const PresentedFrame& PublishPresentedFrame(World& world,
 
     const ActiveCameraService* active = std::as_const(world).TryGetResource<ActiveCameraService>();
     const EntityId camera = active != nullptr && active->HasActive() ? active->GetActive() : EntityId{};
-    // Nothing is presented where nothing is drawn: a headless host leaves the
-    // effects as the simulation started them, as it always has.
     if (!extent.IsEmpty() && camera.IsValid() && world.IsAlive(camera))
         PresentCameraEffects(world, camera, clock, presentation.Alpha);
 

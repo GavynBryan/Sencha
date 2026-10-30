@@ -1,5 +1,3 @@
-// The frame's presented view: one snapshot, published read-only before UI
-// layout, that overlays lay out against and render extraction draws from.
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
@@ -57,9 +55,6 @@ void ExpectSame(const Mat4& a, const Mat4& b)
             EXPECT_EQ(a[row][column], b[row][column]) << row << "," << column;
 }
 
-// A first-person rig: a body that carries tick history, moving between its last
-// two ticks; a camera parented to it, pitched and raised to the eye; and a
-// grandchild on the camera, as a held thing is.
 struct Rig
 {
     Rig()
@@ -95,11 +90,9 @@ struct Rig
         Entities.AddResource<CameraShakeState>();
         Entities.AddResource<CameraFovScaleState>();
 
-        // The tick's own pose, as simulation-domain propagation leaves it.
         PropagateTransforms(Entities, Visible, TransformPropagationDomain::Simulation);
     }
 
-    // What extraction does after the snapshot: propagate to presentation time.
     void PropagateForPresentation(double alpha)
     {
         Entities.AdvanceFrame();
@@ -144,7 +137,6 @@ struct Rig
 
 const ViewportRect kWindow{ .Offset = {}, .Size = { 1280.0f, 720.0f } };
 
-// A camera at the origin looking down -Z, as every view convention here has it.
 const Mat4 kView = Mat4::Identity();
 const Mat4 kPerspective = MakeVulkanPerspective(std::numbers::pi_v<float> / 2.0f, 1280.0f / 720.0f, 0.1f, 100.0f);
 } // namespace
@@ -172,7 +164,6 @@ TEST(WorldPointProjection, UpIsTheTopOfTheFrameAndRightIsRight)
 
 TEST(WorldPointProjection, InFrontButOffTheFrameIsOutsideNotBehind)
 {
-    // 90 degrees of vertical view: 45 off the axis is the frame's edge.
     const ViewportProjection left = ProjectWorldPointToViewport(kView, kPerspective, kWindow, Vec3d(-20.0f, 0.0f, -5.0f));
     EXPECT_EQ(left.Placement, ViewportPlacement::OutsideViewport);
     EXPECT_LT(left.Position.X, 0.0f);
@@ -186,8 +177,7 @@ TEST(WorldPointProjection, InFrontButOffTheFrameIsOutsideNotBehind)
 
 TEST(WorldPointProjection, BehindTheCameraPointsTheWayToTurn)
 {
-    // Behind and to the right: the projection mirrors it to the left, the way to
-    // turn toward it is right.
+    // Mirrored to the left by the projection; the way to turn is right.
     const ViewportProjection behind = ProjectWorldPointToViewport(kView, kPerspective, kWindow, Vec3d(2.0f, 0.0f, 5.0f));
     EXPECT_EQ(behind.Placement, ViewportPlacement::BehindCamera);
     EXPECT_LE(behind.ViewDepth, 0.0f);
@@ -222,19 +212,14 @@ TEST(PresentationPose, IsWherePresentationPropagationWillPutEveryLevelOfARig)
 {
     Rig rig;
     constexpr double kAlpha = 0.375;
-    // Asked before presentation propagation, as a PresentationUpdate system does.
     const Transform3f body = PresentationPoseOf(rig.Entities, rig.Body, kAlpha);
     const Transform3f camera = PresentationPoseOf(rig.Entities, rig.Camera, kAlpha);
     const Transform3f held = PresentationPoseOf(rig.Entities, rig.Held, kAlpha);
 
     rig.PropagateForPresentation(kAlpha);
-    // The body is drawn from its history; its children from what propagation
-    // wrote. Bit for bit, not approximately: the snapshot and the picture are
-    // computed from the same inputs by the same operations.
     ExpectSame(body, ResolvePresentationPose(*rig.Entities.TryGet<WorldTransformHistory>(rig.Body), kAlpha));
     ExpectSame(camera, rig.Entities.TryGet<WorldTransform>(rig.Camera)->Value);
     ExpectSame(held, rig.Entities.TryGet<WorldTransform>(rig.Held)->Value);
-    // And asking again after propagation gives the same answer.
     ExpectSame(PresentationPoseOf(rig.Entities, rig.Held, kAlpha), held);
 }
 
@@ -259,8 +244,6 @@ TEST(PresentedFrame, ResolvingWritesNothingASimulationReaderSees)
     const PresentedFrame& frame = PublishPresentedFrame(rig.Entities, rig.Clock, Frame(3, 0.5), kExtent, rig.Visible);
     ASSERT_TRUE(frame.Valid);
 
-    // The camera is drawn half way along the body's path, and still sits at the
-    // tick's pose for anything that reads its transform.
     ExpectSame(rig.Entities.TryGet<WorldTransform>(rig.Camera)->Value, cameraTick);
     ExpectSame(rig.Entities.TryGet<WorldTransform>(rig.Held)->Value, heldTick);
     ExpectSame(rig.Entities.TryGet<WorldTransformHistory>(rig.Body)->Previous, history.Previous);
@@ -279,7 +262,6 @@ TEST(PresentedFrame, ExtractionDrawsTheMatricesOverlaysLaidOutAgainst)
     EXPECT_NE(rig.Entities.GetResource<CameraShakeState>().OffsetFor(rig.Camera).Rotation, Vec3d());
     EXPECT_GT(rig.Entities.GetResource<CameraFovScaleState>().ScaleFor(rig.Camera), 1.0f);
 
-    // Extraction, after presentation propagation, as the frame runs it.
     rig.PropagateForPresentation(now.Alpha);
     const PresentedFrame& drawn = EnsurePresentedFrame(rig.Entities, rig.Clock, now, kExtent, rig.Visible);
     EXPECT_EQ(&drawn, &frame);
@@ -287,14 +269,11 @@ TEST(PresentedFrame, ExtractionDrawsTheMatricesOverlaysLaidOutAgainst)
     ASSERT_TRUE(CameraRenderDataSystem::Build(drawn, rig.Entities, camera));
     ExpectSame(camera.ViewProjection, frame.ViewProjection);
 
-    // The same view the extraction path drew before the snapshot existed: the
-    // propagated camera, shaken and pulsed, through the active-camera build.
     CameraRenderData before;
     ASSERT_TRUE(CameraRenderDataSystem::Build(rig.Entities.GetResource<ActiveCameraService>(), rig.Entities, kExtent,
                                               before, now.Alpha));
     ExpectSame(before.ViewProjection, frame.ViewProjection);
 
-    // A point on the held thing projects to where the drawn frame puts it.
     const Vec3d point = rig.Entities.TryGet<WorldTransform>(rig.Held)->Value.Position;
     const Vec4 clip = camera.ViewProjection * Vec4{ point.X, point.Y, point.Z, 1.0f };
     const ViewportProjection at = ProjectWorldPoint(frame, kWindow, point);
@@ -312,7 +291,7 @@ TEST(PresentedFrame, AShakenViewMovesWhatIsLaidOverIt)
     EXPECT_NEAR(still.X, 640.0f, 1e-2f);
     EXPECT_NEAR(still.Y, 360.0f, 1e-2f);
 
-    // Into the shake's hold, past its 50 ms attack.
+    // Past the shake's 50 ms attack.
     rig.ShakeAndPulse();
     for (int tick = 0; tick < 6; ++tick)
         rig.Tick();
@@ -326,16 +305,13 @@ TEST(PresentedFrame, ExtractionPublishesAgainForAnotherFrameOrAnotherCamera)
     Rig rig;
     const PresentedFrame first = PublishPresentedFrame(rig.Entities, rig.Clock, Frame(1, 0.25), kExtent, rig.Visible);
 
-    // A frame that reached no publication point.
     const PresentedFrame& next = EnsurePresentedFrame(rig.Entities, rig.Clock, Frame(2, 0.75), kExtent, rig.Visible);
     EXPECT_EQ(next.FrameIndex, 2u);
     EXPECT_NE(next.Placed.Position, first.Placed.Position);
 
-    // A resize between publication and extraction.
     EXPECT_EQ(EnsurePresentedFrame(rig.Entities, rig.Clock, Frame(2, 0.75), { 640, 480 }, rig.Visible).Extent,
               (RenderExtent{ 640, 480 }));
 
-    // The active camera switched after publication: the picture follows it.
     const EntityId other = rig.Entities.CreateEntity();
     rig.Entities.AddComponent(other, LocalTransform{ At(Vec3d(0.0f, 10.0f, 0.0f)) });
     rig.Entities.AddComponent(other, WorldTransform{});
@@ -364,7 +340,6 @@ TEST(PresentedFrame, NothingToDrawIsAnInvalidFrame)
 
 namespace
 {
-// What a PresentationUpdate system saw of the frame it ran in.
 struct Overlay
 {
     const PresentedFrame* Seen = nullptr;
@@ -405,8 +380,7 @@ TEST(PresentationPhase, OverlaysSeeThisFramesViewAndExtractionReusesIt)
     Rig rig;
     EngineConfig config;
     RuntimeFrameLoop runtime;
-    // As FrameDriver orders a frame: presentation time is built after the
-    // ticks, right before the Update phase that runs the presentation step.
+    // Presentation time is built after the ticks, as FrameDriver orders a frame.
     for (int frame = 0; frame < 3; ++frame)
     {
         (void)runtime.BeginFrame();
@@ -418,8 +392,6 @@ TEST(PresentationPhase, OverlaysSeeThisFramesViewAndExtractionReusesIt)
     const PresentedFrame& published =
         RunPresentationPhase(schedule, config, runtime, rig.Entities, rig.Visible, kExtent);
 
-    // The overlay ran against the published snapshot itself, already valid and
-    // already describing this frame, and only the presentation phase ran.
     EXPECT_EQ(overlay.Runs, 1);
     EXPECT_EQ(overlay.Seen, &published);
     EXPECT_EQ(overlay.Seen, TryPresentedFrame(rig.Entities));
@@ -428,8 +400,6 @@ TEST(PresentationPhase, OverlaysSeeThisFramesViewAndExtractionReusesIt)
     EXPECT_TRUE(later.SawFirst);
     EXPECT_EQ(mover.Runs, 0);
 
-    // Extraction in the same frame draws that same publication rather than
-    // resolving another one the overlays never saw.
     const std::uint64_t publication = published.Publication;
     rig.PropagateForPresentation(now.Alpha);
     const PresentedFrame& drawn =
@@ -437,7 +407,6 @@ TEST(PresentationPhase, OverlaysSeeThisFramesViewAndExtractionReusesIt)
     EXPECT_EQ(drawn.Publication, publication);
     ExpectSame(drawn.ViewProjection, overlay.Copy.ViewProjection);
 
-    // The next frame publishes again.
     (void)runtime.BeginFrame();
     (void)runtime.BuildPresentationFrame();
     (void)RunPresentationPhase(schedule, config, runtime, rig.Entities, rig.Visible, kExtent);
