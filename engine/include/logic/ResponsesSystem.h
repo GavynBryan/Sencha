@@ -67,6 +67,33 @@ struct SensorInteractions
     }
 };
 
+// Whether an entity's responses would answer an occurrence, asked without
+// delivering it (docs/gameplay/responses.md, "Availability").
+enum class ResponseReadiness : std::uint8_t
+{
+    // No binding answers the event: the entity is not a candidate for it at all.
+    Unanswered,
+    // A binding answers it, and something this process knows stops every one:
+    // disabled, consumed, cooling, or a condition read false.
+    Blocked,
+    // A binding answers it, and nothing this process knows stops it.
+    Available,
+};
+
+struct ResponseAvailability
+{
+    ResponseReadiness Readiness = ResponseReadiness::Unanswered;
+    // Whether disabled, consumed and cooldown state was part of the answer: true
+    // on the authority, false on a client. A client holds the authored bindings
+    // but none of their runtime state -- its bits are what was authored and it
+    // keeps no cooldowns -- so it judges only the conditions, against its own
+    // copy of the World. There, Available means possible rather than eligible,
+    // and Blocked means a condition read false here, which the authority, with
+    // current state, may not agree with. Only the authority's answer is a
+    // verdict, and even that one is judged again when the occurrence runs.
+    bool RuntimeStateKnown = false;
+};
+
 // Runs entities' authored responses: an occurrence delivered at an entity is
 // matched against that entity's bindings, captured, and run at the first pass of
 // a later tick, on the authority only, bounded by a queue and a command budget.
@@ -96,6 +123,19 @@ public:
                      [](const void* published, AuthoredArguments& payload) {
                          AuthoredApiDefinition<E>::Encode(*static_cast<const E*>(published), payload);
                      });
+    }
+
+    // Whether `subject`'s responses would answer `occurrence` now, asked without
+    // delivering it: nothing is queued, counted, or changed. The gates are the
+    // ones admission and the pass apply, in their order; this never stands in
+    // for them, since a binding can stop answering before it runs. Safe to ask
+    // from inside a running response: it evaluates with its own runner and ports.
+    template<HasAuthoredEvent E>
+    [[nodiscard]] ResponseAvailability Availability(EntityId subject, const E& occurrence)
+    {
+        return Judge(subject, EventOf<E>(), &occurrence, [](const void* published, AuthoredArguments& payload) {
+            AuthoredApiDefinition<E>::Encode(*static_cast<const E*>(published), payload);
+        });
     }
 
     [[nodiscard]] bool HoldsResponses(EntityId subject) const
@@ -209,6 +249,8 @@ private:
                         EncodeFn encode);
     bool Encode(EntityId subject, AuthoredEventId event, const void* occurrence, EncodeFn encode,
                 std::uint32_t& values, std::uint16_t& count);
+    ResponseAvailability Judge(EntityId subject, AuthoredEventId event, const void* occurrence, EncodeFn encode);
+    const CompiledVerbSequence* ResolveSequence(ResponseDefinitions& definitions, VerbSequenceKey sequence);
     [[nodiscard]] bool Cooling(EntityId recipient, std::uint64_t keyHash, ResponseCooldownScope scope,
                                EntityId instigator, std::uint64_t tick) const;
     void ResolveSensorEvents();
@@ -251,6 +293,11 @@ private:
     bool QueueFullReported = false;
     std::vector<bool> InvalidPayloadReported;
     Counters Counts;
+    // Availability's own: it may be asked while Runner is mid-run and RunPorts,
+    // Values and Scratch belong to the activation running.
+    VerbSequenceRunner JudgeRunner;
+    std::vector<AuthoredValue> JudgePorts;
+    AuthoredArguments JudgeScratch;
 };
 
 // The system, its interaction queue, and the cvars that bound them. Called by

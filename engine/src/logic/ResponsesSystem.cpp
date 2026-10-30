@@ -43,6 +43,22 @@ void EncodeSensorActivation(const void* published, AuthoredArguments& payload)
     payload.Set(0, AuthoredValue::Entity(static_cast<const SensorActivation*>(published)->Activator));
 }
 
+// A binding that does not respond, whatever is delivered: switched off, or a
+// once-binding that has run.
+bool SwitchedOff(const Responses& responses, std::uint32_t bit)
+{
+    return ((responses.Disabled | responses.Consumed) & bit) != 0;
+}
+
+bool SatisfiesDeclaration(const AuthoredEventDefinition& definition, const AuthoredArguments& payload)
+{
+    const std::vector<DataFieldSchema>& declared = definition.Payload.Children;
+    bool valid = payload.Size() == declared.size();
+    for (std::size_t i = 0; valid && i < declared.size(); ++i)
+        valid = AuthoredValueSatisfiesField(payload.At(i), declared[i]);
+    return valid;
+}
+
 // What a zone remembers of one binding: whose state, the text it had, and the
 // two bits that differ from authored.
 struct RememberedBinding
@@ -106,11 +122,7 @@ bool ResponsesSystem::Encode(EntityId subject, AuthoredEventId event, const void
     if (definition == nullptr)
         return false;
     encode(occurrence, Scratch);
-    const std::vector<DataFieldSchema>& declared = definition->Payload.Children;
-    bool valid = Scratch.Size() == declared.size();
-    for (std::size_t i = 0; valid && i < declared.size(); ++i)
-        valid = AuthoredValueSatisfiesField(Scratch.At(i), declared[i]);
-    if (!valid)
+    if (!SatisfiesDeclaration(*definition, Scratch))
     {
         ++Counts.InvalidPayloads;
         const std::size_t index = AuthoredEventRegistry::IndexOf(event);
@@ -146,6 +158,84 @@ bool ResponsesSystem::Cooling(EntityId recipient, std::uint64_t keyHash, Respons
     return found != Cooldowns.end() && found->second > tick;
 }
 
+// Whoever asks first compiles a sequence -- the pass, or Availability -- so a
+// compile reports the diagnostics of the sequence it compiled, wherever it ran.
+const CompiledVerbSequence* ResponsesSystem::ResolveSequence(ResponseDefinitions& definitions, VerbSequenceKey sequence)
+{
+    const CompiledVerbSequence* compiled = definitions.Sequences.Resolve(sequence, Entities, Assets, DataAssets);
+    if (definitions.Sequences.CompileCount() != ReportedCompiles)
+    {
+        ReportedCompiles = definitions.Sequences.CompileCount();
+        for (const std::string& diagnostic : definitions.Sequences.Diagnostics(sequence))
+            Log.Error("response sequence: {}", diagnostic);
+    }
+    return compiled;
+}
+
+// Admission's gates, then the pass's conditions, binding by binding as Admit
+// walks them; the first binding that would run answers Available. Runtime state
+// is judged only where it is held: a client's bits are the authored ones and it
+// keeps no cooldowns, so judging them would be judging what it never heard.
+ResponseAvailability ResponsesSystem::Judge(EntityId subject, AuthoredEventId event, const void* occurrence,
+                                            EncodeFn encode)
+{
+    ResponseAvailability answer{ .RuntimeStateKnown = IsSimulationAuthority(Entities) };
+    if (!event.IsValid() || EventCatalog() == nullptr || !HoldsResponses(subject))
+        return answer;
+    const auto* responses =
+        static_cast<const Responses*>(std::as_const(Entities).GetComponentRaw(subject, ResponsesComponent));
+    ResponseDefinitions* definitions = Entities.TryGetResource<ResponseDefinitions>();
+    const AuthoredEventDefinition* declared = Events->Get(event);
+    if (responses == nullptr || definitions == nullptr || declared == nullptr)
+        return answer;
+    const ResponseSetView set = definitions->Sets.Resolve(responses->Set, Entities);
+    const std::span<const CompiledResponseBinding> compiled = set.Compiled;
+    const std::span<const ResponseBindingDesc> bindings = set.Bindings;
+
+    const std::uint64_t now = Clock.GetTickIndex();
+    bool encoded = false;
+    EntityId instigator;
+    for (std::size_t i = 0; i < compiled.size(); ++i)
+    {
+        if (compiled[i].Event != event)
+            continue;
+        answer.Readiness = ResponseReadiness::Blocked;
+        if (answer.RuntimeStateKnown && SwitchedOff(*responses, 1u << i))
+            continue;
+        if (!encoded)
+        {
+            encode(occurrence, JudgeScratch);
+            if (!SatisfiesDeclaration(*declared, JudgeScratch))
+                return answer;
+            JudgePorts.clear();
+            JudgePorts.push_back(AuthoredValue::Entity(subject));
+            for (const AuthoredValue& value : JudgeScratch.Values())
+                JudgePorts.push_back(value);
+            encoded = true;
+            if (compiled[i].InstigatorPort < JudgePorts.size())
+                (void)JudgePorts[compiled[i].InstigatorPort].TryGetEntity(instigator);
+        }
+        const ResponseBindingDesc& binding = bindings[i];
+        if (answer.RuntimeStateKnown && Cooling(subject, binding.KeyHash, binding.CooldownScope, instigator, now))
+            continue;
+        const CompiledVerbSequence* sequence = ResolveSequence(*definitions, binding.Sequence);
+        const SequenceRun run{
+            .Entities = Entities,
+            .Verbs = Verbs,
+            .Queries = Queries,
+            .Tags = Entities.TryGetResource<GameplayTagRegistry>(),
+            .Ports = JudgePorts,
+            .Source = VerbInvocationSource{ .Producer = subject, .Instigator = instigator, .Tick = now },
+        };
+        if (JudgeRunner.Holds(sequence != nullptr ? *sequence : kEmptySequence, run))
+        {
+            answer.Readiness = ResponseReadiness::Available;
+            return answer;
+        }
+    }
+    return answer;
+}
+
 std::uint32_t ResponsesSystem::Admit(EntityId subject, AuthoredEventId event, std::uint64_t tick,
                                      const void* occurrence, EncodeFn encode)
 {
@@ -171,7 +261,7 @@ std::uint32_t ResponsesSystem::Admit(EntityId subject, AuthoredEventId event, st
         if (compiled[i].Event != event)
             continue;
         const std::uint32_t bit = 1u << i;
-        if (((responses->Disabled | responses->Consumed) & bit) != 0)
+        if (SwitchedOff(*responses, bit))
         {
             ++Counts.Gated;
             continue;
@@ -339,7 +429,7 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
                 ++Counts.Abandoned;
                 continue;
             }
-            if (((responses->Disabled | responses->Consumed) & bit) != 0)
+            if (SwitchedOff(*responses, bit))
             {
                 ++Counts.Gated;
                 continue;
@@ -356,14 +446,7 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
             continue;
         }
 
-        const CompiledVerbSequence* sequence =
-            definitions->Sequences.Resolve(activation.Sequence, world, Assets, DataAssets);
-        if (definitions->Sequences.CompileCount() != ReportedCompiles)
-        {
-            ReportedCompiles = definitions->Sequences.CompileCount();
-            for (const std::string& diagnostic : definitions->Sequences.Diagnostics(activation.Sequence))
-                Log.Error("response sequence: {}", diagnostic);
-        }
+        const CompiledVerbSequence* sequence = ResolveSequence(*definitions, activation.Sequence);
         if (sequence == nullptr)
             sequence = &kEmptySequence;
 

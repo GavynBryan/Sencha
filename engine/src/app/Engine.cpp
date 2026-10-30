@@ -1461,6 +1461,9 @@ int Engine::Run(Game& game)
         if (physics != nullptr)
         {
             VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
+            // Use casts through the same physics, and answers through responses.
+            if (ResponsesSystem* responses = EngineSystems.Get<ResponsesSystem>())
+                VocabularyBindings->BindInteraction(physics->GetSimulation(), *responses, *VerbDispatcherState);
             // Projectiles fly through the physics the game registered, so a game
             // without physics launches none. After the ability pass, which is
             // where most launches come from, so a projectile flies on the tick it

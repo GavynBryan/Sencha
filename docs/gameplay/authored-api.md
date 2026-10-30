@@ -285,6 +285,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
 | `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
 | `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
+| `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |
 | `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
 | `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
 | `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |

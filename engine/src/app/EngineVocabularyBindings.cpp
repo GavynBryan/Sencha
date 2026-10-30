@@ -7,6 +7,7 @@
 #include <camera/CameraFovScaleVerbs.h>
 #include <camera/CameraShakeVerbs.h>
 #include <effects/EffectVerbs.h>
+#include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
@@ -86,6 +87,13 @@ void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
 void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs)
 {
     Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
+}
+
+void EngineVocabularyBindings::BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses,
+                                               VerbDispatcher& verbs)
+{
+    Interaction = std::make_unique<InteractUseOperations>(Entities, physics, responses);
+    Verbs.push_back(verbs.Bind<&InvokeInteractUse>(verbs.Registry().Find(kInteractUseVerb), *Interaction));
 }
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)
