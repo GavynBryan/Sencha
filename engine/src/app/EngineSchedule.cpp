@@ -8,6 +8,7 @@ void EngineSchedule::Init()
     TopoSort(PhysicsEntries);
     TopoSort(PostFixedEntries);
     TopoSort(FrameUpdateEntries);
+    TopoSort(PresentationUpdateEntries);
     TopoSort(ExtractRenderEntries);
     TopoSort(AudioEntries);
     TopoSort(EndFrameEntries);
@@ -37,6 +38,7 @@ void EngineSchedule::Shutdown()
     PhysicsEntries.clear();
     PostFixedEntries.clear();
     FrameUpdateEntries.clear();
+    PresentationUpdateEntries.clear();
     ExtractRenderEntries.clear();
     AudioEntries.clear();
     EndFrameEntries.clear();
@@ -71,6 +73,11 @@ void EngineSchedule::RunPostFixed(PostFixedContext& ctx)
 void EngineSchedule::RunFrameUpdate(FrameUpdateContext& ctx)
 {
     Run(FrameUpdateEntries, ctx);
+}
+
+void EngineSchedule::RunPresentationUpdate(PresentationUpdateContext& ctx)
+{
+    Run(PresentationUpdateEntries, ctx);
 }
 
 void EngineSchedule::RunExtractRender(RenderExtractContext& ctx)

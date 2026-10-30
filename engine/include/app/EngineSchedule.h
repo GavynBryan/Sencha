@@ -36,6 +36,10 @@ template<typename T>
 concept HasFrameUpdate = requires(T& t, FrameUpdateContext& ctx) { t.FrameUpdate(ctx); };
 
 template<typename T>
+concept HasPresentationUpdate =
+    requires(T& t, PresentationUpdateContext& ctx) { t.PresentationUpdate(ctx); };
+
+template<typename T>
 concept HasExtractRender = requires(T& t, RenderExtractContext& ctx) { t.ExtractRender(ctx); };
 
 template<typename T>
@@ -47,7 +51,8 @@ concept HasEndFrame = requires(T& t, EndFrameContext& ctx) { t.EndFrame(ctx); };
 template<typename T>
 concept IsScheduledSystem =
     HasZoneResidency<T> || HasPreSimulate<T> || HasFixedLogic<T> || HasPhysics<T>
-    || HasPostFixed<T> || HasFrameUpdate<T> || HasExtractRender<T> || HasAudio<T>
+    || HasPostFixed<T> || HasFrameUpdate<T> || HasPresentationUpdate<T> || HasExtractRender<T>
+    || HasAudio<T>
     || HasEndFrame<T>;
 
 //=============================================================================
@@ -88,6 +93,7 @@ public:
     void RunPhysics(PhysicsContext& ctx);
     void RunPostFixed(PostFixedContext& ctx);
     void RunFrameUpdate(FrameUpdateContext& ctx);
+    void RunPresentationUpdate(PresentationUpdateContext& ctx);
     void RunExtractRender(RenderExtractContext& ctx);
     void RunAudio(AudioContext& ctx);
     void RunEndFrame(EndFrameContext& ctx);
@@ -133,6 +139,7 @@ private:
     std::vector<DispatchEntry<PhysicsContext>> PhysicsEntries;
     std::vector<DispatchEntry<PostFixedContext>> PostFixedEntries;
     std::vector<DispatchEntry<FrameUpdateContext>> FrameUpdateEntries;
+    std::vector<DispatchEntry<PresentationUpdateContext>> PresentationUpdateEntries;
     std::vector<DispatchEntry<RenderExtractContext>> ExtractRenderEntries;
     std::vector<DispatchEntry<AudioContext>> AudioEntries;
     std::vector<DispatchEntry<EndFrameContext>> EndFrameEntries;
@@ -181,6 +188,9 @@ T& EngineSchedule::Register(Args&&... args)
     if constexpr (HasFrameUpdate<T>)
         FrameUpdateEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, FrameUpdateContext& ctx) { static_cast<T*>(p)->FrameUpdate(ctx); }, {} });
+    if constexpr (HasPresentationUpdate<T>)
+        PresentationUpdateEntries.push_back({ std::type_index(typeid(T)), raw,
+            [](void* p, PresentationUpdateContext& ctx) { static_cast<T*>(p)->PresentationUpdate(ctx); }, {} });
     if constexpr (HasExtractRender<T>)
         ExtractRenderEntries.push_back({ std::type_index(typeid(T)), raw,
             [](void* p, RenderExtractContext& ctx) { static_cast<T*>(p)->ExtractRender(ctx); }, {} });
@@ -217,6 +227,7 @@ void EngineSchedule::After()
     landed |= AddDependency(PhysicsEntries, tid, dep);
     landed |= AddDependency(PostFixedEntries, tid, dep);
     landed |= AddDependency(FrameUpdateEntries, tid, dep);
+    landed |= AddDependency(PresentationUpdateEntries, tid, dep);
     landed |= AddDependency(ExtractRenderEntries, tid, dep);
     landed |= AddDependency(AudioEntries, tid, dep);
     landed |= AddDependency(EndFrameEntries, tid, dep);

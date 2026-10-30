@@ -41,6 +41,8 @@ struct CameraRenderData
     }
 };
 
+struct PresentedFrame;
+
 //=============================================================================
 // CameraRenderDataSystem
 //
@@ -51,6 +53,10 @@ struct CameraRenderData
 class CameraRenderDataSystem
 {
 public:
+    [[nodiscard]] static bool Build(const PresentedFrame& frame,
+                                    const World& world,
+                                    CameraRenderData& out);
+
     [[nodiscard]] static bool Build(const ActiveCameraService& activeCamera,
                                     const World& world,
                                     RenderExtent targetExtent,
