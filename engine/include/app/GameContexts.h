@@ -24,6 +24,7 @@
 
 class Engine;
 class EngineSchedule;
+struct PresentedFrame;
 
 struct GameConfigureContext
 {
@@ -154,6 +155,28 @@ struct FrameUpdateContext
     InputFrame& Input;
     double WallDeltaSeconds = 0.0;
     PresentationTime Presentation;
+    World& Entities;
+    const StoragePartitionSet& Partitions;
+};
+
+// Runs once per rendered frame, after every FrameUpdate system and before UI
+// layout, with the view this frame will be drawn with already published. This
+// is where anything laid over the frame at a place in the world is placed: a
+// marker, a leader line, a reticle that follows the shake. Placed here it lands
+// on the picture of the same frame; placed in FrameUpdate it would read the
+// view of the frame before.
+//
+// Presentation only. `Frame` is a read-only snapshot, and nothing here sees
+// interpolated transforms written into WorldTransform -- PresentationPoseOf
+// answers where an entity is drawn. Systems that drive simulation, consume
+// input or move things belong in FrameUpdate, which runs first.
+struct PresentationUpdateContext
+{
+    EngineConfig& Config;
+    RuntimeFrameLoop& Runtime;
+    double WallDeltaSeconds = 0.0;
+    PresentationTime Presentation;
+    const PresentedFrame& Frame;
     World& Entities;
     const StoragePartitionSet& Partitions;
 };

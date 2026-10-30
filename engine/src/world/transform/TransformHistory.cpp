@@ -50,7 +50,13 @@ void RequestTransformHistorySnap(World& world, EntityId entity)
         history->Snap = true;
 }
 
-Transform3f PresentationPoseOf(const World& world, EntityId entity, double alpha)
+namespace
+{
+// Deeper than any authored rig. A chain that reaches it is a cycle, which
+// propagation refuses to order, so the walk stops rather than recursing on.
+constexpr int kMaxPresentationDepth = 64;
+
+Transform3f PresentationPoseAt(const World& world, EntityId entity, double alpha, int depth)
 {
     if (!entity.IsValid() || !world.IsAlive(entity))
         return Transform3f::Identity();
@@ -59,12 +65,34 @@ Transform3f PresentationPoseOf(const World& world, EntityId entity, double alpha
         if (const WorldTransformHistory* history = world.TryGet<WorldTransformHistory>(entity))
             return ResolvePresentationPose(*history, alpha);
     }
+    // What presentation propagation composes: the parent as it is drawn, then
+    // this entity's own local transform. Read from the inputs rather than from
+    // WorldTransform, which holds whichever domain swept it last -- the tick's
+    // pose until this frame's presentation sweep has run.
+    const LocalTransform* local =
+        world.IsRegistered<LocalTransform>() ? world.TryGet<LocalTransform>(entity) : nullptr;
+    if (local != nullptr)
+    {
+        const Parent* parent = world.IsRegistered<Parent>() ? world.TryGet<Parent>(entity) : nullptr;
+        if (parent == nullptr || !parent->Entity.IsValid() || !world.IsAlive(parent->Entity)
+            || depth >= kMaxPresentationDepth)
+        {
+            return local->Value;
+        }
+        return PresentationPoseAt(world, parent->Entity, alpha, depth + 1) * local->Value;
+    }
     if (world.IsRegistered<WorldTransform>())
     {
         if (const WorldTransform* transform = world.TryGet<WorldTransform>(entity))
             return transform->Value;
     }
     return Transform3f::Identity();
+}
+} // namespace
+
+Transform3f PresentationPoseOf(const World& world, EntityId entity, double alpha)
+{
+    return PresentationPoseAt(world, entity, alpha, 0);
 }
 
 Transform3f ResolvePresentationPose(const WorldTransformHistory& history, double alpha)

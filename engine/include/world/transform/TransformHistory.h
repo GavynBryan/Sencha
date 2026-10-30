@@ -56,9 +56,15 @@ void RequestTransformHistorySnap(World& world, EntityId entity);
                                                   double alpha);
 
 // The pose `entity` is drawn at this frame: its history blended at `alpha` when
-// it carries one, its WorldTransform otherwise, identity when it has neither.
-// Anything a presentation-rate system places relative to a simulated entity --
-// a following camera, a nameplate -- reads this and not WorldTransform, or it
-// steps at the tick rate while the entity it follows glides.
+// it carries one; otherwise its local transform composed onto its parent's
+// drawn pose, which is what presentation propagation writes; its WorldTransform
+// when it has no local transform; identity when it has none of them. Anything a
+// presentation-rate system places relative to a simulated entity -- a following
+// camera, a nameplate -- reads this and not WorldTransform, or it steps at the
+// tick rate while the entity it follows glides.
+//
+// Read-only, and right at any point after the frame's ticks: it does not wait
+// for presentation propagation and writes nothing, so asking early never moves a
+// transform that a simulation-side reader would then see.
 [[nodiscard]] Transform3f PresentationPoseOf(const World& world, EntityId entity,
                                              double alpha);

@@ -203,6 +203,9 @@ phase methods:
 - `Physics(PhysicsContext&)`
 - `PostFixed(PostFixedContext&)`
 - `FrameUpdate(FrameUpdateContext&)`
+- `PresentationUpdate(PresentationUpdateContext&)`: after every FrameUpdate
+  system and before UI layout, with the frame's published view
+  (`docs/gameplay/camera.md`, "The presented frame")
 - `ExtractRender(RenderExtractContext&)`
 - `Audio(AudioContext&)`
 - `EndFrame(EndFrameContext&)`

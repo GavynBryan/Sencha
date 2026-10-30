@@ -9,6 +9,7 @@
 #include <attach/Attachment.h>
 #include <app/Engine.h>
 #include <app/Game.h>
+#include <camera/PresentedFrame.h>
 #include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -842,6 +843,32 @@ void Engine::RegisterSimulationFramePhases()
             .Partitions = zones.Logic,
         };
         engine.Schedule().RunFrameUpdate(update);
+
+        // The view this frame is drawn with, once every system that moves the
+        // camera has run and before anything lays out against it. A snapshot:
+        // presentation propagation still writes WorldTransform during
+        // extraction, so nothing on the simulation's side of the frame -- the
+        // audio below included -- sees a pose it did not see before.
+        RenderExtent presentedExtent{};
+#ifdef SENCHA_ENABLE_VULKAN
+        if (engine.HasPresentation())
+        {
+            const VkExtent2D swapchainExtent = engine.Graphics().Frames.PrimarySwapchain().GetExtent();
+            presentedExtent = RenderExtent{ swapchainExtent.width, swapchainExtent.height };
+        }
+#endif
+        const PresentedFrame& presented = PublishPresentedFrame(
+            entities, ctx.Runtime->GetSimulationClock(), rf.Presentation, presentedExtent, zones.Visible);
+        PresentationUpdateContext presentation{
+            .Config = config,
+            .Runtime = *ctx.Runtime,
+            .WallDeltaSeconds = static_cast<double>(rf.WallTime.Dt),
+            .Presentation = rf.Presentation,
+            .Frame = presented,
+            .Entities = entities,
+            .Partitions = zones.Visible,
+        };
+        engine.Schedule().RunPresentationUpdate(presentation);
 
 #ifdef SENCHA_ENABLE_UI
         // The window's size and display scale, every frame.
