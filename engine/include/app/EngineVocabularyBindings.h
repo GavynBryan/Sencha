@@ -16,12 +16,14 @@ class CameraFovScaleOperations;
 class CameraShakeOperations;
 class EffectOperations;
 class FixedSimulationLoop;
+class InteractUseOperations;
 class MovementOperations;
 class NavigationOperations;
 class PhysicsQueries;
 class PhysicsWorld;
 class ProjectileSystem;
 class ResponseOperations;
+class ResponsesSystem;
 class World;
 
 //=============================================================================
@@ -54,6 +56,9 @@ public:
     // projectile.launch, answered by `projectiles`, which must outlive this.
     void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
 
+    // `physics` and `responses` must outlive this.
+    void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
+
 private:
     const World& Entities;
     std::unique_ptr<AnimRequestOperations> Animation;
@@ -68,6 +73,7 @@ private:
     std::unique_ptr<CameraShakeOperations> Shake;
     std::unique_ptr<ResponseOperations> Responses;
     std::unique_ptr<PhysicsQueries> Physics;
+    std::unique_ptr<InteractUseOperations> Interaction;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;
 };

@@ -212,8 +212,61 @@ responses captured under the old declaration are abandoned.
 | `responses.enable {entity, binding = ""}` | verb, authority only | lets a binding -- or all of them -- respond again |
 | `responses.disable {entity, binding = ""}` | verb, authority only | stops it until enabled |
 | `trigger.interact {activator}` | verb, authority only | delivers `sensor.interact` at every volume the activator stands in, at the next pass |
+| `interact.use {activator, range, origin?, direction?}` | verb, authority only | delivers `interact.use` at the one entity the ray strikes first, when it answers ("Use") |
 | `sensor.enter`, `sensor.stay`, `sensor.exit`, `sensor.interact {activator}` | events | a sensor volume's occurrences |
+| `interact.use {activator}` | event | the entity was used: it was what the activator's ray struck |
 | `movement.launch {target, direction, speed = 10, rise = 0}` | verb, authority only | `docs/gameplay/movement.md`, "Launch" |
+
+## Use
+
+`trigger.interact` is the area form: every volume the activator stands in
+answers. `interact.use` is the conventional Use: exactly one entity answers,
+the one the activator points at. The verb casts a ray -- the activator's aim
+(`controller/Aim.h`), unless the invocation names an `origin` and a `direction`
+-- and takes the first body it strikes within `range`. Trigger volumes are
+passed through; nothing behind the first body is considered, so a wall in front
+of a terminal is what is struck and the terminal is not used. When the struck
+entity's responses answer `interact.use`, the occurrence is delivered there with
+the activator as its instigator, and runs at the next pass like any other.
+
+The verb takes `activator`, `range`, and optionally `origin` and `direction`.
+It is refused on a client, for a dead activator, and when nothing in range
+answers (a zero range, or a target whose bindings are all blocked); a negative
+range or a zero-length direction is `InvalidArguments`. The verb and the
+occurrence share a name; verbs and events are separate catalogs, and a binding
+names one as `verb` and the other as `on`. `FindUseCandidate` is read-only, so
+a prompt and a press ask the same question.
+
+A game binds a press to it with an ability, the same way as any other press:
+an `ability.definition` whose `input_default` names the game's action and whose
+phase invokes `interact.use` with `activator: {port: actor}` and the game's
+reach as `range`, granted to the pawn. The action, the reach and the direction
+are the game's data; the engine names none of them. A usable thing needs only a
+collider and a binding `on: interact.use`; its `once`, `cooldown`, `enabled`
+and conditions mean what they mean for any binding.
+
+### Availability
+
+`ResponsesSystem::Availability(subject, occurrence)` asks whether a subject's
+responses would answer an occurrence now, without delivering it: nothing is
+queued, counted or changed, and it evaluates with its own runner and ports, so
+it is safe from inside a running response. `FindUseCandidate`
+(`logic/InteractUse.h`) is the verb's own lookup with that answer attached: what
+a press would reach for, for a prompt to name. The answer has three levels --
+`Unanswered` (no binding answers: not a candidate), `Blocked`, `Available` --
+and says whether runtime state was part of it:
+
+| | Disabled, consumed, cooldown | Conditions | `Available` means |
+|---|---|---|---|
+| Authority (`RuntimeStateKnown`) | judged | judged | nothing stops it now |
+| Client | not judged: never replicated | judged against the client's copy | possible; the authority may refuse |
+
+A client loads the level itself, so it holds the authored bindings and can
+discover candidates; it does not hold their runtime state, and judging the
+authored bits or an empty cooldown table would be judging what it never heard.
+A client's `Blocked` is likewise its own reading of a condition, not a verdict.
+On either side the answer is an early look, not the decision: admission and the
+pass judge the binding again when the occurrence arrives and when it runs.
 
 ## Diagnostics
 

@@ -655,3 +655,16 @@ for the camera it draws. The engine declares `camera.shake`,
 `VerbDispatcher::GetDataAssets`.
 
 **Core.** `SplitMix64` (`core/hash/SplitMix64.h`).
+
+## v38
+
+A targeted Use (`docs/gameplay/responses.md`, "Use").
+
+**Logic.** `logic/InteractUse.h`: the `interact.use` verb and occurrence
+(`InteractUse`, `InteractUseOperations`, `DeclareInteractUseVocabulary`) and the
+read-only `FindUseCandidate`. `ResponsesSystem::Availability`, with
+`ResponseReadiness` and `ResponseAvailability`, answers whether a subject's
+responses would answer an occurrence without delivering it. `trigger.interact`
+and `sensor.interact` are unchanged.
+
+**App.** `EngineVocabularyBindings::BindInteraction` holds the use operations.

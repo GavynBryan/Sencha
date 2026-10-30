@@ -67,6 +67,19 @@ struct SensorInteractions
     }
 };
 
+enum class ResponseReadiness : std::uint8_t
+{
+    Unanswered,
+    Blocked,
+    Available,
+};
+
+struct ResponseAvailability
+{
+    ResponseReadiness Readiness = ResponseReadiness::Unanswered;
+    bool RuntimeStateKnown = false;
+};
+
 // Runs entities' authored responses: an occurrence delivered at an entity is
 // matched against that entity's bindings, captured, and run at the first pass of
 // a later tick, on the authority only, bounded by a queue and a command budget.
@@ -96,6 +109,15 @@ public:
                      [](const void* published, AuthoredArguments& payload) {
                          AuthoredApiDefinition<E>::Encode(*static_cast<const E*>(published), payload);
                      });
+    }
+
+    // Docs: gameplay/responses.md, "Availability".
+    template<HasAuthoredEvent E>
+    [[nodiscard]] ResponseAvailability Availability(EntityId subject, const E& occurrence)
+    {
+        return Judge(subject, EventOf<E>(), &occurrence, [](const void* published, AuthoredArguments& payload) {
+            AuthoredApiDefinition<E>::Encode(*static_cast<const E*>(published), payload);
+        });
     }
 
     [[nodiscard]] bool HoldsResponses(EntityId subject) const
@@ -209,6 +231,8 @@ private:
                         EncodeFn encode);
     bool Encode(EntityId subject, AuthoredEventId event, const void* occurrence, EncodeFn encode,
                 std::uint32_t& values, std::uint16_t& count);
+    ResponseAvailability Judge(EntityId subject, AuthoredEventId event, const void* occurrence, EncodeFn encode);
+    const CompiledVerbSequence* ResolveSequence(ResponseDefinitions& definitions, VerbSequenceKey sequence);
     [[nodiscard]] bool Cooling(EntityId recipient, std::uint64_t keyHash, ResponseCooldownScope scope,
                                EntityId instigator, std::uint64_t tick) const;
     void ResolveSensorEvents();
@@ -251,6 +275,9 @@ private:
     bool QueueFullReported = false;
     std::vector<bool> InvalidPayloadReported;
     Counters Counts;
+    VerbSequenceRunner JudgeRunner;
+    std::vector<AuthoredValue> JudgePorts;
+    AuthoredArguments JudgeScratch;
 };
 
 // The system, its interaction queue, and the cvars that bound them. Called by

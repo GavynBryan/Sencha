@@ -15,6 +15,7 @@
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
+#include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <projectile/ProjectileHit.h>
 #include <logic/ResponsesSystem.h>
@@ -78,7 +79,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 31u);
+    ASSERT_EQ(verbs.size(), 32u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -107,6 +108,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[27].Name, kResponsesEnableVerb);
     EXPECT_EQ(verbs[28].Name, kResponsesDisableVerb);
     EXPECT_EQ(verbs[29].Name, kTriggerInteractVerb);
+    EXPECT_EQ(verbs[31].Name, kInteractUseVerb);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 8u);
     EXPECT_EQ(queries[0].Name, kPhysicsTraceQuery);
@@ -139,10 +141,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 32u);
-    EXPECT_EQ(verbs[31].Name, kModuleVerb);
-    EXPECT_EQ(verbs[31].Provider, "spike");
-    EXPECT_EQ(verbs[31].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 33u);
+    EXPECT_EQ(verbs[32].Name, kModuleVerb);
+    EXPECT_EQ(verbs[32].Provider, "spike");
+    EXPECT_EQ(verbs[32].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -182,7 +184,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 31u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 32u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)
@@ -242,7 +244,7 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
 
     // The engine's sensor and projectile events come first; the module's follow them.
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
-    ASSERT_EQ(events.size(), 6u);
+    ASSERT_EQ(events.size(), 7u);
     EXPECT_EQ(events[0].Name, kSensorEnterEvent);
     EXPECT_EQ(events[1].Name, kSensorStayEvent);
     EXPECT_EQ(events[2].Name, kSensorExitEvent);
@@ -250,7 +252,9 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(events[0].PayloadCount, 1u);
     EXPECT_EQ(events[4].Name, kProjectileHitEvent);
     EXPECT_EQ(events[4].PayloadCount, 5u);
-    EXPECT_EQ(events[5].Name, "lamp.switched");
-    EXPECT_EQ(events[5].SourceComponent, "game.lamp");
-    EXPECT_EQ(events[5].PayloadCount, 0u);
+    EXPECT_EQ(events[5].Name, kInteractUseEvent);
+    EXPECT_EQ(events[5].PayloadCount, 1u);
+    EXPECT_EQ(events[6].Name, "lamp.switched");
+    EXPECT_EQ(events[6].SourceComponent, "game.lamp");
+    EXPECT_EQ(events[6].PayloadCount, 0u);
 }
