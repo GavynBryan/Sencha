@@ -298,6 +298,23 @@ void CheckEmittedLevel(float emitted, float exposure)
 
 } // namespace
 
+// An effect at weight 0 is not scheduled, so the frame is the plain scene's byte
+// for byte; the other two show the chain running before and after the transform.
+TEST(GoldenImage, AnEffectAtWeightZeroIsNotScheduled)
+{
+    CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0" });
+}
+
+TEST(GoldenImage, ADisplayEffectRunsAfterTheTransform)
+{
+    CheckScene({ .Name = "post_fade", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0.5" });
+}
+
+TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
+{
+    CheckScene({ .Name = "post_displace", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.displace 1" });
+}
+
 // The display transform against its own formula, through the forward pass and the
 // output pass of the shipped host. It catches a transform applied twice or not at
 // all whatever the other references say.

@@ -16,6 +16,8 @@
 #include <render/RenderLight.h>
 #include <render/extract/Camera.h>
 #include <render/feature/OutputRenderFeature.h>
+#include <render/feature/PostRenderFeature.h>
+#include <render/post/EnginePostEffects.h>
 #include <render/feature/SkyRenderFeature.h>
 
 #include <DeviceTestSupport.h>
@@ -290,6 +292,31 @@ TEST_P(SceneTargetSynchronizationTest, TheOneSceneImageIsOrderedAcrossFramesResi
     }
 }
 
+// The chain's planes are single images too, rewritten several times a frame.
+TEST_P(SceneTargetSynchronizationTest, TheEffectChainIsOrderedThroughAResize)
+{
+    PostEffectCatalog catalog;
+    RegisterEnginePostEffects(catalog);
+    PostEffectFrame effects;
+    PostEffectFrameEntry fade{ .Effect = catalog.Find("sencha.fade"), .Domain = PostEffectDomain::Display, .Weight = 1.0f };
+    fade.Params = { 0.0f, 1.0f, 0.0f, 0.0f };
+    effects.Entries.push_back(fade);
+
+    const Window b = Open("B");
+    ASSERT_TRUE(b.Presentation.IsValid());
+    Fill(b.Presentation, kRed);
+    ASSERT_NE(Render().AddFeature(std::make_unique<PostRenderFeature>(catalog, effects, OutputParams),
+                                  FeatureRegistration{ .Scope = RenderFeatureScope::For(b.Presentation) }),
+              nullptr);
+    Frames(6);
+
+    Platform->Windows.GetWindow(b.WindowId)->SetSize(300, 200);
+    for (int i = 0; i < 30 && Frames().FindPresentation(b.Presentation)->Swapchain().GetExtent().width != 300; ++i)
+        Frame();
+    Frames(6);
+    EXPECT_EQ(Capture(b.Presentation, "chain_after_resize"), kGreen);
+}
+
 INSTANTIATE_TEST_SUITE_P(FramesInFlight, SceneTargetSynchronizationTest, ::testing::Values(2u, 3u));
 
 TEST_F(PresentationTest, ThreeWindowsEachShowTheirOwnFeature)
@@ -441,6 +468,32 @@ TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto
     ASSERT_TRUE(centre.has_value());
     EXPECT_GT((*centre)[1], 200) << "the sky drew";
     EXPECT_LT((*centre)[0], 50);
+}
+
+TEST_F(PresentationTest, TheEffectChainHoldsPlanesOnlyWhileAnEffectRuns)
+{
+    PostEffectCatalog catalog;
+    RegisterEnginePostEffects(catalog);
+    PostEffectFrame effects;
+    Fill(Render().PrimaryPresentation(), kRed);
+    auto* post = Render().AddFeature(std::make_unique<PostRenderFeature>(catalog, effects, OutputParams));
+    ASSERT_NE(post, nullptr);
+
+    Frames(3);
+    EXPECT_EQ(post->ResidentPlaneCount(), 0u) << "an empty frame allocates nothing";
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_idle"), kRed);
+
+    PostEffectFrameEntry fade{ .Effect = catalog.Find("sencha.fade"), .Domain = PostEffectDomain::Display, .Weight = 1.0f };
+    fade.Params = { 0.0f, 1.0f, 0.0f, 0.0f };
+    effects.Entries.push_back(fade);
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_fade"), kGreen) << "a whole-weight fade shows its colour";
+    EXPECT_EQ(post->ResidentPlaneCount(), 2u);
+
+    effects.Entries.clear();
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_ended"), kRed);
+    Frames(130);
+    EXPECT_EQ(post->ResidentPlaneCount(), 0u) << "planes go after a quiet interval";
+    EXPECT_TRUE(Render().RemoveFeature(post));
 }
 
 namespace

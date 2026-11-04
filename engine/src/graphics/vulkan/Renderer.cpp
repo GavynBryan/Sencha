@@ -552,6 +552,8 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         context.TargetExtent = presentation.Extent;
         context.TargetFormat = presentation.Format;
         context.Retirement = Frames.GetRetirement();
+        ScenePostState post;
+        context.ScenePost = &post;
         RecordScenePhase(context, presentation);
         RecordPostPhase(context, presentation);
         RecordSwapchainPhases(frame, context, presentation);

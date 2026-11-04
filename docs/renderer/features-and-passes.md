@@ -59,7 +59,7 @@ enum class RenderPhase : uint8_t
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
 | `MainColor` | the scene target plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature` |
-| `Post` | none is opened. The feature owns its own passes, reading the scene through `FrameContext` | none yet |
+| `Post` | none is opened. The feature owns its own passes, reading the scene through `FrameContext` | `PostRenderFeature` |
 | `Output` | the swapchain scope is already open, and this is its first draw | `OutputRenderFeature` |
 | `ApplicationUi` | the same swapchain scope | `UiRenderFeature` |
 | `DevelopmentOverlay` | the same swapchain scope | the ImGui debug overlay |

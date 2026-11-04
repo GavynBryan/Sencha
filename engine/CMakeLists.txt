@@ -88,6 +88,8 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
 )
 
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+# What a module's post effect shader includes; the SDK sets this to its installed copy.
+set(SENCHA_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders" CACHE INTERNAL "")
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake")
 
 if(NOT SENCHA_ENABLE_VULKAN)
@@ -278,6 +280,16 @@ if(SENCHA_ENABLE_VULKAN)
         OUT_HEADER _output_present_frag_header
     )
     sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sencha_fade.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _sencha_fade_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_sencha_fade_frag_spv}"
+        VAR_NAME kSenchaFadeFragSpv
+        OUT_HEADER _sencha_fade_frag_header
+    )
+    sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/skin_pose.comp.glsl"
         STAGE comp
         OUTPUT_SPV _skin_pose_comp_spv
@@ -356,6 +368,7 @@ if(SENCHA_ENABLE_VULKAN)
         "${_skin_pose_comp_header}"
         "${_fullscreen_vert_header}"
         "${_output_present_frag_header}"
+        "${_sencha_fade_frag_header}"
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
@@ -1015,7 +1028,11 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/ValidateComponentIndex.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/EmbedSpirv.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sencha/shaders")
 
 # The starter templates ship with the SDK as source, one directory each, so a
 # new project begins as a copy of one. Each is complete on its own: its

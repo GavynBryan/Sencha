@@ -10,7 +10,11 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/UiTextureResidency.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
+#include <presentation/PresentationOwner.h>
 #include <render/feature/UiRenderFeature.h>
+#include <render/post/PostEffectCatalog.h>
+#include <render/post/PostEffectContributions.h>
+#include <shaders/kGoldenDisplaceFragSpv.h>
 #include <ui/UiService.h>
 #include <world/ComponentRegistrar.h>
 #include <components/ActiveCameraService.h>
@@ -27,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -197,6 +202,39 @@ private:
 // A fixed figure on a debug-line channel, written once: a square outline in
 // front of the camera that the scene can hide, and a cross over it that it
 // cannot. What the debug-lines golden watches.
+// Holds the post effects a golden scene asks for, at the weights it asks for.
+struct PostEffectFigureSystem
+{
+    PostEffectFigureSystem(Engine& engine, const double& fade, const double& displace, const PostEffectId& displaceEffect)
+        : EnginePtr(&engine)
+        , Fade(fade)
+        , Displace(displace)
+        , DisplaceEffect(displaceEffect)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        if (!Writer.IsValid())
+            Writer = RegisterPresentationWriter(ctx.Entities, "render_host.post");
+        const auto hold = [&](PostEffectId effect, double weight) {
+            PostEffectContribution contribution;
+            contribution.Owner = PresentationOwner{ .Writer = Writer, .Holder = {} };
+            contribution.Weight = static_cast<float>(weight);
+            contribution.Lifetime = PostEffectLifetime::Session;
+            SetPostEffect(ctx.Entities, effect, contribution);
+        };
+        hold(EnginePtr->PostEffects().Find("sencha.fade"), Fade);
+        hold(DisplaceEffect, Displace);
+    }
+
+    Engine* EnginePtr = nullptr;
+    const double& Fade;
+    const double& Displace;
+    const PostEffectId& DisplaceEffect;
+    PresentationWriterId Writer;
+};
+
 struct DebugLineFigureSystem
 {
     explicit DebugLineFigureSystem(const bool& enabled)
@@ -282,6 +320,28 @@ public:
         });
 
         engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.post.fade",
+            .Owner = "render_host",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.0,
+            .CurrentValue = 0.0,
+            .Flags = CVarFlags::Transient,
+            .Help = "Weight of the engine's fade effect, for the post effect goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { PostFade = std::get<double>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.post.displace",
+            .Owner = "render_host",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.0,
+            .CurrentValue = 0.0,
+            .Flags = CVarFlags::Transient,
+            .Help = "Weight of the test displacement effect, for the post effect goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { PostDisplace = std::get<double>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
             .Name = "render_host.ui",
             .Owner = "render_host",
             .Type = CVarType::String,
@@ -312,8 +372,19 @@ public:
         });
     }
 
+    void OnRegisterPostEffects(PostEffectCatalog& catalog) override
+    {
+        DisplaceEffect = catalog.Register(PostEffectDesc{
+            .Name = "render_host.displace",
+            .FragmentSpirv = std::span<const std::uint32_t>(kGoldenDisplaceFragSpv, kGoldenDisplaceFragSpvWordCount),
+            .Domain = PostEffectDomain::Scene,
+            .Order = 0,
+        });
+    }
+
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
+        ctx.Schedule.Register<PostEffectFigureSystem>(GetEngine(), PostFade, PostDisplace, DisplaceEffect);
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath, Picture);
         ctx.Schedule.Register<DebugLineFigureSystem>(DebugLineFigure);
@@ -335,6 +406,9 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     bool DebugLineFigure = false;
+    double PostFade = 0.0;
+    double PostDisplace = 0.0;
+    PostEffectId DisplaceEffect;
     std::string UiPackagePath;
     HostPicture Picture;
 };

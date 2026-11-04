@@ -937,3 +937,15 @@ described in `docs/navigation/runtime.md`, "Agents".
   `engine/src/effects/`, `engine/src/attach/`.
 - **Trigger:** a fourth lease provider that needs to end holds when its holder
   dies.
+
+## Scene depth in post effects
+
+- **What:** `post_effect.glsli` declares `depthIndex`, which stays `0xFFFFFFFF`.
+  `PostEffectDesc` has no declared inputs, since every input is in the fixed push block.
+- **Where:** `engine/src/graphics/vulkan/PostEffectChain.cpp`,
+  `engine/include/graphics/vulkan/VulkanDepthTarget.h`.
+- **Impact:** an effect cannot read depth, so no depth of field or fog.
+- **Trigger:** the first effect that samples depth. Give the presentation's depth
+  `SAMPLED` usage, a depth-aspect view registered through the descriptor cache, and a
+  barrier into a read layout around the chain.
+

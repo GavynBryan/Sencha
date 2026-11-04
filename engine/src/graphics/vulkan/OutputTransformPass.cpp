@@ -54,12 +54,19 @@ bool OutputTransformPass::EnsurePipeline(const FrameContext& frame)
 
 void OutputTransformPass::Draw(const FrameContext& frame, const OutputTransformParams& params)
 {
-    if (frame.SceneColorBindless == UINT32_MAX || !EnsurePipeline(frame))
+    const ScenePostState* post = frame.ScenePost;
+    const std::uint32_t source = post != nullptr && post->PresentColorBindless != UINT32_MAX
+        ? post->PresentColorBindless
+        : frame.SceneColorBindless;
+    if (source == UINT32_MAX || !EnsurePipeline(frame))
         return;
 
-    const OutputPresentPush push{ .SceneIndex = frame.SceneColorBindless,
-                                  .Exposure = params.Exposure,
+    // Once is the rule: an effect chain that already ran the transform leaves only
+    // the encode, which a display-referred value in [0,1] passes through unchanged.
+    const bool applied = post != nullptr && post->TransformApplied;
+    const OutputPresentPush push{ .SceneIndex = source,
+                                  .Exposure = applied ? 1.0f : params.Exposure,
                                   .TonemapKnee = params.TonemapKnee,
-                                  .TonemapEnabled = params.TonemapEnabled ? 1u : 0u };
+                                  .TonemapEnabled = !applied && params.TonemapEnabled ? 1u : 0u };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, Pipeline.Get(0), &push);
 }

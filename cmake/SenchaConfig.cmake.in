@@ -13,6 +13,7 @@ find_dependency(Vulkan)
 
 include("${CMAKE_CURRENT_LIST_DIR}/SenchaTargets.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/SenchaGameModule.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/SenchaShaders.cmake")
 
 # The component metadata generator ships built, so a game module declares
 # components the way the engine does without Clang development packages of its
@@ -24,6 +25,9 @@ set_target_properties(sencha::component-codegen PROPERTIES
     IMPORTED_LOCATION "${SENCHA_BINDIR}/sencha-component-codegen${CMAKE_EXECUTABLE_SUFFIX}")
 include("${CMAKE_CURRENT_LIST_DIR}/SenchaComponentCodegen.cmake")
 sencha_require_component_codegen_format("${SENCHA_INCLUDEDIR}")
+
+# What a module's post effect shader includes.
+set(SENCHA_SHADER_INCLUDE_DIR "${SENCHA_INCLUDEDIR}/sencha/shaders")
 
 # The engine's component roster, so a game module's metadata is validated
 # against it: a game component claiming an engine identity, schema name or

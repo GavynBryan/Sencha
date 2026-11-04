@@ -16,6 +16,7 @@
 #include <render/feature/DebugLineRenderFeature.h>
 #include <render/feature/MeshRenderFeature.h>
 #include <render/feature/OutputRenderFeature.h>
+#include <render/feature/PostRenderFeature.h>
 #include <render/feature/ShadowRenderFeature.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
 #include <render/feature/SkyRenderFeature.h>
@@ -129,6 +130,13 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
         std::make_unique<OutputRenderFeature>(Output),
         FeatureRegistration{ .Id = kOutput });
 
+    if (PostEffects != nullptr)
+    {
+        graphics.MainRenderer.StageFeature(
+            std::make_unique<PostRenderFeature>(*PostEffects, PostEffectsThisFrame, Output),
+            FeatureRegistration{ .Id = "runtime_post" });
+    }
+
     graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),
         FeatureRegistration{ .Id = kSky });
@@ -214,6 +222,7 @@ void DefaultRenderPipeline::PublishEmptyFrameOutputs()
     CasterEvents.clear();
     Residency.ClearFrameSchedule();
     DebugLines.Clear();
+    PostEffectsThisFrame.Entries.clear();
 }
 
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
@@ -307,6 +316,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         PublishExtractionStats(*Instrumentation->Stats, lightCounts);
 
     ExtractDebugLines(world, DebugLines);
+    if (PostEffects != nullptr)
+        ExtractPostEffects(world, presented.Camera, *PostEffects, ctx.Runtime.GetCurrentFrame().WallTime.Elapsed,
+                           PostEffectsThisFrame);
 
     if (Log != nullptr)
     {

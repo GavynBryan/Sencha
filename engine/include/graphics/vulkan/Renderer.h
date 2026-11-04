@@ -106,6 +106,15 @@ struct RendererServices
     UiTextureResidency* UiTextures = nullptr;
 };
 
+// What the Post phase leaves for the Output phase of one presentation.
+struct ScenePostState
+{
+    // The image to present in place of the scene; UINT32_MAX when nothing replaced it.
+    std::uint32_t PresentColorBindless = UINT32_MAX;
+    // The output transform has already run, inside the effect chain.
+    bool TransformApplied = false;
+};
+
 // Small dense payload handed to OnDraw(). Everything a feature needs to
 // record draws for one frame lives right here -- no pointer chases into
 // the Renderer or the frame service.
@@ -128,6 +137,8 @@ struct FrameContext
     // the scene scope closes. UINT32_MAX until then, and on a frame with none.
     std::uint32_t SceneColorBindless = UINT32_MAX;
     VkExtent2D SceneExtent{};
+    // Set for the phases of a presentation's frame; null in an editor view.
+    ScenePostState* ScenePost = nullptr;
     // Fence-anchored frame clock. A feature releasing a GPU resource the
     // renderer may still be reading stamps it from here and frees it once this
     // reports it retired, rather than counting frames itself.

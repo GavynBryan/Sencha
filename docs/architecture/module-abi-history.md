@@ -727,3 +727,14 @@ and the shoulder move into `OutputTransformPass`. `RenderLightSet` loses `Exposu
 records in `Output`. `FormatEncodesSrgbOnWrite` becomes `FormatNeedsShaderEncode`.
 A game's emissive values render as before except on blended surfaces, which now
 blend in linear light before the transform.
+
+## v42
+
+Post effects. `Game::OnRegisterPostEffects(PostEffectCatalog&)` is a new trailing vtable
+slot, and `Engine::PostEffects()` reaches the catalog. New: `PostEffectCatalog`,
+`PostEffectContributions` with `SetPostEffect`, `ClearPostEffect` and `ClearPostEffectsOf`,
+`PostEffectFrame`, `PostEffectChain`, `PostRenderFeature`, `ScenePostState` and
+`FrameContext::ScenePost`. `presentation/PresentationContributions.h` is the store post
+effects and mesh overrides share, and `MeshOverrideContributions::ByEntity` is now one.
+The SDK installs `SenchaShaders.cmake` and `post_effect.glsli`, and sets
+`SENCHA_SHADER_INCLUDE_DIR`.
