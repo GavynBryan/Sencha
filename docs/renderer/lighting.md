@@ -11,7 +11,7 @@ interprets them with a cheap, art-directable model:
 - hemispheric ambient, replaced by probe irradiance where a volume covers the
   fragment
 - additive emission
-- exposure and an optional tonemap shoulder applied at the end
+- exposure and an optional tonemap shoulder, applied once by the output pass
 
 There are no directional lights, no area lights, and no image-based specular.
 
@@ -171,14 +171,14 @@ is harmless because nothing past the count is read.
 baseColor = pushData.BaseColor * texture(BaseColorTexture, uv0)      // if bound
 emission  = EmissiveFactor.rgb * max(EmissiveFactor.a, 0) * emissiveTexture
 
-if (MATERIAL_UNLIT) { outColor = ResolveOutput(baseColor.rgb + emission); return; }
+if (MATERIAL_UNLIT) { outColor = baseColor.rgb + emission; return; }
 
 orm      = SampleOrm()            // (1,1,0) when unbound: no occlusion, rough, non-metal
 normal   = ResolveWorldNormal(geometricNormal)          // TBN mapping when a normal map is bound
 hemi     = 0.5 + 0.5 * normal.y
 ambient  = mix(AmbientGround, AmbientSky, hemi)
 ambient  = SampleProbeAmbient(worldPos, normal, ambient)   // probe volume wins where one covers
-ambient  = max(ambient, StyleParams.y)                     // minimum ambient floor
+ambient  = max(ambient, MinAmbient)                     // minimum ambient floor
 lit      = baseColor.rgb * ambient * clamp(orm.r, 0, 1) * SampleBakedAo()
 ```
 
@@ -238,11 +238,12 @@ the loop:
 ```glsl
 if (frame.BakedDirectEnabled != 0u)
     lit += baseColor.rgb * SampleBakedDirect();
-outColor = vec4(ResolveOutput(lit + emission), baseColor.a);
+outColor = vec4(lit + emission, baseColor.a);
 ```
 
-`ResolveOutput` multiplies by exposure and then either applies the shoulder
-(`ApplyShoulder`, a per-channel Reinhard-style knee) or clamps to `[0,1]`.
+The forward shader writes scene-referred light. The output pass multiplies it by
+exposure and then either applies the shoulder (`ApplyShoulder`, a per-channel
+Reinhard-style knee) or clamps to `[0,1]`.
 
 ## Style controls
 

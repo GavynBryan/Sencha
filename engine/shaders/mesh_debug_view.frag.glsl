@@ -4,7 +4,6 @@
 #define SENCHA_DEBUG_VIEWS 1
 #include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
-#include "tonemap.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
@@ -64,7 +63,7 @@ void main()
     }
     if (frame.DebugView == DEBUG_EMISSION)
     {
-        outColor = vec4(ResolveOutput(ResolveEmission()), 1.0);
+        outColor = vec4(ResolveEmission(), 1.0);
         return;
     }
     if (frame.DebugView == DEBUG_ROUGHNESS)
@@ -83,7 +82,7 @@ void main()
     {
         // The baked-static-direct lightmap term in isolation (raw irradiance,
         // before base color). Dynamic-lit and unbaked surfaces read black.
-        outColor = vec4(ResolveOutput(SampleBakedDirect()), 1.0);
+        outColor = vec4(SampleBakedDirect(), 1.0);
         return;
     }
     if (frame.DebugView == DEBUG_LIGHTMAP_TEXELS)
@@ -118,7 +117,7 @@ void main()
     float metallic = clamp(pushData.MetallicFactor * orm.b, 0.0, 1.0);
     float specularExponent = exp2(mix(11.0, 1.0, roughness));
     vec3 specularTint = mix(vec3(1.0), baseColor.rgb, metallic);
-    float diffuseWrap = max(frame.StyleParams.x, 0.0);
+    float diffuseWrap = max(frame.DiffuseWrap, 0.0);
 
     vec3 diffuseOnly = vec3(0.0);
     vec3 specularOnly = vec3(0.0);
@@ -167,9 +166,9 @@ void main()
     }
 
     if (frame.DebugView == DEBUG_DIFFUSE)
-        outColor = vec4(ResolveOutput(diffuseOnly), 1.0);
+        outColor = vec4(diffuseOnly, 1.0);
     else if (frame.DebugView == DEBUG_SPECULAR)
-        outColor = vec4(ResolveOutput(specularOnly), 1.0);
+        outColor = vec4(specularOnly, 1.0);
     else if (frame.DebugView == DEBUG_LIGHT_COMPLEXITY)
         outColor = vec4(HeatColor(float(affectingLights) / 8.0), 1.0);
     else if (frame.DebugView == DEBUG_SHADOW_FILTERED)

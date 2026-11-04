@@ -139,7 +139,7 @@ namespace
             if (FindOutput(presentation) == OutputFeatures.end())
                 OutputFeatures.emplace_back(
                     presentation,
-                    Render().AddFeature(std::make_unique<OutputRenderFeature>(),
+                    Render().AddFeature(std::make_unique<OutputRenderFeature>(OutputParams),
                                         FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) }));
         }
 
@@ -235,6 +235,8 @@ namespace
         std::unique_ptr<PlatformServices> Platform;
         std::unique_ptr<GraphicsServices> Graphics;
         std::filesystem::path Output;
+        // These features clear to exact colours, which the shoulder would move.
+        OutputTransformParams OutputParams{ .TonemapEnabled = false };
         std::vector<std::pair<PresentationId, OutputRenderFeature*>> OutputFeatures;
     };
 }
@@ -432,7 +434,6 @@ TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto
     RenderLightSet lights;
     lights.AmbientSky = Vec<3>(0.0f, 1.0f, 0.0f);
     lights.AmbientGround = Vec<3>(0.0f, 1.0f, 0.0f);
-    lights.TonemapEnabled = false;
     ShowScene(Render().PrimaryPresentation());
     ASSERT_NE(Render().AddFeature(std::make_unique<SkyRenderFeature>(camera, lights)), nullptr);
 

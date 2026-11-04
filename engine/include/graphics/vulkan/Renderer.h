@@ -145,7 +145,7 @@ struct FrameContext
 
 // The scene scope's colour attachment, in every presentation. MainColor features
 // compile against this and the swapchain's depth and stencil.
-inline constexpr VkFormat kSceneColorFormat = VK_FORMAT_R8G8B8A8_SRGB;
+inline constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 [[nodiscard]] FrameContext SceneScopeFormats(const RendererServices& services);
 
 struct RendererFrameTiming

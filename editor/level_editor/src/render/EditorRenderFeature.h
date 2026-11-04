@@ -36,6 +36,7 @@
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/OutputTransformPass.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
 #include <render/ui/UiDrawFrame.h>
@@ -185,8 +186,10 @@ private:
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
     void SweepBrushBakes();
-    void DrawStage(const FrameContext& frame, const EditorViewport& viewport, const CameraRenderData& camera,
-                   const DocumentStage& stage, const Vec4& tint);
+    void DrawStageSolid(const FrameContext& frame, const CameraRenderData& camera,
+                        const DocumentStage& stage, const Vec4& tint);
+    void DrawViewportScene(const FrameContext& local, EditorViewport& viewport, const CameraRenderData& camera);
+    void DrawViewportChrome(const FrameContext& local, EditorViewport& viewport, const CameraRenderData& camera);
     void UpdateShadowResidency(const FrameContext& frame);
     // The camera position shadow scores rank against: the active viewport if
     // it is perspective, else the first perspective viewport, else the active
@@ -210,6 +213,9 @@ private:
     // editor shows matches what the game shows. Ortho viewports keep the
     // backdrop: a sky in a 2D working view describes nothing.
     SkyGradientPass        Sky;
+    OutputTransformPass    Output;
+    // The render.* transform for this frame's views; a debug view bypasses it.
+    OutputTransformParams  ViewOutput;
     GpuGridRenderer        Grid;
     // Declared before the renderers that bind a reference to it at construction.
     // (The feature owns the one shared solid pipeline.)

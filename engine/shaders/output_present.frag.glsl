@@ -1,8 +1,10 @@
 #version 450
 
-// Writes the finished scene into the swapchain. The target's hardware sRGB write
-// is the frame's one encode; only a target without one encodes here, so an _SRGB
-// swapchain never sees this shader's curve.
+#include "tonemap.glsli"
+
+// Takes the scene from scene-referred to display-referred linear light, the only
+// place exposure and the shoulder are applied. The target's hardware sRGB write is
+// the frame's one encode; only a target with nothing to encode it encodes here.
 
 layout(location = 0) out vec4 outColor;
 
@@ -12,6 +14,9 @@ layout(constant_id = 0) const bool kEncodeOutput = false;
 
 layout(push_constant) uniform OutputPresentPC {
     uint sceneIndex;
+    float exposure;
+    float tonemapKnee;
+    uint tonemapEnabled;
 } pc;
 
 vec3 EncodeSrgb(vec3 linear)
@@ -24,5 +29,6 @@ vec3 EncodeSrgb(vec3 linear)
 void main()
 {
     vec4 scene = texelFetch(uTextures[pc.sceneIndex], ivec2(gl_FragCoord.xy), 0);
-    outColor = vec4(kEncodeOutput ? EncodeSrgb(scene.rgb) : scene.rgb, scene.a);
+    vec3 display = ApplyOutputTransform(scene.rgb, pc.exposure, pc.tonemapKnee, pc.tonemapEnabled != 0u);
+    outColor = vec4(kEncodeOutput ? EncodeSrgb(display) : display, scene.a);
 }

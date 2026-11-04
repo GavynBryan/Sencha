@@ -83,9 +83,9 @@ void ViewportBackdropRenderer::DrawViewport(VkCommandBuffer cmd,
         desc.Layout         = PipelineLayout;
         desc.CullMode       = VK_CULL_MODE_NONE;
         desc.FrontFace      = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        desc.DepthTest      = false;
+        desc.DepthTest      = true;
         desc.DepthWrite     = false;
-        desc.DepthCompare   = VK_COMPARE_OP_ALWAYS;
+        desc.DepthCompare   = VK_COMPARE_OP_LESS_OR_EQUAL;
         desc.ColorBlend     = { blend };
         desc.ColorFormats   = { colorFormat };
         desc.DepthFormat    = depthFormat;

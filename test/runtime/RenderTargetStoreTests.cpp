@@ -67,13 +67,13 @@ TEST(TargetSlotNeedsRebuild, RebuildsOnALifetimeChange)
     EXPECT_TRUE(TargetSlotNeedsRebuild(built, wanted, true));
 }
 
-TEST(FormatEncodesSrgbOnWrite, OnlyAnSrgbTargetEncodes)
+TEST(FormatNeedsShaderEncode, OnlyATargetThatCannotEncodeOrHoldLinearDoes)
 {
-    EXPECT_TRUE(FormatEncodesSrgbOnWrite(VK_FORMAT_B8G8R8A8_SRGB));
-    EXPECT_TRUE(FormatEncodesSrgbOnWrite(VK_FORMAT_R8G8B8A8_SRGB));
-    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_B8G8R8A8_UNORM));
-    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_R8G8B8A8_UNORM));
-    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_R16G16B16A16_SFLOAT));
+    EXPECT_FALSE(FormatNeedsShaderEncode(VK_FORMAT_B8G8R8A8_SRGB));
+    EXPECT_FALSE(FormatNeedsShaderEncode(VK_FORMAT_R8G8B8A8_SRGB));
+    EXPECT_FALSE(FormatNeedsShaderEncode(VK_FORMAT_R16G16B16A16_SFLOAT));
+    EXPECT_TRUE(FormatNeedsShaderEncode(VK_FORMAT_B8G8R8A8_UNORM));
+    EXPECT_TRUE(FormatNeedsShaderEncode(VK_FORMAT_R8G8B8A8_UNORM));
 }
 
 TEST(TargetSlotNeedsRebuild, BuildsWhenThereAreNoImagesYet)

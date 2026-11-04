@@ -15,6 +15,7 @@
 #include <app/EngineConsoleBuiltins.h>
 #include <core/console/ConsoleRegistry.h>
 #include <render/RenderLight.h>
+#include <render/OutputTransformParams.h>
 #include <render/RenderLightCVars.h>
 #include <runtime/RuntimeFrameLoop.h>
 
@@ -56,8 +57,6 @@ TEST(ApplyRendererCVars, LeavesEveryFieldAloneWithoutARegistry)
 
     ApplyRendererCVars(nullptr, lights);
 
-    EXPECT_EQ(lights.Exposure, defaults.Exposure);
-    EXPECT_EQ(lights.TonemapEnabled, defaults.TonemapEnabled);
     EXPECT_EQ(lights.DiffuseWrap, defaults.DiffuseWrap);
     EXPECT_EQ(lights.MinAmbient, defaults.MinAmbient);
     EXPECT_EQ(lights.BakedDirectEnabled, defaults.BakedDirectEnabled);
@@ -96,12 +95,9 @@ TEST(ApplyRendererCVars, AppliesEveryRegisteredTunable)
     EXPECT_FLOAT_EQ(lights.AmbientGround.Y, 0.65f);
     EXPECT_FLOAT_EQ(lights.AmbientGround.Z, 0.66f);
 
-    // The seven the editor never read.
+    // Four of the seven the editor never read; the output transform has the rest.
     EXPECT_FLOAT_EQ(lights.DiffuseWrap, 0.67f);
     EXPECT_FLOAT_EQ(lights.MinAmbient, 0.68f);
-    EXPECT_FLOAT_EQ(lights.Exposure, 0.69f);
-    EXPECT_FLOAT_EQ(lights.TonemapKnee, 0.70f);
-    EXPECT_FALSE(lights.TonemapEnabled);
     EXPECT_FALSE(lights.BakedDirectEnabled);
     EXPECT_FALSE(lights.BakedAoEnabled);
 
@@ -118,21 +114,17 @@ TEST(ApplyRendererCVars, FallsBackToTheLightSetRatherThanARepeatedLiteral)
     // being restated at each call site.
     ConsoleRegistry empty;
     RenderLightSet lights;
-    lights.Exposure = 3.25f;
     lights.MinAmbient = 0.125f;
-    lights.TonemapEnabled = false;
 
     ApplyRendererCVars(&empty, lights);
 
-    EXPECT_FLOAT_EQ(lights.Exposure, 3.25f);
     EXPECT_FLOAT_EQ(lights.MinAmbient, 0.125f);
-    EXPECT_FALSE(lights.TonemapEnabled);
 }
 
 TEST(ApplyRendererCVars, IsIdempotent)
 {
     RendererCVarHarness harness;
-    harness.SetDouble("render.exposure", 2.5);
+    harness.SetDouble("render.style.min_ambient", 0.25);
 
     RenderLightSet once;
     ApplyRendererCVars(&harness.Registry, once);
@@ -140,6 +132,47 @@ TEST(ApplyRendererCVars, IsIdempotent)
     ApplyRendererCVars(&harness.Registry, twice);
     ApplyRendererCVars(&harness.Registry, twice);
 
-    EXPECT_FLOAT_EQ(once.Exposure, twice.Exposure);
-    EXPECT_FLOAT_EQ(twice.Exposure, 2.5f);
+    EXPECT_FLOAT_EQ(once.MinAmbient, twice.MinAmbient);
+    EXPECT_FLOAT_EQ(twice.MinAmbient, 0.25f);
+}
+
+TEST(ApplyOutputTransformCVars, AppliesEachTunable)
+{
+    RendererCVarHarness harness;
+    harness.SetDouble("render.exposure", 0.69);
+    harness.SetDouble("render.tonemap.knee", 0.70);
+    harness.SetBool("render.tonemap", false);
+
+    OutputTransformParams output;
+    ApplyOutputTransformCVars(&harness.Registry, output);
+
+    EXPECT_FLOAT_EQ(output.Exposure, 0.69f);
+    EXPECT_FLOAT_EQ(output.TonemapKnee, 0.70f);
+    EXPECT_FALSE(output.TonemapEnabled);
+}
+
+TEST(ApplyOutputTransformCVars, FallsBackToWhatTheCallerHeld)
+{
+    ConsoleRegistry empty;
+    OutputTransformParams output;
+    output.Exposure = 3.25f;
+    output.TonemapEnabled = false;
+
+    ApplyOutputTransformCVars(&empty, output);
+
+    EXPECT_FLOAT_EQ(output.Exposure, 3.25f);
+    EXPECT_FALSE(output.TonemapEnabled);
+}
+
+TEST(OutputTransformForView, ADebugViewShowsTheValueItWrote)
+{
+    const OutputTransformParams authored{ .Exposure = 2.0f, .TonemapKnee = 0.5f, .TonemapEnabled = true };
+
+    const OutputTransformParams normal = OutputTransformForView(authored, RenderDebugView::None);
+    EXPECT_FLOAT_EQ(normal.Exposure, 2.0f);
+    EXPECT_TRUE(normal.TonemapEnabled);
+
+    const OutputTransformParams debug = OutputTransformForView(authored, RenderDebugView::WorldNormals);
+    EXPECT_FLOAT_EQ(debug.Exposure, 1.0f);
+    EXPECT_FALSE(debug.TonemapEnabled);
 }

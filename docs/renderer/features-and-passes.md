@@ -342,11 +342,11 @@ editor frame spends around 68 KiB of its slice here. Layout is asserted field by
 | 64 | `ViewPositionTime` | xyz camera position, w unused |
 | 80 | `AmbientSky` |  |
 | 96 | `AmbientGround` |  |
-| 112 | `StyleParams` | x diffuse wrap, y minimum ambient, z exposure, w tonemap knee |
-| 128 | `LightCount` |  |
-| 132 | `TonemapEnabled` |  |
-| 136 | `ShadowDarkness` |  |
-| 140 | `BakedDirectEnabled` |  |
+| 112 | `DiffuseWrap` |  |
+| 116 | `MinAmbient` |  |
+| 120 | `ShadowDarkness` |  |
+| 124 | `BakedDirectEnabled` |  |
+| 128 | `LightCount` | and three pads |
 | 144 | `Lights[64]` | `GpuLight`, 64 bytes each |
 | 4240 | `SpotShadowCount` |  |
 | 4244 | `BakedAoEnabled` |  |
@@ -514,7 +514,6 @@ attachment and no second pipeline variant for hosts that lack one.
 |---|---|
 | inverse view-projection | `MakeInverseSkyViewProjection` in `render/CameraProjection.h`, which strips the view translation so the result is a direction and the gradient does not slide with the camera |
 | `SkyGradientParams` colours | two linear-RGB values. The seam a future authored environment record fills instead of the cvars |
-| `SkyGradientParams` output transform | exposure, tonemap knee, tonemap on/off, applied through the shared `tonemap.glsli`. Without it the background sits in a different display space than the geometry, and raising `render.exposure` brightens the scene but not the sky it is lit by |
 
 Everything fits in a 96-byte push block, so the pass binds no descriptor sets
 and depends on neither the frame uniform nor the lighting bindings.

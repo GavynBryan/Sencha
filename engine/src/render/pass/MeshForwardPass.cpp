@@ -86,12 +86,12 @@ static_assert(offsetof(MeshViewUniforms, AmbientSky)
               == offsetof(MeshViewUniforms, ViewPositionTime) + sizeof(Vec4));
 static_assert(offsetof(MeshViewUniforms, AmbientGround)
               == offsetof(MeshViewUniforms, AmbientSky) + sizeof(Vec4));
-static_assert(offsetof(MeshViewUniforms, StyleParams)
+static_assert(offsetof(MeshViewUniforms, DiffuseWrap)
               == offsetof(MeshViewUniforms, AmbientGround) + sizeof(Vec4));
 static_assert(offsetof(MeshViewUniforms, LightCount)
-              == offsetof(MeshViewUniforms, StyleParams) + sizeof(Vec4));
-// Four scalars -- LightCount, TonemapEnabled, ShadowDarkness, BakedDirectEnabled
-// -- fill one 16-byte slot, so the light array lands aligned with no hidden pad.
+              == offsetof(MeshViewUniforms, DiffuseWrap) + 4 * sizeof(float));
+// LightCount and three pads fill one 16-byte slot, so the light array lands
+// aligned with no hidden pad.
 static_assert(offsetof(MeshViewUniforms, Lights)
               == offsetof(MeshViewUniforms, LightCount) + 4 * sizeof(std::uint32_t));
 static_assert(offsetof(MeshViewUniforms, SpotShadowCount)
@@ -376,9 +376,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
     uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
-    uniforms.StyleParams = Vec4(lights.DiffuseWrap, lights.MinAmbient,
-                                lights.Exposure, lights.TonemapKnee);
-    uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
+    uniforms.DiffuseWrap = lights.DiffuseWrap;
+    uniforms.MinAmbient = lights.MinAmbient;
     uniforms.ShadowDarkness = lights.ShadowDarkness;
     uniforms.BakedDirectEnabled = lights.BakedDirectEnabled ? 1u : 0u;
     uniforms.BakedAoEnabled = lights.BakedAoEnabled ? 1u : 0u;

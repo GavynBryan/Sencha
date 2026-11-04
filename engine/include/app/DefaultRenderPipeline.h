@@ -7,6 +7,7 @@
 #include <render/extract/DebugLineExtraction.h>
 #include <render/extract/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
+#include <render/OutputTransformParams.h>
 #include <render/MaterialSetCache.h>
 #include <render/ProbeVolumeSet.h>
 #include <render/extract/RenderExtractionSystem.h>
@@ -81,6 +82,7 @@ private:
 
     RenderQueue Queue;
     RenderLightSet Lights;
+    OutputTransformParams Output;
     // The frame's skinned instances and their palettes. Extraction fills it,
     // the Offscreen pose feature poses them, the mesh feature draws them; the
     // shared pointer is the channel between the two features.

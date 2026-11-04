@@ -65,25 +65,28 @@ void AnimationPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
         return;
     // Dispatch before opening dynamic rendering, using the runtime pose pass.
     Skinning.OnDraw(renderFrame);
+    const float aspect = static_cast<float>(target->Extent.width) / static_cast<float>(target->Extent.height);
+    const CameraRenderData camera = Camera.BuildRenderData(aspect);
     Picture.Draw(frame, *target, { { 0.025f, 0.03f, 0.045f, 1.0f } },
-                 [&](const RenderScope& rendering) { Record(rendering, target->Extent); });
+                 [&](const FrameContext& rendering) { Record(rendering, camera); },
+                 [&](const FrameContext& rendering) {
+                     WideLines.Submit(rendering,
+                                      Rect2d(0.0f, 0.0f, static_cast<float>(target->Extent.width),
+                                             static_cast<float>(target->Extent.height)),
+                                      camera, Strokes, /*onTop*/ true, "AnimationPreview.strokes");
+                 });
 }
 
-void AnimationPreviewRenderFeature::Record(const RenderScope& rendering, VkExtent2D extent)
+void AnimationPreviewRenderFeature::Record(const FrameContext& rendering, const CameraRenderData& camera)
 {
-    const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-    const CameraRenderData camera = Camera.BuildRenderData(aspect);
     const Vec3d eye = camera.Position;
     Lights.Reset();
     PointLightComponent light;
     light.Intensity = 8.0f * Radius * Radius;
     light.Range = Radius * 30.0f;
     Lights.AddPoint(eye + Vec3d(0.0f, Radius, 0.0f), light);
-    Forward.Draw(rendering.Context(), MeshForwardPass::DrawContext{
+    Forward.Draw(rendering, MeshForwardPass::DrawContext{
         .Camera = camera, .Lights = Lights, .Queue = Scene.Queue,
         .Meshes = *Assets.StaticMeshes, .Materials = Assets.Materials,
         .SkinnedMeshes = Assets.SkinnedMeshes.get() });
-    WideLines.Submit(rendering.Context(),
-                     Rect2d(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height)),
-                     camera, Strokes, /*onTop*/ true, "AnimationPreview.strokes");
 }

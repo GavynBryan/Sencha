@@ -800,8 +800,10 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame, const FrameContex
     desc.Color = { presentation.View, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, kSceneClear };
     desc.ColorFormat = presentation.Format;
     desc.Phase = RenderPhase::Output;
-    // Nothing in this scope tests depth; it is bound because pipelines declare it.
-    AttachDepth(desc, depth, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+    // What the scene wrote, for a diagnostic drawn over it in the Output phase.
+    AttachDepth(desc, depth,
+                context.SceneColorBindless != UINT32_MAX ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
+                VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
     {
         RenderScope scope(context, desc);

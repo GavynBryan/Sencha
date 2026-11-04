@@ -8,11 +8,15 @@
 class OutputRenderFeature final : public IRenderFeature
 {
 public:
+    // `params` outlives the feature and is read each frame.
+    explicit OutputRenderFeature(const OutputTransformParams& params) : Params(&params) {}
+
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Output; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
     void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
 private:
+    const OutputTransformParams* Params = nullptr;
     OutputTransformPass Pass;
 };

@@ -31,7 +31,7 @@ code paths.
 | Shadows | Spot: one 2048 D16 quadtree atlas. Point: 4-cube D16 array, 512 per face |
 | Baked | Per-zone lightmap atlas (RGB9E5), AO plane (R8), L1 SH probe volumes (RGBA16F 3D) |
 | Transparency | Blend materials draw back-to-front per view, depth write off, after opaque |
-| Post | Not implemented. Exposure and a tonemap shoulder run inside the forward shader |
+| Post | The `Post` phase exists with nothing in it. Exposure and the tonemap shoulder run in `OutputTransformPass` |
 | Directional lights | Not implemented |
 | Skinning | Compute pre-skin: one dispatch poses vertices, every later pass draws them as static geometry |
 | Compute | One pipeline, the skinning pre-pass |

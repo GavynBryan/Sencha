@@ -17,11 +17,11 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `fullscreen.vert.glsl` | vertex | `kFullscreenVertSpv`, the bufferless triangle of every `FullscreenPass` |
 | `output_present.frag.glsl` | fragment | `kOutputPresentFragSpv`, the present draw |
 | `mesh_view.glsli` | include | frame UBO block and its structs |
-| `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling, tonemap |
+| `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |
 | `shadow_sampling.glsli` | include | spot and point shadow filters |
 | `probe_sampling.glsli` | include | probe volume selection and SH evaluation |
-| `tonemap.glsli` | include | exposure and the shoulder curve, shared by the mesh and sky passes |
+| `tonemap.glsli` | include | exposure and the shoulder curve, included only by `output_present.frag` |
 
 Editor shaders live under `editor/level_editor/src/render` with their own pipelines and
 are built the same way.
@@ -33,26 +33,21 @@ graph TD
   frag[mesh_forward.frag.glsl] --> frame[mesh_view.glsli]
   frag --> shadow[shadow_sampling.glsli]
   frag --> probe[probe_sampling.glsli]
-  frag --> tone[tonemap.glsli]
   frag --> mat[mesh_material.glsli]
   frag --> light[lighting.glsli]
   dbg[mesh_debug_view.frag.glsl] --> frame
   dbg --> shadow
-  dbg --> tone
   dbg --> mat
   dbg --> light
   vert[mesh_forward.vert.glsl] --> frame
-  sky[sky_gradient.frag.glsl] --> tone
+  out[output_present.frag.glsl] --> tone[tonemap.glsli]
   shadow -.reads.-> frame
   probe -.reads.-> frame
   light -.reads.-> mat
-  mat -.calls.-> tone
 ```
 
-`tonemap.glsli` is the exception to the pattern below: it declares no
-descriptors and reads no globals, taking exposure and knee as arguments, which
-is what lets the sky pass share the display transform without inheriting the
-material push block and the bindless sampler array.
+`tonemap.glsli` is the exception to the pattern below: it declares no descriptors
+and reads no globals, taking exposure and knee as arguments.
 
 Include order is load bearing and not defensive: the `.glsli` files declare no
 include guards and assume their dependencies are already in scope.

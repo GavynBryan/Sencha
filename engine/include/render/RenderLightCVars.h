@@ -1,6 +1,7 @@
 #pragma once
 
 class ConsoleRegistry;
+struct OutputTransformParams;
 struct RenderLightSet;
 
 //=============================================================================
@@ -25,3 +26,6 @@ struct RenderLightSet;
 // `render.debug.view` while the editor selects it from its own UI, so it has
 // two legitimate sources and each host assigns it.
 void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights);
+// The same reader for what the output pass applies, which is per view rather
+// than part of the lighting.
+void ApplyOutputTransformCVars(const ConsoleRegistry* console, OutputTransformParams& output);

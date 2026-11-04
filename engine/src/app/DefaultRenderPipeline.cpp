@@ -95,6 +95,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     //   mesh   -> sky    within MainColor the background fills the view with
     //                    no depth test, so it records first.
     //   lines  -> mesh   depth-tested debug lines need the scene's depth.
+    //   lines  -> output a diagnostic keeps its exact colour, so it draws over
+    //                    the scene after the transform rather than through it.
     //
     // Staging order below is deliberately not the resolved order: the resolver
     // produces the order, and the goldens are what prove it.
@@ -104,7 +106,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     static constexpr std::array<std::string_view, 1> kShadowDeps{ kPose };
     static constexpr std::string_view kMesh = "runtime_mesh";
     static constexpr std::array<std::string_view, 2> kMeshDeps{ kShadow, kSky };
-    static constexpr std::array<std::string_view, 1> kDebugLineDeps{ kMesh };
+    static constexpr std::string_view kOutput = "runtime_output";
+    static constexpr std::array<std::string_view, 2> kDebugLineDeps{ kMesh, kOutput };
 
     auto bindings = std::make_shared<LightBindings>();
     // Constructed before the mesh feature is staged, which captures it: staging
@@ -123,8 +126,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
         FeatureRegistration{ .Id = "runtime_debug_lines", .DependsOn = kDebugLineDeps });
 
     graphics.MainRenderer.StageFeature(
-        std::make_unique<OutputRenderFeature>(),
-        FeatureRegistration{ .Id = "runtime_output" });
+        std::make_unique<OutputRenderFeature>(Output),
+        FeatureRegistration{ .Id = kOutput });
 
     graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),
@@ -263,6 +266,13 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         // is unset.
         Lights.SkyEnabled = true;
         ApplyRendererTunables(Console, Lights);
+        OutputTransformParams authored;
+        ApplyOutputTransformCVars(Console, authored);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        Output = OutputTransformForView(authored, Lights.DebugView);
+#else
+        Output = authored;
+#endif
         LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
                                ShadowRequests, PointShadowRequests, &lightCounts);
         ProbeVolumes.AppendActive(ctx.Partitions, Lights);

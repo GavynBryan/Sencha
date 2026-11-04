@@ -60,7 +60,20 @@ review — is this new image right? — is the ongoing cost of this mechanism, a
 it is the whole point: it puts a person in front of the pixels exactly when the
 pixels move, rather than months later.
 
+The failure message reports how many channels moved by how many 8-bit levels, the
+largest move, and the mean signed difference per channel. That report is for the
+person reviewing the image and never changes the verdict: a one-level rounding shift
+across a re-baseline reads very differently from a real change.
+
 Never widen a tolerance to make a failure go away. There is no tolerance.
+
+## The tonemap ramp
+
+`TonemapRamp` is the one comparison with no reference image. It renders an unlit
+surface at several emissive values through the shipped host and checks the centre
+pixel against the display transform worked out on the CPU, within one level. An image
+reference can only say the picture has not moved; this says the transform is applied
+exactly once, whatever the references were recorded from.
 
 ## Capturing a frame by hand
 

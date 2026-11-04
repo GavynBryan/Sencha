@@ -12,6 +12,9 @@ namespace
 struct OutputPresentPush
 {
     std::uint32_t SceneIndex = 0;
+    float Exposure = 1.0f;
+    float TonemapKnee = 0.8f;
+    std::uint32_t TonemapEnabled = 1;
 };
 }
 
@@ -44,16 +47,19 @@ bool OutputTransformPass::EnsurePipeline(const FrameContext& frame)
 {
     return Pipeline.Ensure(frame.AttachmentFormats(), [&](std::size_t) {
         const std::array encode{ ShaderSpecializationConstant{
-            .Id = 0, .Value = FormatEncodesSrgbOnWrite(frame.TargetFormat) ? 0u : 1u } };
+            .Id = 0, .Value = FormatNeedsShaderEncode(frame.TargetFormat) ? 1u : 0u } };
         return Fullscreen.BuildPipeline(FragmentShader, frame.AttachmentFormats(), {}, encode);
     });
 }
 
-void OutputTransformPass::Draw(const FrameContext& frame)
+void OutputTransformPass::Draw(const FrameContext& frame, const OutputTransformParams& params)
 {
     if (frame.SceneColorBindless == UINT32_MAX || !EnsurePipeline(frame))
         return;
 
-    const OutputPresentPush push{ .SceneIndex = frame.SceneColorBindless };
+    const OutputPresentPush push{ .SceneIndex = frame.SceneColorBindless,
+                                  .Exposure = params.Exposure,
+                                  .TonemapKnee = params.TonemapKnee,
+                                  .TonemapEnabled = params.TonemapEnabled ? 1u : 0u };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, Pipeline.Get(0), &push);
 }

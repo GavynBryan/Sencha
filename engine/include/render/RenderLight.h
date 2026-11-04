@@ -15,9 +15,6 @@ struct RenderLightSet
 
     float DiffuseWrap = 0.25f;
     float MinAmbient = 0.0f;
-    float Exposure = 1.0f;
-    float TonemapKnee = 0.8f;
-    bool TonemapEnabled = true;
     float ShadowDarkness = 1.0f;
     float ShadowSoftness = 1.0f;
     float ShadowBiasConstant = 4.0f;

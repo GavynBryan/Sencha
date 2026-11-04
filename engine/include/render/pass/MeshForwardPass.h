@@ -41,11 +41,14 @@ struct MeshViewUniforms
     Vec4 ViewPositionTime;
     Vec4 AmbientSky;
     Vec4 AmbientGround;
-    Vec4 StyleParams;
-    std::uint32_t LightCount = 0;
-    std::uint32_t TonemapEnabled = 1;
+    float DiffuseWrap = 0.0f;
+    float MinAmbient = 0.0f;
     float ShadowDarkness = 1.0f;
     std::uint32_t BakedDirectEnabled = 1;
+    std::uint32_t LightCount = 0;
+    std::uint32_t LightPad0 = 0;
+    std::uint32_t LightPad1 = 0;
+    std::uint32_t LightPad2 = 0;
     GpuLight Lights[kMaxForwardLights];
     std::uint32_t SpotShadowCount = 0;
     std::uint32_t BakedAoEnabled = 1;

@@ -36,19 +36,25 @@ public:
 
     struct RenderView
     {
-        // The scene target these images belong to, for a caller that has to
+        // The display target these images belong to, for a caller that has to
         // name the target rather than attach it -- a declared frame view says
         // where it renders before anything resolves the images.
-        RenderTargetId Scene;
+        RenderTargetId Display;
+        // What the UI samples: the scene through the output pass, then chrome.
         VkImage       ColorImage = VK_NULL_HANDLE;
         VkImage       DepthImage = VK_NULL_HANDLE;
         VkImageView   ColorView = VK_NULL_HANDLE;
         VkImageView   DepthView = VK_NULL_HANDLE;
         VkExtent2D    Extent{};
         VkImageLayout* ColorLayout = nullptr; // caller updates after its transitions
-        // The scene colour's bindless index, readable once its layout is
+        // The display colour's bindless index, readable once its layout is
         // SHADER_READ_ONLY_OPTIMAL.
         uint32_t      ColorBindless = UINT32_MAX;
+        // Scene-referred light, consumed by the output pass within the frame.
+        VkImage        SceneImage = VK_NULL_HANDLE;
+        VkImageView    SceneView = VK_NULL_HANDLE;
+        RenderTargetAccess* SceneAccess = nullptr;
+        uint32_t       SceneBindless = UINT32_MAX;
         // Bloom scratch: two full-res ping-pong targets + the bindless sample indices.
         VkImage        BloomImage[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
         VkImageView    BloomView[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
@@ -76,6 +82,7 @@ private:
     struct Entry
     {
         ViewportId Id{};
+        RenderTargetId Display;
         RenderTargetId Scene;
         RenderTargetId Bloom[2];
     };

@@ -7,7 +7,7 @@ bool OutputRenderFeature::Setup(const RenderFeatureServices& services)
 
 void OutputRenderFeature::OnDraw(const RenderFrame& frame)
 {
-    Pass.Draw(*frame.Backend);
+    Pass.Draw(*frame.Backend, *Params);
 }
 
 void OutputRenderFeature::Teardown()

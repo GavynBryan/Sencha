@@ -714,3 +714,16 @@ gains `Lifetime`, and `RenderTargetView` gains `ColorAccess`. `GpuScope` gains
 A host that registers its own `MainColor` features now also owes an
 `OutputRenderFeature` for that presentation.
 `DefaultRenderPipeline::AddMeshRenderFeature` registers one.
+
+## v41
+
+The scene target becomes `RGBA16F` holding linear scene-referred light, and exposure
+and the shoulder move into `OutputTransformPass`. `RenderLightSet` loses `Exposure`,
+`TonemapKnee` and `TonemapEnabled`, now `OutputTransformParams`, filled by
+`ApplyOutputTransformCVars`; `OutputTransformForView` steps aside for a debug view.
+`SkyGradientParams` and `SkyPushConstants` lose their output fields, and
+`MeshViewUniforms` replaces `StyleParams` and `TonemapEnabled` with `DiffuseWrap` and
+`MinAmbient`. `OutputRenderFeature` takes the params it applies. `DebugLineRenderFeature`
+records in `Output`. `FormatEncodesSrgbOnWrite` becomes `FormatNeedsShaderEncode`.
+A game's emissive values render as before except on blended surfaces, which now
+blend in linear light before the transform.

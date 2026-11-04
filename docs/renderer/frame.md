@@ -90,7 +90,7 @@ DrawFrameScheduled                                           [FramePhase 12, aft
     RecordSwapchainPhases
       barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
       depth barrier                                          [if declared]
-      vkCmdBeginRendering (color clear, stencil clear, depth load and store DONT_CARE)
+      vkCmdBeginRendering (color clear, stencil clear, depth load if a scene drew)
       for Output, ApplicationUi, DevelopmentOverlay, each feature scoped here: OnDraw
       vkCmdEndRendering
       capture, if armed for this presentation
@@ -125,16 +125,31 @@ the phases after it, so a pass samples it without seeing the image. Every
 presentation that draws a scene needs an `OutputRenderFeature`; without one its
 window shows the clear colour, and the renderer logs that once.
 
-`OutputTransformPass` writes the scene unchanged. The scene target is
-`R8G8B8A8_SRGB` and is read with `texelFetch`, so a present into an `_SRGB`
-swapchain round-trips every 8-bit code exactly. A swapchain without hardware sRGB
-writes gets the encode from a specialization constant in `output_present.frag`.
-Exercising that path needs a device whose surface offers only `_UNORM` formats, so
-it has been reviewed but not run.
+The scene target is `RGBA16F` and holds linear scene-referred light: the sky and
+the forward shaders write it with no exposure or curve, and transparent surfaces
+blend in it. `OutputTransformPass` is the one place exposure and the shoulder are
+applied, from `OutputTransformParams`, and the swapchain's hardware sRGB write is
+the one encode. A swapchain with neither gets the encode from a specialization
+constant in `output_present.frag` (`FormatNeedsShaderEncode`). Exercising that path
+needs a device whose surface offers only `_UNORM` formats, so it has been reviewed
+but not run.
 
-Depth stores at the end of the scene scope. The swapchain scope loads it
-`DONT_CARE` because nothing there tests depth, and it stays bound because
-pipelines in that scope declare the format.
+A debug view bypasses the transform through `OutputTransformForView`, so a channel
+shows the value it wrote: exposure and the shoulder would remap a normal or a heat
+colour. Debug lines draw in the `Output` phase after the present draw, against the
+scene's depth, for the same reason.
+
+Depth stores at the end of the scene scope and loads in the swapchain scope.
+
+### Editor views
+
+Kyusu's viewports, thumbnails, and stage pictures render through
+`RecordSceneThenDisplay`, the one path that takes an editor view from a scene
+target through the output pass to the display target the UI samples. Light the
+scene emits draws before the pass; chrome draws after it against the scene's depth,
+in display-referred linear, as its colours were tuned. The orthographic backdrop is
+chrome and is depth-tested at the far plane, so it fills only what the scene left
+empty, including behind a translucent surface with nothing opaque behind it.
 
 ## Synchronization objects
 

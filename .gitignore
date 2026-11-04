@@ -90,3 +90,6 @@ core.*
 # Captured with a project open, per editor. data_editor has none yet.
 data_editor.imgui.ini
 shoji.imgui.ini
+
+# Written by the tonemap ramp golden on every run.
+test/fixtures/content/assets/materials/dev/generated_tonemap_ramp.smat
