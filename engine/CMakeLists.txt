@@ -258,6 +258,26 @@ if(SENCHA_ENABLE_VULKAN)
         OUT_HEADER _sky_gradient_frag_header
     )
     sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _fullscreen_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_fullscreen_vert_spv}"
+        VAR_NAME kFullscreenVertSpv
+        OUT_HEADER _fullscreen_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/output_present.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _output_present_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_output_present_frag_spv}"
+        VAR_NAME kOutputPresentFragSpv
+        OUT_HEADER _output_present_frag_header
+    )
+    sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/skin_pose.comp.glsl"
         STAGE comp
         OUTPUT_SPV _skin_pose_comp_spv
@@ -334,6 +354,8 @@ if(SENCHA_ENABLE_VULKAN)
         "${_sky_gradient_vert_header}"
         "${_sky_gradient_frag_header}"
         "${_skin_pose_comp_header}"
+        "${_fullscreen_vert_header}"
+        "${_output_present_frag_header}"
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS

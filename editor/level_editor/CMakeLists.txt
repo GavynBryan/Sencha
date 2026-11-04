@@ -62,7 +62,6 @@ list(REMOVE_ITEM LEVEL_SHELL_SOURCES ${LEVEL_AUTHORING_SOURCES})
 set(LEVEL_SHADERS
     "grid.vert.glsl|vert|kGridVertSpv"
     "grid.frag.glsl|frag|kGridFragSpv"
-    "fullscreen.vert.glsl|vert|kFullscreenVertSpv"
     "bloom_brightpass.frag.glsl|frag|kBloomBrightpassFragSpv"
     "bloom_blur.frag.glsl|frag|kBloomBlurFragSpv"
     "bloom_composite.frag.glsl|frag|kBloomCompositeFragSpv"

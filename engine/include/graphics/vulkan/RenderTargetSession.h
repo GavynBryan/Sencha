@@ -2,6 +2,16 @@
 
 #include <vulkan/vulkan.h>
 
+// What last touched a colour plane. A target consumed within the frame has one
+// image across every frame in flight, so its next write names these in the barrier
+// that orders it after them. Docs: docs/renderer/resources.md.
+struct RenderTargetAccess
+{
+    VkImageLayout Layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkPipelineStageFlags2 Stage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 Access = VK_ACCESS_2_NONE;
+};
+
 //=============================================================================
 // RenderTargetSession
 //
@@ -40,6 +50,10 @@ public:
                         VkImage depth = VK_NULL_HANDLE,
                         VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
+    // A target consumed within the frame: its contents are discarded, and the
+    // write is ordered after whatever `access` says last touched it.
+    RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access);
+
     ~RenderTargetSession() { End(); }
 
     RenderTargetSession(const RenderTargetSession&) = delete;
@@ -55,5 +69,6 @@ private:
     VkCommandBuffer Cmd = VK_NULL_HANDLE;
     VkImage Color = VK_NULL_HANDLE;
     VkImageLayout* Layout = nullptr;
+    RenderTargetAccess* LastAccess = nullptr;
     bool Ended = false;
 };

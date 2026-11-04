@@ -4,6 +4,7 @@
 #include <graphics/vulkan/VulkanFormat.h>
 
 #include <graphics/vulkan/VulkanDeviceService.h>
+#include <graphics/vulkan/VulkanQueueService.h>
 
 #include <cassert>
 
@@ -49,8 +50,19 @@ RenderTargetStore::Target* RenderTargetStore::Resolve(RenderTargetId id)
     return &target;
 }
 
+RenderTargetStore::Slot& RenderTargetStore::CurrentSlotOf(Target& target)
+{
+    return target.Slots[target.Desc.Lifetime == RenderTargetLifetime::WithinFrame
+                            ? ResolveTargetSlot(CurrentSlot, kMaxFramesInFlight, RenderTargetLifetime::WithinFrame)
+                            : CurrentSlot];
+}
+
 RenderTargetId RenderTargetStore::Create(const RenderTargetDesc& desc)
 {
+    // One image is safe across frames only because one queue orders them all.
+    assert(desc.Lifetime != RenderTargetLifetime::WithinFrame || Services.Queues == nullptr
+           || !Services.Queues->RequiresSecondQueue());
+
     std::uint32_t index;
     if (!FreeList.empty())
     {
@@ -116,7 +128,7 @@ void RenderTargetStore::ReleaseSlot(Slot& slot)
         Services.Images->Destroy(slot.Depth);
         slot.Depth = {};
     }
-    slot.ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    slot.ColorAccess = {};
     slot.Built = RenderTargetDesc{};
 }
 
@@ -169,7 +181,7 @@ void RenderTargetStore::BuildSlot(Slot& slot, const RenderTargetDesc& desc)
     if (desc.Read == RenderTargetRead::Bindless && desc.Sampler != VK_NULL_HANDLE)
         slot.Bindless = Services.Descriptors->RegisterSampledImage(slot.Color, desc.Sampler);
 
-    slot.ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    slot.ColorAccess = {};
     slot.Built = desc;
 }
 
@@ -181,7 +193,7 @@ std::optional<RenderTargetView> RenderTargetStore::Acquire(RenderTargetId id)
     if (target->Desc.Extent.width == 0 || target->Desc.Extent.height == 0)
         return std::nullopt;
 
-    Slot& slot = target->Slots[CurrentSlot];
+    Slot& slot = CurrentSlotOf(*target);
     if (TargetSlotNeedsRebuild(slot.Built, target->Desc, !slot.Color.IsNull()))
         BuildSlot(slot, target->Desc);
     return Peek(id);
@@ -193,7 +205,7 @@ std::optional<RenderTargetView> RenderTargetStore::Peek(RenderTargetId id)
     if (target == nullptr)
         return std::nullopt;
 
-    Slot& slot = target->Slots[CurrentSlot];
+    Slot& slot = CurrentSlotOf(*target);
     if (slot.Color.IsNull())
         return std::nullopt;
 
@@ -205,7 +217,8 @@ std::optional<RenderTargetView> RenderTargetStore::Peek(RenderTargetId id)
         .DepthView = slot.Depth.IsNull() ? VK_NULL_HANDLE
                                          : Services.Images->GetView(slot.Depth),
         .Extent = slot.Built.Extent,
-        .ColorLayout = &slot.ColorLayout,
+        .ColorLayout = &slot.ColorAccess.Layout,
+        .ColorAccess = &slot.ColorAccess,
         .BindlessIndex = slot.Bindless.IsValid() ? slot.Bindless.Value : UINT32_MAX,
     };
 }

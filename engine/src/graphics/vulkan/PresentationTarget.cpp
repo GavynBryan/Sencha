@@ -3,6 +3,7 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 #include <graphics/vulkan/VulkanQueueService.h>
+#include <graphics/vulkan/VulkanSamplerCache.h>
 #include <platform/SdlWindow.h>
 
 PresentationTarget::PresentationTarget(const Services& services, std::unique_ptr<VulkanSurfaceService> surface,
@@ -54,8 +55,9 @@ PresentationTarget::~PresentationTarget()
     for (VkSemaphore semaphore : ImageAvailable)
         if (semaphore != VK_NULL_HANDLE)
             vkDestroySemaphore(Device, semaphore, nullptr);
-    // The depth image goes through the image service's deletion queue; the
-    // swapchain must die before its surface, and the surface before the window.
+    // These images go through the image service's deletion queue; the swapchain
+    // must die before its surface, and the surface before the window.
+    SceneTargets.Teardown();
     DepthAttachment.reset();
     Chain.reset();
     Surface.reset();
@@ -85,6 +87,24 @@ bool PresentationTarget::Rebuild(WindowExtent extent)
     RebuildPending = false;
     Valid = CreateImageState();
     return Valid;
+}
+
+std::optional<RenderTargetView> PresentationTarget::AcquireSceneColor(const RendererServices& services,
+                                                                      VkExtent2D extent)
+{
+    if (!SceneColor.IsValid())
+    {
+        SceneTargets.Setup(services);
+        SceneColor = SceneTargets.Create(RenderTargetDesc{
+            .ColorFormat = kSceneColorFormat,
+            .Read = RenderTargetRead::Bindless,
+            .Sampler = services.Samplers->GetNearestClamp(),
+            .DebugName = "scene_color",
+            .Lifetime = RenderTargetLifetime::WithinFrame,
+        });
+    }
+    SceneTargets.SetExtent(SceneColor, extent);
+    return SceneTargets.Acquire(SceneColor);
 }
 
 PresentationTarget::ImageState* PresentationTarget::Image(std::uint32_t imageIndex)

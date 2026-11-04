@@ -34,20 +34,24 @@ enum class RenderPhase : std::uint8_t
     // Features here own their render passes/targets (no swapchain pass is open) and
     // run before MainColor: e.g. the editor rendering viewports to offscreen textures.
     Offscreen = 0,
+    // The scene, inside its presentation's scene target and depth.
     MainColor = 1,
+    // After the scene and outside any scope: features here open their own,
+    // reading the scene through the frame.
+    Post = 2,
+    // First in the swapchain scope: carries the scene to the window.
+    Output = 3,
     // Authored, user-facing application UI: a game's HUD and menus, and an
     // editor's own chrome. Named ApplicationUi rather than the runtime-flavoured
     // "UI" because Kyusu draws its application surfaces through it and a name
-    // implying "game" would misdescribe half its traffic. Recorded inside the
-    // same swapchain scope as MainColor, after it.
-    ApplicationUi = 2,
+    // implying "game" would misdescribe half its traffic.
+    ApplicationUi = 4,
     // Diagnostics only -- the ImGui debug overlay and anything else an engineer
     // reads while the product runs. Last, so it is never occluded by the
     // application UI it is used to inspect. This is not where an editor's own
     // chrome belongs: that is application UI implemented in ImGui, and putting it
     // here would let it paint over the authored surfaces replacing it.
-    DevelopmentOverlay = 3,
-    // Reserved for: Shadow, Opaque, Transparent, Post...
+    DevelopmentOverlay = 5,
     Count
 };
 
@@ -102,8 +106,9 @@ public:
     [[nodiscard]] virtual bool Setup(const RenderFeatureServices& services) = 0;
 
     // Per-frame record. For MainColor features the command stream is already
-    // inside the swapchain rendering scope. Features in phases that open
-    // their own passes own their own begin/end.
+    // inside the scene scope, and for Output and the UI phases the swapchain
+    // scope. Features in phases that open their own passes own their own
+    // begin/end.
     virtual void OnDraw(const RenderFrame& frame) = 0;
 
     // Runs in ~Renderer before any backend service is torn down. Release

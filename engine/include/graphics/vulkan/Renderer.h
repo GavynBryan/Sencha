@@ -124,6 +124,10 @@ struct FrameContext
     // is a mismatch rather than an omission.
     VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
+    // The scene this presentation drew this frame, for a pass to sample after
+    // the scene scope closes. UINT32_MAX until then, and on a frame with none.
+    std::uint32_t SceneColorBindless = UINT32_MAX;
+    VkExtent2D SceneExtent{};
     // Fence-anchored frame clock. A feature releasing a GPU resource the
     // renderer may still be reading stamps it from here and frees it once this
     // reports it retired, rather than counting frames itself.
@@ -138,6 +142,11 @@ struct FrameContext
 // The attachment formats the swapchain scope binds, for a pass compiling its
 // pipelines at load rather than on the first frame that records them.
 [[nodiscard]] FrameContext SwapchainScopeFormats(const RendererServices& services);
+
+// The scene scope's colour attachment, in every presentation. MainColor features
+// compile against this and the swapchain's depth and stencil.
+inline constexpr VkFormat kSceneColorFormat = VK_FORMAT_R8G8B8A8_SRGB;
+[[nodiscard]] FrameContext SceneScopeFormats(const RendererServices& services);
 
 struct RendererFrameTiming
 {
@@ -316,6 +325,13 @@ private:
     void TearDownRegisteredAt(std::size_t index);
     void WaitForDeviceIdle();
 
+    [[nodiscard]] bool HasFeatureFor(RenderPhase phase, PresentationId presentation) const;
+    void RecordPresentationPhase(const FrameContext& context, RenderPhase phase, PresentationId presentation) const;
+
     void RecordOffscreenPhase(const VulkanFrame& frame);
-    void RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation);
+    // Leaves the frame's scene in `context` for the two phases after it.
+    void RecordScenePhase(FrameContext& context, const AcquiredPresentation& presentation);
+    void RecordPostPhase(const FrameContext& context, const AcquiredPresentation& presentation);
+    void RecordSwapchainPhases(const VulkanFrame& frame, const FrameContext& context,
+                               const AcquiredPresentation& presentation);
 };

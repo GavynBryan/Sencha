@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <graphics/vulkan/RenderTargetStore.h>
+#include <graphics/vulkan/VulkanFormat.h>
 
 namespace
 {
@@ -50,6 +51,29 @@ TEST(ResolveTargetSlot, ToleratesAStoreWithNoSlots)
 {
     EXPECT_EQ(ResolveTargetSlot(0, 0), 0u);
     EXPECT_EQ(ResolveTargetSlot(7, 0), 0u);
+}
+
+TEST(ResolveTargetSlot, ATargetConsumedWithinTheFrameHasOneSlot)
+{
+    EXPECT_EQ(ResolveTargetSlot(0, 3, RenderTargetLifetime::WithinFrame), 0u);
+    EXPECT_EQ(ResolveTargetSlot(2, 3, RenderTargetLifetime::WithinFrame), 0u);
+}
+
+TEST(TargetSlotNeedsRebuild, RebuildsOnALifetimeChange)
+{
+    const RenderTargetDesc built = Desc(800, 600);
+    RenderTargetDesc wanted = built;
+    wanted.Lifetime = RenderTargetLifetime::WithinFrame;
+    EXPECT_TRUE(TargetSlotNeedsRebuild(built, wanted, true));
+}
+
+TEST(FormatEncodesSrgbOnWrite, OnlyAnSrgbTargetEncodes)
+{
+    EXPECT_TRUE(FormatEncodesSrgbOnWrite(VK_FORMAT_B8G8R8A8_SRGB));
+    EXPECT_TRUE(FormatEncodesSrgbOnWrite(VK_FORMAT_R8G8B8A8_SRGB));
+    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_B8G8R8A8_UNORM));
+    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_R8G8B8A8_UNORM));
+    EXPECT_FALSE(FormatEncodesSrgbOnWrite(VK_FORMAT_R16G16B16A16_SFLOAT));
 }
 
 TEST(TargetSlotNeedsRebuild, BuildsWhenThereAreNoImagesYet)

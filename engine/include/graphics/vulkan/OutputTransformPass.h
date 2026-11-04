@@ -1,0 +1,27 @@
+#pragma once
+
+#include <graphics/vulkan/FullscreenPass.h>
+#include <graphics/vulkan/PipelineVariantSet.h>
+#include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/VulkanShaderCache.h>
+
+// Carries the scene target into the display target: the draw every host owes
+// after its scene. Docs: docs/renderer/frame.md.
+class OutputTransformPass
+{
+public:
+    [[nodiscard]] bool Setup(const RendererServices& services);
+    void Teardown();
+
+    // Inside the display target's rendering scope. Records nothing when the
+    // frame drew no scene.
+    void Draw(const FrameContext& frame);
+
+private:
+    [[nodiscard]] bool EnsurePipeline(const FrameContext& frame);
+
+    VulkanShaderCache* Shaders = nullptr;
+    ShaderHandle FragmentShader;
+    FullscreenPass Fullscreen;
+    PipelineVariantSet<1, AttachmentFormatKey> Pipeline;
+};

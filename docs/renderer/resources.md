@@ -151,6 +151,45 @@ which are what the baked lightmap atlas and AO plane use.
 entry's image. A caller holding a view or descriptor built from it must compare
 against the current value each frame and rebuild when it changes.
 
+## Render targets
+
+`RenderTargetStore` owns offscreen colour and depth images, resized on request and
+retired through the deletion queue and the descriptor cache's gate. A target's
+`RenderTargetLifetime` says how many images it needs.
+
+`PerFrameInFlight` keeps one image per frame slot, for a reader that samples an
+earlier frame's image while the next one renders, as the UI does with a viewport.
+
+`WithinFrame` keeps one image for every frame in flight. That is safe because
+there is one graphics queue and one command buffer per frame, and every access to
+the target is recorded into that buffer:
+
+- A pipeline barrier's first synchronization scope covers every command earlier
+  in submission order on the queue, previous frames included, so the barrier
+  before a write orders it after the previous frame's reads with no semaphore or
+  fence.
+- `RenderTargetAccess` records the layout, stage, and access that last touched the
+  image. `RenderTargetSession` names them in that barrier and commits them at its
+  end, with `UNDEFINED` as the old layout because the contents are cleared. A frame
+  in which the target was not recorded leaves the record alone.
+- Fences only bound CPU-side lifetime. A resize destroys through the deletion
+  queue, and the bindless slot retires through the descriptor cache's gate. A view
+  is never rewritten in place.
+
+The cost is that the next frame's scene write waits for this frame's read, the
+same ordering the shared depth image imposes.
+
+Async compute, a second queue, secondary command buffers recorded on other
+threads, or CPU readback of the target would all break the argument.
+`RenderTargetStore::Create` asserts that no second queue was required, so adopting
+one is a deliberate change.
+
+`SceneTargetSynchronizationTest` runs this under synchronization validation at two
+and three frames in flight, through resizes and a minimize. It fails when the
+write-to-sample barrier inside a frame loses its first scope. It still passes when
+the barrier between frames does, so the between-frames half rests on the argument
+above rather than on the layer.
+
 ## Hot reload
 
 Three caches implement in-place reload, all preserving the handle, slot,

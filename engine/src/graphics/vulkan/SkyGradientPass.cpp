@@ -55,10 +55,10 @@ void SkyGradientPass::Setup(const RendererServices& services)
                        "the background falls back to the clear color");
     }
 
-    // Compile against the swapchain's formats at load. A host rendering into
+    // Compile against the scene scope's formats at load. A host rendering into
     // some other target rebuilds once through the variant set.
     if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
-        (void)EnsurePipeline(SwapchainScopeFormats(services));
+        (void)EnsurePipeline(SceneScopeFormats(services));
 }
 
 bool SkyGradientPass::EnsurePipeline(const FrameContext& frame)

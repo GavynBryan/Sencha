@@ -15,6 +15,7 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/feature/DebugLineRenderFeature.h>
 #include <render/feature/MeshRenderFeature.h>
+#include <render/feature/OutputRenderFeature.h>
 #include <render/feature/ShadowRenderFeature.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
 #include <render/feature/SkyRenderFeature.h>
@@ -120,6 +121,10 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     graphics.MainRenderer.StageFeature(
         std::make_unique<DebugLineRenderFeature>(Camera, DebugLines),
         FeatureRegistration{ .Id = "runtime_debug_lines", .DependsOn = kDebugLineDeps });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<OutputRenderFeature>(),
+        FeatureRegistration{ .Id = "runtime_output" });
 
     graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),

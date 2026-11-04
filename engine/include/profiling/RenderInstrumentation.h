@@ -35,6 +35,8 @@ enum class GpuScope : std::uint8_t
 {
     PhaseOffscreen,
     PhaseMainColor,
+    PhasePost,
+    PhaseOutput,
     PhaseApplicationUi,
     PhaseDevelopmentOverlay,
     ShadowViews,

@@ -77,13 +77,23 @@ DrawFrameScheduled                                           [FramePhase 12, aft
   RecordOffscreenPhase                                       [GpuScope::PhaseOffscreen]
     for each Offscreen feature: OnDraw   (Global ones always; presentation-scoped
                                           ones only if their presentation was acquired)
-  for each acquired presentation: RecordSwapchainPhases     [phase GpuScopes for the primary]
-    barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
-    its depth attachment Recreate(extent) + barrier          [if declared]
-    vkCmdBeginRendering (color clear, depth clear, depth storeOp DONT_CARE)
-    for each swapchain phase, each feature scoped to this presentation: OnDraw
-    vkCmdEndRendering
-    capture, if armed for this presentation
+  for each acquired presentation:                           [phase GpuScopes for the primary]
+    RecordScenePhase                                         [only with a MainColor feature here]
+      acquire the scene target; its depth Recreate(extent) + barrier
+      session: scene -> COLOR_ATTACHMENT_OPTIMAL
+      vkCmdBeginRendering (color clear, depth clear, depth storeOp STORE)
+      for each MainColor feature scoped to this presentation: OnDraw
+      vkCmdEndRendering
+      session end: scene -> SHADER_READ_ONLY_OPTIMAL
+    RecordPostPhase                                          [features open their own scopes]
+      for each Post feature scoped to this presentation: OnDraw
+    RecordSwapchainPhases
+      barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
+      depth barrier                                          [if declared]
+      vkCmdBeginRendering (color clear, stencil clear, depth load and store DONT_CARE)
+      for Output, ApplicationUi, DevelopmentOverlay, each feature scoped here: OnDraw
+      vkCmdEndRendering
+      capture, if armed for this presentation
     barrier: swapchain image -> PRESENT_SRC_KHR
   publish scratch counters into RenderStats
   VulkanFrameService::EndFrame
@@ -99,6 +109,32 @@ The `Offscreen` bucket is skipped entirely when empty, which is the game's
 normal case only when the shadow feature failed setup. Offscreen features open
 and close their own rendering scopes and own their own image barriers; no
 swapchain rendering scope is open around them.
+
+## Scene, post, and output
+
+A presentation with a `MainColor` feature draws its scene into its own colour
+target (`kSceneColorFormat`, the extent of the swapchain) with the presentation's
+depth, and an `Output` feature carries the result into the swapchain as the first
+draw of the swapchain scope. `Post` features run between them, opening their own
+scopes. The UI phases keep the swapchain scope, and the stencil their clip masks
+write. A presentation with no `MainColor` feature, as a Kyusu window is, allocates
+no scene target and records neither step.
+
+`FrameContext::SceneColorBindless` and `SceneExtent` carry the finished scene to
+the phases after it, so a pass samples it without seeing the image. Every
+presentation that draws a scene needs an `OutputRenderFeature`; without one its
+window shows the clear colour, and the renderer logs that once.
+
+`OutputTransformPass` writes the scene unchanged. The scene target is
+`R8G8B8A8_SRGB` and is read with `texelFetch`, so a present into an `_SRGB`
+swapchain round-trips every 8-bit code exactly. A swapchain without hardware sRGB
+writes gets the encode from a specialization constant in `output_present.frag`.
+Exercising that path needs a device whose surface offers only `_UNORM` formats, so
+it has been reviewed but not run.
+
+Depth stores at the end of the scene scope. The swapchain scope loads it
+`DONT_CARE` because nothing there tests depth, and it stays bound because
+pipelines in that scope declare the format.
 
 ## Synchronization objects
 

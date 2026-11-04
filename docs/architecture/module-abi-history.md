@@ -698,3 +698,19 @@ overload now resolves through it.
 **World.** `PresentationPoseOf` composes an entity's local transform onto its
 parent's drawn pose instead of returning its WorldTransform, so it is right
 before presentation propagation runs as well as after it.
+
+## v40
+
+The scene moves into its own colour target. `RenderPhase` gains `Post` and
+`Output` and renumbers `ApplicationUi` and `DevelopmentOverlay`; `MainColor`
+features now record into the scene scope rather than the swapchain scope.
+`FrameContext` gains `SceneColorBindless` and `SceneExtent`, `RenderTargetDesc`
+gains `Lifetime`, and `RenderTargetView` gains `ColorAccess`. `GpuScope` gains
+`PhasePost` and `PhaseOutput`. New: `FullscreenPass`, `OutputTransformPass`,
+`SceneScopeFormats`, `kSceneColorFormat`, `RenderTargetAccess`,
+`RenderTargetLifetime`, `FormatEncodesSrgbOnWrite` and
+`VulkanQueueService::RequiresSecondQueue`.
+
+A host that registers its own `MainColor` features now also owes an
+`OutputRenderFeature` for that presentation.
+`DefaultRenderPipeline::AddMeshRenderFeature` registers one.

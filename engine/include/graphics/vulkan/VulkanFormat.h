@@ -13,3 +13,12 @@
         || format == VK_FORMAT_D24_UNORM_S8_UINT
         || format == VK_FORMAT_D16_UNORM_S8_UINT;
 }
+
+// Whether writing linear light to this colour format encodes it in hardware. The
+// frame encodes once: a display target that does not gets it from the output pass.
+[[nodiscard]] constexpr bool FormatEncodesSrgbOnWrite(VkFormat format)
+{
+    return format == VK_FORMAT_B8G8R8A8_SRGB
+        || format == VK_FORMAT_R8G8B8A8_SRGB
+        || format == VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+}

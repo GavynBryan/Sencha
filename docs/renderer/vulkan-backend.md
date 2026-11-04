@@ -355,7 +355,7 @@ wrappers exist for the swapchain image transitions (`TransitionForColorAttachmen
 **Never name `TOP_OF_PIPE` as a first scope when you mean "order against
 previous writes".** `TOP_OF_PIPE` names no stage, so the first scope is empty
 and the barrier orders nothing. The per-frame depth barrier in
-`Renderer::RecordMainColorPhase` names the early and late fragment-test stages
+`PrepareScopeDepth` in `Renderer.cpp` names the early and late fragment-test stages
 with depth attachment read/write access precisely because one depth image serves
 every frame in flight and a frame only waits on the fence two slots back.
 

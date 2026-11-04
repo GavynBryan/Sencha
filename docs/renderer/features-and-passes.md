@@ -48,16 +48,23 @@ Returning `false` is for "this feature cannot record legal commands".
 ### Phases
 
 ```cpp
-enum class RenderPhase : uint8_t { Offscreen = 0, MainColor = 1, Count };
+enum class RenderPhase : uint8_t
+{
+    Offscreen = 0, MainColor = 1, Post = 2, Output = 3,
+    ApplicationUi = 4, DevelopmentOverlay = 5, Count
+};
 ```
 
 | Phase | Rendering scope | Used by |
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
-| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature`, the ImGui debug overlay |
+| `MainColor` | the scene target plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature` |
+| `Post` | none is opened. The feature owns its own passes, reading the scene through `FrameContext` | none yet |
+| `Output` | the swapchain scope is already open, and this is its first draw | `OutputRenderFeature` |
+| `ApplicationUi` | the same swapchain scope | `UiRenderFeature` |
+| `DevelopmentOverlay` | the same swapchain scope | the ImGui debug overlay |
 
-The enum comment reserves Shadow, Opaque, Transparent, UI, and Post. Adding one
-means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
+Adding a phase means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
 the feature interface does not change. The phase bucket array is sized by
 `RenderPhase::Count`, and an empty bucket costs one branch.
 

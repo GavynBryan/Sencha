@@ -1,7 +1,7 @@
 #version 450
 
 // Single full-screen triangle (3 vertices, no vertex buffer). UV spans [0,1] across
-// the screen. Shared by the bloom passes.
+// the screen. Shared by every FullscreenPass.
 layout(location = 0) out vec2 vUv;
 
 void main()

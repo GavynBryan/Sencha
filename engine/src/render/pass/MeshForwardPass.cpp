@@ -199,7 +199,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     // falls back to the rebuild inside EnsurePipelines.
     if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
     {
-        const FrameContext prewarm = SwapchainScopeFormats(services);
+        const FrameContext prewarm = SceneScopeFormats(services);
         if (prewarm.TargetFormat != VK_FORMAT_UNDEFINED
             && prewarm.DepthFormat != VK_FORMAT_UNDEFINED)
         {

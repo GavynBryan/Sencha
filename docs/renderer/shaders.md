@@ -14,6 +14,8 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `shadow_depth.frag.glsl` | fragment | `kShadowDepthFragSpv` (empty body; depth only) |
 | `sky_gradient.vert.glsl` | vertex | `kSkyGradientVertSpv` (full-screen triangle, no vertex buffer) |
 | `sky_gradient.frag.glsl` | fragment | `kSkyGradientFragSpv` |
+| `fullscreen.vert.glsl` | vertex | `kFullscreenVertSpv`, the bufferless triangle of every `FullscreenPass` |
+| `output_present.frag.glsl` | fragment | `kOutputPresentFragSpv`, the present draw |
 | `mesh_view.glsli` | include | frame UBO block and its structs |
 | `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling, tonemap |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |

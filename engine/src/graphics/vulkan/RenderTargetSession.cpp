@@ -74,6 +74,22 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
     }
 }
 
+RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access)
+    : Cmd(cmd)
+    , Color(color)
+    , Layout(&access.Layout)
+    , LastAccess(&access)
+{
+    if (Cmd == VK_NULL_HANDLE || Color == VK_NULL_HANDLE)
+    {
+        Ended = true;
+        return;
+    }
+    TransitionColor(Cmd, Color, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    access.Stage, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    access.Access, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+}
+
 void RenderTargetSession::End()
 {
     if (Ended)
@@ -88,4 +104,9 @@ void RenderTargetSession::End()
                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     // The commit the callers used to owe by hand.
     *Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (LastAccess != nullptr)
+    {
+        LastAccess->Stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        LastAccess->Access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    }
 }
