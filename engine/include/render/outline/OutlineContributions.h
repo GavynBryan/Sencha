@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <math/Mat.h>
 #include <math/Vec.h>
 #include <presentation/PresentationContributions.h>
 #include <presentation/PresentationOwner.h>
@@ -73,6 +74,10 @@ struct OutlineFrame
     std::vector<OutlineStyleId> DrawOrder;
     OutlineStyleTable Styles{};
     float MaxWidthPixels = 0.0f;
+    // What the queued items cover in normalized device coordinates, x then y, each
+    // from -1 to 1. The whole view when an item reaches behind the camera.
+    float ScreenMin[2] = { 1.0f, 1.0f };
+    float ScreenMax[2] = { -1.0f, -1.0f };
     // Moves when the World's styles change, so the table is uploaded only then.
     std::uint32_t StylesVersion = 0;
 
@@ -80,8 +85,8 @@ struct OutlineFrame
     // The queue an entity's sections also go to, or null when it has no outline.
     [[nodiscard]] RenderQueue* QueueFor(EntityId entity);
     void Reset();
-    // Sorts what extraction filled and works out the draw order.
-    void Finish();
+    // Sorts what extraction filled, and works out the draw order and screen bounds.
+    void Finish(const Mat4& viewProjection);
 };
 
 // Sweeps contributions whose entity or holder has gone, then resolves the rest.

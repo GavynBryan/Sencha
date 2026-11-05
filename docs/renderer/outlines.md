@@ -27,22 +27,27 @@ holder's death, or the entity's.
   one sample land in primitive order, so the higher priority wins an exact depth tie. Skinned
   items bind the same posed buffer as the forward pass. `mesh_forward.vert` declares
   `invariant gl_Position` so the two passes cannot disagree about depth.
-- **The composite.** `output_present.frag` draws an outer outline on pixels whose own mask is
-  0, from a fixed ring of taps at three radii up to the widest style. A style counts only
-  within its own width, and the higher priority takes a pixel two styles compete for, so a
-  highlighted object's material is never painted over.
+- **The composite.** `outline_composite.frag` is its own draw after the present draw,
+  scissored to the highlighted objects' screen bounds grown by the widest style, so normal
+  presentation carries no outline work and the cost follows what is highlighted rather than
+  the window. It draws only on pixels whose own mask is 0, from a fixed ring of taps at three
+  radii up to the widest style. A style counts only within its own width, and the higher
+  priority takes a pixel two styles compete for, so a highlighted object's material is never
+  painted over.
+- **The bounds.** They must hold what the mask drew or the outline is cut off. A skinned item
+  uses `PosedWorldBounds`, since a posed limb reaches outside its rest bounds, and an item
+  reaching behind the camera takes the whole view, since its projection means nothing.
 - **The style table** is a small bindless image uploaded when styles change, so a frame with
   nothing highlighted carries no extra descriptor or push data.
 
 With nothing highlighted, extraction does no per-entity lookup, the mask scope records
-nothing, the mask image is released after a quiet interval, and the composite is one branch.
+nothing, the mask image is released after a quiet interval, and the composite does not draw.
 
-## Known cost
+## Cost
 
-The ring runs on every uncovered pixel on screen, however little is highlighted. On
-`levels/golden_outline`, the present draw measures:
+`Phase/Output` on `levels/golden_outline_single`, one small object highlighted:
 
-| GPU | Nothing highlighted | Outlines active |
+| GPU | Nothing highlighted | One object highlighted |
 |---|---|---|
-| RTX 4060 Laptop | 0.010 ms | 0.060 ms |
-| Intel RPL-P | 0.080 ms | 1.161 ms |
+| RTX 4060 Laptop | 0.010 ms | 0.012 ms |
+| Intel RPL-P | 0.095 ms | 0.141 ms |

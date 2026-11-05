@@ -117,6 +117,8 @@ struct ScenePostState
     std::uint32_t OutlineMaskBindless = UINT32_MAX;
     std::uint32_t OutlineStyleBindless = UINT32_MAX;
     float OutlineMaxWidthPixels = 0.0f;
+    // Where the composite can land: the highlighted objects' bounds on screen.
+    VkRect2D OutlineScissor{};
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to

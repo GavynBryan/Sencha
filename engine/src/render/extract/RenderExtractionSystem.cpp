@@ -322,7 +322,18 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
                              caches.Materials, queue);
             if (outlines != nullptr)
                 if (RenderQueue* mask = outlines->QueueFor(view.Entity(i)))
-                    EmitMeshSections(instance, *mesh, *sectionMaterials, caches.Materials, *mask);
+                {
+                    // The composite is scissored to these bounds, so they have to hold the pose.
+                    MeshDrawInstance outlined = instance;
+                    if (poseSlot != UINT32_MAX && skinnedPoses != nullptr)
+                    {
+                        const SkinnedPoseInstance& pose = skinnedPoses->Instances[poseSlot];
+                        outlined.WorldBounds = PosedWorldBounds(
+                            mesh->LocalBounds, worldMatrix,
+                            std::span<const Mat4>(skinnedPoses->Palettes).subspan(pose.PaletteOffset, pose.JointCount));
+                    }
+                    EmitMeshSections(outlined, *mesh, *sectionMaterials, caches.Materials, *mask);
+                }
         }
     };
 

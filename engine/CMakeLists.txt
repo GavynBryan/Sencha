@@ -300,6 +300,16 @@ if(SENCHA_ENABLE_VULKAN)
         OUT_HEADER _outline_mask_frag_header
     )
     sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_composite.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _outline_composite_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_composite_frag_spv}"
+        VAR_NAME kOutlineCompositeFragSpv
+        OUT_HEADER _outline_composite_frag_header
+    )
+    sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/skin_pose.comp.glsl"
         STAGE comp
         OUTPUT_SPV _skin_pose_comp_spv
@@ -380,6 +390,7 @@ if(SENCHA_ENABLE_VULKAN)
         "${_output_present_frag_header}"
         "${_sencha_fade_frag_header}"
         "${_outline_mask_frag_header}"
+        "${_outline_composite_frag_header}"
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS

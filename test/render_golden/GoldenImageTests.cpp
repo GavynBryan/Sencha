@@ -306,6 +306,20 @@ TEST(GoldenImage, OutlinesFollowPriorityOcclusionAndCutouts)
                  .ExtraArgs = "+set render_host.outline 1" });
 }
 
+// The scissor around the highlights clamps at every edge of the view.
+TEST(GoldenImage, AnOutlineIsClippedByTheViewNotByItsScissor)
+{
+    CheckScene({ .Name = "outline_edges", .Map = "levels/golden_outline_edges", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// A mesh reaching past the camera has no meaningful screen bounds, so it takes the view.
+TEST(GoldenImage, AnOutlineOnAMeshBehindTheCameraIsNotLost)
+{
+    CheckScene({ .Name = "outline_behind", .Map = "levels/golden_outline_behind", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
 // The posed rig, because a skinned mesh binds its posed buffer in the mask too.
 TEST(GoldenImage, AnOutlineFollowsTheSkinnedPose)
 {

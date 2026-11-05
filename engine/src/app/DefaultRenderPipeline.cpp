@@ -278,7 +278,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get(),
             Outlines.IsEmpty() ? nullptr : &Outlines);
         Queue.SortOpaque();
-        Outlines.Finish();
+        Outlines.Finish(Camera.ViewProjection);
     }
 
     LightExtractionCounts lightCounts;

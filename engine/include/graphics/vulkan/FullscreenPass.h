@@ -28,6 +28,8 @@ public:
     // Covers `extent`, inside a rendering scope the caller has open. `push` is
     // the whole block declared at Setup.
     void Draw(VkCommandBuffer cmd, VkExtent2D extent, VkPipeline pipeline, const void* push) const;
+    // The same triangle, shaded only inside `scissor`.
+    void Draw(VkCommandBuffer cmd, VkExtent2D extent, VkRect2D scissor, VkPipeline pipeline, const void* push) const;
 
 private:
     VkDevice Device = VK_NULL_HANDLE;

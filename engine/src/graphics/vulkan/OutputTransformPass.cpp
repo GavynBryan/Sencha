@@ -1,6 +1,7 @@
 #include <graphics/vulkan/OutputTransformPass.h>
 
 #include <graphics/vulkan/VulkanFormat.h>
+#include <shaders/kOutlineCompositeFragSpv.h>
 #include <shaders/kOutputPresentFragSpv.h>
 
 #include <array>
@@ -29,6 +30,8 @@ bool OutputTransformPass::Setup(const RendererServices& services)
 
     FragmentShader = Shaders->CreateModuleFromSpirv(kOutputPresentFragSpv, kOutputPresentFragSpvWordCount,
                                                     "Output present fragment");
+    OutlineFragmentShader = Shaders->CreateModuleFromSpirv(kOutlineCompositeFragSpv, kOutlineCompositeFragSpvWordCount,
+                                                           "Outline composite fragment");
     if (services.Swapchain != nullptr)
         (void)EnsurePipeline(SwapchainScopeFormats(services));
     return true;
@@ -41,17 +44,20 @@ void OutputTransformPass::Teardown()
     if (Shaders != nullptr)
     {
         Shaders->Destroy(FragmentShader);
+        Shaders->Destroy(OutlineFragmentShader);
         FragmentShader = {};
+        OutlineFragmentShader = {};
     }
     Shaders = nullptr;
 }
 
 bool OutputTransformPass::EnsurePipeline(const FrameContext& frame)
 {
-    return Pipeline.Ensure(frame.AttachmentFormats(), [&](std::size_t) {
+    return Pipeline.Ensure(frame.AttachmentFormats(), [&](std::size_t index) {
         const std::array encode{ ShaderSpecializationConstant{
             .Id = 0, .Value = FormatNeedsShaderEncode(frame.TargetFormat) ? 1u : 0u } };
-        return Fullscreen.BuildPipeline(FragmentShader, frame.AttachmentFormats(), {}, encode);
+        return Fullscreen.BuildPipeline(index == 0 ? FragmentShader : OutlineFragmentShader, frame.AttachmentFormats(),
+                                        {}, encode);
     });
 }
 
@@ -75,4 +81,6 @@ void OutputTransformPass::Draw(const FrameContext& frame, const OutputTransformP
                                   .OutlineStyleIndex = post != nullptr ? post->OutlineStyleBindless : UINT32_MAX,
                                   .OutlineMaxWidthPixels = post != nullptr ? post->OutlineMaxWidthPixels : 0.0f };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, Pipeline.Get(0), &push);
+    if (push.OutlineMaskIndex != UINT32_MAX)
+        Fullscreen.Draw(frame.Cmd, frame.TargetExtent, post->OutlineScissor, Pipeline.Get(1), &push);
 }

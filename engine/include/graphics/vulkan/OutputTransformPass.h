@@ -23,6 +23,8 @@ private:
 
     VulkanShaderCache* Shaders = nullptr;
     ShaderHandle FragmentShader;
+    ShaderHandle OutlineFragmentShader;
     FullscreenPass Fullscreen;
-    PipelineVariantSet<1, AttachmentFormatKey> Pipeline;
+    // The present draw, and the outline composite drawn over it.
+    PipelineVariantSet<2, AttachmentFormatKey> Pipeline;
 };

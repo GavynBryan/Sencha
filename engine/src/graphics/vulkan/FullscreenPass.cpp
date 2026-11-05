@@ -78,12 +78,17 @@ VkPipeline FullscreenPass::BuildPipeline(ShaderHandle fragmentShader, const Atta
 
 void FullscreenPass::Draw(VkCommandBuffer cmd, VkExtent2D extent, VkPipeline pipeline, const void* push) const
 {
+    Draw(cmd, extent, VkRect2D{ { 0, 0 }, extent }, pipeline, push);
+}
+
+void FullscreenPass::Draw(VkCommandBuffer cmd, VkExtent2D extent, VkRect2D scissor, VkPipeline pipeline,
+                          const void* push) const
+{
     const VkDescriptorSet bindless = Descriptors->GetBindlessSet();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Layout, 0, 1, &bindless, 0, nullptr);
 
     const VkViewport viewport{ 0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
                                0.0f, 1.0f };
-    const VkRect2D scissor{ { 0, 0 }, extent };
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);

@@ -2,8 +2,10 @@
 
 #include <ecs/World.h>
 #include <render/RenderQueue.h>
+#include <render/SkinnedPoseFrameData.h>
 #include <render/outline/OutlineContributions.h>
 
+#include <array>
 #include <cstddef>
 
 namespace
@@ -114,7 +116,7 @@ TEST(Outlines, NothingHighlightedLeavesNoDrawsAndAWorldWithNoStoreIsFine)
     World world;
     OutlineFrame frame;
     ExtractOutlines(world, frame);
-    frame.Finish();
+    frame.Finish(Mat4::Identity());
     EXPECT_TRUE(frame.IsEmpty());
     EXPECT_TRUE(frame.DrawOrder.empty());
     EXPECT_EQ(frame.QueueFor(world.CreateEntity()), nullptr);
@@ -131,8 +133,53 @@ TEST(Outlines, DrawOrderIsLowestPriorityFirstSoTheHighestWinsADepthTie)
     RenderQueueItem item;
     f.Frame.QueueFor(f.Target)->AddOpaque(item);
     f.Frame.QueueFor(other)->AddOpaque(item);
-    f.Frame.Finish();
+    f.Frame.Finish(Mat4::Identity());
     ASSERT_EQ(f.Frame.DrawOrder.size(), 2u);
     EXPECT_EQ(f.Frame.DrawOrder[0], f.Low);
     EXPECT_EQ(f.Frame.DrawOrder[1], f.High);
+}
+
+TEST(Outlines, TheScreenBoundsCoverTheQueuedItemsAndAnItemBehindTheCameraTakesTheView)
+{
+    Fixture f;
+    SetOutline(f.Entities, f.Target, Outline(Writer(1), f.Low));
+    ExtractOutlines(f.Entities, f.Frame);
+    RenderQueueItem item;
+    item.WorldBounds = Aabb3d(Vec3d(-0.25f, -0.5f, 0.0f), Vec3d(0.5f, 0.25f, 0.5f));
+    f.Frame.QueueFor(f.Target)->AddOpaque(item);
+    f.Frame.Finish(Mat4::Identity());
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMin[0], -0.25f);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMin[1], -0.5f);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMax[0], 0.5f);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMax[1], 0.25f);
+
+    Mat4 behind = Mat4::Identity();
+    behind[3][3] = -1.0f;
+    f.Frame.Finish(behind);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMin[0], -1.0f);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMax[1], 1.0f);
+}
+
+TEST(PosedWorldBounds, HoldsEveryVertexBlendedBetweenItsJoints)
+{
+    const Aabb3d rest(Vec3d(-1.0f, -1.0f, -1.0f), Vec3d(1.0f, 1.0f, 1.0f));
+    Mat4 raised = Mat4::Identity();
+    raised[1][3] = 5.0f;
+    const std::array<Mat4, 2> palette{ Mat4::Identity(), raised };
+    Mat4 world = Mat4::Identity();
+    world[0][3] = 10.0f;
+
+    const Aabb3d bounds = PosedWorldBounds(rest, world, palette);
+    EXPECT_FLOAT_EQ(bounds.Min.X, 9.0f);
+    EXPECT_FLOAT_EQ(bounds.Max.X, 11.0f);
+    EXPECT_FLOAT_EQ(bounds.Min.Y, -1.0f);
+    EXPECT_FLOAT_EQ(bounds.Max.Y, 6.0f) << "the raised joint's reach, which the rest bounds miss";
+
+    // A corner weighted half to each joint lands between them.
+    const Vec4 corner(1.0f, 1.0f, 1.0f, 1.0f);
+    const Vec4 first = world * palette[0] * corner;
+    const Vec4 second = world * palette[1] * corner;
+    const float blendedY = (first.Y + second.Y) * 0.5f;
+    EXPECT_GE(blendedY, bounds.Min.Y);
+    EXPECT_LE(blendedY, bounds.Max.Y);
 }
