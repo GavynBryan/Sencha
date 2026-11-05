@@ -10,10 +10,12 @@
 
 class VulkanDescriptorCache;
 
-// What every screen-space pass shares: the bufferless triangle, and a pipeline
-// layout of the bindless image set at set 0 plus one fragment push block. A
-// pass brings its fragment shaders and decides where they draw; it holds the
-// pipelines this builds, since they belong to the pipeline cache.
+// What a screen-space pass over bindless images shares: the bufferless
+// triangle, and a pipeline layout of the bindless image set at set 0 plus one
+// fragment push block. A pass brings its fragment shaders and decides where
+// they draw; it holds the pipelines this builds, since they belong to the
+// pipeline cache. The sky and the editor backdrops keep their own, since they
+// draw at a depth or into a sub-rect this does not offer.
 class FullscreenPass
 {
 public:
