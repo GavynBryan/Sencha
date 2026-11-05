@@ -25,8 +25,10 @@ holder's death, or the entity's.
   draws them into an `R8_UNORM` mask through a mask pipeline family, lowest priority first,
   testing `LESS_OR_EQUAL` against the scene's depth with no depth write. Attachment writes to
   one sample land in primitive order, so the higher priority wins an exact depth tie. Skinned
-  items bind the same posed buffer as the forward pass. `mesh_forward.vert` declares
-  `invariant gl_Position` so the two passes cannot disagree about depth.
+  items bind the same posed buffer as the forward pass. `outline_mask.vert` outputs only the
+  UV a cutout samples, and takes its position from `mesh_position.glsli`, the same expression
+  under the same `invariant gl_Position` as `mesh_forward.vert`, so the two passes cannot
+  disagree about depth.
 - **The composite.** `outline_composite.frag` is its own draw after the present draw,
   scissored to the highlighted objects' screen bounds grown by the widest style, so normal
   presentation carries no outline work and the cost follows what is highlighted rather than

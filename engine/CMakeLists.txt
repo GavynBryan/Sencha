@@ -290,6 +290,16 @@ if(SENCHA_ENABLE_VULKAN)
         OUT_HEADER _sencha_fade_frag_header
     )
     sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_mask.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _outline_mask_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_mask_vert_spv}"
+        VAR_NAME kOutlineMaskVertSpv
+        OUT_HEADER _outline_mask_vert_header
+    )
+    sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_mask.frag.glsl"
         STAGE frag
         OUTPUT_SPV _outline_mask_frag_spv
@@ -389,6 +399,7 @@ if(SENCHA_ENABLE_VULKAN)
         "${_fullscreen_vert_header}"
         "${_output_present_frag_header}"
         "${_sencha_fade_frag_header}"
+        "${_outline_mask_vert_header}"
         "${_outline_mask_frag_header}"
         "${_outline_composite_frag_header}"
     )

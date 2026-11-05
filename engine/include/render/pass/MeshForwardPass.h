@@ -244,6 +244,7 @@ private:
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
+    ShaderHandle OutlineMaskVertexShader;
     ShaderHandle OutlineMaskFragmentShader;
     // The DrawContext's slot, for the frame uniform and the family selection.
     std::uint8_t ActiveOutlineSlot = 0;

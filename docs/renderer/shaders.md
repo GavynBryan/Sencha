@@ -9,6 +9,7 @@ directory: engine shaders are compiled at build time and baked into the binary.
 |---|---|---|
 | `mesh_forward.vert.glsl` | vertex | `kMeshForwardVertSpv` |
 | `mesh_forward.frag.glsl` | fragment | `kMeshForwardFragSpv` |
+| `outline_mask.vert.glsl` | vertex | `kOutlineMaskVertSpv` |
 | `mesh_debug_view.frag.glsl` | fragment | `kMeshDebugViewFragSpv`, only when `SENCHA_ENABLE_RENDER_PROFILING` |
 | `shadow_depth.vert.glsl` | vertex | `kShadowDepthVertSpv` |
 | `shadow_depth.frag.glsl` | fragment | `kShadowDepthFragSpv` (empty body; depth only) |
@@ -40,6 +41,9 @@ graph TD
   dbg --> mat
   dbg --> light
   vert[mesh_forward.vert.glsl] --> frame
+  vert --> pos[mesh_position.glsli]
+  mask[outline_mask.vert.glsl] --> frame
+  mask --> pos
   out[output_present.frag.glsl] --> tone[tonemap.glsli]
   shadow -.reads.-> frame
   probe -.reads.-> frame

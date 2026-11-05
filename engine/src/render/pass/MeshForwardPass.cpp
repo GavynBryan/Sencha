@@ -13,6 +13,7 @@
 #include <shaders/kMeshForwardFragSpv.h>
 #include <shaders/kMeshForwardVertSpv.h>
 #include <shaders/kOutlineMaskFragSpv.h>
+#include <shaders/kOutlineMaskVertSpv.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <shaders/kMeshDebugViewFragSpv.h>
 #endif
@@ -148,6 +149,8 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
     FragmentShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardFragSpv, kMeshForwardFragSpvWordCount, "Mesh forward fragment");
+    OutlineMaskVertexShader = Shaders->CreateModuleFromSpirv(
+        kOutlineMaskVertSpv, kOutlineMaskVertSpvWordCount, "Outline mask vertex");
     OutlineMaskFragmentShader = Shaders->CreateModuleFromSpirv(
         kOutlineMaskFragSpv, kOutlineMaskFragSpvWordCount, "Outline mask fragment");
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -324,7 +327,10 @@ bool MeshForwardPass::EnsureOutlineMaskPipelines(const FrameContext& frame)
     return OutlineMaskPipelines.Ensure(
         frame.AttachmentFormats(),
         [&](std::size_t index) {
-            GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
+            GraphicsPipelineDesc desc = MakeMeshPipelineBase(OutlineMaskVertexShader, PipelineLayout);
+            std::erase_if(desc.VertexAttributes, [](const auto& attribute) {
+                return attribute.Location == 1 || attribute.Location >= 7;
+            });
             desc.FragmentShader = OutlineMaskFragmentShader;
             // Only the front-most surface writes: tested against the scene's depth
             // at LESS_OR_EQUAL, with the scene's writes left as they are.
@@ -917,6 +923,7 @@ void MeshForwardPass::Teardown()
     {
         Shaders->Destroy(VertexShader);
         Shaders->Destroy(FragmentShader);
+        Shaders->Destroy(OutlineMaskVertexShader);
         Shaders->Destroy(OutlineMaskFragmentShader);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         Shaders->Destroy(DebugFragmentShader);
@@ -924,6 +931,7 @@ void MeshForwardPass::Teardown()
     }
     VertexShader = {};
     FragmentShader = {};
+    OutlineMaskVertexShader = {};
     OutlineMaskFragmentShader = {};
     OutlineMaskPipelines.Reset();
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
