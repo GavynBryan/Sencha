@@ -52,6 +52,12 @@ SynthesizedInput::~SynthesizedInput()
 
 bool SDLCALL SynthesizedInput::OnlyScripted(void* self, SDL_Event* event)
 {
+    const auto* input = static_cast<const SynthesizedInput*>(self);
+    // SDL folds a real key into its modifier state before the event gets here, and
+    // the editor reads that state for pointer events, which carry none; so whatever
+    // arrives from the platform, the script's modifiers are put back.
+    if (!input->Pushing)
+        SDL_SetModState(input->Modifiers);
     switch (event->type)
     {
     case SDL_EVENT_KEY_DOWN:
@@ -61,7 +67,7 @@ bool SDLCALL SynthesizedInput::OnlyScripted(void* self, SDL_Event* event)
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
     case SDL_EVENT_MOUSE_WHEEL:
-        return static_cast<const SynthesizedInput*>(self)->Pushing;
+        return input->Pushing;
     default:
         return true;
     }
