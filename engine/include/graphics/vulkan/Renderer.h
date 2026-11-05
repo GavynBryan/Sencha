@@ -113,6 +113,10 @@ struct ScenePostState
     std::uint32_t PresentColorBindless = UINT32_MAX;
     // The output transform has already run, inside the effect chain.
     bool TransformApplied = false;
+    // The outline composite's inputs, UINT32_MAX while nothing is highlighted.
+    std::uint32_t OutlineMaskBindless = UINT32_MAX;
+    std::uint32_t OutlineStyleBindless = UINT32_MAX;
+    float OutlineMaxWidthPixels = 0.0f;
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to

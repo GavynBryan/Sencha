@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/MeshDrawSubmitter.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
@@ -66,7 +67,7 @@ struct MeshViewUniforms
     std::uint32_t ProbePad2 = 0;
     GpuProbeVolume ProbeVolumes[kMaxActiveProbeVolumes];
     std::uint32_t DebugView = 0;
-    std::uint32_t DebugViewPad0 = 0;
+    std::uint32_t OutlineStyleSlot = 0;
     std::uint32_t DebugViewPad1 = 0;
     std::uint32_t DebugViewPad2 = 0;
 };
@@ -155,8 +156,18 @@ public:
         MaterialCache& Materials;
         const SkinnedMeshCache* SkinnedMeshes = nullptr;
         Vec4 Tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+        // Nonzero draws the queue into an R8 outline mask instead of shading it,
+        // writing this slot where the surface passes the scene's depth.
+        std::uint8_t OutlineStyleSlot = 0;
     };
     void Draw(const FrameContext& frame, const DrawContext& ctx);
+
+    // A frame's outline queues into a cleared mask, lowest priority first, against
+    // the scene's depth, with the mask's scope and barriers around them. Outside any
+    // scope; leaves the mask readable. The runtime feature and an editor view share it.
+    void DrawOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& attachments,
+                         const CameraRenderData& camera, const RenderLightSet& lights, StaticMeshCache& meshes,
+                         MaterialCache& materials, const SkinnedMeshCache* skinnedMeshes, OutlineFrame& outlines);
     void Teardown();
 
     // Pass-local totals, maintained unconditionally at run granularity (the
@@ -198,6 +209,7 @@ private:
                          const DrawToken& token);
     [[nodiscard]] bool EnsurePipelines(const FrameContext& frame);
     [[nodiscard]] bool EnsureTransparentPipelines(const FrameContext& frame);
+    [[nodiscard]] bool EnsureOutlineMaskPipelines(const FrameContext& frame);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     [[nodiscard]] bool EnsureDebugPipelines(const FrameContext& frame,
                                             bool overdraw);
@@ -232,6 +244,9 @@ private:
 
     ShaderHandle VertexShader;
     ShaderHandle FragmentShader;
+    ShaderHandle OutlineMaskFragmentShader;
+    // The DrawContext's slot, for the frame uniform and the family selection.
+    std::uint8_t ActiveOutlineSlot = 0;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     ShaderHandle DebugFragmentShader;
 #endif
@@ -241,6 +256,8 @@ private:
     PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> OpaquePipelines;
     // Blended geometry: depth test on, depth write off, straight-alpha over.
     PipelineVariantSet<kTransparentPipelineCount, AttachmentFormatKey> TransparentPipelines;
+    // Cull and mask axes, the same two the debug families vary over.
+    PipelineVariantSet<kDebugPipelineCount, AttachmentFormatKey> OutlineMaskPipelines;
     // Per-view draw order for the transparent list, retained across frames so
     // the per-view sort does not reallocate.
     std::vector<std::uint32_t> TransparentOrder;

@@ -15,6 +15,7 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/feature/DebugLineRenderFeature.h>
 #include <render/feature/MeshRenderFeature.h>
+#include <render/feature/OutlineRenderFeature.h>
 #include <render/feature/OutputRenderFeature.h>
 #include <render/feature/PostRenderFeature.h>
 #include <render/feature/ShadowRenderFeature.h>
@@ -116,11 +117,21 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     if (SkinnedMeshes != nullptr)
         SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
 
-    graphics.MainRenderer.StageFeature(
+    MeshRenderFeature* mesh = graphics.MainRenderer.StageFeature(
         std::make_unique<MeshRenderFeature>(
             Queue, *Meshes, *Materials, Camera, Lights, bindings,
             SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
         FeatureRegistration{ .Id = kMesh, .DependsOn = kMeshDeps });
+
+    // Takes the mesh feature's pass by reference, and writes its mask before the
+    // post feature so the frame it leaves behind is the one the chain sees.
+    static constexpr std::string_view kOutline = "runtime_outline";
+    static constexpr std::array<std::string_view, 1> kOutlineDeps{ kMesh };
+    static constexpr std::array<std::string_view, 1> kPostDeps{ kOutline };
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<OutlineRenderFeature>(mesh->ForwardPass(), Outlines, Camera, Lights, *Meshes, *Materials,
+                                               SkinnedMeshes),
+        FeatureRegistration{ .Id = kOutline, .DependsOn = kOutlineDeps });
 
     graphics.MainRenderer.StageFeature(
         std::make_unique<DebugLineRenderFeature>(Camera, DebugLines),
@@ -134,7 +145,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     {
         graphics.MainRenderer.StageFeature(
             std::make_unique<PostRenderFeature>(*PostEffects, PostEffectsThisFrame, Output),
-            FeatureRegistration{ .Id = "runtime_post" });
+            FeatureRegistration{ .Id = "runtime_post", .DependsOn = kPostDeps });
     }
 
     graphics.MainRenderer.StageFeature(
@@ -223,6 +234,7 @@ void DefaultRenderPipeline::PublishEmptyFrameOutputs()
     Residency.ClearFrameSchedule();
     DebugLines.Clear();
     PostEffectsThisFrame.Entries.clear();
+    Outlines.Reset();
 }
 
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
@@ -252,6 +264,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         world, ctx.Runtime.GetSimulationClock(), ctx.Presentation, extent, ctx.Partitions);
     if (!CameraRenderDataSystem::Build(presented, world, Camera))
         return;
+    ExtractOutlines(world, Outlines);
 
     CpuScopeTimings* scopes =
         Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr;
@@ -262,8 +275,10 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             world, ctx.Partitions,
             RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
                                  SkinnedMeshes, Skeletons },
-            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
+            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get(),
+            Outlines.IsEmpty() ? nullptr : &Outlines);
         Queue.SortOpaque();
+        Outlines.Finish();
     }
 
     LightExtractionCounts lightCounts;

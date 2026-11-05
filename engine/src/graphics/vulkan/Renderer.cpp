@@ -771,7 +771,13 @@ void Renderer::RecordPostPhase(const FrameContext& context, const AcquiredPresen
         return;
     const PhaseTiming timing(Services, context.Cmd, GpuScope::PhasePost,
                              presentation.Id == Frames.PrimaryPresentation());
-    RecordPresentationPhase(context, RenderPhase::Post, presentation.Id);
+    // The scene's depth, ordered after its writes, for a feature that tests against it.
+    const ScopeDepth depth = PrepareScopeDepth(context.Cmd, *presentation.Target, presentation.Extent);
+    FrameContext post = context;
+    post.DepthView = depth.View;
+    post.DepthFormat = depth.Format;
+    post.StencilFormat = depth.HasStencil ? depth.Format : VK_FORMAT_UNDEFINED;
+    RecordPresentationPhase(post, RenderPhase::Post, presentation.Id);
 }
 
 // Output and the UI phases of one presentation, in one rendering scope. One

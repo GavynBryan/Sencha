@@ -12,7 +12,11 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <presentation/PresentationOwner.h>
 #include <render/feature/UiRenderFeature.h>
+#include <ecs/Query.h>
+#include <render/StaticMeshComponent.h>
+#include <render/outline/OutlineContributions.h>
 #include <render/post/PostEffectCatalog.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/post/PostEffectContributions.h>
 #include <shaders/kGoldenDisplaceFragSpv.h>
 #include <ui/UiService.h>
@@ -31,6 +35,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -235,6 +240,52 @@ struct PostEffectFigureSystem
     PresentationWriterId Writer;
 };
 
+// Outlines what the outline goldens place: left of x = -2.5 in one style, the rest
+// in a higher-priority one, and nothing nearer the camera than z = 1, so a wall
+// there is what occludes. Applies to every mesh in the frame, skinned too.
+struct OutlineFigureSystem
+{
+    explicit OutlineFigureSystem(const bool& enabled) : Enabled(enabled) {}
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        World& world = ctx.Entities;
+        if (!Enabled)
+            return;
+        if (!Writer.IsValid())
+        {
+            Writer = RegisterPresentationWriter(world, "render_host.outline");
+            Left = RegisterOutlineStyle(world, "left", { .Color = Vec<3>(1.0f, 0.8f, 0.1f), .WidthPixels = 3.0f, .Priority = 1 });
+            Right = RegisterOutlineStyle(world, "right", { .Color = Vec<3>(0.1f, 0.9f, 1.0f), .WidthPixels = 3.0f, .Priority = 2 });
+            Meshes.emplace(world);
+            Skinned.emplace(world);
+        }
+        const auto outline = [&](EntityId entity, const Transform3f& pose) {
+            if (pose.Position.Z > 1.0f)
+                return;
+            SetOutline(world, entity, OutlineContribution{ .Owner = { .Writer = Writer, .Holder = {} },
+                                                           .Style = pose.Position.X < -2.5f ? Left : Right });
+        };
+        Meshes->ForEachChunk([&](auto& view) {
+            const auto poses = view.template Read<WorldTransform>();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                outline(view.Entity(i), poses[i].Value);
+        });
+        Skinned->ForEachChunk([&](auto& view) {
+            const auto poses = view.template Read<WorldTransform>();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                outline(view.Entity(i), poses[i].Value);
+        });
+    }
+
+    const bool& Enabled;
+    PresentationWriterId Writer;
+    OutlineStyleId Left;
+    OutlineStyleId Right;
+    std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> Meshes;
+    std::optional<Query<Read<WorldTransform>, Read<SkinnedMeshComponent>>> Skinned;
+};
+
 struct DebugLineFigureSystem
 {
     explicit DebugLineFigureSystem(const bool& enabled)
@@ -320,6 +371,17 @@ public:
         });
 
         engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.outline",
+            .Owner = "render_host",
+            .Type = CVarType::Bool,
+            .DefaultValue = false,
+            .CurrentValue = false,
+            .Flags = CVarFlags::Transient,
+            .Help = "Outline the scene's meshes, for the outline goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { OutlineFigure = std::get<bool>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
             .Name = "render_host.post.fade",
             .Owner = "render_host",
             .Type = CVarType::Double,
@@ -388,6 +450,7 @@ public:
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath, Picture);
         ctx.Schedule.Register<DebugLineFigureSystem>(DebugLineFigure);
+        ctx.Schedule.Register<OutlineFigureSystem>(OutlineFigure);
     }
 
     void OnShutdown(GameShutdownContext&) override
@@ -406,6 +469,7 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     bool DebugLineFigure = false;
+    bool OutlineFigure = false;
     double PostFade = 0.0;
     double PostDisplace = 0.0;
     PostEffectId DisplaceEffect;

@@ -738,3 +738,11 @@ slot, and `Engine::PostEffects()` reaches the catalog. New: `PostEffectCatalog`,
 effects and mesh overrides share, and `MeshOverrideContributions::ByEntity` is now one.
 The SDK installs `SenchaShaders.cmake` and `post_effect.glsli`, and sets
 `SENCHA_SHADER_INCLUDE_DIR`.
+
+## v43
+
+Outlines. New: `render/outline/OutlineContributions.h` (`RegisterOutlineStyle`, `SetOutline`,
+`ClearOutline`, `ClearOutlinesOf`, `OutlineFrame`, `ExtractOutlines`), `OutlineRenderFeature`,
+`OutlineMaskTargets` and `MeshForwardPass::DrawOutlineMask`. `ScenePostState` gains the
+composite's inputs, `MeshViewUniforms::DebugViewPad0` becomes `OutlineStyleSlot`, and
+`RenderExtractionSystem::Extract` takes an optional `OutlineFrame`.

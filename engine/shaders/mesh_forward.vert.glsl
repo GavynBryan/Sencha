@@ -3,6 +3,9 @@
 
 #include "mesh_view.glsli"
 
+// The outline mask draws these triangles again, testing against this depth.
+invariant gl_Position;
+
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUv0;

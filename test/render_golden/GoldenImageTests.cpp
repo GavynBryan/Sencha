@@ -298,6 +298,21 @@ void CheckEmittedLevel(float emitted, float exposure)
 
 } // namespace
 
+// Two overlapping styles with the higher priority winning their shared edge, a mesh
+// partly behind an unoutlined wall, and an alpha-masked mesh outlined along its cutout.
+TEST(GoldenImage, OutlinesFollowPriorityOcclusionAndCutouts)
+{
+    CheckScene({ .Name = "outlines", .Map = "levels/golden_outline", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// The posed rig, because a skinned mesh binds its posed buffer in the mask too.
+TEST(GoldenImage, AnOutlineFollowsTheSkinnedPose)
+{
+    CheckScene({ .Name = "outline_skinned", .Map = "levels/golden_skinned_pose", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
 // An effect at weight 0 is not scheduled, so the frame is the plain scene's byte
 // for byte; the other two show the chain running before and after the transform.
 TEST(GoldenImage, AnEffectAtWeightZeroIsNotScheduled)

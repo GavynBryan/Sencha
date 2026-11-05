@@ -8,6 +8,7 @@
 #include <render/extract/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
 #include <render/OutputTransformParams.h>
+#include <render/outline/OutlineContributions.h>
 #include <render/post/PostEffectContributions.h>
 #include <render/MaterialSetCache.h>
 #include <render/ProbeVolumeSet.h>
@@ -89,6 +90,7 @@ private:
     OutputTransformParams Output;
     const PostEffectCatalog* PostEffects = nullptr;
     PostEffectFrame PostEffectsThisFrame;
+    OutlineFrame Outlines;
     // The frame's skinned instances and their palettes. Extraction fills it,
     // the Offscreen pose feature poses them, the mesh feature draws them; the
     // shared pointer is the channel between the two features.

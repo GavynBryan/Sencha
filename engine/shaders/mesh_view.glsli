@@ -82,7 +82,7 @@ layout(set = 0, binding = 0) uniform MeshView
     uint ProbePad2;
     GpuProbeVolume ProbeVolumes[MAX_PROBE_VOLUMES];
     uint DebugView;
-    uint DebugViewPad0;
+    uint OutlineStyleSlot; // the outline mask pass's slot; 0 in every other pass
     uint DebugViewPad1;
     uint DebugViewPad2;
 } frame;

@@ -15,6 +15,9 @@ struct OutputPresentPush
     float Exposure = 1.0f;
     float TonemapKnee = 0.8f;
     std::uint32_t TonemapEnabled = 1;
+    std::uint32_t OutlineMaskIndex = UINT32_MAX;
+    std::uint32_t OutlineStyleIndex = UINT32_MAX;
+    float OutlineMaxWidthPixels = 0.0f;
 };
 }
 
@@ -67,6 +70,9 @@ void OutputTransformPass::Draw(const FrameContext& frame, const OutputTransformP
     const OutputPresentPush push{ .SceneIndex = source,
                                   .Exposure = applied ? 1.0f : params.Exposure,
                                   .TonemapKnee = params.TonemapKnee,
-                                  .TonemapEnabled = !applied && params.TonemapEnabled ? 1u : 0u };
+                                  .TonemapEnabled = !applied && params.TonemapEnabled ? 1u : 0u,
+                                  .OutlineMaskIndex = post != nullptr ? post->OutlineMaskBindless : UINT32_MAX,
+                                  .OutlineStyleIndex = post != nullptr ? post->OutlineStyleBindless : UINT32_MAX,
+                                  .OutlineMaxWidthPixels = post != nullptr ? post->OutlineMaxWidthPixels : 0.0f };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, Pipeline.Get(0), &push);
 }
