@@ -4,11 +4,7 @@
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanFormat.h>
 
-namespace
-{
-// The display scope reads what the scene scope wrote to the same image in the
-// same layout, so all this orders is the access.
-void OrderDepthAfterScene(VkCommandBuffer cmd, VkImage depth, VkFormat format)
+void OrderViewDepthAccess(VkCommandBuffer cmd, VkImage depth, VkFormat format)
 {
     const bool hasStencil = FormatHasStencil(format);
     const VkImageLayout layout = hasStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
@@ -25,7 +21,6 @@ void OrderDepthAfterScene(VkCommandBuffer cmd, VkImage depth, VkFormat format)
                                     : VK_IMAGE_ASPECT_DEPTH_BIT;
     VulkanBarriers::TransitionImage(cmd, barrier);
 }
-} // namespace
 
 void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets& targets, VkClearColorValue clear,
                             OutputTransformPass& output, const OutputTransformParams& params,
@@ -55,11 +50,11 @@ void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets
         drawScene(scene.Context());
     }
 
-    OrderDepthAfterScene(frame.Cmd, targets.DepthImage, targets.DepthFormat);
+    OrderViewDepthAccess(frame.Cmd, targets.DepthImage, targets.DepthFormat);
     if (drawBetween)
     {
         drawBetween(frame);
-        OrderDepthAfterScene(frame.Cmd, targets.DepthImage, targets.DepthFormat);
+        OrderViewDepthAccess(frame.Cmd, targets.DepthImage, targets.DepthFormat);
     }
 
     {

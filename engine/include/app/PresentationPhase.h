@@ -1,13 +1,12 @@
 #pragma once
 
-#include <graphics/RenderExtent.h>
-
 class EngineSchedule;
 class RuntimeFrameLoop;
 class StoragePartitionSet;
 class World;
 struct EngineConfig;
 struct PresentedFrame;
+struct RenderExtent;
 
 const PresentedFrame& RunPresentationPhase(EngineSchedule& schedule,
                                            EngineConfig& config,

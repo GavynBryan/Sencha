@@ -160,35 +160,61 @@ retired through the deletion queue and the descriptor cache's gate. A target's
 `PerFrameInFlight` keeps one image per frame slot, for a reader that samples an
 earlier frame's image while the next one renders, as the UI does with a viewport.
 
-`WithinFrame` keeps one image for every frame in flight. That is safe because
-there is one graphics queue and one command buffer per frame, and every access to
-the target is recorded into that buffer:
+`WithinFrame` keeps one image for every frame in flight. `RenderTargetAccess` records the
+layout, stage, and access that last touched it, and `RenderTargetSession` names them in a
+barrier before each write.
 
-- A pipeline barrier's first synchronization scope covers every command earlier
-  in submission order on the queue, previous frames included, so the barrier
-  before a write orders it after the previous frame's reads with no semaphore or
-  fence.
-- `RenderTargetAccess` records the layout, stage, and access that last touched the
-  image. `RenderTargetSession` names them in that barrier and commits them at its
-  end, with `UNDEFINED` as the old layout because the contents are cleared. A frame
-  in which the target was not recorded leaves the record alone.
-- Fences only bound CPU-side lifetime. A resize destroys through the deletion
-  queue, and the bindless slot retires through the descriptor cache's gate. A view
-  is never rewritten in place.
+### Why one image is correct
 
-The cost is that the next frame's scene write waits for this frame's read, the
-same ordering the shared depth image imposes.
+Frames overlap on the GPU, so this rests on Vulkan's rules rather than on fences. Each step
+below is an execution or memory dependency the specification defines.
 
-Async compute, a second queue, secondary command buffers recorded on other
-threads, or CPU readback of the target would all break the argument.
-`RenderTargetStore::Create` asserts that no second queue was required, so adopting
-one is a deliberate change.
+1. **One queue, one order.** Every frame's commands reach one graphics queue through
+   `vkQueueSubmit`, and submission order runs across command buffers and batches on a queue.
+   Uploads use that queue too. No code submits to a compute or transfer queue, and nothing
+   records a secondary command buffer. `RenderTargetStore::Create` asserts no second queue
+   was required.
+2. **Barriers reach across frames.** The first synchronization scope of a pipeline barrier
+   outside a render pass includes all commands earlier in submission order, not just those in
+   its own command buffer. So frame N+1's write barrier orders against frame N's commands with
+   no semaphore or fence.
+3. **Write to sample, inside a frame.** `WithinFrameReadBarrier` has `COLOR_ATTACHMENT_OUTPUT`
+   with `COLOR_ATTACHMENT_WRITE` as its first scope and `FRAGMENT_SHADER` with
+   `SHADER_SAMPLED_READ` as its second. That makes the write available, makes it visible to
+   the read, and performs the layout transition between the two scopes.
+4. **Sample to the next write.** `WithinFrameWriteBarrier` has `FRAGMENT_SHADER` as its first
+   scope, the stage the last read ran in. A read needs no availability operation, so an
+   execution dependency is enough for it. The barrier's layout transition is itself a write,
+   ordered after the first scope and before the second, and `COLOR_ATTACHMENT_OUTPUT` with
+   `COLOR_ATTACHMENT_WRITE` covers the next frame's load operation and draws. The old layout is
+   `UNDEFINED` because the contents are cleared.
+5. **No gap when nothing sampled.** Step 3's second scope and step 4's first scope both name
+   `FRAGMENT_SHADER`, so they form a dependency chain even if no draw read the image.
+6. **Frames that do not record.** A presentation that was not acquired records nothing and
+   leaves `RenderTargetAccess` as it was, so its next barrier still names the last real access.
+7. **The first use after a resize.** A new image has a fresh `RenderTargetAccess`, whose
+   `NONE` scope is correct because nothing has touched it. The old image and its bindless slot
+   go through the deletion queue and the descriptor cache's gate, which wait on the fences of
+   every frame that could reference them, so memory is never reused under a frame still running.
+   Fences matter only here, for CPU-side lifetime.
+8. **Stale descriptors.** The bindless binding is `PARTIALLY_BOUND` and `UPDATE_AFTER_BIND`, so
+   layout rules apply to what a draw dynamically accesses. A pass samples the image only after
+   step 3.
 
-`SceneTargetSynchronizationTest` runs this under synchronization validation at two
-and three frames in flight, through resizes and a minimize. It fails when the
-write-to-sample barrier inside a frame loses its first scope. It still passes when
-the barrier between frames does, so the between-frames half rests on the argument
-above rather than on the layer.
+The cost is that the next frame's scene write waits for this frame's read, the same ordering
+the shared depth image imposes.
+
+Async compute, a second queue, secondary command buffers recorded on other threads, or CPU
+readback of the target would each break step 1 or 2, so adopting one means revisiting this.
+
+### What verifies it
+
+`WithinFrameBarriers` tests pin the stages, accesses, and layouts above, including the chain in
+step 5, so a change to any of them fails without a device. `SceneTargetSynchronizationTest` runs
+under synchronization validation at two and three frames in flight, through resizes and a
+minimize, with the effect chain active. That run fails if step 3's barrier loses its first
+scope, but it still passes if step 4's does: the layer does not track reads through the bindless
+array. Between frames, the argument above and those unit tests are the evidence, not the layer.
 
 ## Hot reload
 

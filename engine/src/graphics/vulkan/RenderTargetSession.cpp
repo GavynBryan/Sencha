@@ -85,9 +85,7 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, Ren
         Ended = true;
         return;
     }
-    TransitionColor(Cmd, Color, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    access.Stage, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    access.Access, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    VulkanBarriers::TransitionImage(Cmd, WithinFrameWriteBarrier(Color, access));
 }
 
 void RenderTargetSession::End()
@@ -96,17 +94,9 @@ void RenderTargetSession::End()
         return;
     Ended = true;
 
-    TransitionColor(Cmd, Color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    VulkanBarriers::TransitionImage(Cmd, WithinFrameReadBarrier(Color));
     // The commit the callers used to owe by hand.
     *Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     if (LastAccess != nullptr)
-    {
-        LastAccess->Stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        LastAccess->Access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    }
+        *LastAccess = kAccessAfterWithinFrameRead;
 }

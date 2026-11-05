@@ -24,6 +24,10 @@ struct SceneDisplayTargets
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
 };
 
+// Orders a later scope's use of a view's depth after the last scope's writes to it,
+// with the layout unchanged. A load or store op of DONT_CARE still counts as a write.
+void OrderViewDepthAccess(VkCommandBuffer cmd, VkImage depth, VkFormat format);
+
 // One view's frame: `drawScene` into the scene target, `drawBetween` outside any scope
 // with the scene's depth readable, the output pass, then `drawDisplay` over its result
 // with that depth, in display-referred linear light. The one path an editor view renders

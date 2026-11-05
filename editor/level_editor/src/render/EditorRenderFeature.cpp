@@ -912,6 +912,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         viewport.RegionMax = Vec2d(static_cast<float>(target.BloomExtent.width),
                                     static_cast<float>(target.BloomExtent.height));
 
+        OrderViewDepthAccess(frame.Cmd, target.DepthImage, VK_FORMAT_D32_SFLOAT);
         // Depth is attached but neither loaded nor stored: the wide-line pipeline
         // expects a depth format, and this pass does not test against it.
         RenderScopeDesc glowScope{};
