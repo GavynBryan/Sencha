@@ -44,8 +44,43 @@ SDL_Keymod ModifierOf(SDL_Keycode key)
 }
 } // namespace
 
+SynthesizedInput::~SynthesizedInput()
+{
+    if (Exclusive)
+        SDL_SetEventFilter(nullptr, nullptr);
+}
+
+bool SDLCALL SynthesizedInput::OnlyScripted(void* self, SDL_Event* event)
+{
+    switch (event->type)
+    {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+    case SDL_EVENT_TEXT_INPUT:
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_MOUSE_WHEEL:
+        return static_cast<const SynthesizedInput*>(self)->Pushing;
+    default:
+        return true;
+    }
+}
+
 void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::uint32_t()> window)
 {
+    registry.RegisterCommand({
+        .Name = "input.exclusive",
+        .Owner = "editor",
+        .Usage = "input.exclusive",
+        .Help = "From here on, only what a script asks for reaches the editor. An unattended run still opens "
+                "a real window, and the pointer, wheel and keys of whoever is at the desk would reach it too.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
+            Exclusive = true;
+            SDL_SetEventFilter(&SynthesizedInput::OnlyScripted, this);
+            return ConsoleResult{};
+        },
+    });
     registry.RegisterCommand({
         .Name = "input.key",
         .Owner = "editor",
@@ -227,7 +262,9 @@ void SynthesizedInput::Advance()
             }
             event.key.mod = Modifiers;
         }
+        Pushing = true;
         (void)SDL_PushEvent(&event);
+        Pushing = false;
         it = Queue.erase(it);
     }
     ++Frame;

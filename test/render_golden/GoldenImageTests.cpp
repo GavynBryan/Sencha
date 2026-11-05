@@ -362,6 +362,8 @@ TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
     const std::string command = std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
         + " --settings none --project " + root + "/project.senchaproj"
         + " +editor.open " + root + "/assets/levels/golden_editor_selection.sscene"
+        // The window is real, so without this a pointer or wheel at the desk reaches it.
+        + " +input.exclusive"
         + " +editor.select 05ade20000000001"
         + " +render.screenshot " + actual.string() + " 400"
         + " +set app.exit_after_frames 500 >/dev/null 2>&1";
