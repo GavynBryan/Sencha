@@ -18,6 +18,11 @@
 #include "BrushBakeGpu.h"
 #include "SceneSourceStage.h"
 #include "render/SceneThenDisplay.h"
+
+#include <graphics/vulkan/OutlineMaskTargets.h>
+#include <render/StaticMeshComponent.h>
+#include <render/outline/OutlineContributions.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include "render/TargetImagePublish.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -39,6 +44,8 @@
 
 namespace
 {
+constexpr OutlineStyleId kSelectionOutlineStyle{ 1 };
+
 constexpr std::string_view kCullBackfaces = "editor.cull_backfaces";
 constexpr std::string_view kBloomEnable = "editor.bloom.enable";
 // The interactive limit on pieces one brush's modifier stack may evaluate to.
@@ -136,6 +143,30 @@ void EditorRenderFeature::DrawStageSolid(const FrameContext& frame, const Camera
                                                           .Tint = tint });
 }
 
+// Placed meshes gain a highlight here; brushes keep their wireframe, which the
+// selection renderer draws.
+void EditorRenderFeature::BuildSelectionOutlines()
+{
+    SelectionOutlines.Reset();
+    const ::World& world = World.FocusDocument().GetScene().GetRegistry().Components;
+    for (const SelectableRef& ref : SelectionRef.GetSelection())
+    {
+        if (!ref.IsEntity() || !world.IsAlive(ref.Entity))
+            continue;
+        const bool isMesh = world.TryGet<StaticMeshComponent>(ref.Entity) != nullptr
+            || world.TryGet<SkinnedMeshComponent>(ref.Entity) != nullptr;
+        if (isMesh)
+            SelectionOutlines.StyleOf.emplace(ref.Entity, kSelectionOutlineStyle);
+    }
+    if (SelectionOutlines.IsEmpty())
+        return;
+    SelectionOutlines.Styles[kSelectionOutlineStyle.Slot] =
+        OutlineStyleEntry{ .LinearColor = Vec<3>(EditorTheme::Selection.X, EditorTheme::Selection.Y, EditorTheme::Selection.Z),
+                           .WidthPixels = 2.0f, .Priority = 0 };
+    SelectionOutlines.MaxWidthPixels = 2.0f;
+    SelectionOutlines.StylesVersion = 1;
+}
+
 void EditorRenderFeature::SweepBrushBakes()
 {
     // Residency follows the open documents and their stores, never
@@ -190,6 +221,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , BrushBakes(runtimeAssets != nullptr ? MakeBrushBakeGpu(*runtimeAssets) : BrushBakeCache::Gpu{})
     , Meshes(Solid, logging, assets, catalog)
     , Placement(placement)
+    , SelectionRef(selection)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
@@ -244,6 +276,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     Sky.Setup(services);
     if (!Output.Setup(services))
         return false;
+    SelectionStyleImage.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
     if (!Lighting.Setup(services))
@@ -369,7 +402,9 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
             std::max<std::int64_t>(1, ReadCVarInt(Console, kPieceBudget, kPieceBudgetDefault))));
         World.FocusDocument().GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
         World.FocusDocument().GetScene().RefreshDerivedTransforms();
-        QueueBuilder->Build(World.FocusDocument());
+        BuildSelectionOutlines();
+        QueueBuilder->Build(World.FocusDocument(), SelectionOutlines.IsEmpty() ? nullptr : &SelectionOutlines);
+        SelectionOutlines.Finish(Mat4::Identity());
         if (Ghost)
         {
             // Resolved through the focus document's own roots, so the ghost
@@ -654,10 +689,36 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                        .DepthImage = target.DepthImage,
                                        .DepthView = target.DepthView,
                                        .DepthFormat = VK_FORMAT_D32_SFLOAT };
+    ScenePostState post;
+    const std::optional<RenderTargetView> mask = MaterialPath && !SelectionOutlines.DrawOrder.empty()
+        ? Targets.AcquireOutlineMask(viewport.Id)
+        : std::nullopt;
+    const std::uint32_t styleImage =
+        mask.has_value() ? SelectionStyleImage.Update(SelectionOutlines.Styles, SelectionOutlines.StylesVersion) : UINT32_MAX;
+    const bool outlining = mask.has_value() && styleImage != UINT32_MAX;
+    if (!outlining)
+        Targets.ReleaseOutlineMask(viewport.Id);
     RecordSceneThenDisplay(
         frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, ViewOutput,
         [&](const FrameContext& local) { DrawViewportScene(local, viewport, camera); },
-        [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); });
+        [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); },
+        !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
+            SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
+            Forward.DrawOutlineMask(between,
+                                    OutlineMaskAttachments{ .MaskImage = mask->ColorImage,
+                                                            .MaskView = mask->ColorView,
+                                                            .MaskAccess = mask->ColorAccess,
+                                                            .Extent = mask->Extent,
+                                                            .DepthView = target.DepthView,
+                                                            .DepthFormat = VK_FORMAT_D32_SFLOAT },
+                                    camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
+                                    SelectionOutlines);
+            post.OutlineMaskBindless = mask->BindlessIndex;
+            post.OutlineStyleBindless = styleImage;
+            post.OutlineMaxWidthPixels = SelectionOutlines.MaxWidthPixels;
+            post.OutlineScissor = OutlineScissorFor(SelectionOutlines, target.Extent);
+        },
+        &post);
 
     if (BloomEnabled)
         RecordViewportBloom(frame, viewport, target, camera);
@@ -908,6 +969,7 @@ void EditorRenderFeature::Teardown()
     Backdrop.Teardown();
     Sky.Teardown();
     Output.Teardown();
+    SelectionStyleImage.Teardown();
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();

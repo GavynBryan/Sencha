@@ -36,7 +36,9 @@
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/OutputTransformPass.h>
+#include <render/outline/OutlineContributions.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
 #include <render/ui/UiDrawFrame.h>
@@ -186,6 +188,7 @@ private:
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
     void SweepBrushBakes();
+    void BuildSelectionOutlines();
     void DrawStageSolid(const FrameContext& frame, const CameraRenderData& camera,
                         const DocumentStage& stage, const Vec4& tint);
     void DrawViewportScene(const FrameContext& local, EditorViewport& viewport, const CameraRenderData& camera);
@@ -214,6 +217,9 @@ private:
     // backdrop: a sky in a 2D working view describes nothing.
     SkyGradientPass        Sky;
     OutputTransformPass    Output;
+    // The selection's placed meshes, re-resolved each frame; the editor owns its style.
+    OutlineFrame           SelectionOutlines;
+    OutlineStyleImage      SelectionStyleImage;
     // The render.* transform for this frame's views; a debug view bypasses it.
     OutputTransformParams  ViewOutput;
     GpuGridRenderer        Grid;
@@ -279,6 +285,7 @@ private:
     ColoredVertexPipeline     Lines;
     EditorInstancedLinePipeline InstancedLines;
     EditorInstancedFillPipeline InstancedFill;
+    SelectionService&      SelectionRef;
     WireframeRenderer      Wireframe;
     ComponentVisualRenderer Visuals;
     // Selection feedback strokes draw through the wide-line pipeline (exact pixel

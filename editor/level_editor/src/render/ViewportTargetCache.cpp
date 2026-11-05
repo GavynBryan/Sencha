@@ -1,5 +1,6 @@
 #include "ViewportTargetCache.h"
 
+#include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
 #include <algorithm>
@@ -65,6 +66,13 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
     scene.DebugName = "viewport_scene";
     scene.Lifetime = RenderTargetLifetime::WithinFrame;
 
+    RenderTargetDesc mask{};
+    mask.ColorFormat = kOutlineMaskFormat;
+    mask.Read = RenderTargetRead::Bindless;
+    mask.Sampler = Services.Samplers->GetNearestClamp();
+    mask.DebugName = "viewport_outline_mask";
+    mask.Lifetime = RenderTargetLifetime::WithinFrame;
+
     // Full resolution, not half: a half-res glow source stair-steps the
     // wireframe lines, and the blur cannot smooth diagonal stair-steps, so the
     // halo looks wavy. Full-res keeps the source line straight, at the cost of
@@ -79,6 +87,7 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
         .Id = id,
         .Display = Store.Create(display),
         .Scene = Store.Create(scene),
+        .OutlineMask = Store.Create(mask),
         .Bloom = { Store.Create(bloom), Store.Create(bloom) },
     });
     return Entries.back();
@@ -88,6 +97,7 @@ void ViewportTargetCache::Release(Entry& entry)
 {
     Store.Destroy(entry.Display);
     Store.Destroy(entry.Scene);
+    Store.Destroy(entry.OutlineMask);
     for (RenderTargetId& bloom : entry.Bloom)
         Store.Destroy(bloom);
 }
@@ -137,6 +147,18 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     return view;
 }
 
+std::optional<RenderTargetView> ViewportTargetCache::AcquireOutlineMask(ViewportId id)
+{
+    Entry* entry = Find(id);
+    return entry != nullptr ? Store.Acquire(entry->OutlineMask) : std::nullopt;
+}
+
+void ViewportTargetCache::ReleaseOutlineMask(ViewportId id)
+{
+    if (Entry* entry = Find(id))
+        Store.Evict(entry->OutlineMask);
+}
+
 void ViewportTargetCache::Prune(std::span<const ViewportId> live)
 {
     for (auto it = Entries.begin(); it != Entries.end();)
@@ -158,6 +180,7 @@ void ViewportTargetCache::Show(ViewportId id, VkExtent2D extent)
     Entry& entry = FindOrAdd(id);
     Store.SetExtent(entry.Display, extent);
     Store.SetExtent(entry.Scene, extent);
+    Store.SetExtent(entry.OutlineMask, extent);
     for (RenderTargetId bloom : entry.Bloom)
         Store.SetExtent(bloom, extent);
 }

@@ -11,6 +11,21 @@ namespace
 constexpr std::uint32_t kMaskQuietFrames = 120;
 }
 
+VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent)
+{
+    // Grown by the widest style, which is how far an outline reaches past its object.
+    const auto width = static_cast<float>(extent.width);
+    const auto height = static_cast<float>(extent.height);
+    const float reach = outlines.MaxWidthPixels + 1.0f;
+    const float left = std::clamp((outlines.ScreenMin[0] * 0.5f + 0.5f) * width - reach, 0.0f, width);
+    const float top = std::clamp((outlines.ScreenMin[1] * 0.5f + 0.5f) * height - reach, 0.0f, height);
+    const float right = std::clamp((outlines.ScreenMax[0] * 0.5f + 0.5f) * width + reach, 0.0f, width);
+    const float bottom = std::clamp((outlines.ScreenMax[1] * 0.5f + 0.5f) * height + reach, 0.0f, height);
+    return VkRect2D{ { static_cast<std::int32_t>(std::floor(left)), static_cast<std::int32_t>(std::floor(top)) },
+                     { static_cast<std::uint32_t>(std::ceil(right) - std::floor(left)),
+                       static_cast<std::uint32_t>(std::ceil(bottom) - std::floor(top)) } };
+}
+
 void OutlineStyleImage::Setup(const RendererServices& services)
 {
     Services = services;
@@ -116,19 +131,7 @@ void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& 
     frame.ScenePost->OutlineMaskBindless = MaskBindless;
     frame.ScenePost->OutlineStyleBindless = StyleBindless;
     frame.ScenePost->OutlineMaxWidthPixels = outlines.MaxWidthPixels;
-
-    // Grown by the widest style, which is how far an outline reaches past its object.
-    const auto width = static_cast<float>(frame.SceneExtent.width);
-    const auto height = static_cast<float>(frame.SceneExtent.height);
-    const float reach = outlines.MaxWidthPixels + 1.0f;
-    const float left = std::clamp((outlines.ScreenMin[0] * 0.5f + 0.5f) * width - reach, 0.0f, width);
-    const float top = std::clamp((outlines.ScreenMin[1] * 0.5f + 0.5f) * height - reach, 0.0f, height);
-    const float right = std::clamp((outlines.ScreenMax[0] * 0.5f + 0.5f) * width + reach, 0.0f, width);
-    const float bottom = std::clamp((outlines.ScreenMax[1] * 0.5f + 0.5f) * height + reach, 0.0f, height);
-    frame.ScenePost->OutlineScissor = VkRect2D{
-        { static_cast<std::int32_t>(std::floor(left)), static_cast<std::int32_t>(std::floor(top)) },
-        { static_cast<std::uint32_t>(std::ceil(right) - std::floor(left)),
-          static_cast<std::uint32_t>(std::ceil(bottom) - std::floor(top)) } };
+    frame.ScenePost->OutlineScissor = OutlineScissorFor(outlines, frame.SceneExtent);
 }
 
 bool OutlineMaskTargets::HoldsMaskImage()

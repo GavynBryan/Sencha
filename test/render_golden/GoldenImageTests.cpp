@@ -157,7 +157,8 @@ struct Comparison
     std::array<double, 3> MeanSignedDifference{};
 };
 
-[[nodiscard]] Comparison Compare(const Image& reference, const Image& actual)
+// `firstRow` skips the rows above it, for a capture whose top shows a machine's paths.
+[[nodiscard]] Comparison Compare(const Image& reference, const Image& actual, std::size_t firstRow = 0)
 {
     Comparison result;
     result.SameSize = reference.Width == actual.Width && reference.Height == actual.Height;
@@ -166,7 +167,7 @@ struct Comparison
 
     result.TotalPixels = static_cast<std::size_t>(reference.Width) * reference.Height;
     std::array<std::int64_t, 3> signedTotal{};
-    for (std::size_t pixel = 0; pixel < result.TotalPixels; ++pixel)
+    for (std::size_t pixel = firstRow * reference.Width; pixel < result.TotalPixels; ++pixel)
     {
         const std::size_t byte = pixel * 4;
         // Alpha is forced opaque on capture, so three channels is the whole
@@ -342,6 +343,41 @@ TEST(GoldenImage, ADisplayEffectRunsAfterTheTransform)
 TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
 {
     CheckScene({ .Name = "post_displace", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.displace 1" });
+}
+
+// Kyusu's own path: the placed mesh the selection names gets the outline and its
+// neighbour does not, through the same mask family and composite as the runtime. Below
+// the title bar and breadcrumb, which show this checkout's path.
+TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
+
+    constexpr std::size_t kBelowPathRows = 80;
+    const std::filesystem::path reference = ReferenceDir() / "editor_selection.png";
+    const std::filesystem::path actual = ReferenceDir() / "editor_selection.actual.png";
+    std::error_code ignored;
+    std::filesystem::remove(actual, ignored);
+    const std::string root = SENCHA_GOLDEN_CONTENT_ROOT;
+    const std::string command = std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
+        + " --settings none --project " + root + "/project.senchaproj"
+        + " +editor.open " + root + "/assets/levels/golden_editor_selection.sscene"
+        + " +editor.select 05ade20000000001"
+        + " +render.screenshot " + actual.string() + " 400"
+        + " +set app.exit_after_frames 500 >/dev/null 2>&1";
+    std::system(command.c_str());
+
+    const std::optional<Image> actualImage = LoadImageFromFile(actual.string());
+    const std::optional<Image> referenceImage = LoadImageFromFile(reference.string());
+    ASSERT_TRUE(actualImage.has_value()) << "the editor produced no capture";
+    ASSERT_TRUE(referenceImage.has_value());
+    const Comparison comparison = Compare(*referenceImage, *actualImage, kBelowPathRows);
+    ASSERT_TRUE(comparison.SameSize);
+    EXPECT_EQ(comparison.DifferingPixels, 0u)
+        << comparison.DifferingPixels << " pixels differ, by at most " << comparison.LargestLevelDifference
+        << " levels. Compare " << actual << " against " << reference;
+    if (comparison.DifferingPixels == 0)
+        std::filesystem::remove(actual, ignored);
 }
 
 // The display transform against its own formula, through the forward pass and the

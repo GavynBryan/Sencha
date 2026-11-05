@@ -43,6 +43,13 @@ holder's death, or the entity's.
 With nothing highlighted, extraction does no per-entity lookup, the mask scope records
 nothing, the mask image is released after a quiet interval, and the composite does not draw.
 
+## In the editor
+
+Kyusu outlines the selection's placed meshes through the same mask family and composite;
+brushes keep their wireframe. Viewports replay one queue under several cameras, so each
+recomputes the screen bounds with `OutlineFrame::UpdateScreenBounds`, and each holds its own
+mask, released while nothing is outlined. The editor owns its style.
+
 ## Cost
 
 `Phase/Output` on `levels/golden_outline_single`, one small object highlighted:

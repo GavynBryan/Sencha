@@ -24,6 +24,9 @@ struct OutlineMaskAttachments
     VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
 };
 
+// Where the composite can land for this camera's screen bounds, in `extent` pixels.
+[[nodiscard]] VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent);
+
 // The style table where the composite can read it: a small bindless image, so a
 // frame with nothing highlighted carries no extra descriptor or push data.
 class OutlineStyleImage

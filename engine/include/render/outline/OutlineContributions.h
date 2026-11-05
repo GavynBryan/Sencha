@@ -87,6 +87,8 @@ struct OutlineFrame
     void Reset();
     // Sorts what extraction filled, and works out the draw order and screen bounds.
     void Finish(const Mat4& viewProjection);
+    // The screen bounds alone, for a host replaying these queues under another camera.
+    void UpdateScreenBounds(const Mat4& viewProjection);
 };
 
 // Sweeps contributions whose entity or holder has gone, then resolves the rest.

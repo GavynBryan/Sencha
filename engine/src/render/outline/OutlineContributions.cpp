@@ -89,8 +89,25 @@ void OutlineFrame::Reset()
 void OutlineFrame::Finish(const Mat4& viewProjection)
 {
     DrawOrder.clear();
+    for (std::uint8_t slot = 1; slot <= kMaxOutlineStyles; ++slot)
+    {
+        RenderQueue& queue = Queues[slot];
+        if (queue.Opaque().empty() && queue.Transparent().empty())
+            continue;
+        queue.SortOpaque();
+        DrawOrder.push_back(OutlineStyleId{ slot });
+    }
+    std::ranges::sort(DrawOrder, [this](OutlineStyleId a, OutlineStyleId b) {
+        return Styles[a.Slot].Priority < Styles[b.Slot].Priority;
+    });
+    UpdateScreenBounds(viewProjection);
+}
+
+void OutlineFrame::UpdateScreenBounds(const Mat4& viewProjection)
+{
     ScreenMin[0] = ScreenMin[1] = 1.0f;
     ScreenMax[0] = ScreenMax[1] = -1.0f;
+    bool behindCamera = false;
     const auto cover = [&](const RenderQueueItem& item) {
         const Vec3d low = item.WorldBounds.Min;
         const Vec3d high = item.WorldBounds.Max;
@@ -100,8 +117,7 @@ void OutlineFrame::Finish(const Mat4& viewProjection)
                                                     (corner & 4) != 0 ? high.Z : low.Z, 1.0f);
             if (clip.W <= 0.0001f)
             {
-                ScreenMin[0] = ScreenMin[1] = -1.0f;
-                ScreenMax[0] = ScreenMax[1] = 1.0f;
+                behindCamera = true;
                 return;
             }
             ScreenMin[0] = std::min(ScreenMin[0], clip.X / clip.W);
@@ -110,21 +126,18 @@ void OutlineFrame::Finish(const Mat4& viewProjection)
             ScreenMax[1] = std::max(ScreenMax[1], clip.Y / clip.W);
         }
     };
-    for (std::uint8_t slot = 1; slot <= kMaxOutlineStyles; ++slot)
+    for (const OutlineStyleId style : DrawOrder)
     {
-        RenderQueue& queue = Queues[slot];
-        if (queue.Opaque().empty() && queue.Transparent().empty())
-            continue;
-        queue.SortOpaque();
-        DrawOrder.push_back(OutlineStyleId{ slot });
-        for (const RenderQueueItem& item : queue.Opaque())
+        for (const RenderQueueItem& item : Queues[style.Slot].Opaque())
             cover(item);
-        for (const RenderQueueItem& item : queue.Transparent())
+        for (const RenderQueueItem& item : Queues[style.Slot].Transparent())
             cover(item);
     }
-    std::ranges::sort(DrawOrder, [this](OutlineStyleId a, OutlineStyleId b) {
-        return Styles[a.Slot].Priority < Styles[b.Slot].Priority;
-    });
+    if (behindCamera)
+    {
+        ScreenMin[0] = ScreenMin[1] = -1.0f;
+        ScreenMax[0] = ScreenMax[1] = 1.0f;
+    }
 }
 
 void ExtractOutlines(World& world, OutlineFrame& out)

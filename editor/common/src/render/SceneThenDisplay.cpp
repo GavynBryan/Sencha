@@ -30,7 +30,8 @@ void OrderDepthAfterScene(VkCommandBuffer cmd, VkImage depth, VkFormat format)
 void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets& targets, VkClearColorValue clear,
                             OutputTransformPass& output, const OutputTransformParams& params,
                             const std::function<void(const FrameContext&)>& drawScene,
-                            const std::function<void(const FrameContext&)>& drawDisplay)
+                            const std::function<void(const FrameContext&)>& drawDisplay,
+                            const std::function<void(const FrameContext&)>& drawBetween, ScenePostState* post)
 {
     RenderTargetSession displaySession(frame.Cmd, targets.DisplayImage, targets.DisplayLayout, targets.DepthImage,
                                        targets.DepthFormat);
@@ -55,6 +56,11 @@ void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets
     }
 
     OrderDepthAfterScene(frame.Cmd, targets.DepthImage, targets.DepthFormat);
+    if (drawBetween)
+    {
+        drawBetween(frame);
+        OrderDepthAfterScene(frame.Cmd, targets.DepthImage, targets.DepthFormat);
+    }
 
     {
         desc.Color.View = targets.DisplayView;
@@ -65,6 +71,7 @@ void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets
         FrameContext context = display.Context();
         context.SceneColorBindless = targets.SceneBindless;
         context.SceneExtent = targets.Extent;
+        context.ScenePost = post;
         output.Draw(context, params);
         drawDisplay(context);
     }
