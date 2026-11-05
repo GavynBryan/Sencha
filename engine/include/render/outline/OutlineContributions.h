@@ -51,6 +51,7 @@ struct OutlineContribution
 void SetOutline(World& world, EntityId entity, const OutlineContribution& contribution);
 void ClearOutline(World& world, EntityId entity, const PresentationOwner& owner);
 void ClearOutlinesOf(World& world, PresentationWriterId writer);
+[[nodiscard]] bool IsOutlined(const World& world, EntityId entity);
 
 // A style as the composite reads it.
 struct OutlineStyleEntry

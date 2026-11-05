@@ -86,11 +86,13 @@ TEST(Outlines, ClearingOneOwnerRevealsTheNextAndClearingAWriterTakesAllOfIts)
     Fixture f;
     SetOutline(f.Entities, f.Target, Outline(Writer(1), f.Low, 0));
     SetOutline(f.Entities, f.Target, Outline(Writer(2), f.High, 5));
+    EXPECT_TRUE(IsOutlined(f.Entities, f.Target));
     ClearOutline(f.Entities, f.Target, Writer(2));
     EXPECT_EQ(f.Resolved(), f.Low);
     ClearOutlinesOf(f.Entities, PresentationWriterId{ 1 });
     EXPECT_FALSE(f.Resolved().IsValid());
     EXPECT_TRUE(f.Frame.IsEmpty());
+    EXPECT_FALSE(IsOutlined(f.Entities, f.Target));
 }
 
 TEST(Outlines, ADeadTargetAndADeadHolderAreSweptBeforeResolving)

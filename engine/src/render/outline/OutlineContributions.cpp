@@ -70,6 +70,12 @@ void ClearOutlinesOf(World& world, PresentationWriterId writer)
         contributions->ByEntity.ClearWriter(writer, [](EntityId, const OutlineContribution&) {});
 }
 
+bool IsOutlined(const World& world, EntityId entity)
+{
+    const OutlineContributions* contributions = world.TryGetResource<OutlineContributions>();
+    return contributions != nullptr && contributions->ByEntity.Find(entity) != nullptr;
+}
+
 RenderQueue* OutlineFrame::QueueFor(EntityId entity)
 {
     const auto found = StyleOf.find(entity);
