@@ -31,7 +31,8 @@ void BeginColor(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout)
                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                    // Read too: a pass compositing over the target loads it.
+                    VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 }
 } // namespace
 
