@@ -69,6 +69,18 @@ TEST(PostEffectCatalog, RefusesAnEffectWithNoShader)
     EXPECT_FALSE(catalog.Register(PostEffectDesc{ .Name = "empty", .FragmentSpirv = {} }).IsValid());
 }
 
+TEST(PostEffectCatalog, KeepsEachRefusalWithItsReason)
+{
+    PostEffectCatalog catalog;
+    ASSERT_TRUE(catalog.Register(Desc("a", PostEffectDomain::Display, 1)).IsValid());
+    EXPECT_TRUE(catalog.Refusals().empty());
+    (void)catalog.Register(Desc("a", PostEffectDomain::Scene, 2));
+    (void)catalog.Register(Desc("b", PostEffectDomain::Display, 1));
+    ASSERT_EQ(catalog.Refusals().size(), 2u);
+    EXPECT_EQ(catalog.Refusals()[0], "post effect 'a' refused: the name is taken");
+    EXPECT_EQ(catalog.Refusals()[1], "post effect 'b' refused: 'a' already runs at that order in that domain");
+}
+
 TEST(PostEffects, TheHighestOrderWinsAnEffectAndTheTieBreakIsTheSameEitherWay)
 {
     Fixture f;

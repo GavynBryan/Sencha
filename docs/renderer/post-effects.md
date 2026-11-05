@@ -7,8 +7,11 @@ implements `IRenderFeature`, opens a rendering scope, or sees a Vulkan handle.
 
 `Game::OnRegisterPostEffects(PostEffectCatalog&)` runs at startup. A `PostEffectDesc` is a
 name, SPIR-V, a domain, and an order; a duplicate name or a duplicate (domain, order) is
-refused, because effects compose in that order. The catalog keeps its own copy of the
-SPIR-V, so a module's data is not read after registration.
+refused, because effects compose in that order, and the engine logs each refusal with its
+reason. The catalog keeps its own copy of the SPIR-V, so a module's data is not read after
+registration, and starts each `Engine::Run` holding only the engine's effects. Every effect
+compiles when the renderer sets up rather than on the frame it first has weight; one that
+fails to compile is skipped, and not tried again.
 
 Compile the shader with `sencha_compile_shader` and embed it with `sencha_embed_spirv`,
 passing `SENCHA_SHADER_INCLUDE_DIR` as an include directory. Both ship in the SDK.

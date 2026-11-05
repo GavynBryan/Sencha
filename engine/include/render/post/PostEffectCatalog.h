@@ -47,13 +47,16 @@ class PostEffectCatalog
 {
 public:
     // Null when the name or the (domain, order) is already taken, or the shader is
-    // empty: effects compose in that order, so a duplicate would have none.
+    // empty: effects compose in that order, so a duplicate would have none. Each
+    // refusal is kept, with its reason, for the host to report.
     [[nodiscard]] PostEffectId Register(const PostEffectDesc& desc);
 
     [[nodiscard]] PostEffectId Find(std::string_view name) const;
     [[nodiscard]] const PostEffectType* Get(PostEffectId id) const;
     [[nodiscard]] std::size_t Count() const { return Types.size(); }
+    [[nodiscard]] std::span<const std::string> Refusals() const { return Refusals_; }
 
 private:
     std::vector<PostEffectType> Types;
+    std::vector<std::string> Refusals_;
 };

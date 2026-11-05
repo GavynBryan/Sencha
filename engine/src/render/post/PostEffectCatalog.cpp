@@ -4,11 +4,21 @@
 
 PostEffectId PostEffectCatalog::Register(const PostEffectDesc& desc)
 {
-    const bool taken = std::ranges::any_of(Types, [&](const PostEffectType& type) {
-        return type.Name == desc.Name || (type.Domain == desc.Domain && type.Order == desc.Order);
-    });
-    if (taken || desc.Name.empty() || desc.FragmentSpirv.empty())
-        return {};
+    const auto refuse = [&](std::string_view why) {
+        Refusals_.push_back("post effect '" + std::string(desc.Name) + "' refused: " + std::string(why));
+        return PostEffectId{};
+    };
+    if (desc.Name.empty())
+        return refuse("it has no name");
+    if (desc.FragmentSpirv.empty())
+        return refuse("it has no shader");
+    for (const PostEffectType& type : Types)
+    {
+        if (type.Name == desc.Name)
+            return refuse("the name is taken");
+        if (type.Domain == desc.Domain && type.Order == desc.Order)
+            return refuse("'" + type.Name + "' already runs at that order in that domain");
+    }
 
     Types.push_back(PostEffectType{ .Name = std::string(desc.Name),
                                     .FragmentSpirv = { desc.FragmentSpirv.begin(), desc.FragmentSpirv.end() },

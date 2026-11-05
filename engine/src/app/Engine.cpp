@@ -185,7 +185,6 @@ bool Engine::Initialize()
         EngineSystems.Register<MeshOverrideSystem>();
         EngineSystems.Register<PostEffectLifetimeSystem>();
     }
-    RegisterEnginePostEffects(PostEffectTypes);
 
     // A process with nothing to present has nobody listening to it either, so
     // it holds no playback device. Mixing still exists as a service; it simply
@@ -1038,6 +1037,8 @@ int Engine::Run(Game& game)
     // called again in the same process.
     ComponentSerializerRegistry& serializers = SceneSerializerRegistry;
     serializers.Clear();
+    PostEffectTypes = PostEffectCatalog{};
+    RegisterEnginePostEffects(PostEffectTypes);
     RuntimeComponentSchemaState = WorldComponentSchema{};
     ReplicationLayoutState = ReplicationLayout{};
 
@@ -1170,6 +1171,10 @@ int Engine::Run(Game& game)
         // whose content names a verb that was refused must not reach a frame.
         game.OnRegisterVocabulary(entities);
         game.OnRegisterPostEffects(PostEffectTypes);
+        // A refused effect leaves the game running without it, so it is a warning,
+        // not a reason to stop.
+        for (const std::string& refusal : PostEffectTypes.Refusals())
+            LoggingState.GetLogger<Engine>().Warn(refusal);
 
         if (const std::vector<std::string> errors = AuthoredInstallationErrors(entities);
             !errors.empty())

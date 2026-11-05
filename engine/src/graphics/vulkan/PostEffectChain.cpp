@@ -48,6 +48,10 @@ bool PostEffectChain::Setup(const RendererServices& services, const PostEffectCa
     plane.Lifetime = RenderTargetLifetime::WithinFrame;
     Plane[0] = Planes.Create(plane);
     Plane[1] = Planes.Create(plane);
+    // Every effect compiles here rather than on the frame it first has weight,
+    // which for a game's death or fade is the frame a hitch would be seen.
+    for (std::uint32_t id = 1; id <= catalog.Count(); ++id)
+        (void)Compile(PostEffectId{ id });
     return true;
 }
 
@@ -66,9 +70,10 @@ void PostEffectChain::Teardown()
 
 const PostEffectChain::CompiledEffect* PostEffectChain::Compile(PostEffectId effect)
 {
+    // A failed compile is kept too, so a broken shader is tried once rather than every frame.
     const auto known = std::ranges::find_if(Compiled, [&](const CompiledEffect& c) { return c.Effect == effect; });
     if (known != Compiled.end())
-        return &*known;
+        return known->Pipeline != VK_NULL_HANDLE ? &*known : nullptr;
 
     const PostEffectType* type = Catalog != nullptr ? Catalog->Get(effect) : nullptr;
     if (type == nullptr)
@@ -79,6 +84,7 @@ const PostEffectChain::CompiledEffect* PostEffectChain::Compile(PostEffectId eff
     if (pipeline == VK_NULL_HANDLE)
     {
         Shaders->Destroy(fragment);
+        Compiled.push_back({ .Effect = effect, .Fragment = {}, .Pipeline = VK_NULL_HANDLE });
         return nullptr;
     }
     Compiled.push_back({ .Effect = effect, .Fragment = fragment, .Pipeline = pipeline });
