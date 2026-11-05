@@ -733,3 +733,8 @@ and mesh overrides share, so `MeshOverrideContributions::ByEntity` is now one. T
 `OutlineRenderFeature`, `OutlineMaskTargets` and `MeshForwardPass::DrawOutlineMask`.
 `MeshViewUniforms::DebugViewPad0` becomes `OutlineStyleSlot`, and `RenderExtractionSystem::Extract`
 takes an optional `OutlineFrame`.
+
+**Fingerprint.** `render/post/`, `render/outline/` and `presentation/` headers join the
+fingerprint, since `Engine` holds the catalog by value ahead of members a module reaches through
+inline accessors, and a module builds effect, outline and owner values. `post_effect.glsli` joins
+too: a module compiles its push block into its own SPIR-V.

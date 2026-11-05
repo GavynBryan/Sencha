@@ -508,6 +508,13 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/PresentedView.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/CameraProjection.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/FrameClock.h"
+    # The presentation layer: Engine holds the post effect catalog by value, a
+    # module builds effect, outline and owner values, and it compiles the post
+    # effect push block from post_effect.glsli into its own SPIR-V.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/post/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/outline/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/presentation/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
