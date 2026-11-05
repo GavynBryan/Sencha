@@ -147,9 +147,10 @@ Kyusu's viewports, thumbnails, and stage pictures render through
 `RecordSceneThenDisplay`, the one path that takes an editor view from a scene
 target through the output pass to the display target the UI samples. Light the
 scene emits draws before the pass; chrome draws after it against the scene's depth,
-in display-referred linear, as its colours were tuned. The orthographic backdrop is
-chrome and is depth-tested at the far plane, so it fills only what the scene left
-empty, including behind a translucent surface with nothing opaque behind it.
+in display-referred linear, as its colours were tuned. The editor's flat backdrop is the
+exception: its colours are tuned on screen, but it draws first in the scene, as the
+values the output pass turns into those colours (`SceneValueForDisplay`), so a
+translucent surface blends over it as it would over a sky.
 
 ## Synchronization objects
 

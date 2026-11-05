@@ -1,8 +1,8 @@
 #version 450
 
 // A near-black vertical gradient that replaces the engine's clear color inside each
-// editor viewport, giving the dark "analog scope" look. Colors arrive in LINEAR
-// space (the swapchain is sRGB and re-encodes on write); the C++ side picks them per
+// editor viewport, giving the dark "analog scope" look. Colors arrive as linear
+// scene values that the output pass turns into the tuned ones; the C++ side picks them per
 // viewport mode (a faint top->bottom lift for perspective, near-flat for ortho).
 layout(location = 0) in  vec2 vUv;
 layout(location = 0) out vec4 outColor;

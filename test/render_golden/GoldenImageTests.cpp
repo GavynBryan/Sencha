@@ -348,23 +348,22 @@ TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
 // Kyusu's own path: the placed mesh the selection names gets the outline and its
 // neighbour does not, through the same mask family and composite as the runtime. Below
 // the title bar and breadcrumb, which show this checkout's path.
-TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
+namespace
 {
-    if (!DisplayAvailable())
-        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
-
+// Kyusu on a fixture level, compared below the rows that show the machine's paths.
+void CheckEditorCapture(const std::string& level, const std::string& commands, const std::string& name)
+{
     constexpr std::size_t kBelowPathRows = 80;
-    const std::filesystem::path reference = ReferenceDir() / "editor_selection.png";
-    const std::filesystem::path actual = ReferenceDir() / "editor_selection.actual.png";
+    const std::filesystem::path reference = ReferenceDir() / (name + ".png");
+    const std::filesystem::path actual = ReferenceDir() / (name + ".actual.png");
     std::error_code ignored;
     std::filesystem::remove(actual, ignored);
     const std::string root = SENCHA_GOLDEN_CONTENT_ROOT;
     const std::string command = std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
         + " --settings none --project " + root + "/project.senchaproj"
-        + " +editor.open " + root + "/assets/levels/golden_editor_selection.sscene"
         // The window is real, so without this a pointer or wheel at the desk reaches it.
         + " +input.exclusive"
-        + " +editor.select 05ade20000000001"
+        + " +editor.open " + root + "/assets/levels/" + level + commands
         + " +render.screenshot " + actual.string() + " 400"
         + " +set app.exit_after_frames 500 >/dev/null 2>&1";
     std::system(command.c_str());
@@ -380,6 +379,23 @@ TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
         << " levels. Compare " << actual << " against " << reference;
     if (comparison.DifferingPixels == 0)
         std::filesystem::remove(actual, ignored);
+}
+} // namespace
+
+TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
+    CheckEditorCapture("golden_editor_selection.sscene", " +editor.select 05ade20000000001", "editor_selection");
+}
+
+// The ortho views draw the flat backdrop; a translucent surface over it must still
+// blend over it rather than be painted out.
+TEST(GoldenImage, AGlassMeshShowsOverTheOrthoBackdrop)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
+    CheckEditorCapture("golden_editor_ortho_glass.sscene", " +set editor.view.arrangement 2", "editor_ortho_glass");
 }
 
 // The display transform against its own formula, through the forward pass and the

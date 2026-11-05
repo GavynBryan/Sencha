@@ -735,11 +735,18 @@ void EditorRenderFeature::DrawViewportScene(const FrameContext& local, EditorVie
     EditorDocument& focusDocument = World.FocusDocument();
     const EditorScene& scene = focusDocument.GetScene();
 
+    // A perspective viewport shows the game's background; an ortho one keeps the
+    // flat editor backdrop, since a sky in a 2D working view describes nothing.
     const RenderLightSet& viewLights = QueueBuilder->Lights();
     if (viewport.Orientation == ViewportOrientation::Perspective && viewLights.SkyEnabled)
     {
         Sky.Draw(local, MakeInverseSkyViewProjection(camera.View, camera.Projection),
                  SkyGradientParams{ .Top = viewLights.AmbientSky, .Bottom = viewLights.AmbientGround });
+    }
+    else
+    {
+        Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat,
+                              ViewOutput);
     }
 
     // Context zones (open, visible, not the focus) render dimmed and reduced:
@@ -828,11 +835,6 @@ void EditorRenderFeature::DrawViewportChrome(const FrameContext& local, EditorVi
     EditorDocument& focusDocument = World.FocusDocument();
     const EditorScene& scene = focusDocument.GetScene();
 
-    // A perspective viewport shows the game's background; an ortho one keeps the
-    // flat editor backdrop, since a sky in a 2D working view describes nothing.
-    // Depth-tested at the far plane, so it fills only what the scene left empty.
-    if (viewport.Orientation != ViewportOrientation::Perspective || !QueueBuilder->Lights().SkyEnabled)
-        Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
     Grid.DrawViewport(local.Cmd, viewport, camera, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
 
     World.VisitOpenZones(
