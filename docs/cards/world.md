@@ -17,9 +17,9 @@ Snapshot `97ed48e4` (2026-10-30). Layer: world and frame.
 ## 3. Outputs
 
 - The unified entity `World` owned by `RuntimeWorld` (`engine/include/world/RuntimeWorld.h:74`), with zone partitions; consumed by every scheduled system.
-- Transform components `WorldTransform` and `WorldTransformHistory`, written by `PropagateTransforms` (`engine/include/world/transform/TransformPropagation.h:33`): consumed by physics, render, audio and attachments.
-- Authority facts, `IsSimulationAuthority` (`engine/include/world/SimulationAuthority.h:38`) and `IsLocallyPredicted` (`engine/include/world/SimulationTimeline.h:18`): consumed by every system that must not run on a client.
-- Persistent identity, `PersistentEntityIndex` (`engine/include/world/identity/PersistentEntityIndex.h:23`): consumed by zone state, replication and level logic.
+- Transform components `WorldTransform` and `WorldTransformHistory`, written by `PropagateTransforms` (`engine/include/world/transform/TransformPropagation.h:33`): consumed by physics, render, net, navigation, attach and most gameplay modules.
+- Authority facts, `IsSimulationAuthority` (`engine/include/world/SimulationAuthority.h:38`) and `IsLocallyPredicted` (`engine/include/world/SimulationTimeline.h:18`): the first gates abilities, logic, movement, navigation, perception and projectile; the second is read by anim.
+- Persistent identity, `PersistentEntityIndex` (`engine/include/world/identity/PersistentEntityIndex.h:23`): consumed by zone, net and authored entity constants.
 
 ## 4. Central decisions
 

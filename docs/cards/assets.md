@@ -16,9 +16,9 @@ Snapshot `97ed48e4` (2026-10-30). Layer: world and frame.
 
 ## 3. Outputs
 
-- `RuntimeAssets` (`engine/include/assets/runtime/RuntimeAssets.h:69`): resident meshes, materials, textures, clips and data assets, consumed by 21 engine modules and 99 editor files.
-- Cooked files and cache entries, from `ImportAssetsOnDemand` (`engine/include/assets/cook/ImportOnDemand.h:40`): consumed by runtime loaders and the level cook.
-- Baked lighting data, `PackLightmapAtlas` (`engine/include/assets/cook/LightmapAtlasPack.h:49`): consumed by render.
+- `RuntimeAssets` (`engine/include/assets/runtime/RuntimeAssets.h:69`): resident meshes, materials, textures, clips and data assets, consumed by app, input and 68 editor files; the module as a whole is used by 21 engine modules.
+- Cooked files and cache entries, from `ImportAssetsOnDemand` (`engine/include/assets/cook/ImportOnDemand.h:40`): read back by the runtime loaders.
+- Packed lightmap atlases, `PackLightmapAtlas` (`engine/include/assets/cook/LightmapAtlasPack.h:49`): called from the editor's lighting bake.
 
 ## 4. Central decisions
 

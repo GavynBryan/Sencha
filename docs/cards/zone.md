@@ -17,8 +17,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: world and frame.
 ## 3. Outputs
 
 - Zone residency and participation, `ZoneParticipation` (`engine/include/zone/ZoneParticipation.h:3`): consumed by `RuntimeWorld` to build each frame's partition view.
-- Demand records, `ZoneDemandRecord` (`engine/include/zone/ZoneDemand.h:44`): read by Kyusu's demand view and diagnostics.
-- Topology components `Dock`, `Gate` and `Link`, and `WorldPartitionIndex` adjacency (`engine/include/zone/WorldPartitionIndex.h:13`): consumed by navigation, logic and net.
+- Demand records, `ZoneDemandRecord` (`engine/include/zone/ZoneDemand.h:44`): read by app and the level editor (`editor/level_editor/src/workspace/PartitionOutline.cpp`).
+- Adjacency, `WorldPartitionIndex` (`engine/include/zone/WorldPartitionIndex.h:13`), and dock crossings, `DockTraversalResult` (`engine/include/zone/DockCrossing.h:24`): consumed within zone by demand and streaming.
 - Remembered zone state, `ZoneStateStore` (`engine/include/zone/ZoneStateStore.h:33`): replayed when a zone streams back in.
 
 ## 4. Central decisions
