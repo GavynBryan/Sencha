@@ -1,5 +1,6 @@
 #version 450
 
+#include "display_encode.glsli"
 #include "tonemap.glsli"
 
 // Takes the scene from scene-referred to display-referred linear light, the only
@@ -17,17 +18,7 @@ layout(push_constant) uniform OutputPresentPC {
     float exposure;
     float tonemapKnee;
     uint tonemapEnabled;
-    uint outlineMaskIndex;
-    uint outlineStyleIndex;
-    float outlineMaxWidth;
 } pc;
-
-vec3 EncodeSrgb(vec3 linear)
-{
-    vec3 low = linear * 12.92;
-    vec3 high = 1.055 * pow(max(linear, vec3(0.0031308)), vec3(1.0 / 2.4)) - 0.055;
-    return mix(high, low, lessThanEqual(linear, vec3(0.0031308)));
-}
 
 void main()
 {

@@ -58,7 +58,7 @@ std::uint32_t OutlineStyleImage::Update(const OutlineStyleTable& styles, std::ui
     }
     if (UploadedVersion != version)
     {
-        // Two texels per slot, read by texelFetch in output_present.frag.glsl:
+        // Two texels per slot, read by texelFetch in outline_composite.frag.glsl:
         // colour and width, then priority.
         std::array<float, (kMaxOutlineStyles + 1) * 8> texels{};
         for (std::size_t slot = 0; slot < styles.size(); ++slot)

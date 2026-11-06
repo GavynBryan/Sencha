@@ -5,7 +5,9 @@
 // window. Only on pixels no highlighted surface covers, so a highlighted object's
 // material is never painted over. A fixed ring of taps at three radii up to the widest
 // style; a style counts only within its own width, and the highest priority takes a
-// pixel two styles compete for. Shares OutputPresentPC with output_present.frag.glsl.
+// pixel two styles compete for. Mirrored by OutlineCompositePush in OutlineCompositePass.cpp.
+
+#include "display_encode.glsli"
 
 layout(location = 0) out vec4 outColor;
 
@@ -13,22 +15,11 @@ layout(set = 0, binding = 0) uniform sampler2D uTextures[1024];
 
 layout(constant_id = 0) const bool kEncodeOutput = false;
 
-layout(push_constant) uniform OutputPresentPC {
-    uint sceneIndex;
-    float exposure;
-    float tonemapKnee;
-    uint tonemapEnabled;
+layout(push_constant) uniform OutlineCompositePC {
     uint outlineMaskIndex;
     uint outlineStyleIndex;
     float outlineMaxWidth;
 } pc;
-
-vec3 EncodeSrgb(vec3 linear)
-{
-    vec3 low = linear * 12.92;
-    vec3 high = 1.055 * pow(max(linear, vec3(0.0031308)), vec3(1.0 / 2.4)) - 0.055;
-    return mix(high, low, lessThanEqual(linear, vec3(0.0031308)));
-}
 
 void main()
 {

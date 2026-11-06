@@ -1,6 +1,7 @@
 #pragma once
 
 #include <graphics/vulkan/FullscreenPass.h>
+#include <graphics/vulkan/OutlineCompositePass.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
@@ -15,7 +16,8 @@ public:
     void Teardown();
 
     // Inside the display target's rendering scope. Records nothing when the
-    // frame drew no scene.
+    // frame drew no scene. Then draws the frame's outlines over it, so every host
+    // that owes this draw gets them.
     void Draw(const FrameContext& frame, const OutputTransformParams& params);
 
 private:
@@ -23,8 +25,7 @@ private:
 
     VulkanShaderCache* Shaders = nullptr;
     ShaderHandle FragmentShader;
-    ShaderHandle OutlineFragmentShader;
     FullscreenPass Fullscreen;
-    // The present draw, and the outline composite drawn over it.
-    PipelineVariantSet<2, AttachmentFormatKey> Pipeline;
+    PipelineVariantSet<1, AttachmentFormatKey> Pipeline;
+    OutlineCompositePass Composite;
 };

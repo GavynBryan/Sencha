@@ -17,12 +17,14 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `sky_gradient.frag.glsl` | fragment | `kSkyGradientFragSpv` |
 | `fullscreen.vert.glsl` | vertex | `kFullscreenVertSpv`, the bufferless triangle of every `FullscreenPass` |
 | `output_present.frag.glsl` | fragment | `kOutputPresentFragSpv`, the present draw |
+| `outline_composite.frag.glsl` | fragment | `kOutlineCompositeFragSpv`, the outline drawn over the presented frame |
 | `mesh_view.glsli` | include | frame UBO block and its structs |
 | `mesh_material.glsli` | include | fragment inputs, push constants, bindless sampling |
 | `lighting.glsli` | include | direct-light terms and shadow visibility composition |
 | `shadow_sampling.glsli` | include | spot and point shadow filters |
 | `probe_sampling.glsli` | include | probe volume selection and SH evaluation |
 | `tonemap.glsli` | include | exposure and the shoulder curve, included only by `output_present.frag` |
+| `display_encode.glsli` | include | the sRGB encode for a target the hardware does not encode |
 
 Editor shaders live under `editor/level_editor/src/render` with their own pipelines and
 are built the same way.
@@ -45,6 +47,8 @@ graph TD
   mask[outline_mask.vert.glsl] --> frame
   mask --> pos
   out[output_present.frag.glsl] --> tone[tonemap.glsli]
+  out --> enc[display_encode.glsli]
+  comp[outline_composite.frag.glsl] --> enc
   shadow -.reads.-> frame
   probe -.reads.-> frame
   light -.reads.-> mat

@@ -29,7 +29,8 @@ holder's death, or the entity's.
   UV a cutout samples, and takes its position from `mesh_position.glsli`, the same expression
   under the same `invariant gl_Position` as `mesh_forward.vert`, so the two passes cannot
   disagree about depth.
-- **The composite.** `outline_composite.frag` is its own draw after the present draw,
+- **The composite.** `OutlineCompositePass` draws `outline_composite.frag` after the present
+  draw, from inside `OutputTransformPass::Draw` so every host that owes that draw gets it,
   scissored to the highlighted objects' screen bounds grown by the widest style, so normal
   presentation carries no outline work and the cost follows what is highlighted rather than
   the window. It draws only on pixels whose own mask is 0, from a fixed ring of taps at three

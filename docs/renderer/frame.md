@@ -130,7 +130,7 @@ the forward shaders write it with no exposure or curve, and transparent surfaces
 blend in it. `OutputTransformPass` is the one place exposure and the shoulder are
 applied, from `OutputTransformParams`, and the swapchain's hardware sRGB write is
 the one encode. A swapchain with neither gets the encode from a specialization
-constant in `output_present.frag` (`FormatNeedsShaderEncode`). Exercising that path
+constant in `output_present.frag` and `outline_composite.frag` (`FormatNeedsShaderEncode`). Exercising that path
 needs a device whose surface offers only `_UNORM` formats, so it has been reviewed
 but not run.
 
