@@ -4,6 +4,7 @@
 
 #include <cassert>
 
+class PostEffectCatalog;
 class Engine;
 class ComponentRegistrar;
 class DataAssetTypeRegistry;
@@ -93,6 +94,10 @@ public:
     // Last on purpose: a new hook takes a trailing vtable slot, so a module
     // built against an older header keeps every earlier slot at its old index.
     virtual void OnRegisterVocabulary(World&) {}
+
+    // Registers post effects: compiled SPIR-V and where it runs, with no rendering
+    // code. Docs: docs/renderer/post-effects.md.
+    virtual void OnRegisterPostEffects(PostEffectCatalog&) {}
 
     // Wiring, not behavior: Engine::Run binds itself once before any hook so a
     // game can reach the engine without threading a handle through contexts.

@@ -1,0 +1,141 @@
+{
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
+  "id": "3b7e22c4d1f09a57",
+  "entities": [
+    {
+      "id": "05ade10000000001",
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              -8.6,
+              3.0,
+              0.0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              3,
+              3,
+              3
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/red.smat"
+          ],
+          "visible": true,
+          "section_mask": 4294967295
+        }
+      }
+    },
+    {
+      "id": "05ade10000000002",
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              8.6,
+              3.0,
+              0.0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              3,
+              3,
+              3
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/green.smat"
+          ],
+          "visible": true,
+          "section_mask": 4294967295
+        }
+      }
+    },
+    {
+      "id": "05ade10000000003",
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.0,
+              7.8,
+              0.0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              3,
+              3,
+              3
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/blue.smat"
+          ],
+          "visible": true,
+          "section_mask": 4294967295
+        }
+      }
+    },
+    {
+      "id": "05ade10000000004",
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              0.0,
+              -1.8,
+              0.0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              3,
+              3,
+              3
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/gray.smat"
+          ],
+          "visible": true,
+          "section_mask": 4294967295
+        }
+      }
+    }
+  ]
+}

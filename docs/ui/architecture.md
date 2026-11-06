@@ -115,7 +115,7 @@ Implementing `FontEngineInterface` ourselves buys nothing we need.
 
 ```cpp
 enum class RenderPhase : std::uint8_t
-{ Offscreen = 0, MainColor = 1, ApplicationUi = 2, DevelopmentOverlay = 3, Count };
+{ Offscreen = 0, MainColor = 1, Post = 2, Output = 3, ApplicationUi = 4, DevelopmentOverlay = 5, Count };
 ```
 
 `Renderer::RecordSwapchainPhases` records the last three inside one

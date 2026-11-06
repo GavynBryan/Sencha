@@ -30,8 +30,13 @@
 #include <assets/texture/Image.h>
 #include <assets/texture/ImageLoader.h>
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace
@@ -143,9 +148,17 @@ struct Comparison
     bool SameSize = false;
     std::size_t DifferingPixels = 0;
     std::size_t TotalPixels = 0;
+    // Differing channels by how many 8-bit levels they moved: 1, 2, 3-4, 5-8,
+    // 9-16, 17 or more. For the person deciding whether a change is a rounding
+    // shift or a real one; it never affects the verdict, which stays exact.
+    std::array<std::size_t, 6> LevelHistogram{};
+    int LargestLevelDifference = 0;
+    // Mean signed difference per channel, actual minus reference.
+    std::array<double, 3> MeanSignedDifference{};
 };
 
-[[nodiscard]] Comparison Compare(const Image& reference, const Image& actual)
+// `firstRow` skips the rows above it, for a capture whose top shows a machine's paths.
+[[nodiscard]] Comparison Compare(const Image& reference, const Image& actual, std::size_t firstRow = 0)
 {
     Comparison result;
     result.SameSize = reference.Width == actual.Width && reference.Height == actual.Height;
@@ -153,18 +166,33 @@ struct Comparison
         return result;
 
     result.TotalPixels = static_cast<std::size_t>(reference.Width) * reference.Height;
-    for (std::size_t pixel = 0; pixel < result.TotalPixels; ++pixel)
+    std::array<std::int64_t, 3> signedTotal{};
+    for (std::size_t pixel = firstRow * reference.Width; pixel < result.TotalPixels; ++pixel)
     {
         const std::size_t byte = pixel * 4;
         // Alpha is forced opaque on capture, so three channels is the whole
         // comparison.
-        if (reference.Pixels[byte + 0] != actual.Pixels[byte + 0]
-            || reference.Pixels[byte + 1] != actual.Pixels[byte + 1]
-            || reference.Pixels[byte + 2] != actual.Pixels[byte + 2])
+        bool differs = false;
+        for (std::size_t channel = 0; channel < 3; ++channel)
         {
-            ++result.DifferingPixels;
+            const int difference = static_cast<int>(actual.Pixels[byte + channel])
+                                 - static_cast<int>(reference.Pixels[byte + channel]);
+            if (difference == 0)
+                continue;
+            differs = true;
+            signedTotal[channel] += difference;
+            const int magnitude = std::abs(difference);
+            result.LargestLevelDifference = std::max(result.LargestLevelDifference, magnitude);
+            const std::size_t bucket = magnitude == 1 ? 0 : magnitude == 2 ? 1 : magnitude <= 4 ? 2
+                                     : magnitude <= 8 ? 3 : magnitude <= 16 ? 4 : 5;
+            ++result.LevelHistogram[bucket];
         }
+        if (differs)
+            ++result.DifferingPixels;
     }
+    for (std::size_t channel = 0; channel < 3; ++channel)
+        result.MeanSignedDifference[channel] =
+            static_cast<double>(signedTotal[channel]) / static_cast<double>(result.TotalPixels);
     return result;
 }
 
@@ -208,7 +236,13 @@ void CheckScene(const GoldenScene& scene)
         << comparison.DifferingPixels << " of " << comparison.TotalPixels << " pixels differ ("
         << (100.0 * static_cast<double>(comparison.DifferingPixels)
             / static_cast<double>(comparison.TotalPixels))
-        << "%). Compare " << actual << " against " << reference << ". If the change was "
+        << "%), by at most " << comparison.LargestLevelDifference << " levels. Channels moved by "
+        << "1: " << comparison.LevelHistogram[0] << ", 2: " << comparison.LevelHistogram[1]
+        << ", 3-4: " << comparison.LevelHistogram[2] << ", 5-8: " << comparison.LevelHistogram[3]
+        << ", 9-16: " << comparison.LevelHistogram[4] << ", 17+: " << comparison.LevelHistogram[5]
+        << ". Mean signed difference RGB: " << comparison.MeanSignedDifference[0] << ", "
+        << comparison.MeanSignedDifference[1] << ", " << comparison.MeanSignedDifference[2]
+        << ". Compare " << actual << " against " << reference << ". If the change was "
         << "meant to alter the image, replace the reference with the capture in the same "
         << "commit; otherwise something moved that should not have.";
 
@@ -219,7 +253,148 @@ void CheckScene(const GoldenScene& scene)
     }
 }
 
+// What the output pass should write for a surface emitting `emitted` linear light,
+// worked out here rather than taken from a capture, so it cannot agree with a
+// transform applied twice or not at all.
+[[nodiscard]] int ExpectedDisplayLevel(float emitted, float exposure)
+{
+    constexpr float kKnee = 0.8f;
+    float display = emitted * exposure;
+    if (display > kKnee)
+    {
+        const float s = (display - kKnee) / (1.0f - kKnee);
+        display = kKnee + (1.0f - kKnee) * s / (1.0f + s);
+    }
+    const float encoded = display <= 0.0031308f ? display * 12.92f
+                                                : 1.055f * std::pow(display, 1.0f / 2.4f) - 0.055f;
+    return static_cast<int>(std::lround(encoded * 255.0f));
+}
+
+void CheckEmittedLevel(float emitted, float exposure)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
+
+    const std::filesystem::path material = std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT) / "assets" / "materials"
+        / "dev" / "generated_tonemap_ramp.smat";
+    std::ofstream(material, std::ios::trunc)
+        << "{ \"id\": \"7a3f10c2b95e4d18\", \"version\": 2, \"shading\": \"unlit\", "
+        << "\"base_color_factor\": [0, 0, 0, 1], \"emissive_factor\": [1, 1, 1], "
+        << "\"emissive_strength\": " << emitted << " }\n";
+
+    const std::string args = "+set render.exposure " + std::to_string(exposure);
+    const GoldenScene scene{ .Name = "tonemap_ramp", .Map = "levels/golden_tonemap_ramp", .ExtraArgs = args.c_str() };
+    ASSERT_TRUE(CookScene(scene));
+    const std::filesystem::path capture = std::filesystem::temp_directory_path() / "sencha_tonemap_ramp.png";
+    ASSERT_TRUE(RenderScene(scene, capture));
+    const std::optional<Image> image = LoadImageFromFile(capture.string());
+    ASSERT_TRUE(image.has_value());
+
+    const std::size_t pixel = (static_cast<std::size_t>(image->Height / 2) * image->Width + image->Width / 2) * 4;
+    const int expected = ExpectedDisplayLevel(emitted, exposure);
+    for (std::size_t channel = 0; channel < 3; ++channel)
+        EXPECT_NEAR(static_cast<int>(image->Pixels[pixel + channel]), expected, 1)
+            << "a surface emitting " << emitted << " at exposure " << exposure << ", channel " << channel;
+}
+
 } // namespace
+
+// Two overlapping styles with the higher priority winning their shared edge, a mesh
+// partly behind an unoutlined wall, and an alpha-masked mesh outlined along its cutout.
+TEST(GoldenImage, OutlinesFollowPriorityOcclusionAndCutouts)
+{
+    CheckScene({ .Name = "outlines", .Map = "levels/golden_outline", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// The scissor around the highlights clamps at every edge of the view.
+TEST(GoldenImage, AnOutlineIsClippedByTheViewNotByItsScissor)
+{
+    CheckScene({ .Name = "outline_edges", .Map = "levels/golden_outline_edges", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// A mesh reaching past the camera has no meaningful screen bounds, so it takes the view.
+TEST(GoldenImage, AnOutlineOnAMeshBehindTheCameraIsNotLost)
+{
+    CheckScene({ .Name = "outline_behind", .Map = "levels/golden_outline_behind", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// The posed rig, because a skinned mesh binds its posed buffer in the mask too.
+TEST(GoldenImage, AnOutlineFollowsTheSkinnedPose)
+{
+    CheckScene({ .Name = "outline_skinned", .Map = "levels/golden_skinned_pose", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1" });
+}
+
+// An effect at weight 0 is not scheduled, so the frame is the plain scene's byte
+// for byte; the other two show the chain running before and after the transform.
+TEST(GoldenImage, AnEffectAtWeightZeroIsNotScheduled)
+{
+    CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0" });
+}
+
+TEST(GoldenImage, ADisplayEffectRunsAfterTheTransform)
+{
+    CheckScene({ .Name = "post_fade", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0.5" });
+}
+
+TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
+{
+    CheckScene({ .Name = "post_displace", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.displace 1" });
+}
+
+// Kyusu's own path: the placed mesh the selection names gets the outline and its
+// neighbour does not, through the same mask family and composite as the runtime. Below
+// the title bar and breadcrumb, which show this checkout's path.
+TEST(GoldenImage, ASelectedPlacedMeshIsOutlinedInAViewport)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display; the golden images need a GPU to render against";
+
+    constexpr std::size_t kBelowPathRows = 80;
+    const std::filesystem::path reference = ReferenceDir() / "editor_selection.png";
+    const std::filesystem::path actual = ReferenceDir() / "editor_selection.actual.png";
+    std::error_code ignored;
+    std::filesystem::remove(actual, ignored);
+    const std::string root = SENCHA_GOLDEN_CONTENT_ROOT;
+    const std::string command = std::string("SENCHA_PRESENT_MODE=IMMEDIATE ") + SENCHA_GOLDEN_EDITOR
+        + " --settings none --project " + root + "/project.senchaproj"
+        + " +editor.open " + root + "/assets/levels/golden_editor_selection.sscene"
+        // The window is real, so without this a pointer or wheel at the desk reaches it.
+        + " +input.exclusive"
+        + " +editor.select 05ade20000000001"
+        + " +render.screenshot " + actual.string() + " 400"
+        + " +set app.exit_after_frames 500 >/dev/null 2>&1";
+    std::system(command.c_str());
+
+    const std::optional<Image> actualImage = LoadImageFromFile(actual.string());
+    const std::optional<Image> referenceImage = LoadImageFromFile(reference.string());
+    ASSERT_TRUE(actualImage.has_value()) << "the editor produced no capture";
+    ASSERT_TRUE(referenceImage.has_value());
+    const Comparison comparison = Compare(*referenceImage, *actualImage, kBelowPathRows);
+    ASSERT_TRUE(comparison.SameSize);
+    EXPECT_EQ(comparison.DifferingPixels, 0u)
+        << comparison.DifferingPixels << " pixels differ, by at most " << comparison.LargestLevelDifference
+        << " levels. Compare " << actual << " against " << reference;
+    if (comparison.DifferingPixels == 0)
+        std::filesystem::remove(actual, ignored);
+}
+
+// The display transform against its own formula, through the forward pass and the
+// output pass of the shipped host. It catches a transform applied twice or not at
+// all whatever the other references say.
+TEST(TonemapRamp, EachEmittedLevelLandsWhereTheFormulaSays)
+{
+    for (const float emitted : { 0.0f, 0.25f, 0.75f, 1.0f, 1.5f, 2.0f })
+        CheckEmittedLevel(emitted, 1.0f);
+}
+
+TEST(TonemapRamp, ExposureScalesBeforeTheShoulder)
+{
+    CheckEmittedLevel(0.5f, 2.0f);
+}
 
 // One scene covering as much of the renderer as a single frame can: cooked
 // meshes and materials, the forward pass, spot and point shadows, the ambient

@@ -99,7 +99,9 @@ which is how the off path pays nothing.
 | Scope | Written by |
 |---|---|
 | `PhaseOffscreen` | `Renderer::DrawFrameScheduled` around the offscreen bucket |
-| `PhaseMainColor` | `Renderer::DrawFrameScheduled` around the main color bucket |
+| `PhaseMainColor` | `Renderer::RecordScenePhase` around the scene bucket |
+| `PhasePost` | `Renderer::RecordPostPhase` around the post bucket |
+| `PhaseOutput` | `Renderer::RecordSwapchainPhases` around the present draw |
 | `ShadowViews` | `ShadowRenderFeature::OnDraw` |
 | `ForwardOpaque` | `MeshRenderFeature::OnDraw` |
 

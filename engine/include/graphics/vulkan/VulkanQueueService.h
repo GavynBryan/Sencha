@@ -29,6 +29,9 @@ public:
     [[nodiscard]] VkQueue GetPresentQueue() const { return PresentQueue; }
     [[nodiscard]] VkQueue GetComputeQueue() const { return ComputeQueue; }
     [[nodiscard]] VkQueue GetTransferQueue() const { return TransferQueue; }
+    // Whether anything asked to submit beyond the graphics queue. Single-image
+    // render targets rely on the answer being no.
+    [[nodiscard]] bool RequiresSecondQueue() const { return SecondQueueRequired; }
 
 private:
     bool ValidateRequiredQueues(const VulkanBootstrapPolicy& policy) const;
@@ -40,5 +43,6 @@ private:
     VkQueue PresentQueue = VK_NULL_HANDLE;
     VkQueue ComputeQueue = VK_NULL_HANDLE;
     VkQueue TransferQueue = VK_NULL_HANDLE;
+    bool SecondQueueRequired = false;
     bool Valid = false;
 };

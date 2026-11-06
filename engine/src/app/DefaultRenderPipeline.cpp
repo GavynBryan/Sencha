@@ -15,6 +15,9 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/feature/DebugLineRenderFeature.h>
 #include <render/feature/MeshRenderFeature.h>
+#include <render/feature/OutlineRenderFeature.h>
+#include <render/feature/OutputRenderFeature.h>
+#include <render/feature/PostRenderFeature.h>
 #include <render/feature/ShadowRenderFeature.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
 #include <render/feature/SkyRenderFeature.h>
@@ -94,6 +97,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     //   mesh   -> sky    within MainColor the background fills the view with
     //                    no depth test, so it records first.
     //   lines  -> mesh   depth-tested debug lines need the scene's depth.
+    //   lines  -> output a diagnostic keeps its exact colour, so it draws over
+    //                    the scene after the transform rather than through it.
     //
     // Staging order below is deliberately not the resolved order: the resolver
     // produces the order, and the goldens are what prove it.
@@ -103,7 +108,8 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     static constexpr std::array<std::string_view, 1> kShadowDeps{ kPose };
     static constexpr std::string_view kMesh = "runtime_mesh";
     static constexpr std::array<std::string_view, 2> kMeshDeps{ kShadow, kSky };
-    static constexpr std::array<std::string_view, 1> kDebugLineDeps{ kMesh };
+    static constexpr std::string_view kOutput = "runtime_output";
+    static constexpr std::array<std::string_view, 2> kDebugLineDeps{ kMesh, kOutput };
 
     auto bindings = std::make_shared<LightBindings>();
     // Constructed before the mesh feature is staged, which captures it: staging
@@ -111,15 +117,36 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     if (SkinnedMeshes != nullptr)
         SkinnedPoses = std::make_shared<SkinnedPoseFrameData>();
 
-    graphics.MainRenderer.StageFeature(
+    MeshRenderFeature* mesh = graphics.MainRenderer.StageFeature(
         std::make_unique<MeshRenderFeature>(
             Queue, *Meshes, *Materials, Camera, Lights, bindings,
             SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
         FeatureRegistration{ .Id = kMesh, .DependsOn = kMeshDeps });
 
+    // Takes the mesh feature's pass by reference, and writes its mask before the
+    // post feature so the frame it leaves behind is the one the chain sees.
+    static constexpr std::string_view kOutline = "runtime_outline";
+    static constexpr std::array<std::string_view, 1> kOutlineDeps{ kMesh };
+    static constexpr std::array<std::string_view, 1> kPostDeps{ kOutline };
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<OutlineRenderFeature>(mesh->ForwardPass(), Outlines, Camera, Lights, *Meshes, *Materials,
+                                               SkinnedMeshes),
+        FeatureRegistration{ .Id = kOutline, .DependsOn = kOutlineDeps });
+
     graphics.MainRenderer.StageFeature(
         std::make_unique<DebugLineRenderFeature>(Camera, DebugLines),
         FeatureRegistration{ .Id = "runtime_debug_lines", .DependsOn = kDebugLineDeps });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<OutputRenderFeature>(Output),
+        FeatureRegistration{ .Id = kOutput });
+
+    if (PostEffects != nullptr)
+    {
+        graphics.MainRenderer.StageFeature(
+            std::make_unique<PostRenderFeature>(*PostEffects, PostEffectsThisFrame, Output),
+            FeatureRegistration{ .Id = "runtime_post", .DependsOn = kPostDeps });
+    }
 
     graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),
@@ -206,6 +233,8 @@ void DefaultRenderPipeline::PublishEmptyFrameOutputs()
     CasterEvents.clear();
     Residency.ClearFrameSchedule();
     DebugLines.Clear();
+    PostEffectsThisFrame.Entries.clear();
+    Outlines.Reset();
 }
 
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
@@ -235,6 +264,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         world, ctx.Runtime.GetSimulationClock(), ctx.Presentation, extent, ctx.Partitions);
     if (!CameraRenderDataSystem::Build(presented, world, Camera))
         return;
+    ExtractOutlines(world, Outlines);
 
     CpuScopeTimings* scopes =
         Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr;
@@ -245,8 +275,10 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
             world, ctx.Partitions,
             RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
                                  SkinnedMeshes, Skeletons },
-            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
+            Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get(),
+            Outlines.IsEmpty() ? nullptr : &Outlines);
         Queue.SortOpaque();
+        Outlines.Finish(Camera.ViewProjection);
     }
 
     LightExtractionCounts lightCounts;
@@ -258,6 +290,13 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         // is unset.
         Lights.SkyEnabled = true;
         ApplyRendererTunables(Console, Lights);
+        OutputTransformParams authored;
+        ApplyOutputTransformCVars(Console, authored);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+        Output = OutputTransformForView(authored, Lights.DebugView);
+#else
+        Output = authored;
+#endif
         LightExtractor.Extract(world, ctx.Partitions, Camera, Lights,
                                ShadowRequests, PointShadowRequests, &lightCounts);
         ProbeVolumes.AppendActive(ctx.Partitions, Lights);
@@ -292,6 +331,9 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         PublishExtractionStats(*Instrumentation->Stats, lightCounts);
 
     ExtractDebugLines(world, DebugLines);
+    if (PostEffects != nullptr)
+        ExtractPostEffects(world, presented.Camera, *PostEffects, ctx.Runtime.GetCurrentFrame().WallTime.Elapsed,
+                           PostEffectsThisFrame);
 
     if (Log != nullptr)
     {

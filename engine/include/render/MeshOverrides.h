@@ -3,6 +3,7 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
+#include <presentation/PresentationContributions.h>
 #include <presentation/PresentationOwner.h>
 #include <render/Material.h>
 #include <render/MaterialSetHandle.h>
@@ -10,7 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
-#include <unordered_map>
 #include <vector>
 
 class World;
@@ -90,16 +90,19 @@ struct ComponentTraits<MeshOverrides>
 };
 
 // Every entity's contributions, beside the World rather than in its rows. A
-// World resource; MeshOverrides' removal forgets an entity's.
+// World resource; MeshOverrides' removal forgets an entity's, and
+// MeshOverrideSystem sweeps those whose holder has gone.
 struct MeshOverrideContributions
 {
-    std::unordered_map<EntityId, std::vector<MeshOverrideContribution>, EntityIdHash> ByEntity;
+    PresentationContributions<EntityId, MeshOverrideContribution, EntityIdHash> ByEntity;
 };
 
 // Adds or replaces `contribution.Owner`'s contribution and composes. Structural
 // on an entity's first contribution, so outside any query.
 MeshOverrideOutcome SetMeshOverride(World& world, EntityId entity, MeshOverrideContribution contribution);
 void ClearMeshOverride(World& world, EntityId entity, const PresentationOwner& owner);
+// Takes back everything a holder that has gone was holding, and recomposes.
+void SweepMeshOverrideHolders(World& world);
 // Recomposes against the entity's current authored set.
 MeshOverrideOutcome ComposeMeshOverrides(World& world, EntityId entity);
 

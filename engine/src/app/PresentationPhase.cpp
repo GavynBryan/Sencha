@@ -1,4 +1,5 @@
 #include <app/PresentationPhase.h>
+#include <graphics/RenderExtent.h>
 
 #include <app/EngineSchedule.h>
 #include <camera/PresentedFrame.h>

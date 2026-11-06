@@ -15,12 +15,16 @@
 #include <platform/WindowCreateInfo.h>
 #include <render/RenderLight.h>
 #include <render/extract/Camera.h>
+#include <render/feature/OutputRenderFeature.h>
+#include <render/feature/PostRenderFeature.h>
+#include <render/post/EnginePostEffects.h>
 #include <render/feature/SkyRenderFeature.h>
 
 #include <DeviceTestSupport.h>
 #include <SDL3/SDL.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdlib>
@@ -68,6 +72,8 @@ namespace
     class PresentationTest : public ::testing::Test
     {
     protected:
+        virtual void Configure(EngineConfig&) {}
+
         void SetUp() override
         {
             if (!DisplayAvailable())
@@ -75,6 +81,7 @@ namespace
             setenv("SENCHA_PRESENT_MODE", "IMMEDIATE", 1);
             Logging.AddSink<ValidationErrorCount>(ValidationErrors);
             Config.Graphics.EnableValidation = true;
+            Configure(Config);
             Config.Window.Width = 320;
             Config.Window.Height = 240;
             Platform = std::make_unique<PlatformServices>(Logging);
@@ -115,10 +122,36 @@ namespace
             return { Render().CreatePresentation(*window, desc), window->GetId() };
         }
 
+        auto FindOutput(PresentationId presentation)
+        {
+            return std::ranges::find_if(OutputFeatures,
+                                        [presentation](const auto& entry) { return entry.first == presentation; });
+        }
+
+        // A scene and the output pass that carries it to the window.
         SolidColorFeature* Fill(PresentationId presentation, Rgb color)
         {
+            ShowScene(presentation);
             return Render().AddFeature(std::make_unique<SolidColorFeature>(color),
                                        FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) });
+        }
+
+        void ShowScene(PresentationId presentation)
+        {
+            if (FindOutput(presentation) == OutputFeatures.end())
+                OutputFeatures.emplace_back(
+                    presentation,
+                    Render().AddFeature(std::make_unique<OutputRenderFeature>(OutputParams),
+                                        FeatureRegistration{ .Scope = RenderFeatureScope::For(presentation) }));
+        }
+
+        bool RemoveFill(PresentationId presentation, SolidColorFeature* fill)
+        {
+            const auto output = FindOutput(presentation);
+            if (output == OutputFeatures.end() || !Render().RemoveFeature(output->second))
+                return false;
+            OutputFeatures.erase(output);
+            return Render().RemoveFeature(fill);
         }
 
         // Pumps the window system the way the engine's platform phase does,
@@ -204,8 +237,87 @@ namespace
         std::unique_ptr<PlatformServices> Platform;
         std::unique_ptr<GraphicsServices> Graphics;
         std::filesystem::path Output;
+        // These features clear to exact colours, which the shoulder would move.
+        OutputTransformParams OutputParams{ .TonemapEnabled = false };
+        std::vector<std::pair<PresentationId, OutputRenderFeature*>> OutputFeatures;
     };
 }
+
+namespace
+{
+    class SceneTargetSynchronizationTest : public PresentationTest,
+                                           public ::testing::WithParamInterface<std::uint32_t>
+    {
+    protected:
+        void Configure(EngineConfig& config) override
+        {
+            config.Graphics.ValidateSynchronization = true;
+            config.Graphics.FramesInFlight = GetParam();
+        }
+    };
+}
+
+// One scene image serves every frame in flight, so the barriers are all that
+// keep overlapping frames apart. The validation count in TearDown is the check.
+TEST_P(SceneTargetSynchronizationTest, TheOneSceneImageIsOrderedAcrossFramesResizesAndAMinimize)
+{
+    const Window b = Open("B");
+    ASSERT_TRUE(b.Presentation.IsValid());
+    Fill(Render().PrimaryPresentation(), kRed);
+    Fill(b.Presentation, kGreen);
+    Frames(8);
+
+    SdlWindow& window = *Platform->Windows.GetWindow(b.WindowId);
+    for (const int width : { 300, 200, 260 })
+    {
+        window.SetSize(width, 200);
+        for (int i = 0; i < 30 && Frames().FindPresentation(b.Presentation)->Swapchain().GetExtent().width
+                                      != static_cast<std::uint32_t>(width);
+             ++i)
+            Frame();
+        Frames(4);
+    }
+    EXPECT_EQ(Capture(b.Presentation, "b_after_resizes"), kGreen);
+
+    window.Minimize();
+    Frames(6);
+    window.Restore();
+    // The compositor decides when, or on some desktops whether, a window comes back.
+    for (int i = 0; i < 60 && window.IsMinimized(); ++i)
+        Frame();
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "primary_after_minimize"), kRed);
+    if (!window.IsMinimized())
+    {
+        EXPECT_EQ(Capture(b.Presentation, "b_after_minimize"), kGreen);
+    }
+}
+
+// The chain's planes are single images too, rewritten several times a frame.
+TEST_P(SceneTargetSynchronizationTest, TheEffectChainIsOrderedThroughAResize)
+{
+    PostEffectCatalog catalog;
+    RegisterEnginePostEffects(catalog);
+    PostEffectFrame effects;
+    PostEffectFrameEntry fade{ .Effect = catalog.Find("sencha.fade"), .Domain = PostEffectDomain::Display, .Weight = 1.0f };
+    fade.Params = { 0.0f, 1.0f, 0.0f, 0.0f };
+    effects.Entries.push_back(fade);
+
+    const Window b = Open("B");
+    ASSERT_TRUE(b.Presentation.IsValid());
+    Fill(b.Presentation, kRed);
+    ASSERT_NE(Render().AddFeature(std::make_unique<PostRenderFeature>(catalog, effects, OutputParams),
+                                  FeatureRegistration{ .Scope = RenderFeatureScope::For(b.Presentation) }),
+              nullptr);
+    Frames(6);
+
+    Platform->Windows.GetWindow(b.WindowId)->SetSize(300, 200);
+    for (int i = 0; i < 30 && Frames().FindPresentation(b.Presentation)->Swapchain().GetExtent().width != 300; ++i)
+        Frame();
+    Frames(6);
+    EXPECT_EQ(Capture(b.Presentation, "chain_after_resize"), kGreen);
+}
+
+INSTANTIATE_TEST_SUITE_P(FramesInFlight, SceneTargetSynchronizationTest, ::testing::Values(2u, 3u));
 
 TEST_F(PresentationTest, ThreeWindowsEachShowTheirOwnFeature)
 {
@@ -259,7 +371,7 @@ TEST_F(PresentationTest, AWindowIsDestroyedOnlyOnceNothingRecordsIntoIt)
     EXPECT_NE(Frames().FindPresentation(b.Presentation), nullptr);
     EXPECT_FALSE(Render().DestroyPresentation(Render().PrimaryPresentation(), {}));
 
-    ASSERT_TRUE(Render().RemoveFeature(green));
+    ASSERT_TRUE(RemoveFill(b.Presentation, green));
     ASSERT_TRUE(DestroyAndWait(b));
     EXPECT_EQ(Frames().FindPresentation(b.Presentation), nullptr);
     EXPECT_EQ(Capture(c.Presentation, "c_after_destroy"), kBlue);
@@ -285,8 +397,8 @@ TEST_F(PresentationTest, WindowsGoInAnyOrder)
         SolidColorFeature* green = Fill(b.Presentation, kGreen);
         SolidColorFeature* blue = Fill(c.Presentation, kBlue);
         Frames(3);
-        ASSERT_TRUE(Render().RemoveFeature(green));
-        ASSERT_TRUE(Render().RemoveFeature(blue));
+        ASSERT_TRUE(RemoveFill(b.Presentation, green));
+        ASSERT_TRUE(RemoveFill(c.Presentation, blue));
         const std::array<Window, 2> order = firstCreatedFirst ? std::array{ b, c } : std::array{ c, b };
         for (const Window& window : order)
             EXPECT_TRUE(DestroyAndWait(window));
@@ -343,19 +455,45 @@ TEST_F(PresentationTest, StalledWindowsTogetherCostAFrameAtMostTheAcquireDeadlin
 
 TEST_F(PresentationTest, ALoadTimePipelineMatchesTheDepthStencilScopeItDrawsInto)
 {
-    // Built at Setup, before any frame: the stencil aspect the swapchain scope
+    // Built at Setup, before any frame: the stencil aspect the scene scope
     // binds has to be in the formats it was compiled against.
     CameraRenderData camera;
     RenderLightSet lights;
     lights.AmbientSky = Vec<3>(0.0f, 1.0f, 0.0f);
     lights.AmbientGround = Vec<3>(0.0f, 1.0f, 0.0f);
-    lights.TonemapEnabled = false;
+    ShowScene(Render().PrimaryPresentation());
     ASSERT_NE(Render().AddFeature(std::make_unique<SkyRenderFeature>(camera, lights)), nullptr);
 
     const std::optional<Rgb> centre = Capture(Render().PrimaryPresentation(), "sky");
     ASSERT_TRUE(centre.has_value());
     EXPECT_GT((*centre)[1], 200) << "the sky drew";
     EXPECT_LT((*centre)[0], 50);
+}
+
+TEST_F(PresentationTest, TheEffectChainHoldsPlanesOnlyWhileAnEffectRuns)
+{
+    PostEffectCatalog catalog;
+    RegisterEnginePostEffects(catalog);
+    PostEffectFrame effects;
+    Fill(Render().PrimaryPresentation(), kRed);
+    auto* post = Render().AddFeature(std::make_unique<PostRenderFeature>(catalog, effects, OutputParams));
+    ASSERT_NE(post, nullptr);
+
+    Frames(3);
+    EXPECT_EQ(post->ResidentPlaneCount(), 0u) << "an empty frame allocates nothing";
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_idle"), kRed);
+
+    PostEffectFrameEntry fade{ .Effect = catalog.Find("sencha.fade"), .Domain = PostEffectDomain::Display, .Weight = 1.0f };
+    fade.Params = { 0.0f, 1.0f, 0.0f, 0.0f };
+    effects.Entries.push_back(fade);
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_fade"), kGreen) << "a whole-weight fade shows its colour";
+    EXPECT_EQ(post->ResidentPlaneCount(), 2u);
+
+    effects.Entries.clear();
+    EXPECT_EQ(Capture(Render().PrimaryPresentation(), "post_ended"), kRed);
+    Frames(130);
+    EXPECT_EQ(post->ResidentPlaneCount(), 0u) << "planes go after a quiet interval";
+    EXPECT_TRUE(Render().RemoveFeature(post));
 }
 
 namespace

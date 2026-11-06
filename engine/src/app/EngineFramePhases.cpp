@@ -10,6 +10,7 @@
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/PresentationPhase.h>
+#include <graphics/RenderExtent.h>
 #include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>

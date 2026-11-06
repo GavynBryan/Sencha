@@ -43,6 +43,10 @@ public:
     void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
+    // For the outline feature, which draws through the same pass and pipeline
+    // layout. Good once this feature is set up.
+    [[nodiscard]] MeshForwardPass& ForwardPass() { return Pass; }
+
 private:
     RenderQueue* Queue = nullptr;
     StaticMeshCache* Meshes = nullptr;

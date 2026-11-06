@@ -33,7 +33,7 @@ public:
     [[nodiscard]] CameraRenderData ViewCamera(float aspect) const { return Camera.BuildRenderData(aspect); }
 
 private:
-    void Record(const RenderScope& rendering, VkExtent2D extent);
+    void Record(const FrameContext& rendering, const CameraRenderData& camera);
 
     RuntimeAssets& Assets;
     AnimationPreviewScene& Scene;

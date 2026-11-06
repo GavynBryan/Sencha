@@ -77,13 +77,23 @@ DrawFrameScheduled                                           [FramePhase 12, aft
   RecordOffscreenPhase                                       [GpuScope::PhaseOffscreen]
     for each Offscreen feature: OnDraw   (Global ones always; presentation-scoped
                                           ones only if their presentation was acquired)
-  for each acquired presentation: RecordSwapchainPhases     [phase GpuScopes for the primary]
-    barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
-    its depth attachment Recreate(extent) + barrier          [if declared]
-    vkCmdBeginRendering (color clear, depth clear, depth storeOp DONT_CARE)
-    for each swapchain phase, each feature scoped to this presentation: OnDraw
-    vkCmdEndRendering
-    capture, if armed for this presentation
+  for each acquired presentation:                           [phase GpuScopes for the primary]
+    RecordScenePhase                                         [only with a MainColor feature here]
+      acquire the scene target; its depth Recreate(extent) + barrier
+      session: scene -> COLOR_ATTACHMENT_OPTIMAL
+      vkCmdBeginRendering (color clear, depth clear, depth storeOp STORE)
+      for each MainColor feature scoped to this presentation: OnDraw
+      vkCmdEndRendering
+      session end: scene -> SHADER_READ_ONLY_OPTIMAL
+    RecordPostPhase                                          [features open their own scopes]
+      for each Post feature scoped to this presentation: OnDraw
+    RecordSwapchainPhases
+      barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
+      depth barrier                                          [if declared]
+      vkCmdBeginRendering (color clear, stencil clear, depth load if a scene drew)
+      for Output, ApplicationUi, DevelopmentOverlay, each feature scoped here: OnDraw
+      vkCmdEndRendering
+      capture, if armed for this presentation
     barrier: swapchain image -> PRESENT_SRC_KHR
   publish scratch counters into RenderStats
   VulkanFrameService::EndFrame
@@ -99,6 +109,47 @@ The `Offscreen` bucket is skipped entirely when empty, which is the game's
 normal case only when the shadow feature failed setup. Offscreen features open
 and close their own rendering scopes and own their own image barriers; no
 swapchain rendering scope is open around them.
+
+## Scene, post, and output
+
+A presentation with a `MainColor` feature draws its scene into its own colour
+target (`kSceneColorFormat`, the extent of the swapchain) with the presentation's
+depth, and an `Output` feature carries the result into the swapchain as the first
+draw of the swapchain scope. `Post` features run between them, opening their own
+scopes. The UI phases keep the swapchain scope, and the stencil their clip masks
+write. A presentation with no `MainColor` feature, as a Kyusu window is, allocates
+no scene target and records neither step.
+
+`FrameContext::SceneColorBindless` and `SceneExtent` carry the finished scene to
+the phases after it, so a pass samples it without seeing the image. Every
+presentation that draws a scene needs an `OutputRenderFeature`; without one its
+window shows the clear colour, and the renderer logs that once.
+
+The scene target is `RGBA16F` and holds linear scene-referred light: the sky and
+the forward shaders write it with no exposure or curve, and transparent surfaces
+blend in it. `OutputTransformPass` is the one place exposure and the shoulder are
+applied, from `OutputTransformParams`, and the swapchain's hardware sRGB write is
+the one encode. A swapchain with neither gets the encode from a specialization
+constant in `output_present.frag` (`FormatNeedsShaderEncode`). Exercising that path
+needs a device whose surface offers only `_UNORM` formats, so it has been reviewed
+but not run.
+
+A debug view bypasses the transform through `OutputTransformForView`, so a channel
+shows the value it wrote: exposure and the shoulder would remap a normal or a heat
+colour. Debug lines draw in the `Output` phase after the present draw, against the
+scene's depth, for the same reason.
+
+Depth stores at the end of the scene scope and loads in the swapchain scope.
+
+### Editor views
+
+Kyusu's viewports, thumbnails, and stage pictures render through
+`RecordSceneThenDisplay`, the one path that takes an editor view from a scene
+target through the output pass to the display target the UI samples. Light the
+scene emits draws before the pass; chrome draws after it against the scene's depth,
+in display-referred linear, as its colours were tuned. The orthographic backdrop is
+chrome and is depth-tested at the far plane, so it fills only what the scene left
+empty, including behind a translucent surface with nothing opaque behind it.
 
 ## Synchronization objects
 

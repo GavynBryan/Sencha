@@ -52,7 +52,7 @@ public:
     PreviewBackdropStyle BackdropStyle;
 
 private:
-    void DrawMaterial(const RenderScope& rendering, VkExtent2D extent);
+    void DrawMaterial(const FrameContext& rendering, VkExtent2D extent);
 
     RuntimeAssets& Assets;
     StagePicture Picture;

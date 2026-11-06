@@ -146,9 +146,9 @@ function(sencha_embed_spirv)
                 "-DINPUT_SPV=${_A_SOURCE_SPV}"
                 "-DVAR_NAME=${_A_VAR_NAME}"
                 "-DOUTPUT_HEADER=${_header}"
-                "-P" "${CMAKE_SOURCE_DIR}/cmake/EmbedSpirv.cmake"
+                "-P" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/EmbedSpirv.cmake"
         DEPENDS "${_A_SOURCE_SPV}"
-                "${CMAKE_SOURCE_DIR}/cmake/EmbedSpirv.cmake"
+                "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/EmbedSpirv.cmake"
         COMMENT "Embedding SPIR-V ${_A_VAR_NAME}"
         VERBATIM
     )

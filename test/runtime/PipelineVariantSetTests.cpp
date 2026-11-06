@@ -208,6 +208,18 @@ TEST(SwapchainScopeFormats, ALoadTimeBuildKeysOnTheFormatsTheScopeBinds)
     EXPECT_EQ(SwapchainScopeFormats(services).AttachmentFormats(), scope.AttachmentFormats());
 }
 
+TEST(SceneScopeFormats, ALoadTimeBuildKeysOnTheSceneTargetAndTheSameDepth)
+{
+    RendererServices services;
+    services.DepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+    services.StencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+    const FrameContext scope = SceneScopeFormats(services);
+    EXPECT_EQ(scope.TargetFormat, kSceneColorFormat);
+    EXPECT_EQ(scope.DepthFormat, VK_FORMAT_D32_SFLOAT_S8_UINT);
+    EXPECT_EQ(scope.StencilFormat, VK_FORMAT_D32_SFLOAT_S8_UINT);
+}
+
 TEST(ShadowDepthBias, SeparatesFamiliesByExactBiasValue)
 {
     // The shadow family keys on cvar-driven floats rather than formats, so

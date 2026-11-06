@@ -1,0 +1,86 @@
+#include <graphics/vulkan/OutputTransformPass.h>
+
+#include <graphics/vulkan/VulkanFormat.h>
+#include <shaders/kOutlineCompositeFragSpv.h>
+#include <shaders/kOutputPresentFragSpv.h>
+
+#include <array>
+#include <cstdint>
+
+namespace
+{
+// Mirrored by the push block in output_present.frag.glsl.
+struct OutputPresentPush
+{
+    std::uint32_t SceneIndex = 0;
+    float Exposure = 1.0f;
+    float TonemapKnee = 0.8f;
+    std::uint32_t TonemapEnabled = 1;
+    std::uint32_t OutlineMaskIndex = UINT32_MAX;
+    std::uint32_t OutlineStyleIndex = UINT32_MAX;
+    float OutlineMaxWidthPixels = 0.0f;
+};
+}
+
+bool OutputTransformPass::Setup(const RendererServices& services)
+{
+    Shaders = services.Shaders;
+    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(OutputPresentPush)))
+        return false;
+
+    FragmentShader = Shaders->CreateModuleFromSpirv(kOutputPresentFragSpv, kOutputPresentFragSpvWordCount,
+                                                    "Output present fragment");
+    OutlineFragmentShader = Shaders->CreateModuleFromSpirv(kOutlineCompositeFragSpv, kOutlineCompositeFragSpvWordCount,
+                                                           "Outline composite fragment");
+    if (services.Swapchain != nullptr)
+        (void)EnsurePipeline(SwapchainScopeFormats(services));
+    return true;
+}
+
+void OutputTransformPass::Teardown()
+{
+    Pipeline.Reset();
+    Fullscreen.Teardown();
+    if (Shaders != nullptr)
+    {
+        Shaders->Destroy(FragmentShader);
+        Shaders->Destroy(OutlineFragmentShader);
+        FragmentShader = {};
+        OutlineFragmentShader = {};
+    }
+    Shaders = nullptr;
+}
+
+bool OutputTransformPass::EnsurePipeline(const FrameContext& frame)
+{
+    return Pipeline.Ensure(frame.AttachmentFormats(), [&](std::size_t index) {
+        const std::array encode{ ShaderSpecializationConstant{
+            .Id = 0, .Value = FormatNeedsShaderEncode(frame.TargetFormat) ? 1u : 0u } };
+        return Fullscreen.BuildPipeline(index == 0 ? FragmentShader : OutlineFragmentShader, frame.AttachmentFormats(),
+                                        {}, encode);
+    });
+}
+
+void OutputTransformPass::Draw(const FrameContext& frame, const OutputTransformParams& params)
+{
+    const ScenePostState* post = frame.ScenePost;
+    const std::uint32_t source = post != nullptr && post->PresentColorBindless != UINT32_MAX
+        ? post->PresentColorBindless
+        : frame.SceneColorBindless;
+    if (source == UINT32_MAX || !EnsurePipeline(frame))
+        return;
+
+    // Once is the rule: an effect chain that already ran the transform leaves only
+    // the encode, which a display-referred value in [0,1] passes through unchanged.
+    const bool applied = post != nullptr && post->TransformApplied;
+    const OutputPresentPush push{ .SceneIndex = source,
+                                  .Exposure = applied ? 1.0f : params.Exposure,
+                                  .TonemapKnee = params.TonemapKnee,
+                                  .TonemapEnabled = !applied && params.TonemapEnabled ? 1u : 0u,
+                                  .OutlineMaskIndex = post != nullptr ? post->OutlineMaskBindless : UINT32_MAX,
+                                  .OutlineStyleIndex = post != nullptr ? post->OutlineStyleBindless : UINT32_MAX,
+                                  .OutlineMaxWidthPixels = post != nullptr ? post->OutlineMaxWidthPixels : 0.0f };
+    Fullscreen.Draw(frame.Cmd, frame.TargetExtent, Pipeline.Get(0), &push);
+    if (push.OutlineMaskIndex != UINT32_MAX)
+        Fullscreen.Draw(frame.Cmd, frame.TargetExtent, post->OutlineScissor, Pipeline.Get(1), &push);
+}

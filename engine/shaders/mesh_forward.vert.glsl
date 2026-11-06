@@ -2,14 +2,10 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "mesh_view.glsli"
+#include "mesh_position.glsli"
 
-layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUv0;
-layout(location = 3) in vec4 inWorld0;
-layout(location = 4) in vec4 inWorld1;
-layout(location = 5) in vec4 inWorld2;
-layout(location = 6) in vec4 inWorld3;
 layout(location = 7) in vec4 inTangent;
 layout(location = 8) in vec2 inLightmapUv;        // unorm16 atlas UV
 layout(location = 9) in vec4 inLightmapScaleBias; // per-instance rect remap
@@ -23,7 +19,7 @@ layout(location = 5) out vec2 outLightmapUv;
 
 void main()
 {
-    mat4 world = mat4(inWorld0, inWorld1, inWorld2, inWorld3);
+    mat4 world = InstanceWorld();
     vec4 worldPosition = world * vec4(inPosition, 1.0);
 
     mat3 linear = mat3(world);
@@ -43,5 +39,5 @@ void main()
     outWorldTangent = worldTangent;
     outTangentSign = inTangent.w * orientation;
     outLightmapUv = inLightmapUv * inLightmapScaleBias.xy + inLightmapScaleBias.zw;
-    gl_Position = frame.ViewProjection * worldPosition;
+    gl_Position = MeshClipPosition(worldPosition);
 }

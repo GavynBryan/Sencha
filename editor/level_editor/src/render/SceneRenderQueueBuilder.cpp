@@ -1,4 +1,6 @@
 #include "SceneRenderQueueBuilder.h"
+
+#include <render/outline/OutlineContributions.h>
 #include "EditorRenderEntityKey.h"
 
 #include "document/EditorDocument.h"
@@ -65,7 +67,7 @@ SceneRenderQueueBuilder::SceneRenderQueueBuilder(AssetSystem& assets,
 
 SceneRenderQueueBuilder::~SceneRenderQueueBuilder() = default;
 
-void SceneRenderQueueBuilder::Build(const EditorDocument& document)
+void SceneRenderQueueBuilder::Build(const EditorDocument& document, OutlineFrame* outlines)
 {
     const EditorScene& scene = document.GetScene();
     const bool changed = Draws.Refresh(scene, Bakes, document.GetDefaultMaterial());
@@ -87,7 +89,7 @@ void SceneRenderQueueBuilder::Build(const EditorDocument& document)
         PlacedMeshes.SortOpaque();
     }
     else
-        BuildMeshQueue(document);
+        BuildMeshQueue(document, outlines);
     BuildLights(document);
     BuildShadowCasters(document);
 
@@ -187,7 +189,7 @@ void SceneRenderQueueBuilder::RebuildBrushCasters(const EditorDocument& document
     }
 }
 
-void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
+void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document, OutlineFrame* outlines)
 {
     PlacedMeshes.Reset();
 
@@ -217,6 +219,9 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
         instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
         instance.SectionMask = renderer->SectionMask;
         EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
+        if (outlines != nullptr)
+            if (RenderQueue* mask = outlines->QueueFor(entity))
+                EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, *mask);
     }
 
     // Skinned placements, at rest geometry through the same expansion the
@@ -251,6 +256,9 @@ void SceneRenderQueueBuilder::BuildMeshQueue(const EditorDocument& document)
             instance.WorldBounds = TransformAabb(mesh->LocalBounds, worldMatrix);
             instance.SectionMask = renderer->SectionMask;
             EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, PlacedMeshes);
+            if (outlines != nullptr)
+                if (RenderQueue* mask = outlines->QueueFor(entity))
+                    EmitMeshSections(instance, *mesh, *sectionMaterials, Materials, *mask);
         }
     }
     PlacedMeshes.SortOpaque();

@@ -59,6 +59,7 @@ TEST(VulkanImageUploadValidation, FootprintFollowsTheFormatBlockGeometry)
     EXPECT_EQ(TightCopyFootprint(VK_FORMAT_R8G8B8A8_SRGB, 4, 4, 1), 64u);
     EXPECT_EQ(TightCopyFootprint(VK_FORMAT_R8_UNORM, 8, 8, 1), 64u);
     EXPECT_EQ(TightCopyFootprint(VK_FORMAT_R16G16B16A16_SFLOAT, 4, 4, 4), 512u);
+    EXPECT_EQ(TightCopyFootprint(VK_FORMAT_R32G32B32A32_SFLOAT, 32, 1, 1), 512u);
 
     // Block formats round up to whole blocks, so every mip below 4x4 still
     // costs one block.

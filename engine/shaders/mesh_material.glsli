@@ -99,9 +99,3 @@ vec3 ResolveEmission()
          * max(pushData.EmissiveFactor.a, 0.0)
          * emissiveTexture;
 }
-
-vec3 ResolveOutput(vec3 color)
-{
-    return ApplyOutputTransform(color, frame.StyleParams.z, frame.StyleParams.w,
-                                frame.TonemapEnabled != 0u);
-}

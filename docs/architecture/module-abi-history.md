@@ -698,3 +698,38 @@ overload now resolves through it.
 **World.** `PresentationPoseOf` composes an entity's local transform onto its
 parent's drawn pose instead of returning its WorldTransform, so it is right
 before presentation propagation runs as well as after it.
+
+## v40
+
+The presentation layer: an HDR scene target, a post-processing phase, and outlines.
+
+**Frame.** `RenderPhase` gains `Post` and `Output` and renumbers `ApplicationUi` and
+`DevelopmentOverlay`. `MainColor` features record into a per-presentation scene target rather
+than the swapchain scope, so a host registering its own owes an `OutputRenderFeature(params)` for
+that presentation; `DefaultRenderPipeline::AddMeshRenderFeature` registers one.
+`DebugLineRenderFeature` records in `Output`. `FrameContext` gains `SceneColorBindless`,
+`SceneExtent` and `ScenePost` (`ScenePostState`). `RenderTargetDesc` gains `Lifetime`,
+`RenderTargetView` gains `ColorAccess`, and `GpuScope` gains `PhasePost` and `PhaseOutput`. New:
+`FullscreenPass`, `OutputTransformPass`, `SceneScopeFormats`, `kSceneColorFormat`,
+`RenderTargetAccess`, `RenderTargetLifetime`, `FormatNeedsShaderEncode` and
+`VulkanQueueService::RequiresSecondQueue`.
+
+**Tone mapping.** The scene target is `RGBA16F` holding linear scene-referred light, and exposure
+and the shoulder move into `OutputTransformPass`. `RenderLightSet` loses `Exposure`, `TonemapKnee`
+and `TonemapEnabled`, now `OutputTransformParams`, filled by `ApplyOutputTransformCVars`.
+`SkyGradientParams` and `SkyPushConstants` lose their output fields, and `MeshViewUniforms` replaces
+`StyleParams` and `TonemapEnabled` with `DiffuseWrap` and `MinAmbient`. A game's emissive values
+render as before except on blended surfaces, which now blend in linear light before the transform.
+
+**Post effects.** `Game::OnRegisterPostEffects(PostEffectCatalog&)` is a new trailing vtable slot,
+and `Engine::PostEffects()` reaches the catalog. New: `PostEffectContributions` with `SetPostEffect`,
+`ClearPostEffect` and `ClearPostEffectsOf`, `PostEffectFrame`, `PostEffectChain` and
+`PostRenderFeature`. `presentation/PresentationContributions.h` is the store post effects, outlines
+and mesh overrides share, so `MeshOverrideContributions::ByEntity` is now one. The SDK installs
+`SenchaShaders.cmake` and `post_effect.glsli`, and sets `SENCHA_SHADER_INCLUDE_DIR`.
+
+**Outlines.** New: `render/outline/OutlineContributions.h` (`RegisterOutlineStyle`, `SetOutline`,
+`ClearOutline`, `ClearOutlinesOf`, `IsOutlined`, `OutlineFrame`, `ExtractOutlines`),
+`OutlineRenderFeature`, `OutlineMaskTargets` and `MeshForwardPass::DrawOutlineMask`.
+`MeshViewUniforms::DebugViewPad0` becomes `OutlineStyleSlot`, and `RenderExtractionSystem::Extract`
+takes an optional `OutlineFrame`.

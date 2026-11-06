@@ -17,6 +17,12 @@
 #include <app/EngineConsoleBuiltins.h>
 #include "BrushBakeGpu.h"
 #include "SceneSourceStage.h"
+#include "render/SceneThenDisplay.h"
+
+#include <graphics/vulkan/OutlineMaskTargets.h>
+#include <render/StaticMeshComponent.h>
+#include <render/outline/OutlineContributions.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include "render/TargetImagePublish.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -38,6 +44,8 @@
 
 namespace
 {
+constexpr OutlineStyleId kSelectionOutlineStyle{ 1 };
+
 constexpr std::string_view kCullBackfaces = "editor.cull_backfaces";
 constexpr std::string_view kBloomEnable = "editor.bloom.enable";
 // The interactive limit on pieces one brush's modifier stack may evaluate to.
@@ -119,8 +127,8 @@ void EditorRenderFeature::RegisterCVars(ConsoleRegistry& console)
                            .Source = { "editor" } });
 }
 
-void EditorRenderFeature::DrawStage(const FrameContext& frame, const EditorViewport& viewport,
-                                    const CameraRenderData& camera, const DocumentStage& stage, const Vec4& tint)
+void EditorRenderFeature::DrawStageSolid(const FrameContext& frame, const CameraRenderData& camera,
+                                         const DocumentStage& stage, const Vec4& tint)
 {
     // Solid, lit by the focus scene, depth-tested and depth-writing; its own
     // lights and casters are never gathered (docs/editor/placement.md).
@@ -133,7 +141,30 @@ void EditorRenderFeature::DrawStage(const FrameContext& frame, const EditorViewp
                                                           .Materials = *MaterialStore,
                                                           .SkinnedMeshes = SkinnedMeshCacheRef,
                                                           .Tint = tint });
-    Visuals.DrawViewport(frame, viewport, camera, stage.Scene(), tint);
+}
+
+// Placed meshes gain a highlight here; brushes keep their wireframe, which the
+// selection renderer draws.
+void EditorRenderFeature::BuildSelectionOutlines()
+{
+    SelectionOutlines.Reset();
+    const ::World& world = World.FocusDocument().GetScene().GetRegistry().Components;
+    for (const SelectableRef& ref : SelectionRef.GetSelection())
+    {
+        if (!ref.IsEntity() || !world.IsAlive(ref.Entity))
+            continue;
+        const bool isMesh = world.TryGet<StaticMeshComponent>(ref.Entity) != nullptr
+            || world.TryGet<SkinnedMeshComponent>(ref.Entity) != nullptr;
+        if (isMesh)
+            SelectionOutlines.StyleOf.emplace(ref.Entity, kSelectionOutlineStyle);
+    }
+    if (SelectionOutlines.IsEmpty())
+        return;
+    SelectionOutlines.Styles[kSelectionOutlineStyle.Slot] =
+        OutlineStyleEntry{ .LinearColor = Vec<3>(EditorTheme::Selection.X, EditorTheme::Selection.Y, EditorTheme::Selection.Z),
+                           .WidthPixels = 2.0f, .Priority = 0 };
+    SelectionOutlines.MaxWidthPixels = 2.0f;
+    SelectionOutlines.StylesVersion = 1;
 }
 
 void EditorRenderFeature::SweepBrushBakes()
@@ -190,6 +221,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , BrushBakes(runtimeAssets != nullptr ? MakeBrushBakeGpu(*runtimeAssets) : BrushBakeCache::Gpu{})
     , Meshes(Solid, logging, assets, catalog)
     , Placement(placement)
+    , SelectionRef(selection)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
@@ -242,6 +274,9 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     Log = services.Logging ? &services.Logging->GetLogger<EditorRenderFeature>() : nullptr;
     Backdrop.Setup(services);
     Sky.Setup(services);
+    if (!Output.Setup(services))
+        return false;
+    SelectionStyleImage.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
     if (!Lighting.Setup(services))
@@ -271,7 +306,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     // scopes declare.
     if (MaterialPath && RuntimeAssetsRef != nullptr)
     {
-        Studio.emplace(Targets, Forward, Sky, *RuntimeAssetsRef->StaticMeshes,
+        Studio.emplace(Targets, Forward, Sky, Output, *RuntimeAssetsRef->StaticMeshes,
                        RuntimeAssetsRef->Materials,
                        RuntimeAssetsRef->SkinnedMeshes.get(),
                        VK_FORMAT_D32_SFLOAT);
@@ -347,10 +382,15 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         // lights are packed. Reset() inside Build preserves these fields.
         RenderLightSet& lights = QueueBuilder->Lights();
         ApplyRendererCVars(Console, lights);
+        OutputTransformParams authored;
+        ApplyOutputTransformCVars(Console, authored);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         // The one tunable the shared reader leaves alone: the editor selects it
         // from its view menu rather than from render.debug.view.
         lights.DebugView = WorldView.DebugViewMode;
+        ViewOutput = OutputTransformForView(authored, WorldView.DebugViewMode);
+#else
+        ViewOutput = authored;
 #endif
 
         // Derived world transforms are refreshed here, immediately before the
@@ -362,7 +402,9 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
             std::max<std::int64_t>(1, ReadCVarInt(Console, kPieceBudget, kPieceBudgetDefault))));
         World.FocusDocument().GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
         World.FocusDocument().GetScene().RefreshDerivedTransforms();
-        QueueBuilder->Build(World.FocusDocument());
+        BuildSelectionOutlines();
+        QueueBuilder->Build(World.FocusDocument(), SelectionOutlines.IsEmpty() ? nullptr : &SelectionOutlines);
+        SelectionOutlines.Finish(Mat4::Identity());
         if (Ghost)
         {
             // Resolved through the focus document's own roots, so the ghost
@@ -447,7 +489,7 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     for (ViewSlot& slot : ViewSlots)
         Composition.AddView({
             .View = { .Name = "viewport",
-                      .Target = slot.Target.Scene,
+                      .Target = slot.Target.Display,
                       // Built once here rather than by each renderer inside the
                       // view: same camera, same frame, one construction.
                       .Camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width,
@@ -636,177 +678,212 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     viewport.RegionMax = Vec2d(static_cast<float>(target.Extent.width),
                                 static_cast<float>(target.Extent.height));
 
-    // Brackets the recording below: both planes into attachment layouts now,
-    // color back to sampled and the store's layout committed at scope end.
-    RenderTargetSession session(frame.Cmd, target.ColorImage, target.ColorLayout,
-                                target.DepthImage, VK_FORMAT_D32_SFLOAT);
-
-    // The offscreen target is RGBA16F linear; the scene pipelines key on these
-    // formats and rebuild their RGBA16F variant transparently.
-    RenderScopeDesc scope{};
-    scope.Area.offset = { 0, 0 };
-    scope.Area.extent = target.Extent;
-    scope.Color.View = target.ColorView;
-    scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    scope.Color.Clear.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
-    scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    scope.Depth.View = target.DepthView;
-    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
-    scope.DepthFormat = VK_FORMAT_D32_SFLOAT;
-    scope.Phase = RenderPhase::Offscreen;
-
-    {
-        const RenderScope rendering(frame, scope);
-        const FrameContext& local = rendering.Context();
-
-        EditorDocument& focusDocument = World.FocusDocument();
-        const EditorScene& scene = focusDocument.GetScene();
-
-        // A perspective viewport shows the game's background; an ortho one keeps
-        // the flat editor backdrop, since a sky in a 2D working view describes
-        // nothing. Either way exactly one of the two fills the target.
-        const RenderLightSet& viewLights = QueueBuilder->Lights();
-        if (viewport.Orientation == ViewportOrientation::Perspective && viewLights.SkyEnabled)
-        {
-            Sky.Draw(local,
-                     MakeInverseSkyViewProjection(camera.View, camera.Projection),
-                     SkyGradientParams{ .Top = viewLights.AmbientSky,
-                                        .Bottom = viewLights.AmbientGround,
-                                        .Exposure = viewLights.Exposure,
-                                        .TonemapKnee = viewLights.TonemapKnee,
-                                        .TonemapEnabled = viewLights.TonemapEnabled });
-        }
-        else
-        {
-            Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
-        }
-        Grid.DrawViewport(local.Cmd, viewport, camera, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
-
-        // Context zones (open, visible, not the focus) render dimmed and reduced:
-        // solid-preview or wireframe body plus component visuals, modulated by the
-        // theme dim constant. No real-material pass, no selection highlight, no
-        // hover glow; picking never sees them, so they read as present but inert.
-        World.VisitOpenZones(
-            [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
-            {
-                if (&document == &focusDocument || !view.VisibleInEditor)
-                    return;
-                const EditorScene& contextScene = document.GetScene();
-                if (viewport.Shading == ViewportShading::Solid)
-                {
-                    // Real materials under the grey overlay when the WYSIWYG path
-                    // is up; the checker fallback only without an asset system.
-                    const auto it = ContextBuilders.find(zone.Value);
-                    if (MaterialPath && it != ContextBuilders.end())
-                    {
-                        // Full-bright neutral ambient under a translucent grey wash:
-                        // the textures stay readable and the grey does not depend on
-                        // whether a focus-zone light happens to reach this zone.
-                        RenderLightSet contextLights;
-                        contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
-                        contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
-    #ifdef SENCHA_ENABLE_RENDER_PROFILING
-                        contextLights.DebugView = WorldView.DebugViewMode;
-    #endif
-                        Forward.Draw(local, MeshForwardPass::DrawContext{
-                                                .Camera = camera,
-                                                .Lights = contextLights,
-                                                .Queue = it->second->BrushQueue(),
-                                                .Meshes = *MeshCache,
-                                                .Materials = *MaterialStore,
-                                                .SkinnedMeshes = SkinnedMeshCacheRef });
-                        // Placed meshes cannot receive the brush-triangle wash, so
-                        // the overlay folds into their multiply tint instead (exact
-                        // on white, close on bright textures).
-                        const Vec4& wash = EditorTheme::ContextZoneOverlay;
-                        const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W,
-                                           1.0f - wash.W + wash.Y * wash.W,
-                                           1.0f - wash.W + wash.Z * wash.W, 1.0f);
-                        Forward.Draw(local, MeshForwardPass::DrawContext{
-                                                .Camera = camera,
-                                                .Lights = contextLights,
-                                                .Queue = it->second->MeshQueue(),
-                                                .Meshes = *MeshCache,
-                                                .Materials = *MaterialStore,
-                                                .SkinnedMeshes = SkinnedMeshCacheRef,
-                                                .Tint = meshDim });
-                        BrushFills.DrawZoneOverlay(local, viewport, camera, contextScene,
-                                                   EditorTheme::ContextZoneOverlay);
-                    }
-                    else
-                    {
-                        BrushSolid.DrawViewportTinted(local, viewport, camera, contextScene,
-                                                      EditorTheme::ContextZoneDim);
-                    }
-                }
-                else
-                {
-                    const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
-                    const auto it = ContextBuilders.find(zone.Value);
-                    if (SceneWire && it != ContextBuilders.end())
-                        SceneWire->DrawWireframe(local, viewport, camera, contextScene,
-                                                 it->second->BrushDraws(), dimmedWire);
-                    else
-                        Wireframe.DrawWireframe(local, viewport, camera, contextScene, dimmedWire);
-                }
-                Visuals.DrawViewport(local, viewport, camera, contextScene, EditorTheme::ContextZoneDim);
-            });
-
-        // The focus zone renders exactly as a single document does.
-        if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
-            body->DrawViewport(local, viewport, camera, scene);
-        // Placed meshes draw in every viewport so they read regardless of shading: through
-        // the real-material queue when active, else the procedural-checker fallback.
-        if (MaterialPath)
-        {
-            Forward.Draw(local, MeshForwardPass::DrawContext{
-                                    .Camera = camera,
-                                    .Lights = QueueBuilder->Lights(),
-                                    .Queue = QueueBuilder->MeshQueue(),
-                                    .Meshes = *MeshCache,
-                                    .Materials = *MaterialStore,
-                                    .SkinnedMeshes = SkinnedMeshCacheRef });
-        }
-        else
-            Meshes.DrawViewport(local, viewport, camera, scene);
-        if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
-            MaterialPath && ghost != nullptr && ghost->Staged().Queues() != nullptr)
-            DrawStage(local, viewport, camera, ghost->Staged(), EditorTheme::PlacementGhostTint);
-        if (MaterialPath && Drafts)
-        {
-            if (const DocumentStage* added = Drafts->Added(); added != nullptr && added->Queues() != nullptr)
-            {
-                DrawStage(local, viewport, camera, *added, EditorTheme::DraftAddedTint);
-                Volumes.DrawViewport(local, viewport, camera, added->Queues()->BrushDraws());
-            }
-            if (const DocumentStage* removed = Drafts->Removed(); removed != nullptr && removed->Queues() != nullptr)
-                DrawStage(local, viewport, camera, *removed, EditorTheme::DraftRemovedTint);
-        }
-        Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-        if (QueueBuilder)
-            Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws(), &scene.GetRegistry());
-        IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
-        Highlight.DrawViewport(local, viewport, camera, scene, *Session());
-        if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
-            ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
-        if (WorldView.ShowZoneGraph)
-            ZoneGraph.DrawViewport(local, viewport, camera, World);
-        Affordances.DrawViewport(local, viewport, camera);
-        Preview.DrawViewport(local, viewport, camera);
-        Annotations.DrawViewport(local, viewport, camera);
-    }
-
-    // Sampled and committed, so the view's host image can read it -- and so
-    // bloom below starts from a target whose layout is what the store says.
-    session.End();
+    const SceneDisplayTargets targets{ .Extent = target.Extent,
+                                       .SceneImage = target.SceneImage,
+                                       .SceneView = target.SceneView,
+                                       .SceneAccess = target.SceneAccess,
+                                       .SceneBindless = target.SceneBindless,
+                                       .DisplayImage = target.ColorImage,
+                                       .DisplayView = target.ColorView,
+                                       .DisplayLayout = target.ColorLayout,
+                                       .DepthImage = target.DepthImage,
+                                       .DepthView = target.DepthView,
+                                       .DepthFormat = VK_FORMAT_D32_SFLOAT };
+    ScenePostState post;
+    const std::optional<RenderTargetView> mask = MaterialPath && !SelectionOutlines.DrawOrder.empty()
+        ? Targets.AcquireOutlineMask(viewport.Id)
+        : std::nullopt;
+    const std::uint32_t styleImage =
+        mask.has_value() ? SelectionStyleImage.Update(SelectionOutlines.Styles, SelectionOutlines.StylesVersion) : UINT32_MAX;
+    const bool outlining = mask.has_value() && styleImage != UINT32_MAX;
+    if (!outlining)
+        Targets.ReleaseOutlineMask(viewport.Id);
+    RecordSceneThenDisplay(
+        frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, ViewOutput,
+        [&](const FrameContext& local) { DrawViewportScene(local, viewport, camera); },
+        [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); },
+        !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
+            SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
+            Forward.DrawOutlineMask(between,
+                                    OutlineMaskAttachments{ .MaskImage = mask->ColorImage,
+                                                            .MaskView = mask->ColorView,
+                                                            .MaskAccess = mask->ColorAccess,
+                                                            .Extent = mask->Extent,
+                                                            .DepthView = target.DepthView,
+                                                            .DepthFormat = VK_FORMAT_D32_SFLOAT },
+                                    camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
+                                    SelectionOutlines);
+            post.OutlineMaskBindless = mask->BindlessIndex;
+            post.OutlineStyleBindless = styleImage;
+            post.OutlineMaxWidthPixels = SelectionOutlines.MaxWidthPixels;
+            post.OutlineScissor = OutlineScissorFor(SelectionOutlines, target.Extent);
+        },
+        &post);
 
     if (BloomEnabled)
         RecordViewportBloom(frame, viewport, target, camera);
 
     viewport.RegionMin = savedMin;
     viewport.RegionMax = savedMax;
+}
+
+// What the output pass transforms: light the scene emits. Colours tuned as editor
+// chrome draw in DrawViewportChrome instead, against this depth.
+void EditorRenderFeature::DrawViewportScene(const FrameContext& local, EditorViewport& viewport,
+                                            const CameraRenderData& camera)
+{
+    EditorDocument& focusDocument = World.FocusDocument();
+    const EditorScene& scene = focusDocument.GetScene();
+
+    const RenderLightSet& viewLights = QueueBuilder->Lights();
+    if (viewport.Orientation == ViewportOrientation::Perspective && viewLights.SkyEnabled)
+    {
+        Sky.Draw(local, MakeInverseSkyViewProjection(camera.View, camera.Projection),
+                 SkyGradientParams{ .Top = viewLights.AmbientSky, .Bottom = viewLights.AmbientGround });
+    }
+
+    // Context zones (open, visible, not the focus) render dimmed and reduced:
+    // no selection highlight, no hover glow; picking never sees them, so they
+    // read as present but inert.
+    World.VisitOpenZones(
+        [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
+        {
+            if (&document == &focusDocument || !view.VisibleInEditor
+                || viewport.Shading != ViewportShading::Solid)
+                return;
+            const EditorScene& contextScene = document.GetScene();
+            // Real materials under the grey overlay when the WYSIWYG path is up;
+            // the checker fallback only without an asset system.
+            const auto it = ContextBuilders.find(zone.Value);
+            if (!MaterialPath || it == ContextBuilders.end())
+            {
+                BrushSolid.DrawViewportTinted(local, viewport, camera, contextScene, EditorTheme::ContextZoneDim);
+                return;
+            }
+            // Full-bright neutral ambient under a translucent grey wash: the
+            // textures stay readable and the grey does not depend on whether a
+            // focus-zone light happens to reach this zone.
+            RenderLightSet contextLights;
+            contextLights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
+            contextLights.AmbientGround = Vec<3>(1.0f, 1.0f, 1.0f);
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+            contextLights.DebugView = WorldView.DebugViewMode;
+#endif
+            Forward.Draw(local, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                              .Lights = contextLights,
+                                                              .Queue = it->second->BrushQueue(),
+                                                              .Meshes = *MeshCache,
+                                                              .Materials = *MaterialStore,
+                                                              .SkinnedMeshes = SkinnedMeshCacheRef });
+            // Placed meshes cannot receive the brush-triangle wash, so the overlay
+            // folds into their multiply tint instead (exact on white, close on
+            // bright textures).
+            const Vec4& wash = EditorTheme::ContextZoneOverlay;
+            const Vec4 meshDim(1.0f - wash.W + wash.X * wash.W, 1.0f - wash.W + wash.Y * wash.W,
+                               1.0f - wash.W + wash.Z * wash.W, 1.0f);
+            Forward.Draw(local, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                              .Lights = contextLights,
+                                                              .Queue = it->second->MeshQueue(),
+                                                              .Meshes = *MeshCache,
+                                                              .Materials = *MaterialStore,
+                                                              .SkinnedMeshes = SkinnedMeshCacheRef,
+                                                              .Tint = meshDim });
+            BrushFills.DrawZoneOverlay(local, viewport, camera, contextScene, EditorTheme::ContextZoneOverlay);
+        });
+
+    // The focus zone renders exactly as a single document does.
+    if (viewport.Shading == ViewportShading::Solid)
+    {
+        if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
+            body->DrawViewport(local, viewport, camera, scene);
+    }
+    // Placed meshes draw in every viewport so they read regardless of shading: through
+    // the real-material queue when active, else the procedural-checker fallback.
+    if (MaterialPath)
+    {
+        Forward.Draw(local, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                          .Lights = QueueBuilder->Lights(),
+                                                          .Queue = QueueBuilder->MeshQueue(),
+                                                          .Meshes = *MeshCache,
+                                                          .Materials = *MaterialStore,
+                                                          .SkinnedMeshes = SkinnedMeshCacheRef });
+    }
+    else
+        Meshes.DrawViewport(local, viewport, camera, scene);
+    if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
+        MaterialPath && ghost != nullptr && ghost->Staged().Queues() != nullptr)
+        DrawStageSolid(local, camera, ghost->Staged(), EditorTheme::PlacementGhostTint);
+    if (MaterialPath && Drafts)
+    {
+        if (const DocumentStage* added = Drafts->Added(); added != nullptr && added->Queues() != nullptr)
+            DrawStageSolid(local, camera, *added, EditorTheme::DraftAddedTint);
+        if (const DocumentStage* removed = Drafts->Removed(); removed != nullptr && removed->Queues() != nullptr)
+            DrawStageSolid(local, camera, *removed, EditorTheme::DraftRemovedTint);
+    }
+}
+
+void EditorRenderFeature::DrawViewportChrome(const FrameContext& local, EditorViewport& viewport,
+                                             const CameraRenderData& camera)
+{
+    EditorDocument& focusDocument = World.FocusDocument();
+    const EditorScene& scene = focusDocument.GetScene();
+
+    // A perspective viewport shows the game's background; an ortho one keeps the
+    // flat editor backdrop, since a sky in a 2D working view describes nothing.
+    // Depth-tested at the far plane, so it fills only what the scene left empty.
+    if (viewport.Orientation != ViewportOrientation::Perspective || !QueueBuilder->Lights().SkyEnabled)
+        Backdrop.DrawViewport(local.Cmd, viewport, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+    Grid.DrawViewport(local.Cmd, viewport, camera, GridCfg, GridStyleCache, local.TargetExtent, local.TargetFormat, local.DepthFormat);
+
+    World.VisitOpenZones(
+        [&](ZoneId zone, EditorDocument& document, const ZoneViewState& view)
+        {
+            if (&document == &focusDocument || !view.VisibleInEditor)
+                return;
+            const EditorScene& contextScene = document.GetScene();
+            if (viewport.Shading != ViewportShading::Solid)
+            {
+                const Vec4 dimmedWire(EditorTheme::ContextZoneDim.X, 0.0f, 0.0f, 1.0f);
+                const auto it = ContextBuilders.find(zone.Value);
+                if (SceneWire && it != ContextBuilders.end())
+                    SceneWire->DrawWireframe(local, viewport, camera, contextScene,
+                                             it->second->BrushDraws(), dimmedWire);
+                else
+                    Wireframe.DrawWireframe(local, viewport, camera, contextScene, dimmedWire);
+            }
+            Visuals.DrawViewport(local, viewport, camera, contextScene, EditorTheme::ContextZoneDim);
+        });
+
+    if (viewport.Shading != ViewportShading::Solid)
+    {
+        if (IBrushBodyRenderer* body = BodyRenderers[static_cast<std::size_t>(viewport.Shading)])
+            body->DrawViewport(local, viewport, camera, scene);
+    }
+    if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
+        MaterialPath && ghost != nullptr && ghost->Staged().Queues() != nullptr)
+        Visuals.DrawViewport(local, viewport, camera, ghost->Staged().Scene(), EditorTheme::PlacementGhostTint);
+    if (MaterialPath && Drafts)
+    {
+        if (const DocumentStage* added = Drafts->Added(); added != nullptr && added->Queues() != nullptr)
+        {
+            Visuals.DrawViewport(local, viewport, camera, added->Scene(), EditorTheme::DraftAddedTint);
+            Volumes.DrawViewport(local, viewport, camera, added->Queues()->BrushDraws());
+        }
+        if (const DocumentStage* removed = Drafts->Removed(); removed != nullptr && removed->Queues() != nullptr)
+            Visuals.DrawViewport(local, viewport, camera, removed->Scene(), EditorTheme::DraftRemovedTint);
+    }
+    Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    if (QueueBuilder)
+        Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws(), &scene.GetRegistry());
+    IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
+    Highlight.DrawViewport(local, viewport, camera, scene, *Session());
+    if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
+        ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
+    if (WorldView.ShowZoneGraph)
+        ZoneGraph.DrawViewport(local, viewport, camera, World);
+    Affordances.DrawViewport(local, viewport, camera);
+    Preview.DrawViewport(local, viewport, camera);
+    Annotations.DrawViewport(local, viewport, camera);
 }
 
 void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorViewport& viewport,
@@ -835,6 +912,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         viewport.RegionMax = Vec2d(static_cast<float>(target.BloomExtent.width),
                                     static_cast<float>(target.BloomExtent.height));
 
+        OrderViewDepthAccess(frame.Cmd, target.DepthImage, VK_FORMAT_D32_SFLOAT);
         // Depth is attached but neither loaded nor stored: the wide-line pipeline
         // expects a depth format, and this pass does not test against it.
         RenderScopeDesc glowScope{};
@@ -891,6 +969,8 @@ void EditorRenderFeature::Teardown()
 
     Backdrop.Teardown();
     Sky.Teardown();
+    Output.Teardown();
+    SelectionStyleImage.Teardown();
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();

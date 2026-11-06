@@ -3,7 +3,7 @@
 
 // Everything reaching the blend stage here is LINEAR with PREMULTIPLIED alpha,
 // which is what the (ONE, ONE_MINUS_SRC_ALPHA) blend the pass sets up expects.
-// The swapchain is sRGB and encodes on write, so nothing is converted back.
+// The display target encodes on write, so nothing is converted back.
 //
 // Two texture classes arrive differently and are reconciled here:
 //

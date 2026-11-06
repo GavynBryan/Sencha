@@ -12,6 +12,7 @@ VulkanQueueService::VulkanQueueService(
     const VulkanBootstrapPolicy& policy)
     : Log(logging.GetLogger<VulkanQueueService>())
     , QueueFamilies(physicalDevice.GetQueueFamilies())
+    , SecondQueueRequired(policy.RequiredQueues.Compute || policy.RequiredQueues.Transfer)
 {
     if (!device.IsValid())
     {

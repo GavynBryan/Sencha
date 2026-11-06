@@ -48,16 +48,23 @@ Returning `false` is for "this feature cannot record legal commands".
 ### Phases
 
 ```cpp
-enum class RenderPhase : uint8_t { Offscreen = 0, MainColor = 1, Count };
+enum class RenderPhase : uint8_t
+{
+    Offscreen = 0, MainColor = 1, Post = 2, Output = 3,
+    ApplicationUi = 4, DevelopmentOverlay = 5, Count
+};
 ```
 
 | Phase | Rendering scope | Used by |
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
-| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature`, the ImGui debug overlay |
+| `MainColor` | the scene target plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature` |
+| `Post` | none is opened. The feature owns its own passes, reading the scene through `FrameContext` | `PostRenderFeature` |
+| `Output` | the swapchain scope is already open, and this is its first draw | `OutputRenderFeature` |
+| `ApplicationUi` | the same swapchain scope | `UiRenderFeature` |
+| `DevelopmentOverlay` | the same swapchain scope | the ImGui debug overlay |
 
-The enum comment reserves Shadow, Opaque, Transparent, UI, and Post. Adding one
-means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
+Adding a phase means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
 the feature interface does not change. The phase bucket array is sized by
 `RenderPhase::Count`, and an empty bucket costs one branch.
 
@@ -335,11 +342,11 @@ editor frame spends around 68 KiB of its slice here. Layout is asserted field by
 | 64 | `ViewPositionTime` | xyz camera position, w unused |
 | 80 | `AmbientSky` |  |
 | 96 | `AmbientGround` |  |
-| 112 | `StyleParams` | x diffuse wrap, y minimum ambient, z exposure, w tonemap knee |
-| 128 | `LightCount` |  |
-| 132 | `TonemapEnabled` |  |
-| 136 | `ShadowDarkness` |  |
-| 140 | `BakedDirectEnabled` |  |
+| 112 | `DiffuseWrap` |  |
+| 116 | `MinAmbient` |  |
+| 120 | `ShadowDarkness` |  |
+| 124 | `BakedDirectEnabled` |  |
+| 128 | `LightCount` | and three pads |
 | 144 | `Lights[64]` | `GpuLight`, 64 bytes each |
 | 4240 | `SpotShadowCount` |  |
 | 4244 | `BakedAoEnabled` |  |
@@ -507,7 +514,6 @@ attachment and no second pipeline variant for hosts that lack one.
 |---|---|
 | inverse view-projection | `MakeInverseSkyViewProjection` in `render/CameraProjection.h`, which strips the view translation so the result is a direction and the gradient does not slide with the camera |
 | `SkyGradientParams` colours | two linear-RGB values. The seam a future authored environment record fills instead of the cvars |
-| `SkyGradientParams` output transform | exposure, tonemap knee, tonemap on/off, applied through the shared `tonemap.glsli`. Without it the background sits in a different display space than the geometry, and raising `render.exposure` brightens the scene but not the sky it is lit by |
 
 Everything fits in a 96-byte push block, so the pass binds no descriptor sets
 and depends on neither the frame uniform nor the lighting bindings.

@@ -116,7 +116,8 @@ void RenderExtractionSystem::Extract(
     const CameraRenderData& camera,
     RenderQueue& queue,
     double interpolationAlpha,
-    SkinnedPoseFrameData* skinnedPoses)
+    SkinnedPoseFrameData* skinnedPoses,
+    OutlineFrame* outlines)
 {
     if (!world.IsRegistered<WorldTransform>()
         || !world.IsRegistered<StaticMeshComponent>())
@@ -129,12 +130,12 @@ void RenderExtractionSystem::Extract(
     const bool skinnedRegistered = world.IsRegistered<SkinnedMeshComponent>();
     EnsureQueries(world, skinnedRegistered);
 
-    EmitStaticMeshes(partitions, caches, camera, queue, interpolationAlpha);
+    EmitStaticMeshes(partitions, caches, camera, queue, interpolationAlpha, outlines);
 
     if (caches.SkinnedMeshes == nullptr || !skinnedRegistered)
         return;
     EmitSkinnedMeshes(world, partitions, caches, camera, queue,
-                      interpolationAlpha, skinnedPoses);
+                      interpolationAlpha, skinnedPoses, outlines);
 }
 
 void RenderExtractionSystem::ResolveLightmaps(
@@ -173,7 +174,7 @@ void RenderExtractionSystem::EnsureQueries(const World& world,
 void RenderExtractionSystem::EmitStaticMeshes(
     const StoragePartitionSet& partitions, const RenderExtractCaches& caches,
     const CameraRenderData& camera, RenderQueue& queue,
-    double interpolationAlpha)
+    double interpolationAlpha, OutlineFrame* outlines)
 {
     // Whether an entity carries pose history is an archetype property, so the
     // two paths are separate chunk walks rather than a per-entity branch.
@@ -230,6 +231,9 @@ void RenderExtractionSystem::EmitStaticMeshes(
             instance.LightmapScaleBias = renderer.LightmapScaleBias;
             EmitMeshSections(instance, *mesh, *sectionMaterials,
                              caches.Materials, queue);
+            if (outlines != nullptr)
+                if (RenderQueue* mask = outlines->QueueFor(view.Entity(i)))
+                    EmitMeshSections(instance, *mesh, *sectionMaterials, caches.Materials, *mask);
         }
     };
 
@@ -256,7 +260,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     const World& world, const StoragePartitionSet& partitions,
     const RenderExtractCaches& caches, const CameraRenderData& camera,
     RenderQueue& queue, double interpolationAlpha,
-    SkinnedPoseFrameData* skinnedPoses)
+    SkinnedPoseFrameData* skinnedPoses, OutlineFrame* outlines)
 {
     const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
 
@@ -316,6 +320,20 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             instance.PoseSlot = poseSlot;
             EmitMeshSections(instance, *mesh, *sectionMaterials,
                              caches.Materials, queue);
+            if (outlines != nullptr)
+                if (RenderQueue* mask = outlines->QueueFor(view.Entity(i)))
+                {
+                    // The composite is scissored to these bounds, so they have to hold the pose.
+                    MeshDrawInstance outlined = instance;
+                    if (poseSlot != UINT32_MAX && skinnedPoses != nullptr)
+                    {
+                        const SkinnedPoseInstance& pose = skinnedPoses->Instances[poseSlot];
+                        outlined.WorldBounds = PosedWorldBounds(
+                            mesh->LocalBounds, worldMatrix,
+                            std::span<const Mat4>(skinnedPoses->Palettes).subspan(pose.PaletteOffset, pose.JointCount));
+                    }
+                    EmitMeshSections(outlined, *mesh, *sectionMaterials, caches.Materials, *mask);
+                }
         }
     };
 

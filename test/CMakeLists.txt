@@ -374,7 +374,8 @@ file(GLOB_RECURSE PRESENTATION_TEST_SOURCES CONFIGURE_DEPENDS
 if(PRESENTATION_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
     add_executable(presentation_tests ${PRESENTATION_TEST_SOURCES})
     target_link_libraries(presentation_tests PRIVATE sencha_engine GTest::gtest_main)
-    target_include_directories(presentation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
+    target_include_directories(presentation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support
+                               ${CMAKE_BINARY_DIR}/engine/generated)
     list(APPEND SENCHA_TEST_TARGETS presentation_tests)
 endif()
 

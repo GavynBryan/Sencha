@@ -106,6 +106,21 @@ struct RendererServices
     UiTextureResidency* UiTextures = nullptr;
 };
 
+// What the Post phase leaves for the Output phase of one presentation.
+struct ScenePostState
+{
+    // The image to present in place of the scene; UINT32_MAX when nothing replaced it.
+    std::uint32_t PresentColorBindless = UINT32_MAX;
+    // The output transform has already run, inside the effect chain.
+    bool TransformApplied = false;
+    // The outline composite's inputs, UINT32_MAX while nothing is highlighted.
+    std::uint32_t OutlineMaskBindless = UINT32_MAX;
+    std::uint32_t OutlineStyleBindless = UINT32_MAX;
+    float OutlineMaxWidthPixels = 0.0f;
+    // Where the composite can land: the highlighted objects' bounds on screen.
+    VkRect2D OutlineScissor{};
+};
+
 // Small dense payload handed to OnDraw(). Everything a feature needs to
 // record draws for one frame lives right here -- no pointer chases into
 // the Renderer or the frame service.
@@ -124,6 +139,12 @@ struct FrameContext
     // is a mismatch rather than an omission.
     VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
     RenderPhase Phase = RenderPhase::MainColor;
+    // The scene this presentation drew this frame, for a pass to sample after
+    // the scene scope closes. UINT32_MAX until then, and on a frame with none.
+    std::uint32_t SceneColorBindless = UINT32_MAX;
+    VkExtent2D SceneExtent{};
+    // Set for the phases of a presentation's frame; null in an editor view.
+    ScenePostState* ScenePost = nullptr;
     // Fence-anchored frame clock. A feature releasing a GPU resource the
     // renderer may still be reading stamps it from here and frees it once this
     // reports it retired, rather than counting frames itself.
@@ -138,6 +159,11 @@ struct FrameContext
 // The attachment formats the swapchain scope binds, for a pass compiling its
 // pipelines at load rather than on the first frame that records them.
 [[nodiscard]] FrameContext SwapchainScopeFormats(const RendererServices& services);
+
+// The scene scope's colour attachment, in every presentation. MainColor features
+// compile against this and the swapchain's depth and stencil.
+inline constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+[[nodiscard]] FrameContext SceneScopeFormats(const RendererServices& services);
 
 struct RendererFrameTiming
 {
@@ -316,6 +342,13 @@ private:
     void TearDownRegisteredAt(std::size_t index);
     void WaitForDeviceIdle();
 
+    [[nodiscard]] bool HasFeatureFor(RenderPhase phase, PresentationId presentation) const;
+    void RecordPresentationPhase(const FrameContext& context, RenderPhase phase, PresentationId presentation) const;
+
     void RecordOffscreenPhase(const VulkanFrame& frame);
-    void RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation);
+    // Leaves the frame's scene in `context` for the two phases after it.
+    void RecordScenePhase(FrameContext& context, const AcquiredPresentation& presentation);
+    void RecordPostPhase(const FrameContext& context, const AcquiredPresentation& presentation);
+    void RecordSwapchainPhases(const VulkanFrame& frame, const FrameContext& context,
+                               const AcquiredPresentation& presentation);
 };

@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "settings": {
+    "default_material": "asset://materials/dev/gray.smat"
+  },
+  "id": "3b7e22c4d1f09a58",
+  "entities": [
+    {
+      "id": "05ade10000000001",
+      "components": {
+        "Transform": {
+          "local": {
+            "position": [
+              3.0,
+              1.0,
+              1.0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              2,
+              2,
+              30
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/green.smat"
+          ],
+          "visible": true,
+          "section_mask": 4294967295
+        }
+      }
+    }
+  ]
+}

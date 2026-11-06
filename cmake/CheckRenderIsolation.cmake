@@ -27,7 +27,7 @@
 # RENDER_PASS_DRIVERS are the files licensed to drive the recording set: the
 # render/feature/ units, whose whole job is handing render-domain state to a
 # pass, plus ProbeVolumeSet.cpp, which publishes probe images into the
-# lighting bindings. Two feature headers additionally hold a backend pass by
+# lighting bindings. Five feature headers additionally hold a backend pass by
 # value (the SkyRenderFeature precedent: the pass takes plain data and names
 # no render-domain type, so the recording set did not grow); each is licensed
 # for exactly the one pass header it owns, nothing else.
@@ -69,10 +69,16 @@ set(RENDER_PASS_DRIVERS
     "/engine/include/render/feature/MeshRenderFeature.h"
     "/engine/include/render/feature/ShadowRenderFeature.h"
     "/engine/include/render/feature/SkyRenderFeature.h"
+    "/engine/include/render/feature/OutputRenderFeature.h"
+    "/engine/include/render/feature/PostRenderFeature.h"
+    "/engine/include/render/feature/OutlineRenderFeature.h"
     "/engine/include/render/feature/SkinnedPoseRenderFeature.h"
     "/engine/src/render/feature/MeshRenderFeature.cpp"
     "/engine/src/render/feature/ShadowRenderFeature.cpp"
     "/engine/src/render/feature/SkyRenderFeature.cpp"
+    "/engine/src/render/feature/OutputRenderFeature.cpp"
+    "/engine/src/render/feature/PostRenderFeature.cpp"
+    "/engine/src/render/feature/OutlineRenderFeature.cpp"
     "/engine/src/render/feature/SkinnedPoseRenderFeature.cpp"
     "/engine/src/render/ProbeVolumeSet.cpp"  # publishes probe images into LightBindings
 )
@@ -81,6 +87,9 @@ set(RENDER_PASS_DRIVERS
 # these may include, because it holds that pass by value.
 set(RENDER_DRIVER_BACKEND_PAIRS
     "/engine/include/render/feature/SkyRenderFeature.h=graphics/vulkan/SkyGradientPass.h"
+    "/engine/include/render/feature/OutputRenderFeature.h=graphics/vulkan/OutputTransformPass.h"
+    "/engine/include/render/feature/PostRenderFeature.h=graphics/vulkan/PostEffectChain.h"
+    "/engine/include/render/feature/OutlineRenderFeature.h=graphics/vulkan/OutlineMaskTargets.h"
     "/engine/include/render/feature/UiRenderFeature.h=graphics/vulkan/UiDrawPass.h"
     "/engine/include/render/feature/SkinnedPoseRenderFeature.h=graphics/vulkan/SkinnedPosePass.h"
     "/engine/include/render/feature/DebugLineRenderFeature.h=graphics/vulkan/DebugLinePass.h"

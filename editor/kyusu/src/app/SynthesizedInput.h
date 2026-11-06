@@ -19,6 +19,8 @@ class ConsoleRegistry;
 class SynthesizedInput
 {
 public:
+    ~SynthesizedInput();
+
     // `window` answers the id of the window the events are for.
     void Register(ConsoleRegistry& registry, std::function<std::uint32_t()> window);
 
@@ -26,6 +28,8 @@ public:
     void Advance();
 
 private:
+    static bool SDLCALL OnlyScripted(void* self, SDL_Event* event);
+
     struct Pending
     {
         std::uint64_t AtFrame = 0;
@@ -40,4 +44,6 @@ private:
     float PointerY = 0.0f;
     SDL_Keymod Modifiers = SDL_KMOD_NONE;
     SDL_MouseButtonFlags Buttons = 0;
+    bool Exclusive = false;
+    bool Pushing = false;
 };

@@ -1,18 +1,15 @@
 #include "EditorBloomPass.h"
 
 #include <graphics/vulkan/RenderTargetSession.h>
-#include <graphics/vulkan/VulkanDescriptorCache.h>
-#include <graphics/vulkan/VulkanDeviceService.h>
-#include <graphics/vulkan/VulkanPipelineCache.h>
 
 #include <math/Vec.h>
 
 #include <shaders/kBloomBrightpassFragSpv.h>
 #include <shaders/kBloomBlurFragSpv.h>
 #include <shaders/kBloomCompositeFragSpv.h>
-#include <shaders/kFullscreenVertSpv.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 
 namespace
@@ -33,89 +30,45 @@ struct BloomPush
 
 void EditorBloomPass::Setup(const RendererServices& services)
 {
-    Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
     Shaders = services.Shaders;
-    Pipelines = services.Pipelines;
-    Descriptors = services.Descriptors;
-    if (Device == VK_NULL_HANDLE || Shaders == nullptr || Pipelines == nullptr || Descriptors == nullptr)
-        return; // bloom unavailable; Record() early-outs while Layout stays null
+    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(BloomPush)))
+        return; // bloom unavailable; Record() early-outs while no pipeline builds
 
-    VertShader = Shaders->CreateModuleFromSpirv(kFullscreenVertSpv, kFullscreenVertSpvWordCount, "Fullscreen vertex");
     BrightFrag = Shaders->CreateModuleFromSpirv(kBloomBrightpassFragSpv, kBloomBrightpassFragSpvWordCount, "Bloom bright");
     BlurFrag = Shaders->CreateModuleFromSpirv(kBloomBlurFragSpv, kBloomBlurFragSpvWordCount, "Bloom blur");
     CompositeFrag = Shaders->CreateModuleFromSpirv(kBloomCompositeFragSpv, kBloomCompositeFragSpvWordCount, "Bloom composite");
-
-    // Layout: just the engine's bindless image set (bound at set 0 here) + the push
-    // constant. No frame UBO, so no descriptor the editor would have to fill.
-    VkPushConstantRange pushRange{};
-    pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushRange.offset = 0;
-    pushRange.size = sizeof(BloomPush);
-
-    VkDescriptorSetLayout setLayout = Descriptors->GetBindlessSetLayout();
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &setLayout;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &pushRange;
-    vkCreatePipelineLayout(Device, &layoutInfo, nullptr, &Layout);
 }
 
-VkPipeline EditorBloomPass::EnsurePipeline(Pass pass, VkFormat colorFormat)
+bool EditorBloomPass::EnsurePipelines(VkFormat colorFormat)
 {
-    if (CachedFormat != colorFormat)
-    {
-        PassPipelines[0] = PassPipelines[1] = PassPipelines[2] = VK_NULL_HANDLE;
-        CachedFormat = colorFormat;
-    }
-    if (PassPipelines[pass] != VK_NULL_HANDLE)
-        return PassPipelines[pass];
-
-    ColorBlendAttachmentDesc blend{};
-    if (pass == Composite) // additive: add the glow over the scene
-    {
-        blend.BlendEnable = true;
-        blend.SrcColor = VK_BLEND_FACTOR_ONE;
-        blend.DstColor = VK_BLEND_FACTOR_ONE;
-        blend.ColorOp = VK_BLEND_OP_ADD;
-        blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
-        blend.DstAlpha = VK_BLEND_FACTOR_ONE;
-        blend.AlphaOp = VK_BLEND_OP_ADD;
-    }
-
-    GraphicsPipelineDesc desc{};
-    desc.VertexShader = VertShader;
-    desc.FragmentShader = pass == Bright ? BrightFrag : (pass == Blur ? BlurFrag : CompositeFrag);
-    desc.Layout = Layout;
-    desc.Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    desc.CullMode = VK_CULL_MODE_NONE;
-    desc.DepthTest = false;
-    desc.DepthWrite = false;
-    desc.ColorBlend = { blend };
-    desc.ColorFormats = { colorFormat };
-    desc.DepthFormat = VK_FORMAT_UNDEFINED;
-    PassPipelines[pass] = Pipelines->GetGraphicsPipeline(desc);
-    return PassPipelines[pass];
+    return Pipelines.Ensure(colorFormat, [&](std::size_t pass) {
+        ColorBlendAttachmentDesc blend{};
+        if (pass == Composite) // additive: add the glow over the scene
+        {
+            blend.BlendEnable = true;
+            blend.SrcColor = VK_BLEND_FACTOR_ONE;
+            blend.DstColor = VK_BLEND_FACTOR_ONE;
+            blend.ColorOp = VK_BLEND_OP_ADD;
+            blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
+            blend.DstAlpha = VK_BLEND_FACTOR_ONE;
+            blend.AlphaOp = VK_BLEND_OP_ADD;
+        }
+        const ShaderHandle fragment = pass == Bright ? BrightFrag : (pass == Blur ? BlurFrag : CompositeFrag);
+        return Fullscreen.BuildPipeline(fragment, AttachmentFormatKey{ .Color = colorFormat }, blend);
+    });
 }
 
 void EditorBloomPass::Record(const FrameContext& frame,
                              const ViewportTargetCache::RenderView& t,
                              const BloomParams& params)
 {
-    if (Descriptors == nullptr || Layout == VK_NULL_HANDLE
-        || t.BloomImage[0] == VK_NULL_HANDLE || t.BloomImage[1] == VK_NULL_HANDLE)
+    if (t.BloomImage[0] == VK_NULL_HANDLE || t.BloomImage[1] == VK_NULL_HANDLE || !EnsurePipelines(kHdrFormat))
         return;
 
     const VkCommandBuffer cmd = frame.Cmd;
-    const VkPipeline bright = EnsurePipeline(Bright, kHdrFormat);
-    const VkPipeline blur = EnsurePipeline(Blur, kHdrFormat);
-    const VkPipeline composite = EnsurePipeline(Composite, kHdrFormat);
-    if (bright == VK_NULL_HANDLE || blur == VK_NULL_HANDLE || composite == VK_NULL_HANDLE)
-        return;
-
-    const VkDescriptorSet bindless = Descriptors->GetBindlessSet();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Layout, 0, 1, &bindless, 0, nullptr);
+    const VkPipeline bright = Pipelines.Get(Bright);
+    const VkPipeline blur = Pipelines.Get(Blur);
+    const VkPipeline composite = Pipelines.Get(Composite);
 
     // One full-screen pass, bracketed by a session: dst becomes an attachment,
     // the draw happens, dst goes back to sampled.
@@ -141,14 +94,7 @@ void EditorBloomPass::Record(const FrameContext& frame,
         info.colorAttachmentCount = 1;
         info.pColorAttachments = &color;
         vkCmdBeginRendering(cmd, &info);
-
-        VkViewport vp{ 0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f };
-        VkRect2D sc{ { 0, 0 }, extent };
-        vkCmdSetViewport(cmd, 0, 1, &vp);
-        vkCmdSetScissor(cmd, 0, 1, &sc);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdPushConstants(cmd, Layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        Fullscreen.Draw(cmd, extent, pipeline, &push);
         vkCmdEndRendering(cmd);
     };
 
@@ -184,26 +130,16 @@ void EditorBloomPass::Record(const FrameContext& frame,
 
 void EditorBloomPass::Teardown()
 {
+    Pipelines.Reset();
+    Fullscreen.Teardown();
     if (Shaders != nullptr)
     {
-        Shaders->Destroy(VertShader);
         Shaders->Destroy(BrightFrag);
         Shaders->Destroy(BlurFrag);
         Shaders->Destroy(CompositeFrag);
-        VertShader = {};
         BrightFrag = {};
         BlurFrag = {};
         CompositeFrag = {};
     }
-    if (Device != VK_NULL_HANDLE && Layout != VK_NULL_HANDLE)
-    {
-        vkDestroyPipelineLayout(Device, Layout, nullptr);
-        Layout = VK_NULL_HANDLE;
-    }
-    PassPipelines[0] = PassPipelines[1] = PassPipelines[2] = VK_NULL_HANDLE;
-    CachedFormat = VK_FORMAT_UNDEFINED;
-    Descriptors = nullptr;
-    Pipelines = nullptr;
     Shaders = nullptr;
-    Device = VK_NULL_HANDLE;
 }

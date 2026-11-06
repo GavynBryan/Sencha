@@ -2,6 +2,7 @@
 
 #include <app/EngineSchedule.h>
 #include <app/PresentationPhase.h>
+#include <graphics/RenderExtent.h>
 #include <camera/CameraEffects.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>

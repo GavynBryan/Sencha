@@ -1,0 +1,21 @@
+// Where a mesh vertex lands, for every shader that must agree on its depth. The
+// outline mask draws forward's triangles again and tests against forward's depth,
+// so one expression and an invariant position are what keep them equal.
+
+invariant gl_Position;
+
+layout(location = 0) in vec3 inPosition;
+layout(location = 3) in vec4 inWorld0;
+layout(location = 4) in vec4 inWorld1;
+layout(location = 5) in vec4 inWorld2;
+layout(location = 6) in vec4 inWorld3;
+
+mat4 InstanceWorld()
+{
+    return mat4(inWorld0, inWorld1, inWorld2, inWorld3);
+}
+
+vec4 MeshClipPosition(vec4 worldPosition)
+{
+    return frame.ViewProjection * worldPosition;
+}

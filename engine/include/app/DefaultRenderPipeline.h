@@ -7,6 +7,9 @@
 #include <render/extract/DebugLineExtraction.h>
 #include <render/extract/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
+#include <render/OutputTransformParams.h>
+#include <render/outline/OutlineContributions.h>
+#include <render/post/PostEffectContributions.h>
 #include <render/MaterialSetCache.h>
 #include <render/ProbeVolumeSet.h>
 #include <render/extract/RenderExtractionSystem.h>
@@ -55,6 +58,9 @@ public:
 
     // The engine's instrumentation bundle; extraction publishes its frame
     // counters through it while the mode is Counters or above.
+    // Before AddMeshRenderFeature: the catalog the effect chain runs from.
+    void SetPostEffectCatalog(const PostEffectCatalog* catalog) { PostEffects = catalog; }
+
     void SetInstrumentation(const RenderInstrumentation* instrumentation)
     {
         Instrumentation = instrumentation;
@@ -81,6 +87,10 @@ private:
 
     RenderQueue Queue;
     RenderLightSet Lights;
+    OutputTransformParams Output;
+    const PostEffectCatalog* PostEffects = nullptr;
+    PostEffectFrame PostEffectsThisFrame;
+    OutlineFrame Outlines;
     // The frame's skinned instances and their palettes. Extraction fills it,
     // the Offscreen pose feature poses them, the mesh feature draws them; the
     // shared pointer is the channel between the two features.

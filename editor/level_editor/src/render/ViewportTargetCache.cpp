@@ -1,5 +1,6 @@
 #include "ViewportTargetCache.h"
 
+#include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
 #include <algorithm>
@@ -45,18 +46,32 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
     if (Entry* existing = Find(id))
         return *existing;
 
-    RenderTargetDesc scene{};
-    scene.ColorFormat = kColorFormat;
+    RenderTargetDesc display{};
+    display.ColorFormat = kColorFormat;
     // Depth only, deliberately not the swapchain's format. That one carries a
     // stencil aspect for authored UI's clip mask, and a viewport target has no
     // use for one -- inheriting it would make every barrier on these images a
     // combined-aspect barrier for a feature they do not have.
-    scene.DepthFormat = VK_FORMAT_D32_SFLOAT;
+    display.DepthFormat = VK_FORMAT_D32_SFLOAT;
     // Nearest, not linear: the target is shown 1:1, and bilinear resampling
     // beats against the 1px grid and wireframe lines (moire).
+    display.Read = RenderTargetRead::Bindless;
+    display.Sampler = Services.Samplers->GetNearestClamp();
+    display.DebugName = "viewport_color";
+
+    RenderTargetDesc scene{};
+    scene.ColorFormat = kSceneColorFormat;
     scene.Read = RenderTargetRead::Bindless;
     scene.Sampler = Services.Samplers->GetNearestClamp();
-    scene.DebugName = "viewport_color";
+    scene.DebugName = "viewport_scene";
+    scene.Lifetime = RenderTargetLifetime::WithinFrame;
+
+    RenderTargetDesc mask{};
+    mask.ColorFormat = kOutlineMaskFormat;
+    mask.Read = RenderTargetRead::Bindless;
+    mask.Sampler = Services.Samplers->GetNearestClamp();
+    mask.DebugName = "viewport_outline_mask";
+    mask.Lifetime = RenderTargetLifetime::WithinFrame;
 
     // Full resolution, not half: a half-res glow source stair-steps the
     // wireframe lines, and the blur cannot smooth diagonal stair-steps, so the
@@ -70,7 +85,9 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 
     Entries.push_back(Entry{
         .Id = id,
+        .Display = Store.Create(display),
         .Scene = Store.Create(scene),
+        .OutlineMask = Store.Create(mask),
         .Bloom = { Store.Create(bloom), Store.Create(bloom) },
     });
     return Entries.back();
@@ -78,7 +95,9 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 
 void ViewportTargetCache::Release(Entry& entry)
 {
+    Store.Destroy(entry.Display);
     Store.Destroy(entry.Scene);
+    Store.Destroy(entry.OutlineMask);
     for (RenderTargetId& bloom : entry.Bloom)
         Store.Destroy(bloom);
 }
@@ -89,25 +108,30 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     if (entry == nullptr)
         return std::nullopt;
 
+    const std::optional<RenderTargetView> display = Store.Acquire(entry->Display);
     const std::optional<RenderTargetView> scene = Store.Acquire(entry->Scene);
-    if (!scene.has_value())
+    if (!display.has_value() || !scene.has_value())
         return std::nullopt;
     const std::optional<RenderTargetView> bloom0 = Store.Acquire(entry->Bloom[0]);
     const std::optional<RenderTargetView> bloom1 = Store.Acquire(entry->Bloom[1]);
-    // The scene target is what the viewport needs to render at all; bloom is an
+    // These two are what the viewport needs to render at all; bloom is an
     // effect that degrades to off, so a failed bloom plane is not fatal here.
     // EditorBloomPass checks its images before recording.
     const bool haveBloom = bloom0.has_value() && bloom1.has_value();
 
     RenderView view{};
-    view.Scene = entry->Scene;
-    view.ColorImage = scene->ColorImage;
-    view.DepthImage = scene->DepthImage;
-    view.ColorView = scene->ColorView;
-    view.DepthView = scene->DepthView;
-    view.Extent = scene->Extent;
-    view.ColorLayout = scene->ColorLayout;
-    view.ColorBindless = scene->BindlessIndex;
+    view.Display = entry->Display;
+    view.ColorImage = display->ColorImage;
+    view.DepthImage = display->DepthImage;
+    view.ColorView = display->ColorView;
+    view.DepthView = display->DepthView;
+    view.Extent = display->Extent;
+    view.ColorLayout = display->ColorLayout;
+    view.ColorBindless = display->BindlessIndex;
+    view.SceneImage = scene->ColorImage;
+    view.SceneView = scene->ColorView;
+    view.SceneAccess = scene->ColorAccess;
+    view.SceneBindless = scene->BindlessIndex;
     if (haveBloom)
     {
         view.BloomImage[0] = bloom0->ColorImage;
@@ -121,6 +145,18 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
         view.BloomBindless[1] = bloom1->BindlessIndex;
     }
     return view;
+}
+
+std::optional<RenderTargetView> ViewportTargetCache::AcquireOutlineMask(ViewportId id)
+{
+    Entry* entry = Find(id);
+    return entry != nullptr ? Store.Acquire(entry->OutlineMask) : std::nullopt;
+}
+
+void ViewportTargetCache::ReleaseOutlineMask(ViewportId id)
+{
+    if (Entry* entry = Find(id))
+        Store.Evict(entry->OutlineMask);
 }
 
 void ViewportTargetCache::Prune(std::span<const ViewportId> live)
@@ -142,7 +178,9 @@ void ViewportTargetCache::Show(ViewportId id, VkExtent2D extent)
 {
     Displays.MarkDisplayed(id);
     Entry& entry = FindOrAdd(id);
+    Store.SetExtent(entry.Display, extent);
     Store.SetExtent(entry.Scene, extent);
+    Store.SetExtent(entry.OutlineMask, extent);
     for (RenderTargetId bloom : entry.Bloom)
         Store.SetExtent(bloom, extent);
 }

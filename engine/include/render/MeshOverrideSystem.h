@@ -10,8 +10,9 @@
 
 struct FrameUpdateContext;
 
-// Composes an entity's overrides again when its authored materials change
-// under them. Work is proportional to the entities that have overrides.
+// Takes back what a dead holder held, and composes an entity's overrides again
+// when its authored materials change under them. Work is proportional to the
+// entities that have overrides and the contributions held.
 // Registered only where a window presents.
 class MeshOverrideSystem
 {
