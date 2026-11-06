@@ -36,7 +36,8 @@ bool PostEffectChain::Setup(const RendererServices& services, const PostEffectCa
 {
     Catalog = &catalog;
     Shaders = services.Shaders;
-    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(PostEffectPush)) || !Transform.Setup(services))
+    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(PostEffectPush)) || !Transform.Setup(services)
+        || !Outlines.Setup(services))
         return false;
 
     Planes.Setup(services);
@@ -62,6 +63,7 @@ void PostEffectChain::Teardown()
         if (Shaders != nullptr)
             Shaders->Destroy(effect.Fragment);
     Compiled.clear();
+    Outlines.Teardown();
     Transform.Teardown();
     Fullscreen.Teardown();
     Shaders = nullptr;
@@ -127,7 +129,8 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
     std::uint32_t input = frame.SceneColorBindless;
     std::size_t target = 0;
 
-    const auto intoPlane = [&](const auto& draw) {
+    // `sceneDepth` attaches the scene's depth, read only, for a draw that tests against it.
+    const auto intoPlane = [&](const auto& draw, bool sceneDepth = false) {
         const RenderTargetView& plane = *planes[target];
         {
             RenderTargetSession session(frame.Cmd, plane.ColorImage, *plane.ColorAccess);
@@ -136,6 +139,20 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
             desc.Color.View = plane.ColorView;
             desc.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             desc.ColorFormat = kSceneColorFormat;
+            if (sceneDepth && frame.DepthView != VK_NULL_HANDLE)
+            {
+                desc.Depth.View = frame.DepthView;
+                desc.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+                desc.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
+                desc.DepthFormat = frame.DepthFormat;
+                if (frame.StencilFormat != VK_FORMAT_UNDEFINED)
+                {
+                    desc.Stencil.View = frame.DepthView;
+                    desc.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+                    desc.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
+                    desc.StencilFormat = frame.StencilFormat;
+                }
+            }
             desc.Phase = RenderPhase::Post;
             const RenderScope scope(frame, desc);
             draw(scope.Context());
@@ -169,13 +186,21 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
     });
     if (anyDisplay)
     {
-        intoPlane([&](const FrameContext& context) {
-            FrameContext source = context;
-            source.SceneColorBindless = input;
-            source.ScenePost = nullptr;
-            Transform.Draw(source, output);
-        });
+        const bool outlined = frame.ScenePost->OutlineMaskBindless != UINT32_MAX;
+        intoPlane(
+            [&](const FrameContext& context) {
+                FrameContext source = context;
+                source.SceneColorBindless = input;
+                source.ScenePost = nullptr;
+                Transform.Draw(source, output);
+                FrameContext outlines = context;
+                outlines.ScenePost = frame.ScenePost;
+                Outlines.Draw(outlines);
+            },
+            outlined);
         frame.ScenePost->TransformApplied = true;
+        // Drawn here, under the display effects; the output pass must not draw them again.
+        frame.ScenePost->OutlineMaskBindless = UINT32_MAX;
         for (const PostEffectFrameEntry& entry : effects.Entries)
             if (entry.Domain == PostEffectDomain::Display)
                 runEffect(entry);

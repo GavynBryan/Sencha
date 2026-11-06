@@ -13,6 +13,9 @@ registration, and starts each `Engine::Run` holding only the engine's effects. E
 compiles when the renderer sets up rather than on the frame it first has weight; one that
 fails to compile is skipped, and not tried again.
 
+When a display effect runs, the frame's outlines are drawn after the transform and before
+the display effects, so a fade covers them too. See [outlines.md](outlines.md).
+
 Compile the shader with `sencha_compile_shader` and embed it with `sencha_embed_spirv`,
 passing `SENCHA_SHADER_INCLUDE_DIR` as an include directory. Both ship in the SDK.
 

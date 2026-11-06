@@ -307,6 +307,14 @@ TEST(GoldenImage, OutlinesFollowPriorityOcclusionAndCutouts)
                  .ExtraArgs = "+set render_host.outline 1" });
 }
 
+// A display effect covers outlines like the rest of the frame: a half fade dims
+// them, where drawn after the chain they would stay at full strength.
+TEST(GoldenImage, AFadeCoversOutlinesToo)
+{
+    CheckScene({ .Name = "outline_fade", .Map = "levels/golden_outline", .EditorCook = true,
+                 .ExtraArgs = "+set render_host.outline 1 +set render_host.post.fade 0.5" });
+}
+
 // The scissor around the highlights clamps at every edge of the view.
 TEST(GoldenImage, AnOutlineIsClippedByTheViewNotByItsScissor)
 {

@@ -782,15 +782,17 @@ void MeshForwardPass::DrawOutlineMask(const FrameContext& frame, const OutlineMa
     desc.Color.View = attachments.MaskView;
     desc.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     desc.ColorFormat = kOutlineMaskFormat;
+    // Read only: the mask tests against the scene's depth and writes none, and a
+    // store would count as a write a later reader in the phase must be ordered after.
     desc.Depth.View = attachments.DepthView;
     desc.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    desc.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    desc.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
     desc.DepthFormat = attachments.DepthFormat;
     if (attachments.StencilFormat != VK_FORMAT_UNDEFINED)
     {
         desc.Stencil.View = attachments.DepthView;
-        desc.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        desc.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        desc.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        desc.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
         desc.StencilFormat = attachments.StencilFormat;
     }
     desc.Phase = RenderPhase::Post;

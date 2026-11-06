@@ -49,6 +49,13 @@ holder's death, or the entity's.
   something nearer than that stands, and kept where the floor beside a box's base is only
   millimetres nearer. The view's projection rows (`OutlineDepthTermsOf`) let it move a depth
   by a distance in a perspective or an orthographic view.
+- **Under display effects.** When the chain runs a display effect, it draws the outlines into
+  its plane right after the transform, with the scene's depth attached read only, and the
+  output pass then draws none, so a fade covers them like the rest of the frame
+  (`outline_fade`). A scene-domain effect still runs before they are drawn, so an outline does
+  not follow a displacement. The mask scope stores neither depth nor stencil
+  (`VK_ATTACHMENT_STORE_OP_NONE`), so the two scopes reading them in one phase need no barrier
+  between them.
 - **The bounds.** They must hold what the mask drew or the outline is cut off. A skinned item
   uses `PosedWorldBounds`, since a posed limb reaches outside its rest bounds, and an item
   reaching behind the camera takes the whole view, since its projection means nothing.

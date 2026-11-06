@@ -1,6 +1,7 @@
 #pragma once
 
 #include <graphics/vulkan/FullscreenPass.h>
+#include <graphics/vulkan/OutlineCompositePass.h>
 #include <graphics/vulkan/OutputTransformPass.h>
 #include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/Renderer.h>
@@ -13,7 +14,9 @@
 
 // Runs a frame's post effects over two within-frame planes, with the output
 // transform between the scene and display domains. A linear list by design: the
-// inputs are the fixed set in post_effect.glsli. Docs: docs/renderer/post-effects.md.
+// inputs are the fixed set in post_effect.glsli. When display effects run, the
+// frame's outlines are drawn after the transform and before them, so a fade covers
+// them too. Docs: docs/renderer/post-effects.md.
 class PostEffectChain
 {
 public:
@@ -40,6 +43,7 @@ private:
     VulkanShaderCache* Shaders = nullptr;
     FullscreenPass Fullscreen;
     OutputTransformPass Transform;
+    OutlineCompositePass Outlines;
     RenderTargetStore Planes;
     RenderTargetId Plane[2];
     std::vector<CompiledEffect> Compiled;
