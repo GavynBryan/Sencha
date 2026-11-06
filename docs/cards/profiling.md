@@ -15,7 +15,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 
 ## 3. Outputs
 
-- `CpuScopeTimings` (`engine/include/profiling/CpuScopeTimings.h:54`) and `RenderStats` (`engine/include/profiling/RenderStats.h:16`): read by the debug overlay and the profile panel.
+- `CpuScopeTimings` (`engine/include/profiling/CpuScopeTimings.h:54`) and `RenderStats` (`engine/include/profiling/RenderStats.h:16`): read by app, graphics and render; `RenderStats` also by debug.
 - `RenderStatsHistory` (`engine/include/profiling/RenderStats.h:103`) and `RenderCapture` (`engine/include/profiling/RenderCapture.h:23`): written to CSV by a console command in `engine/src/app/EngineConsoleBuiltins.cpp`.
 
 ## 4. Central decisions

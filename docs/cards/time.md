@@ -16,8 +16,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 ## 3. Outputs
 
 - `FixedStepPlan` (`engine/include/time/FixedStepScheduler.h:26`): how many ticks run this frame, consumed by the runtime frame loop.
-- `ActorTime` (`engine/include/time/ActorTime.h:13`) and `ActorTimeDilated` (`engine/include/time/ActorTime.h:25`): each actor's local clock, consumed by movement, abilities, animation and effects.
-- `ActorTimeLeasesWire` (`engine/include/time/ActorTimeLeasesWire.h:27`): replicated lease state, consumed by remote machines.
+- `ActorTime` (`engine/include/time/ActorTime.h:13`) and `ActorTimeDilated` (`engine/include/time/ActorTime.h:25`): each actor's local clock, consumed by abilities, effects, movement, navigation and physics.
+- `ActorTimeLeasesWire` (`engine/include/time/ActorTimeLeasesWire.h:27`): the replicated form of lease state.
 
 ## 4. Central decisions
 

@@ -15,8 +15,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 
 ## 3. Outputs
 
-- `PlatformServices` (`engine/include/platform/PlatformServices.h:20`): window and video services consumed by app, input, graphics, ui and debug.
-- Window state per window, through `SdlWindowService` (`engine/include/platform/SdlWindowService.h:19`): consumed by the frame loop's lifecycle phase and by presentation targets.
+- `PlatformServices` (`engine/include/platform/PlatformServices.h:20`): window and video services, consumed by app.
+- Window state per window, through `SdlWindowService` (`engine/include/platform/SdlWindowService.h:19`): consumed by app, graphics, input and ui.
 
 ## 4. Central decisions
 

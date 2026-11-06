@@ -17,7 +17,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 
 - Entity storage, `World` (`engine/include/ecs/World.h:75`): read by 32 of the 40 engine modules.
 - Chunk iteration, `Query` (`engine/include/ecs/Query.h:112`) handing out `ChunkView` (`engine/include/ecs/Query.h:41`): consumed by every scheduled system.
-- Structural versions, `World::StructuralVersion` (`engine/include/ecs/World.h:753`): consumed by anything that caches results across ticks.
+- Structural versions, `World::StructuralVersion` (`engine/include/ecs/World.h:753`): consumed by navigation, physics and world to skip unchanged work.
 - Partition-move facts, `EntityPartitionMove` (`engine/include/ecs/World.h:62`), delivered by `DispatchPartitionMoves` (`engine/include/ecs/PartitionFollowers.h:47`) to followers in `engine/src/world/RuntimeWorld.cpp` and `engine/src/attach/Attachment.cpp`.
 
 ## 4. Central decisions

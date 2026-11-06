@@ -14,7 +14,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 ## 3. Outputs
 
 - Vectors, matrices and quaternions, `Vec` (`engine/include/math/Vec.h:242`), `Mat` (`engine/include/math/Mat.h:26`), `Quat` (`engine/include/math/Quat.h:33`): used by 26 engine modules and 176 editor files.
-- Geometry, `Aabb3d` (`engine/include/math/geometry/3d/Aabb3d.h:10`), `Frustum` (`engine/include/math/geometry/3d/Frustum.h:11`), `Transform3d` (`engine/include/math/geometry/3d/Transform3d.h:29`): consumed by render culling, physics and the editor.
+- Geometry, `Aabb3d` (`engine/include/math/geometry/3d/Aabb3d.h:10`), `Frustum` (`engine/include/math/geometry/3d/Frustum.h:11`), `Transform3d` (`engine/include/math/geometry/3d/Transform3d.h:29`): consumed by render, navigation, zone, assets and the editor.
 
 ## 4. Central decisions
 

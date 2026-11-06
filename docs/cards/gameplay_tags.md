@@ -14,9 +14,9 @@ Snapshot `97ed48e4` (2026-10-30). Layer: foundation.
 
 ## 3. Outputs
 
-- `GameplayTagRegistry` (`engine/include/gameplay_tags/GameplayTagRegistry.h:21`): interned ids and hierarchy, consumed by 13 engine modules and 18 editor files.
+- `GameplayTagRegistry` (`engine/include/gameplay_tags/GameplayTagRegistry.h:21`): interned ids and hierarchy, consumed by 14 engine modules and 20 editor files.
 - `GameplayTagContainer` (`engine/include/gameplay_tags/GameplayTagContainer.h:30`), a component holding an entity's tags with stack counts: consumed by abilities, effects, perception, projectile and spatial queries.
-- Wire forms, `GameplayTagWireShared` (`engine/include/gameplay_tags/GameplayTagContainerWire.h:29`): consumed by replication.
+- Wire forms, `GameplayTagWireShared` (`engine/include/gameplay_tags/GameplayTagContainerWire.h:29`): the replicated form.
 
 ## 4. Central decisions
 
