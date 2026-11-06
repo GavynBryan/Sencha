@@ -5,6 +5,7 @@
 
 #include <graphics/GpuFrameRetirement.h>
 #include <graphics/RenderTargetId.h>
+#include <graphics/vulkan/OutlineTilePass.h>
 #include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/Renderer.h>
 
@@ -68,9 +69,14 @@ public:
     // The current slot's images for `id`, sized to what the panel last
     // requested. nullopt until the panel has requested a size.
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
-    // The view's outline mask, built on first use.
-    [[nodiscard]] std::optional<RenderTargetView> AcquireOutlineMask(ViewportId id);
-    // Releases the view's mask while nothing is outlined.
+    // The view's outline mask and the tiles the composite reads, built on first use.
+    struct OutlineViews
+    {
+        RenderTargetView Mask;
+        OutlineTileTargets Tiles;
+    };
+    [[nodiscard]] std::optional<OutlineViews> AcquireOutlineMask(ViewportId id);
+    // Releases the view's mask and tiles while nothing is outlined.
     void ReleaseOutlineMask(ViewportId id);
     // Destroy targets for viewports not in `live` (closed or re-laid-out).
     void Prune(std::span<const ViewportId> live);
@@ -89,6 +95,7 @@ private:
         RenderTargetId Display;
         RenderTargetId Scene;
         RenderTargetId OutlineMask;
+        RenderTargetId OutlineTiles[2];
         RenderTargetId Bloom[2];
     };
 

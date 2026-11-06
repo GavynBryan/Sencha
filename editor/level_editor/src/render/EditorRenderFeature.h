@@ -220,6 +220,7 @@ private:
     // The selection's placed meshes, re-resolved each frame; the editor owns its style.
     OutlineFrame           SelectionOutlines;
     OutlineStyleImage      SelectionStyleImage;
+    OutlineTilePass        SelectionTiles;
     // The render.* transform for this frame's views; a debug view bypasses it.
     OutputTransformParams  ViewOutput;
     GpuGridRenderer        Grid;

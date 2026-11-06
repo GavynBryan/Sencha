@@ -89,19 +89,30 @@ void OutlineMaskTargets::Setup(const RendererServices& services)
     mask.DebugName = "outline_mask";
     mask.Lifetime = RenderTargetLifetime::WithinFrame;
     Mask = Targets.Create(mask);
+    RenderTargetDesc tiles = mask;
+    tiles.ColorFormat = kOutlineTileFormat;
+    tiles.DebugName = "outline_tiles_marked";
+    MarkedTiles = Targets.Create(tiles);
+    tiles.DebugName = "outline_tiles_near";
+    NearTiles = Targets.Create(tiles);
+    (void)TilePass.Setup(services);
     StyleImage.Setup(services);
 }
 
 void OutlineMaskTargets::Teardown()
 {
     StyleImage.Teardown();
+    TilePass.Teardown();
     Targets.Teardown();
 }
 
 void OutlineMaskTargets::NoteQuietFrame()
 {
-    if (++QuietFrames == kMaskQuietFrames)
-        Targets.Evict(Mask);
+    if (++QuietFrames != kMaskQuietFrames)
+        return;
+    Targets.Evict(Mask);
+    Targets.Evict(MarkedTiles);
+    Targets.Evict(NearTiles);
 }
 
 std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameContext& frame, const OutlineFrame& outlines)
@@ -111,10 +122,15 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
         return std::nullopt;
 
     Targets.SetExtent(Mask, frame.SceneExtent);
+    Targets.SetExtent(MarkedTiles, OutlineTileExtent(frame.SceneExtent));
+    Targets.SetExtent(NearTiles, OutlineTileExtent(frame.SceneExtent));
     const std::optional<RenderTargetView> mask = Targets.Acquire(Mask);
+    const std::optional<RenderTargetView> marked = Targets.Acquire(MarkedTiles);
+    const std::optional<RenderTargetView> near = Targets.Acquire(NearTiles);
     StyleBindless = StyleImage.Update(outlines.Styles, outlines.StylesVersion);
-    if (!mask.has_value() || StyleBindless == UINT32_MAX)
+    if (!mask.has_value() || !marked.has_value() || !near.has_value() || StyleBindless == UINT32_MAX)
         return std::nullopt;
+    Tiles = OutlineTileTargets{ .Marked = *marked, .Near = *near };
 
     MaskBindless = mask->BindlessIndex;
     return OutlineMaskAttachments{ .MaskImage = mask->ColorImage,
@@ -128,10 +144,15 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
 
 void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& outlines)
 {
+    const VkRect2D scissor = OutlineScissorFor(outlines, frame.SceneExtent);
+    const std::uint32_t tiles = TilePass.Record(frame, MaskBindless, Tiles, scissor, outlines.MaxWidthPixels);
+    if (tiles == UINT32_MAX)
+        return;
     frame.ScenePost->OutlineMaskBindless = MaskBindless;
     frame.ScenePost->OutlineStyleBindless = StyleBindless;
+    frame.ScenePost->OutlineTilesBindless = tiles;
     frame.ScenePost->OutlineMaxWidthPixels = outlines.MaxWidthPixels;
-    frame.ScenePost->OutlineScissor = OutlineScissorFor(outlines, frame.SceneExtent);
+    frame.ScenePost->OutlineScissor = scissor;
 }
 
 bool OutlineMaskTargets::HoldsMaskImage()

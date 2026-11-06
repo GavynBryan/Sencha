@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/OutlineTilePass.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/RenderTargetStore.h>
@@ -45,8 +46,8 @@ private:
     std::uint32_t UploadedVersion = 0;
 };
 
-// One presentation's mask image, held only while something is highlighted, and the
-// style table the composite reads.
+// One presentation's mask and tile images, held only while something is highlighted,
+// and the style table the composite reads.
 class OutlineMaskTargets
 {
 public:
@@ -59,7 +60,8 @@ public:
 
     // Nullopt when this frame has no scene to outline or an image cannot be made.
     [[nodiscard]] std::optional<OutlineMaskAttachments> Begin(const FrameContext& frame, const OutlineFrame& outlines);
-    // Hands the mask to the output pass, once it holds this frame's outlines.
+    // Marks the tiles with outline work and hands the mask to the output pass, once it
+    // holds this frame's outlines.
     void Publish(const FrameContext& frame, const OutlineFrame& outlines);
 
     [[nodiscard]] bool HoldsMaskImage();
@@ -67,6 +69,10 @@ public:
 private:
     RenderTargetStore Targets;
     RenderTargetId Mask;
+    RenderTargetId MarkedTiles;
+    RenderTargetId NearTiles;
+    OutlineTileTargets Tiles;
+    OutlineTilePass TilePass;
     OutlineStyleImage StyleImage;
     std::uint32_t StyleBindless = UINT32_MAX;
     std::uint32_t MaskBindless = UINT32_MAX;

@@ -116,6 +116,8 @@ struct ScenePostState
     // The outline composite's inputs, UINT32_MAX while nothing is highlighted.
     std::uint32_t OutlineMaskBindless = UINT32_MAX;
     std::uint32_t OutlineStyleBindless = UINT32_MAX;
+    // Which tiles of the frame have outline work, from OutlineTilePass.
+    std::uint32_t OutlineTilesBindless = UINT32_MAX;
     float OutlineMaxWidthPixels = 0.0f;
     // Where the composite can land: the highlighted objects' bounds on screen.
     VkRect2D OutlineScissor{};

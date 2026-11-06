@@ -277,6 +277,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     if (!Output.Setup(services))
         return false;
     SelectionStyleImage.Setup(services);
+    (void)SelectionTiles.Setup(services);
     Grid.Setup(services);
     Solid.Setup(services);
     if (!Lighting.Setup(services))
@@ -690,7 +691,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                        .DepthView = target.DepthView,
                                        .DepthFormat = VK_FORMAT_D32_SFLOAT };
     ScenePostState post;
-    const std::optional<RenderTargetView> mask = MaterialPath && !SelectionOutlines.DrawOrder.empty()
+    const std::optional<ViewportTargetCache::OutlineViews> mask = MaterialPath && !SelectionOutlines.DrawOrder.empty()
         ? Targets.AcquireOutlineMask(viewport.Id)
         : std::nullopt;
     const std::uint32_t styleImage =
@@ -705,18 +706,21 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
             SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
             Forward.DrawOutlineMask(between,
-                                    OutlineMaskAttachments{ .MaskImage = mask->ColorImage,
-                                                            .MaskView = mask->ColorView,
-                                                            .MaskAccess = mask->ColorAccess,
-                                                            .Extent = mask->Extent,
+                                    OutlineMaskAttachments{ .MaskImage = mask->Mask.ColorImage,
+                                                            .MaskView = mask->Mask.ColorView,
+                                                            .MaskAccess = mask->Mask.ColorAccess,
+                                                            .Extent = mask->Mask.Extent,
                                                             .DepthView = target.DepthView,
                                                             .DepthFormat = VK_FORMAT_D32_SFLOAT },
                                     camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
                                     SelectionOutlines);
-            post.OutlineMaskBindless = mask->BindlessIndex;
+            const VkRect2D scissor = OutlineScissorFor(SelectionOutlines, target.Extent);
+            post.OutlineTilesBindless = SelectionTiles.Record(between, mask->Mask.BindlessIndex, mask->Tiles, scissor,
+                                                              SelectionOutlines.MaxWidthPixels);
+            post.OutlineMaskBindless = mask->Mask.BindlessIndex;
             post.OutlineStyleBindless = styleImage;
             post.OutlineMaxWidthPixels = SelectionOutlines.MaxWidthPixels;
-            post.OutlineScissor = OutlineScissorFor(SelectionOutlines, target.Extent);
+            post.OutlineScissor = scissor;
         },
         &post);
 
@@ -973,6 +977,7 @@ void EditorRenderFeature::Teardown()
     Sky.Teardown();
     Output.Teardown();
     SelectionStyleImage.Teardown();
+    SelectionTiles.Teardown();
     Grid.Teardown();
     Solid.Teardown();
     Forward.Teardown();

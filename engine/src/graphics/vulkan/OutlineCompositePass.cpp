@@ -13,6 +13,7 @@ struct OutlineCompositePush
 {
     std::uint32_t MaskIndex = UINT32_MAX;
     std::uint32_t StyleIndex = UINT32_MAX;
+    std::uint32_t TilesIndex = UINT32_MAX;
     float MaxWidthPixels = 0.0f;
 };
 }
@@ -51,10 +52,12 @@ bool OutlineCompositePass::EnsurePipeline(const FrameContext& frame)
 void OutlineCompositePass::Draw(const FrameContext& frame)
 {
     const ScenePostState* post = frame.ScenePost;
-    if (post == nullptr || post->OutlineMaskBindless == UINT32_MAX || !EnsurePipeline(frame))
+    if (post == nullptr || post->OutlineMaskBindless == UINT32_MAX || post->OutlineTilesBindless == UINT32_MAX
+        || !EnsurePipeline(frame))
         return;
     const OutlineCompositePush push{ .MaskIndex = post->OutlineMaskBindless,
                                      .StyleIndex = post->OutlineStyleBindless,
+                                     .TilesIndex = post->OutlineTilesBindless,
                                      .MaxWidthPixels = post->OutlineMaxWidthPixels };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, post->OutlineScissor, Pipeline.Get(0), &push);
 }

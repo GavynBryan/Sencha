@@ -72,6 +72,9 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
     mask.Sampler = Services.Samplers->GetNearestClamp();
     mask.DebugName = "viewport_outline_mask";
     mask.Lifetime = RenderTargetLifetime::WithinFrame;
+    RenderTargetDesc tiles = mask;
+    tiles.ColorFormat = kOutlineTileFormat;
+    tiles.DebugName = "viewport_outline_tiles";
 
     // Full resolution, not half: a half-res glow source stair-steps the
     // wireframe lines, and the blur cannot smooth diagonal stair-steps, so the
@@ -88,6 +91,7 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
         .Display = Store.Create(display),
         .Scene = Store.Create(scene),
         .OutlineMask = Store.Create(mask),
+        .OutlineTiles = { Store.Create(tiles), Store.Create(tiles) },
         .Bloom = { Store.Create(bloom), Store.Create(bloom) },
     });
     return Entries.back();
@@ -98,6 +102,8 @@ void ViewportTargetCache::Release(Entry& entry)
     Store.Destroy(entry.Display);
     Store.Destroy(entry.Scene);
     Store.Destroy(entry.OutlineMask);
+    for (RenderTargetId tiles : entry.OutlineTiles)
+        Store.Destroy(tiles);
     for (RenderTargetId& bloom : entry.Bloom)
         Store.Destroy(bloom);
 }
@@ -147,16 +153,27 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     return view;
 }
 
-std::optional<RenderTargetView> ViewportTargetCache::AcquireOutlineMask(ViewportId id)
+std::optional<ViewportTargetCache::OutlineViews> ViewportTargetCache::AcquireOutlineMask(ViewportId id)
 {
     Entry* entry = Find(id);
-    return entry != nullptr ? Store.Acquire(entry->OutlineMask) : std::nullopt;
+    if (entry == nullptr)
+        return std::nullopt;
+    const std::optional<RenderTargetView> mask = Store.Acquire(entry->OutlineMask);
+    const std::optional<RenderTargetView> marked = Store.Acquire(entry->OutlineTiles[0]);
+    const std::optional<RenderTargetView> near = Store.Acquire(entry->OutlineTiles[1]);
+    if (!mask.has_value() || !marked.has_value() || !near.has_value())
+        return std::nullopt;
+    return OutlineViews{ .Mask = *mask, .Tiles = { .Marked = *marked, .Near = *near } };
 }
 
 void ViewportTargetCache::ReleaseOutlineMask(ViewportId id)
 {
     if (Entry* entry = Find(id))
+    {
         Store.Evict(entry->OutlineMask);
+        for (RenderTargetId tiles : entry->OutlineTiles)
+            Store.Evict(tiles);
+    }
 }
 
 void ViewportTargetCache::Prune(std::span<const ViewportId> live)
@@ -181,6 +198,8 @@ void ViewportTargetCache::Show(ViewportId id, VkExtent2D extent)
     Store.SetExtent(entry.Display, extent);
     Store.SetExtent(entry.Scene, extent);
     Store.SetExtent(entry.OutlineMask, extent);
+    for (RenderTargetId tiles : entry.OutlineTiles)
+        Store.SetExtent(tiles, OutlineTileExtent(extent));
     for (RenderTargetId bloom : entry.Bloom)
         Store.SetExtent(bloom, extent);
 }

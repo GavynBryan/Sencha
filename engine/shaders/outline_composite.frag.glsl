@@ -18,12 +18,18 @@ layout(constant_id = 0) const bool kEncodeOutput = false;
 layout(push_constant) uniform OutlineCompositePC {
     uint outlineMaskIndex;
     uint outlineStyleIndex;
+    uint outlineTilesIndex;
     float outlineMaxWidth;
 } pc;
+
+const int kTileSize = 8;
 
 void main()
 {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
+    // Most of the scissor is far from any outline; one fetch says so.
+    if (texelFetch(uTextures[pc.outlineTilesIndex], pixel / kTileSize, 0).r == 0.0)
+        discard;
     if (texelFetch(uTextures[pc.outlineMaskIndex], pixel, 0).r != 0.0)
         discard;
 

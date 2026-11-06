@@ -34,7 +34,11 @@ holder's death, or the entity's.
   scissored to the highlighted objects' screen bounds grown by the widest style, so normal
   presentation carries no outline work and the cost follows what is highlighted rather than
   the window. It draws only on pixels whose own mask is 0, from a fixed ring of taps at three
-  radii up to the widest style. A style counts only within its own width, and the higher
+  radii up to the widest style. A scissor can still be far larger than the outline -- an item
+  reaching behind the camera takes the whole view -- so `OutlineTilePass` first marks the 8x8
+  tiles holding any mask texel, with gathers, then grows the marks by the widest style's reach,
+  and the composite leaves any pixel in an unmarked tile after one fetch. On an Intel RPL-P at
+  1920x1080 that took the whole-view case from 2.7 ms to about 0.4 ms. A style counts only within its own width, and the higher
   priority takes a pixel two styles compete for, so a highlighted object's material is never
   painted over.
 - **The bounds.** They must hold what the mask drew or the outline is cut off. A skinned item
