@@ -17,9 +17,9 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `ActiveAbilities` (`engine/include/abilities/ActiveAbilities.h:126`): running and lingering records, consumed by presentation, replication and the editor preview.
-- `AbilityCueLog` (`engine/include/abilities/AbilityCueLog.h:33`): discrete cues, consumed by `AbilityPresentationSystem` and replication.
-- `AbilityTrace` (`engine/include/abilities/AbilityTrace.h:70`): why an ability did or did not run, consumed by inspectors.
+- `ActiveAbilities` (`engine/include/abilities/ActiveAbilities.h:126`): running and lingering records, consumed by the module's presentation and replication and by the editor's ability preview.
+- `AbilityCueLog` (`engine/include/abilities/AbilityCueLog.h:33`): discrete cues, consumed by `AbilityPresentationSystem`, replication and projectile.
+- `AbilityTrace` (`engine/include/abilities/AbilityTrace.h:70`): why an ability did or did not run, consumed by the editor's ability inspector.
 - Effects and attribute costs, applied through `ApplyEffect` (`engine/include/effects/EffectSystem.h:17`).
 
 ## 4. Central decisions

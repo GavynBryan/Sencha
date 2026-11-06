@@ -14,7 +14,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `Attachment` (`engine/include/attach/AttachmentComponents.h:38`) and `AttachmentSet` (`engine/include/attach/AttachmentComponents.h:33`): the attached entity and its holder's list, consumed by transform propagation and render extraction.
+- `Attachment` (`engine/include/attach/AttachmentComponents.h:38`) and `AttachmentSet` (`engine/include/attach/AttachmentComponents.h:33`): the attached entity and its holder's list; `Attachment` is read by render, graphics and physics.
 - Placed transforms on attached entities: consumed by `PropagateTransforms` in the same pass.
 
 ## 4. Central decisions

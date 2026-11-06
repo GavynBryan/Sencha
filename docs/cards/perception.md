@@ -14,7 +14,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `PerceptionFrame` (`engine/include/perception/PerceptionFrame.h:22`): this tick's `Observation` records, consumed by perception queries and game AI.
+- `PerceptionFrame` (`engine/include/perception/PerceptionFrame.h:22`): this tick's `Observation` records, consumed by the module's authored queries and by debug views.
 - `Observation` (`engine/include/perception/Observation.h:11`): evidence that an observer acquired something, with scan coverage.
 - Authored queries, `BindPerceptionQueries` (`engine/include/perception/PerceptionVocabulary.h:36`): consumed by response and ability conditions.
 - `SightStats` (`engine/include/perception/PerceptionSystem.h:15`): consumed by debug drawing.

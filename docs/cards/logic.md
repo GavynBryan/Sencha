@@ -19,8 +19,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 ## 3. Outputs
 
 - Verb invocations, through `VerbSequenceRunner` (`engine/include/logic/VerbSequenceRunner.h:39`): consumed by every module that declares verbs.
-- Use targets, `FindUseCandidate` (`engine/include/logic/InteractUse.h:48`): consumed by the interact verb and HUD prompts.
-- Compiled sequences, `CompileVerbSequence` (`engine/include/logic/VerbSequenceCompiler.h:26`): consumed by responses, relays and the editor's sequence rows.
+- Use targets, `FindUseCandidate` (`engine/include/logic/InteractUse.h:48`): consumed by the interact verb, `InteractUseOperations` (`engine/include/logic/InteractUse.h:53`).
+- Compiled sequences, `CompileVerbSequence` (`engine/include/logic/VerbSequenceCompiler.h:26`): consumed by responses and relays.
 
 ## 4. Central decisions
 

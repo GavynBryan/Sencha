@@ -13,10 +13,10 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `AttributeRegistry` (`engine/include/attributes/AttributeRegistry.h:20`): names, defaults and ranges, consumed by effects, abilities, projectile, movement and debug.
-- `AttributeSet` (`engine/include/attributes/AttributeSet.h:18`): an entity's base and current values, consumed by effects, abilities and costs.
-- `AttributeSetWire` (`engine/include/attributes/AttributeSetWire.h:22`): an actor's attributes sent to its owner, consumed by prediction.
-- Saved values, `WriteAttributes` (`engine/include/attributes/AttributeSerialization.h:17`): consumed by scene save and load.
+- `AttributeRegistry` (`engine/include/attributes/AttributeRegistry.h:20`): names, defaults and ranges, consumed by effects, abilities, movement and assets.
+- `AttributeSet` (`engine/include/attributes/AttributeSet.h:18`): an entity's base and current values, consumed by effects, abilities, movement, projectile and debug.
+- `AttributeSetWire` (`engine/include/attributes/AttributeSetWire.h:22`): an actor's attributes as replication sends them to its owner alone.
+- Saved values, `WriteAttributes` (`engine/include/attributes/AttributeSerialization.h:17`): the component's saved form, by name.
 
 ## 4. Central decisions
 

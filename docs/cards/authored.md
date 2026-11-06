@@ -15,8 +15,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `VerbDispatcher` (`engine/include/authored/VerbDispatcher.h:47`): invokes bound operations, consumed by logic, abilities, projectile and 14 other modules.
-- `AuthoredQueryDispatcher` (`engine/include/authored/AuthoredQueryDispatcher.h:23`): read-only answers, consumed by conditions in logic and abilities.
+- `VerbDispatcher` (`engine/include/authored/VerbDispatcher.h:47`): invokes bound operations, held by abilities, anim, app, camera, logic and ui.
+- `AuthoredQueryDispatcher` (`engine/include/authored/AuthoredQueryDispatcher.h:23`): read-only answers, consumed by abilities, logic, navigation, perception and spatial.
 - `AuthoredEventDispatcher` (`engine/include/authored/AuthoredEventDispatcher.h:84`): buffered occurrences, consumed by responses and subscribers.
 - `AuthoredCatalog` (`engine/include/authored/AuthoredCatalog.h:153`): the vocabulary the editor's catalog view lists.
 

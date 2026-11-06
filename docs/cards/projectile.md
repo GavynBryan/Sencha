@@ -16,8 +16,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `ProjectileFlight` (`engine/include/projectile/ProjectileState.h:30`) and `ProjectileMotion` (`engine/include/projectile/ProjectileState.h:50`): in-flight state, consumed by replication and rendering.
-- `ProjectileHit` (`engine/include/projectile/ProjectileHit.h:25`): the occurrence a struck entity hears, consumed by responses.
+- `ProjectileFlight` (`engine/include/projectile/ProjectileState.h:30`) and `ProjectileMotion` (`engine/include/projectile/ProjectileState.h:50`): in-flight state, replicated as `ProjectileFlightWire` (`engine/include/projectile/ProjectileFlightWire.h:10`) and drawn by the system's own `Present` (`engine/src/projectile/ProjectileSystem.cpp:717`).
+- `ProjectileHit` (`engine/include/projectile/ProjectileHit.h:25`): the occurrence a struck entity hears, handed to responses by `Deliver` (`engine/src/projectile/ProjectileSystem.cpp:598`).
 - Effects on what it strikes, through `ApplyEffect` (`engine/include/effects/EffectSystem.h:17`).
 
 ## 4. Central decisions

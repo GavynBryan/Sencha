@@ -17,7 +17,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 ## 3. Outputs
 
 - `ActiveEffect` (`engine/include/effects/ActiveEffect.h:19`): one entity per lasting effect, consumed by the fold and by ability grants.
-- Folded current attribute values, from `ResolveAttributesWithEffects` (`engine/include/effects/EffectSystem.h:29`): consumed by abilities, movement and costs.
+- Current values in each target's `AttributeSet`, folded by `ResolveAttributesWithEffects` (`engine/include/effects/EffectSystem.h:29`): read by abilities, movement, projectile and debug.
 - Granted tags, ref-counted on the target: consumed by any tag query.
 - Cost verdicts, `CheckEffectCosts` (`engine/include/effects/EffectCost.h:39`): consumed by ability admission.
 
