@@ -15,6 +15,7 @@ struct OutlineCompositePush
     std::uint32_t StyleIndex = UINT32_MAX;
     std::uint32_t TilesIndex = UINT32_MAX;
     float MaxWidthPixels = 0.0f;
+    std::array<float, 4> DepthTerms{};
 };
 }
 
@@ -45,7 +46,9 @@ bool OutlineCompositePass::EnsurePipeline(const FrameContext& frame)
     return Pipeline.Ensure(frame.AttachmentFormats(), [&](std::size_t) {
         const std::array encode{ ShaderSpecializationConstant{
             .Id = 0, .Value = FormatNeedsShaderEncode(frame.TargetFormat) ? 1u : 0u } };
-        return Fullscreen.BuildPipeline(FragmentShader, frame.AttachmentFormats(), {}, encode);
+        // With no depth in the scope there is nothing to stand in front of an outline.
+        return Fullscreen.BuildPipeline(FragmentShader, frame.AttachmentFormats(), {}, encode,
+                                        frame.DepthFormat != VK_FORMAT_UNDEFINED);
     });
 }
 
@@ -58,6 +61,7 @@ void OutlineCompositePass::Draw(const FrameContext& frame)
     const OutlineCompositePush push{ .MaskIndex = post->OutlineMaskBindless,
                                      .StyleIndex = post->OutlineStyleBindless,
                                      .TilesIndex = post->OutlineTilesBindless,
-                                     .MaxWidthPixels = post->OutlineMaxWidthPixels };
+                                     .MaxWidthPixels = post->OutlineMaxWidthPixels,
+                                     .DepthTerms = post->OutlineDepthTerms };
     Fullscreen.Draw(frame.Cmd, frame.TargetExtent, post->OutlineScissor, Pipeline.Get(0), &push);
 }

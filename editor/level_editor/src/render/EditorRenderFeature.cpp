@@ -720,6 +720,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             post.OutlineMaskBindless = mask->Mask.BindlessIndex;
             post.OutlineStyleBindless = styleImage;
             post.OutlineMaxWidthPixels = SelectionOutlines.MaxWidthPixels;
+            post.OutlineDepthTerms = OutlineDepthTermsOf(camera.Projection);
             post.OutlineScissor = scissor;
         },
         &post);

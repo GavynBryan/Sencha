@@ -26,6 +26,11 @@ VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent)
                        static_cast<std::uint32_t>(std::ceil(bottom) - std::floor(top)) } };
 }
 
+std::array<float, 4> OutlineDepthTermsOf(const Mat4& projection)
+{
+    return { projection[2][2], projection[2][3], projection[3][2], projection[3][3] };
+}
+
 void OutlineStyleImage::Setup(const RendererServices& services)
 {
     Services = services;
@@ -142,7 +147,7 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
                                    .StencilFormat = frame.StencilFormat };
 }
 
-void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& outlines)
+void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& outlines, const Mat4& projection)
 {
     const VkRect2D scissor = OutlineScissorFor(outlines, frame.SceneExtent);
     const std::uint32_t tiles = TilePass.Record(frame, MaskBindless, Tiles, scissor, outlines.MaxWidthPixels);
@@ -152,6 +157,7 @@ void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& 
     frame.ScenePost->OutlineStyleBindless = StyleBindless;
     frame.ScenePost->OutlineTilesBindless = tiles;
     frame.ScenePost->OutlineMaxWidthPixels = outlines.MaxWidthPixels;
+    frame.ScenePost->OutlineDepthTerms = OutlineDepthTermsOf(projection);
     frame.ScenePost->OutlineScissor = scissor;
 }
 

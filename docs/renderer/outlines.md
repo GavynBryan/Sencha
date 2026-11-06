@@ -22,13 +22,14 @@ holder's death, or the entity's.
   and `PresentedWith` are not walked.
 - **The mask.** `OutlineFrame` holds a `RenderQueue` per style, filled by extraction beside
   the opaque queue, so nothing joins `RenderQueueItem` or run identity. `MeshForwardPass`
-  draws them into an `R8_UNORM` mask through a mask pipeline family, lowest priority first,
+  draws them into an `R32_SFLOAT` mask through a mask pipeline family, lowest priority first,
   testing `LESS_OR_EQUAL` against the scene's depth with no depth write. Attachment writes to
   one sample land in primitive order, so the higher priority wins an exact depth tie. Skinned
   items bind the same posed buffer as the forward pass. `outline_mask.vert` outputs only the
   UV a cutout samples, and takes its position from `mesh_position.glsli`, the same expression
   under the same `invariant gl_Position` as `mesh_forward.vert`, so the two passes cannot
-  disagree about depth.
+  disagree about depth. A mask texel is the style's slot plus the surface's depth as the
+  fraction.
 - **The composite.** `OutlineCompositePass` draws `outline_composite.frag` after the present
   draw, from inside `OutputTransformPass::Draw` so every host that owes that draw gets it,
   scissored to the highlighted objects' screen bounds grown by the widest style, so normal
@@ -38,9 +39,16 @@ holder's death, or the entity's.
   reaching behind the camera takes the whole view -- so `OutlineTilePass` first marks the 8x8
   tiles holding any mask texel, with gathers, then grows the marks by the widest style's reach,
   and the composite leaves any pixel in an unmarked tile after one fetch. On an Intel RPL-P at
-  1920x1080 that took the whole-view case from 2.7 ms to about 0.4 ms. A style counts only within its own width, and the higher
-  priority takes a pixel two styles compete for, so a highlighted object's material is never
-  painted over.
+  1920x1080 that took the whole-view case from 2.7 ms to about 0.5 ms. A style counts only
+  within its own width, and the higher priority takes a pixel two styles compete for, so a
+  highlighted object's material is never painted over.
+- **What stands in front.** The mask holds only the visible part of an object, so the edge of
+  anything in front of it is an edge of the mask too. The composite writes the outlined
+  surface's depth, moved toward the camera by 5 cm or 2% of its distance, whichever is more,
+  as its fragment depth, and tests it against the scene's: the ring is hidden wherever
+  something nearer than that stands, and kept where the floor beside a box's base is only
+  millimetres nearer. The view's projection rows (`OutlineDepthTermsOf`) let it move a depth
+  by a distance in a perspective or an orthographic view.
 - **The bounds.** They must hold what the mask drew or the outline is cut off. A skinned item
   uses `PosedWorldBounds`, since a posed limb reaches outside its rest bounds, and an item
   reaching behind the camera takes the whole view, since its projection means nothing.
@@ -58,6 +66,17 @@ recomputes the screen bounds with `OutlineFrame::UpdateScreenBounds`, and each h
 mask, released while nothing is outlined. The editor owns its style.
 
 ## Cost
+
+All of an outline's work on an Intel RPL-P at 1920x1080, `Phase/Post` (mask and tiles) and
+`Phase/Output` (present and composite):
+
+| Case | Post | Output |
+|---|---|---|
+| Nothing highlighted | 0.001 ms | 0.177 ms |
+| `levels/golden_outline`, every mesh highlighted | 0.060 ms | 0.253 ms |
+| `levels/golden_outline_behind`, scissor is the whole view | 0.182 ms | 0.475 ms |
+
+Earlier, at the host's default window size:
 
 `Phase/Output` on `levels/golden_outline_single`, one small object highlighted:
 

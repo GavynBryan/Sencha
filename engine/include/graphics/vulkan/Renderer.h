@@ -12,6 +12,7 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -119,6 +120,9 @@ struct ScenePostState
     // Which tiles of the frame have outline work, from OutlineTilePass.
     std::uint32_t OutlineTilesBindless = UINT32_MAX;
     float OutlineMaxWidthPixels = 0.0f;
+    // The view's projection rows the composite reads to keep its outline behind
+    // whatever stands in front of the object (OutlineDepthTermsOf).
+    std::array<float, 4> OutlineDepthTerms{};
     // Where the composite can land: the highlighted objects' bounds on screen.
     VkRect2D OutlineScissor{};
 };

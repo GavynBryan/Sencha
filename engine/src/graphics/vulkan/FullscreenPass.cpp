@@ -55,7 +55,8 @@ void FullscreenPass::Teardown()
 
 VkPipeline FullscreenPass::BuildPipeline(ShaderHandle fragmentShader, const AttachmentFormatKey& formats,
                                          const ColorBlendAttachmentDesc& blend,
-                                         std::span<const ShaderSpecializationConstant> specialization) const
+                                         std::span<const ShaderSpecializationConstant> specialization,
+                                         bool testDepth) const
 {
     if (Layout == VK_NULL_HANDLE)
         return VK_NULL_HANDLE;
@@ -67,8 +68,9 @@ VkPipeline FullscreenPass::BuildPipeline(ShaderHandle fragmentShader, const Atta
     desc.Layout = Layout;
     desc.Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     desc.CullMode = VK_CULL_MODE_NONE;
-    desc.DepthTest = false;
+    desc.DepthTest = testDepth;
     desc.DepthWrite = false;
+    desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
     desc.ColorBlend = { blend };
     desc.ColorFormats = { formats.Color };
     desc.DepthFormat = formats.Depth;

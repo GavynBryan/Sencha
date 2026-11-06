@@ -8,10 +8,12 @@
 #include <graphics/vulkan/VulkanImageService.h>
 #include <render/outline/OutlineContributions.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
-inline constexpr VkFormat kOutlineMaskFormat = VK_FORMAT_R8_UNORM;
+// The style slot as the integer part and the surface's depth as the fraction.
+inline constexpr VkFormat kOutlineMaskFormat = VK_FORMAT_R32_SFLOAT;
 
 // Where a frame's outline mask draws: its own target, and the scene's depth.
 struct OutlineMaskAttachments
@@ -27,6 +29,10 @@ struct OutlineMaskAttachments
 
 // Where the composite can land for this camera's screen bounds, in `extent` pixels.
 [[nodiscard]] VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent);
+
+// The projection's depth and w rows, which the composite needs to move a depth by a
+// distance in either a perspective or an orthographic view.
+[[nodiscard]] std::array<float, 4> OutlineDepthTermsOf(const Mat4& projection);
 
 // The style table where the composite can read it: a small bindless image, so a
 // frame with nothing highlighted carries no extra descriptor or push data.
@@ -61,8 +67,8 @@ public:
     // Nullopt when this frame has no scene to outline or an image cannot be made.
     [[nodiscard]] std::optional<OutlineMaskAttachments> Begin(const FrameContext& frame, const OutlineFrame& outlines);
     // Marks the tiles with outline work and hands the mask to the output pass, once it
-    // holds this frame's outlines.
-    void Publish(const FrameContext& frame, const OutlineFrame& outlines);
+    // holds this frame's outlines seen through `projection`.
+    void Publish(const FrameContext& frame, const OutlineFrame& outlines, const Mat4& projection);
 
     [[nodiscard]] bool HoldsMaskImage();
 

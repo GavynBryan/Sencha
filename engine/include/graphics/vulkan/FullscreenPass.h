@@ -23,9 +23,12 @@ public:
     [[nodiscard]] bool Setup(const RendererServices& services, std::uint32_t pushConstantBytes);
     void Teardown();
 
+    // `testDepth` keeps a fragment only where its depth is at or in front of the
+    // scope's depth attachment, for a shader that writes the depth it stands for.
     [[nodiscard]] VkPipeline BuildPipeline(ShaderHandle fragmentShader, const AttachmentFormatKey& formats,
                                            const ColorBlendAttachmentDesc& blend = {},
-                                           std::span<const ShaderSpecializationConstant> specialization = {}) const;
+                                           std::span<const ShaderSpecializationConstant> specialization = {},
+                                           bool testDepth = false) const;
 
     // Covers `extent`, inside a rendering scope the caller has open. `push` is
     // the whole block declared at Setup.

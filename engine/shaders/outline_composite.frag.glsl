@@ -20,7 +20,28 @@ layout(push_constant) uniform OutlineCompositePC {
     uint outlineStyleIndex;
     uint outlineTilesIndex;
     float outlineMaxWidth;
+    // The projection's rows: clip z = a * z + b, clip w = c * z + d, for view z.
+    vec4 depthTerms;
 } pc;
+
+// The mask's depth fraction, and how near something must stand to hide the ring:
+// at least a few centimetres, so the floor beside a box's base does not hide its
+// bottom edge, and more with distance, as depth precision falls off.
+const float kOutlineDepthScale = 0.9375;
+const float kHideBeyondMeters = 0.05;
+const float kHideBeyondFraction = 0.02;
+
+// A depth moved `meters` toward the camera.
+float NearerDepth(float depth, float meters)
+{
+    float a = pc.depthTerms.x;
+    float b = pc.depthTerms.y;
+    float c = pc.depthTerms.z;
+    float d = pc.depthTerms.w;
+    float viewZ = (b - depth * d) / (depth * c - a);
+    float nearer = viewZ - sign(viewZ) * max(meters, abs(viewZ) * kHideBeyondFraction);
+    return clamp((a * nearer + b) / (c * nearer + d), 0.0, 1.0);
+}
 
 const int kTileSize = 8;
 
@@ -38,15 +59,18 @@ void main()
                                        vec2(-1, 0), vec2(-0.7071, -0.7071), vec2(0, -1), vec2(0.7071, -0.7071));
     int winner = 0;
     float winnerPriority = 0.0;
+    float winnerDepth = 1.0;
     for (int ring = 1; ring <= 3; ++ring)
     {
         float radius = pc.outlineMaxWidth * float(ring) / 3.0;
         for (int i = 0; i < 8; ++i)
         {
             ivec2 tap = clamp(pixel + ivec2(round(kDirections[i] * radius)), ivec2(0), last);
-            int slot = int(round(texelFetch(uTextures[pc.outlineMaskIndex], tap, 0).r * 255.0));
+            float texel = texelFetch(uTextures[pc.outlineMaskIndex], tap, 0).r;
+            int slot = int(floor(texel));
             if (slot == 0)
                 continue;
+            float depth = fract(texel) / kOutlineDepthScale;
             vec4 style = texelFetch(uTextures[pc.outlineStyleIndex], ivec2(slot * 2, 0), 0);
             if (radius > style.a + 0.5)
                 continue;
@@ -55,11 +79,19 @@ void main()
             {
                 winner = slot;
                 winnerPriority = priority;
+                winnerDepth = depth;
+            }
+            else if (slot == winner)
+            {
+                winnerDepth = min(winnerDepth, depth);
             }
         }
     }
     if (winner == 0)
         discard;
+    // The object's own depth, moved toward the camera: anything nearer than that
+    // stands in front of the object here, and the depth test hides the ring on it.
+    gl_FragDepth = NearerDepth(winnerDepth, kHideBeyondMeters);
     vec3 color = texelFetch(uTextures[pc.outlineStyleIndex], ivec2(winner * 2, 0), 0).rgb;
     outColor = vec4(kEncodeOutput ? EncodeSrgb(color) : color, 1.0);
 }

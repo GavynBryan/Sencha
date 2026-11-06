@@ -37,5 +37,5 @@ void OutlineRenderFeature::OnDraw(const RenderFrame& frame)
         return;
     Forward->DrawOutlineMask(*frame.Backend, *attachments, *Camera, *Lights, *Meshes, *Materials, SkinnedMeshes,
                              *Outlines);
-    Targets.Publish(*frame.Backend, *Outlines);
+    Targets.Publish(*frame.Backend, *Outlines, Camera->Projection);
 }
