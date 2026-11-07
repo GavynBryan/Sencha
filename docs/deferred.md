@@ -952,3 +952,30 @@ described in `docs/navigation/runtime.md`, "Agents".
   `SAMPLED` usage, a depth-aspect view registered through the descriptor cache, and a
   barrier into a read layout around the chain.
 
+## Authored post effects
+
+- **What:** a post effect's weight is driven from C++ every frame, on whatever clock its
+  writer picks, and `PostEffectContribution` carries its own `Held`/`Session` lifetime and
+  `RemainingWallSeconds`. Camera shakes already have an authored envelope and cosmetic verbs
+  (`CameraEffectTiming`, `CameraShakeVerbs`); post effects have neither, and Kyusu cannot show
+  or author one.
+- **Where:** `engine/include/render/post/PostEffectContributions.h`,
+  `engine/src/camera/CameraShakeVerbs.cpp`.
+- **Impact:** a fade or a hit flash is C++ in the game, not data a designer tunes.
+- **Trigger:** a second game effect that wants an envelope rather than a weight its own
+  code drives. Give the contribution an envelope (attack, hold, release on wall or
+  simulation time) and add a cosmetic verb, sharing the camera effects' timing where the
+  clocks agree.
+
+## Culling skinned meshes by their posed bounds
+
+- **What:** extraction culls a skinned mesh by its rest bounds moved to the entity
+  (`RenderExtractionSystem.cpp`), while outlines take `PosedWorldBounds`, because a posed
+  limb reaches outside the rest bounds. One entity has two bounds in one extraction.
+- **Where:** `engine/src/render/extract/RenderExtractionSystem.cpp`,
+  `engine/include/render/SkinnedPoseFrameData.h`.
+- **Impact:** a mesh posed far from its rest shape, such as an arm thrown out, can be culled
+  while part of it is on screen.
+- **Trigger:** a skinned mesh seen popping at a screen edge. Culling by posed bounds means
+  posing before culling, which costs pose work for meshes that would have been culled.
+
