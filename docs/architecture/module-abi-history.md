@@ -737,4 +737,7 @@ takes an optional `OutlineFrame`.
 **Fingerprint.** `render/post/`, `render/outline/` and `presentation/` headers join the
 fingerprint, since `Engine` holds the catalog by value ahead of members a module reaches through
 inline accessors, and a module builds effect, outline and owner values. `post_effect.glsli` joins
-too: a module compiles its push block into its own SPIR-V.
+too: a module compiles its push block into its own SPIR-V. A game includes
+`render/outline/OutlineContributions.h` for the outline calls and `OutlineStyles.h` comes with it;
+`OutlineFrame` and `ExtractOutlines` are in `OutlineFrame.h`, which only a renderer needs, and the
+chain's per-frame list is `render/post/PostEffectFrame.h`.

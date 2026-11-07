@@ -8,7 +8,7 @@
 #include <render/extract/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
 #include <render/OutputTransformParams.h>
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/post/PostEffectContributions.h>
 #include <render/MaterialSetCache.h>
 #include <render/ProbeVolumeSet.h>

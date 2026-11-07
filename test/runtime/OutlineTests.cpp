@@ -4,6 +4,7 @@
 #include <render/RenderQueue.h>
 #include <render/SkinnedPoseFrameData.h>
 #include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 
 #include <array>
 #include <cstddef>

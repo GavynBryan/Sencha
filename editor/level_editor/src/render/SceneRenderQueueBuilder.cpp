@@ -1,6 +1,6 @@
 #include "SceneRenderQueueBuilder.h"
 
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include "EditorRenderEntityKey.h"
 
 #include "document/EditorDocument.h"

@@ -38,7 +38,7 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/OutputTransformPass.h>
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
 #include <render/ui/UiDrawFrame.h>

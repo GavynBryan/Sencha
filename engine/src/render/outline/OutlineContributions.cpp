@@ -1,4 +1,7 @@
 #include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
+
+#include <presentation/PresentationContributions.h>
 
 #include <ecs/World.h>
 
@@ -174,4 +177,13 @@ void ExtractOutlines(World& world, OutlineFrame& out)
         out.StyleOf.emplace(entity, winner->Style);
         out.MaxWidthPixels = std::max(out.MaxWidthPixels, out.Styles[winner->Style.Slot].WidthPixels);
     });
+}
+
+OutlineCompositeInputs OutlineFrame::CompositeInputs() const
+{
+    return OutlineCompositeInputs{ .Styles = &Styles,
+                                   .StylesVersion = StylesVersion,
+                                   .MaxWidthPixels = MaxWidthPixels,
+                                   .ScreenMin = { ScreenMin[0], ScreenMin[1] },
+                                   .ScreenMax = { ScreenMax[0], ScreenMax[1] } };
 }

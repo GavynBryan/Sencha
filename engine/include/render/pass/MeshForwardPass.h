@@ -5,6 +5,7 @@
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/extract/Camera.h>
 #include <render/pass/LightBindings.h>
 #include <render/MaterialCache.h>

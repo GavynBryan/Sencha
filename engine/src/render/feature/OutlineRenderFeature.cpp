@@ -32,10 +32,10 @@ void OutlineRenderFeature::OnDraw(const RenderFrame& frame)
         Targets.NoteQuietFrame();
         return;
     }
-    const auto attachments = Targets.Begin(*frame.Backend, *Outlines);
+    const auto attachments = Targets.Begin(*frame.Backend, Outlines->CompositeInputs());
     if (!attachments.has_value())
         return;
     Forward->DrawOutlineMask(*frame.Backend, *attachments, *Camera, *Lights, *Meshes, *Materials, SkinnedMeshes,
                              *Outlines);
-    Targets.Publish(*frame.Backend, *Outlines, Camera->Projection);
+    Targets.Publish(*frame.Backend, Outlines->CompositeInputs(), Camera->Projection);
 }

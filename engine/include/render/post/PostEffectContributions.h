@@ -4,6 +4,7 @@
 #include <presentation/PresentationContributions.h>
 #include <presentation/PresentationOwner.h>
 #include <render/post/PostEffectCatalog.h>
+#include <render/post/PostEffectFrame.h>
 
 #include <array>
 #include <cstdint>
@@ -26,8 +27,6 @@ enum class PostEffectLifetime : std::uint8_t
     // by clearing its writer, or when RemainingWallSeconds runs out.
     Session,
 };
-
-inline constexpr std::size_t kPostEffectParamCount = 16;
 
 // One writer's request to run an effect. Its owner drives Weight every frame on
 // whatever clock it chooses. Presentation-only: never replicated, never saved,
@@ -59,22 +58,6 @@ void ClearPostEffectsOf(World& world, PresentationWriterId writer);
 
 // Ends held contributions whose holder has gone and sessions whose cap has run out.
 void AdvancePostEffectLifetimes(World& world, float wallDeltaSeconds);
-
-struct PostEffectFrameEntry
-{
-    PostEffectId Effect;
-    PostEffectDomain Domain = PostEffectDomain::Display;
-    float Weight = 0.0f;
-    std::array<float, kPostEffectParamCount> Params{};
-};
-
-// What the chain runs this frame for one camera, in (domain, registered order).
-struct PostEffectFrame
-{
-    std::vector<PostEffectFrameEntry> Entries;
-    // Wall seconds that keep advancing while the simulation is paused.
-    float WallSeconds = 0.0f;
-};
 
 // A contribution at weight 0 is not in the result, so an idle effect costs no pass.
 void ExtractPostEffects(const World& world, EntityId camera, const PostEffectCatalog& catalog, float wallSeconds,

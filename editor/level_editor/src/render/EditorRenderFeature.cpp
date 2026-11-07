@@ -21,7 +21,7 @@
 
 #include <graphics/vulkan/OutlineMaskTargets.h>
 #include <render/StaticMeshComponent.h>
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include "render/TargetImagePublish.h"
 
@@ -714,7 +714,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                                             .DepthFormat = VK_FORMAT_D32_SFLOAT },
                                     camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
                                     SelectionOutlines);
-            const VkRect2D scissor = OutlineScissorFor(SelectionOutlines, target.Extent);
+            const VkRect2D scissor = OutlineScissorFor(SelectionOutlines.CompositeInputs(), target.Extent);
             post.OutlineTilesBindless = SelectionTiles.Record(between, mask->Mask.BindlessIndex, mask->Tiles, scissor,
                                                               SelectionOutlines.MaxWidthPixels);
             post.OutlineMaskBindless = mask->Mask.BindlessIndex;

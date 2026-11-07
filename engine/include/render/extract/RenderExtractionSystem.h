@@ -10,7 +10,7 @@
 #include <render/RenderQueue.h>
 #include <anim/SkeletonCache.h>
 #include <render/SkinnedPoseFrameData.h>
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/TextureHandle.h>

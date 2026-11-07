@@ -6,7 +6,8 @@
 #include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
-#include <render/outline/OutlineContributions.h>
+#include <math/Mat.h>
+#include <render/outline/OutlineStyles.h>
 
 #include <array>
 #include <cstdint>
@@ -28,7 +29,7 @@ struct OutlineMaskAttachments
 };
 
 // Where the composite can land for this camera's screen bounds, in `extent` pixels.
-[[nodiscard]] VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent);
+[[nodiscard]] VkRect2D OutlineScissorFor(const OutlineCompositeInputs& outlines, VkExtent2D extent);
 
 // The projection's depth and w rows, which the composite needs to move a depth by a
 // distance in either a perspective or an orthographic view.
@@ -65,10 +66,11 @@ public:
     void NoteQuietFrame();
 
     // Nullopt when this frame has no scene to outline or an image cannot be made.
-    [[nodiscard]] std::optional<OutlineMaskAttachments> Begin(const FrameContext& frame, const OutlineFrame& outlines);
+    [[nodiscard]] std::optional<OutlineMaskAttachments> Begin(const FrameContext& frame,
+                                                              const OutlineCompositeInputs& outlines);
     // Marks the tiles with outline work and hands the mask to the output pass, once it
     // holds this frame's outlines seen through `projection`.
-    void Publish(const FrameContext& frame, const OutlineFrame& outlines, const Mat4& projection);
+    void Publish(const FrameContext& frame, const OutlineCompositeInputs& outlines, const Mat4& projection);
 
     [[nodiscard]] bool HoldsMaskImage();
 

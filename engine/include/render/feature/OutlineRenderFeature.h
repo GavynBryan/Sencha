@@ -2,7 +2,7 @@
 
 #include <graphics/RenderFeature.h>
 #include <graphics/vulkan/OutlineMaskTargets.h>
-#include <render/outline/OutlineContributions.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/pass/MeshForwardPass.h>
 
 // Draws the outline mask for the runtime, between the scene and the effect chain.

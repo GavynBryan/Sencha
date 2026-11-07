@@ -11,7 +11,7 @@ namespace
 constexpr std::uint32_t kMaskQuietFrames = 120;
 }
 
-VkRect2D OutlineScissorFor(const OutlineFrame& outlines, VkExtent2D extent)
+VkRect2D OutlineScissorFor(const OutlineCompositeInputs& outlines, VkExtent2D extent)
 {
     // Grown by the widest style, which is how far an outline reaches past its object.
     const auto width = static_cast<float>(extent.width);
@@ -120,7 +120,8 @@ void OutlineMaskTargets::NoteQuietFrame()
     Targets.Evict(NearTiles);
 }
 
-std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameContext& frame, const OutlineFrame& outlines)
+std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameContext& frame,
+                                                                const OutlineCompositeInputs& outlines)
 {
     QuietFrames = 0;
     if (frame.ScenePost == nullptr || frame.SceneColorBindless == UINT32_MAX || frame.DepthView == VK_NULL_HANDLE)
@@ -132,7 +133,7 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
     const std::optional<RenderTargetView> mask = Targets.Acquire(Mask);
     const std::optional<RenderTargetView> marked = Targets.Acquire(MarkedTiles);
     const std::optional<RenderTargetView> near = Targets.Acquire(NearTiles);
-    StyleBindless = StyleImage.Update(outlines.Styles, outlines.StylesVersion);
+    StyleBindless = StyleImage.Update(*outlines.Styles, outlines.StylesVersion);
     if (!mask.has_value() || !marked.has_value() || !near.has_value() || StyleBindless == UINT32_MAX)
         return std::nullopt;
     Tiles = OutlineTileTargets{ .Marked = *marked, .Near = *near };
@@ -147,7 +148,8 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
                                    .StencilFormat = frame.StencilFormat };
 }
 
-void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineFrame& outlines, const Mat4& projection)
+void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineCompositeInputs& outlines,
+                                 const Mat4& projection)
 {
     const VkRect2D scissor = OutlineScissorFor(outlines, frame.SceneExtent);
     const std::uint32_t tiles = TilePass.Record(frame, MaskBindless, Tiles, scissor, outlines.MaxWidthPixels);

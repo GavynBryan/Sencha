@@ -7,7 +7,8 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <render/OutputTransformParams.h>
-#include <render/post/PostEffectContributions.h>
+#include <render/post/PostEffectCatalog.h>
+#include <render/post/PostEffectFrame.h>
 
 #include <cstdint>
 #include <vector>
