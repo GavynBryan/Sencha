@@ -219,6 +219,23 @@ bool VulkanSwapchainService::HasUsableSupport(const SwapchainSupport& support) c
 VkSurfaceFormatKHR VulkanSwapchainService::ChooseSurfaceFormat(
     const std::vector<VkSurfaceFormatKHR>& formats) const
 {
+    // A surface with no hardware sRGB write takes the shader encode instead. Most
+    // devices offer one, so a run can ask for that path on purpose to exercise it.
+    if (const char* requested = std::getenv("SENCHA_SURFACE_FORMAT");
+        requested != nullptr && std::string_view(requested) == "UNORM")
+    {
+        for (const auto& format : formats)
+        {
+            if ((format.format == VK_FORMAT_B8G8R8A8_UNORM || format.format == VK_FORMAT_R8G8B8A8_UNORM)
+                && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                Log.Info("Using requested _UNORM surface format; the output pass encodes");
+                return format;
+            }
+        }
+        Log.Warn("SENCHA_SURFACE_FORMAT=UNORM requested, but the surface offers no _UNORM format");
+    }
+
     for (const auto& format : formats)
     {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB

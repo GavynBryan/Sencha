@@ -5,6 +5,7 @@
 
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <graphics/vulkan/VulkanFormat.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
@@ -51,6 +52,9 @@ struct ImmediatePipelineConfig
     // InstanceExpansion, which already spends binding 0 on instance data.
     std::uint32_t        InstanceStride = 0;
     ColorBlendAttachmentDesc Blend{}; // default = opaque (no blend)
+    // Sets specialization constant 0 when the target has no hardware sRGB write, for
+    // a shader that declares kEncodeOutput and draws opaque straight to the display.
+    bool                 EncodeForTarget = false;
     // Polygon offset applied to the depth-tested slot only (on-top draws ignore depth).
     float                DepthBiasConstant = 0.0f;
     float                DepthBiasSlope = 0.0f;
@@ -336,6 +340,9 @@ private:
         desc.DepthBiasConstant = Config.DepthBiasConstant;
         desc.DepthBiasSlope = Config.DepthBiasSlope;
         desc.ColorBlend = { Config.Blend };
+        if (Config.EncodeForTarget)
+            desc.FragmentSpecializationConstants = { ShaderSpecializationConstant{
+                .Id = 0, .Value = FormatNeedsShaderEncode(frame.TargetFormat) ? 1u : 0u } };
         desc.ColorFormats = { frame.TargetFormat };
         desc.DepthFormat = frame.DepthFormat;
         desc.StencilFormat = frame.StencilFormat;

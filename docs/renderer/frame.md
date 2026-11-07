@@ -130,9 +130,13 @@ the forward shaders write it with no exposure or curve, and transparent surfaces
 blend in it. `OutputTransformPass` is the one place exposure and the shoulder are
 applied, from `OutputTransformParams`, and the swapchain's hardware sRGB write is
 the one encode. A swapchain with neither gets the encode from a specialization
-constant in `output_present.frag` and `outline_composite.frag` (`FormatNeedsShaderEncode`). Exercising that path
-needs a device whose surface offers only `_UNORM` formats, so it has been reviewed
-but not run.
+constant in `output_present.frag` and `outline_composite.frag` (`FormatNeedsShaderEncode`).
+Debug lines, which draw in Output, set it through `ImmediatePipelineConfig::EncodeForTarget`.
+`SENCHA_SURFACE_FORMAT=UNORM` asks for a `_UNORM` surface where the device offers one, to run
+that path on purpose. On it the scene, the outlines and the debug lines land within one level
+of the hardware encode. Authored UI, host images and the editor's chrome do not encode: they
+blend, and blending an encoded value in the target is not blending light, so they need an
+intermediate target before a `_UNORM` surface shows them right.
 
 A debug view bypasses the transform through `OutputTransformForView`, so a channel
 shows the value it wrote: exposure and the shoulder would remap a normal or a heat
