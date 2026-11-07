@@ -229,6 +229,10 @@ public:
     bool SetGraphRadius(GraphId graph, std::optional<double> radius);
     bool SetGraphResidentCap(GraphId graph, std::optional<int32_t> cap);
 
+    // The world's and a graph's presentation layers; false when nothing changed.
+    bool SetWorldPresentation(PresentationSettingsLayer presentation);
+    bool SetGraphPresentation(GraphId graph, PresentationSettingsLayer presentation);
+
     // Explicit migration window for v1 manifests. Teleports have enough data
     // to become non-spatial world links. Geometric records have no plane
     // transform in the legacy format and remain unresolved instead of being

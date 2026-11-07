@@ -53,6 +53,9 @@
 #include "workspace/LightingDiagnostics.h"
 #include "workspace/HierarchyOutline.h"
 #include "workspace/PartitionOutline.h"
+#include "workspace/ScenePresentationSource.h"
+
+#include <render/GamePresentationLayer.h>
 #include "workspace/PropertyHandles.h"
 #include "workspace/WorldMapMode.h"
 #include "ui/WorldMapSurface.h"
@@ -181,6 +184,7 @@ LevelWorkspace::~LevelWorkspace()
     Lighting.reset();
     MapMode.reset();
     Hierarchy.reset();
+    SceneSettings.reset();
     Partition.reset();
     WorldOutline.reset();
     Entities.reset();
@@ -228,7 +232,12 @@ void LevelWorkspace::BuildDocument()
     CameraSystem = std::make_unique<EditorViewportCameraSystem>(Workspace->Layout);
     LevelDocument = std::make_unique<LevelDocumentSource>(*Workspace, *Commands, Documents);
     if (Assets)
+    {
         Workspace->World.SetAssetEnvironment(*Assets);
+        if (GamePresentation == nullptr)
+            GamePresentation = std::make_unique<GamePresentationLayer>(*Assets);
+        Workspace->GamePresentation = GamePresentation.get();
+    }
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
 }
 
@@ -336,6 +345,7 @@ void LevelWorkspace::BuildSelectionSources()
     Entities->OfferZoneMoves(Catalog, ActionHandlers);
     WorldOutline = std::make_unique<WorldExplorer>(*Workspace);
     Partition = std::make_unique<PartitionOutline>(*Workspace);
+    SceneSettings = std::make_unique<ScenePresentationSource>(*Workspace);
     Hierarchy = std::make_unique<HierarchyOutline>(*Workspace, *WorldOutline, *Partition);
     ExplorerRows.Offer(Catalog, ActionHandlers, Hierarchy->Row());
     OfferAction(Catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
@@ -810,10 +820,10 @@ WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 
 WorkspaceSelectionFacet LevelWorkspace::Selection()
 {
-    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr
+    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr || SceneSettings == nullptr
         || Lighting == nullptr)
         return {};
-    WorkspaceSelectionFacet selection = SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition, *Lighting);
+    WorkspaceSelectionFacet selection = SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition, *SceneSettings, *Lighting);
     // The view stays clear: what is selected is looked at through the context
     // wheel, and in full when asked for.
     selection.OnRequest = true;

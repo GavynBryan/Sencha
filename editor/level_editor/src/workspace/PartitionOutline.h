@@ -14,6 +14,7 @@
 #include <vector>
 
 class EditorWorkspace;
+struct PresentationSettingsLayer;
 
 //=============================================================================
 // PartitionOutline
@@ -55,6 +56,8 @@ private:
     [[nodiscard]] std::vector<PropertyNode> GraphNodes(GraphId graph) const;
     [[nodiscard]] std::vector<PropertyNode> WorldNodes() const;
     [[nodiscard]] std::string ValueOf(std::string_view key) const;
+    [[nodiscard]] const PresentationSettingsLayer* GameLayer() const;
+    PropertyEditResult CommitPresentation(std::string_view key, std::string_view value);
     // Runs a manifest verb as one step; false when the verb changed nothing.
     template <typename Verb>
     bool Edit(Verb&& verb);

@@ -32,6 +32,7 @@
 #include <string>
 #include <vector>
 
+class GamePresentationLayer;
 class LoggingProvider;
 
 class EditorWorkspace
@@ -175,6 +176,9 @@ public:
     std::optional<FaceMaterialClipboard> UvClipboard;
     GridSettings Grid;
     PivotState Pivot;
+    // The project's own presentation layer, beneath a world's and a scene's;
+    // null when the project has none. Owned by the hosting workspace.
+    const GamePresentationLayer* GamePresentation = nullptr;
     // The document-bound editing stack and the transient state that dies with
     // the edited document.
     WorkspaceInteractionRuntime Interaction;
