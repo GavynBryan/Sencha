@@ -3,7 +3,8 @@
 
 #include "bloom.glsli"
 
-// Nine taps along pc.texel, one axis per pass.
+// Nine taps along pc.texel, one axis per pass. A radius past 1 leaves gaps between
+// taps that thin lines fall into, so reach comes from the plane's resolution.
 const float kWeight[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
 
 void main()

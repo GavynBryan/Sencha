@@ -237,7 +237,7 @@ struct PostEffectFigureSystem
         };
         hold(EnginePtr->PostEffects().Find("sencha.fade"), Fade, {});
         hold(DisplaceEffect, Displace, {});
-        hold(EnginePtr->PostEffects().Find("sencha.bloom"), Bloom, { 0.6f, 1.0f, 2.0f });
+        hold(EnginePtr->PostEffects().Find("sencha.bloom"), Bloom, { 0.6f, 1.0f, 1.0f });
     }
 
     Engine* EnginePtr = nullptr;

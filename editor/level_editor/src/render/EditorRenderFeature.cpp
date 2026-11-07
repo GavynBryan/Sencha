@@ -953,7 +953,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         return BloomPlane{ target.BloomImage[i], target.BloomView[i], target.BloomAccess[i], target.BloomBindless[i],
                            target.BloomExtent };
     };
-    Bloom.Blur(frame, target.BloomBindless[0], plane(1), plane(0), BloomParamsCache);
+    Bloom.Blur(frame, target.BloomBindless[0], target.BloomExtent, plane(1), plane(0), BloomParamsCache);
 
     RenderTargetSession display(frame.Cmd, target.ColorImage, target.ColorLayout);
     RenderScopeDesc desc{};

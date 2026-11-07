@@ -168,8 +168,8 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
         std::array<BloomPlane, 2> glow;
         for (std::size_t i = 0; i < 2; ++i)
         {
-            Planes.SetExtent(GlowPlane[i], { std::max(1u, frame.SceneExtent.width / 2),
-                                             std::max(1u, frame.SceneExtent.height / 2) });
+            Planes.SetExtent(GlowPlane[i], { std::max(1u, frame.SceneExtent.width / 4),
+                                             std::max(1u, frame.SceneExtent.height / 4) });
             const std::optional<RenderTargetView> view = Planes.Acquire(GlowPlane[i]);
             if (!view.has_value())
                 return;
@@ -178,7 +178,7 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
         const BloomParams params{ .Threshold = entry.Params[0],
                                   .Intensity = entry.Params[1] * entry.Weight,
                                   .Radius = entry.Params[2] };
-        Bloom.Blur(frame, input, glow[0], glow[1], params);
+        Bloom.Blur(frame, input, frame.SceneExtent, glow[0], glow[1], params);
         const std::uint32_t scene = input;
         intoPlane([&](const FrameContext& context) { Bloom.Composite(context, glow[0].Bindless, scene, params.Intensity); });
     };

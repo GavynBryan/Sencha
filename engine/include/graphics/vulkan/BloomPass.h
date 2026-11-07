@@ -33,8 +33,8 @@ public:
     void Teardown();
 
     // Outside any scope. Leaves the blurred light of `source` in `glow`.
-    void Blur(const FrameContext& frame, std::uint32_t source, const BloomPlane& glow, const BloomPlane& scratch,
-              const BloomParams& params);
+    void Blur(const FrameContext& frame, std::uint32_t source, VkExtent2D sourceExtent, const BloomPlane& glow,
+              const BloomPlane& scratch, const BloomParams& params);
 
     // Inside the target's scope. Adds `glow` over `scene`, or over what the target
     // holds when `scene` is UINT32_MAX.

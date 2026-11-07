@@ -11,6 +11,6 @@ layout(push_constant) uniform BloomPC {
     float threshold;
     float intensity;
     float radius;
-    float pad;
+    uint gather; // source texels per axis one glow texel covers
     vec2 texel;
 } pc;

@@ -17,7 +17,7 @@ struct BloomPush
     float Threshold = 1.0f;
     float Intensity = 1.0f;
     float Radius = 1.0f;
-    float Pad = 0.0f;
+    std::uint32_t Gather = 1;
     float Texel[2]{};
 };
 static_assert(sizeof(BloomPush) == 32);
@@ -68,8 +68,8 @@ bool BloomPass::EnsurePipelines(VkFormat format)
     });
 }
 
-void BloomPass::Blur(const FrameContext& frame, std::uint32_t source, const BloomPlane& glow,
-                     const BloomPlane& scratch, const BloomParams& params)
+void BloomPass::Blur(const FrameContext& frame, std::uint32_t source, VkExtent2D sourceExtent,
+                     const BloomPlane& glow, const BloomPlane& scratch, const BloomParams& params)
 {
     if (!EnsurePipelines(kSceneColorFormat))
         return;
@@ -86,6 +86,7 @@ void BloomPass::Blur(const FrameContext& frame, std::uint32_t source, const Bloo
         Fullscreen.Draw(frame.Cmd, plane.Extent, Pipelines.Get(step), &push);
         push.SourceIndex = plane.Bindless;
     };
+    push.Gather = std::max(1u, sourceExtent.width / std::max(1u, glow.Extent.width));
     into(glow, Bright);
     push.Texel[0] = 1.0f / static_cast<float>(std::max(1u, glow.Extent.width));
     into(scratch, Spread);
