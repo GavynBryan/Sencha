@@ -16,6 +16,13 @@ enum class PostEffectDomain : std::uint8_t
     Display,
 };
 
+// Bloom is recorded by the engine itself, over passes a single shader cannot express.
+enum class PostEffectKind : std::uint8_t
+{
+    Shader,
+    Bloom,
+};
+
 struct PostEffectId
 {
     std::uint32_t Value = 0;
@@ -32,6 +39,7 @@ struct PostEffectDesc
     std::span<const std::uint32_t> FragmentSpirv;
     PostEffectDomain Domain = PostEffectDomain::Display;
     std::int16_t Order = 0;
+    PostEffectKind Kind = PostEffectKind::Shader;
 };
 
 struct PostEffectType
@@ -40,6 +48,7 @@ struct PostEffectType
     std::vector<std::uint32_t> FragmentSpirv;
     PostEffectDomain Domain = PostEffectDomain::Display;
     std::int16_t Order = 0;
+    PostEffectKind Kind = PostEffectKind::Shader;
 };
 
 // Every effect type this process can run. Owned by Engine; a game adds to it from

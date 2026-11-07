@@ -35,8 +35,8 @@ bool PostEffectChain::Setup(const RendererServices& services, const PostEffectCa
 {
     Catalog = &catalog;
     Shaders = services.Shaders;
-    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(PostEffectPush)) || !Transform.Setup(services)
-        || !Outlines.Setup(services))
+    if (Shaders == nullptr || !Fullscreen.Setup(services, sizeof(PostEffectPush)) || !Bloom.Setup(services)
+        || !Transform.Setup(services) || !Outlines.Setup(services))
         return false;
 
     Planes.Setup(services);
@@ -48,6 +48,9 @@ bool PostEffectChain::Setup(const RendererServices& services, const PostEffectCa
     plane.Lifetime = RenderTargetLifetime::WithinFrame;
     Plane[0] = Planes.Create(plane);
     Plane[1] = Planes.Create(plane);
+    plane.DebugName = "bloom_plane";
+    GlowPlane[0] = Planes.Create(plane);
+    GlowPlane[1] = Planes.Create(plane);
     // Every effect compiles here rather than on the frame it first has weight,
     // which for a game's death or fade is the frame a hitch would be seen.
     for (std::uint32_t id = 1; id <= catalog.Count(); ++id)
@@ -64,6 +67,7 @@ void PostEffectChain::Teardown()
     Compiled.clear();
     Outlines.Teardown();
     Transform.Teardown();
+    Bloom.Teardown();
     Fullscreen.Teardown();
     Shaders = nullptr;
     Catalog = nullptr;
@@ -77,7 +81,7 @@ const PostEffectChain::CompiledEffect* PostEffectChain::Compile(PostEffectId eff
         return known->Pipeline != VK_NULL_HANDLE ? &*known : nullptr;
 
     const PostEffectType* type = Catalog != nullptr ? Catalog->Get(effect) : nullptr;
-    if (type == nullptr)
+    if (type == nullptr || type->Kind != PostEffectKind::Shader)
         return nullptr;
     const ShaderHandle fragment = Shaders->CreateModuleFromSpirv(
         type->FragmentSpirv.data(), type->FragmentSpirv.size(), type->Name.c_str());
@@ -95,7 +99,7 @@ const PostEffectChain::CompiledEffect* PostEffectChain::Compile(PostEffectId eff
 std::size_t PostEffectChain::ResidentPlaneCount() const
 {
     std::size_t resident = 0;
-    for (const RenderTargetId id : Plane)
+    for (const RenderTargetId id : { Plane[0], Plane[1], GlowPlane[0], GlowPlane[1] })
         resident += const_cast<RenderTargetStore&>(Planes).Peek(id).has_value() ? 1u : 0u;
     return resident;
 }
@@ -106,7 +110,7 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
     if (effects.Entries.empty())
     {
         if (Quiet.NoteQuiet())
-            for (const RenderTargetId id : Plane)
+            for (const RenderTargetId id : { Plane[0], Plane[1], GlowPlane[0], GlowPlane[1] })
                 Planes.Evict(id);
         return;
     }
@@ -160,7 +164,29 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
         target ^= 1u;
     };
 
+    const auto runBloom = [&](const PostEffectFrameEntry& entry) {
+        std::array<BloomPlane, 2> glow;
+        for (std::size_t i = 0; i < 2; ++i)
+        {
+            Planes.SetExtent(GlowPlane[i], { std::max(1u, frame.SceneExtent.width / 2),
+                                             std::max(1u, frame.SceneExtent.height / 2) });
+            const std::optional<RenderTargetView> view = Planes.Acquire(GlowPlane[i]);
+            if (!view.has_value())
+                return;
+            glow[i] = { view->ColorImage, view->ColorView, view->ColorAccess, view->BindlessIndex, view->Extent };
+        }
+        const BloomParams params{ .Threshold = entry.Params[0],
+                                  .Intensity = entry.Params[1] * entry.Weight,
+                                  .Radius = entry.Params[2] };
+        Bloom.Blur(frame, input, glow[0], glow[1], params);
+        const std::uint32_t scene = input;
+        intoPlane([&](const FrameContext& context) { Bloom.Composite(context, glow[0].Bindless, scene, params.Intensity); });
+    };
+
     const auto runEffect = [&](const PostEffectFrameEntry& entry) {
+        const PostEffectType* type = Catalog != nullptr ? Catalog->Get(entry.Effect) : nullptr;
+        if (type != nullptr && type->Kind == PostEffectKind::Bloom)
+            return runBloom(entry);
         const CompiledEffect* compiled = Compile(entry.Effect);
         if (compiled == nullptr)
             return;

@@ -42,7 +42,12 @@ simulation is paused, the weight, and four `vec4` params. `depthIndex` and `mask
 or more than the 128 bytes every device guarantees, is a design conversation rather than a
 bigger block.
 
-The engine ships `sencha.fade`, a display-domain fade to `params[0].rgb`.
+The engine ships `sencha.fade`, a display-domain fade to `params[0].rgb`, and
+`sencha.bloom`, the first scene effect: light above `params[0].x` is blurred at half
+resolution with a spread of `params[0].z` and added back at `params[0].y` times the
+weight. Bloom is the one effect the engine records itself (`PostEffectKind::Bloom`),
+because it takes several passes; the level editor's selection glow draws through the
+same `BloomPass`.
 
 ## Domains
 

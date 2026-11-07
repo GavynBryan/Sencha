@@ -758,3 +758,7 @@ vtable slot, and `Engine::MaterialShaders()` reaches the catalog, which `Engine`
 **Time and blending.** `PresentationTime`, `PresentedFrame` and `CameraRenderData` gain the
 presented moment (`SimulationSeconds`, `TimeSeconds`), which reaches `ViewPositionTime.w`.
 Blended surfaces composite premultiplied, so their emission is no longer scaled by alpha.
+
+**Bloom.** `PostEffectDesc` and `PostEffectType` gain `Kind`, and the engine registers
+`sencha.bloom`. `ShaderCatalog` leaves the empty-shader check to each catalog, since a bloom
+type has none.

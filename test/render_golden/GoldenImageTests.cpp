@@ -357,6 +357,11 @@ TEST(GoldenImage, ADisplayEffectRunsAfterTheTransform)
     CheckScene({ .Name = "post_fade", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0.5" });
 }
 
+TEST(GoldenImage, BloomSpreadsTheLightAboveItsThreshold)
+{
+    CheckScene({ .Name = "post_bloom", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.bloom 1" });
+}
+
 TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
 {
     CheckScene({ .Name = "post_displace", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.displace 1" });

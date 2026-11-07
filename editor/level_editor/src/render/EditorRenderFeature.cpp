@@ -318,7 +318,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
         Ghost.emplace(RuntimeAssetsRef, *LoggingRef);
         Drafts.emplace(RuntimeAssetsRef, *LoggingRef);
     }
-    Bloom.Setup(services);
+    (void)Bloom.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
     if (Log != nullptr)
@@ -947,7 +947,21 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
     // Outside the session: the bloom chain samples bloom[0], which the session's
     // exit is what makes readable.
-    Bloom.Record(frame, target, BloomParamsCache);
+    if (target.BloomImage[0] == VK_NULL_HANDLE || target.BloomImage[1] == VK_NULL_HANDLE)
+        return;
+    const auto plane = [&](std::size_t i) {
+        return BloomPlane{ target.BloomImage[i], target.BloomView[i], target.BloomAccess[i], target.BloomBindless[i],
+                           target.BloomExtent };
+    };
+    Bloom.Blur(frame, target.BloomBindless[0], plane(1), plane(0), BloomParamsCache);
+
+    RenderTargetSession display(frame.Cmd, target.ColorImage, target.ColorLayout);
+    RenderScopeDesc desc{};
+    desc.Area.extent = target.Extent;
+    desc.Color.View = target.ColorView;
+    desc.ColorFormat = kSceneColorFormat;
+    const RenderScope scope(frame, desc);
+    Bloom.Composite(scope.Context(), target.BloomBindless[1], UINT32_MAX, BloomParamsCache.Intensity);
 }
 
 void EditorRenderFeature::Teardown()

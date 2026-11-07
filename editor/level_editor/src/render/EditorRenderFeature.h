@@ -6,7 +6,7 @@
 #include "EditorFillPipeline.h"
 #include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "EditorSolidPipeline.h"
-#include "EditorBloomPass.h"
+#include <graphics/vulkan/BloomPass.h>
 #include "render/EditorWideLinePipeline.h"
 #include "viewport/EditorViewport.h"
 #include "GpuGridRenderer.h"
@@ -316,7 +316,7 @@ private:
     std::vector<ViewSlot>  ViewSlots;
     std::vector<ViewportId> LiveViewports;
     std::vector<ViewImage> ViewImages;
-    EditorBloomPass        Bloom;
+    BloomPass              Bloom;
     bool                   BloomEnabled = true;     // editor.bloom.enable
     BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius
     RendererServices       Services{};

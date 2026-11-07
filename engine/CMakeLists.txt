@@ -319,6 +319,17 @@ if(SENCHA_ENABLE_VULKAN)
         VAR_NAME kOutlineTilesFragSpv
         OUT_HEADER _outline_tiles_frag_header
     )
+    set(_bloom_frag_headers)
+    foreach(_entry "bloom_brightpass|kBloomBrightpassFragSpv" "bloom_blur|kBloomBlurFragSpv"
+                   "bloom_composite|kBloomCompositeFragSpv")
+        string(REPLACE "|" ";" _entry "${_entry}")
+        list(GET _entry 0 _file)
+        list(GET _entry 1 _var)
+        sencha_compile_shader(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${_file}.frag.glsl" STAGE frag
+                              OUTPUT_SPV _spv)
+        sencha_embed_spirv(SOURCE_SPV "${_spv}" VAR_NAME ${_var} OUT_HEADER _header)
+        list(APPEND _bloom_frag_headers "${_header}")
+    endforeach()
     sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_composite.frag.glsl"
         STAGE frag
@@ -413,6 +424,7 @@ if(SENCHA_ENABLE_VULKAN)
         "${_outline_mask_frag_header}"
         "${_outline_composite_frag_header}"
         "${_outline_tiles_frag_header}"
+        ${_bloom_frag_headers}
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS

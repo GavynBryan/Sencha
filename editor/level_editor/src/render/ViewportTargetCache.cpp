@@ -125,7 +125,7 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     const std::optional<RenderTargetView> bloom1 = Store.Acquire(entry->Bloom[1]);
     // These two are what the viewport needs to render at all; bloom is an
     // effect that degrades to off, so a failed bloom plane is not fatal here.
-    // EditorBloomPass checks its images before recording.
+    // The feature checks them before it records bloom.
     const bool haveBloom = bloom0.has_value() && bloom1.has_value();
 
     RenderView view{};

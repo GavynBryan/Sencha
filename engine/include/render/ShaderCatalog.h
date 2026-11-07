@@ -40,8 +40,6 @@ protected:
         };
         if (type.Name.empty())
             return refuse("it has no name");
-        if (type.FragmentSpirv.empty())
-            return refuse("it has no shader");
         if (Find(type.Name).IsValid())
             return refuse("the name is taken");
         if (!conflict.empty())
