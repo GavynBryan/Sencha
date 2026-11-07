@@ -151,6 +151,7 @@ bool WriteCookedScene(
     const JsonValue& cookedScene,
     std::span<const std::string> extraRefs,
     std::span<const SmapCollisionCell> collisionCells,
+    const PresentationSettingsLayer& presentation,
     const ComponentSerializerRegistry& serializers,
     const std::function<std::filesystem::path(std::string_view)>& physicalPathFor,
     const std::filesystem::path& cookedScenePath,
@@ -203,6 +204,7 @@ bool WriteCookedScene(
         return false;
 
     contents.Collision.assign(collisionCells.begin(), collisionCells.end());
+    contents.Presentation = presentation;
 
     std::vector<std::byte> bytes;
     SmapError smapError;

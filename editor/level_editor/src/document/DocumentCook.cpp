@@ -237,7 +237,7 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
 
     if (!WriteCookedSceneArtifacts(ctx, std::move(snapshot.PassthroughScene),
                                    pendingMeshes, cellEntities, collisionEntries,
-                                   runCollision))
+                                   runCollision, snapshot.Presentation))
         return result;
 
     if (!StageDocumentIndex(ctx, sourceRel, geometryHash, runReferencedAssets,

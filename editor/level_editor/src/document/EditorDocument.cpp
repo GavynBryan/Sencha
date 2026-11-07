@@ -274,10 +274,13 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
                                                  : Json5Value::MakeObject();
     std::erase_if(out.Settings.Members,
         [](const Json5Value::Member& member)
-        { return member.first == "default_material"; });
+        { return member.first == "default_material" || member.first == "presentation"; });
     if (DefaultMaterial.IsValid())
         out.Settings.Members.emplace_back("default_material",
                                           Json5FromJson(AssetRefToJson(Current(DefaultMaterial))));
+    if (!Presentation.IsEmpty())
+        out.Settings.Members.emplace_back("presentation",
+                                          Json5FromJson(WritePresentationSettingsLayer(Presentation)));
 
 
     std::unordered_map<std::uint64_t, const SceneSourceEntity*> retainedById;
@@ -435,6 +438,11 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
             Logging.GetLogger<EditorDocument>().Warn(
                 "brush sidecar: entries skipped:\n{}", sidecarProblems);
     }
+
+    Presentation = {};
+    if (const Json5Value* presentation = parsed->Settings.Find("presentation"))
+        if (std::string invalid; !ReadPresentationSettingsLayer(Json5ToJson(*presentation), Presentation, invalid))
+            return fail("settings.presentation: " + invalid);
 
     if (const Json5Value* material = parsed->Settings.Find("default_material"))
         if (std::optional<AssetRef> ref = AssetRefFromJson(Json5ToJson(*material)))
@@ -751,4 +759,14 @@ const AssetRef& EditorDocument::GetDefaultMaterial() const
 void EditorDocument::SetDefaultMaterial(AssetRef material)
 {
     DefaultMaterial = std::move(material);
+}
+
+const PresentationSettingsLayer& EditorDocument::GetPresentation() const
+{
+    return Presentation;
+}
+
+void EditorDocument::SetPresentation(PresentationSettingsLayer presentation)
+{
+    Presentation = std::move(presentation);
 }

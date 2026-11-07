@@ -12,6 +12,7 @@
 #include <ecs/EntityId.h>
 #include <math/Mat.h>
 #include <math/spatial/GridTransform3d.h>
+#include <render/PresentationSettings.h>
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
@@ -43,6 +44,7 @@ struct LightmapPlacement
 struct DocumentCookSnapshot
 {
     JsonValue PassthroughScene;
+    PresentationSettingsLayer Presentation;
     LightingCookParams Lighting;
     std::vector<CookBrushGeometry> Brushes;
     CookChartSet Charts;

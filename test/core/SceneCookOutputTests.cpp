@@ -62,7 +62,7 @@ namespace
                                 std::span<const std::string> extraRefs,
                                 std::string* error)
         {
-            return WriteCookedScene(scene, extraRefs, /*collisionCells*/ {},
+            return WriteCookedScene(scene, extraRefs, /*collisionCells*/ {}, /*presentation*/ {},
                 Serializers, Resolver(), Root / "scene.smap", error);
         }
 
