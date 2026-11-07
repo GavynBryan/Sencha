@@ -21,7 +21,6 @@
 #include <physics/CollisionShape.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsWorld.h>
-#include <physics/components/CharacterController.h>
 #include <projectile/ProjectileHit.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
@@ -66,74 +65,6 @@ Quatf Facing(const Vec3d& direction)
     return cosine < 0.0f ? Quatf::FromAxisAngle(Vec3d::Up(), kPi) : Quatf::Identity();
 }
 
-// Where a ray first enters a capsule standing upright about `centre`, as a
-// distance along the ray, or nothing when it misses within `maxDistance`.
-// A ray starting inside reports zero.
-std::optional<float> RayCapsule(const Vec3d& origin, const Vec3d& direction, float maxDistance, const Vec3d& centre,
-                                float halfSegment, float radius)
-{
-    const Vec3d a = centre - Vec3d::Up() * halfSegment;
-    const Vec3d b = centre + Vec3d::Up() * halfSegment;
-    const float radiusSq = radius * radius;
-
-    // Inside already: the nearest point of the segment is within the radius.
-    {
-        const Vec3d ab = b - a;
-        const float length = ab.SqrMagnitude();
-        const float t = length > 0.0f ? std::clamp((origin - a).Dot(ab) / length, 0.0f, 1.0f) : 0.0f;
-        if ((origin - (a + ab * t)).SqrMagnitude() <= radiusSq)
-            return 0.0f;
-    }
-
-    std::optional<float> best;
-    auto consider = [&](float t) {
-        if (t >= 0.0f && t <= maxDistance && (!best || t < *best))
-            best = t;
-    };
-
-    // The cylinder between the caps: solve in the plane across the up axis.
-    const Vec3d up = Vec3d::Up();
-    const Vec3d offset = origin - a;
-    const Vec3d dPerp = direction - up * direction.Dot(up);
-    const Vec3d oPerp = offset - up * offset.Dot(up);
-    const float qa = dPerp.Dot(dPerp);
-    if (qa > 1.0e-12f)
-    {
-        const float qb = 2.0f * oPerp.Dot(dPerp);
-        const float qc = oPerp.Dot(oPerp) - radiusSq;
-        const float disc = qb * qb - 4.0f * qa * qc;
-        if (disc >= 0.0f)
-        {
-            const float t = (-qb - std::sqrt(disc)) / (2.0f * qa);
-            const float along = (offset + direction * t).Dot(up);
-            if (along >= 0.0f && along <= 2.0f * halfSegment)
-                consider(t);
-        }
-    }
-    // The caps.
-    for (const Vec3d& cap : { a, b })
-    {
-        const Vec3d m = origin - cap;
-        const float sb = m.Dot(direction);
-        const float sc = m.Dot(m) - radiusSq;
-        const float disc = sb * sb - sc;
-        if (disc >= 0.0f)
-            consider(-sb - std::sqrt(disc));
-    }
-    return best;
-}
-
-// The squared distance from `point` to an upright capsule's axis segment.
-float SegmentDistanceSq(const Vec3d& point, const Vec3d& centre, float halfSegment)
-{
-    const float along = std::clamp((point - centre).Dot(Vec3d::Up()), -halfSegment, halfSegment);
-    return (point - (centre + Vec3d::Up() * along)).SqrMagnitude();
-}
-
-float CapsuleHalfSegment(const CharacterController& character)
-{
-    return std::max(0.0f, character.Height * 0.5f - character.Radius);
-}
 
 bool Struck(const ProjectileMotion& motion, EntityId entity)
 {
@@ -509,7 +440,9 @@ std::optional<ProjectileSystem::Contact> ProjectileSystem::Sweep(const Projectil
         ignored[count++] = instigator;
     for (std::uint8_t i = 0; i < motion.HitCount; ++i)
         ignored[count++] = motion.Hits[i];
-    const PhysicsQueryFilter filter{ .IncludeTriggers = false, .IgnoreEntities = { ignored.data(), count } };
+    const PhysicsQueryFilter filter{ .IncludeTriggers = false,
+                                     .IgnoreEntities = { ignored.data(), count },
+                                     .IncludeCharacters = definition.Definition.HitsCharacters };
 
     std::optional<Contact> nearest;
     const PhysicsQueries queries(*Host.Physics);
@@ -529,54 +462,6 @@ std::optional<ProjectileSystem::Contact> ProjectileSystem::Sweep(const Projectil
         if (hit.Hit)
             nearest = Contact{ .Entity = hit.Entity, .Distance = hit.Distance, .Point = hit.Point, .Normal = hit.Normal };
     }
-
-    if (definition.Definition.HitsCharacters)
-        if (const std::optional<Contact> character =
-                SweepCharacters(motion, definition, instigator, from, direction, distance);
-            character.has_value() && (!nearest || character->Distance < nearest->Distance))
-            nearest = character;
-    return nearest;
-}
-
-std::optional<ProjectileSystem::Contact> ProjectileSystem::SweepCharacters(const ProjectileMotion& motion,
-                                                                           const ResolvedProjectile& definition,
-                                                                           EntityId instigator, const Vec3d& from,
-                                                                           const Vec3d& direction,
-                                                                           float distance)
-{
-    World& world = *Entities;
-    if (!world.IsRegistered<CharacterController>())
-        return std::nullopt;
-    if (!Characters)
-        Characters.emplace(world);
-
-    std::optional<Contact> nearest;
-    Characters->ForEachChunk([&](auto& view) {
-        auto shapes = view.template Read<CharacterController>();
-        auto poses = view.template Read<WorldTransform>();
-        for (std::uint32_t i = 0; i < view.Count(); ++i)
-        {
-            const EntityId entity = view.Entity(i);
-            if (entity == instigator || Struck(motion, entity))
-                continue;
-            const Vec3d centre = poses[i].Value.Position;
-            const float halfSegment = CapsuleHalfSegment(shapes[i]);
-            // A sphere meets a capsule where its centre meets the capsule grown
-            // by the sphere's radius.
-            const std::optional<float> t = RayCapsule(from, direction, distance, centre, halfSegment,
-                                                      shapes[i].Radius + definition.Definition.Radius);
-            if (!t.has_value() || (nearest && *t >= nearest->Distance))
-                continue;
-            const Vec3d at = from + direction * *t;
-            const float along = std::clamp((at - centre).Dot(Vec3d::Up()), -halfSegment, halfSegment);
-            Vec3d normal = at - (centre + Vec3d::Up() * along);
-            normal = normal.SqrMagnitude() > 1.0e-10f ? normal.Normalized() : -direction;
-            nearest = Contact{ .Entity = entity,
-                               .Distance = *t,
-                               .Point = at - normal * definition.Definition.Radius,
-                               .Normal = normal };
-        }
-    });
     return nearest;
 }
 
@@ -629,30 +514,12 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
     World& world = *Entities;
     std::array<EntityId, 1> self{ instigator };
     const PhysicsQueryFilter filter{ .IncludeTriggers = false,
-                                     .IgnoreEntities = { self.data(), instigator.IsValid() ? 1u : 0u } };
+                                     .IgnoreEntities = { self.data(), instigator.IsValid() ? 1u : 0u },
+                                     .IncludeCharacters = definition.Definition.HitsCharacters };
     const PhysicsQueries queries(*Host.Physics);
     Overlaps.clear();
     queries.OverlapShape(CollisionShape::MakeSphere(radius), point, Quatf::Identity(), Overlaps, filter);
 
-    // Characters have no body for the overlap to find.
-    if (definition.Definition.HitsCharacters && world.IsRegistered<CharacterController>())
-    {
-        if (!Characters)
-            Characters.emplace(world);
-        Characters->ForEachChunk([&](auto& view) {
-            auto shapes = view.template Read<CharacterController>();
-            auto poses = view.template Read<WorldTransform>();
-            for (std::uint32_t i = 0; i < view.Count(); ++i)
-            {
-                const EntityId entity = view.Entity(i);
-                const float reach = radius + shapes[i].Radius;
-                if (entity != instigator
-                    && SegmentDistanceSq(point, poses[i].Value.Position, CapsuleHalfSegment(shapes[i]))
-                           <= reach * reach)
-                    Overlaps.push_back(entity);
-            }
-        });
-    }
     // In identity order, so a splash over several targets applies the same way
     // on every run.
     std::sort(Overlaps.begin(), Overlaps.end());

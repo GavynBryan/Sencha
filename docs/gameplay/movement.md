@@ -307,6 +307,11 @@ those — so the same motor serves any up axis and any mode.
 `CharacterMoverPool::Drive` feeds it each character's `MotionRequest` and
 writes back position, achieved velocity, and support.
 
+Each character also carries an inner body on the `CharacterBody` layer, the
+same capsule, named by its entity. Physics queries strike it (rays, sweeps,
+overlaps, sight); it pairs with no layer, so it changes no contact and no
+motion. `PhysicsQueryFilter::IncludeCharacters` leaves it out.
+
 A character moves in world space and writes its `LocalTransform` as such, so a
 character is a root. One placed under another entity, as a prefab instance's
 members are under the instance, is detached when its mover binds, keeping

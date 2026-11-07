@@ -520,14 +520,16 @@ do the work and delete the entry.
   different scales colliding and an undilated body striking a dilated character
   (`CharactersAtDifferentScalesCollideConsistently`,
   `BodyStrikingADilatedCharacterUsesSimulationRate`). Neither happens at any scale
-  today: the character mover sets up no character-versus-character collision and
-  gives a character no inner body, so characters pass through each other and rigid
-  bodies pass through characters.
+  today: the character mover sets up no character-versus-character collision, and
+  a character's inner body is on `CharacterBody`, a layer queries strike and that
+  pairs with nothing, so characters pass through each other and rigid bodies pass
+  through characters.
 - **Where:** `engine/src/physics/CharacterMover.cpp` (`CharacterMover::Move`, the
   `CharacterVirtual` settings) and `test/runtime/ActorTimeInteractionTests.cpp`.
-- **Trigger:** characters gaining an inner body or character-versus-character
-  collision; the two tests are written with that change, against dilated characters
-  as well as undilated ones.
+- **Trigger:** a character's body taking part in contacts (pairing
+  `CharacterBody` with `Moving`) or character-versus-character collision; the two
+  tests are written with that change, against dilated characters as well as
+  undilated ones.
 
 ## Ending an ability on an authored event
 
@@ -888,7 +890,7 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** a projectile's contacts are decided against the authority's present.
   A target the firer saw at an interpolated, older pose is struck where the
   authority has it now.
-- **Where:** `ProjectileSystem::Sweep` and `SweepCharacters`.
+- **Where:** `ProjectileSystem::Sweep`.
 - **Trigger:** the same as hitscan lag compensation in `docs/plans/networking.md`:
   combat at internet latency where players notice. It needs a per-tick history of
   character capsules and body poses to sweep against.

@@ -78,13 +78,10 @@ strikes that tick is resolved that tick.
 
 Each tick the authority moves a flying projectile along the chord of its arc --
 exact for straight flight, within a tick's curvature for a falling one -- and
-sweeps its sphere along that chord against two things:
-
-- physics bodies, through `PhysicsQueries::SweepShape`, ignoring sensors, its
-  instigator and everything it has already struck;
-- walking characters, whose `CharacterVirtual` capsules no physics query sees.
-  Each `CharacterController` is an upright capsule about its entity's position,
-  tested analytically.
+sweeps its sphere along that chord through `PhysicsQueries::SweepShape`,
+ignoring sensors, its instigator and everything it has already struck. Walking
+characters are struck through the body each carries (`CharacterBody` in
+`docs/gameplay/movement.md`) unless `hits_characters` is false.
 
 Contacts are taken nearest first. Each is struck at most once in the
 projectile's life: its effects are applied, `projectile.hit` is delivered at it,

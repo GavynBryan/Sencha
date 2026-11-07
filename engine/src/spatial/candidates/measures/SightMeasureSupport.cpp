@@ -1,5 +1,7 @@
 #include "SightMeasureSupport.h"
 
+#include <array>
+
 #include <ecs/World.h>
 #include <math/Angle.h>
 #include <spatial/sight/SightPlacement.h>
@@ -67,9 +69,14 @@ namespace candidate_operation
             return SightResult{ .Outcome = geometry };
         if (!run.ChargeRaycast())
             return std::nullopt;
-        const EntityId ignore[] = { observerEntity };
-        const std::span<const EntityId> ignored =
-            observerEntity.IsValid() ? std::span<const EntityId>(ignore) : std::span<const EntityId>{};
-        return TestSight(*run.Physics(), observer, target, targetEntity, PhysicsQueryFilter{ .IgnoreEntities = ignored });
+        // The querier asks about places it would stand in, so where it stands
+        // now blocks nothing.
+        std::array<EntityId, 2> ignore{};
+        std::size_t count = 0;
+        for (const EntityId entity : { observerEntity, run.Querier() })
+            if (entity.IsValid() && entity != targetEntity && (count == 0 || ignore[0] != entity))
+                ignore[count++] = entity;
+        return TestSight(*run.Physics(), observer, target, targetEntity,
+                         PhysicsQueryFilter{ .IgnoreEntities = std::span<const EntityId>(ignore.data(), count) });
     }
 }

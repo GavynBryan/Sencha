@@ -216,6 +216,7 @@ void CharacterMoverPool::Reconcile(
             config.StepHeight = controllers[index].StepHeight;
             config.GroundSnapDistance = controllers[index].GroundSnapDistance;
             config.SkinWidth = controllers[index].SkinWidth;
+            config.Owner = entity;
             state.Slots[slot].Mover.emplace(
                 *Simulation,
                 config,

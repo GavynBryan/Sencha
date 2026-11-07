@@ -28,7 +28,6 @@ class ResponsesSystem;
 class World;
 struct FixedLogicContext;
 struct FixedSimTime;
-struct CharacterController;
 struct WorldTransform;
 
 // A prefab's Projectile with its names resolved: what a flight reads every tick.
@@ -171,9 +170,6 @@ private:
     // The nearest thing the sphere meets along `direction` within `distance`.
     std::optional<Contact> Sweep(const ProjectileMotion& motion, const ResolvedProjectile& definition,
                                  EntityId instigator, const Vec3d& from, const Vec3d& direction, float distance);
-    std::optional<Contact> SweepCharacters(const ProjectileMotion& motion, const ResolvedProjectile& definition,
-                                           EntityId instigator, const Vec3d& from, const Vec3d& direction,
-                                           float distance);
     // Strikes `target`: its effects, its delivery, the cue. False if it was struck before.
     bool Strike(EntityId projectile, ProjectileMotion& motion, const ResolvedProjectile& definition,
                 EntityId instigator, const Contact& contact, const FixedSimTime& now);
@@ -194,7 +190,6 @@ private:
 
     std::optional<Query<Read<ProjectileMotion>>> Flying;
     std::optional<Query<Write<ProjectileFlight>>> Flights;
-    std::optional<Query<Read<CharacterController>, Read<WorldTransform>>> Characters;
     // Reused every tick: gathered before anything is struck, because a strike
     // can apply effects that make structural changes.
     std::vector<EntityId> Scratch;

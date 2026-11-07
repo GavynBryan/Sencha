@@ -1,5 +1,7 @@
 #include <physics/PhysicsQueries.h>
 
+#include "PhysicsLayers.h"
+
 #include "PhysicsWorldImpl.h"
 
 #include <algorithm>
@@ -40,6 +42,8 @@ public:
     bool ShouldCollideLocked(const JPH::Body& body) const override
     {
         if (body.IsSensor() && !Filter.IncludeTriggers)
+            return false;
+        if (!Filter.IncludeCharacters && body.GetObjectLayer() == PhysicsObjectLayers::CharacterBody)
             return false;
         const EntityId entity = UnpackEntity(body.GetUserData());
         return std::find(Filter.IgnoreEntities.begin(), Filter.IgnoreEntities.end(), entity)

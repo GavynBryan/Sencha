@@ -37,6 +37,7 @@
 #include <net/ReplicationInterpolation.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
+#include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterController.h>
 #include <projectile/Projectile.h>
 #include <projectile/ProjectileState.h>
@@ -207,7 +208,7 @@ protected:
         return entity;
     }
 
-    // A walking character: a capsule with no body for any query to find.
+    // A walking character, bound to its mover as the physics step binds one.
     EntityId Character(const Vec3d& centre)
     {
         const EntityId entity = WorldState.CreateEntity();
@@ -218,6 +219,7 @@ protected:
         WorldState.AddComponent<CharacterController>(entity, CharacterController{ .Radius = 0.4f, .Height = 1.8f });
         WorldState.AddComponent<AttributeSet>(entity, AttributeSet{});
         (void)WorldState.TryGet<AttributeSet>(entity)->Add(Health, 100.0f);
+        Movers.Reconcile(WorldState, Logic);
         return entity;
     }
 
@@ -283,6 +285,7 @@ protected:
     EngineSchedule Schedule;
     FixedSimulationLoop Loop{ kDt };
     PhysicsWorld Physics;
+    CharacterMoverPool Movers{ Physics };
     StubPrefabSpawner Prefabs;
     NetTickEstimator Clock;
     ReplicationInterpolation Interpolation;
@@ -382,7 +385,7 @@ TEST_F(ProjectileFixture, ItNeverStrikesItsInstigator)
     EXPECT_GT(Position(bolt).X, 2.5f);
 }
 
-TEST_F(ProjectileFixture, ItStrikesAWalkingCharacterThoughNoQueryCanSeeOne)
+TEST_F(ProjectileFixture, ItStrikesAWalkingCharacter)
 {
     const EntityId walker = Character(Vec3d(4.0f, 0.0f, 0.0f));
     const EntityId bolt = Launch();
@@ -443,6 +446,7 @@ TEST_F(ProjectileFixture, ASplashReachesWhatItCanSeeButNeitherItsInstigatorNorWh
     WorldState.AddComponent<CharacterController>(Shooter, CharacterController{ .Radius = 0.4f, .Height = 1.8f });
     WorldState.AddComponent<AttributeSet>(Shooter, AttributeSet{});
     (void)WorldState.TryGet<AttributeSet>(Shooter)->Add(Health, 100.0f);
+    Movers.Reconcile(WorldState, Logic);
     (void)Launch();
     Ticks(5);
     EXPECT_FLOAT_EQ(HealthOf(wall), 90.0f) << "struck once, and not splashed as well";

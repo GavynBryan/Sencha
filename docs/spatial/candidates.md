@@ -213,7 +213,7 @@ ray. A target counts as seen when the ray reaches it or first hits its own
 entity.
 
 - **Triggers.** It uses the filtered `PhysicsQueries::Raycast`, which skips triggers by default and ignores the observer's own entity.
-- **Characters.** Characters have no query bodies (`CharacterVirtual` without an inner body), so they never block sight.
+- **Characters.** A character's body blocks sight as any body does, except the run's querier and the observer, which are ignored: the querier asks about places it would stand in.
 - **Authored eyes.** An entity's `SightSensor` (range, half-angle, eye offset, facing its world forward) and `SightTarget` (sample offset) live beside the test, in `spatial/sight/SightComponents.h`, and `SightPlacement.h` turns them into a `SightObserver` and a sample point. The `visibility` and `route_visibility` measures use them whenever the observer or target is an entity that has them; an unusable sensor sees nothing. The `eye_height`, `target_height`, `half_angle_degrees` and `range` arguments describe only the eyes and targets with no component behind them, such as grid points.
 - **Ray caps.** `SightOutcome::Untested` is what a caller that caps rays records for a candidate it had no ray left for. `TestSight` never returns it.
 

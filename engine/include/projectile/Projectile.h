@@ -113,7 +113,7 @@ Projectile
 
     SENCHA_FIELD("hits_characters")
     SENCHA_LABEL("Hits characters")
-    SENCHA_TOOLTIP("It strikes walking characters, whose capsules no physics query sees.")
+    SENCHA_TOOLTIP("It strikes characters as well as bodies.")
     bool HitsCharacters = true;
 
     SENCHA_FIELD("ends_with_instigator")

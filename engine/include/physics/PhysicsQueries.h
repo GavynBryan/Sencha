@@ -44,6 +44,8 @@ struct PhysicsQueryFilter
 {
     bool IncludeTriggers = false;
     std::span<const EntityId> IgnoreEntities{};
+    // A character's body, which queries strike and nothing collides with.
+    bool IncludeCharacters = true;
 };
 
 class PhysicsQueries
