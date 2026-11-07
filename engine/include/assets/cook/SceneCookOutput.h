@@ -19,6 +19,7 @@ class JsonValue;
     const JsonValue& cookedScene,
     std::span<const std::string> extraRefs,
     std::span<const SmapCollisionCell> collisionCells,
+    const PresentationSettingsLayer& presentation,
     const ComponentSerializerRegistry& serializers,
     const std::function<std::filesystem::path(std::string_view)>& physicalPathFor,
     const std::filesystem::path& cookedScenePath,

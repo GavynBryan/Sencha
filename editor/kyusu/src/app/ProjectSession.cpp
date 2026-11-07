@@ -74,6 +74,7 @@ ProjectSession::~ProjectSession()
     if (!GameModule.IsValid())
         return;
     UnregisterGameDataAssets(*GameModule.Instance, Assets());
+    Host.MaterialShaders() = MaterialShaderCatalog{};
     ModuleLoader.Unload(GameModule);
 }
 
@@ -130,6 +131,9 @@ void ProjectSession::LoadModule(const std::string& modulePath)
     // a data asset type may still reach the engine it was written against.
     GameModule.Instance->AttachEngine(Host);
     RegisterGameDataAssets(*GameModule.Instance, Assets());
+    GameModule.Instance->OnRegisterMaterialShaders(Host.MaterialShaders());
+    for (const std::string& refusal : Host.MaterialShaders().Refusals())
+        std::fprintf(stderr, "[kyusu] %s\n", refusal.c_str());
     std::fprintf(stderr, "[kyusu] loaded game module '%s'\n", modulePath.c_str());
 }
 

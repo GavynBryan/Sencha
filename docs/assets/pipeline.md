@@ -713,6 +713,8 @@ E); this decision just states who fills it and how.
 `BaseColorFactor` + `BaseColorTexture`, `NormalTexture` + `NormalScale`,
 `OrmTexture` + `RoughnessFactor` + `MetallicFactor`, `EmissiveFactor` +
 `EmissiveTexture`, and `AlphaMode` (`Opaque` | `Mask` + cutoff | `Blend`).
+An optional `shader` names a registered material shader, and `shader_params`
+holds up to two four-number arrays for it (`docs/renderer/material-shaders.md`).
 Every texture slot is optional with a defined **neutral default** (white for
 base color, flat +Z for normal, occlusion 1 / roughness 1 / metallic 0 for
 ORM, black for emissive) — a material with no textures is still a complete

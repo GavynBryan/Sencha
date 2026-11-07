@@ -30,6 +30,7 @@
 #include <attach/Attachment.h>
 #include <render/MeshOverrideSystem.h>
 #include <render/PresentationLifetimeSystem.h>
+#include <app/PresentationSettingsSystem.h>
 #include <render/post/EnginePostEffects.h>
 
 #include <app/EngineVocabularyBindings.h>
@@ -1039,6 +1040,7 @@ int Engine::Run(Game& game)
     serializers.Clear();
     PostEffectTypes = PostEffectCatalog{};
     RegisterEnginePostEffects(PostEffectTypes);
+    MaterialShaderTypes = MaterialShaderCatalog{};
     RuntimeComponentSchemaState = WorldComponentSchema{};
     ReplicationLayoutState = ReplicationLayout{};
 
@@ -1171,10 +1173,12 @@ int Engine::Run(Game& game)
         // whose content names a verb that was refused must not reach a frame.
         game.OnRegisterVocabulary(entities);
         game.OnRegisterPostEffects(PostEffectTypes);
-        // A refused effect leaves the game running without it, so it is a warning,
+        game.OnRegisterMaterialShaders(MaterialShaderTypes);
+        // A refused shader leaves the game running without it, so it is a warning,
         // not a reason to stop.
-        for (const std::string& refusal : PostEffectTypes.Refusals())
-            LoggingState.GetLogger<Engine>().Warn(refusal);
+        for (const std::span<const std::string> refusals : { PostEffectTypes.Refusals(), MaterialShaderTypes.Refusals() })
+            for (const std::string& refusal : refusals)
+                LoggingState.GetLogger<Engine>().Warn(refusal);
 
         if (const std::vector<std::string> errors = AuthoredInstallationErrors(entities);
             !errors.empty())
@@ -1214,6 +1218,7 @@ int Engine::Run(Game& game)
         Configuration.Runtime.ContentRoots.push_back(engineContent.string());
 
     ContentState.emplace(*this, LoggingState.GetLogger<Engine>());
+    ContentState->Assets().Materials.UseShaders(MaterialShaderTypes);
     RegisterGameDataAssets(game, ContentState->Assets());
     ContentState->Mount();
     ContentState->Publish(RuntimeWorldState->Entities());
@@ -1425,6 +1430,10 @@ int Engine::Run(Game& game)
     // index, and a game reaches the queries through Schedule().Get<>().
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
+
+    if (PresentsAWindow(Configuration))
+        EngineSystems.Register<PresentationSettingsSystem>(*LevelState, *RuntimeWorldState, ContentState->Assets(),
+                                                           PostEffectTypes);
 
     // The engine domains' operations. Animation requests from authored content go
     // through the same door an ability's do.

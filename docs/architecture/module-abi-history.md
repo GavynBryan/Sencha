@@ -746,3 +746,25 @@ chain's per-frame list is `render/post/PostEffectFrame.h`.
 extraction through the new `RenderExtractContext::PixelsPerDp`; `ExtractOutlines` takes that
 scale. `PresentationLifetimeSystem` replaces `PostEffectLifetimeSystem`, and outline
 extraction takes a `const World&`.
+
+## v41
+
+**Material shaders.** `Game::OnRegisterMaterialShaders(MaterialShaderCatalog&)` is a new trailing
+vtable slot, and `Engine::MaterialShaders()` reaches the catalog, which `Engine` holds by value.
+`PostEffectCatalog` derives from the new `render/ShaderCatalog.h`. `Material` gains `Shader` and
+`ShaderParams`, and `MeshPushConstants` grows from 80 to 112 bytes with `Params`. The SDK installs
+`mesh_view.glsli` and `mesh_material.glsli`, which join the fingerprint with both catalog headers.
+
+**Time and blending.** `PresentationTime`, `PresentedFrame` and `CameraRenderData` gain the
+presented moment (`SimulationSeconds`, `TimeSeconds`), which reaches `ViewPositionTime.w`.
+Blended surfaces composite premultiplied, so their emission is no longer scaled by alpha.
+
+**Bloom.** `PostEffectDesc` and `PostEffectType` gain `Kind`, and the engine registers
+`sencha.bloom`. `ShaderCatalog` leaves the empty-shader check to each catalog, since a bloom
+type has none.
+
+**Presentation settings.** `LoadedLevel::Manifest()` reaches the loaded world's manifest, which
+gains `Presentation`, as `GraphRecord` does. `PresentationSettingsSystem` joins the engine's
+systems. Cooked scenes move to `.smap` version 2 for the optional `PRES` section, so every
+level recooks; `WriteCookedScene` takes the scene's layer. See
+[presentation-settings.md](../renderer/presentation-settings.md).

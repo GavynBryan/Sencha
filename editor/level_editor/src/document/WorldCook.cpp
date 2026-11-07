@@ -249,6 +249,10 @@ std::optional<WorldCookInput> CollectWorldCookInput(
         if (!document.Load(scenePath.generic_string()))
             return fail("CookWorld: could not load world scene '"
                 + scenePath.generic_string() + "'");
+        if (!document.GetPresentation().IsEmpty())
+            logging.GetLogger<WorldDocument>().Warn(
+                "CookWorld: world scene '{}' sets presentation settings, which a world scene does not "
+                "carry; set them on the world instead", data->Manifest.WorldSceneRef);
         std::string inputError;
         DocumentCookOptions documentOptions = options;
         documentOptions.OutputNamespace =

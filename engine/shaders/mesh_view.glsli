@@ -54,7 +54,7 @@ struct GpuProbeVolume
 layout(set = 0, binding = 0) uniform MeshView
 {
     mat4 ViewProjection;
-    vec4 ViewPositionTime;
+    vec4 ViewPositionTime;  // w: CameraRenderData::TimeSeconds, what materials animate on
     vec4 AmbientSky;
     vec4 AmbientGround;
     float DiffuseWrap;

@@ -8,6 +8,7 @@
 
 #include <core/assets/AssetId.h>
 #include <math/geometry/3d/Aabb3d.h>
+#include <render/PresentationSettings.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
 
@@ -95,6 +96,7 @@ struct GraphRecord
     GraphId              Id{};
     std::string          Name{};
     GraphStreamingConfig Streaming{};
+    PresentationSettingsLayer Presentation{};
 
     friend bool operator==(const GraphRecord&, const GraphRecord&) = default;
 };
@@ -150,6 +152,8 @@ struct WorldPartitionManifest
     // the runtime's world-start load.
     std::string CookedWorldSceneRef;
     uint64_t    CookedWorldContentHash = 0;
+    // The world's layer, between the game's and a graph's.
+    PresentationSettingsLayer Presentation;
     std::vector<GraphRecord>     Graphs;
     std::vector<ZoneHeader>       Zones;
     std::vector<TransitionRecord> Transitions;

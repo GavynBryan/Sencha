@@ -72,9 +72,15 @@ public:
     [[nodiscard]] const Material* Get(MaterialHandle handle) const;
     [[nodiscard]] std::string_view GetName(MaterialHandle handle) const;
 
+    void UseShaders(const MaterialShaderCatalog& shaders) { ShaderTypes = &shaders; }
+    [[nodiscard]] bool ResolvesShaders() const { return ShaderTypes != nullptr; }
+    [[nodiscard]] const MaterialShaderCatalog& Shaders() const;
+
 private:
     friend class AssetCache<MaterialCache, MaterialHandle, MaterialEntry, AssetType::Material>;
 
     void OnFree(MaterialEntry& entry);
     bool IsEntryLive(const MaterialEntry& entry) const;
+
+    const MaterialShaderCatalog* ShaderTypes = nullptr;
 };

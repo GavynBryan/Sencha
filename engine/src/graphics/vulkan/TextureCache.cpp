@@ -198,7 +198,8 @@ bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage,
 
 SamplerDesc TextureCache::SamplerForTextureData(const TextureData& texture)
 {
-    SamplerDesc sampler;
+    // Without anisotropy a surface seen edge-on blurs to its most minified axis.
+    SamplerDesc sampler{ .MaxAnisotropy = 16.0f };
     if (texture.Filter == TextureFilter::Nearest)
     {
         sampler.MinFilter = SamplerFilter::Nearest;

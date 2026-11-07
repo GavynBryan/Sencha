@@ -7,10 +7,6 @@
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
-// Matches the lit shader's constant id: a debug view that kept the fragments
-// the lit pass discards would describe geometry that is not on screen.
-layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
-
 layout(location = 0) out vec4 outColor;
 
 const uint DEBUG_WORLD_NORMALS = 1u;

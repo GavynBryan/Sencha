@@ -69,3 +69,11 @@ private:
         std::move(before), std::move(after),
         [&scene, entity](const BrushMesh& mesh) { scene.SetBrushMesh(entity, mesh); }, document);
 }
+
+[[nodiscard]] inline std::unique_ptr<ICommand> MakeSetPresentationCommand(
+    PresentationSettingsLayer before, PresentationSettingsLayer after, EditorDocument& document)
+{
+    return std::make_unique<ValueCommand<PresentationSettingsLayer>>(
+        std::move(before), std::move(after),
+        [&document](const PresentationSettingsLayer& layer) { document.SetPresentation(layer); }, document);
+}

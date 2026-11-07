@@ -1,3 +1,8 @@
+// Variants, not branches: a shader that can discard loses early depth testing.
+layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
+layout(constant_id = 2) const bool MATERIAL_BLEND = false;
+
 layout(location = 0) in vec3 inWorldNormal;
 layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
@@ -25,6 +30,7 @@ layout(push_constant) uniform MeshPush
     uint LightmapTextureIndex;
     uint AoTextureIndex;
     float AlphaCutoff;
+    vec4 Params[2];
 } pushData;
 
 layout(set = 1, binding = 0) uniform sampler2D BindlessTextures[1024];
@@ -98,4 +104,11 @@ vec3 ResolveEmission()
     return pushData.EmissiveFactor.rgb
          * max(pushData.EmissiveFactor.a, 0.0)
          * emissiveTexture;
+}
+
+// Premultiplied when blended, so coverage never dims emission.
+vec4 MeshOutput(vec3 surface, vec3 emission, float alpha)
+{
+    return MATERIAL_BLEND ? vec4(surface * alpha + emission, alpha)
+                          : vec4(surface + emission, alpha);
 }

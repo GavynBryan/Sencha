@@ -17,6 +17,7 @@
 #include <ecs/World.h>
 #include <physics/ZoneCollisionLoader.h>
 #include <render/ProbeVolumeSet.h>
+#include <render/ZonePresentation.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
 #include <zone/WorldPartitionIds.h>
@@ -78,6 +79,11 @@ bool LoadedLevel::IsLoaded() const
     return SceneLoaded || (Partition.has_value() && Partition->HasManifest());
 }
 
+const WorldPartitionManifest* LoadedLevel::Manifest() const
+{
+    return Partition.has_value() && Partition->HasManifest() ? &Partition->Manifest() : nullptr;
+}
+
 ZoneId LoadedLevel::PlayZone() const
 {
     if (SceneLoaded)
@@ -131,6 +137,7 @@ void LoadedLevel::AttachSceneContent(RuntimeWorld& runtime,
     }
     if (DefaultRenderPipeline* pipeline = Host.GetRenderPipeline())
         AttachZoneProbes(pipeline->GetProbeVolumes(), zone, staged.Probes);
+    AttachZonePresentation(zone, contents.Presentation);
     if (!staged.NavigationError.empty())
         Log.Warn("level: navigation not loaded: {}", staged.NavigationError);
     if (staged.Navigation.has_value())

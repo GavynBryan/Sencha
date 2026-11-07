@@ -52,4 +52,5 @@ struct PresentationTime
     double DeltaSeconds = 1.0 / 60.0;
     double Alpha = 0.0;
     uint64_t FrameIndex = 0;
+    double SimulationSeconds = 0.0;
 };

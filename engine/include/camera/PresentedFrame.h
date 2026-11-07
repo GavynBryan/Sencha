@@ -20,6 +20,7 @@ struct PresentedFrame
     bool Valid = false;
     std::uint64_t FrameIndex = 0;
     double Alpha = 0.0;
+    double SimulationSeconds = 0.0;
     std::uint64_t Publication = 0;
 
     EntityId Camera;

@@ -4,6 +4,7 @@
 
 #include <cassert>
 
+class MaterialShaderCatalog;
 class PostEffectCatalog;
 class Engine;
 class ComponentRegistrar;
@@ -98,6 +99,9 @@ public:
     // Registers post effects: compiled SPIR-V and where it runs, with no rendering
     // code. Docs: docs/renderer/post-effects.md.
     virtual void OnRegisterPostEffects(PostEffectCatalog&) {}
+
+    // Docs: docs/renderer/material-shaders.md.
+    virtual void OnRegisterMaterialShaders(MaterialShaderCatalog&) {}
 
     // Wiring, not behavior: Engine::Run binds itself once before any hook so a
     // game can reach the engine without threading a handle through contexts.

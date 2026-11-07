@@ -76,6 +76,9 @@ public:
     // with nothing loaded.
     [[nodiscard]] ZoneId PlayZone() const;
 
+    // The loaded world's manifest; null for a single scene or nothing loaded.
+    [[nodiscard]] const WorldPartitionManifest* Manifest() const;
+
 private:
     void AttachSceneContent(RuntimeWorld& runtime,
                             RuntimeZoneRecord& zone,

@@ -11,6 +11,7 @@
 #include "workspace/FaceUvSource.h"
 #include "workspace/LightingDiagnostics.h"
 #include "workspace/PartitionOutline.h"
+#include "workspace/ScenePresentationSource.h"
 
 #include <world/identity/PersistentIdComponent.h>
 
@@ -41,11 +42,18 @@ std::string KnownAs(const EditorDocument& document, EntityId entity)
 
 WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs,
                                     const EntityVerbs& entityVerbs, FaceUvSource& uv, ComponentPropertySource& components,
-                                    PartitionOutline& partition, LightingDiagnostics& lighting)
+                                    PartitionOutline& partition, ScenePresentationSource& scene,
+                                    LightingDiagnostics& lighting)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
     {
+        if (!workspace.World.IsWorld())
+        {
+            WorkspaceSelectionFacet level{ .Title = "Scene", .Revision = workspace.Selection.Revision() };
+            level.Sections.push_back({ .Heading = {}, .Source = &scene });
+            return level;
+        }
         WorkspaceSelectionFacet zone{ .Title = partition.Title(), .Revision = workspace.Selection.Revision() };
         if (!zone.Title.empty())
             zone.Sections.push_back({ .Heading = {}, .Source = &partition });

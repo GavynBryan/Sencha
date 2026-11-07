@@ -61,6 +61,7 @@ public:
         return PresentationTime{
             .DeltaSeconds = FixedDt,
             .Alpha = alpha,
+            .SimulationSeconds = (static_cast<double>(TickIndex) + alpha) * FixedDt,
         };
     }
 

@@ -288,6 +288,25 @@ JsonValue WriteLinkEndpoint(const LinkEndpoint& endpoint)
     return JsonValue{ std::move(value) };
 }
 
+bool ReadOptionalPresentation(const JsonValue& object, PresentationSettingsLayer& out,
+                              std::string* error, std::string_view path)
+{
+    const JsonValue* value = object.Find("presentation");
+    if (value == nullptr)
+        return true;
+    std::string invalid;
+    if (ReadPresentationSettingsLayer(*value, out, invalid))
+        return true;
+    SetError(error, std::format("{}presentation: {}", path, invalid));
+    return false;
+}
+
+void WriteOptionalPresentation(JsonValue::Object& object, const PresentationSettingsLayer& layer)
+{
+    if (!layer.IsEmpty())
+        object.emplace_back("presentation", WritePresentationSettingsLayer(layer));
+}
+
 } // namespace
 
 std::optional<WorldPartitionManifest>
@@ -344,6 +363,8 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
         }
         manifest.CookedWorldContentHash = *decoded;
     }
+    if (!ReadOptionalPresentation(root, manifest.Presentation, error, ""))
+        return std::nullopt;
 
     const char* graphArrayKey = legacy ? "regions" : "graphs";
     if (const JsonValue* graphs = root.Find(graphArrayKey))
@@ -407,6 +428,9 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
                     record.Streaming.Radius = radius->AsNumber();
                 }
             }
+            if (!ReadOptionalPresentation(entry, record.Presentation, error,
+                                          std::format("{}[{}].", graphArrayKey, i)))
+                return std::nullopt;
             manifest.Graphs.push_back(std::move(record));
         }
     }
@@ -612,6 +636,7 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
     if (manifest.CookedWorldContentHash != 0)
         root.emplace_back("world_scene_content_hash",
                           JsonValue{ HexEncode(manifest.CookedWorldContentHash) });
+    WriteOptionalPresentation(root, manifest.Presentation);
 
     JsonValue::Array graphs;
     for (const GraphRecord& record : manifest.Graphs)
@@ -631,6 +656,7 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
                 object.emplace_back("resident_zone_cap", JsonValue{ *streaming.ResidentZoneCap });
             entry.emplace_back("streaming", JsonValue{ std::move(object) });
         }
+        WriteOptionalPresentation(entry, record.Presentation);
         graphs.emplace_back(JsonValue{ std::move(entry) });
     }
     root.emplace_back("graphs", JsonValue{ std::move(graphs) });

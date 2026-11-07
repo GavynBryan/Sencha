@@ -8,6 +8,7 @@
 #include <render/extract/Camera.h>
 #include <render/pass/LightBindings.h>
 #include <render/MaterialCache.h>
+#include <render/MeshPushConstants.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
 #include <render/SkinnedPoseFrameData.h>
@@ -94,31 +95,6 @@ inline constexpr std::size_t kDebugPipelineCount = 4;
     return static_cast<std::size_t>((bits & kOpaquePipelineDoubleSidedBit) != 0 ? 1u : 0u)
          | static_cast<std::size_t>((bits & kOpaquePipelineMaskedBit) != 0 ? 2u : 0u);
 }
-
-struct MeshPushConstants
-{
-    Vec4 BaseColor;
-    Vec4 EmissiveFactor;
-    float NormalScale = 1.0f;
-    float RoughnessFactor = 1.0f;
-    float MetallicFactor = 0.0f;
-    float SpecularIntensity = 0.5f;
-    std::uint32_t BaseColorTextureIndex = UINT32_MAX;
-    std::uint32_t NormalTextureIndex = UINT32_MAX;
-    std::uint32_t OrmTextureIndex = UINT32_MAX;
-    std::uint32_t EmissiveTextureIndex = UINT32_MAX;
-    std::uint32_t ReceiveShadows = 1;
-    // Bindless slot of the zone's baked-lighting atlas; UINT32_MAX skips the
-    // baked term. Uniform per run (part of the run-merge identity).
-    std::uint32_t LightmapTextureIndex = UINT32_MAX;
-    // Bindless slot of the zone's baked-AO plane (lightmap UVs); UINT32_MAX
-    // leaves ambient unmodulated. Uniform per run, merge identity too.
-    std::uint32_t AoTextureIndex = UINT32_MAX;
-    // Fragments whose base-colour alpha falls below this are discarded, in the
-    // masked pipeline variants only. Ignored by the others, so an opaque
-    // material keeps its early-depth path.
-    float AlphaCutoff = 0.0f;
-};
 
 // Binding 1 of the mesh vertex input: one entry per drawn instance, written
 // into per-frame scratch by BindInstanceStream.
@@ -229,6 +205,14 @@ private:
     // one draw have no order against each other, and order is the contract.
     void RecordTransparentItems(const FrameContext& frame, const DrawContext& ctx,
                                 uint32_t streamedInstances);
+    void RecordItem(const FrameContext& frame, const DrawContext& ctx, const RenderQueueItem& item, bool blended,
+                    uint32_t firstInstance, uint32_t instanceCount);
+    [[nodiscard]] VkPipeline SelectPipeline(const FrameContext& frame, const MaterialShaderCatalog& shaders,
+                                            const Material& material, const RenderQueueItem& item, bool blended);
+    [[nodiscard]] VkPipeline MaterialShaderPipeline(const FrameContext& frame, const MaterialShaderCatalog& shaders,
+                                                    MaterialShaderId id, const RenderQueueItem& item, bool blended);
+    void ReleaseMaterialShaderFamilies();
+    void PublishTally();
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
@@ -253,10 +237,19 @@ private:
     // One variant per OpaquePipelineId: lit and unlit, back-face culled and
     // double-sided, opaque and alpha-masked.
     PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> OpaquePipelines;
-    // Blended geometry: depth test on, depth write off, straight-alpha over.
+    // Blended geometry: depth test on, depth write off, premultiplied over.
     PipelineVariantSet<kTransparentPipelineCount, AttachmentFormatKey> TransparentPipelines;
     // Cull and mask axes, the same two the debug families vary over.
     PipelineVariantSet<kDebugPipelineCount, AttachmentFormatKey> OutlineMaskPipelines;
+    struct MaterialShaderFamily
+    {
+        ShaderHandle Fragment;
+        PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> Opaque;
+        PipelineVariantSet<kTransparentPipelineCount, AttachmentFormatKey> Transparent;
+        bool Failed = false;
+    };
+    std::vector<MaterialShaderFamily> MaterialShaderFamilies;
+    std::uint64_t MaterialShaderStamp = 0;
     // Per-view draw order for the transparent list, retained across frames so
     // the per-view sort does not reallocate.
     std::vector<std::uint32_t> TransparentOrder;

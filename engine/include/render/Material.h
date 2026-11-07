@@ -4,7 +4,9 @@
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <math/Vec.h>
+#include <render/MaterialShaderCatalog.h>
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 #include <tuple>
@@ -71,6 +73,9 @@ struct Material
     bool DoubleSided = false;
     bool ReceiveShadows = true;
     bool CastShadows = true;
+
+    MaterialShaderId Shader{};
+    std::array<Vec4, kMaterialShaderParamCount> ShaderParams{};
 };
 
 // Which pass a material draws in. Derived at the emission boundary rather than

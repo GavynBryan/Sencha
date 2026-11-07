@@ -11,6 +11,7 @@
 #include "workspace/FaceUvSource.h"
 #include "workspace/LightingDiagnostics.h"
 #include "workspace/PartitionOutline.h"
+#include "workspace/ScenePresentationSource.h"
 #include "workspace/SelectionSummary.h"
 
 #include <gtest/gtest.h>
@@ -49,6 +50,7 @@ protected:
     FaceUvSource Uv{ Workspace, nullptr };
     EntityVerbs Entities{ Workspace, {} };
     PartitionOutline Partition{ Workspace };
+    ScenePresentationSource SceneSettings{ Workspace };
     LightingDiagnostics Lighting{ Workspace, Commands, {} };
     ComponentPropertySource Components{ Workspace.World, Workspace.Selection, Commands,
                                         Workspace.Affordances->Registry() };
@@ -61,14 +63,23 @@ protected:
 
 TEST_F(ElementVerbsTest, NothingSelectedHasNoCard)
 {
-    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting).Title.empty());
+    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting).Title.empty());
     EXPECT_FALSE(Stack.Query("brush.normals").Enabled);
 }
 
+TEST_F(ElementVerbsTest, NothingSelectedInASceneShowsItsSettings)
+{
+    Workspace.World.New();
+    const WorkspaceSelectionFacet facet =
+        SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
+    EXPECT_EQ(facet.Title, "Scene");
+    ASSERT_EQ(facet.Sections.size(), 1u);
+    EXPECT_EQ(facet.Sections[0].Source, &SceneSettings);
+}
 TEST_F(ElementVerbsTest, AnObjectThatIsNoBrushOffersNoBrushVerbs)
 {
     SelectEntity(Scene().CreateEntity({ 0, 2, 0 }));
-    const WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    const WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_TRUE(Lists(facet, "edit.duplicate"));
     EXPECT_FALSE(Lists(facet, "brush.normals"));
     EXPECT_FALSE(Lists(facet, "brush.bake"));
@@ -78,7 +89,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 {
     const EntityId brush = AddBrush({ 0, 0, 0 });
     SelectEntity(brush);
-    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_FALSE(facet.Title.empty());
     EXPECT_TRUE(Lists(facet, "brush.normals"));
     ASSERT_EQ(facet.Details.size(), 1u) << "one object's components are there to look at closely";
@@ -87,7 +98,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Face);
     SelectElements(brush, MeshElementKind::Face, { 0, 1 });
-    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_EQ(facet.Title, "2 faces");
     EXPECT_TRUE(Lists(facet, "face.inset"));
     EXPECT_TRUE(Lists(facet, "uv.fit"));
@@ -96,7 +107,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Edge);
     SelectElements(brush, MeshElementKind::Edge, { 0 });
-    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_EQ(facet.Title, "1 edge");
     EXPECT_TRUE(Lists(facet, "edge.bevel"));
     EXPECT_FALSE(Stack.Query("edge.bridge").Enabled) << "a bridge spans two edges";
@@ -110,7 +121,7 @@ TEST_F(ElementVerbsTest, AStagedInsetFollowsItsSettingUntilAppliedOrCancelled)
 
     ASSERT_TRUE(Stack.Invoke("face.inset"));
     ASSERT_TRUE(Workspace.HasPendingInset());
-    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_TRUE(staged.Staged);
     EXPECT_EQ(staged.Actions, (std::vector<std::string>{ "element.apply", "element.cancel" }));
     EXPECT_FALSE(Stack.Query("face.inset").Enabled) << "one staged edit at a time";
@@ -148,7 +159,7 @@ TEST_F(ElementVerbsTest, OneObjectIsTitledByItsNameAndKnownByItsId)
                                ResolveComponentTypeId<PersistentIdComponent>() });
     const EntityId entity = Scene().CreateEntity({ 0, 2, 0 });
     SelectEntity(entity);
-    const WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    const WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting);
     EXPECT_NE(facet.Subtitle.find("id "), std::string::npos) << facet.Subtitle;
     ASSERT_EQ(facet.TitleProperty.Source, &Components);
     ASSERT_FALSE(facet.TitleProperty.Key.empty());
@@ -160,7 +171,7 @@ TEST_F(ElementVerbsTest, OneObjectIsTitledByItsNameAndKnownByItsId)
     }
 
     EXPECT_EQ(PropertyEditSession{}.Set(Components, facet.TitleProperty.Key, "Gate"), PropertyEditResult::Applied);
-    EXPECT_EQ(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting).Title, "Gate");
+    EXPECT_EQ(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting).Title, "Gate");
     Commands.Undo();
-    EXPECT_NE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting).Title, "Gate");
+    EXPECT_NE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, SceneSettings, Lighting).Title, "Gate");
 }

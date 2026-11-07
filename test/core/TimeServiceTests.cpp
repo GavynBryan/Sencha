@@ -160,6 +160,15 @@ TEST(FixedSimulationLoop, BuildsClampedPresentationAlpha)
     EXPECT_DOUBLE_EQ(high.Alpha, 1.0);
 }
 
+TEST(FixedSimulationLoop, PresentsTheSimulatedMomentBetweenTicks)
+{
+    FixedSimulationLoop loop;
+    for (int tick = 0; tick < 3; ++tick)
+        loop.EndFixedTick();
+
+    EXPECT_DOUBLE_EQ(loop.BuildPresentationTime(0.5).SimulationSeconds, 3.5 * loop.GetFixedDt());
+}
+
 // =============================================================================
 // Timing history
 // =============================================================================

@@ -180,7 +180,7 @@ becomes the generic command stream that was considered and rejected.
 **What stays hand-written**, so nobody absorbs it into a mechanism:
 `Renderer::RecordSwapchainPhases`' swapchain transitions and cross-frame depth
 barrier, because no attachment declaration expresses "two frames ago";
-`LightBindings`' pool transitions and clear-at-creation; `EditorBloomPass`'s
+`LightBindings`' pool transitions and clear-at-creation; `BloomPass`'s
 ping-pong aliasing, where sub-pass N's target is N+1's sampled source;
 descriptor set 2 creation and the update-after-bind probe slot swap; and
 frame-scratch partial-grant clipping, which runs before the run list is final
