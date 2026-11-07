@@ -372,3 +372,24 @@ TEST(SmapFormat, ImportsIntoRuntimeWorldLikeTheJsonPath)
     ASSERT_NE(persistent, nullptr);
     EXPECT_EQ(persistent->Id, (PersistentEntityId{ 0xaa }));
 }
+
+TEST(SmapFormat, PresentationSettingsRoundTripAndStayOutWhenUnset)
+{
+    const ComponentSerializerRegistry serializers = MakeSerializers();
+    SmapContents written = MakeContents();
+    const std::vector<std::byte> without = WriteOrDie(written, serializers);
+
+    written.Presentation.Bloom.Enabled = true;
+    written.Presentation.Bloom.Intensity = 0.8f;
+    const std::vector<std::byte> with = WriteOrDie(written, serializers);
+    EXPECT_GT(with.size(), without.size());
+
+    SmapContents read;
+    SmapError error;
+    ASSERT_TRUE(ReadSmap(with, serializers, read, &error)) << error.Message;
+    EXPECT_EQ(read.Presentation, written.Presentation);
+
+    ASSERT_TRUE(ReadSmap(without, serializers, read, &error)) << error.Message;
+    EXPECT_TRUE(read.Presentation.IsEmpty());
+}
+

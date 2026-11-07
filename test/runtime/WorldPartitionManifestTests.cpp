@@ -415,3 +415,30 @@ TEST(WorldPartitionDisplayName, TheInnermostZoneHoldsAPointWhereZonesOverlap)
     EXPECT_EQ(InnermostZoneAt(manifest, Vec3d(5, 0, 0))->Id, ZoneId{ 0x1 });
     EXPECT_EQ(InnermostZoneAt(manifest, Vec3d(50, 0, 0)), nullptr);
 }
+
+TEST(WorldPartitionManifest, PresentationLayersRoundTripOnTheWorldAndItsGraphs)
+{
+    WorldPartitionManifest first = ParseFixture(CanonicalFixture);
+    ASSERT_FALSE(first.Graphs.empty());
+    first.Presentation.Bloom.Enabled = true;
+    first.Graphs[0].Presentation.Bloom.Intensity = 0.25f;
+
+    std::string error;
+    const auto second = ReadWorldPartitionManifest(WriteWorldPartitionManifest(first), &error);
+    ASSERT_TRUE(second.has_value()) << error;
+    EXPECT_EQ(second->Presentation, first.Presentation);
+    EXPECT_EQ(second->Graphs[0].Presentation, first.Graphs[0].Presentation);
+}
+
+TEST(WorldPartitionManifest, ReadRejectsAnInvalidPresentationLayerNamingWhere)
+{
+    std::optional<JsonValue> json = JsonParse(CanonicalFixture);
+    ASSERT_TRUE(json.has_value());
+    JsonValue::Object bloom{ { "intensity", JsonValue(-1.0) } };
+    json->AsObject().emplace_back("presentation", JsonValue(JsonValue::Object{ { "bloom", JsonValue(std::move(bloom)) } }));
+
+    std::string error;
+    EXPECT_FALSE(ReadWorldPartitionManifest(*json, &error).has_value());
+    EXPECT_NE(error.find("presentation"), std::string::npos) << error;
+}
+

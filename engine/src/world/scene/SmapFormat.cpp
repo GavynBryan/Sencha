@@ -71,6 +71,7 @@ struct ParsedContainer
     ByteReader Dependencies{ {} };
     ByteReader Entities{ {} };
     ByteReader Collision{ {} };
+    std::optional<ByteReader> Presentation;
 };
 
 [[nodiscard]] bool ParseContainer(std::span<const std::byte> bytes,
@@ -151,6 +152,7 @@ struct ParsedContainer
     out.Dependencies = *depsReader;
     out.Entities = *entityReader;
     out.Collision = *collisionReader;
+    out.Presentation = section(kSmapSectionPresentation);
 
     std::uint64_t count = 0;
     if (!tableReader->Varint(count) || !tableReader->CanHold(count, 1))
@@ -244,6 +246,37 @@ struct ParsedContainer
     if (!reader.AtEnd())
     {
         SetError(error, ".smap collision section has trailing bytes.");
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool ParsePresentation(ParsedContainer& container,
+                                     SmapContents& contents,
+                                     SmapError* error)
+{
+    if (!container.Presentation)
+        return true;
+    ByteReader& reader = *container.Presentation;
+    std::uint32_t version = 0;
+    if (!reader.U32(version))
+    {
+        SetError(error, "Malformed .smap presentation section.");
+        return false;
+    }
+    if (version != kPresentationSettingsVersion)
+    {
+        SetError(error, "Presentation settings were cooked at version " + std::to_string(version)
+                            + " but this build reads version " + std::to_string(kPresentationSettingsVersion)
+                            + "; recook the level.");
+        return false;
+    }
+    JsonValue value;
+    std::string invalid;
+    if (!DecodeValue(reader, container.Strings, value, 0) || !reader.AtEnd()
+        || !ReadPresentationSettingsLayer(value, contents.Presentation, invalid))
+    {
+        SetError(error, "Malformed .smap presentation section." + (invalid.empty() ? "" : " " + invalid));
         return false;
     }
     return true;
@@ -413,6 +446,13 @@ bool WriteSmap(const SmapContents& contents,
         collision.F32(cell.Origin.Z);
     }
 
+    ByteBuilder presentation;
+    if (!contents.Presentation.IsEmpty())
+    {
+        presentation.U32(kPresentationSettingsVersion);
+        EncodeValue(WritePresentationSettingsLayer(contents.Presentation), strings, presentation);
+    }
+
     ByteBuilder table;
     table.Varint(strings.Strings().size());
     for (const std::string& text : strings.Strings())
@@ -421,24 +461,26 @@ bool WriteSmap(const SmapContents& contents,
         table.Raw(text);
     }
 
-    // Assemble: header, directory, then the four sections in fixed order. The
+    // Assemble: header, directory, then the sections in fixed order. The
     // content hash covers the section payloads in directory order.
-    const std::pair<std::uint32_t, const ByteBuilder*> sections[] = {
+    std::vector<std::pair<std::uint32_t, const ByteBuilder*>> sections = {
         { kSmapSectionStrings, &table },
         { kSmapSectionDependencies, &deps },
         { kSmapSectionEntities, &entities },
         { kSmapSectionCollision, &collision },
     };
+    if (!contents.Presentation.IsEmpty())
+        sections.emplace_back(kSmapSectionPresentation, &presentation);
 
     ByteBuilder file;
     file.U32(kSmapMagic);
     file.U32(kSmapVersion);
     const std::size_t hashOffset = file.Size();
     file.U64(0); // content hash, patched below
-    file.U32(static_cast<std::uint32_t>(std::size(sections)));
+    file.U32(static_cast<std::uint32_t>(sections.size()));
 
     std::uint64_t offset =
-        file.Size() + std::size(sections) * (4 + 8 + 8); // past the directory
+        file.Size() + sections.size() * (4 + 8 + 8); // past the directory
     Fnv1a contentHash;
     for (const auto& [id, payload] : sections)
     {
@@ -553,7 +595,8 @@ bool ReadSmap(std::span<const std::byte> bytes,
         return false;
     }
 
-    if (!ParseCollision(container, contents, error))
+    if (!ParseCollision(container, contents, error)
+        || !ParsePresentation(container, contents, error))
         return false;
 
     out = std::move(contents);

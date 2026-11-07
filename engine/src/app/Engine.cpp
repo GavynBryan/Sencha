@@ -30,6 +30,7 @@
 #include <attach/Attachment.h>
 #include <render/MeshOverrideSystem.h>
 #include <render/PresentationLifetimeSystem.h>
+#include <app/PresentationSettingsSystem.h>
 #include <render/post/EnginePostEffects.h>
 
 #include <app/EngineVocabularyBindings.h>
@@ -1429,6 +1430,10 @@ int Engine::Run(Game& game)
     // index, and a game reaches the queries through Schedule().Get<>().
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
+
+    if (PresentsAWindow(Configuration))
+        EngineSystems.Register<PresentationSettingsSystem>(*LevelState, *RuntimeWorldState, ContentState->Assets(),
+                                                           PostEffectTypes);
 
     // The engine domains' operations. Animation requests from authored content go
     // through the same door an ability's do.

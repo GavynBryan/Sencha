@@ -5,6 +5,7 @@
 #include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
 #include <math/Vec.h>
+#include <render/PresentationSettings.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -42,13 +43,15 @@ struct IComponentSerializer;
 //=============================================================================
 
 inline constexpr std::uint32_t kSmapMagic = 0x50414D53; // 'SMAP' little-endian
-inline constexpr std::uint32_t kSmapVersion = 1;
+inline constexpr std::uint32_t kSmapVersion = 2;
 
 // Section identities, four-character codes.
 inline constexpr std::uint32_t kSmapSectionStrings = 0x53525453;      // 'STRS'
 inline constexpr std::uint32_t kSmapSectionDependencies = 0x53504544; // 'DEPS'
 inline constexpr std::uint32_t kSmapSectionEntities = 0x53544E45;     // 'ENTS'
 inline constexpr std::uint32_t kSmapSectionCollision = 0x4C4C4F43;    // 'COLL'
+// Optional: present only when the scene authors presentation settings.
+inline constexpr std::uint32_t kSmapSectionPresentation = 0x53455250; // 'PRES'
 
 // One asset this scene needs resident: the stable id when the cook knew it,
 // the virtual path always (the dev-build fallback resolver). No type: what an
@@ -82,6 +85,7 @@ struct SmapContents
     std::vector<SmapDependency> Dependencies;
     std::vector<SmapCollisionCell> Collision;
     std::vector<SmapEntityRecord> Entities;
+    PresentationSettingsLayer Presentation;
 };
 
 // Records with no parent: the roots an import of these contents produces.
