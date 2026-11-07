@@ -85,6 +85,8 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
     bloom.Read = RenderTargetRead::Bindless;
     bloom.Sampler = Services.Samplers->GetLinearClamp();
     bloom.DebugName = "viewport_bloom";
+    // Written and read within one frame, so one image serves every frame in flight.
+    bloom.Lifetime = RenderTargetLifetime::WithinFrame;
 
     Entries.push_back(Entry{
         .Id = id,
@@ -145,8 +147,8 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
         view.BloomImage[1] = bloom1->ColorImage;
         view.BloomView[0] = bloom0->ColorView;
         view.BloomView[1] = bloom1->ColorView;
-        view.BloomLayout[0] = bloom0->ColorLayout;
-        view.BloomLayout[1] = bloom1->ColorLayout;
+        view.BloomAccess[0] = bloom0->ColorAccess;
+        view.BloomAccess[1] = bloom1->ColorAccess;
         view.BloomExtent = bloom0->Extent;
         view.BloomBindless[0] = bloom0->BindlessIndex;
         view.BloomBindless[1] = bloom1->BindlessIndex;

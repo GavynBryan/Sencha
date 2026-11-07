@@ -70,15 +70,12 @@ void EditorBloomPass::Record(const FrameContext& frame,
     const VkPipeline blur = Pipelines.Get(Blur);
     const VkPipeline composite = Pipelines.Get(Composite);
 
-    // One full-screen pass, bracketed by a session: dst becomes an attachment,
-    // the draw happens, dst goes back to sampled.
-    const auto runPass = [&](VkImage dstImage, VkImageView dstView, VkImageLayout* dstLayout,
-                             VkExtent2D extent, VkPipeline pipeline, const BloomPush& push, bool loadExisting)
+    // One full-screen pass into `dstView`, inside the session its caller opened: dst
+    // an attachment now, back to sampled when that session ends, which is what makes
+    // the next pass's source readable.
+    const auto renderInto = [&](VkImageView dstView, VkExtent2D extent, VkPipeline pipeline, const BloomPush& push,
+                                bool loadExisting)
     {
-        // Brackets this pass: into an attachment now, back to sampled and the
-        // layout committed when the session ends -- which is what makes the
-        // next pass's source layout true.
-        RenderTargetSession session(cmd, dstImage, dstLayout);
 
         VkRenderingAttachmentInfo color{};
         color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -110,22 +107,28 @@ void EditorBloomPass::Record(const FrameContext& frame,
     // 1. bright pass: bloom[0] -> bloom[1] (keep only the > threshold part).
     push.SrcIndex = t.BloomBindless[0];
     push.Texel = Vec2d{ 0.0f, 0.0f };
-    runPass(t.BloomImage[1], t.BloomView[1], t.BloomLayout[1], t.BloomExtent, bright, push, false);
+    // The planes are within-frame: each session is ordered after what last touched it.
+    const auto intoPlane = [&](std::size_t plane, VkPipeline pipeline) {
+        RenderTargetSession session(cmd, t.BloomImage[plane], *t.BloomAccess[plane]);
+        renderInto(t.BloomView[plane], t.BloomExtent, pipeline, push, false);
+    };
+    intoPlane(1, bright);
 
     // 2. blur horizontal: bloom[1] -> bloom[0].
     push.SrcIndex = t.BloomBindless[1];
     push.Texel = Vec2d{ invW, 0.0f };
-    runPass(t.BloomImage[0], t.BloomView[0], t.BloomLayout[0], t.BloomExtent, blur, push, false);
+    intoPlane(0, blur);
 
     // 3. blur vertical: bloom[0] -> bloom[1].
     push.SrcIndex = t.BloomBindless[0];
     push.Texel = Vec2d{ 0.0f, invH };
-    runPass(t.BloomImage[1], t.BloomView[1], t.BloomLayout[1], t.BloomExtent, blur, push, false);
+    intoPlane(1, blur);
 
     // 4. composite: bloom[1] -> scene color, additive (load existing scene).
     push.SrcIndex = t.BloomBindless[1];
     push.Texel = Vec2d{ 0.0f, 0.0f };
-    runPass(t.ColorImage, t.ColorView, t.ColorLayout, t.Extent, composite, push, true);
+    RenderTargetSession display(cmd, t.ColorImage, t.ColorLayout);
+    renderInto(t.ColorView, t.Extent, composite, push, true);
 }
 
 void EditorBloomPass::Teardown()

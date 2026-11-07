@@ -59,7 +59,8 @@ public:
         // Bloom scratch: two full-res ping-pong targets + the bindless sample indices.
         VkImage        BloomImage[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
         VkImageView    BloomView[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
-        VkImageLayout* BloomLayout[2]{ nullptr, nullptr };
+        // Within the frame: what last touched each plane, which its session reads.
+        RenderTargetAccess* BloomAccess[2]{ nullptr, nullptr };
         VkExtent2D     BloomExtent{};
         uint32_t       BloomBindless[2]{ UINT32_MAX, UINT32_MAX };
     };

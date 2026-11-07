@@ -20,7 +20,11 @@ void RenderTargetStore::Teardown()
     // the release below is immediate and complete.
     if (Services.Device != nullptr)
         vkDeviceWaitIdle(Services.Device->GetDevice());
+    Release();
+}
 
+void RenderTargetStore::Release()
+{
     for (Target& target : Targets)
     {
         for (Slot& slot : target.Slots)

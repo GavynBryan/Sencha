@@ -151,6 +151,9 @@ class RenderTargetStore
 public:
     void Setup(const RendererServices& services);
     void Teardown();
+    // Releases every target through the image service's deletion queue without
+    // waiting, for an owner that goes away while frames still retire.
+    void Release();
 
     // Selects this frame's slot. Call once per frame, before any Acquire.
     void BeginFrame(std::uint32_t frameInFlightIndex);

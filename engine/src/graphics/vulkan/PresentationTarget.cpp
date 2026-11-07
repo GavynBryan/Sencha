@@ -55,9 +55,10 @@ PresentationTarget::~PresentationTarget()
     for (VkSemaphore semaphore : ImageAvailable)
         if (semaphore != VK_NULL_HANDLE)
             vkDestroySemaphore(Device, semaphore, nullptr);
-    // These images go through the image service's deletion queue; the swapchain
-    // must die before its surface, and the surface before the window.
-    SceneTargets.Teardown();
+    // These images go through the image service's deletion queue, with no device
+    // idle: a window closing mid-run retires them with the frames still in flight.
+    // The swapchain must die before its surface, and the surface before the window.
+    SceneTargets.Release();
     DepthAttachment.reset();
     Chain.reset();
     Surface.reset();

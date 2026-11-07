@@ -910,8 +910,7 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         // Single-plane: the scene session above already left the shared depth
         // in DEPTH_ATTACHMENT_OPTIMAL, and this pass attaches it DONT_CARE
         // without testing, so it has no depth of its own to bracket.
-        RenderTargetSession glowTarget(frame.Cmd, target.BloomImage[0],
-                                       target.BloomLayout[0]);
+        RenderTargetSession glowTarget(frame.Cmd, target.BloomImage[0], *target.BloomAccess[0]);
 
         const Vec2d savedMin = viewport.RegionMin;
         const Vec2d savedMax = viewport.RegionMax;
