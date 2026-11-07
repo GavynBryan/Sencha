@@ -14,6 +14,7 @@
 #include <net/NetComponentRegistration.h>
 #include <net/ReplicationLayout.h>
 #include <participant/ParticipantComponentRegistration.h>
+#include <perception/PerceptionComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <projectile/ProjectileRegistration.h>
 #include <render/RenderComponentRegistration.h>
@@ -49,6 +50,7 @@ namespace
         LogicComponents,
         AnimationComponents,
         SightComponents,
+        PerceptionComponents,
         ProjectileComponents,
         AttachmentComponents>;
 
@@ -102,6 +104,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
+    RegisterPerceptionComponents(registrar);
     RegisterProjectileComponents(registrar);
     RegisterAttachmentComponents(registrar);
 }

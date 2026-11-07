@@ -19,6 +19,7 @@ interprets, and no entity has to take part in every stage.
 | One tick's evidence (`Observation`, `PerceptionFrame`) | `perception/` | gameplay substrate |
 | Running the senses each fixed tick (`PerceptionSystem`) | `perception/` | gameplay substrate |
 | Authored questions about the frame (`perception.*` queries) | `perception/PerceptionQueries` | gameplay substrate |
+| What an observer retains (`ObservationMemory`, `ObservationMemorySystem`) | `perception/` | gameplay substrate |
 | Lines a simulation system wants shown (`DebugLineChannels`) | `debug/DebugLines` | neutral, no render |
 | Lines in render form, the pass, the feature | `render/debug`, `graphics/vulkan/DebugLinePass`, `render/feature/DebugLineRenderFeature` | render |
 
@@ -128,6 +129,38 @@ Candidate evaluation reaches the same answers through its `authored_query`
 measure. That makes "of the things I can see, pick one" a definition, not
 code.
 
+## Memory
+
+`ObservationMemory { RetainSeconds }` on an observer keeps up to eight
+entries, one per subject: the last observed position, a velocity measured
+from two observations at most 0.25 s apart, the sense and confidence, `Age`
+(seconds since last observed) and `Tracked` (seconds observed without a
+lapse). An anonymous observation refreshes the remembered anonymous entry
+within 2 m of it, or starts one. A full memory replaces its oldest entry, and
+an entry older than `RetainSeconds` is dropped.
+
+`ObservationMemorySystem` runs in FixedLogic after `PerceptionSystem`, on the
+authority, over the logic partitions; `RegisterPerception` registers both. It
+copies out of the frame, so nothing it keeps outlives a tick's spans. Memory
+never interprets an entry: what counts as a threat is the reader's question.
+
+Queries, from the observer's memory:
+
+| Query | Arguments | Result |
+| --- | --- | --- |
+| `perception.remembers` | observer, subject | bool |
+| `perception.last_seen_position` | observer, subject | vector |
+| `perception.last_seen_velocity` | observer, subject | vector |
+| `perception.seconds_since_seen` | observer, subject | float |
+| `perception.seconds_tracked` | observer, subject | float |
+| `perception.nearest_remembered_tagged` | observer, tag | entity |
+
+They answer `Unavailable` off the authority or for an observer with no
+memory. A subject never remembered answers false for `remembers` and
+`Unavailable` for the rest. `nearest_remembered_tagged` skips subjects no
+longer alive. A remembered position is where the subject was; a reader that
+wants where it is now asks `perception.sees` first.
+
 ## Diagnostics
 
 `PerceptionStats` per tick: sensors, unusable sensors, candidates, rejected
@@ -155,7 +188,7 @@ also draws a green line to each seen sample, a red line to each blocking hit
 with the occluded remainder dimmed, and a marker at each observed position.
 The Perception panel in the debug overlay lists the counters and every
 observer with its coverage, and for the selected observer each candidate's
-outcome. That is enough to explain why any target was or was not seen.
+outcome and its memory. That is enough to explain why any target was or was not seen.
 
 ## Lifecycle and networking
 
@@ -182,10 +215,12 @@ D. Built. Debug lines (channels, extraction, pass, feature) on the
    Perception panel.
 E. Hearing: `HearingSensor`, stimuli staged from authored events by game
    adapters, observations through the same frame. Separate follow-up.
+F. Built. Memory: `ObservationMemory`, `ObservationMemorySystem` and the
+   memory queries.
 
 ## Not in v1
 
-Memory, appraisal, belief, alertness, behavior selection, communication,
+Appraisal, belief, alertness, behavior selection, communication,
 prediction, multiple sample points, lighting-aware concealment, sound
 propagation, parallel or multi-tick scanning, a sense registration framework,
 and a spatial index. Each waits for a real consumer or a measurement. None is

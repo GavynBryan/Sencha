@@ -6,8 +6,8 @@ class PerceptionSystem;
 class World;
 
 // Why an observer did or did not see a target: last tick's counters, each
-// observer's coverage, and the selected observer's candidates. Selecting also
-// narrows perception.debug.draw to that observer.
+// observer's coverage, and the selected observer's candidates and memory.
+// Selecting also narrows perception.debug.draw to that observer.
 class PerceptionPanel : public IDebugPanel
 {
 public:

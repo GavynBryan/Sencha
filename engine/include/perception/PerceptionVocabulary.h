@@ -17,6 +17,16 @@ inline constexpr std::string_view kSeesTaggedQuery = "perception.sees_tagged";
 // Unavailable when nothing matching was seen.
 inline constexpr std::string_view kNearestSeenTaggedQuery = "perception.nearest_seen_tagged";
 
+// From the observer's ObservationMemory. Unavailable off the authority or
+// without a memory; a subject never observed is false for remembers and
+// Unavailable for the rest.
+inline constexpr std::string_view kRemembersQuery = "perception.remembers";
+inline constexpr std::string_view kLastSeenPositionQuery = "perception.last_seen_position";
+inline constexpr std::string_view kLastSeenVelocityQuery = "perception.last_seen_velocity";
+inline constexpr std::string_view kSecondsSinceSeenQuery = "perception.seconds_since_seen";
+inline constexpr std::string_view kSecondsTrackedQuery = "perception.seconds_tracked";
+inline constexpr std::string_view kNearestRememberedTaggedQuery = "perception.nearest_remembered_tagged";
+
 struct PerceptionSenses
 {
     GameplayTagId Sight;

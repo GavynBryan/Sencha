@@ -4,7 +4,9 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <perception/ObservationMemory.h>
 #include <perception/PerceptionFrame.h>
+#include <world/SimulationAuthority.h>
 #include <world/transform/TransformComponents.h>
 
 #include <limits>
@@ -139,6 +141,94 @@ namespace
         result = AuthoredValue::Entity(nearest);
         return AuthoredQueryStatus::Value;
     }
+
+    const ObservationMemory* MemoryOf(const World& world, EntityId observer)
+    {
+        return IsSimulationAuthority(world) ? world.TryGet<ObservationMemory>(observer) : nullptr;
+    }
+
+    AuthoredQueryStatus Remembered(const World& world, std::span<const AuthoredValue> arguments,
+                                   const ObservationMemoryEntry*& entry)
+    {
+        EntityId observer;
+        EntityId subject;
+        if (!arguments[0].TryGetEntity(observer) || !arguments[1].TryGetEntity(subject))
+            return AuthoredQueryStatus::InvalidArguments;
+        const ObservationMemory* memory = MemoryOf(world, observer);
+        if (memory == nullptr)
+            return AuthoredQueryStatus::Unavailable;
+        entry = subject.IsValid() ? FindRemembered(*memory, subject) : nullptr;
+        return AuthoredQueryStatus::Value;
+    }
+
+    AuthoredValue VectorValue(const Vec3d& value)
+    {
+        return AuthoredValue::Vector(AuthoredVectorValue{ .Components = { value.X, value.Y, value.Z, 0.0 },
+                                                          .Length = 3 });
+    }
+
+    AuthoredQueryStatus Remembers(const World& world, std::span<const AuthoredValue> arguments,
+                                  AuthoredValue& result)
+    {
+        const ObservationMemoryEntry* entry = nullptr;
+        const AuthoredQueryStatus status = Remembered(world, arguments, entry);
+        if (status == AuthoredQueryStatus::Value)
+            result = AuthoredValue::Bool(entry != nullptr);
+        return status;
+    }
+
+    template<AuthoredValue (*Read)(const ObservationMemoryEntry&)>
+    AuthoredQueryStatus RememberedValue(const World& world, std::span<const AuthoredValue> arguments,
+                                        AuthoredValue& result)
+    {
+        const ObservationMemoryEntry* entry = nullptr;
+        const AuthoredQueryStatus status = Remembered(world, arguments, entry);
+        if (status != AuthoredQueryStatus::Value)
+            return status;
+        if (entry == nullptr)
+            return AuthoredQueryStatus::Unavailable;
+        result = Read(*entry);
+        return AuthoredQueryStatus::Value;
+    }
+
+    AuthoredValue PositionOf(const ObservationMemoryEntry& entry) { return VectorValue(entry.Position); }
+    AuthoredValue VelocityOf(const ObservationMemoryEntry& entry) { return VectorValue(entry.Velocity); }
+    AuthoredValue AgeOf(const ObservationMemoryEntry& entry) { return AuthoredValue::Float(entry.Age); }
+    AuthoredValue TrackedOf(const ObservationMemoryEntry& entry) { return AuthoredValue::Float(entry.Tracked); }
+
+    AuthoredQueryStatus NearestRememberedTagged(const World& world, std::span<const AuthoredValue> arguments,
+                                                AuthoredValue& result)
+    {
+        EntityId observer;
+        GameplayTagId tag;
+        if (!arguments[0].TryGetEntity(observer) || !arguments[1].TryGetTag(tag))
+            return AuthoredQueryStatus::InvalidArguments;
+        const ObservationMemory* memory = MemoryOf(world, observer);
+        const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+        const WorldTransform* from = world.TryGet<WorldTransform>(observer);
+        if (memory == nullptr || tags == nullptr || from == nullptr)
+            return AuthoredQueryStatus::Unavailable;
+
+        EntityId nearest;
+        float nearestDistance = std::numeric_limits<float>::infinity();
+        for (std::uint32_t index = 0; index < memory->Count; ++index)
+        {
+            const ObservationMemoryEntry& entry = memory->Entries[index];
+            if (!entry.Subject.IsValid() || !world.IsAlive(entry.Subject)
+                || !SubjectCarries(world, *tags, entry.Subject, tag))
+                continue;
+            const float distance = (entry.Position - from->Value.Position).SqrMagnitude();
+            if (distance < nearestDistance || (distance == nearestDistance && entry.Subject < nearest))
+            {
+                nearest = entry.Subject;
+                nearestDistance = distance;
+            }
+        }
+        if (!nearest.IsValid())
+            return AuthoredQueryStatus::Unavailable;
+        result = AuthoredValue::Entity(nearest);
+        return AuthoredQueryStatus::Value;
+    }
 }
 
 const PerceptionSenses& EnsurePerceptionSenses(World& world)
@@ -175,6 +265,24 @@ bool InstallPerceptionVocabulary(World& world)
     (void)scope.Declare(Declaration(kNearestSeenTaggedQuery, "Nearest seen tagged",
                               "The closest thing carrying the tag that the observer saw this tick, by sight alone.",
                               DataFieldKind::GameplayTag, "tag", "Tag", DataFieldKind::Entity));
+    (void)scope.Declare(Declaration(kRemembersQuery, "Remembers",
+                              "Whether the observer's memory holds the subject.",
+                              DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Bool));
+    (void)scope.Declare(Declaration(kLastSeenPositionQuery, "Last seen position",
+                              "Where the observer last sensed the subject, not where it is now.",
+                              DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Vector));
+    (void)scope.Declare(Declaration(kLastSeenVelocityQuery, "Last seen velocity",
+                              "The subject's velocity as the observer last measured it; zero when it could not.",
+                              DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Vector));
+    (void)scope.Declare(Declaration(kSecondsSinceSeenQuery, "Seconds since seen",
+                              "Seconds since the observer last sensed the subject.",
+                              DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Float));
+    (void)scope.Declare(Declaration(kSecondsTrackedQuery, "Seconds tracked",
+                              "Seconds the observer has sensed the subject without a lapse.",
+                              DataFieldKind::Entity, "subject", "Subject", DataFieldKind::Float));
+    (void)scope.Declare(Declaration(kNearestRememberedTaggedQuery, "Nearest remembered tagged",
+                              "The closest remembered position of something alive carrying the tag.",
+                              DataFieldKind::GameplayTag, "tag", "Tag", DataFieldKind::Entity));
     return scope.Commit();
 }
 
@@ -186,5 +294,11 @@ std::vector<AuthoredQueryBindingToken> BindPerceptionQueries(AuthoredQueryDispat
     tokens.push_back(dispatcher.Bind<&Sees>(registry.Find(kSeesQuery), world));
     tokens.push_back(dispatcher.Bind<&SeesTagged>(registry.Find(kSeesTaggedQuery), world));
     tokens.push_back(dispatcher.Bind<&NearestSeenTagged>(registry.Find(kNearestSeenTaggedQuery), world));
+    tokens.push_back(dispatcher.Bind<&Remembers>(registry.Find(kRemembersQuery), world));
+    tokens.push_back(dispatcher.Bind<&RememberedValue<&PositionOf>>(registry.Find(kLastSeenPositionQuery), world));
+    tokens.push_back(dispatcher.Bind<&RememberedValue<&VelocityOf>>(registry.Find(kLastSeenVelocityQuery), world));
+    tokens.push_back(dispatcher.Bind<&RememberedValue<&AgeOf>>(registry.Find(kSecondsSinceSeenQuery), world));
+    tokens.push_back(dispatcher.Bind<&RememberedValue<&TrackedOf>>(registry.Find(kSecondsTrackedQuery), world));
+    tokens.push_back(dispatcher.Bind<&NearestRememberedTagged>(registry.Find(kNearestRememberedTaggedQuery), world));
     return tokens;
 }
