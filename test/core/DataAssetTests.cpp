@@ -333,10 +333,12 @@ TEST(DataAssetLease, LeasesOnFirstGetAndReadsTheCompiledValue)
 
     DataAssetLease<std::string> lease(file.Record().Path, "test.text");
     EXPECT_FALSE(lease.Handle().IsValid()) << "nothing is leased before the first Get";
+    EXPECT_EQ(lease.Peek(cache), nullptr) << "Peek never leases";
     const std::string* value = lease.Get(assets, cache);
     ASSERT_NE(value, nullptr);
     EXPECT_EQ(*value, "hello");
     EXPECT_TRUE(lease.Handle().IsValid());
+    EXPECT_EQ(lease.Peek(cache), value);
 
     DataAssetLease<std::string> wrongType(file.Record().Path, "test.other");
     EXPECT_EQ(wrongType.Get(assets, cache), nullptr) << "a value of another type is not read as this one";

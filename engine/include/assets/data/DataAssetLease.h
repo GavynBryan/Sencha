@@ -27,6 +27,13 @@ public:
     {
         if (!Lease.IsValid())
             Lease = assets.LoadLease(Path, AssetType::Data);
+        return Peek(data);
+    }
+
+    // What Get would return, without leasing: for a reader that leased once, when it
+    // opened, and reads from const code after. Null until a Get has leased it.
+    [[nodiscard]] const T* Peek(const DataAssetCache& data) const
+    {
         return Lease.IsValid() ? data.TryGet<T>(Handle(), Type) : nullptr;
     }
 
