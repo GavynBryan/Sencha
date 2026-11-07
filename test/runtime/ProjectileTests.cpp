@@ -38,6 +38,7 @@
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
 #include <physics/CharacterMoverPool.h>
+#include <physics/components/HitRegion.h>
 #include <physics/components/CharacterController.h>
 #include <projectile/Projectile.h>
 #include <projectile/ProjectileState.h>
@@ -125,9 +126,20 @@ protected:
             DeclareResponseVocabulary(scope, events);
             DeclareProjectileVocabulary(scope, events);
             ASSERT_TRUE(CommitTogether(scope, events));
+            AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(WorldState), "test");
+            AuthoredQueryDefinition scale;
+            scale.Name = "test.region_scale";
+            scale.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "target", "Target"));
+            scale.Arguments.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "region", "Region"));
+            scale.Arguments.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "kind", "Kind"));
+            scale.Result.Kind = DataFieldKind::Float;
+            (void)queries.Declare(std::move(scale));
+            ASSERT_TRUE(queries.Commit());
         }
+        Head = *Tags->RegisterTag("Test.Region.Head");
         Dispatcher = std::make_unique<VerbDispatcher>(*Verbs);
         Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(WorldState));
+        QueryTokens.push_back(Queries->Bind<&DoubleOnTheHead>(FindAuthoredQueryRegistry(WorldState)->Find("test.region_scale"), *this));
         Record = std::make_unique<RecordingOperation>(Calls);
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.record"), *Record));
 
@@ -141,7 +153,8 @@ protected:
                                                                        .Clock = &Clock,
                                                                        .Interpolation = &Interpolation,
                                                                        .Console = &Console,
-                                                                       .Logging = &Logging });
+                                                                       .Logging = &Logging,
+                                                                       .Queries = Queries.get() });
         Schedule.After<ProjectileSystem, ResponsesSystem>();
         Tokens.push_back(Dispatcher->Bind<&InvokeProjectileLaunch>(Verbs->Find(kProjectileLaunchVerb), *System));
         Schedule.Init();
@@ -158,6 +171,30 @@ protected:
         Schedule.Shutdown();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
+        for (AuthoredQueryBindingToken& token : QueryTokens)
+            token.Reset();
+    }
+
+    static AuthoredQueryStatus DoubleOnTheHead(const ProjectileFixture& self, std::span<const AuthoredValue> arguments,
+                                               AuthoredValue& result)
+    {
+        GameplayTagId region;
+        (void)arguments[1].TryGetTag(region);
+        result = AuthoredValue::Float(region == self.Head ? 2.0 : 1.0);
+        return AuthoredQueryStatus::Value;
+    }
+
+    // A part of `owner` named Head, placed in the world where it is.
+    void HeadOf(EntityId owner, const Vec3d& centre, float radius)
+    {
+        const EntityId part = WorldState.CreateEntity();
+        WorldState.AddComponent<LocalTransform>(part, LocalTransform{ Transform3f{ centre, Quatf::Identity(), Vec3d::One() } });
+        WorldState.AddComponent<WorldTransform>(part, WorldTransform{ Transform3f{ centre, Quatf::Identity(), Vec3d::One() } });
+        WorldState.AddComponent<Parent>(part, Parent{ owner });
+        HitRegion region;
+        region.Region = "Test.Region.Head";
+        region.Shape = CollisionShape::MakeSphere(radius);
+        WorldState.AddComponent<HitRegion>(part, region);
     }
 
     // The prefab the test launches, built the way a scene prefab is: a root with
@@ -302,6 +339,8 @@ protected:
     std::vector<Recorded> Calls;
     std::unique_ptr<RecordingOperation> Record;
     std::vector<VerbBindingToken> Tokens;
+    std::vector<AuthoredQueryBindingToken> QueryTokens;
+    GameplayTagId Head;
     ResponsesSystem* Responses = nullptr;
     ProjectileSystem* System = nullptr;
     EntityId Shooter;
@@ -481,6 +520,29 @@ TEST_F(ProjectileFixture, WhatItStrikesHearsProjectileHitWithItsKind)
     Ticks(6);
     ASSERT_EQ(Calls.size(), 1u);
     EXPECT_EQ(Calls.front().Target, Shooter);
+}
+
+TEST_F(ProjectileFixture, AStrikeNamesTheRegionItLandsOnAndScalesItsEffectsByTheGamesQuery)
+{
+    Bolt([](Projectile& p) { p.HitScaleQuery = "test.region_scale"; });
+    const EntityId high = Box(Vec3d(3.0f, 0.0f, 0.0f), Vec3d(0.5f, 2.0f, 2.0f));
+    HeadOf(high, Vec3d(3.0f, 0.0f, 0.0f), 0.6f);
+    WorldState.AddComponent<::Responses>(high, ::Responses{});
+    const std::optional<JsonValue> bindings = JsonParse(R"({"struck": {"on": "projectile.hit", "sequence": {
+        "conditions": [{"tag": "region", "tags": {"any": ["Test.Region.Head"]}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "instigator"}}}]}}})");
+    ASSERT_TRUE(bindings.has_value());
+    ASSERT_TRUE(SetResponseBindings(WorldState, high, *bindings));
+    (void)Launch();
+    Ticks(6);
+    EXPECT_FLOAT_EQ(HealthOf(high), 80.0f) << "twice the hit effect on the head";
+    ASSERT_EQ(Calls.size(), 1u) << "the delivery names the region";
+
+    const EntityId low = Box(Vec3d(3.0f, 0.0f, 5.0f), Vec3d(0.5f, 2.0f, 2.0f));
+    HeadOf(low, Vec3d(3.0f, 1.5f, 5.0f), 0.3f);
+    (void)Launch(Vec3d(3.0f, 0.0f, 5.0f).Normalized());
+    Ticks(8);
+    EXPECT_FLOAT_EQ(HealthOf(low), 90.0f) << "a strike that misses the head applies as authored";
 }
 
 TEST_F(ProjectileFixture, ALaunchPastCapacityIsRefusedUntilOneEnds)

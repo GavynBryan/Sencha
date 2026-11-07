@@ -3,6 +3,7 @@
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
+#include <physics/components/HitRegion.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
 #include <world/ComponentSet.h>
@@ -36,6 +37,7 @@ using PhysicsComponents = ComponentSet<
     Collider,
     RigidBody,
     CharacterController,
+    HitRegion,
     // The runtime links the bridges add at reconcile time. Named here so a
     // caller cannot forget them and the reconcile's AddComponent never asserts.
     PhysicsBodyLink,

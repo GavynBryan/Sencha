@@ -31,6 +31,7 @@ like. Its fields:
 | `hit_kind` | a gameplay tag carried by `projectile.hit`, so responses tell one kind of shot from another |
 | `impact_cue` | a cue appended to the instigator's cue log wherever it strikes or ends |
 | `hits_characters`, `ends_with_instigator` | whether walking characters stop it; whether it ends when its instigator is gone |
+| `hit_scale_query` | an authored query `{target, region, kind}` whose number scales the hit and scaled effects, as the game reads where it struck; empty applies them as authored |
 
 Effects and tags are named, as `asset://effects/<name>.sdata` and tag names, and
 resolved the first time the prefab is launched. A name nobody declared refuses
@@ -103,10 +104,32 @@ consequences are effects, the delivery and the cue, and nothing else: damage is
 an effect, death is the owning system's, and anything a struck entity does about
 being struck is its responses' (`docs/gameplay/responses.md`).
 
-`projectile.hit` carries `instigator`, `projectile`, `kind`, `point` and
-`normal`, with the instigator as its instigator. A hitscan weapon that means the
-same thing delivers the same `ProjectileHit` with no projectile, so a door that
-opens to any shot answers one event.
+`projectile.hit` carries `instigator`, `projectile`, `kind`, `point`, `normal`
+and `region`, with the instigator as its instigator. A hitscan weapon that means
+the same thing delivers the same `ProjectileHit` with no projectile, so a door
+that opens to any shot answers one event.
+
+## Hit regions
+
+A `HitRegion { region, shape, priority }` names a part of an entity: a shape in
+its own entity's frame and a gameplay tag. It belongs to its entity or its
+entity's parent, so a character's head is a child entity placed at the head. It
+collides with nothing and no query sees it.
+
+A strike resolves afterwards (`HitRegionResolver`, `physics/HitRegionResolver.h`):
+along the projectile's path from where it was this tick, past the contact by
+2 m, the part of the struck entity the ray enters first wins, ties going to the
+higher priority. `RaycastShape` in `physics/PhysicsQueries.h` is the one-shape
+ray test it uses. The region rides `projectile.hit`, and the projectile's
+`hit_scale_query`, if any, is asked `{target, region, kind}` before effects
+apply; an answer that is not a finite non-negative number applies them as
+authored. A strike that crosses no part has no region. Splash has none and is
+never scaled.
+
+What a region means is the game's: the engine never names a head. Regions sit
+where the entity stands, so they follow a character's capsule and turn, not its
+animation; regions anchored to joints wait for an animated enemy
+(`docs/deferred.md`).
 
 ## Across machines
 

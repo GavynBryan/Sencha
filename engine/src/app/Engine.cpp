@@ -1490,7 +1490,8 @@ int Engine::Run(Game& game)
                                             .Clock = &NetClockState,
                                             .Interpolation = &InterpolationState,
                                             .Console = &console.Registry(),
-                                            .Logging = &LoggingState });
+                                            .Logging = &LoggingState,
+                                            .Queries = QueryDispatcherState.get() });
             if (EngineSystems.Has<AbilitySystem>())
                 EngineSystems.After<ProjectileSystem, AbilitySystem>();
             if (EngineSystems.Has<AttributeResolveSystem>())

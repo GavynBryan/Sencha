@@ -29,6 +29,8 @@ struct ProjectileHit
     GameplayTagId Kind{};
     Vec3d Point = Vec3d::Zero();
     Vec3d Normal = Vec3d::Zero();
+    // The struck entity's HitRegion the strike landed on; invalid when none.
+    GameplayTagId Region{};
 };
 
 template <>
@@ -37,11 +39,12 @@ struct AuthoredApiDefinition<ProjectileHit>
     static constexpr std::string_view EventName = kProjectileHitEvent;
     static void Encode(const ProjectileHit& event, AuthoredArguments& payload)
     {
-        payload.Resize(5);
+        payload.Resize(6);
         payload.Set(0, AuthoredValue::Entity(event.Instigator));
         payload.Set(1, AuthoredValue::Entity(event.Projectile));
         payload.Set(2, AuthoredValue::Tag(event.Kind));
         payload.Set(3, AuthoredValue::Vector({ { event.Point.X, event.Point.Y, event.Point.Z }, 3 }));
         payload.Set(4, AuthoredValue::Vector({ { event.Normal.X, event.Normal.Y, event.Normal.Z }, 3 }));
+        payload.Set(5, AuthoredValue::Tag(event.Region));
     }
 };

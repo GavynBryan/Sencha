@@ -86,6 +86,8 @@ void DeclareProjectileVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegi
     DataFieldSchema normal = MakeDataField(DataFieldKind::Vector, "normal", "Normal", "The struck surface's normal.");
     normal.VectorLength = 3;
     hit.Payload.Children.push_back(std::move(normal));
+    hit.Payload.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "region", "Region",
+                                                 "The struck entity's hit region; none when it has none there."));
     hit.Instigator = "instigator";
     (void)events.Declare(std::move(hit));
 }

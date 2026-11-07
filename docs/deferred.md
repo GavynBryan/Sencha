@@ -874,6 +874,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   by instigator and launch tick when that arrives, and retire the guess. The
   guess strikes nothing.
 
+## Hit regions that follow animation
+
+- **What:** a `HitRegion` sits where its entity stands, so a character's parts
+  follow its capsule and turn but not its pose. A region anchored to a joint
+  needs the pose on the authority, and `AnimPoseSystem` runs only where a pose
+  is presented (`AnimationHost::PresentsPose`).
+- **Where:** `physics/components/HitRegion.h`, `HitRegionResolver`; poses in
+  `anim/AnimPosePool.h`.
+- **Trigger:** the first animated character whose parts must move with its
+  pose, such as a crouch or a reaching arm a shot should miss. That consumer
+  decides whether a headless authority poses characters, and adds a socket to
+  `HitRegion` resolved through a simulation-side joint readback.
+
 ## Lag-compensated projectile contacts
 
 - **What:** a projectile's contacts are decided against the authority's present.

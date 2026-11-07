@@ -1,9 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <vector>
 
 #include <ecs/EntityId.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
 #include <physics/CollisionShape.h>
@@ -47,6 +49,12 @@ struct PhysicsQueryFilter
     // A character's body, which queries strike and nothing collides with.
     bool IncludeCharacters = true;
 };
+
+// Where a ray first enters `shape` standing at `pose`, as a distance along the
+// ray, or nullopt when it misses within `maxDistance`. A ray that starts inside
+// reports zero. A pure test against one shape: no world, no body.
+[[nodiscard]] std::optional<float> RaycastShape(const CollisionShape& shape, const Transform3f& pose,
+                                                const Vec3d& origin, const Vec3d& unitDirection, float maxDistance);
 
 class PhysicsQueries
 {

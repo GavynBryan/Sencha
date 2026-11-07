@@ -67,6 +67,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterMoverLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/HitRegion.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/PhysicsBodyLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/RigidBody.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/projectile/Projectile.h"

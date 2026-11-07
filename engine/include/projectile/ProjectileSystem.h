@@ -1,11 +1,14 @@
 #pragma once
 
+#include <authored/AuthoredQueryId.h>
+#include <authored/AuthoredValue.h>
 #include <core/assets/AssetId.h>
 #include <ecs/EntityId.h>
 #include <ecs/Query.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <math/Vec.h>
+#include <physics/HitRegionResolver.h>
 #include <projectile/Projectile.h>
 #include <projectile/ProjectileState.h>
 
@@ -18,6 +21,7 @@
 #include <vector>
 
 class AssetSystem;
+class AuthoredQueryDispatcher;
 class ConsoleRegistry;
 class INetPrefabSpawner;
 class LoggingProvider;
@@ -41,6 +45,7 @@ struct ResolvedProjectile
     GameplayTagId PassesThrough{};
     GameplayTagId HitKind{};
     GameplayTagId ImpactCue{};
+    AuthoredQueryHandle HitScale{};
 };
 
 // Every prefab launched in this World, resolved once. A resource rather than the
@@ -127,6 +132,8 @@ public:
         const ReplicationInterpolation* Interpolation = nullptr;
         ConsoleRegistry* Console = nullptr;
         LoggingProvider* Logging = nullptr;
+        // Answers a projectile's hit scale query; without it every strike applies as authored.
+        const AuthoredQueryDispatcher* Queries = nullptr;
     };
 
     ProjectileSystem(World& world, const Services& services);
@@ -163,6 +170,9 @@ private:
         float Distance = 0.0f;
         Vec3d Point = Vec3d::Zero();
         Vec3d Normal = Vec3d::Zero();
+        // The swept path, which hit regions are resolved along.
+        Vec3d From = Vec3d::Zero();
+        Vec3d Direction = Vec3d::Forward();
     };
 
     std::optional<std::uint32_t> Resolve(AssetId prefab, EntityId root);
@@ -174,7 +184,9 @@ private:
     bool Strike(EntityId projectile, ProjectileMotion& motion, const ResolvedProjectile& definition,
                 EntityId instigator, const Contact& contact, const FixedSimTime& now);
     void ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                      EffectId override, const FixedSimTime& now);
+                      EffectId override, const FixedSimTime& now, float scale = 1.0f);
+    // The projectile's hit scale query's answer for a strike; 1 without one.
+    [[nodiscard]] float HitScale(const ResolvedProjectile& definition, EntityId target, GameplayTagId region);
     void Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,
                 const Vec3d& point, const Vec3d& normal, const FixedSimTime& now);
     void Cue(EntityId instigator, EntityId projectile, GameplayTagId cue, const Vec3d& point, const Vec3d& normal,
@@ -194,6 +206,9 @@ private:
     // can apply effects that make structural changes.
     std::vector<EntityId> Scratch;
     std::vector<EntityId> Overlaps;
+    HitRegionResolver Regions;
+    AuthoredArguments ScaleArguments;
+    AuthoredValue ScaleAnswer;
     // Launches seeded this tick, per instigator.
     std::uint64_t SeedTick = 0;
     std::unordered_map<EntityId, std::uint32_t, EntityIdHash> SeedsThisTick;

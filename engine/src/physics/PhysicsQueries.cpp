@@ -99,6 +99,22 @@ RaycastHit PhysicsQueries::Raycast(const Vec3d& origin,
     return CastRay(*Simulation, origin, unitDirection, maxDistance, QueryBodyFilter{ filter });
 }
 
+std::optional<float> RaycastShape(const CollisionShape& shape, const Transform3f& pose, const Vec3d& origin,
+                                  const Vec3d& unitDirection, float maxDistance)
+{
+    const JPH::ShapeRefC jShape = BuildShape(ScaledCollisionShape(shape, pose.Scale));
+    if (jShape == nullptr || !(maxDistance > 0.0f))
+        return std::nullopt;
+    const Quatf inverse = pose.Rotation.Normalized().Inverse();
+    const Vec3d localOrigin = inverse.RotateVector(origin - pose.Position);
+    const Vec3d localReach = inverse.RotateVector(unitDirection * maxDistance);
+    const JPH::RayCast ray(ToJph(localOrigin), ToJph(localReach));
+    JPH::RayCastResult hit;
+    if (!jShape->CastRay(ray, JPH::SubShapeIDCreator(), hit))
+        return std::nullopt;
+    return hit.mFraction * maxDistance;
+}
+
 namespace
 {
 ShapeSweepHit CastShape(const PhysicsWorld& world,

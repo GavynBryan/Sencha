@@ -1,6 +1,7 @@
 #include <projectile/ProjectileSystem.h>
 
 #include <abilities/AbilityCueLog.h>
+#include <authored/AuthoredQueryDispatcher.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <assets/runtime/AssetSystem.h>
@@ -192,6 +193,13 @@ std::optional<std::uint32_t> ProjectileSystem::Resolve(AssetId prefab, EntityId 
     tag(d.PassesThrough, resolved.PassesThrough);
     tag(d.HitKind, resolved.HitKind);
     tag(d.ImpactCue, resolved.ImpactCue);
+    if (!d.HitScaleQuery.Empty() && problem.empty())
+    {
+        resolved.HitScale = Host.Queries != nullptr ? Host.Queries->Registry().Resolve(d.HitScaleQuery.View())
+                                                    : AuthoredQueryHandle{};
+        if (!resolved.HitScale.IsValid())
+            problem = "no authored query is declared as '" + std::string(d.HitScaleQuery.View()) + "'";
+    }
 
     if (!problem.empty())
     {
@@ -454,13 +462,16 @@ std::optional<ProjectileSystem::Contact> ProjectileSystem::Sweep(const Projectil
             nearest = Contact{ .Entity = hit.Entity,
                                .Distance = std::clamp(hit.Fraction, 0.0f, 1.0f) * distance,
                                .Point = hit.Point,
-                               .Normal = hit.Normal };
+                               .Normal = hit.Normal,
+                               .From = from,
+                               .Direction = direction };
     }
     else
     {
         const RaycastHit hit = queries.Raycast(from, direction, distance, filter);
         if (hit.Hit)
-            nearest = Contact{ .Entity = hit.Entity, .Distance = hit.Distance, .Point = hit.Point, .Normal = hit.Normal };
+            nearest = Contact{ .Entity = hit.Entity, .Distance = hit.Distance, .Point = hit.Point, .Normal = hit.Normal,
+                               .From = from, .Direction = direction };
     }
     return nearest;
 }
@@ -478,18 +489,39 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
     ++StrikeCount;
 
     const EntityId target = contact.Entity;
-    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now);
+    // Past the surface by a body's depth, so a part behind the one struck first is still crossed.
+    constexpr float kRegionDepth = 2.0f;
+    const std::optional<HitRegionHit> region =
+        Regions.Resolve(world, target, contact.From, contact.Direction, contact.Distance + kRegionDepth);
+    const GameplayTagId part = region ? region->Region : GameplayTagId{};
+    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now, HitScale(definition, target, part));
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = instigator,
                                                             .Projectile = projectile,
                                                             .Kind = definition.HitKind,
                                                             .Point = contact.Point,
-                                                            .Normal = contact.Normal });
+                                                            .Normal = contact.Normal,
+                                                            .Region = part });
     return true;
 }
 
+float ProjectileSystem::HitScale(const ResolvedProjectile& definition, EntityId target, GameplayTagId region)
+{
+    if (!definition.HitScale.IsValid() || Host.Queries == nullptr)
+        return 1.0f;
+    ScaleArguments.Resize(3);
+    ScaleArguments.Set(0, AuthoredValue::Entity(target));
+    ScaleArguments.Set(1, AuthoredValue::Tag(region));
+    ScaleArguments.Set(2, AuthoredValue::Tag(definition.HitKind));
+    double scale = 1.0;
+    if (Host.Queries->Evaluate(definition.HitScale, ScaleArguments.Values(), ScaleAnswer) != AuthoredQueryStatus::Value
+        || !ScaleAnswer.TryGetFloat(scale) || !std::isfinite(scale) || scale < 0.0)
+        return 1.0f;
+    return static_cast<float>(scale);
+}
+
 void ProjectileSystem::ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                                    EffectId override, const FixedSimTime& now)
+                                    EffectId override, const FixedSimTime& now, float scale)
 {
     World& world = *Entities;
     if (!world.IsAlive(target) || !world.HasComponent<AttributeSet>(target))
@@ -500,9 +532,9 @@ void ProjectileSystem::ApplyEffects(float magnitude, const ResolvedProjectile& d
         return;
     }
     if (definition.HitEffect.IsValid())
-        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, 1.0f);
+        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, scale);
     if (definition.ScaledEffect.IsValid() && magnitude > 0.0f && world.IsAlive(target))
-        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude);
+        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude * scale);
 }
 
 void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,

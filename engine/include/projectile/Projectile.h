@@ -120,6 +120,12 @@ Projectile
     SENCHA_LABEL("Ends with instigator")
     SENCHA_TOOLTIP("It ends when whatever launched it is gone; otherwise it flies on.")
     bool EndsWithInstigator = false;
+
+    SENCHA_FIELD("hit_scale_query")
+    SENCHA_LABEL("Hit scale query")
+    SENCHA_TOOLTIP("An authored query {target, region, kind} whose number scales the effects a strike "
+                   "applies, as a game reads where it struck. Empty applies them as authored.")
+    InlineString<64> HitScaleQuery;
 };
 
 static_assert(std::is_trivially_copyable_v<Projectile>, "Projectile must be trivially copyable to live in ECS chunks");
