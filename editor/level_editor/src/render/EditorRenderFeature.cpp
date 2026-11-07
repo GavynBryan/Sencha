@@ -24,6 +24,7 @@
 #include <render/outline/OutlineFrame.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include "render/TargetImagePublish.h"
+#include "viewport/ViewClock.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
@@ -488,20 +489,21 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 
     // Separate loop on purpose: a declared view holds a pointer into ViewSlots,
     // and pushing to it above would move the ones already declared.
+    const double viewSeconds = EditorViewSeconds();
     for (ViewSlot& slot : ViewSlots)
+    {
+        // Built once here rather than by each renderer inside the view: same
+        // camera, same frame, one construction.
+        CameraRenderData camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width, slot.Target.Extent.height);
+        camera.TimeSeconds = viewSeconds;
         Composition.AddView({
-            .View = { .Name = "viewport",
-                      .Target = slot.Target.Display,
-                      // Built once here rather than by each renderer inside the
-                      // view: same camera, same frame, one construction.
-                      .Camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width,
-                                                              slot.Target.Extent.height),
-                      .User = &slot },
+            .View = { .Name = "viewport", .Target = slot.Target.Display, .Camera = camera, .User = &slot },
             .Record = { [](void* self, const RenderFrame& context, const FrameView& view)
                         { static_cast<EditorRenderFeature*>(self)->RecordViewportView(*context.Backend, view); },
                         this },
             .DependsOn = viewDependsOn,
         });
+    }
 
     Composition.Execute(renderFrame);
     PublishViewImages();

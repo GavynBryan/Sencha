@@ -3,6 +3,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <math/geometry/3d/Frustum.h>
 #include <render/CameraProjection.h>
+#include "viewport/ViewClock.h"
 
 #include <algorithm>
 #include <cmath>
@@ -87,7 +88,8 @@ void MaterialPreviewRenderFeature::DrawMaterial(const FrameContext& rendering, V
 {
     const float aspect = extent.height > 0 ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
 
-    const CameraRenderData camera = Camera.BuildRenderData(aspect);
+    CameraRenderData camera = Camera.BuildRenderData(aspect);
+    camera.TimeSeconds = EditorViewSeconds();
     const Vec3d eye = camera.Position;
 
     // Key light rides above the camera's shoulder so orbiting keeps the lit

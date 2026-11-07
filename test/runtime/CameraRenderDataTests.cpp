@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <camera/CameraExclusion.h>
+#include <camera/PresentedFrame.h>
 #include <world/transform/TransformHistory.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -176,4 +177,16 @@ TEST(CameraRenderDataExclusion, ExcludesItsEntityAndWhatIsPresentedWithIt)
     EXPECT_TRUE(camera.Excludes(rifle, body));
     EXPECT_FALSE(camera.Excludes(rifle, other));
     EXPECT_FALSE(camera.Excludes(other, EntityId{}));
+}
+
+// Materials animate on the view's time, so the presented moment must reach it.
+TEST(CameraRenderDataTime, TheViewCarriesThePresentedMoment)
+{
+    CameraDataHarness harness;
+    const PresentedFrame frame = ResolvePresentedFrame(harness.WorldState, harness.Camera, RenderExtent{ 1280, 720 },
+                                                       PresentationTime{ .SimulationSeconds = 2.5 });
+
+    CameraRenderData data;
+    ASSERT_TRUE(CameraRenderDataSystem::Build(frame, harness.WorldState, data));
+    EXPECT_DOUBLE_EQ(data.TimeSeconds, 2.5);
 }

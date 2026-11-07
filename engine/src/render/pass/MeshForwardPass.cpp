@@ -415,7 +415,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
 {
     MeshViewUniforms uniforms{};
     uniforms.ViewProjection = camera.ViewProjection.Transposed();
-    uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
+    uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z,
+                                     static_cast<float>(camera.TimeSeconds));
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
     uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
     uniforms.DiffuseWrap = lights.DiffuseWrap;

@@ -25,6 +25,9 @@ struct CameraRenderData
     Mat4 Projection = Mat4::Identity();
     Mat4 ViewProjection = Mat4::Identity();
     Vec3d Position;
+    // The moment the view shows, which materials animate on: simulation seconds
+    // in a game, the editor's own clock in a viewport.
+    double TimeSeconds = 0.0;
     Frustum ViewFrustum;
 
     // Mesh extraction skips this entity for this camera. It is derived per frame
