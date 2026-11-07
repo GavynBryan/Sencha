@@ -27,7 +27,9 @@ A contribution names slots with `MeshSlotSelector`:
   the authored set names nothing and is reported (`SlotOutOfRange`).
 
 A contribution `Hide`s slots and `Substitute`s materials into slots, and keeps
-every material it substitutes resident while it is held.
+every material it substitutes resident while it is held. Contributions live in the
+shared [store](presentation-contributions.md), and `MeshOverrideSystem` takes back
+any whose holder has died.
 
 ## Composition
 

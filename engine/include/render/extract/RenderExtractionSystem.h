@@ -10,6 +10,7 @@
 #include <render/RenderQueue.h>
 #include <anim/SkeletonCache.h>
 #include <render/SkinnedPoseFrameData.h>
+#include <render/outline/OutlineFrame.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/TextureHandle.h>
@@ -138,7 +139,8 @@ public:
         const CameraRenderData& camera,
         RenderQueue& queue,
         double interpolationAlpha = 1.0,
-        SkinnedPoseFrameData* skinnedPoses = nullptr);
+        SkinnedPoseFrameData* skinnedPoses = nullptr,
+        OutlineFrame* outlines = nullptr);
 
     // Same extraction with the caches spelled out. Retained for callers built
     // against the older signature; forwards to the bundled form.
@@ -162,12 +164,13 @@ private:
     void EmitStaticMeshes(const StoragePartitionSet& partitions,
                           const RenderExtractCaches& caches,
                           const CameraRenderData& camera, RenderQueue& queue,
-                          double interpolationAlpha);
+                          double interpolationAlpha,
+                          OutlineFrame* outlines);
     void EmitSkinnedMeshes(const World& world, const StoragePartitionSet& partitions,
                            const RenderExtractCaches& caches,
                            const CameraRenderData& camera, RenderQueue& queue,
                            double interpolationAlpha,
-                           SkinnedPoseFrameData* skinnedPoses);
+                           SkinnedPoseFrameData* skinnedPoses, OutlineFrame* outlines);
     // Poses the palette from the pose pass's rig pose (`poseAlpha` of the way
     // from last tick's to this one's), else bind identity. Returns UINT32_MAX
     // when the mesh carries no skinning data.

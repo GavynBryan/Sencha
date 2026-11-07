@@ -2,13 +2,12 @@
 
 #include "render/ViewportTargetCache.h"
 
+#include <graphics/vulkan/FullscreenPass.h>
+#include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 
 #include <vulkan/vulkan.h>
-
-class VulkanPipelineCache;
-class VulkanDescriptorCache;
 
 struct BloomParams
 {
@@ -36,19 +35,14 @@ public:
 
 private:
     enum Pass { Bright = 0, Blur = 1, Composite = 2 };
-    [[nodiscard]] VkPipeline EnsurePipeline(Pass pass, VkFormat colorFormat);
+    [[nodiscard]] bool EnsurePipelines(VkFormat colorFormat);
 
-    VkDevice               Device = VK_NULL_HANDLE;
-    VulkanShaderCache*     Shaders = nullptr;
-    VulkanPipelineCache*   Pipelines = nullptr;
-    VulkanDescriptorCache* Descriptors = nullptr;
+    VulkanShaderCache* Shaders = nullptr;
+    FullscreenPass Fullscreen;
 
-    ShaderHandle VertShader;
     ShaderHandle BrightFrag;
     ShaderHandle BlurFrag;
     ShaderHandle CompositeFrag;
 
-    VkPipelineLayout Layout = VK_NULL_HANDLE;
-    VkPipeline       PassPipelines[3] = { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE };
-    VkFormat         CachedFormat = VK_FORMAT_UNDEFINED;
+    PipelineVariantSet<3, VkFormat> Pipelines;
 };

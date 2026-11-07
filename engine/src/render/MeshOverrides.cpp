@@ -90,15 +90,10 @@ namespace
 void ComponentTraits<MeshOverrides>::OnRemove(const MeshOverrides& overrides, World& world, EntityId entity)
 {
     ReleaseComposedSet(world, overrides.Materials);
-    MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();
-    if (contributions == nullptr)
-        return;
-    if (const auto found = contributions->ByEntity.find(entity); found != contributions->ByEntity.end())
-    {
-        for (const MeshOverrideContribution& contribution : found->second)
+    if (MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>())
+        contributions->ByEntity.ForgetKey(entity, [&](EntityId, const MeshOverrideContribution& contribution) {
             ReleaseSubstitutes(world, contribution);
-        contributions->ByEntity.erase(found);
-    }
+        });
 }
 
 MeshOverrideOutcome ComposeMeshOverrides(World& world, EntityId entity)
@@ -120,8 +115,7 @@ MeshOverrideOutcome ComposeMeshOverrides(World& world, EntityId entity)
 
     const std::vector<MeshOverrideContribution>* held = nullptr;
     if (const MeshOverrideContributions* all = world.TryGetResource<MeshOverrideContributions>())
-        if (const auto found = all->ByEntity.find(entity); found != all->ByEntity.end())
-            held = &found->second;
+        held = all->ByEntity.Find(entity);
 
     std::uint32_t hidden = 0;
     std::vector<SlotWinner> winners(slots.size());
@@ -185,17 +179,9 @@ MeshOverrideOutcome SetMeshOverride(World& world, EntityId entity, MeshOverrideC
         world.AddComponent<MeshOverrides>(entity);
 
     RetainSubstitutes(world, contribution);
-    std::vector<MeshOverrideContribution>& held = world.GetResource<MeshOverrideContributions>().ByEntity[entity];
-    const auto existing = std::find_if(held.begin(), held.end(), [&](const MeshOverrideContribution& c) {
-        return c.Owner == contribution.Owner;
-    });
-    if (existing != held.end())
-    {
-        ReleaseSubstitutes(world, *existing);
-        *existing = std::move(contribution);
-    }
-    else
-        held.push_back(std::move(contribution));
+    if (const std::optional<MeshOverrideContribution> replaced =
+            world.GetResource<MeshOverrideContributions>().ByEntity.Set(entity, std::move(contribution)))
+        ReleaseSubstitutes(world, *replaced);
     return ComposeMeshOverrides(world, entity);
 }
 
@@ -204,19 +190,37 @@ void ClearMeshOverride(World& world, EntityId entity, const PresentationOwner& o
     MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();
     if (contributions == nullptr)
         return;
-    const auto found = contributions->ByEntity.find(entity);
-    if (found == contributions->ByEntity.end())
+    const std::optional<MeshOverrideContribution> cleared = contributions->ByEntity.Clear(entity, owner);
+    if (!cleared.has_value())
         return;
-    std::vector<MeshOverrideContribution>& held = found->second;
-    const auto existing = std::find_if(held.begin(), held.end(),
-                                       [&](const MeshOverrideContribution& c) { return c.Owner == owner; });
-    if (existing == held.end())
-        return;
-    ReleaseSubstitutes(world, *existing);
-    held.erase(existing);
-    if (held.empty())
-        contributions->ByEntity.erase(found);
+    ReleaseSubstitutes(world, *cleared);
     (void)ComposeMeshOverrides(world, entity);
+}
+
+void ClearMeshOverridesOf(World& world, PresentationWriterId writer)
+{
+    MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();
+    if (contributions == nullptr)
+        return;
+    contributions->ByEntity.ClearWriter(writer, [&](EntityId entity, const MeshOverrideContribution& contribution) {
+        ReleaseSubstitutes(world, contribution);
+        if (world.IsAlive(entity))
+            (void)ComposeMeshOverrides(world, entity);
+    });
+}
+
+void SweepMeshOverrideHolders(World& world)
+{
+    MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();
+    if (contributions == nullptr)
+        return;
+    contributions->ByEntity.SweepDeadHolders(
+        [&](EntityId holder) { return world.IsAlive(holder); },
+        [&](EntityId entity, const MeshOverrideContribution& contribution) {
+            ReleaseSubstitutes(world, contribution);
+            if (world.IsAlive(entity))
+                (void)ComposeMeshOverrides(world, entity);
+        });
 }
 
 EffectiveMeshDraw ApplyMeshOverrides(const MeshOverrides* overrides, MaterialSetHandle authoredMaterials,

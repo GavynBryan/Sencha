@@ -1,5 +1,7 @@
 #include <render/pass/MeshForwardPass.h>
 
+#include <graphics/vulkan/RenderScope.h>
+#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanDebugLabels.h>
 #include <graphics/vulkan/VulkanBufferService.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
@@ -10,6 +12,8 @@
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <shaders/kMeshForwardFragSpv.h>
 #include <shaders/kMeshForwardVertSpv.h>
+#include <shaders/kOutlineMaskFragSpv.h>
+#include <shaders/kOutlineMaskVertSpv.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <shaders/kMeshDebugViewFragSpv.h>
 #endif
@@ -86,12 +90,12 @@ static_assert(offsetof(MeshViewUniforms, AmbientSky)
               == offsetof(MeshViewUniforms, ViewPositionTime) + sizeof(Vec4));
 static_assert(offsetof(MeshViewUniforms, AmbientGround)
               == offsetof(MeshViewUniforms, AmbientSky) + sizeof(Vec4));
-static_assert(offsetof(MeshViewUniforms, StyleParams)
+static_assert(offsetof(MeshViewUniforms, DiffuseWrap)
               == offsetof(MeshViewUniforms, AmbientGround) + sizeof(Vec4));
 static_assert(offsetof(MeshViewUniforms, LightCount)
-              == offsetof(MeshViewUniforms, StyleParams) + sizeof(Vec4));
-// Four scalars -- LightCount, TonemapEnabled, ShadowDarkness, BakedDirectEnabled
-// -- fill one 16-byte slot, so the light array lands aligned with no hidden pad.
+              == offsetof(MeshViewUniforms, DiffuseWrap) + 4 * sizeof(float));
+// LightCount and three pads fill one 16-byte slot, so the light array lands
+// aligned with no hidden pad.
 static_assert(offsetof(MeshViewUniforms, Lights)
               == offsetof(MeshViewUniforms, LightCount) + 4 * sizeof(std::uint32_t));
 static_assert(offsetof(MeshViewUniforms, SpotShadowCount)
@@ -145,6 +149,10 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
         kMeshForwardVertSpv, kMeshForwardVertSpvWordCount, "Mesh forward vertex");
     FragmentShader = Shaders->CreateModuleFromSpirv(
         kMeshForwardFragSpv, kMeshForwardFragSpvWordCount, "Mesh forward fragment");
+    OutlineMaskVertexShader = Shaders->CreateModuleFromSpirv(
+        kOutlineMaskVertSpv, kOutlineMaskVertSpvWordCount, "Outline mask vertex");
+    OutlineMaskFragmentShader = Shaders->CreateModuleFromSpirv(
+        kOutlineMaskFragSpv, kOutlineMaskFragSpvWordCount, "Outline mask fragment");
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     DebugFragmentShader = Shaders->CreateModuleFromSpirv(
         kMeshDebugViewFragSpv, kMeshDebugViewFragSpvWordCount,
@@ -199,7 +207,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     // falls back to the rebuild inside EnsurePipelines.
     if (PipelineLayout != VK_NULL_HANDLE && services.Swapchain != nullptr)
     {
-        const FrameContext prewarm = SwapchainScopeFormats(services);
+        const FrameContext prewarm = SceneScopeFormats(services);
         if (prewarm.TargetFormat != VK_FORMAT_UNDEFINED
             && prewarm.DepthFormat != VK_FORMAT_UNDEFINED)
         {
@@ -308,6 +316,45 @@ bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
         });
 }
 
+bool MeshForwardPass::EnsureOutlineMaskPipelines(const FrameContext& frame)
+{
+    static constexpr const char* kNames[kDebugPipelineCount] = {
+        "Forward/OutlineMaskBack",
+        "Forward/OutlineMaskDoubleSided",
+        "Forward/OutlineMaskBackMasked",
+        "Forward/OutlineMaskDoubleSidedMasked",
+    };
+    return OutlineMaskPipelines.Ensure(
+        frame.AttachmentFormats(),
+        [&](std::size_t index) {
+            GraphicsPipelineDesc desc = MakeMeshPipelineBase(OutlineMaskVertexShader, PipelineLayout);
+            std::erase_if(desc.VertexAttributes, [](const auto& attribute) {
+                return attribute.Location == 1 || attribute.Location >= 7;
+            });
+            desc.FragmentShader = OutlineMaskFragmentShader;
+            // Only the front-most surface writes: tested against the scene's depth
+            // at LESS_OR_EQUAL, with the scene's writes left as they are.
+            desc.DepthTest = true;
+            desc.DepthWrite = false;
+            desc.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+            desc.ColorBlend = { ColorBlendAttachmentDesc{} };
+            desc.ColorFormats = { frame.TargetFormat };
+            desc.DepthFormat = frame.DepthFormat;
+            desc.StencilFormat = frame.StencilFormat;
+            const bool doubleSided = (index & 1u) != 0;
+            const bool masked = (index & 2u) != 0;
+            desc.FragmentSpecializationConstants = {
+                ShaderSpecializationConstant{ .Id = 1, .Value = masked ? 1u : 0u }
+            };
+            desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
+            if (pipeline != VK_NULL_HANDLE)
+                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
+                                              reinterpret_cast<std::uint64_t>(pipeline), kNames[index]);
+            return pipeline;
+        });
+}
+
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
                                            bool overdraw)
@@ -376,9 +423,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
     uniforms.ViewPositionTime = Vec4(camera.Position.X, camera.Position.Y, camera.Position.Z, 0.0f);
     uniforms.AmbientSky = Vec4(lights.AmbientSky.X, lights.AmbientSky.Y, lights.AmbientSky.Z, 0.0f);
     uniforms.AmbientGround = Vec4(lights.AmbientGround.X, lights.AmbientGround.Y, lights.AmbientGround.Z, 0.0f);
-    uniforms.StyleParams = Vec4(lights.DiffuseWrap, lights.MinAmbient,
-                                lights.Exposure, lights.TonemapKnee);
-    uniforms.TonemapEnabled = lights.TonemapEnabled ? 1u : 0u;
+    uniforms.DiffuseWrap = lights.DiffuseWrap;
+    uniforms.MinAmbient = lights.MinAmbient;
     uniforms.ShadowDarkness = lights.ShadowDarkness;
     uniforms.BakedDirectEnabled = lights.BakedDirectEnabled ? 1u : 0u;
     uniforms.BakedAoEnabled = lights.BakedAoEnabled ? 1u : 0u;
@@ -425,8 +471,9 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
                 sizeof(GpuProbeVolume) * probeVolumeCount);
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    uniforms.DebugView = static_cast<std::uint32_t>(lights.DebugView);
+    uniforms.DebugView = static_cast<std::uint32_t>(ActiveDebugView);
 #endif
+    uniforms.OutlineStyleSlot = ActiveOutlineSlot;
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshViewUniforms),
                                                ScratchTag::ForwardViewUniforms);
@@ -554,6 +601,11 @@ void MeshForwardPass::DrawRuns(const FrameContext& frame, const DrawContext& ctx
 
         const auto pipelineIndex = static_cast<std::size_t>(item.Pipeline);
         VkPipeline pipeline = VK_NULL_HANDLE;
+        if (ActiveOutlineSlot != 0)
+        {
+            pipeline = OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
+        }
+        else
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         if (ActiveDebugView != RenderDebugView::None)
         {
@@ -651,6 +703,11 @@ void MeshForwardPass::RecordTransparentItems(const FrameContext& frame,
             continue;
 
         VkPipeline pipeline = VK_NULL_HANDLE;
+        if (ActiveOutlineSlot != 0)
+        {
+            pipeline = OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
+        }
+        else
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         if (ActiveDebugView != RenderDebugView::None)
         {
@@ -713,6 +770,22 @@ void MeshForwardPass::RecordTransparentItems(const FrameContext& frame,
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
+void MeshForwardPass::DrawOutlineMask(const FrameContext& frame, const CameraRenderData& camera,
+                                      StaticMeshCache& meshes, MaterialCache& materials,
+                                      const SkinnedMeshCache* skinnedMeshes, OutlineFrame& outlines)
+{
+    // The mask shades nothing, so it reads no lights.
+    static const RenderLightSet kNoLights{};
+    for (const OutlineStyleId style : outlines.DrawOrder)
+        Draw(frame, DrawContext{ .Camera = camera,
+                                 .Lights = kNoLights,
+                                 .Queue = outlines.Queues[style.Slot],
+                                 .Meshes = meshes,
+                                 .Materials = materials,
+                                 .SkinnedMeshes = skinnedMeshes,
+                                 .OutlineStyleSlot = style.Slot });
+}
+
 void MeshForwardPass::Draw(const FrameContext& frame, const DrawContext& ctx)
 {
     const DrawToken token = DrawOpaque(frame, ctx);
@@ -749,9 +822,15 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     };
     // The transparent family only has to exist when something blends.
     const bool wantTransparent = !TransparentOrder.empty();
+    ActiveOutlineSlot = ctx.OutlineStyleSlot;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-    ActiveDebugView = lights.DebugView;
-    if (ActiveDebugView == RenderDebugView::None)
+    ActiveDebugView = ActiveOutlineSlot != 0 ? RenderDebugView::None : lights.DebugView;
+    if (ActiveOutlineSlot != 0)
+    {
+        if (!EnsureOutlineMaskPipelines(frame))
+            return giveUp();
+    }
+    else if (ActiveDebugView == RenderDebugView::None)
     {
         if (!EnsurePipelines(frame))
             return giveUp();
@@ -764,10 +843,18 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
         return giveUp();
     }
 #else
-    if (!EnsurePipelines(frame))
-        return giveUp();
-    if (wantTransparent && !EnsureTransparentPipelines(frame))
-        return giveUp();
+    if (ActiveOutlineSlot != 0)
+    {
+        if (!EnsureOutlineMaskPipelines(frame))
+            return giveUp();
+    }
+    else
+    {
+        if (!EnsurePipelines(frame))
+            return giveUp();
+        if (wantTransparent && !EnsureTransparentPipelines(frame))
+            return giveUp();
+    }
 #endif
 
     const std::optional<VkDeviceSize> uniformOffset = UploadViewUniforms(camera, lights);
@@ -816,12 +903,17 @@ void MeshForwardPass::Teardown()
     {
         Shaders->Destroy(VertexShader);
         Shaders->Destroy(FragmentShader);
+        Shaders->Destroy(OutlineMaskVertexShader);
+        Shaders->Destroy(OutlineMaskFragmentShader);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         Shaders->Destroy(DebugFragmentShader);
 #endif
     }
     VertexShader = {};
     FragmentShader = {};
+    OutlineMaskVertexShader = {};
+    OutlineMaskFragmentShader = {};
+    OutlineMaskPipelines.Reset();
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     DebugFragmentShader = {};
 #endif

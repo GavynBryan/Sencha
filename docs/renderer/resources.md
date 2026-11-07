@@ -151,6 +151,71 @@ which are what the baked lightmap atlas and AO plane use.
 entry's image. A caller holding a view or descriptor built from it must compare
 against the current value each frame and rebuild when it changes.
 
+## Render targets
+
+`RenderTargetStore` owns offscreen colour and depth images, resized on request and
+retired through the deletion queue and the descriptor cache's gate. A target's
+`RenderTargetLifetime` says how many images it needs.
+
+`PerFrameInFlight` keeps one image per frame slot, for a reader that samples an
+earlier frame's image while the next one renders, as the UI does with a viewport.
+
+`WithinFrame` keeps one image for every frame in flight. `RenderTargetAccess` records the
+layout, stage, and access that last touched it, and `RenderTargetSession` names them in a
+barrier before each write.
+
+### Why one image is correct
+
+Frames overlap on the GPU, so this rests on Vulkan's rules rather than on fences. Each step
+below is an execution or memory dependency the specification defines.
+
+1. **One queue, one order.** Every frame's commands reach one graphics queue through
+   `vkQueueSubmit`, and submission order runs across command buffers and batches on a queue.
+   Uploads use that queue too. No code submits to a compute or transfer queue, and nothing
+   records a secondary command buffer. `RenderTargetStore::Create` asserts no second queue
+   was required.
+2. **Barriers reach across frames.** The first synchronization scope of a pipeline barrier
+   outside a render pass includes all commands earlier in submission order, not just those in
+   its own command buffer. So frame N+1's write barrier orders against frame N's commands with
+   no semaphore or fence.
+3. **Write to sample, inside a frame.** `WithinFrameReadBarrier` has `COLOR_ATTACHMENT_OUTPUT`
+   with `COLOR_ATTACHMENT_WRITE` as its first scope and `FRAGMENT_SHADER` with
+   `SHADER_SAMPLED_READ` as its second. That makes the write available, makes it visible to
+   the read, and performs the layout transition between the two scopes.
+4. **Sample to the next write.** `WithinFrameWriteBarrier` has `FRAGMENT_SHADER` as its first
+   scope, the stage the last read ran in. A read needs no availability operation, so an
+   execution dependency is enough for it. The barrier's layout transition is itself a write,
+   ordered after the first scope and before the second, and `COLOR_ATTACHMENT_OUTPUT` with
+   `COLOR_ATTACHMENT_WRITE` covers the next frame's load operation and draws. The old layout is
+   `UNDEFINED` because the contents are cleared.
+5. **No gap when nothing sampled.** Step 3's second scope and step 4's first scope both name
+   `FRAGMENT_SHADER`, so they form a dependency chain even if no draw read the image.
+6. **Frames that do not record.** A presentation that was not acquired records nothing and
+   leaves `RenderTargetAccess` as it was, so its next barrier still names the last real access.
+7. **The first use after a resize.** A new image has a fresh `RenderTargetAccess`, whose
+   `NONE` scope is correct because nothing has touched it. The old image and its bindless slot
+   go through the deletion queue and the descriptor cache's gate, which wait on the fences of
+   every frame that could reference them, so memory is never reused under a frame still running.
+   Fences matter only here, for CPU-side lifetime.
+8. **Stale descriptors.** The bindless binding is `PARTIALLY_BOUND` and `UPDATE_AFTER_BIND`, so
+   layout rules apply to what a draw dynamically accesses. A pass samples the image only after
+   step 3.
+
+The cost is that the next frame's scene write waits for this frame's read, the same ordering
+the shared depth image imposes.
+
+Async compute, a second queue, secondary command buffers recorded on other threads, or CPU
+readback of the target would each break step 1 or 2, so adopting one means revisiting this.
+
+### What verifies it
+
+`WithinFrameBarriers` tests pin the stages, accesses, and layouts above, including the chain in
+step 5, so a change to any of them fails without a device. `SceneTargetSynchronizationTest` runs
+under synchronization validation at two and three frames in flight, through resizes and a
+minimize, with the effect chain active. That run fails if step 3's barrier loses its first
+scope, but it still passes if step 4's does: the layer does not track reads through the bindless
+array. Between frames, the argument above and those unit tests are the evidence, not the layer.
+
 ## Hot reload
 
 Three caches implement in-place reload, all preserving the handle, slot,

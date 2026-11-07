@@ -1,16 +1,19 @@
 #pragma once
 
 #include <graphics/vulkan/VulkanShaderCache.h>
+#include <render/OutputTransformParams.h>
 #include <vulkan/vulkan.h>
 
 struct EditorViewport;
 struct RendererServices;
 class VulkanPipelineCache;
 
-// Fills each editor viewport rect with a near-black vertical gradient, drawn before
-// the grid so it replaces the engine's (shared) clear color inside the viewport only
-// — giving the dark "analog scope" look of the editor mockup without touching the
-// game's clear. Perspective viewports get a faint top->horizon lift; ortho are flat.
+// Fills each editor viewport rect with a near-black vertical gradient, drawn first
+// in the scene so it replaces the engine's (shared) clear color inside the viewport
+// only — giving the dark "analog scope" look of the editor mockup without touching
+// the game's clear. Perspective viewports get a faint top->horizon lift; ortho are
+// flat. Its colours are tuned on screen, so it draws the scene values `output`
+// turns into them, and a translucent surface still blends over it.
 class ViewportBackdropRenderer
 {
 public:
@@ -19,7 +22,8 @@ public:
                       const EditorViewport& viewport,
                       VkExtent2D targetExtent,
                       VkFormat colorFormat,
-                      VkFormat depthFormat);
+                      VkFormat depthFormat,
+                      const OutputTransformParams& output);
     void Teardown();
 
 private:

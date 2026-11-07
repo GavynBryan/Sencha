@@ -76,14 +76,14 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
     if (!target)
         return;
     // Black base; the backdrop draw paints the glowing grid over it.
-    Picture.Draw(frame, *target, { { 0.0f, 0.0f, 0.0f, 1.0f } }, [&](const RenderScope& rendering) {
+    Picture.Draw(frame, *target, { { 0.0f, 0.0f, 0.0f, 1.0f } }, [&](const FrameContext& rendering) {
         Backdrop.Draw(frame.Cmd, target->Extent, StagePicture::kColorFormat, Services.DepthFormat, BackdropStyle);
         if (Material.IsValid())
             DrawMaterial(rendering, target->Extent);
     });
 }
 
-void MaterialPreviewRenderFeature::DrawMaterial(const RenderScope& rendering, VkExtent2D extent)
+void MaterialPreviewRenderFeature::DrawMaterial(const FrameContext& rendering, VkExtent2D extent)
 {
     const float aspect = extent.height > 0 ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
 
@@ -120,7 +120,7 @@ void MaterialPreviewRenderFeature::DrawMaterial(const RenderScope& rendering, Vk
         Queue.AddOpaque(item);
     Queue.SortOpaque();
 
-    Forward.Draw(rendering.Context(),
+    Forward.Draw(rendering,
                  MeshForwardPass::DrawContext{ .Camera = camera,
                                                .Lights = Lights,
                                                .Queue = Queue,

@@ -2,6 +2,8 @@
 
 #include <graphics/BufferHandle.h>
 #include <math/Mat.h>
+#include <math/geometry/3d/Aabb3d.h>
+#include <math/geometry/3d/AabbTransform.h>
 #include <render/RenderEntityKey.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
@@ -49,6 +51,19 @@ inline void CopyPalettesColumnMajor(std::span<const Mat4> palettes, std::span<fl
             for (int row = 0; row < 4; ++row)
                 column[col * 4 + row] = palettes[m].Data[row][col];
     }
+}
+
+// Bounds holding a mesh under a pose, from its rest bounds and joint palette. Skinning
+// blends a vertex between its joints' transforms, so it stays inside the union of the
+// rest bounds under each joint. Conservative, and a rest-bounds box is not: a posed limb
+// reaches outside it.
+[[nodiscard]] inline Aabb3d PosedWorldBounds(const Aabb3d& localBounds, const Mat4& world,
+                                             std::span<const Mat4> palette)
+{
+    Aabb3d bounds = Aabb3d::Empty();
+    for (const Mat4& joint : palette)
+        bounds.ExpandToInclude(TransformAabb(localBounds, world * joint));
+    return bounds;
 }
 
 struct SkinnedPoseInstance

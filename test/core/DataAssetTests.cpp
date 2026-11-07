@@ -1,4 +1,5 @@
 #include <assets/data/DataAssetCache.h>
+#include <assets/data/DataAssetLease.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
@@ -305,6 +306,42 @@ TEST(DataAssetHotReload, AReferenceByIdAloneResolvesToItsAssetsCurrentPath)
     const std::string* resolved = cache.TryGet<std::string>(handle, "test.pointer");
     ASSERT_NE(resolved, nullptr);
     EXPECT_EQ(*resolved, target) << "the reload compiled the reference without knowing where its asset is";
+}
+
+TEST(DataAssetLease, LeasesOnFirstGetAndReadsTheCompiledValue)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    DataAssetTypeRegistry types;
+    DataAssetCache cache;
+    DataAssetTypeRegistration text;
+    text.Name = "test.text";
+    text.CurrentVersion = 1;
+    text.Compile = [](const JsonValue& data) {
+        DataAssetCompileResult result;
+        result.Value = std::make_shared<std::string>(data.Find("value")->AsString());
+        return result;
+    };
+    ASSERT_TRUE(types.Register(std::move(text)));
+    DataAssetLoader loader(logging, &types, nullptr, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Data, loader, &cache);
+
+    TempDataFile file;
+    file.Write(R"({"type":"test.text","version":1,"data":{"value":"hello"}})");
+    ASSERT_TRUE(registry.Register(file.Record()));
+
+    DataAssetLease<std::string> lease(file.Record().Path, "test.text");
+    EXPECT_FALSE(lease.Handle().IsValid()) << "nothing is leased before the first Get";
+    EXPECT_EQ(lease.Peek(cache), nullptr) << "Peek never leases";
+    const std::string* value = lease.Get(assets, cache);
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(*value, "hello");
+    EXPECT_TRUE(lease.Handle().IsValid());
+    EXPECT_EQ(lease.Peek(cache), value);
+
+    DataAssetLease<std::string> wrongType(file.Record().Path, "test.other");
+    EXPECT_EQ(wrongType.Get(assets, cache), nullptr) << "a value of another type is not read as this one";
 }
 
 // A load refused because something it depends on did not load says which.

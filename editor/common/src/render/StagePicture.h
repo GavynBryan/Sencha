@@ -1,7 +1,9 @@
 #pragma once
 
 #include "render/DisplayedTargets.h"
+#include "render/SceneThenDisplay.h"
 
+#include <graphics/vulkan/OutputTransformPass.h>
 #include <graphics/vulkan/RenderScope.h>
 #include <render/ui/UiDrawFrame.h>
 
@@ -27,13 +29,19 @@ public:
 
     // Render side, once per frame: this frame's target, or none while it is not shown.
     [[nodiscard]] std::optional<RenderTargetView> Begin(const FrameContext& frame);
-    // Records `draw` into `target` cleared to `clear`, then shows it.
+    // Records `drawScene`, the output pass and `drawOverlay` into `target`, the
+    // scene cleared to `clear`, then shows it. Overlay colours are not transformed.
+    // A stage with no scene passes an empty `drawScene` and runs no output pass.
+    using DrawFn = std::function<void(const FrameContext&)>;
     void Draw(const FrameContext& frame, const RenderTargetView& target, VkClearColorValue clear,
-              const std::function<void(const RenderScope&)>& draw);
+              const DrawFn& drawScene, const DrawFn& drawOverlay = [](const FrameContext&) {});
 
 private:
     RendererServices Services{};
     DisplayedTargets Targets;
     RenderTargetId Target;
+    RenderTargetId Scene;
+    OutputTransformPass Output;
+    bool OutputReady = false;
     std::optional<UiHostImageId> Image;
 };

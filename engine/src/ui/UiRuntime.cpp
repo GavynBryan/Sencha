@@ -939,7 +939,11 @@ void UiRuntime::Update()
             continue;
 
         const UiDiagnosticLog::Scope updating(Diagnostics, SurfaceAttribution(index));
+        // Layout loads an image the first time it appears, as an element a data-if just
+        // brought in does, so this answers to the surface's resource table too.
+        ActiveRenderSurface = UiSurfaceId{ static_cast<std::uint32_t>(index + 1), surface.Generation };
         surface.Context->Update();
+        ActiveRenderSurface = {};
     }
     for (Screen& screen : Screens)
         for (const std::unique_ptr<Screen::BoundRows>& rows : screen.RowLists)

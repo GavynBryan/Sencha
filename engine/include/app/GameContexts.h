@@ -177,6 +177,9 @@ struct RenderExtractContext
     PresentationTime Presentation;
     World& Entities;
     const StoragePartitionSet& Partitions;
+    // Physical pixels to the density-independent pixel on the window this frame
+    // presents to, for what is authored in dp and drawn by the renderer.
+    float PixelsPerDp = 1.0f;
 };
 
 struct AudioContext

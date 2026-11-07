@@ -21,6 +21,9 @@ bool DescribeUploadFormat(VkFormat format,
     case VK_FORMAT_R16G16B16A16_SFLOAT:
         blockWidth = 1; blockHeight = 1; blockByteSize = 8;
         return true;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        blockWidth = 1; blockHeight = 1; blockByteSize = 16;
+        return true;
     case VK_FORMAT_BC4_UNORM_BLOCK:
         blockWidth = 4; blockHeight = 4; blockByteSize = 8;
         return true;

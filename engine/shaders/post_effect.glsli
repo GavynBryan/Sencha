@@ -1,0 +1,24 @@
+// The whole interface of a post effect: the bindless image array and one push block,
+// mirrored by PostEffectPush in PostEffectChain.cpp. An effect that needs more is a
+// design conversation, not a bigger block. Docs: docs/renderer/post-effects.md.
+
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 outColor;
+
+layout(set = 0, binding = 0) uniform sampler2D uTextures[1024];
+
+layout(push_constant) uniform PostEffectPC {
+    uint sceneIndex;
+    uint depthIndex; // 0xFFFFFFFF until a consumer samples scene depth
+    uint maskIndex;  // 0xFFFFFFFF until outlines publish a mask
+    uint pad;
+    vec2 texelSize;
+    float wallSeconds; // keeps advancing while the simulation is paused
+    float weight;
+    vec4 params[4];
+} post;
+
+vec4 SampleScene(vec2 uv)
+{
+    return texture(uTextures[post.sceneIndex], uv);
+}

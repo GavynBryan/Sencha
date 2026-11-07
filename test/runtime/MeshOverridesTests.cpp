@@ -134,6 +134,48 @@ TEST(MeshOverrides, ATieIsReportedAndSettledTheSameWayInAnyOrder)
     EXPECT_TRUE(winnerFor(false));
 }
 
+TEST(MeshOverrides, AHolderThatDiesTakesItsContributionWithIt)
+{
+    OverrideFixture f;
+    const EntityId holder = f.Entities.CreateEntity();
+
+    MeshOverrideContribution fromHolder;
+    fromHolder.Owner = { .Writer = PresentationWriterId{ 1 }, .Holder = LeaseOwner{ .Entity = holder, .Key = 0 } };
+    fromHolder.Hide.push_back(Drawing(f.Skin));
+    MeshOverrideContribution fromWriter;
+    fromWriter.Owner = Owner(2);
+    fromWriter.Hide.push_back(Drawing(f.Hair));
+    (void)SetMeshOverride(f.Entities, f.Body, fromHolder);
+    (void)SetMeshOverride(f.Entities, f.Body, fromWriter);
+    const auto hidden = [&] { return f.Entities.TryGet<MeshOverrides>(f.Body)->HiddenSlots; };
+    ASSERT_EQ(hidden(), 0b11u);
+
+    SweepMeshOverrideHolders(f.Entities);
+    EXPECT_EQ(hidden(), 0b11u) << "a live holder keeps its hold";
+
+    f.Entities.DestroyEntity(holder);
+    SweepMeshOverrideHolders(f.Entities);
+    EXPECT_EQ(hidden(), 0b10u) << "a contribution with no holder is the writer's to end";
+}
+
+TEST(MeshOverrides, ClearingAWriterTakesBackEverythingItContributed)
+{
+    OverrideFixture f;
+    MeshOverrideContribution skin;
+    skin.Owner = Owner(1);
+    skin.Hide.push_back(Drawing(f.Skin));
+    MeshOverrideContribution hair;
+    hair.Owner = Owner(2);
+    hair.Hide.push_back(Drawing(f.Hair));
+    (void)SetMeshOverride(f.Entities, f.Body, skin);
+    (void)SetMeshOverride(f.Entities, f.Body, hair);
+    const auto hidden = [&] { return f.Entities.TryGet<MeshOverrides>(f.Body)->HiddenSlots; };
+    ASSERT_EQ(hidden(), 0b11u);
+
+    ClearMeshOverridesOf(f.Entities, PresentationWriterId{ 1 });
+    EXPECT_EQ(hidden(), 0b10u) << "the other writer's contribution stays";
+}
+
 TEST(MeshOverrides, ASubstituteStaysResidentWhileContributed)
 {
     OverrideFixture fx;
@@ -163,7 +205,7 @@ TEST(MeshOverrides, TheComposedSetIsReleasedWhenTheEntityGoes)
     fx.Entities.DestroyEntity(fx.Body);
     EXPECT_EQ(fx.Sets.Get(composed), nullptr);
     EXPECT_EQ(fx.Materials.Get(fx.Gold), nullptr);
-    EXPECT_TRUE(fx.Entities.GetResource<MeshOverrideContributions>().ByEntity.empty());
+    EXPECT_TRUE(fx.Entities.GetResource<MeshOverrideContributions>().ByEntity.KeyCount() == 0);
 }
 
 TEST(MeshOverrides, AChangedAuthoredSetIsDrawnAsAuthoredUntilComposedAgain)

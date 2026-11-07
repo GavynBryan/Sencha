@@ -31,7 +31,8 @@ void BeginColor(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout)
                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                    // Read too: a pass compositing over the target loads it.
+                    VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 }
 } // namespace
 
@@ -74,18 +75,29 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
     }
 }
 
+RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access)
+    : Cmd(cmd)
+    , Color(color)
+    , Layout(&access.Layout)
+    , LastAccess(&access)
+{
+    if (Cmd == VK_NULL_HANDLE || Color == VK_NULL_HANDLE)
+    {
+        Ended = true;
+        return;
+    }
+    VulkanBarriers::TransitionImage(Cmd, WithinFrameWriteBarrier(Color, access));
+}
+
 void RenderTargetSession::End()
 {
     if (Ended)
         return;
     Ended = true;
 
-    TransitionColor(Cmd, Color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    VulkanBarriers::TransitionImage(Cmd, WithinFrameReadBarrier(Color));
     // The commit the callers used to owe by hand.
     *Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (LastAccess != nullptr)
+        *LastAccess = kAccessAfterWithinFrameRead;
 }

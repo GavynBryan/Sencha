@@ -10,7 +10,15 @@
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/UiTextureResidency.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
+#include <presentation/PresentationOwner.h>
 #include <render/feature/UiRenderFeature.h>
+#include <ecs/Query.h>
+#include <render/StaticMeshComponent.h>
+#include <render/outline/OutlineContributions.h>
+#include <render/post/PostEffectCatalog.h>
+#include <render/skinned_mesh/SkinnedMeshComponent.h>
+#include <render/post/PostEffectContributions.h>
+#include <shaders/kGoldenDisplaceFragSpv.h>
 #include <ui/UiService.h>
 #include <world/ComponentRegistrar.h>
 #include <components/ActiveCameraService.h>
@@ -27,6 +35,8 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -197,6 +207,85 @@ private:
 // A fixed figure on a debug-line channel, written once: a square outline in
 // front of the camera that the scene can hide, and a cross over it that it
 // cannot. What the debug-lines golden watches.
+// Holds the post effects a golden scene asks for, at the weights it asks for.
+struct PostEffectFigureSystem
+{
+    PostEffectFigureSystem(Engine& engine, const double& fade, const double& displace, const PostEffectId& displaceEffect)
+        : EnginePtr(&engine)
+        , Fade(fade)
+        , Displace(displace)
+        , DisplaceEffect(displaceEffect)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        if (!Writer.IsValid())
+            Writer = RegisterPresentationWriter(ctx.Entities, "render_host.post");
+        const auto hold = [&](PostEffectId effect, double weight) {
+            PostEffectContribution contribution;
+            contribution.Owner = PresentationOwner{ .Writer = Writer, .Holder = {} };
+            contribution.Weight = static_cast<float>(weight);
+            contribution.Lifetime = PostEffectLifetime::Session;
+            SetPostEffect(ctx.Entities, effect, contribution);
+        };
+        hold(EnginePtr->PostEffects().Find("sencha.fade"), Fade);
+        hold(DisplaceEffect, Displace);
+    }
+
+    Engine* EnginePtr = nullptr;
+    const double& Fade;
+    const double& Displace;
+    const PostEffectId& DisplaceEffect;
+    PresentationWriterId Writer;
+};
+
+// Outlines what the outline goldens place: left of x = -2.5 in one style, the rest
+// in a higher-priority one, and nothing nearer the camera than z = 1, so a wall
+// there is what occludes. Applies to every mesh in the frame, skinned too.
+struct OutlineFigureSystem
+{
+    explicit OutlineFigureSystem(const bool& enabled) : Enabled(enabled) {}
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        World& world = ctx.Entities;
+        if (!Enabled)
+            return;
+        if (!Writer.IsValid())
+        {
+            Writer = RegisterPresentationWriter(world, "render_host.outline");
+            Left = RegisterOutlineStyle(world, "left", { .Color = Vec<3>(1.0f, 0.8f, 0.1f), .WidthDp = 3.0f, .Priority = 1 });
+            Right = RegisterOutlineStyle(world, "right", { .Color = Vec<3>(0.1f, 0.9f, 1.0f), .WidthDp = 3.0f, .Priority = 2 });
+            Meshes.emplace(world);
+            Skinned.emplace(world);
+        }
+        const auto outline = [&](EntityId entity, const Transform3f& pose) {
+            if (pose.Position.Z > 1.0f)
+                return;
+            SetOutline(world, entity, OutlineContribution{ .Owner = { .Writer = Writer, .Holder = {} },
+                                                           .Style = pose.Position.X < -2.5f ? Left : Right });
+        };
+        Meshes->ForEachChunk([&](auto& view) {
+            const auto poses = view.template Read<WorldTransform>();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                outline(view.Entity(i), poses[i].Value);
+        });
+        Skinned->ForEachChunk([&](auto& view) {
+            const auto poses = view.template Read<WorldTransform>();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                outline(view.Entity(i), poses[i].Value);
+        });
+    }
+
+    const bool& Enabled;
+    PresentationWriterId Writer;
+    OutlineStyleId Left;
+    OutlineStyleId Right;
+    std::optional<Query<Read<WorldTransform>, Read<StaticMeshComponent>>> Meshes;
+    std::optional<Query<Read<WorldTransform>, Read<SkinnedMeshComponent>>> Skinned;
+};
+
 struct DebugLineFigureSystem
 {
     explicit DebugLineFigureSystem(const bool& enabled)
@@ -282,6 +371,39 @@ public:
         });
 
         engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.outline",
+            .Owner = "render_host",
+            .Type = CVarType::Bool,
+            .DefaultValue = false,
+            .CurrentValue = false,
+            .Flags = CVarFlags::Transient,
+            .Help = "Outline the scene's meshes, for the outline goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { OutlineFigure = std::get<bool>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.post.fade",
+            .Owner = "render_host",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.0,
+            .CurrentValue = 0.0,
+            .Flags = CVarFlags::Transient,
+            .Help = "Weight of the engine's fade effect, for the post effect goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { PostFade = std::get<double>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.post.displace",
+            .Owner = "render_host",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.0,
+            .CurrentValue = 0.0,
+            .Flags = CVarFlags::Transient,
+            .Help = "Weight of the test displacement effect, for the post effect goldens.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) { PostDisplace = std::get<double>(ctx.NewValue); },
+        });
+        engine.Console().Registry().RegisterCVar({
             .Name = "render_host.ui",
             .Owner = "render_host",
             .Type = CVarType::String,
@@ -312,11 +434,23 @@ public:
         });
     }
 
+    void OnRegisterPostEffects(PostEffectCatalog& catalog) override
+    {
+        DisplaceEffect = catalog.Register(PostEffectDesc{
+            .Name = "render_host.displace",
+            .FragmentSpirv = std::span<const std::uint32_t>(kGoldenDisplaceFragSpv, kGoldenDisplaceFragSpvWordCount),
+            .Domain = PostEffectDomain::Scene,
+            .Order = 0,
+        });
+    }
+
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
+        ctx.Schedule.Register<PostEffectFigureSystem>(GetEngine(), PostFade, PostDisplace, DisplaceEffect);
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath, Picture);
         ctx.Schedule.Register<DebugLineFigureSystem>(DebugLineFigure);
+        ctx.Schedule.Register<OutlineFigureSystem>(OutlineFigure);
     }
 
     void OnShutdown(GameShutdownContext&) override
@@ -335,6 +469,10 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     bool DebugLineFigure = false;
+    bool OutlineFigure = false;
+    double PostFade = 0.0;
+    double PostDisplace = 0.0;
+    PostEffectId DisplaceEffect;
     std::string UiPackagePath;
     HostPicture Picture;
 };

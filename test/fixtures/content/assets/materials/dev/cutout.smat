@@ -1,0 +1,14 @@
+{
+  "id": "31c7a90e5d2b4f06",
+  "version": 2,
+  "base_color_factor": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "base_color_texture": "asset://textures/dev/cutout.png",
+  "alpha_mode": "mask",
+  "alpha_cutoff": 0.5,
+  "double_sided": false
+}

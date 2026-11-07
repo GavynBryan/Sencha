@@ -1,6 +1,7 @@
 #include <render/RenderLightCVars.h>
 
 #include <core/console/CVarRead.h>
+#include <render/OutputTransformParams.h>
 #include <render/RenderLight.h>
 
 void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
@@ -17,11 +18,6 @@ void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
         console, "render.style.diffuse_wrap", lights.DiffuseWrap);
     lights.MinAmbient = ReadCVarFloat(
         console, "render.style.min_ambient", lights.MinAmbient);
-    lights.Exposure = ReadCVarFloat(console, "render.exposure", lights.Exposure);
-    lights.TonemapKnee = ReadCVarFloat(
-        console, "render.tonemap.knee", lights.TonemapKnee);
-    lights.TonemapEnabled = ReadCVarBool(
-        console, "render.tonemap", lights.TonemapEnabled);
     lights.ShadowDarkness = ReadCVarFloat(
         console, "render.shadow.darkness", lights.ShadowDarkness);
     lights.ShadowSoftness = ReadCVarFloat(
@@ -35,4 +31,11 @@ void ApplyRendererCVars(const ConsoleRegistry* console, RenderLightSet& lights)
     lights.BakedAoEnabled = ReadCVarBool(
         console, "render.ao.enabled", lights.BakedAoEnabled);
     lights.SkyEnabled = ReadCVarBool(console, "render.sky.enabled", lights.SkyEnabled);
+}
+
+void ApplyOutputTransformCVars(const ConsoleRegistry* console, OutputTransformParams& output)
+{
+    output.Exposure = ReadCVarFloat(console, "render.exposure", output.Exposure);
+    output.TonemapKnee = ReadCVarFloat(console, "render.tonemap.knee", output.TonemapKnee);
+    output.TonemapEnabled = ReadCVarBool(console, "render.tonemap", output.TonemapEnabled);
 }

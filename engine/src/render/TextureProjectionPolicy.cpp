@@ -1,5 +1,7 @@
 #include <render/TextureProjectionPolicy.h>
 
+#include <render/ScreenBounds.h>
+
 #include <render/CameraProjection.h>
 
 #include <algorithm>
@@ -116,35 +118,15 @@ ProjectionScreenRect ComputeProjectionScreenRect(
     std::uint32_t targetWidth,
     std::uint32_t targetHeight)
 {
-    float minX = 1.0f, minY = 1.0f, maxX = -1.0f, maxY = -1.0f;
-    int behind = 0;
-    const Vec<3>& lo = sweptBounds.Min;
-    const Vec<3>& hi = sweptBounds.Max;
-    for (int corner = 0; corner < 8; ++corner)
-    {
-        const Vec4 clip = cameraViewProjection
-            * Vec4((corner & 1) != 0 ? hi.X : lo.X,
-                   (corner & 2) != 0 ? hi.Y : lo.Y,
-                   (corner & 4) != 0 ? hi.Z : lo.Z, 1.0f);
-        if (clip.W <= 1e-5f)
-        {
-            // A corner behind the eye has no meaningful projection.
-            ++behind;
-            continue;
-        }
-        const float x = clip.X / clip.W;
-        const float y = clip.Y / clip.W;
-        minX = std::min(minX, x); maxX = std::max(maxX, x);
-        minY = std::min(minY, y); maxY = std::max(maxY, y);
-    }
-
-    // Entirely behind the eye: nothing to shade. Straddling the near plane: a
-    // rect built from the surviving corners could clip visible projection, so
-    // be conservative -- a larger rect costs fill, a smaller one clips.
-    if (behind == 8)
+    const NdcBounds ndc = ProjectToNdc(sweptBounds, cameraViewProjection);
+    if (ndc.IsEmpty())
         return ProjectionScreenRect{};
-    if (behind > 0)
+    if (ndc.WholeView)
         return ProjectionScreenRect{ 0, 0, targetWidth, targetHeight };
+    const float minX = ndc.Min[0];
+    const float minY = ndc.Min[1];
+    const float maxX = ndc.Max[0];
+    const float maxY = ndc.Max[1];
     if (maxX < -1.0f || minX > 1.0f || maxY < -1.0f || minY > 1.0f)
         return ProjectionScreenRect{}; // fully off screen
 

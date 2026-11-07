@@ -58,6 +58,8 @@ struct Registry;
 //
 // CPU/asset only (no Vulkan) so it can be unit-tested headlessly.
 //=============================================================================
+struct OutlineFrame;
+
 class SceneRenderQueueBuilder
 {
 public:
@@ -81,7 +83,8 @@ public:
     // baked only when a distinct mesh's content is new to the cache (an idle
     // frame, a Count drag, or a transform edit uploads nothing); placements and
     // placed-mesh items are re-emitted each call.
-    void Build(const EditorDocument& document);
+    // `outlines`, when given, also receives the sections of the entities it names.
+    void Build(const EditorDocument& document, OutlineFrame* outlines = nullptr);
 
     // Scores the gathered shadow candidates against the given origin (the
     // focus viewport's camera) and emits residency requests, score descending
@@ -129,7 +132,7 @@ private:
     void EmitBrushQueue();
     void RebuildBrushCasters(const EditorDocument& document);
     void EmitPreviewQueue();
-    void BuildMeshQueue(const EditorDocument& document);
+    void BuildMeshQueue(const EditorDocument& document, OutlineFrame* outlines);
     void BuildLights(const EditorDocument& document);
     void BuildShadowCasters(const EditorDocument& document);
 

@@ -1,6 +1,53 @@
 #pragma once
 
+#include <graphics/vulkan/VulkanBarriers.h>
 #include <vulkan/vulkan.h>
+
+// What last touched a colour plane. A target consumed within the frame has one
+// image across every frame in flight, so its next write names these in the barrier
+// that orders it after them. Docs: docs/renderer/resources.md.
+struct RenderTargetAccess
+{
+    VkImageLayout Layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkPipelineStageFlags2 Stage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 Access = VK_ACCESS_2_NONE;
+};
+
+// The two barriers a WithinFrame target lives by, and what they leave behind. Their
+// correctness is an argument about submission order that no validation layer checks
+// here, so it is stated in docs/renderer/resources.md and pinned by tests.
+[[nodiscard]] constexpr VulkanBarriers::ImageTransition WithinFrameWriteBarrier(VkImage color,
+                                                                                const RenderTargetAccess& last)
+{
+    VulkanBarriers::ImageTransition barrier{};
+    barrier.Image = color;
+    barrier.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.NewLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.SrcStage = last.Stage;
+    barrier.DstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    barrier.SrcAccess = last.Access;
+    barrier.DstAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    return barrier;
+}
+
+[[nodiscard]] constexpr VulkanBarriers::ImageTransition WithinFrameReadBarrier(VkImage color)
+{
+    VulkanBarriers::ImageTransition barrier{};
+    barrier.Image = color;
+    barrier.OldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.SrcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    barrier.DstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    barrier.SrcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.DstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    barrier.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    return barrier;
+}
+
+inline constexpr RenderTargetAccess kAccessAfterWithinFrameRead{ VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                                                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT };
 
 //=============================================================================
 // RenderTargetSession
@@ -40,6 +87,10 @@ public:
                         VkImage depth = VK_NULL_HANDLE,
                         VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
+    // A target consumed within the frame: its contents are discarded, and the
+    // write is ordered after whatever `access` says last touched it.
+    RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access);
+
     ~RenderTargetSession() { End(); }
 
     RenderTargetSession(const RenderTargetSession&) = delete;
@@ -55,5 +106,6 @@ private:
     VkCommandBuffer Cmd = VK_NULL_HANDLE;
     VkImage Color = VK_NULL_HANDLE;
     VkImageLayout* Layout = nullptr;
+    RenderTargetAccess* LastAccess = nullptr;
     bool Ended = false;
 };

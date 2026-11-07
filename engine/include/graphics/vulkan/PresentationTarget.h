@@ -5,6 +5,7 @@
 #include <graphics/SwapchainImageLedger.h>
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/VulkanDepthTarget.h>
 #include <graphics/vulkan/VulkanSurfaceService.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
@@ -12,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class SdlWindow;
@@ -30,7 +32,7 @@ struct PresentationDesc
 
 // Everything that exists once per window the renderer presents to: its
 // surface and swapchain, the semaphores and per-image state that pace them,
-// and the depth attachment of its swapchain scope. The window outlives it.
+// and the scene colour and depth its frames draw into. The window outlives it.
 class PresentationTarget
 {
 public:
@@ -82,6 +84,12 @@ public:
     [[nodiscard]] VulkanDepthTarget* Depth() { return DepthAttachment.get(); }
     VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
+    // Made the first frame a scene draws here, and remade when `extent` moves.
+    // Nullopt when the image cannot be created.
+    [[nodiscard]] std::optional<RenderTargetView> AcquireSceneColor(const RendererServices& services,
+                                                                    VkExtent2D extent);
+    bool ReportedNoOutputFeature = false;
+
     // What features recording into this presentation's swapchain scope are
     // set up with: its swapchain and its attachment formats. Stable for the
     // presentation's life, so a feature may keep the pointer.
@@ -98,6 +106,8 @@ private:
     std::unique_ptr<VulkanSurfaceService> Surface;
     std::unique_ptr<VulkanSwapchainService> Chain;
     std::unique_ptr<VulkanDepthTarget> DepthAttachment;
+    RenderTargetStore SceneTargets;
+    RenderTargetId SceneColor;
     std::vector<VkSemaphore> ImageAvailable;
     PresentHistory PresentLog;
     SwapchainImageLedger ImageUses;

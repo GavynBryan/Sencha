@@ -88,6 +88,8 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
 )
 
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake")
+# What a module's post effect shader includes; the SDK sets this to its installed copy.
+set(SENCHA_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders" CACHE INTERNAL "")
 include("${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake")
 
 if(NOT SENCHA_ENABLE_VULKAN)
@@ -258,6 +260,76 @@ if(SENCHA_ENABLE_VULKAN)
         OUT_HEADER _sky_gradient_frag_header
     )
     sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _fullscreen_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_fullscreen_vert_spv}"
+        VAR_NAME kFullscreenVertSpv
+        OUT_HEADER _fullscreen_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/output_present.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _output_present_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_output_present_frag_spv}"
+        VAR_NAME kOutputPresentFragSpv
+        OUT_HEADER _output_present_frag_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sencha_fade.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _sencha_fade_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_sencha_fade_frag_spv}"
+        VAR_NAME kSenchaFadeFragSpv
+        OUT_HEADER _sencha_fade_frag_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_mask.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _outline_mask_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_mask_vert_spv}"
+        VAR_NAME kOutlineMaskVertSpv
+        OUT_HEADER _outline_mask_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_mask.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _outline_mask_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_mask_frag_spv}"
+        VAR_NAME kOutlineMaskFragSpv
+        OUT_HEADER _outline_mask_frag_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_tiles.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _outline_tiles_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_tiles_frag_spv}"
+        VAR_NAME kOutlineTilesFragSpv
+        OUT_HEADER _outline_tiles_frag_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/outline_composite.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _outline_composite_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_outline_composite_frag_spv}"
+        VAR_NAME kOutlineCompositeFragSpv
+        OUT_HEADER _outline_composite_frag_header
+    )
+    sencha_compile_shader(
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/skin_pose.comp.glsl"
         STAGE comp
         OUTPUT_SPV _skin_pose_comp_spv
@@ -334,6 +406,13 @@ if(SENCHA_ENABLE_VULKAN)
         "${_sky_gradient_vert_header}"
         "${_sky_gradient_frag_header}"
         "${_skin_pose_comp_header}"
+        "${_fullscreen_vert_header}"
+        "${_output_present_frag_header}"
+        "${_sencha_fade_frag_header}"
+        "${_outline_mask_vert_header}"
+        "${_outline_mask_frag_header}"
+        "${_outline_composite_frag_header}"
+        "${_outline_tiles_frag_header}"
     )
     if(SENCHA_ENABLE_RENDER_PROFILING)
         list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
@@ -393,6 +472,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # schemas, so its layout and its id's are layout the module compiled.
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetRef.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetId.h"
+    # A module holds leases by value, alone or inside DataAssetLease.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetLease.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/assets/data/DataAssetLease.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/identity/StrongId.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     # EngineConfig reaches a game module through GameConfigureContext, so its
@@ -440,6 +522,13 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/PresentedView.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/CameraProjection.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/FrameClock.h"
+    # The presentation layer: Engine holds the post effect catalog by value, a
+    # module builds effect, outline and owner values, and it compiles the post
+    # effect push block from post_effect.glsli into its own SPIR-V.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/post/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/outline/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/presentation/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
@@ -993,7 +1082,11 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/cmake/SenchaGameModule.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/SenchaComponentCodegen.cmake"
     "${CMAKE_SOURCE_DIR}/cmake/ValidateComponentIndex.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/SenchaShaders.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/EmbedSpirv.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sencha/shaders")
 
 # The starter templates ship with the SDK as source, one directory each, so a
 # new project begins as a copy of one. Each is complete on its own: its

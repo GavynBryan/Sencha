@@ -64,7 +64,8 @@ void ViewportBackdropRenderer::DrawViewport(VkCommandBuffer cmd,
                                             const EditorViewport& viewport,
                                             VkExtent2D targetExtent,
                                             VkFormat colorFormat,
-                                            VkFormat depthFormat)
+                                            VkFormat depthFormat,
+                                            const OutputTransformParams& output)
 {
     const float vpWidth  = viewport.RegionMax.X - viewport.RegionMin.X;
     const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
@@ -130,6 +131,11 @@ void ViewportBackdropRenderer::DrawViewport(VkCommandBuffer cmd,
     {
         Hex(push.TopColor, 0x0A0D0F);
         Hex(push.BotColor, 0x0A0D0F);
+    }
+    for (int channel = 0; channel < 3; ++channel)
+    {
+        push.TopColor[channel] = SceneValueForDisplay(output, push.TopColor[channel]);
+        push.BotColor[channel] = SceneValueForDisplay(output, push.BotColor[channel]);
     }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);

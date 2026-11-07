@@ -1,8 +1,8 @@
 #include "ThumbnailStudio.h"
 
+#include "render/SceneThenDisplay.h"
+
 #include <graphics/FramesInFlight.h>
-#include <graphics/vulkan/RenderScope.h>
-#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <math/Angle.h>
 #include <math/geometry/3d/Aabb3d.h>
@@ -21,6 +21,7 @@ namespace
 ThumbnailStudio::ThumbnailStudio(ViewportTargetCache& targets,
                                  MeshForwardPass& forward,
                                  SkyGradientPass& sky,
+                                 OutputTransformPass& output,
                                  StaticMeshCache& meshes,
                                  MaterialCache& materials,
                                  const SkinnedMeshCache* skinnedMeshes,
@@ -28,6 +29,7 @@ ThumbnailStudio::ThumbnailStudio(ViewportTargetCache& targets,
     : Targets(targets)
     , Forward(forward)
     , Sky(sky)
+    , Output(output)
     , Meshes(meshes)
     , Materials(materials)
     , SkinnedMeshes(skinnedMeshes)
@@ -109,52 +111,40 @@ bool ThumbnailStudio::RenderPass(const FrameContext& frame, ViewportId target,
     if (!view.has_value())
         return false;
 
-    RenderTargetSession session(frame.Cmd, view->ColorImage, view->ColorLayout,
-                                view->DepthImage, frame.DepthFormat);
-    RenderScopeDesc scope{};
-    scope.Area.offset = { 0, 0 };
-    scope.Area.extent = view->Extent;
-    scope.Color.View = view->ColorView;
-    scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    scope.Color.Clear.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
-    scope.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    scope.Depth.View = view->DepthView;
-    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
-    scope.DepthFormat = DepthFormat;
-    scope.Phase = RenderPhase::Offscreen;
-
-    {
-        const RenderScope rendering(frame, scope);
-        const FrameContext& local = rendering.Context();
-
-        // Studio look: sky gradient behind, full-bright neutral ambient over
-        // the geometry -- readable materials with no dependence on any scene's
-        // lights or shadows.
-        RenderLightSet lights;
-        lights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
-        lights.AmbientGround = Vec<3>(0.75f, 0.75f, 0.75f);
-        Sky.Draw(local,
-                 MakeInverseSkyViewProjection(camera.View, camera.Projection),
-                 SkyGradientParams{ .Top = Vec<3>(0.16f, 0.22f, 0.28f),
-                                    .Bottom = Vec<3>(0.07f, 0.09f, 0.11f),
-                                    .Exposure = 1.0f,
-                                    .TonemapKnee = 1.0f,
-                                    .TonemapEnabled = false });
-        for (const RenderQueue* queue : queues)
-        {
-            if (queue == nullptr)
-                continue;
-            Forward.Draw(local, MeshForwardPass::DrawContext{
-                                    .Camera = camera,
-                                    .Lights = lights,
-                                    .Queue = *queue,
-                                    .Meshes = Meshes,
-                                    .Materials = Materials,
-                                    .SkinnedMeshes = SkinnedMeshes });
-        }
-    }
-    session.End();
+    const SceneDisplayTargets targets{ .Extent = view->Extent,
+                                       .SceneImage = view->SceneImage,
+                                       .SceneView = view->SceneView,
+                                       .SceneAccess = view->SceneAccess,
+                                       .SceneBindless = view->SceneBindless,
+                                       .DisplayImage = view->ColorImage,
+                                       .DisplayView = view->ColorView,
+                                       .DisplayLayout = view->ColorLayout,
+                                       .DepthImage = view->DepthImage,
+                                       .DepthView = view->DepthView,
+                                       .DepthFormat = DepthFormat };
+    RecordSceneThenDisplay(
+        frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, OutputTransformParams{},
+        [&](const FrameContext& local) {
+            // Studio look: sky gradient behind, full-bright neutral ambient over
+            // the geometry -- readable materials with no dependence on any scene's
+            // lights or shadows.
+            RenderLightSet lights;
+            lights.AmbientSky = Vec<3>(1.0f, 1.0f, 1.0f);
+            lights.AmbientGround = Vec<3>(0.75f, 0.75f, 0.75f);
+            Sky.Draw(local, MakeInverseSkyViewProjection(camera.View, camera.Projection),
+                     SkyGradientParams{ .Top = Vec<3>(0.16f, 0.22f, 0.28f), .Bottom = Vec<3>(0.07f, 0.09f, 0.11f) });
+            for (const RenderQueue* queue : queues)
+            {
+                if (queue == nullptr)
+                    continue;
+                Forward.Draw(local, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                                  .Lights = lights,
+                                                                  .Queue = *queue,
+                                                                  .Meshes = Meshes,
+                                                                  .Materials = Materials,
+                                                                  .SkinnedMeshes = SkinnedMeshes });
+            }
+        },
+        {}, [](const FrameContext&) {});
     return true;
 }

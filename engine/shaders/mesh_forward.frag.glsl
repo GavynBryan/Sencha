@@ -5,7 +5,6 @@
 #include "mesh_view.glsli"
 #include "shadow_sampling.glsli"
 #include "probe_sampling.glsli"
-#include "tonemap.glsli"
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
@@ -26,7 +25,7 @@ void main()
 
     if (MATERIAL_UNLIT)
     {
-        outColor = vec4(ResolveOutput(baseColor.rgb + emission), baseColor.a);
+        outColor = vec4(baseColor.rgb + emission, baseColor.a);
         return;
     }
 
@@ -38,7 +37,7 @@ void main()
     float hemi = 0.5 + 0.5 * normal.y;
     vec3 ambientColor = mix(frame.AmbientGround.rgb, frame.AmbientSky.rgb, hemi);
     ambientColor = SampleProbeAmbient(inWorldPos, normal, ambientColor);
-    ambientColor = max(ambientColor, vec3(max(frame.StyleParams.y, 0.0)));
+    ambientColor = max(ambientColor, vec3(max(frame.MinAmbient, 0.0)));
     // Baked AO joins the material's own occlusion channel on the ambient
     // term only; direct light, baked direct, and emission stay untouched.
     vec3 lit = baseColor.rgb * ambientColor * clamp(orm.r, 0.0, 1.0)
@@ -48,7 +47,7 @@ void main()
     float metallic = clamp(pushData.MetallicFactor * orm.b, 0.0, 1.0);
     float specularExponent = exp2(mix(11.0, 1.0, roughness));
     vec3 specularTint = mix(vec3(1.0), baseColor.rgb, metallic);
-    float diffuseWrap = max(frame.StyleParams.x, 0.0);
+    float diffuseWrap = max(frame.DiffuseWrap, 0.0);
 
     bool chartedReceiver = pushData.LightmapTextureIndex != 0xFFFFFFFFu;
     uint count = min(frame.LightCount, MAX_LIGHTS);
@@ -90,5 +89,5 @@ void main()
     if (frame.BakedDirectEnabled != 0u)
         lit += baseColor.rgb * SampleBakedDirect();
 
-    outColor = vec4(ResolveOutput(lit + emission), baseColor.a);
+    outColor = vec4(lit + emission, baseColor.a);
 }

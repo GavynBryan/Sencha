@@ -10,6 +10,7 @@
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/PresentationPhase.h>
+#include <graphics/RenderExtent.h>
 #include <input/SdlGamepadCapture.h>
 #include <input/SdlInputCapture.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -1141,12 +1142,15 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             config.Runtime.TransformForceFullPropagation,
             ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 
+        const PlatformServices* platform = engine.TryPlatform();
+        const SdlWindow* window = platform != nullptr ? platform->Windows.GetPrimaryWindow() : nullptr;
         RenderExtractContext extract{
             .Config = config,
             .Runtime = *ctx.Runtime,
             .Presentation = ctx.Runtime->GetCurrentFrame().Presentation,
             .Entities = entities,
             .Partitions = zones.Visible,
+            .PixelsPerDp = window != nullptr ? window->GetDisplayScale() : 1.0f,
         };
         engine.Schedule().RunExtractRender(extract);
 

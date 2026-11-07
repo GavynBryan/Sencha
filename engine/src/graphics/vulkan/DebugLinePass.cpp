@@ -4,7 +4,11 @@
 
 void DebugLinePass::Setup(const RendererServices& services)
 {
-    Lines.Setup(services, ColoredVertexConfig(VK_PRIMITIVE_TOPOLOGY_LINE_LIST));
+    // Lines draw in the output phase, straight to the display, so they owe the encode
+    // a display with no hardware sRGB write needs.
+    ImmediatePipelineConfig config = ColoredVertexConfig(VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+    config.EncodeForTarget = true;
+    Lines.Setup(services, config);
 }
 
 void DebugLinePass::Draw(const FrameContext& frame, const CameraRenderData& camera, const DebugLineFrame& lines)

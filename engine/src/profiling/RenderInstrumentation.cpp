@@ -18,6 +18,8 @@ const char* ToString(GpuScope scope)
     {
     case GpuScope::PhaseOffscreen:  return "Phase/Offscreen";
     case GpuScope::PhaseMainColor:  return "Phase/MainColor";
+    case GpuScope::PhasePost:       return "Phase/Post";
+    case GpuScope::PhaseOutput:     return "Phase/Output";
     case GpuScope::PhaseApplicationUi: return "Phase/ApplicationUi";
     case GpuScope::PhaseDevelopmentOverlay: return "Phase/DevelopmentOverlay";
     case GpuScope::ShadowViews: return "Shadow/Views";

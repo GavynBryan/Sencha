@@ -2,6 +2,7 @@
 
 #include <app/BackRouter.h>
 #include <app/DefaultRenderPipeline.h>
+#include <render/post/PostEffectCatalog.h>
 #include <app/OptionsPage.h>
 #include <app/PauseState.h>
 #include <input/PointerCaptureSettle.h>
@@ -409,6 +410,11 @@ public:
         return SceneSerializerRegistry;
     }
 
+    // Every post effect type this process can run; a game adds to it from
+    // Game::OnRegisterPostEffects.
+    [[nodiscard]] PostEffectCatalog& PostEffects() { return PostEffectTypes; }
+    [[nodiscard]] const PostEffectCatalog& PostEffects() const { return PostEffectTypes; }
+
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
@@ -522,6 +528,7 @@ public:
 #endif
 
 private:
+    PostEffectCatalog PostEffectTypes;
     // Frame-phase bodies and the state they sample. Registered once, from
     // EngineFramePhases.cpp; nothing outside the frame pipeline reads these.
     //

@@ -13,6 +13,7 @@ class MaterialCache;
 class MeshForwardPass;
 class RenderQueue;
 class SkinnedMeshCache;
+class OutputTransformPass;
 class SkyGradientPass;
 class StaticMeshCache;
 struct Aabb3d;
@@ -39,6 +40,7 @@ public:
     ThumbnailStudio(ViewportTargetCache& targets,
                     MeshForwardPass& forward,
                     SkyGradientPass& sky,
+                    OutputTransformPass& output,
                     StaticMeshCache& meshes,
                     MaterialCache& materials,
                     const SkinnedMeshCache* skinnedMeshes,
@@ -74,6 +76,7 @@ private:
     ViewportTargetCache& Targets;
     MeshForwardPass& Forward;
     SkyGradientPass& Sky;
+    OutputTransformPass& Output;
     StaticMeshCache& Meshes;
     MaterialCache& Materials;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;

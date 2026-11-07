@@ -268,6 +268,10 @@ an `AssetType` and reads the kind record.
   path through the registry, checks the store for a dedup hit, otherwise stages
   and commits back-to-back. The returned lease is the caller's reference.
 
+  A system that reads one data asset as its compiled type holds a
+  `DataAssetLease<T>` (`assets/data/DataAssetLease.h`): it leases on first `Get`
+  and reads through the cache, so a hot reload shows on the next call.
+
 - **`TryAcquireLease(path, type)`** — Store-only lookup, never loads. The
   preloader dedups against residency with it before submitting async work.
 

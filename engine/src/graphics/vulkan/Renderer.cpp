@@ -2,6 +2,8 @@
 
 #include <graphics/vulkan/PresentationFramePlan.h>
 #include <graphics/vulkan/PresentationTarget.h>
+#include <graphics/vulkan/RenderScope.h>
+#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanAllocatorService.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanBufferService.h>
@@ -84,6 +86,105 @@ namespace
     double SecondsSince(RendererClock::time_point start)
     {
         return std::chrono::duration<double>(RendererClock::now() - start).count();
+    }
+
+    constexpr VkClearValue kSceneClear{ .color = { { 0.05f, 0.09f, 0.12f, 1.0f } } };
+
+    // Times one phase of one presentation. Phase timings are the primary's: a
+    // scope is one entry per frame.
+    class PhaseTiming
+    {
+    public:
+        PhaseTiming([[maybe_unused]] const RendererServices& services, [[maybe_unused]] VkCommandBuffer cmd,
+                    [[maybe_unused]] GpuScope scope, [[maybe_unused]] bool primary)
+        {
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+            Pool = primary && services.Instrumentation != nullptr ? services.Instrumentation->GpuTimestamps : nullptr;
+            Cmd = cmd;
+            Scope = scope;
+            if (Pool != nullptr)
+            {
+                VulkanDebugLabels::BeginLabel(Cmd, ToString(Scope));
+                Pool->BeginScope(Cmd, Scope);
+            }
+#endif
+        }
+
+        ~PhaseTiming()
+        {
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+            if (Pool != nullptr)
+            {
+                Pool->EndScope(Cmd, Scope);
+                VulkanDebugLabels::EndLabel(Cmd);
+            }
+#endif
+        }
+
+        PhaseTiming(const PhaseTiming&) = delete;
+        PhaseTiming& operator=(const PhaseTiming&) = delete;
+
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+    private:
+        GpuTimestampPool* Pool = nullptr;
+        VkCommandBuffer Cmd = VK_NULL_HANDLE;
+        GpuScope Scope{};
+#endif
+    };
+
+    // One presentation's depth, ready for the scope about to bind it.
+    struct ScopeDepth
+    {
+        VkImageView View = VK_NULL_HANDLE;
+        VkFormat Format = VK_FORMAT_UNDEFINED;
+        bool HasStencil = false;
+    };
+
+    // Made the first frame a scope binds it, and remade on a resize. Called before
+    // each scope that binds the image, whatever it does with the contents: one
+    // image serves every frame in flight and every scope in this one, and a frame
+    // only waits on the fence of the frame two slots back, so this barrier is
+    // what orders these accesses after the last writes. That needs a first scope
+    // naming those writes: TOP_OF_PIPE names no stage, which would leave the
+    // dependency empty.
+    ScopeDepth PrepareScopeDepth(VkCommandBuffer cmd, PresentationTarget& target, VkExtent2D extent)
+    {
+        VulkanDepthTarget* depth = target.Depth();
+        if (depth == nullptr)
+            return {};
+
+        const VkExtent2D oldExtent = depth->GetExtent();
+        depth->Recreate(extent);
+        if (oldExtent.width != extent.width || oldExtent.height != extent.height)
+            target.DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        // A rendering scope's attachments have to agree with the layout the image is
+        // actually in, so the whole attachment takes the one DepthAttachmentLayout.
+        const bool hasStencil = depth->HasStencil();
+        if (depth->GetImage() != VK_NULL_HANDLE)
+        {
+            VulkanBarriers::OrderDepthAttachment(cmd, depth->GetImage(), hasStencil, target.DepthLayout);
+            target.DepthLayout = VulkanBarriers::DepthAttachmentLayout(hasStencil);
+        }
+        return { depth->GetView(), depth->GetFormat(), hasStencil && depth->GetView() != VK_NULL_HANDLE };
+    }
+
+    void AttachDepth(RenderScopeDesc& desc, const ScopeDepth& depth, VkAttachmentLoadOp depthLoad,
+                     VkAttachmentStoreOp depthStore)
+    {
+        desc.DepthFormat = depth.Format;
+        if (depth.View == VK_NULL_HANDLE)
+            return;
+        VkClearValue clear{};
+        clear.depthStencil = { 1.0f, 0 };
+        desc.Depth = { depth.View, depthLoad, depthStore, clear };
+        if (!depth.HasStencil)
+            return;
+        // The same view, as Vulkan requires when a scope binds both. Cleared to
+        // zero so authored UI's clip mask starts from a known state rather than
+        // from whatever the previous frame left; nothing else tests against it.
+        desc.Stencil = { depth.View, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE, clear };
+        desc.StencilFormat = depth.Format;
     }
 }
 
@@ -429,10 +530,20 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         VulkanDebugLabels::EndLabel(frame.CommandBuffer);
     }
 #endif
-    // The three swapchain phases share one rendering scope per presentation,
-    // so each is labelled and timed inside rather than wrapped as a group here.
     for (const AcquiredPresentation& presentation : frame.Presentations)
-        RecordSwapchainPhases(frame, presentation);
+    {
+        FrameContext context;
+        context.Cmd = frame.CommandBuffer;
+        context.FrameInFlightIndex = frame.FrameIndex;
+        context.TargetExtent = presentation.Extent;
+        context.TargetFormat = presentation.Format;
+        context.Retirement = Frames.GetRetirement();
+        ScenePostState post;
+        context.ScenePost = &post;
+        RecordScenePhase(context, presentation);
+        RecordPostPhase(context, presentation);
+        RecordSwapchainPhases(frame, context, presentation);
+    }
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
     if (Services.Instrumentation != nullptr
@@ -487,6 +598,13 @@ FrameContext SwapchainScopeFormats(const RendererServices& services)
         services.Swapchain != nullptr ? services.Swapchain->GetFormat() : VK_FORMAT_UNDEFINED;
     formats.DepthFormat = services.DepthFormat;
     formats.StencilFormat = services.StencilFormat;
+    return formats;
+}
+
+FrameContext SceneScopeFormats(const RendererServices& services)
+{
+    FrameContext formats = SwapchainScopeFormats(services);
+    formats.TargetFormat = kSceneColorFormat;
     return formats;
 }
 
@@ -578,158 +696,126 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
     }
 }
 
-// The swapchain phases of one presentation, in one rendering scope. MainColor
-// is the scene; ApplicationUi is authored user-facing UI drawn over it;
-// DevelopmentOverlay is diagnostics drawn over everything. One
-// vkCmdBeginRendering serves all three: the UI phases want the same colour
-// attachment and no depth interaction, and their pipelines disable depth test
-// and write rather than open a scope of their own.
+bool Renderer::HasFeatureFor(RenderPhase phase, PresentationId presentation) const
+{
+    return std::ranges::any_of(PhaseBuckets[static_cast<size_t>(phase)], [presentation](const BucketEntry& entry) {
+        return entry.Scope.Presentation == presentation;
+    });
+}
+
+void Renderer::RecordPresentationPhase(const FrameContext& context, RenderPhase phase,
+                                       PresentationId presentation) const
+{
+    FrameContext phaseContext = context;
+    phaseContext.Phase = phase;
+    for (const BucketEntry& entry : PhaseBuckets[static_cast<size_t>(phase)])
+    {
+        if (entry.Scope.Presentation == presentation)
+            entry.Feature->OnDraw(MakeRenderFrame(phaseContext, Services.Instrumentation));
+    }
+}
+
+// The scene in its own target, with depth kept for the phases after it. A
+// presentation with no MainColor feature, as an editor window is, has no target
+// and pays for none. Docs: docs/renderer/frame.md.
+void Renderer::RecordScenePhase(FrameContext& context, const AcquiredPresentation& presentation)
+{
+    if (!HasFeatureFor(RenderPhase::MainColor, presentation.Id))
+        return;
+
+    PresentationTarget& target = *presentation.Target;
+    const std::optional<RenderTargetView> scene = target.AcquireSceneColor(Services, presentation.Extent);
+    if (!scene.has_value())
+    {
+        Log.Error("Renderer: presentation has no scene target this frame; its scene is skipped");
+        return;
+    }
+    const ScopeDepth depth = PrepareScopeDepth(context.Cmd, target, presentation.Extent);
+
+    {
+        RenderTargetSession session(context.Cmd, scene->ColorImage, *scene->ColorAccess);
+        RenderScopeDesc desc;
+        desc.Area.extent = presentation.Extent;
+        desc.Color = { scene->ColorView, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, kSceneClear };
+        desc.ColorFormat = kSceneColorFormat;
+        desc.Phase = RenderPhase::MainColor;
+        AttachDepth(desc, depth, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
+
+        RenderScope scope(context, desc);
+        const PhaseTiming timing(Services, context.Cmd, GpuScope::PhaseMainColor,
+                                 presentation.Id == Frames.PrimaryPresentation());
+        RecordPresentationPhase(scope.Context(), RenderPhase::MainColor, presentation.Id);
+    }
+
+    context.SceneColorBindless = scene->BindlessIndex;
+    context.SceneExtent = scene->Extent;
+}
+
+void Renderer::RecordPostPhase(const FrameContext& context, const AcquiredPresentation& presentation)
+{
+    if (!HasFeatureFor(RenderPhase::Post, presentation.Id))
+        return;
+    const PhaseTiming timing(Services, context.Cmd, GpuScope::PhasePost,
+                             presentation.Id == Frames.PrimaryPresentation());
+    // The scene's depth, ordered after its writes, for a feature that tests against it.
+    const ScopeDepth depth = PrepareScopeDepth(context.Cmd, *presentation.Target, presentation.Extent);
+    FrameContext post = context;
+    post.DepthView = depth.View;
+    post.DepthFormat = depth.Format;
+    post.StencilFormat = depth.HasStencil ? depth.Format : VK_FORMAT_UNDEFINED;
+    RecordPresentationPhase(post, RenderPhase::Post, presentation.Id);
+}
+
+// Output and the UI phases of one presentation, in one rendering scope. One
+// vkCmdBeginRendering serves all three: they want the same colour attachment
+// and no depth interaction, and their pipelines disable depth test and write
+// rather than open a scope of their own.
 //
 // Capture and the present transition stay after the last bucket, so a capture is
 // still the finished frame.
-void Renderer::RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation)
+void Renderer::RecordSwapchainPhases(const VulkanFrame& frame, const FrameContext& context,
+                                     const AcquiredPresentation& presentation)
 {
     PresentationTarget& target = *presentation.Target;
     PresentationTarget::ImageState& image = *target.Image(presentation.ImageIndex);
 
+    if (context.SceneColorBindless != UINT32_MAX && !HasFeatureFor(RenderPhase::Output, presentation.Id)
+        && !target.ReportedNoOutputFeature)
+    {
+        target.ReportedNoOutputFeature = true;
+        Log.Error("Renderer: a presentation draws a scene with no Output feature, so its window never shows it");
+    }
+
     VulkanBarriers::TransitionForColorAttachment(frame.CommandBuffer, presentation.Image, image.Layout);
+    const ScopeDepth depth = PrepareScopeDepth(frame.CommandBuffer, target, presentation.Extent);
 
-    // Made the first frame this scope records, and remade on a resize.
-    VulkanDepthTarget* depth = target.Depth();
-    if (depth != nullptr)
+    RenderScopeDesc desc;
+    desc.Area.extent = presentation.Extent;
+    desc.Color = { presentation.View, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, kSceneClear };
+    desc.ColorFormat = presentation.Format;
+    desc.Phase = RenderPhase::Output;
+    // What the scene wrote, for a diagnostic drawn over it in the Output phase.
+    AttachDepth(desc, depth,
+                context.SceneColorBindless != UINT32_MAX ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
+                VK_ATTACHMENT_STORE_OP_DONT_CARE);
+
     {
-        const VkExtent2D oldDepthExtent = depth->GetExtent();
-        depth->Recreate(presentation.Extent);
-        if (oldDepthExtent.width != presentation.Extent.width
-            || oldDepthExtent.height != presentation.Extent.height)
+        RenderScope scope(context, desc);
+        struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };
+        constexpr SwapchainPhase kSwapchainPhases[] = {
+            { RenderPhase::Output,             GpuScope::PhaseOutput },
+            { RenderPhase::ApplicationUi,      GpuScope::PhaseApplicationUi },
+            { RenderPhase::DevelopmentOverlay, GpuScope::PhaseDevelopmentOverlay },
+        };
+        for (const auto& [phase, gpuScope] : kSwapchainPhases)
         {
-            target.DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            if (PhaseBuckets[static_cast<size_t>(phase)].empty())
+                continue;
+            const PhaseTiming timing(Services, frame.CommandBuffer, gpuScope,
+                                     presentation.Id == Frames.PrimaryPresentation());
+            RecordPresentationPhase(scope.Context(), phase, presentation.Id);
         }
     }
-    // One layout for the whole attachment, decided by whether it carries a
-    // stencil. A barrier whose aspect mask includes stencil may not use a
-    // depth-only layout, and a rendering scope's attachments have to agree with
-    // the layout the image is actually in -- so the barrier, the depth
-    // attachment and the stencil attachment all read from here.
-    const bool depthHasStencil = depth != nullptr && depth->HasStencil();
-    const VkImageLayout depthLayout = depthHasStencil
-        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    const VkImageView depthView = depth != nullptr ? depth->GetView() : VK_NULL_HANDLE;
-
-    if (depth != nullptr && depth->GetImage() != VK_NULL_HANDLE)
-    {
-        VulkanBarriers::ImageTransition t{};
-        t.Image = depth->GetImage();
-        t.OldLayout = target.DepthLayout;
-        t.NewLayout = depthLayout;
-        // One depth image serves every frame in flight, and a frame only
-        // waits on the fence of the frame two slots back, so this barrier is
-        // what orders these depth writes after the previous frame's. That
-        // needs a first scope naming those writes: TOP_OF_PIPE names no
-        // stage, which would leave the dependency empty.
-        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                   | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                   | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                    | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        t.AspectMask = depthHasStencil
-            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-            : VK_IMAGE_ASPECT_DEPTH_BIT;
-        VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
-        target.DepthLayout = depthLayout;
-    }
-
-    VkRenderingAttachmentInfo colorAttach{};
-    colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = presentation.View;
-    colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttach.clearValue.color = { { 0.05f, 0.09f, 0.12f, 1.0f } };
-
-    VkRenderingAttachmentInfo depthAttach{};
-    depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = depthView;
-    depthAttach.imageLayout = depthLayout;
-    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttach.clearValue.depthStencil = { 1.0f, 0 };
-
-    // The same view, as Vulkan requires when a scope binds both. Cleared to
-    // zero so authored UI's clip mask starts from a known state rather than
-    // from whatever the previous frame left; nothing else in the scope tests
-    // against it.
-    const bool hasStencil = depthHasStencil && depthView != VK_NULL_HANDLE;
-    VkRenderingAttachmentInfo stencilAttach = depthAttach;
-    stencilAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    stencilAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-    VkRenderingInfo renderingInfo{};
-    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = { 0, 0 };
-    renderingInfo.renderArea.extent = presentation.Extent;
-    renderingInfo.layerCount = 1;
-    renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachments = &colorAttach;
-    renderingInfo.pDepthAttachment = depthView != VK_NULL_HANDLE ? &depthAttach : nullptr;
-    renderingInfo.pStencilAttachment = hasStencil ? &stencilAttach : nullptr;
-
-    vkCmdBeginRendering(frame.CommandBuffer, &renderingInfo);
-
-    FrameContext ctx;
-    ctx.Cmd = frame.CommandBuffer;
-    ctx.FrameInFlightIndex = frame.FrameIndex;
-    ctx.TargetExtent = presentation.Extent;
-    ctx.TargetFormat = presentation.Format;
-    ctx.DepthView = depthView;
-    ctx.DepthFormat = depth != nullptr ? depth->GetFormat() : VK_FORMAT_UNDEFINED;
-    ctx.StencilFormat = hasStencil ? depth->GetFormat() : VK_FORMAT_UNDEFINED;
-    ctx.Retirement = Frames.GetRetirement();
-
-    struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };
-    constexpr SwapchainPhase kSwapchainPhases[] = {
-        { RenderPhase::MainColor,          GpuScope::PhaseMainColor },
-        { RenderPhase::ApplicationUi,      GpuScope::PhaseApplicationUi },
-        { RenderPhase::DevelopmentOverlay, GpuScope::PhaseDevelopmentOverlay },
-    };
-    // Phase timings are the primary's: a scope is one entry per frame.
-    [[maybe_unused]] const bool timed = presentation.Id == Frames.PrimaryPresentation();
-
-    for (const auto& [phase, scope] : kSwapchainPhases)
-    {
-        auto& bucket = PhaseBuckets[static_cast<size_t>(phase)];
-        if (bucket.empty())
-            continue;
-
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-        GpuTimestampPool* const phaseScopes = timed && Services.Instrumentation != nullptr
-            ? Services.Instrumentation->GpuTimestamps
-            : nullptr;
-        if (phaseScopes != nullptr)
-        {
-            VulkanDebugLabels::BeginLabel(frame.CommandBuffer, ToString(scope));
-            phaseScopes->BeginScope(frame.CommandBuffer, scope);
-        }
-#endif
-        ctx.Phase = phase;
-        for (const BucketEntry& entry : bucket)
-        {
-            if (entry.Scope.Presentation == presentation.Id)
-                entry.Feature->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
-        }
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-        if (phaseScopes != nullptr)
-        {
-            phaseScopes->EndScope(frame.CommandBuffer, scope);
-            VulkanDebugLabels::EndLabel(frame.CommandBuffer);
-        }
-#endif
-    }
-
-    vkCmdEndRendering(frame.CommandBuffer);
 
     // Before the present transition, with the image still a colour attachment:
     // this is the finished frame, and capture leaves the layout as it found it.

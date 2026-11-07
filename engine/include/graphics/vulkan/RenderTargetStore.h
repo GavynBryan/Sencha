@@ -3,6 +3,7 @@
 #include <graphics/FramesInFlight.h>
 #include <graphics/RenderTargetId.h>
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanImageService.h>
 
@@ -15,7 +16,7 @@
 // RenderTargetStore
 //
 // Offscreen colour (+ depth) targets, sized on request, one set per frame in
-// flight. Images are destroyed through the image service's deletion queue and
+// flight unless a target is consumed within the frame. Images are destroyed through the image service's deletion queue and
 // bindless indices through the descriptor cache's retirement gate, so the
 // store holds no retirement clock of its own.
 //
@@ -53,6 +54,17 @@ enum class RenderTargetRead : std::uint8_t
     Bindless,
 };
 
+// How many images a target needs across overlapping frames.
+enum class RenderTargetLifetime : std::uint8_t
+{
+    // A slot per frame in flight, for a reader that samples an earlier frame's
+    // image while the next renders.
+    PerFrameInFlight,
+    // One image, written and sampled inside one frame's command buffer, so queue
+    // order and barriers keep frames apart. Docs: docs/renderer/resources.md.
+    WithinFrame,
+};
+
 struct RenderTargetDesc
 {
     VkExtent2D Extent{};
@@ -63,9 +75,22 @@ struct RenderTargetDesc
     // Sampler for the bindless registration; ignored otherwise.
     VkSampler Sampler = VK_NULL_HANDLE;
     const char* DebugName = nullptr;
+    RenderTargetLifetime Lifetime = RenderTargetLifetime::PerFrameInFlight;
 
     [[nodiscard]] friend bool operator==(const RenderTargetDesc&,
                                          const RenderTargetDesc&) = default;
+};
+
+// When to release a target that went unused: after a quiet interval, so a brief gap,
+// such as moving between highlighted objects, does not reallocate it.
+struct QuietInterval
+{
+    static constexpr std::uint32_t kFrames = 120;
+    std::uint32_t Frames = 0;
+
+    void NoteUsed() { Frames = 0; }
+    // True on the one frame the interval runs out.
+    [[nodiscard]] bool NoteQuiet() { return ++Frames == kFrames; }
 };
 
 // One frame's worth of a target: what to attach, and where the store is
@@ -81,6 +106,9 @@ struct RenderTargetView
     // it after transitioning, so the next frame's transition names the right
     // old layout instead of discarding contents.
     VkImageLayout* ColorLayout = nullptr;
+    // The same layout with what last touched the image, which a WithinFrame
+    // target's session reads and commits.
+    RenderTargetAccess* ColorAccess = nullptr;
     // UINT32_MAX unless the descriptor asked for Bindless.
     std::uint32_t BindlessIndex = UINT32_MAX;
 };
@@ -91,9 +119,10 @@ struct RenderTargetView
 // slot most likely to still be in flight, which is what made the old fold
 // corrupt rather than degrade.
 [[nodiscard]] constexpr std::uint32_t ResolveTargetSlot(std::uint32_t frameInFlightIndex,
-                                                        std::uint32_t slotCount)
+                                                        std::uint32_t slotCount,
+                                                        RenderTargetLifetime lifetime = RenderTargetLifetime::PerFrameInFlight)
 {
-    if (slotCount == 0)
+    if (slotCount == 0 || lifetime == RenderTargetLifetime::WithinFrame)
         return 0;
     return frameInFlightIndex < slotCount ? frameInFlightIndex : slotCount - 1;
 }
@@ -113,7 +142,8 @@ struct RenderTargetView
         || built.Extent.height != wanted.Extent.height
         || built.ColorFormat != wanted.ColorFormat
         || built.DepthFormat != wanted.DepthFormat
-        || built.Read != wanted.Read;
+        || built.Read != wanted.Read
+        || built.Lifetime != wanted.Lifetime;
 }
 
 class RenderTargetStore
@@ -121,6 +151,9 @@ class RenderTargetStore
 public:
     void Setup(const RendererServices& services);
     void Teardown();
+    // Releases every target through the image service's deletion queue without
+    // waiting, for an owner that goes away while frames still retire.
+    void Release();
 
     // Selects this frame's slot. Call once per frame, before any Acquire.
     void BeginFrame(std::uint32_t frameInFlightIndex);
@@ -156,7 +189,7 @@ private:
         ImageHandle Color;
         ImageHandle Depth;
         BindlessImageIndex Bindless;
-        VkImageLayout ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        RenderTargetAccess ColorAccess;
         // The descriptor these images were built for.
         RenderTargetDesc Built;
     };
@@ -170,6 +203,7 @@ private:
     };
 
     [[nodiscard]] Target* Resolve(RenderTargetId id);
+    [[nodiscard]] Slot& CurrentSlotOf(Target& target);
     void BuildSlot(Slot& slot, const RenderTargetDesc& desc);
     void ReleaseSlot(Slot& slot);
 
