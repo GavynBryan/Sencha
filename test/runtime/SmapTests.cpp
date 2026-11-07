@@ -392,4 +392,3 @@ TEST(SmapFormat, PresentationSettingsRoundTripAndStayOutWhenUnset)
     ASSERT_TRUE(ReadSmap(without, serializers, read, &error)) << error.Message;
     EXPECT_TRUE(read.Presentation.IsEmpty());
 }
-

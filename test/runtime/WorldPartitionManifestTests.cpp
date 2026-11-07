@@ -441,4 +441,3 @@ TEST(WorldPartitionManifest, ReadRejectsAnInvalidPresentationLayerNamingWhere)
     EXPECT_FALSE(ReadWorldPartitionManifest(*json, &error).has_value());
     EXPECT_NE(error.find("presentation"), std::string::npos) << error;
 }
-
