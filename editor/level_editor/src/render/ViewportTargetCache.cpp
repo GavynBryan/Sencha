@@ -92,6 +92,7 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
         .Scene = Store.Create(scene),
         .OutlineMask = Store.Create(mask),
         .OutlineTiles = { Store.Create(tiles), Store.Create(tiles) },
+        .OutlineQuiet = {},
         .Bloom = { Store.Create(bloom), Store.Create(bloom) },
     });
     return Entries.back();
@@ -158,6 +159,7 @@ std::optional<ViewportTargetCache::OutlineViews> ViewportTargetCache::AcquireOut
     Entry* entry = Find(id);
     if (entry == nullptr)
         return std::nullopt;
+    entry->OutlineQuiet.NoteUsed();
     const std::optional<RenderTargetView> mask = Store.Acquire(entry->OutlineMask);
     const std::optional<RenderTargetView> marked = Store.Acquire(entry->OutlineTiles[0]);
     const std::optional<RenderTargetView> near = Store.Acquire(entry->OutlineTiles[1]);
@@ -166,9 +168,9 @@ std::optional<ViewportTargetCache::OutlineViews> ViewportTargetCache::AcquireOut
     return OutlineViews{ .Mask = *mask, .Tiles = { .Marked = *marked, .Near = *near } };
 }
 
-void ViewportTargetCache::ReleaseOutlineMask(ViewportId id)
+void ViewportTargetCache::NoteOutlineMaskQuiet(ViewportId id)
 {
-    if (Entry* entry = Find(id))
+    if (Entry* entry = Find(id); entry != nullptr && entry->OutlineQuiet.NoteQuiet())
     {
         Store.Evict(entry->OutlineMask);
         for (RenderTargetId tiles : entry->OutlineTiles)

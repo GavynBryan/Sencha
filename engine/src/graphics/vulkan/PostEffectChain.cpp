@@ -13,7 +13,6 @@ namespace
 {
 // Frames of nothing active before the planes go, so an effect that pulses does
 // not reallocate them each time.
-constexpr std::uint32_t kPlaneQuietFrames = 120;
 
 // Mirrored by the push block in post_effect.glsli.
 struct PostEffectPush
@@ -106,12 +105,12 @@ void PostEffectChain::Record(const FrameContext& frame, const PostEffectFrame& e
 {
     if (effects.Entries.empty())
     {
-        if (++QuietFrames == kPlaneQuietFrames)
+        if (Quiet.NoteQuiet())
             for (const RenderTargetId id : Plane)
                 Planes.Evict(id);
         return;
     }
-    QuietFrames = 0;
+    Quiet.NoteUsed();
     if (frame.SceneColorBindless == UINT32_MAX || frame.ScenePost == nullptr)
         return;
 

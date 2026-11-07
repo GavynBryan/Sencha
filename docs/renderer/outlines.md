@@ -72,7 +72,11 @@ nothing, the mask image is released after a quiet interval, and the composite do
 Kyusu outlines the selection's placed meshes through the same mask family and composite;
 brushes keep their wireframe. Viewports replay one queue under several cameras, so each
 recomputes the screen bounds with `OutlineFrame::UpdateScreenBounds`, and each holds its own
-mask, released while nothing is outlined. The editor owns its style.
+mask and tiles, released after a quiet interval (`QuietInterval`) as the runtime's are. Both hosts
+publish through `PublishOutlineComposite`. The editor owns its style, in the linear colour
+`EditorTheme` already holds. The lighting preview draws no selection outline: it shows the
+cooked snapshot, and the selection's live meshes are not guaranteed to land on that snapshot's
+depth to the bit, so a mask of them could speckle.
 
 ## Cost
 

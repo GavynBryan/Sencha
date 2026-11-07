@@ -48,5 +48,5 @@ private:
     RenderTargetStore Planes;
     RenderTargetId Plane[2];
     std::vector<CompiledEffect> Compiled;
-    std::uint32_t QuietFrames = 0;
+    QuietInterval Quiet;
 };

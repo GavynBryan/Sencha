@@ -10,7 +10,6 @@
 
 namespace
 {
-constexpr std::uint32_t kMaskQuietFrames = 120;
 }
 
 void RecordOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& attachments,
@@ -146,7 +145,7 @@ void OutlineMaskTargets::Teardown()
 
 void OutlineMaskTargets::NoteQuietFrame()
 {
-    if (++QuietFrames != kMaskQuietFrames)
+    if (!Quiet.NoteQuiet())
         return;
     Targets.Evict(Mask);
     Targets.Evict(MarkedTiles);
@@ -156,7 +155,7 @@ void OutlineMaskTargets::NoteQuietFrame()
 std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameContext& frame,
                                                                 const OutlineCompositeInputs& outlines)
 {
-    QuietFrames = 0;
+    Quiet.NoteUsed();
     if (frame.ScenePost == nullptr || frame.SceneColorBindless == UINT32_MAX || frame.DepthView == VK_NULL_HANDLE)
         return std::nullopt;
 
@@ -181,21 +180,33 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
                                    .StencilFormat = frame.StencilFormat };
 }
 
+void PublishOutlineComposite(const FrameContext& frame, ScenePostState& post, OutlineTilePass& tilePass,
+                             const OutlineCompositeTargets& targets, const OutlineCompositeInputs& outlines,
+                             const Mat4& projection, VkExtent2D extent)
+{
+    const VkRect2D scissor = OutlineScissorFor(outlines, extent);
+    if (scissor.extent.width == 0 || scissor.extent.height == 0)
+        return;
+    const std::uint32_t tiles = tilePass.Record(frame, targets.MaskBindless, targets.Tiles, scissor,
+                                                outlines.MaxWidthPixels);
+    if (tiles == UINT32_MAX)
+        return;
+    post.OutlineMaskBindless = targets.MaskBindless;
+    post.OutlineStyleBindless = targets.StyleBindless;
+    post.OutlineTilesBindless = tiles;
+    post.OutlineMaxWidthPixels = outlines.MaxWidthPixels;
+    post.OutlineDepthTerms = OutlineDepthTermsOf(projection);
+    post.OutlineScissor = scissor;
+}
+
 void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineCompositeInputs& outlines,
                                  const Mat4& projection)
 {
-    const VkRect2D scissor = OutlineScissorFor(outlines, frame.SceneExtent);
-    if (scissor.extent.width == 0 || scissor.extent.height == 0)
-        return;
-    const std::uint32_t tiles = TilePass.Record(frame, MaskBindless, Tiles, scissor, outlines.MaxWidthPixels);
-    if (tiles == UINT32_MAX)
-        return;
-    frame.ScenePost->OutlineMaskBindless = MaskBindless;
-    frame.ScenePost->OutlineStyleBindless = StyleBindless;
-    frame.ScenePost->OutlineTilesBindless = tiles;
-    frame.ScenePost->OutlineMaxWidthPixels = outlines.MaxWidthPixels;
-    frame.ScenePost->OutlineDepthTerms = OutlineDepthTermsOf(projection);
-    frame.ScenePost->OutlineScissor = scissor;
+    PublishOutlineComposite(frame, *frame.ScenePost, TilePass,
+                            OutlineCompositeTargets{ .MaskBindless = MaskBindless,
+                                                     .StyleBindless = StyleBindless,
+                                                     .Tiles = Tiles },
+                            outlines, projection, frame.SceneExtent);
 }
 
 bool OutlineMaskTargets::HoldsMaskImage()

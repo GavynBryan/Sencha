@@ -76,8 +76,9 @@ public:
         OutlineTileTargets Tiles;
     };
     [[nodiscard]] std::optional<OutlineViews> AcquireOutlineMask(ViewportId id);
-    // Releases the view's mask and tiles while nothing is outlined.
-    void ReleaseOutlineMask(ViewportId id);
+    // A frame the view outlined nothing; its mask and tiles go after a quiet
+    // interval, so selecting again soon does not reallocate them.
+    void NoteOutlineMaskQuiet(ViewportId id);
     // Destroy targets for viewports not in `live` (closed or re-laid-out).
     void Prune(std::span<const ViewportId> live);
     // Whether `id` was shown last frame; a viewport nobody shows does not
@@ -96,6 +97,7 @@ private:
         RenderTargetId Scene;
         RenderTargetId OutlineMask;
         RenderTargetId OutlineTiles[2];
+        QuietInterval OutlineQuiet;
         RenderTargetId Bloom[2];
     };
 

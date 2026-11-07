@@ -81,6 +81,18 @@ struct RenderTargetDesc
                                          const RenderTargetDesc&) = default;
 };
 
+// When to release a target that went unused: after a quiet interval, so a brief gap,
+// such as moving between highlighted objects, does not reallocate it.
+struct QuietInterval
+{
+    static constexpr std::uint32_t kFrames = 120;
+    std::uint32_t Frames = 0;
+
+    void NoteUsed() { Frames = 0; }
+    // True on the one frame the interval runs out.
+    [[nodiscard]] bool NoteQuiet() { return ++Frames == kFrames; }
+};
+
 // One frame's worth of a target: what to attach, and where the store is
 // remembering its layout.
 struct RenderTargetView

@@ -160,6 +160,8 @@ void EditorRenderFeature::BuildSelectionOutlines()
     }
     if (SelectionOutlines.IsEmpty())
         return;
+    // EditorTheme is a linear palette -- the same colour draws the zone bounds and the
+    // rest of the selection chrome -- so it goes in as the linear colour it already is.
     SelectionOutlines.Styles[kSelectionOutlineStyle.Slot] =
         OutlineStyleEntry{ .LinearColor = Vec<3>(EditorTheme::Selection.X, EditorTheme::Selection.Y, EditorTheme::Selection.Z),
                            .WidthPixels = 2.0f, .Priority = 0 };
@@ -698,7 +700,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         mask.has_value() ? SelectionStyleImage.Update(SelectionOutlines.Styles, SelectionOutlines.StylesVersion) : UINT32_MAX;
     const bool outlining = mask.has_value() && styleImage != UINT32_MAX;
     if (!outlining)
-        Targets.ReleaseOutlineMask(viewport.Id);
+        Targets.NoteOutlineMaskQuiet(viewport.Id);
     RecordSceneThenDisplay(
         frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, ViewOutput,
         [&](const FrameContext& local) { DrawViewportScene(local, viewport, camera); },
@@ -715,16 +717,11 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                   Forward.DrawOutlineMask(scope, camera, *MeshCache, *MaterialStore,
                                                           SkinnedMeshCacheRef, SelectionOutlines);
                               });
-            const VkRect2D scissor = OutlineScissorFor(SelectionOutlines.CompositeInputs(), target.Extent);
-            if (scissor.extent.width == 0 || scissor.extent.height == 0)
-                return;
-            post.OutlineTilesBindless = SelectionTiles.Record(between, mask->Mask.BindlessIndex, mask->Tiles, scissor,
-                                                              SelectionOutlines.MaxWidthPixels);
-            post.OutlineMaskBindless = mask->Mask.BindlessIndex;
-            post.OutlineStyleBindless = styleImage;
-            post.OutlineMaxWidthPixels = SelectionOutlines.MaxWidthPixels;
-            post.OutlineDepthTerms = OutlineDepthTermsOf(camera.Projection);
-            post.OutlineScissor = scissor;
+            PublishOutlineComposite(between, post, SelectionTiles,
+                                    OutlineCompositeTargets{ .MaskBindless = mask->Mask.BindlessIndex,
+                                                             .StyleBindless = styleImage,
+                                                             .Tiles = mask->Tiles },
+                                    SelectionOutlines.CompositeInputs(), camera.Projection, target.Extent);
         },
         [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); }, &post);
 

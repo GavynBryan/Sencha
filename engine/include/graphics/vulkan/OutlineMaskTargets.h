@@ -43,6 +43,22 @@ void RecordOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& 
 // distance in either a perspective or an orthographic view.
 [[nodiscard]] std::array<float, 4> OutlineDepthTermsOf(const Mat4& projection);
 
+// What a host drew this frame's outlines into, for the composite to read.
+struct OutlineCompositeTargets
+{
+    std::uint32_t MaskBindless = UINT32_MAX;
+    std::uint32_t StyleBindless = UINT32_MAX;
+    OutlineTileTargets Tiles;
+};
+
+// Marks the tiles with outline work and fills `post` with what the composite reads,
+// once the mask holds this frame's outlines seen through `projection`. Leaves `post`
+// untouched when nothing outlined is on screen. The runtime feature and an editor
+// view share it.
+void PublishOutlineComposite(const FrameContext& frame, ScenePostState& post, OutlineTilePass& tilePass,
+                             const OutlineCompositeTargets& targets, const OutlineCompositeInputs& outlines,
+                             const Mat4& projection, VkExtent2D extent);
+
 // The style table where the composite can read it: a small bindless image, so a
 // frame with nothing highlighted carries no extra descriptor or push data.
 class OutlineStyleImage
@@ -92,5 +108,5 @@ private:
     OutlineStyleImage StyleImage;
     std::uint32_t StyleBindless = UINT32_MAX;
     std::uint32_t MaskBindless = UINT32_MAX;
-    std::uint32_t QuietFrames = 0;
+    QuietInterval Quiet;
 };
