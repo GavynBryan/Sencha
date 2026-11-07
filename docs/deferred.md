@@ -609,17 +609,6 @@ do the work and delete the entry.
   - *What's missing:* a budgeted scheduler that calls the same `Evaluate` on a subset of callers per tick.
   - *Trigger:* measured per-tick cost of real encounters exceeds budget.
 
-## Hearing
-
-- **What:** Stage E of `docs/plans/perception.md`: a `HearingSensor`, spatial
-  stimuli that game adapters stage from authored events, and a hearing pass
-  that reports into the same `PerceptionFrame`.
-- **Where:** `engine/src/perception/` beside `SightScan`; `PerceptionSystem`
-  runs each sense pass between `PerceptionFrame::Begin` and `Publish`, and the
-  frame already orders scans by observer and sense.
-- **Trigger:** the first game that needs an NPC to react to a sound, or the
-  roadmap's data-authored enemy gate if its encounter includes one.
-
 ## Sight candidate selection
 
 - **What:** a spatial candidate query for sight. Every sensor is tested

@@ -1,5 +1,6 @@
 #include <perception/PerceptionSystem.h>
 
+#include "HearingScan.h"
 #include "SightScan.h"
 
 #include <core/console/CVarRead.h>
@@ -99,8 +100,10 @@ struct PerceptionSystem::State
     }
 
     SightScan Sight;
+    HearingScan Hearing;
     ConsoleRegistry* Console = nullptr;
     SightStats Stats;
+    HearingStats Heard;
     std::vector<SightTraceRow> Trace;
     EntityId Selected;
     bool Drawing = false;
@@ -137,6 +140,8 @@ void PerceptionSystem::FixedLogic(FixedLogicContext& ctx)
             .TracedObserver = Impl->Selected,
         };
         Impl->Sight.Run(world, ctx.Partitions, settings, frame, Impl->Stats, Impl->Trace);
+        Impl->Heard = {};
+        Impl->Hearing.Run(world, ctx.Partitions, senses.Hearing, frame, Impl->Heard);
     }
     frame.Publish();
 
@@ -155,6 +160,16 @@ void PerceptionSystem::FixedLogic(FixedLogicContext& ctx)
 const SightStats& PerceptionSystem::LastSightStats() const
 {
     return Impl->Stats;
+}
+
+std::uint32_t PerceptionSystem::LastStimuli() const
+{
+    return Impl->Heard.Stimuli;
+}
+
+std::uint32_t PerceptionSystem::LastHeard() const
+{
+    return Impl->Heard.Heard;
 }
 
 void PerceptionSystem::SelectObserver(EntityId observer)

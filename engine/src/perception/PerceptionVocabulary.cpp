@@ -6,6 +6,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <perception/ObservationMemory.h>
 #include <perception/PerceptionFrame.h>
+#include <perception/PerceptionStimuli.h>
 #include <world/SimulationAuthority.h>
 #include <world/transform/TransformComponents.h>
 
@@ -229,6 +230,39 @@ namespace
         result = AuthoredValue::Entity(nearest);
         return AuthoredQueryStatus::Value;
     }
+
+    DataFieldSchema Optional(DataFieldKind kind, std::string key, std::string name, std::string summary)
+    {
+        DataFieldSchema field = MakeDataField(kind, std::move(key), std::move(name), std::move(summary));
+        field.Required = false;
+        return field;
+    }
+
+    VerbAdmission Stimulate(World& world, const VerbInvocation& invocation)
+    {
+        PerceptionStimulus stimulus;
+        double radius = 0.0;
+        if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetFloat(2, radius) || !(radius >= 0.0))
+            return VerbAdmission::InvalidArguments;
+        stimulus.Radius = static_cast<float>(radius);
+        (void)invocation.Arguments->TryGetEntity(0, stimulus.Source);
+        (void)invocation.Arguments->TryGetEntity(3, stimulus.Only);
+        AuthoredVectorValue position;
+        if (invocation.Arguments->TryGetVector(1, position))
+        {
+            stimulus.Position = Vec3d(static_cast<float>(position.Components[0]), static_cast<float>(position.Components[1]),
+                                      static_cast<float>(position.Components[2]));
+        }
+        else
+        {
+            const WorldTransform* at =
+                stimulus.Source.IsValid() ? world.TryGet<WorldTransform>(stimulus.Source) : nullptr;
+            if (at == nullptr)
+                return VerbAdmission::InvalidArguments;
+            stimulus.Position = at->Value.Position;
+        }
+        return StagePerceptionStimulus(world, stimulus) ? VerbAdmission::Accepted : VerbAdmission::Refused;
+    }
 }
 
 const PerceptionSenses& EnsurePerceptionSenses(World& world)
@@ -237,9 +271,11 @@ const PerceptionSenses& EnsurePerceptionSenses(World& world)
         world.AddResource<GameplayTagRegistry>();
     if (!world.HasResource<PerceptionSenses>())
     {
-        const std::optional<GameplayTagId> sight =
-            world.GetResource<GameplayTagRegistry>().RegisterTag(kSightSenseTag);
-        world.AddResource<PerceptionSenses>(PerceptionSenses{ .Sight = sight.value_or(GameplayTagId{}) });
+        GameplayTagRegistry& tags = world.GetResource<GameplayTagRegistry>();
+        const std::optional<GameplayTagId> sight = tags.RegisterTag(kSightSenseTag);
+        const std::optional<GameplayTagId> hearing = tags.RegisterTag(kHearingSenseTag);
+        world.AddResource<PerceptionSenses>(PerceptionSenses{ .Sight = sight.value_or(GameplayTagId{}),
+                                                              .Hearing = hearing.value_or(GameplayTagId{}) });
     }
     return world.GetResource<PerceptionSenses>();
 }
@@ -283,7 +319,36 @@ bool InstallPerceptionVocabulary(World& world)
     (void)scope.Declare(Declaration(kNearestRememberedTaggedQuery, "Nearest remembered tagged",
                               "The closest remembered position of something alive carrying the tag.",
                               DataFieldKind::GameplayTag, "tag", "Tag", DataFieldKind::Entity));
-    return scope.Commit();
+    if (!scope.Commit())
+        return false;
+
+    VerbRegistry* verbs = FindVerbRegistry(world);
+    if (verbs == nullptr)
+        return false;
+    VerbRegistrationScope verbScope(*verbs, "engine");
+    VerbDefinition stimulus;
+    stimulus.Name = std::string(kPerceptionStimulusVerb);
+    stimulus.DisplayName = "Perception stimulus";
+    stimulus.Description = "Something hearing picks up: a shot, a footstep, a hit. Heard by every ear within its "
+                           "radius, or by one observer alone.";
+    stimulus.Category = "Perception";
+    stimulus.Arguments.Children.push_back(Optional(DataFieldKind::Entity, "source", "Source",
+                                                   "Who made it; an observer remembers them where it happened."));
+    DataFieldSchema position = Optional(DataFieldKind::Vector, "position", "Position",
+                                        "Where it happened; the source's position without one.");
+    position.VectorLength = 3;
+    stimulus.Arguments.Children.push_back(std::move(position));
+    stimulus.Arguments.Children.push_back(
+        MakeDataField(DataFieldKind::Float, "radius", "Radius", "Metres it carries to an ear of sensitivity one."));
+    stimulus.Arguments.Children.push_back(Optional(DataFieldKind::Entity, "only", "Only",
+                                                   "The one observer it reaches, wherever that observer is."));
+    (void)verbScope.Declare(std::move(stimulus));
+    return verbScope.Commit();
+}
+
+VerbBindingToken BindPerceptionVerbs(VerbDispatcher& dispatcher, World& world)
+{
+    return dispatcher.Bind<&Stimulate>(dispatcher.Registry().Find(kPerceptionStimulusVerb), world);
 }
 
 std::vector<AuthoredQueryBindingToken> BindPerceptionQueries(AuthoredQueryDispatcher& dispatcher,

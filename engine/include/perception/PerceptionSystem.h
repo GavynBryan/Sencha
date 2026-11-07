@@ -53,6 +53,9 @@ public:
     void FixedLogic(FixedLogicContext& ctx);
 
     [[nodiscard]] const SightStats& LastSightStats() const;
+    // Stimuli the last hearing pass took, and the observations ears made of them.
+    [[nodiscard]] std::uint32_t LastStimuli() const;
+    [[nodiscard]] std::uint32_t LastHeard() const;
 
     // Debug inspection. The trace is kept only while drawing is on or an
     // observer is selected; with a selection it holds that observer's rows.

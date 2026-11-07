@@ -57,6 +57,7 @@ void PerceptionPanel::Draw()
     ImGui::Text("seen %u  blocked %u  out of range %u  outside cone %u  untested %u", stats.Seen,
                 stats.Blocked, stats.OutOfRange, stats.OutsideCone, stats.Untested);
     ImGui::Text("rays %u  partial scans %u", stats.Raycasts, stats.PartialScans);
+    ImGui::Text("stimuli %u  heard %u", Perception.LastStimuli(), Perception.LastHeard());
 
     const PerceptionFrame* frame = Entities.TryGetResource<PerceptionFrame>();
     const EntityId selected = Perception.SelectedObserver();

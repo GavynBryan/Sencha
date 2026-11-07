@@ -1,6 +1,7 @@
 #pragma once
 
 #include <authored/AuthoredQueryDispatcher.h>
+#include <authored/VerbDispatcher.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <string_view>
@@ -9,6 +10,12 @@
 class World;
 
 inline constexpr std::string_view kSightSenseTag = "perception.sense.sight";
+inline constexpr std::string_view kHearingSenseTag = "perception.sense.hearing";
+
+// Stages a stimulus for hearing: {source?, position?, radius, only?}. Without a
+// position it happens where the source stands; with `only` it reaches that
+// observer alone. Authority only.
+inline constexpr std::string_view kPerceptionStimulusVerb = "perception.stimulus";
 
 // Sight only. True when seen this tick; false only when the observer's sight
 // scan this tick was complete; otherwise Unavailable, never false.
@@ -30,6 +37,7 @@ inline constexpr std::string_view kNearestRememberedTaggedQuery = "perception.ne
 struct PerceptionSenses
 {
     GameplayTagId Sight;
+    GameplayTagId Hearing;
 };
 
 // The sense tags, a GameplayTagRegistry if the World has none, as a World
@@ -40,6 +48,9 @@ const PerceptionSenses& EnsurePerceptionSenses(World& world);
 // the World's authored catalog. Runtime and editors both install it, so content
 // validates without a game running. False when a declaration was refused.
 [[nodiscard]] bool InstallPerceptionVocabulary(World& world);
+
+// perception.stimulus, staging into `world`, for as long as the token lives.
+[[nodiscard]] VerbBindingToken BindPerceptionVerbs(VerbDispatcher& dispatcher, World& world);
 
 // Answers the perception queries from `world`'s PerceptionFrame for as long as
 // the tokens live. A World nobody scans answers Unavailable.

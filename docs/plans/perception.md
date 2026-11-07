@@ -1,6 +1,6 @@
 # Perception v1
 
-Date: 2026-10-14. Status: stages A-D built; hearing (E) is next. Scope: sight,
+Date: 2026-10-14. Status: stages A-F built. Scope: sight,
 the observation contract, diagnostics with world drawing, and the authored read
 path. Hearing shapes the contract but is not built here.
 
@@ -20,6 +20,7 @@ interprets, and no entity has to take part in every stage.
 | Running the senses each fixed tick (`PerceptionSystem`) | `perception/` | gameplay substrate |
 | Authored questions about the frame (`perception.*` queries) | `perception/PerceptionQueries` | gameplay substrate |
 | What an observer retains (`ObservationMemory`, `ObservationMemorySystem`) | `perception/` | gameplay substrate |
+| Ears, staged stimuli and the hearing pass (`HearingSensor`, `PerceptionStimuli`, `HearingScan`) | `perception/` | gameplay substrate |
 | Lines a simulation system wants shown (`DebugLineChannels`) | `debug/DebugLines` | neutral, no render |
 | Lines in render form, the pass, the feature | `render/debug`, `graphics/vulkan/DebugLinePass`, `render/feature/DebugLineRenderFeature` | render |
 
@@ -129,6 +130,26 @@ Candidate evaluation reaches the same answers through its `authored_query`
 measure. That makes "of the things I can see, pick one" a definition, not
 code.
 
+## Hearing
+
+`HearingSensor { Sensitivity, EarOffset }` is an ear. A `PerceptionStimulus
+{ Source, Position, Radius, Only }` is something to hear, staged on the
+authority with `StagePerceptionStimulus` or, from content, the
+`perception.stimulus` verb (`{source?, position?, radius, only?}`; without a
+position it happens where the source stands). The hearing pass runs after
+sight in `PerceptionSystem`, takes every stimulus staged since the last pass,
+and reports into the same frame under `perception.sense.hearing`:
+
+- An ear within `Radius × Sensitivity` hears it, with confidence falling from 1
+  at the source to 0 at that reach. Nothing occludes sound.
+- A stimulus with `Only` reaches that observer alone, wherever it is, at
+  confidence 1: being struck is heard by what was struck.
+- A source never hears itself. The observation's subject is the source, which
+  may be invalid for an anonymous sound.
+
+A stimulus staged before a tick's pass is heard that tick, after it the next,
+and each is heard once. Every ear's hearing scan is `Complete`.
+
 ## Memory
 
 `ObservationMemory { RetainSeconds }` on an observer keeps up to eight
@@ -213,8 +234,8 @@ C. Built. Authored queries, declared through `InstallEngineVocabulary` and
 D. Built. Debug lines (channels, extraction, pass, feature) on the
    colored-vertex pipeline the editor shares, perception drawing, and the
    Perception panel.
-E. Hearing: `HearingSensor`, stimuli staged from authored events by game
-   adapters, observations through the same frame. Separate follow-up.
+E. Built. Hearing: `HearingSensor`, staged stimuli and `perception.stimulus`,
+   observations through the same frame.
 F. Built. Memory: `ObservationMemory`, `ObservationMemorySystem` and the
    memory queries.
 
@@ -222,6 +243,6 @@ F. Built. Memory: `ObservationMemory`, `ObservationMemorySystem` and the
 
 Appraisal, belief, alertness, behavior selection, communication,
 prediction, multiple sample points, lighting-aware concealment, sound
-propagation, parallel or multi-tick scanning, a sense registration framework,
+occlusion and propagation, parallel or multi-tick scanning, a sense registration framework,
 and a spatial index. Each waits for a real consumer or a measurement. None is
 excluded by the contract.
