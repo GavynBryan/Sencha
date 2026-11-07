@@ -156,7 +156,7 @@ Material MaterialAssetLoader::ResolveDescription(std::string_view path,
     if (!desc.Shader.empty())
     {
         material.Shader = Materials->Shaders().Find(desc.Shader);
-        if (!material.Shader.IsValid())
+        if (!material.Shader.IsValid() && Materials->ResolvesShaders())
             Log.Warn("MaterialAssetLoader: '{}' names shader '{}', which nothing registered; "
                      "it draws with the built-in shading", path, desc.Shader);
     }

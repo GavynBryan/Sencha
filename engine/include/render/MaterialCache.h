@@ -73,6 +73,7 @@ public:
     [[nodiscard]] std::string_view GetName(MaterialHandle handle) const;
 
     void UseShaders(const MaterialShaderCatalog& shaders) { ShaderTypes = &shaders; }
+    [[nodiscard]] bool ResolvesShaders() const { return ShaderTypes != nullptr; }
     [[nodiscard]] const MaterialShaderCatalog& Shaders() const;
 
 private:
