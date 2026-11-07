@@ -15,10 +15,12 @@
 #include <ecs/Query.h>
 #include <render/StaticMeshComponent.h>
 #include <render/outline/OutlineContributions.h>
+#include <render/MaterialShaderCatalog.h>
 #include <render/post/PostEffectCatalog.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include <render/post/PostEffectContributions.h>
 #include <shaders/kGoldenDisplaceFragSpv.h>
+#include <shaders/kGoldenParamsEmitFragSpv.h>
 #include <ui/UiService.h>
 #include <world/ComponentRegistrar.h>
 #include <components/ActiveCameraService.h>
@@ -441,6 +443,14 @@ public:
             .FragmentSpirv = std::span<const std::uint32_t>(kGoldenDisplaceFragSpv, kGoldenDisplaceFragSpvWordCount),
             .Domain = PostEffectDomain::Scene,
             .Order = 0,
+        });
+    }
+
+    void OnRegisterMaterialShaders(MaterialShaderCatalog& catalog) override
+    {
+        (void)catalog.Register(MaterialShaderDesc{
+            .Name = "render_host.params_emit",
+            .FragmentSpirv = std::span<const std::uint32_t>(kGoldenParamsEmitFragSpv, kGoldenParamsEmitFragSpvWordCount),
         });
     }
 

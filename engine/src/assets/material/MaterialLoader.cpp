@@ -80,6 +80,18 @@ namespace
             "unknown shading '{}' (expected standard_lit or unlit)", shading));
     }
 
+    bool ReadShaderParams(const JsonValue& value, std::array<Vec4, kMaterialShaderParamCount>& out,
+                          MaterialParseError* error)
+    {
+        if (!value.IsArray() || value.Size() > out.size())
+            return Fail(error, std::format("'shader_params' must be an array of at most {} arrays of 4 numbers",
+                                           out.size()));
+        for (std::size_t i = 0; i < value.Size(); ++i)
+            if (!ReadFactor(value.AsArray()[i], "shader_params", 4, out[i], error))
+                return false;
+        return true;
+    }
+
     bool ReadAlphaMode(const JsonValue& value, MaterialAlphaMode& out, MaterialParseError* error)
     {
         if (!value.IsString())
@@ -109,6 +121,7 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
                                        versionValue->AsNumber(), kSmatVersion));
 
     MaterialDescription desc;
+    bool hasShaderParams = false;
     for (const auto& [key, value] : root.AsObject())
     {
         bool ok = true;
@@ -155,6 +168,19 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
             ok = ReadBool(value, key, desc.ReceiveShadows, error);
         else if (key == "cast_shadows")
             ok = ReadBool(value, key, desc.CastShadows, error);
+        else if (key == "shader")
+        {
+            ok = value.IsString() && !value.AsString().empty();
+            if (ok)
+                desc.Shader = value.AsString();
+            else
+                Fail(error, "'shader' must be a shader's registered name");
+        }
+        else if (key == "shader_params")
+        {
+            ok = ReadShaderParams(value, desc.ShaderParams, error);
+            hasShaderParams = true;
+        }
         else
             return Fail(error, std::format("unknown material key '{}'", key));
 
@@ -166,6 +192,8 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         return Fail(error, "'specular_factor' must be between 0 and 1");
     if (desc.EmissiveStrength < 0.0f)
         return Fail(error, "'emissive_strength' must be non-negative");
+    if (hasShaderParams && desc.Shader.empty())
+        return Fail(error, "'shader_params' needs a 'shader' to read them");
 
     out = desc;
     return true;

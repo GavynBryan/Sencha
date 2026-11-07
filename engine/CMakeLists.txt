@@ -529,6 +529,12 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/outline/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/presentation/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
+    # Material shaders: Engine holds their catalog by value, and a module compiles
+    # the mesh push and view blocks into its own SPIR-V.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/ShaderCatalog.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/MaterialShaderCatalog.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_view.glsli"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_material.glsli"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
@@ -1086,6 +1092,8 @@ install(FILES
     "${CMAKE_SOURCE_DIR}/cmake/EmbedSpirv.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Sencha")
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_effect.glsli"
+              "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_view.glsli"
+              "${CMAKE_CURRENT_SOURCE_DIR}/shaders/mesh_material.glsli"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sencha/shaders")
 
 # The starter templates ship with the SDK as source, one directory each, so a

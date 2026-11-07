@@ -112,3 +112,35 @@ TEST(MaterialV2, WriterRoundTripsCompleteMaterialFields)
     EXPECT_FALSE(parsed.ReceiveShadows);
     EXPECT_FALSE(parsed.CastShadows);
 }
+
+TEST(MaterialV2, WriterRoundTripsAMaterialShader)
+{
+    MaterialDescription written;
+    written.Shader = "game.surface";
+    written.ShaderParams = { Vec4(1.0f, 2.0f, 3.0f, 4.0f), Vec4(0.5f, 0.0f, 0.0f, 0.0f) };
+
+    MaterialDescription parsed;
+    MaterialParseError error;
+    ASSERT_TRUE(ParseMaterialJson(WriteMaterialJson(written), parsed, &error)) << error.Message;
+    EXPECT_EQ(parsed.Shader, "game.surface");
+    EXPECT_FLOAT_EQ(parsed.ShaderParams[0].W, 4.0f);
+    EXPECT_FLOAT_EQ(parsed.ShaderParams[1].X, 0.5f);
+}
+
+TEST(MaterialV2, ShaderParamsNeedAShader)
+{
+    MaterialDescription desc;
+    MaterialParseError error;
+    EXPECT_FALSE(ParseMaterialJson(ParseMaterialText(R"({ "version": 2, "shader_params": [[1, 1, 1, 1]] })"), desc,
+                                   &error));
+    EXPECT_NE(error.Message.find("shader_params"), std::string::npos);
+}
+
+TEST(MaterialV2, RejectsMoreShaderParamsThanTheBlockHolds)
+{
+    MaterialDescription desc;
+    MaterialParseError error;
+    EXPECT_FALSE(ParseMaterialJson(
+        ParseMaterialText(R"({ "version": 2, "shader": "s", "shader_params": [[0,0,0,0], [0,0,0,0], [0,0,0,0]] })"),
+        desc, &error));
+}

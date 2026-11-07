@@ -55,7 +55,7 @@ private:
     // Builds the runtime Material from a parsed description, resolving each
     // texture slot to a bindless index and accumulating the owned texture
     // references into `outOwned`. Shared by CommitTyped and CommitReload.
-    [[nodiscard]] Material ResolveDescription(const MaterialDescription& desc,
+    [[nodiscard]] Material ResolveDescription(std::string_view path, const MaterialDescription& desc,
                                               AssetSystem& assets,
                                               std::vector<TextureCacheHandle>& outOwned);
 

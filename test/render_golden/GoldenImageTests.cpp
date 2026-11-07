@@ -38,6 +38,8 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
+#include <optional>
 
 namespace
 {
@@ -270,9 +272,9 @@ void CheckScene(const GoldenScene& scene)
     return static_cast<int>(std::lround(encoded * 255.0f));
 }
 
-// Below 1, `coverage` blends the black surface over a black sky, where its emission
-// must land exactly where an opaque surface's does.
-void CheckEmittedLevel(float emitted, float exposure, float coverage = 1.0f)
+// Below 1, `coverage` blends the surface over a black sky.
+void CheckEmittedLevel(float emitted, float exposure, float coverage = 1.0f, std::string_view shaderKeys = {},
+                       std::optional<float> shown = std::nullopt)
 {
     if (!DisplayAvailable())
         GTEST_SKIP() << "no display; the golden images need a GPU to render against";
@@ -282,7 +284,7 @@ void CheckEmittedLevel(float emitted, float exposure, float coverage = 1.0f)
         / "dev" / "generated_tonemap_ramp.smat";
     std::ofstream(material, std::ios::trunc)
         << "{ \"id\": \"7a3f10c2b95e4d18\", \"version\": 2, \"shading\": \"unlit\", "
-        << (blended ? "\"alpha_mode\": \"blend\", " : "")
+        << (blended ? "\"alpha_mode\": \"blend\", " : "") << shaderKeys
         << "\"base_color_factor\": [0, 0, 0, " << coverage << "], \"emissive_factor\": [1, 1, 1], "
         << "\"emissive_strength\": " << emitted << " }\n";
 
@@ -298,7 +300,7 @@ void CheckEmittedLevel(float emitted, float exposure, float coverage = 1.0f)
     ASSERT_TRUE(image.has_value());
 
     const std::size_t pixel = (static_cast<std::size_t>(image->Height / 2) * image->Width + image->Width / 2) * 4;
-    const int expected = ExpectedDisplayLevel(emitted, exposure);
+    const int expected = ExpectedDisplayLevel(shown.value_or(emitted), exposure);
     for (std::size_t channel = 0; channel < 3; ++channel)
         EXPECT_NEAR(static_cast<int>(image->Pixels[pixel + channel]), expected, 1)
             << "a surface emitting " << emitted << " at exposure " << exposure << ", channel " << channel;
@@ -431,6 +433,18 @@ TEST(TonemapRamp, ABlendedSurfaceEmitsAtFullStrength)
 {
     for (const float emitted : { 0.25f, 1.0f, 2.0f })
         CheckEmittedLevel(emitted, 1.0f, 0.1f);
+}
+
+TEST(MaterialShader, ARegisteredShaderDrawsWithTheMaterialsParams)
+{
+    for (const float coverage : { 1.0f, 0.1f })
+        CheckEmittedLevel(0.0f, 1.0f, coverage,
+                          R"("shader": "render_host.params_emit", "shader_params": [[1, 1, 1, 0.75]], )", 0.75f);
+}
+
+TEST(MaterialShader, AnUnregisteredNameDrawsTheBuiltInShading)
+{
+    CheckEmittedLevel(0.75f, 1.0f, 1.0f, R"("shader": "nobody.registered", )");
 }
 
 // One scene covering as much of the renderer as a single frame can: cooked

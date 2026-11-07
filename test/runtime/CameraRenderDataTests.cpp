@@ -179,7 +179,6 @@ TEST(CameraRenderDataExclusion, ExcludesItsEntityAndWhatIsPresentedWithIt)
     EXPECT_FALSE(camera.Excludes(other, EntityId{}));
 }
 
-// Materials animate on the view's time, so the presented moment must reach it.
 TEST(CameraRenderDataTime, TheViewCarriesThePresentedMoment)
 {
     CameraDataHarness harness;

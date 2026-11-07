@@ -1,7 +1,8 @@
 #pragma once
 
+#include <render/ShaderCatalog.h>
+
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -43,20 +44,9 @@ struct PostEffectType
 
 // Every effect type this process can run. Owned by Engine; a game adds to it from
 // Game::OnRegisterPostEffects at startup. Docs: docs/renderer/post-effects.md.
-class PostEffectCatalog
+class PostEffectCatalog : public ShaderCatalog<PostEffectId, PostEffectType>
 {
 public:
-    // Null when the name or the (domain, order) is already taken, or the shader is
-    // empty: effects compose in that order, so a duplicate would have none. Each
-    // refusal is kept, with its reason, for the host to report.
+    // Effects compose in (domain, order), so a taken pair is refused too.
     [[nodiscard]] PostEffectId Register(const PostEffectDesc& desc);
-
-    [[nodiscard]] PostEffectId Find(std::string_view name) const;
-    [[nodiscard]] const PostEffectType* Get(PostEffectId id) const;
-    [[nodiscard]] std::size_t Count() const { return Types.size(); }
-    [[nodiscard]] std::span<const std::string> Refusals() const { return Refusals_; }
-
-private:
-    std::vector<PostEffectType> Types;
-    std::vector<std::string> Refusals_;
 };

@@ -2,6 +2,7 @@
 
 #include <app/BackRouter.h>
 #include <app/DefaultRenderPipeline.h>
+#include <render/MaterialShaderCatalog.h>
 #include <render/post/PostEffectCatalog.h>
 #include <app/OptionsPage.h>
 #include <app/PauseState.h>
@@ -415,6 +416,8 @@ public:
     [[nodiscard]] PostEffectCatalog& PostEffects() { return PostEffectTypes; }
     [[nodiscard]] const PostEffectCatalog& PostEffects() const { return PostEffectTypes; }
 
+    [[nodiscard]] MaterialShaderCatalog& MaterialShaders() { return MaterialShaderTypes; }
+
     [[nodiscard]] DefaultRenderPipeline* GetRenderPipeline();
     [[nodiscard]] const DefaultRenderPipeline* GetRenderPipeline() const;
 
@@ -529,6 +532,7 @@ public:
 
 private:
     PostEffectCatalog PostEffectTypes;
+    MaterialShaderCatalog MaterialShaderTypes;
     // Frame-phase bodies and the state they sample. Registered once, from
     // EngineFramePhases.cpp; nothing outside the frame pipeline reads these.
     //

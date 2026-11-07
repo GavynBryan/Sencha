@@ -52,7 +52,5 @@ struct PresentationTime
     double DeltaSeconds = 1.0 / 60.0;
     double Alpha = 0.0;
     uint64_t FrameIndex = 0;
-    // Completed ticks plus Alpha, in seconds: the simulated moment this frame
-    // shows. It stands still while the simulation is paused.
     double SimulationSeconds = 0.0;
 };

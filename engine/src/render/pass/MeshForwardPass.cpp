@@ -68,8 +68,6 @@ namespace
         return blend;
     }
 
-    // `variant` carries OpaquePipelineId's bits. Blended surfaces test against the
-    // opaque scene and write no depth, so they never occlude each other by draw order.
     GraphicsPipelineDesc MakeShadedPipeline(ShaderHandle vertexShader, ShaderHandle fragmentShader,
                                             VkPipelineLayout layout, const FrameContext& frame,
                                             std::size_t variant, bool blended)
@@ -121,6 +119,7 @@ namespace
         push.LightmapTextureIndex = item.LightmapTextureIndex;
         push.AoTextureIndex = item.AoTextureIndex;
         push.AlphaCutoff = material.AlphaCutoff;
+        push.Params = material.ShaderParams;
         return push;
     }
 } // namespace
@@ -139,7 +138,8 @@ static_assert(offsetof(MeshPushConstants, ReceiveShadows) == 64);
 static_assert(offsetof(MeshPushConstants, LightmapTextureIndex) == 68);
 static_assert(offsetof(MeshPushConstants, AoTextureIndex) == 72);
 static_assert(offsetof(MeshPushConstants, AlphaCutoff) == 76);
-static_assert(sizeof(MeshPushConstants) == 80);
+static_assert(offsetof(MeshPushConstants, Params) == 80);
+static_assert(sizeof(MeshPushConstants) == 112);
 
 static_assert(offsetof(MeshInstanceData, World) == 0);
 static_assert(offsetof(MeshInstanceData, LightmapScaleBias) == 64);
@@ -565,9 +565,9 @@ BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
 }
 } // namespace
 
-// Outline and debug families draw blended items opaquely: they want the surface, not
-// the composite, and carry only the cull and mask axes.
-VkPipeline MeshForwardPass::SelectPipeline(const RenderQueueItem& item, bool blended) const
+// Outline and debug views show the surface, so they ignore blending and material shaders.
+VkPipeline MeshForwardPass::SelectPipeline(const FrameContext& frame, const MaterialShaderCatalog& shaders,
+                                           const Material& material, const RenderQueueItem& item, bool blended)
 {
     if (ActiveOutlineSlot != 0)
         return OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
@@ -576,8 +576,60 @@ VkPipeline MeshForwardPass::SelectPipeline(const RenderQueueItem& item, bool ble
         return (ActiveDebugView == RenderDebugView::Overdraw ? OverdrawPipelines : DebugPipelines)
             .Get(DebugPipelineIndex(item.Pipeline));
 #endif
+    if (material.Shader.IsValid())
+        if (const VkPipeline custom = MaterialShaderPipeline(frame, shaders, material.Shader, item, blended);
+            custom != VK_NULL_HANDLE)
+            return custom;
     return blended ? TransparentPipelines.Get(TransparentPipelineIndex(item.Pipeline))
                    : OpaquePipelines.Get(static_cast<std::size_t>(item.Pipeline));
+}
+
+VkPipeline MeshForwardPass::MaterialShaderPipeline(const FrameContext& frame, const MaterialShaderCatalog& shaders,
+                                                   MaterialShaderId id, const RenderQueueItem& item, bool blended)
+{
+    if (shaders.Stamp() != MaterialShaderStamp)
+    {
+        ReleaseMaterialShaderFamilies();
+        MaterialShaderStamp = shaders.Stamp();
+    }
+    const MaterialShaderType* type = shaders.Get(id);
+    if (type == nullptr)
+        return VK_NULL_HANDLE;
+    if (MaterialShaderFamilies.size() < shaders.Count())
+        MaterialShaderFamilies.resize(shaders.Count());
+
+    MaterialShaderFamily& family = MaterialShaderFamilies[id.Value - 1];
+    if (family.Failed)
+        return VK_NULL_HANDLE;
+    if (!family.Fragment.IsValid())
+        family.Fragment = Shaders->CreateModuleFromSpirv(
+            type->FragmentSpirv.data(), static_cast<uint32_t>(type->FragmentSpirv.size()), type->Name.c_str());
+
+    const auto build = [&](std::size_t index) {
+        return BuildNamed(*Pipelines, Device,
+                          MakeShadedPipeline(VertexShader, family.Fragment, PipelineLayout, frame, index, blended),
+                          type->Name.c_str());
+    };
+    const AttachmentFormatKey formats = frame.AttachmentFormats();
+    const bool built = family.Fragment.IsValid()
+        && (blended ? family.Transparent.Ensure(formats, build) : family.Opaque.Ensure(formats, build));
+    if (!built)
+    {
+        family.Failed = true;
+        if (Log != nullptr)
+            Log->Error("Material shader '{}' did not build; its materials draw with the built-in shading",
+                       type->Name);
+        return VK_NULL_HANDLE;
+    }
+    return blended ? family.Transparent.Get(TransparentPipelineIndex(item.Pipeline))
+                   : family.Opaque.Get(static_cast<std::size_t>(item.Pipeline));
+}
+
+void MeshForwardPass::ReleaseMaterialShaderFamilies()
+{
+    for (const MaterialShaderFamily& family : MaterialShaderFamilies)
+        Shaders->Destroy(family.Fragment);
+    MaterialShaderFamilies.clear();
 }
 
 void MeshForwardPass::RecordItem(const FrameContext& frame, const DrawContext& ctx, const RenderQueueItem& item,
@@ -589,7 +641,7 @@ void MeshForwardPass::RecordItem(const FrameContext& frame, const DrawContext& c
     const Material* material = ctx.Materials.Get(item.Material);
     if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
         return;
-    const VkPipeline pipeline = SelectPipeline(item, blended);
+    const VkPipeline pipeline = SelectPipeline(frame, ctx.Materials.Shaders(), *material, item, blended);
     if (pipeline == VK_NULL_HANDLE)
         return;
 
@@ -788,6 +840,7 @@ void MeshForwardPass::Teardown()
 {
     if (Shaders != nullptr)
     {
+        ReleaseMaterialShaderFamilies();
         Shaders->Destroy(VertexShader);
         Shaders->Destroy(FragmentShader);
         Shaders->Destroy(OutlineMaskVertexShader);

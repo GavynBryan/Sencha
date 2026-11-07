@@ -92,7 +92,7 @@ MaterialHandle MaterialAssetLoader::CommitTyped(AssetStaging&& staged, AssetSyst
     }
 
     std::vector<TextureCacheHandle> ownedTextures;
-    Material material = ResolveDescription(*desc, assets, ownedTextures);
+    Material material = ResolveDescription(staged.Record.Path, *desc, assets, ownedTextures);
 
     MaterialHandle handle =
         Materials->Register(staged.Record.Path, material, std::move(ownedTextures));
@@ -128,12 +128,13 @@ bool MaterialAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& asset
     }
 
     std::vector<TextureCacheHandle> ownedTextures;
-    Material material = ResolveDescription(*desc, assets, ownedTextures);
+    Material material = ResolveDescription(staged.Record.Path, *desc, assets, ownedTextures);
 
     return Materials->ReloadInPlace(staged.Record.Path, material, std::move(ownedTextures));
 }
 
-Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc,
+Material MaterialAssetLoader::ResolveDescription(std::string_view path,
+                                                 const MaterialDescription& desc,
                                                  AssetSystem& assets,
                                                  std::vector<TextureCacheHandle>& outOwned)
 {
@@ -151,6 +152,14 @@ Material MaterialAssetLoader::ResolveDescription(const MaterialDescription& desc
     material.DoubleSided = desc.DoubleSided;
     material.ReceiveShadows = desc.ReceiveShadows;
     material.CastShadows = desc.CastShadows;
+    material.ShaderParams = desc.ShaderParams;
+    if (!desc.Shader.empty())
+    {
+        material.Shader = Materials->Shaders().Find(desc.Shader);
+        if (!material.Shader.IsValid())
+            Log.Warn("MaterialAssetLoader: '{}' names shader '{}', which nothing registered; "
+                     "it draws with the built-in shading", path, desc.Shader);
+    }
 
     ResolveTextureSlot(desc.BaseColorTexture, /*srgb*/ true, assets,
                        material.BaseColorTextureIndex, outOwned);
