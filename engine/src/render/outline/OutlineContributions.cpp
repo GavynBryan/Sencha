@@ -130,19 +130,23 @@ void OutlineFrame::UpdateScreenBounds(const Mat4& viewProjection)
     ScreenMax[1] = covered.Max[1];
 }
 
-void ExtractOutlines(World& world, OutlineFrame& out)
+void SweepOutlines(World& world)
+{
+    OutlineContributions* contributions = world.TryGetResource<OutlineContributions>();
+    if (contributions == nullptr)
+        return;
+    contributions->ByEntity.RemoveWhere([&](EntityId entity, const OutlineContribution&) { return !world.IsAlive(entity); },
+                                        [](EntityId, const OutlineContribution&) {});
+    contributions->ByEntity.SweepDeadHolders([&](EntityId holder) { return world.IsAlive(holder); },
+                                             [](EntityId, const OutlineContribution&) {});
+}
+
+void ExtractOutlines(const World& world, OutlineFrame& out)
 {
     out.Reset();
-    OutlineContributions* contributions = world.TryGetResource<OutlineContributions>();
+    const OutlineContributions* contributions = world.TryGetResource<OutlineContributions>();
     if (contributions == nullptr || contributions->ByEntity.KeyCount() == 0)
         return;
-
-    contributions->ByEntity.RemoveWhere(
-        [&](EntityId entity, const OutlineContribution& contribution) {
-            const LeaseOwner& holder = contribution.Owner.Holder;
-            return !world.IsAlive(entity) || (holder.IsSet() && !world.IsAlive(holder.Entity));
-        },
-        [](EntityId, const OutlineContribution&) {});
 
     const OutlineStyles* styles = world.TryGetResource<OutlineStyles>();
     if (styles == nullptr)
@@ -151,8 +155,13 @@ void ExtractOutlines(World& world, OutlineFrame& out)
     for (std::size_t i = 0; i < styles->Records.size(); ++i)
         out.Styles[i + 1] = styles->Records[i].Entry;
 
+    // Read only: what has gone since SweepOutlines last ran is passed over, not removed.
     contributions->ByEntity.ForEachKey([&](EntityId entity, const std::vector<OutlineContribution>&) {
-        const OutlineContribution* winner = contributions->ByEntity.Resolve(entity);
+        if (!world.IsAlive(entity))
+            return;
+        const OutlineContribution* winner = contributions->ByEntity.Resolve(entity, [&](const OutlineContribution& c) {
+            return !c.Owner.Holder.IsSet() || world.IsAlive(c.Owner.Holder.Entity);
+        });
         if (winner == nullptr || !winner->Style.IsValid() || winner->Style.Slot > styles->Records.size())
             return;
         out.StyleOf.emplace(entity, winner->Style);

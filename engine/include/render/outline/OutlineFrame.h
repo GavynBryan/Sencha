@@ -42,5 +42,5 @@ struct OutlineFrame
     [[nodiscard]] OutlineCompositeInputs CompositeInputs() const;
 };
 
-// Sweeps contributions whose entity or holder has gone, then resolves the rest.
-void ExtractOutlines(World& world, OutlineFrame& out);
+// Resolves each living entity's outline, passing over contributions whose holder has gone.
+void ExtractOutlines(const World& world, OutlineFrame& out);

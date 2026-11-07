@@ -197,6 +197,18 @@ void ClearMeshOverride(World& world, EntityId entity, const PresentationOwner& o
     (void)ComposeMeshOverrides(world, entity);
 }
 
+void ClearMeshOverridesOf(World& world, PresentationWriterId writer)
+{
+    MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();
+    if (contributions == nullptr)
+        return;
+    contributions->ByEntity.ClearWriter(writer, [&](EntityId entity, const MeshOverrideContribution& contribution) {
+        ReleaseSubstitutes(world, contribution);
+        if (world.IsAlive(entity))
+            (void)ComposeMeshOverrides(world, entity);
+    });
+}
+
 void SweepMeshOverrideHolders(World& world)
 {
     MeshOverrideContributions* contributions = world.TryGetResource<MeshOverrideContributions>();

@@ -936,7 +936,10 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/audio/AudioVerbs.cpp`, `engine/src/movement/MovementVerbs.cpp`,
   `engine/src/effects/`, `engine/src/attach/`.
 - **Trigger:** a fourth lease provider that needs to end holds when its holder
-  dies.
+  dies. Presentation contributions (mesh overrides, outlines, post effects) end
+  theirs through one rule, `PresentationContributions::SweepDeadHolders`, run by
+  `PresentationLifetimeSystem`; they are cosmetic and local, so they do not count
+  toward this trigger for the simulation's leases.
 
 ## Scene depth in post effects
 

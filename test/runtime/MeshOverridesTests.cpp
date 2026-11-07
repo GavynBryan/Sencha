@@ -158,6 +158,24 @@ TEST(MeshOverrides, AHolderThatDiesTakesItsContributionWithIt)
     EXPECT_EQ(hidden(), 0b10u) << "a contribution with no holder is the writer's to end";
 }
 
+TEST(MeshOverrides, ClearingAWriterTakesBackEverythingItContributed)
+{
+    OverrideFixture f;
+    MeshOverrideContribution skin;
+    skin.Owner = Owner(1);
+    skin.Hide.push_back(Drawing(f.Skin));
+    MeshOverrideContribution hair;
+    hair.Owner = Owner(2);
+    hair.Hide.push_back(Drawing(f.Hair));
+    (void)SetMeshOverride(f.Entities, f.Body, skin);
+    (void)SetMeshOverride(f.Entities, f.Body, hair);
+    const auto hidden = [&] { return f.Entities.TryGet<MeshOverrides>(f.Body)->HiddenSlots; };
+    ASSERT_EQ(hidden(), 0b11u);
+
+    ClearMeshOverridesOf(f.Entities, PresentationWriterId{ 1 });
+    EXPECT_EQ(hidden(), 0b10u) << "the other writer's contribution stays";
+}
+
 TEST(MeshOverrides, ASubstituteStaysResidentWhileContributed)
 {
     OverrideFixture fx;

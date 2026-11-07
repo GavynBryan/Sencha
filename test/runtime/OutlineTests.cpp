@@ -97,7 +97,7 @@ TEST(Outlines, ClearingOneOwnerRevealsTheNextAndClearingAWriterTakesAllOfIts)
     EXPECT_FALSE(IsOutlined(f.Entities, f.Target));
 }
 
-TEST(Outlines, ADeadTargetAndADeadHolderAreSweptBeforeResolving)
+TEST(Outlines, ExtractionPassesOverWhatHasGoneAndTheSweepRemovesIt)
 {
     Fixture f;
     const EntityId holder = f.Entities.CreateEntity();
@@ -109,6 +109,9 @@ TEST(Outlines, ADeadTargetAndADeadHolderAreSweptBeforeResolving)
 
     f.Entities.DestroyEntity(holder);
     EXPECT_FALSE(f.Resolved().IsValid()) << "its holder went";
+    EXPECT_TRUE(IsOutlined(f.Entities, f.Target)) << "extraction reads; it does not remove";
+    SweepOutlines(f.Entities);
+    EXPECT_FALSE(IsOutlined(f.Entities, f.Target));
 
     f.Entities.DestroyEntity(other);
     ExtractOutlines(f.Entities, f.Frame);

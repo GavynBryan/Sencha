@@ -29,8 +29,8 @@
 #include <app/Engine.h>
 #include <attach/Attachment.h>
 #include <render/MeshOverrideSystem.h>
+#include <render/PresentationLifetimeSystem.h>
 #include <render/post/EnginePostEffects.h>
-#include <render/post/PostEffectLifetimeSystem.h>
 
 #include <app/EngineVocabularyBindings.h>
 
@@ -183,7 +183,7 @@ bool Engine::Initialize()
     if (PresentsAWindow(Configuration))
     {
         EngineSystems.Register<MeshOverrideSystem>();
-        EngineSystems.Register<PostEffectLifetimeSystem>();
+        EngineSystems.Register<PresentationLifetimeSystem>();
     }
 
     // A process with nothing to present has nobody listening to it either, so

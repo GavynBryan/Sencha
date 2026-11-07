@@ -84,16 +84,25 @@ public:
                     std::forward<Removed>(removed));
     }
 
-    // Removes whatever a holder entity held once `isAlive` says it has gone.
+    // Removes whatever a holder entity held once `isAlive` says it has gone, among the
+    // contributions `applies` accepts: a kind of contribution that outlives its holder
+    // by design says so here.
+    template <typename IsAlive, typename Removed, typename Applies>
+    void SweepDeadHolders(IsAlive&& isAlive, Removed&& removed, Applies&& applies)
+    {
+        RemoveWhere(
+            [&isAlive, &applies](const Key&, const Contribution& contribution) {
+                const LeaseOwner& holder = contribution.Owner.Holder;
+                return applies(contribution) && holder.IsSet() && !isAlive(holder.Entity);
+            },
+            std::forward<Removed>(removed));
+    }
+
     template <typename IsAlive, typename Removed>
     void SweepDeadHolders(IsAlive&& isAlive, Removed&& removed)
     {
-        RemoveWhere(
-            [&isAlive](const Key&, const Contribution& contribution) {
-                const LeaseOwner& holder = contribution.Owner.Holder;
-                return holder.IsSet() && !isAlive(holder.Entity);
-            },
-            std::forward<Removed>(removed));
+        SweepDeadHolders(std::forward<IsAlive>(isAlive), std::forward<Removed>(removed),
+                         [](const Contribution&) { return true; });
     }
 
     // Every contribution a key loses when the key itself goes.

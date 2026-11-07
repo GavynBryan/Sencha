@@ -5,7 +5,6 @@
 void MeshOverrideSystem::FrameUpdate(FrameUpdateContext& ctx)
 {
     World& world = ctx.Entities;
-    SweepMeshOverrideHolders(world);
     if (!world.IsRegistered<MeshOverrides>() || !world.IsRegistered<StaticMeshComponent>()
         || !world.IsRegistered<SkinnedMeshComponent>())
         return;

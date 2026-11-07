@@ -31,12 +31,9 @@ void AdvancePostEffectLifetimes(World& world, float wallDeltaSeconds)
     PostEffectContributions* contributions = world.TryGetResource<PostEffectContributions>();
     if (contributions == nullptr || contributions->ByEffect.KeyCount() == 0)
         return;
-    contributions->ByEffect.RemoveWhere(
-        [&](PostEffectId, const PostEffectContribution& contribution) {
-            const LeaseOwner& holder = contribution.Owner.Holder;
-            return contribution.Lifetime == PostEffectLifetime::Held && holder.IsSet() && !world.IsAlive(holder.Entity);
-        },
-        [](PostEffectId, const PostEffectContribution&) {});
+    contributions->ByEffect.SweepDeadHolders(
+        [&](EntityId holder) { return world.IsAlive(holder); }, [](PostEffectId, const PostEffectContribution&) {},
+        [](const PostEffectContribution& contribution) { return contribution.Lifetime == PostEffectLifetime::Held; });
     contributions->ByEffect.ForEachKeyMutable([&](PostEffectId, std::vector<PostEffectContribution>& held) {
         for (PostEffectContribution& contribution : held)
             if (contribution.RemainingWallSeconds >= 0.0f)

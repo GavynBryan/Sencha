@@ -24,5 +24,8 @@ struct OutlineContribution
 void SetOutline(World& world, EntityId entity, const OutlineContribution& contribution);
 void ClearOutline(World& world, EntityId entity, const PresentationOwner& owner);
 void ClearOutlinesOf(World& world, PresentationWriterId writer);
+// Removes contributions whose entity or holder has gone. The engine runs it each
+// frame, through PresentationLifetimeSystem.
+void SweepOutlines(World& world);
 [[nodiscard]] bool IsOutlined(const World& world, EntityId entity);
 
