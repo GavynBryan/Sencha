@@ -472,6 +472,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # schemas, so its layout and its id's are layout the module compiled.
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetRef.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetId.h"
+    # A module holds leases by value, alone or inside DataAssetLease.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetLease.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/assets/data/DataAssetLease.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/identity/StrongId.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     # EngineConfig reaches a game module through GameConfigureContext, so its
