@@ -8,12 +8,6 @@
 #include "mesh_material.glsli"
 #include "lighting.glsli"
 
-layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
-// Alpha masking is a pipeline variant rather than a branch every material pays
-// for: a fragment shader that can discard loses early depth testing, and an
-// opaque scene should not give that up to serve the masked materials in it.
-layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
-
 layout(location = 0) out vec4 outColor;
 
 void main()
@@ -25,7 +19,7 @@ void main()
 
     if (MATERIAL_UNLIT)
     {
-        outColor = vec4(baseColor.rgb + emission, baseColor.a);
+        outColor = MeshOutput(baseColor.rgb, emission, baseColor.a);
         return;
     }
 
@@ -89,5 +83,5 @@ void main()
     if (frame.BakedDirectEnabled != 0u)
         lit += baseColor.rgb * SampleBakedDirect();
 
-    outColor = vec4(lit + emission, baseColor.a);
+    outColor = MeshOutput(lit, emission, baseColor.a);
 }

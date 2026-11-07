@@ -171,7 +171,7 @@ is harmless because nothing past the count is read.
 baseColor = pushData.BaseColor * texture(BaseColorTexture, uv0)      // if bound
 emission  = EmissiveFactor.rgb * max(EmissiveFactor.a, 0) * emissiveTexture
 
-if (MATERIAL_UNLIT) { outColor = baseColor.rgb + emission; return; }
+if (MATERIAL_UNLIT) { outColor = MeshOutput(baseColor.rgb, emission, baseColor.a); return; }
 
 orm      = SampleOrm()            // (1,1,0) when unbound: no occlusion, rough, non-metal
 normal   = ResolveWorldNormal(geometricNormal)          // TBN mapping when a normal map is bound
@@ -238,7 +238,7 @@ the loop:
 ```glsl
 if (frame.BakedDirectEnabled != 0u)
     lit += baseColor.rgb * SampleBakedDirect();
-outColor = vec4(lit + emission, baseColor.a);
+outColor = MeshOutput(lit, emission, baseColor.a);
 ```
 
 The forward shader writes scene-referred light. The output pass multiplies it by

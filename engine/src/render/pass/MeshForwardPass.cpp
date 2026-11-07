@@ -54,6 +54,75 @@ namespace
         base.DepthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
         return base;
     }
+
+    // Alpha composites as over too, so a target that started opaque stays opaque
+    // and the editor's UI composite cannot see through the viewport.
+    ColorBlendAttachmentDesc PremultipliedOver()
+    {
+        ColorBlendAttachmentDesc blend{};
+        blend.BlendEnable = true;
+        blend.SrcColor = VK_BLEND_FACTOR_ONE;
+        blend.DstColor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
+        blend.DstAlpha = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        return blend;
+    }
+
+    // `variant` carries OpaquePipelineId's bits. Blended surfaces test against the
+    // opaque scene and write no depth, so they never occlude each other by draw order.
+    GraphicsPipelineDesc MakeShadedPipeline(ShaderHandle vertexShader, ShaderHandle fragmentShader,
+                                            VkPipelineLayout layout, const FrameContext& frame,
+                                            std::size_t variant, bool blended)
+    {
+        const auto has = [variant](std::uint8_t bit) { return (variant & bit) != 0 ? 1u : 0u; };
+        GraphicsPipelineDesc desc = MakeMeshPipelineBase(vertexShader, layout);
+        desc.FragmentShader = fragmentShader;
+        desc.DepthTest = true;
+        desc.DepthWrite = !blended;
+        desc.ColorBlend = { blended ? PremultipliedOver() : ColorBlendAttachmentDesc{} };
+        desc.ColorFormats = { frame.TargetFormat };
+        desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
+        desc.FragmentSpecializationConstants = {
+            ShaderSpecializationConstant{ .Id = 0, .Value = has(kOpaquePipelineUnlitBit) },
+            ShaderSpecializationConstant{ .Id = 1, .Value = has(kOpaquePipelineMaskedBit) },
+            ShaderSpecializationConstant{ .Id = 2, .Value = blended ? 1u : 0u },
+        };
+        desc.CullMode = has(kOpaquePipelineDoubleSidedBit) != 0 ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        return desc;
+    }
+
+    VkPipeline BuildNamed(VulkanPipelineCache& pipelines, VkDevice device, const GraphicsPipelineDesc& desc,
+                          const char* name)
+    {
+        const VkPipeline pipeline = pipelines.GetGraphicsPipeline(desc);
+        if (pipeline != VK_NULL_HANDLE)
+            VulkanDebugLabels::NameObject(device, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(pipeline),
+                                          name);
+        return pipeline;
+    }
+
+    MeshPushConstants MakePushConstants(const Material& material, const RenderQueueItem& item, Vec4 tint)
+    {
+        MeshPushConstants push{};
+        push.BaseColor = Vec4{ material.BaseColor.X * tint.X, material.BaseColor.Y * tint.Y,
+                               material.BaseColor.Z * tint.Z, material.BaseColor.W * tint.W };
+        push.EmissiveFactor = Vec4(material.EmissiveFactor.X, material.EmissiveFactor.Y,
+                                   material.EmissiveFactor.Z, material.EmissiveStrength);
+        push.NormalScale = material.NormalScale;
+        push.RoughnessFactor = material.RoughnessFactor;
+        push.MetallicFactor = material.MetallicFactor;
+        push.SpecularIntensity = material.SpecularIntensity;
+        push.BaseColorTextureIndex = material.BaseColorTextureIndex;
+        push.NormalTextureIndex = material.NormalTextureIndex;
+        push.OrmTextureIndex = material.OrmTextureIndex;
+        push.EmissiveTextureIndex = material.EmissiveTextureIndex;
+        push.ReceiveShadows = material.ReceiveShadows ? 1u : 0u;
+        push.LightmapTextureIndex = item.LightmapTextureIndex;
+        push.AoTextureIndex = item.AoTextureIndex;
+        push.AlphaCutoff = material.AlphaCutoff;
+        return push;
+    }
 } // namespace
 
 static_assert(offsetof(MeshPushConstants, BaseColor) == 0);
@@ -232,35 +301,8 @@ bool MeshForwardPass::EnsurePipelines(const FrameContext& frame)
     return OpaquePipelines.Ensure(
         frame.AttachmentFormats(),
         [&](std::size_t index) {
-            GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
-            desc.FragmentShader = FragmentShader;
-            desc.DepthTest = true;
-            desc.DepthWrite = true;
-            desc.ColorBlend = { ColorBlendAttachmentDesc{} };
-            desc.ColorFormats = { frame.TargetFormat };
-            desc.DepthFormat = frame.DepthFormat;
-            desc.StencilFormat = frame.StencilFormat;
-
-            // Read the axes as bits. The old test for unlit was "index is at
-            // or past UnlitBack", which stops being true the moment a third
-            // axis is added above it.
-            const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
-            const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
-            const bool masked = (index & kOpaquePipelineMaskedBit) != 0;
-            desc.FragmentSpecializationConstants = {
-                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u },
-                ShaderSpecializationConstant{ .Id = 1, .Value = masked ? 1u : 0u }
-            };
-            desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-
-            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
-            if (pipeline != VK_NULL_HANDLE)
-            {
-                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
-                                              reinterpret_cast<std::uint64_t>(pipeline),
-                                              kPipelineNames[index]);
-            }
-            return pipeline;
+            return BuildNamed(*Pipelines, Device, MakeShadedPipeline(VertexShader, FragmentShader, PipelineLayout, frame, index, false),
+                              kPipelineNames[index]);
         });
 }
 
@@ -276,43 +318,8 @@ bool MeshForwardPass::EnsureTransparentPipelines(const FrameContext& frame)
     return TransparentPipelines.Ensure(
         frame.AttachmentFormats(),
         [&](std::size_t index) {
-            GraphicsPipelineDesc desc = MakeMeshPipelineBase(VertexShader, PipelineLayout);
-            desc.FragmentShader = FragmentShader;
-            // Test against the opaque scene, never behind it; write nothing,
-            // so blended surfaces do not occlude each other by draw order.
-            desc.DepthTest = true;
-            desc.DepthWrite = false;
-            // Straight-alpha over, matching the shader's unpremultiplied
-            // output. Alpha composites as over too -- ONE, not SRC_ALPHA -- so
-            // a target that started opaque stays opaque and the editor's UI
-            // composite cannot see through the viewport.
-            ColorBlendAttachmentDesc blend{};
-            blend.BlendEnable = true;
-            blend.SrcColor = VK_BLEND_FACTOR_SRC_ALPHA;
-            blend.DstColor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            blend.SrcAlpha = VK_BLEND_FACTOR_ONE;
-            blend.DstAlpha = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            desc.ColorBlend = { blend };
-            desc.ColorFormats = { frame.TargetFormat };
-            desc.DepthFormat = frame.DepthFormat;
-            desc.StencilFormat = frame.StencilFormat;
-
-            const bool doubleSided = (index & kOpaquePipelineDoubleSidedBit) != 0;
-            const bool unlit = (index & kOpaquePipelineUnlitBit) != 0;
-            desc.FragmentSpecializationConstants = {
-                ShaderSpecializationConstant{ .Id = 0, .Value = unlit ? 1u : 0u },
-                ShaderSpecializationConstant{ .Id = 1, .Value = 0u }
-            };
-            desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-
-            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
-            if (pipeline != VK_NULL_HANDLE)
-            {
-                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
-                                              reinterpret_cast<std::uint64_t>(pipeline),
-                                              kTransparentNames[index]);
-            }
-            return pipeline;
+            return BuildNamed(*Pipelines, Device, MakeShadedPipeline(VertexShader, FragmentShader, PipelineLayout, frame, index, true),
+                              kTransparentNames[index]);
         });
 }
 
@@ -347,11 +354,7 @@ bool MeshForwardPass::EnsureOutlineMaskPipelines(const FrameContext& frame)
                 ShaderSpecializationConstant{ .Id = 1, .Value = masked ? 1u : 0u }
             };
             desc.CullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-            const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
-            if (pipeline != VK_NULL_HANDLE)
-                VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
-                                              reinterpret_cast<std::uint64_t>(pipeline), kNames[index]);
-            return pipeline;
+            return BuildNamed(*Pipelines, Device, desc, kNames[index]);
         });
 }
 
@@ -398,15 +401,7 @@ bool MeshForwardPass::EnsureDebugPipelines(const FrameContext& frame,
         desc.FragmentSpecializationConstants = {
             ShaderSpecializationConstant{ .Id = 1, .Value = (index & 2u) != 0 ? 1u : 0u }
         };
-
-        const VkPipeline pipeline = Pipelines->GetGraphicsPipeline(desc);
-        if (pipeline != VK_NULL_HANDLE)
-        {
-            VulkanDebugLabels::NameObject(Device, VK_OBJECT_TYPE_PIPELINE,
-                                          reinterpret_cast<std::uint64_t>(pipeline),
-                                          overdraw ? kOverdrawNames[index] : kDebugNames[index]);
-        }
-        return pipeline;
+        return BuildNamed(*Pipelines, Device, desc, overdraw ? kOverdrawNames[index] : kDebugNames[index]);
     };
 
     const AttachmentFormatKey key = frame.AttachmentFormats();
@@ -569,205 +564,96 @@ BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
 }
 } // namespace
 
-void MeshForwardPass::DrawRuns(const FrameContext& frame, const DrawContext& ctx,
-                               uint32_t streamedInstances)
+// Outline and debug families draw blended items opaquely: they want the surface, not
+// the composite, and carry only the cull and mask axes.
+VkPipeline MeshForwardPass::SelectPipeline(const RenderQueueItem& item, bool blended) const
 {
-    const RenderQueue& queue = ctx.Queue;
-    StaticMeshCache& meshes = ctx.Meshes;
-    MaterialCache& materials = ctx.Materials;
-    const SkinnedMeshCache* skinnedMeshes = ctx.SkinnedMeshes;
-    const Vec4 tint = ctx.Tint;
-    const std::vector<RenderQueueItem>& items = queue.Opaque();
-    const std::vector<uint32_t>& order = queue.OpaqueOrder();
-
-    // BindFrameState and the instance stream have just been bound, so nothing
-    // this submitter recorded on an earlier frame still describes the buffer.
-    Submitter.ClearTally();
-    Submitter.Invalidate();
-
-    for (const RenderQueueRun& run : queue.OpaqueRuns())
-    {
-        if (run.First >= streamedInstances)
-            continue;
-        const uint32_t drawCount =
-            std::min(run.Count, streamedInstances - run.First);
-        const RenderQueueItem& item = items[order[run.First]];
-        const GpuStaticMesh* mesh = item.SkinnedMesh.IsValid()
-            ? (skinnedMeshes != nullptr ? skinnedMeshes->Get(item.SkinnedMesh) : nullptr)
-            : meshes.Get(item.Mesh);
-        const Material* material = materials.Get(item.Material);
-        if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
-            continue;
-
-        const auto pipelineIndex = static_cast<std::size_t>(item.Pipeline);
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        if (ActiveOutlineSlot != 0)
-        {
-            pipeline = OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
-        }
-        else
+    if (ActiveOutlineSlot != 0)
+        return OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-        if (ActiveDebugView != RenderDebugView::None)
-        {
-            // Debug families carry the cull and mask axes only, so the
-            // lit/unlit half of the id is dropped rather than indexing past
-            // their end.
-            const std::size_t debugVariant = DebugPipelineIndex(item.Pipeline);
-            pipeline = ActiveDebugView == RenderDebugView::Overdraw
-                ? OverdrawPipelines.Get(debugVariant)
-                : DebugPipelines.Get(debugVariant);
-        }
-        else
+    if (ActiveDebugView != RenderDebugView::None)
+        return (ActiveDebugView == RenderDebugView::Overdraw ? OverdrawPipelines : DebugPipelines)
+            .Get(DebugPipelineIndex(item.Pipeline));
 #endif
-        {
-            pipeline = OpaquePipelines.Get(pipelineIndex);
-        }
-        if (pipeline == VK_NULL_HANDLE)
-            continue;
+    return blended ? TransparentPipelines.Get(TransparentPipelineIndex(item.Pipeline))
+                   : OpaquePipelines.Get(static_cast<std::size_t>(item.Pipeline));
+}
 
-        const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
+void MeshForwardPass::RecordItem(const FrameContext& frame, const DrawContext& ctx, const RenderQueueItem& item,
+                                 bool blended, uint32_t firstInstance, uint32_t instanceCount)
+{
+    const GpuStaticMesh* mesh = item.SkinnedMesh.IsValid()
+        ? (ctx.SkinnedMeshes != nullptr ? ctx.SkinnedMeshes->Get(item.SkinnedMesh) : nullptr)
+        : ctx.Meshes.Get(item.Mesh);
+    const Material* material = ctx.Materials.Get(item.Material);
+    if (mesh == nullptr || material == nullptr || item.SectionIndex >= mesh->Sections.size())
+        return;
+    const VkPipeline pipeline = SelectPipeline(item, blended);
+    if (pipeline == VK_NULL_HANDLE)
+        return;
 
-        MeshPushConstants push{};
-        push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
-                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
-        push.EmissiveFactor = Vec4(material->EmissiveFactor.X,
-                                   material->EmissiveFactor.Y,
-                                   material->EmissiveFactor.Z,
-                                   material->EmissiveStrength);
-        push.NormalScale = material->NormalScale;
-        push.RoughnessFactor = material->RoughnessFactor;
-        push.MetallicFactor = material->MetallicFactor;
-        push.SpecularIntensity = material->SpecularIntensity;
-        push.BaseColorTextureIndex = material->BaseColorTextureIndex;
-        push.NormalTextureIndex = material->NormalTextureIndex;
-        push.OrmTextureIndex = material->OrmTextureIndex;
-        push.EmissiveTextureIndex = material->EmissiveTextureIndex;
-        push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
-        push.LightmapTextureIndex = item.LightmapTextureIndex;
-        push.AoTextureIndex = item.AoTextureIndex;
-        // Only the masked variants read it, so an opaque material's value is
-        // carried but never consulted.
-        push.AlphaCutoff = material->AlphaCutoff;
+    // Layout-scoped, so independent of whatever the submitter decides to rebind.
+    const MeshPushConstants push = MakePushConstants(*material, item, ctx.Tint);
+    vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+    ++LastStats.MaterialSwitches;
 
-        // Push constants are layout-scoped rather than pipeline-scoped, so
-        // this is independent of whatever the submitter decides to rebind.
-        vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(push), &push);
-        ++LastStats.MaterialSwitches;
+    const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
+    MeshDrawCommand draw{};
+    draw.Pipeline = pipeline;
+    draw.VertexBuffer = Buffers->GetBuffer(ResolveVertexBuffer(item, *mesh, Poses));
+    draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
+    draw.IndexCount = section.IndexCount;
+    draw.IndexOffset = section.IndexOffset;
+    draw.InstanceCount = instanceCount;
+    draw.FirstInstance = firstInstance;
+    Submitter.Submit(frame.Cmd, draw);
+}
 
-        MeshDrawCommand draw{};
-        draw.Pipeline = pipeline;
-        draw.VertexBuffer =
-            Buffers->GetBuffer(ResolveVertexBuffer(item, *mesh, Poses));
-        draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
-        draw.IndexCount = section.IndexCount;
-        draw.IndexOffset = section.IndexOffset;
-        draw.InstanceCount = drawCount;
-        draw.FirstInstance = run.First;
-        Submitter.Submit(frame.Cmd, draw);
-    }
-
+void MeshForwardPass::PublishTally()
+{
     const MeshDrawTally& tally = Submitter.Tally();
     LastStats.DrawCalls = tally.Draws;
     LastStats.Triangles = tally.Triangles;
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
+void MeshForwardPass::DrawRuns(const FrameContext& frame, const DrawContext& ctx,
+                               uint32_t streamedInstances)
+{
+    const std::vector<RenderQueueItem>& items = ctx.Queue.Opaque();
+    const std::vector<uint32_t>& order = ctx.Queue.OpaqueOrder();
+
+    // BindFrameState and the instance stream have just been bound, so nothing
+    // this submitter recorded on an earlier frame still describes the buffer.
+    Submitter.ClearTally();
+    Submitter.Invalidate();
+
+    for (const RenderQueueRun& run : ctx.Queue.OpaqueRuns())
+    {
+        if (run.First >= streamedInstances)
+            continue;
+        RecordItem(frame, ctx, items[order[run.First]], false, run.First,
+                   std::min(run.Count, streamedInstances - run.First));
+    }
+    PublishTally();
+}
+
 void MeshForwardPass::RecordTransparentItems(const FrameContext& frame,
                                              const DrawContext& ctx,
                                              uint32_t streamedInstances)
 {
-    const RenderQueue& queue = ctx.Queue;
-    StaticMeshCache& meshes = ctx.Meshes;
-    MaterialCache& materials = ctx.Materials;
-    const SkinnedMeshCache* skinnedMeshes = ctx.SkinnedMeshes;
-    const Vec4 tint = ctx.Tint;
-    const std::vector<RenderQueueItem>& items = queue.Transparent();
-    const uint32_t opaqueCount = static_cast<uint32_t>(queue.OpaqueOrder().size());
+    const std::vector<RenderQueueItem>& items = ctx.Queue.Transparent();
+    const uint32_t opaqueCount = static_cast<uint32_t>(ctx.Queue.OpaqueOrder().size());
 
     for (uint32_t position = 0; position < TransparentOrder.size(); ++position)
     {
-        // Instance data for this draw sits at opaqueCount + position; past the
-        // streamed grant there is nothing to read.
+        // Past the streamed grant there is no instance data to read.
         const uint32_t instanceIndex = opaqueCount + position;
         if (instanceIndex >= streamedInstances)
             break;
-
-        const RenderQueueItem& item = items[TransparentOrder[position]];
-        const GpuStaticMesh* mesh = item.SkinnedMesh.IsValid()
-            ? (skinnedMeshes != nullptr ? skinnedMeshes->Get(item.SkinnedMesh) : nullptr)
-            : meshes.Get(item.Mesh);
-        const Material* material = materials.Get(item.Material);
-        if (mesh == nullptr || material == nullptr
-            || item.SectionIndex >= mesh->Sections.size())
-            continue;
-
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        if (ActiveOutlineSlot != 0)
-        {
-            pipeline = OutlineMaskPipelines.Get(DebugPipelineIndex(item.Pipeline));
-        }
-        else
-#ifdef SENCHA_ENABLE_RENDER_PROFILING
-        if (ActiveDebugView != RenderDebugView::None)
-        {
-            // Debug channels inspect geometry, so blended items appear in them
-            // -- opaquely, which is the point: a debug view wants the surface,
-            // not the composite.
-            pipeline = ActiveDebugView == RenderDebugView::Overdraw
-                ? OverdrawPipelines.Get(DebugPipelineIndex(item.Pipeline))
-                : DebugPipelines.Get(DebugPipelineIndex(item.Pipeline));
-        }
-        else
-#endif
-        {
-            pipeline = TransparentPipelines.Get(TransparentPipelineIndex(item.Pipeline));
-        }
-        if (pipeline == VK_NULL_HANDLE)
-            continue;
-
-        const StaticMeshSection& section = mesh->Sections[item.SectionIndex];
-
-        MeshPushConstants push{};
-        push.BaseColor = Vec4{ material->BaseColor.X * tint.X, material->BaseColor.Y * tint.Y,
-                               material->BaseColor.Z * tint.Z, material->BaseColor.W * tint.W };
-        push.EmissiveFactor = Vec4(material->EmissiveFactor.X,
-                                   material->EmissiveFactor.Y,
-                                   material->EmissiveFactor.Z,
-                                   material->EmissiveStrength);
-        push.NormalScale = material->NormalScale;
-        push.RoughnessFactor = material->RoughnessFactor;
-        push.MetallicFactor = material->MetallicFactor;
-        push.SpecularIntensity = material->SpecularIntensity;
-        push.BaseColorTextureIndex = material->BaseColorTextureIndex;
-        push.NormalTextureIndex = material->NormalTextureIndex;
-        push.OrmTextureIndex = material->OrmTextureIndex;
-        push.EmissiveTextureIndex = material->EmissiveTextureIndex;
-        push.ReceiveShadows = material->ReceiveShadows ? 1u : 0u;
-        push.LightmapTextureIndex = item.LightmapTextureIndex;
-        push.AoTextureIndex = item.AoTextureIndex;
-        push.AlphaCutoff = material->AlphaCutoff;
-
-        vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(push), &push);
-        ++LastStats.MaterialSwitches;
-
-        MeshDrawCommand draw{};
-        draw.Pipeline = pipeline;
-        draw.VertexBuffer =
-            Buffers->GetBuffer(ResolveVertexBuffer(item, *mesh, Poses));
-        draw.IndexBuffer = Buffers->GetBuffer(mesh->IndexBuffer);
-        draw.IndexCount = section.IndexCount;
-        draw.IndexOffset = section.IndexOffset;
-        draw.InstanceCount = 1;
-        draw.FirstInstance = instanceIndex;
-        Submitter.Submit(frame.Cmd, draw);
+        RecordItem(frame, ctx, items[TransparentOrder[position]], true, instanceIndex, 1);
     }
-
-    const MeshDrawTally& tally = Submitter.Tally();
-    LastStats.DrawCalls = tally.Draws;
-    LastStats.Triangles = tally.Triangles;
-    LastStats.PipelineSwitches = tally.PipelineBinds;
+    PublishTally();
 }
 
 void MeshForwardPass::DrawOutlineMask(const FrameContext& frame, const CameraRenderData& camera,

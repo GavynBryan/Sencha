@@ -229,6 +229,10 @@ private:
     // one draw have no order against each other, and order is the contract.
     void RecordTransparentItems(const FrameContext& frame, const DrawContext& ctx,
                                 uint32_t streamedInstances);
+    void RecordItem(const FrameContext& frame, const DrawContext& ctx, const RenderQueueItem& item, bool blended,
+                    uint32_t firstInstance, uint32_t instanceCount);
+    [[nodiscard]] VkPipeline SelectPipeline(const RenderQueueItem& item, bool blended) const;
+    void PublishTally();
 
     VulkanBufferService* Buffers = nullptr;
     VulkanDescriptorCache* Descriptors = nullptr;
@@ -253,7 +257,7 @@ private:
     // One variant per OpaquePipelineId: lit and unlit, back-face culled and
     // double-sided, opaque and alpha-masked.
     PipelineVariantSet<kOpaquePipelineCount, AttachmentFormatKey> OpaquePipelines;
-    // Blended geometry: depth test on, depth write off, straight-alpha over.
+    // Blended geometry: depth test on, depth write off, premultiplied over.
     PipelineVariantSet<kTransparentPipelineCount, AttachmentFormatKey> TransparentPipelines;
     // Cull and mask axes, the same two the debug families vary over.
     PipelineVariantSet<kDebugPipelineCount, AttachmentFormatKey> OutlineMaskPipelines;

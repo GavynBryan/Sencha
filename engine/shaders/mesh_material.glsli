@@ -1,3 +1,9 @@
+// Pipeline variants rather than branches: a shader that can discard loses early
+// depth testing, which an opaque scene should not pay for its masked materials.
+layout(constant_id = 0) const bool MATERIAL_UNLIT = false;
+layout(constant_id = 1) const bool MATERIAL_ALPHA_MASK = false;
+layout(constant_id = 2) const bool MATERIAL_BLEND = false;
+
 layout(location = 0) in vec3 inWorldNormal;
 layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec3 inWorldPos;
@@ -98,4 +104,12 @@ vec3 ResolveEmission()
     return pushData.EmissiveFactor.rgb
          * max(pushData.EmissiveFactor.a, 0.0)
          * emissiveTexture;
+}
+
+// Blended variants write premultiplied colour, so emission adds at full
+// strength whatever the surface's coverage.
+vec4 MeshOutput(vec3 surface, vec3 emission, float alpha)
+{
+    return MATERIAL_BLEND ? vec4(surface * alpha + emission, alpha)
+                          : vec4(surface + emission, alpha);
 }
