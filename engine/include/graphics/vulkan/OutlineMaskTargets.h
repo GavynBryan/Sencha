@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 // The style slot as the integer part and the surface's depth as the fraction.
@@ -27,6 +28,12 @@ struct OutlineMaskAttachments
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     VkFormat StencilFormat = VK_FORMAT_UNDEFINED;
 };
+
+// Opens the mask's scope -- cleared, testing against the scene's depth and writing
+// none, and leaving the mask readable after -- and records `draw` inside it. Outside
+// any scope. The runtime feature and an editor view share it.
+void RecordOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& attachments,
+                       const std::function<void(const FrameContext&)>& draw);
 
 // Where the composite can land for this camera's screen bounds, in `extent` pixels.
 // Empty when nothing outlined is on screen.

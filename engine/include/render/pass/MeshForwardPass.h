@@ -1,6 +1,5 @@
 #pragma once
 
-#include <graphics/vulkan/OutlineMaskTargets.h>
 #include <graphics/vulkan/MeshDrawSubmitter.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
@@ -157,17 +156,15 @@ public:
         MaterialCache& Materials;
         const SkinnedMeshCache* SkinnedMeshes = nullptr;
         Vec4 Tint = Vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
-        // Nonzero draws the queue into an R8 outline mask instead of shading it,
+        // Nonzero draws the queue into the outline mask instead of shading it,
         // writing this slot where the surface passes the scene's depth.
         std::uint8_t OutlineStyleSlot = 0;
     };
     void Draw(const FrameContext& frame, const DrawContext& ctx);
 
-    // A frame's outline queues into a cleared mask, lowest priority first, against
-    // the scene's depth, with the mask's scope and barriers around them. Outside any
-    // scope; leaves the mask readable. The runtime feature and an editor view share it.
-    void DrawOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& attachments,
-                         const CameraRenderData& camera, const RenderLightSet& lights, StaticMeshCache& meshes,
+    // A frame's outline queues, lowest priority first, inside the mask's scope that
+    // RecordOutlineMask opens. The runtime feature and an editor view share it.
+    void DrawOutlineMask(const FrameContext& frame, const CameraRenderData& camera, StaticMeshCache& meshes,
                          MaterialCache& materials, const SkinnedMeshCache* skinnedMeshes, OutlineFrame& outlines);
     void Teardown();
 

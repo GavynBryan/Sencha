@@ -770,42 +770,20 @@ void MeshForwardPass::RecordTransparentItems(const FrameContext& frame,
     LastStats.PipelineSwitches = tally.PipelineBinds;
 }
 
-void MeshForwardPass::DrawOutlineMask(const FrameContext& frame, const OutlineMaskAttachments& attachments,
-                                      const CameraRenderData& camera, const RenderLightSet& lights,
+void MeshForwardPass::DrawOutlineMask(const FrameContext& frame, const CameraRenderData& camera,
                                       StaticMeshCache& meshes, MaterialCache& materials,
                                       const SkinnedMeshCache* skinnedMeshes, OutlineFrame& outlines)
 {
-    RenderTargetSession session(frame.Cmd, attachments.MaskImage, *attachments.MaskAccess);
-
-    RenderScopeDesc desc{};
-    desc.Area.extent = attachments.Extent;
-    desc.Color.View = attachments.MaskView;
-    desc.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    desc.ColorFormat = kOutlineMaskFormat;
-    // Read only: the mask tests against the scene's depth and writes none, and a
-    // store would count as a write a later reader in the phase must be ordered after.
-    desc.Depth.View = attachments.DepthView;
-    desc.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    desc.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
-    desc.DepthFormat = attachments.DepthFormat;
-    if (attachments.StencilFormat != VK_FORMAT_UNDEFINED)
-    {
-        desc.Stencil.View = attachments.DepthView;
-        desc.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        desc.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_NONE;
-        desc.StencilFormat = attachments.StencilFormat;
-    }
-    desc.Phase = RenderPhase::Post;
-    const RenderScope scope(frame, desc);
-
+    // The mask shades nothing, so it reads no lights.
+    static const RenderLightSet kNoLights{};
     for (const OutlineStyleId style : outlines.DrawOrder)
-        Draw(scope.Context(), DrawContext{ .Camera = camera,
-                                           .Lights = lights,
-                                           .Queue = outlines.Queues[style.Slot],
-                                           .Meshes = meshes,
-                                           .Materials = materials,
-                                           .SkinnedMeshes = skinnedMeshes,
-                                           .OutlineStyleSlot = style.Slot });
+        Draw(frame, DrawContext{ .Camera = camera,
+                                 .Lights = kNoLights,
+                                 .Queue = outlines.Queues[style.Slot],
+                                 .Meshes = meshes,
+                                 .Materials = materials,
+                                 .SkinnedMeshes = skinnedMeshes,
+                                 .OutlineStyleSlot = style.Slot });
 }
 
 void MeshForwardPass::Draw(const FrameContext& frame, const DrawContext& ctx)

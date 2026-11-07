@@ -12,8 +12,7 @@ class OutlineRenderFeature final : public IRenderFeature
 public:
     // `forward` belongs to the mesh feature this declares a dependency on.
     OutlineRenderFeature(MeshForwardPass& forward, OutlineFrame& outlines, const CameraRenderData& camera,
-                         const RenderLightSet& lights, StaticMeshCache& meshes, MaterialCache& materials,
-                         const SkinnedMeshCache* skinnedMeshes);
+                         StaticMeshCache& meshes, MaterialCache& materials, const SkinnedMeshCache* skinnedMeshes);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Post; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
@@ -26,7 +25,6 @@ private:
     MeshForwardPass* Forward = nullptr;
     OutlineFrame* Outlines = nullptr;
     const CameraRenderData* Camera = nullptr;
-    const RenderLightSet* Lights = nullptr;
     StaticMeshCache* Meshes = nullptr;
     MaterialCache* Materials = nullptr;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;

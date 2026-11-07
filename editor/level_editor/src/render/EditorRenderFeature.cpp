@@ -705,15 +705,17 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); },
         !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
             SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
-            Forward.DrawOutlineMask(between,
-                                    OutlineMaskAttachments{ .MaskImage = mask->Mask.ColorImage,
-                                                            .MaskView = mask->Mask.ColorView,
-                                                            .MaskAccess = mask->Mask.ColorAccess,
-                                                            .Extent = mask->Mask.Extent,
-                                                            .DepthView = target.DepthView,
-                                                            .DepthFormat = VK_FORMAT_D32_SFLOAT },
-                                    camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
-                                    SelectionOutlines);
+            RecordOutlineMask(between,
+                              OutlineMaskAttachments{ .MaskImage = mask->Mask.ColorImage,
+                                                      .MaskView = mask->Mask.ColorView,
+                                                      .MaskAccess = mask->Mask.ColorAccess,
+                                                      .Extent = mask->Mask.Extent,
+                                                      .DepthView = target.DepthView,
+                                                      .DepthFormat = VK_FORMAT_D32_SFLOAT },
+                              [&](const FrameContext& scope) {
+                                  Forward.DrawOutlineMask(scope, camera, *MeshCache, *MaterialStore,
+                                                          SkinnedMeshCacheRef, SelectionOutlines);
+                              });
             const VkRect2D scissor = OutlineScissorFor(SelectionOutlines.CompositeInputs(), target.Extent);
             if (scissor.extent.width == 0 || scissor.extent.height == 0)
                 return;

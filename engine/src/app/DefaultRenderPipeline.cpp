@@ -129,7 +129,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     static constexpr std::array<std::string_view, 1> kOutlineDeps{ kMesh };
     static constexpr std::array<std::string_view, 1> kPostDeps{ kOutline };
     graphics.MainRenderer.StageFeature(
-        std::make_unique<OutlineRenderFeature>(mesh->ForwardPass(), Outlines, Camera, Lights, *Meshes, *Materials,
+        std::make_unique<OutlineRenderFeature>(mesh->ForwardPass(), Outlines, Camera, *Meshes, *Materials,
                                                SkinnedMeshes),
         FeatureRegistration{ .Id = kOutline, .DependsOn = kOutlineDeps });
 
