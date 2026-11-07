@@ -406,3 +406,35 @@ TEST(CharacterMoverPoolStep, RestoreIsWhereTheNextSweepStartsFrom)
         << "the transform-only write survived a sweep, so this test can no "
            "longer tell a real correction from a lost one";
 }
+
+TEST(CharacterMoverPool, ACharacterPlacedUnderAnotherEntityBecomesARootWhereItStands)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    if (!ecs.IsRegistered<Parent>())
+        ecs.RegisterComponent<Parent>();
+    CharacterMoverPool pool(physics);
+
+    const EntityId placement = ecs.CreateEntity();
+    Transform3f placed;
+    placed.Position = Vec3d(10.0f, 0.0f, 0.0f);
+    placed.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), 3.14159265f);
+    ecs.AddComponent<LocalTransform>(placement, LocalTransform{ placed });
+    const EntityId character = SpawnCharacter(ecs, Vec3d(1.0f, 5.0f, 0.0f));
+    ecs.AddComponent<Parent>(character, Parent{ placement });
+
+    pool.Reconcile(ecs, ActivePartitions());
+    EXPECT_FALSE(ecs.HasComponent<Parent>(character));
+    const LocalTransform* rooted = ecs.TryGet<LocalTransform>(character);
+    ASSERT_NE(rooted, nullptr);
+    EXPECT_NEAR(rooted->Value.Position.X, 9.0f, 1e-4f);
+    EXPECT_NEAR(rooted->Value.Position.Y, 5.0f, 1e-4f);
+    EXPECT_NEAR(std::abs(rooted->Value.Rotation.Y), 1.0f, 1e-4f);
+
+    ecs.TryGet<MotionRequest>(character)->Velocity = Vec3d(6.0f, 0.0f, 0.0f);
+    pool.Drive(ecs, ActivePartitions(), kFixedDt, Vec3d::Zero());
+    EXPECT_GT(ecs.TryGet<LocalTransform>(character)->Value.Position.X, 9.0f);
+}

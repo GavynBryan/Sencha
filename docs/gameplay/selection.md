@@ -70,10 +70,12 @@ moves.
 
 `SelectionEvaluator(world, queries).Evaluate(table, context, scratch, trace)`
 is a pure read on the owner thread. The context carries the entities and
-inputs in table order, the current option and how long it has held, and a
-seed.
+inputs in table order, the current option and how long it has held, a mask of
+options the caller rules out (one whose execution has nowhere to go, say), and
+a seed.
 
-1. Each option's requirements run first; the first failure disqualifies it and
+1. An option the caller ruled out is disqualified before anything is asked.
+   Each other option's requirements run first; the first failure disqualifies it and
    skips the rest of its considerations.
 2. A qualified option's score is the weighted mean of its curve outputs,
    summed in authored order.

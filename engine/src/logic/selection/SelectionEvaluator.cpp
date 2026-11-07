@@ -110,7 +110,10 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
                 trace->Values[traced->FirstValue + index] = { value, output, status };
         };
 
-        bool qualified = true;
+        const bool unavailable = optionIndex < 64 && (context.Unavailable >> optionIndex & 1u) != 0;
+        if (traced != nullptr)
+            traced->Unavailable = unavailable;
+        bool qualified = !unavailable;
         for (std::uint32_t index = 0; qualified && index < considerations.size(); ++index)
         {
             const SelectionConsideration& consideration = considerations[index];

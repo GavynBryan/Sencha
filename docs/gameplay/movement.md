@@ -307,6 +307,11 @@ those — so the same motor serves any up axis and any mode.
 `CharacterMoverPool::Drive` feeds it each character's `MotionRequest` and
 writes back position, achieved velocity, and support.
 
+A character moves in world space and writes its `LocalTransform` as such, so a
+character is a root. One placed under another entity, as a prefab instance's
+members are under the instance, is detached when its mover binds, keeping
+where it stands (`CharacterMoverPool::Reconcile`).
+
 Config knobs (`CharacterMoverConfig`): capsule radius/height, slope limit,
 step height, ground-snap distance, skin width, push mass.
 

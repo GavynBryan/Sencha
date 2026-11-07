@@ -38,6 +38,9 @@ struct SelectionContext
     std::span<const float> Inputs;
     std::optional<std::uint32_t> Current;
     float CurrentSeconds = 0.0f;
+    // A bit per option the caller rules out, such as one whose execution has
+    // nowhere to go right now.
+    std::uint64_t Unavailable = 0;
     // PickFromBand only.
     std::uint64_t Seed = 0;
 };
@@ -69,6 +72,8 @@ struct SelectionTraceValue
 struct SelectionTraceOption
 {
     bool Qualified = false;
+    // Ruled out by the caller before any consideration ran.
+    bool Unavailable = false;
     // The consideration that disqualified it, when one did.
     std::optional<std::uint32_t> RejectedBy;
     float Score = 0.0f;

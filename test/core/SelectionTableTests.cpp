@@ -308,6 +308,25 @@ TEST(SelectionTable, BandPickIsSeededAndStaysInTheBand)
     EXPECT_EQ(picked, (std::set<std::uint32_t>{ 0u, 1u, 2u }));
 }
 
+TEST(SelectionTable, AnOptionTheCallerRulesOutNeitherWinsNorHolds)
+{
+    SelectionHarness harness;
+    const std::optional<SelectionTable> table = harness.Bind(kDistanceTable);
+    ASSERT_TRUE(table);
+    const EntityId entities[] = { harness.Querier, harness.Threat };
+    const std::vector<float> inputs{ 2.0f };
+    const SelectionEvaluator evaluator(harness.Entities, &*harness.Dispatcher);
+    SelectionTrace trace;
+    const SelectionResult result = evaluator.Evaluate(
+        *table, SelectionContext{ .Entities = entities, .Inputs = inputs, .Current = 0u, .CurrentSeconds = 0.0f,
+                                  .Unavailable = 1u },
+        harness.Scratch, &trace);
+    EXPECT_EQ(result.Option, 1u);
+    EXPECT_EQ(result.Decision, SelectionDecision::Chosen);
+    EXPECT_TRUE(trace.Options[0].Unavailable);
+    EXPECT_FALSE(trace.Options[0].Qualified);
+}
+
 TEST(SelectionTable, TooSmallAContextIsMissingNotAChoice)
 {
     SelectionHarness harness;
