@@ -1,5 +1,6 @@
 #include <physics/PhysicsQueries.h>
 
+#include "JoltStartup.h"
 #include "PhysicsLayers.h"
 
 #include "PhysicsWorldImpl.h"
@@ -102,6 +103,8 @@ RaycastHit PhysicsQueries::Raycast(const Vec3d& origin,
 std::optional<float> RaycastShape(const CollisionShape& shape, const Transform3f& pose, const Vec3d& origin,
                                   const Vec3d& unitDirection, float maxDistance)
 {
+    // No world need exist yet to build the shape.
+    EnsureJoltRegistered();
     const JPH::ShapeRefC jShape = BuildShape(ScaledCollisionShape(shape, pose.Scale));
     if (jShape == nullptr || !(maxDistance > 0.0f))
         return std::nullopt;
