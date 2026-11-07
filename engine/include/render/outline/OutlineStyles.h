@@ -20,17 +20,21 @@ struct OutlineStyleDesc
 {
     // sRGB, as a colour is authored; converted to linear once at registration.
     Vec<3> Color;
-    float WidthPixels = 2.0f;
+    // Density-independent pixels: the engine scales it by the display's scale when it
+    // draws, so an outline keeps its look across displays and a scale change.
+    float WidthDp = 2.0f;
     // Where two styles compete for a pixel, the higher wins. Unique per World.
     std::int16_t Priority = 0;
 };
 
-// A style as the composite reads it.
+// A style as the composite reads it, its width resolved to physical pixels.
 struct OutlineStyleEntry
 {
     Vec<3> LinearColor;
     float WidthPixels = 0.0f;
     std::int16_t Priority = 0;
+
+    friend bool operator==(const OutlineStyleEntry&, const OutlineStyleEntry&) = default;
 };
 
 using OutlineStyleTable = std::array<OutlineStyleEntry, kMaxOutlineStyles + 1>;
@@ -40,8 +44,6 @@ using OutlineStyleTable = std::array<OutlineStyleEntry, kMaxOutlineStyles + 1>;
 struct OutlineCompositeInputs
 {
     const OutlineStyleTable* Styles = nullptr;
-    // Moves when the styles change, so the table is uploaded only then.
-    std::uint32_t StylesVersion = 0;
     float MaxWidthPixels = 0.0f;
     // What the outlined items cover in normalized device coordinates, x then y.
     float ScreenMin[2] = { 1.0f, 1.0f };

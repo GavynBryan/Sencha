@@ -28,8 +28,6 @@ struct OutlineFrame
     // from -1 to 1. The whole view when an item reaches behind the camera.
     float ScreenMin[2] = { 1.0f, 1.0f };
     float ScreenMax[2] = { -1.0f, -1.0f };
-    // Moves when the World's styles change, so the table is uploaded only then.
-    std::uint32_t StylesVersion = 0;
 
     [[nodiscard]] bool IsEmpty() const { return StyleOf.empty(); }
     // The queue an entity's sections also go to, or null when it has no outline.
@@ -42,5 +40,6 @@ struct OutlineFrame
     [[nodiscard]] OutlineCompositeInputs CompositeInputs() const;
 };
 
-// Resolves each living entity's outline, passing over contributions whose holder has gone.
-void ExtractOutlines(const World& world, OutlineFrame& out);
+// Resolves each living entity's outline, passing over contributions whose holder has
+// gone, with style widths at `pixelsPerDp` physical pixels to the dp.
+void ExtractOutlines(const World& world, OutlineFrame& out, float pixelsPerDp = 1.0f);

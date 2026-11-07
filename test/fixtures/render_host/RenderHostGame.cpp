@@ -255,8 +255,8 @@ struct OutlineFigureSystem
         if (!Writer.IsValid())
         {
             Writer = RegisterPresentationWriter(world, "render_host.outline");
-            Left = RegisterOutlineStyle(world, "left", { .Color = Vec<3>(1.0f, 0.8f, 0.1f), .WidthPixels = 3.0f, .Priority = 1 });
-            Right = RegisterOutlineStyle(world, "right", { .Color = Vec<3>(0.1f, 0.9f, 1.0f), .WidthPixels = 3.0f, .Priority = 2 });
+            Left = RegisterOutlineStyle(world, "left", { .Color = Vec<3>(1.0f, 0.8f, 0.1f), .WidthDp = 3.0f, .Priority = 1 });
+            Right = RegisterOutlineStyle(world, "right", { .Color = Vec<3>(0.1f, 0.9f, 1.0f), .WidthDp = 3.0f, .Priority = 2 });
             Meshes.emplace(world);
             Skinned.emplace(world);
         }

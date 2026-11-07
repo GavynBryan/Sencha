@@ -14,6 +14,7 @@ namespace
     struct OutlineStyleRecord
     {
         std::string Name;
+        // Its width is still in dp: extraction resolves it for the display.
         OutlineStyleEntry Entry;
     };
 
@@ -22,7 +23,6 @@ namespace
     struct OutlineStyles
     {
         std::vector<OutlineStyleRecord> Records;
-        std::uint32_t Version = 0;
     };
 
     struct OutlineContributions
@@ -49,9 +49,8 @@ OutlineStyleId RegisterOutlineStyle(World& world, std::string_view name, const O
     styles.Records.push_back({ .Name = std::string(name),
                                .Entry = { .LinearColor = Vec<3>(SrgbToLinear(desc.Color.X), SrgbToLinear(desc.Color.Y),
                                                                 SrgbToLinear(desc.Color.Z)),
-                                          .WidthPixels = desc.WidthPixels,
+                                          .WidthPixels = desc.WidthDp,
                                           .Priority = desc.Priority } });
-    ++styles.Version;
     return OutlineStyleId{ static_cast<std::uint8_t>(styles.Records.size()) };
 }
 
@@ -141,7 +140,7 @@ void SweepOutlines(World& world)
                                              [](EntityId, const OutlineContribution&) {});
 }
 
-void ExtractOutlines(const World& world, OutlineFrame& out)
+void ExtractOutlines(const World& world, OutlineFrame& out, float pixelsPerDp)
 {
     out.Reset();
     const OutlineContributions* contributions = world.TryGetResource<OutlineContributions>();
@@ -151,9 +150,12 @@ void ExtractOutlines(const World& world, OutlineFrame& out)
     const OutlineStyles* styles = world.TryGetResource<OutlineStyles>();
     if (styles == nullptr)
         return;
-    out.StylesVersion = styles->Version;
+    // A record holds its width in dp; the frame's table, in this display's pixels.
     for (std::size_t i = 0; i < styles->Records.size(); ++i)
+    {
         out.Styles[i + 1] = styles->Records[i].Entry;
+        out.Styles[i + 1].WidthPixels *= pixelsPerDp;
+    }
 
     // Read only: what has gone since SweepOutlines last ran is passed over, not removed.
     contributions->ByEntity.ForEachKey([&](EntityId entity, const std::vector<OutlineContribution>&) {
@@ -172,7 +174,6 @@ void ExtractOutlines(const World& world, OutlineFrame& out)
 OutlineCompositeInputs OutlineFrame::CompositeInputs() const
 {
     return OutlineCompositeInputs{ .Styles = &Styles,
-                                   .StylesVersion = StylesVersion,
                                    .MaxWidthPixels = MaxWidthPixels,
                                    .ScreenMin = { ScreenMin[0], ScreenMin[1] },
                                    .ScreenMax = { ScreenMax[0], ScreenMax[1] } };

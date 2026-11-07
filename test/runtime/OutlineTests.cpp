@@ -14,7 +14,7 @@ namespace
 {
     OutlineStyleDesc Style(std::int16_t priority)
     {
-        return { .Color = Vec<3>(1.0f, 0.5f, 0.0f), .WidthPixels = 2.0f, .Priority = priority };
+        return { .Color = Vec<3>(1.0f, 0.5f, 0.0f), .WidthDp = 2.0f, .Priority = priority };
     }
 
     PresentationOwner Writer(std::uint32_t writer, EntityId holder = {})
@@ -173,6 +173,17 @@ TEST(Outlines, TheScreenBoundsCoverTheQueuedItemsAndAnItemAcrossTheEyePlaneTakes
     behind[3][3] = -1.0f;
     f.Frame.Finish(behind);
     EXPECT_GT(f.Frame.ScreenMin[0], f.Frame.ScreenMax[0]);
+}
+
+TEST(Outlines, AStyleWidthInDpScalesWithTheDisplay)
+{
+    Fixture f;
+    SetOutline(f.Entities, f.Target, Outline(Writer(1), f.Low));
+    ExtractOutlines(f.Entities, f.Frame, 1.5f);
+    EXPECT_FLOAT_EQ(f.Frame.MaxWidthPixels, 3.0f);
+    EXPECT_FLOAT_EQ(f.Frame.Styles[f.Low.Slot].WidthPixels, 3.0f);
+    ExtractOutlines(f.Entities, f.Frame, 1.0f);
+    EXPECT_FLOAT_EQ(f.Frame.MaxWidthPixels, 2.0f) << "a scale change takes effect on the next frame";
 }
 
 TEST(Outlines, NothingOnScreenGivesAnEmptyScissor)

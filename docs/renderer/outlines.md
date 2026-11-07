@@ -5,10 +5,13 @@ visible part of the entity only.
 
 ## Using one
 
-`RegisterOutlineStyle(world, name, {Color, WidthPixels, Priority})` returns a slot from 1
+`RegisterOutlineStyle(world, name, {Color, WidthDp, Priority})` returns a slot from 1
 to 15. A duplicate priority or a sixteenth style is refused, and styles are per World, so a
 game owns its own and the editor owns its own. Colors are authored in sRGB and converted to
-linear once, at registration.
+linear once, at registration. The width is in density-independent pixels: extraction scales it
+by the primary window's display scale every frame (`RenderExtractContext::PixelsPerDp`), so it
+follows the UI across displays and a scale change, and the style table is uploaded again
+whenever its contents differ.
 
 `SetOutline(world, entity, {Owner, Style, Order})` holds an outline in the shared
 [store](presentation-contributions.md). An outline adds no component, so an entity's

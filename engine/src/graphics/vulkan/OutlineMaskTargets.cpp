@@ -76,12 +76,13 @@ void OutlineStyleImage::Teardown()
         Services.Images->Destroy(Image);
     Bindless = {};
     Image = {};
-    UploadedVersion = 0;
+    Uploaded.reset();
 }
 
-std::uint32_t OutlineStyleImage::Update(const OutlineStyleTable& styles, std::uint32_t version)
+std::uint32_t OutlineStyleImage::Update(const OutlineStyleTable& styles)
 {
-    if (!Image.IsNull() && UploadedVersion == version)
+    // Compared by content: a display's scale moves the widths without the styles changing.
+    if (!Image.IsNull() && Uploaded == styles)
         return Bindless.IsValid() ? Bindless.Value : UINT32_MAX;
     // A frame still in flight may be sampling the table it was given, so new styles
     // go into a new image, and the old one retires through the deletion queue and
@@ -111,7 +112,7 @@ std::uint32_t OutlineStyleImage::Update(const OutlineStyleTable& styles, std::ui
     }
     if (!Services.Images->Upload(Image, texels.data(), sizeof(texels)))
         return UINT32_MAX;
-    UploadedVersion = version;
+    Uploaded = styles;
     Bindless = Services.Descriptors->RegisterSampledImage(Image, Services.Samplers->GetNearestClamp());
     return Bindless.IsValid() ? Bindless.Value : UINT32_MAX;
 }
@@ -165,7 +166,7 @@ std::optional<OutlineMaskAttachments> OutlineMaskTargets::Begin(const FrameConte
     const std::optional<RenderTargetView> mask = Targets.Acquire(Mask);
     const std::optional<RenderTargetView> marked = Targets.Acquire(MarkedTiles);
     const std::optional<RenderTargetView> near = Targets.Acquire(NearTiles);
-    StyleBindless = StyleImage.Update(*outlines.Styles, outlines.StylesVersion);
+    StyleBindless = StyleImage.Update(*outlines.Styles);
     if (!mask.has_value() || !marked.has_value() || !near.has_value() || StyleBindless == UINT32_MAX)
         return std::nullopt;
     Tiles = OutlineTileTargets{ .Marked = *marked, .Near = *near };

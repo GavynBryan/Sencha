@@ -741,3 +741,8 @@ too: a module compiles its push block into its own SPIR-V. A game includes
 `render/outline/OutlineContributions.h` for the outline calls and `OutlineStyles.h` comes with it;
 `OutlineFrame` and `ExtractOutlines` are in `OutlineFrame.h`, which only a renderer needs, and the
 chain's per-frame list is `render/post/PostEffectFrame.h`.
+
+`OutlineStyleDesc::WidthDp` is in density-independent pixels, scaled by the display at
+extraction through the new `RenderExtractContext::PixelsPerDp`; `ExtractOutlines` takes that
+scale. `PresentationLifetimeSystem` replaces `PostEffectLifetimeSystem`, and outline
+extraction takes a `const World&`.

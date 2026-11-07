@@ -166,7 +166,6 @@ void EditorRenderFeature::BuildSelectionOutlines()
         OutlineStyleEntry{ .LinearColor = Vec<3>(EditorTheme::Selection.X, EditorTheme::Selection.Y, EditorTheme::Selection.Z),
                            .WidthPixels = 2.0f, .Priority = 0 };
     SelectionOutlines.MaxWidthPixels = 2.0f;
-    SelectionOutlines.StylesVersion = 1;
 }
 
 void EditorRenderFeature::SweepBrushBakes()
@@ -697,7 +696,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         ? Targets.AcquireOutlineMask(viewport.Id)
         : std::nullopt;
     const std::uint32_t styleImage =
-        mask.has_value() ? SelectionStyleImage.Update(SelectionOutlines.Styles, SelectionOutlines.StylesVersion) : UINT32_MAX;
+        mask.has_value() ? SelectionStyleImage.Update(SelectionOutlines.Styles) : UINT32_MAX;
     const bool outlining = mask.has_value() && styleImage != UINT32_MAX;
     if (!outlining)
         Targets.NoteOutlineMaskQuiet(viewport.Id);

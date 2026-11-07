@@ -67,14 +67,15 @@ public:
     void Setup(const RendererServices& services);
     void Teardown();
 
-    // Uploads when `version` moved. UINT32_MAX when the image cannot be made.
-    [[nodiscard]] std::uint32_t Update(const OutlineStyleTable& styles, std::uint32_t version);
+    // Uploads when the table differs from the last one uploaded. UINT32_MAX when the
+    // image cannot be made.
+    [[nodiscard]] std::uint32_t Update(const OutlineStyleTable& styles);
 
 private:
     RendererServices Services{};
     ImageHandle Image;
     BindlessImageIndex Bindless;
-    std::uint32_t UploadedVersion = 0;
+    std::optional<OutlineStyleTable> Uploaded;
 };
 
 // One presentation's mask and tile images, held only while something is highlighted,

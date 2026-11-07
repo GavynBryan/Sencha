@@ -264,7 +264,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         world, ctx.Runtime.GetSimulationClock(), ctx.Presentation, extent, ctx.Partitions);
     if (!CameraRenderDataSystem::Build(presented, world, Camera))
         return;
-    ExtractOutlines(world, Outlines);
+    ExtractOutlines(world, Outlines, ctx.PixelsPerDp);
 
     CpuScopeTimings* scopes =
         Instrumentation != nullptr ? Instrumentation->CpuScopes : nullptr;
