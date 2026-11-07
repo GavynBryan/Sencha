@@ -24,6 +24,7 @@ HitRegion
     CollisionShape Shape;
 
     SENCHA_FIELD("priority")
+    SENCHA_OPTIONAL
     SENCHA_TOOLTIP("Which of two parts a ray enters at the same distance wins.")
     std::int32_t Priority = 0;
 };

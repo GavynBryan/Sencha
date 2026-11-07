@@ -33,6 +33,7 @@ struct SENCHA_COMPONENT("ObservationMemory")
 ObservationMemory
 {
     SENCHA_FIELD("retain_seconds")
+    SENCHA_OPTIONAL
     SENCHA_LABEL("Retain seconds")
     SENCHA_TOOLTIP("How long something unobserved is remembered.")
     float RetainSeconds = 8.0f;

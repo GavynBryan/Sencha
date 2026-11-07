@@ -746,3 +746,35 @@ chain's per-frame list is `render/post/PostEffectFrame.h`.
 extraction through the new `RenderExtractContext::PixelsPerDp`; `ExtractOutlines` takes that
 scale. `PresentationLifetimeSystem` replaces `PostEffectLifetimeSystem`, and outline
 extraction takes a `const World&`.
+
+## v41
+
+Mechanisms for enemies that sense, remember, choose and strike, and for
+naming where a strike lands.
+
+**Perception.** `ObservationMemory` (component, `OBSM`) and
+`ObservationMemorySystem`, which `RegisterPerception` now schedules after
+`PerceptionSystem`. `HearingSensor` (component), `PerceptionStimuli` and the
+`perception.stimulus` verb; `PerceptionSystem::LastStimuli` and `LastHeard`.
+`PerceptionComponentRegistration.h` registers the two new components, and
+`PerceptionVocabulary.h` gains the memory queries and `PerceptionSenses::Hearing`.
+
+**Selection.** `logic/selection/`: `SelectionTableDesc`, `SelectionTable`,
+`SelectionTableData` (`selection.table`) and `SelectionEvaluator`.
+`math/SeededPick.h`, `authored/AuthoredQueryCall.h` and
+`gameplay_tags/GameplayTagQueryNames.h` are shared by the table and candidates.
+
+**Candidates and navigation.** `NavDistanceToEdge` and
+`ZoneNavigation::DistanceToEdge` with `NavEdgeDistanceResult`, behind the new
+`escape_routes` and `edge_distance` measures; `CandidateRun::CandidateFlood`.
+
+**Physics.** Every `CharacterVirtual` carries an inner body on the
+`CharacterBody` layer, which queries strike and nothing collides with;
+`CharacterMoverConfig::Owner` names the entity it answers for.
+`PhysicsQueryFilter::IncludeCharacters` (default true) and `RaycastShape`.
+`HitRegion` (component) and `HitRegionResolver`.
+
+**Projectiles.** `ProjectileHit::Region`, the sixth `projectile.hit` payload
+value. `Projectile::HitScaleQuery` (`hit_scale_query`) scales a strike's
+effects; `ProjectileSystem::Services::Queries` answers it. Characters are
+struck through their bodies, so `SweepCharacters` is gone.

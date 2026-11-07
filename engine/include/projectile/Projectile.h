@@ -122,6 +122,7 @@ Projectile
     bool EndsWithInstigator = false;
 
     SENCHA_FIELD("hit_scale_query")
+    SENCHA_OPTIONAL
     SENCHA_LABEL("Hit scale query")
     SENCHA_TOOLTIP("An authored query {target, region, kind} whose number scales the effects a strike "
                    "applies, as a game reads where it struck. Empty applies them as authored.")
