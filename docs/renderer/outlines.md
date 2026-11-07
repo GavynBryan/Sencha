@@ -36,7 +36,7 @@ holder's death, or the entity's.
   presentation carries no outline work and the cost follows what is highlighted rather than
   the window. It draws only on pixels whose own mask is 0, from a fixed ring of taps at three
   radii up to the widest style. A scissor can still be far larger than the outline -- an item
-  reaching behind the camera takes the whole view -- so `OutlineTilePass` first marks the 8x8
+  straddling the eye plane takes the whole view -- so `OutlineTilePass` first marks the 8x8
   tiles holding any mask texel, with gathers, then grows the marks by the widest style's reach,
   and the composite leaves any pixel in an unmarked tile after one fetch. On an Intel RPL-P at
   1920x1080 that took the whole-view case from 2.7 ms to about 0.5 ms. A style counts only
@@ -58,7 +58,9 @@ holder's death, or the entity's.
   between them.
 - **The bounds.** They must hold what the mask drew or the outline is cut off. A skinned item
   uses `PosedWorldBounds`, since a posed limb reaches outside its rest bounds, and an item
-  reaching behind the camera takes the whole view, since its projection means nothing.
+  straddling the eye plane takes the whole view, since its projection means nothing, and one
+  wholly behind it covers nothing. That rule is `ProjectToNdc` in `render/ScreenBounds.h`, which
+  texture projection's scissor follows too.
 - **The style table** is a small bindless image uploaded when styles change, so a frame with
   nothing highlighted carries no extra descriptor or push data.
 

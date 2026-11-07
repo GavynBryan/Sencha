@@ -2,6 +2,7 @@
 #include <render/outline/OutlineFrame.h>
 
 #include <presentation/PresentationContributions.h>
+#include <render/ScreenBounds.h>
 
 #include <ecs/World.h>
 
@@ -114,27 +115,8 @@ void OutlineFrame::Finish(const Mat4& viewProjection)
 
 void OutlineFrame::UpdateScreenBounds(const Mat4& viewProjection)
 {
-    ScreenMin[0] = ScreenMin[1] = 1.0f;
-    ScreenMax[0] = ScreenMax[1] = -1.0f;
-    bool behindCamera = false;
-    const auto cover = [&](const RenderQueueItem& item) {
-        const Vec3d low = item.WorldBounds.Min;
-        const Vec3d high = item.WorldBounds.Max;
-        for (int corner = 0; corner < 8; ++corner)
-        {
-            const Vec4 clip = viewProjection * Vec4((corner & 1) != 0 ? high.X : low.X, (corner & 2) != 0 ? high.Y : low.Y,
-                                                    (corner & 4) != 0 ? high.Z : low.Z, 1.0f);
-            if (clip.W <= 0.0001f)
-            {
-                behindCamera = true;
-                return;
-            }
-            ScreenMin[0] = std::min(ScreenMin[0], clip.X / clip.W);
-            ScreenMin[1] = std::min(ScreenMin[1], clip.Y / clip.W);
-            ScreenMax[0] = std::max(ScreenMax[0], clip.X / clip.W);
-            ScreenMax[1] = std::max(ScreenMax[1], clip.Y / clip.W);
-        }
-    };
+    NdcBounds covered;
+    const auto cover = [&](const RenderQueueItem& item) { covered.Include(ProjectToNdc(item.WorldBounds, viewProjection)); };
     for (const OutlineStyleId style : DrawOrder)
     {
         for (const RenderQueueItem& item : Queues[style.Slot].Opaque())
@@ -142,11 +124,10 @@ void OutlineFrame::UpdateScreenBounds(const Mat4& viewProjection)
         for (const RenderQueueItem& item : Queues[style.Slot].Transparent())
             cover(item);
     }
-    if (behindCamera)
-    {
-        ScreenMin[0] = ScreenMin[1] = -1.0f;
-        ScreenMax[0] = ScreenMax[1] = 1.0f;
-    }
+    ScreenMin[0] = covered.Min[0];
+    ScreenMin[1] = covered.Min[1];
+    ScreenMax[0] = covered.Max[0];
+    ScreenMax[1] = covered.Max[1];
 }
 
 void ExtractOutlines(World& world, OutlineFrame& out)

@@ -5,6 +5,7 @@
 #include <render/SkinnedPoseFrameData.h>
 #include <render/outline/OutlineContributions.h>
 #include <render/outline/OutlineFrame.h>
+#include <graphics/vulkan/OutlineMaskTargets.h>
 
 #include <array>
 #include <cstddef>
@@ -142,7 +143,7 @@ TEST(Outlines, DrawOrderIsLowestPriorityFirstSoTheHighestWinsADepthTie)
     EXPECT_EQ(f.Frame.DrawOrder[1], f.High);
 }
 
-TEST(Outlines, TheScreenBoundsCoverTheQueuedItemsAndAnItemBehindTheCameraTakesTheView)
+TEST(Outlines, TheScreenBoundsCoverTheQueuedItemsAndAnItemAcrossTheEyePlaneTakesTheView)
 {
     Fixture f;
     SetOutline(f.Entities, f.Target, Outline(Writer(1), f.Low));
@@ -156,11 +157,35 @@ TEST(Outlines, TheScreenBoundsCoverTheQueuedItemsAndAnItemBehindTheCameraTakesTh
     EXPECT_FLOAT_EQ(f.Frame.ScreenMax[0], 0.5f);
     EXPECT_FLOAT_EQ(f.Frame.ScreenMax[1], 0.25f);
 
+    // w = z - 0.25: the item's near face is behind the eye and its far face in front.
+    Mat4 across = Mat4::Identity();
+    across[3][2] = 1.0f;
+    across[3][3] = -0.25f;
+    f.Frame.Finish(across);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMin[0], -1.0f);
+    EXPECT_FLOAT_EQ(f.Frame.ScreenMax[1], 1.0f);
+
+    // Wholly behind the eye, it covers nothing, so the composite has nowhere to draw.
     Mat4 behind = Mat4::Identity();
     behind[3][3] = -1.0f;
     f.Frame.Finish(behind);
-    EXPECT_FLOAT_EQ(f.Frame.ScreenMin[0], -1.0f);
-    EXPECT_FLOAT_EQ(f.Frame.ScreenMax[1], 1.0f);
+    EXPECT_GT(f.Frame.ScreenMin[0], f.Frame.ScreenMax[0]);
+}
+
+TEST(Outlines, NothingOnScreenGivesAnEmptyScissor)
+{
+    Fixture f;
+    SetOutline(f.Entities, f.Target, Outline(Writer(1), f.Low));
+    ExtractOutlines(f.Entities, f.Frame);
+    RenderQueueItem item;
+    item.WorldBounds = Aabb3d(Vec3d(-0.25f, -0.5f, 0.0f), Vec3d(0.5f, 0.25f, 0.5f));
+    f.Frame.QueueFor(f.Target)->AddOpaque(item);
+    Mat4 behind = Mat4::Identity();
+    behind[3][3] = -1.0f;
+    f.Frame.Finish(behind);
+    const VkRect2D scissor = OutlineScissorFor(f.Frame.CompositeInputs(), VkExtent2D{ 1920, 1080 });
+    EXPECT_EQ(scissor.extent.width, 0u);
+    EXPECT_EQ(scissor.extent.height, 0u);
 }
 
 TEST(PosedWorldBounds, HoldsEveryVertexBlendedBetweenItsJoints)

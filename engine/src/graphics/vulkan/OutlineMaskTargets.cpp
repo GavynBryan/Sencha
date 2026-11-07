@@ -13,6 +13,9 @@ constexpr std::uint32_t kMaskQuietFrames = 120;
 
 VkRect2D OutlineScissorFor(const OutlineCompositeInputs& outlines, VkExtent2D extent)
 {
+    // Nothing outlined is on screen: every item is wholly behind the eye.
+    if (outlines.ScreenMin[0] > outlines.ScreenMax[0] || outlines.ScreenMin[1] > outlines.ScreenMax[1])
+        return VkRect2D{};
     // Grown by the widest style, which is how far an outline reaches past its object.
     const auto width = static_cast<float>(extent.width);
     const auto height = static_cast<float>(extent.height);
@@ -152,6 +155,8 @@ void OutlineMaskTargets::Publish(const FrameContext& frame, const OutlineComposi
                                  const Mat4& projection)
 {
     const VkRect2D scissor = OutlineScissorFor(outlines, frame.SceneExtent);
+    if (scissor.extent.width == 0 || scissor.extent.height == 0)
+        return;
     const std::uint32_t tiles = TilePass.Record(frame, MaskBindless, Tiles, scissor, outlines.MaxWidthPixels);
     if (tiles == UINT32_MAX)
         return;

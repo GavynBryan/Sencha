@@ -715,6 +715,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
                                     camera, QueueBuilder->Lights(), *MeshCache, *MaterialStore, SkinnedMeshCacheRef,
                                     SelectionOutlines);
             const VkRect2D scissor = OutlineScissorFor(SelectionOutlines.CompositeInputs(), target.Extent);
+            if (scissor.extent.width == 0 || scissor.extent.height == 0)
+                return;
             post.OutlineTilesBindless = SelectionTiles.Record(between, mask->Mask.BindlessIndex, mask->Tiles, scissor,
                                                               SelectionOutlines.MaxWidthPixels);
             post.OutlineMaskBindless = mask->Mask.BindlessIndex;

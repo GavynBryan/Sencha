@@ -29,6 +29,7 @@ struct OutlineMaskAttachments
 };
 
 // Where the composite can land for this camera's screen bounds, in `extent` pixels.
+// Empty when nothing outlined is on screen.
 [[nodiscard]] VkRect2D OutlineScissorFor(const OutlineCompositeInputs& outlines, VkExtent2D extent);
 
 // The projection's depth and w rows, which the composite needs to move a depth by a
