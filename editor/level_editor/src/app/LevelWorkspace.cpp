@@ -494,6 +494,7 @@ void LevelWorkspace::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
+    renderFeature->SetGamePresentation(GamePresentation.get());
     renderFeature->SetDraftSource([this] {
         LevelTarget& level = Workspace->Level;
         const LevelDraft* draft = level.PreviewedDraft();

@@ -63,7 +63,14 @@ void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets
     OrderViewDepthAccess(frame.Cmd, targets.DepthImage, targets.DepthFormat);
     if (drawBetween)
     {
-        drawBetween(frame);
+        FrameContext between = frame;
+        between.SceneColorBindless = targets.SceneBindless;
+        between.SceneExtent = targets.Extent;
+        between.ScenePost = post;
+        between.DepthView = targets.DepthView;
+        between.DepthFormat = targets.DepthFormat;
+        between.StencilFormat = FormatHasStencil(targets.DepthFormat) ? targets.DepthFormat : VK_FORMAT_UNDEFINED;
+        drawBetween(between);
         OrderViewDepthAccess(frame.Cmd, targets.DepthImage, targets.DepthFormat);
     }
 

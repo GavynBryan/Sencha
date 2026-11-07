@@ -3,7 +3,9 @@
 #include <presentation/PresentationOwner.h>
 #include <render/PresentationSettings.h>
 #include <render/post/PostEffectCatalog.h>
+#include <render/post/PostEffectFrame.h>
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -12,6 +14,9 @@ class World;
 
 // Below every order a game can write at, so any game contribution wins.
 inline constexpr std::int16_t kPresentationSettingsOrder = std::numeric_limits<std::int16_t>::min();
+
+// What sencha.bloom reads from its params for these settings.
+[[nodiscard]] std::array<float, kPostEffectParamCount> BloomEffectParams(const BloomSettings& bloom);
 
 // Holds resolved settings as post-effect contributions for every view of a World.
 class PresentationSettingsPublisher

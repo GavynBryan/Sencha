@@ -2,6 +2,11 @@
 
 #include <render/post/PostEffectContributions.h>
 
+std::array<float, kPostEffectParamCount> BloomEffectParams(const BloomSettings& bloom)
+{
+    return { bloom.Threshold, bloom.Intensity, bloom.Spread };
+}
+
 PresentationSettingsPublisher::PresentationSettingsPublisher(const PostEffectCatalog& effects)
     : Bloom(effects.Find("sencha.bloom"))
 {
@@ -27,7 +32,7 @@ void PresentationSettingsPublisher::Publish(World& world, const PresentationSett
     bloom.Owner = owner;
     bloom.Order = kPresentationSettingsOrder;
     bloom.Weight = 1.0f;
-    bloom.Params = { settings.Bloom.Threshold, settings.Bloom.Intensity, settings.Bloom.Spread };
+    bloom.Params = BloomEffectParams(settings.Bloom);
     bloom.Lifetime = PostEffectLifetime::Session;
     SetPostEffect(world, Bloom, bloom);
 }
