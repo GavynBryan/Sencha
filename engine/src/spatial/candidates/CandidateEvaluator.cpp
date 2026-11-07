@@ -1,13 +1,11 @@
 #include <spatial/candidates/CandidateEvaluator.h>
 
-#include <core/hash/ContentHash.h>
+#include <math/SeededPick.h>
 #include <world/RuntimeWorld.h>
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <chrono>
-#include <cstddef>
 
 namespace
 {
@@ -20,14 +18,6 @@ namespace
         case CandidateAppliesTo::Entity: return entity.IsValid();
         }
         return false;
-    }
-
-    // Independent of evaluation order and thread count: a pure function of
-    // the caller's seed and the candidate's generation order.
-    [[nodiscard]] std::uint64_t BandKey(std::uint64_t seed, std::uint32_t order)
-    {
-        const std::array<std::byte, sizeof(order)> bytes = std::bit_cast<std::array<std::byte, sizeof(order)>>(order);
-        return HashBytes64(bytes, seed);
     }
 }
 
@@ -280,11 +270,11 @@ void CandidateEvaluator::Select(CandidateRun& run, CandidateResultBuffer& result
     {
         const float floor = scratch.Scores[scratch.Ranked.front()] - selection.BandWidth;
         std::uint32_t pick = 0;
-        std::uint64_t pickKey = BandKey(run.Context.Seed, scratch.Ranked.front());
+        std::uint64_t pickKey = SeededPickKey(run.Context.Seed, scratch.Ranked.front());
         for (std::uint32_t rank = 1; rank < scratch.Ranked.size() && scratch.Scores[scratch.Ranked[rank]] >= floor;
              ++rank)
         {
-            const std::uint64_t key = BandKey(run.Context.Seed, scratch.Ranked[rank]);
+            const std::uint64_t key = SeededPickKey(run.Context.Seed, scratch.Ranked[rank]);
             if (key < pickKey)
             {
                 pick = rank;

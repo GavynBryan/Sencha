@@ -12,6 +12,7 @@
 #include <anim/AnimFlowData.h>
 #include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
+#include <logic/selection/SelectionTableData.h>
 #include <spatial/candidates/CandidateEvaluationData.h>
 #include <core/logging/LoggingProvider.h>
 #include <attributes/AttributeDeclarations.h>
@@ -117,6 +118,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterCuePresentationData(DataTypes, DataSchemas);
     RegisterCameraShakeData(DataTypes, DataSchemas);
     RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
+    RegisterSelectionTableData(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

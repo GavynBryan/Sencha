@@ -494,6 +494,12 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # invocation values by value.
     "${SENCHA_ENGINE_INCLUDE_DIR}/authored/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/*.h"
+    # A module holds bound selection tables and candidate evaluations by value,
+    # with the curves and tag queries inside them.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/selection/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/ResponseCurve.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagQuery.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagQueryNames.h"
     # Navigation queries: a game holds locations, regions, requests, and route
     # buffers by value and reaches the system through Schedule().Get<>().
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/*.h"

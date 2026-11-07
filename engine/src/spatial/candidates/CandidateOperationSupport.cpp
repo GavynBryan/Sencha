@@ -1,5 +1,6 @@
 #include "CandidateOperationSupport.h"
 
+#include <gameplay_tags/GameplayTagQueryNames.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <navigation/NavigationQuery.h>
 
@@ -157,17 +158,7 @@ namespace candidate_operation
 
     DataFieldSchema TagQueryField(std::string key, std::string displayName)
     {
-        const auto tagList = [](std::string listKey, std::string listName) {
-            DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(listKey), std::move(listName));
-            list.Required = false;
-            list.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "tag", "Tag"));
-            return list;
-        };
-        DataFieldSchema query = MakeDataField(DataFieldKind::Record, std::move(key), std::move(displayName));
-        query.Required = false;
-        query.Children.push_back(tagList("all", "All of"));
-        query.Children.push_back(tagList("any", "Any of"));
-        query.Children.push_back(tagList("none", "None of"));
+        DataFieldSchema query = MakeTagQueryNamesField(std::move(key), std::move(displayName));
         query.Children.push_back(EnumField("match", "Match", { "exact", "hierarchical" }, "exact"));
         return query;
     }
@@ -178,16 +169,10 @@ namespace candidate_operation
         const JsonValue* query = arguments.Find(key);
         if (query == nullptr)
             return names;
-        const auto read = [query](std::string_view listKey, std::vector<std::string>& out) {
-            if (const JsonValue* list = query->Find(listKey))
-            {
-                for (const JsonValue& tag : list->AsArray())
-                    out.push_back(tag.AsString());
-            }
-        };
-        read("all", names.All);
-        read("any", names.Any);
-        read("none", names.None);
+        GameplayTagQueryNames lists = ReadTagQueryNames(*query);
+        names.All = std::move(lists.All);
+        names.Any = std::move(lists.Any);
+        names.None = std::move(lists.None);
         if (StringOr(*query, "match", "exact") == "hierarchical")
             names.Match = GameplayTagMatchMode::Hierarchical;
         return names;

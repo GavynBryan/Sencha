@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/json/JsonValue.h>
+#include <core/metadata/DataSchema.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 
 #include <string>
@@ -23,3 +25,8 @@ struct GameplayTagQueryNames
 // out of the query and appended to `missing`.
 [[nodiscard]] GameplayTagQuery ResolveTagQuery(const GameplayTagQueryNames& names, const GameplayTagRegistry& tags,
                                                std::vector<std::string>& missing);
+
+// The authored record: optional "all", "any" and "none" lists of tag names.
+[[nodiscard]] DataFieldSchema MakeTagQueryNamesField(std::string key, std::string displayName);
+// Reads a record the field above has accepted.
+[[nodiscard]] GameplayTagQueryNames ReadTagQueryNames(const JsonValue& query);

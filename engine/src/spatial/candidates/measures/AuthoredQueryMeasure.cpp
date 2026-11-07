@@ -1,7 +1,6 @@
 #include "../CandidateOperationSupport.h"
 
-#include <authored/AuthoredArgumentMatch.h>
-#include <authored/AuthoredLiteral.h>
+#include <authored/AuthoredQueryCall.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/AuthoredQueryRegistry.h>
 
@@ -20,8 +19,7 @@ namespace candidate_operation
 
         struct AuthoredQueryBound
         {
-            AuthoredQueryHandle Query;
-            AuthoredArguments Constants;
+            AuthoredQueryCall Call;
             std::size_t EntitySlot = 0;
         };
 
@@ -52,55 +50,15 @@ namespace candidate_operation
                 return nullptr;
             }
             AuthoredQueryBound bound;
-            bound.Query = environment.Queries->Resolve(authored.Query);
-            if (!bound.Query.IsValid())
-            {
-                errors.push_back(std::format("{}: '{}' is not a query this World declares", subject, authored.Query));
-                return nullptr;
-            }
-            const AuthoredQueryDefinition& definition = *environment.Queries->Get(bound.Query.Slot);
-            if (!IsNumericResult(definition.Result))
+            const std::string_view entityArgument = authored.EntityArgument;
+            const bool ok = CompileAuthoredQueryCall(*environment.Queries, authored.Query, authored.Constants,
+                                                     std::span(&entityArgument, 1), std::span(&bound.EntitySlot, 1),
+                                                     subject, bound.Call, errors);
+            if (bound.Call.Query.IsValid()
+                && !IsNumericResult(environment.Queries->Get(bound.Call.Query.Slot)->Result))
             {
                 errors.push_back(std::format("{}: '{}' answers with a value no measure can rank", subject, authored.Query));
                 return nullptr;
-            }
-
-            std::vector<std::string_view> names;
-            for (const auto& [key, unused] : authored.Constants.AsObject())
-                names.push_back(key);
-            std::vector<std::string_view> undeclared;
-            const std::vector<AuthoredArgumentSlot> slots =
-                MatchAuthoredArguments(definition.Arguments, names, undeclared);
-            bool ok = true;
-            bool foundEntity = false;
-            bound.Constants.Resize(slots.size());
-            for (std::size_t slot = 0; slot < slots.size(); ++slot)
-            {
-                const DataFieldSchema& field = *slots[slot].Field;
-                if (field.Key == authored.EntityArgument)
-                {
-                    foundEntity = field.Kind == DataFieldKind::Entity;
-                    bound.EntitySlot = slot;
-                    continue;
-                }
-                AuthoredValue value;
-                ok = (slots[slot].Given
-                          ? CompileAuthoredLiteral(authored.Constants.AsObject()[*slots[slot].Given].second, field,
-                                                   subject, field.Key, value, errors)
-                          : CompileAuthoredDefault(field, subject, field.Key, value, errors))
-                    && ok;
-                bound.Constants.Set(slot, std::move(value));
-            }
-            if (!foundEntity)
-            {
-                errors.push_back(std::format("{}: '{}' declares no entity argument '{}'", subject, authored.Query,
-                                             authored.EntityArgument));
-                ok = false;
-            }
-            for (const std::string_view name : undeclared)
-            {
-                errors.push_back(std::format("{}: '{}' declares no argument '{}'", subject, authored.Query, name));
-                ok = false;
             }
             if (!ok)
                 return nullptr;
@@ -147,17 +105,17 @@ namespace candidate_operation
             }
 
             AuthoredArguments& arguments = run.QueryArguments();
-            arguments.Resize(bound.Constants.Size());
-            for (std::size_t slot = 0; slot < bound.Constants.Size(); ++slot)
+            arguments.Resize(bound.Call.Arguments.Size());
+            for (std::size_t slot = 0; slot < bound.Call.Arguments.Size(); ++slot)
             {
                 if (slot != bound.EntitySlot)
-                    arguments.Set(slot, bound.Constants.At(slot));
+                    arguments.Set(slot, bound.Call.Arguments.At(slot));
             }
             AuthoredValue& answer = run.QueryAnswer();
             for (const std::uint32_t row : rows)
             {
                 arguments.Set(bound.EntitySlot, AuthoredValue::Entity(run.Entity(row)));
-                const AuthoredQueryStatus status = dispatcher->Evaluate(bound.Query, arguments.Values(), answer);
+                const AuthoredQueryStatus status = dispatcher->Evaluate(bound.Call.Query, arguments.Values(), answer);
                 statuses[row] = FromQuery(status);
                 if (statuses[row] == CandidateMeasureStatus::Stale)
                     run.MarkDefinitionStale();
