@@ -762,3 +762,9 @@ Blended surfaces composite premultiplied, so their emission is no longer scaled 
 **Bloom.** `PostEffectDesc` and `PostEffectType` gain `Kind`, and the engine registers
 `sencha.bloom`. `ShaderCatalog` leaves the empty-shader check to each catalog, since a bloom
 type has none.
+
+**Presentation settings.** `LoadedLevel::Manifest()` reaches the loaded world's manifest, which
+gains `Presentation`, as `GraphRecord` does. `PresentationSettingsSystem` joins the engine's
+systems. Cooked scenes move to `.smap` version 2 for the optional `PRES` section, so every
+level recooks; `WriteCookedScene` takes the scene's layer. See
+[presentation-settings.md](../renderer/presentation-settings.md).
