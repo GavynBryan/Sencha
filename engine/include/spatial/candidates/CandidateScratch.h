@@ -49,6 +49,8 @@ private:
 
     NavQueryContext Navigation;
     NavReachableBuffer Reachable;
+    // A measure's own search from one candidate, apart from the run's shared set.
+    NavReachableBuffer CandidateFlood;
     std::vector<NavReachableRegion> ReachableByRef;
     NavRouteBuffer Route;
     StoragePartitionSet Partitions;

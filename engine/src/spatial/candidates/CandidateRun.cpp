@@ -189,6 +189,11 @@ NavRouteBuffer& CandidateRun::Route()
     return Scratch.Route;
 }
 
+NavReachableBuffer& CandidateRun::CandidateFlood()
+{
+    return Scratch.CandidateFlood;
+}
+
 std::optional<NavLocation> CandidateRun::QuerierNav()
 {
     if (QuerierProjected)

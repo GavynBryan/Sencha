@@ -18,5 +18,7 @@ void DeclareBuiltInCandidateOperations(CandidateMeasureRegistrationScope& measur
     (void)measures.Declare(TravelCostMeasure());
     (void)measures.Declare(VisibilityMeasure());
     (void)measures.Declare(RouteVisibilityMeasure());
+    (void)measures.Declare(EdgeDistanceMeasure());
+    (void)measures.Declare(EscapeRoutesMeasure());
     (void)measures.Declare(AuthoredQueryMeasure());
 }

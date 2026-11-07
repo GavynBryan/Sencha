@@ -105,6 +105,7 @@ The `.snav` codec (`NavigationFile.cpp`) writes records through the
 |---|---|
 | `ProjectPoint` | nearest walkable point within extents |
 | `NavRaycast` | whether walkable surface continues in a line -- not line of sight |
+| `NavDistanceToEdge` | how far walkable surface extends around a location, up to a radius: half a corridor's width at its middle |
 | `Reachable`, `TravelCost` | whether a route exists, and its cost, without assembling it |
 | `FindRoute` | walk legs (corners) and `Traverse` steps, one per link crossing |
 | `CollectReachable` | regions reachable within a cost budget, with entry costs, cheapest first |

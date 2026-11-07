@@ -173,5 +173,7 @@ namespace candidate_operation
     [[nodiscard]] CandidateMeasureDefinition TravelCostMeasure();
     [[nodiscard]] CandidateMeasureDefinition VisibilityMeasure();
     [[nodiscard]] CandidateMeasureDefinition RouteVisibilityMeasure();
+    [[nodiscard]] CandidateMeasureDefinition EdgeDistanceMeasure();
+    [[nodiscard]] CandidateMeasureDefinition EscapeRoutesMeasure();
     [[nodiscard]] CandidateMeasureDefinition AuthoredQueryMeasure();
 }

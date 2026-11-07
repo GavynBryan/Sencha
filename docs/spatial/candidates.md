@@ -93,12 +93,16 @@ About generation:
 | `travel_cost` | navigation cost from the querier (`region_entry` or `exact`) | NavigationBatch / NavigationExact |
 | `visibility` | sight between the candidate and a slot, observer on either side; `any`, `all` or `fraction` | Physics |
 | `route_visibility` | whether a slot's observers see the querier's route to the candidate | NavigationExact |
+| `edge_distance` | metres of walkable ground around the candidate before an edge, up to `max_radius` | NavigationBatch |
+| `escape_routes` | how many of `directions` lead to ground `distance` away reachable within `distance × detour` | NavigationExact |
 
 Measure details:
 
 - **`region_entry` cost** is the cost of entering the candidate's region. It is low by up to one region's width, so it is for ranking, not measuring.
 - **Estimates.** `reachable` and `travel_cost` take `outside_zone`: `reject` (default) or `estimate`, which uses straight-line distance and reports `Estimated`.
 - **`route_visibility` sampling.** It samples the route's start, every corner, and points along each leg at `spacing`.
+- **`visibility` sample heights.** `sample_heights` tests the candidate's side at each height as its own sample, so `reduce: fraction` over a waist-high wall answers between 0 and 1 where open ground answers 1. A height stands in for `target_height` when the slot watches and `eye_height` when the candidate does; an entity's own sight components still win.
+- **`escape_routes` probes.** Each direction projects a point `distance` away onto navigation (within `vertical` above or below) and counts when that point's region was reached by one search from the candidate, capped at `distance × detour`. A dead end opens one way, a corridor two, a spot against a wall about half, open ground all. The search is charged to `exact_nav_searches`. Region entry costs run low by up to a region's width, so `detour` absorbs that too.
 - **Trace detail codes:**
   - `visibility`: the first failing observer's `SightOutcome`, with the blocking hit point and entity.
   - `route_visibility`: the index of the first sample an observer saw.
@@ -155,7 +159,7 @@ Callers hold the binding, never a pointer into the cache.
 2. **Generate** in definition order, up to the candidate budget.
 3. **Criteria**, in order of cost class, then Require before Score, then authored order. A criterion sees only survivors. Operations that need a missing service (physics, navigation, dispatcher) report `NotApplicable`.
 4. **Score.** A weighted mean of curve outputs, summed in authored order. Ties go to generation order. Comparison is exact, with no epsilon.
-5. **Select.** Best, TopN, AllQualified, or PickFromBand. PickFromBand draws the smallest `HashBytes64(order, seed)` among candidates scoring at least best − width.
+5. **Select.** Best, TopN, AllQualified, or PickFromBand. PickFromBand draws the smallest `SeededPickKey(seed, order)` among candidates scoring at least best − width.
 
 Budgets are counts (candidates, exact searches, rays, reachable regions,
 generation attempts), never time, so identical inputs stop at the same place.
@@ -239,6 +243,7 @@ plain owned data. Filling it never changes a result.
 ## Response curves
 
 `math/ResponseCurve.h` (Linear, Step, Band over authored bounds) is shared
-with the future utility and consideration tables named in the roadmap.
+with selection tables (`docs/gameplay/selection.md`), and so is the seeded
+band draw, `math/SeededPick.h`.
 Normalization is always against authored bounds, never the current candidate
 set, so adding a candidate never reshuffles the others.

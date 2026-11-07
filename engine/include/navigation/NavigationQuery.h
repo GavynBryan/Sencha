@@ -30,6 +30,14 @@ class ZoneNavigation;
                                           const NavLocation& start,
                                           const Vec3d& target);
 
+// How far walkable surface extends around `start`, up to `maxRadius`: half a
+// corridor's width at its middle, zero against a wall.
+[[nodiscard]] NavEdgeDistanceResult NavDistanceToEdge(const ZoneNavigation& zone,
+                                                      NavQueryContext& context,
+                                                      const NavQueryRequest& request,
+                                                      const NavLocation& start,
+                                                      float maxRadius);
+
 [[nodiscard]] NavStatus NavReachable(const ZoneNavigation& zone,
                                      NavQueryContext& context,
                                      const NavQueryRequest& request,
@@ -97,6 +105,10 @@ public:
                                            const NavQueryRequest& request,
                                            const NavLocation& start,
                                            const Vec3d& target) const;
+    [[nodiscard]] NavEdgeDistanceResult DistanceToEdge(NavQueryContext& context,
+                                                       const NavQueryRequest& request,
+                                                       const NavLocation& start,
+                                                       float maxRadius) const;
     [[nodiscard]] NavStatus Reachable(NavQueryContext& context,
                                       const NavQueryRequest& request,
                                       const NavLocation& start,

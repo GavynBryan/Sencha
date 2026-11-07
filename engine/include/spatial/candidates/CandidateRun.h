@@ -21,6 +21,7 @@ class CandidateEvaluator;
 class CandidateScratch;
 class GameplayTagRegistry;
 class NavQueryContext;
+class NavReachableBuffer;
 class NavRouteBuffer;
 class RuntimeWorld;
 class World;
@@ -77,6 +78,7 @@ public:
     [[nodiscard]] const NavQueryRequest& NavRequest() const;
     [[nodiscard]] NavQueryContext& NavContext();
     [[nodiscard]] NavRouteBuffer& Route();
+    [[nodiscard]] NavReachableBuffer& CandidateFlood();
 
     // Projected once per run; nullopt sets QuerierOffNavigation.
     [[nodiscard]] std::optional<NavLocation> QuerierNav();

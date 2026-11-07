@@ -606,9 +606,6 @@ do the work and delete the entry.
 - **Multi-tick evaluation scheduler.**
   - *What's missing:* a budgeted scheduler that calls the same `Evaluate` on a subset of callers per tick.
   - *Trigger:* measured per-tick cost of real encounters exceeds budget.
-- **`walkable_width` measure.**
-  - *What's blocking it:* navigation exposes no distance-to-edge query (Detour has one).
-  - *Trigger:* a consumer needs corridor width, for example to avoid or prefer choke points.
 
 ## Hearing
 

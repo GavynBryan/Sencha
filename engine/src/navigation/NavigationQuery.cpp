@@ -274,6 +274,37 @@ NavRaycastResult NavRaycast(const ZoneNavigation& zone, NavQueryContext& context
     return result;
 }
 
+NavEdgeDistanceResult NavDistanceToEdge(const ZoneNavigation& zone, NavQueryContext& context,
+                                        const NavQueryRequest& request, const NavLocation& start, float maxRadius)
+{
+    NavEdgeDistanceResult result;
+    Context& ctx = context.GetBackend();
+    NavQueryPlan plan;
+    result.Status = PlanNavQuery(zone, ctx, request, plan);
+    if (result.Status == NavStatus::Success)
+        result.Status = CheckEndpoint(plan, start, NavStatus::InvalidStart);
+    if (result.Status != NavStatus::Success)
+        return result;
+
+    float center[3];
+    CopyToDetour(start.Position, center);
+    float distance = 0.0f;
+    float point[3] = {};
+    float normal[3] = {};
+    const float radius = std::max(maxRadius, 0.0f);
+    if (dtStatusFailed(ctx.Query->findDistanceToWall(start.Ref, center, radius, &ctx.Filter, &distance, point,
+                                                     normal)))
+    {
+        result.Status = NavStatus::InvalidStart;
+        return result;
+    }
+    result.Distance = std::min(distance, radius);
+    result.Hit = distance < radius;
+    result.Point = FromFloats(point);
+    result.Normal = FromFloats(normal);
+    return result;
+}
+
 NavStatus NavReachable(const ZoneNavigation& zone, NavQueryContext& context,
                        const NavQueryRequest& request, const NavLocation& start,
                        const NavLocation& end, NavQueryDiagnostics* diagnostics)
@@ -411,6 +442,15 @@ NavProjectResult NavigationQuery::ProjectPoint(NavQueryContext& context,
     return InZone(request.Zone, NavProjectResult{ NavStatus::ZoneUnavailable, {} },
                   [&](const ZoneNavigation& zone)
                   { return NavProjectPoint(zone, context, request, point, halfExtents); });
+}
+
+NavEdgeDistanceResult NavigationQuery::DistanceToEdge(NavQueryContext& context, const NavQueryRequest& request,
+                                                      const NavLocation& start, float maxRadius) const
+{
+    NavEdgeDistanceResult unavailable;
+    unavailable.Status = NavStatus::ZoneUnavailable;
+    return InZone(request.Zone, unavailable, [&](const ZoneNavigation& zone)
+                  { return NavDistanceToEdge(zone, context, request, start, maxRadius); });
 }
 
 NavRaycastResult NavigationQuery::Raycast(NavQueryContext& context,

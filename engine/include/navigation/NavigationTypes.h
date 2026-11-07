@@ -278,6 +278,17 @@ struct NavRaycastResult
     Vec3d Normal = Vec3d::Zero();
 };
 
+struct NavEdgeDistanceResult
+{
+    NavStatus Status = NavStatus::NoPath;
+    // Distance across walkable surface to the nearest edge; the search radius
+    // when no edge lies within it.
+    float Distance = 0.0f;
+    bool Hit = false;
+    Vec3d Point = Vec3d::Zero();
+    Vec3d Normal = Vec3d::Zero();
+};
+
 struct NavProjectResult
 {
     NavStatus Status = NavStatus::InvalidStart;
