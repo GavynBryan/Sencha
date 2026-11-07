@@ -7,29 +7,39 @@
 void OrderViewDepthAccess(VkCommandBuffer cmd, VkImage depth, VkFormat format)
 {
     const bool hasStencil = FormatHasStencil(format);
-    const VkImageLayout layout = hasStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                                            : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    VulkanBarriers::ImageTransition barrier{};
-    barrier.Image = depth;
-    barrier.OldLayout = layout;
-    barrier.NewLayout = layout;
-    barrier.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-    barrier.DstStage = barrier.SrcStage;
-    barrier.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    barrier.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    barrier.AspectMask = hasStencil ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-                                    : VK_IMAGE_ASPECT_DEPTH_BIT;
-    VulkanBarriers::TransitionImage(cmd, barrier);
+    VulkanBarriers::OrderDepthAttachment(cmd, depth, hasStencil, VulkanBarriers::DepthAttachmentLayout(hasStencil));
 }
 
 void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets& targets, VkClearColorValue clear,
                             OutputTransformPass& output, const OutputTransformParams& params,
                             const std::function<void(const FrameContext&)>& drawScene,
-                            const std::function<void(const FrameContext&)>& drawDisplay,
-                            const std::function<void(const FrameContext&)>& drawBetween, ScenePostState* post)
+                            const std::function<void(const FrameContext&)>& drawBetween,
+                            const std::function<void(const FrameContext&)>& drawDisplay, ScenePostState* post)
 {
     RenderTargetSession displaySession(frame.Cmd, targets.DisplayImage, targets.DisplayLayout, targets.DepthImage,
                                        targets.DepthFormat);
+    if (!drawScene)
+    {
+        // Nothing emits light, so there is nothing to transform: the display clears.
+        RenderScopeDesc desc{};
+        desc.Area.extent = targets.Extent;
+        desc.ColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        desc.DepthFormat = targets.DepthFormat;
+        desc.Phase = RenderPhase::Offscreen;
+        desc.Color.View = targets.DisplayView;
+        desc.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        desc.Color.Clear.color = clear;
+        desc.Depth.View = targets.DepthView;
+        desc.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        desc.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        desc.Depth.Clear.depthStencil = { 1.0f, 0 };
+        {
+            const RenderScope display(frame, desc);
+            drawDisplay(display.Context());
+        }
+        displaySession.End();
+        return;
+    }
 
     RenderScopeDesc desc{};
     desc.Area.extent = targets.Extent;

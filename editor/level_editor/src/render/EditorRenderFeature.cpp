@@ -702,7 +702,6 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     RecordSceneThenDisplay(
         frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, ViewOutput,
         [&](const FrameContext& local) { DrawViewportScene(local, viewport, camera); },
-        [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); },
         !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
             SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
             RecordOutlineMask(between,
@@ -727,7 +726,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             post.OutlineDepthTerms = OutlineDepthTermsOf(camera.Projection);
             post.OutlineScissor = scissor;
         },
-        &post);
+        [&](const FrameContext& local) { DrawViewportChrome(local, viewport, camera); }, &post);
 
     if (BloomEnabled)
         RecordViewportBloom(frame, viewport, target, camera);

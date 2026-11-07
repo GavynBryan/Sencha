@@ -31,6 +31,7 @@ public:
     [[nodiscard]] std::optional<RenderTargetView> Begin(const FrameContext& frame);
     // Records `drawScene`, the output pass and `drawOverlay` into `target`, the
     // scene cleared to `clear`, then shows it. Overlay colours are not transformed.
+    // A stage with no scene passes an empty `drawScene` and runs no output pass.
     using DrawFn = std::function<void(const FrameContext&)>;
     void Draw(const FrameContext& frame, const RenderTargetView& target, VkClearColorValue clear,
               const DrawFn& drawScene, const DrawFn& drawOverlay = [](const FrameContext&) {});

@@ -145,6 +145,6 @@ bool ThumbnailStudio::RenderPass(const FrameContext& frame, ViewportId target,
                                                                   .SkinnedMeshes = SkinnedMeshes });
             }
         },
-        [](const FrameContext&) {});
+        {}, [](const FrameContext&) {});
     return true;
 }

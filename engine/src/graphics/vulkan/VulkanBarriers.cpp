@@ -86,4 +86,23 @@ namespace VulkanBarriers
         t.DstAccess = 0;
         TransitionImage(commandBuffer, t);
     }
+
+    VkImageLayout DepthAttachmentLayout(bool hasStencil)
+    {
+        return hasStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    }
+
+    void OrderDepthAttachment(VkCommandBuffer commandBuffer, VkImage image, bool hasStencil, VkImageLayout oldLayout)
+    {
+        ImageTransition t{};
+        t.Image = image;
+        t.OldLayout = oldLayout;
+        t.NewLayout = DepthAttachmentLayout(hasStencil);
+        t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        t.DstStage = t.SrcStage;
+        t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        t.AspectMask = hasStencil ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) : VK_IMAGE_ASPECT_DEPTH_BIT;
+        TransitionImage(commandBuffer, t);
+    }
 }

@@ -56,4 +56,13 @@ namespace VulkanBarriers
     // Convenience: color attachment -> present src (dynamic rendering end).
     void TransitionFromColorAttachmentToPresent(VkCommandBuffer commandBuffer,
                                                 VkImage image);
+
+    // The one layout a depth attachment is used in: both aspects once it carries a
+    // stencil, since a barrier naming stencil may not use a depth-only layout.
+    [[nodiscard]] VkImageLayout DepthAttachmentLayout(bool hasStencil);
+
+    // Orders a scope's use of a depth attachment after the last scope's writes to
+    // it, from `oldLayout` into DepthAttachmentLayout. A load or store op of
+    // DONT_CARE still counts as a write.
+    void OrderDepthAttachment(VkCommandBuffer commandBuffer, VkImage image, bool hasStencil, VkImageLayout oldLayout);
 }

@@ -158,27 +158,13 @@ namespace
         if (oldExtent.width != extent.width || oldExtent.height != extent.height)
             target.DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        // One layout for the whole attachment, decided by whether it carries a
-        // stencil. A barrier whose aspect mask includes stencil may not use a
-        // depth-only layout, and a rendering scope's attachments have to agree with
-        // the layout the image is actually in.
+        // A rendering scope's attachments have to agree with the layout the image is
+        // actually in, so the whole attachment takes the one DepthAttachmentLayout.
         const bool hasStencil = depth->HasStencil();
-        const VkImageLayout layout = hasStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                                                : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         if (depth->GetImage() != VK_NULL_HANDLE)
         {
-            VulkanBarriers::ImageTransition t{};
-            t.Image = depth->GetImage();
-            t.OldLayout = target.DepthLayout;
-            t.NewLayout = layout;
-            t.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            t.DstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            t.SrcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            t.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            t.AspectMask = hasStencil ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-                                      : VK_IMAGE_ASPECT_DEPTH_BIT;
-            VulkanBarriers::TransitionImage(cmd, t);
-            target.DepthLayout = layout;
+            VulkanBarriers::OrderDepthAttachment(cmd, depth->GetImage(), hasStencil, target.DepthLayout);
+            target.DepthLayout = VulkanBarriers::DepthAttachmentLayout(hasStencil);
         }
         return { depth->GetView(), depth->GetFormat(), hasStencil && depth->GetView() != VK_NULL_HANDLE };
     }

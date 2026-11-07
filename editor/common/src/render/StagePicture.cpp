@@ -72,7 +72,7 @@ void StagePicture::Draw(const FrameContext& frame, const RenderTargetView& targe
                                        .DepthImage = target.DepthImage,
                                        .DepthView = target.DepthView,
                                        .DepthFormat = Services.DepthFormat };
-    RecordSceneThenDisplay(frame, targets, clear, Output, OutputTransformParams{}, drawScene, drawOverlay);
+    RecordSceneThenDisplay(frame, targets, clear, Output, OutputTransformParams{}, drawScene, {}, drawOverlay);
     if (Services.UiTextures != nullptr && Image.has_value())
         PublishTargetImage(*Services.UiTextures, *Image, target.ColorLayout, target.BindlessIndex);
 }

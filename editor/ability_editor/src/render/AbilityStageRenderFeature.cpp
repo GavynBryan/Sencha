@@ -35,7 +35,7 @@ void AbilityStageRenderFeature::OnDraw(const RenderFrame& renderFrame)
     const std::optional<RenderTargetView> target = Picture.Begin(frame);
     if (!target)
         return;
-    Picture.Draw(frame, *target, { { 0.025f, 0.03f, 0.045f, 1.0f } }, [](const FrameContext&) {},
+    Picture.Draw(frame, *target, { { 0.025f, 0.03f, 0.045f, 1.0f } }, {},
                  [&](const FrameContext& rendering) {
                      const VkExtent2D extent = target->Extent;
                      const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);

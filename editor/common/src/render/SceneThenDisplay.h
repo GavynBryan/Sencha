@@ -31,10 +31,12 @@ void OrderViewDepthAccess(VkCommandBuffer cmd, VkImage depth, VkFormat format);
 // One view's frame: `drawScene` into the scene target, `drawBetween` outside any scope
 // with the scene's depth readable, the output pass, then `drawDisplay` over its result
 // with that depth, in display-referred linear light. The one path an editor view renders
-// through, so none can skip the output pass. The display target ends readable.
+// through, so none can skip the output pass. An empty `drawScene` means a view with no
+// scene: the display clears to `clear` and only `drawDisplay` runs. Either callback but
+// `drawDisplay` may be empty. The display target ends readable.
 void RecordSceneThenDisplay(const FrameContext& frame, const SceneDisplayTargets& targets, VkClearColorValue clear,
                             OutputTransformPass& output, const OutputTransformParams& params,
                             const std::function<void(const FrameContext&)>& drawScene,
+                            const std::function<void(const FrameContext&)>& drawBetween,
                             const std::function<void(const FrameContext&)>& drawDisplay,
-                            const std::function<void(const FrameContext&)>& drawBetween = {},
                             ScenePostState* post = nullptr);
