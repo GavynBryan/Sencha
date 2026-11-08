@@ -1,7 +1,8 @@
 # Effect reactions
 
-An entity can answer the effects applied to it: a push, and a shake of the
-view it owns, in proportion to how far the effect moved one of its attributes.
+An entity can answer the effects applied to it: a push, a shake of the view it
+owns, in proportion to how far the effect moved one of its attributes, and a
+flinch.
 A reaction is keyed to the kind of effect and the change it made, never to the
 ability or projectile that delivered it, so a new attack reacts as soon as its
 effect carries a kind a profile answers.
@@ -52,7 +53,8 @@ tick is answered on the next.
     "recipient": { "none": ["lf.state.dead"] },
     "attribute": "Health", "change": "decrease", "threshold": 1,
     "impulse": { "per_unit": 0.18, "max": 4, "lift": 0.1 },
-    "shake": { "profile": "asset://camera/struck.sdata", "per_unit": 0.03, "max": 1 } } ] } }
+    "shake": { "profile": "asset://camera/struck.sdata", "per_unit": 0.03, "max": 1 },
+    "animation": { "front": "Anim.Flinch.Front", "back": "Anim.Flinch.Back", "ticks": 24 } } ] } }
 ```
 
 - The first reaction that matches an application answers it. A reaction
@@ -68,6 +70,13 @@ tick is answered on the next.
   motion. An entity without `MotionImpulse` is never pushed.
 - The shake is a `camera.shake` profile at `per_unit` times the change, capped
   at `max`, for the view the recipient owns alone (`docs/gameplay/camera.md`).
+- The animation asks the recipient's rig for an intent, as a Fixed request of
+  `ticks` from the authority, so it replicates like any other. `front`, `back`,
+  `left` and `right` name intents for the side the blow came from: the strike's
+  direction read against the way the recipient faces. Only `front` is required,
+  and it answers any side that names none and a blow with no direction. A rig
+  plays one on a layer whose selector reads it; an additive layer over the
+  upper body lets a character flinch while it walks.
 
 `ReactToEffect` is the decision as a pure function of the rules and one
 application, so a game can test its own profiles without a World.

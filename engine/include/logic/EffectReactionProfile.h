@@ -2,10 +2,12 @@
 
 #include <attributes/AttributeId.h>
 #include <effects/EffectSource.h>
+#include <gameplay_tags/GameplayTagId.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagQueryNames.h>
 #include <math/Vec.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -22,7 +24,8 @@ struct EffectAttributeChange;
 
 // How an entity answers the effects applied to it, as authored content: each
 // reaction matches an effect's kinds and the way one attribute moved, and pushes
-// the entity and shakes its view in proportion to how far it moved.
+// the entity and shakes its view in proportion to how far it moved, and asks its
+// rig to flinch from the side the blow came from.
 // docs/gameplay/reactions.md.
 inline constexpr std::string_view kEffectReactionProfileType = "effect.reaction_profile";
 
@@ -44,6 +47,13 @@ struct EffectReactionDeclaration
     std::string ShakeProfile;
     float ShakePerUnit = 0.0f;
     float ShakeMax = 0.0f;
+    // Animation intents by the side the blow came from; empty plays nothing. Front
+    // answers a blow with no direction, and any side that names none of its own.
+    std::string AnimationFront;
+    std::string AnimationBack;
+    std::string AnimationLeft;
+    std::string AnimationRight;
+    std::uint32_t AnimationTicks = 0;
 };
 
 struct EffectReactionProfile
@@ -67,6 +77,11 @@ struct EffectReactionRule
     std::string ShakeProfile;
     float ShakePerUnit = 0.0f;
     float ShakeMax = 0.0f;
+    GameplayTagId AnimationFront;
+    GameplayTagId AnimationBack;
+    GameplayTagId AnimationLeft;
+    GameplayTagId AnimationRight;
+    std::uint32_t AnimationTicks = 0;
 };
 
 // The rules `profile` means in a World with these registries, or false with one
@@ -89,6 +104,8 @@ struct EffectReactionCase
     // Where the instigator stood, when it still exists.
     std::optional<Vec3d> InstigatorPosition;
     Vec3d Up = Vec3d(0.0f, 1.0f, 0.0f);
+    // Which way the recipient faces, for the side a blow came from.
+    std::optional<Vec3d> Forward = std::nullopt;
 };
 
 struct EffectReactionOutcome
@@ -99,6 +116,9 @@ struct EffectReactionOutcome
     // Zero when the rule pushes nothing or the case has no direction to push along.
     Vec3d Impulse = Vec3d::Zero();
     float ShakeScale = 0.0f;
+    // What to ask the recipient's rig to play, and for how long; invalid when the rule asks nothing.
+    GameplayTagId AnimationIntent;
+    std::uint32_t AnimationTicks = 0;
 };
 
 // The first rule that answers the case, and what it does; nullopt when none does.

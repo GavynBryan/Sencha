@@ -49,6 +49,24 @@ namespace
         shake.Children.push_back(Amount("per_unit", "Per unit", "Shake scale per unit of change."));
         shake.Children.push_back(Amount("max", "Most", "The shake scale's cap."));
 
+        const auto intent = [](std::string key, std::string name, std::string summary) {
+            DataFieldSchema field = MakeDataField(DataFieldKind::GameplayTag, std::move(key), std::move(name),
+                                                  std::move(summary));
+            field.Required = false;
+            return field;
+        };
+        DataFieldSchema ticks = MakeDataField(DataFieldKind::Int, "ticks", "Ticks", "How long the intent is asked for.");
+        ticks.Required = false;
+        ticks.Numeric.Minimum = 1.0;
+        DataFieldSchema animation = MakeDataField(DataFieldKind::Record, "animation", "Animation",
+                                                  "Asks the entity's rig to flinch, by the side the blow came from.");
+        animation.Required = false;
+        animation.Children.push_back(intent("front", "Front", "Struck from the front, or from no direction."));
+        animation.Children.push_back(intent("back", "Back", "Struck from behind; the front when empty."));
+        animation.Children.push_back(intent("left", "Left", "Struck from its left; the front when empty."));
+        animation.Children.push_back(intent("right", "Right", "Struck from its right; the front when empty."));
+        animation.Children.push_back(std::move(ticks));
+
         DataFieldSchema reaction = MakeDataField(DataFieldKind::Record, "reaction", "Reaction");
         reaction.Children.push_back(MakeTagQueryNamesField("kinds", "Kinds"));
         reaction.Children.push_back(MakeTagQueryNamesField("recipient", "Recipient"));
@@ -58,6 +76,7 @@ namespace
         reaction.Children.push_back(Amount("threshold", "Threshold", "The least change answered at all."));
         reaction.Children.push_back(std::move(impulse));
         reaction.Children.push_back(std::move(shake));
+        reaction.Children.push_back(std::move(animation));
 
         DataFieldSchema reactions = MakeDataField(DataFieldKind::Array, "reactions", "Reactions",
                                                   "The first that matches an application answers it.");
@@ -69,7 +88,7 @@ namespace
         schema.TypeName = std::string(kEffectReactionProfileType);
         schema.DisplayName = "Effect reactions";
         schema.Description = "How an entity answers the effects applied to it: a push and a shake of its view, in "
-                             "proportion to the change.";
+                             "proportion to the change, and a flinch.";
         schema.Root.Kind = DataFieldKind::Record;
         schema.Root.Children.push_back(std::move(reactions));
         return schema;
@@ -121,6 +140,21 @@ namespace
             }
             reaction.ShakePerUnit = AmountOr(shake, "per_unit");
             reaction.ShakeMax = AmountOr(shake, "max");
+            if (const JsonValue* animation = entry.Find("animation"))
+            {
+                const auto name = [&](std::string_view key) {
+                    const JsonValue* value = animation->Find(key);
+                    return value != nullptr && value->IsString() ? value->AsString() : std::string{};
+                };
+                reaction.AnimationFront = name("front");
+                reaction.AnimationBack = name("back");
+                reaction.AnimationLeft = name("left");
+                reaction.AnimationRight = name("right");
+                const JsonValue* ticks = animation->Find("ticks");
+                if (reaction.AnimationFront.empty() || ticks == nullptr || !ticks->IsNumber() || ticks->AsNumber() < 1.0)
+                    return { {}, {}, at + ".animation An animation names at least its front, and its ticks." };
+                reaction.AnimationTicks = static_cast<std::uint32_t>(ticks->AsNumber());
+            }
             for (const float amount : { reaction.Threshold, reaction.ImpulsePerUnit, reaction.ImpulseMax,
                                         reaction.Lift, reaction.ShakePerUnit, reaction.ShakeMax })
                 if (!std::isfinite(amount) || amount < 0.0f)
@@ -154,6 +188,23 @@ namespace
         const float length = way.Magnitude();
         return std::isfinite(length) && length > 1.0e-4f ? way / length : Vec3d::Zero();
     }
+
+    // The intent for the side a blow travelling along `way` struck, the front when it has none.
+    GameplayTagId FlinchIntent(const EffectReactionRule& rule, const EffectReactionCase& application, Vec3d way)
+    {
+        if (!application.Forward || way.Magnitude() <= 0.0f)
+            return rule.AnimationFront;
+        const Vec3d forward = application.Forward->Normalized();
+        const Vec3d right = forward.Cross(application.Up.Normalized());
+        const float along = way.Dot(forward);
+        const float across = way.Dot(right);
+        GameplayTagId side;
+        if (std::abs(along) >= std::abs(across))
+            side = along > 0.0f ? rule.AnimationBack : rule.AnimationFront;
+        else
+            side = across > 0.0f ? rule.AnimationLeft : rule.AnimationRight;
+        return side.IsValid() ? side : rule.AnimationFront;
+    }
 }
 
 void RegisterEffectReactionProfileData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas)
@@ -186,6 +237,19 @@ bool ResolveEffectReactionProfile(const EffectReactionProfile& profile, const At
         rule.ShakeProfile = reaction.ShakeProfile;
         rule.ShakePerUnit = reaction.ShakePerUnit;
         rule.ShakeMax = reaction.ShakeMax;
+        const auto intent = [&](const std::string& name) {
+            if (name.empty())
+                return GameplayTagId{};
+            const GameplayTagId id = tags.FindTag(name);
+            if (!id.IsValid())
+                errors.push_back(std::format("no gameplay tag '{}'", name));
+            return id;
+        };
+        rule.AnimationFront = intent(reaction.AnimationFront);
+        rule.AnimationBack = intent(reaction.AnimationBack);
+        rule.AnimationLeft = intent(reaction.AnimationLeft);
+        rule.AnimationRight = intent(reaction.AnimationRight);
+        rule.AnimationTicks = reaction.AnimationTicks;
         out.push_back(std::move(rule));
     }
     return errors.size() == before;
@@ -212,13 +276,17 @@ std::optional<EffectReactionOutcome> ReactToEffect(std::span<const EffectReactio
         if (!(units > 0.0f) || units < rule.Threshold)
             continue;
 
-        EffectReactionOutcome outcome{ .Rule = index, .Units = units };
+        EffectReactionOutcome outcome;
+        outcome.Rule = index;
+        outcome.Units = units;
+        const Vec3d way = PushDirection(application);
         const float speed = std::min(units * rule.ImpulsePerUnit, rule.ImpulseMax);
-        if (speed > 0.0f)
+        if (speed > 0.0f && way.Magnitude() > 0.0f)
+            outcome.Impulse = way * speed + application.Up.Normalized() * (speed * rule.Lift);
+        if (rule.AnimationFront.IsValid())
         {
-            const Vec3d way = PushDirection(application);
-            if (way.Magnitude() > 0.0f)
-                outcome.Impulse = way * speed + application.Up.Normalized() * (speed * rule.Lift);
+            outcome.AnimationIntent = FlinchIntent(rule, application, way);
+            outcome.AnimationTicks = rule.AnimationTicks;
         }
         if (!rule.ShakeProfile.empty())
             outcome.ShakeScale = std::min(units * rule.ShakePerUnit, rule.ShakeMax);
