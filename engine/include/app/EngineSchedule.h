@@ -3,6 +3,8 @@
 #include <app/GameContexts.h>
 
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <queue>
 #include <typeindex>
 #include <unordered_map>
@@ -99,6 +101,14 @@ public:
     void RunEndFrame(EndFrameContext& ctx);
 
 private:
+    // Fatal in every build: a dropped ordering shows up as wrong behaviour far
+    // from here, and a cycle would remove whole systems from their phase.
+    [[noreturn]] static void DieOfBadOrdering(const char* message)
+    {
+        std::fprintf(stderr, "EngineSchedule: %s\n", message);
+        std::abort();
+    }
+
     template<typename TContext>
     struct DispatchEntry
     {
@@ -211,14 +221,14 @@ void EngineSchedule::After()
     const std::type_index dep(typeid(TDep));
 
     // An edge between systems one of which is not registered is a typo, not an
-    // ordering. Asserted rather than ignored because an ordering that quietly
+    // ordering. Fatal rather than ignored because an ordering that quietly
     // does not exist is the one scheduling fault that never shows up as a
     // crash: it shows up as a remote player a tick behind, months later, on
     // someone else's machine.
-    assert(TypeIndex.contains(tid)
-           && "After<T, TDep>: T is not registered in this schedule");
-    assert(TypeIndex.contains(dep)
-           && "After<T, TDep>: TDep is not registered in this schedule");
+    if (!TypeIndex.contains(tid))
+        DieOfBadOrdering("After<T, TDep>: T is not registered in this schedule");
+    if (!TypeIndex.contains(dep))
+        DieOfBadOrdering("After<T, TDep>: TDep is not registered in this schedule");
 
     bool landed = false;
     landed |= AddDependency(ZoneResidencyEntries, tid, dep);
@@ -236,8 +246,8 @@ void EngineSchedule::After()
     // is better than believing one was declared: the dependency is recorded per
     // phase list, so an edge between a PreSimulate system and a FrameUpdate one
     // silently describes nothing.
-    assert(landed && "After<T, TDep>: T and TDep share no frame phase");
-    (void)landed;
+    if (!landed)
+        DieOfBadOrdering("After<T, TDep>: T and TDep share no frame phase");
 }
 
 template<typename T>
@@ -329,8 +339,8 @@ void EngineSchedule::TopoSort(std::vector<DispatchEntry<TContext>>& entries)
                 q.push(m);
     }
 
-    assert(sorted.size() == entries.size()
-        && "Cycle detected in EngineSchedule dependency declarations");
+    if (sorted.size() != entries.size())
+        DieOfBadOrdering("a cycle in EngineSchedule dependency declarations would drop systems from their phase");
 
     entries = std::move(sorted);
 }
