@@ -15,6 +15,7 @@
 #include <authored/WorldVocabulary.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <attributes/AttributeDeclarations.h>
+#include <attributes/AttributeRegistry.h>
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
 #include <effects/EffectDefinitionData.h>
@@ -281,6 +282,39 @@ TEST(ContentVocabulary, AnEffectDeclaresTheAbilitiesItGrants)
     EXPECT_EQ(entry->Key, "w_fire");
     EXPECT_EQ(entry->Override.Priority, 10);
     EXPECT_EQ(world.Entities.GetResource<AbilityRegistry>().GetName(entry->Ability), "asset://a/fire.sdata");
+}
+
+TEST(ContentVocabulary, AnEffectsKindsResolveToTagsItNeverGrants)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets{ logging, serializers };
+    const DataAssetCompileResult compiled = assets.DataTypes.Find(kEffectDefinitionType)->Compile(*JsonParse(R"({
+        "kinds": [ "damage.claw" ],
+        "modifiers": [ { "key": "hurt", "attribute": "Health", "magnitude": -18 } ] })"));
+    ASSERT_TRUE(compiled.IsValid()) << compiled.Error;
+    const auto& declaration = *static_cast<const EffectDeclaration*>(compiled.Value.get());
+    ASSERT_EQ(declaration.Kinds.size(), 1u);
+
+    AttributeRegistry attributes;
+    (void)attributes.RegisterAttribute("Health");
+    GameplayTagRegistry tags;
+    EffectDefinition definition;
+    std::vector<std::string> errors;
+    EXPECT_FALSE(ResolveEffectDeclaration(declaration, attributes, tags, definition, errors));
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("damage.claw"), std::string::npos);
+
+    const GameplayTagId claw = *tags.RegisterTag("damage.claw");
+    errors.clear();
+    ASSERT_TRUE(ResolveEffectDeclaration(declaration, attributes, tags, definition, errors));
+    EXPECT_TRUE(definition.Kinds.HasExact(claw));
+    EXPECT_TRUE(definition.GrantedTags.empty());
+
+    EXPECT_FALSE(assets.DataTypes.Find(kEffectDefinitionType)
+                     ->Compile(*JsonParse(R"({ "kinds": [ "a", "a" ] })"))
+                     .IsValid())
+        << "a kind named twice";
 }
 
 TEST(ContentVocabulary, MalformedDeclarationsDoNotCompile)

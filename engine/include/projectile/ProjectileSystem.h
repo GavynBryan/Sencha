@@ -6,6 +6,7 @@
 #include <ecs/EntityId.h>
 #include <ecs/Query.h>
 #include <effects/EffectId.h>
+#include <effects/EffectSource.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <math/Vec.h>
 #include <physics/HitRegionResolver.h>
@@ -184,7 +185,7 @@ private:
     bool Strike(EntityId projectile, ProjectileMotion& motion, const ResolvedProjectile& definition,
                 EntityId instigator, const Contact& contact, const FixedSimTime& now);
     void ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                      EffectId override, const FixedSimTime& now, float scale = 1.0f);
+                      EffectId override, const FixedSimTime& now, const EffectSource& source, float scale = 1.0f);
     // The projectile's hit scale query's answer for a strike; 1 without one.
     [[nodiscard]] float HitScale(const ResolvedProjectile& definition, EntityId target, GameplayTagId region);
     void Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,

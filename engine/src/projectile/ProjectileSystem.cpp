@@ -494,7 +494,13 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
     const std::optional<HitRegionHit> region =
         Regions.Resolve(world, target, contact.From, contact.Direction, contact.Distance + kRegionDepth);
     const GameplayTagId part = region ? region->Region : GameplayTagId{};
-    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now, HitScale(definition, target, part));
+    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now,
+                 EffectSource{ .Instigator = instigator,
+                               .Point = contact.Point,
+                               .Direction = contact.Direction,
+                               .HasPoint = true,
+                               .HasDirection = true },
+                 HitScale(definition, target, part));
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = instigator,
                                                             .Projectile = projectile,
@@ -521,20 +527,21 @@ float ProjectileSystem::HitScale(const ResolvedProjectile& definition, EntityId 
 }
 
 void ProjectileSystem::ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                                    EffectId override, const FixedSimTime& now, float scale)
+                                    EffectId override, const FixedSimTime& now, const EffectSource& source,
+                                    float scale)
 {
     World& world = *Entities;
     if (!world.IsAlive(target) || !world.HasComponent<AttributeSet>(target))
         return;
     if (override.IsValid())
     {
-        (void)ApplyEffect(world, target, override, now, LeaseOwner{}, 1.0f);
+        (void)ApplyEffect(world, target, override, now, LeaseOwner{}, 1.0f, source);
         return;
     }
     if (definition.HitEffect.IsValid())
-        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, scale);
+        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, scale, source);
     if (definition.ScaledEffect.IsValid() && magnitude > 0.0f && world.IsAlive(target))
-        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude * scale);
+        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude * scale, source);
 }
 
 void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,
@@ -577,7 +584,9 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
             }
         }
         motion.Hits[motion.HitCount++] = target;
-        ApplyEffects(motion.Magnitude, definition, target, definition.SplashEffect, now);
+        // From the blast's centre, so a splash pushes outward.
+        ApplyEffects(motion.Magnitude, definition, target, definition.SplashEffect, now,
+                     EffectSource{ .Instigator = instigator, .Point = point, .HasPoint = true });
     }
 }
 

@@ -9,6 +9,8 @@
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
+#include <effects/EffectLifetimeSystem.h>
+#include <logic/EffectReactionSystem.h>
 #include <logic/ResponsesSystem.h>
 #include <logic/VerbRelaySystem.h>
 #include <movement/FreeLocomotionSystem.h>
@@ -1441,6 +1443,15 @@ int Engine::Run(Game& game)
                                            .Presents = PresentsAWindow(Configuration),
                                            .Logging = &LoggingState });
 
+    // Every host answers effects with reactions: an entity whose EffectReactions
+    // name a profile is pushed and shaken in a process whose game registered
+    // nothing for it. After every engine pass that applies effects.
+    EngineSystems.Register<EffectReactionSystem>(
+        EffectReactionSystem::Services{ .DataAssets = &ContentState->Assets().DataAssets,
+                                        .Log = &LoggingState.GetLogger<EffectReactionSystem>() });
+    EngineSystems.After<EffectReactionSystem, EffectLifetimeSystem>();
+    EngineSystems.After<EffectReactionSystem, ResponsesSystem>();
+
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
     VocabularyBindings->BindPerception(*QueryDispatcherState);
@@ -1496,6 +1507,7 @@ int Engine::Run(Game& game)
                 EngineSystems.After<ProjectileSystem, AbilitySystem>();
             if (EngineSystems.Has<AttributeResolveSystem>())
                 EngineSystems.After<AttributeResolveSystem, ProjectileSystem>();
+            EngineSystems.After<EffectReactionSystem, ProjectileSystem>();
             VocabularyBindings->BindProjectiles(projectiles, *VerbDispatcherState);
         }
         CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(

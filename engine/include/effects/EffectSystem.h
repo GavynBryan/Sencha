@@ -3,6 +3,7 @@
 #include <ecs/EntityId.h>
 #include <effects/ActiveEffect.h>
 #include <effects/EffectId.h>
+#include <effects/EffectSource.h>
 #include <time/FrameClock.h>
 
 #include <cstddef>
@@ -13,9 +14,10 @@ class World;
 
 // The effect entity a lasting effect spawns; none for an instant one. Its authored
 // seconds become whole ticks of `now`'s tick length, and `scale` multiplies every
-// modifier's magnitude, whatever its op.
+// modifier's magnitude, whatever its op. `source` is recorded with what an
+// application changes, in the World's EffectApplicationLog when it has one.
 EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const FixedSimTime& now,
-                     LeaseOwner owner = {}, float scale = 1.0f);
+                     LeaseOwner owner = {}, float scale = 1.0f, const EffectSource& source = {});
 
 // Ends one lasting effect, revoking the tags it granted. Not inside a query.
 bool RemoveEffect(World& world, EntityId effect);

@@ -267,6 +267,15 @@ approach velocity, so the outcome depends on how the character arrived): a
 launch is the same however the character came in. It is authority-only; a
 predicting client is corrected to it (`docs/gameplay/responses.md`).
 
+### Impulse
+
+`movement.impulse {target, direction, speed = 1, rise = 0}` adds
+`direction × speed` plus `rise` along the character's up axis to however it
+was moving, once, through `AddMotionImpulse`: a shove, a blast. A walker
+shoved sideways keeps walking forward. It reads its arguments as a launch
+does and is authority-only in the same way. Effect reactions push through
+the same function (`docs/gameplay/reactions.md`).
+
 Jump is carried by `MovementIntent.Jump` rather than an ability
 (`JumpExecutionSystem.h`): a predicting client replays its own movement from
 each tick's state and input, and the ability path spawned timed effect

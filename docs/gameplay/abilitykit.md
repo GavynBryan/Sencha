@@ -139,7 +139,8 @@ All in fixed logic, ordered with `After<>`:
 
 1. `ActorTimeSystem` -- each actor's clock from its time leases.
 2. `AbilitySystem` -- the pass ("Runtime"); on a client, its predicted pass.
-3. Movement's composition, then `AttributeResolveSystem` and `EffectLifetimeSystem`.
+3. Movement's composition, then `AttributeResolveSystem` and `EffectLifetimeSystem`,
+   then `EffectReactionSystem`.
 4. `AbilityPresentationSystem`, where something presents.
 
 ## Effects
@@ -169,8 +170,9 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   them; an effect whose target is gone ends on the next lifetime pass, as does one
   whose owner is gone.
 - **Owners, scale and removal.** `ApplyEffect` takes an optional `LeaseOwner`
-  (an entity plus an opaque key) and a scale that multiplies every modifier's
-  magnitude, whatever its op. Content applies effects through `effect.apply` and
+  (an entity plus an opaque key), a scale that multiplies every modifier's
+  magnitude, whatever its op, and an `EffectSource`: who applied it and the
+  strike's point and direction. Content applies effects through `effect.apply` and
   holds them through the `effect.hold` lease (`docs/gameplay/authored-api.md`). `RemoveEffect` ends one effect and
   `RemoveEffectsOwnedBy` ends everything an owner holds; neither may run inside a
   query.
@@ -181,6 +183,11 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
 - **The fold is canonical.** Floating-point folding depends on order, so modifiers
   fold per target in effect-definition order, then application order, never
   storage order.
+- **Kinds and the application log.** An effect definition's `kinds` are tags
+  that say what sort of effect it is; they are never granted. While a World holds
+  an `EffectApplicationLog`, each application that changes Base records its
+  source and each attribute's Base before and after, clamped. Reactions read it
+  (`docs/gameplay/reactions.md`).
 - **Costs fail closed.** `CheckEffectCosts` decides whether an actor can pay several
   costs together: deltas are summed per attribute first, a Base may not go below
   zero or the attribute's minimum (whichever is higher), and a missing definition,

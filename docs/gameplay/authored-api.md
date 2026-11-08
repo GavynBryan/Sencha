@@ -274,7 +274,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `anim.request`, `anim.cancel` | verb | gameplay / simulation | `docs/gameplay/animation.md` |
 | `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
 | `anim.present {target, intent, lifetime = impulse, ticks}` | verb | cosmetic / presentation | the intent played on the target's presentation layers, on this machine alone (`docs/gameplay/animation.md`, "Presentation layers") |
-| `effect.apply {target, effect, scale = 1}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale` |
+| `effect.apply {target, effect, scale = 1, instigator?, from?}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale`; `instigator` and `from` are its source, for reactions |
 | `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
 | `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
 | `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
@@ -283,6 +283,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends |
 | `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
 | `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
+| `movement.impulse {target, direction, speed = 1, rise = 0}` | verb | gameplay / authority only | that velocity added to the character's once (`docs/gameplay/movement.md`, "Impulse") |
 | `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
 | `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
 | `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |

@@ -749,8 +749,8 @@ extraction takes a `const World&`.
 
 ## v41
 
-Mechanisms for enemies that sense, remember, choose and strike, and for
-naming where a strike lands.
+Mechanisms for enemies that sense, remember, choose and strike, for
+naming where a strike lands, and for answering the effects that land.
 
 **Perception.** `ObservationMemory` (component, `OBSM`) and
 `ObservationMemorySystem`, which `RegisterPerception` now schedules after
@@ -778,3 +778,10 @@ naming where a strike lands.
 value. `Projectile::HitScaleQuery` (`hit_scale_query`) scales a strike's
 effects; `ProjectileSystem::Services::Queries` answers it. Characters are
 struck through their bodies, so `SweepCharacters` is gone.
+
+**Effects and reactions.** `ApplyEffect` takes a trailing `EffectSource`, and
+`EffectDefinition` gains `Kinds`. `EffectApplicationLog` records what each
+application changed. `effect.apply` gains optional `instigator` and `from`
+arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
+`ReactToEffect` and `EffectReactionSystem`, which every host registers.
+`movement.impulse` and `MovementOperations::Impulse`.

@@ -2,6 +2,7 @@
 
 #include <attributes/AttributeId.h>
 #include <gameplay_tags/GameplayTagId.h>
+#include <gameplay_tags/GameplayTagSet.h>
 
 #include <cstdint>
 #include <vector>
@@ -60,4 +61,6 @@ struct EffectDefinition
 
     std::vector<EffectModifier> Modifiers;
     std::vector<GameplayTagId> GrantedTags; // applied while a Duration/Infinite effect is active
+    // What sort of effect it is, for whatever reacts to an application; never granted.
+    GameplayTagSet Kinds;
 };

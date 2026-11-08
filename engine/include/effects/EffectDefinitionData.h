@@ -33,6 +33,7 @@ struct EffectDeclaration
     float TimeScale = 1.0f;
     std::vector<Modifier> Modifiers;
     std::vector<std::string> GrantedTags;
+    std::vector<std::string> Kinds;
     // Held by the target for as long as the effect lasts.
     std::vector<AbilityGrantDeclaration> GrantedAbilities;
 };

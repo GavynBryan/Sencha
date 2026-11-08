@@ -7,6 +7,7 @@
 #include <physics/PhysicsStepSystem.h>
 #include <physics/components/Collider.h>
 #include <physics/components/RigidBody.h>
+#include <movement/MotionComposition.h>
 #include <navigation/NavigationGeometry.h>
 #include <time/ActorTimeLeases.h>
 
@@ -106,6 +107,25 @@ TEST(NavAgentRepath, FollowsAMovingTargetWithoutReplanningEveryTick)
     for (std::size_t i = 1; i < repathTicks.size(); ++i)
         EXPECT_GE(repathTicks[i] - repathTicks[i - 1], 30u) << "refreshes closer than nav.agent.repath_interval";
     EXPECT_EQ(reversals, 0);
+}
+
+// A shove knocks an agent off its route; it walks on from wherever it lands.
+TEST(NavAgentRepath, AnAgentShovedOffItsRouteStillArrives)
+{
+    NavAgentHarness harness(LongHall());
+    const EntityId agent = harness.SpawnAgent(Vec3d(2.0f, 0.0f, 5.0f));
+    (void)RequestNavigation(harness.Entities(), agent, NavDestination::AtPoint(Vec3d(30.0f, 0.0f, 5.0f)));
+    for (int i = 0; i < 60; ++i)
+        harness.Step();
+    const float before = harness.Position(agent).Z;
+    ASSERT_TRUE(AddMotionImpulse(harness.Entities(), agent, Vec3d(0.0f, 0.0f, 9.0f)));
+    for (int i = 0; i < 20; ++i)
+        harness.Step();
+    EXPECT_GT(harness.Position(agent).Z - before, 1.0f) << "the shove moved it off the route";
+
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
+    EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
+    EXPECT_NEAR(harness.Position(agent).X, 30.0f, 1.0f);
 }
 
 // C: a change to the route's own tiles replans around it, and with no way

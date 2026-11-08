@@ -887,6 +887,27 @@ described in `docs/navigation/runtime.md`, "Agents".
   decides whether a headless authority poses characters, and adds a socket to
   `HitRegion` resolved through a simulation-side joint readback.
 
+## Effect reactions on a remote client
+
+- **What:** `EffectReactionSystem` runs on the authority. The shake it starts
+  is presented only by the authority's own views, so a struck remote player's
+  screen does not shake, and its push reaches a predicting client only as a
+  correction, which may snap.
+- **Where:** `logic/EffectReactionSystem.h`; cues reach clients through
+  `AbilityCueLog`; prediction corrections in `docs/gameplay/responses.md`.
+- **Trigger:** the first networked session where a remote player is struck.
+  It sends the shake as a cue to the struck player's machine and measures
+  whether a shove snaps there, carrying it in the predicted motion if it does.
+
+## An event for each effect application
+
+- **What:** content cannot answer an effect landing through `responses`; only
+  `EffectReactionSystem` reads the application log.
+- **Where:** `effects/EffectApplicationLog.h`.
+- **Trigger:** the first content that must answer an effect rather than a
+  strike, such as a sound for a heal. It declares an `effect.applied` event and
+  decides which attribute's change its payload carries.
+
 ## Lag-compensated projectile contacts
 
 - **What:** a projectile's contacts are decided against the authority's present.

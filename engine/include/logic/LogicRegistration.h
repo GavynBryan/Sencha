@@ -1,14 +1,16 @@
 #pragma once
 
+#include <logic/EffectReactions.h>
 #include <logic/Responses.h>
 #include <logic/ResponsesSerializer.h>
 #include <logic/VerbRelay.h>
 #include <logic/VerbRelaySerializer.h>
 #include <world/ComponentRegistrar.h>
 
-// Authored logic placed in a scene: relays, which a native path activates, and
-// responses, which answer the occurrences delivered at their entity.
-using LogicComponents = ComponentSet<VerbRelay, Responses>;
+// Authored logic placed in a scene: relays, which a native path activates,
+// responses, which answer the occurrences delivered at their entity, and effect
+// reactions, which answer the effects applied to it.
+using LogicComponents = ComponentSet<VerbRelay, Responses, EffectReactions>;
 
 inline void RegisterLogicComponents(ComponentRegistrar& registrar)
 {

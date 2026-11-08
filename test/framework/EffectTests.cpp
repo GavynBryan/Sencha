@@ -1,6 +1,7 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <effects/ActiveEffect.h>
+#include <effects/EffectApplicationLog.h>
 #include <effects/EffectCost.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
@@ -455,4 +456,65 @@ TEST(EffectCost, ACostNeverTakesAnUnboundedAttributeBelowZero)
 
     const std::array costs{ cost };
     EXPECT_EQ(CheckEffectCosts(w.world, hero, costs).Status, EffectCostStatus::Insufficient);
+}
+
+TEST_F(EffectFixture, AnApplicationRecordsWhatItChangedAsItLandedAndWhereItCameFrom)
+{
+    EffectDefinition d{};
+    d.Duration = EffectDuration::Instant;
+    d.Modifiers = { { health, ModifierOp::Add, -30.0f }, { health, ModifierOp::Add, -10.0f } };
+    const EffectId blow = Define("Blow", d);
+    EntityId hero = MakeActor(25.0f, 5.0f);
+    EntityId villain = MakeActor(100.0f, 5.0f);
+
+    ApplyEffect(world, hero, blow, At(0));
+    EffectApplicationLog& log = world.AddResource<EffectApplicationLog>();
+    EXPECT_TRUE(log.Applications().empty()) << "nothing is recorded before the World holds a log";
+
+    const EffectSource source{ .Instigator = villain, .Point = Vec3d(1.0f, 2.0f, 3.0f), .HasPoint = true };
+    ApplyEffect(world, hero, blow, At(1), {}, 0.5f, source);
+    ASSERT_EQ(log.Applications().size(), 1u);
+    const EffectApplication& application = log.Applications()[0];
+    EXPECT_EQ(application.Target, hero);
+    EXPECT_EQ(application.Effect, blow);
+    EXPECT_EQ(application.Source.Instigator, villain);
+    EXPECT_TRUE(application.Source.HasPoint);
+    EXPECT_FALSE(application.Source.HasDirection);
+    EXPECT_FLOAT_EQ(application.Scale, 0.5f);
+    ASSERT_EQ(log.ChangesOf(application).size(), 1u) << "one change per attribute, however many modifiers";
+    EXPECT_FLOAT_EQ(log.ChangesOf(application)[0].Before, 0.0f) << "the first blow already took it to zero";
+    EXPECT_FLOAT_EQ(log.ChangeIn(application, health), 0.0f);
+
+    Set(hero).SetBase(health, 25.0f);
+    ApplyEffect(world, hero, blow, At(2), {}, 0.5f);
+    EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[1], health), -20.0f);
+    ApplyEffect(world, hero, blow, At(3));
+    EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[2], health), -5.0f) << "measured after the clamp, not as authored";
+    EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[2], speed), 0.0f);
+
+    log.Clear();
+    EXPECT_TRUE(log.Applications().empty());
+}
+
+TEST_F(EffectFixture, APeriodFallingDueIsRecordedAndALastingFoldIsNot)
+{
+    EffectDefinition poison{};
+    poison.Duration = EffectDuration::Infinite;
+    poison.Period = 1.0f;
+    poison.Modifiers = { { health, ModifierOp::Add, -3.0f } };
+    EffectDefinition haste{};
+    haste.Duration = EffectDuration::Infinite;
+    haste.Modifiers = { { speed, ModifierOp::Add, 2.0f } };
+    const EffectId poisoned = Define("Poison", poison);
+    const EffectId hasted = Define("Haste", haste);
+    EffectApplicationLog& log = world.AddResource<EffectApplicationLog>();
+
+    EntityId hero = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, hero, poisoned, At(0));
+    ApplyEffect(world, hero, hasted, At(0));
+    EXPECT_TRUE(log.Applications().empty()) << "neither changed Base yet";
+    Pass();
+    ASSERT_EQ(log.Applications().size(), 1u);
+    EXPECT_EQ(log.Applications()[0].Effect, poisoned);
+    EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[0], health), -3.0f);
 }

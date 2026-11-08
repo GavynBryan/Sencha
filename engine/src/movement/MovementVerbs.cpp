@@ -118,6 +118,23 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
                                   0.0, 0.0);
     launch.Arguments.Children.push_back(std::move(rise));
     (void)scope.Declare(std::move(launch));
+
+    VerbDefinition impulse;
+    impulse.Name = std::string(kMovementImpulseVerb);
+    impulse.DisplayName = "Impulse";
+    impulse.Description = "Adds a velocity to the character's, on top of whatever it was moving at: a shove.";
+    impulse.Category = "Movement";
+    DataFieldSchema shoved = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character shoved.");
+    shoved.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
+    impulse.Arguments.Children.push_back(std::move(shoved));
+    DataFieldSchema way = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, in world space.");
+    way.VectorLength = 3;
+    way.Editor.Widget = "direction";
+    impulse.Arguments.Children.push_back(std::move(way));
+    impulse.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second along the direction.", 1.0, 0.0));
+    impulse.Arguments.Children.push_back(
+        Number("rise", "Rise", "Metres per second added straight up, along the character's up axis.", 0.0, 0.0));
+    (void)scope.Declare(std::move(impulse));
 }
 
 namespace
@@ -256,11 +273,15 @@ VerbAdmission MovementOperations::Mode(const VerbInvocation& invocation)
     return VerbAdmission::Accepted;
 }
 
-VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
+namespace
 {
-    if (!IsSimulationAuthority(*Entities))
+// The velocity a launch or an impulse names: `direction` scaled to `speed`, plus
+// `rise` along the target's up axis.
+VerbAdmission ReadVelocity(World& world, const VerbInvocation& invocation, EntityId& target, Vec3d& velocity,
+                           Vec3d& up)
+{
+    if (!IsSimulationAuthority(world))
         return VerbAdmission::Refused;
-    EntityId target;
     AuthoredVectorValue direction;
     double speed = 0.0;
     double rise = 0.0;
@@ -273,17 +294,39 @@ VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
     const float length = heading.Magnitude();
     if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0))
         return VerbAdmission::InvalidArguments;
-    if (!Entities->IsAlive(target) || static_cast<const World&>(*Entities).TryGet<CharacterMovement>(target) == nullptr)
+    if (!world.IsAlive(target) || std::as_const(world).TryGet<CharacterMovement>(target) == nullptr)
         return VerbAdmission::Refused;
 
-    const LocomotionOutput* locomotion = Entities->IsRegistered<LocomotionOutput>()
-        ? static_cast<const World&>(*Entities).TryGet<LocomotionOutput>(target)
-        : nullptr;
-    const Vec3d up = locomotion != nullptr ? locomotion->UpAxis.Normalized() : Vec3d(0.0f, 1.0f, 0.0f);
-    const Vec3d velocity = (length > 1.0e-6f ? heading * (static_cast<float>(speed) / length) : Vec3d::Zero())
+    const LocomotionOutput* locomotion =
+        world.IsRegistered<LocomotionOutput>() ? std::as_const(world).TryGet<LocomotionOutput>(target) : nullptr;
+    up = locomotion != nullptr ? locomotion->UpAxis.Normalized() : Vec3d(0.0f, 1.0f, 0.0f);
+    velocity = (length > 1.0e-6f ? heading * (static_cast<float>(speed) / length) : Vec3d::Zero())
         + up * static_cast<float>(rise);
+    return VerbAdmission::Accepted;
+}
+} // namespace
+
+VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
+{
+    EntityId target;
+    Vec3d velocity;
+    Vec3d up;
+    if (const VerbAdmission read = ReadVelocity(*Entities, invocation, target, velocity, up);
+        read != VerbAdmission::Accepted)
+        return read;
     const float upward = velocity.Dot(up);
     const bool planar = ForceSetPlanarMotionOverride(*Entities, target, velocity - up * upward);
     const bool vertical = ForceSetUpMotionOverride(*Entities, target, upward);
     return planar && vertical ? VerbAdmission::Accepted : VerbAdmission::Refused;
+}
+
+VerbAdmission MovementOperations::Impulse(const VerbInvocation& invocation)
+{
+    EntityId target;
+    Vec3d velocity;
+    Vec3d up;
+    if (const VerbAdmission read = ReadVelocity(*Entities, invocation, target, velocity, up);
+        read != VerbAdmission::Accepted)
+        return read;
+    return AddMotionImpulse(*Entities, target, velocity) ? VerbAdmission::Accepted : VerbAdmission::Refused;
 }

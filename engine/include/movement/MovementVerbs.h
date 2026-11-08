@@ -18,6 +18,8 @@ inline constexpr std::string_view kMovementTetherLease = "movement.tether";
 inline constexpr std::string_view kMovementModeLease = "movement.mode";
 // Set a character moving at a velocity once; it keeps that momentum afterwards.
 inline constexpr std::string_view kMovementLaunchVerb = "movement.launch";
+// Add a velocity to a character's once, on top of whatever it was moving at: a shove.
+inline constexpr std::string_view kMovementImpulseVerb = "movement.impulse";
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope);
 
@@ -37,6 +39,7 @@ public:
     VerbAdmission Tether(const VerbInvocation& invocation);
     VerbAdmission Mode(const VerbInvocation& invocation);
     VerbAdmission Launch(const VerbInvocation& invocation);
+    VerbAdmission Impulse(const VerbInvocation& invocation);
 
 private:
     // Whether `owner` still holds a slot of `T`, looked for on its own entity first.
@@ -66,4 +69,9 @@ inline VerbAdmission InvokeMovementMode(MovementOperations& operations, const Ve
 inline VerbAdmission InvokeMovementLaunch(MovementOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Launch(invocation);
+}
+
+inline VerbAdmission InvokeMovementImpulse(MovementOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.Impulse(invocation);
 }
