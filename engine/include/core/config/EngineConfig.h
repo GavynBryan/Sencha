@@ -41,6 +41,10 @@ struct EngineConfig
     EngineCaptionConfig Captions;
 };
 
+// Applies the SENCHA_* measurement overrides (window size, validation, frame
+// scratch, adapter). Any host that wants them measurable calls this after configuring.
+void ApplyEnvironmentOverrides(EngineConfig& config);
+
 //=============================================================================
 // EngineConfigError
 //=============================================================================

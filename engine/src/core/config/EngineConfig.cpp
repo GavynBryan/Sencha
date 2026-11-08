@@ -2,6 +2,8 @@
 #include <core/json/JsonParser.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <utility>
@@ -104,4 +106,39 @@ std::optional<EngineConfig> LoadEngineConfig(
     }
 
     return config;
+}
+
+void ApplyEnvironmentOverrides(EngineConfig& config)
+{
+    if (const char* size = std::getenv("SENCHA_WINDOW_SIZE"))
+    {
+        int width = 0;
+        int height = 0;
+        if (std::sscanf(size, "%dx%d", &width, &height) == 2 && width > 0 && height > 0)
+        {
+            config.Window.Width = static_cast<std::uint32_t>(width);
+            config.Window.Height = static_cast<std::uint32_t>(height);
+        }
+    }
+    const auto readBool = [](const char* name, bool& out)
+    {
+        if (const char* value = std::getenv(name))
+            out = std::strcmp(value, "0") != 0;
+    };
+    readBool("SENCHA_VALIDATION", config.Graphics.EnableValidation);
+    readBool("SENCHA_VALIDATE_SYNC", config.Graphics.ValidateSynchronization);
+    readBool("SENCHA_VALIDATE_GPU_ASSISTED", config.Graphics.ValidateGpuAssisted);
+    readBool("SENCHA_VALIDATE_BEST_PRACTICES", config.Graphics.ValidateBestPractices);
+    if (const char* scratch = std::getenv("SENCHA_FRAME_SCRATCH_BYTES"))
+    {
+        unsigned long long bytes = 0;
+        if (std::sscanf(scratch, "%llu", &bytes) == 1 && bytes > 0)
+            config.Graphics.FrameScratchBytesPerFrame = bytes;
+    }
+    if (const char* device = std::getenv("SENCHA_DEVICE_INDEX"))
+    {
+        int index = -1;
+        if (std::sscanf(device, "%d", &index) == 1)
+            config.Graphics.DeviceIndex = index;
+    }
 }
