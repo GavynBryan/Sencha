@@ -444,7 +444,9 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
         const auto indexBytes = static_cast<std::uint64_t>(blob.Indices.size() * sizeof(std::uint32_t));
 
         const auto vertices = scratch->AllocateVertex(vertexBytes, ScratchTag::UiVertices);
-        const auto indices = scratch->AllocateIndex(indexBytes, ScratchTag::UiIndices);
+        const auto indices = vertices.IsValid()
+            ? scratch->AllocateIndex(indexBytes, ScratchTag::UiIndices)
+            : GpuFrameScratch::Allocation{};
         if (!vertices.IsValid() || !indices.IsValid())
         {
             // The ring is sized by a cvar and reports its own failures; dropping
@@ -459,8 +461,12 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
 
         if (command.Texture.Kind == UiTextureKind::Content && Textures != nullptr)
         {
-            push.TextureIndex = Textures->GetBindlessIndex(command.Texture.Content).Value;
-            push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
+            const BindlessImageIndex index = Textures->GetBindlessIndex(command.Texture.Content);
+            if (index.IsValid())
+            {
+                push.TextureIndex = index.Value;
+                push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
+            }
         }
         else if (command.Texture.Kind == UiTextureKind::Generated)
         {

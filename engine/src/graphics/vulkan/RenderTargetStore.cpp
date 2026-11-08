@@ -183,7 +183,14 @@ void RenderTargetStore::BuildSlot(Slot& slot, const RenderTargetDesc& desc)
     }
 
     if (desc.Read == RenderTargetRead::Bindless && desc.Sampler != VK_NULL_HANDLE)
+    {
         slot.Bindless = Services.Descriptors->RegisterSampledImage(slot.Color, desc.Sampler);
+        if (!slot.Bindless.IsValid())
+        {
+            ReleaseSlot(slot);
+            return;
+        }
+    }
 
     slot.ColorAccess = {};
     slot.Built = desc;
