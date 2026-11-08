@@ -49,7 +49,9 @@ SkinnedPoseRenderFeature::PosedSlots& SkinnedPoseRenderFeature::SlotFor(const Re
                                      [](const PosedSlots& slot, const RenderEntityKey& wanted) { return slot.Key < wanted; });
     if (it != Slots.end() && it->Key == key)
         return *it;
-    return *Slots.insert(it, PosedSlots{ .Key = key });
+    PosedSlots slots;
+    slots.Key = key;
+    return *Slots.insert(it, std::move(slots));
 }
 
 void SkinnedPoseRenderFeature::ReleaseBuffers(PosedSlots& slots)

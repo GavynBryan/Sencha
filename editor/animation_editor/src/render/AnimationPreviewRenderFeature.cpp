@@ -6,9 +6,15 @@
 #include <algorithm>
 #include <cmath>
 
+namespace
+{
+// The preview poses one character, however many sections it has.
+constexpr SkinnedPoseBudget kPreviewPoseBudget{ 16, 1024 * 1024 };
+}
+
 AnimationPreviewRenderFeature::AnimationPreviewRenderFeature(
     RuntimeAssets& assets, AnimationPreviewScene& scene)
-    : Assets(assets), Scene(scene), Skinning(scene.Poses, *assets.SkinnedMeshes)
+    : Assets(assets), Scene(scene), Skinning(scene.Poses, *assets.SkinnedMeshes, kPreviewPoseBudget)
 {
 }
 

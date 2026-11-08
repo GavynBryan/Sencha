@@ -326,7 +326,9 @@ TEST(FrameScratchPools, RandomAllocationsNeverOverrunAndAlwaysHonourFloors)
         {
             const std::uint64_t floor = pools[index].Floor;
             if (charged[index] < floor)
+            {
                 EXPECT_GE(ring.Available(static_cast<ScratchPool>(index), 1), floor - charged[index]);
+            }
         }
     }
 }
