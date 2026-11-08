@@ -65,6 +65,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/participant/ParticipantControl.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/perception/HearingSensor.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/perception/ObservationMemory.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/ObservationSharing.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterMoverLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"

@@ -11,6 +11,7 @@
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
+#include <logic/ClaimVocabulary.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
@@ -66,6 +67,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeResponsesDisable>(catalog.Find(kResponsesDisableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Responses));
     Verbs.push_back(BindPerceptionVerbs(verbs, entities));
+    Verbs.push_back(BindClaimVerbs(verbs, entities));
 }
 
 EngineVocabularyBindings::~EngineVocabularyBindings()
@@ -77,6 +79,8 @@ EngineVocabularyBindings::~EngineVocabularyBindings()
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
 {
     for (AuthoredQueryBindingToken& token : BindPerceptionQueries(queries, Entities))
+        Queries.push_back(std::move(token));
+    for (AuthoredQueryBindingToken& token : BindClaimQueries(queries, Entities))
         Queries.push_back(std::move(token));
 }
 

@@ -86,6 +86,8 @@ public:
     // The candidate's location in the querier's zone, projecting it once if the
     // generator did not. Ok, OutsideZone, OffNavigation or NotApplicable.
     [[nodiscard]] CandidateMeasureStatus CandidateNav(std::uint32_t row, NavLocation& out);
+    // Any point on the querier's navigation, as candidates are projected; nullopt off it.
+    [[nodiscard]] std::optional<NavLocation> ProjectNav(const Vec3d& point);
 
     // Built once per run with the first caller's limits, then shared.
     // Nullopt when navigation or the querier's location is unavailable.

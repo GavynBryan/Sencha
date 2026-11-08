@@ -23,6 +23,8 @@ struct ObservationMemoryEntry
     float Age = 0.0f;
     // Seconds the subject has been observed without a lapse.
     float Tracked = 0.0f;
+    // The way the subject faced when last observed; zero for an anonymous entry.
+    Vec3d Facing = Vec3d::Zero();
 };
 
 // An observer's retained observations, updated on the authority after each

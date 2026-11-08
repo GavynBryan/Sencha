@@ -168,6 +168,7 @@ namespace candidate_operation
     [[nodiscard]] CandidateMeasureDefinition DistanceMeasure();
     [[nodiscard]] CandidateMeasureDefinition HeightMeasure();
     [[nodiscard]] CandidateMeasureDefinition FacingMeasure();
+    [[nodiscard]] CandidateMeasureDefinition CrowdingMeasure();
     [[nodiscard]] CandidateMeasureDefinition EntityTagsMeasure();
     [[nodiscard]] CandidateMeasureDefinition ReachableMeasure();
     [[nodiscard]] CandidateMeasureDefinition TravelCostMeasure();

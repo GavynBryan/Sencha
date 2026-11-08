@@ -11,6 +11,8 @@ class World;
 
 inline constexpr std::string_view kSightSenseTag = "perception.sense.sight";
 inline constexpr std::string_view kHearingSenseTag = "perception.sense.hearing";
+// What an observer knows because another member of its group sensed it.
+inline constexpr std::string_view kSharedSenseTag = "perception.sense.shared";
 
 // Stages a stimulus for hearing: {source?, position?, radius, only?}. Without a
 // position it happens where the source stands; with `only` it reaches that
@@ -38,6 +40,7 @@ struct PerceptionSenses
 {
     GameplayTagId Sight;
     GameplayTagId Hearing;
+    GameplayTagId Shared;
 };
 
 // The sense tags, a GameplayTagRegistry if the World has none, as a World

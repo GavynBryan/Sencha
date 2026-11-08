@@ -8,6 +8,7 @@
 #include <camera/CameraShakeVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
+#include <logic/ClaimVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
@@ -62,5 +63,6 @@ bool InstallEngineVocabulary(World& world)
 
     const bool engineDeclared = CommitTogether(scope, queryScope, eventScope);
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);
-    return engineDeclared && perceptionDeclared;
+    const bool claimsDeclared = InstallClaimVocabulary(world);
+    return engineDeclared && perceptionDeclared && claimsDeclared;
 }

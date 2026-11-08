@@ -785,3 +785,8 @@ application changed. `effect.apply` gains optional `instigator` and `from`
 arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
 `ReactToEffect` and `EffectReactionSystem`, which every host registers.
 `movement.impulse` and `MovementOperations::Impulse`.
+
+**Groups.** `ObservationMemoryEntry::Facing`, `ObservationSharing`
+(component, `OBSS`) and `PerceptionSenses::Shared`. `ClaimBoard`,
+`claims.hold`, `claims.count` and `claims.held`. The `crowding` candidate
+measure and `CandidateRun::ProjectNav`.

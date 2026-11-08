@@ -155,8 +155,9 @@ and each is heard once. Every ear's hearing scan is `Complete`.
 `ObservationMemory { RetainSeconds }` on an observer keeps up to eight
 entries, one per subject: the last observed position, a velocity measured
 from two observations at most 0.25 s apart, the sense and confidence, `Age`
-(seconds since last observed) and `Tracked` (seconds observed without a
-lapse). An anonymous observation refreshes the remembered anonymous entry
+(seconds since last observed), `Tracked` (seconds observed without a
+lapse) and `Facing`, the way the subject faced when it was observed. An
+anonymous observation refreshes the remembered anonymous entry
 within 2 m of it, or starts one. A full memory replaces its oldest entry, and
 an entry older than `RetainSeconds` is dropped.
 
@@ -175,6 +176,18 @@ Queries, from the observer's memory:
 | `perception.seconds_since_seen` | observer, subject | float |
 | `perception.seconds_tracked` | observer, subject | float |
 | `perception.nearest_remembered_tagged` | observer, tag | entity |
+
+### Sharing
+
+`ObservationSharing { group, radius, delay_seconds }` puts an observer in a
+group named by a gameplay tag. Each observation a member makes reaches every
+other member's memory after `delay_seconds`, if that member stands within
+`radius` of the one that made it (zero reaches all), under the
+`perception.sense.shared` sense and with the subject's facing as observed.
+A member's own sight in the same tick is never overwritten by what it is
+told, so a reader that asks whether a subject is in view still checks for
+sight. Members are visited in entity order, so sharing is deterministic. A
+squad's radio is a radius and half a second; a hive is zero and zero.
 
 They answer `Unavailable` off the authority or for an observer with no
 memory. A subject never remembered answers false for `remembers` and

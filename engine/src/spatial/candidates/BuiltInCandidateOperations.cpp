@@ -20,5 +20,6 @@ void DeclareBuiltInCandidateOperations(CandidateMeasureRegistrationScope& measur
     (void)measures.Declare(RouteVisibilityMeasure());
     (void)measures.Declare(EdgeDistanceMeasure());
     (void)measures.Declare(EscapeRoutesMeasure());
+    (void)measures.Declare(CrowdingMeasure());
     (void)measures.Declare(AuthoredQueryMeasure());
 }

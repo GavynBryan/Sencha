@@ -284,6 +284,8 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
 | `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
 | `movement.impulse {target, direction, speed = 1, rise = 0}` | verb | gameplay / authority only | that velocity added to the character's once (`docs/gameplay/movement.md`, "Impulse") |
+| `claims.hold {group, claim, count = 1, share = 0}` | lease | gameplay / authority only | a place in a group's claim while held (`docs/gameplay/claims.md`) |
+| `claims.count {group, claim}`, `claims.held {holder, group, claim}` | query | | how many places are held; whether an entity holds one |
 | `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
 | `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
 | `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |

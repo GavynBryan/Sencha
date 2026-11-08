@@ -127,3 +127,88 @@ TEST(CandidateTacticalMeasures, SampleHeightsTellLowCoverFromOpenGround)
     const std::vector<Measured> tall = exposure(std::span(threats).last(1));
     EXPECT_FLOAT_EQ(tall[2].Value, 0.0f);
 }
+
+namespace
+{
+    // A 10 m hub with hallways leaving east, north and south.
+    NavTestGeometry HubWithThreeHallways()
+    {
+        NavTestGeometry geometry;
+        geometry.AddFloor(0.0f, 0.0f, 10.0f, 10.0f);
+        geometry.AddFloor(10.0f, 4.0f, 30.0f, 6.0f);
+        geometry.AddFloor(4.0f, 10.0f, 6.0f, 30.0f);
+        geometry.AddFloor(4.0f, -20.0f, 6.0f, 0.0f);
+        return geometry;
+    }
+
+    std::vector<float> CrowdingAt(CandidateHarness& harness, std::string_view arguments,
+                                  std::span<const CandidatePoint> spots, std::span<const CandidatePoint> others,
+                                  const Vec3d& origin)
+    {
+        const std::string json = std::format(R"({{
+            "slots": [{{ "name": "spots" }}, {{ "name": "others", "required": false }}, {{ "name": "origin" }}],
+            "generators": [{{ "generator": "candidates.generator.points", "arguments": {{ "slot": "spots" }} }}],
+            "criteria": [{{ "measure": "candidates.measure.crowding", "arguments": {}, "require": {{ "min": 0 }} }}],
+            "selection": {{ "mode": "all_qualified" }},
+            "limits": {{ "exact_nav_searches": 64 }}
+        }})", arguments);
+        const CandidateEvaluation evaluation = harness.Compile(json);
+        const std::array origins{ CandidatePoint{ .Position = origin } };
+        const std::vector<CandidateSlotBinding> slots{ CandidateSlotBinding{ 1, spots }, CandidateSlotBinding{ 2, others },
+                                                       CandidateSlotBinding{ 3, origins } };
+        CandidateContext context = QuerierAt(harness, kRoom, origin);
+        context.Slots = slots;
+        CandidateTrace trace(CandidateTraceLevel::Full, 16);
+        (void)harness.Run(evaluation, context, &trace);
+        std::vector<float> counts;
+        for (std::uint32_t row = 0; row < trace.Rows().size(); ++row)
+        {
+            EXPECT_EQ(trace.Value(row, 0).Status, CandidateMeasureStatus::Ok) << "row " << row;
+            counts.push_back(trace.Value(row, 0).Value);
+        }
+        return counts;
+    }
+}
+
+TEST(CandidateTacticalMeasures, CrowdingCountsWhoIsAlreadyHeadedEachWay)
+{
+    CandidateHarness harness;
+    harness.AttachZone(kRoom, HubWithThreeHallways());
+    const std::array others{ CandidatePoint{ .Position = Vec3d(15, 0, 5) }, CandidatePoint{ .Position = Vec3d(20, 0, 5) },
+                             CandidatePoint{ .Position = Vec3d(5, 0, 15) } };
+    const std::array spots{ CandidatePoint{ .Position = Vec3d(25, 0, 5) }, CandidatePoint{ .Position = Vec3d(5, 0, 25) },
+                            CandidatePoint{ .Position = Vec3d(5, 0, -15) } };
+    const std::vector<float> counts =
+        CrowdingAt(harness, R"({ "slot": "others", "origin": "origin", "angle": 30 })", spots, others, Vec3d(5, 0, 5));
+    ASSERT_EQ(counts.size(), 3u);
+    EXPECT_EQ(counts[0], 2.0f);
+    EXPECT_EQ(counts[1], 1.0f);
+    EXPECT_EQ(counts[2], 0.0f) << "the south hallway is the least crowded";
+
+    const std::vector<float> near =
+        CrowdingAt(harness, R"({ "slot": "others", "mode": "distance", "distance": 6 })", spots, others, Vec3d(5, 0, 5));
+    EXPECT_EQ(near[0], 1.0f) << "within 6 m of (25, 5) is the one at (20, 5)";
+    EXPECT_EQ(near[2], 0.0f);
+}
+
+TEST(CandidateTacticalMeasures, ByRouteABendingHallwayIsItsOwnWayOut)
+{
+    CandidateHarness harness;
+    NavTestGeometry geometry;
+    geometry.AddFloor(0.0f, 0.0f, 10.0f, 10.0f);
+    geometry.AddFloor(4.0f, 10.0f, 6.0f, 30.0f);
+    // East through a low door, then north up a parallel hallway.
+    geometry.AddFloor(10.0f, 1.0f, 20.0f, 3.0f);
+    geometry.AddFloor(18.0f, 3.0f, 20.0f, 30.0f);
+    harness.AttachZone(kRoom, geometry);
+    const std::array others{ CandidatePoint{ .Position = Vec3d(5, 0, 25) } };
+    const std::array spots{ CandidatePoint{ .Position = Vec3d(19, 0, 25) } };
+    const Vec3d origin(5, 0, 5);
+    EXPECT_EQ(CrowdingAt(harness, R"({ "slot": "others", "origin": "origin", "angle": 40 })", spots, others, origin)[0],
+              1.0f)
+        << "in a straight line the two hallways look alike";
+    EXPECT_EQ(CrowdingAt(harness, R"({ "slot": "others", "origin": "origin", "angle": 40, "bearing": "route", "radius": 6 })",
+                         spots, others, origin)[0],
+              0.0f)
+        << "by route one leaves the hub north and the other east";
+}

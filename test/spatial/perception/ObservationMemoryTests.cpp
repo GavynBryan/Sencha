@@ -8,8 +8,11 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <perception/ObservationMemory.h>
 #include <perception/ObservationMemorySystem.h>
+#include <perception/ObservationSharing.h>
+#include <perception/PerceptionVocabulary.h>
 #include <world/SimulationAuthority.h>
 
+#include <numbers>
 #include <optional>
 #include <vector>
 
@@ -26,6 +29,7 @@ namespace
         MemoryHarness()
         {
             Entities.RegisterComponent<ObservationMemory>();
+            Entities.RegisterComponent<ObservationSharing>();
             InstallAuthoredVocabulary(Entities);
             EXPECT_TRUE(InstallPerceptionVocabulary(Entities));
             Dispatcher.emplace(*FindAuthoredQueryRegistry(Entities));
@@ -37,6 +41,13 @@ namespace
             const EntityId entity = Observer(position);
             Entities.AddComponent<ObservationMemory>(entity, ObservationMemory{ .RetainSeconds = retainSeconds });
             return entity;
+        }
+
+        void Share(EntityId observer, std::string_view group, float radius, float delaySeconds)
+        {
+            (void)Entities.GetResource<GameplayTagRegistry>().RegisterTag(group);
+            Entities.AddComponent<ObservationSharing>(
+                observer, ObservationSharing{ .Group = group, .Radius = radius, .DelaySeconds = delaySeconds });
         }
 
         void Tick()
@@ -265,4 +276,64 @@ TEST(ObservationMemory, AClientRemembersNothingAndAnswersUnavailable)
     EXPECT_EQ(harness.Entities.TryGet<ObservationMemory>(eye)->Count, 0u);
     AuthoredValue answer;
     EXPECT_EQ(harness.Ask(kRemembersQuery, eye, target, answer), AuthoredQueryStatus::Unavailable);
+}
+
+TEST(ObservationMemory, RemembersTheWayTheSubjectFacedWhenItWasSeen)
+{
+    MemoryHarness harness;
+    const EntityId eye = harness.RememberingObserver(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+    const Quatf turned = Quatf::FromAxisAngle(Vec3d::Up(), std::numbers::pi_v<float> * 0.5f);
+    harness.Place(target, Vec3d(0, 0, -5), turned);
+    harness.Tick();
+    harness.Place(target, Vec3d(0, 0, 5));
+    harness.Ticks(5);
+    const ObservationMemoryEntry* entry = harness.Entry(eye, target);
+    ASSERT_NE(entry, nullptr);
+    const Vec3d faced = turned.RotateVector(Vec3d::Forward());
+    EXPECT_NEAR(entry->Facing.X, faced.X, 1e-4f) << "as it faced when seen, not as it faces now";
+    EXPECT_NEAR(entry->Facing.Z, faced.Z, 1e-4f);
+}
+
+TEST(ObservationMemory, AGroupSharesWhatOneMemberSeesAfterItsDelayAndWithinItsRadius)
+{
+    MemoryHarness harness;
+    const Quatf away = Quatf::FromAxisAngle(Vec3d::Up(), std::numbers::pi_v<float>);
+    const EntityId spotter = harness.RememberingObserver(Vec3d::Zero(), 30.0f);
+    const EntityId near = harness.Observer(Vec3d(10, 0, 0), 50.0f, std::numbers::pi_v<float> / 4.0f, away);
+    harness.Entities.AddComponent<ObservationMemory>(near, ObservationMemory{ .RetainSeconds = 30.0f });
+    const EntityId far = harness.Observer(Vec3d(200, 0, 0), 50.0f, std::numbers::pi_v<float> / 4.0f, away);
+    harness.Entities.AddComponent<ObservationMemory>(far, ObservationMemory{ .RetainSeconds = 30.0f });
+    const EntityId stranger = harness.Observer(Vec3d(-10, 0, 0), 50.0f, std::numbers::pi_v<float> / 4.0f, away);
+    harness.Entities.AddComponent<ObservationMemory>(stranger, ObservationMemory{ .RetainSeconds = 30.0f });
+    harness.Share(spotter, "squad.red", 60.0f, 0.5f);
+    harness.Share(near, "squad.red", 60.0f, 0.5f);
+    harness.Share(far, "squad.red", 60.0f, 0.5f);
+    harness.Share(stranger, "squad.blue", 60.0f, 0.5f);
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+
+    harness.Tick();
+    ASSERT_NE(harness.Entry(spotter, target), nullptr);
+    EXPECT_EQ(harness.Entry(near, target), nullptr) << "not before the delay";
+    harness.Place(target, Vec3d(0, 0, 50));
+    harness.Ticks(30);
+    const ObservationMemoryEntry* shared = harness.Entry(near, target);
+    ASSERT_NE(shared, nullptr);
+    EXPECT_EQ(shared->Sense, harness.Entities.GetResource<PerceptionSenses>().Shared)
+        << "known from a member, not seen";
+    EXPECT_EQ(shared->Position, Vec3d(0, 0, -5));
+    EXPECT_EQ(harness.Entry(far, target), nullptr) << "out of the spotter's radius";
+    EXPECT_EQ(harness.Entry(stranger, target), nullptr) << "another group";
+}
+
+TEST(ObservationMemory, AMembersOwnSightIsNotOverwrittenByWhatItIsTold)
+{
+    MemoryHarness harness;
+    const EntityId first = harness.RememberingObserver(Vec3d(-1, 0, 0), 30.0f);
+    const EntityId second = harness.RememberingObserver(Vec3d(1, 0, 0), 30.0f);
+    harness.Share(first, "squad.red", 0.0f, 0.0f);
+    harness.Share(second, "squad.red", 0.0f, 0.0f);
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+    harness.Ticks(3);
+    EXPECT_EQ(harness.Entry(second, target)->Sense, harness.Entities.GetResource<PerceptionSenses>().Sight);
 }

@@ -44,7 +44,8 @@ public:
     EngineVocabularyBindings(const EngineVocabularyBindings&) = delete;
     EngineVocabularyBindings& operator=(const EngineVocabularyBindings&) = delete;
 
-    // The perception.* queries, answered from this World's PerceptionFrame.
+    // The perception.* queries, answered from this World's PerceptionFrame, and
+    // the claims.* queries, from its ClaimBoard.
     void BindPerception(AuthoredQueryDispatcher& queries);
 
     // The navigation.* queries, answered from this World's agents' progress.

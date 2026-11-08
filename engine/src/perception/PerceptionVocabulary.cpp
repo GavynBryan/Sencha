@@ -274,8 +274,10 @@ const PerceptionSenses& EnsurePerceptionSenses(World& world)
         GameplayTagRegistry& tags = world.GetResource<GameplayTagRegistry>();
         const std::optional<GameplayTagId> sight = tags.RegisterTag(kSightSenseTag);
         const std::optional<GameplayTagId> hearing = tags.RegisterTag(kHearingSenseTag);
+        const std::optional<GameplayTagId> shared = tags.RegisterTag(kSharedSenseTag);
         world.AddResource<PerceptionSenses>(PerceptionSenses{ .Sight = sight.value_or(GameplayTagId{}),
-                                                              .Hearing = hearing.value_or(GameplayTagId{}) });
+                                                              .Hearing = hearing.value_or(GameplayTagId{}),
+                                                              .Shared = shared.value_or(GameplayTagId{}) });
     }
     return world.GetResource<PerceptionSenses>();
 }

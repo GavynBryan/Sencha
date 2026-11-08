@@ -95,6 +95,7 @@ About generation:
 | `route_visibility` | whether a slot's observers see the querier's route to the candidate | NavigationExact |
 | `edge_distance` | metres of walkable ground around the candidate before an edge, up to `max_radius` | NavigationBatch |
 | `escape_routes` | how many of `directions` lead to ground `distance` away reachable within `distance × detour` | NavigationExact |
+| `crowding` | how many of a slot's points share the candidate's direction from an origin, or lie within a distance of it | NavigationExact |
 
 Measure details:
 
@@ -102,6 +103,7 @@ Measure details:
 - **Estimates.** `reachable` and `travel_cost` take `outside_zone`: `reject` (default) or `estimate`, which uses straight-line distance and reports `Estimated`.
 - **`route_visibility` sampling.** It samples the route's start, every corner, and points along each leg at `spacing`.
 - **`visibility` sample heights.** `sample_heights` tests the candidate's side at each height as its own sample, so `reduce: fraction` over a waist-high wall answers between 0 and 1 where open ground answers 1. A height stands in for `target_height` when the slot watches and `eye_height` when the candidate does; an entity's own sight components still win.
+- **`crowding` directions.** In `angle` mode a point counts when its bearing from `origin` (the querier unless named) is within `angle` of the candidate's. `bearing: straight` is the line from the origin; `bearing: route` is where the route from the origin leaves `radius` of it, so a bending hallway or two doors facing one way are told apart, at one exact search per candidate and per point. In `distance` mode a point counts when it lies within `distance` of the candidate. Up to 32 points are weighed. It is what spreads a group across directions: each member scoring the least crowded way settles the group near an even split.
 - **`escape_routes` probes.** Each direction projects a point `distance` away onto navigation (within `vertical` above or below) and counts when that point's region was reached by one search from the candidate, capped at `distance × detour`. A dead end opens one way, a corridor two, a spot against a wall about half, open ground all. The search is charged to `exact_nav_searches`. Region entry costs run low by up to a region's width, so `detour` absorbs that too.
 - **Trace detail codes:**
   - `visibility`: the first failing observer's `SightOutcome`, with the blocking hit point and entity.
