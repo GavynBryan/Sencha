@@ -485,6 +485,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # EngineConfig reaches a game module through GameConfigureContext, so its
     # sections are layout the module compiled against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/config/*.h"
+    # Engine holds the render stats by value, so their fields move members a
+    # module's inline accessors read.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/profiling/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
     # The authored UI surface: a game holds UiScreenHandle, UiValue and the ids
     # by value and reaches the service through an inline Engine accessor, so
