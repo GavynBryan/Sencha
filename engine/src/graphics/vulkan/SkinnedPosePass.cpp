@@ -119,12 +119,17 @@ BufferHandle SkinnedPosePass::CreatePosedBuffer(std::uint32_t vertexCount)
     if (Buffers == nullptr || vertexCount == 0)
         return {};
     return Buffers->Create(BufferCreateInfo{
-        .Size = static_cast<VkDeviceSize>(vertexCount) * sizeof(StaticMeshVertex),
+        .Size = PosedBufferBytes(vertexCount),
         .Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .Memory = BufferMemory::GpuOnly,
         .DebugName = "Posed skinned vertices",
     });
+}
+
+std::uint64_t SkinnedPosePass::PosedBufferBytes(std::uint32_t vertexCount)
+{
+    return static_cast<std::uint64_t>(vertexCount) * sizeof(StaticMeshVertex);
 }
 
 void SkinnedPosePass::DestroyPosedBuffer(BufferHandle buffer)

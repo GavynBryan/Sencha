@@ -77,6 +77,38 @@ struct SkinnedPoseInstance
     std::uint32_t JointCount = 0;
 };
 
+struct SkinnedPoseOutcome
+{
+    std::uint32_t Visible = 0;
+    std::uint32_t Posed = 0;
+    std::uint32_t AtRest = 0;
+};
+
+[[nodiscard]] inline SkinnedPoseOutcome CountSkinnedPoseOutcome(std::span<const BufferHandle> posedBuffers)
+{
+    SkinnedPoseOutcome outcome;
+    outcome.Visible = static_cast<std::uint32_t>(posedBuffers.size());
+    for (const BufferHandle buffer : posedBuffers)
+        outcome.Posed += buffer.IsValid() ? 1u : 0u;
+    outcome.AtRest = outcome.Visible - outcome.Posed;
+    return outcome;
+}
+
+// The pose pass records in order and drops only the tail, so every buffered
+// instance past `recorded` was never written this frame.
+inline void InvalidateUnrecordedPoses(std::span<BufferHandle> posedBuffers, std::uint32_t recorded)
+{
+    std::uint32_t seen = 0;
+    for (BufferHandle& buffer : posedBuffers)
+    {
+        if (!buffer.IsValid())
+            continue;
+        if (seen >= recorded)
+            buffer = {};
+        ++seen;
+    }
+}
+
 struct SkinnedPoseFrameData
 {
     bool Ready = false;

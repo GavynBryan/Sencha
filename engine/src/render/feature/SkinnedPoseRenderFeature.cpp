@@ -1,7 +1,9 @@
 #include <render/feature/SkinnedPoseRenderFeature.h>
 
 #include <graphics/GpuFrameScratch.h>
+#include <graphics/RenderFrameHealth.h>
 #include <profiling/RenderInstrumentation.h>
+#include <profiling/RenderStats.h>
 
 
 #include <cstdint>
@@ -33,6 +35,9 @@ bool SkinnedPoseRenderFeature::Setup(const RenderFeatureServices& services)
 {
     Scratch = services.Scratch;
     Instrumentation = services.Instrumentation;
+    Health = services.Backend->Health;
+    Log = services.Logging != nullptr
+        ? &services.Logging->GetLogger<SkinnedPoseRenderFeature>() : nullptr;
     Pass.Setup(*services.Backend);
     return true;
 }
@@ -99,12 +104,16 @@ void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
 {
     ++FrameCounter;
     PruneStale();
+    PublishOutcome(RecordPoses(frame));
+}
 
+std::uint32_t SkinnedPoseRenderFeature::RecordPoses(const RenderFrame& frame)
+{
     SkinnedPoseFrameData& data = *FrameData;
     data.Ready = false;
     data.PosedBuffers.assign(data.Instances.size(), BufferHandle{});
     if (data.Instances.empty() || Scratch == nullptr)
-        return;
+        return 0;
 
     // The whole frame's palettes as one scratch allocation; each dispatch
     // binds its slice by offset. Scratch is host-visible and coherent, and
@@ -115,7 +124,7 @@ void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
         Scratch->Allocate(paletteBytes, kPaletteAlignment,
                           ScratchTag::SkinningPalettes);
     if (!palettes.IsValid())
-        return; // items fall back to rest geometry, counted as not Ready
+        return 0; // items fall back to rest geometry, counted as at rest
     CopyPalettesColumnMajor(
         data.Palettes,
         std::span<float>(static_cast<float*>(palettes.Mapped),
@@ -154,22 +163,56 @@ void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
     BeginGpuScope(frame, GpuScope::SkinPose);
     const std::uint32_t recorded = Pass.Record(*frame.Backend, DispatchScratch);
     EndGpuScope(frame, GpuScope::SkinPose);
-    // A job the pass could not record (budget, allocation) left its slot's
-    // entry stale-but-valid in PosedBuffers only if it dispatched; the pass
-    // records in order and only drops the tail, so invalidate the tail.
-    if (recorded < DispatchScratch.size())
+    InvalidateUnrecordedPoses(data.PosedBuffers, recorded);
+    data.Ready = recorded > 0;
+    return static_cast<std::uint32_t>(DispatchScratch.size()) - recorded;
+}
+
+void SkinnedPoseRenderFeature::PublishOutcome(std::uint32_t unrecorded)
+{
+    const SkinnedPoseOutcome outcome = CountSkinnedPoseOutcome(FrameData->PosedBuffers);
+    std::uint32_t posedBuffers = 0;
+    std::uint64_t posedBytes = 0;
+    for (const PosedSlots& slots : Slots)
     {
-        std::size_t seen = 0;
-        for (std::size_t index = 0; index < data.Instances.size(); ++index)
+        for (const BufferHandle buffer : slots.Buffers)
         {
-            if (!data.PosedBuffers[index].IsValid())
+            if (!buffer.IsValid())
                 continue;
-            if (seen >= recorded)
-                data.PosedBuffers[index] = {};
-            ++seen;
+            ++posedBuffers;
+            posedBytes += SkinnedPosePass::PosedBufferBytes(slots.VertexCount);
         }
     }
-    data.Ready = recorded > 0;
+
+    if (Health != nullptr)
+    {
+        Health->SkinnedVisible += outcome.Visible;
+        Health->SkinnedPosed += outcome.Posed;
+        Health->SkinnedAtRest += outcome.AtRest;
+        Health->PosedBuffers += posedBuffers;
+        Health->PosedBufferBytes += posedBytes;
+    }
+    if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
+    {
+        RenderStats& out = *Instrumentation->Stats;
+        out.SkinnedVisible = outcome.Visible;
+        out.SkinnedPosed = outcome.Posed;
+        out.SkinnedAtRest = outcome.AtRest;
+        out.PosedBuffers = posedBuffers;
+        out.PosedBufferBytes = posedBytes;
+    }
+
+    if (unrecorded > 0 && UnrecordedLog.Record() && Log != nullptr)
+    {
+        Log->Error("{} of {} visible skinned instances could not be posed: the pass records at most {} "
+                   "dispatches a frame, so the rest draw at rest",
+                   unrecorded, outcome.Visible, SkinnedPosePass::kMaxDispatchesPerFrame);
+    }
+    if (const auto ended = UnrecordedLog.EndPeriod(); ended.has_value() && Log != nullptr)
+    {
+        Log->Warn("Skinned instances are all posed again after {} frames over the dispatch limit",
+                  ended->Periods);
+    }
 }
 
 void SkinnedPoseRenderFeature::Teardown()

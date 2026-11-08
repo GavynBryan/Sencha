@@ -7,6 +7,7 @@
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/GpuFrameScratch.h>
+#include <graphics/RenderFrameHealth.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
@@ -138,6 +139,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     Buffers = services.Buffers;
     Descriptors = services.Descriptors;
     Scratch = services.Scratch;
+    Health = services.Health;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
     Bindings = &bindings;
@@ -523,6 +525,14 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
     return stream.Count;
 }
 
+void MeshForwardPass::PublishDropped(uint32_t instances, bool skipped) const
+{
+    if (Health == nullptr)
+        return;
+    Health->InstancesDropped += instances;
+    Health->PassesSkipped += skipped ? 1u : 0u;
+}
+
 void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset)
 {
     VkViewport viewport{};
@@ -818,6 +828,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     {
         LastStats.Skipped = true;
         LastStats.InstancesDropped = LastStats.QueueItems;
+        PublishDropped(LastStats.QueueItems, true);
         return DrawToken{};
     };
     // The transparent family only has to exist when something blends.
@@ -866,6 +877,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     // Whatever the slice could not carry goes unrendered this frame, and is
     // counted rather than silently missing from the image.
     LastStats.InstancesDropped = LastStats.QueueItems - streamed;
+    PublishDropped(LastStats.InstancesDropped, false);
 
     BindFrameState(frame, *uniformOffset);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING

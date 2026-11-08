@@ -29,7 +29,7 @@ public:
 	// 10: frame slot and acquire waits, the limiter wait, present and frame
 	// latency estimates, the locked delta, swapchain image count, presents
 	// outstanding and late present wait.
-	static constexpr std::uint32_t kSchemaVersion = 10;
+	static constexpr std::uint32_t kSchemaVersion = 11;
 
 	struct FrameRecord
 	{

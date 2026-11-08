@@ -229,6 +229,7 @@ Renderer::Renderer(LoggingProvider& logging,
     Services.Descriptors = &descriptors;
     Services.Scratch = &scratch;
     Services.Upload = &upload;
+    Services.Health = &FrameHealth;
 
     // Binding 0 names the scratch ring for the rest of the cache's life. Passes
     // then declare only the range their block needs, so no pass can point the
@@ -499,6 +500,7 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     // Rotate the per-frame scratch allocator into this frame's slice before
     // any feature draws -- feature code allocates transient UBOs from it.
     Services.Scratch->BeginFrame();
+    FrameHealth = RenderFrameHealth{ .FramesRecorded = FramesDrawn + 1 };
 
     // The descriptor cache holds released bindless slots until the GPU proves
     // it is done with the frames that could still resolve them; this is where
@@ -546,6 +548,11 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     }
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
+    const ScratchTagCounters& tags = Services.Scratch->GetTagCounters();
+    FrameHealth.ScratchFailures = Services.Scratch->GetFailedAllocationCount();
+    for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
+        FrameHealth.ScratchTagFailures[i] = tags.FailedAllocations(static_cast<ScratchTag>(i));
+
     if (Services.Instrumentation != nullptr
         && Services.Instrumentation->Stats != nullptr)
     {
@@ -554,7 +561,6 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         stats.ScratchUsedBytes = Services.Scratch->GetUsedBytes();
         stats.ScratchBytesPerFrame = Services.Scratch->GetBytesPerFrame();
         stats.ScratchAllocFailures = Services.Scratch->GetFailedAllocationCount();
-        const ScratchTagCounters& tags = Services.Scratch->GetTagCounters();
         for (std::size_t i = 0; i < ScratchTagCounters::kTagCount; ++i)
         {
             const auto tag = static_cast<ScratchTag>(i);

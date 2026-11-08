@@ -99,6 +99,11 @@ namespace
 			{ "scratch_bytes_per_frame", static_cast<double>(stats.ScratchBytesPerFrame) },
 			{ "scratch_alloc_failures_count", static_cast<double>(stats.ScratchAllocFailures) },
 			{ "passes_skipped_count", static_cast<double>(stats.PassesSkipped) },
+			{ "skinned_visible_count", static_cast<double>(stats.SkinnedVisible) },
+			{ "skinned_posed_count", static_cast<double>(stats.SkinnedPosed) },
+			{ "skinned_at_rest_count", static_cast<double>(stats.SkinnedAtRest) },
+			{ "posed_buffers_count", static_cast<double>(stats.PosedBuffers) },
+			{ "posed_buffer_bytes", static_cast<double>(stats.PosedBufferBytes) },
 		};
 		// Per-consumer slice columns, appended so the fixed set above keeps its
 		// order: a capture that shows the budget exhausted can then say which

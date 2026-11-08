@@ -5,6 +5,8 @@
 #include <render/SkinnedPoseFrameData.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
+#include <core/logging/RepeatedFailureLog.h>
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -30,6 +32,8 @@
 // buffer and their items fall back to rest geometry -- visible degradation,
 // never a dropped draw.
 //=============================================================================
+struct RenderFrameHealth;
+
 class SkinnedPoseRenderFeature : public IRenderFeature
 {
 public:
@@ -61,11 +65,17 @@ private:
                                                   std::uint32_t vertexCount,
                                                   std::uint32_t frameInFlight);
     void PruneStale();
+    // Returns how many wanted dispatches the pass could not record.
+    [[nodiscard]] std::uint32_t RecordPoses(const RenderFrame& frame);
+    void PublishOutcome(std::uint32_t unrecorded);
 
     std::shared_ptr<SkinnedPoseFrameData> FrameData;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
     GpuFrameScratch* Scratch = nullptr;
     const RenderInstrumentation* Instrumentation = nullptr;
+    RenderFrameHealth* Health = nullptr;
+    Logger* Log = nullptr;
+    RepeatedFailureLog UnrecordedLog;
     SkinnedPosePass Pass;
     std::vector<PosedSlots> Slots;
     std::vector<SkinnedPoseDispatch> DispatchScratch;

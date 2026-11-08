@@ -27,6 +27,7 @@ bool ShadowRenderFeature::Setup(const RenderFeatureServices& services)
         : nullptr;
 
     Instrumentation = services.Instrumentation;
+    Health = services.Backend->Health;
     if (!Bindings->Setup(*services.Backend))
     {
         if (log != nullptr)
@@ -62,9 +63,14 @@ void ShadowRenderFeature::OnDraw(const RenderFrame& frame)
     }
     EndGpuScope(frame, GpuScope::ShadowViews);
 
+    const ShadowDepthPass::DrawStats stats = Pass.GetLastDrawStats();
+    if (Health != nullptr)
+    {
+        Health->ShadowCastersDropped += stats.CastersDropped;
+        Health->PassesSkipped += stats.Skipped ? 1u : 0u;
+    }
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
     {
-        const ShadowDepthPass::DrawStats stats = Pass.GetLastDrawStats();
         Instrumentation->Stats->ShadowViewsRendered =
             stats.ViewsRendered + stats.PointFacesRendered;
         Instrumentation->Stats->PointShadowFacesRendered = stats.PointFacesRendered;

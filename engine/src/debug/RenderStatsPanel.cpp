@@ -118,6 +118,12 @@ void RenderStatsPanel::Draw()
 	            stats->ShadowInstanceRuns);
 
 	ImGui::Separator();
+	ImGui::Text("Skinning");
+	ImGui::Text("  visible %u  posed %u  at rest %u", stats->SkinnedVisible, stats->SkinnedPosed, stats->SkinnedAtRest);
+	ImGui::Text("  posed buffers %u (%.1f MiB)", stats->PosedBuffers,
+	            static_cast<float>(stats->PosedBufferBytes) / (1024.0f * 1024.0f));
+
+	ImGui::Separator();
 	ImGui::Text("Frame services");
 	ImGui::Text("  scratch %.1f / %.1f KiB (high water %.1f KiB)",
 	            static_cast<float>(stats->ScratchUsedBytes) / 1024.0f,

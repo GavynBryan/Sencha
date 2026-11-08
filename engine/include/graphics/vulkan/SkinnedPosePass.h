@@ -51,8 +51,7 @@ class SkinnedPosePass
 {
 public:
     // One descriptor set per dispatch per frame; the pool is sized for this
-    // many and Record drops jobs beyond it (the feature budgets first, so
-    // hitting the cap here is a policy failure worth the log).
+    // many and Record drops jobs beyond it, which the feature counts and logs.
     static constexpr std::uint32_t kMaxDispatchesPerFrame = 64;
 
     void Setup(const RendererServices& services);
@@ -61,6 +60,7 @@ public:
     // above holds only the policy that decides when to ask for one.
     [[nodiscard]] BufferHandle CreatePosedBuffer(std::uint32_t vertexCount);
     void DestroyPosedBuffer(BufferHandle buffer);
+    [[nodiscard]] static std::uint64_t PosedBufferBytes(std::uint32_t vertexCount);
     // Records every dispatch and the write->vertex-read barrier. Returns how
     // many jobs were recorded; the caller treats the rest as unposed.
     std::uint32_t Record(const FrameContext& frame,
