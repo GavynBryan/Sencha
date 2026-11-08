@@ -1,5 +1,6 @@
 #include <perception/ObservationMemorySystem.h>
 
+#include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <perception/ObservationSharing.h>
 #include <perception/PerceptionFrame.h>
@@ -42,19 +43,37 @@ namespace
         return nearest;
     }
 
-    ObservationMemoryEntry& Slot(ObservationMemory& memory)
+    // Whether `subject` carries the memory's preferred tag, which it forgets last.
+    bool Preferred(const World& world, const GameplayTagRegistry* tags, GameplayTagId prefer, EntityId subject)
+    {
+        if (!prefer.IsValid() || tags == nullptr || !subject.IsValid() || !world.IsAlive(subject))
+            return false;
+        const GameplayTagContainer* held = world.TryGet<GameplayTagContainer>(subject);
+        return held != nullptr && held->HasDescendantOf(*tags, prefer);
+    }
+
+    // A free entry, or the oldest one not preferred, or the oldest of all.
+    ObservationMemoryEntry& Slot(ObservationMemory& memory, const World& world, const GameplayTagRegistry* tags,
+                                 GameplayTagId prefer)
     {
         if (memory.Count < kObservationMemoryCapacity)
         {
             memory.Entries[memory.Count] = {};
             return memory.Entries[memory.Count++];
         }
-        ObservationMemoryEntry* oldest = &memory.Entries[0];
-        for (std::uint32_t index = 1; index < memory.Count; ++index)
-            if (memory.Entries[index].Age > oldest->Age)
-                oldest = &memory.Entries[index];
-        *oldest = {};
-        return *oldest;
+        ObservationMemoryEntry* oldest = nullptr;
+        ObservationMemoryEntry* oldestPlain = nullptr;
+        for (std::uint32_t index = 0; index < memory.Count; ++index)
+        {
+            ObservationMemoryEntry& entry = memory.Entries[index];
+            if (oldest == nullptr || entry.Age > oldest->Age)
+                oldest = &entry;
+            if (!Preferred(world, tags, prefer, entry.Subject) && (oldestPlain == nullptr || entry.Age > oldestPlain->Age))
+                oldestPlain = &entry;
+        }
+        ObservationMemoryEntry& freed = oldestPlain != nullptr ? *oldestPlain : *oldest;
+        freed = {};
+        return freed;
     }
 
     // The way `subject` faces now, which is when it is being observed; zero for none.
@@ -66,12 +85,22 @@ namespace
         return pose != nullptr ? pose->Value.Rotation.RotateVector(Vec3d::Forward()) : Vec3d::Zero();
     }
 
-    void Remember(ObservationMemory& memory, const Observation& observation, const Vec3d& facing)
+    void Remember(ObservationMemory& memory, const Observation& observation, const Vec3d& facing, const World& world)
     {
         ObservationMemoryEntry* entry = Match(memory, observation);
         if (entry == nullptr)
         {
-            entry = &Slot(memory);
+            const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+            const GameplayTagId prefer = tags != nullptr && !memory.Prefer.View().empty()
+                ? tags->FindTag(memory.Prefer.View())
+                : GameplayTagId{};
+            // A full memory never gives up something it prefers for something it does not.
+            if (memory.Count == kObservationMemoryCapacity && !Preferred(world, tags, prefer, observation.Subject)
+                && std::all_of(memory.Entries, memory.Entries + memory.Count, [&](const ObservationMemoryEntry& held) {
+                       return Preferred(world, tags, prefer, held.Subject);
+                   }))
+                return;
+            entry = &Slot(memory, world, tags, prefer);
             entry->Subject = observation.Subject;
         }
         else if (entry->Age == 0.0f)
@@ -131,7 +160,7 @@ void ObservationMemorySystem::FixedLogic(FixedLogicContext& ctx)
                 memory.Entries[index].Age += elapsed;
             for (const SenseScan& scan : frame->ScansOf(view.Entity(row)))
                 for (const Observation& observation : frame->ObservationsOf(scan))
-                    Remember(memory, observation, FacingOf(world, observation.Subject));
+                    Remember(memory, observation, FacingOf(world, observation.Subject), world);
         }
     });
     Now += elapsed;
@@ -170,9 +199,18 @@ void ObservationMemorySystem::Share(World& world, const FixedLogicContext&)
     // In identity order, so what arrives where is the same on every run.
     std::ranges::sort(members, {}, &Member::Entity);
 
+    // Members already know where the group is; only what lies outside it is passed on.
+    const auto inGroup = [&](EntityId subject, GameplayTagId group) {
+        return std::ranges::any_of(members, [&](const Member& other) {
+            return other.Entity == subject && other.Group == group;
+        });
+    };
     for (const Member& member : members)
         for (const SenseScan& scan : frame.ScansOf(member.Entity))
             for (const Observation& observation : frame.ObservationsOf(scan))
+            {
+                if (inGroup(observation.Subject, member.Group))
+                    continue;
                 InFlight.push_back({ .Group = member.Group,
                                      .From = member.Entity,
                                      .FromPosition = member.Position,
@@ -180,6 +218,7 @@ void ObservationMemorySystem::Share(World& world, const FixedLogicContext&)
                                      .Due = Now + member.Sharing->DelaySeconds,
                                      .Seen = observation,
                                      .Facing = FacingOf(world, observation.Subject) });
+            }
 
     Arrived.clear();
     std::erase_if(InFlight, [&](const SharedObservation& pending) {
@@ -202,7 +241,7 @@ void ObservationMemorySystem::Share(World& world, const FixedLogicContext&)
             if (ObservationMemory* memory = world.TryGet<ObservationMemory>(member.Entity))
             {
                 passed.Observer = member.Entity;
-                Remember(*memory, passed, arrival.Facing);
+                Remember(*memory, passed, arrival.Facing, world);
             }
         }
     }

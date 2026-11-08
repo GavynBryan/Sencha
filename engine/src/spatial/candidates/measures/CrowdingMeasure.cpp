@@ -137,10 +137,14 @@ namespace candidate_operation
             const Vec3d origin = run.SlotPoint(crowding.Origin, 0).Position;
             const bool byRoute = crowding.Way == Bearing::Route;
             const std::optional<NavLocation> start = byRoute ? run.ProjectNav(origin) : std::nullopt;
+            // Within the radius of the origin nothing has set out in a direction yet.
+            const auto near = [&](const Vec3d& point) { return Flat(point - origin).Magnitude() < crowding.Radius; };
             std::array<std::optional<Vec3d>, kMostOthers> bearings{};
             for (std::uint32_t index = 0; index < others; ++index)
             {
                 const Vec3d other = run.SlotPoint(crowding.Others, index).Position;
+                if (near(other))
+                    continue;
                 CandidateMeasureStatus ignored = CandidateMeasureStatus::Ok;
                 bearings[index] =
                     BearingOf(run, crowding, origin, start, other, byRoute ? run.ProjectNav(other) : std::nullopt, ignored);
@@ -149,6 +153,11 @@ namespace candidate_operation
             const float cosine = std::cos(ToRadians(crowding.AngleDegrees));
             for (const std::uint32_t row : rows)
             {
+                if (near(run.Position(row)))
+                {
+                    statuses[row] = CandidateMeasureStatus::NotApplicable;
+                    continue;
+                }
                 std::optional<NavLocation> end;
                 if (byRoute)
                 {
@@ -180,8 +189,9 @@ namespace candidate_operation
         definition.DisplayName = "Crowding";
         definition.Description = "How many of a slot's points share the candidate's direction from an origin: within "
                                  "an angle of its bearing, straight or where the route from the origin leaves a "
-                                 "radius, or within a distance of it. The route form charges an exact search per "
-                                 "candidate and per point.";
+                                 "radius, or within a distance of it. Within the radius of the origin a candidate is "
+                                 "unmeasured and a point is not counted: neither has set out yet. The route form "
+                                 "charges an exact search per candidate and per point.";
         definition.Arguments = Record({ SlotField("slot", "Others"), SlotField("origin", "Origin", "querier"),
                                         EnumField("mode", "Mode", { "angle", "distance" }, "angle"),
                                         FloatField("angle", "Angle (degrees)", 30.0, 0.0),

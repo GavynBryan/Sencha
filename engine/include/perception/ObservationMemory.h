@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/text/InlineString.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -39,6 +40,12 @@ ObservationMemory
     SENCHA_LABEL("Retain seconds")
     SENCHA_TOOLTIP("How long something unobserved is remembered.")
     float RetainSeconds = 8.0f;
+
+    SENCHA_FIELD("prefer")
+    SENCHA_OPTIONAL
+    SENCHA_LABEL("Prefer")
+    SENCHA_TOOLTIP("When memory is full, subjects carrying this gameplay tag, or one beneath it, are forgotten last.")
+    InlineString<64> Prefer{};
 
     std::uint32_t Count = 0;
     ObservationMemoryEntry Entries[kObservationMemoryCapacity]{};

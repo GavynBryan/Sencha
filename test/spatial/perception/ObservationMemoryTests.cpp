@@ -337,3 +337,45 @@ TEST(ObservationMemory, AMembersOwnSightIsNotOverwrittenByWhatItIsTold)
     harness.Ticks(3);
     EXPECT_EQ(harness.Entry(second, target)->Sense, harness.Entities.GetResource<PerceptionSenses>().Sight);
 }
+
+TEST(ObservationMemory, AFullMemoryForgetsWhatItPrefersLast)
+{
+    MemoryHarness harness;
+    const GameplayTagId hostile = *harness.Entities.GetResource<GameplayTagRegistry>().RegisterTag("faction.hostile");
+    const EntityId eye = harness.RememberingObserver(Vec3d::Zero(), 100.0f);
+    harness.Entities.TryGet<ObservationMemory>(eye)->Prefer = "faction.hostile";
+    const EntityId foe = harness.Target(Vec3d(0, 0, -10));
+    GameplayTagContainer tags{};
+    ASSERT_TRUE(tags.Grant(hostile));
+    harness.Entities.AddComponent<GameplayTagContainer>(foe, tags);
+    harness.Tick();
+    harness.Place(foe, Vec3d(0, 0, 50));
+    harness.Ticks(3);
+
+    // A crowd of others, each newer than the foe, fills and overflows the memory.
+    for (std::uint32_t index = 0; index < kObservationMemoryCapacity + 2; ++index)
+    {
+        (void)harness.Target(Vec3d(0.4f * static_cast<float>(index) - 2.0f, 0, -8));
+        harness.Tick();
+    }
+    EXPECT_NE(harness.Entry(eye, foe), nullptr) << "the preferred subject outlasts newer ones";
+    EXPECT_EQ(harness.Entities.TryGet<ObservationMemory>(eye)->Count, kObservationMemoryCapacity);
+}
+
+TEST(ObservationMemory, AGroupDoesNotPassOnSightingsOfItsOwnMembers)
+{
+    MemoryHarness harness;
+    const Quatf away = Quatf::FromAxisAngle(Vec3d::Up(), std::numbers::pi_v<float>);
+    const EntityId spotter = harness.RememberingObserver(Vec3d::Zero(), 30.0f);
+    const EntityId member = harness.Observer(Vec3d(0, 0, -5), 50.0f, std::numbers::pi_v<float> / 4.0f, away);
+    harness.Entities.AddComponent<ObservationMemory>(member, ObservationMemory{ .RetainSeconds = 30.0f });
+    harness.Entities.AddComponent<SightTarget>(member, SightTarget{ .SampleOffset = Vec3d::Zero() });
+    const EntityId listener = harness.Observer(Vec3d(20, 0, 0), 50.0f, std::numbers::pi_v<float> / 4.0f, away);
+    harness.Entities.AddComponent<ObservationMemory>(listener, ObservationMemory{ .RetainSeconds = 30.0f });
+    harness.Share(spotter, "squad.red", 0.0f, 0.0f);
+    harness.Share(member, "squad.red", 0.0f, 0.0f);
+    harness.Share(listener, "squad.red", 0.0f, 0.0f);
+    harness.Ticks(3);
+    ASSERT_NE(harness.Entry(spotter, member), nullptr) << "the spotter sees its fellow member";
+    EXPECT_EQ(harness.Entry(listener, member), nullptr) << "and does not tell the group where it is";
+}

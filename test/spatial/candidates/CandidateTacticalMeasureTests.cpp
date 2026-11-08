@@ -141,9 +141,9 @@ namespace
         return geometry;
     }
 
-    std::vector<float> CrowdingAt(CandidateHarness& harness, std::string_view arguments,
-                                  std::span<const CandidatePoint> spots, std::span<const CandidatePoint> others,
-                                  const Vec3d& origin)
+    std::vector<Measured> CrowdingRows(CandidateHarness& harness, std::string_view arguments,
+                                       std::span<const CandidatePoint> spots, std::span<const CandidatePoint> others,
+                                       const Vec3d& origin)
     {
         const std::string json = std::format(R"({{
             "slots": [{{ "name": "spots" }}, {{ "name": "others", "required": false }}, {{ "name": "origin" }}],
@@ -160,11 +160,21 @@ namespace
         context.Slots = slots;
         CandidateTrace trace(CandidateTraceLevel::Full, 16);
         (void)harness.Run(evaluation, context, &trace);
-        std::vector<float> counts;
+        std::vector<Measured> rows;
         for (std::uint32_t row = 0; row < trace.Rows().size(); ++row)
+            rows.push_back({ trace.Value(row, 0).Status, trace.Value(row, 0).Value });
+        return rows;
+    }
+
+    std::vector<float> CrowdingAt(CandidateHarness& harness, std::string_view arguments,
+                                  std::span<const CandidatePoint> spots, std::span<const CandidatePoint> others,
+                                  const Vec3d& origin)
+    {
+        std::vector<float> counts;
+        for (const Measured& row : CrowdingRows(harness, arguments, spots, others, origin))
         {
-            EXPECT_EQ(trace.Value(row, 0).Status, CandidateMeasureStatus::Ok) << "row " << row;
-            counts.push_back(trace.Value(row, 0).Value);
+            EXPECT_EQ(row.Status, CandidateMeasureStatus::Ok);
+            counts.push_back(row.Value);
         }
         return counts;
     }
@@ -184,6 +194,19 @@ TEST(CandidateTacticalMeasures, CrowdingCountsWhoIsAlreadyHeadedEachWay)
     EXPECT_EQ(counts[0], 2.0f);
     EXPECT_EQ(counts[1], 1.0f);
     EXPECT_EQ(counts[2], 0.0f) << "the south hallway is the least crowded";
+
+    const std::array insideHub{ CandidatePoint{ .Position = Vec3d(7, 0, 7) } };
+    const std::array headedOut{ CandidatePoint{ .Position = Vec3d(6, 0, 6) }, CandidatePoint{ .Position = Vec3d(20, 0, 5) } };
+    EXPECT_EQ(CrowdingRows(harness, R"({ "slot": "others", "origin": "origin", "radius": 6 })", insideHub, headedOut,
+                           Vec3d(5, 0, 5))
+                  .front()
+                  .Status,
+              CandidateMeasureStatus::NotApplicable)
+        << "within the radius a candidate has set out in no direction";
+    EXPECT_EQ(CrowdingAt(harness, R"({ "slot": "others", "origin": "origin", "radius": 6 })", spots, headedOut,
+                         Vec3d(5, 0, 5))[0],
+              1.0f)
+        << "and an ally within it is not counted";
 
     const std::vector<float> near =
         CrowdingAt(harness, R"({ "slot": "others", "mode": "distance", "distance": 6 })", spots, others, Vec3d(5, 0, 5));
