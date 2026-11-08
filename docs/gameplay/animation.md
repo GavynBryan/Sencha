@@ -210,7 +210,8 @@ the binding.
 Gameplay values reach fact slots through `AnimFactProviders`, a World resource
 binding a slot name to a plain function over a const World. The runtime binds
 movement's (`BindMovementAnimFacts`: `Grounded`, `Speed`, `VerticalSpeed`, the
-engine schema's slots) in every host; a game binds its own. Adding an
+engine schema's slots, and `MoveForward` and `MoveRight`, planar velocity along
+the body's own axes, the axes of a directional blendspace) in every host; a game binds its own. Adding an
 animation-relevant value is one `Bind` or `BindField` call in game code, with
 no engine edit, and gathering is a call per slot per entity with no allocation
 and no virtual dispatch. A provider must produce the same value on a server

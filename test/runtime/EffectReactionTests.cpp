@@ -167,6 +167,46 @@ TEST(EffectReactions, ThePushRunsAlongTheStrikeElseFromItsPointElseFromTheInstig
     EXPECT_FLOAT_EQ(nowhere->ShakeScale, 0.5f);
 }
 
+TEST(EffectReactions, AFlinchPlaysForTheSideTheBlowCameFromAndTheFrontWithoutOne)
+{
+    GameplayTagRegistry tags;
+    AttributeRegistry attributes;
+    const AttributeId health = attributes.RegisterAttribute("Health", 0.0f, 100.0f, 100.0f);
+    const GameplayTagId front = *tags.RegisterTag("Anim.Flinch.Front");
+    const GameplayTagId back = *tags.RegisterTag("Anim.Flinch.Back");
+    const GameplayTagId left = *tags.RegisterTag("Anim.Flinch.Left");
+    const GameplayTagId right = *tags.RegisterTag("Anim.Flinch.Right");
+
+    EffectReactionDeclaration flinch;
+    flinch.Attribute = "Health";
+    flinch.AnimationFront = "Anim.Flinch.Front";
+    flinch.AnimationBack = "Anim.Flinch.Back";
+    flinch.AnimationLeft = "Anim.Flinch.Left";
+    flinch.AnimationRight = "Anim.Flinch.Right";
+    flinch.AnimationTicks = 24;
+    std::vector<EffectReactionRule> rules;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(ResolveEffectReactionProfile(EffectReactionProfile{ { flinch } }, attributes, tags, rules, errors));
+
+    const std::array<EffectAttributeChange, 1> changes{ EffectAttributeChange{ health, 60.0f, 50.0f } };
+    GameplayTagSet noKinds;
+    // The recipient faces -Z; a blow is named for where it came from, not where it goes.
+    const auto intentOf = [&](const EffectSource& source, std::optional<Vec3d> forward = Vec3d::Forward()) {
+        const std::optional<EffectReactionOutcome> outcome = ReactToEffect(
+            rules, EffectReactionCase{ .Kinds = &noKinds, .Changes = changes, .Source = source,
+                                       .InstigatorPosition = std::nullopt, .Forward = forward }, tags);
+        EXPECT_TRUE(outcome);
+        EXPECT_EQ(outcome->AnimationTicks, 24u);
+        return outcome->AnimationIntent;
+    };
+    EXPECT_EQ(intentOf(Along(Vec3d(0, 0, 1))), front) << "travelling at its face";
+    EXPECT_EQ(intentOf(Along(Vec3d(0, 0, -1))), back) << "travelling the way it faces";
+    EXPECT_EQ(intentOf(Along(Vec3d(1, 0, 0))), left) << "travelling to its right, so from its left";
+    EXPECT_EQ(intentOf(Along(Vec3d(-1, 0, 0))), right);
+    EXPECT_EQ(intentOf(EffectSource{}), front) << "no direction";
+    EXPECT_EQ(intentOf(Along(Vec3d(1, 0, 0)), std::nullopt), front) << "no facing";
+}
+
 TEST(EffectReactions, AProfileCompilesItsReactionsAndNamesItsShake)
 {
     LoggingProvider logging;
@@ -193,6 +233,12 @@ TEST(EffectReactions, AProfileCompilesItsReactionsAndNamesItsShake)
     EXPECT_FALSE(compile(R"({ "reactions": [ { "threshold": 1 } ] })").IsValid()) << "no attribute";
     EXPECT_FALSE(compile(R"({ "reactions": [ { "attribute": "Health", "change": "sideways" } ] })").IsValid());
     EXPECT_FALSE(compile(R"({ "reactions": [ { "attribute": "Health", "impulse": { "max": -1 } } ] })").IsValid());
+    EXPECT_FALSE(compile(R"({ "reactions": [ { "attribute": "Health", "animation": { "back": "A.B", "ticks": 4 } } ] })")
+                     .IsValid()) << "an animation names its front";
+    EXPECT_FALSE(compile(R"({ "reactions": [ { "attribute": "Health", "animation": { "front": "A.B" } } ] })").IsValid())
+        << "an animation names its ticks";
+    EXPECT_TRUE(compile(R"({ "reactions": [ { "attribute": "Health", "animation": { "front": "A.B", "ticks": 4 } } ] })")
+                    .IsValid());
 }
 
 namespace

@@ -1,5 +1,7 @@
 #include <logic/EffectReactionSystem.h>
 
+#include <anim/AnimRequestJournal.h>
+#include <anim/AnimRequests.h>
 #include <app/GameContexts.h>
 #include <assets/data/DataAssetCache.h>
 #include <attributes/AttributeRegistry.h>
@@ -72,7 +74,8 @@ void EffectReactionSystem::React(World& world, const FixedLogicContext& ctx)
                                      .Changes = log.ChangesOf(application),
                                      .Source = application.Source,
                                      .TargetPosition = pose->Value.Position,
-                                     .InstigatorPosition = std::nullopt };
+                                     .InstigatorPosition = std::nullopt,
+                                     .Forward = pose->Value.Rotation.RotateVector(Vec3d::Forward()) };
         if (world.IsAlive(application.Source.Instigator))
             if (const WorldTransform* instigator = view.TryGet<WorldTransform>(application.Source.Instigator))
                 reaction.InstigatorPosition = instigator->Value.Position;
@@ -85,6 +88,16 @@ void EffectReactionSystem::React(World& world, const FixedLogicContext& ctx)
             continue;
         if (outcome->Impulse.Magnitude() > 0.0f)
             (void)AddMotionImpulse(world, application.Target, outcome->Impulse);
+        // An entity with no rig, or a rig that plays no such intent, turns the request down.
+        if (outcome->AnimationIntent.IsValid())
+        {
+            AnimRequestDesc flinch;
+            flinch.Source = application.Target;
+            flinch.Intent = outcome->AnimationIntent;
+            flinch.Lifetime = AnimRequestLifetime::Fixed;
+            flinch.FixedTicks = outcome->AnimationTicks;
+            (void)RequestAnimation(world, application.Target, flinch, ctx.Time.TickIndex);
+        }
         CameraShakeState* shakes = world.TryGetResource<CameraShakeState>();
         const EffectReactionRule& rule = (*rules)[outcome->Rule];
         if (shakes == nullptr || !(outcome->ShakeScale > 0.0f))
