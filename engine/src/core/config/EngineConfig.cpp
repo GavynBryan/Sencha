@@ -135,6 +135,12 @@ void ApplyEnvironmentOverrides(EngineConfig& config)
         if (std::sscanf(scratch, "%llu", &bytes) == 1 && bytes > 0)
             config.Graphics.FrameScratchBytesPerFrame = bytes;
     }
+    if (const char* dispatches = std::getenv("SENCHA_SKINNED_DISPATCHES"))
+    {
+        unsigned int count = 0;
+        if (std::sscanf(dispatches, "%u", &count) == 1 && count > 0)
+            config.Graphics.SkinnedPoseDispatchesPerFrame = count;
+    }
     if (const char* device = std::getenv("SENCHA_DEVICE_INDEX"))
     {
         int index = -1;

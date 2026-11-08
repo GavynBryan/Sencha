@@ -8,12 +8,14 @@ TEST(EngineEnvironmentOverrides, ScratchAndAdapterReachAnyHostsConfig)
 {
     ScopedEnv scratch("SENCHA_FRAME_SCRATCH_BYTES", "4096");
     ScopedEnv device("SENCHA_DEVICE_INDEX", "2");
+    ScopedEnv dispatches("SENCHA_SKINNED_DISPATCHES", "7");
     EngineConfig config;
 
     ApplyEnvironmentOverrides(config);
 
     EXPECT_EQ(config.Graphics.FrameScratchBytesPerFrame, 4096u);
     EXPECT_EQ(config.Graphics.DeviceIndex, 2);
+    EXPECT_EQ(config.Graphics.SkinnedPoseDispatchesPerFrame, 7u);
 }
 
 TEST(EngineEnvironmentOverrides, WindowSizeAndValidationSwitches)
