@@ -15,7 +15,7 @@ SkeletonHandle SkeletonCache::Register(std::string_view name, SkeletonData skele
     if (name.empty())
         return {};
 
-    if (SkeletonHandle existing = FindRegisteredHandle(name); existing.IsValid())
+    if (SkeletonHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
         return existing;
 
     SkeletonEntry entry;

@@ -28,7 +28,7 @@ StaticMeshHandle StaticMeshCache::CreateFromData(std::string_view name, const Me
     if (name.empty())
         return Create(data);
 
-    if (StaticMeshHandle existing = FindRegisteredHandle(name); existing.IsValid())
+    if (StaticMeshHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
         return existing;
 
     StaticMeshEntry entry;

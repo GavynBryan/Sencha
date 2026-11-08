@@ -434,6 +434,19 @@ TEST(SkeletonCache, RegisterAcquireRelease)
     EXPECT_EQ(cache.Get(handle), nullptr); // freed at refcount zero
 }
 
+TEST(SkeletonCache, ADuplicateRegisterHoldsItsOwnReference)
+{
+    SkeletonCache cache;
+    const SkeletonHandle first = cache.Register("asset://twice.sskel", TwoJointSkeleton());
+    const SkeletonHandle second = cache.Register("asset://twice.sskel", TwoJointSkeleton());
+    ASSERT_EQ(second, first);
+
+    cache.Release(first);
+    EXPECT_NE(cache.Get(second), nullptr);
+    cache.Release(second);
+    EXPECT_EQ(cache.Get(second), nullptr);
+}
+
 TEST(AnimationClipCache, ClipReleaseFreesSkeletonChain)
 {
     SkeletonCache skeletons;

@@ -23,7 +23,7 @@ SkinnedMeshHandle SkinnedMeshCache::CreateFromData(std::string_view name,
     // Existing entry already owns its own skeleton reference; ownedSkeleton
     // releases on return.
     if (!name.empty())
-        if (SkinnedMeshHandle existing = FindRegisteredHandle(name); existing.IsValid())
+        if (SkinnedMeshHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
             return existing;
 
     SkinnedMeshEntry entry;
