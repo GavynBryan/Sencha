@@ -119,7 +119,9 @@ void RenderStatsPanel::Draw()
 
 	ImGui::Separator();
 	ImGui::Text("Skinning");
-	ImGui::Text("  visible %u  posed %u  at rest %u", stats->SkinnedVisible, stats->SkinnedPosed, stats->SkinnedAtRest);
+	ImGui::Text("  first pose %u  refreshed %u  held %u", stats->SkinnedFirstPose, stats->SkinnedRefreshed, stats->SkinnedHeld);
+	ImGui::Text("  awaiting %u  bind fallback %u  failures %u", stats->SkinnedAwaitingFirstPose,
+	            stats->SkinnedBindFallback, stats->SkinnedPoseFailures);
 	ImGui::Text("  posed buffers %u (%.1f MiB)", stats->PosedBuffers,
 	            static_cast<float>(stats->PosedBufferBytes) / (1024.0f * 1024.0f));
 

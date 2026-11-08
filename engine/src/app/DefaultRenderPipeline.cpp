@@ -163,7 +163,9 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     if (SkinnedMeshes != nullptr)
     {
         graphics.MainRenderer.StageFeature(
-            std::make_unique<SkinnedPoseRenderFeature>(SkinnedPoses, *SkinnedMeshes),
+            std::make_unique<SkinnedPoseRenderFeature>(
+                SkinnedPoses, *SkinnedMeshes,
+                SkinnedPoseBudget{ graphics.SkinnedPoseDispatchesPerFrame, graphics.SkinnedPaletteBytesPerFrame }),
             FeatureRegistration{ .Id = kPose });
     }
 

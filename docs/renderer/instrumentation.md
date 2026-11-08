@@ -43,7 +43,7 @@ field, written on one thread, reset by the mode latch at the top of extraction.
 |---|---|---|
 | Identity | `FrameIndex` | the engine, at push time |
 | Forward pass | `VisibleObjects`, `DrawCalls`, `SubmittedTriangles`, `PipelineSwitches`, `MaterialSwitches`, `InstancesDropped` | `MeshRenderFeature::OnDraw` from `MeshForwardPass::DrawStats` |
-| Skinning | `SkinnedVisible`, `SkinnedPosed`, `SkinnedAtRest`, `PosedBuffers`, `PosedBufferBytes` | `SkinnedPoseRenderFeature::OnDraw` |
+| Skinning | `SkinnedFirstPose`, `SkinnedRefreshed`, `SkinnedHeld`, `SkinnedAwaitingFirstPose`, `SkinnedBindFallback`, `SkinnedPoseFailures`, `PosedBuffers`, `PosedBufferBytes` | `SkinnedPoseRenderFeature::OnDraw` |
 | Lights | `LightsVisible`, `LightsDroppedAtCap`, `ShadowCastingLights` | `DefaultRenderPipeline::PublishExtractionStats` |
 | Shadow pass | `ShadowViewsRendered`, `PointShadowFacesRendered`, `ShadowCasterDraws`, `ShadowCastersTested`, `ShadowCastersVisible`, `ShadowCastersDropped`, `ShadowInstanceRuns` | `ShadowRenderFeature::OnDraw` |
 | Shadow residency | `ShadowSlotsHeld`, `ShadowCacheHits`, `ShadowRequestsDenied`, `AtlasTiles1024/512/256`, `PointShadowCubesHeld`, `ShadowTileBytes`, `CasterDiffEvents` | extraction, from `ShadowFrameStats` and per-slot info |

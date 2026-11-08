@@ -29,11 +29,14 @@ struct RenderStats
     // geometry it was asked to render.
     std::uint32_t InstancesDropped = 0;
 
-    // Skinning. Every visible instance is posed or at rest; PosedBuffers and
-    // PosedBufferBytes are what the live instances hold, visible or not.
-    std::uint32_t SkinnedVisible = 0;
-    std::uint32_t SkinnedPosed = 0;
-    std::uint32_t SkinnedAtRest = 0;
+    // Skinning. Every visible instance is in exactly one of the first five;
+    // PosedBuffers and PosedBufferBytes are what live instances hold.
+    std::uint32_t SkinnedFirstPose = 0;
+    std::uint32_t SkinnedRefreshed = 0;
+    std::uint32_t SkinnedHeld = 0;
+    std::uint32_t SkinnedAwaitingFirstPose = 0;
+    std::uint32_t SkinnedBindFallback = 0;
+    std::uint32_t SkinnedPoseFailures = 0;
     std::uint32_t PosedBuffers = 0;
     std::uint64_t PosedBufferBytes = 0;
 

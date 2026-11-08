@@ -22,10 +22,8 @@
 //
 // Extraction fills Instances and Palettes on the owner thread; the pose
 // feature (Offscreen) acquires buffers, dispatches, and fills PosedBuffers;
-// the forward pass (MainColor, recorded after Offscreen) binds them. Ready
-// says the buffers are valid for this frame -- when false, items fall back
-// to their rest geometry, which is what a skinned mesh drew before a pose
-// path existed.
+// the forward pass (MainColor, recorded after Offscreen) binds them. An
+// instance with no posed buffer draws its rest geometry.
 //=============================================================================
 
 // Palettes start on a boundary of this many matrices. The pose dispatch hands
@@ -75,43 +73,28 @@ struct SkinnedPoseInstance
     // at PaletteOffset (element index, not bytes), aligned per above.
     std::uint32_t PaletteOffset = 0;
     std::uint32_t JointCount = 0;
+    float CameraDepth = 0.0f;
 };
 
+// Every visible skinned instance lands in exactly one of the first five.
 struct SkinnedPoseOutcome
 {
-    std::uint32_t Visible = 0;
-    std::uint32_t Posed = 0;
-    std::uint32_t AtRest = 0;
-};
+    std::uint32_t FirstPose = 0;
+    std::uint32_t Refreshed = 0;
+    std::uint32_t Held = 0;
+    std::uint32_t AwaitingFirstPose = 0;
+    std::uint32_t BindFallback = 0;
+    // Chosen instances whose dispatch could not be recorded, already counted above.
+    std::uint32_t PoseFailures = 0;
 
-[[nodiscard]] inline SkinnedPoseOutcome CountSkinnedPoseOutcome(std::span<const BufferHandle> posedBuffers)
-{
-    SkinnedPoseOutcome outcome;
-    outcome.Visible = static_cast<std::uint32_t>(posedBuffers.size());
-    for (const BufferHandle buffer : posedBuffers)
-        outcome.Posed += buffer.IsValid() ? 1u : 0u;
-    outcome.AtRest = outcome.Visible - outcome.Posed;
-    return outcome;
-}
-
-// The pose pass records in order and drops only the tail, so every buffered
-// instance past `recorded` was never written this frame.
-inline void InvalidateUnrecordedPoses(std::span<BufferHandle> posedBuffers, std::uint32_t recorded)
-{
-    std::uint32_t seen = 0;
-    for (BufferHandle& buffer : posedBuffers)
+    [[nodiscard]] std::uint32_t Visible() const
     {
-        if (!buffer.IsValid())
-            continue;
-        if (seen >= recorded)
-            buffer = {};
-        ++seen;
+        return FirstPose + Refreshed + Held + AwaitingFirstPose + BindFallback;
     }
-}
+};
 
 struct SkinnedPoseFrameData
 {
-    bool Ready = false;
     std::vector<SkinnedPoseInstance> Instances;
     std::vector<Mat4> Palettes;
     std::vector<BufferHandle> PosedBuffers;
@@ -140,7 +123,6 @@ struct SkinnedPoseFrameData
 
     void Reset()
     {
-        Ready = false;
         Instances.clear();
         Palettes.clear();
         PosedBuffers.clear();

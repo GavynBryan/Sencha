@@ -1001,3 +1001,8 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a skinned mesh seen popping at a screen edge. Culling by posed bounds means
   posing before culling, which costs pose work for meshes that would have been culled.
 
+## Culling a posed mesh by its pose
+
+- **What:** skinned meshes frustum-cull against their rest bounds, so a limb posed outside those bounds can pop out at the edge of the view.
+- **Where:** `RenderExtractionSystem::EmitSkinnedMeshes`; `PosedWorldBounds` already computes the tighter bound per pose.
+- **Trigger:** a report of popping on an animated enemy. A cooked per-skeleton reach would change the mesh format, so it needs format treatment.
