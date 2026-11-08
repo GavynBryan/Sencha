@@ -103,10 +103,16 @@ float DeltaAxisAngle(const Quatf& from, const Quatf& to, Vec3d& axisOut)
 }
 } // namespace
 
+const PhysicsCapacityFailures& PhysicsWorld::GetCapacityFailures() const
+{
+    return Impl->CapacityFailures;
+}
+
 void PhysicsWorld::Step(float dt, int collisionSteps)
 {
     DriveConstraints(dt);
-    Impl->System.Update(dt, collisionSteps, &Impl->Temp, &Impl->Jobs);
+    if (Impl->System.Update(dt, collisionSteps, &Impl->Temp, &Impl->Jobs) != JPH::EPhysicsUpdateError::None)
+        ++Impl->CapacityFailures.OverflowedSteps;
 }
 
 // Locked velocity-drive prototype. The target pose is the frame at the start of
@@ -224,6 +230,8 @@ PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
 
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID id = bodies.CreateAndAddBody(settings, activation);
+    if (id.IsInvalid())
+        ++Impl->CapacityFailures.BodiesRefused;
     if (!id.IsInvalid() && desc.IsTrigger && desc.Layer == CollisionLayer::Trigger)
         ++Impl->SensorCount;
     if (!id.IsInvalid() && desc.Motion != BodyMotion::Static && !desc.IsTrigger)

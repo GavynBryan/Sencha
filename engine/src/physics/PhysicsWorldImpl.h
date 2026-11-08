@@ -5,6 +5,7 @@
 // physics .cpp (world, scene, queries, character); never included by a public
 // engine header, so no JPH type ever leaks to gameplay or ECS.
 
+#include <physics/PhysicsWorld.h>
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Core/JobSystemSingleThreaded.h>
@@ -76,6 +77,7 @@ struct PhysicsWorldImpl
     std::vector<uint32_t> FreeConstraintSlots;
     uint32_t AliveConstraints = 0;
     uint64_t StaleRefreshes = 0;
+    PhysicsCapacityFailures CapacityFailures;
 
     // From PhysicsWorldConfig (see its comment on tunneling).
     float MaxDriveClosingSpeed = 50.0f;

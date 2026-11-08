@@ -1524,6 +1524,8 @@ int Engine::Run(Game& game)
     // After the game's, so whatever ordering constraints it declared already
     // exist when these are added.
     ContentState->RegisterSystems(EngineSystems);
+    if (PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>())
+        physics->SetLog(&LoggingState.GetLogger<PhysicsStepSystem>());
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
