@@ -790,3 +790,11 @@ arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
 (component, `OBSS`) and `PerceptionSenses::Shared`. `ClaimBoard`,
 `claims.hold`, `claims.count` and `claims.held`. The `crowding` candidate
 measure and `CandidateRun::ProjectNav`.
+
+## v42
+
+`EngineGraphicsConfig` gains the scratch pool floors and the skinned pose budget,
+and the default scratch slice is 3 MiB. `RendererServices::Health`,
+`Renderer::GetLastFrameHealth` and `RenderFrameHealth`. `ScratchTag` gains the
+outline tags. `SkinnedPoseFrameData` loses `Ready`, and `SkinnedPosePass::Setup`
+takes its dispatch capacity.

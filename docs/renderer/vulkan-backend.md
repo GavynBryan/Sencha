@@ -202,7 +202,7 @@ no staging, no flush, no fence on the scratch itself.
 
 - Usage flags: `UNIFORM | STORAGE | VERTEX`. Index buffers and transfer-src are
   out of scope.
-- Default budget: `EngineGraphicsConfig::FrameScratchBytesPerFrame`, 1 MiB per
+- Default budget: `EngineGraphicsConfig::FrameScratchBytesPerFrame`, 3 MiB per
   slice. The editor raises it, since it re-uploads the scene for every viewport
   into one slice per frame.
 - The per-slice size is padded up to `minUniformBufferOffsetAlignment` so slice
@@ -218,6 +218,25 @@ Four allocation entry points:
 | `AllocateUniform(size)` | `minUniformBufferOffsetAlignment` | all or nothing |
 | `AllocateVertex(size)` | 16 | all or nothing |
 | `AllocateVertexElements(maxElements, stride)` | 16 | **partial grant**: returns as many whole elements as the slice can still serve |
+
+Every allocation is charged to a pool, `PoolOf(ScratchTag)`:
+
+| Pool | Tags | Floor | Past its floor |
+|---|---|---|---|
+| Main view | Forward view uniforms | 16 KiB | Shared pool, then a bug |
+| World | Forward instance data | 400 KiB | Shared pool, then a counted prefix drop |
+| UI | UI vertices and indices | 800 KiB | Shared pool, then counted drops |
+| Skinning | Palettes | 528 KiB, capped at 1 MiB | Selection shrinks and instances hold |
+| Optional | Shadows, outlines, immediate draws | None | Shared pool only |
+
+A pool under its floor always succeeds, whatever else allocated first. The
+cursor equals the bytes charged to every pool, padding included, and charges are
+admitted only against a pool's unused floor plus the unclaimed shared bytes, so
+the sum cannot pass the slice. Unused floors are not lent out: a later consumer
+may still need them, and that is the cost of being order independent. The floors
+come from a measured baseline: 2 KB for the HUD and 781 KiB for the death screen
+at 1080p, and 4,096 bytes per 62-joint instance. Floors larger than a small
+configured slice are scaled down with a warning.
 
 The partial grant exists because an instance stream that does not fit whole is
 the normal case at scene scale, and an all-or-nothing request there means the

@@ -29,10 +29,18 @@ struct EngineGraphicsConfig
     bool ValidateSynchronization = false;
     bool ValidateGpuAssisted = false;
     bool ValidateBestPractices = false;
-    // Per-frame-in-flight scratch budget for transient vertex/uniform uploads. The game
-    // needs little; the editor raises this since it re-uploads the scene for every
-    // viewport into one slice each frame.
-    uint64_t FrameScratchBytesPerFrame = 1024 * 1024;
+    // Per-frame-in-flight scratch budget for transient vertex/uniform uploads. The
+    // editor raises this since it re-uploads the scene for every viewport.
+    uint64_t FrameScratchBytesPerFrame = 3 * 1024 * 1024;
+    // Bytes of each slice guaranteed to a consumer in any allocation order. What
+    // they leave over is shared; docs/renderer/vulkan-backend.md has the sizing.
+    uint64_t ScratchViewFloorBytes = 16 * 1024;
+    uint64_t ScratchWorldFloorBytes = 400 * 1024;
+    uint64_t ScratchUiFloorBytes = 800 * 1024;
+    uint64_t ScratchSkinningFloorBytes = 528 * 1024;
+    uint64_t ScratchSkinningCapBytes = 1024 * 1024;
+    // Skinned instances posed per frame; the rest hold their last pose.
+    uint32_t SkinnedPoseDispatchesPerFrame = 128;
     // Adapter to use, by enumeration order. Negative scores devices normally
     // (the shipping behavior); a value selects one explicitly so the same
     // scene can be measured across the adapters in one machine.

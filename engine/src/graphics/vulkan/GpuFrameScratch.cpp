@@ -36,7 +36,11 @@ GpuFrameScratch::GpuFrameScratch(LoggingProvider& logging,
     // bind out of it as storage buffers.
     Ring = FrameScratchRing(
         config.FramesInFlight,
-        ResolveScratchSliceBytes(config.BytesPerFrame, UniformAlignment));
+        ResolveScratchSliceBytes(config.BytesPerFrame, UniformAlignment),
+        config.Pools);
+    if (Ring.FloorsWereScaled())
+        Log.Warn("GpuFrameScratch: the scratch pool floors exceed the {} byte slice and were scaled down",
+                 Ring.GetBytesPerFrame());
 
     BufferCreateInfo info{};
     info.Size = Ring.GetTotalBytes();
@@ -85,6 +89,8 @@ std::string_view ToString(ScratchTag tag)
         case ScratchTag::ShadowInstanceTransforms: return "shadow_instance_transforms";
         case ScratchTag::ForwardViewUniforms:      return "forward_view_uniforms";
         case ScratchTag::ForwardInstanceData:      return "forward_instance_data";
+        case ScratchTag::OutlineViewUniforms:      return "outline_view_uniforms";
+        case ScratchTag::OutlineInstanceData:      return "outline_instance_data";
         case ScratchTag::ImmediateVertices:        return "immediate_vertices";
         case ScratchTag::UiVertices:               return "ui_vertices";
         case ScratchTag::UiIndices:                return "ui_indices";
@@ -120,7 +126,7 @@ GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDevic
     if (!Valid) return {};
 
     const FrameScratchRing::Grant grant =
-        Ring.Allocate(size, alignment == 0 ? 1 : alignment);
+        Ring.Allocate(size, alignment == 0 ? 1 : alignment, PoolOf(tag));
     if (!grant.IsValid())
     {
         TagCounters.RecordFailure(tag);
@@ -137,6 +143,11 @@ GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDevic
     }
     TagCounters.RecordGrant(tag, grant.Bytes);
     return MakeAllocation(grant);
+}
+
+std::uint64_t GpuFrameScratch::AvailableBytes(ScratchTag tag, std::uint64_t alignment) const
+{
+    return Valid ? Ring.Available(PoolOf(tag), alignment == 0 ? 1 : alignment) : 0;
 }
 
 GpuFrameScratch::Allocation GpuFrameScratch::MakeAllocation(
@@ -170,7 +181,7 @@ GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(
     if (!Valid) return {};
 
     const FrameScratchRing::Grant grant =
-        Ring.AllocateElements(maxElements, stride, kVertexAlignment);
+        Ring.AllocateElements(maxElements, stride, kVertexAlignment, PoolOf(tag));
     if (!grant.IsValid())
     {
         TagCounters.RecordFailure(tag);

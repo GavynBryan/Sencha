@@ -478,7 +478,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
     uniforms.OutlineStyleSlot = ActiveOutlineSlot;
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshViewUniforms),
-                                               ScratchTag::ForwardViewUniforms);
+                                               ActiveOutlineSlot != 0 ? ScratchTag::OutlineViewUniforms
+                                                                      : ScratchTag::ForwardViewUniforms);
     if (!allocation.IsValid())
         return std::nullopt;
     std::memcpy(allocation.Mapped, &uniforms, sizeof(uniforms));
@@ -499,7 +500,8 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
     // first to be clipped -- effects drop before world geometry does.
     auto stream = Scratch->AllocateVertexElements(
         static_cast<uint32_t>(order.size() + TransparentOrder.size()),
-        sizeof(MeshInstanceData), ScratchTag::ForwardInstanceData);
+        sizeof(MeshInstanceData),
+        ActiveOutlineSlot != 0 ? ScratchTag::OutlineInstanceData : ScratchTag::ForwardInstanceData);
     if (!stream.IsValid())
         return 0;
 
@@ -569,7 +571,7 @@ BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
                                  const GpuStaticMesh& mesh,
                                  const SkinnedPoseFrameData* poses)
 {
-    if (poses != nullptr && poses->Ready && item.PoseSlot != UINT32_MAX
+    if (poses != nullptr && item.PoseSlot != UINT32_MAX
         && item.PoseSlot < poses->PosedBuffers.size()
         && poses->PosedBuffers[item.PoseSlot].IsValid())
     {

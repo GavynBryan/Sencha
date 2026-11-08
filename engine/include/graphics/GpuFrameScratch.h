@@ -31,6 +31,8 @@ enum class ScratchTag : std::uint8_t
     ShadowInstanceTransforms,
     ForwardViewUniforms,
     ForwardInstanceData,
+    OutlineViewUniforms,
+    OutlineInstanceData,
     ImmediateVertices,
     UiVertices,
     UiIndices,
@@ -38,6 +40,25 @@ enum class ScratchTag : std::uint8_t
 };
 
 [[nodiscard]] std::string_view ToString(ScratchTag tag);
+
+[[nodiscard]] constexpr ScratchPool PoolOf(ScratchTag tag)
+{
+    switch (tag)
+    {
+    case ScratchTag::SkinningPalettes:    return ScratchPool::Skinning;
+    case ScratchTag::ForwardViewUniforms: return ScratchPool::MainView;
+    case ScratchTag::ForwardInstanceData: return ScratchPool::World;
+    case ScratchTag::UiVertices:
+    case ScratchTag::UiIndices:           return ScratchPool::Ui;
+    case ScratchTag::ShadowViewUniforms:
+    case ScratchTag::ShadowInstanceTransforms:
+    case ScratchTag::OutlineViewUniforms:
+    case ScratchTag::OutlineInstanceData:
+    case ScratchTag::ImmediateVertices:
+    case ScratchTag::Count:               return ScratchPool::Optional;
+    }
+    return ScratchPool::Optional;
+}
 
 // Per-consumer slice accounting. Used and failure counts describe the frame
 // being recorded; the high-water mark persists, which is what sizing a slice
@@ -138,6 +159,7 @@ public:
     {
         uint32_t FramesInFlight = 2;
         std::uint64_t BytesPerFrame = 1024 * 1024; // 1 MB per slice by default
+        ScratchPoolBudgets Pools{};
     };
 
     struct Allocation
@@ -202,6 +224,9 @@ public:
     [[nodiscard]] ElementAllocation AllocateVertexElements(uint32_t maxElements,
                                                            std::uint64_t stride,
                                                            ScratchTag tag);
+
+    // Content bytes the consumer could be granted now, before anything else allocates.
+    [[nodiscard]] std::uint64_t AvailableBytes(ScratchTag tag, std::uint64_t alignment) const;
 
     // -- Accessors ----------------------------------------------------------
 
