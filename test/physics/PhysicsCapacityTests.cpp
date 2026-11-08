@@ -28,6 +28,9 @@ TEST(PhysicsCapacity, ABodyPastTheConfiguredLimitIsCounted)
 
 TEST(PhysicsCapacity, ContactsPastTheConfiguredLimitAreCounted)
 {
+#ifndef NDEBUG
+    GTEST_SKIP() << "Jolt traps on a dropped contact in a debug build, before reporting it";
+#endif
     PhysicsWorld world(PhysicsWorldConfig{ .MaxBodyPairs = 4, .MaxContactConstraints = 4 });
     for (int i = 0; i < 16; ++i)
         ASSERT_TRUE(world.AddBody(DynamicSphereAt(static_cast<float>(i) * 0.1f)).IsValid());
