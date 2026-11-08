@@ -2,7 +2,19 @@
 #include <ecs/World.h>
 
 #include <cassert>
+#include <cstring>
 #include <vector>
+
+std::optional<std::uint32_t> CommandBuffer::ClaimForRun(EntityId entity, std::uint32_t item)
+{
+    if (entity.Index >= RunClaims.size())
+        RunClaims.resize(entity.Index + 1);
+    RunClaim& claim = RunClaims[entity.Index];
+    if (claim.Run == CurrentRun)
+        return claim.Item;
+    claim = RunClaim{ CurrentRun, item };
+    return std::nullopt;
+}
 
 void CommandBuffer::Flush()
 {
@@ -39,6 +51,12 @@ void CommandBuffer::Flush()
         return meta != nullptr && meta->OnRemoveHook != nullptr;
     };
 
+    const auto overwrite = [this](EntityId entity, ComponentId id, const void* payload, size_t size)
+    {
+        if (size > 0 && payload != nullptr)
+            std::memcpy(W->GetComponentRaw(entity, id), payload, size);
+    };
+
     for (size_t i = 0; i < Commands.size();)
     {
         Command& cmd = Commands[i];
@@ -63,14 +81,22 @@ void CommandBuffer::Flush()
             {
                 std::vector<ComponentBatchItem> items;
                 items.reserve(end - i);
+                ++CurrentRun;
                 for (size_t j = i; j < end; ++j)
                 {
                     const EntityId entity = resolve(Commands[j]);
                     if (!W->IsAlive(entity)) continue;
-                    items.push_back(ComponentBatchItem{
-                        entity,
-                        PayloadData(Commands[j].Payload)
-                    });
+                    const void* payload = PayloadData(Commands[j].Payload);
+                    if (W->HasComponent(entity, id))
+                    {
+                        overwrite(entity, id, payload, size);
+                        continue;
+                    }
+                    const auto item = static_cast<std::uint32_t>(items.size());
+                    if (const auto earlier = ClaimForRun(entity, item))
+                        items[*earlier].Blob = payload;
+                    else
+                        items.push_back(ComponentBatchItem{ entity, payload });
                 }
                 if (!items.empty())
                     W->AddComponentsRawBatch(id, items.data(), items.size(), size, align);
@@ -95,11 +121,13 @@ void CommandBuffer::Flush()
             {
                 std::vector<EntityId> entities;
                 entities.reserve(end - i);
+                ++CurrentRun;
                 for (size_t j = i; j < end; ++j)
                 {
                     const EntityId entity = resolve(Commands[j]);
-                    if (!W->IsAlive(entity)) continue;
-                    entities.push_back(entity);
+                    if (!W->IsAlive(entity) || !W->HasComponent(entity, id)) continue;
+                    if (!ClaimForRun(entity, 0).has_value())
+                        entities.push_back(entity);
                 }
                 if (!entities.empty())
                     W->RemoveComponentsRawBatch(id, entities.data(), entities.size());
@@ -114,6 +142,11 @@ void CommandBuffer::Flush()
         {
             const EntityId entity = resolve(cmd);
             if (!W->IsAlive(entity)) break;
+            if (W->HasComponent(entity, cmd.Payload.Id))
+            {
+                overwrite(entity, cmd.Payload.Id, PayloadData(cmd.Payload), cmd.Payload.Size);
+                break;
+            }
             W->AddComponentRaw(
                 entity,
                 cmd.Payload.Id,
@@ -125,7 +158,7 @@ void CommandBuffer::Flush()
         case CommandKind::RemoveComponent:
         {
             const EntityId entity = resolve(cmd);
-            if (!W->IsAlive(entity)) break;
+            if (!W->IsAlive(entity) || !W->HasComponent(entity, cmd.Payload.Id)) break;
             W->RemoveComponentRaw(entity, cmd.Payload.Id);
             break;
         }

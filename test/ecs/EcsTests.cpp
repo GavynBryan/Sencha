@@ -962,3 +962,79 @@ TEST_F(EcsTest, Stress_CommandBufferBatchedNonContiguousAddRemovePreservesData)
         EXPECT_EQ(world.TryGet<Vel>(entities[i])->X, static_cast<float>(i * 2));
     }
 }
+
+TEST_F(EcsTest, CommandBuffer_RepeatedAddInOneRunKeepsOneRowAndTheLastValue)
+{
+    EntityId first = world.CreateEntity();
+    EntityId second = world.CreateEntity();
+    world.AddComponent<Pos>(first, { 1.f, 0.f, 0.f });
+    world.AddComponent<Pos>(second, { 2.f, 0.f, 0.f });
+
+    CommandBuffer cmds(world);
+    cmds.AddComponent<Vel>(first, { 10.f, 0.f, 0.f });
+    cmds.AddComponent<Vel>(first, { 20.f, 0.f, 0.f });
+    cmds.AddComponent<Vel>(second, { 30.f, 0.f, 0.f });
+    cmds.Flush();
+
+    int rows = 0;
+    Query<Read<Pos>, Read<Vel>> q(world);
+    q.ForEachChunk([&rows](auto& view) { rows += view.Count(); });
+    EXPECT_EQ(rows, 2);
+    EXPECT_EQ(world.TryGet<Pos>(first)->X, 1.f);
+    EXPECT_EQ(world.TryGet<Pos>(second)->X, 2.f);
+    EXPECT_EQ(world.TryGet<Vel>(first)->X, 20.f);
+    EXPECT_EQ(world.TryGet<Vel>(second)->X, 30.f);
+}
+
+TEST_F(EcsTest, CommandBuffer_AddingAComponentAnEntityHasOverwritesIt)
+{
+    EntityId held = world.CreateEntity();
+    EntityId fresh = world.CreateEntity();
+    world.AddComponent<Vel>(held, { 1.f, 0.f, 0.f });
+    world.AddComponent<Pos>(held, { 5.f, 0.f, 0.f });
+    world.AddComponent<Pos>(fresh, { 6.f, 0.f, 0.f });
+
+    CommandBuffer cmds(world);
+    cmds.AddComponent<Vel>(held, { 2.f, 0.f, 0.f });
+    cmds.AddComponent<Vel>(fresh, { 3.f, 0.f, 0.f });
+    cmds.Flush();
+
+    EXPECT_EQ(world.TryGet<Vel>(held)->X, 2.f);
+    EXPECT_EQ(world.TryGet<Vel>(fresh)->X, 3.f);
+    EXPECT_EQ(world.TryGet<Pos>(held)->X, 5.f);
+    EXPECT_EQ(world.TryGet<Pos>(fresh)->X, 6.f);
+}
+
+TEST_F(EcsTest, CommandBuffer_RepeatedRemoveInOneRunMovesTheEntityOnce)
+{
+    EntityId first = world.CreateEntity();
+    EntityId second = world.CreateEntity();
+    for (EntityId entity : { first, second })
+    {
+        world.AddComponent<Pos>(entity, { entity == first ? 1.f : 2.f, 0.f, 0.f });
+        world.AddComponent<Vel>(entity, {});
+    }
+
+    CommandBuffer cmds(world);
+    cmds.RemoveComponent<Vel>(first);
+    cmds.RemoveComponent<Vel>(first);
+    cmds.RemoveComponent<Vel>(second);
+    cmds.Flush();
+
+    EXPECT_FALSE(world.HasComponent<Vel>(first));
+    EXPECT_FALSE(world.HasComponent<Vel>(second));
+    EXPECT_EQ(world.TryGet<Pos>(first)->X, 1.f);
+    EXPECT_EQ(world.TryGet<Pos>(second)->X, 2.f);
+}
+
+TEST_F(EcsTest, CommandBuffer_RemovingAComponentAnEntityLacksIsNoOp)
+{
+    EntityId entity = world.CreateEntity();
+    world.AddComponent<Pos>(entity, { 7.f, 0.f, 0.f });
+
+    CommandBuffer cmds(world);
+    cmds.RemoveComponent<Vel>(entity);
+    cmds.Flush();
+
+    EXPECT_EQ(world.TryGet<Pos>(entity)->X, 7.f);
+}
