@@ -44,7 +44,10 @@ jobs:
             libclang-dev \
             libvulkan-dev \
             llvm-dev \
-            ninja-build
+            mesa-vulkan-drivers \
+            ninja-build \
+            vulkan-validationlayers \
+            xvfb
 
       - name: Build and install SDL3
         id: sdl
@@ -57,6 +60,8 @@ jobs:
         run: >-
           cmake --preset ci
           -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}"
+          -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang
+          -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm
 
       - name: Build
         run: |
@@ -90,6 +95,16 @@ jobs:
         run: |
           set -o pipefail
           ctest --preset ci 2>&1 | tee test-ci.log
+
+      # lavapipe proves correctness, not speed, and golden images stay on real
+      # hardware because they do not match across drivers.
+      - name: Test against a software Vulkan device
+        timeout-minutes: 20
+        env:
+          SENCHA_VALIDATION: "1"
+        run: |
+          set -o pipefail
+          xvfb-run -a ctest --preset ci -L gpu -E 'GoldenImage' --output-on-failure 2>&1 | tee -a test-ci.log
 
       - name: Upload failed test log
         if: failure()
