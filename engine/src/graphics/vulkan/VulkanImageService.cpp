@@ -68,6 +68,8 @@ namespace
         StagingBuffer& operator=(StagingBuffer&&) = delete;
 
         [[nodiscard]] bool IsValid() const { return Result == VK_SUCCESS; }
+        // For a submission still reading this buffer after its wait timed out.
+        void Abandon() { Buffer = VK_NULL_HANDLE; }
         [[nodiscard]] VkResult GetResult() const { return Result; }
         [[nodiscard]] VkBuffer Get() const { return Buffer; }
 
@@ -434,7 +436,7 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
         return false;
     }
 
-    const StagingBuffer staging(Allocator, data, size);
+    StagingBuffer staging(Allocator, data, size);
     if (!staging.IsValid())
     {
         Log.Error("image upload: staging vmaCreateBuffer failed ({})",
@@ -470,7 +472,10 @@ bool VulkanImageService::Upload(ImageHandle handle, const void* data, VkDeviceSi
     else
         TransitionChainToShaderRead(cmd, entry->Image, entry->MipLevels);
 
-    return UploadCtx->Submit(cmd);
+    const bool ok = UploadCtx->Submit(cmd);
+    if (UploadCtx->IsWedged())
+        staging.Abandon();
+    return ok;
 }
 
 bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDeviceSize size,
@@ -491,7 +496,7 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
         return false;
     }
 
-    const StagingBuffer staging(Allocator, data, size);
+    StagingBuffer staging(Allocator, data, size);
     if (!staging.IsValid())
     {
         Log.Error("mip upload: staging vmaCreateBuffer failed ({})",
@@ -529,7 +534,10 @@ bool VulkanImageService::UploadMips(ImageHandle handle, const void* data, VkDevi
 
     TransitionChainToShaderRead(cmd, entry->Image, entry->MipLevels);
 
-    return UploadCtx->Submit(cmd);
+    const bool ok = UploadCtx->Submit(cmd);
+    if (UploadCtx->IsWedged())
+        staging.Abandon();
+    return ok;
 }
 
 void VulkanImageService::RecordMipChain(VkCommandBuffer cmd, ImageEntry& entry)
