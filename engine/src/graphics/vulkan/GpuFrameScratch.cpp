@@ -96,8 +96,22 @@ std::string_view ToString(ScratchTag tag)
 void GpuFrameScratch::BeginFrame()
 {
     if (!Valid) return;
+    for (std::size_t i = 0; i < TagFailureLogs.size(); ++i)
+    {
+        if (const auto ended = TagFailureLogs[i].EndPeriod())
+        {
+            Log.Warn("GpuFrameScratch: {} fits again after {} failed allocations over {} frames",
+                     ToString(static_cast<ScratchTag>(i)), ended->Failures, ended->Periods);
+        }
+    }
     Ring.BeginFrame();
     TagCounters.BeginFrame();
+}
+
+bool GpuFrameScratch::OpensFailureEpisode(ScratchTag tag)
+{
+    const auto index = static_cast<std::size_t>(tag);
+    return index < TagFailureLogs.size() && TagFailureLogs[index].Record();
 }
 
 GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDeviceSize alignment,
@@ -110,7 +124,7 @@ GpuFrameScratch::Allocation GpuFrameScratch::Allocate(VkDeviceSize size, VkDevic
     if (!grant.IsValid())
     {
         TagCounters.RecordFailure(tag);
-        if (size != 0)
+        if (size != 0 && OpensFailureEpisode(tag))
         {
             Log.Error("GpuFrameScratch: {} asked for {} bytes at cursor {}, past the "
                       "frame slice capacity ({})",
@@ -160,7 +174,7 @@ GpuFrameScratch::ElementAllocation GpuFrameScratch::AllocateVertexElements(
     if (!grant.IsValid())
     {
         TagCounters.RecordFailure(tag);
-        if (maxElements != 0 && stride != 0)
+        if (maxElements != 0 && stride != 0 && OpensFailureEpisode(tag))
         {
             Log.Error("GpuFrameScratch: {} had no room for a {}-byte element at cursor "
                       "{} of frame slice capacity ({})",

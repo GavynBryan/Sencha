@@ -231,7 +231,8 @@ the end of a slice) are unit-testable without a device.
 
 Counters exposed each frame: high water, this frame's used bytes, the per-frame
 budget they are measured against, and the number of requests the slice could not
-serve.
+serve. A consumer that keeps failing logs when it starts and when it stops, not
+once per failed request; the counters and `RenderFrameHealth` hold the detail.
 
 ## Descriptor sets
 

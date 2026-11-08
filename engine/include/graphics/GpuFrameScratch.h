@@ -1,9 +1,11 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <core/logging/RepeatedFailureLog.h>
 #include <graphics/BufferHandle.h>
 #include <graphics/FrameScratchRing.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -223,6 +225,8 @@ public:
 private:
     // Turns a ring offset into a binding plus a writable pointer.
     [[nodiscard]] Allocation MakeAllocation(const FrameScratchRing::Grant& grant) const;
+    // True when this failure starts a run of them for `tag`, the one to log.
+    [[nodiscard]] bool OpensFailureEpisode(ScratchTag tag);
 
     Logger& Log;
     VulkanBufferService* Buffers = nullptr;
@@ -234,5 +238,6 @@ private:
     // Slice geometry and cursors; this type owns only the memory behind them.
     FrameScratchRing Ring;
     ScratchTagCounters TagCounters;
+    std::array<RepeatedFailureLog, ScratchTagCounters::kTagCount> TagFailureLogs;
     std::uint64_t UniformAlignment = 256;
 };
