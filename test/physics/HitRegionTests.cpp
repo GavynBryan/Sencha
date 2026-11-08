@@ -104,3 +104,32 @@ TEST(HitRegions, OverlappingPartsAtOneDistanceGoToTheHigherPriority)
     ASSERT_TRUE(hit);
     EXPECT_EQ(hit->Region, world.Tags->FindTag("region.plate"));
 }
+
+TEST(HitRegions, AGrazingRayCountsOnlyWhereItTouches)
+{
+    RegionWorld world;
+    const EntityId target = world.Body(Vec3d(10, 0, 0));
+    (void)world.Part(target, "region.head", CollisionShape::MakeSphere(0.2f), Vec3d(10, 0.75f, 0));
+    HitRegionResolver resolver;
+    const std::optional<HitRegionHit> grazed =
+        resolver.Resolve(world.Entities, target, Vec3d(0, 0.94f, 0), Vec3d(1, 0, 0), 20.0f);
+    ASSERT_TRUE(grazed) << "a ray just inside the head's edge still enters it";
+    EXPECT_EQ(grazed->Region, world.Tags->FindTag("region.head"));
+    EXPECT_GT(grazed->Distance, 9.8f);
+    EXPECT_LT(grazed->Distance, 10.0f);
+    EXPECT_FALSE(resolver.Resolve(world.Entities, target, Vec3d(0, 0.96f, 0), Vec3d(1, 0, 0), 20.0f))
+        << "just outside it, the ray misses";
+}
+
+TEST(HitRegions, AStrikeOnATargetWithNoPartsLandsOnNone)
+{
+    RegionWorld world;
+    const EntityId bare = world.Body(Vec3d(5, 0, 0));
+    HitRegionResolver resolver;
+    EXPECT_FALSE(resolver.Resolve(world.Entities, bare, Vec3d::Zero(), Vec3d(1, 0, 0), 10.0f));
+    const EntityId inside = world.Body(Vec3d(0, 0, 0));
+    (void)world.Part(inside, "region.torso", CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f)), Vec3d::Zero());
+    const std::optional<HitRegionHit> point = resolver.Resolve(world.Entities, inside, Vec3d::Zero(), Vec3d(1, 0, 0), 10.0f);
+    ASSERT_TRUE(point) << "a strike that starts inside a part lands on it";
+    EXPECT_NEAR(point->Distance, 0.0f, 1e-4f);
+}
