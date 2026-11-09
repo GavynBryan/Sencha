@@ -31,6 +31,8 @@ struct AnimPoseScratch
     std::vector<Transform3f> ShownBefore;
     std::vector<Transform3f> Incoming;
     std::vector<Transform3f> Composed;
+    // Layers x Joints, layer-major: what each layer posed this evaluation.
+    std::vector<Transform3f> LayerPoses;
     std::array<std::vector<Transform3f>, kAnimMaxLayers> References;
 };
 

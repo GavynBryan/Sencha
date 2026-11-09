@@ -112,3 +112,14 @@ TEST(AnimPresentedPose, ASteadyPoseAllocatesNothing)
     }
     EXPECT_EQ(AllocationCount() - before, 0u);
 }
+
+TEST(AnimPosePoolShape, LayerStateFollowsTheRigAndLayerPosesAreOnlyKeptWhenAsked)
+{
+    AnimPosePool::Slot slot;
+    slot.Shape(3, 2);
+    EXPECT_EQ(slot.LayerStates.size(), 2u);
+    EXPECT_TRUE(slot.LayerPoses.empty());
+    slot.Shape(3, 2, true);
+    EXPECT_EQ(slot.LayerPoses.size(), 6u);
+    EXPECT_EQ(slot.LayerPose(1).size(), 3u);
+}

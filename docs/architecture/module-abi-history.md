@@ -825,6 +825,9 @@ replication table hash moved with `ActiveAbilities`' local size.
 **Staggered sight.** `perception.sight.scan_interval_ticks`, `SightStats::HeldScans`,
 `PerceptionFrame::AddHeld` and `LastScanRows`, and `ObservationPreference`.
 
+**Pose storage.** `AnimPoseState::Layers` moved to `AnimPosePool::Slot::LayerStates`,
+sized to the rig. A layer's own pose is kept only with `AnimPosePool::RetainLayerPoses`.
+
 **Ability requests.** `AbilityRequestQueue::Push` no longer refuses and returns
 nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, which
 bounds only requests waiting on a dormant actor. A request's `Origin` counts that

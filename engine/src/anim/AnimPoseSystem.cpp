@@ -91,7 +91,8 @@ void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partition
                 slot = pool.Find(state.Slot, entity);
             }
             slot->Shape(static_cast<std::uint32_t>(skeleton->Joints.size()),
-                        static_cast<std::uint32_t>(std::min(rig->Layers.size(), kAnimMaxLayers)));
+                        static_cast<std::uint32_t>(std::min(rig->Layers.size(), kAnimMaxLayers)),
+                        pool.RetainLayerPoses);
             slot->Skeleton = rig->Skeleton;
 
             Item item;

@@ -46,10 +46,9 @@ struct AnimLayerPose
 inline constexpr std::uint32_t kAnimNoPoseSlot = 0;
 
 // Carried only where a pose is presented; selection, content and events never read
-// it. The per-joint half lives in the AnimPosePool slot it names.
+// it. Everything sized by the rig lives in the AnimPosePool slot it names.
 struct SENCHA_COMPONENT("sencha.anim_pose_state") AnimPoseState
 {
-    AnimLayerPose Layers[kAnimMaxLayers] = {};
     // The rig binding the layers were posed against; another resets them.
     std::uint64_t BindingGeneration = 0;
     // One past the pool slot index; kAnimNoPoseSlot before one is assigned.

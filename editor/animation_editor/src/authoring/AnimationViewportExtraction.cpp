@@ -156,8 +156,7 @@ const std::vector<Mat4>& AnimationViewportExtraction::Palette(AnimationAuditionS
     const SkeletonData& skeleton = audition.Session.Skeleton();
     const AnimBoundRig* rig = simulation.Rig();
     const AnimPosePool::Slot* slot = simulation.SubjectPose();
-    const AnimPoseState* state = simulation.SubjectPoseState();
-    if (rig == nullptr || slot == nullptr || state == nullptr || !slot->HasCurrent)
+    if (rig == nullptr || slot == nullptr || !slot->HasCurrent)
     {
         Note = rig != nullptr && rig->SkeletonPath.empty() ? "The rig names no skeleton, so nothing poses it."
                                                            : "Nothing posed yet.";
@@ -176,11 +175,11 @@ const std::vector<Mat4>& AnimationViewportExtraction::Palette(AnimationAuditionS
         && history[*navigation.InspectRecord].Pose.size() == skeleton.Joints.size())
         SimulationLocal = history[*navigation.InspectRecord].Pose;
     else
-        AnimationPreviewDisplayPose(sources, *slot, *state, simulation.Selection(), LayerDisplay, slot->Tick,
+        AnimationPreviewDisplayPose(sources, *slot, simulation.Selection(), LayerDisplay, slot->Tick,
                                     simulation.TickSeconds(), DisplayScratch, SimulationLocal);
-    for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
+    for (std::size_t l = 0; l < rig->Layers.size() && l < slot->LayerStates.size(); ++l)
     {
-        const std::uint16_t content = state->Layers[l].Playing.Content;
+        const std::uint16_t content = slot->LayerStates[l].Playing.Content;
         if (content < rig->Contents.size())
             Note += std::format("{}{}: {}{}", Note.empty() ? "" : "; ", rig->Layers[l].NameText,
                                 rig->Contents[content].Path, LayerDisplay.Shows(l) ? "" : " (hidden)");
@@ -191,7 +190,7 @@ const std::vector<Mat4>& AnimationViewportExtraction::Palette(AnimationAuditionS
 }
 
 void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
-                                 const AnimPoseState& state, const AnimSelectorState* selection,
+                                 const AnimSelectorState* selection,
                                  const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
                                  AnimPoseScratch& scratch, std::vector<Transform3f>& out)
 {
@@ -208,7 +207,7 @@ void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPoseP
     std::array<AnimPoseLayer, kAnimMaxLayers> compose{};
     for (std::size_t l = 0; l < layers; ++l)
     {
-        const AnimLayerPose& layer = state.Layers[l];
+        const AnimLayerPose& layer = slot.LayerStates[l];
         const bool plays = layer.Playing.Content != kAnimNoContent || layer.Fading;
         if (!display.Shows(l) || !plays)
             continue;

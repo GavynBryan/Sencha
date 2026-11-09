@@ -40,7 +40,7 @@ struct AnimationLayerDisplay
 // With every layer shown this is the pose pass's own result; otherwise the
 // shown layers are recomposed into `out` without touching the pass's state.
 void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
-                                 const AnimPoseState& state, const AnimSelectorState* selection,
+                                 const AnimSelectorState* selection,
                                  const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
                                  AnimPoseScratch& scratch, std::vector<Transform3f>& out);
 

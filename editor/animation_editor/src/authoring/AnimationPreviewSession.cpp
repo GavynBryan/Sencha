@@ -345,6 +345,7 @@ void AnimationPreviewSession::BuildWorld()
         Movers = std::make_unique<CharacterMoverPool>(*Physics);
     }
     InstallAnimationVocabulary(*Preview);
+    Preview->AddResource<AnimPosePool>().RetainLayerPoses = true;
     // Engine verbs before the project's, as a runtime World declares them.
     InstallAuthoredVocabulary(*Preview);
     VerbRegistry& verbs = *FindVerbRegistry(*Preview);

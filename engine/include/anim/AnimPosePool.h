@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimPoseState.h>
 #include <anim/AnimTypes.h>
 #include <anim/Skeleton.h>
 #include <anim/SkeletonHandle.h>
@@ -30,7 +31,6 @@ struct AnimJointOffset
 // Derived on first request and kept until the pose or the blend changes.
 struct AnimPresentedPose
 {
-    std::vector<Transform3f> Local;
     std::vector<Mat4> Model;
     std::uint64_t Revision = 0;
     float Alpha = 0.0f;
@@ -51,8 +51,11 @@ public:
         SkeletonHandle Skeleton;
         std::uint32_t Joints = 0;
         std::uint32_t Layers = 0;
+        // One per layer the rig has.
+        std::vector<AnimLayerPose> LayerStates;
         // Layers x Joints, layer-major.
         std::vector<AnimJointOffset> Offsets;
+        // Only where asked for: the runtime's layer poses last one evaluation, in scratch.
         std::vector<Transform3f> LayerPoses;
         std::vector<Transform3f> Current;
         std::vector<Transform3f> Previous;
@@ -67,7 +70,7 @@ public:
         bool Live = false;
 
         // Clears the slot when the shape changes.
-        void Shape(std::uint32_t joints, std::uint32_t layers);
+        void Shape(std::uint32_t joints, std::uint32_t layers, bool retainLayerPoses = false);
 
         // The model-space pose `alpha` of the way from Previous to Current, built at
         // most once per pose and blend. A skinned palette and anything placed on a
@@ -96,6 +99,9 @@ public:
     [[nodiscard]] Slot* Find(std::uint32_t handle, EntityId owner);
     [[nodiscard]] const Slot* Find(std::uint32_t handle, EntityId owner) const;
     [[nodiscard]] std::size_t LiveCount() const { return Slots.size() - Free.size(); }
+
+    // Keep each layer's own pose past its evaluation, for a tool that shows them.
+    bool RetainLayerPoses = false;
 
 private:
     std::vector<Slot> Slots;
