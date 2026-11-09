@@ -46,7 +46,7 @@ enum class AbilityEndReason : std::uint8_t
 
 // Which start this is: the command tick, the ability, and where the start came from
 // -- the index of the press in that tick's edge list, or kAbilityRequestOrigin plus
-// the request's place in the queue. Tied to the attempt rather than to a count of
+// how many requests that actor already made this pass. Tied to the attempt rather than to a count of
 // admitted starts, so two machines that admit differently still name the same
 // press the same way.
 struct AbilityActivationKey

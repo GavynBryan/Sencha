@@ -1036,12 +1036,12 @@ TEST_F(AbilityRuntime, RequestsActivateAndCancelByName)
     const EntityId actor = Actor();
     Grant(actor, charge);
     AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
-    ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge }));
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
     Step();
     const AbilityRecord* record = LiveRecord(actor, charge);
     ASSERT_NE(record, nullptr);
     EXPECT_GE(record->Key.Origin, kAbilityRequestOrigin);
-    ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge }));
+    queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge });
     Step();
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::ExplicitCancel);
 }
@@ -1248,6 +1248,41 @@ TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)
     EXPECT_EQ(skipped[0].Admission, VerbAdmission::UnresolvedReference) << "skipped for being gone, not for its guard";
 }
 
+// A hive's members all answer one death in the same tick.
+TEST_F(AbilityRuntime, EveryRequestOfATickIsHeardHoweverManyThereAre)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    std::vector<EntityId> actors;
+    for (int i = 0; i < 300; ++i)
+    {
+        actors.push_back(Actor());
+        Grant(actors.back(), charge, {}, "g_" + std::to_string(i));
+        queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actors.back(), .Ability = charge });
+    }
+    Step();
+    for (const EntityId actor : actors)
+        EXPECT_NE(LiveRecord(actor, charge), nullptr);
+}
+
+// One actor's requests name its starts apart, wherever others' fall in the queue.
+TEST_F(AbilityRuntime, ARequestsNameDependsOnlyOnItsOwnActor)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId first = Actor();
+    const EntityId second = Actor();
+    Grant(first, charge);
+    Grant(second, charge);
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = first, .Ability = charge });
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = second, .Ability = charge });
+    Step();
+    ASSERT_NE(LiveRecord(first, charge), nullptr);
+    ASSERT_NE(LiveRecord(second, charge), nullptr);
+    EXPECT_EQ(LiveRecord(first, charge)->Key.Origin, kAbilityRequestOrigin);
+    EXPECT_EQ(LiveRecord(second, charge)->Key.Origin, kAbilityRequestOrigin);
+}
+
 TEST_F(AbilityRuntime, AFifthLiveRecordIsRefusedForCapacity)
 {
     std::vector<AbilityId> waits;
@@ -1259,7 +1294,7 @@ TEST_F(AbilityRuntime, AFifthLiveRecordIsRefusedForCapacity)
     for (int i = 0; i < 5; ++i)
     {
         Grant(actor, waits[i], {}, "g_" + std::to_string(i));
-        ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = waits[i] }));
+        queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = waits[i] });
     }
     Step();
     EXPECT_EQ(LiveCount(actor), 4u);

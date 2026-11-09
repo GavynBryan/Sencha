@@ -809,3 +809,8 @@ shares a pool between Worlds; `Archetype::Blocks` must be set before a standalon
 archetype makes a chunk. A pool keeps at most the larger of 64 blocks and a quarter
 of those in use.
 
+**Ability requests.** `AbilityRequestQueue::Push` no longer refuses and returns
+nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, which
+bounds only requests waiting on a dormant actor. A request's `Origin` counts that
+actor's requests in the pass, not its place in the queue.
+

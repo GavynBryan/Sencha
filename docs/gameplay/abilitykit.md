@@ -282,8 +282,9 @@ The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"
   binding says `on_interrupt: release`.
 
 `ability.activate`, `ability.cancel`, `ability.grant` and `ability.revoke` reach
-the same admission by name, through `AbilityRequestQueue` (bounded; a full queue
-answers `QueueFull`).
+the same admission by name, through `AbilityRequestQueue`. Every request a tick makes is
+heard: the queue drains each pass, so it holds one tick's asks. Only requests
+waiting on a dormant actor carry over, and those are capped.
 
 ## Runtime
 
