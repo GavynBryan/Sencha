@@ -3,6 +3,7 @@
 #include <attach/AttachmentComponents.h>
 #include <ecs/World.h>
 #include <render/MaterialSetHandle.h>
+#include <render/PointLightComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
@@ -65,6 +66,18 @@ struct MeshAttachmentSpec
 EntityId CreateMeshAttachment(World& world, const MeshAttachmentSpec& spec, AttachResult* result = nullptr);
 // In place: the entity is kept, and its mesh changes keep their leases balanced.
 AttachResult UpdateMeshAttachment(World& world, EntityId attached, const MeshAttachmentSpec& spec);
+
+struct LightAttachmentSpec
+{
+    EntityId Root;
+    // Empty: the root's origin, by intent.
+    std::string_view Socket;
+    AttachPlacement Placement;
+    PointLightComponent Light;
+};
+
+// Invalid, with nothing created, unless `result` reports it attached.
+EntityId CreateLightAttachment(World& world, const LightAttachmentSpec& spec, AttachResult* result = nullptr);
 
 [[nodiscard]] EntityId FindAttachment(const World& world, EntityId root, const PresentationOwner& owner);
 

@@ -1,17 +1,36 @@
 #include <attach/AttachmentVerbs.h>
 
+#include <attach/AttachedLight.h>
 #include <attach/Attachment.h>
 #include <authored/AuthoredValue.h>
+#include <camera/CameraEffectArguments.h>
 #include <core/assets/AssetRef.h>
 #include <core/assets/AssetStoreTable.h>
 #include <ecs/World.h>
+#include <time/SimClock.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string>
 
 namespace
 {
+    namespace LightSlot
+    {
+        constexpr std::size_t Target = 0;
+        constexpr std::size_t Socket = 1;
+        constexpr std::size_t Position = 2;
+        constexpr std::size_t Color = 3;
+        constexpr std::size_t Intensity = 4;
+        constexpr std::size_t Range = 5;
+        constexpr std::size_t PeakScale = 6;
+        constexpr std::size_t PulseSeconds = 7;
+        constexpr std::size_t Attack = 8;
+        constexpr std::size_t Release = 9;
+        constexpr std::size_t PacksFirst = 10;
+    }
+
     DataFieldSchema Argument(std::string key, DataFieldKind kind, std::string label, std::string description,
                              bool required = true)
     {
@@ -61,6 +80,43 @@ void DeclareAttachmentVerbs(VerbRegistrationScope& scope)
         std::move(shadows),
     };
     (void)scope.Declare(std::move(attach));
+
+    VerbDefinition light;
+    light.Name = std::string(kPresentationLightLease);
+    light.DisplayName = "Hold light";
+    light.Description = "Shows a point light on the target while held, then fades it out.";
+    light.Category = "Presentation";
+    light.Kind = VerbKind::Lease;
+    light.Scope = AuthoredScope::Cosmetic;
+    light.Prediction = AuthoredPrediction::Presentation;
+    DataFieldSchema intensity = Argument("intensity", DataFieldKind::Float, "Intensity", "Its steady brightness.");
+    intensity.Numeric.Minimum = 0.0;
+    DataFieldSchema range = Argument("range", DataFieldKind::Float, "Range", "Metres it reaches.");
+    range.Numeric.Minimum = 0.0;
+    DataFieldSchema peak = Argument("peak_scale", DataFieldKind::Float, "Peak scale",
+                                    "How many times the steady brightness it starts at.", false);
+    peak.Default = 1.0;
+    peak.Numeric.Minimum = 1.0;
+    DataFieldSchema first = Argument("packs_first", DataFieldKind::Bool, "Packs first",
+                                     "Keeps its place ahead of other live lights when the budget is short.", false);
+    first.Default = false;
+    DataFieldSchema socketName = Argument("socket", DataFieldKind::String, "Socket",
+                                          "The rig socket it hangs from; empty for the target's origin.", false);
+    socketName.Default = std::string{};
+    light.Arguments.Children = {
+        Argument("target", DataFieldKind::Entity, "Target", "The body that wears it."),
+        std::move(socketName),
+        Argument("position", DataFieldKind::Vector, "Offset", "Metres from the socket, in its space.", false),
+        Argument("color", DataFieldKind::Vector, "Color", "Linear red, green and blue."),
+        std::move(intensity),
+        std::move(range),
+        std::move(peak),
+        CameraEffectSecondsField("pulse_seconds", "Pulse", "How quickly the peak settles to the steady brightness."),
+        CameraEffectSecondsField("attack", "Attack", "Rising from nothing."),
+        CameraEffectSecondsField("release", "Release", "Fading out once let go."),
+        std::move(first),
+    };
+    (void)scope.Declare(std::move(light));
 }
 
 AttachmentOperations::AttachmentOperations(World& world)
@@ -150,4 +206,74 @@ void AttachmentOperations::Release(const LeaseOwner& owner)
         DestroyAttachment(*Entities, held.Attachment);
         return true;
     });
+}
+
+AttachedLightOperations::AttachedLightOperations(World& world, const FixedSimulationLoop& clock)
+    : Entities(&world)
+    , Clock(&clock)
+    , WriterId(RegisterPresentationWriter(world, kPresentationLightLease))
+{
+}
+
+VerbAdmission AttachedLightOperations::Light(const VerbInvocation& invocation)
+{
+    AttachedLightState* state = Entities->TryGetResource<AttachedLightState>();
+    if (state == nullptr)
+        return VerbAdmission::Unavailable;
+    const auto release = [&] {
+        state->Release(invocation.Owner, CameraEffectTickOf(invocation, *Clock), Clock->GetFixedDt());
+    };
+    if (invocation.Step == LeaseStep::Release)
+    {
+        release();
+        return VerbAdmission::Accepted;
+    }
+    // A refused acquire holds nothing, even for a holder that held a light before it.
+    const VerbAdmission admission = Acquire(invocation);
+    if (admission != VerbAdmission::Accepted)
+        release();
+    return admission;
+}
+
+VerbAdmission AttachedLightOperations::Acquire(const VerbInvocation& invocation)
+{
+    const AuthoredArguments* arguments = invocation.Arguments;
+    EntityId target;
+    double intensity = 0.0;
+    double range = 0.0;
+    if (arguments == nullptr || !invocation.Owner.IsSet() || !arguments->TryGetEntity(LightSlot::Target, target)
+        || !arguments->TryGetFloat(LightSlot::Intensity, intensity) || !arguments->TryGetFloat(LightSlot::Range, range)
+        || !std::isfinite(intensity) || !std::isfinite(range) || intensity <= 0.0 || range <= 0.0)
+        return VerbAdmission::InvalidArguments;
+
+    AttachedLightSpec spec;
+    if (!ReadCameraEffectSeconds(*arguments, LightSlot::Attack, spec.Envelope.Attack)
+        || !ReadCameraEffectSeconds(*arguments, LightSlot::Release, spec.Envelope.Release)
+        || !ReadCameraEffectSeconds(*arguments, LightSlot::PulseSeconds, spec.PulseSeconds)
+        || !IsValidCameraEnvelope(spec.Envelope) || !std::isfinite(spec.PulseSeconds) || spec.PulseSeconds < 0.0f)
+        return VerbAdmission::InvalidArguments;
+    double peak = 1.0;
+    (void)arguments->TryGetFloat(LightSlot::PeakScale, peak);
+    if (!std::isfinite(peak) || peak < 1.0)
+        return VerbAdmission::InvalidArguments;
+    spec.PeakScale = static_cast<float>(peak);
+
+    PointLightComponent& light = spec.Attachment.Light;
+    light.Color = VectorArgument(*arguments, LightSlot::Color);
+    light.Intensity = static_cast<float>(intensity);
+    light.Range = static_cast<float>(range);
+    (void)arguments->TryGetBool(LightSlot::PacksFirst, light.PacksFirst);
+    std::string_view socket;
+    (void)arguments->TryGetString(LightSlot::Socket, socket);
+    spec.Attachment.Root = target;
+    spec.Attachment.Socket = socket;
+    spec.Attachment.Placement = { .Offset = Transform3f(VectorArgument(*arguments, LightSlot::Position),
+                                                        Quat<float>::Identity(), Vec3d::One()),
+                                  .Owner = { WriterId, invocation.Owner } };
+
+    const AttachResult result = Entities->GetResource<AttachedLightState>().Hold(
+        *Entities, spec, CameraEffectTickOf(invocation, *Clock), invocation.Owner);
+    if (result == AttachResult::Attached || result == AttachResult::Updated)
+        return VerbAdmission::Accepted;
+    return result == AttachResult::NotPresenting ? VerbAdmission::Unavailable : VerbAdmission::Refused;
 }

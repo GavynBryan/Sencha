@@ -22,6 +22,7 @@ ForwardLightCandidate MakePointLightCandidate(
         .Intensity = light.Intensity,
         .Light = MakePointGpuLight(position, light),
         .Baked = baked,
+        .PacksFirst = light.PacksFirst && !baked,
         // A baked light's shadowing is the bake's job; it never competes for
         // a shadow slot in a zone lit specifically to avoid that cost.
         .WantsPointShadow = light.CastShadows && !baked,
@@ -53,6 +54,7 @@ ForwardLightCandidate MakeSpotLightCandidate(
         .Intensity = light.Intensity,
         .Light = MakeSpotGpuLight(transform.Position, direction, light),
         .Baked = baked,
+        .PacksFirst = false,
         .WantsSpotShadow = light.CastShadows && !baked,
         .WantsPointShadow = false,
         .SpotShadow = {},
@@ -87,12 +89,15 @@ void SelectForwardLights(
     for (ForwardLightCandidate& candidate : candidates)
         candidate.Score = LightImportanceScore(
             candidate.Position, candidate.Range, candidate.Intensity, viewOrigin);
-    // Two tiers: every live light packs before any baked one, so filling the
-    // cap with baked lights can never evict live light -- baked lights only
-    // take the slots live lights left empty. Within a tier: score, then key.
+    // Three tiers: lights that pack first, other live lights, baked lights. So
+    // filling the cap with baked lights can never evict live light -- baked
+    // lights only take the slots live lights left empty. Within a tier: score,
+    // then key.
     std::sort(candidates.begin(), candidates.end(),
         [](const ForwardLightCandidate& a, const ForwardLightCandidate& b)
         {
+            if (a.PacksFirst != b.PacksFirst)
+                return a.PacksFirst;
             if (a.Baked != b.Baked)
                 return b.Baked;
             if (a.Score != b.Score)

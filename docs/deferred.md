@@ -1001,3 +1001,13 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a skinned mesh seen popping at a screen edge. Culling by posed bounds means
   posing before culling, which costs pose work for meshes that would have been culled.
 
+## A scale on a lasting effect's duration
+
+- **What:** a lasting effect's length is its definition's `seconds`, with nothing
+  at the application to lengthen or shorten it. `scale` multiplies magnitudes only.
+- **Where:** `ApplyEffect` (`engine/src/effects/EffectSystem.cpp`), `effect.apply`
+  (`engine/src/effects/EffectVerbs.cpp`).
+- **Trigger:** a game choosing a length by difficulty, which Loss Function plans
+  for its seizure effect (`assets/effects/prayer_seizure.sdata`). Add an optional
+  `duration_scale` to `effect.apply`, default 1, without touching `effect.hold`.
+

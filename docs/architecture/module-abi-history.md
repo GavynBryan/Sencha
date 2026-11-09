@@ -790,3 +790,8 @@ arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
 (component, `OBSS`) and `PerceptionSenses::Shared`. `ClaimBoard`,
 `claims.hold`, `claims.count` and `claims.held`. The `crowding` candidate
 measure and `CandidateRun::ProjectNav`.
+**Worn lights.** `PointLightComponent::PacksFirst`, a runtime-only field outside
+the scene chunk. `LightAttachmentSpec`, `CreateLightAttachment`,
+`attach/AttachedLight.h` (`AttachedLightState`, a World resource on every
+`RuntimeWorld`) and the `presentation.light` lease. `CameraEffectClock::At`.
+

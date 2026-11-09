@@ -68,6 +68,7 @@ namespace attach_test
             ComponentStorageTraits<LocalTransform>::Register(Entities);
             Entities.RegisterComponent<WorldTransformHistory>();
             Entities.RegisterComponent<StaticMeshComponent>();
+            Entities.RegisterComponent<PointLightComponent>();
             Entities.RegisterComponent<PresentedWith>();
             Entities.RegisterComponent<AttachmentSet>();
             Entities.RegisterComponent<Attachment>();

@@ -10,6 +10,7 @@
 class AbilityOperations;
 class ActorTimeOperations;
 class AnimRequestOperations;
+class AttachedLightOperations;
 class AttachmentOperations;
 class AudioOperations;
 class CameraFovScaleOperations;
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;
     std::unique_ptr<AttachmentOperations> Attachments;
+    std::unique_ptr<AttachedLightOperations> AttachedLights;
     std::unique_ptr<CameraFovScaleOperations> FovScale;
     std::unique_ptr<CameraShakeOperations> Shake;
     std::unique_ptr<ResponseOperations> Responses;

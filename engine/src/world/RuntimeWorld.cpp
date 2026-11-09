@@ -1,5 +1,6 @@
 #include <world/RuntimeWorld.h>
 
+#include <attach/AttachedLight.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>
 #include <components/ActiveCameraService.h>
@@ -28,6 +29,7 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // machine, never replicated, never read by the simulation.
     Entities_.AddResource<CameraShakeState>();
     Entities_.AddResource<CameraFovScaleState>();
+    Entities_.AddResource<AttachedLightState>();
 
     // Every driven world can resolve persistent identities; the identity
     // component's hooks maintain the index as zones import and detach.

@@ -32,6 +32,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
     , Attachments(std::make_unique<AttachmentOperations>(entities))
+    , AttachedLights(std::make_unique<AttachedLightOperations>(entities, clock))
     , FovScale(std::make_unique<CameraFovScaleOperations>(entities, clock))
     , Shake(std::make_unique<CameraShakeOperations>(entities, clock, verbs))
     , Responses(std::make_unique<ResponseOperations>(entities, clock))
@@ -59,6 +60,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
     Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(catalog.Find(kPresentationAttachLease), *Attachments));
+    Verbs.push_back(verbs.Bind<&InvokePresentationLight>(catalog.Find(kPresentationLightLease), *AttachedLights));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(catalog.Find(kCameraFovScaleVerb), *FovScale));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(catalog.Find(kCameraFovScaleHoldLease), *FovScale));
     Verbs.push_back(verbs.Bind<&InvokeCameraShake>(catalog.Find(kCameraShakeVerb), *Shake));

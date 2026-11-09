@@ -79,15 +79,18 @@ one policy shared by the runtime and the editor:
 
 ```
 score = intensity * clamp(range / max(distance, 1e-4), 0, 1)^2
-sort live lights before baked ones, then by score descending, ties broken by
-  RenderEntityKey (stable, deterministic)
+sort lights that pack first, then other live lights, then baked ones; within
+  each, by score descending, ties broken by RenderEntityKey (stable, deterministic)
 pack the first min(candidates, 64) into RenderLightSet
 each packed light that wants a shadow emits one request, in pack order,
   carrying the packed light index
 ```
 
-The two tiers are the cap guarantee: a baked light can never evict a live
-one, and zones bake precisely so few live lights remain.
+The baked tier is the cap guarantee: a baked light can never evict a live one,
+and zones bake precisely so few live lights remain. `PointLightComponent::
+PacksFirst` is runtime-only and never authored: a light gameplay depends on the
+player seeing, such as `presentation.light` with `packs_first`, outranks scene
+lights however dim or distant it is.
 
 ## The options, in designer terms
 

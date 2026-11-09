@@ -2,6 +2,7 @@
 
 #include <app/DefaultRenderPipeline.h>
 #include <audio/AudioService.h>
+#include <attach/AttachedLight.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>
 #include <controller/LookOrientation.h>
@@ -529,6 +530,20 @@ namespace EngineConsoleBuiltins
                 .OnChange = [world](const CVarChangeContext& ctx) {
                     if (CameraFovScaleState* state = world->TryGetResource<CameraFovScaleState>())
                         state->Settings.Intensity = static_cast<float>(std::get<double>(ctx.NewValue));
+                },
+            });
+            registry.RegisterCVar({
+                .Name = "render.reduced_flashing",
+                .Owner = "engine",
+                .Type = CVarType::Bool,
+                .DefaultValue = false,
+                .CurrentValue = false,
+                .Flags = CVarFlags::Archive,
+                .Help = "Takes the sudden pulse out of lights worn by bodies and slows their fades.",
+                .Source = { "player settings" },
+                .OnChange = [world](const CVarChangeContext& ctx) {
+                    if (AttachedLightState* state = world->TryGetResource<AttachedLightState>())
+                        state->Settings.ReducedFlashing = std::get<bool>(ctx.NewValue);
                 },
             });
         }

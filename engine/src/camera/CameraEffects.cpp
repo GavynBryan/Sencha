@@ -8,9 +8,7 @@
 
 void PresentCameraEffects(World& world, EntityId camera, const FixedSimulationLoop& clock, double presentationAlpha)
 {
-    const CameraEffectClock now{ .Tick = clock.GetTickIndex(),
-                                 .Alpha = presentationAlpha,
-                                 .TickSeconds = clock.GetFixedDt() };
+    const CameraEffectClock now = CameraEffectClock::At(clock, presentationAlpha);
     if (CameraShakeState* shake = world.TryGetResource<CameraShakeState>())
         shake->Update(world, camera, PresentationPoseOf(world, camera, presentationAlpha).Position, now);
     if (CameraFovScaleState* fov = world.TryGetResource<CameraFovScaleState>())

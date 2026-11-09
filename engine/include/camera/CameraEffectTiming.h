@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 
+class FixedSimulationLoop;
 class World;
 
 // Seconds to rise to full strength, stay there, and fall back, each on a
@@ -30,6 +31,8 @@ struct CameraEffectClock
     std::uint64_t Tick = 0;
     double Alpha = 0.0;
     double TickSeconds = 1.0 / 60.0;
+
+    [[nodiscard]] static CameraEffectClock At(const FixedSimulationLoop& clock, double presentationAlpha);
 };
 
 // When one presented camera effect started, when it lets go, whose view it

@@ -291,6 +291,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |
 | `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
 | `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
+| `presentation.light {target, socket = "", position?, color, intensity, range, peak_scale = 1, pulse_seconds = 0, attack = 0, release = 0, packs_first = false}` | lease | cosmetic / presentation | a point light worn by the target while held, then faded (`docs/gameplay/attachments.md`) |
 | `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
 | `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
 

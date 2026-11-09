@@ -9,11 +9,15 @@
 #include <string_view>
 #include <vector>
 
+class FixedSimulationLoop;
 class World;
 
 // Holds a static mesh at a socket of the target while the lease is held: a
 // prop an ability phase shows. Cosmetic, so it runs wherever its phase is presented.
 inline constexpr std::string_view kPresentationAttachLease = "presentation.attach";
+// Holds a point light on the target while the lease is held, then fades it out.
+// Cosmetic, like the prop.
+inline constexpr std::string_view kPresentationLightLease = "presentation.light";
 
 void DeclareAttachmentVerbs(VerbRegistrationScope& scope);
 
@@ -44,6 +48,30 @@ private:
     PresentationWriterId WriterId;
     std::vector<Held> Holds;
 };
+
+// The light provider, over the World's AttachedLightState.
+class AttachedLightOperations
+{
+public:
+    AttachedLightOperations(World& world, const FixedSimulationLoop& clock);
+
+    AttachedLightOperations(const AttachedLightOperations&) = delete;
+    AttachedLightOperations& operator=(const AttachedLightOperations&) = delete;
+
+    VerbAdmission Light(const VerbInvocation& invocation);
+
+private:
+    VerbAdmission Acquire(const VerbInvocation& invocation);
+
+    World* Entities;
+    const FixedSimulationLoop* Clock;
+    PresentationWriterId WriterId;
+};
+
+inline VerbAdmission InvokePresentationLight(AttachedLightOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.Light(invocation);
+}
 
 inline VerbAdmission InvokePresentationAttach(AttachmentOperations& operations, const VerbInvocation& invocation)
 {
