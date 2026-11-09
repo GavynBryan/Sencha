@@ -2,7 +2,7 @@
 
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilityRequestQueue.h>
-#include <abilities/ActiveAbilities.h>
+#include <abilities/AbilityActivations.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -30,14 +30,6 @@ namespace
     {
         if (NavAbilityCrossings* crossings = world.TryGetResource<NavAbilityCrossings>())
             std::erase_if(crossings->Active, [&](const NavAbilityCrossing& entry) { return entry.Agent == agent; });
-    }
-
-    [[nodiscard]] bool AbilityLive(const World& world, EntityId agent, AbilityId ability)
-    {
-        const ActiveAbilities* active = world.TryGet<ActiveAbilities>(agent);
-        return active != nullptr && std::ranges::any_of(active->Records, [&](const AbilityRecord& record) {
-            return record.State == AbilityRecordState::Live && record.Key.Ability == ability;
-        });
     }
 
     // Landing counts within this many metres of the exit, or the link's own
@@ -154,7 +146,7 @@ NavTraversalResult NavTraverseByAbility(NavTraversalFrame& frame)
         frame.Memory = ability.Value + 1;
         return NavTraversalResult::Running;
     }
-    if (AbilityLive(world, frame.Agent, AbilityId{ frame.Memory - 1 }) || frame.Ticks < kAbilityStartTicks)
+    if (IsAbilityLive(world, frame.Agent, AbilityId{ frame.Memory - 1 }) || frame.Ticks < kAbilityStartTicks)
         return NavTraversalResult::Running;
     // An ability may end in the air, as a rope let go does; the crossing lasts until it lands.
     const Footing footing = FootingOf(world, frame.Agent);

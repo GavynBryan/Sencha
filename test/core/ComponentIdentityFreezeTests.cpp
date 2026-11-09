@@ -140,7 +140,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K'), 0x02E7F865828EE5CBull },
     { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N'), 0x75C60F44DC220B00ull },
     { "Nav Agent",           0x775C60F13B8FA8C4ull, MakeFourCC('N','A','G','T'), 0x2468E13CB665229Bull },
-    { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0x9164FAFA468AD95Full },
+    { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0xD0462B30022F2BE2ull },
     { "Nav Link State",      0xC634FEDD79698D79ull, MakeFourCC('N','L','S','T'), 0xF4222739CE2AEA8Eull },
     { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T'), 0x133C5B9C945CFC5Aull },
     { "SkinnedMesh",         0x1EE6CB7FBD7486D6ull, MakeFourCC('S','K','I','N'), 0x354907348BB3323Bull },
