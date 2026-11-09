@@ -801,3 +801,11 @@ in every build. `AbilityGrants` and `ActiveAbilities` no longer derive
 `EngineSchedule` can time its systems (`SetTimingEnabled`, `CollectTimings`) and
 host work (`ScheduleFrameWorkScope`).
 
+## v42
+
+**ECS chunk storage.** `Chunk::Data` is now a pointer to a block taken from a
+`ChunkBlockPool`, null while the chunk is empty. `World(std::shared_ptr<ChunkBlockPool>)`
+shares a pool between Worlds; `Archetype::Blocks` must be set before a standalone
+archetype makes a chunk. A pool keeps at most the larger of 64 blocks and a quarter
+of those in use.
+

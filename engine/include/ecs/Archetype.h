@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/ArchetypeSignature.h>
+#include <ecs/ChunkBlockPool.h>
 #include <ecs/Chunk.h>
 #include <ecs/ComponentId.h>
 #include <ecs/EntityId.h>
@@ -39,6 +40,20 @@ struct Archetype
 
     uint32_t RowsPerChunk = 0;
     uint32_t Id           = 0; // index into World::ArchetypeList
+
+    // Non-owning: outlives this archetype. Set before the first chunk.
+    ChunkBlockPool* Blocks = nullptr;
+
+    Archetype() = default;
+    Archetype(const Archetype&) = delete;
+    Archetype& operator=(const Archetype&) = delete;
+
+    ~Archetype()
+    {
+        for (const auto& chunk : Chunks)
+            if (chunk->Data != nullptr)
+                Blocks->Release(chunk->Data);
+    }
 
     // Build column layout from ComponentInfos (tags filtered out by zero Size).
     // Must be called once before creating any chunks.
@@ -100,10 +115,9 @@ struct Archetype
         return EntityColumnOffset_ + sizeof(EntityIndex) * RowsPerChunk <= ChunkSizeBytes;
     }
 
-    // Takes an emptied slab back before allocating, so resident chunk memory is
-    // bounded by how many chunks are live at once rather than by how many have
-    // ever been live. Streaming a zone in and out repeatedly used to orphan every
-    // slab but one per cycle.
+    // Takes an emptied header back before making one, so headers are bounded by
+    // how many chunks are live at once rather than by how many have ever been
+    // live. The block comes from the pool either way; neither is zeroed.
     Chunk* AllocChunk(StoragePartitionId partition = StoragePartitionId::Default())
     {
         uint32_t index;
@@ -114,6 +128,7 @@ struct Archetype
 
             Chunk& recycled = *Chunks[index];
             assert(recycled.IsEmpty() && "a chunk on the free list holds rows");
+            recycled.Data = Blocks->Acquire();
             recycled.Partition = partition;
             // The previous tenant's column versions are left alone: nothing reads
             // an empty chunk, and AddRow stamps every column as this frame's write
@@ -122,6 +137,7 @@ struct Archetype
         else
         {
             auto chunk = std::make_unique<Chunk>();
+            chunk->Data               = Blocks->Acquire();
             chunk->RowCount           = 0;
             chunk->RowCapacity        = RowsPerChunk;
             chunk->Partition          = partition;
@@ -207,9 +223,9 @@ struct Archetype
 
         --chunk->RowCount;
 
-        // A slab that just lost its last row goes back to the free list, where any
-        // partition of this archetype can claim it. Nothing outside moves: the
-        // chunk keeps its index in Chunks, so no EntityLocation needs fixing up.
+        // A chunk that just lost its last row gives up its block and waits on the
+        // free list, where any partition of this archetype can claim it. Nothing
+        // outside moves: the chunk keeps its index in Chunks, so no EntityLocation needs fixing up.
         // That is why reclamation is a free list rather than compaction — erasing
         // or swapping chunk slots would renumber live rows.
         if (chunk->RowCount == 0)
@@ -254,8 +270,7 @@ struct Archetype
         }
     }
 
-    // Slabs held but holding nothing: the reclamation signal. Diagnostics and
-    // tests only.
+    // Headers with no block, waiting for rows. Diagnostics and tests only.
     size_t FreeChunkCount() const { return FreeChunks_.size(); }
 
 private:
@@ -269,13 +284,14 @@ private:
         if (claim != LastChunkByPartition_.end() && claim->second == chunkIdx)
             LastChunkByPartition_.erase(claim);
 
+        Blocks->Release(chunk.Data);
+        chunk.Data = nullptr;
         FreeChunks_.push_back(chunkIdx);
     }
 
     size_t EntityColumnOffset_ = 0;
     std::unordered_map<uint32_t, uint32_t> LastChunkByPartition_;
 
-    // Indices into Chunks, most recently emptied first. Reusing the newest slab
-    // first is the warmest choice for the allocator and for the cache.
+    // Indices into Chunks, most recently emptied first.
     std::vector<uint32_t> FreeChunks_;
 };

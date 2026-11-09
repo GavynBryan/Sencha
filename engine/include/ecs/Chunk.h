@@ -18,6 +18,7 @@
 // archetype while staying L1-resident during a sweep.
 // See docs/ecs/decisions.md D0.1 for the full rationale.
 constexpr size_t ChunkSizeBytes = 16 * 1024;
+constexpr size_t kChunkBlockAlignment = 64;
 
 // Per-column metadata stored in the chunk header.
 struct ColumnDescriptor
@@ -31,6 +32,11 @@ struct ColumnDescriptor
 // storage partition. Rows from different partitions never share a chunk.
 // Columns are parallel arrays; one column per non-tag component in the signature.
 //
+// The header stays with its archetype for the archetype's life, so a chunk's index
+// and every EntityLocation naming it remain valid. Data is the block holding the
+// rows, taken from the World's pool and given back when the last row leaves: null
+// exactly while the chunk is empty.
+//
 // Memory layout within Data[]:
 //   [column 0: capacity * stride0 bytes]
 //   [column 1: capacity * stride1 bytes]
@@ -40,7 +46,7 @@ struct ColumnDescriptor
 // See docs/ecs/decisions.md D0.3 for column-first vs AoS rationale.
 struct Chunk
 {
-    alignas(64) uint8_t Data[ChunkSizeBytes] = {};
+    uint8_t* Data = nullptr;
 
     uint32_t RowCount    = 0;
     uint32_t RowCapacity = 0;
@@ -61,23 +67,27 @@ struct Chunk
 
     EntityIndex* EntityIndices()
     {
+        assert(Data != nullptr);
         return reinterpret_cast<EntityIndex*>(Data + EntityColumnOffset);
     }
 
     const EntityIndex* EntityIndices() const
     {
+        assert(Data != nullptr);
         return reinterpret_cast<const EntityIndex*>(Data + EntityColumnOffset);
     }
 
     uint8_t* ColumnData(uint32_t col)
     {
         assert(col < ColumnCount);
+        assert(Data != nullptr);
         return Data + Columns[col].Offset;
     }
 
     const uint8_t* ColumnData(uint32_t col) const
     {
         assert(col < ColumnCount);
+        assert(Data != nullptr);
         return Data + Columns[col].Offset;
     }
 

@@ -89,6 +89,12 @@ class World
 public:
     World() = default;
 
+    // Shares chunk storage with every other World given the same pool.
+    explicit World(std::shared_ptr<ChunkBlockPool> blocks)
+        : ChunkBlocks(std::move(blocks))
+    {
+    }
+
     // Teardown order contract: live components' OnRemove hooks fire first,
     // while resources are still reachable, then resources are destroyed.
     // Reversed, retain/release components could not reach their services and
@@ -790,8 +796,10 @@ public:
 
     uint64_t RowMigrationCount() const { return RowMigrationCounter; }
 
+    [[nodiscard]] ChunkBlockPool::Counters ChunkBlockStats() const { return ChunkBlocks->Stats(); }
+
     // Chunk census, walked on demand — diagnostics and bench only, never per
-    // frame. EmptyChunkCount is the reclamation signal: slabs retained past the
+    // frame. EmptyChunkCount is the reclamation signal: headers retained past the
     // last row that needed them.
     size_t ChunkCount() const
     {
@@ -1195,6 +1203,8 @@ private:
     };
 
     EntityRegistry                          Entities;
+    // Before ArchetypeList: archetypes give their blocks back as they die.
+    std::shared_ptr<ChunkBlockPool> ChunkBlocks = std::make_shared<ChunkBlockPool>();
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 
     // Index-aligned with ArchetypeList: the component ids in this archetype
@@ -1269,7 +1279,9 @@ private:
     void MoveFrom(World&& other)
     {
         Entities = std::move(other.Entities);
+        // Replaced archetypes release into the old pool, so it changes after them.
         ArchetypeList = std::move(other.ArchetypeList);
+        ChunkBlocks = other.ChunkBlocks;
         HookedRemoveIdsByArchetype = std::move(other.HookedRemoveIdsByArchetype);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
@@ -1457,6 +1469,7 @@ private:
         auto arch = std::make_unique<Archetype>();
         arch->Signature = sig;
         arch->Id        = id;
+        arch->Blocks    = ChunkBlocks.get();
 
         std::vector<ComponentInfo> cols;
         std::vector<ComponentId>   hooked;

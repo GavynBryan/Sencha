@@ -821,8 +821,9 @@ TEST_F(AbilityReplication, AClientsReleaseLeavesTheAuthoritysRecordAlone)
     word.Identity = 99;
     ClientHeld[kGlowAction] = true;
     ClientTick({ { kGlowAction, InputEdgeKind::Release } });
-    EXPECT_EQ(word.State, AbilityRecordState::Live) << "the authority's record is only presented here";
-    EXPECT_FALSE(word.Released);
+    const AbilityRecord& after = Client.Entities.TryGet<ActiveAbilities>(Remote())->Records[0];
+    EXPECT_EQ(after.State, AbilityRecordState::Live) << "the authority's record is only presented here";
+    EXPECT_FALSE(after.Released);
 }
 
 TEST_F(AbilityReplication, AGuessCancelsOnlyGuesses)

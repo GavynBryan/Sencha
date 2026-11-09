@@ -5,7 +5,9 @@
 
 TEST(StoragePartition, RowsFromDifferentPartitionsNeverShareAChunk)
 {
+    ChunkBlockPool blocks;
     Archetype archetype;
+    archetype.Blocks = &blocks;
     archetype.BuildLayout({});
 
     const StoragePartitionId first{ 1 };
@@ -23,7 +25,9 @@ TEST(StoragePartition, RowsFromDifferentPartitionsNeverShareAChunk)
 
 TEST(StoragePartition, SamePartitionReusesAvailableChunk)
 {
+    ChunkBlockPool blocks;
     Archetype archetype;
+    archetype.Blocks = &blocks;
     archetype.BuildLayout({});
 
     const StoragePartitionId partition{ 7 };
@@ -38,7 +42,9 @@ TEST(StoragePartition, SamePartitionReusesAvailableChunk)
 
 TEST(StoragePartition, ExistingCallersRemainInDefaultPartition)
 {
+    ChunkBlockPool blocks;
     Archetype archetype;
+    archetype.Blocks = &blocks;
     archetype.BuildLayout({});
 
     const auto [chunk, row] = archetype.AddRow(10);
@@ -52,7 +58,9 @@ TEST(StoragePartition, ExistingCallersRemainInDefaultPartition)
 // one claimant, so the same partition gets the same slab back at the same index.
 TEST(StoragePartition, EmptiedChunkIsReclaimedAtTheSameIndex)
 {
+    ChunkBlockPool blocks;
     Archetype archetype;
+    archetype.Blocks = &blocks;
     archetype.BuildLayout({});
 
     const StoragePartitionId partition{ 3 };
