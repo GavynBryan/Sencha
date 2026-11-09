@@ -92,8 +92,12 @@ struct Archetype
         offset = (offset + alignof(EntityIndex) - 1) & ~(alignof(EntityIndex) - 1);
         EntityColumnOffset_ = offset;
 
-        assert(offset + sizeof(EntityIndex) * RowsPerChunk <= ChunkSizeBytes
-               && "Archetype column layout exceeds chunk size");
+    }
+
+    // False when even one row of this signature overruns a chunk.
+    [[nodiscard]] bool RowsFitChunk() const
+    {
+        return EntityColumnOffset_ + sizeof(EntityIndex) * RowsPerChunk <= ChunkSizeBytes;
     }
 
     // Takes an emptied slab back before allocating, so resident chunk memory is

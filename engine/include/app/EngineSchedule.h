@@ -3,6 +3,8 @@
 #include <app/GameContexts.h>
 
 #include <cassert>
+#include <chrono>
+#include <cstdint>
 #include <queue>
 #include <typeindex>
 #include <unordered_map>
@@ -55,6 +57,17 @@ concept IsScheduledSystem =
     || HasAudio<T>
     || HasEndFrame<T>;
 
+// What one system has cost in one phase since timing was last reset.
+struct ScheduleSystemTiming
+{
+    // The system's type_info name.
+    const char* System = nullptr;
+    const char* Phase = nullptr;
+    std::uint64_t Calls = 0;
+    std::uint64_t Nanoseconds = 0;
+    std::uint64_t WorstNanoseconds = 0;
+};
+
 //=============================================================================
 // EngineSchedule
 //
@@ -98,6 +111,14 @@ public:
     void RunAudio(AudioContext& ctx);
     void RunEndFrame(EndFrameContext& ctx);
 
+    // Off by default; a measuring host turns it on, at one clock read per system call.
+    void SetTimingEnabled(bool enabled) { TimingEnabled = enabled; }
+    void ResetTimings();
+    [[nodiscard]] std::vector<ScheduleSystemTiming> CollectTimings() const;
+    [[nodiscard]] bool IsTimingEnabled() const { return TimingEnabled; }
+    // Host work outside any system, such as render extraction and submission.
+    void RecordFrameWork(const char* name, std::uint64_t nanoseconds);
+
 private:
     template<typename TContext>
     struct DispatchEntry
@@ -106,6 +127,9 @@ private:
         void* Ptr = nullptr;
         void (*Fn)(void*, TContext&) = nullptr;
         std::vector<std::type_index> DependsOn;
+        std::uint64_t Calls = 0;
+        std::uint64_t Nanoseconds = 0;
+        std::uint64_t WorstNanoseconds = 0;
     };
 
     struct SystemRecord
@@ -118,7 +142,7 @@ private:
     };
 
     template<typename TContext>
-    static void Run(const std::vector<DispatchEntry<TContext>>& entries, TContext& ctx);
+    void Run(std::vector<DispatchEntry<TContext>>& entries, TContext& ctx);
 
     template<typename TContext>
     static void TopoSort(std::vector<DispatchEntry<TContext>>& entries);
@@ -145,6 +169,36 @@ private:
     std::vector<DispatchEntry<EndFrameContext>> EndFrameEntries;
 
     bool Initialized = false;
+    bool TimingEnabled = false;
+    std::vector<ScheduleSystemTiming> FrameWork;
+};
+
+// Times one span of host work when the schedule is timing; a clock read per span.
+class ScheduleFrameWorkScope
+{
+public:
+    ScheduleFrameWorkScope(EngineSchedule& schedule, const char* name)
+        : Schedule(schedule.IsTimingEnabled() ? &schedule : nullptr)
+        , Name(name)
+    {
+        if (Schedule != nullptr)
+            Start = std::chrono::steady_clock::now();
+    }
+
+    ~ScheduleFrameWorkScope()
+    {
+        if (Schedule != nullptr)
+            Schedule->RecordFrameWork(Name, static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - Start).count()));
+    }
+
+    ScheduleFrameWorkScope(const ScheduleFrameWorkScope&) = delete;
+    ScheduleFrameWorkScope& operator=(const ScheduleFrameWorkScope&) = delete;
+
+private:
+    EngineSchedule* Schedule;
+    const char* Name;
+    std::chrono::steady_clock::time_point Start;
 };
 
 template<typename T, typename... Args>
@@ -254,10 +308,25 @@ bool EngineSchedule::Has() const
 }
 
 template<typename TContext>
-void EngineSchedule::Run(const std::vector<DispatchEntry<TContext>>& entries, TContext& ctx)
+void EngineSchedule::Run(std::vector<DispatchEntry<TContext>>& entries, TContext& ctx)
 {
-    for (const auto& entry : entries)
+    if (!TimingEnabled)
+    {
+        for (const auto& entry : entries)
+            entry.Fn(entry.Ptr, ctx);
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    for (auto& entry : entries)
+    {
+        const Clock::time_point start = Clock::now();
         entry.Fn(entry.Ptr, ctx);
+        const auto spent = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count());
+        ++entry.Calls;
+        entry.Nanoseconds += spent;
+        entry.WorstNanoseconds = entry.WorstNanoseconds < spent ? spent : entry.WorstNanoseconds;
+    }
 }
 
 template<typename TContext>

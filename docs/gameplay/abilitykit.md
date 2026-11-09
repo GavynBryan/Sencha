@@ -501,7 +501,7 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 9,016 bytes: `AbilityLocals` 4,560 (eight typed slots and an
+Per actor with grants, 8,432 bytes: `AbilityLocals` 4,560 (eight typed slots and an
 entity list for each of ten slots), `ActiveAbilities` 2,256, `AbilityPresentationState`
 624, `AbilityCueLog` and `AbilityPredictedCues` 584 each, `AbilityGrants` 392,
 `ActorTime` 16. The four guess slots are 2,912 of those bytes, empty everywhere but

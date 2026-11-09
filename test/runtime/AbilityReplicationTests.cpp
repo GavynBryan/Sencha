@@ -926,6 +926,7 @@ TEST_F(AbilityReplication, AGuessedCueHidesOnlyTheAuthorityEntryItGuessed)
     const GameplayTagId shot = client.GetResource<GameplayTagRegistry>().FindTag("cue.shot");
     const EntityId struck = client.CreateEntity();
     const EntityId missed = client.CreateEntity();
+    client.AddComponent<AbilityPredictedCues>(Remote());
     (void)AppendAbilityCue(client.TryGet<AbilityPredictedCues>(Remote())->Log, CueAt(shot, ClientNow, struck));
     Client.Presenter->Present(client, ClientNow);
     ASSERT_EQ(Client.Showings.Counts.size(), 1u) << "the guess is shown at once";
@@ -966,4 +967,14 @@ TEST_F(AbilityReplication, NoGuessStartsThatTheJournalCannotDecide)
     Locksteps(24);
     EXPECT_EQ(journal.Size(), 0u);
     EXPECT_EQ(Client.Glows.Held, 0);
+}
+
+TEST_F(AbilityReplication, OnlyAPredictingActorCarriesGuessedCues)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    EXPECT_FALSE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
+    EXPECT_FALSE(Authority.Entities.HasComponent<AbilityPredictedCues>(Actor));
+    Predict();
+    ClientTick({});
+    EXPECT_TRUE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
 }

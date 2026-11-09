@@ -320,6 +320,10 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
                 scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
         });
     else if (world.HasComponent<AbilityGrants>(predicted->Entity))
+    {
+        // Only the one actor this client predicts ever makes a guessed cue.
+        if (!world.HasComponent<AbilityPredictedCues>(predicted->Entity))
+            world.AddComponent<AbilityPredictedCues>(predicted->Entity);
         scratch.Actors.push_back(predicted->Entity);
 
     FixedSimTime tick = now;

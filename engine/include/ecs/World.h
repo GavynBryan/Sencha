@@ -10,14 +10,18 @@
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
 
+#include <algorithm>
 #include <any>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <tuple>
 #include <typeindex>
 #include <type_traits>
@@ -949,6 +953,24 @@ public:
     // A caller that has to undo its own add diffs the entity's components
     // across the call rather than being handed a list: provisioning recurses,
     // so what one call put on an entity is not only what this loop touched.
+    // Fatal in every build: the alternative is writing past the end of a chunk.
+    [[noreturn]] void DieOfOversizedRow(std::vector<ComponentInfo> columns) const
+    {
+        std::ranges::sort(columns, std::ranges::greater{}, &ComponentInfo::Size);
+        std::size_t bytes = sizeof(EntityIndex);
+        std::string largest;
+        for (const ComponentInfo& column : columns)
+        {
+            bytes += column.Size;
+            if (largest.size() < 200 && column.Size > 0)
+                largest += std::string(ComponentMetas[column.Id].Name) + " " + std::to_string(column.Size) + ", ";
+        }
+        std::fprintf(stderr, "An entity's components need %zu bytes before padding across %zu components, more than one "
+                             "%zu byte chunk can hold. Largest: %s\n",
+                     bytes, columns.size(), ChunkSizeBytes, largest.c_str());
+        std::abort();
+    }
+
     void ProvideDerivedComponents(EntityId entity, ComponentId id)
     {
         if (id >= Provisioning.size())
@@ -1448,6 +1470,8 @@ private:
         }
 
         arch->BuildLayout(cols);
+        if (!arch->RowsFitChunk())
+            DieOfOversizedRow(cols);
         SignatureToArchetype[sig] = id;
         ArchetypeList.push_back(std::move(arch));
         HookedRemoveIdsByArchetype.push_back(std::move(hooked));

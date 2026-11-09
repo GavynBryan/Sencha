@@ -59,7 +59,7 @@ template<>
 struct ComponentTraits<AbilityGrants>
 {
     using DerivedComponents =
-        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPredictedCues, AbilityPresentationState,
+        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPresentationState,
                    ActorTime, GameplayTagContainer>;
 };
 

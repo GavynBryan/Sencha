@@ -65,3 +65,59 @@ TEST(ArchetypeLayout, PaddingBetweenColumnsIsCountedWhenSizingAChunk)
         EXPECT_EQ(world.TryGet<WideB>(entity)->Value, -i) << "no column overlaps the next";
     }
 }
+
+namespace
+{
+struct TooWide
+{
+    char Value[ChunkSizeBytes] = {};
+};
+
+struct NearlyFull
+{
+    char Value[ChunkSizeBytes - 8] = {};
+};
+
+struct EightMoreBytes
+{
+    std::int64_t Value = 0;
+};
+}
+
+SENCHA_DECLARE_COMPONENT_TYPE(TooWide, "test.layout.too_wide");
+SENCHA_DECLARE_COMPONENT_TYPE(NearlyFull, "test.layout.nearly_full");
+SENCHA_DECLARE_COMPONENT_TYPE(EightMoreBytes, "test.layout.eight_more");
+
+TEST(ArchetypeLayoutDeath, ARowLargerThanAChunkDiesNamingItsComponents)
+{
+    EXPECT_DEATH(
+        {
+            World world;
+            world.RegisterComponent<TooWide>();
+            world.AddComponent<TooWide>(world.CreateEntity());
+        },
+        "test\\.layout\\.too_wide");
+}
+
+TEST(ArchetypeLayoutDeath, PaddingAndTheEntityIdCountTowardTheRow)
+{
+    EXPECT_DEATH(
+        {
+            World world;
+            world.RegisterComponent<NearlyFull>();
+            world.RegisterComponent<EightMoreBytes>();
+            const EntityId entity = world.CreateEntity();
+            world.AddComponent<NearlyFull>(entity);
+            world.AddComponent<EightMoreBytes>(entity);
+        },
+        "more than one");
+}
+
+TEST(ArchetypeLayout, TheLargestRowThatFitsIsAccepted)
+{
+    World world;
+    world.RegisterComponent<NearlyFull>();
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent<NearlyFull>(entity);
+    EXPECT_TRUE(world.HasComponent<NearlyFull>(entity));
+}

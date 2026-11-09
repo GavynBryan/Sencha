@@ -722,7 +722,10 @@ void Engine::RegisterSimulationFramePhases()
         engine.Tasks().DrainCompletions(budget);
         // After completions so a spawn whose worker just finished can publish
         // this frame; the pump itself enforces request order.
-        engine.Spawns().Pump();
+        {
+            const ScheduleFrameWorkScope timing(engine.Schedule(), "SpawnPump");
+            engine.Spawns().Pump();
+        }
         engine.World().FlushLifecycleRequests();
     });
 
@@ -1125,6 +1128,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     });
 
     driver.Register(FramePhase::ExtractRender, [&engine, &config](PhaseContext& ctx) {
+        const ScheduleFrameWorkScope timing(engine.Schedule(), "ExtractRender");
         // Before any extraction or recording reads the bundle, so one frame
         // sees exactly one profile mode.
         engine.ApplyPendingRenderProfileMode();
@@ -1182,6 +1186,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     });
 
     driver.Register(FramePhase::Render, [&engine, &windows, windowId, &renderer, &frames, &swapchain](PhaseContext& ctx) {
+        const ScheduleFrameWorkScope timing(engine.Schedule(), "Render");
         const RenderFrameResult renderResult = renderer.DrawFrameScheduled();
         if (renderResult == RenderFrameResult::SwapchainOutOfDate
             || renderResult == RenderFrameResult::SurfaceSuboptimal)

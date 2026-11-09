@@ -795,3 +795,9 @@ the scene chunk. `LightAttachmentSpec`, `CreateLightAttachment`,
 `attach/AttachedLight.h` (`AttachedLightState`, a World resource on every
 `RuntimeWorld`) and the `presentation.light` lease. `CameraEffectClock::At`.
 
+**Storage.** `Archetype::RowsFitChunk`, and a row too large for a chunk is fatal
+in every build. `AbilityGrants` and `ActiveAbilities` no longer derive
+`AbilityPredictedCues`; `AbilitySystem` adds it to the actor a client predicts.
+`EngineSchedule` can time its systems (`SetTimingEnabled`, `CollectTimings`) and
+host work (`ScheduleFrameWorkScope`).
+

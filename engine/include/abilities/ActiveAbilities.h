@@ -144,7 +144,7 @@ static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
 template<>
 struct ComponentTraits<ActiveAbilities>
 {
-    using DerivedComponents = std::tuple<AbilityCueLog, AbilityPredictedCues, AbilityPresentationState>;
+    using DerivedComponents = std::tuple<AbilityCueLog, AbilityPresentationState>;
 };
 
 #if !defined(SENCHA_CODEGEN)
