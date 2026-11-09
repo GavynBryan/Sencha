@@ -15,6 +15,7 @@ class AttachmentOperations;
 class AudioOperations;
 class CameraFovScaleOperations;
 class CameraShakeOperations;
+class ContactLineSystem;
 class EffectOperations;
 class FixedSimulationLoop;
 class InteractUseOperations;
@@ -57,6 +58,9 @@ public:
 
     // projectile.launch, answered by `projectiles`, which must outlive this.
     void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
+
+    // line.extend, line.cut and the line.* queries, answered by `lines`, which must outlive this.
+    void BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
 
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);

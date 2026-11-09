@@ -3,6 +3,7 @@
 #include <authored/AuthoredValue.h>
 #include <ecs/World.h>
 #include <navigation/NavAgentRequests.h>
+#include <navigation/NavTraversal.h>
 
 #include <string>
 #include <utility>
@@ -75,6 +76,25 @@ namespace
         return AuthoredQueryStatus::Value;
     }
 
+    template <Vec3d NavAbilityCrossing::*Point, bool NeedsAnchor>
+    AuthoredQueryStatus EvaluateCrossingPoint(const World& world, std::span<const AuthoredValue> arguments,
+                                              AuthoredValue& result)
+    {
+        EntityId agent;
+        const NavAbilityCrossings* crossings = world.TryGetResource<NavAbilityCrossings>();
+        if (arguments.empty() || !arguments[0].TryGetEntity(agent) || crossings == nullptr)
+            return AuthoredQueryStatus::Unavailable;
+        for (const NavAbilityCrossing& crossing : crossings->Active)
+            if (crossing.Agent == agent && (!NeedsAnchor || crossing.Anchored))
+            {
+                const Vec3d& point = crossing.*Point;
+                result = AuthoredValue::Vector(
+                    AuthoredVectorValue{ .Components = { point.X, point.Y, point.Z, 0.0 }, .Length = 3 });
+                return AuthoredQueryStatus::Value;
+            }
+        return AuthoredQueryStatus::Unavailable;
+    }
+
     AuthoredQueryStatus EvaluateFailureQuery(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         const NavAgentProgress* progress = QueriedAgentProgress(world, arguments);
@@ -145,6 +165,19 @@ void DeclareNavigationQueries(AuthoredQueryRegistrationScope& scope)
     (void)scope.Declare(AgentQuery(kNavigationRemainingQuery, "Distance remaining",
                                    "Metres of route the agent still has to walk.",
                                    MakeDataField(DataFieldKind::Float, "remaining", "Remaining")));
+    const auto crossing = [&](std::string_view name, std::string display, std::string description) {
+        DataFieldSchema point = MakeDataField(DataFieldKind::Vector, "point", "Point");
+        point.VectorLength = 3;
+        (void)scope.Declare(AgentQuery(name, std::move(display), std::move(description), std::move(point)));
+    };
+    crossing(kNavigationCrossingStartQuery, "Crossing start",
+             "Where the agent's centre stands to begin the crossing it is making by ability.");
+    crossing(kNavigationCrossingExitQuery, "Crossing exit",
+             "Where the agent's centre stands at the end of the crossing it is making by ability.");
+    crossing(kNavigationCrossingAnchorQuery, "Crossing anchor",
+             "The point the crossing it is making by ability hangs from; unavailable when none.");
+    crossing(kNavigationCrossingReleaseQuery, "Crossing release",
+             "Where along its rope the agent lets go to drop onto the exit.");
 }
 
 VerbAdmission NavigationOperations::MoveTo(const VerbInvocation& invocation)
@@ -192,5 +225,13 @@ std::vector<AuthoredQueryBindingToken> BindNavigationQueries(AuthoredQueryDispat
     tokens.push_back(dispatcher.Bind<&EvaluatePhaseQuery>(registry.Find(kNavigationPhaseQuery), world));
     tokens.push_back(dispatcher.Bind<&EvaluateFailureQuery>(registry.Find(kNavigationFailureQuery), world));
     tokens.push_back(dispatcher.Bind<&EvaluateRemainingQuery>(registry.Find(kNavigationRemainingQuery), world));
+    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Start, false>>(
+        registry.Find(kNavigationCrossingStartQuery), world));
+    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Exit, false>>(
+        registry.Find(kNavigationCrossingExitQuery), world));
+    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Anchor, true>>(
+        registry.Find(kNavigationCrossingAnchorQuery), world));
+    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Release, false>>(
+        registry.Find(kNavigationCrossingReleaseQuery), world));
     return tokens;
 }

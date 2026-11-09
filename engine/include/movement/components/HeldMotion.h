@@ -38,7 +38,9 @@ struct SENCHA_COMPONENT("sencha.motion_bursts") MotionBursts
 
 // A rope from the character to an anchor: longer than Length, it pulls the
 // character toward the anchor at Speed. An anchor entity is followed while it
-// lives, and the tether ends when it does; with none, Point is the anchor.
+// lives, and the tether ends when it does; with none, Point is the anchor. One
+// that Arrives is a reel: reaching Length it stops the character dead and ends.
+// One that Yields gives way to any other holder that asks for the slot.
 struct SENCHA_COMPONENT("sencha.tether_session") TetherSession
 {
     LeaseOwner Owner;
@@ -46,6 +48,8 @@ struct SENCHA_COMPONENT("sencha.tether_session") TetherSession
     Vec3d Point = Vec3d::Zero();
     float Length = 0.0f;
     float Speed = 0.0f;
+    bool Arrives = false;
+    bool Yields = false;
 };
 
 // The mode a holder put the character in, which letting go returns to free.

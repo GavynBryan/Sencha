@@ -14,8 +14,14 @@ class PhysicsQueries;
 inline constexpr std::string_view kPhysicsTraceQuery = "physics.trace";
 // Every entity whose body overlaps a sphere.
 inline constexpr std::string_view kPhysicsOverlapQuery = "physics.overlap";
+// Whether a line, or an upright capsule moved along one, meets nothing solid.
+inline constexpr std::string_view kPhysicsClearPathQuery = "physics.clear_path";
 
 void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope);
+
+AuthoredQueryStatus EvaluatePhysicsClearPath(const PhysicsQueries& physics,
+                                             std::span<const AuthoredValue> arguments,
+                                             AuthoredValue& result);
 
 AuthoredQueryStatus EvaluatePhysicsTrace(const PhysicsQueries& physics,
                                          std::span<const AuthoredValue> arguments,

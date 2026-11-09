@@ -11,6 +11,7 @@
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
+#include <line/ContactLineSystem.h>
 #include <logic/ClaimVocabulary.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
@@ -97,6 +98,16 @@ void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, Ve
     Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
 }
 
+void EngineVocabularyBindings::BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs,
+                                                AuthoredQueryDispatcher& queries)
+{
+    Verbs.push_back(verbs.Bind<&InvokeLineExtend>(verbs.Registry().Find(kLineExtendLease), lines));
+    Verbs.push_back(verbs.Bind<&InvokeLineCut>(verbs.Registry().Find(kLineCutVerb), lines));
+    Verbs.push_back(verbs.Bind<&InvokeLineRetract>(verbs.Registry().Find(kLineRetractVerb), lines));
+    for (AuthoredQueryBindingToken& token : BindContactLineQueries(queries, lines))
+        Queries.push_back(std::move(token));
+}
+
 void EngineVocabularyBindings::BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses,
                                                VerbDispatcher& verbs)
 {
@@ -111,4 +122,6 @@ void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, Authored
                                                           std::as_const(*Physics)));
     Queries.push_back(queries.Bind<&EvaluatePhysicsOverlap>(queries.Registry().Find(kPhysicsOverlapQuery),
                                                             std::as_const(*Physics)));
+    Queries.push_back(queries.Bind<&EvaluatePhysicsClearPath>(queries.Registry().Find(kPhysicsClearPathQuery),
+                                                              std::as_const(*Physics)));
 }

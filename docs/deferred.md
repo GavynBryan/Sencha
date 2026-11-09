@@ -1011,3 +1011,20 @@ described in `docs/navigation/runtime.md`, "Agents".
   for its seizure effect (`assets/effects/prayer_seizure.sdata`). Add an optional
   `duration_scale` to `effect.apply`, default 1, without touching `effect.hold`.
 
+## Contact lines on other machines
+
+- **What:** a contact line lives on the authority only, so a client neither draws
+  one nor knows its tip.
+- **Where:** `engine/src/line/ContactLineSystem.cpp`.
+- **Trigger:** the first game shipping a contact line in a networked session.
+  Replicate the line's root as a prefab, as `ProjectileSystem` does, with its stage
+  and instigator as a wire component like `ProjectileFlight`.
+
+## Cook-time generation of anchored navigation links
+
+- **What:** anchored links are hand-authored. The cook could sample walkable
+  borders, pair them within rope range and validate clearance, emitting the same
+  `NavLinkRecord`s.
+- **Where:** `engine/src/assets/cook/NavigationCook.cpp`, `navigation/tooling/NavMeshSnapshot.h`.
+- **Trigger:** the first level needing more anchored links than is reasonable to
+  place by hand. Nothing at runtime changes: routes already read the records.

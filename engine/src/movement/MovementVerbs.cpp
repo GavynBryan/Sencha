@@ -1,4 +1,5 @@
 #include <movement/MovementVerbs.h>
+#include <world/transform/TransformComponents.h>
 
 #include <authored/AuthoredValue.h>
 #include <ecs/Query.h>
@@ -91,6 +92,12 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     tether.Arguments.Children.push_back(std::move(point));
     tether.Arguments.Children.push_back(Number("length", "Length", "Metres of rope.", 2.0, 0.0));
     tether.Arguments.Children.push_back(Number("speed", "Speed", "How fast it pulls, in metres per second.", 12.0, 0.0));
+    DataFieldSchema until = MakeDataField(DataFieldKind::Vector, "until", "Until",
+                                          "A point along the rope: the length becomes its distance from the anchor, "
+                                          "and reaching it stops the character and completes the tether.");
+    until.VectorLength = 3;
+    until.Required = false;
+    tether.Arguments.Children.push_back(std::move(until));
     tether.Completes = true;
     (void)scope.Declare(std::move(tether));
 
@@ -233,13 +240,23 @@ VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation)
     if (followed ? !Entities->IsAlive(anchor) : !invocation.Arguments->TryGetVector(2, point))
         return VerbAdmission::InvalidArguments;
     TetherSession* tether = Entities->IsRegistered<TetherSession>() ? Entities->TryGet<TetherSession>(target) : nullptr;
-    if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner))
+    if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner && !tether->Yields))
         return VerbAdmission::Refused;
     *tether = TetherSession{ .Owner = invocation.Owner,
                              .Anchor = followed ? anchor : EntityId{},
                              .Point = followed ? Vec3d::Zero() : VectorOf(point),
                              .Length = static_cast<float>(length),
                              .Speed = static_cast<float>(speed) };
+    AuthoredVectorValue until;
+    if (invocation.Arguments->TryGetVector(5, until) && until.Length == 3)
+    {
+        const LocalTransform* followedPose =
+            followed ? static_cast<const World&>(*Entities).TryGet<LocalTransform>(anchor) : nullptr;
+        if (followed && followedPose == nullptr)
+            return VerbAdmission::InvalidArguments;
+        tether->Length = (VectorOf(until) - (followed ? followedPose->Value.Position : tether->Point)).Magnitude();
+        tether->Arrives = true;
+    }
     return VerbAdmission::Accepted;
 }
 

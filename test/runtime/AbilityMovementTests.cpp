@@ -482,3 +482,31 @@ TEST_F(AbilityMovement, OverclockDilatesUntilItsEnergyRunsOutThenCoolsDown)
     Step();
     EXPECT_EQ(scale(), kActorTimeOne) << "not while cooling down";
 }
+
+TEST_F(AbilityMovement, AReelStopsTheCharacterAtItsPointAndCompletes)
+{
+    const Vec3d anchor(10.0f, 6.0f, 0.0f);
+    Steps(10);
+    const Vec3d start = Position(Character);
+    const Vec3d line = (anchor - start).Normalized();
+    const Vec3d until = start + line * 5.0f;
+    const LeaseOwner holder{ .Entity = Character, .Key = 1 };
+    ASSERT_EQ(Lease(&MovementOperations::Tether, holder,
+                    { AuthoredValue::Entity(Character), AuthoredValue{},
+                      AuthoredValue::Vector({ { anchor.X, anchor.Y, anchor.Z }, 3 }), AuthoredValue::Float(2.0),
+                      AuthoredValue::Float(12.0), AuthoredValue::Vector({ { until.X, until.Y, until.Z }, 3 }) }),
+              VerbAdmission::Accepted);
+    const auto held = [&] { return static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet(); };
+    int ticks = 0;
+    while (held() && ticks < 120)
+    {
+        Step();
+        ++ticks;
+    }
+    ASSERT_FALSE(held()) << "reaching its point completes the reel";
+    EXPECT_NEAR((Position(Character) - until).Magnitude(), 0.0f, 0.05f);
+    EXPECT_LT(ticks, 40) << "five metres at twelve metres a second";
+    Step();
+    EXPECT_LT(static_cast<const World&>(Entities).TryGet<KinematicState>(Character)->Velocity.Magnitude(), 1.0f)
+        << "stopped dead, so letting go drops it";
+}

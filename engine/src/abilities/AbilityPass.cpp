@@ -266,7 +266,7 @@ void AbilityPass::LeavePhase(const AbilityActor& actor, std::size_t slot, const 
 {
     if (runExit && !RunOps(actor, slot, definition, definition.Phases[actor.Record(slot).Phase].Exit))
         return;
-    ReleaseLeases(actor, slot);
+    ReleasePhaseAbilityLeases(Host.Verbs, actor.Entity, actor.Record(slot), definition, Now.TickIndex);
 }
 
 void AbilityPass::ReleaseLeases(const AbilityActor& actor, std::size_t slot)
@@ -290,10 +290,17 @@ bool AbilityPass::HoldsCompleted(const AbilityActor& actor, std::size_t slot)
         return false;
     const VerbRegistry& verbs = Host.Verbs->Registry();
     const AbilityRecord& record = actor.Record(slot);
+    const AbilityDefinition* definition = DefinitionOf(record);
+    if (definition == nullptr)
+        return false;
+    const std::vector<std::uint16_t>& phaseHolds = definition->Phases[record.Phase].Hold;
     bool completing = false;
     for (std::size_t i = 0; i < record.LeaseCount; ++i)
     {
         const AbilityHeldLease& held = record.Leases[i];
+        // A hold kept from an earlier phase says nothing about this one.
+        if (std::ranges::find(phaseHolds, static_cast<std::uint16_t>(held.Op)) == phaseHolds.end())
+            continue;
         if (!verbs.IsLive(held.Lease) || !verbs.Get(held.Lease)->Completes)
             continue;
         completing = true;

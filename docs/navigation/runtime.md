@@ -326,6 +326,22 @@ waiting for one. A failed crossing puts its link on the agent's avoid-list for
 (drops and gaps a step crosses) and `NavTraverseByJumping`, and registers
 neither.
 
+`kNavCrossByAbility` carries a crossing out with an ability: the row for the
+link's kind in the agent's `navigation.policy` names it as `ability`, and a game
+registers the executor for that kind. It requests the ability, publishes the
+crossing in `NavAbilityCrossings` for the `navigation.crossing_*` queries to
+read, and is over once the ability has ended and the agent stands: succeeded
+within the landing radius of the exit, failed anywhere else, as a failed crossing
+always is. An abort cancels the ability.
+
+A link may name a point it hangs from (`anchored`, `anchor_offset`), which a
+rope needs and a jump does not. `NavAnchoredRelease` says where a rope from the
+entry to the anchor lets go to drop onto the exit; the cook refuses a link whose
+rope passes too far from above its exit (`nav.link.anchor_misses_exit`) and an
+anchored link that runs both ways (`nav.link.anchor_bidirectional`). A link must
+cost at least its span: one cheaper than the distance it covers reads as a
+teleport, and turns the search into Dijkstra.
+
 ### Route storage
 
 Routes live in the system's route slots, not in components: a slot is taken on

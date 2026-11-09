@@ -800,6 +800,34 @@ TEST_F(AbilityRuntime, AModuleQueryGatesAnAbilityAndAModuleLeaseIsHeldAndRelease
     EXPECT_NE(Held.Calls[0].second, Held.Calls[1].second) << "each op holds under its own key";
 }
 
+TEST_F(AbilityRuntime, AHoldForTheActivationOutlivesItsPhase)
+{
+    const AbilityId kept = Define("asset://abilities/kept.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+        "phases": [
+          { "key": "p_first",
+            "hold": [ { "key": "o_kept", "lease": "test.hold", "scope": "activation" },
+                      { "key": "o_phase", "lease": "test.hold" } ],
+            "then": [ { "key": "t_next", "on": "timeout", "ticks": 1, "to": "p_second" } ] },
+          { "key": "p_second", "then": [ { "key": "t_end", "on": "release", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, kept);
+
+    Step({ Press(kFire) });
+    ASSERT_EQ(Held.Calls.size(), 2u);
+    const auto keptKey = Held.Calls[0].second;
+    const auto phaseKey = Held.Calls[1].second;
+    Step({});
+    Step({});
+    ASSERT_EQ(Held.Calls.size(), 3u) << "leaving the phase lets go of its own hold alone";
+    EXPECT_EQ(Held.Calls[2].first, LeaseStep::Release);
+    EXPECT_EQ(Held.Calls[2].second, phaseKey);
+    Step({ Release(kFire) });
+    ASSERT_EQ(Held.Calls.size(), 4u) << "the end of the activation lets go of the rest";
+    EXPECT_EQ(Held.Calls[3].first, LeaseStep::Release);
+    EXPECT_EQ(Held.Calls[3].second, keptKey);
+}
+
 TEST_F(AbilityRuntime, ARefusedLeaseEndsTheActivation)
 {
     const AbilityId gated = Define("asset://abilities/held.sdata", R"({

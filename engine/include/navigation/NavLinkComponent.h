@@ -57,6 +57,14 @@ NavLink
     // How close an agent must be to the entry anchor to begin the traversal.
     SENCHA_FIELD("entry_radius")
     float EntryRadius = 0.5f;
+
+    // A third point the crossing hangs from, in the entity's local frame: where a
+    // rope is fixed. One way only, since the other direction would need its own.
+    SENCHA_FIELD("anchored")
+    bool Anchored = false;
+
+    SENCHA_FIELD("anchor_offset")
+    Vec3d AnchorOffset = Vec3d::Zero();
 };
 
 template <>

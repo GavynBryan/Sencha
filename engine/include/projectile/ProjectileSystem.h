@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -46,7 +47,32 @@ struct ResolvedProjectile
     GameplayTagId PassesThrough{};
     GameplayTagId HitKind{};
     GameplayTagId ImpactCue{};
+    GameplayTagId Ignores{};
     AuthoredQueryHandle HitScale{};
+};
+
+enum class ProjectileStopKind : std::uint8_t
+{
+    // Stopped against something that lives or moves.
+    Struck,
+    // Stopped against level geometry: a body nothing moves or hurts.
+    Level,
+    Expired,
+};
+
+// How one projectile ended, for what was following it.
+struct ProjectileStop
+{
+    EntityId Projectile{};
+    ProjectileStopKind Kind = ProjectileStopKind::Expired;
+    Vec3d Point = Vec3d::Zero();
+    Vec3d Normal = Vec3d::Zero();
+};
+
+// The projectiles that ended on this authority tick, rewritten every tick.
+struct ProjectileStops
+{
+    std::vector<ProjectileStop> Entries;
 };
 
 // Every prefab launched in this World, resolved once. A resource rather than the
@@ -74,6 +100,8 @@ struct ProjectileLaunch
     float SpeedScale = 1.0f;
     float Magnitude = 0.0f;
     float SplashScale = 1.0f;
+    // Metres it may fly before its time runs out; zero leaves it to its lifetime.
+    float MaxDistance = 0.0f;
 };
 
 enum class ProjectileLaunchResult : std::uint8_t
@@ -144,6 +172,8 @@ public:
     EntityId Launch(const ProjectileLaunch& launch, ProjectileLaunchResult* result = nullptr);
     // The prefab a path names, or an invalid id when nothing resolves it.
     [[nodiscard]] AssetId PrefabOf(std::string_view path) const;
+    // Ends a flight where it is, striking nothing more and reporting no stop.
+    void Recall(EntityId projectile, std::uint64_t tick);
     // A scatter seed for `instigator`'s next launch on `tick`: from who, when,
     // and which of that instigator's launches this tick it is, so no other
     // instigator's launches change it. Each call counts one launch.
@@ -180,7 +210,8 @@ private:
     void Fly(EntityId projectile, const FixedSimTime& now);
     // The nearest thing the sphere meets along `direction` within `distance`.
     std::optional<Contact> Sweep(const ProjectileMotion& motion, const ResolvedProjectile& definition,
-                                 EntityId instigator, const Vec3d& from, const Vec3d& direction, float distance);
+                                 EntityId instigator, const Vec3d& from, const Vec3d& direction, float distance,
+                                 std::span<const EntityId> passed);
     // Strikes `target`: its effects, its delivery, the cue. False if it was struck before.
     bool Strike(EntityId projectile, ProjectileMotion& motion, const ResolvedProjectile& definition,
                 EntityId instigator, const Contact& contact, const FixedSimTime& now);

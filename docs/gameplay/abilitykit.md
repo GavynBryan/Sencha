@@ -211,7 +211,9 @@ An ability is content: an `ability.definition` data asset
   `on: complete`, or immediate; `to` a phase or `end`). `complete` waits until
   every hold of the phase that can finish on its own has (a lease whose
   definition `Completes`, as a timed `movement.burst` or a `movement.tether` does);
-  a phase that holds none is `complete_unheld`.
+  a phase that holds none is `complete_unheld`. A hold with `"scope": "activation"`
+  is kept past its phase and let go when the activation ends; it counts toward
+  `complete` only in the phase that declares it.
 - **Ops.** `invoke` a verb, `query` into a local, `set` a local, `commit` cost
   groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
@@ -504,8 +506,8 @@ Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
 Per actor with grants, 8,432 bytes: `AbilityLocals` 4,560 (eight typed slots and an
 entity list for each of ten slots), `ActiveAbilities` 2,256, `AbilityPresentationState`
-624, `AbilityCueLog` and `AbilityPredictedCues` 584 each, `AbilityGrants` 392,
-`ActorTime` 16. The four guess slots are 2,912 of those bytes, empty everywhere but
+624, `AbilityCueLog` 584, `AbilityGrants` 392, `ActorTime` 16. The 584 bytes of
+`AbilityPredictedCues` are only on the actor a client predicts. The four guess slots are 2,912 of those bytes, empty everywhere but
 on the pawn a client predicts (`docs/deferred.md`).
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |

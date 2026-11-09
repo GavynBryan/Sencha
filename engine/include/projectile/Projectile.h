@@ -127,6 +127,13 @@ Projectile
     SENCHA_TOOLTIP("An authored query {target, region, kind} whose number scales the effects a strike "
                    "applies, as a game reads where it struck. Empty applies them as authored.")
     InlineString<64> HitScaleQuery;
+
+    SENCHA_FIELD("ignores")
+    SENCHA_OPTIONAL
+    SENCHA_LABEL("Ignores")
+    SENCHA_TOOLTIP("A gameplay tag: an entity carrying it is neither struck nor stops it, as if it were not "
+                   "there. Empty ignores nothing.")
+    InlineString<64> Ignores;
 };
 
 static_assert(std::is_trivially_copyable_v<Projectile>, "Projectile must be trivially copyable to live in ECS chunks");

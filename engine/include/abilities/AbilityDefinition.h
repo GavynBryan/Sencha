@@ -62,6 +62,8 @@ struct AbilityOp
     CompiledVerbBinding Binding;
     std::vector<AbilityValue> Inputs;
     std::uint8_t Targets = kAbilityNoLocal;
+    // Lease: held until the activation ends, not until its phase does.
+    bool ForActivation = false;
     // Query: one value per declared argument.
     AuthoredQueryHandle Query;
     std::vector<AbilityValue> Arguments;

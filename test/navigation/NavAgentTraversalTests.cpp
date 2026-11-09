@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <optional>
 #include <vector>
 
 namespace
@@ -40,7 +41,7 @@ namespace
         frame.Intent.WishDir = Vec3d::Zero();
         return NavTraversalResult::Running;
     }
-    void CountAbort(World&, EntityId, const NavRouteStep&) { ++gAborts; }
+    void CountAbort(World&, EntityId, const NavRouteStep&, std::uint32_t) { ++gAborts; }
 }
 
 // E (1): reaching the entry is not completion; walking resumes after the crossing.
@@ -192,4 +193,31 @@ TEST(NavAgentTraversal, WalksOffALedgeThroughADropLink)
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived)
         << "failure " << static_cast<int>(harness.Progress(agent).Failure);
     EXPECT_LT(harness.Position(agent).Y, 1.5f);
+}
+
+TEST(NavAnchoredRelease, LetsGoAboveTheExitAlongTheRope)
+{
+    const Vec3d entry(0.0f, 0.0f, 0.0f);
+    const Vec3d exit(10.0f, 3.0f, 0.0f);
+    const float height = 1.8f;
+    // A wall behind the exit, higher than it: the rope runs up and over the lip.
+    const std::optional<Vec3d> release = NavAnchoredRelease(entry, exit, Vec3d(12.0f, 6.0f, 0.0f), height);
+    ASSERT_TRUE(release.has_value());
+    EXPECT_NEAR(release->X, 10.0f, 0.9f);
+    EXPECT_GE(release->Y, exit.Y + height * 0.5f) << "it lets go above where it will stand";
+}
+
+TEST(NavAnchoredRelease, RefusesARopeThatPassesWideOfTheExit)
+{
+    EXPECT_FALSE(NavAnchoredRelease(Vec3d::Zero(), Vec3d(10.0f, 0.0f, 0.0f), Vec3d(0.0f, 10.0f, 0.0f), 1.8f).has_value());
+}
+
+TEST(NavAgentTraversal, ACrossingByAbilityWithNoAbilityNamedFails)
+{
+    NavAgentHarness harness(TwoIslands(), JumpLink());
+    ASSERT_TRUE(RegisterNavTraversal(harness.Entities(), harness.Tag("navigation.traversal.jump"), kNavCrossByAbility));
+    const EntityId agent = harness.SpawnAgent(Vec3d(2.0f, 0.0f, 5.0f), { "navigation.traversal.jump" });
+    (void)harness.GoTo(agent, Vec3d(18.0f, 0.0f, 5.0f));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
+    EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::TraversalFailed);
 }

@@ -159,6 +159,8 @@ struct AbilityOpDecl
     std::vector<AbilityArgumentDecl> Arguments;
     // Invoke, Lease: an entities local the op repeats over, as the `target` port.
     std::string Targets;
+    // Lease: held until the activation ends, not until its phase does.
+    bool ForActivation = false;
     // Query: the local it writes. Set: the local it sets.
     std::string Local;
     AbilityValueDecl From;

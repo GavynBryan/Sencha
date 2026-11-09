@@ -161,6 +161,8 @@ namespace
             step->Traversal = link.Traversal;
             step->Entry = from.Position;
             step->Exit = to.Position;
+            step->Anchored = link.Anchored;
+            step->Anchor = link.Anchor;
             step->EntryRadius = link.EntryRadius;
             step->Reversed = reversed;
             step->Cost = cost;

@@ -340,7 +340,22 @@ struct NavAgentSystem::State
         if (const NavRouteStep* step = CrossedStep(agent, progress))
             if (const NavTraversalExecutor* executor = ExecutorFor(world, step->Traversal);
                 executor != nullptr && executor->Abort != nullptr)
-                executor->Abort(world, agent, *step);
+                executor->Abort(world, agent, *step, SlotOf(agent, progress)->CrossingMemory);
+    }
+
+    // The ability `agent`'s policy crosses `kind` with, or that of its nearest listed ancestor.
+    std::string_view CrossingAbility(World& world, EntityId agent, GameplayTagId kind)
+    {
+        const NavAgent* config = std::as_const(world).TryGet<NavAgent>(agent);
+        const GameplayTagRegistry* tags = std::as_const(world).TryGetResource<GameplayTagRegistry>();
+        const NavQueryPolicy* policy = config != nullptr && tags != nullptr ? Policies.Bind(config->Policy, *tags) : nullptr;
+        if (policy == nullptr)
+            return {};
+        for (GameplayTagId current = kind; current.IsValid(); current = tags->GetParent(current))
+            for (const NavTraversalCost& entry : policy->TraversalCosts)
+                if (entry.Kind == current && !entry.Ability.empty())
+                    return entry.Ability;
+        return {};
     }
 
     // The executor has already stopped (failed, timed out and aborted, or aborted
@@ -562,38 +577,8 @@ struct NavAgentSystem::State
         for (std::size_t i = 0; i < slot->Avoid.size(); ++i)
             if (slot->Avoid[i].IsValid() && slot->AvoidUntilTick[i] > Tick)
                 input.AvoidLinks[input.AvoidLinkCount++] = slot->Avoid[i];
-        GatherCapabilities(world, agent, *navigation, *tags, input);
+        input.CapabilityCount = CollectNavCapabilities(world, agent, *navigation, input.Capabilities);
         return true;
-    }
-
-    // The zone's link kinds this agent may cross: its tags grant the kind or an
-    // ancestor of it, and an executor is registered to carry it out. A crossing
-    // nobody can perform is never planned.
-    void GatherCapabilities(const World& world, EntityId agent, const ZoneNavigation& navigation,
-                            const GameplayTagRegistry& tags, NavPlanInput& input) const
-    {
-        const NavTraversalExecutors* table = world.TryGetResource<NavTraversalExecutors>();
-        const GameplayTagContainer* held =
-            world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(agent) : nullptr;
-        if (table == nullptr || held == nullptr)
-            return;
-        const auto granted = [&](GameplayTagId kind) {
-            for (std::uint8_t i = 0; i < held->Count; ++i)
-                if (tags.IsDescendantOf(kind, held->Tags[i]))
-                    return true;
-            return false;
-        };
-        for (std::uint32_t i = 0; i < navigation.LinkCount(); ++i)
-        {
-            const GameplayTagId kind = navigation.Link(i).Traversal;
-            const auto chosen = std::span(input.Capabilities.data(), input.CapabilityCount);
-            // The zone binds at most kNavMaxTraversalKinds kinds; past that a kind is unusable anyway.
-            if (!kind.IsValid() || input.CapabilityCount == input.Capabilities.size()
-                || std::ranges::find(chosen, kind) != chosen.end())
-                continue;
-            if (granted(kind) && table->Resolve(tags, kind) != nullptr)
-                input.Capabilities[input.CapabilityCount++] = kind;
-        }
     }
 
     void Commit(World& world, EntityId agent, const NavPlanInput& input, std::size_t index)
@@ -815,7 +800,7 @@ struct NavAgentSystem::State
         progress.Phase = NavAgentPhase::Traversing;
         const float seconds = AgentSeconds(world, agent);
         NavTraversalFrame frame{ world, agent, step, slot.CrossingTicks, seconds, slot.Height, *intent,
-                                 slot.CrossingMemory };
+                                 slot.CrossingMemory, CrossingAbility(world, agent, step.Traversal) };
         NavTraversalResult result = executor->Step(frame);
         ++slot.CrossingTicks;
         slot.CrossingSeconds += seconds;

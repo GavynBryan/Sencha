@@ -790,6 +790,7 @@ arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
 (component, `OBSS`) and `PerceptionSenses::Shared`. `ClaimBoard`,
 `claims.hold`, `claims.count` and `claims.held`. The `crowding` candidate
 measure and `CandidateRun::ProjectNav`.
+
 **Worn lights.** `PointLightComponent::PacksFirst`, a runtime-only field outside
 the scene chunk. `LightAttachmentSpec`, `CreateLightAttachment`,
 `attach/AttachedLight.h` (`AttachedLightState`, a World resource on every
@@ -803,6 +804,10 @@ host work (`ScheduleFrameWorkScope`).
 
 ## v42
 
+**Lines and tethers.** `ContactLine` gains `max_length`, `leash_slack`,
+`rehit_seconds`, `slots` and `slot_spacing`, and `ContactLineState` what they need;
+prefabs carrying one must be recooked. `ProjectileLaunch` gains `MaxDistance`.
+
 **ECS chunk storage.** `Chunk::Data` is now a pointer to a block taken from a
 `ChunkBlockPool`, null while the chunk is empty. `World(std::shared_ptr<ChunkBlockPool>)`
 shares a pool between Worlds; `Archetype::Blocks` must be set before a standalone
@@ -814,3 +819,18 @@ nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, whic
 bounds only requests waiting on a dormant actor. A request's `Origin` counts that
 actor's requests in the pass, not its place in the queue.
 
+**Contact lines.** `line/`: `ContactLine`, `ContactLineSpan`, `ContactLineState`,
+`ContactLineSystem`, `line.extend`, `line.cut`, `line.anchored` and
+`line.anchored_within`.
+
+**Projectiles.** `Projectile::Ignores`; `ProjectileStops`, what ended this tick.
+
+**Navigation.** `NavLink::Anchored` and `AnchorOffset`, carried through
+`NavLinkRecord`, `NavLinkInfo` and `NavRouteStep`; `.snav` format 2, so every zone
+recooks. `NavTraversalExecutor::Abort` takes the executor's memory, and
+`NavTraversalFrame::Ability` names the policy's ability. `NavTraversalCost::Ability`,
+`kNavCrossByAbility`, `CollectNavCapabilities`, `NavAnchoredRelease`,
+`NavAbilityCrossings` and the `navigation.crossing_*` queries.
+
+**Abilities and movement.** A hold's `scope`; `AbilityOp::ForActivation`.
+`TetherSession::Arrives` and `movement.tether`'s `until`. `physics.clear_path`.

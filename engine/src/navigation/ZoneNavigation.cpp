@@ -71,6 +71,8 @@ namespace
             link.EntryRadius = record.EntryRadius;
             link.Entry = record.Entry;
             link.Exit = record.Exit;
+            link.Anchored = record.Anchored;
+            link.Anchor = record.Anchor;
             if (!link.Traversal.IsValid())
                 zone.Diagnostics.push_back(std::format(
                     "navigation link {} names traversal '{}', which is not a registered "

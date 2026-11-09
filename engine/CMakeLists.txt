@@ -57,6 +57,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavAgent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/line/ContactLine.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavigationGeometry.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"

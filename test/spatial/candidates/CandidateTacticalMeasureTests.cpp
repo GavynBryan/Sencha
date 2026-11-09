@@ -143,15 +143,15 @@ namespace
 
     std::vector<Measured> CrowdingRows(CandidateHarness& harness, std::string_view arguments,
                                        std::span<const CandidatePoint> spots, std::span<const CandidatePoint> others,
-                                       const Vec3d& origin)
+                                       const Vec3d& origin, std::string_view measure = "crowding")
     {
         const std::string json = std::format(R"({{
             "slots": [{{ "name": "spots" }}, {{ "name": "others", "required": false }}, {{ "name": "origin" }}],
             "generators": [{{ "generator": "candidates.generator.points", "arguments": {{ "slot": "spots" }} }}],
-            "criteria": [{{ "measure": "candidates.measure.crowding", "arguments": {}, "require": {{ "min": 0 }} }}],
+            "criteria": [{{ "measure": "candidates.measure.{}", "arguments": {}, "require": {{ "min": 0 }} }}],
             "selection": {{ "mode": "all_qualified" }},
             "limits": {{ "exact_nav_searches": 64 }}
-        }})", arguments);
+        }})", measure, arguments);
         const CandidateEvaluation evaluation = harness.Compile(json);
         const std::array origins{ CandidatePoint{ .Position = origin } };
         const std::vector<CandidateSlotBinding> slots{ CandidateSlotBinding{ 1, spots }, CandidateSlotBinding{ 2, others },
@@ -212,6 +212,88 @@ TEST(CandidateTacticalMeasures, CrowdingCountsWhoIsAlreadyHeadedEachWay)
         CrowdingAt(harness, R"({ "slot": "others", "mode": "distance", "distance": 6 })", spots, others, Vec3d(5, 0, 5));
     EXPECT_EQ(near[0], 1.0f) << "within 6 m of (25, 5) is the one at (20, 5)";
     EXPECT_EQ(near[2], 0.0f);
+}
+
+TEST(CandidateTacticalMeasures, SeparationIsTheAngleToTheNearestOther)
+{
+    CandidateHarness harness;
+    harness.AttachZone(kRoom, HubWithThreeHallways());
+    const Vec3d origin(5, 0, 5);
+    const char* arguments = R"({ "slot": "others", "origin": "origin", "radius": 2 })";
+    const std::array spots{ CandidatePoint{ .Position = Vec3d(25, 0, 5) }, CandidatePoint{ .Position = Vec3d(5, 0, 25) },
+                            CandidatePoint{ .Position = Vec3d(-15, 0, 5) } };
+
+    const std::array east{ CandidatePoint{ .Position = Vec3d(15, 0, 5) } };
+    std::vector<Measured> rows = CrowdingRows(harness, arguments, spots, east, origin, "separation");
+    ASSERT_EQ(rows.size(), 3u);
+    EXPECT_NEAR(rows[0].Value, 0.0f, 0.1f);
+    EXPECT_NEAR(rows[1].Value, 90.0f, 0.1f);
+    EXPECT_NEAR(rows[2].Value, 180.0f, 0.1f) << "directly opposite the only other";
+
+    const std::array eastAndWest{ CandidatePoint{ .Position = Vec3d(15, 0, 5) }, CandidatePoint{ .Position = Vec3d(-5, 0, 5) } };
+    rows = CrowdingRows(harness, arguments, spots, eastAndWest, origin, "separation");
+    EXPECT_NEAR(rows[1].Value, 90.0f, 0.1f) << "between two opposite others is as far as it gets, which their mean cannot say";
+    EXPECT_NEAR(rows[2].Value, 0.0f, 0.1f) << "the nearest counts, not the mean";
+
+    const std::array onTheOrigin{ CandidatePoint{ .Position = Vec3d(6, 0, 5) } };
+    EXPECT_EQ(CrowdingRows(harness, arguments, spots, onTheOrigin, origin, "separation").front().Status,
+              CandidateMeasureStatus::NotApplicable)
+        << "an other within the radius lies in no direction";
+    EXPECT_EQ(CrowdingRows(harness, arguments, onTheOrigin, east, origin, "separation").front().Status,
+              CandidateMeasureStatus::NotApplicable)
+        << "nor does a candidate";
+}
+
+TEST(CandidateTacticalMeasures, LaneClearanceIsTheGapBetweenALaneAndThePoints)
+{
+    CandidateHarness harness;
+    harness.AttachZone(kRoom, HubWithThreeHallways());
+    const std::array spots{ CandidatePoint{ .Position = Vec3d(5, 0, 5) } };
+    const std::array obstacle{ CandidatePoint{ .Position = Vec3d(15, 3.3f, 5) } };
+    const std::string json = R"({
+        "slots": [{ "name": "spots" }, { "name": "others", "required": false }, { "name": "target" }],
+        "generators": [{ "generator": "candidates.generator.points", "arguments": { "slot": "spots" } }],
+        "criteria": [{ "measure": "candidates.measure.lane_clearance", "arguments": { "slot": "others", "target": "target", "lift": 1, "end_gap": 1.5 }, "require": { "min": 0 } }],
+        "selection": { "mode": "all_qualified" }
+    })";
+    const CandidateEvaluation evaluation = harness.Compile(json);
+    const std::array target{ CandidatePoint{ .Position = Vec3d(25, 1, 5) } };
+    const std::vector<CandidateSlotBinding> slots{ CandidateSlotBinding{ 1, spots }, CandidateSlotBinding{ 2, obstacle },
+                                                   CandidateSlotBinding{ 3, target } };
+    CandidateContext context = QuerierAt(harness, kRoom, Vec3d(5, 0, 5));
+    context.Slots = slots;
+    CandidateTrace trace(CandidateTraceLevel::Full, 16);
+    (void)harness.Run(evaluation, context, &trace);
+    ASSERT_EQ(trace.Rows().size(), 1u);
+    EXPECT_NEAR(trace.Value(0, 0).Value, 2.3f, 0.05f);
+}
+
+TEST(CandidateTacticalMeasures, ABackstopIsLevelBeyondThePointWithinReach)
+{
+    CandidateHarness harness;
+    harness.AttachZone(kRoom, HubWithThreeHallways());
+    harness.AddStaticBox(Vec3d(20, 0, 3), Vec3d(21, 4, 7), harness.Runtime.Entities().CreateEntity());
+    const std::string json = R"({
+        "slots": [{ "name": "spots" }, { "name": "through" }],
+        "generators": [{ "generator": "candidates.generator.points", "arguments": { "slot": "spots" } }],
+        "criteria": [{ "measure": "candidates.measure.backstop", "arguments": { "slot": "through", "reach": 18, "lift": 1 }, "require": { "min": 0 } }],
+        "selection": { "mode": "all_qualified" }
+    })";
+    const CandidateEvaluation evaluation = harness.Compile(json);
+    const auto backstopped = [&](const Vec3d& spot, const Vec3d& point) {
+        const std::array spots{ CandidatePoint{ .Position = spot } };
+        const std::array through{ CandidatePoint{ .Position = point } };
+        const std::vector<CandidateSlotBinding> slots{ CandidateSlotBinding{ 1, spots }, CandidateSlotBinding{ 2, through } };
+        CandidateContext context = QuerierAt(harness, kRoom, Vec3d(5, 0, 5));
+        context.Slots = slots;
+        CandidateTrace trace(CandidateTraceLevel::Full, 16);
+        (void)harness.Run(evaluation, context, &trace);
+        EXPECT_EQ(trace.Rows().size(), 1u);
+        return trace.Rows().size() == 1u ? (trace.Value(0, 0).Status == CandidateMeasureStatus::Ok ? trace.Value(0, 0).Value : -2.0f) : -1.0f;
+    };
+    EXPECT_EQ(backstopped(Vec3d(5, 0, 5), Vec3d(12, 1, 5)), 1.0f) << "the wall is 15 m on, inside the reach";
+    EXPECT_EQ(backstopped(Vec3d(0, 0, 5), Vec3d(12, 1, 5)), 0.0f) << "the wall is 20 m on, out of reach";
+    EXPECT_EQ(backstopped(Vec3d(5, 0, 5), Vec3d(30, 1, 5)), 0.0f) << "the wall comes before the point";
 }
 
 TEST(CandidateTacticalMeasures, ByRouteABendingHallwayIsItsOwnWayOut)

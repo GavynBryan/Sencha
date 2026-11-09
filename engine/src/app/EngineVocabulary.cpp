@@ -13,6 +13,7 @@
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
+#include <line/ContactLineSystem.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <projectile/ProjectileVerbs.h>
@@ -57,6 +58,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareNavigationVerbs(scope);
     DeclareResponseVocabulary(scope, eventScope);
     DeclareProjectileVocabulary(scope, eventScope);
+    DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);

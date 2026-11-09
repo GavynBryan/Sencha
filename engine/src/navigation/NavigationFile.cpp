@@ -46,7 +46,7 @@ namespace
         return Serialize(writer, link.Id) && Serialize(writer, link.Traversal)
             && Serialize(writer, link.Directions) && Serialize(writer, link.BaseCost)
             && Serialize(writer, link.EntryRadius) && Serialize(writer, link.Entry)
-            && Serialize(writer, link.Exit);
+            && Serialize(writer, link.Exit) && Serialize(writer, link.Anchored) && Serialize(writer, link.Anchor);
     }
 
     bool DeserializeNavLink(BinaryReader& reader, NavLinkRecord& link)
@@ -54,7 +54,8 @@ namespace
         return Deserialize(reader, link.Id) && DeserializeNavName(reader, link.Traversal)
             && Deserialize(reader, link.Directions) && Deserialize(reader, link.BaseCost)
             && Deserialize(reader, link.EntryRadius) && Deserialize(reader, link.Entry)
-            && Deserialize(reader, link.Exit);
+            && Deserialize(reader, link.Exit) && Deserialize(reader, link.Anchored)
+            && Deserialize(reader, link.Anchor);
     }
 
     bool SerializeNavTile(BinaryWriter& writer, const NavTileRecord& tile)

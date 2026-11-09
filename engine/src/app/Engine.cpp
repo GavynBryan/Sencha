@@ -17,6 +17,7 @@
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
 #include <physics/PhysicsStepSystem.h>
+#include <line/ContactLineSystem.h>
 #include <projectile/ProjectileSystem.h>
 #include <effects/AttributeResolveSystem.h>
 #include <anim/AnimationRegistration.h>
@@ -1509,6 +1510,20 @@ int Engine::Run(Game& game)
                 EngineSystems.After<AttributeResolveSystem, ProjectileSystem>();
             EngineSystems.After<EffectReactionSystem, ProjectileSystem>();
             VocabularyBindings->BindProjectiles(projectiles, *VerbDispatcherState);
+
+            // After projectiles, whose stops it reads this tick; before attributes
+            // resolve, so what it strikes is resolved this tick too.
+            ContactLineSystem& lines = RegisterContactLineSystem(
+                EngineSystems, RuntimeWorldState->Entities(),
+                ContactLineSystem::Services{ .Physics = &physics->GetSimulation(),
+                                             .Prefabs = NetPrefabState.get(),
+                                             .Projectiles = &projectiles,
+                                             .Responses = EngineSystems.Get<ResponsesSystem>() });
+            EngineSystems.After<ContactLineSystem, ProjectileSystem>();
+            if (EngineSystems.Has<AttributeResolveSystem>())
+                EngineSystems.After<AttributeResolveSystem, ContactLineSystem>();
+            EngineSystems.After<EffectReactionSystem, ContactLineSystem>();
+            VocabularyBindings->BindContactLines(lines, *VerbDispatcherState, *QueryDispatcherState);
         }
         CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
             *RuntimeWorldState, ContentState->Assets().CandidateOperations,

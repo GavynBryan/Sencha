@@ -16,6 +16,10 @@ inline constexpr std::string_view kNavigationStopVerb = "navigation.stop";
 inline constexpr std::string_view kNavigationPhaseQuery = "navigation.phase";
 inline constexpr std::string_view kNavigationFailureQuery = "navigation.failure";
 inline constexpr std::string_view kNavigationRemainingQuery = "navigation.remaining";
+inline constexpr std::string_view kNavigationCrossingStartQuery = "navigation.crossing_start";
+inline constexpr std::string_view kNavigationCrossingExitQuery = "navigation.crossing_exit";
+inline constexpr std::string_view kNavigationCrossingAnchorQuery = "navigation.crossing_anchor";
+inline constexpr std::string_view kNavigationCrossingReleaseQuery = "navigation.crossing_release";
 
 void DeclareNavigationVerbs(VerbRegistrationScope& scope);
 void DeclareNavigationQueries(AuthoredQueryRegistrationScope& scope);

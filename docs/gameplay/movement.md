@@ -347,6 +347,10 @@ steps, as every provider's pull rule asks.
   when it does) or a point. Longer than its length, it forces a pull toward the
   anchor at its speed, never past taut in one step, so the character arrives at
   the rope's length.
+  Given `until`, a point along the rope, it is a reel: the length becomes that
+  point's distance from the anchor, and reaching it stops the character dead and
+  completes the tether, so letting go there drops the character rather than
+  throwing it.
 - **Mode:** a locomotion mode requested for the lease's scope; released, the
   character is asked back to free if it is still in the leased mode.
 

@@ -31,6 +31,7 @@ like. Its fields:
 | `hit_kind` | a gameplay tag carried by `projectile.hit`, so responses tell one kind of shot from another |
 | `impact_cue` | a cue appended to the instigator's cue log wherever it strikes or ends |
 | `hits_characters`, `ends_with_instigator` | whether walking characters stop it; whether it ends when its instigator is gone |
+| `ignores` | a gameplay tag: what carries it is neither struck nor in the way |
 | `hit_scale_query` | an authored query `{target, region, kind}` whose number scales the hit and scaled effects, as the game reads where it struck; empty applies them as authored |
 
 Effects and tags are named, as `asset://effects/<name>.sdata` and tag names, and
@@ -168,8 +169,9 @@ struck. A client could not use it without second-guessing the authority.
   yet (`docs/deferred.md`).
 - **No lag compensation.** What a projectile strikes is decided against the
   authority's present, not against what the firer saw.
-- **No bounce, homing or attached flight.** A contact strikes, passes through,
-  or stops.
+- **No bounce or homing.** A contact strikes, passes through, or stops. What
+  stays attached after it stops is not a projectile: see `contact-lines.md`,
+  which reads `ProjectileStops` to learn how one ended.
 
 ## What it costs
 

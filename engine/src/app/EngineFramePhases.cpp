@@ -8,6 +8,7 @@
 #include <anim/AnimRequestJournal.h>
 #include <attach/AttachedLight.h>
 #include <attach/Attachment.h>
+#include <line/ContactLineSystem.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/PresentationPhase.h>
@@ -1139,6 +1140,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         // Before propagation, so what is attached is composed onto the pose its
         // body is drawn at in this same pass.
         PlaceAttachments(entities, ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
+        PlaceContactLines(entities, ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
         PresentAttachedLights(entities, ctx.Runtime->GetSimulationClock(),
                               ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 

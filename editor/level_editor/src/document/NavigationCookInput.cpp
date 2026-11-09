@@ -32,6 +32,8 @@ std::vector<NavLinkRecord> CollectNavLinks(const EditorDocument& document)
             cooked.EntryRadius = link.EntryRadius;
             cooked.Entry = toWorld.Position;
             cooked.Exit = toWorld.TransformPoint(link.ExitOffset);
+            cooked.Anchored = link.Anchored;
+            cooked.Anchor = toWorld.TransformPoint(link.AnchorOffset);
             links.push_back(std::move(cooked));
         });
     return links;
