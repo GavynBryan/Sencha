@@ -822,6 +822,9 @@ records and locals live in the `AbilityActivations` World resource. The
 is the writable World where a snapshot is applied. The wire is unchanged; the
 replication table hash moved with `ActiveAbilities`' local size.
 
+**Staggered sight.** `perception.sight.scan_interval_ticks`, `SightStats::HeldScans`,
+`PerceptionFrame::AddHeld` and `LastScanRows`, and `ObservationPreference`.
+
 **Ability requests.** `AbilityRequestQueue::Push` no longer refuses and returns
 nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, which
 bounds only requests waiting on a dormant actor. A request's `Origin` counts that

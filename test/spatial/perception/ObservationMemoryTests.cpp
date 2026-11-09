@@ -131,6 +131,27 @@ TEST(ObservationMemory, ALapseResetsTrackingAndVelocity)
     EXPECT_EQ(entry->Age, 0.0f);
 }
 
+TEST(ObservationMemory, BetweenScansItAgesAndMeasuresVelocityAcrossTheGap)
+{
+    MemoryHarness harness;
+    harness.SetCVar("perception.sight.scan_interval_ticks", CVarValue{ std::int64_t{ 4 } });
+    const EntityId eye = harness.RememberingObserver(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -10));
+    harness.Tick();
+    while ((eye.Index + harness.PerceptionHarness::Tick + 1) % 4 == 0)
+        harness.Tick();
+    harness.Tick();
+    EXPECT_GT(harness.Entry(eye, target)->Age, 0.0f) << "a held scan is not a new sighting";
+
+    while ((eye.Index + harness.PerceptionHarness::Tick + 1) % 4 != 0)
+        harness.Tick();
+    const float gap = harness.Entry(eye, target)->Age + static_cast<float>(kDt);
+    harness.Place(target, Vec3d(0, 0, -9));
+    harness.Tick();
+    EXPECT_EQ(harness.Entry(eye, target)->Age, 0.0f);
+    EXPECT_NEAR(harness.Entry(eye, target)->Velocity.Z, 1.0f / gap, 0.01f);
+}
+
 TEST(ObservationMemory, ForgetsAfterItsRetention)
 {
     MemoryHarness harness;

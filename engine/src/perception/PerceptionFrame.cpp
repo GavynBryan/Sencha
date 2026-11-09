@@ -40,6 +40,19 @@ void PerceptionFrame::Add(EntityId subject, const Vec3d& position, float confide
     ++scan.Count;
 }
 
+void PerceptionFrame::AddHeld(const Observation& observation)
+{
+    assert(OpenScan != kNoOpenScan);
+    Rows.push_back(observation);
+    ++ScanRows[OpenScan].Count;
+}
+
+std::span<const Observation> PerceptionFrame::LastScanRows() const
+{
+    assert(!ScanRows.empty());
+    return std::span<const Observation>(Rows).subspan(ScanRows.back().First, ScanRows.back().Count);
+}
+
 void PerceptionFrame::EndScan(ScanCoverage coverage)
 {
     assert(OpenScan != kNoOpenScan);

@@ -18,6 +18,7 @@ namespace
     constexpr std::string_view kDebugDrawCVar = "perception.debug.draw";
     constexpr std::string_view kDebugChannel = "perception";
     constexpr std::int64_t kDefaultRaysPerObserver = 32;
+    constexpr std::string_view kScanIntervalCVar = "perception.sight.scan_interval_ticks";
 
     const Vec4 kConeColor{ 0.35f, 0.55f, 0.9f, 1.0f };
     const Vec4 kSeenColor{ 0.2f, 0.95f, 0.35f, 1.0f };
@@ -41,6 +42,17 @@ namespace
             .Source = { "perception" },
             .Min = 1.0,
             .Max = 4096.0,
+        });
+        console.RegisterCVar({
+            .Name = std::string(kScanIntervalCVar),
+            .Owner = "perception",
+            .Type = CVarType::Int,
+            .DefaultValue = std::int64_t{ 1 },
+            .CurrentValue = std::int64_t{ 1 },
+            .Help = "How many fixed ticks apart an observer scans. Between scans, what it last saw stands.",
+            .Source = { "perception" },
+            .Min = 1.0,
+            .Max = 60.0,
         });
         console.RegisterCVar({
             .Name = std::string(kDebugDrawCVar),
@@ -136,6 +148,8 @@ void PerceptionSystem::FixedLogic(FixedLogicContext& ctx)
             .Sense = senses.Sight,
             .RaysPerObserver = static_cast<std::uint32_t>(
                 ReadCVarInt(Impl->Console, kRaysPerObserverCVar, kDefaultRaysPerObserver)),
+            .ScanIntervalTicks = static_cast<std::uint32_t>(ReadCVarInt(Impl->Console, kScanIntervalCVar, 1)),
+            .Tick = ctx.Time.TickIndex,
             .Trace = draw || Impl->Selected.IsValid(),
             .TracedObserver = Impl->Selected,
         };

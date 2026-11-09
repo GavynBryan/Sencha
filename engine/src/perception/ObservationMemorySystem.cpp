@@ -43,18 +43,9 @@ namespace
         return nearest;
     }
 
-    // Whether `subject` carries the memory's preferred tag, which it forgets last.
-    bool Preferred(const World& world, const GameplayTagRegistry* tags, GameplayTagId prefer, EntityId subject)
-    {
-        if (!prefer.IsValid() || tags == nullptr || !subject.IsValid() || !world.IsAlive(subject))
-            return false;
-        const GameplayTagContainer* held = world.TryGet<GameplayTagContainer>(subject);
-        return held != nullptr && held->HasDescendantOf(*tags, prefer);
-    }
-
     // A free entry, or the oldest one not preferred, or the oldest of all.
-    ObservationMemoryEntry& Slot(ObservationMemory& memory, const World& world, const GameplayTagRegistry* tags,
-                                 GameplayTagId prefer)
+    ObservationMemoryEntry& Slot(ObservationMemory& memory, ObservationPreference& preferences, const World& world,
+                                 const GameplayTagRegistry* tags, GameplayTagId prefer)
     {
         if (memory.Count < kObservationMemoryCapacity)
         {
@@ -68,7 +59,7 @@ namespace
             ObservationMemoryEntry& entry = memory.Entries[index];
             if (oldest == nullptr || entry.Age > oldest->Age)
                 oldest = &entry;
-            if (!Preferred(world, tags, prefer, entry.Subject) && (oldestPlain == nullptr || entry.Age > oldestPlain->Age))
+            if (!preferences.Holds(world, tags, prefer, entry.Subject) && (oldestPlain == nullptr || entry.Age > oldestPlain->Age))
                 oldestPlain = &entry;
         }
         ObservationMemoryEntry& freed = oldestPlain != nullptr ? *oldestPlain : *oldest;
@@ -85,7 +76,8 @@ namespace
         return pose != nullptr ? pose->Value.Rotation.RotateVector(Vec3d::Forward()) : Vec3d::Zero();
     }
 
-    void Remember(ObservationMemory& memory, const Observation& observation, const Vec3d& facing, const World& world)
+    void Remember(ObservationMemory& memory, ObservationPreference& preferences, const Observation& observation,
+                  const Vec3d& facing, const World& world)
     {
         ObservationMemoryEntry* entry = Match(memory, observation);
         if (entry == nullptr)
@@ -95,12 +87,12 @@ namespace
                 ? tags->FindTag(memory.Prefer.View())
                 : GameplayTagId{};
             // A full memory never gives up something it prefers for something it does not.
-            if (memory.Count == kObservationMemoryCapacity && !Preferred(world, tags, prefer, observation.Subject)
+            if (memory.Count == kObservationMemoryCapacity && !preferences.Holds(world, tags, prefer, observation.Subject)
                 && std::all_of(memory.Entries, memory.Entries + memory.Count, [&](const ObservationMemoryEntry& held) {
-                       return Preferred(world, tags, prefer, held.Subject);
+                       return preferences.Holds(world, tags, prefer, held.Subject);
                    }))
                 return;
-            entry = &Slot(memory, world, tags, prefer);
+            entry = &Slot(memory, preferences, world, tags, prefer);
             entry->Subject = observation.Subject;
         }
         else if (entry->Age == 0.0f)
@@ -137,6 +129,27 @@ namespace
     }
 }
 
+void ObservationPreference::BeginTick()
+{
+    ++Stamp;
+}
+
+bool ObservationPreference::Holds(const World& world, const GameplayTagRegistry* tags, GameplayTagId prefer,
+                                  EntityId subject)
+{
+    if (!prefer.IsValid() || tags == nullptr || !subject.IsValid() || !world.IsAlive(subject))
+        return false;
+    if (subject.Index >= Answers.size())
+        Answers.resize(subject.Index + 1);
+    Answer& answer = Answers[subject.Index];
+    if (answer.Stamp != Stamp || answer.Generation != subject.Generation || answer.Prefer != prefer)
+    {
+        const GameplayTagContainer* held = world.TryGet<GameplayTagContainer>(subject);
+        answer = { Stamp, subject.Generation, prefer, held != nullptr && held->HasDescendantOf(*tags, prefer) };
+    }
+    return answer.Holds;
+}
+
 void ObservationMemorySystem::FixedLogic(FixedLogicContext& ctx)
 {
     World& world = ctx.Entities;
@@ -151,6 +164,7 @@ void ObservationMemorySystem::FixedLogic(FixedLogicContext& ctx)
     }
 
     const float elapsed = static_cast<float>(ctx.Time.DeltaSeconds);
+    Preferences.BeginTick();
     Memories->ForEachChunkIn(ctx.Partitions, [&](auto& view) {
         auto memories = view.template Write<ObservationMemory>();
         for (std::uint32_t row = 0; row < view.Count(); ++row)
@@ -160,7 +174,8 @@ void ObservationMemorySystem::FixedLogic(FixedLogicContext& ctx)
                 memory.Entries[index].Age += elapsed;
             for (const SenseScan& scan : frame->ScansOf(view.Entity(row)))
                 for (const Observation& observation : frame->ObservationsOf(scan))
-                    Remember(memory, observation, FacingOf(world, observation.Subject), world);
+                    if (observation.Tick == frame->Tick())
+                        Remember(memory, Preferences, observation, FacingOf(world, observation.Subject), world);
         }
     });
     Now += elapsed;
@@ -209,7 +224,7 @@ void ObservationMemorySystem::Share(World& world, const FixedLogicContext&)
         for (const SenseScan& scan : frame.ScansOf(member.Entity))
             for (const Observation& observation : frame.ObservationsOf(scan))
             {
-                if (inGroup(observation.Subject, member.Group))
+                if (observation.Tick != frame.Tick() || inGroup(observation.Subject, member.Group))
                     continue;
                 InFlight.push_back({ .Group = member.Group,
                                      .From = member.Entity,
@@ -241,7 +256,7 @@ void ObservationMemorySystem::Share(World& world, const FixedLogicContext&)
             if (ObservationMemory* memory = world.TryGet<ObservationMemory>(member.Entity))
             {
                 passed.Observer = member.Entity;
-                Remember(*memory, passed, arrival.Facing, world);
+                Remember(*memory, Preferences, passed, arrival.Facing, world);
             }
         }
     }

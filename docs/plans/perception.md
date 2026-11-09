@@ -100,6 +100,14 @@ starve the same high-id observers on every tick, permanently. A per-observer
 cap needs no multi-tick scheduler. An observer that hits its cap is `Partial`,
 and the candidates it never tested produce no observation.
 
+An observer scans once every `perception.sight.scan_interval_ticks`, staggered
+by id, with the first scan immediate. Between scans its last observations stand
+in the frame with their original tick and coverage, minus any subject that has
+since been destroyed, so queries still answer rather than reporting nothing.
+`ObservationMemorySystem` only takes observations of the current tick. Rays are
+about 80% of perception at 256 enemies and all-pairs geometry about 6%, so the
+interval, not an index over targets, is what bounds the cost.
+
 Targets are gathered once per tick from the logic partitions and sorted by
 id. Scratch storage is retained, so a steady state does not allocate. A
 spatial index is not built until a measured encounter exceeds the ~1 ms gate.

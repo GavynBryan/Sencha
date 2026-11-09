@@ -25,6 +25,8 @@ struct SightStats
     std::uint32_t Untested = 0;
     std::uint32_t Raycasts = 0;
     std::uint32_t PartialScans = 0;
+    // Observers answering from their last scan this tick.
+    std::uint32_t HeldScans = 0;
 };
 
 // One candidate's fate, kept while debug drawing or the debug panel asks.

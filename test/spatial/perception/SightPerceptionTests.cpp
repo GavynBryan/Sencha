@@ -293,3 +293,73 @@ TEST(SightPerception, TargetsBeyondTheRayCapTakeTheirTurnOnLaterTicks)
     for (std::size_t t = 0; t < targets.size(); ++t)
         EXPECT_GE(timesSeen[t], 1) << "target " << t << " was never given a ray";
 }
+
+TEST(SightPerception, BetweenScansAnObserverAnswersFromItsLastOne)
+{
+    PerceptionHarness harness;
+    harness.SetCVar("perception.sight.scan_interval_ticks", CVarValue{ std::int64_t{ 4 } });
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+
+    harness.Step();
+    ASSERT_TRUE(harness.Sees(eye, target)) << "a new observer scans at once";
+    while ((eye.Index + harness.Tick + 1) % 4 == 0)
+        harness.Step();
+
+    harness.Box(Vec3d(0, 0, -2.5), Vec3d(2, 2, 0.1));
+    harness.Step();
+    EXPECT_TRUE(harness.Sees(eye, target)) << "what it last saw stands until it looks again";
+    EXPECT_EQ(harness.Frame().CoverageOf(eye), ScanCoverage::Complete);
+    EXPECT_EQ(harness.System.LastSightStats().HeldScans, 1u);
+    for (int i = 0; i < 4; ++i)
+        harness.Step();
+    EXPECT_FALSE(harness.Sees(eye, target)) << "and within an interval it has looked";
+}
+
+TEST(SightPerception, EachObserverScansOnceAnInterval)
+{
+    PerceptionHarness harness;
+    harness.SetCVar("perception.sight.scan_interval_ticks", CVarValue{ std::int64_t{ 4 } });
+    for (int i = 0; i < 16; ++i)
+        harness.Observer(Vec3d(static_cast<float>(i), 0, 0));
+    harness.Target(Vec3d(0, 0, -5));
+    harness.Step();
+    std::uint32_t scans = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        harness.Step();
+        scans += harness.System.LastSightStats().Sensors - harness.System.LastSightStats().HeldScans;
+    }
+    EXPECT_EQ(scans, 16u);
+}
+
+TEST(SightPerception, AHeldObservationOfADestroyedTargetIsDropped)
+{
+    PerceptionHarness harness;
+    harness.SetCVar("perception.sight.scan_interval_ticks", CVarValue{ std::int64_t{ 8 } });
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+    harness.Step();
+    ASSERT_TRUE(harness.Sees(eye, target));
+    while ((eye.Index + harness.Tick + 1) % 8 == 0)
+        harness.Step();
+    harness.Entities.DestroyEntity(target);
+    harness.Step();
+    EXPECT_EQ(harness.System.LastSightStats().HeldScans, 1u);
+    EXPECT_FALSE(harness.Sees(eye, target));
+    EXPECT_EQ(harness.Frame().CoverageOf(eye), ScanCoverage::Complete);
+}
+
+TEST(SightPerception, AHeldObservationKeepsTheTickItWasMade)
+{
+    PerceptionHarness harness;
+    harness.SetCVar("perception.sight.scan_interval_ticks", CVarValue{ std::int64_t{ 8 } });
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+    harness.Step();
+    while ((eye.Index + harness.Tick + 1) % 8 == 0)
+        harness.Step();
+    harness.Step();
+    ASSERT_EQ(harness.System.LastSightStats().HeldScans, 1u);
+    EXPECT_LT(harness.Seen(eye, target)->Tick, harness.Frame().Tick());
+}
