@@ -120,7 +120,9 @@ name.
 
 `ActiveAbilities`, record
 : An actor's running and lingering activations, each named on every machine by
-  its activation identity.
+  its activation identity. `ActiveAbilities` holds a handle per slot; the record and
+  its locals live in the World's `AbilityActivations`, so an actor pays only for what
+  it is running.
 
 Op, lease, query
 : What a phase does: invoke a verb, hold a lease while the phase lasts, evaluate a
@@ -263,7 +265,7 @@ the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
 every machine on the same tick.
 
-An actor with grants carries `ActiveAbilities`, `AbilityLocals`, `ActorTime` and a
+An actor with grants carries `ActiveAbilities`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
 input at all.
 
@@ -451,7 +453,11 @@ effect-held grants stay with the authority.
 The guesses sit beside the authority's records, never over them. `ActiveAbilities`
 holds the authority's six records, which the codec sends and a snapshot rewrites,
 then `kAbilityGuessCapacity` slots for guesses, one per activation the authority can
-hold live, so a client can guess every start the authority admits.
+hold live, so a client can guess every start the authority admits. A slot's activation
+is freed when its record is; `ActiveAbilities` is replicated, so it may carry no
+lifecycle hooks, and each pass collects any activation whose owner is gone or no
+longer names it. Freed activations are kept for the next start, up to the larger of
+64 and a quarter of those live.
 `AbilityPredictionJournal` (a `PredictionJournal`) takes each guess as it starts
 and puts the guesses back after each snapshot. A guess the journal has no room
 for is not made (`PredictionFull`): with sixteen undecided, the client waits for
@@ -504,11 +510,10 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 8,432 bytes: `AbilityLocals` 4,560 (eight typed slots and an
-entity list for each of ten slots), `ActiveAbilities` 2,256, `AbilityPresentationState`
-624, `AbilityCueLog` 584, `AbilityGrants` 392, `ActorTime` 16. The 584 bytes of
-`AbilityPredictedCues` are only on the actor a client predicts. The four guess slots are 2,912 of those bytes, empty everywhere but
-on the pawn a client predicts (`docs/deferred.md`).
+Per actor with grants, 1,712 bytes: `AbilityCueLog` 584, `AbilityPresentationState` 624,
+`AbilityGrants` 392, `ActiveAbilities` 96 (a handle per slot) and `ActorTime` 16. Each
+running or lingering activation adds 688 in `AbilityActivations`. The 584 bytes of
+`AbilityPredictedCues` are only on the actor a client predicts.
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |
 |---|---|---|---|

@@ -93,7 +93,6 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "sencha.attribute_set",                 0xCBAB285D411E9BC8ull },
     { "sencha.ability_grants",                0xED200FDB07495669ull },
     { "sencha.active_abilities",              0x2429C868EFBEF956ull },
-    { "sencha.ability_locals",                0x0594651A45B4FB4Eull },
     { "sencha.actor_time",                    0x779CF32D6039B666ull },
     { "sencha.aim_origin",                    0x15FDEA7DFC8BE3DDull },
     { "sencha.active_effect",                 0xE29C7992C1DB0669ull },
@@ -184,7 +183,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 // it is a deliberate act with a reason, never a side effect: the last move added
 // ProjectileFlight, so a launched projectile reaches every peer with its
 // instigator and the ticks it flew between.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xF0B06113864A587AULL;
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x851A0C9472A400A2ULL;
 
 struct EngineVocabulary
 {

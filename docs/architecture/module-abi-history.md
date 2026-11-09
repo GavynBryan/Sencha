@@ -814,6 +814,14 @@ shares a pool between Worlds; `Archetype::Blocks` must be set before a standalon
 archetype makes a chunk. A pool keeps at most the larger of 64 blocks and a quarter
 of those in use.
 
+**Pooled activations.** `ActiveAbilities::Records` became `Slots`, a handle each;
+records and locals live in the `AbilityActivations` World resource. The
+`AbilityLocals` component is gone, and `AbilityRecordLocals` stays. Read through
+`AbilityActivations::Record`, `IsAbilityLive` or `AbilityRecordsOf`.
+`IsAbilityRecordShadowed` takes the activations. `ReplicationWireContext::Receiving`
+is the writable World where a snapshot is applied. The wire is unchanged; the
+replication table hash moved with `ActiveAbilities`' local size.
+
 **Ability requests.** `AbilityRequestQueue::Push` no longer refuses and returns
 nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, which
 bounds only requests waiting on a dormant actor. A request's `Origin` counts that

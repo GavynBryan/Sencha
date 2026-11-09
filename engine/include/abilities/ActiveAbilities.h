@@ -13,6 +13,7 @@
 #include <math/Vec.h>
 
 #include <authored/VerbId.h>
+#include <core/handle/Handle.h>
 
 #include <cstdint>
 #include <string_view>
@@ -66,6 +67,8 @@ inline constexpr std::uint8_t kAbilityRequestOrigin = 0x80;
 [[nodiscard]] std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey,
                                                       AbilityGrantId grant);
 inline constexpr std::uint8_t kAbilityNoTrigger = 0xFF;
+
+class AbilityActivations;
 
 enum class AbilityRecordState : std::uint8_t
 {
@@ -122,11 +125,14 @@ struct AbilityRecord
     bool Predicted = false;
 };
 
+using AbilityActivationHandle = Handle<struct AbilityActivationTag>;
+
 // What an actor is running, and what it ran recently enough to still present.
 struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
 {
-    // The authority's records, then this machine's guesses (AbilityCapacity.h).
-    AbilityRecord Records[kAbilitySlotCapacity] = {};
+    // The authority's records, then this machine's guesses (AbilityCapacity.h); the
+    // records themselves are in the World's AbilityActivations.
+    AbilityActivationHandle Slots[kAbilitySlotCapacity] = {};
     std::uint64_t NextSequence = 1;
     // Lingering records evicted to make room for a live one.
     std::uint32_t Evicted = 0;
@@ -134,7 +140,8 @@ struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
 
 // A record the authority sent while this machine runs its own guess at the same
 // activation: kept as the authority's word, but neither counted, run nor presented.
-[[nodiscard]] bool IsAbilityRecordShadowed(const ActiveAbilities& active, std::size_t slot);
+[[nodiscard]] bool IsAbilityRecordShadowed(const ActiveAbilities& active, const AbilityActivations& activations,
+                                           std::size_t slot);
 
 static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
               "ActiveAbilities must be trivially copyable to live in ECS chunks");

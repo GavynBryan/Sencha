@@ -70,9 +70,13 @@ bool AbilityPass::Live(const AbilityActor& actor, std::size_t slot) const
 
 bool AbilityPass::AuthorityRuns(const AbilityActor& actor, const AbilityRecord& guess) const
 {
-    return std::ranges::any_of(actor.Active().Records, [&](const AbilityRecord& record) {
-        return !record.Predicted && record.State == AbilityRecordState::Live && record.Identity == guess.Identity;
-    });
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+    {
+        const AbilityRecord& record = actor.Record(slot);
+        if (!record.Predicted && record.State == AbilityRecordState::Live && record.Identity == guess.Identity)
+            return true;
+    }
+    return false;
 }
 
 bool AbilityPass::Runs(const AbilityActor& actor, std::size_t slot) const
@@ -112,11 +116,11 @@ int AbilityPass::ClaimSlot(const AbilityActor& actor)
     int oldest = -1;
     for (std::size_t i = first; i < end; ++i)
     {
-        const AbilityRecord& record = active.Records[i];
+        const AbilityRecord& record = actor.Record(i);
         if (record.State == AbilityRecordState::Free && free < 0)
             free = static_cast<int>(i);
         else if (record.State == AbilityRecordState::Lingering && !(Predicting && AuthorityRuns(actor, record))
-                 && (oldest < 0 || record.Sequence < active.Records[oldest].Sequence))
+                 && (oldest < 0 || record.Sequence < actor.Record(oldest).Sequence))
             oldest = static_cast<int>(i);
     }
     if (free >= 0)
@@ -140,8 +144,8 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
     const ActiveAbilities& active = actor.Active();
     for (std::size_t i = 0; i < kAbilitySlotCapacity; ++i)
     {
-        const AbilityRecord& record = active.Records[i];
-        if (record.State != AbilityRecordState::Live || IsAbilityRecordShadowed(active, i))
+        const AbilityRecord& record = actor.Record(i);
+        if (record.State != AbilityRecordState::Live || IsAbilityRecordShadowed(active, *actor.Activations, i))
             continue;
         ++live;
         instances += record.Key.Ability == grant.Ability ? 1 : 0;
@@ -188,8 +192,7 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     const AbilityDefinition& definition = *Abilities->Get(grant.Ability);
 
     ActiveAbilities& active = actor.Active();
-    AbilityRecord& record = active.Records[slot];
-    record = AbilityRecord{};
+    AbilityRecord& record = actor.Activations->Claim(active, slot, actor.Entity).Record;
     record.Key = key;
     record.Grant = grant.Id;
     record.State = AbilityRecordState::Live;
@@ -200,7 +203,6 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     record.Sequence = active.NextSequence++;
     record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability), grant.Id);
     record.Predicted = Predicting;
-    actor.Locals(slot) = AbilityRecordLocals{};
     if (Predicting)
     {
         [[maybe_unused]] const bool tracked = Journal->Track(actor.Entity, record, actor.Locals(slot));
@@ -710,9 +712,6 @@ void AbilityPass::Linger(const AbilityActor& actor)
         AbilityRecord& record = actor.Record(slot);
         if (record.State == AbilityRecordState::Lingering && (!Predicting || (record.Predicted && !AuthorityRuns(actor, record)))
             && Now.TickIndex >= record.EndTick + LingerTicks)
-        {
-            record = AbilityRecord{};
-            actor.Locals(slot) = AbilityRecordLocals{};
-        }
+            actor.Activations->Free(actor.Active(), slot);
     }
 }

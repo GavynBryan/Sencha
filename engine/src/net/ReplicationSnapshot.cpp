@@ -1529,7 +1529,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             std::memcpy(codecLocal.data(), held, component.LocalSize);
         else
             (void)schema.WriteDefaultBytes(component.Type, codecLocal);
-        const ReplicationWireContext context{ .Entities = &world, .Entity = pending.Entity,
+        const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = pending.Entity,
                                               .Client = &identity };
         component.FromWire(context, std::span(decoded.data() + slot.Offset, component.Size), codecLocal);
         const bool wrote =

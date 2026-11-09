@@ -357,7 +357,7 @@ TEST_F(AbilityMovement, APhaseWaitsForItsTimedBurstToComplete)
     Grant(kLungeThenRecover);
     Steps(20);
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
-    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    const AbilityRecord& record = Entities.GetResource<AbilityActivations>().Record(*Entities.TryGet<ActiveAbilities>(Character), 0);
     Steps(13);
     EXPECT_EQ(record.Phase, 0u) << "still lunging: the burst has time left";
     Steps(4);
@@ -400,7 +400,7 @@ TEST_F(AbilityMovement, AGrappleEndsWhenWhatItGrabbedIsGone)
     Steps(10);
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
     Steps(5);
-    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    const AbilityRecord& record = Entities.GetResource<AbilityActivations>().Record(*Entities.TryGet<ActiveAbilities>(Character), 0);
     ASSERT_EQ(record.Phase, 1u) << "the trace struck the post, so it pulls";
     EXPECT_TRUE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
 

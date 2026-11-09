@@ -4,7 +4,7 @@
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityKit.h>
-#include <abilities/AbilityLocals.h>
+#include <abilities/AbilityActivations.h>
 #include <anim/AnimRequestSet.h>
 #include <app/EngineSchedule.h>
 #include <app/EngineVocabulary.h>
@@ -312,7 +312,7 @@ AbilityPreviewTickRecord AbilityPreviewSession::RunTick(std::uint64_t tick)
         if (traced.Tick == tick && traced.Actor == FixtureEntity)
             record.Trace.push_back(traced);
     });
-    for (const AbilityRecord& held : world.TryGet<ActiveAbilities>(FixtureEntity)->Records)
+    for (const AbilityRecord& held : AbilityRecordsOf(world, FixtureEntity))
         if (held.State != AbilityRecordState::Free)
             record.Records.push_back(held);
     const AttributeRegistry& attributes = world.GetResource<AttributeRegistry>();
@@ -326,10 +326,10 @@ AbilityPreviewTickRecord AbilityPreviewSession::RunTick(std::uint64_t tick)
     record.AimOrigin = aim.Origin;
     record.AimDirection = aim.Direction;
     const ActiveAbilities& active = *static_cast<const World&>(world).TryGet<ActiveAbilities>(FixtureEntity);
-    const AbilityLocals& locals = *static_cast<const World&>(world).TryGet<AbilityLocals>(FixtureEntity);
+    const AbilityActivations& activations = *static_cast<const World&>(world).TryGetResource<AbilityActivations>();
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
-        if (active.Records[slot].State != AbilityRecordState::Free)
-            for (const AbilityLocalValue& value : locals.Records[slot].Values)
+        if (activations.Record(active, slot).State != AbilityRecordState::Free)
+            for (const AbilityLocalValue& value : activations.Locals(active, slot).Values)
                 if (value.Set && value.Hit)
                     record.Hits.push_back({ .Point = value.Point, .Normal = value.Normal });
     return record;

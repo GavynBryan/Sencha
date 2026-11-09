@@ -195,8 +195,7 @@ namespace
             const AbilityActivationKey key{ .CommandTick = pass.Tick(), .Ability = request.Ability,
                                             .Origin = static_cast<std::uint8_t>(kAbilityRequestOrigin + asked) };
             asked = std::min<std::uint8_t>(asked + 1, 0x7F);
-            if (!world.IsAlive(request.Actor) || !world.HasComponent<ActiveAbilities>(request.Actor)
-                || !world.HasComponent<AbilityLocals>(request.Actor))
+            if (!world.IsAlive(request.Actor) || !world.HasComponent<ActiveAbilities>(request.Actor))
                 continue;
             // A dormant actor keeps its request for the tick it wakes.
             if (partitions != nullptr && !partitions->Contains(world.GetEntityPartition(request.Actor)))
@@ -208,7 +207,8 @@ namespace
                                  .Refusal = AbilityRefusal::Capacity });
                 continue;
             }
-            const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource };
+            const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource,
+                                      &world.GetResource<AbilityActivations>() };
             if (request.Kind == AbilityRequestKind::Cancel)
             {
                 for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
@@ -299,6 +299,8 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
 {
     if (!world.IsRegistered<AbilityGrants>())
         return;
+    if (AbilityActivations* activations = world.TryGetResource<AbilityActivations>())
+        activations->CollectOrphans(world);
     // A client runs only its guesses at its own pawn, on that pawn's command timeline.
     const bool authority = IsSimulationAuthority(world);
     const PredictedSimulation* predicted = authority ? nullptr : world.TryGetResource<PredictedSimulation>();
@@ -345,11 +347,10 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         const InputActionSourceRef* ref =
             world.IsRegistered<InputActionSourceRef>() ? world.TryGet<InputActionSourceRef>(entity) : nullptr;
         return AbilityActor{ &world, entity, sources.TickFor(entity),
-                             ref != nullptr ? ref->Source : kLocalInputActionSource };
+                             ref != nullptr ? ref->Source : kLocalInputActionSource, &world.GetResource<AbilityActivations>() };
     };
     const auto ready = [&](EntityId entity) {
-        return world.IsAlive(entity) && world.HasComponent<ActiveAbilities>(entity)
-            && world.HasComponent<AbilityLocals>(entity);
+        return world.IsAlive(entity) && world.HasComponent<ActiveAbilities>(entity);
     };
 
     for (const EntityId entity : scratch.Actors)
