@@ -147,6 +147,18 @@ std::optional<EngineGraphicsConfig> DeserializeGraphicsConfig(
         || !ReadU64Either(root, "frameScratchBytesPerFrame",
             "frame_scratch_bytes_per_frame",
             config.FrameScratchBytesPerFrame, sectionError, 1)
+        || !ReadU64Either(root, "scratchViewFloorBytes", "scratch_view_floor_bytes",
+            config.ScratchViewFloorBytes, sectionError, 0)
+        || !ReadU64Either(root, "scratchWorldFloorBytes", "scratch_world_floor_bytes",
+            config.ScratchWorldFloorBytes, sectionError, 0)
+        || !ReadU64Either(root, "scratchUiFloorBytes", "scratch_ui_floor_bytes",
+            config.ScratchUiFloorBytes, sectionError, 0)
+        || !ReadU64Either(root, "scratchSkinningFloorBytes", "scratch_skinning_floor_bytes",
+            config.ScratchSkinningFloorBytes, sectionError, 0)
+        || !ReadU64Either(root, "scratchSkinningCapBytes", "scratch_skinning_cap_bytes",
+            config.ScratchSkinningCapBytes, sectionError, 0)
+        || !ReadU32Either(root, "skinnedPoseDispatchesPerFrame", "skinned_pose_dispatches_per_frame",
+            config.SkinnedPoseDispatchesPerFrame, sectionError, 0)
         || !ReadBoolEither(root, "validateSynchronization", "validate_synchronization",
             config.ValidateSynchronization, sectionError)
         || !ReadBoolEither(root, "validateGpuAssisted", "validate_gpu_assisted",

@@ -4,6 +4,7 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <graphics/RenderFeature.h>
+#include <graphics/RenderFrameHealth.h>
 #include <graphics/PresentationId.h>
 #include <graphics/vulkan/FeatureRegistrationOrder.h>
 #include <graphics/vulkan/FrameImageCapture.h>
@@ -105,6 +106,8 @@ struct RendererServices
     // The one GPU owner of the authored UI's generated textures, which every
     // pass drawing authored UI resolves through.
     UiTextureResidency* UiTextures = nullptr;
+    // What the frame being recorded has failed to do; passes add to it.
+    RenderFrameHealth* Health = nullptr;
 };
 
 // What the Post phase leaves for the Output phase of one presentation.
@@ -269,6 +272,7 @@ public:
     RenderFrameResult DrawFrameScheduled();
 
     [[nodiscard]] const RendererFrameTiming& GetLastTiming() const { return LastTiming; }
+    [[nodiscard]] const RenderFrameHealth& GetLastFrameHealth() const { return FrameHealth; }
 
     // The presentation created with the renderer: where a swapchain-phase
     // feature records unless its registration names another.
@@ -329,6 +333,7 @@ private:
     std::vector<std::unique_ptr<IRenderFeature>> StagedFeatures;
     std::vector<FeatureRegistration> StagedRegistrations;
     RendererFrameTiming LastTiming;
+    RenderFrameHealth FrameHealth;
     FrameImageCapture ImageCapture;
     UiTextureResidency UiTextures;
     PresentationId CapturePresentation;

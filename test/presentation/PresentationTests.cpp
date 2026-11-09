@@ -575,3 +575,35 @@ TEST_F(PresentationTest, AFeatureAddedByNameIsCheckedAgainstWhatIsRegistered)
     EXPECT_TRUE(Render().RemoveFeature(consumer));
     EXPECT_TRUE(Render().RemoveFeature(provider));
 }
+
+TEST_F(PresentationTest, BindlessRegistrationRefusesPastCapacityAndKeepsExistingSlots)
+{
+    VkSampler sampler = Graphics->Samplers.GetLinearClamp();
+    std::vector<ImageHandle> images;
+    std::vector<BindlessImageIndex> indices;
+    BindlessImageIndex refused;
+    for (std::uint32_t i = 0; i <= VulkanDescriptorCache::kBindlessImageCapacity; ++i)
+    {
+        ImageCreateInfo info;
+        info.Format = VK_FORMAT_R8G8B8A8_UNORM;
+        info.Extent = VkExtent2D{ 1, 1 };
+        info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+        info.DebugName = "bindless_capacity";
+        const ImageHandle image = Graphics->Images.Create(info);
+        ASSERT_TRUE(image.IsValid());
+        images.push_back(image);
+        refused = Graphics->Descriptors.RegisterSampledImage(image, sampler);
+        if (!refused.IsValid())
+            break;
+        indices.push_back(refused);
+    }
+
+    EXPECT_FALSE(refused.IsValid());
+    EXPECT_LE(indices.size(), VulkanDescriptorCache::kBindlessImageCapacity);
+    EXPECT_EQ(Graphics->Descriptors.RegisterSampledImage(images.front(), sampler), indices.front());
+
+    for (const BindlessImageIndex index : indices)
+        Graphics->Descriptors.UnregisterSampledImage(index);
+    for (const ImageHandle image : images)
+        Graphics->Images.Destroy(image);
+}

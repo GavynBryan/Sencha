@@ -10,6 +10,8 @@
 
 #include <memory>
 
+struct RenderFrameHealth;
+
 //=============================================================================
 // ShadowRenderFeature
 //
@@ -42,5 +44,6 @@ private:
     StaticMeshCache& Meshes;
     ShadowResidency& Residency;
     const RenderInstrumentation* Instrumentation = nullptr;
+    RenderFrameHealth* Health = nullptr;
     ShadowDepthPass Pass;
 };

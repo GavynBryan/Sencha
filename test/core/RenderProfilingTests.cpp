@@ -200,7 +200,7 @@ TEST(RenderCapture, JsonEnvelopeCarriesSchemaCvarsAndUnitKeyedFrames)
     ASSERT_NE(root.Find("schema_version"), nullptr);
     // Last moved by the frame waits, display latency estimates, image count,
     // presents outstanding and late present wait joining the frame record (v10).
-    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 10.0);
+    EXPECT_EQ(root.Find("schema_version")->AsNumber(), 12.0);
     EXPECT_EQ(root.Find("frame_count")->AsNumber(), 3.0);
     ASSERT_NE(root.Find("cvars"), nullptr);
     ASSERT_NE(root.Find("cvars")->Find("render.profile.mode"), nullptr);

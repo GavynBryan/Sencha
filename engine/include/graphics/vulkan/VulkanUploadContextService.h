@@ -8,6 +8,20 @@
 class VulkanDeviceService;
 class VulkanQueueService;
 
+// What a finished wait on an upload fence allows. A timed-out submission may
+// still be executing, so everything it reads has to stay alive.
+struct UploadWaitResponse
+{
+    bool FreeCommandBuffer = true;
+    bool Wedged = false;
+};
+
+[[nodiscard]] constexpr UploadWaitResponse ClassifyUploadWait(VkResult result)
+{
+    return result == VK_TIMEOUT ? UploadWaitResponse{ .FreeCommandBuffer = false, .Wedged = true }
+                                : UploadWaitResponse{};
+}
+
 //=============================================================================
 // VulkanUploadContextService
 //
@@ -48,6 +62,9 @@ public:
     VulkanUploadContextService& operator=(VulkanUploadContextService&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return UploadPool != VK_NULL_HANDLE; }
+    // True once a submission timed out and may still be executing. Everything
+    // it reads stays alive, and no further upload begins.
+    [[nodiscard]] bool IsWedged() const { return Wedged; }
 
     // Allocate and begin a one-shot primary command buffer. Returns
     // VK_NULL_HANDLE on failure. The caller must follow up with Submit().
@@ -61,6 +78,7 @@ public:
     bool Submit(VkCommandBuffer cmd);
 
 private:
+    bool Wedged = false;
     Logger& Log;
     VkDevice Device = VK_NULL_HANDLE;
     VkQueue UploadQueue = VK_NULL_HANDLE;

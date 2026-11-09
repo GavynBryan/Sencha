@@ -82,12 +82,18 @@ UiTextureResidency::Applied UiTextureResidency::Prepare(const GpuFrameRetirement
             continue;
         }
 
+        const BindlessImageIndex bindless = Services->Descriptors->RegisterSampledImage(image, Sampler);
+        if (!bindless.IsValid())
+        {
+            if (log != nullptr)
+                log->Error("no bindless slot for a generated UI texture; it will draw untextured");
+            Services->Images->Destroy(image);
+            continue;
+        }
+
         ++applied.Uploads;
         applied.UploadBytes += static_cast<std::uint64_t>(upload.Size.Width) * upload.Size.Height * 4u;
-        Generated.emplace(upload.Id, GeneratedTexture{
-            .Image = image,
-            .Bindless = Services->Descriptors->RegisterSampledImage(image, Sampler),
-        });
+        Generated.emplace(upload.Id, GeneratedTexture{ .Image = image, .Bindless = bindless });
     }
 
     for (const UiGeneratedTextureId id : Pending.Released)

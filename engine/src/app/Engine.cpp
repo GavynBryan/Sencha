@@ -740,6 +740,9 @@ void Engine::RequestExit(ExitSource source)
     if (ExitPending)
         return;
 
+    static constexpr const char* kExitSourceNames[] = { "window close", "menu", "console", "game" };
+    LoggingState.GetLogger<Engine>().Info("Exit requested by {}", kExitSourceNames[static_cast<std::size_t>(source)]);
+
     if (OnExitRequested && OnExitRequested(source) == ExitDecision::Defer)
     {
         ExitPending = true;
@@ -1539,6 +1542,8 @@ int Engine::Run(Game& game)
     // After the game's, so whatever ordering constraints it declared already
     // exist when these are added.
     ContentState->RegisterSystems(EngineSystems);
+    if (PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>())
+        physics->SetLog(&LoggingState.GetLogger<PhysicsStepSystem>());
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 

@@ -300,6 +300,18 @@ TEST(EngineScheduleOrderingDeath, AnEdgeBetweenSystemsSharingNoPhaseDies)
                  "share no frame phase");
 }
 
+TEST(EngineScheduleOrderingDeath, ACycleDiesAtInitInsteadOfDroppingSystems)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+    harness.Schedule.Register<FixedB>();
+    harness.Schedule.After<FixedA, FixedB>();
+    harness.Schedule.After<FixedB, FixedA>();
+
+    EXPECT_DEATH(harness.Schedule.Init(), "cycle");
+}
+
 TEST(EngineScheduleOrdering, AnEdgeWithinOnePhaseIsRecorded)
 {
     ScheduleHarness harness;

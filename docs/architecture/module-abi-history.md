@@ -848,3 +848,9 @@ recooks. `NavTraversalExecutor::Abort` takes the executor's memory, and
 
 **Abilities and movement.** A hold's `scope`; `AbilityOp::ForActivation`.
 `TetherSession::Arrives` and `movement.tether`'s `until`. `physics.clear_path`.
+
+**Frame scratch and skinned poses.** `EngineGraphicsConfig` gains the scratch pool floors and the skinned pose budget,
+and the default scratch slice is 3 MiB. `RendererServices::Health`,
+`Renderer::GetLastFrameHealth` and `RenderFrameHealth`. `ScratchTag` gains the
+outline tags. `SkinnedPoseFrameData` loses `Ready`, and `SkinnedPosePass::Setup`
+takes its dispatch capacity.

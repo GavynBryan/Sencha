@@ -7,6 +7,7 @@
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/GpuFrameScratch.h>
+#include <graphics/RenderFrameHealth.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
@@ -138,6 +139,7 @@ void MeshForwardPass::Setup(const RendererServices& services, LightBindings& bin
     Buffers = services.Buffers;
     Descriptors = services.Descriptors;
     Scratch = services.Scratch;
+    Health = services.Health;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
     Bindings = &bindings;
@@ -476,7 +478,8 @@ std::optional<VkDeviceSize> MeshForwardPass::UploadViewUniforms(
     uniforms.OutlineStyleSlot = ActiveOutlineSlot;
 
     auto allocation = Scratch->AllocateUniform(sizeof(MeshViewUniforms),
-                                               ScratchTag::ForwardViewUniforms);
+                                               ActiveOutlineSlot != 0 ? ScratchTag::OutlineViewUniforms
+                                                                      : ScratchTag::ForwardViewUniforms);
     if (!allocation.IsValid())
         return std::nullopt;
     std::memcpy(allocation.Mapped, &uniforms, sizeof(uniforms));
@@ -497,7 +500,8 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
     // first to be clipped -- effects drop before world geometry does.
     auto stream = Scratch->AllocateVertexElements(
         static_cast<uint32_t>(order.size() + TransparentOrder.size()),
-        sizeof(MeshInstanceData), ScratchTag::ForwardInstanceData);
+        sizeof(MeshInstanceData),
+        ActiveOutlineSlot != 0 ? ScratchTag::OutlineInstanceData : ScratchTag::ForwardInstanceData);
     if (!stream.IsValid())
         return 0;
 
@@ -521,6 +525,14 @@ uint32_t MeshForwardPass::BindInstanceStream(const FrameContext& frame,
     VkBuffer instanceBuffer = Buffers->GetBuffer(stream.Grant.Buffer);
     vkCmdBindVertexBuffers(frame.Cmd, 1, 1, &instanceBuffer, &stream.Grant.Offset);
     return stream.Count;
+}
+
+void MeshForwardPass::PublishDropped(uint32_t instances, bool skipped) const
+{
+    if (Health == nullptr)
+        return;
+    Health->InstancesDropped += instances;
+    Health->PassesSkipped += skipped ? 1u : 0u;
 }
 
 void MeshForwardPass::BindFrameState(const FrameContext& frame, VkDeviceSize uniformOffset)
@@ -559,7 +571,7 @@ BufferHandle ResolveVertexBuffer(const RenderQueueItem& item,
                                  const GpuStaticMesh& mesh,
                                  const SkinnedPoseFrameData* poses)
 {
-    if (poses != nullptr && poses->Ready && item.PoseSlot != UINT32_MAX
+    if (poses != nullptr && item.PoseSlot != UINT32_MAX
         && item.PoseSlot < poses->PosedBuffers.size()
         && poses->PosedBuffers[item.PoseSlot].IsValid())
     {
@@ -818,6 +830,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     {
         LastStats.Skipped = true;
         LastStats.InstancesDropped = LastStats.QueueItems;
+        PublishDropped(LastStats.QueueItems, true);
         return DrawToken{};
     };
     // The transparent family only has to exist when something blends.
@@ -866,6 +879,7 @@ MeshForwardPass::DrawToken MeshForwardPass::DrawOpaque(const FrameContext& frame
     // Whatever the slice could not carry goes unrendered this frame, and is
     // counted rather than silently missing from the image.
     LastStats.InstancesDropped = LastStats.QueueItems - streamed;
+    PublishDropped(LastStats.InstancesDropped, false);
 
     BindFrameState(frame, *uniformOffset);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING

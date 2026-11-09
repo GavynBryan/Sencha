@@ -309,6 +309,8 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             {
                 poseSlot = RegisterSkinnedPose(world, caches, renderer,
                                                view.Entity(i), poseAlpha, *skinnedPoses);
+                if (poseSlot != UINT32_MAX)
+                    skinnedPoses->Instances[poseSlot].CameraDepth = -cameraSpaceCenter.Z;
             }
 
             MeshDrawInstance instance;

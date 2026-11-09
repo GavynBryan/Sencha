@@ -1015,3 +1015,9 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/assets/cook/NavigationCook.cpp`, `navigation/tooling/NavMeshSnapshot.h`.
 - **Trigger:** the first level needing more anchored links than is reasonable to
   place by hand. Nothing at runtime changes: routes already read the records.
+
+## Culling a posed mesh by its pose
+
+- **What:** skinned meshes frustum-cull against their rest bounds, so a limb posed outside those bounds can pop out at the edge of the view.
+- **Where:** `RenderExtractionSystem::EmitSkinnedMeshes`; `PosedWorldBounds` already computes the tighter bound per pose.
+- **Trigger:** a report of popping on an animated enemy. A cooked per-skeleton reach would change the mesh format, so it needs format treatment.

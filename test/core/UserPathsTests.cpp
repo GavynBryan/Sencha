@@ -2,42 +2,14 @@
 
 #include <platform/UserPaths.h>
 
+#include "support/ScopedEnv.h"
+
 #include <cstdlib>
-#include <optional>
 #include <string>
 
 // One owner for "where does a user's configuration live", and the precedence
 // it resolves. Both the console's settings archive and the launcher's project
 // catalog build on it, so this is where that rule is pinned once.
-
-namespace
-{
-    // The environment is process state; a test that changes it puts it back.
-    class ScopedEnv
-    {
-    public:
-        ScopedEnv(const char* name, const char* value) : Name(name)
-        {
-            if (const char* old = std::getenv(name))
-                Previous = old;
-            if (value != nullptr)
-                setenv(name, value, 1);
-            else
-                unsetenv(name);
-        }
-        ~ScopedEnv()
-        {
-            if (Previous.has_value())
-                setenv(Name, Previous->c_str(), 1);
-            else
-                unsetenv(Name);
-        }
-
-    private:
-        const char* Name;
-        std::optional<std::string> Previous;
-    };
-}
 
 TEST(UserPaths, XdgConfigHomeWinsOverHome)
 {

@@ -482,11 +482,14 @@ if(TARGET render_golden_tests)
     # Longer discovery and run: each case launches the host and renders a scene.
     gtest_discover_tests(render_golden_tests
         DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS gpu
     )
 endif()
 
 if(TARGET presentation_tests)
-    gtest_discover_tests(presentation_tests)
+    gtest_discover_tests(presentation_tests
+        PROPERTIES LABELS gpu
+    )
 endif()
 
 if(TARGET engine_feature_tests)

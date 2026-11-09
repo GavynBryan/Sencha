@@ -43,6 +43,7 @@ field, written on one thread, reset by the mode latch at the top of extraction.
 |---|---|---|
 | Identity | `FrameIndex` | the engine, at push time |
 | Forward pass | `VisibleObjects`, `DrawCalls`, `SubmittedTriangles`, `PipelineSwitches`, `MaterialSwitches`, `InstancesDropped` | `MeshRenderFeature::OnDraw` from `MeshForwardPass::DrawStats` |
+| Skinning | `SkinnedFirstPose`, `SkinnedRefreshed`, `SkinnedHeld`, `SkinnedAwaitingFirstPose`, `SkinnedBindFallback`, `SkinnedPoseFailures`, `PosedBuffers`, `PosedBufferBytes` | `SkinnedPoseRenderFeature::OnDraw` |
 | Lights | `LightsVisible`, `LightsDroppedAtCap`, `ShadowCastingLights` | `DefaultRenderPipeline::PublishExtractionStats` |
 | Shadow pass | `ShadowViewsRendered`, `PointShadowFacesRendered`, `ShadowCasterDraws`, `ShadowCastersTested`, `ShadowCastersVisible`, `ShadowCastersDropped`, `ShadowInstanceRuns` | `ShadowRenderFeature::OnDraw` |
 | Shadow residency | `ShadowSlotsHeld`, `ShadowCacheHits`, `ShadowRequestsDenied`, `AtlasTiles1024/512/256`, `PointShadowCubesHeld`, `ShadowTileBytes`, `CasterDiffEvents` | extraction, from `ShadowFrameStats` and per-slot info |
@@ -68,6 +69,25 @@ Three pairs are designed to be read together, because either number alone lies:
 `RenderStatsHistory` is a 512-frame ring with a `Version` counter that must not
 advance while the mode is `off`. That is the mechanical proof the off path
 writes nothing.
+
+## Frame health
+
+`RenderFrameHealth` (`engine/include/graphics/RenderFrameHealth.h`) is what the
+last recorded frame could not do. Unlike `RenderStats` it is filled in every
+build and at every `render.profile.mode`, because a shipped game and an
+automated run need the answer without opting into profiling. Read it with
+`Renderer::GetLastFrameHealth()`; `FramesRecorded` says whether a new frame was
+recorded since the last read.
+
+`LostWork()` is the correctness bit. A run that reports frame times while it is
+true measured an emptier frame than the one it asked for, so a benchmark treats
+it as a failed run rather than a result.
+
+Passes add to the frame's health through `RendererServices::Health`, so a pass
+driven by several features (the forward pass, for the scene and the outline
+mask) counts everything it dropped. A failure that recurs every frame logs once
+when it starts and once when it stops (`RepeatedFailureLog`), with the counters
+carrying the per-frame detail.
 
 ## CPU scopes
 

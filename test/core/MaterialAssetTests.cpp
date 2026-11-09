@@ -204,6 +204,19 @@ TEST(MaterialCacheOwnership, DuplicateRegisterReleasesIncomingTextures)
     EXPECT_EQ(textures.Detached, 1);
 }
 
+TEST(MaterialCacheOwnership, ADuplicateRegisterHoldsItsOwnReference)
+{
+    MaterialCache materials;
+    const MaterialHandle first = materials.Register("asset://materials/test/twice.smat", Material{});
+    const MaterialHandle second = materials.Register("asset://materials/test/twice.smat", Material{});
+    ASSERT_EQ(second, first);
+
+    materials.Release(first);
+    EXPECT_NE(materials.Get(second), nullptr);
+    materials.Release(second);
+    EXPECT_EQ(materials.Get(second), nullptr);
+}
+
 TEST(MaterialCacheOwnership, CacheDestructionReleasesOwnedTextures)
 {
     CountingLifetimeOwner textures;

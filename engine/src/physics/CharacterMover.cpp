@@ -89,6 +89,8 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
 
     Impl->Character = new JPH::CharacterVirtual(settings, ToJphR(position), JPH::Quat::sIdentity(),
                                                 PackEntity(config.Owner), &Impl->Scene->System);
+    if (Impl->Character->GetInnerBodyID().IsInvalid())
+        ++Impl->Scene->CapacityFailures.BodiesRefused;
 }
 
 CharacterMover::~CharacterMover() = default;

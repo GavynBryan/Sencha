@@ -27,6 +27,22 @@ VulkanBootstrapPolicy GraphicsServices::BuildPolicy(const EngineConfig& config,
     return policy;
 }
 
+GpuFrameScratch::Config GraphicsServices::BuildScratchConfig(const EngineConfig& config)
+{
+    const EngineGraphicsConfig& graphics = config.Graphics;
+    GpuFrameScratch::Config scratch;
+    scratch.BytesPerFrame = graphics.FrameScratchBytesPerFrame;
+    const auto budget = [&](ScratchPool pool) -> ScratchPoolBudget& {
+        return scratch.Pools[static_cast<std::size_t>(pool)];
+    };
+    budget(ScratchPool::MainView).Floor = graphics.ScratchViewFloorBytes;
+    budget(ScratchPool::World).Floor = graphics.ScratchWorldFloorBytes;
+    budget(ScratchPool::Ui).Floor = graphics.ScratchUiFloorBytes;
+    budget(ScratchPool::Skinning).Floor = graphics.ScratchSkinningFloorBytes;
+    budget(ScratchPool::Skinning).Cap = graphics.ScratchSkinningCapBytes;
+    return scratch;
+}
+
 std::uint32_t GraphicsServices::ResolveFramesInFlight(const EngineConfig& config)
 {
     return ClampFramesInFlight(config.Graphics.FramesInFlight);
@@ -37,8 +53,10 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
                                    SdlWindow& window,
                                    SdlWindowService& windows)
     : GraphicsServices(logging, BuildPolicy(config, windows), ResolveFramesInFlight(config),
-                       config.Graphics.FrameScratchBytesPerFrame, window)
+                       BuildScratchConfig(config), window)
 {
+    SkinnedPoseDispatchesPerFrame = config.Graphics.SkinnedPoseDispatchesPerFrame;
+    SkinnedPaletteBytesPerFrame = config.Graphics.ScratchSkinningCapBytes;
     // Reported once here rather than by the clamp, which stays pure. Silence
     // would leave a configured 8 running as 4 with no way to tell from a log.
     const std::uint32_t requested = config.Graphics.FramesInFlight;
@@ -54,7 +72,7 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
 GraphicsServices::GraphicsServices(LoggingProvider& logging,
                                    const VulkanBootstrapPolicy& policy,
                                    std::uint32_t framesInFlight,
-                                   std::uint64_t scratchBytesPerFrame,
+                                   const GpuFrameScratch::Config& scratch,
                                    SdlWindow& window)
     : Instance(logging, policy)
     , PrimarySurface(std::make_unique<VulkanSurfaceService>(logging, Instance, window))
@@ -72,7 +90,8 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
     , Descriptors(logging, Device, Buffers, Images)
     , Scratch(logging, Device, PhysicalDevice, Buffers,
               GpuFrameScratch::Config{ .FramesInFlight = framesInFlight,
-                                          .BytesPerFrame = scratchBytesPerFrame })
+                                          .BytesPerFrame = scratch.BytesPerFrame,
+                                          .Pools = scratch.Pools })
     , Frames(VulkanFrameService::Services{ .Logging = &logging,
                                            .Instance = &Instance,
                                            .PhysicalDevice = &PhysicalDevice,
