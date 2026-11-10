@@ -40,7 +40,7 @@ struct CandidateDetail
 struct CandidateTraceCriterion
 {
     std::string Measure;
-    CandidateCriterionMode Mode = CandidateCriterionMode::Require;
+    ConsiderationMode Mode = ConsiderationMode::Require;
     std::uint32_t Evaluated = 0;
     std::uint32_t Rejected = 0;
     std::array<std::uint32_t, static_cast<std::size_t>(CandidateMeasureStatus::Count)> Statuses{};

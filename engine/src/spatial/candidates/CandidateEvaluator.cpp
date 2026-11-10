@@ -150,6 +150,7 @@ void CandidateEvaluator::RunCriterion(CandidateRun& run, std::uint32_t index)
     CandidateScratch& scratch = run.Scratch;
     const CandidateEvaluation::BoundCriterion& bound = run.Evaluation.Criteria()[index];
     const CandidateCriterion& criterion = bound.Criterion;
+    const ConsiderationRule& rule = criterion.Rule;
     const std::size_t capacity = scratch.Limits().MaxCandidates;
     const std::span<float> values(scratch.Values.data() + index * capacity, capacity);
     const std::span<CandidateMeasureStatus> statuses(scratch.Statuses.data() + index * capacity, capacity);
@@ -186,14 +187,13 @@ void CandidateEvaluator::RunCriterion(CandidateRun& run, std::uint32_t index)
         bool keep = true;
         if (!IsMeasured(status))
         {
-            keep = criterion.UnmeasuredScore.has_value();
-            curves[row] = criterion.UnmeasuredScore.value_or(0.0f);
+            keep = rule.UnmeasuredScore.has_value();
+            curves[row] = rule.UnmeasuredScore.value_or(0.0f);
         }
-        else if (criterion.Mode == CandidateCriterionMode::Require)
-            keep = values[row] >= criterion.Min && values[row] <= criterion.Max;
+        else if (rule.Mode == ConsiderationMode::Require)
+            keep = rule.Admits(values[row]);
         else
-            curves[row] = criterion.Curve ? EvaluateResponseCurve(*criterion.Curve, values[row])
-                                          : std::clamp(values[row], 0.0f, 1.0f);
+            curves[row] = rule.Output(values[row]);
 
         if (keep)
             scratch.Live[kept++] = row;
@@ -220,10 +220,10 @@ void CandidateEvaluator::Score(CandidateRun& run)
     float weightSum = 0.0f;
     for (std::uint32_t index = 0; index < criteria.size(); ++index)
     {
-        if (criteria[index].Criterion.Mode != CandidateCriterionMode::Score)
+        if (criteria[index].Criterion.Rule.Mode != ConsiderationMode::Score)
             continue;
         scored[scoredCount++] = index;
-        weightSum += criteria[index].Criterion.Weight;
+        weightSum += criteria[index].Criterion.Rule.Weight;
     }
     std::sort(scored.begin(), scored.begin() + scoredCount, [&](std::uint32_t a, std::uint32_t b) {
         return criteria[a].Criterion.AuthoredIndex < criteria[b].Criterion.AuthoredIndex;
@@ -240,7 +240,7 @@ void CandidateEvaluator::Score(CandidateRun& run)
         for (std::size_t i = 0; i < scoredCount; ++i)
         {
             const std::uint32_t index = scored[i];
-            sum += criteria[index].Criterion.Weight * scratch.CurveOutputs[index * capacity + row];
+            sum += criteria[index].Criterion.Rule.Weight * scratch.CurveOutputs[index * capacity + row];
         }
         scratch.Scores[row] = sum / weightSum;
     }
@@ -269,17 +269,13 @@ void CandidateEvaluator::Select(CandidateRun& run, CandidateResultBuffer& result
     if (selection.Mode == CandidateSelectionMode::PickFromBand)
     {
         const float floor = scratch.Scores[scratch.Ranked.front()] - selection.BandWidth;
+        SeededBandPick band(run.Context.Seed);
         std::uint32_t pick = 0;
-        std::uint64_t pickKey = SeededPickKey(run.Context.Seed, scratch.Ranked.front());
-        for (std::uint32_t rank = 1; rank < scratch.Ranked.size() && scratch.Scores[scratch.Ranked[rank]] >= floor;
+        for (std::uint32_t rank = 0; rank < scratch.Ranked.size() && scratch.Scores[scratch.Ranked[rank]] >= floor;
              ++rank)
         {
-            const std::uint64_t key = SeededPickKey(run.Context.Seed, scratch.Ranked[rank]);
-            if (key < pickKey)
-            {
+            if (band.Offer(scratch.Ranked[rank]))
                 pick = rank;
-                pickKey = key;
-            }
         }
         if (results.Capacity() > 0)
             emit(pick);
@@ -320,7 +316,7 @@ void CandidateEvaluator::FillTrace(CandidateRun& run,
     for (std::size_t index = 0; index < criteria.size(); ++index)
     {
         trace.Criteria_[index].Measure.assign(criteria[index].Criterion.Operation);
-        trace.Criteria_[index].Mode = criteria[index].Criterion.Mode;
+        trace.Criteria_[index].Mode = criteria[index].Criterion.Rule.Mode;
     }
     if (trace.Level() != CandidateTraceLevel::Full)
         return;
@@ -333,8 +329,8 @@ void CandidateEvaluator::FillTrace(CandidateRun& run,
     float weightSum = 0.0f;
     for (const CandidateEvaluation::BoundCriterion& criterion : criteria)
     {
-        if (criterion.Criterion.Mode == CandidateCriterionMode::Score)
-            weightSum += criterion.Criterion.Weight;
+        if (criterion.Criterion.Rule.Mode == ConsiderationMode::Score)
+            weightSum += criterion.Criterion.Rule.Weight;
     }
 
     for (std::uint32_t row = 0; row < trace.RowCount; ++row)
@@ -362,9 +358,9 @@ void CandidateEvaluator::FillTrace(CandidateRun& run,
             value.Value = scratch.Values[cell];
             value.Status = scratch.Statuses[cell];
             value.CurveOutput = scratch.CurveOutputs[cell];
-            const CandidateCriterion& criterion = criteria[index].Criterion;
-            if (survived && criterion.Mode == CandidateCriterionMode::Score && weightSum > 0.0f)
-                value.Contribution = criterion.Weight * value.CurveOutput / weightSum;
+            const ConsiderationRule& rule = criteria[index].Criterion.Rule;
+            if (survived && rule.Mode == ConsiderationMode::Score && weightSum > 0.0f)
+                value.Contribution = rule.Weight * value.CurveOutput / weightSum;
         }
     }
     for (std::uint32_t rank = 0; rank < scratch.Ranked.size() && result.Qualified > 0; ++rank)

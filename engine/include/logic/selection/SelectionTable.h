@@ -26,12 +26,7 @@ struct SelectionConsideration
     std::vector<std::size_t> EntitySlots;
     std::vector<std::uint8_t> Entities;
 
-    SelectionConsiderationMode Mode = SelectionConsiderationMode::Score;
-    float Min = 0.0f;
-    float Max = 0.0f;
-    std::optional<ResponseCurve> Curve;
-    float Weight = 1.0f;
-    std::optional<float> UnmeasuredScore;
+    ConsiderationRule Rule;
 };
 
 struct SelectionOption

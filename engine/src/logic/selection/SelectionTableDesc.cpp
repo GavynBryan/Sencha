@@ -1,7 +1,6 @@
 #include <logic/selection/SelectionTableDesc.h>
 
 #include <algorithm>
-#include <cmath>
 #include <format>
 #include <utility>
 
@@ -40,51 +39,6 @@ namespace
             ok = false;
         }
         return ok;
-    }
-
-    bool CompileRequire(const JsonValue& require, SelectionConsiderationDesc& consideration, std::string_view subject,
-                        std::vector<std::string>& errors)
-    {
-        if (const JsonValue* expect = require.Find("expect"))
-        {
-            consideration.Min = consideration.Max = expect->AsBool() ? 1.0f : 0.0f;
-            return true;
-        }
-        consideration.Min = static_cast<float>(require.NumberOr("min", -INFINITY));
-        consideration.Max = static_cast<float>(require.NumberOr("max", INFINITY));
-        if (consideration.Min > consideration.Max)
-        {
-            errors.push_back(std::format("{}: require.min exceeds require.max", subject));
-            return false;
-        }
-        return true;
-    }
-
-    bool CompileScore(const JsonValue& score, SelectionConsiderationDesc& consideration, std::string_view subject,
-                      std::vector<std::string>& errors)
-    {
-        consideration.Weight = static_cast<float>(score.NumberOr("weight", 1.0));
-        if (!(consideration.Weight > 0.0f) || !std::isfinite(consideration.Weight))
-        {
-            errors.push_back(std::format("{}: a score weight is positive and finite", subject));
-            return false;
-        }
-        if (const JsonValue* curve = score.Find("curve"))
-        {
-            std::string problem;
-            consideration.Curve = ReadResponseCurve(*curve, problem);
-            if (!consideration.Curve)
-            {
-                errors.push_back(std::format("{}: {}", subject, problem));
-                return false;
-            }
-        }
-        else if (consideration.Source == SelectionSource::Input)
-        {
-            errors.push_back(std::format("{}: scoring an input needs a curve", subject));
-            return false;
-        }
-        return true;
     }
 
     bool CompileSource(const JsonValue& step, const SelectionTableDesc& table, SelectionConsiderationDesc& out,
@@ -147,19 +101,9 @@ namespace
     {
         if (!CompileSource(step, table, out, subject, errors))
             return false;
-        const JsonValue* require = step.Find("require");
-        const JsonValue* score = step.Find("score");
-        if ((require == nullptr) == (score == nullptr))
-        {
-            errors.push_back(std::format("{}: exactly one of 'require' and 'score'", subject));
-            return false;
-        }
-        out.Mode = require != nullptr ? SelectionConsiderationMode::Require : SelectionConsiderationMode::Score;
-        const bool modeOk = require != nullptr ? CompileRequire(*require, out, subject, errors)
-                                               : CompileScore(*score, out, subject, errors);
-        if (const JsonValue* unmeasured = step.Find("unmeasured"))
-            out.UnmeasuredScore = static_cast<float>(unmeasured->NumberOr("score", 0.0));
-        return modeOk;
+        return CompileConsiderationRule(step,
+                                        out.Source == SelectionSource::Input ? "scoring an input needs a curve" : "",
+                                        out.Rule, subject, errors);
     }
 
     bool CompileOptions(const JsonValue& data, SelectionTableDesc& out, std::vector<std::string>& errors)
@@ -263,26 +207,6 @@ bool CompileSelectionTableDesc(const JsonValue& data, SelectionTableDesc& out, s
 
 DataSchema MakeSelectionTableSchema()
 {
-    DataFieldSchema require = OpenRecord("require", "Require");
-    require.Children.push_back(Optional(DataFieldKind::Float, "min", "Minimum"));
-    require.Children.push_back(Optional(DataFieldKind::Float, "max", "Maximum"));
-    require.Children.push_back(Optional(DataFieldKind::Bool, "expect", "Expect"));
-
-    DataFieldSchema score = OpenRecord("score", "Score");
-    DataFieldSchema curve = MakeResponseCurveField("curve", "Curve");
-    curve.Required = false;
-    score.Children.push_back(std::move(curve));
-    DataFieldSchema weight = Optional(DataFieldKind::Float, "weight", "Weight");
-    weight.Default = 1.0;
-    score.Children.push_back(std::move(weight));
-
-    DataFieldSchema unmeasured = OpenRecord("unmeasured", "When unmeasured");
-    unmeasured.Summary = "Score an unmeasured value instead of disqualifying the option.";
-    DataFieldSchema unmeasuredScore = MakeDataField(DataFieldKind::Float, "score", "Score");
-    unmeasuredScore.Numeric.Minimum = 0.0;
-    unmeasuredScore.Numeric.Maximum = 1.0;
-    unmeasured.Children.push_back(std::move(unmeasuredScore));
-
     DataFieldSchema consideration = MakeDataField(DataFieldKind::Record, "consideration", "Consideration");
     consideration.Children.push_back(Optional(DataFieldKind::String, "input", "Input",
                                               "A number the caller supplies, named in the table's inputs."));
@@ -290,9 +214,8 @@ DataSchema MakeSelectionTableSchema()
                                               "An authored query with a numeric answer."));
     consideration.Children.push_back(OpenRecord("entities", "Entity arguments"));
     consideration.Children.push_back(OpenRecord("arguments", "Constant arguments"));
-    consideration.Children.push_back(std::move(require));
-    consideration.Children.push_back(std::move(score));
-    consideration.Children.push_back(std::move(unmeasured));
+    for (DataFieldSchema& field : MakeConsiderationRuleFields("Score an unmeasured value instead of disqualifying the option."))
+        consideration.Children.push_back(std::move(field));
 
     DataFieldSchema considerations = Optional(DataFieldKind::Array, "considerations", "Considerations");
     considerations.Editor.Widget = "cards";

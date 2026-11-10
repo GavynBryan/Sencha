@@ -23,11 +23,6 @@ namespace
         return static_cast<float>(number);
     }
 
-    [[nodiscard]] float CurveOutput(const SelectionConsideration& consideration, float value)
-    {
-        return consideration.Curve ? EvaluateResponseCurve(*consideration.Curve, value) : std::clamp(value, 0.0f, 1.0f);
-    }
-
     [[nodiscard]] bool ContextFits(const SelectionTable& table, const SelectionContext& context)
     {
         return !context.Entities.empty() && context.Entities.size() >= table.Entities().size()
@@ -117,11 +112,11 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
         for (std::uint32_t index = 0; qualified && index < considerations.size(); ++index)
         {
             const SelectionConsideration& consideration = considerations[index];
-            if (consideration.Mode != SelectionConsiderationMode::Require)
+            const ConsiderationRule& rule = consideration.Rule;
+            if (rule.Mode != ConsiderationMode::Require)
                 continue;
             const std::optional<float> value = Measure(consideration, context, scratch);
-            const bool passes = value ? *value >= consideration.Min && *value <= consideration.Max
-                                      : consideration.UnmeasuredScore.has_value();
+            const bool passes = value ? rule.Admits(*value) : rule.UnmeasuredScore.has_value();
             record(index, value.value_or(0.0f), passes ? 1.0f : 0.0f,
                    value ? SelectionValueStatus::Measured : SelectionValueStatus::Unmeasured);
             if (!passes)
@@ -137,10 +132,11 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
         for (std::uint32_t index = 0; qualified && index < considerations.size(); ++index)
         {
             const SelectionConsideration& consideration = considerations[index];
-            if (consideration.Mode != SelectionConsiderationMode::Score)
+            const ConsiderationRule& rule = consideration.Rule;
+            if (rule.Mode != ConsiderationMode::Score)
                 continue;
             const std::optional<float> value = Measure(consideration, context, scratch);
-            if (!value && !consideration.UnmeasuredScore)
+            if (!value && !rule.UnmeasuredScore)
             {
                 record(index, 0.0f, 0.0f, SelectionValueStatus::Unmeasured);
                 qualified = false;
@@ -148,11 +144,11 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
                     traced->RejectedBy = index;
                 break;
             }
-            const float output = value ? CurveOutput(consideration, *value) : *consideration.UnmeasuredScore;
+            const float output = value ? rule.Output(*value) : *rule.UnmeasuredScore;
             record(index, value.value_or(0.0f), output,
                    value ? SelectionValueStatus::Measured : SelectionValueStatus::Unmeasured);
-            sum += consideration.Weight * output;
-            weights += consideration.Weight;
+            sum += rule.Weight * output;
+            weights += rule.Weight;
         }
 
         scratch.Qualified[optionIndex] = qualified ? 1 : 0;
@@ -188,18 +184,12 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
     else if (table.Mode() == SelectionMode::PickFromBand)
     {
         const float floor = scratch.Scores[*best] - table.BandWidth();
+        SeededBandPick band(context.Seed);
         std::uint32_t pick = *best;
-        std::uint64_t pickKey = SeededPickKey(context.Seed, pick);
         for (std::uint32_t index = 0; index < options.size(); ++index)
         {
-            if (scratch.Qualified[index] == 0 || scratch.Scores[index] < floor)
-                continue;
-            const std::uint64_t key = SeededPickKey(context.Seed, index);
-            if (key < pickKey)
-            {
+            if (scratch.Qualified[index] != 0 && scratch.Scores[index] >= floor && band.Offer(index))
                 pick = index;
-                pickKey = key;
-            }
         }
         finish(pick, SelectionDecision::Chosen);
     }

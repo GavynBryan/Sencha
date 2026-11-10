@@ -49,7 +49,7 @@ namespace
             errors.push_back(std::format("{}: '{}' answers with a value no curve can score", subject, desc.Query));
             ok = false;
         }
-        else if (desc.Mode == SelectionConsiderationMode::Score && !desc.Curve && result != DataFieldKind::Bool)
+        else if (desc.Rule.Mode == ConsiderationMode::Score && !desc.Rule.Curve && result != DataFieldKind::Bool)
         {
             errors.push_back(std::format("{}: scoring '{}' needs a curve", subject, desc.Query));
             ok = false;
@@ -118,12 +118,7 @@ bool BindSelectionTable(const SelectionTableDesc& desc, const AuthoredQueryRegis
             SelectionConsideration boundConsideration;
             boundConsideration.Source = consideration.Source;
             boundConsideration.Input = consideration.Input;
-            boundConsideration.Mode = consideration.Mode;
-            boundConsideration.Min = consideration.Min;
-            boundConsideration.Max = consideration.Max;
-            boundConsideration.Curve = consideration.Curve;
-            boundConsideration.Weight = consideration.Weight;
-            boundConsideration.UnmeasuredScore = consideration.UnmeasuredScore;
+            boundConsideration.Rule = consideration.Rule;
             if (consideration.Source == SelectionSource::Query)
             {
                 const std::string subject = std::format("option {} '{}' consideration {}", optionIndex, option.Name, index);

@@ -3,11 +3,9 @@
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
 #include <gameplay_tags/GameplayTagQueryNames.h>
-#include <math/ResponseCurve.h>
+#include <math/ConsiderationRule.h>
 
 #include <cstdint>
-#include <limits>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,14 +16,6 @@
 inline constexpr std::string_view kSelectionTableTypeName = "selection.table";
 inline constexpr std::uint32_t kMaxSelectionOptions = 64;
 inline constexpr std::uint32_t kMaxSelectionConsiderations = 32;
-
-enum class SelectionConsiderationMode : std::uint8_t
-{
-    // Disqualifies the option when the value lies outside [Min, Max].
-    Require,
-    // Maps the value through Curve and weights it.
-    Score,
-};
 
 enum class SelectionSource : std::uint8_t
 {
@@ -56,13 +46,7 @@ struct SelectionConsiderationDesc
     std::vector<SelectionEntityArgument> EntityArguments;
     JsonValue Constants;
 
-    SelectionConsiderationMode Mode = SelectionConsiderationMode::Score;
-    float Min = -std::numeric_limits<float>::infinity();
-    float Max = std::numeric_limits<float>::infinity();
-    std::optional<ResponseCurve> Curve;
-    float Weight = 1.0f;
-    // A value that could not be measured disqualifies the option unless this is set.
-    std::optional<float> UnmeasuredScore;
+    ConsiderationRule Rule;
 };
 
 struct SelectionOptionDesc
