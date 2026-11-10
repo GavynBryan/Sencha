@@ -14,8 +14,8 @@ namespace candidate_operation
         {
             std::uint8_t Center = 0;
             float Reach = 18.0f;
-            int Rays = 24;
-            int Rows = 3;
+            std::uint32_t Rays = 24;
+            std::uint32_t Rows = 3;
             float LowestPitch = 0.0f;
             float HighestPitch = 45.0f;
             float Eye = 1.3f;
@@ -30,16 +30,16 @@ namespace candidate_operation
             SurfaceState state;
             state.Center = ReadSlot(arguments, "center", "querier", context, subject, errors).value_or(0);
             state.Reach = FloatOr(arguments, "reach", state.Reach);
-            state.Rays = static_cast<int>(FloatOr(arguments, "rays", 24.0f));
-            state.Rows = static_cast<int>(FloatOr(arguments, "rows", 3.0f));
+            state.Rays = StepCountOr(arguments, "rays", 24, subject, errors);
+            state.Rows = StepCountOr(arguments, "rows", 3, subject, errors);
             state.LowestPitch = FloatOr(arguments, "lowest_pitch", state.LowestPitch);
             state.HighestPitch = FloatOr(arguments, "highest_pitch", state.HighestPitch);
             state.Eye = FloatOr(arguments, "eye", state.Eye);
             state.Standoff = FloatOr(arguments, "standoff", state.Standoff);
             state.MostSlope = FloatOr(arguments, "most_slope", state.MostSlope);
             state.Drop = FloatOr(arguments, "drop", state.Drop);
-            if (!(state.Reach > 0.0f) || state.Rays <= 0 || state.Rows <= 0 || !(state.Drop > 0.0f))
-                errors.push_back(std::string(subject) + ": reach, rays, rows and drop are positive");
+            if (!(state.Reach > 0.0f) || !(state.Drop > 0.0f))
+                errors.push_back(std::string(subject) + ": reach and drop are positive");
             return Prepared(state);
         }
 
@@ -55,11 +55,11 @@ namespace candidate_operation
             const std::array<EntityId, 1> ignored{ run.Querier() };
             const PhysicsQueryFilter filter{ .IncludeTriggers = false, .IgnoreEntities = ignored, .IncludeCharacters = false };
             const Vec3d origin = run.SlotPoint(surface.Center, 0).Position + Vec3d::Up() * surface.Eye;
-            for (int row = 0; row < surface.Rows; ++row)
+            for (std::uint32_t row = 0; row < surface.Rows; ++row)
             {
                 const float share = surface.Rows > 1 ? static_cast<float>(row) / static_cast<float>(surface.Rows - 1) : 0.0f;
                 const float pitch = ToRadians(surface.LowestPitch + (surface.HighestPitch - surface.LowestPitch) * share);
-                for (int ray = 0; ray < surface.Rays; ++ray)
+                for (std::uint32_t ray = 0; ray < surface.Rays; ++ray)
                 {
                     if (!run.ChargeGenerationAttempt() || !run.ChargeRaycast())
                         return;
@@ -99,8 +99,8 @@ namespace candidate_operation
                                  "navigation below to land on. The candidate stands off the wall; its navigation "
                                  "location is the landing.";
         definition.Arguments = Record({ SlotField("center", "Center", "querier"),
-                                        FloatField("reach", "Reach", 18.0, 0.0), FloatField("rays", "Rays", 24.0, 0.0),
-                                        FloatField("rows", "Rows", 3.0, 0.0),
+                                        FloatField("reach", "Reach", 18.0, 0.0), IntField("rays", "Rays", 24, 1),
+                                        IntField("rows", "Rows", 3, 1),
                                         FloatField("lowest_pitch", "Lowest pitch", 0.0, std::nullopt),
                                         FloatField("highest_pitch", "Highest pitch", 45.0, std::nullopt),
                                         FloatField("eye", "Eye", 1.3, 0.0), FloatField("standoff", "Standoff", 0.55, 0.0),

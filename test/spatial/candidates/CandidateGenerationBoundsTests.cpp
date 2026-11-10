@@ -62,6 +62,9 @@ TEST(CandidateGenerationBounds, PathologicalNumbersAreRefusedWhenTheEvaluationCo
     EXPECT_TRUE(Mentions(harness.CompileErrors(Generator("candidates.generator.ring",
                                                          R"({ "outer_radius": 1e39 })")),
                          "outer_radius is a finite number"));
+    EXPECT_FALSE(harness.CompileErrors(Generator("candidates.generator.surface", R"({ "rays": 2.7 })")).empty())
+        << "a count of rays is a whole number";
+    EXPECT_FALSE(harness.CompileErrors(Generator("candidates.generator.surface", R"({ "rows": 1e12 })")).empty());
 }
 
 TEST(CandidateGenerationBounds, FailedProjectionsSpendAttemptsAndStopGeneration)
