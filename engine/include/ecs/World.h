@@ -951,16 +951,6 @@ public:
         return Provisioning[id].DeclaredOwed;
     }
 
-    // Adds everything `id` owes that this World knows and `entity` does not
-    // already carry, default-constructed, through the ordinary typed add --
-    // which applies each provisioned component's own owed set, so one call
-    // settles the whole closure and a cycle terminates on what is already
-    // there. A component the World never registered is skipped, so a fixture
-    // with a partial vocabulary stays valid.
-    //
-    // A caller that has to undo its own add diffs the entity's components
-    // across the call rather than being handed a list: provisioning recurses,
-    // so what one call put on an entity is not only what this loop touched.
     // Fatal in every build: the alternative is writing past the end of a chunk.
     [[noreturn]] void DieOfOversizedRow(std::vector<ComponentInfo> columns) const
     {
@@ -979,6 +969,16 @@ public:
         std::abort();
     }
 
+    // Adds everything `id` owes that this World knows and `entity` does not
+    // already carry, default-constructed, through the ordinary typed add --
+    // which applies each provisioned component's own owed set, so one call
+    // settles the whole closure and a cycle terminates on what is already
+    // there. A component the World never registered is skipped, so a fixture
+    // with a partial vocabulary stays valid.
+    //
+    // A caller that has to undo its own add diffs the entity's components
+    // across the call rather than being handed a list: provisioning recurses,
+    // so what one call put on an entity is not only what this loop touched.
     void ProvideDerivedComponents(EntityId entity, ComponentId id)
     {
         if (id >= Provisioning.size())

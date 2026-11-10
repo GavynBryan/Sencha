@@ -569,7 +569,6 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
         if (stop != nullptr)
         {
             state.Tip = stop->Point;
-            // Let go in flight and not meant to stay: nothing is holding it now.
             if (stop->Kind == ProjectileStopKind::Level && (state.Kept || state.Owner.IsSet()))
             {
                 state.Stage = ContactLineStage::Anchored;
@@ -580,6 +579,7 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
             }
             else
             {
+                // Let go in flight and not meant to stay: nothing is holding it now.
                 retract();
             }
         }

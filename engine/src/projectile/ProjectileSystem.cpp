@@ -59,8 +59,6 @@ bool Finite(const Vec3d& v)
     return std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z);
 }
 
-// A zone's collision cell, or any body nothing moves or hurts. A cell is an
-// entity carrying a Collider alone, so having an entity does not tell it apart.
 bool Struck(const ProjectileMotion& motion, EntityId entity)
 {
     return std::find(motion.Hits.begin(), motion.Hits.begin() + motion.HitCount, entity)
