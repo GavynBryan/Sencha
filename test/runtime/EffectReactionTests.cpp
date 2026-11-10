@@ -392,3 +392,38 @@ TEST(EffectReactions, AStruckCharacterIsShovedAlongTheStrikeAndItsViewShakesOnce
     harness.Step(60);
     EXPECT_NEAR(harness.Position(walker).Z, after.Z, 0.02f) << "a gain of the same size moves nothing";
 }
+
+TEST(EffectReactions, AKindRegisteredAfterTheProfileBoundIsStillAnswered)
+{
+    StrikeHarness harness;
+    EffectReactionProfile late;
+    EffectReactionDeclaration answer;
+    answer.Kinds.Any = { "damage.late" };
+    answer.Attribute = "Health";
+    answer.ShakeProfile = std::string(kShakePath);
+    answer.ShakePerUnit = 0.03f;
+    answer.ShakeMax = 1.0f;
+    late.Reactions = { answer };
+    const DataAssetHandle profile = harness.DataAssets.Register(
+        "asset://reactions/late.sdata", std::string(kEffectReactionProfileType), std::make_shared<EffectReactionProfile>(late));
+    const EntityId walker = harness.Character();
+    harness.Entities().TryGet<EffectReactions>(walker)->Profile = profile;
+    harness.Step(5);
+    World& world = harness.Entities();
+    CameraShakeState& shakes = world.GetResource<CameraShakeState>();
+    const std::size_t calm = shakes.Count();
+    harness.Strike(walker, harness.Claw);
+    harness.Step();
+    EXPECT_EQ(shakes.Count(), calm) << "a claw is not the kind this profile answers";
+
+    const GameplayTagId kind = *world.GetResource<GameplayTagRegistry>().RegisterTag("damage.late");
+    EffectDefinition hurt{};
+    hurt.Modifiers = { { harness.Health, ModifierOp::Add, -18.0f } };
+    (void)hurt.Kinds.AddExact(kind);
+    const EffectId strike = world.GetResource<EffectRegistry>().Register("late", hurt);
+    const std::size_t shaking = shakes.Count();
+    harness.Strike(walker, strike);
+    harness.Step();
+    EXPECT_EQ(shakes.Count(), shaking + 1) << "the kind it names exists now, so the profile answers it";
+}
+

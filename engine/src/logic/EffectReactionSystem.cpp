@@ -124,13 +124,13 @@ const std::vector<EffectReactionRule>* EffectReactionSystem::RulesFor(const Worl
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     if (authored == nullptr || attributes == nullptr || tags == nullptr)
         return nullptr;
-    const std::uint64_t version = Use.DataAssets->GetReloadVersion(profile);
-    auto bound = std::ranges::find(Profiles, profile, &BoundProfile::Profile);
-    if (bound != Profiles.end() && bound->Version == version)
+    auto bound = std::ranges::find(Profiles, profile, [](const BoundProfile& held) { return held.Asset.Asset; });
+    if (bound != Profiles.end() && bound->Asset.Matches(*Use.DataAssets) && bound->Tags.Matches(*tags))
         return &bound->Rules;
     if (bound == Profiles.end())
-        bound = Profiles.insert(Profiles.end(), BoundProfile{ .Profile = profile, .Version = 0, .Rules = {} });
-    bound->Version = version;
+        bound = Profiles.insert(Profiles.end(), BoundProfile{});
+    bound->Asset = DataAssetStamp::Of(*Use.DataAssets, profile);
+    bound->Tags = TagVocabularyStamp::Of(*tags);
     std::vector<std::string> errors;
     if (!ResolveEffectReactionProfile(*authored, *attributes, *tags, bound->Rules, errors) && Use.Log != nullptr)
         for (const std::string& error : errors)

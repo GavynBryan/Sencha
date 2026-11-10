@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assets/data/DataAssetHandle.h>
+#include <authored/BindingDependencyStamp.h>
 #include <logic/EffectReactionProfile.h>
 
 #include <cstdint>
@@ -33,12 +34,12 @@ public:
 private:
     struct BoundProfile
     {
-        DataAssetHandle Profile;
-        std::uint64_t Version = 0;
+        DataAssetStamp Asset;
+        TagVocabularyStamp Tags;
         std::vector<EffectReactionRule> Rules;
     };
 
-    // The profile's rules in `world`, bound again when the profile reloads.
+    // The profile's rules in `world`, bound again when the profile reloads or a tag it names appears.
     const std::vector<EffectReactionRule>* RulesFor(const World& world, DataAssetHandle profile);
     void React(World& world, const FixedLogicContext& ctx);
 

@@ -164,13 +164,15 @@ namespace
         return { std::move(profile), std::move(dependencies), {} };
     }
 
-    void ResolveQuery(const GameplayTagQueryNames& names, const GameplayTagRegistry& tags, GameplayTagQuery& out,
+    // False when a name is missing: the query would then match more than it says.
+    bool ResolveQuery(const GameplayTagQueryNames& names, const GameplayTagRegistry& tags, GameplayTagQuery& out,
                       std::vector<std::string>& errors)
     {
         std::vector<std::string> missing;
         out = ResolveTagQuery(names, tags, missing);
         for (const std::string& name : missing)
             errors.push_back(std::format("no gameplay tag '{}'", name));
+        return missing.empty();
     }
 
     // Which way the case pushes, flattened onto the ground plane; zero when it names none.
@@ -224,8 +226,9 @@ bool ResolveEffectReactionProfile(const EffectReactionProfile& profile, const At
     for (const EffectReactionDeclaration& reaction : profile.Reactions)
     {
         EffectReactionRule rule;
-        ResolveQuery(reaction.Kinds, tags, rule.Kinds, errors);
-        ResolveQuery(reaction.Recipient, tags, rule.Recipient, errors);
+        const bool kinds = ResolveQuery(reaction.Kinds, tags, rule.Kinds, errors);
+        if (!ResolveQuery(reaction.Recipient, tags, rule.Recipient, errors) || !kinds)
+            continue;
         rule.Attribute = attributes.FindAttribute(reaction.Attribute);
         if (!rule.Attribute.IsValid())
             errors.push_back(std::format("no attribute '{}'", reaction.Attribute));
