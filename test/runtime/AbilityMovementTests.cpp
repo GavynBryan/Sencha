@@ -352,6 +352,20 @@ TEST_F(AbilityMovement, ATetherPullsTowardItsAnchorAndEndsWhenTheAnchorGoes)
         << "its anchor is gone, so it is";
 }
 
+TEST_F(AbilityMovement, ATetherRefusedForItsArrivalLeavesTheSlotAsItWas)
+{
+    const EntityId anchor = Entities.CreateEntity();
+    Steps(10);
+    const LeaseOwner holder{ .Entity = Character, .Key = 1 };
+    EXPECT_EQ(Lease(&MovementOperations::Tether, holder,
+                    { AuthoredValue::Entity(Character), AuthoredValue::Entity(anchor), AuthoredValue{},
+                      AuthoredValue::Float(2.0), AuthoredValue::Float(12.0),
+                      AuthoredValue::Vector({ .Components = { 1.0, 0.0, 0.0, 0.0 }, .Length = 3 }) }),
+              VerbAdmission::InvalidArguments)
+        << "an anchor with no place cannot say where the reel arrives";
+    EXPECT_FALSE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
+}
+
 TEST_F(AbilityMovement, APhaseWaitsForItsTimedBurstToComplete)
 {
     Grant(kLungeThenRecover);

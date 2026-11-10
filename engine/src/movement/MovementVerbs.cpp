@@ -239,24 +239,27 @@ VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation)
     const bool followed = invocation.Arguments->TryGetEntity(1, anchor);
     if (followed ? !Entities->IsAlive(anchor) : !invocation.Arguments->TryGetVector(2, point))
         return VerbAdmission::InvalidArguments;
-    TetherSession* tether = Entities->IsRegistered<TetherSession>() ? Entities->TryGet<TetherSession>(target) : nullptr;
-    if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner && !tether->Yields))
-        return VerbAdmission::Refused;
-    *tether = TetherSession{ .Owner = invocation.Owner,
-                             .Anchor = followed ? anchor : EntityId{},
-                             .Point = followed ? Vec3d::Zero() : VectorOf(point),
-                             .Length = static_cast<float>(length),
-                             .Speed = static_cast<float>(speed) };
+    const Vec3d fixedPoint = followed ? Vec3d::Zero() : VectorOf(point);
+    float reach = static_cast<float>(length);
     AuthoredVectorValue until;
-    if (invocation.Arguments->TryGetVector(5, until) && until.Length == 3)
+    const bool arrives = invocation.Arguments->TryGetVector(5, until) && until.Length == 3;
+    if (arrives)
     {
         const LocalTransform* followedPose =
             followed ? static_cast<const World&>(*Entities).TryGet<LocalTransform>(anchor) : nullptr;
         if (followed && followedPose == nullptr)
             return VerbAdmission::InvalidArguments;
-        tether->Length = (VectorOf(until) - (followed ? followedPose->Value.Position : tether->Point)).Magnitude();
-        tether->Arrives = true;
+        reach = (VectorOf(until) - (followed ? followedPose->Value.Position : fixedPoint)).Magnitude();
     }
+    TetherSession* tether = Entities->IsRegistered<TetherSession>() ? Entities->TryGet<TetherSession>(target) : nullptr;
+    if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner && !tether->Yields))
+        return VerbAdmission::Refused;
+    *tether = TetherSession{ .Owner = invocation.Owner,
+                             .Anchor = followed ? anchor : EntityId{},
+                             .Point = fixedPoint,
+                             .Length = reach,
+                             .Speed = static_cast<float>(speed),
+                             .Arrives = arrives };
     return VerbAdmission::Accepted;
 }
 
