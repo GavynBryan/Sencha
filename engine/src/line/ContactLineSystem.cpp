@@ -62,20 +62,11 @@ void BeginRetract(ContactLineState& state)
     state.Remaining = kMostRetractSeconds;
 }
 
-template <typename T>
-DataFieldSchema QueryField(std::string key, std::string label, std::string summary = {})
-{
-    DataFieldSchema field =
-        MakeDataField(DataFieldKind::String, std::move(key), std::move(label), std::move(summary));
-    AuthoredValueTraits<T>::Describe(field);
-    return field;
-}
-
 AuthoredQueryStatus EvaluateAnchored(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
                                      AuthoredValue& result)
 {
     EntityId instigator;
-    if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), instigator))
+    if (!ReadAuthoredArgument(arguments, 0, instigator))
         return AuthoredQueryStatus::InvalidArguments;
     result = AuthoredValue::Bool(system.AnchorOf(instigator).has_value());
     return AuthoredQueryStatus::Value;
@@ -87,9 +78,9 @@ AuthoredQueryStatus EvaluateAnchoredWithin(const ContactLineSystem& system, std:
     EntityId instigator;
     Vec3d point;
     float distance = 0.0f;
-    if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), instigator)
-        || !AuthoredValueTraits<Vec3d>::Decode(AuthoredArgumentAt(arguments, 1), point)
-        || !AuthoredValueTraits<float>::Decode(AuthoredArgumentAt(arguments, 2), distance))
+    if (!ReadAuthoredArgument(arguments, 0, instigator)
+        || !ReadAuthoredArgument(arguments, 1, point)
+        || !ReadAuthoredArgument(arguments, 2, distance))
         return AuthoredQueryStatus::InvalidArguments;
     const std::optional<Vec3d> anchor = system.AnchorOf(instigator);
     result = AuthoredValue::Bool(anchor.has_value() && (*anchor - point).Magnitude() <= distance);
@@ -100,12 +91,12 @@ AuthoredQueryStatus EvaluateAnchor(const ContactLineSystem& system, std::span<co
                                    AuthoredValue& result)
 {
     EntityId instigator;
-    if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), instigator))
+    if (!ReadAuthoredArgument(arguments, 0, instigator))
         return AuthoredQueryStatus::InvalidArguments;
     const std::optional<Vec3d> anchor = system.AnchorOf(instigator);
     if (!anchor)
         return AuthoredQueryStatus::Unavailable;
-    result = AuthoredValue::Vector({ { anchor->X, anchor->Y, anchor->Z }, 3 });
+    result = AuthoredValueTraits<Vec3d>::Encode(*anchor);
     return AuthoredQueryStatus::Value;
 }
 
@@ -113,7 +104,7 @@ AuthoredQueryStatus EvaluateStuck(const ContactLineSystem& system, std::span<con
                                   AuthoredValue& result)
 {
     EntityId instigator;
-    if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), instigator))
+    if (!ReadAuthoredArgument(arguments, 0, instigator))
         return AuthoredQueryStatus::InvalidArguments;
     result = AuthoredValue::Bool(system.StuckPoint(instigator, 0.0f).has_value());
     return AuthoredQueryStatus::Value;
@@ -124,13 +115,13 @@ AuthoredQueryStatus EvaluateStuckPoint(const ContactLineSystem& system, std::spa
 {
     EntityId instigator;
     float shortOf = 0.0f;
-    if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), instigator)
-        || !AuthoredValueTraits<float>::Decode(AuthoredArgumentAt(arguments, 1), shortOf))
+    if (!ReadAuthoredArgument(arguments, 0, instigator)
+        || !ReadAuthoredArgument(arguments, 1, shortOf))
         return AuthoredQueryStatus::InvalidArguments;
     const std::optional<Vec3d> point = system.StuckPoint(instigator, shortOf);
     if (!point)
         return AuthoredQueryStatus::Unavailable;
-    result = AuthoredValue::Vector({ { point->X, point->Y, point->Z }, 3 });
+    result = AuthoredValueTraits<Vec3d>::Encode(*point);
     return AuthoredQueryStatus::Value;
 }
 } // namespace
@@ -189,8 +180,8 @@ void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryReg
     anchored.DisplayName = "Line anchored";
     anchored.Description = "Whether the instigator is holding a line anchored.";
     anchored.Category = "Lines";
-    anchored.Arguments.Children = { QueryField<EntityId>("instigator", "Instigator") };
-    anchored.Result = QueryField<bool>("anchored", "Anchored");
+    anchored.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
+    anchored.Result = AuthoredField<bool>("anchored", "Anchored");
     (void)queries.Declare(std::move(anchored));
 
     AuthoredQueryDefinition within;
@@ -198,9 +189,9 @@ void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryReg
     within.DisplayName = "Line anchored within";
     within.Description = "Whether the instigator is holding a line anchored within a distance of a point.";
     within.Category = "Lines";
-    within.Arguments.Children = { QueryField<EntityId>("instigator", "Instigator"), QueryField<Vec3d>("point", "Point"),
-                                  QueryField<float>("distance", "Distance", "In metres.") };
-    within.Result = QueryField<bool>("anchored", "Anchored");
+    within.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator"), AuthoredField<Vec3d>("point", "Point"),
+                                  AuthoredField<float>("distance", "Distance", "In metres.") };
+    within.Result = AuthoredField<bool>("anchored", "Anchored");
     (void)queries.Declare(std::move(within));
 
     AuthoredQueryDefinition anchor;
@@ -208,8 +199,8 @@ void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryReg
     anchor.DisplayName = "Line anchor";
     anchor.Description = "Where the line the instigator is holding is anchored; unavailable when none is.";
     anchor.Category = "Lines";
-    anchor.Arguments.Children = { QueryField<EntityId>("instigator", "Instigator") };
-    anchor.Result = QueryField<Vec3d>("anchor", "Anchor");
+    anchor.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
+    anchor.Result = AuthoredField<Vec3d>("anchor", "Anchor");
     (void)queries.Declare(std::move(anchor));
 
     AuthoredQueryDefinition stuck;
@@ -217,8 +208,8 @@ void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryReg
     stuck.DisplayName = "Line stuck";
     stuck.Description = "Whether the instigator has let go of a line and left it stuck where it landed.";
     stuck.Category = "Lines";
-    stuck.Arguments.Children = { QueryField<EntityId>("instigator", "Instigator") };
-    stuck.Result = QueryField<bool>("stuck", "Stuck");
+    stuck.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
+    stuck.Result = AuthoredField<bool>("stuck", "Stuck");
     (void)queries.Declare(std::move(stuck));
 
     AuthoredQueryDefinition stuckPoint;
@@ -227,9 +218,9 @@ void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryReg
     stuckPoint.Description = "A point on the newest line the instigator has left stuck, some metres short of where "
                              "it landed; unavailable when none is.";
     stuckPoint.Category = "Lines";
-    stuckPoint.Arguments.Children = { QueryField<EntityId>("instigator", "Instigator"),
-                                      QueryField<float>("short_of", "Short of", "In metres, back along the line.") };
-    stuckPoint.Result = QueryField<Vec3d>("point", "Point");
+    stuckPoint.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator"),
+                                      AuthoredField<float>("short_of", "Short of", "In metres, back along the line.") };
+    stuckPoint.Result = AuthoredField<Vec3d>("point", "Point");
     (void)queries.Declare(std::move(stuckPoint));
 }
 
@@ -306,8 +297,8 @@ VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
     const Aim aim = AimOf(world, instigator);
     ProjectileLaunch launch{ .Prefab = shotId, .Instigator = instigator, .Origin = aim.Origin,
                              .Direction = aim.Direction, .Tick = invocation.Tick, .SplashScale = 0.0f };
-    AuthoredVectorValue at;
-    const bool aimedAt = arguments->TryGetVector(3, at) && at.Length == 3;
+    Vec3d at;
+    const bool aimedAt = ReadAuthoredArgument(*arguments, 3, at);
     bool keep = false;
     (void)arguments->TryGetBool(4, keep);
 
@@ -364,8 +355,7 @@ VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
     state.Tip = origin;
     launch.Origin = origin;
     if (aimedAt)
-        launch.Direction = Vec3d(static_cast<float>(at.Components[0]), static_cast<float>(at.Components[1]),
-                                 static_cast<float>(at.Components[2])) - origin;
+        launch.Direction = at - origin;
     else if (state.Side != 0.0f)
         launch.Direction = aim.Origin + aim.Direction * kHandsConverge - origin;
     launch.MaxDistance = authored->MaxLength;

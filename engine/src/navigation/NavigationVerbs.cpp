@@ -1,5 +1,7 @@
 #include <navigation/NavigationVerbs.h>
 
+#include <core/metadata/DataSchemaFields.h>
+#include <authored/AuthoredValueTraits.h>
 #include <authored/AuthoredValue.h>
 #include <ecs/World.h>
 #include <navigation/NavAgentRequests.h>
@@ -15,15 +17,6 @@ namespace
         DataFieldSchema agent = MakeDataField(DataFieldKind::Entity, "target", "Agent", "The agent given the order.");
         agent.Reference.ComponentIdentity = std::string(ComponentDefinition<NavAgent>::Identity);
         return agent;
-    }
-
-    DataFieldSchema OptionalNumberField(std::string key, std::string label, std::string summary, double fallback)
-    {
-        DataFieldSchema field = MakeDataField(DataFieldKind::Float, std::move(key), std::move(label), std::move(summary));
-        field.Required = false;
-        field.Default = fallback;
-        field.Numeric.Minimum = 0.0;
-        return field;
     }
 
     VerbDefinition OrderVerbDefinition(std::string_view name, std::string display, std::string description)
@@ -88,8 +81,7 @@ namespace
             if (crossing.Agent == agent && (!NeedsAnchor || crossing.Anchored))
             {
                 const Vec3d& point = crossing.*Point;
-                result = AuthoredValue::Vector(
-                    AuthoredVectorValue{ .Components = { point.X, point.Y, point.Z, 0.0 }, .Length = 3 });
+                result = AuthoredValueTraits<Vec3d>::Encode(point);
                 return AuthoredQueryStatus::Value;
             }
         return AuthoredQueryStatus::Unavailable;
@@ -134,8 +126,8 @@ void DeclareNavigationVerbs(VerbRegistrationScope& scope)
     point.VectorLength = 3;
     moveTo.Arguments.Children.push_back(std::move(point));
     moveTo.Arguments.Children.push_back(
-        OptionalNumberField("arrive_radius", "Arrive radius", "Metres from the point that count as there; zero is the default.", 0.0));
-    moveTo.Arguments.Children.push_back(OptionalNumberField("speed", "Speed", "The fraction of its top speed it walks at.", 1.0));
+        DataField::OptionalNumber("arrive_radius", "Arrive radius", "Metres from the point that count as there; zero is the default.", 0.0, 0.0));
+    moveTo.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "The fraction of its top speed it walks at.", 1.0, 0.0));
     (void)scope.Declare(std::move(moveTo));
 
     VerbDefinition approach =
@@ -148,8 +140,8 @@ void DeclareNavigationVerbs(VerbRegistrationScope& scope)
     follow.Default = false;
     approach.Arguments.Children.push_back(std::move(follow));
     approach.Arguments.Children.push_back(
-        OptionalNumberField("arrive_radius", "Arrive radius", "Metres from it that count as there; zero is the default.", 0.0));
-    approach.Arguments.Children.push_back(OptionalNumberField("speed", "Speed", "The fraction of its top speed it walks at.", 1.0));
+        DataField::OptionalNumber("arrive_radius", "Arrive radius", "Metres from it that count as there; zero is the default.", 0.0, 0.0));
+    approach.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "The fraction of its top speed it walks at.", 1.0, 0.0));
     (void)scope.Declare(std::move(approach));
 
     (void)scope.Declare(OrderVerbDefinition(kNavigationStopVerb, "Stop", "Ends the agent's order; it stands where it is."));
@@ -183,13 +175,10 @@ void DeclareNavigationQueries(AuthoredQueryRegistrationScope& scope)
 VerbAdmission NavigationOperations::MoveTo(const VerbInvocation& invocation)
 {
     EntityId agent;
-    AuthoredVectorValue point;
     NavDestination destination;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, agent)
-        || !invocation.Arguments->TryGetVector(1, point))
+        || !ReadAuthoredArgument(*invocation.Arguments, 1, destination.Point))
         return VerbAdmission::InvalidArguments;
-    destination.Point = Vec3d(static_cast<float>(point.Components[0]), static_cast<float>(point.Components[1]),
-                              static_cast<float>(point.Components[2]));
     destination.ArriveRadius = OptionalFloatArgument(invocation, 2, 0.0);
     destination.SpeedScale = OptionalFloatArgument(invocation, 3, 1.0);
     return AdmissionFor(RequestNavigation(*Entities, agent, destination));

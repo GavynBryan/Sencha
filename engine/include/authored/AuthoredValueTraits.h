@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -363,3 +364,26 @@ struct AuthoredSchemaDefault<std::optional<T>>
         return value ? AuthoredSchemaDefault<T>::ToDefault(*value) : DataDefaultValue{};
     }
 };
+
+// The schema of a member that holds a T.
+template<IsAuthoredValueType T>
+[[nodiscard]] DataFieldSchema AuthoredField(std::string key, std::string label, std::string summary = {})
+{
+    DataFieldSchema field = MakeDataField(DataFieldKind::String, std::move(key), std::move(label), std::move(summary));
+    AuthoredValueTraits<T>::Describe(field);
+    return field;
+}
+
+// Decodes slot `slot`; a slot past the end reads as absent.
+template<IsAuthoredValueType T>
+[[nodiscard]] bool ReadAuthoredArgument(std::span<const AuthoredValue> arguments, std::size_t slot, T& out)
+{
+    static const AuthoredValue absent;
+    return AuthoredValueTraits<T>::Decode(slot < arguments.size() ? arguments[slot] : absent, out);
+}
+
+template<IsAuthoredValueType T>
+[[nodiscard]] bool ReadAuthoredArgument(const AuthoredArguments& arguments, std::size_t slot, T& out)
+{
+    return ReadAuthoredArgument(arguments.Values(), slot, out);
+}

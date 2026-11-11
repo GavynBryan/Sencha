@@ -1,5 +1,6 @@
 #include "AbilityPass.h"
 
+#include <authored/AuthoredValueTraits.h>
 #include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityLeases.h>
 #include <abilities/AbilityPredictionJournal.h>
@@ -391,11 +392,9 @@ void AbilityPass::End(const AbilityActor& actor, std::size_t slot, AbilityEndRea
 AbilityPass::CuePlace AbilityPass::PlaceOf(const AuthoredValue& at)
 {
     const auto vector = [](const AuthoredValue& value) {
-        AuthoredVectorValue read;
-        return value.TryGetVector(read) ? Vec3d(static_cast<float>(read.Components[0]),
-                                                static_cast<float>(read.Components[1]),
-                                                static_cast<float>(read.Components[2]))
-                                        : Vec3d::Zero();
+        Vec3d read = Vec3d::Zero();
+        (void)AuthoredValueTraits<Vec3d>::Decode(value, read);
+        return read;
     };
     CuePlace place;
     // A hit is {hit, entity, point, normal}; an entity or a point stands alone.
@@ -577,14 +576,7 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
     if (!answered)
         return;
 
-    const auto vector = [](const AuthoredValue& from, Vec3d& to) {
-        AuthoredVectorValue read;
-        if (!from.TryGetVector(read))
-            return false;
-        to = Vec3d(static_cast<float>(read.Components[0]), static_cast<float>(read.Components[1]),
-                   static_cast<float>(read.Components[2]));
-        return true;
-    };
+    const auto vector = [](const AuthoredValue& from, Vec3d& to) { return AuthoredValueTraits<Vec3d>::Decode(from, to); };
     bool truth = false;
     std::int64_t whole = 0;
     switch (type)

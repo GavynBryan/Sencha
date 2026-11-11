@@ -1,5 +1,6 @@
 #include <effects/EffectVerbs.h>
 
+#include <authored/AuthoredValueTraits.h>
 #include <attributes/AttributeSet.h>
 #include <authored/AuthoredValue.h>
 #include <ecs/World.h>
@@ -55,13 +56,7 @@ namespace
             return VerbAdmission::InvalidArguments;
         out.Scale = static_cast<float>(scale);
         (void)invocation.Arguments->TryGetEntity(3, out.Source.Instigator);
-        AuthoredVectorValue from;
-        if (invocation.Arguments->TryGetVector(4, from) && from.Length == 3)
-        {
-            out.Source.Point = Vec3d(static_cast<float>(from.Components[0]), static_cast<float>(from.Components[1]),
-                                     static_cast<float>(from.Components[2]));
-            out.Source.HasPoint = true;
-        }
+        out.Source.HasPoint = ReadAuthoredArgument(*invocation.Arguments, 4, out.Source.Point);
 
         const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
         out.Effect = effects != nullptr ? effects->Find(effect->Path) : EffectId{};

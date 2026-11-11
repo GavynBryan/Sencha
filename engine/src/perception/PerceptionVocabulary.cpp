@@ -1,5 +1,6 @@
 #include <perception/PerceptionVocabulary.h>
 
+#include <authored/AuthoredValueTraits.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -247,13 +248,7 @@ namespace
         stimulus.Radius = static_cast<float>(radius);
         (void)invocation.Arguments->TryGetEntity(0, stimulus.Source);
         (void)invocation.Arguments->TryGetEntity(3, stimulus.Only);
-        AuthoredVectorValue position;
-        if (invocation.Arguments->TryGetVector(1, position))
-        {
-            stimulus.Position = Vec3d(static_cast<float>(position.Components[0]), static_cast<float>(position.Components[1]),
-                                      static_cast<float>(position.Components[2]));
-        }
-        else
+        if (!ReadAuthoredArgument(*invocation.Arguments, 1, stimulus.Position))
         {
             const WorldTransform* at =
                 stimulus.Source.IsValid() ? world.TryGet<WorldTransform>(stimulus.Source) : nullptr;

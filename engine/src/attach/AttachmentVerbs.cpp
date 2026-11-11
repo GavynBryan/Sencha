@@ -1,5 +1,6 @@
 #include <attach/AttachmentVerbs.h>
 
+#include <authored/AuthoredValueTraits.h>
 #include <attach/AttachedLight.h>
 #include <attach/Attachment.h>
 #include <authored/AuthoredValue.h>
@@ -41,11 +42,9 @@ namespace
 
     Vec3d VectorArgument(const AuthoredArguments& arguments, std::size_t slot)
     {
-        AuthoredVectorValue value;
-        if (!arguments.TryGetVector(slot, value))
-            return Vec3d::Zero();
-        return Vec3d(static_cast<float>(value.Components[0]), static_cast<float>(value.Components[1]),
-                     static_cast<float>(value.Components[2]));
+        Vec3d value = Vec3d::Zero();
+        (void)ReadAuthoredArgument(arguments, slot, value);
+        return value;
     }
 }
 

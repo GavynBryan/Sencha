@@ -1,5 +1,6 @@
 #include "AbilityPass.h"
 
+#include <authored/AuthoredValueTraits.h>
 #include <attributes/AttributeSet.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <controller/Aim.h>
@@ -38,12 +39,7 @@ namespace
 
     AuthoredValue VectorOf(const Vec3d& vector)
     {
-        AuthoredVectorValue value;
-        value.Length = 3;
-        value.Components[0] = vector.X;
-        value.Components[1] = vector.Y;
-        value.Components[2] = vector.Z;
-        return AuthoredValue::Vector(value);
+        return AuthoredValueTraits<Vec3d>::Encode(vector);
     }
 }
 

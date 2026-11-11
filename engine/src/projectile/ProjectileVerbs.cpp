@@ -1,5 +1,7 @@
 #include <projectile/ProjectileVerbs.h>
 
+#include <core/metadata/DataSchemaFields.h>
+#include <authored/AuthoredValueTraits.h>
 #include <authored/AuthoredValue.h>
 #include <controller/Aim.h>
 #include <core/assets/AssetRef.h>
@@ -13,28 +15,6 @@
 
 namespace
 {
-DataFieldSchema Number(std::string key, std::string label, std::string summary, double fallback, double minimum)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Float, std::move(key), std::move(label), std::move(summary));
-    field.Required = false;
-    field.Default = fallback;
-    field.Numeric.Minimum = minimum;
-    return field;
-}
-
-DataFieldSchema Vector(std::string key, std::string label, std::string summary)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Vector, std::move(key), std::move(label), std::move(summary));
-    field.VectorLength = 3;
-    field.Required = false;
-    return field;
-}
-
-Vec3d VectorOf(const AuthoredVectorValue& value)
-{
-    return Vec3d(static_cast<float>(value.Components[0]), static_cast<float>(value.Components[1]),
-                 static_cast<float>(value.Components[2]));
-}
 } // namespace
 
 void DeclareProjectileVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegistrationScope& events)
@@ -53,20 +33,20 @@ void DeclareProjectileVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegi
                                                "names it holds it resident.");
     projectile.Reference.AssetTypeFilter = AssetType::Scene;
     launch.Arguments.Children.push_back(std::move(projectile));
-    launch.Arguments.Children.push_back(Vector("origin", "Origin", "Where it starts. The instigator's aim when absent."));
-    DataFieldSchema direction = Vector("direction", "Direction", "Which way it goes. The instigator's aim when absent.");
+    launch.Arguments.Children.push_back(DataField::Vector("origin", "Origin", "Where it starts. The instigator's aim when absent.", 3, false));
+    DataFieldSchema direction = DataField::Vector("direction", "Direction", "Which way it goes. The instigator's aim when absent.", 3, false);
     direction.Editor.Widget = "direction";
     launch.Arguments.Children.push_back(std::move(direction));
     launch.Arguments.Children.push_back(
-        Number("spread", "Spread", "Degrees either side of the direction it may scatter by.", 0.0, 0.0));
+        DataField::OptionalNumber("spread", "Spread", "Degrees either side of the direction it may scatter by.", 0.0, 0.0));
     launch.Arguments.Children.push_back(
-        Number("speed_scale", "Speed scale", "Multiplies the projectile's own speed.", 1.0, 0.0));
-    launch.Arguments.Children.push_back(Number(
+        DataField::OptionalNumber("speed_scale", "Speed scale", "Multiplies the projectile's own speed.", 1.0, 0.0));
+    launch.Arguments.Children.push_back(DataField::OptionalNumber(
         "magnitude", "Magnitude", "What the launcher measured -- a charge, a distance -- scaling the projectile's "
                                   "scaled effect. Zero applies none.",
         0.0, 0.0));
     launch.Arguments.Children.push_back(
-        Number("splash_scale", "Splash scale", "Multiplies the projectile's splash radius; zero has none.", 1.0, 0.0));
+        DataField::OptionalNumber("splash_scale", "Splash scale", "Multiplies the projectile's splash radius; zero has none.", 1.0, 0.0));
     (void)verbs.Declare(std::move(launch));
 
     AuthoredEventDefinition hit;
@@ -117,10 +97,10 @@ VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocat
         return VerbAdmission::UnresolvedReference;
 
     const World& world = system.GetWorld();
-    AuthoredVectorValue origin;
-    AuthoredVectorValue direction;
-    const bool hasOrigin = arguments->TryGetVector(2, origin) && origin.Length == 3;
-    const bool hasDirection = arguments->TryGetVector(3, direction) && direction.Length == 3;
+    Vec3d origin;
+    Vec3d direction;
+    const bool hasOrigin = ReadAuthoredArgument(*arguments, 2, origin);
+    const bool hasDirection = ReadAuthoredArgument(*arguments, 3, direction);
     if ((!hasOrigin || !hasDirection) && world.IsAlive(instigator))
     {
         const Aim aim = AimOf(world, instigator);
@@ -128,9 +108,9 @@ VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocat
         launch.Direction = aim.Direction;
     }
     if (hasOrigin)
-        launch.Origin = VectorOf(origin);
+        launch.Origin = origin;
     if (hasDirection)
-        launch.Direction = VectorOf(direction);
+        launch.Direction = direction;
 
     // The scatter is the launch's own: who, when, and which of that instigator's
     // launches this tick it was.

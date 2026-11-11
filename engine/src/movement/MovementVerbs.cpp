@@ -1,4 +1,6 @@
 #include <movement/MovementVerbs.h>
+#include <core/metadata/DataSchemaFields.h>
+#include <authored/AuthoredValueTraits.h>
 #include <world/transform/TransformComponents.h>
 
 #include <authored/AuthoredValue.h>
@@ -33,21 +35,6 @@ VerbDefinition Lease(std::string_view name, std::string displayName, std::string
     return lease;
 }
 
-DataFieldSchema Number(std::string key, std::string label, std::string summary, double fallback, double minimum)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Float, std::move(key), std::move(label), std::move(summary));
-    field.Required = false;
-    field.Default = fallback;
-    field.Numeric.Minimum = minimum;
-    return field;
-}
-
-Vec3d VectorOf(const AuthoredVectorValue& value)
-{
-    return Vec3d(static_cast<float>(value.Components[0]), static_cast<float>(value.Components[1]),
-                 static_cast<float>(value.Components[2]));
-}
-
 // Every slot of `T` the owner holds, on whichever character it is.
 template <typename T, typename F>
 void ForEachHeld(World& world, F&& release)
@@ -72,8 +59,8 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     direction.VectorLength = 3;
     direction.Editor.Widget = "direction";
     burst.Arguments.Children.push_back(std::move(direction));
-    burst.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second of the character's time.", 10.0, 0.0));
-    burst.Arguments.Children.push_back(Number("seconds", "Seconds", "How long; zero holds it until let go.", 0.0, 0.0));
+    burst.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second of the character's time.", 10.0, 0.0));
+    burst.Arguments.Children.push_back(DataField::OptionalNumber("seconds", "Seconds", "How long; zero holds it until let go.", 0.0, 0.0));
     DataFieldSchema rises = MakeDataField(DataFieldKind::Bool, "rises", "Rises", "Its upward part lifts the character too.");
     rises.Required = false;
     rises.Default = false;
@@ -90,8 +77,8 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     point.VectorLength = 3;
     point.Required = false;
     tether.Arguments.Children.push_back(std::move(point));
-    tether.Arguments.Children.push_back(Number("length", "Length", "Metres of rope.", 2.0, 0.0));
-    tether.Arguments.Children.push_back(Number("speed", "Speed", "How fast it pulls, in metres per second.", 12.0, 0.0));
+    tether.Arguments.Children.push_back(DataField::OptionalNumber("length", "Length", "Metres of rope.", 2.0, 0.0));
+    tether.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "How fast it pulls, in metres per second.", 12.0, 0.0));
     DataFieldSchema until = MakeDataField(DataFieldKind::Vector, "until", "Until",
                                           "A point along the rope: the length becomes its distance from the anchor, "
                                           "and reaching it stops the character and completes the tether.");
@@ -120,8 +107,8 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     heading.VectorLength = 3;
     heading.Editor.Widget = "direction";
     launch.Arguments.Children.push_back(std::move(heading));
-    launch.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second along the direction.", 10.0, 0.0));
-    DataFieldSchema rise = Number("rise", "Rise", "Metres per second added straight up, along the character's up axis.",
+    launch.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second along the direction.", 10.0, 0.0));
+    DataFieldSchema rise = DataField::OptionalNumber("rise", "Rise", "Metres per second added straight up, along the character's up axis.",
                                   0.0, 0.0);
     launch.Arguments.Children.push_back(std::move(rise));
     (void)scope.Declare(std::move(launch));
@@ -138,9 +125,9 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     way.VectorLength = 3;
     way.Editor.Widget = "direction";
     impulse.Arguments.Children.push_back(std::move(way));
-    impulse.Arguments.Children.push_back(Number("speed", "Speed", "Metres per second along the direction.", 1.0, 0.0));
+    impulse.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second along the direction.", 1.0, 0.0));
     impulse.Arguments.Children.push_back(
-        Number("rise", "Rise", "Metres per second added straight up, along the character's up axis.", 0.0, 0.0));
+        DataField::OptionalNumber("rise", "Rise", "Metres per second added straight up, along the character's up axis.", 0.0, 0.0));
     (void)scope.Declare(std::move(impulse));
 }
 
@@ -191,12 +178,12 @@ VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
         return VerbAdmission::Accepted;
     }
     EntityId target;
-    AuthoredVectorValue direction;
+    Vec3d way;
     double speed = 0.0;
     double seconds = 0.0;
     bool rises = false;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !invocation.Arguments->TryGetVector(1, direction) || !invocation.Arguments->TryGetFloat(2, speed)
+        || !ReadAuthoredArgument(*invocation.Arguments, 1, way) || !invocation.Arguments->TryGetFloat(2, speed)
         || !invocation.Arguments->TryGetFloat(3, seconds) || !invocation.Arguments->TryGetBool(4, rises)
         || !Entities->IsAlive(target))
         return VerbAdmission::InvalidArguments;
@@ -206,7 +193,6 @@ VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
     const auto free = std::ranges::find_if(bursts->Slots, [](const MotionBurst& burst) { return !burst.Owner.IsSet(); });
     if (free == std::end(bursts->Slots))
         return VerbAdmission::Refused;
-    const Vec3d way = VectorOf(direction);
     *free = MotionBurst{ .Owner = invocation.Owner,
                          .Velocity = way.SqrMagnitude() > 0.0f ? way.Normalized() * static_cast<float>(speed) : Vec3d::Zero(),
                          .RemainingSeconds = static_cast<float>(seconds),
@@ -235,21 +221,20 @@ VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation)
         || !Entities->IsAlive(target))
         return VerbAdmission::InvalidArguments;
     EntityId anchor;
-    AuthoredVectorValue point;
+    Vec3d fixedPoint = Vec3d::Zero();
     const bool followed = invocation.Arguments->TryGetEntity(1, anchor);
-    if (followed ? !Entities->IsAlive(anchor) : !invocation.Arguments->TryGetVector(2, point))
+    if (followed ? !Entities->IsAlive(anchor) : !ReadAuthoredArgument(*invocation.Arguments, 2, fixedPoint))
         return VerbAdmission::InvalidArguments;
-    const Vec3d fixedPoint = followed ? Vec3d::Zero() : VectorOf(point);
     float reach = static_cast<float>(length);
-    AuthoredVectorValue until;
-    const bool arrives = invocation.Arguments->TryGetVector(5, until) && until.Length == 3;
+    Vec3d until;
+    const bool arrives = ReadAuthoredArgument(*invocation.Arguments, 5, until);
     if (arrives)
     {
         const LocalTransform* followedPose =
             followed ? static_cast<const World&>(*Entities).TryGet<LocalTransform>(anchor) : nullptr;
         if (followed && followedPose == nullptr)
             return VerbAdmission::InvalidArguments;
-        reach = (VectorOf(until) - (followed ? followedPose->Value.Position : fixedPoint)).Magnitude();
+        reach = (until - (followed ? followedPose->Value.Position : fixedPoint)).Magnitude();
     }
     TetherSession* tether = Entities->IsRegistered<TetherSession>() ? Entities->TryGet<TetherSession>(target) : nullptr;
     if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner && !tether->Yields))
@@ -302,15 +287,14 @@ VerbAdmission ReadVelocity(World& world, const VerbInvocation& invocation, Entit
 {
     if (!IsSimulationAuthority(world))
         return VerbAdmission::Refused;
-    AuthoredVectorValue direction;
+    Vec3d heading;
     double speed = 0.0;
     double rise = 0.0;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !invocation.Arguments->TryGetVector(1, direction) || direction.Length != 3
+        || !ReadAuthoredArgument(*invocation.Arguments, 1, heading)
         || !invocation.Arguments->TryGetFloat(2, speed) || !invocation.Arguments->TryGetFloat(3, rise)
         || !std::isfinite(speed) || !std::isfinite(rise))
         return VerbAdmission::InvalidArguments;
-    const Vec3d heading = VectorOf(direction);
     const float length = heading.Magnitude();
     if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0))
         return VerbAdmission::InvalidArguments;
