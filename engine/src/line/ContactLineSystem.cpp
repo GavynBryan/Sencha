@@ -4,16 +4,15 @@
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <attributes/AttributeSet.h>
+#include <authored/AuthoredNameResolver.h>
 #include <authored/AuthoredApiDefinition.h>
 #include <authored/AuthoredSchema.h>
 #include <authored/AuthoredValueTraits.h>
 #include <controller/Aim.h>
 #include <core/assets/AssetRef.h>
 #include <ecs/World.h>
-#include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/ResponsesSystem.h>
 #include <movement/components/HeldMotion.h>
 #include <math/geometry/3d/FacingRotation.h>
@@ -299,9 +298,8 @@ VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
         return VerbAdmission::InvalidArguments;
     if (!IsSimulationAuthority(world) || Host.Prefabs == nullptr || Host.Projectiles == nullptr)
         return VerbAdmission::Refused;
-    const AssetId lineId = linePrefab->Id.IsValid() ? linePrefab->Id : Host.Projectiles->PrefabOf(linePrefab->Path);
-    const AssetId shotId =
-        projectilePrefab->Id.IsValid() ? projectilePrefab->Id : Host.Projectiles->PrefabOf(projectilePrefab->Path);
+    const AssetId lineId = Host.Projectiles->PrefabOf(*linePrefab);
+    const AssetId shotId = Host.Projectiles->PrefabOf(*projectilePrefab);
     if (!lineId.IsValid() || !shotId.IsValid() || Host.Prefabs->Prepare(lineId) != NetPrefabReadiness::Ready)
         return VerbAdmission::UnresolvedReference;
 
@@ -317,32 +315,22 @@ VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
     if (!root.IsValid())
         return VerbAdmission::UnresolvedReference;
     const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(root);
-    const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
-    const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     ContactLineState state;
     state.Owner = invocation.Owner;
     state.Instigator = instigator;
     state.Kept = keep;
-    bool resolved = authored != nullptr && std::isfinite(authored->Radius) && authored->Radius > 0.0f;
-    const auto tag = [&](const InlineString<64>& name, GameplayTagId& out) {
-        if (name.Empty())
-            return;
-        out = tags != nullptr ? tags->FindTag(name.View()) : GameplayTagId{};
-        resolved = resolved && out.IsValid();
-    };
-    if (resolved)
+    AuthoredNameResolver names(world);
+    if (authored == nullptr || !std::isfinite(authored->Radius) || authored->Radius <= 0.0f)
+        names.Fail("no positive radius");
+    else
     {
-        tag(authored->Kind, state.Kind);
-        tag(authored->Ignores, state.Ignores);
-        tag(authored->AnchorCue, state.AnchorCue);
-        tag(authored->CutCue, state.CutCue);
-        if (!authored->Effect.Empty())
-        {
-            state.Effect = effects != nullptr ? effects->Find(authored->Effect.View()) : EffectId{};
-            resolved = resolved && effects != nullptr && effects->Get(state.Effect) != nullptr;
-        }
+        names.Tag(authored->Kind.View(), state.Kind);
+        names.Tag(authored->Ignores.View(), state.Ignores);
+        names.Tag(authored->AnchorCue.View(), state.AnchorCue);
+        names.Tag(authored->CutCue.View(), state.CutCue);
+        names.Effect(authored->Effect.View(), state.Effect);
     }
-    if (!resolved)
+    if (!names.Resolved())
     {
         Host.Prefabs->Despawn(world, root);
         return VerbAdmission::UnresolvedReference;
@@ -394,13 +382,7 @@ VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
     }
 
     world.AddComponent<ContactLineState>(root, state);
-    if (LocalTransform* local = world.TryGet<LocalTransform>(root))
-        local->Value.Position = origin;
-    if (WorldTransform* placed = world.TryGet<WorldTransform>(root))
-        placed->Value.Position = origin;
-    if (!world.HasComponent<WorldTransformHistory>(root))
-        world.AddComponent<WorldTransformHistory>(root, WorldTransformHistory{});
-    RequestTransformHistorySnap(world, root);
+    PlaceSpawnedRoot(world, root, origin, std::nullopt);
     return VerbAdmission::Accepted;
 }
 
@@ -561,12 +543,7 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
     if (state.Stage == ContactLineStage::Extending)
     {
         const ProjectileStops* stops = world.TryGetResource<ProjectileStops>();
-        const ProjectileStop* stop = nullptr;
-        if (stops != nullptr)
-            for (const ProjectileStop& entry : stops->Entries)
-                if (entry.Projectile == state.Projectile)
-                    stop = &entry;
-        if (stop != nullptr)
+        if (const ProjectileStop* stop = stops != nullptr ? stops->Find(state.Projectile) : nullptr)
         {
             state.Tip = stop->Point;
             if (stop->Kind == ProjectileStopKind::Level && (state.Kept || state.Owner.IsSet()))
@@ -679,8 +656,6 @@ bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, cons
     Overlaps.clear();
     queries.OverlapShape(CollisionShape::MakeCapsule(authored.Radius, std::max(reach * 0.5f, 0.001f)),
                          root + direction * (reach * 0.5f), rotation, Overlaps, touching);
-    std::sort(Overlaps.begin(), Overlaps.end());
-    Overlaps.erase(std::unique(Overlaps.begin(), Overlaps.end()), Overlaps.end());
 
     const bool characters = world.IsRegistered<CharacterMoverLink>();
     for (const EntityId target : Overlaps)
@@ -736,21 +711,9 @@ bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, cons
 void ContactLineSystem::CueAt(const ContactLineState& state, EntityId line, GameplayTagId cue, const Vec3d& point,
                               std::uint64_t tick)
 {
-    World& world = *Entities;
-    if (!cue.IsValid() || !world.IsAlive(state.Instigator) || !world.IsRegistered<AbilityCueLog>())
-        return;
-    AbilityCueLog* log = world.TryGet<AbilityCueLog>(state.Instigator);
-    if (log == nullptr)
-        return;
-    // Named by the line and the tick, which no ability activation shares.
-    const std::uint64_t activation =
-        0x434C000000000000ull ^ (static_cast<std::uint64_t>(line.Index) << 24) ^ (tick & 0xFFFFFFull);
-    AbilityCueEntry entry;
-    entry.Cue = cue;
-    entry.Activation = activation;
-    entry.Tick = tick;
-    entry.Point = point;
-    (void)AppendAbilityCue(*log, entry);
+    constexpr std::uint16_t kLineCues = 0x434C;
+    AppendSourcedCue(*Entities, state.Instigator, kLineCues, line,
+                     AbilityCueEntry{ .Cue = cue, .Tick = tick, .Point = point, .Normal = Vec3d::Zero(), .Target = {} });
 }
 
 void ContactLineSystem::Remove(EntityId line, std::uint64_t tick)

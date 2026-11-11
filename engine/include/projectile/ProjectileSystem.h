@@ -73,6 +73,12 @@ struct ProjectileStop
 struct ProjectileStops
 {
     std::vector<ProjectileStop> Entries;
+
+    [[nodiscard]] const ProjectileStop* Find(EntityId projectile) const
+    {
+        const auto found = std::ranges::find(Entries, projectile, &ProjectileStop::Projectile);
+        return found != Entries.end() ? &*found : nullptr;
+    }
 };
 
 // Every prefab launched in this World, resolved once. A resource rather than the
@@ -172,6 +178,8 @@ public:
     EntityId Launch(const ProjectileLaunch& launch, ProjectileLaunchResult* result = nullptr);
     // The prefab a path names, or an invalid id when nothing resolves it.
     [[nodiscard]] AssetId PrefabOf(std::string_view path) const;
+    // By the id a binding compiled to, else by the path it still names.
+    [[nodiscard]] AssetId PrefabOf(const AssetRef& reference) const;
     // Ends a flight where it is, striking nothing more and reporting no stop.
     void Recall(EntityId projectile, std::uint64_t tick);
     // A scatter seed for `instigator`'s next launch on `tick`: from who, when,

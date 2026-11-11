@@ -91,8 +91,8 @@ public:
         float maxDistance,
         const PhysicsQueryFilter& filter) const;
 
-    // Entities whose bodies overlap shape placed at (position, rotation). Each
-    // entity appears once. Cleared before filling.
+    // Entities whose bodies overlap shape placed at (position, rotation), each
+    // once and in identity order. Cleared before filling.
     void OverlapShape(
         const CollisionShape& shape,
         const Vec3d& position,

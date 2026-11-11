@@ -4,6 +4,8 @@
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <optional>
+
 class StoragePartitionSet;
 class World;
 
@@ -49,6 +51,11 @@ void CaptureWorldTransformHistory(World& world,
 // Collapse one entity's history, for a teleport that the rest of the frame
 // should not blend through. Safe to call on an entity without history.
 void RequestTransformHistorySnap(World& world, EntityId entity);
+
+// Moves a parentless root just spawned to `position`, and `rotation` when given,
+// and gives it a history snapped there, so it is drawn between ticks from here
+// on without streaking from wherever its prefab was built.
+void PlaceSpawnedRoot(World& world, EntityId root, const Vec3d& position, std::optional<Quatf> rotation);
 
 // The pose to render: the blend between the last two ticks, or the current
 // pose when there is nothing meaningful to blend from.

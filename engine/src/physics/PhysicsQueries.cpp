@@ -177,16 +177,10 @@ void CollideShape(const PhysicsWorld& world,
     query.CollideShape(jShape, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector, {}, {},
                        bodyFilter);
 
-    // Dedup in place using the caller's vector: gather every hit's entity, then
-    // sort + unique. One body maps to one entity, so this matches a by-body dedup
-    // without a per-call hash set. Order is unspecified by the contract.
     for (const JPH::CollideShapeResult& result : collector.mHits)
         out.push_back(EntityOf(system, result.mBodyID2));
 
-    std::sort(out.begin(), out.end(), [](EntityId a, EntityId b)
-    {
-        return a.Index != b.Index ? a.Index < b.Index : a.Generation < b.Generation;
-    });
+    std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 } // namespace

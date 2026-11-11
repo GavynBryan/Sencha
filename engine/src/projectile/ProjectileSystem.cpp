@@ -6,13 +6,12 @@
 #include <app/GameContexts.h>
 #include <assets/runtime/AssetSystem.h>
 #include <attributes/AttributeSet.h>
+#include <authored/AuthoredNameResolver.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
-#include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/ResponsesSystem.h>
 #include <math/geometry/3d/ConeScatter.h>
 #include <math/geometry/3d/FacingRotation.h>
@@ -126,6 +125,11 @@ AssetId ProjectileSystem::PrefabOf(std::string_view path) const
     return record != nullptr ? record->Id : AssetId{};
 }
 
+AssetId ProjectileSystem::PrefabOf(const AssetRef& reference) const
+{
+    return reference.Id.IsValid() ? reference.Id : PrefabOf(reference.Path);
+}
+
 std::uint64_t ProjectileSystem::NextSeed(EntityId instigator, std::uint64_t tick)
 {
     if (tick != SeedTick)
@@ -157,50 +161,33 @@ std::optional<std::uint32_t> ProjectileSystem::Resolve(AssetId prefab, EntityId 
 
     ResolvedProjectile resolved{ .Prefab = prefab, .Definition = *authored };
     Projectile& d = resolved.Definition;
-    std::string problem;
+    AuthoredNameResolver names(*Entities);
     if (!std::isfinite(d.Speed) || d.Speed <= 0.0f || !std::isfinite(d.Radius) || d.Radius < 0.0f
         || !std::isfinite(d.Lifetime) || d.Lifetime <= 0.0f || !std::isfinite(d.GravityScale)
         || !std::isfinite(d.SplashRadius) || d.SplashRadius < 0.0f)
-        problem = "its speed and lifetime must be positive, and its radius, gravity and splash finite";
+        names.Fail("its speed and lifetime must be positive, and its radius, gravity and splash finite");
     d.MaxHits = std::clamp<std::uint32_t>(d.MaxHits, 1u, static_cast<std::uint32_t>(kProjectileMaxHits));
 
-    const EffectRegistry* effects = Entities->TryGetResource<EffectRegistry>();
-    auto effect = [&](const InlineString<192>& name, EffectId& out) {
-        if (name.Empty() || !problem.empty())
-            return;
-        out = effects != nullptr ? effects->Find(name.View()) : EffectId{};
-        if (effects == nullptr || effects->Get(out) == nullptr)
-            problem = "no effect is declared as '" + std::string(name.View()) + "'";
-    };
-    effect(d.HitEffect, resolved.HitEffect);
-    effect(d.ScaledEffect, resolved.ScaledEffect);
-    effect(d.SplashEffect, resolved.SplashEffect);
-
-    const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
-    auto tag = [&](const InlineString<64>& name, GameplayTagId& out) {
-        if (name.Empty() || !problem.empty())
-            return;
-        out = tags != nullptr ? tags->FindTag(name.View()) : GameplayTagId{};
-        if (!out.IsValid())
-            problem = "no gameplay tag is declared as '" + std::string(name.View()) + "'";
-    };
-    tag(d.PassesThrough, resolved.PassesThrough);
-    tag(d.HitKind, resolved.HitKind);
-    tag(d.ImpactCue, resolved.ImpactCue);
-    tag(d.Ignores, resolved.Ignores);
-    if (!d.HitScaleQuery.Empty() && problem.empty())
+    names.Effect(d.HitEffect.View(), resolved.HitEffect);
+    names.Effect(d.ScaledEffect.View(), resolved.ScaledEffect);
+    names.Effect(d.SplashEffect.View(), resolved.SplashEffect);
+    names.Tag(d.PassesThrough.View(), resolved.PassesThrough);
+    names.Tag(d.HitKind.View(), resolved.HitKind);
+    names.Tag(d.ImpactCue.View(), resolved.ImpactCue);
+    names.Tag(d.Ignores.View(), resolved.Ignores);
+    if (!d.HitScaleQuery.Empty() && names.Resolved())
     {
         resolved.HitScale = Host.Queries != nullptr ? Host.Queries->Registry().Resolve(d.HitScaleQuery.View())
                                                     : AuthoredQueryHandle{};
         if (!resolved.HitScale.IsValid())
-            problem = "no authored query is declared as '" + std::string(d.HitScaleQuery.View()) + "'";
+            names.Fail("no authored query is declared as '" + std::string(d.HitScaleQuery.View()) + "'");
     }
 
-    if (!problem.empty())
+    if (!names.Resolved())
     {
         if (Host.Logging != nullptr)
             Host.Logging->GetLogger<ProjectileSystem>().Error(
-                "Projectile prefab {} will not launch: {}", AssetIdToString(prefab), problem);
+                "Projectile prefab {} will not launch: {}", AssetIdToString(prefab), names.Problem());
         return std::nullopt;
     }
 
@@ -252,18 +239,6 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
     const ResolvedProjectile& definition = world.GetResource<ProjectileDefinitions>().Entries[*index];
 
     const Vec3d direction = ScatterInCone(launch.Direction.Normalized(), launch.SpreadDegrees, launch.Seed);
-    if (LocalTransform* local = world.TryGet<LocalTransform>(root))
-    {
-        local->Value.Position = launch.Origin;
-        local->Value.Rotation = FacingRotation(direction);
-    }
-    // Its world pose is its local one: a projectile has no parent.
-    if (WorldTransform* placed = world.TryGet<WorldTransform>(root))
-    {
-        if (const LocalTransform* local = std::as_const(world).TryGet<LocalTransform>(root))
-            placed->Value = local->Value;
-    }
-
     world.AddComponent<ProjectileFlight>(root, ProjectileFlight{ .Instigator = launch.Instigator,
                                                                  .LaunchTick = launch.Tick != 0 ? launch.Tick
                                                                                                 : LastTick + 1,
@@ -278,11 +253,7 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
                                 .Magnitude = launch.Magnitude,
                                 .SplashScale = launch.SplashScale,
                                 .Definition = *index });
-    // Drawn between ticks, as anything moving every tick is; snapped, so it does
-    // not streak from wherever the prefab was built to the muzzle.
-    if (!world.HasComponent<WorldTransformHistory>(root))
-        world.AddComponent<WorldTransformHistory>(root, WorldTransformHistory{});
-    RequestTransformHistorySnap(world, root);
+    PlaceSpawnedRoot(world, root, launch.Origin, FacingRotation(direction));
     // Every machine draws it: the prefab names its body, and the root alone
     // travels, as for any replicated group.
     if (!world.HasComponent<NetReplicated>(root))
@@ -587,11 +558,6 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
     Overlaps.clear();
     queries.OverlapShape(CollisionShape::MakeSphere(radius), point, Quatf::Identity(), Overlaps, filter);
 
-    // In identity order, so a splash over several targets applies the same way
-    // on every run.
-    std::sort(Overlaps.begin(), Overlaps.end());
-    Overlaps.erase(std::unique(Overlaps.begin(), Overlaps.end()), Overlaps.end());
-
     for (const EntityId target : Overlaps)
     {
         if (!world.IsAlive(target) || Struck(motion, target) || motion.HitCount >= kProjectileMaxHits)
@@ -621,23 +587,9 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
 void ProjectileSystem::Cue(EntityId instigator, EntityId projectile, GameplayTagId cue, const Vec3d& point,
                            const Vec3d& normal, EntityId target, std::uint64_t tick)
 {
-    if (!cue.IsValid() || !instigator.IsValid())
-        return;
-    World& world = *Entities;
-    AbilityCueLog* log = world.IsAlive(instigator) && world.IsRegistered<AbilityCueLog>()
-        ? world.TryGet<AbilityCueLog>(instigator)
-        : nullptr;
-    if (log == nullptr)
-        return;
-    // Named by the projectile and the tick, which no ability activation shares.
-    const std::uint64_t activation = 0x5052000000000000ull ^ (static_cast<std::uint64_t>(projectile.Index) << 24)
-                                   ^ (tick & 0xFFFFFFull);
-    (void)AppendAbilityCue(*log, AbilityCueEntry{ .Cue = cue,
-                                                  .Activation = activation,
-                                                  .Tick = tick,
-                                                  .Point = point,
-                                                  .Normal = normal,
-                                                  .Target = target });
+    constexpr std::uint16_t kProjectileCues = 0x5052;
+    AppendSourcedCue(*Entities, instigator, kProjectileCues, projectile,
+                     AbilityCueEntry{ .Cue = cue, .Tick = tick, .Point = point, .Normal = normal, .Target = target });
 }
 
 void ProjectileSystem::Recall(EntityId projectile, std::uint64_t tick)

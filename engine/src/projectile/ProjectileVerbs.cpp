@@ -106,9 +106,7 @@ VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocat
         || !arguments->TryGetFloat(6, magnitude) || !arguments->TryGetFloat(7, splashScale))
         return VerbAdmission::InvalidArguments;
 
-    // By the id the binding compiled to against the mounted assets; one compiled
-    // with nothing to check against still names its path.
-    ProjectileLaunch launch{ .Prefab = projectile->Id.IsValid() ? projectile->Id : system.PrefabOf(projectile->Path),
+    ProjectileLaunch launch{ .Prefab = system.PrefabOf(*projectile),
                              .Instigator = instigator,
                              .Tick = invocation.Tick,
                              .SpreadDegrees = static_cast<float>(spread),

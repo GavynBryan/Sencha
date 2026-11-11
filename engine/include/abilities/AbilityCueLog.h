@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <type_traits>
 
+class World;
+
 // One discrete cue an ability made: where, at what, and by which activation and
 // op, for whatever presents it (docs/gameplay/abilitykit.md, "Presentation").
 struct AbilityCueEntry
@@ -49,6 +51,12 @@ struct SENCHA_COMPONENT("sencha.ability_predicted_cues") AbilityPredictedCues
 
 // Appends `entry` under the next serial number, which it returns.
 std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry);
+
+// Appends to `instigator`'s log, if it keeps one, a cue `source` made outside any
+// ability. Its activation is drawn from `family`, the source and the tick, which
+// no ability activation shares.
+void AppendSourcedCue(World& world, EntityId instigator, std::uint16_t family, EntityId source,
+                      AbilityCueEntry entry);
 
 // One occurrence as every machine names it: the activation, op, tick, target and
 // ordinal, which a guess and the authority's entry for it share.
