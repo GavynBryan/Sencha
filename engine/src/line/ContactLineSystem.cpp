@@ -245,135 +245,180 @@ ContactLineSystem::ContactLineSystem(World& world, const Services& services)
     Overlaps.reserve(16);
 }
 
+namespace
+{
+template <typename Visit>
+void ForEachHeldBy(World& world, const LeaseOwner& owner, Visit&& visit)
+{
+    if (!world.IsRegistered<ContactLineState>())
+        return;
+    world.ForEachComponent<ContactLineState>([&](EntityId line, ContactLineState& state) {
+        if (state.Owner == owner)
+            visit(line, state);
+    });
+}
+
+// The names the prefab authors, and a radius a line can strike with.
+bool ResolveLine(const World& world, const ContactLine* authored, ContactLineState& state)
+{
+    AuthoredNameResolver names(world);
+    if (authored == nullptr || !std::isfinite(authored->Radius) || authored->Radius <= 0.0f)
+        return false;
+    names.Tag(authored->Kind.View(), state.Kind);
+    names.Tag(authored->Ignores.View(), state.Ignores);
+    names.Tag(authored->AnchorCue.View(), state.AnchorCue);
+    names.Tag(authored->CutCue.View(), state.CutCue);
+    names.Effect(authored->Effect.View(), state.Effect);
+    return names.Resolved();
+}
+
+// A slot no other line of the instigator's holds, else the one its oldest let-go
+// line held, which is drawn home. False when every slot is held.
+bool TakeSlot(World& world, const ContactLine& authored, ContactLineState& state)
+{
+    if (authored.Slots == 0)
+        return true;
+    std::uint32_t taken = 0;
+    ContactLineState* oldest = nullptr;
+    world.ForEachComponent<ContactLineState>([&](EntityId, ContactLineState& other) {
+        if (other.Instigator != state.Instigator || other.Stage == ContactLineStage::Retracting)
+            return;
+        taken |= 1u << other.Slot;
+        if (!other.Owner.IsSet() && (oldest == nullptr || other.Remaining < oldest->Remaining))
+            oldest = &other;
+    });
+    std::uint32_t slot = static_cast<std::uint32_t>(std::countr_one(taken));
+    if (slot >= authored.Slots)
+    {
+        if (oldest == nullptr)
+            return false;
+        slot = oldest->Slot;
+        BeginRetract(*oldest);
+    }
+    state.Slot = static_cast<std::uint8_t>(slot);
+    state.Side = (static_cast<float>(slot) - static_cast<float>(authored.Slots - 1) * 0.5f) * authored.SlotSpacing;
+    return true;
+}
+
+struct LineThrow
+{
+    EntityId Instigator;
+    const AssetRef* Line = nullptr;
+    const AssetRef* Projectile = nullptr;
+    std::optional<Vec3d> At;
+    bool Keep = false;
+};
+
+bool ReadThrow(const AuthoredArguments* arguments, LineThrow& out)
+{
+    if (arguments == nullptr || !arguments->TryGetEntity(0, out.Instigator) || !arguments->TryGetAsset(1, out.Line)
+        || !arguments->TryGetAsset(2, out.Projectile))
+        return false;
+    if (Vec3d at; ReadAuthoredArgument(*arguments, 3, at))
+        out.At = at;
+    (void)arguments->TryGetBool(4, out.Keep);
+    return true;
+}
+
+VerbAdmission AdmissionOf(ProjectileLaunchResult result)
+{
+    switch (result)
+    {
+    case ProjectileLaunchResult::Launched: return VerbAdmission::Accepted;
+    case ProjectileLaunchResult::Full: return VerbAdmission::QueueFull;
+    case ProjectileLaunchResult::Unresolved: return VerbAdmission::UnresolvedReference;
+    default: return VerbAdmission::Refused;
+    }
+}
+} // namespace
+
 VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
 {
-    World& world = *Entities;
-    const auto owned = [&](auto&& visit) {
-        if (!world.IsRegistered<ContactLineState>())
-            return;
-        world.ForEachComponent<ContactLineState>([&](EntityId line, ContactLineState& state) {
-            if (state.Owner == invocation.Owner)
-                visit(line, state);
-        });
-    };
     if (invocation.Step == LeaseStep::Probe)
     {
         bool out = false;
-        owned([&](EntityId, const ContactLineState& state) { out = out || state.Stage != ContactLineStage::Retracting; });
+        ForEachHeldBy(*Entities, invocation.Owner,
+                      [&](EntityId, const ContactLineState& state) { out = out || state.Stage != ContactLineStage::Retracting; });
         return out ? VerbAdmission::Accepted : VerbAdmission::Refused;
     }
     if (invocation.Step == LeaseStep::Release)
     {
-        Scratch.clear();
-        owned([&](EntityId line, ContactLineState& state) {
-            state.Owner = {};
-            if (state.Stage == ContactLineStage::Extending
-                || (state.Kept && state.Stage == ContactLineStage::Anchored))
-                return;
-            BeginRetract(state);
-            const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
-            if (authored == nullptr || authored->RetractSpeed <= 0.0f)
-                Scratch.push_back(line);
-        });
-        for (const EntityId line : Scratch)
-            Remove(line, invocation.Tick);
+        LetGo(invocation.Owner, invocation.Tick);
         return VerbAdmission::Accepted;
     }
+    return Throw(invocation);
+}
 
-    const AuthoredArguments* arguments = invocation.Arguments;
-    EntityId instigator;
-    const AssetRef* linePrefab = nullptr;
-    const AssetRef* projectilePrefab = nullptr;
-    if (arguments == nullptr || !arguments->TryGetEntity(0, instigator) || !arguments->TryGetAsset(1, linePrefab)
-        || !arguments->TryGetAsset(2, projectilePrefab) || !world.IsAlive(instigator))
+void ContactLineSystem::LetGo(const LeaseOwner& owner, std::uint64_t tick)
+{
+    World& world = *Entities;
+    Scratch.clear();
+    ForEachHeldBy(world, owner, [&](EntityId line, ContactLineState& state) {
+        state.Owner = {};
+        if (state.Stage == ContactLineStage::Extending || (state.Kept && state.Stage == ContactLineStage::Anchored))
+            return;
+        BeginRetract(state);
+        const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
+        if (authored == nullptr || authored->RetractSpeed <= 0.0f)
+            Scratch.push_back(line);
+    });
+    for (const EntityId line : Scratch)
+        Remove(line, tick);
+}
+
+VerbAdmission ContactLineSystem::Throw(const VerbInvocation& invocation)
+{
+    World& world = *Entities;
+    LineThrow request;
+    if (!ReadThrow(invocation.Arguments, request) || !world.IsAlive(request.Instigator))
         return VerbAdmission::InvalidArguments;
     if (!IsSimulationAuthority(world) || Host.Prefabs == nullptr || Host.Projectiles == nullptr)
         return VerbAdmission::Refused;
-    const AssetId lineId = Host.Projectiles->PrefabOf(*linePrefab);
-    const AssetId shotId = Host.Projectiles->PrefabOf(*projectilePrefab);
+    const AssetId lineId = Host.Projectiles->PrefabOf(*request.Line);
+    const AssetId shotId = Host.Projectiles->PrefabOf(*request.Projectile);
     if (!lineId.IsValid() || !shotId.IsValid() || Host.Prefabs->Prepare(lineId) != NetPrefabReadiness::Ready)
         return VerbAdmission::UnresolvedReference;
 
-    const Aim aim = AimOf(world, instigator);
-    ProjectileLaunch launch{ .Prefab = shotId, .Instigator = instigator, .Origin = aim.Origin,
-                             .Direction = aim.Direction, .Tick = invocation.Tick, .SplashScale = 0.0f };
-    Vec3d at;
-    const bool aimedAt = ReadAuthoredArgument(*arguments, 3, at);
-    bool keep = false;
-    (void)arguments->TryGetBool(4, keep);
-
-    const EntityId root = Host.Prefabs->Instantiate(lineId, world, world.GetEntityPartition(instigator));
+    const EntityId root = Host.Prefabs->Instantiate(lineId, world, world.GetEntityPartition(request.Instigator));
     if (!root.IsValid())
         return VerbAdmission::UnresolvedReference;
-    const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(root);
     ContactLineState state;
     state.Owner = invocation.Owner;
-    state.Instigator = instigator;
-    state.Kept = keep;
-    AuthoredNameResolver names(world);
-    if (authored == nullptr || !std::isfinite(authored->Radius) || authored->Radius <= 0.0f)
-        names.Fail("no positive radius");
-    else
-    {
-        names.Tag(authored->Kind.View(), state.Kind);
-        names.Tag(authored->Ignores.View(), state.Ignores);
-        names.Tag(authored->AnchorCue.View(), state.AnchorCue);
-        names.Tag(authored->CutCue.View(), state.CutCue);
-        names.Effect(authored->Effect.View(), state.Effect);
-    }
-    if (!names.Resolved())
+    state.Instigator = request.Instigator;
+    state.Kept = request.Keep;
+    const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(root);
+    VerbAdmission admission = VerbAdmission::UnresolvedReference;
+    if (ResolveLine(world, authored, state))
+        admission = TakeSlot(world, *authored, state) ? LaunchTip(state, *authored, shotId, request.At, invocation.Tick)
+                                                      : VerbAdmission::Refused;
+    if (admission != VerbAdmission::Accepted)
     {
         Host.Prefabs->Despawn(world, root);
-        return VerbAdmission::UnresolvedReference;
+        return admission;
     }
-    if (authored->Slots > 0)
-    {
-        std::uint32_t taken = 0;
-        ContactLineState* oldest = nullptr;
-        world.ForEachComponent<ContactLineState>([&](EntityId, ContactLineState& out) {
-            if (out.Instigator != instigator || out.Stage == ContactLineStage::Retracting)
-                return;
-            taken |= 1u << out.Slot;
-            if (!out.Owner.IsSet() && (oldest == nullptr || out.Remaining < oldest->Remaining))
-                oldest = &out;
-        });
-        std::uint32_t slot = static_cast<std::uint32_t>(std::countr_one(taken));
-        if (slot >= authored->Slots)
-        {
-            if (oldest == nullptr)
-            {
-                Host.Prefabs->Despawn(world, root);
-                return VerbAdmission::Refused;
-            }
-            slot = oldest->Slot;
-            BeginRetract(*oldest);
-        }
-        state.Slot = static_cast<std::uint8_t>(slot);
-        state.Side = (static_cast<float>(slot) - static_cast<float>(authored->Slots - 1) * 0.5f) * authored->SlotSpacing;
-    }
+    world.AddComponent<ContactLineState>(root, state);
+    PlaceSpawnedRoot(world, root, state.Tip, std::nullopt);
+    return VerbAdmission::Accepted;
+}
+
+VerbAdmission ContactLineSystem::LaunchTip(ContactLineState& state, const ContactLine& authored, AssetId shot,
+                                           const std::optional<Vec3d>& at, std::uint64_t tick)
+{
+    const World& world = *Entities;
+    const Aim aim = AimOf(world, state.Instigator);
     const Vec3d origin = ContactLineRoot(world, state);
     state.Tip = origin;
-    launch.Origin = origin;
-    if (aimedAt)
-        launch.Direction = at - origin;
+    ProjectileLaunch launch{ .Prefab = shot, .Instigator = state.Instigator, .Origin = origin,
+                             .Direction = aim.Direction, .Tick = tick, .SplashScale = 0.0f };
+    if (at)
+        launch.Direction = *at - origin;
     else if (state.Side != 0.0f)
         launch.Direction = aim.Origin + aim.Direction * kHandsConverge - origin;
-    launch.MaxDistance = authored->MaxLength;
-
-    launch.Seed = Host.Projectiles->NextSeed(instigator, invocation.Tick);
+    launch.MaxDistance = authored.MaxLength;
+    launch.Seed = Host.Projectiles->NextSeed(state.Instigator, tick);
     ProjectileLaunchResult result = ProjectileLaunchResult::Refused;
     state.Projectile = Host.Projectiles->Launch(launch, &result);
-    if (result != ProjectileLaunchResult::Launched)
-    {
-        Host.Prefabs->Despawn(world, root);
-        return result == ProjectileLaunchResult::Full        ? VerbAdmission::QueueFull
-             : result == ProjectileLaunchResult::Unresolved ? VerbAdmission::UnresolvedReference
-                                                            : VerbAdmission::Refused;
-    }
-
-    world.AddComponent<ContactLineState>(root, state);
-    PlaceSpawnedRoot(world, root, origin, std::nullopt);
-    return VerbAdmission::Accepted;
+    return AdmissionOf(result);
 }
 
 VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation)
@@ -465,39 +510,72 @@ void ContactLineSystem::FixedLogic(FixedLogicContext& ctx)
     Leash(lines);
 }
 
+namespace
+{
+bool HoldsLeash(const ContactLineState& state, const ContactLine& authored)
+{
+    return state.Kept && !state.Owner.IsSet() && state.Stage == ContactLineStage::Anchored && authored.LeashSlack > 0.0f;
+}
+
+// False once the tip is home, or has taken too long getting there.
+bool DrawIn(ContactLineState& state, const ContactLine& authored, const Vec3d& root, float dt)
+{
+    state.Remaining -= dt;
+    const Vec3d home = root - state.Tip;
+    const float distance = home.Magnitude();
+    const float step = authored.RetractSpeed * dt;
+    if (distance <= step || state.Remaining <= 0.0f)
+        return false;
+    state.Tip += home * (step / distance);
+    return true;
+}
+
+// Struck before: only again after staying off it, and touching it restarts that.
+bool TakeStrike(ContactLineState& state, const ContactLine& authored, EntityId target)
+{
+    const auto struck = std::find(state.Hits.begin(), state.Hits.begin() + state.HitCount, target);
+    if (struck != state.Hits.begin() + state.HitCount)
+    {
+        float& off = state.OffSeconds[static_cast<std::size_t>(struck - state.Hits.begin())];
+        const bool again = authored.RehitSeconds > 0.0f && off >= authored.RehitSeconds;
+        off = 0.0f;
+        return again;
+    }
+    if (state.HitCount >= kContactLineMaxHits)
+        return false;
+    state.OffSeconds[state.HitCount] = 0.0f;
+    state.Hits[state.HitCount++] = target;
+    return true;
+}
+
+const WorldTransform* StrikablePose(const World& world, const ContactLineState& state, EntityId target)
+{
+    if (!world.IsAlive(target) || !world.HasComponent<CharacterMoverLink>(target))
+        return nullptr;
+    if (state.Ignores.IsValid())
+        if (const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target);
+            tags != nullptr && tags->HasExact(state.Ignores))
+            return nullptr;
+    return world.TryGet<WorldTransform>(target);
+}
+
+// A capsule's long axis is +Y: a turn from there onto the line.
+Quatf CapsuleAlong(const Vec3d& direction)
+{
+    const Vec3d up = Vec3d::Up();
+    const Vec3d axis = up.Cross(direction);
+    const float cosine = std::clamp(up.Dot(direction), -1.0f, 1.0f);
+    return axis.SqrMagnitude() > 1.0e-8f ? Quatf::FromAxisAngle(axis.Normalized(), std::acos(cosine))
+                                         : Quatf::Identity();
+}
+} // namespace
+
 void ContactLineSystem::Leash(std::span<const EntityId> lines)
 {
     World& world = *Entities;
     if (!world.IsRegistered<TetherSession>())
         return;
-    Leashes.clear();
-    for (const EntityId line : lines)
-    {
-        if (!world.IsAlive(line))
-            continue;
-        const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line);
-        const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
-        TetherSession* tether = state != nullptr ? world.TryGet<TetherSession>(state->Instigator) : nullptr;
-        if (authored == nullptr || tether == nullptr)
-            continue;
-        const LeaseOwner owner{ line, kLeashKey };
-        if (!state->Kept || state->Owner.IsSet() || state->Stage != ContactLineStage::Anchored || authored->LeashSlack <= 0.0f)
-        {
-            if (tether->Owner == owner)
-                *tether = {};
-            continue;
-        }
-        const LocalTransform* body = std::as_const(world).TryGet<LocalTransform>(state->Instigator);
-        if (body == nullptr)
-            continue;
-        const float allowed = state->Length + authored->LeashSlack;
-        const float margin = allowed - (state->Tip - body->Value.Position).Magnitude();
-        const auto entry = std::ranges::find(Leashes, state->Instigator, &LeashEntry::Instigator);
-        if (entry == Leashes.end())
-            Leashes.push_back(LeashEntry{ state->Instigator, line, state->Tip, allowed, margin });
-        else if (margin < entry->Margin)
-            *entry = LeashEntry{ state->Instigator, line, state->Tip, allowed, margin };
-    }
+    GatherLeashes(lines);
     for (const LeashEntry& entry : Leashes)
     {
         TetherSession* tether = world.TryGet<TetherSession>(entry.Instigator);
@@ -509,6 +587,39 @@ void ContactLineSystem::Leash(std::span<const EntityId> lines)
         tether->Length = entry.Allowed;
         tether->Speed = kLeashSpeed;
         tether->Yields = true;
+    }
+}
+
+void ContactLineSystem::GatherLeashes(std::span<const EntityId> lines)
+{
+    World& world = *Entities;
+    Leashes.clear();
+    for (const EntityId line : lines)
+    {
+        if (!world.IsAlive(line))
+            continue;
+        const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line);
+        const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
+        TetherSession* tether = state != nullptr ? world.TryGet<TetherSession>(state->Instigator) : nullptr;
+        if (authored == nullptr || tether == nullptr)
+            continue;
+        if (!HoldsLeash(*state, *authored))
+        {
+            if (tether->Owner == LeaseOwner{ line, kLeashKey })
+                *tether = {};
+            continue;
+        }
+        const LocalTransform* body = std::as_const(world).TryGet<LocalTransform>(state->Instigator);
+        if (body == nullptr)
+            continue;
+        const float allowed = state->Length + authored->LeashSlack;
+        const LeashEntry candidate{ state->Instigator, line, state->Tip, allowed,
+                                    allowed - (state->Tip - body->Value.Position).Magnitude() };
+        const auto entry = std::ranges::find(Leashes, state->Instigator, &LeashEntry::Instigator);
+        if (entry == Leashes.end())
+            Leashes.push_back(candidate);
+        else if (candidate.Margin < entry->Margin)
+            *entry = candidate;
     }
 }
 
@@ -529,56 +640,23 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
     const float dt = static_cast<float>(now.DeltaSeconds);
     const Vec3d root = ContactLineRoot(world, state);
 
-    const auto retract = [&] { BeginRetract(state); };
-    if (state.Stage == ContactLineStage::Extending)
+    switch (state.Stage)
     {
-        const ProjectileStops* stops = world.TryGetResource<ProjectileStops>();
-        if (const ProjectileStop* stop = stops != nullptr ? stops->Find(state.Projectile) : nullptr)
-        {
-            state.Tip = stop->Point;
-            if (stop->Kind == ProjectileStopKind::Level && (state.Kept || state.Owner.IsSet()))
-            {
-                state.Stage = ContactLineStage::Anchored;
-                state.Remaining = authored.AnchorSeconds;
-                if (const LocalTransform* body = std::as_const(world).TryGet<LocalTransform>(state.Instigator))
-                    state.Length = (state.Tip - body->Value.Position).Magnitude();
-                CueAt(state, line, state.AnchorCue, state.Tip, now.TickIndex);
-            }
-            else
-            {
-                // Let go in flight and not meant to stay: nothing is holding it now.
-                retract();
-            }
-        }
-        else if (const LocalTransform* tip = world.IsAlive(state.Projectile)
-                     ? std::as_const(world).TryGet<LocalTransform>(state.Projectile)
-                     : nullptr)
-        {
-            state.Tip = tip->Value.Position;
-        }
-        else
-        {
-            retract();
-        }
-    }
-    else if (state.Stage == ContactLineStage::Anchored)
-    {
+    case ContactLineStage::Extending:
+        FollowTip(line, state, authored, now.TickIndex);
+        break;
+    case ContactLineStage::Anchored:
         state.Remaining -= dt;
         if (state.Remaining <= 0.0f)
-            retract();
-    }
-    else
-    {
-        state.Remaining -= dt;
-        const Vec3d home = root - state.Tip;
-        const float distance = home.Magnitude();
-        const float step = authored.RetractSpeed * dt;
-        if (distance <= step || state.Remaining <= 0.0f)
+            BeginRetract(state);
+        break;
+    case ContactLineStage::Retracting:
+        if (!DrawIn(state, authored, root, dt))
         {
             Remove(line, now.TickIndex);
             return;
         }
-        state.Tip += home * (step / distance);
+        break;
     }
 
     if (state.Stage != ContactLineStage::Retracting && !StrikeAlong(line, state, authored, root, now))
@@ -587,7 +665,40 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
         Remove(line, now.TickIndex);
         return;
     }
+    WriteBack(line, state, root);
+}
 
+void ContactLineSystem::FollowTip(EntityId line, ContactLineState& state, const ContactLine& authored,
+                                  std::uint64_t tick)
+{
+    const World& world = *Entities;
+    const ProjectileStops* stops = world.TryGetResource<ProjectileStops>();
+    if (const ProjectileStop* stop = stops != nullptr ? stops->Find(state.Projectile) : nullptr)
+    {
+        state.Tip = stop->Point;
+        // Let go in flight and not meant to stay: nothing is holding it now.
+        if (stop->Kind != ProjectileStopKind::Level || (!state.Kept && !state.Owner.IsSet()))
+        {
+            BeginRetract(state);
+            return;
+        }
+        state.Stage = ContactLineStage::Anchored;
+        state.Remaining = authored.AnchorSeconds;
+        if (const LocalTransform* body = world.TryGet<LocalTransform>(state.Instigator))
+            state.Length = (state.Tip - body->Value.Position).Magnitude();
+        CueAt(state, line, state.AnchorCue, state.Tip, tick);
+        return;
+    }
+    const LocalTransform* tip = world.IsAlive(state.Projectile) ? world.TryGet<LocalTransform>(state.Projectile) : nullptr;
+    if (tip != nullptr)
+        state.Tip = tip->Value.Position;
+    else
+        BeginRetract(state);
+}
+
+void ContactLineSystem::WriteBack(EntityId line, const ContactLineState& state, const Vec3d& root)
+{
+    World& world = *Entities;
     if (!world.IsAlive(line))
         return;
     ContactLineState* written = world.TryGet<ContactLineState>(line);
@@ -606,27 +717,14 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
 bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, const ContactLine& authored,
                                     const Vec3d& root, const FixedSimTime& now)
 {
-    World& world = *Entities;
     const Vec3d delta = state.Tip - root;
     const float length = delta.Magnitude();
     if (length < kShortestLine)
         return true;
     const Vec3d direction = delta / length;
-    const PhysicsQueries queries(*Host.Physics);
-
-    const std::array<EntityId, 1> ignored{ state.Instigator };
-    const PhysicsQueryFilter solid{ .IncludeTriggers = false,
-                                    .IgnoreEntities = ignored,
-                                    .IncludeCharacters = false };
-    // In flight the tip has just come that way; only a line that is out can have
-    // something come between.
-    const float clear = length - kSolidTestInset;
-    if (state.Stage != ContactLineStage::Extending && clear > kSolidTestInset
-        && queries.Raycast(root, direction, clear, solid).Hit)
-    {
-        // Across a wall it reaches no one, however briefly.
+    // Across a wall it reaches no one, however briefly.
+    if (CrossesSolid(state, root, direction, length))
         return ++state.BlockedTicks < kBlockedTicksToCut;
-    }
     state.BlockedTicks = 0;
 
     const float reach = state.Stage == ContactLineStage::Extending ? length - kFlightTipGap : length;
@@ -634,68 +732,55 @@ bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, cons
         return true;
     for (std::uint8_t i = 0; i < state.HitCount; ++i)
         state.OffSeconds[i] += static_cast<float>(now.DeltaSeconds);
-    const PhysicsQueryFilter touching{ .IncludeTriggers = false,
-                                       .IgnoreEntities = ignored,
-                                       .IncludeCharacters = true };
-    // A capsule's long axis is +Y: a turn from there onto the line.
-    const Vec3d up = Vec3d::Up();
-    const Vec3d axis = up.Cross(direction);
-    const float cosine = std::clamp(up.Dot(direction), -1.0f, 1.0f);
-    const Quatf rotation = axis.SqrMagnitude() > 1.0e-8f ? Quatf::FromAxisAngle(axis.Normalized(), std::acos(cosine))
-                                                         : Quatf::Identity();
-    Overlaps.clear();
-    queries.OverlapShape(CollisionShape::MakeCapsule(authored.Radius, std::max(reach * 0.5f, 0.001f)),
-                         root + direction * (reach * 0.5f), rotation, Overlaps, touching);
+    if (!Entities->IsRegistered<CharacterMoverLink>())
+        return true;
 
-    const bool characters = world.IsRegistered<CharacterMoverLink>();
+    const std::array<EntityId, 1> ignored{ state.Instigator };
+    const PhysicsQueryFilter touching{ .IncludeTriggers = false, .IgnoreEntities = ignored, .IncludeCharacters = true };
+    PhysicsQueries(*Host.Physics)
+        .OverlapShape(CollisionShape::MakeCapsule(authored.Radius, std::max(reach * 0.5f, 0.001f)),
+                      root + direction * (reach * 0.5f), CapsuleAlong(direction), Overlaps, touching);
     for (const EntityId target : Overlaps)
     {
-        if (!characters || !world.IsAlive(target) || !world.HasComponent<CharacterMoverLink>(target))
+        const WorldTransform* pose = StrikablePose(*Entities, state, target);
+        if (pose == nullptr || !TakeStrike(state, authored, target))
             continue;
-        if (state.Ignores.IsValid())
-            if (const GameplayTagContainer* tags = std::as_const(world).TryGet<GameplayTagContainer>(target);
-                tags != nullptr && tags->HasExact(state.Ignores))
-                continue;
-        const WorldTransform* pose = std::as_const(world).TryGet<WorldTransform>(target);
-        if (pose == nullptr)
-            continue;
-        // Struck before: only again after staying off it, and touching it restarts that.
-        const auto struck = std::find(state.Hits.begin(), state.Hits.begin() + state.HitCount, target);
-        const bool known = struck != state.Hits.begin() + state.HitCount;
-        if (known)
-        {
-            float& off = state.OffSeconds[static_cast<std::size_t>(struck - state.Hits.begin())];
-            const bool again = authored.RehitSeconds > 0.0f && off >= authored.RehitSeconds;
-            off = 0.0f;
-            if (!again)
-                continue;
-        }
-        else if (state.HitCount >= kContactLineMaxHits)
-        {
-            continue;
-        }
         const float along = std::clamp((pose->Value.Position - root).Dot(direction), 0.0f, reach);
         const Vec3d point = root + direction * along;
-        Vec3d away = pose->Value.Position - point;
-        away = away.SqrMagnitude() > 1.0e-6f ? away.Normalized() : direction.Cross(up).Normalized();
-
-        if (!known)
-        {
-            state.OffSeconds[state.HitCount] = 0.0f;
-            state.Hits[state.HitCount++] = target;
-        }
-        const EffectSource source{ .Instigator = state.Instigator, .Point = point, .Direction = away,
-                                   .HasPoint = true, .HasDirection = true };
-        if (state.Effect.IsValid() && world.HasComponent<AttributeSet>(target))
-            (void)ApplyEffect(world, target, state.Effect, now, LeaseOwner{}, 1.0f, source);
-        if (Host.Responses != nullptr)
-            (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = state.Instigator,
-                                                                 .Projectile = line,
-                                                                 .Kind = state.Kind,
-                                                                 .Point = point,
-                                                                 .Normal = away });
+        const Vec3d away = pose->Value.Position - point;
+        Strike(line, state, target, point,
+               away.SqrMagnitude() > 1.0e-6f ? away.Normalized() : direction.Cross(Vec3d::Up()).Normalized(), now);
     }
     return true;
+}
+
+// In flight the tip has just come that way; only a line that is out can have
+// something come between.
+bool ContactLineSystem::CrossesSolid(const ContactLineState& state, const Vec3d& root, const Vec3d& direction,
+                                     float length) const
+{
+    const float clear = length - kSolidTestInset;
+    if (state.Stage == ContactLineStage::Extending || clear <= kSolidTestInset)
+        return false;
+    const std::array<EntityId, 1> ignored{ state.Instigator };
+    const PhysicsQueryFilter solid{ .IncludeTriggers = false, .IgnoreEntities = ignored, .IncludeCharacters = false };
+    return PhysicsQueries(*Host.Physics).Raycast(root, direction, clear, solid).Hit;
+}
+
+void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point,
+                               const Vec3d& away, const FixedSimTime& now)
+{
+    World& world = *Entities;
+    const EffectSource source{ .Instigator = state.Instigator, .Point = point, .Direction = away,
+                               .HasPoint = true, .HasDirection = true };
+    if (state.Effect.IsValid() && world.HasComponent<AttributeSet>(target))
+        (void)ApplyEffect(world, target, state.Effect, now, LeaseOwner{}, 1.0f, source);
+    if (Host.Responses != nullptr)
+        (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = state.Instigator,
+                                                             .Projectile = line,
+                                                             .Kind = state.Kind,
+                                                             .Point = point,
+                                                             .Normal = away });
 }
 
 void ContactLineSystem::CueAt(const ContactLineState& state, EntityId line, GameplayTagId cue, const Vec3d& point,

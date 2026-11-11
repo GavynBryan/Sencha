@@ -100,6 +100,78 @@ namespace
         return value != nullptr && value->IsNumber() ? static_cast<float>(value->AsNumber()) : 0.0f;
     }
 
+    // An empty string when `change` is absent or valid.
+    std::string ReadChange(const JsonValue& entry, EffectReactionDeclaration& reaction)
+    {
+        const JsonValue* change = entry.Find("change");
+        if (change == nullptr || !change->IsString())
+            return {};
+        if (change->AsString() != "decrease" && change->AsString() != "increase")
+            return ".change A change is a decrease or an increase.";
+        reaction.Decrease = change->AsString() == "decrease";
+        return {};
+    }
+
+    void ReadShake(const JsonValue* shake, EffectReactionDeclaration& reaction, std::vector<AssetRef>& dependencies)
+    {
+        if (const JsonValue* path = shake != nullptr ? shake->Find("profile") : nullptr;
+            path != nullptr && path->IsString() && !path->AsString().empty())
+        {
+            reaction.ShakeProfile = path->AsString();
+            dependencies.push_back(AssetRef{ AssetType::Data, reaction.ShakeProfile });
+        }
+        reaction.ShakePerUnit = AmountOr(shake, "per_unit");
+        reaction.ShakeMax = AmountOr(shake, "max");
+    }
+
+    std::string ReadAnimation(const JsonValue* animation, EffectReactionDeclaration& reaction)
+    {
+        if (animation == nullptr)
+            return {};
+        const auto name = [&](std::string_view key) {
+            const JsonValue* value = animation->Find(key);
+            return value != nullptr && value->IsString() ? value->AsString() : std::string{};
+        };
+        reaction.AnimationFront = name("front");
+        reaction.AnimationBack = name("back");
+        reaction.AnimationLeft = name("left");
+        reaction.AnimationRight = name("right");
+        const JsonValue* ticks = animation->Find("ticks");
+        if (reaction.AnimationFront.empty() || ticks == nullptr || !ticks->IsNumber() || ticks->AsNumber() < 1.0)
+            return ".animation An animation names at least its front, and its ticks.";
+        reaction.AnimationTicks = static_cast<std::uint32_t>(ticks->AsNumber());
+        return {};
+    }
+
+    // An empty string, or the problem after the reaction's path.
+    std::string ReadReaction(const JsonValue& entry, EffectReactionDeclaration& reaction,
+                             std::vector<AssetRef>& dependencies)
+    {
+        if (const JsonValue* kinds = entry.Find("kinds"))
+            reaction.Kinds = ReadTagQueryNames(*kinds);
+        if (const JsonValue* recipient = entry.Find("recipient"))
+            reaction.Recipient = ReadTagQueryNames(*recipient);
+        const JsonValue* attribute = entry.Find("attribute");
+        if (attribute == nullptr || !attribute->IsString() || attribute->AsString().empty())
+            return ".attribute A reaction names the attribute whose change it answers.";
+        reaction.Attribute = attribute->AsString();
+        if (std::string problem = ReadChange(entry, reaction); !problem.empty())
+            return problem;
+        reaction.Threshold = AmountOr(&entry, "threshold");
+        const JsonValue* impulse = entry.Find("impulse");
+        reaction.ImpulsePerUnit = AmountOr(impulse, "per_unit");
+        reaction.ImpulseMax = AmountOr(impulse, "max");
+        reaction.Lift = AmountOr(impulse, "lift");
+        ReadShake(entry.Find("shake"), reaction, dependencies);
+        if (std::string problem = ReadAnimation(entry.Find("animation"), reaction); !problem.empty())
+            return problem;
+        for (const float amount : { reaction.Threshold, reaction.ImpulsePerUnit, reaction.ImpulseMax,
+                                    reaction.Lift, reaction.ShakePerUnit, reaction.ShakeMax })
+            if (!std::isfinite(amount) || amount < 0.0f)
+                return " Every amount is a number no less than zero.";
+        return {};
+    }
+
     DataAssetCompileResult Compile(const JsonValue& data)
     {
         auto profile = std::make_shared<EffectReactionProfile>();
@@ -109,56 +181,9 @@ namespace
             return { {}, {}, "$.data.reactions A profile lists its reactions." };
         for (std::size_t i = 0; i < reactions->AsArray().size(); ++i)
         {
-            const JsonValue& entry = reactions->AsArray()[i];
-            const std::string at = std::format("$.data.reactions[{}]", i);
             EffectReactionDeclaration reaction;
-            if (const JsonValue* kinds = entry.Find("kinds"))
-                reaction.Kinds = ReadTagQueryNames(*kinds);
-            if (const JsonValue* recipient = entry.Find("recipient"))
-                reaction.Recipient = ReadTagQueryNames(*recipient);
-            const JsonValue* attribute = entry.Find("attribute");
-            if (attribute == nullptr || !attribute->IsString() || attribute->AsString().empty())
-                return { {}, {}, at + ".attribute A reaction names the attribute whose change it answers." };
-            reaction.Attribute = attribute->AsString();
-            if (const JsonValue* change = entry.Find("change"); change != nullptr && change->IsString())
-            {
-                if (change->AsString() != "decrease" && change->AsString() != "increase")
-                    return { {}, {}, at + ".change A change is a decrease or an increase." };
-                reaction.Decrease = change->AsString() == "decrease";
-            }
-            reaction.Threshold = AmountOr(&entry, "threshold");
-            const JsonValue* impulse = entry.Find("impulse");
-            reaction.ImpulsePerUnit = AmountOr(impulse, "per_unit");
-            reaction.ImpulseMax = AmountOr(impulse, "max");
-            reaction.Lift = AmountOr(impulse, "lift");
-            const JsonValue* shake = entry.Find("shake");
-            if (const JsonValue* path = shake != nullptr ? shake->Find("profile") : nullptr;
-                path != nullptr && path->IsString() && !path->AsString().empty())
-            {
-                reaction.ShakeProfile = path->AsString();
-                dependencies.push_back(AssetRef{ AssetType::Data, reaction.ShakeProfile });
-            }
-            reaction.ShakePerUnit = AmountOr(shake, "per_unit");
-            reaction.ShakeMax = AmountOr(shake, "max");
-            if (const JsonValue* animation = entry.Find("animation"))
-            {
-                const auto name = [&](std::string_view key) {
-                    const JsonValue* value = animation->Find(key);
-                    return value != nullptr && value->IsString() ? value->AsString() : std::string{};
-                };
-                reaction.AnimationFront = name("front");
-                reaction.AnimationBack = name("back");
-                reaction.AnimationLeft = name("left");
-                reaction.AnimationRight = name("right");
-                const JsonValue* ticks = animation->Find("ticks");
-                if (reaction.AnimationFront.empty() || ticks == nullptr || !ticks->IsNumber() || ticks->AsNumber() < 1.0)
-                    return { {}, {}, at + ".animation An animation names at least its front, and its ticks." };
-                reaction.AnimationTicks = static_cast<std::uint32_t>(ticks->AsNumber());
-            }
-            for (const float amount : { reaction.Threshold, reaction.ImpulsePerUnit, reaction.ImpulseMax,
-                                        reaction.Lift, reaction.ShakePerUnit, reaction.ShakeMax })
-                if (!std::isfinite(amount) || amount < 0.0f)
-                    return { {}, {}, at + " Every amount is a number no less than zero." };
+            if (std::string problem = ReadReaction(reactions->AsArray()[i], reaction, dependencies); !problem.empty())
+                return { {}, {}, std::format("$.data.reactions[{}]{}", i, problem) };
             profile->Reactions.push_back(std::move(reaction));
         }
         return { std::move(profile), std::move(dependencies), {} };

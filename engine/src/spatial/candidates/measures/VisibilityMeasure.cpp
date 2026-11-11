@@ -45,12 +45,82 @@ namespace candidate_operation
             return Prepared(state);
         }
 
+        enum class Sighting : std::uint8_t
+        {
+            Seen,
+            Unseen,
+            BudgetSpent,
+        };
+
+        // A slot point with no eye to see from counts as unseen. The first blocked
+        // line is kept as the row's detail when the run traces it.
+        Sighting SightBetween(CandidateRun& run, const SightArguments& sight, bool slotWatches, std::uint32_t row,
+                              std::uint32_t index, bool& recorded)
+        {
+            const CandidatePoint point = run.SlotPoint(sight.Slot, index);
+            const Vec3d& eyeBase = slotWatches ? point.Position : run.Position(row);
+            const Vec3d& targetBase = slotWatches ? run.Position(row) : point.Position;
+            const EntityId observerEntity = slotWatches ? point.Entity : run.Entity(row);
+            const EntityId targetEntity = slotWatches ? run.Entity(row) : point.Entity;
+            const std::optional<SightObserver> observer =
+                ObserverAt(run, observerEntity, eyeBase, slotWatches ? point.Forward : Vec3d::Zero(), sight);
+            if (!observer)
+                return Sighting::Unseen;
+            const std::optional<SightResult> result = TestSightCharged(
+                run, *observer, TargetAt(run, targetEntity, targetBase, sight), targetEntity, observerEntity);
+            if (!result)
+                return Sighting::BudgetSpent;
+            if (result->Seen())
+                return Sighting::Seen;
+            if (!recorded && run.TracingDetail())
+            {
+                run.RecordDetail(row, CandidateDetail{ result->HitPoint, result->HitEntity,
+                                                       static_cast<std::uint32_t>(result->Outcome) });
+                recorded = true;
+            }
+            return Sighting::Unseen;
+        }
+
+        // Over every slot point at every sample height; none once the budget is spent.
+        std::optional<std::uint32_t> CountSeen(CandidateRun& run, const VisibilityState& visibility, std::uint32_t row,
+                                               std::uint32_t points)
+        {
+            const bool slotWatches = visibility.Watcher == Observer::Slot;
+            const std::size_t heights = std::max<std::size_t>(visibility.SampleHeights.size(), 1);
+            std::uint32_t seen = 0;
+            bool recorded = false;
+            for (std::size_t height = 0; height < heights; ++height)
+            {
+                SightArguments sight = visibility.Sight;
+                if (!visibility.SampleHeights.empty())
+                    (slotWatches ? sight.TargetHeight : sight.EyeHeight) = visibility.SampleHeights[height];
+                for (std::uint32_t index = 0; index < points; ++index)
+                {
+                    const Sighting sighting = SightBetween(run, sight, slotWatches, row, index, recorded);
+                    if (sighting == Sighting::BudgetSpent)
+                        return std::nullopt;
+                    seen += sighting == Sighting::Seen ? 1u : 0u;
+                }
+            }
+            return seen;
+        }
+
+        float Reduce(Combine reduction, std::uint32_t seen, std::uint32_t samples)
+        {
+            switch (reduction)
+            {
+            case Combine::All: return seen == samples ? 1.0f : 0.0f;
+            case Combine::Fraction: return static_cast<float>(seen) / static_cast<float>(samples);
+            case Combine::Any: break;
+            }
+            return seen > 0 ? 1.0f : 0.0f;
+        }
+
         void MeasureVisibility(CandidateRun& run, const void* state, std::span<const std::uint32_t> rows,
                                std::span<float> values, std::span<CandidateMeasureStatus> statuses)
         {
             const auto& visibility = *static_cast<const VisibilityState*>(state);
             const std::uint32_t points = run.SlotSize(visibility.Sight.Slot);
-            const bool slotWatches = visibility.Watcher == Observer::Slot;
             const std::size_t heights = std::max<std::size_t>(visibility.SampleHeights.size(), 1);
             const std::uint32_t samples = points * static_cast<std::uint32_t>(heights);
             for (const std::uint32_t row : rows)
@@ -60,54 +130,10 @@ namespace candidate_operation
                     statuses[row] = CandidateMeasureStatus::NotApplicable;
                     continue;
                 }
-                std::uint32_t seen = 0;
-                bool spent = false;
-                bool recorded = false;
-                for (std::size_t height = 0; height < heights && !spent; ++height)
-                {
-                    SightArguments sight = visibility.Sight;
-                    if (!visibility.SampleHeights.empty())
-                        (slotWatches ? sight.TargetHeight : sight.EyeHeight) = visibility.SampleHeights[height];
-                    for (std::uint32_t index = 0; index < points; ++index)
-                    {
-                        const CandidatePoint point = run.SlotPoint(sight.Slot, index);
-                        const Vec3d& eyeBase = slotWatches ? point.Position : run.Position(row);
-                        const Vec3d& targetBase = slotWatches ? run.Position(row) : point.Position;
-                        const EntityId observerEntity = slotWatches ? point.Entity : run.Entity(row);
-                        const EntityId targetEntity = slotWatches ? run.Entity(row) : point.Entity;
-                        const std::optional<SightObserver> observer =
-                            ObserverAt(run, observerEntity, eyeBase, slotWatches ? point.Forward : Vec3d::Zero(), sight);
-                        if (!observer)
-                            continue;
-                        const std::optional<SightResult> result = TestSightCharged(
-                            run, *observer, TargetAt(run, targetEntity, targetBase, sight), targetEntity, observerEntity);
-                        if (!result)
-                        {
-                            spent = true;
-                            break;
-                        }
-                        if (result->Seen())
-                            ++seen;
-                        else if (!recorded && run.TracingDetail())
-                        {
-                            run.RecordDetail(row, CandidateDetail{ result->HitPoint, result->HitEntity,
-                                                                   static_cast<std::uint32_t>(result->Outcome) });
-                            recorded = true;
-                        }
-                    }
-                }
-                if (spent)
-                {
-                    statuses[row] = CandidateMeasureStatus::BeyondBudget;
-                    continue;
-                }
-                statuses[row] = CandidateMeasureStatus::Ok;
-                switch (visibility.Reduction)
-                {
-                case Combine::Any: values[row] = seen > 0 ? 1.0f : 0.0f; break;
-                case Combine::All: values[row] = seen == samples ? 1.0f : 0.0f; break;
-                case Combine::Fraction: values[row] = static_cast<float>(seen) / static_cast<float>(samples); break;
-                }
+                const std::optional<std::uint32_t> seen = CountSeen(run, visibility, row, points);
+                statuses[row] = seen ? CandidateMeasureStatus::Ok : CandidateMeasureStatus::BeyondBudget;
+                if (seen)
+                    values[row] = Reduce(visibility.Reduction, *seen, samples);
             }
         }
     }

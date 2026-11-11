@@ -47,6 +47,62 @@ void EffectReactionSystem::FixedLogic(FixedLogicContext& ctx)
     log->Clear();
 }
 
+namespace
+{
+    EffectReactionCase CaseOf(const World& world, const EffectApplicationLog& log, const EffectApplication& application,
+                              const EffectDefinition& definition, const WorldTransform& pose)
+    {
+        EffectReactionCase reaction{ .Kinds = &definition.Kinds,
+                                     .Recipient = world.IsRegistered<GameplayTagContainer>()
+                                                      ? world.TryGet<GameplayTagContainer>(application.Target)
+                                                      : nullptr,
+                                     .Changes = log.ChangesOf(application),
+                                     .Source = application.Source,
+                                     .TargetPosition = pose.Value.Position,
+                                     .InstigatorPosition = std::nullopt,
+                                     .Forward = pose.Value.Rotation.RotateVector(Vec3d::Forward()) };
+        if (world.IsAlive(application.Source.Instigator))
+            if (const WorldTransform* instigator = world.TryGet<WorldTransform>(application.Source.Instigator))
+                reaction.InstigatorPosition = instigator->Value.Position;
+        if (world.IsRegistered<LocomotionOutput>())
+            if (const LocomotionOutput* locomotion = world.TryGet<LocomotionOutput>(application.Target))
+                reaction.Up = locomotion->UpAxis;
+        return reaction;
+    }
+
+    // An entity with no rig, or a rig that plays no such intent, turns the request down.
+    void Flinch(World& world, EntityId target, const EffectReactionOutcome& outcome, std::uint64_t tick)
+    {
+        if (!outcome.AnimationIntent.IsValid())
+            return;
+        AnimRequestDesc flinch;
+        flinch.Source = target;
+        flinch.Intent = outcome.AnimationIntent;
+        flinch.Lifetime = AnimRequestLifetime::Fixed;
+        flinch.FixedTicks = outcome.AnimationTicks;
+        (void)RequestAnimation(world, target, flinch, tick);
+    }
+
+    void Shake(World& world, const DataAssetCache& assets, EntityId target, const EffectReactionRule& rule,
+               float scale, const FixedSimTime& time)
+    {
+        CameraShakeState* shakes = world.TryGetResource<CameraShakeState>();
+        if (shakes == nullptr || !(scale > 0.0f))
+            return;
+        const CameraShakeProfile* profile =
+            assets.TryGet<CameraShakeProfile>(assets.Find(rule.ShakeProfile), kCameraShakeType);
+        if (profile == nullptr)
+            return;
+        const std::uint64_t tick = time.TickIndex;
+        shakes->Start(CameraShakeInstance{ .Timing = CameraEffectTiming::Once(profile->Envelope, tick, target),
+                                           .Profile = *profile,
+                                           .Scale = scale,
+                                           .Seed = tick ^ target.Index,
+                                           .Point = std::nullopt },
+                      { .Tick = tick + 1, .Alpha = 0.0, .TickSeconds = time.DeltaSeconds });
+    }
+}
+
 void EffectReactionSystem::React(World& world, const FixedLogicContext& ctx)
 {
     const EffectApplicationLog& log = world.GetResource<EffectApplicationLog>();
@@ -61,58 +117,18 @@ void EffectReactionSystem::React(World& world, const FixedLogicContext& ctx)
             world.IsAlive(application.Target) ? view.TryGet<EffectReactions>(application.Target) : nullptr;
         const WorldTransform* pose = reactions != nullptr ? view.TryGet<WorldTransform>(application.Target) : nullptr;
         const EffectDefinition* definition = effects->Get(application.Effect);
-        if (pose == nullptr || definition == nullptr)
-            continue;
-        const std::vector<EffectReactionRule>* rules = RulesFor(world, reactions->Profile);
+        const std::vector<EffectReactionRule>* rules =
+            pose != nullptr && definition != nullptr ? RulesFor(world, reactions->Profile) : nullptr;
         if (rules == nullptr)
             continue;
-
-        EffectReactionCase reaction{ .Kinds = &definition->Kinds,
-                                     .Recipient = world.IsRegistered<GameplayTagContainer>()
-                                                      ? view.TryGet<GameplayTagContainer>(application.Target)
-                                                      : nullptr,
-                                     .Changes = log.ChangesOf(application),
-                                     .Source = application.Source,
-                                     .TargetPosition = pose->Value.Position,
-                                     .InstigatorPosition = std::nullopt,
-                                     .Forward = pose->Value.Rotation.RotateVector(Vec3d::Forward()) };
-        if (world.IsAlive(application.Source.Instigator))
-            if (const WorldTransform* instigator = view.TryGet<WorldTransform>(application.Source.Instigator))
-                reaction.InstigatorPosition = instigator->Value.Position;
-        if (world.IsRegistered<LocomotionOutput>())
-            if (const LocomotionOutput* locomotion = view.TryGet<LocomotionOutput>(application.Target))
-                reaction.Up = locomotion->UpAxis;
-
-        const std::optional<EffectReactionOutcome> outcome = ReactToEffect(*rules, reaction, *tags);
+        const std::optional<EffectReactionOutcome> outcome =
+            ReactToEffect(*rules, CaseOf(view, log, application, *definition, *pose), *tags);
         if (!outcome)
             continue;
         if (outcome->Impulse.Magnitude() > 0.0f)
             (void)AddMotionImpulse(world, application.Target, outcome->Impulse);
-        // An entity with no rig, or a rig that plays no such intent, turns the request down.
-        if (outcome->AnimationIntent.IsValid())
-        {
-            AnimRequestDesc flinch;
-            flinch.Source = application.Target;
-            flinch.Intent = outcome->AnimationIntent;
-            flinch.Lifetime = AnimRequestLifetime::Fixed;
-            flinch.FixedTicks = outcome->AnimationTicks;
-            (void)RequestAnimation(world, application.Target, flinch, ctx.Time.TickIndex);
-        }
-        CameraShakeState* shakes = world.TryGetResource<CameraShakeState>();
-        const EffectReactionRule& rule = (*rules)[outcome->Rule];
-        if (shakes == nullptr || !(outcome->ShakeScale > 0.0f))
-            continue;
-        const CameraShakeProfile* profile = Use.DataAssets->TryGet<CameraShakeProfile>(
-            Use.DataAssets->Find(rule.ShakeProfile), kCameraShakeType);
-        if (profile == nullptr)
-            continue;
-        const std::uint64_t tick = ctx.Time.TickIndex;
-        shakes->Start(CameraShakeInstance{ .Timing = CameraEffectTiming::Once(profile->Envelope, tick, application.Target),
-                                           .Profile = *profile,
-                                           .Scale = outcome->ShakeScale,
-                                           .Seed = tick ^ application.Target.Index,
-                                           .Point = std::nullopt },
-                      { .Tick = tick + 1, .Alpha = 0.0, .TickSeconds = ctx.Time.DeltaSeconds });
+        Flinch(world, application.Target, *outcome, ctx.Time.TickIndex);
+        Shake(world, *Use.DataAssets, application.Target, (*rules)[outcome->Rule], outcome->ShakeScale, ctx.Time);
     }
 }
 

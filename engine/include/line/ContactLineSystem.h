@@ -83,16 +83,27 @@ public:
     [[nodiscard]] std::optional<Vec3d> StuckPoint(EntityId instigator, float shortOf) const;
 
 private:
+    void LetGo(const LeaseOwner& owner, std::uint64_t tick);
+    VerbAdmission Throw(const VerbInvocation& invocation);
+    VerbAdmission LaunchTip(ContactLineState& state, const ContactLine& authored, AssetId shot,
+                            const std::optional<Vec3d>& at, std::uint64_t tick);
     void Step(EntityId line, const FixedSimTime& now);
+    void FollowTip(EntityId line, ContactLineState& state, const ContactLine& authored, std::uint64_t tick);
+    void WriteBack(EntityId line, const ContactLineState& state, const Vec3d& root);
     // False when something solid has cut the line.
     bool StrikeAlong(EntityId line, ContactLineState& state, const ContactLine& authored, const Vec3d& root,
                      const FixedSimTime& now);
+    [[nodiscard]] bool CrossesSolid(const ContactLineState& state, const Vec3d& root, const Vec3d& direction,
+                                    float length) const;
+    void Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point, const Vec3d& away,
+                const FixedSimTime& now);
     void CueAt(const ContactLineState& state, EntityId line, GameplayTagId cue, const Vec3d& point, std::uint64_t tick);
     // Ends the line, and its throw if that is still in the air: a tip nobody can
     // see must not go on striking.
     void Remove(EntityId line, std::uint64_t tick);
     // Holds each instigator within the tightest of its kept lines.
     void Leash(std::span<const EntityId> lines);
+    void GatherLeashes(std::span<const EntityId> lines);
 
     World* Entities;
     Services Host;
