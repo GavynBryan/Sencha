@@ -2,6 +2,7 @@
 
 #include <core/hash/SplitMix64.h>
 #include <ecs/World.h>
+#include <presentation/HeldEffects.h>
 #include <math/Angle.h>
 #include <math/ResponseCurve.h>
 
@@ -89,33 +90,21 @@ Transform3f ApplyCameraShake(const Transform3f& pose, const CameraShakeOffset& o
 
 void CameraShakeState::Start(CameraShakeInstance shake, const CameraEffectClock& now)
 {
-    if (Shakes.size() >= kCapacity)
-    {
-        const auto weakest = std::ranges::min_element(Shakes, {}, [&](const CameraShakeInstance& running) {
-            return running.Timing.Level(running.Timing.Elapsed(now)) * running.Scale;
-        });
-        *weakest = std::move(shake);
-        return;
-    }
-    Shakes.push_back(std::move(shake));
+    StartHeldEffect(Shakes, kCapacity, std::move(shake), [&](const CameraShakeInstance& running) {
+        return running.Timing.Level(running.Timing.Elapsed(now)) * running.Scale;
+    });
 }
 
 void CameraShakeState::Release(const LeaseOwner& holder, std::uint64_t tick, double tickSeconds)
 {
-    for (CameraShakeInstance& shake : Shakes)
-        if (shake.Timing.Holder.IsSet() && shake.Timing.Holder == holder)
-            shake.Timing.ReleaseAfter(tick, tickSeconds);
+    ReleaseHeldEffects(Shakes, holder, tick, tickSeconds);
 }
 
 void CameraShakeState::Update(const World& world, EntityId camera, Vec3d cameraPosition, const CameraEffectClock& now)
 {
     Presented = {};
     PresentedCamera = camera;
-    std::erase_if(Shakes, [&](CameraShakeInstance& shake) {
-        if (shake.Timing.Holder.IsSet() && !world.IsAlive(shake.Timing.Holder.Entity))
-            shake.Timing.ReleaseAfter(now.Tick == 0 ? 0 : now.Tick - 1, now.TickSeconds);
-        return shake.Timing.Expired(shake.Timing.Elapsed(now));
-    });
+    RetireHeldEffects(Shakes, world, now);
     if (Settings.Scale <= 0.0f || !camera.IsValid())
         return;
     for (const CameraShakeInstance& shake : Shakes)

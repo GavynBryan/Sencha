@@ -1,6 +1,7 @@
 #include <attach/AttachedLight.h>
 
 #include <ecs/World.h>
+#include <presentation/HeldEffects.h>
 
 #include <algorithm>
 #include <cmath>
@@ -46,9 +47,7 @@ AttachResult AttachedLightState::Hold(World& world, AttachedLightSpec spec, std:
 
 void AttachedLightState::Release(const LeaseOwner& holder, std::uint64_t tick, double tickSeconds)
 {
-    for (Held& light : Lights)
-        if (light.Timing.Holder.IsSet() && light.Timing.Holder == holder)
-            light.Timing.ReleaseAfter(tick, tickSeconds);
+    ReleaseHeldEffects(Lights, holder, tick, tickSeconds);
 }
 
 void AttachedLightState::Update(World& world, const CameraEffectClock& now)
