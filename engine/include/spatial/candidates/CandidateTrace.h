@@ -74,6 +74,11 @@ struct CandidateTraceRow
     float Score = 0.0f;
 };
 
+class CandidateTrace;
+
+// The run's outcome, then each requirement: how many it rejected and why.
+[[nodiscard]] std::string DescribeCandidateTrace(const CandidateTrace& trace);
+
 class CandidateTrace
 {
 public:

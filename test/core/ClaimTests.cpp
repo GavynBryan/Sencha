@@ -8,6 +8,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/ClaimVocabulary.h>
 #include <logic/Claims.h>
+#include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
 
@@ -70,6 +71,27 @@ TEST(Claims, AShareOfTheGroupScalesWithItsMembers)
         (void)world.Member();
     (void)world.Entities.CreateEntity();
     EXPECT_EQ(CountGroupMembers(world.Entities, world.Squad, *world.Tags), 9u);
+}
+
+TEST(Claims, GroupMembersWithinARadiusComeInIdentityOrder)
+{
+    ClaimWorld world;
+    world.Entities.RegisterComponent<WorldTransform>();
+    const auto at = [&](EntityId entity, float x) {
+        Transform3f pose = Transform3f::Identity();
+        pose.Position = Vec3d(x, 0.0f, 0.0f);
+        world.Entities.AddComponent<WorldTransform>(entity, WorldTransform{ pose });
+        return entity;
+    };
+    const EntityId first = at(world.Member(), 3.0f);
+    const EntityId far = at(world.Member(), 30.0f);
+    const EntityId second = at(world.Member(), -2.0f);
+    const EntityId outsider = at(world.Entities.CreateEntity(), 1.0f);
+    std::vector<EntityId> members;
+    CollectGroupMembersWithin(world.Entities, world.Squad, *world.Tags, Vec3d::Zero(), 5.0f, members);
+    EXPECT_EQ(members, (std::vector<EntityId>{ first, second }));
+    (void)far;
+    (void)outsider;
 }
 
 TEST(Claims, ContentHoldsAPlaceThroughTheLeaseAndLetsGo)

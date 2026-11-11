@@ -7,6 +7,7 @@
 #include <math/SeededPick.h>
 
 #include <algorithm>
+#include <format>
 
 namespace
 {
@@ -251,4 +252,19 @@ SelectionResult SelectionEvaluator::Evaluate(const SelectionTable& table, const 
     if (trace != nullptr)
         trace->Result = result;
     return result;
+}
+
+std::string DescribeSelectionTrace(const SelectionTrace& trace)
+{
+    std::string text;
+    for (std::size_t index = 0; index < trace.Options.size(); ++index)
+    {
+        const SelectionTraceOption& option = trace.Options[index];
+        text += std::format("  option {}: {}\n", index,
+                            option.Unavailable ? "unavailable"
+                            : option.Qualified ? std::format("score {:.3f}", option.Score)
+                                               : std::format("disqualified by consideration {}",
+                                                             option.RejectedBy.value_or(0)));
+    }
+    return text;
 }

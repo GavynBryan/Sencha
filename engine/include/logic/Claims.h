@@ -3,6 +3,7 @@
 #include <ecs/EntityId.h>
 #include <ecs/LeaseOwner.h>
 #include <gameplay_tags/GameplayTagId.h>
+#include <math/Vec.h>
 
 #include <cstdint>
 #include <vector>
@@ -46,6 +47,10 @@ private:
 // Live entities whose tags hold `group` or a tag beneath it.
 [[nodiscard]] std::uint32_t CountGroupMembers(const World& world, GameplayTagId group,
                                               const GameplayTagRegistry& tags);
+
+// Those same members within `radius` of `centre`, in identity order.
+void CollectGroupMembersWithin(const World& world, GameplayTagId group, const GameplayTagRegistry& tags,
+                               const Vec3d& centre, float radius, std::vector<EntityId>& out);
 
 // A claim's capacity in a group of `members`: `count`, or `share` of the
 // members rounded down if that is more.

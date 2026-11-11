@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 class AuthoredQueryDispatcher;
@@ -97,6 +98,9 @@ struct SelectionScratch
     std::vector<float> Scores;
     std::vector<std::uint8_t> Qualified;
 };
+
+// One line per option: unavailable, its score, or what disqualified it.
+[[nodiscard]] std::string DescribeSelectionTrace(const SelectionTrace& trace);
 
 // Owner thread; a pure read of the World and the queries it asks.
 class SelectionEvaluator

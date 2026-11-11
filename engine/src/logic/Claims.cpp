@@ -4,6 +4,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <cmath>
@@ -72,6 +73,22 @@ std::uint32_t CountGroupMembers(const World& world, GameplayTagId group, const G
             ++members;
     });
     return members;
+}
+
+void CollectGroupMembersWithin(const World& world, GameplayTagId group, const GameplayTagRegistry& tags,
+                               const Vec3d& centre, float radius, std::vector<EntityId>& out)
+{
+    out.clear();
+    if (!group.IsValid() || !world.IsRegistered<GameplayTagContainer>())
+        return;
+    GameplayTagQuery query;
+    query.AddAll(group, GameplayTagMatchMode::Hierarchical);
+    world.ForEachComponent<GameplayTagContainer>([&](EntityId member, const GameplayTagContainer& held) {
+        const WorldTransform* pose = world.TryGet<WorldTransform>(member);
+        if (pose != nullptr && (pose->Value.Position - centre).Magnitude() <= radius && query.Matches(held, tags))
+            out.push_back(member);
+    });
+    std::ranges::sort(out);
 }
 
 std::uint32_t ClaimCapacity(std::uint32_t count, float share, std::uint32_t members)

@@ -216,6 +216,7 @@ TEST(SelectionTable, ARequirementDisqualifiesAndTheTraceSaysWhich)
     EXPECT_FALSE(trace.Options[0].Qualified);
     EXPECT_EQ(trace.Options[0].RejectedBy, 0u);
     EXPECT_FLOAT_EQ(trace.Values[trace.Options[0].FirstValue].Value, 3.0f);
+    EXPECT_EQ(DescribeSelectionTrace(trace), "  option 0: disqualified by consideration 0\n  option 1: score 1.000\n");
 
     harness.Answers.Of[harness.Threat] = 7.0;
     EXPECT_EQ(harness.Choose(*table, {}).Option, 0u);

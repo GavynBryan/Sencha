@@ -89,6 +89,8 @@ TEST(CandidateGenerationBounds, FailedProjectionsSpendAttemptsAndStopGeneration)
     EXPECT_EQ(result.Generated, 0u);
     EXPECT_EQ(trace.DroppedAtGeneration, 100u);
     EXPECT_TRUE(result.Flags.BudgetExhausted);
+    EXPECT_NE(DescribeCandidateTrace(trace).find("generated 0, qualified 0, budget spent"), std::string::npos)
+        << DescribeCandidateTrace(trace);
     EXPECT_TRUE(result.Flags.GenerationTruncated);
 }
 
