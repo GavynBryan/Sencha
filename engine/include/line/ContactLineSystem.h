@@ -25,21 +25,13 @@ class World;
 struct FixedLogicContext;
 struct FixedSimTime;
 
-// Throw a line at a point or along the aim, and keep it out while held.
 inline constexpr std::string_view kLineExtendLease = "line.extend";
-// End every line an entity has out, where it is.
 inline constexpr std::string_view kLineCutVerb = "line.cut";
-// Draw home every line an entity has left anchored.
 inline constexpr std::string_view kLineRetractVerb = "line.retract";
-// Whether an entity has a line it is holding anchored.
 inline constexpr std::string_view kLineAnchoredQuery = "line.anchored";
-// Whether an entity has a line it is holding anchored within a distance of a point.
 inline constexpr std::string_view kLineAnchoredWithinQuery = "line.anchored_within";
-// Where the line an entity is holding is anchored.
 inline constexpr std::string_view kLineAnchorQuery = "line.anchor";
-// Whether an entity has a line it let go of still stuck where it landed.
 inline constexpr std::string_view kLineStuckQuery = "line.stuck";
-// A point along the newest such line, some metres short of where it is stuck.
 inline constexpr std::string_view kLineStuckPointQuery = "line.stuck_point";
 
 void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries);

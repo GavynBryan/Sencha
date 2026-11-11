@@ -854,3 +854,24 @@ and the default scratch slice is 3 MiB. `RendererServices::Health`,
 `Renderer::GetLastFrameHealth` and `RenderFrameHealth`. `ScratchTag` gains the
 outline tags. `SkinnedPoseFrameData` loses `Ready`, and `SkinnedPosePass::Setup`
 takes its dispatch capacity.
+
+## v43
+
+**Decision agents.** A new component, `DecisionAgent`, holds what an entity choosing its own options tracks.
+`DecisionAgents` decides for every one from a `DecisionProfile` that a game embeds in its own profile. The game
+registers its inputs and slots by name and adds its own state through `DecisionHooks`. See
+`docs/gameplay/decision-agent.md`.
+
+**Considerations.** `SelectionConsiderationDesc`, `SelectionConsideration` and `CandidateCriterion` hold a
+`ConsiderationRule` in place of their own mode, bounds, curve, weight and unmeasured score.
+`SelectionConsiderationMode` and `CandidateCriterionMode` are both `ConsiderationMode`.
+
+**Helpers a game had written for itself.** `Sees`, `PredictMotion`, `NavAgentQueryRequest` and `NavCheckReach`
+(also `NavigationQuery::CheckReach`), `CollectGroupMembersWithin`, `DescribeSelectionTrace`,
+`DescribeCandidateTrace` and `GameModuleRun`. Authored values: `AuthoredField<T>`, `ReadAuthoredArgument<T>`
+and `DataField::OptionalNumber`.
+
+**Shared machinery.** `SpareRetention` replaces the retention constants of `ChunkBlockPool` and
+`AbilityActivations`. `presentation/HeldEffects.h` starts, releases and retires held lights, shakes and pulses.
+Also new: `AuthoredNameResolver`, `AppendSourcedCue`, `PlaceSpawnedRoot`, `ProjectileStops::Find`, and
+`ProjectileSystem::PrefabOf(AssetRef)`. Overlap queries return each entity once, in identity order.

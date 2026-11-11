@@ -10,15 +10,10 @@
 
 class World;
 
-// Drive a character at a velocity while held, or for a time: a lunge, a dash, a launch.
 inline constexpr std::string_view kMovementBurstLease = "movement.burst";
-// Tie a character to an anchor while held, pulled toward it beyond the rope's length.
 inline constexpr std::string_view kMovementTetherLease = "movement.tether";
-// Put a character in a locomotion mode while held; letting go returns it to free.
 inline constexpr std::string_view kMovementModeLease = "movement.mode";
-// Set a character moving at a velocity once; it keeps that momentum afterwards.
 inline constexpr std::string_view kMovementLaunchVerb = "movement.launch";
-// Add a velocity to a character's once, on top of whatever it was moving at: a shove.
 inline constexpr std::string_view kMovementImpulseVerb = "movement.impulse";
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope);

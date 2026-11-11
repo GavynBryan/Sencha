@@ -12,9 +12,7 @@ class PhysicsQueries;
 // The closest body along a ray: {hit, entity, point, normal}. `entity` may be invalid
 // on a hit, for a body no entity owns.
 inline constexpr std::string_view kPhysicsTraceQuery = "physics.trace";
-// Every entity whose body overlaps a sphere.
 inline constexpr std::string_view kPhysicsOverlapQuery = "physics.overlap";
-// Whether a line, or an upright capsule moved along one, meets nothing solid.
 inline constexpr std::string_view kPhysicsClearPathQuery = "physics.clear_path";
 
 void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope);

@@ -111,6 +111,10 @@ The `.snav` codec (`NavigationFile.cpp`) writes records through the
 | `CollectReachable` | regions reachable within a cost budget, with entry costs, cheapest first |
 | `ClosestPointInRegion`, `RegionBounds` | positions inside a region; the caller decides sampling |
 | `ValidateRoute` | whether a stored route still holds |
+| `NavCheckReach`, `CheckReach` | whether one point reaches another once both project, within a tolerance of the second; or that the first is off navigation |
+
+`NavAgentQueryRequest` builds the request an agent plans with, without its ends:
+its zone, its profile, and the traversal kinds it may use.
 
 Every query takes a caller-owned `NavQueryContext` (node pool, open list, corridor
 scratch, sized once) and never allocates after warm-up. There is no lock: give

@@ -8,7 +8,6 @@
 
 class ProjectileSystem;
 
-// Launch a projectile prefab from an entity's aim, or from a given origin and direction.
 inline constexpr std::string_view kProjectileLaunchVerb = "projectile.launch";
 
 // projectile.launch and the projectile.hit occurrence.

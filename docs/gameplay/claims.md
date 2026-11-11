@@ -23,6 +23,7 @@ tokens and an "in position" signal are three claims.
   nothing: its place is free on the next take.
 - **Native use.** A game system that decides for its entities takes and
   releases places on the `ClaimBoard` directly, with the same capacity rule
-  (`ClaimCapacity`, `CountGroupMembers`).
+  (`ClaimCapacity`, `CountGroupMembers`). `CollectGroupMembersWithin` finds the
+  members near a point in identity order, for a squad that weighs its neighbours.
 - **Authority.** Taking a place is refused off the authority; counts read
   whatever the World holds.
