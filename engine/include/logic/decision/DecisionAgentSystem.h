@@ -11,18 +11,23 @@
 #include <math/Vec.h>
 #include <perception/ObservationMemory.h>
 #include <spatial/candidates/CandidateTrace.h>
+#include <spatial/candidates/CandidateTypes.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 class AuthoredQueryDispatcher;
+class CandidateEvaluator;
+class PhysicsWorld;
+class RuntimeWorld;
 class Logger;
 class World;
 struct FixedLogicContext;
@@ -39,6 +44,23 @@ struct DecisionMoment
 };
 
 using DecisionInput = std::function<float(const DecisionMoment&)>;
+
+// What a place evaluation's slot reads when the agent chooses a place.
+struct DecisionSlotQuery
+{
+    const World& Entities;
+    EntityId Self;
+    const DecisionAgent& Agent;
+    const ObservationMemoryEntry* Target = nullptr;
+    // Where the target is known to be and the way it faced: from memory, or from
+    // the last contact once memory has let go.
+    Vec3d Known = Vec3d::Zero();
+    Vec3d Facing = Vec3d::Zero();
+};
+
+// The points a slot of this name holds; none leaves the slot unbound. The span
+// must stay valid until the evaluation that asked for it has run.
+using DecisionSlot = std::function<std::optional<std::span<const CandidatePoint>>(const DecisionSlotQuery&)>;
 
 enum class DecisionTurn : std::uint8_t
 {
@@ -88,15 +110,6 @@ struct DecisionHooks
     std::function<void(World&, EntityId, std::string_view option, bool changed)> OptionChosen{};
     // Nothing qualified, so it stopped.
     std::function<void(World&, EntityId)> Stopped{};
-    // Where the option goes; Ran says whether an evaluation ran, which spends the tick's budget.
-    struct PlaceChoice
-    {
-        std::optional<DecisionPlace> Place;
-        bool Ran = false;
-    };
-    std::function<PlaceChoice(World&, EntityId, DecisionAgent&, const DecisionOptionPlan&,
-                              const ObservationMemoryEntry* target, std::uint64_t tick, DecisionRecord&)>
-        ChoosePlace{};
 };
 
 struct DecisionRunSettings
@@ -119,6 +132,12 @@ public:
     {
         RuntimeAssets* Assets = nullptr;
         const AuthoredQueryDispatcher* Queries = nullptr;
+        // Where an agent stands on navigation, for its place evaluations.
+        const RuntimeWorld* Runtime = nullptr;
+        // Stops a predicted target at walls and ledges; straight without one.
+        const PhysicsWorld* Physics = nullptr;
+        // Runs place evaluations; without one every option that needs a place is unavailable.
+        std::function<CandidateEvaluator*()> Candidates{};
         Logger* Log = nullptr;
     };
 
@@ -129,6 +148,10 @@ public:
 
     // What a table's input of this name reads.
     void RegisterInput(std::string name, DecisionInput input);
+    // What a place evaluation's slot of this name holds. The agent's own slots
+    // are built in: target, target_position, current, contact, self, predicted,
+    // and visited, the places its group has reached lately; a game may replace them.
+    void RegisterSlot(std::string name, DecisionSlot slot);
 
     void Run(FixedLogicContext& ctx, const DecisionRunSettings& settings);
     // Releases every asset lease; decisions resume once the next tick binds again.
@@ -141,8 +164,6 @@ public:
     [[nodiscard]] std::string_view OptionName(const World& world, const DecisionProfile& profile, std::uint32_t option);
     // The group an agent decides with: its ObservationSharing group.
     [[nodiscard]] static GameplayTagId GroupOf(const World& world, EntityId agent);
-    // Places the group has marked visited within the last `seconds`.
-    void CollectVisited(GameplayTagId group, float seconds, std::vector<Vec3d>& out) const;
 
     [[nodiscard]] std::string Describe(EntityId agent) const;
     [[nodiscard]] std::string DescribeCost() const;

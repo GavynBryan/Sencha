@@ -12,11 +12,22 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Claims.h>
+#include <navigation/NavAgent.h>
+#include <navigation/NavTraversal.h>
+#include <navigation/ZoneNavigation.h>
 #include <perception/ObservationSharing.h>
+#include <physics/MotionPrediction.h>
+#include <physics/PhysicsQueries.h>
+#include <spatial/candidates/CandidateEvaluation.h>
+#include <spatial/candidates/CandidateEvaluationData.h>
+#include <spatial/candidates/CandidateEvaluator.h>
+#include <spatial/candidates/CandidateScratch.h>
+#include <world/RuntimeWorld.h>
 #include <perception/PerceptionVocabulary.h>
 #include <world/SimulationAuthority.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <format>
 
@@ -30,6 +41,12 @@ namespace
     constexpr std::size_t kVisitedPlaces = 32;
     // The holder key an agent's one claim is held under.
     constexpr std::uint64_t kClaimKey = 1;
+    // A place visited this long ago is worth visiting again.
+    constexpr float kVisitedSeconds = 30.0f;
+    // How far ahead a predicted target is placed.
+    constexpr float kPredictedSeconds = 1.2f;
+    // How long a lost contact is followed on along its last motion.
+    constexpr float kMostContactSeconds = 2.0f;
 
     const Vec4 kDestinationColor{ 0.2f, 0.9f, 0.4f, 1.0f };
     const Vec4 kTargetColor{ 0.95f, 0.3f, 0.25f, 1.0f };
@@ -61,6 +78,15 @@ namespace
         std::vector<const DecisionInput*> Inputs;
         std::vector<EntityRole> Entities;
         std::vector<OptionRuntime> Options;
+    };
+
+    // A place evaluation the profile's options name, bound once however many name it.
+    struct PlaceRuntime
+    {
+        std::string Path;
+        std::optional<DataAssetLease<CandidateEvaluationDesc>> Lease;
+        CandidateEvaluationBinding Binding;
+        bool Bound = false;
     };
 
     // Places a group has visited and when, oldest overwritten first.
@@ -141,11 +167,29 @@ namespace
 
 struct DecisionAgents::State
 {
-    State(Services services, DecisionHooks hooks) : Use(services), Hooks(std::move(hooks)) {}
+    State(Services services, DecisionHooks hooks) : Use(std::move(services)), Hooks(std::move(hooks))
+    {
+        RegisterBuiltInSlots();
+    }
 
     Services Use;
     DecisionHooks Hooks;
     std::unordered_map<std::string, DecisionInput> Inputs;
+    std::vector<std::pair<std::string, DecisionSlot>> Slots;
+    std::vector<PlaceRuntime> PlaceRuntimes;
+    // Sized for the largest place run content asks for: a search floods far.
+    CandidateScratch Places{ CandidateLimits{ .MaxCandidates = 256, .MaxCriteria = 16, .MaxReachableRegions = 4096 } };
+    CandidateResultBuffer Results{ 4 };
+    std::array<CandidateSlotBinding, 16> Bindings{};
+    std::array<GameplayTagId, kNavMaxTraversalKinds> Capabilities{};
+    std::array<CandidatePoint, 1> TargetPoint{};
+    std::array<CandidatePoint, 1> TargetPositionPoint{};
+    std::array<CandidatePoint, 1> CurrentPoint{};
+    std::array<CandidatePoint, 1> ContactPoint{};
+    std::array<CandidatePoint, 1> SelfPoint{};
+    std::array<CandidatePoint, 1> PredictedPoint{};
+    std::vector<CandidatePoint> VisitedPoints;
+    bool Drawing = false;
     const World* QueriedWorld = nullptr;
     std::optional<Query<Write<DecisionAgent>, Read<ObservationMemory>, Read<WorldTransform>>> Agents;
     std::vector<std::unique_ptr<ProfileRuntime>> Profiles;
@@ -249,8 +293,182 @@ struct DecisionAgents::State
             if (out.Plan == nullptr && Use.Log != nullptr)
                 Use.Log->Error("Decision table '{}' option '{}' has no plan in its profile", table.Name(), option.Name);
         }
+        for (const DecisionOptionPlan& plan : runtime.Profile->Options)
+            if (!plan.Position.empty() && PlaceFor(plan.Position) == nullptr)
+                PlaceRuntimes.push_back(PlaceRuntime{ .Path = plan.Position,
+                                                      .Lease = DataAssetLease<CandidateEvaluationDesc>(
+                                                          plan.Position, kCandidateEvaluationTypeName),
+                                                      .Binding = {},
+                                                      .Bound = false });
         if (Hooks.Bound)
             Hooks.Bound(*runtime.Profile);
+    }
+
+    PlaceRuntime* PlaceFor(const std::string& path)
+    {
+        const auto found = std::ranges::find(PlaceRuntimes, path, &PlaceRuntime::Path);
+        return found != PlaceRuntimes.end() ? &*found : nullptr;
+    }
+
+    const CandidateEvaluation* BindPlace(const World& world, PlaceRuntime& place)
+    {
+        const CandidateBindEnvironment environment{ world.TryGetResource<GameplayTagRegistry>(),
+                                                    Use.Queries != nullptr ? &Use.Queries->Registry() : nullptr };
+        Errors.clear();
+        if (!place.Bound)
+        {
+            if (place.Lease->Get(Use.Assets->Assets, Use.Assets->DataAssets) == nullptr)
+                return nullptr;
+            place.Bound = place.Binding.BindFrom(Use.Assets->DataAssets, place.Lease->Handle(),
+                                                 Use.Assets->CandidateOperations, environment, Errors);
+            if (!place.Bound && Use.Log != nullptr)
+                Use.Log->Error("Decision position '{}' did not bind", place.Path);
+        }
+        else
+        {
+            (void)place.Binding.Refresh(Use.Assets->DataAssets, Use.Assets->CandidateOperations, environment, Errors);
+        }
+        return place.Binding.Evaluation();
+    }
+
+    using Points = std::optional<std::span<const CandidatePoint>>;
+
+    void RegisterBuiltInSlots()
+    {
+        Slots.emplace_back("target", [this](const DecisionSlotQuery& q) { return TargetSlot(q); });
+        Slots.emplace_back("target_position", [this](const DecisionSlotQuery& q) -> Points {
+            if (q.Target == nullptr && !q.Agent.Engaged)
+                return std::nullopt;
+            TargetPositionPoint[0] = CandidatePoint{ .Position = q.Known };
+            return TargetPositionPoint;
+        });
+        Slots.emplace_back("current", [this](const DecisionSlotQuery& q) -> Points {
+            if (!q.Agent.HasDestination)
+                return std::nullopt;
+            CurrentPoint[0] = CandidatePoint{ .Position = q.Agent.Destination };
+            return CurrentPoint;
+        });
+        Slots.emplace_back("contact", [this](const DecisionSlotQuery& q) { return ContactSlot(q); });
+        Slots.emplace_back("self", [this](const DecisionSlotQuery& q) -> Points {
+            const WorldTransform* pose = q.Entities.TryGet<WorldTransform>(q.Self);
+            SelfPoint[0] = pose != nullptr ? CandidatePoint{ .Position = pose->Value.Position } : CandidatePoint{};
+            return SelfPoint;
+        });
+        Slots.emplace_back("predicted", [this](const DecisionSlotQuery& q) { return PredictedSlot(q); });
+        Slots.emplace_back("visited", [this](const DecisionSlotQuery&) { return VisitedSlot(); });
+    }
+
+    // Seen now, the target is read where it stands; otherwise it is where it
+    // was known to be, facing the way it faced then.
+    Points TargetSlot(const DecisionSlotQuery& q)
+    {
+        if (q.Target == nullptr && !q.Agent.Engaged)
+            return std::nullopt;
+        TargetPoint[0] = q.Target != nullptr && Sees(q.Entities, q.Self, q.Target->Subject)
+            ? CandidatePoint{ .Entity = q.Target->Subject }
+            : CandidatePoint{ .Position = q.Known, .Forward = q.Facing };
+        return TargetPoint;
+    }
+
+    // Where a lost contact would be had it kept going, for a while.
+    Points ContactSlot(const DecisionSlotQuery& q)
+    {
+        if (!q.Agent.Engaged)
+            return std::nullopt;
+        const float ahead = std::min(q.Agent.SecondsSinceContact, kMostContactSeconds);
+        const float speed = q.Agent.ContactVelocity.Magnitude();
+        ContactPoint[0] = CandidatePoint{ .Position = q.Agent.ContactPosition + q.Agent.ContactVelocity * ahead,
+                                          .Forward = speed > 0.1f ? q.Agent.ContactVelocity / speed : Vec3d::Zero() };
+        return ContactPoint;
+    }
+
+    Points PredictedSlot(const DecisionSlotQuery& q)
+    {
+        if (!q.Agent.Engaged)
+            return std::nullopt;
+        PredictedPoint[0] = CandidatePoint{
+            .Position = Use.Physics != nullptr
+                ? PredictMotion(PhysicsQueries(*Use.Physics), q.Known, q.Agent.ContactVelocity, kPredictedSeconds,
+                                q.Agent.Target)
+                : q.Known + q.Agent.ContactVelocity * kPredictedSeconds };
+        return PredictedPoint;
+    }
+
+    Points VisitedSlot()
+    {
+        VisitedPoints.clear();
+        const auto found = std::ranges::find(Visits, Group, &VisitLog::Group);
+        if (Group.IsValid() && found != Visits.end())
+            for (std::size_t index = 0; index < found->Places.size(); ++index)
+                if (Now - found->When[index] < kVisitedSeconds)
+                    VisitedPoints.push_back(CandidatePoint{ .Position = found->Places[index] });
+        return VisitedPoints;
+    }
+
+    std::size_t BindSlots(const CandidateEvaluation& evaluation, const DecisionSlotQuery& query)
+    {
+        std::size_t bound = 0;
+        for (const auto& [name, slot] : Slots)
+        {
+            const std::optional<std::uint8_t> index = evaluation.FindSlot(name);
+            if (!index || bound >= Bindings.size())
+                continue;
+            if (const Points points = slot(query))
+                Bindings[bound++] = CandidateSlotBinding{ *index, *points };
+        }
+        return bound;
+    }
+
+    CandidateContext PlaceContext(const World& world, EntityId self, const DecisionAgent& agent, std::uint64_t tick,
+                                  std::size_t bound)
+    {
+        CandidateContext context;
+        context.Querier = self;
+        context.Slots = std::span(Bindings.data(), bound);
+        context.Seed = (static_cast<std::uint64_t>(self.Index) << 32) ^ agent.Decisions;
+        context.Tick = tick;
+        if (const std::optional<ZoneId> zone = Use.Runtime != nullptr ? Use.Runtime->ZoneOf(self) : std::nullopt)
+        {
+            context.Navigation.Zone = *zone;
+            if (const ZoneNavigation* navigation = FindZoneNavigation(*Use.Runtime, *zone))
+                context.Navigation.Capabilities =
+                    std::span(Capabilities).first(CollectNavCapabilities(world, self, *navigation, Capabilities));
+        }
+        if (const NavAgent* nav = world.TryGet<NavAgent>(self))
+            if (const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+                context.Navigation.Profile = tags->FindTag(nav->Profile.View());
+        return context;
+    }
+
+    struct PlaceChoice
+    {
+        std::optional<DecisionPlace> Place;
+        bool Ran = false;
+    };
+
+    // Where the option goes; Ran says whether an evaluation ran, which spends the tick's budget.
+    PlaceChoice ChoosePlace(World& world, EntityId self, const DecisionAgent& agent, const DecisionOptionPlan& plan,
+                            const ObservationMemoryEntry* target, std::uint64_t tick, DecisionRecord& record)
+    {
+        CandidateEvaluator* candidates = Use.Candidates ? Use.Candidates() : nullptr;
+        PlaceRuntime* place = PlaceFor(plan.Position);
+        const CandidateEvaluation* evaluation = candidates != nullptr && place != nullptr ? BindPlace(world, *place) : nullptr;
+        if (evaluation == nullptr)
+            return {};
+        const DecisionSlotQuery query{ world, self, agent, target,
+                                       target != nullptr ? target->Position : agent.ContactPosition,
+                                       target != nullptr ? target->Facing : agent.ContactFacing };
+        const std::size_t bound = BindSlots(*evaluation, query);
+
+        const CandidateTraceLevel level = Drawing ? CandidateTraceLevel::Full : CandidateTraceLevel::Summary;
+        if (!record.Places || record.Places->Level() != level)
+            record.Places.emplace(level, Drawing ? 128u : 0u);
+        const CandidateRunResult result =
+            candidates->Evaluate(*evaluation, PlaceContext(world, self, agent, tick, bound), Places, Results, &*record.Places);
+        if (result.Status != CandidateRunStatus::Success || Results.Entries().empty())
+            return { .Place = std::nullopt, .Ran = true };
+        const CandidateResultEntry& best = Results.Entries().front();
+        return { .Place = DecisionPlace{ .Position = best.Position, .Score = best.Score }, .Ran = true };
     }
 
     void Report(ProfileRuntime& runtime, std::string_view what)
@@ -442,9 +660,7 @@ struct DecisionAgents::State
             && runtime.Options[agent.PlaceOption].Plan != nullptr && runtime.Options[agent.PlaceOption].Plan->MarksVisited
             && FlatDistance(agent.Destination, position) <= kVisitedMetres)
             RecordVisited(agent.Destination);
-        const DecisionHooks::PlaceChoice choice = Hooks.ChoosePlace
-            ? Hooks.ChoosePlace(world, self, agent, plan, target, tick, record)
-            : DecisionHooks::PlaceChoice{};
+        const PlaceChoice choice = ChoosePlace(world, self, agent, plan, target, tick, record);
         RunsThisTick += choice.Ran ? 1u : 0u;
         if (!choice.Place)
         {
@@ -625,10 +841,20 @@ void DecisionAgents::RegisterInput(std::string name, DecisionInput input)
     Impl->Inputs.insert_or_assign(std::move(name), std::move(input));
 }
 
+void DecisionAgents::RegisterSlot(std::string name, DecisionSlot slot)
+{
+    const auto found = std::ranges::find(Impl->Slots, name, &std::pair<std::string, DecisionSlot>::first);
+    if (found != Impl->Slots.end())
+        found->second = std::move(slot);
+    else
+        Impl->Slots.emplace_back(std::move(name), std::move(slot));
+}
+
 void DecisionAgents::Close()
 {
     Impl->Profiles.clear();
     Impl->Records.clear();
+    Impl->PlaceRuntimes.clear();
 }
 
 void DecisionAgents::Run(FixedLogicContext& ctx, const DecisionRunSettings& settings)
@@ -647,6 +873,7 @@ void DecisionAgents::Run(FixedLogicContext& ctx, const DecisionRunSettings& sett
     const float elapsed = static_cast<float>(ctx.Time.DeltaSeconds);
     state.Now += elapsed;
     state.RunsThisTick = 0;
+    state.Drawing = settings.Drawing;
 
     state.DueNow.clear();
     state.Agents->ForEachChunkIn(ctx.Partitions, [&](auto& view) {
@@ -695,17 +922,6 @@ GameplayTagId DecisionAgents::GroupOf(const World& world, EntityId agent)
         world.IsRegistered<ObservationSharing>() ? world.TryGet<ObservationSharing>(agent) : nullptr;
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     return sharing != nullptr && tags != nullptr ? tags->FindTag(sharing->Group.View()) : GameplayTagId{};
-}
-
-void DecisionAgents::CollectVisited(GameplayTagId group, float seconds, std::vector<Vec3d>& out) const
-{
-    out.clear();
-    const auto found = std::ranges::find(Impl->Visits, group, &VisitLog::Group);
-    if (!group.IsValid() || found == Impl->Visits.end())
-        return;
-    for (std::size_t index = 0; index < found->Places.size(); ++index)
-        if (Impl->Now - found->When[index] < seconds)
-            out.push_back(found->Places[index]);
 }
 
 std::string DecisionAgents::Describe(EntityId agent) const
