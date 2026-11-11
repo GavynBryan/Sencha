@@ -45,6 +45,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/EffectReactions.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/decision/DecisionAgent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/Responses.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/VerbRelay.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
@@ -505,6 +506,7 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # A module holds bound selection tables and candidate evaluations by value,
     # with the curves and tag queries inside them.
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/selection/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/decision/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/math/ResponseCurve.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/math/ConsiderationRule.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagQuery.h"
