@@ -11,11 +11,6 @@ namespace
 {
 constexpr std::align_val_t kBlockAlignment{ kChunkBlockAlignment };
 
-std::size_t RetentionLimit(std::size_t inUse)
-{
-    return std::max(ChunkBlockPool::kMinRetainedBlocks, inUse / ChunkBlockPool::kRetainedShareOfInUse);
-}
-
 std::uint8_t* NewBlock()
 {
     return static_cast<std::uint8_t*>(::operator new(ChunkSizeBytes, kBlockAlignment));
@@ -73,7 +68,7 @@ void ChunkBlockPool::Release(std::uint8_t* block) noexcept
         assert(Counts.InUse > 0);
         --Counts.InUse;
         Retained.push_back(block);
-        const std::size_t limit = RetentionLimit(Counts.InUse);
+        const std::size_t limit = kRetention.Limit(Counts.InUse);
         if (Retained.size() > limit)
         {
             surplus.assign(Retained.begin() + static_cast<std::ptrdiff_t>(limit), Retained.end());

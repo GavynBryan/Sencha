@@ -72,8 +72,8 @@ TEST(ChunkBlockPool, KeepsTheFloorOnceNothingIsInUse)
     for (std::uint8_t* block : blocks)
         pool.Release(block);
     EXPECT_EQ(pool.Stats().InUse, 0u);
-    EXPECT_EQ(pool.Stats().Retained, ChunkBlockPool::kMinRetainedBlocks);
-    EXPECT_EQ(pool.Stats().ToAllocator, 1000u - ChunkBlockPool::kMinRetainedBlocks);
+    EXPECT_EQ(pool.Stats().Retained, ChunkBlockPool::kRetention.Floor);
+    EXPECT_EQ(pool.Stats().ToAllocator, 1000u - ChunkBlockPool::kRetention.Floor);
 }
 
 TEST(ChunkBlockPool, KeepsAShareOfWhatIsInUse)
@@ -88,7 +88,7 @@ TEST(ChunkBlockPool, KeepsAShareOfWhatIsInUse)
         blocks.pop_back();
     }
     EXPECT_EQ(pool.Stats().InUse, 800u);
-    EXPECT_EQ(pool.Stats().Retained, 800u / ChunkBlockPool::kRetainedShareOfInUse);
+    EXPECT_EQ(pool.Stats().Retained, 800u / ChunkBlockPool::kRetention.ShareOfLive);
     for (std::uint8_t* block : blocks)
         pool.Release(block);
 }

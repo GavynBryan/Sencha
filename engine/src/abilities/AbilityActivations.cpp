@@ -77,7 +77,7 @@ void AbilityActivations::Retire(AbilityActivationHandle handle)
         return;
     --Counts.Live;
     Spare.push_back(std::move(value));
-    const std::size_t limit = std::max(kMinSpare, Counts.Live / kSpareShareOfLive);
+    const std::size_t limit = kRetention.Limit(Counts.Live);
     if (Spare.size() > limit)
         Spare.resize(limit);
     Counts.Spare = Spare.size();

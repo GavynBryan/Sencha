@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/containers/SpareRetention.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -13,15 +15,10 @@
 // A block comes back as its last tenant left it. A row's columns are written by
 // whoever placed them, and debug builds scribble over every block handed out or
 // taken back, so a reader relying on stale bytes or a released block fails.
-//
-// The pool keeps a released block only while it holds no more than the larger of
-// kMinRetainedBlocks and a kRetainedShareOfInUse-th of the blocks in use. The rest
-// return to the allocator, so what it holds follows the live population.
 class ChunkBlockPool
 {
 public:
-    static constexpr std::size_t kMinRetainedBlocks = 64;
-    static constexpr std::size_t kRetainedShareOfInUse = 4;
+    static constexpr SpareRetention kRetention{};
 
     struct Counters
     {

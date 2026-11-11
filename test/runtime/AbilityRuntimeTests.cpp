@@ -1422,7 +1422,7 @@ TEST_F(AbilityRuntime, SpareActivationsStayBoundedAfterABurst)
         Entities.DestroyEntity(actor);
     Step();
     EXPECT_EQ(pool.Stats().Live, 0u);
-    EXPECT_EQ(pool.Stats().Spare, AbilityActivations::kMinSpare);
+    EXPECT_EQ(pool.Stats().Spare, AbilityActivations::kRetention.Floor);
 }
 
 // One actor's requests name its starts apart, wherever others' fall in the queue.

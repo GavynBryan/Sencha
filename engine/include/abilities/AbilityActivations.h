@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/containers/SpareRetention.h>
+
 #include <abilities/AbilityCapacity.h>
 #include <abilities/AbilityId.h>
 #include <abilities/AbilityLocals.h>
@@ -29,14 +31,11 @@ struct AbilityActivation
 // ActiveAbilities is replicated, and a replicated component may declare no lifecycle
 // hooks, so a slot's activation is not freed by one. A pass collects any whose owner
 // is gone or no longer names it. Nothing else depends on when that happens.
-//
-// Freed activations are kept for the next start, up to the larger of kMinSpare and a
-// kSpareShareOfLive-th of those live, so warmed-up combat allocates nothing.
 class AbilityActivations
 {
 public:
-    static constexpr std::size_t kMinSpare = 64;
-    static constexpr std::size_t kSpareShareOfLive = 4;
+    // Freed activations kept for the next start.
+    static constexpr SpareRetention kRetention{};
 
     struct Counters
     {
