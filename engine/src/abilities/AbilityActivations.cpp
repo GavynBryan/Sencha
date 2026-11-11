@@ -100,9 +100,11 @@ void AbilityActivations::CollectOrphans(const World& world)
 
 bool IsAbilityLive(const World& world, EntityId actor, AbilityId ability)
 {
-    const ActiveAbilities* active = world.TryGet<ActiveAbilities>(actor);
     const AbilityActivations* activations = world.TryGetResource<AbilityActivations>();
-    if (active == nullptr || activations == nullptr || !ability.IsValid())
+    if (activations == nullptr || !ability.IsValid() || !world.IsRegistered<ActiveAbilities>())
+        return false;
+    const ActiveAbilities* active = world.TryGet<ActiveAbilities>(actor);
+    if (active == nullptr)
         return false;
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
