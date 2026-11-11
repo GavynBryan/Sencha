@@ -43,6 +43,10 @@ struct PerceptionSenses
     GameplayTagId Shared;
 };
 
+// Whether `subject` is in `observer`'s standing sight scan: true between looks
+// too, unlike a memory's age of zero.
+[[nodiscard]] bool Sees(const World& world, EntityId observer, EntityId subject);
+
 // The sense tags, a GameplayTagRegistry if the World has none, as a World
 // resource. Idempotent.
 const PerceptionSenses& EnsurePerceptionSenses(World& world);

@@ -1,10 +1,16 @@
 #pragma once
 
+#include <ecs/EntityId.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <navigation/NavQueryContext.h>
 #include <navigation/NavigationTypes.h>
 
+class World;
+
+#include <cstdint>
+#include <limits>
 #include <optional>
+#include <span>
 
 class RuntimeWorld;
 class ZoneNavigation;
@@ -88,6 +94,27 @@ class ZoneNavigation;
 [[nodiscard]] NavRouteValidity NavValidateRoute(const ZoneNavigation& zone,
                                                 const NavRouteBuffer& route);
 
+struct NavReachCheck
+{
+    Vec3d From = Vec3d::Zero();
+    Vec3d FromExtents = Vec3d::Zero();
+    Vec3d To = Vec3d::Zero();
+    Vec3d ToExtents = Vec3d::Zero();
+    // How far from To its projection may land and still count as reaching it.
+    float Tolerance = std::numeric_limits<float>::infinity();
+};
+
+enum class NavReach : std::uint8_t
+{
+    Reachable,
+    Unreachable,
+    // From projects onto no navigation, so nothing can be said either way.
+    StartOffNavigation,
+};
+
+[[nodiscard]] NavReach NavCheckReach(const ZoneNavigation& zone, NavQueryContext& context,
+                                     const NavQueryRequest& request, const NavReachCheck& check);
+
 // The same operations, finding the request's zone among a runtime world's
 // resident zones (dormant included); ZoneUnavailable otherwise.
 class NavigationQuery
@@ -136,6 +163,8 @@ public:
                                                         const Vec3d& point) const;
     [[nodiscard]] std::optional<Aabb3d> RegionBounds(const NavRegion& region) const;
     [[nodiscard]] NavRouteValidity ValidateRoute(const NavRouteBuffer& route) const;
+    [[nodiscard]] NavReach CheckReach(NavQueryContext& context, const NavQueryRequest& request,
+                                      const NavReachCheck& check) const;
 
 private:
     template <typename Result, typename Operation>
@@ -147,3 +176,10 @@ private:
 
     const RuntimeWorld* World;
 };
+
+// The query `agent` plans with, short of its ends and policy: its zone, its
+// profile, and the traversal kinds it may use, written into `capabilities`.
+// None when it stands in no zone or is no agent.
+[[nodiscard]] std::optional<NavQueryRequest> NavAgentQueryRequest(const World& world, const RuntimeWorld& runtime,
+                                                                  EntityId agent,
+                                                                  std::span<GameplayTagId> capabilities);

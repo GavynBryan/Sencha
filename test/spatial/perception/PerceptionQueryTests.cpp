@@ -68,6 +68,18 @@ TEST(PerceptionQueries, SeesAnswersTrueFalseAndUnavailable)
     EXPECT_FALSE(seen);
 }
 
+TEST(PerceptionQueries, SeesHoldsBetweenScansForWhatTheStandingScanHolds)
+{
+    QueryHarness harness;
+    const EntityId eye = harness.Observer(Vec3d::Zero());
+    const EntityId target = harness.Target(Vec3d(0, 0, -5));
+    const EntityId hidden = harness.Target(Vec3d(0, 0, 5));
+    EXPECT_FALSE(Sees(harness.Entities, eye, target)) << "before any scan";
+    harness.Step();
+    EXPECT_TRUE(Sees(harness.Entities, eye, target));
+    EXPECT_FALSE(Sees(harness.Entities, eye, hidden));
+}
+
 TEST(PerceptionQueries, APartialScanNeverAnswersFalse)
 {
     QueryHarness harness;

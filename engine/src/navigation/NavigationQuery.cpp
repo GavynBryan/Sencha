@@ -6,7 +6,11 @@
 #include "NavTileMeshBackend.h"
 #include "ZoneNavigationBackend.h"
 
+#include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <navigation/NavAgent.h>
 #include <navigation/NavTileMesh.h>
+#include <navigation/NavTraversal.h>
 #include <navigation/ZoneNavigation.h>
 #include <world/RuntimeWorld.h>
 
@@ -474,6 +478,13 @@ NavStatus NavigationQuery::Reachable(NavQueryContext& context, const NavQueryReq
                   { return NavReachable(zone, context, request, start, end, diagnostics); });
 }
 
+NavReach NavigationQuery::CheckReach(NavQueryContext& context, const NavQueryRequest& request,
+                                     const NavReachCheck& check) const
+{
+    const ZoneNavigation* zone = FindZone(request.Zone);
+    return zone != nullptr ? NavCheckReach(*zone, context, request, check) : NavReach::StartOffNavigation;
+}
+
 NavCostResult NavigationQuery::TravelCost(NavQueryContext& context,
                                           const NavQueryRequest& request,
                                           const NavLocation& start, const NavLocation& end,
@@ -523,4 +534,33 @@ NavRouteValidity NavigationQuery::ValidateRoute(const NavRouteBuffer& route) con
 {
     return InZone(route.Zone, NavRouteValidity::ZoneUnavailable,
                   [&](const ZoneNavigation& zone) { return NavValidateRoute(zone, route); });
+}
+
+NavReach NavCheckReach(const ZoneNavigation& zone, NavQueryContext& context, const NavQueryRequest& request,
+                       const NavReachCheck& check)
+{
+    const NavProjectResult start = NavProjectPoint(zone, context, request, check.From, check.FromExtents);
+    if (start.Status != NavStatus::Success)
+        return NavReach::StartOffNavigation;
+    const NavProjectResult end = NavProjectPoint(zone, context, request, check.To, check.ToExtents);
+    const bool reaches = end.Status == NavStatus::Success
+        && (end.Location.Position - check.To).Magnitude() <= check.Tolerance
+        && NavReachable(zone, context, request, start.Location, end.Location) == NavStatus::Success;
+    return reaches ? NavReach::Reachable : NavReach::Unreachable;
+}
+
+std::optional<NavQueryRequest> NavAgentQueryRequest(const World& world, const RuntimeWorld& runtime, EntityId agent,
+                                                    std::span<GameplayTagId> capabilities)
+{
+    const std::optional<ZoneId> zone = runtime.ZoneOf(agent);
+    const NavAgent* config = world.TryGet<NavAgent>(agent);
+    const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+    if (!zone || config == nullptr || tags == nullptr)
+        return std::nullopt;
+    NavQueryRequest request;
+    request.Zone = *zone;
+    request.Profile = tags->FindTag(config->Profile.View());
+    if (const ZoneNavigation* navigation = FindZoneNavigation(runtime, *zone))
+        request.Capabilities = capabilities.first(CollectNavCapabilities(world, agent, *navigation, capabilities));
+    return request;
 }

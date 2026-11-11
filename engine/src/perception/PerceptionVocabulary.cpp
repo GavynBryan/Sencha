@@ -66,7 +66,7 @@ namespace
         return AuthoredQueryStatus::Value;
     }
 
-    AuthoredQueryStatus Sees(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
+    AuthoredQueryStatus AnswerSees(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         EntityId observer;
         EntityId subject;
@@ -260,6 +260,13 @@ namespace
     }
 }
 
+bool Sees(const World& world, EntityId observer, EntityId subject)
+{
+    const PerceptionFrame* frame = world.TryGetResource<PerceptionFrame>();
+    const PerceptionSenses* senses = world.TryGetResource<PerceptionSenses>();
+    return frame != nullptr && senses != nullptr && frame->Find(observer, senses->Sight, subject) != nullptr;
+}
+
 const PerceptionSenses& EnsurePerceptionSenses(World& world)
 {
     if (!world.HasResource<GameplayTagRegistry>())
@@ -353,7 +360,7 @@ std::vector<AuthoredQueryBindingToken> BindPerceptionQueries(AuthoredQueryDispat
 {
     const AuthoredQueryRegistry& registry = dispatcher.Registry();
     std::vector<AuthoredQueryBindingToken> tokens;
-    tokens.push_back(dispatcher.Bind<&Sees>(registry.Find(kSeesQuery), world));
+    tokens.push_back(dispatcher.Bind<&AnswerSees>(registry.Find(kSeesQuery), world));
     tokens.push_back(dispatcher.Bind<&SeesTagged>(registry.Find(kSeesTaggedQuery), world));
     tokens.push_back(dispatcher.Bind<&NearestSeenTagged>(registry.Find(kNearestSeenTaggedQuery), world));
     tokens.push_back(dispatcher.Bind<&Remembers>(registry.Find(kRemembersQuery), world));
