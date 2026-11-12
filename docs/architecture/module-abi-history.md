@@ -768,3 +768,132 @@ gains `Presentation`, as `GraphRecord` does. `PresentationSettingsSystem` joins 
 systems. Cooked scenes move to `.smap` version 2 for the optional `PRES` section, so every
 level recooks; `WriteCookedScene` takes the scene's layer. See
 [presentation-settings.md](../renderer/presentation-settings.md).
+
+## v42
+
+Mechanisms for enemies that sense, remember, choose and strike, for
+naming where a strike lands, and for answering the effects that land.
+
+**Perception.** `ObservationMemory` (component, `OBSM`) and
+`ObservationMemorySystem`, which `RegisterPerception` now schedules after
+`PerceptionSystem`. `HearingSensor` (component), `PerceptionStimuli` and the
+`perception.stimulus` verb; `PerceptionSystem::LastStimuli` and `LastHeard`.
+`PerceptionComponentRegistration.h` registers the two new components, and
+`PerceptionVocabulary.h` gains the memory queries and `PerceptionSenses::Hearing`.
+
+**Selection.** `logic/selection/`: `SelectionTableDesc`, `SelectionTable`,
+`SelectionTableData` (`selection.table`) and `SelectionEvaluator`.
+`math/SeededPick.h`, `authored/AuthoredQueryCall.h` and
+`gameplay_tags/GameplayTagQueryNames.h` are shared by the table and candidates.
+
+**Candidates and navigation.** `NavDistanceToEdge` and
+`ZoneNavigation::DistanceToEdge` with `NavEdgeDistanceResult`, behind the new
+`escape_routes` and `edge_distance` measures; `CandidateRun::CandidateFlood`.
+
+**Physics.** Every `CharacterVirtual` carries an inner body on the
+`CharacterBody` layer, which queries strike and nothing collides with;
+`CharacterMoverConfig::Owner` names the entity it answers for.
+`PhysicsQueryFilter::IncludeCharacters` (default true) and `RaycastShape`.
+`HitRegion` (component) and `HitRegionResolver`.
+
+**Projectiles.** `ProjectileHit::Region`, the sixth `projectile.hit` payload
+value. `Projectile::HitScaleQuery` (`hit_scale_query`) scales a strike's
+effects; `ProjectileSystem::Services::Queries` answers it. Characters are
+struck through their bodies, so `SweepCharacters` is gone.
+
+**Effects and reactions.** `ApplyEffect` takes a trailing `EffectSource`, and
+`EffectDefinition` gains `Kinds`. `EffectApplicationLog` records what each
+application changed. `effect.apply` gains optional `instigator` and `from`
+arguments. `EffectReactions` (component, `EFRX`), `effect.reaction_profile`,
+`ReactToEffect` and `EffectReactionSystem`, which every host registers.
+`movement.impulse` and `MovementOperations::Impulse`.
+
+**Groups.** `ObservationMemoryEntry::Facing`, `ObservationMemory::Prefer`, `ObservationSharing`
+(component, `OBSS`) and `PerceptionSenses::Shared`. `ClaimBoard`,
+`claims.hold`, `claims.count` and `claims.held`. The `crowding` candidate
+measure and `CandidateRun::ProjectNav`.
+
+**Worn lights.** `PointLightComponent::PacksFirst`, a runtime-only field outside
+the scene chunk. `LightAttachmentSpec`, `CreateLightAttachment`,
+`attach/AttachedLight.h` (`AttachedLightState`, a World resource on every
+`RuntimeWorld`) and the `presentation.light` lease. `CameraEffectClock::At`.
+
+**Storage.** `Archetype::RowsFitChunk`, and a row too large for a chunk is fatal
+in every build. `AbilityGrants` and `ActiveAbilities` no longer derive
+`AbilityPredictedCues`; `AbilitySystem` adds it to the actor a client predicts.
+`EngineSchedule` can time its systems (`SetTimingEnabled`, `CollectTimings`) and
+host work (`ScheduleFrameWorkScope`).
+
+## v43
+
+**Lines and tethers.** `ContactLine` gains `max_length`, `leash_slack`,
+`rehit_seconds`, `slots` and `slot_spacing`, and `ContactLineState` what they need;
+prefabs carrying one must be recooked. `ProjectileLaunch` gains `MaxDistance`.
+
+**ECS chunk storage.** `Chunk::Data` is now a pointer to a block taken from a
+`ChunkBlockPool`, null while the chunk is empty. `World(std::shared_ptr<ChunkBlockPool>)`
+shares a pool between Worlds; `Archetype::Blocks` must be set before a standalone
+archetype makes a chunk. A pool keeps at most the larger of 64 blocks and a quarter
+of those in use.
+
+**Pooled activations.** `ActiveAbilities::Records` became `Slots`, a handle each;
+records and locals live in the `AbilityActivations` World resource. The
+`AbilityLocals` component is gone, and `AbilityRecordLocals` stays. Read through
+`AbilityActivations::Record`, `IsAbilityLive` or `AbilityRecordsOf`.
+`IsAbilityRecordShadowed` takes the activations. `ReplicationWireContext::Receiving`
+is the writable World where a snapshot is applied. The wire is unchanged; the
+replication table hash moved with `ActiveAbilities`' local size.
+
+**Staggered sight.** `perception.sight.scan_interval_ticks`, `SightStats::HeldScans`,
+`PerceptionFrame::AddHeld` and `LastScanRows`, and `ObservationPreference`.
+
+**Pose storage.** `AnimPoseState::Layers` moved to `AnimPosePool::Slot::LayerStates`,
+sized to the rig. A layer's own pose is kept only with `AnimPosePool::RetainLayerPoses`.
+
+**Ability requests.** `AbilityRequestQueue::Push` no longer refuses and returns
+nothing; `kAbilityRequestCapacity` became `kAbilityDormantRequestCapacity`, which
+bounds only requests waiting on a dormant actor. A request's `Origin` counts that
+actor's requests in the pass, not its place in the queue.
+
+**Contact lines.** `line/`: `ContactLine`, `ContactLineSpan`, `ContactLineState`,
+`ContactLineSystem`, `line.extend`, `line.cut`, `line.anchored` and
+`line.anchored_within`.
+
+**Projectiles.** `Projectile::Ignores`; `ProjectileStops`, what ended this tick.
+
+**Navigation.** `NavLink::Anchored` and `AnchorOffset`, carried through
+`NavLinkRecord`, `NavLinkInfo` and `NavRouteStep`; `.snav` format 2, so every zone
+recooks. `NavTraversalExecutor::Abort` takes the executor's memory, and
+`NavTraversalFrame::Ability` names the policy's ability. `NavTraversalCost::Ability`,
+`kNavCrossByAbility`, `CollectNavCapabilities`, `NavAnchoredRelease`,
+`NavAbilityCrossings` and the `navigation.crossing_*` queries.
+
+**Abilities and movement.** A hold's `scope`; `AbilityOp::ForActivation`.
+`TetherSession::Arrives` and `movement.tether`'s `until`. `physics.clear_path`.
+
+**Frame scratch and skinned poses.** `EngineGraphicsConfig` gains the scratch pool floors and the skinned pose budget,
+and the default scratch slice is 3 MiB. `RendererServices::Health`,
+`Renderer::GetLastFrameHealth` and `RenderFrameHealth`. `ScratchTag` gains the
+outline tags. `SkinnedPoseFrameData` loses `Ready`, and `SkinnedPosePass::Setup`
+takes its dispatch capacity.
+
+## v44
+
+**Decision agents.** A new component, `DecisionAgent`, holds what an entity choosing its own options tracks.
+`DecisionAgents` decides for every one from a `DecisionProfile` that a game embeds in its own profile. The game
+registers its inputs and slots by name and adds its own state through `DecisionHooks`. See
+`docs/gameplay/decision-agent.md`.
+
+**Considerations.** `SelectionConsiderationDesc`, `SelectionConsideration` and `CandidateCriterion` hold a
+`ConsiderationRule` in place of their own mode, bounds, curve, weight and unmeasured score.
+`SelectionConsiderationMode` and `CandidateCriterionMode` are both `ConsiderationMode`.
+
+**Helpers a game had written for itself.** `Sees`, `PredictMotion`, `NavAgentQueryRequest` and `NavCheckReach`
+(also `NavigationQuery::CheckReach`), `CollectGroupMembersWithin`, `DescribeSelectionTrace`,
+`DescribeCandidateTrace` and `GameModuleRun`. Authored values: `AuthoredField<T>`, `ReadAuthoredArgument<T>`
+and `DataField::OptionalNumber`.
+
+**Shared machinery.** `SpareRetention` replaces the retention constants of `ChunkBlockPool` and
+`AbilityActivations`. `presentation/HeldEffects.h` starts, releases and retires held lights, shakes and pulses.
+Also new: `AuthoredNameResolver`, `AppendSourcedCue`, `PlaceSpawnedRoot`, `ProjectileStops::Find`, and
+`ProjectileSystem::PrefabOf(AssetRef)`. Overlap queries return each entity once, in identity order.

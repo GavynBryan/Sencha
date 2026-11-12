@@ -1,5 +1,7 @@
 #pragma once
 
+struct RenderFrameHealth;
+
 #include <graphics/vulkan/MeshDrawSubmitter.h>
 #include <graphics/vulkan/PipelineVariantSet.h>
 #include <graphics/vulkan/Renderer.h>
@@ -205,6 +207,7 @@ private:
     // one draw have no order against each other, and order is the contract.
     void RecordTransparentItems(const FrameContext& frame, const DrawContext& ctx,
                                 uint32_t streamedInstances);
+    void PublishDropped(uint32_t instances, bool skipped) const;
     void RecordItem(const FrameContext& frame, const DrawContext& ctx, const RenderQueueItem& item, bool blended,
                     uint32_t firstInstance, uint32_t instanceCount);
     [[nodiscard]] VkPipeline SelectPipeline(const FrameContext& frame, const MaterialShaderCatalog& shaders,
@@ -218,6 +221,7 @@ private:
     VulkanDescriptorCache* Descriptors = nullptr;
     Logger* Log = nullptr;
     GpuFrameScratch* Scratch = nullptr;
+    RenderFrameHealth* Health = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     LightBindings* Bindings = nullptr;

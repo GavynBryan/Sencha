@@ -3,6 +3,7 @@
 CandidateScratch::CandidateScratch(const CandidateLimits& limits)
     : Limits_(limits)
     , Reachable(limits.MaxReachableRegions)
+    , CandidateFlood(limits.MaxReachableRegions)
 {
     const std::size_t rows = limits.MaxCandidates;
     const std::size_t cells = rows * limits.MaxCriteria;

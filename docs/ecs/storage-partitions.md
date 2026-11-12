@@ -19,6 +19,13 @@ worlds may use the same mechanism for other disjoint storage lanes.
   partition filtering is a later phase and must occur once per chunk, never once
   per entity.
 
+A chunk's header stays in its archetype's array for good, so its index and every
+`EntityLocation` remain valid; the 16 KB block holding its rows is taken from the
+World's `ChunkBlockPool` and given back when the last row leaves. Blocks are one
+size, so any archetype of any World sharing the pool can reuse them, unzeroed: a
+row's columns are always written by whoever placed them. The pool keeps the larger
+of 64 blocks and a quarter of those in use, and returns the rest to the allocator.
+
 The archetype retains a flat chunk array so existing cached queries and chunk
 iteration do not gain another indirection. A per-archetype lookup caches the most
 recent writable chunk for each partition. Structural operations pay the partition

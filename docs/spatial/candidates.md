@@ -73,6 +73,7 @@ Generators and measures live in two `AuthoredCatalog` instantiations,
 | `ring` | Concentric rings around a slot | ring, then angle |
 | `grid` | Square grid within a radius of a slot | row-major from −x −z |
 | `reachable` | Points on the querier's navigation reachable within a cost budget, `grid` or `per_region` | grid order, or cheapest region first |
+| `surface` | Points standing off a wall of the level, found by rays fanned out from a slot, with navigation below them to land on; the candidate's navigation location is the landing | row, then yaw |
 
 About generation:
 
@@ -93,12 +94,22 @@ About generation:
 | `travel_cost` | navigation cost from the querier (`region_entry` or `exact`) | NavigationBatch / NavigationExact |
 | `visibility` | sight between the candidate and a slot, observer on either side; `any`, `all` or `fraction` | Physics |
 | `route_visibility` | whether a slot's observers see the querier's route to the candidate | NavigationExact |
+| `edge_distance` | metres of walkable ground around the candidate before an edge, up to `max_radius` | NavigationBatch |
+| `escape_routes` | how many of `directions` lead to ground `distance` away reachable within `distance × detour` | NavigationExact |
+| `crowding` | how many of a slot's points share the candidate's direction from an origin, or lie within a distance of it | NavigationExact |
+| `separation` | degrees round an origin to the nearest of a slot's points, 0 to 180 | Geometric |
+| `lane_clearance` | metres between a slot's points and the straight line from the candidate to a target, stopping short of the target | Geometric |
+| `backstop` | 1 when a straight line from the candidate through a slot's first point goes on to meet the level within `reach` | Geometric |
 
 Measure details:
 
 - **`region_entry` cost** is the cost of entering the candidate's region. It is low by up to one region's width, so it is for ranking, not measuring.
 - **Estimates.** `reachable` and `travel_cost` take `outside_zone`: `reject` (default) or `estimate`, which uses straight-line distance and reports `Estimated`.
 - **`route_visibility` sampling.** It samples the route's start, every corner, and points along each leg at `spacing`.
+- **`visibility` sample heights.** `sample_heights` tests the candidate's side at each height as its own sample, so `reduce: fraction` over a waist-high wall answers between 0 and 1 where open ground answers 1. A height stands in for `target_height` when the slot watches and `eye_height` when the candidate does; an entity's own sight components still win.
+- **`crowding` directions.** In `angle` mode a point counts when its bearing from `origin` (the querier unless named) is within `angle` of the candidate's. `bearing: straight` is the line from the origin; `bearing: route` is where the route from the origin leaves `radius` of it, so a bending hallway or two doors facing one way are told apart, at one exact search per candidate and per point. Within `radius` of the origin a candidate is unmeasured and a point is not counted: in a room the search started from, nothing has set out in any direction yet, so the room's corners do not pass for ways out. In `distance` mode a point counts when it lies within `distance` of the candidate. Up to 32 points are weighed. It is what spreads a group across directions: each member scoring the least crowded way settles the group near an even split.
+- **`separation` against `crowding`.** `crowding` counts who shares a direction, so everything outside its angle scores alike. `separation` is continuous: scored rising, two end up opposite and three a third of the way round each other, with no curve that knows how many there are.
+- **`escape_routes` probes.** Each direction projects a point `distance` away onto navigation (within `vertical` above or below) and counts when that point's region was reached by one search from the candidate, capped at `distance × detour`. A dead end opens one way, a corridor two, a spot against a wall about half, open ground all. The search is charged to `exact_nav_searches`. Region entry costs run low by up to a region's width, so `detour` absorbs that too.
 - **Trace detail codes:**
   - `visibility`: the first failing observer's `SightOutcome`, with the blocking hit point and entity.
   - `route_visibility`: the index of the first sample an observer saw.
@@ -155,7 +166,7 @@ Callers hold the binding, never a pointer into the cache.
 2. **Generate** in definition order, up to the candidate budget.
 3. **Criteria**, in order of cost class, then Require before Score, then authored order. A criterion sees only survivors. Operations that need a missing service (physics, navigation, dispatcher) report `NotApplicable`.
 4. **Score.** A weighted mean of curve outputs, summed in authored order. Ties go to generation order. Comparison is exact, with no epsilon.
-5. **Select.** Best, TopN, AllQualified, or PickFromBand. PickFromBand draws the smallest `HashBytes64(order, seed)` among candidates scoring at least best − width.
+5. **Select.** Best, TopN, AllQualified, or PickFromBand. PickFromBand draws the smallest `SeededPickKey(seed, order)` among candidates scoring at least best − width.
 
 Budgets are counts (candidates, exact searches, rays, reachable regions,
 generation attempts), never time, so identical inputs stop at the same place.
@@ -209,7 +220,7 @@ ray. A target counts as seen when the ray reaches it or first hits its own
 entity.
 
 - **Triggers.** It uses the filtered `PhysicsQueries::Raycast`, which skips triggers by default and ignores the observer's own entity.
-- **Characters.** Characters have no query bodies (`CharacterVirtual` without an inner body), so they never block sight.
+- **Characters.** A character's body blocks sight as any body does, except the run's querier and the observer, which are ignored: the querier asks about places it would stand in.
 - **Authored eyes.** An entity's `SightSensor` (range, half-angle, eye offset, facing its world forward) and `SightTarget` (sample offset) live beside the test, in `spatial/sight/SightComponents.h`, and `SightPlacement.h` turns them into a `SightObserver` and a sample point. The `visibility` and `route_visibility` measures use them whenever the observer or target is an entity that has them; an unusable sensor sees nothing. The `eye_height`, `target_height`, `half_angle_degrees` and `range` arguments describe only the eyes and targets with no component behind them, such as grid points.
 - **Ray caps.** `SightOutcome::Untested` is what a caller that caps rays records for a candidate it had no ray left for. `TestSight` never returns it.
 
@@ -239,6 +250,7 @@ plain owned data. Filling it never changes a result.
 ## Response curves
 
 `math/ResponseCurve.h` (Linear, Step, Band over authored bounds) is shared
-with the future utility and consideration tables named in the roadmap.
+with selection tables (`docs/gameplay/selection.md`), and so is the seeded
+band draw, `math/SeededPick.h`.
 Normalization is always against authored bounds, never the current candidate
 set, so adding a candidate never reshuffles the others.

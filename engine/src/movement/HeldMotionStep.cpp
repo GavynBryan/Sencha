@@ -10,6 +10,8 @@
 
 namespace
 {
+constexpr float kReelArrivedMetres = 0.01f;
+
 void Force(MotionAxisOverride& overrides, Vec3d velocity, Vec3d up, bool vertical)
 {
     const float along = velocity.Dot(up);
@@ -75,6 +77,14 @@ void StepTether(World& world, EntityId entity, TetherSession& tether, MotionAxis
     }
     const Vec3d offset = anchor - self->Value.Position;
     const float distance = offset.Magnitude();
+    if (tether.Arrives && distance <= tether.Length + kReelArrivedMetres)
+    {
+        // The last step's pull is still the character's velocity: one forced
+        // stop, so letting go here drops it rather than throwing it.
+        Force(overrides, Vec3d::Zero(), up, true);
+        tether = {};
+        return;
+    }
     if (distance <= tether.Length || tether.Speed <= 0.0f || dt <= 0.0f)
         return;
     // Never past taut in one step, so the character arrives at the rope's length.

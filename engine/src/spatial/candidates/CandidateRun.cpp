@@ -189,6 +189,11 @@ NavRouteBuffer& CandidateRun::Route()
     return Scratch.Route;
 }
 
+NavReachableBuffer& CandidateRun::CandidateFlood()
+{
+    return Scratch.CandidateFlood;
+}
+
 std::optional<NavLocation> CandidateRun::QuerierNav()
 {
     if (QuerierProjected)
@@ -235,6 +240,15 @@ CandidateMeasureStatus CandidateRun::CandidateNav(std::uint32_t row, NavLocation
     Scratch.Navs[row] = projected.Location;
     out = projected.Location;
     return CandidateMeasureStatus::Ok;
+}
+
+std::optional<NavLocation> CandidateRun::ProjectNav(const Vec3d& point)
+{
+    if (ZoneNav == nullptr)
+        return std::nullopt;
+    const NavProjectResult projected =
+        NavProjectPoint(*ZoneNav, Scratch.Navigation, Context.Navigation, point, kCandidateProjectionExtents);
+    return projected.Status == NavStatus::Success ? std::optional(projected.Location) : std::nullopt;
 }
 
 std::optional<std::span<const NavReachableRegion>> CandidateRun::ReachableRegions(float radius, float maxCost)

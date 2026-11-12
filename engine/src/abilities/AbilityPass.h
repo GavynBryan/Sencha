@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityGrants.h>
+#include <abilities/AbilityActivations.h>
 #include <abilities/AbilityLocals.h>
 #include <abilities/AbilitySystem.h>
 #include <abilities/AbilityTrace.h>
@@ -32,13 +33,11 @@ struct AbilityActor
     EntityId Entity;
     InputActionView Input;
     InputActionSourceId Source = kLocalInputActionSource;
+    AbilityActivations* Activations = nullptr;
 
     [[nodiscard]] ActiveAbilities& Active() const { return *Entities->TryGet<ActiveAbilities>(Entity); }
-    [[nodiscard]] AbilityRecord& Record(std::size_t slot) const { return Active().Records[slot]; }
-    [[nodiscard]] AbilityRecordLocals& Locals(std::size_t slot) const
-    {
-        return Entities->TryGet<AbilityLocals>(Entity)->Records[slot];
-    }
+    [[nodiscard]] AbilityRecord& Record(std::size_t slot) const { return Activations->Record(Active(), slot); }
+    [[nodiscard]] AbilityRecordLocals& Locals(std::size_t slot) const { return Activations->Locals(Active(), slot); }
     [[nodiscard]] const AbilityGrants* Grants() const
     {
         return static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);

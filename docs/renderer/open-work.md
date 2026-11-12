@@ -108,11 +108,6 @@ device-lost fault injection are owed in the same bucket.
   behind it re-acquiring the slot. A probe volume authored into a streamed zone
   would close it, and would also exercise the transient 2x slot demand a zone
   reload creates.
-- **Scratch reservations are not built.** Per-consumer accounting landed
-  (`ScratchTag`), so an exhausted slice now names who filled it. Reservations or
-  protected minimums would change which allocations succeed, and there is no
-  observed exhaustion to size them against -- a nonzero per-tag failure count in
-  a real scene is the trigger.
 - **Feature status is a bool.** `Setup` returning true after a pass failed to
   build is deliberate degradation (the frame still presents), and the failing
   passes now log what will be missing. A structured Ready/Degraded/Failed status

@@ -1,3 +1,4 @@
+#include <camera/CameraEffectArguments.h>
 #include <camera/CameraShakeProfile.h>
 
 #include <cmath>
@@ -72,16 +73,6 @@ DataFieldSchema Optional(DataFieldSchema field)
     return field;
 }
 
-DataFieldSchema Seconds(std::string key, std::string label, std::string summary)
-{
-    DataFieldSchema field = Optional(MakeDataField(DataFieldKind::Float, std::move(key), std::move(label),
-                                                   std::move(summary)));
-    field.Units = "s";
-    field.Default = 0.0;
-    field.Numeric.Minimum = 0.0;
-    return field;
-}
-
 DataFieldSchema ChannelsField(std::string key, std::string label, std::string summary)
 {
     DataFieldSchema rotation = Optional(MakeDataField(DataFieldKind::Vector, "rotation", "Rotation",
@@ -123,9 +114,9 @@ DataSchema MakeSchema()
         ChannelsField("noise", "Noise", "The most each axis oscillates."),
         ChannelsField("kick", "Kick", "A fixed displacement, eased in and out by the envelope."),
         std::move(frequency),
-        Seconds("attack", "Attack", "Rising to full strength."),
-        Seconds("hold", "Hold", "At full strength, when not held by a lease."),
-        Seconds("release", "Release", "Falling back to nothing."),
+        CameraEffectSecondsField("attack", "Attack", "Rising to full strength."),
+        CameraEffectSecondsField("hold", "Hold", "At full strength, when not held by a lease."),
+        CameraEffectSecondsField("release", "Release", "Falling back to nothing."),
         std::move(falloff),
     };
     return schema;

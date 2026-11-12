@@ -278,16 +278,16 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
     // Indices from another binding name other content: start the layers over.
     if (state.BindingGeneration != rig.Generation)
     {
-        for (AnimLayerPose& layer : state.Layers)
-            layer = AnimLayerPose{};
+        std::ranges::fill(slot.LayerStates, AnimLayerPose{});
         state.BindingGeneration = rig.Generation;
     }
 
     const std::size_t layerCount = std::min<std::size_t>(rig.Layers.size(), slot.Layers);
+    scratch.LayerPoses.resize(layerCount * slot.Joints);
     std::array<AnimPoseLayer, kAnimMaxLayers> compose{};
     for (std::size_t l = 0; l < layerCount; ++l)
     {
-        AnimLayerPose& layer = state.Layers[l];
+        AnimLayerPose& layer = slot.LayerStates[l];
         const AnimLayerContent& content = input.Content->Layers[l];
         const std::span<AnimJointOffset> offsets = slot.LayerOffsets(l);
         const AnimLayerPlayback incoming = AnimPlaybackOf(rig, content, now);
@@ -360,7 +360,9 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
 
         std::vector<Transform3f>& shown = scratch.Shown;
         SampleShownPose(input.Sources, layer, offsets, now, dt, scratch, shown);
-        const std::span<Transform3f> pose = slot.LayerPose(l);
+        const std::span<Transform3f> pose = slot.LayerPoses.empty()
+            ? std::span(scratch.LayerPoses).subspan(l * slot.Joints, slot.Joints)
+            : slot.LayerPose(l);
         std::copy_n(shown.begin(), std::min(shown.size(), pose.size()), pose.begin());
 
         // A layer with nothing to play and nothing fading adds nothing.

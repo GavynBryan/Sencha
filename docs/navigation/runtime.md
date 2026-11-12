@@ -105,11 +105,16 @@ The `.snav` codec (`NavigationFile.cpp`) writes records through the
 |---|---|
 | `ProjectPoint` | nearest walkable point within extents |
 | `NavRaycast` | whether walkable surface continues in a line -- not line of sight |
+| `NavDistanceToEdge` | how far walkable surface extends around a location, up to a radius: half a corridor's width at its middle |
 | `Reachable`, `TravelCost` | whether a route exists, and its cost, without assembling it |
 | `FindRoute` | walk legs (corners) and `Traverse` steps, one per link crossing |
 | `CollectReachable` | regions reachable within a cost budget, with entry costs, cheapest first |
 | `ClosestPointInRegion`, `RegionBounds` | positions inside a region; the caller decides sampling |
 | `ValidateRoute` | whether a stored route still holds |
+| `NavCheckReach`, `CheckReach` | whether one point reaches another once both project, within a tolerance of the second; or that the first is off navigation |
+
+`NavAgentQueryRequest` builds the request an agent plans with, without its ends:
+its zone, its profile, and the traversal kinds it may use.
 
 Every query takes a caller-owned `NavQueryContext` (node pool, open list, corridor
 scratch, sized once) and never allocates after warm-up. There is no lock: give
@@ -324,6 +329,22 @@ waiting for one. A failed crossing puts its link on the agent's avoid-list for
 `nav.agent.avoid_seconds` and replans. The engine ships `NavTraverseByWalking`
 (drops and gaps a step crosses) and `NavTraverseByJumping`, and registers
 neither.
+
+`kNavCrossByAbility` carries a crossing out with an ability: the row for the
+link's kind in the agent's `navigation.policy` names it as `ability`, and a game
+registers the executor for that kind. It requests the ability, publishes the
+crossing in `NavAbilityCrossings` for the `navigation.crossing_*` queries to
+read, and is over once the ability has ended and the agent stands: succeeded
+within the landing radius of the exit, failed anywhere else, as a failed crossing
+always is. An abort cancels the ability.
+
+A link may name a point it hangs from (`anchored`, `anchor_offset`), which a
+rope needs and a jump does not. `NavAnchoredRelease` says where a rope from the
+entry to the anchor lets go to drop onto the exit; the cook refuses a link whose
+rope passes too far from above its exit (`nav.link.anchor_misses_exit`) and an
+anchored link that runs both ways (`nav.link.anchor_bidirectional`). A link must
+cost at least its span: one cheaper than the distance it covers reads as a
+teleport, and turns the search into Dijkstra.
 
 ### Route storage
 

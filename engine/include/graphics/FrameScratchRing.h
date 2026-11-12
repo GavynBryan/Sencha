@@ -1,6 +1,30 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
+
+// Who an allocation is charged to. Each pool's floor is guaranteed to it in any
+// allocation order; what floors leave over is shared, first come first served.
+enum class ScratchPool : std::uint8_t
+{
+    MainView,
+    World,
+    Ui,
+    Skinning,
+    Optional,
+    Count,
+};
+
+struct ScratchPoolBudget
+{
+    std::uint64_t Floor = 0;
+    std::uint64_t Cap = std::numeric_limits<std::uint64_t>::max();
+};
+
+inline constexpr std::size_t kScratchPoolCount = static_cast<std::size_t>(ScratchPool::Count);
+using ScratchPoolBudgets = std::array<ScratchPoolBudget, kScratchPoolCount>;
 
 // The largest offset alignment a descriptor binding into the ring can demand.
 // Vulkan caps both minUniformBufferOffsetAlignment and
@@ -53,11 +77,8 @@ public:
     };
 
     FrameScratchRing() = default;
-    FrameScratchRing(std::uint32_t framesInFlight, std::uint64_t bytesPerFrame)
-        : FramesInFlight(framesInFlight == 0 ? 1u : framesInFlight)
-        , BytesPerFrame(bytesPerFrame)
-    {
-    }
+    FrameScratchRing(std::uint32_t framesInFlight, std::uint64_t bytesPerFrame,
+                     const ScratchPoolBudgets& pools = {});
 
     // Rotate to the next slice and reset its cursor and failure count.
     void BeginFrame()
@@ -65,18 +86,28 @@ public:
         CurrentFrame = (CurrentFrame + 1) % FramesInFlight;
         Cursor = 0;
         FailedAllocations = 0;
+        SharedUsed = 0;
+        Used.fill(0);
     }
 
     // All-or-nothing. For fixed-size uploads whose consumer has no way to use
     // a partial result (a uniform block, a view matrix).
-    [[nodiscard]] Grant Allocate(std::uint64_t size, std::uint64_t alignment);
+    [[nodiscard]] Grant Allocate(std::uint64_t size, std::uint64_t alignment,
+                                 ScratchPool pool = ScratchPool::Optional);
 
     // As many `stride`-sized elements as the slice can still serve, up to
     // `maxElements`. A caller that can draw in runs uses this so a stream too
     // large for one slice costs it a rebind rather than the whole pass.
     [[nodiscard]] Grant AllocateElements(std::uint64_t maxElements,
                                          std::uint64_t stride,
-                                         std::uint64_t alignment);
+                                         std::uint64_t alignment,
+                                         ScratchPool pool = ScratchPool::Optional);
+
+    // Content bytes `pool` could be granted right now at `alignment`.
+    [[nodiscard]] std::uint64_t Available(ScratchPool pool, std::uint64_t alignment) const;
+
+    // True when the configured floors did not fit the slice and were scaled down.
+    [[nodiscard]] bool FloorsWereScaled() const { return FloorsScaled; }
 
     [[nodiscard]] std::uint32_t GetFramesInFlight() const { return FramesInFlight; }
     [[nodiscard]] std::uint64_t GetBytesPerFrame() const { return BytesPerFrame; }
@@ -101,7 +132,8 @@ private:
         std::uint64_t Remaining = 0;
     };
     [[nodiscard]] SliceSpace SpaceFor(std::uint64_t alignment) const;
-    [[nodiscard]] Grant Take(std::uint64_t alignedCursor, std::uint64_t bytes);
+    [[nodiscard]] std::uint64_t PoolRoom(ScratchPool pool, std::uint64_t padding) const;
+    [[nodiscard]] Grant Take(std::uint64_t alignedCursor, std::uint64_t bytes, ScratchPool pool);
 
     std::uint32_t FramesInFlight = 1;
     std::uint64_t BytesPerFrame = 0;
@@ -109,4 +141,9 @@ private:
     std::uint64_t Cursor = 0;
     std::uint64_t HighWater = 0;
     std::uint32_t FailedAllocations = 0;
+    ScratchPoolBudgets Pools{};
+    std::array<std::uint64_t, kScratchPoolCount> Used{};
+    std::uint64_t SharedBytes = 0;
+    std::uint64_t SharedUsed = 0;
+    bool FloorsScaled = false;
 };

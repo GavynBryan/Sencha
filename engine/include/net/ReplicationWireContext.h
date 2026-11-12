@@ -13,6 +13,8 @@ class World;
 struct ReplicationWireContext
 {
     const World* Entities = nullptr;
+    // Set where a snapshot is applied, for a codec whose state lives off the row.
+    World* Receiving = nullptr;
     EntityId Entity;
     ReplicationAuthorityIdentity* Authority = nullptr;
     const ReplicationClientIdentity* Client = nullptr;

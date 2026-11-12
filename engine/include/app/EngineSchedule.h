@@ -3,6 +3,10 @@
 #include <app/GameContexts.h>
 
 #include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <queue>
 #include <typeindex>
 #include <unordered_map>
@@ -55,6 +59,17 @@ concept IsScheduledSystem =
     || HasAudio<T>
     || HasEndFrame<T>;
 
+// What one system has cost in one phase since timing was last reset.
+struct ScheduleSystemTiming
+{
+    // The system's type_info name.
+    const char* System = nullptr;
+    const char* Phase = nullptr;
+    std::uint64_t Calls = 0;
+    std::uint64_t Nanoseconds = 0;
+    std::uint64_t WorstNanoseconds = 0;
+};
+
 //=============================================================================
 // EngineSchedule
 //
@@ -98,7 +113,23 @@ public:
     void RunAudio(AudioContext& ctx);
     void RunEndFrame(EndFrameContext& ctx);
 
+    // Off by default; a measuring host turns it on, at one clock read per system call.
+    void SetTimingEnabled(bool enabled) { TimingEnabled = enabled; }
+    void ResetTimings();
+    [[nodiscard]] std::vector<ScheduleSystemTiming> CollectTimings() const;
+    [[nodiscard]] bool IsTimingEnabled() const { return TimingEnabled; }
+    // Host work outside any system, such as render extraction and submission.
+    void RecordFrameWork(const char* name, std::uint64_t nanoseconds);
+
 private:
+    // Fatal in every build: a dropped ordering shows up as wrong behaviour far
+    // from here, and a cycle would remove whole systems from their phase.
+    [[noreturn]] static void DieOfBadOrdering(const char* message)
+    {
+        std::fprintf(stderr, "EngineSchedule: %s\n", message);
+        std::abort();
+    }
+
     template<typename TContext>
     struct DispatchEntry
     {
@@ -106,6 +137,9 @@ private:
         void* Ptr = nullptr;
         void (*Fn)(void*, TContext&) = nullptr;
         std::vector<std::type_index> DependsOn;
+        std::uint64_t Calls = 0;
+        std::uint64_t Nanoseconds = 0;
+        std::uint64_t WorstNanoseconds = 0;
     };
 
     struct SystemRecord
@@ -118,7 +152,7 @@ private:
     };
 
     template<typename TContext>
-    static void Run(const std::vector<DispatchEntry<TContext>>& entries, TContext& ctx);
+    void Run(std::vector<DispatchEntry<TContext>>& entries, TContext& ctx);
 
     template<typename TContext>
     static void TopoSort(std::vector<DispatchEntry<TContext>>& entries);
@@ -145,6 +179,36 @@ private:
     std::vector<DispatchEntry<EndFrameContext>> EndFrameEntries;
 
     bool Initialized = false;
+    bool TimingEnabled = false;
+    std::vector<ScheduleSystemTiming> FrameWork;
+};
+
+// Times one span of host work when the schedule is timing; a clock read per span.
+class ScheduleFrameWorkScope
+{
+public:
+    ScheduleFrameWorkScope(EngineSchedule& schedule, const char* name)
+        : Schedule(schedule.IsTimingEnabled() ? &schedule : nullptr)
+        , Name(name)
+    {
+        if (Schedule != nullptr)
+            Start = std::chrono::steady_clock::now();
+    }
+
+    ~ScheduleFrameWorkScope()
+    {
+        if (Schedule != nullptr)
+            Schedule->RecordFrameWork(Name, static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - Start).count()));
+    }
+
+    ScheduleFrameWorkScope(const ScheduleFrameWorkScope&) = delete;
+    ScheduleFrameWorkScope& operator=(const ScheduleFrameWorkScope&) = delete;
+
+private:
+    EngineSchedule* Schedule;
+    const char* Name;
+    std::chrono::steady_clock::time_point Start;
 };
 
 template<typename T, typename... Args>
@@ -211,14 +275,14 @@ void EngineSchedule::After()
     const std::type_index dep(typeid(TDep));
 
     // An edge between systems one of which is not registered is a typo, not an
-    // ordering. Asserted rather than ignored because an ordering that quietly
+    // ordering. Fatal rather than ignored because an ordering that quietly
     // does not exist is the one scheduling fault that never shows up as a
     // crash: it shows up as a remote player a tick behind, months later, on
     // someone else's machine.
-    assert(TypeIndex.contains(tid)
-           && "After<T, TDep>: T is not registered in this schedule");
-    assert(TypeIndex.contains(dep)
-           && "After<T, TDep>: TDep is not registered in this schedule");
+    if (!TypeIndex.contains(tid))
+        DieOfBadOrdering("After<T, TDep>: T is not registered in this schedule");
+    if (!TypeIndex.contains(dep))
+        DieOfBadOrdering("After<T, TDep>: TDep is not registered in this schedule");
 
     bool landed = false;
     landed |= AddDependency(ZoneResidencyEntries, tid, dep);
@@ -236,8 +300,8 @@ void EngineSchedule::After()
     // is better than believing one was declared: the dependency is recorded per
     // phase list, so an edge between a PreSimulate system and a FrameUpdate one
     // silently describes nothing.
-    assert(landed && "After<T, TDep>: T and TDep share no frame phase");
-    (void)landed;
+    if (!landed)
+        DieOfBadOrdering("After<T, TDep>: T and TDep share no frame phase");
 }
 
 template<typename T>
@@ -254,10 +318,25 @@ bool EngineSchedule::Has() const
 }
 
 template<typename TContext>
-void EngineSchedule::Run(const std::vector<DispatchEntry<TContext>>& entries, TContext& ctx)
+void EngineSchedule::Run(std::vector<DispatchEntry<TContext>>& entries, TContext& ctx)
 {
-    for (const auto& entry : entries)
+    if (!TimingEnabled)
+    {
+        for (const auto& entry : entries)
+            entry.Fn(entry.Ptr, ctx);
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    for (auto& entry : entries)
+    {
+        const Clock::time_point start = Clock::now();
         entry.Fn(entry.Ptr, ctx);
+        const auto spent = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count());
+        ++entry.Calls;
+        entry.Nanoseconds += spent;
+        entry.WorstNanoseconds = entry.WorstNanoseconds < spent ? spent : entry.WorstNanoseconds;
+    }
 }
 
 template<typename TContext>
@@ -329,8 +408,8 @@ void EngineSchedule::TopoSort(std::vector<DispatchEntry<TContext>>& entries)
                 q.push(m);
     }
 
-    assert(sorted.size() == entries.size()
-        && "Cycle detected in EngineSchedule dependency declarations");
+    if (sorted.size() != entries.size())
+        DieOfBadOrdering("a cycle in EngineSchedule dependency declarations would drop systems from their phase");
 
     entries = std::move(sorted);
 }

@@ -52,6 +52,8 @@ namespace
     {
         if (meta.Type == CVarType::String)
             return ReadCVarString(&registry, row.CVar, "") == choice.Value;
+        if (meta.Type == CVarType::Bool)
+            return ParseCVarValue(meta.Type, choice.Value) == std::optional<CVarValue>(meta.CurrentValue);
         const std::optional<double> wanted = ParseNumber(choice.Value);
         return wanted.has_value()
             && std::abs(*wanted - ReadCVarDouble(&registry, row.CVar, 0.0)) < 1e-9;
@@ -97,7 +99,7 @@ void OptionsPage::InstallDefaults(const ConsoleRegistry& registry)
 {
     Rows_.clear();
 
-    // Four settings, and they are the four a player looks for. Deliberately not
+    // Five settings, and they are the five a player looks for. Deliberately not
     // every archived cvar: the rest are developer tuning, and a page that
     // listed them would be a different thing wearing this one's name.
     //
@@ -120,6 +122,9 @@ void OptionsPage::InstallDefaults(const ConsoleRegistry& registry)
                    .Choices = { { "Unlimited", "0" }, { "30", "30" }, { "60", "60" },
                                 { "90", "90" }, { "120", "120" }, { "144", "144" },
                                 { "240", "240" } } },
+        OptionRow{ .Label = "Reduced Flashing", .CVar = "render.reduced_flashing",
+                   .Control = OptionControl::Choice, .Step = 0.0, .Min = 0.0, .Max = 0.0,
+                   .Choices = { { "Off", "0" }, { "On", "1" } } },
     };
 
     for (const OptionRow& row : candidates)

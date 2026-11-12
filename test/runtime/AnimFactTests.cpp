@@ -17,9 +17,12 @@
 #include <movement/components/CharacterFacts.h>
 #include <world/ComponentRegistrar.h>
 
+#include <world/transform/TransformComponents.h>
+
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -341,6 +344,36 @@ TEST(AnimRigBinding, AProviderOfTheWrongKindIsLocatedAtTheSlot)
     EXPECT_EQ(diagnostic->AssetPath, "asset://animation/game.facts.sdata");
     EXPECT_EQ(diagnostic->FieldPath, "$.data.slots[1].kind");
     EXPECT_LT(bound.Slots[1].Provider, 0);
+}
+
+TEST(AnimFactProviders, MovementReadsVelocityAlongTheBodysOwnAxes)
+{
+    AnimFixture fx;
+    AnimFactProviders& providers = fx.Entities.GetResource<AnimFactProviders>();
+    ASSERT_TRUE(BindMovementAnimFacts(providers));
+    if (!fx.Entities.IsRegistered<WorldTransform>())
+        fx.Entities.RegisterComponent<WorldTransform>();
+
+    const EntityId body = fx.Entities.CreateEntity();
+    KinematicState kinematics;
+    kinematics.Velocity = Vec3d(3.0f, -9.0f, -4.0f);
+    fx.Entities.AddComponent<KinematicState>(body, kinematics);
+    WorldTransform pose;
+    fx.Entities.AddComponent<WorldTransform>(body, pose);
+
+    const auto read = [&](std::string_view slot) {
+        const AnimFactProvider& provider = providers.At(providers.IndexOf(slot));
+        std::uint32_t out = 0;
+        EXPECT_TRUE(provider.Read(std::as_const(fx.Entities), body, provider.Context, out));
+        return AnimFactToFloat(out);
+    };
+    EXPECT_NEAR(read("MoveForward"), 4.0f, 1e-4f) << "the engine faces -Z, and falling is not forward";
+    EXPECT_NEAR(read("MoveRight"), 3.0f, 1e-4f);
+
+    fx.Entities.TryGet<WorldTransform>(body)->Value.Rotation =
+        Quatf::FromAxisAngle(Vec3d::Up(), std::numbers::pi_v<float> * 0.5f);
+    EXPECT_NEAR(read("MoveForward"), -3.0f, 1e-3f) << "turned a quarter left, what was right is behind it";
+    EXPECT_NEAR(read("MoveRight"), 4.0f, 1e-3f);
 }
 
 TEST(AnimFactProviders, OneSlotHasOneSource)

@@ -54,7 +54,7 @@ namespace
     [[nodiscard]] std::uint32_t CriterionRank(const CandidateCriterion& criterion)
     {
         return static_cast<std::uint32_t>(criterion.Cost) * 2u
-            + (criterion.Mode == CandidateCriterionMode::Score ? 1u : 0u);
+            + (criterion.Rule.Mode == ConsiderationMode::Score ? 1u : 0u);
     }
 
     bool CompileSlots(const JsonValue& data, CandidateEvaluationDesc& out, std::vector<std::string>& errors)
@@ -136,51 +136,6 @@ namespace
         return ok;
     }
 
-    bool CompileRequire(const JsonValue& require, CandidateCriterion& criterion, std::string_view subject,
-                        std::vector<std::string>& errors)
-    {
-        if (const JsonValue* expect = require.Find("expect"))
-        {
-            criterion.Min = criterion.Max = expect->AsBool() ? 1.0f : 0.0f;
-            return true;
-        }
-        criterion.Min = static_cast<float>(require.NumberOr("min", -INFINITY));
-        criterion.Max = static_cast<float>(require.NumberOr("max", INFINITY));
-        if (criterion.Min > criterion.Max)
-        {
-            errors.push_back(std::format("{}: require.min exceeds require.max", subject));
-            return false;
-        }
-        return true;
-    }
-
-    bool CompileScore(const JsonValue& score, CandidateCriterion& criterion, std::string_view subject,
-                      std::vector<std::string>& errors)
-    {
-        criterion.Weight = static_cast<float>(score.NumberOr("weight", 1.0));
-        if (!(criterion.Weight > 0.0f) || !std::isfinite(criterion.Weight))
-        {
-            errors.push_back(std::format("{}: a score weight is positive and finite", subject));
-            return false;
-        }
-        if (const JsonValue* curve = score.Find("curve"))
-        {
-            std::string problem;
-            criterion.Curve = ReadResponseCurve(*curve, problem);
-            if (!criterion.Curve)
-            {
-                errors.push_back(std::format("{}: {}", subject, problem));
-                return false;
-            }
-        }
-        else if (criterion.Value == CandidateValueKind::Scalar)
-        {
-            errors.push_back(std::format("{}: scoring this measure needs a curve", subject));
-            return false;
-        }
-        return true;
-    }
-
     bool CompileCriteria(const JsonValue& data,
                          const CandidateCatalogs& catalogs,
                          const CandidatePrepareContext& context,
@@ -224,24 +179,13 @@ namespace
             criterion.Value = definition.Value;
             criterion.AuthoredIndex = static_cast<std::uint32_t>(index);
 
-            const JsonValue* require = step.Find("require");
-            const JsonValue* score = step.Find("score");
-            if ((require == nullptr) == (score == nullptr))
-            {
-                errors.push_back(std::format("{}: exactly one of 'require' and 'score'", subject));
-                ok = false;
-                continue;
-            }
-            criterion.Mode = require != nullptr ? CandidateCriterionMode::Require : CandidateCriterionMode::Score;
-            const bool modeOk = require != nullptr ? CompileRequire(*require, criterion, subject, errors)
-                                                   : CompileScore(*score, criterion, subject, errors);
-            if (!modeOk)
+            const std::string_view missingCurve =
+                criterion.Value == CandidateValueKind::Scalar ? "scoring this measure needs a curve" : "";
+            if (!CompileConsiderationRule(step, missingCurve, criterion.Rule, subject, errors))
             {
                 ok = false;
                 continue;
             }
-            if (const JsonValue* unmeasured = step.Find("unmeasured"))
-                criterion.UnmeasuredScore = static_cast<float>(unmeasured->NumberOr("score", 0.0));
 
             const std::size_t before = errors.size();
             CandidatePrepared prepared = definition.Prepare(arguments, context, subject, errors);
@@ -360,33 +304,12 @@ DataSchema MakeCandidateEvaluationSchema()
                                                "A candidates.generator.* operation."));
     generator.Children.push_back(OpenRecord("arguments", "Arguments"));
 
-    DataFieldSchema require = OpenRecord("require", "Require");
-    require.Children.push_back(Optional(DataFieldKind::Float, "min", "Minimum"));
-    require.Children.push_back(Optional(DataFieldKind::Float, "max", "Maximum"));
-    require.Children.push_back(Optional(DataFieldKind::Bool, "expect", "Expect"));
-
-    DataFieldSchema score = OpenRecord("score", "Score");
-    DataFieldSchema curve = MakeResponseCurveField("curve", "Curve");
-    curve.Required = false;
-    score.Children.push_back(std::move(curve));
-    DataFieldSchema weight = Optional(DataFieldKind::Float, "weight", "Weight");
-    weight.Default = 1.0;
-    score.Children.push_back(std::move(weight));
-
-    DataFieldSchema unmeasured = OpenRecord("unmeasured", "When unmeasured");
-    unmeasured.Summary = "Score unmeasured candidates instead of rejecting them.";
-    DataFieldSchema unmeasuredScore = MakeDataField(DataFieldKind::Float, "score", "Score");
-    unmeasuredScore.Numeric.Minimum = 0.0;
-    unmeasuredScore.Numeric.Maximum = 1.0;
-    unmeasured.Children.push_back(std::move(unmeasuredScore));
-
     DataFieldSchema criterion = MakeDataField(DataFieldKind::Record, "criterion", "Criterion");
     criterion.Children.push_back(MakeDataField(DataFieldKind::String, "measure", "Measure",
                                                "A candidates.measure.* operation."));
     criterion.Children.push_back(OpenRecord("arguments", "Arguments"));
-    criterion.Children.push_back(std::move(require));
-    criterion.Children.push_back(std::move(score));
-    criterion.Children.push_back(std::move(unmeasured));
+    for (DataFieldSchema& field : MakeConsiderationRuleFields("Score unmeasured candidates instead of rejecting them."))
+        criterion.Children.push_back(std::move(field));
 
     DataFieldSchema mode = MakeDataField(DataFieldKind::Enum, "mode", "Mode");
     for (const SelectionName& named : kSelectionNames)

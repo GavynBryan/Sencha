@@ -5,6 +5,7 @@
 #include <authored/AuthoredValueTraits.h>
 #include <physics/PhysicsQueries.h>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <utility>
@@ -12,18 +13,9 @@
 
 namespace
 {
-    template<typename T>
-    DataFieldSchema Field(std::string key, std::string label, std::string summary = {})
-    {
-        DataFieldSchema field = MakeDataField(DataFieldKind::String, std::move(key), std::move(label),
-                                              std::move(summary));
-        AuthoredValueTraits<T>::Describe(field);
-        return field;
-    }
-
     DataFieldSchema IgnoreField()
     {
-        return Field<std::optional<EntityId>>("ignore", "Ignore", "An entity whose bodies the query passes through.");
+        return AuthoredField<std::optional<EntityId>>("ignore", "Ignore", "An entity whose bodies the query passes through.");
     }
 
     // Triggers count: an authored trace or overlap reports what is there. Views
@@ -34,11 +26,6 @@ namespace
                                    .IgnoreEntities = ignore ? std::span(&*ignore, 1) : std::span<const EntityId>{} };
     }
 
-    template<typename T>
-    bool Read(std::span<const AuthoredValue> arguments, std::size_t slot, T& out)
-    {
-        return AuthoredValueTraits<T>::Decode(AuthoredArgumentAt(arguments, slot), out);
-    }
 }
 
 void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope)
@@ -49,17 +36,17 @@ void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope)
     trace.Description = "The first body a ray strikes.";
     trace.Category = "Physics";
     trace.Arguments.Children = {
-        Field<Vec3d>("origin", "Origin"),
-        Field<Vec3d>("direction", "Direction"),
-        Field<float>("range", "Range", "How far the ray reaches, in meters."),
+        AuthoredField<Vec3d>("origin", "Origin"),
+        AuthoredField<Vec3d>("direction", "Direction"),
+        AuthoredField<float>("range", "Range", "How far the ray reaches, in meters."),
         IgnoreField(),
     };
     trace.Result = AuthoredRecordRoot();
     trace.Result.Children = {
-        Field<bool>("hit", "Hit", "Whether the ray struck anything."),
-        Field<EntityId>("entity", "Entity", "What it struck, when an entity owns the body."),
-        Field<Vec3d>("point", "Point"),
-        Field<Vec3d>("normal", "Normal"),
+        AuthoredField<bool>("hit", "Hit", "Whether the ray struck anything."),
+        AuthoredField<EntityId>("entity", "Entity", "What it struck, when an entity owns the body."),
+        AuthoredField<Vec3d>("point", "Point"),
+        AuthoredField<Vec3d>("normal", "Normal"),
     };
     (void)scope.Declare(std::move(trace));
 
@@ -69,13 +56,65 @@ void DeclarePhysicsQueries(AuthoredQueryRegistrationScope& scope)
     overlap.Description = "Every entity whose body overlaps a sphere.";
     overlap.Category = "Physics";
     overlap.Arguments.Children = {
-        Field<Vec3d>("position", "Position"),
-        Field<float>("radius", "Radius", "In meters."),
+        AuthoredField<Vec3d>("position", "Position"),
+        AuthoredField<float>("radius", "Radius", "In meters."),
         IgnoreField(),
     };
     overlap.Result = MakeDataField(DataFieldKind::Array, "entities", "Entities");
-    overlap.Result.Children = { Field<EntityId>("entity", "Entity") };
+    overlap.Result.Children = { AuthoredField<EntityId>("entity", "Entity") };
     (void)scope.Declare(std::move(overlap));
+
+    AuthoredQueryDefinition clear;
+    clear.Name = std::string(kPhysicsClearPathQuery);
+    clear.DisplayName = "Clear path";
+    clear.Description = "Whether a line, or an upright capsule centred on it, reaches the end without meeting "
+                        "anything solid. Characters and triggers do not count.";
+    clear.Category = "Physics";
+    clear.Arguments.Children = {
+        AuthoredField<Vec3d>("from", "From"),
+        AuthoredField<Vec3d>("to", "To"),
+        AuthoredField<float>("radius", "Radius", "The capsule's, in meters; zero tests a line."),
+        AuthoredField<float>("height", "Height", "The capsule's whole height, in meters."),
+        IgnoreField(),
+    };
+    clear.Result = AuthoredField<bool>("clear", "Clear");
+    (void)scope.Declare(std::move(clear));
+}
+
+AuthoredQueryStatus EvaluatePhysicsClearPath(const PhysicsQueries& physics,
+                                             std::span<const AuthoredValue> arguments,
+                                             AuthoredValue& result)
+{
+    Vec3d from;
+    Vec3d to;
+    float radius = 0.0f;
+    float height = 0.0f;
+    std::optional<EntityId> ignore;
+    if (!ReadAuthoredArgument(arguments, 0, from) || !ReadAuthoredArgument(arguments, 1, to) || !ReadAuthoredArgument(arguments, 2, radius)
+        || !ReadAuthoredArgument(arguments, 3, height) || !ReadAuthoredArgument(arguments, 4, ignore) || !(radius >= 0.0f) || !(height >= 0.0f))
+        return AuthoredQueryStatus::InvalidArguments;
+
+    const Vec3d delta = to - from;
+    const float length = delta.Magnitude();
+    if (length < 1.0e-4f)
+    {
+        result = AuthoredValue::Bool(true);
+        return AuthoredQueryStatus::Value;
+    }
+    const PhysicsQueryFilter filter{ .IncludeTriggers = false,
+                                     .IgnoreEntities = ignore ? std::span(&*ignore, 1) : std::span<const EntityId>{},
+                                     .IncludeCharacters = false };
+    const Vec3d direction = delta / length;
+    // A line's end is usually on the surface it is aimed at, which is not in the way.
+    constexpr float kLineEndInset = 0.25f;
+    bool blocked = false;
+    if (radius > 0.0f)
+        blocked = physics.SweepShape(CollisionShape::MakeCapsule(radius, std::max(height * 0.5f - radius, 0.01f)), from,
+                                     Quatf::Identity(), direction, length, filter).Hit;
+    else if (length > kLineEndInset)
+        blocked = physics.Raycast(from, direction, length - kLineEndInset, filter).Hit;
+    result = AuthoredValue::Bool(!blocked);
+    return AuthoredQueryStatus::Value;
 }
 
 AuthoredQueryStatus EvaluatePhysicsTrace(const PhysicsQueries& physics,
@@ -86,8 +125,8 @@ AuthoredQueryStatus EvaluatePhysicsTrace(const PhysicsQueries& physics,
     Vec3d direction;
     float range = 0.0f;
     std::optional<EntityId> ignore;
-    if (!Read(arguments, 0, origin) || !Read(arguments, 1, direction) || !Read(arguments, 2, range)
-        || !Read(arguments, 3, ignore) || !(range >= 0.0f) || direction.SqrMagnitude() == 0.0)
+    if (!ReadAuthoredArgument(arguments, 0, origin) || !ReadAuthoredArgument(arguments, 1, direction) || !ReadAuthoredArgument(arguments, 2, range)
+        || !ReadAuthoredArgument(arguments, 3, ignore) || !(range >= 0.0f) || direction.SqrMagnitude() == 0.0)
         return AuthoredQueryStatus::InvalidArguments;
 
     const RaycastHit hit = physics.Raycast(origin, direction.Normalized(), range, Filter(ignore));
@@ -107,7 +146,7 @@ AuthoredQueryStatus EvaluatePhysicsOverlap(const PhysicsQueries& physics,
     Vec3d position;
     float radius = 0.0f;
     std::optional<EntityId> ignore;
-    if (!Read(arguments, 0, position) || !Read(arguments, 1, radius) || !Read(arguments, 2, ignore)
+    if (!ReadAuthoredArgument(arguments, 0, position) || !ReadAuthoredArgument(arguments, 1, radius) || !ReadAuthoredArgument(arguments, 2, ignore)
         || !(radius > 0.0f))
         return AuthoredQueryStatus::InvalidArguments;
 

@@ -1,23 +1,29 @@
 #pragma once
 
+#include <authored/AuthoredQueryId.h>
+#include <authored/AuthoredValue.h>
 #include <core/assets/AssetId.h>
 #include <ecs/EntityId.h>
 #include <ecs/Query.h>
 #include <effects/EffectId.h>
+#include <effects/EffectSource.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <math/Vec.h>
+#include <physics/HitRegionResolver.h>
 #include <projectile/Projectile.h>
 #include <projectile/ProjectileState.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 class AssetSystem;
+class AuthoredQueryDispatcher;
 class ConsoleRegistry;
 class INetPrefabSpawner;
 class LoggingProvider;
@@ -28,7 +34,6 @@ class ResponsesSystem;
 class World;
 struct FixedLogicContext;
 struct FixedSimTime;
-struct CharacterController;
 struct WorldTransform;
 
 // A prefab's Projectile with its names resolved: what a flight reads every tick.
@@ -42,6 +47,38 @@ struct ResolvedProjectile
     GameplayTagId PassesThrough{};
     GameplayTagId HitKind{};
     GameplayTagId ImpactCue{};
+    GameplayTagId Ignores{};
+    AuthoredQueryHandle HitScale{};
+};
+
+enum class ProjectileStopKind : std::uint8_t
+{
+    // Stopped against something that lives or moves.
+    Struck,
+    // Stopped against level geometry: a body nothing moves or hurts.
+    Level,
+    Expired,
+};
+
+// How one projectile ended, for what was following it.
+struct ProjectileStop
+{
+    EntityId Projectile{};
+    ProjectileStopKind Kind = ProjectileStopKind::Expired;
+    Vec3d Point = Vec3d::Zero();
+    Vec3d Normal = Vec3d::Zero();
+};
+
+// The projectiles that ended on this authority tick, rewritten every tick.
+struct ProjectileStops
+{
+    std::vector<ProjectileStop> Entries;
+
+    [[nodiscard]] const ProjectileStop* Find(EntityId projectile) const
+    {
+        const auto found = std::ranges::find(Entries, projectile, &ProjectileStop::Projectile);
+        return found != Entries.end() ? &*found : nullptr;
+    }
 };
 
 // Every prefab launched in this World, resolved once. A resource rather than the
@@ -69,6 +106,8 @@ struct ProjectileLaunch
     float SpeedScale = 1.0f;
     float Magnitude = 0.0f;
     float SplashScale = 1.0f;
+    // Metres it may fly before its time runs out; zero leaves it to its lifetime.
+    float MaxDistance = 0.0f;
 };
 
 enum class ProjectileLaunchResult : std::uint8_t
@@ -128,6 +167,8 @@ public:
         const ReplicationInterpolation* Interpolation = nullptr;
         ConsoleRegistry* Console = nullptr;
         LoggingProvider* Logging = nullptr;
+        // Answers a projectile's hit scale query; without it every strike applies as authored.
+        const AuthoredQueryDispatcher* Queries = nullptr;
     };
 
     ProjectileSystem(World& world, const Services& services);
@@ -137,6 +178,10 @@ public:
     EntityId Launch(const ProjectileLaunch& launch, ProjectileLaunchResult* result = nullptr);
     // The prefab a path names, or an invalid id when nothing resolves it.
     [[nodiscard]] AssetId PrefabOf(std::string_view path) const;
+    // By the id a binding compiled to, else by the path it still names.
+    [[nodiscard]] AssetId PrefabOf(const AssetRef& reference) const;
+    // Ends a flight where it is, striking nothing more and reporting no stop.
+    void Recall(EntityId projectile, std::uint64_t tick);
     // A scatter seed for `instigator`'s next launch on `tick`: from who, when,
     // and which of that instigator's launches this tick it is, so no other
     // instigator's launches change it. Each call counts one launch.
@@ -164,21 +209,24 @@ private:
         float Distance = 0.0f;
         Vec3d Point = Vec3d::Zero();
         Vec3d Normal = Vec3d::Zero();
+        // The swept path, which hit regions are resolved along.
+        Vec3d From = Vec3d::Zero();
+        Vec3d Direction = Vec3d::Forward();
     };
 
     std::optional<std::uint32_t> Resolve(AssetId prefab, EntityId root);
     void Fly(EntityId projectile, const FixedSimTime& now);
     // The nearest thing the sphere meets along `direction` within `distance`.
     std::optional<Contact> Sweep(const ProjectileMotion& motion, const ResolvedProjectile& definition,
-                                 EntityId instigator, const Vec3d& from, const Vec3d& direction, float distance);
-    std::optional<Contact> SweepCharacters(const ProjectileMotion& motion, const ResolvedProjectile& definition,
-                                           EntityId instigator, const Vec3d& from, const Vec3d& direction,
-                                           float distance);
+                                 EntityId instigator, const Vec3d& from, const Vec3d& direction, float distance,
+                                 std::span<const EntityId> passed);
     // Strikes `target`: its effects, its delivery, the cue. False if it was struck before.
     bool Strike(EntityId projectile, ProjectileMotion& motion, const ResolvedProjectile& definition,
                 EntityId instigator, const Contact& contact, const FixedSimTime& now);
     void ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                      EffectId override, const FixedSimTime& now);
+                      EffectId override, const FixedSimTime& now, const EffectSource& source, float scale = 1.0f);
+    // The projectile's hit scale query's answer for a strike; 1 without one.
+    [[nodiscard]] float HitScale(const ResolvedProjectile& definition, EntityId target, GameplayTagId region);
     void Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,
                 const Vec3d& point, const Vec3d& normal, const FixedSimTime& now);
     void Cue(EntityId instigator, EntityId projectile, GameplayTagId cue, const Vec3d& point, const Vec3d& normal,
@@ -194,11 +242,13 @@ private:
 
     std::optional<Query<Read<ProjectileMotion>>> Flying;
     std::optional<Query<Write<ProjectileFlight>>> Flights;
-    std::optional<Query<Read<CharacterController>, Read<WorldTransform>>> Characters;
     // Reused every tick: gathered before anything is struck, because a strike
     // can apply effects that make structural changes.
     std::vector<EntityId> Scratch;
     std::vector<EntityId> Overlaps;
+    HitRegionResolver Regions;
+    AuthoredArguments ScaleArguments;
+    AuthoredValue ScaleAnswer;
     // Launches seeded this tick, per instigator.
     std::uint64_t SeedTick = 0;
     std::unordered_map<EntityId, std::uint32_t, EntityIdHash> SeedsThisTick;

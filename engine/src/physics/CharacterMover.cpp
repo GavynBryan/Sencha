@@ -78,6 +78,8 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
 
     JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
     settings->mShape = new JPH::CapsuleShape(cylinderHalfHeight, radius); // centered: position is capsule center
+    settings->mInnerBodyShape = settings->mShape;
+    settings->mInnerBodyLayer = PhysicsObjectLayers::CharacterBody;
     settings->mMaxSlopeAngle = ToRadians(config.SlopeLimitDegrees);
     settings->mMass = config.Mass;
     settings->mUp = JPH::Vec3::sAxisY();
@@ -85,7 +87,10 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
     // Keep the character out of geometry by its own margin, like a body skin.
     settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -radius);
 
-    Impl->Character = new JPH::CharacterVirtual(settings, ToJphR(position), JPH::Quat::sIdentity(), 0, &Impl->Scene->System);
+    Impl->Character = new JPH::CharacterVirtual(settings, ToJphR(position), JPH::Quat::sIdentity(),
+                                                PackEntity(config.Owner), &Impl->Scene->System);
+    if (Impl->Character->GetInnerBodyID().IsInvalid())
+        ++Impl->Scene->CapacityFailures.BodiesRefused;
 }
 
 CharacterMover::~CharacterMover() = default;

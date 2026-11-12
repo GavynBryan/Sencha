@@ -1,6 +1,6 @@
 # Perception v1
 
-Date: 2026-10-14. Status: stages A-D built; hearing (E) is next. Scope: sight,
+Date: 2026-10-14. Status: stages A-F built. Scope: sight,
 the observation contract, diagnostics with world drawing, and the authored read
 path. Hearing shapes the contract but is not built here.
 
@@ -19,6 +19,8 @@ interprets, and no entity has to take part in every stage.
 | One tick's evidence (`Observation`, `PerceptionFrame`) | `perception/` | gameplay substrate |
 | Running the senses each fixed tick (`PerceptionSystem`) | `perception/` | gameplay substrate |
 | Authored questions about the frame (`perception.*` queries) | `perception/PerceptionQueries` | gameplay substrate |
+| What an observer retains (`ObservationMemory`, `ObservationMemorySystem`) | `perception/` | gameplay substrate |
+| Ears, staged stimuli and the hearing pass (`HearingSensor`, `PerceptionStimuli`, `HearingScan`) | `perception/` | gameplay substrate |
 | Lines a simulation system wants shown (`DebugLineChannels`) | `debug/DebugLines` | neutral, no render |
 | Lines in render form, the pass, the feature | `render/debug`, `graphics/vulkan/DebugLinePass`, `render/feature/DebugLineRenderFeature` | render |
 
@@ -98,6 +100,14 @@ starve the same high-id observers on every tick, permanently. A per-observer
 cap needs no multi-tick scheduler. An observer that hits its cap is `Partial`,
 and the candidates it never tested produce no observation.
 
+An observer scans once every `perception.sight.scan_interval_ticks`, staggered
+by id, with the first scan immediate. Between scans its last observations stand
+in the frame with their original tick and coverage, minus any subject that has
+since been destroyed, so queries still answer rather than reporting nothing.
+`ObservationMemorySystem` only takes observations of the current tick. Rays are
+about 80% of perception at 256 enemies and all-pairs geometry about 6%, so the
+interval, not an index over targets, is what bounds the cost.
+
 Targets are gathered once per tick from the logic partitions and sorted by
 id. Scratch storage is retained, so a steady state does not allocate. A
 spatial index is not built until a measured encounter exceeds the ~1 ms gate.
@@ -128,6 +138,75 @@ Candidate evaluation reaches the same answers through its `authored_query`
 measure. That makes "of the things I can see, pick one" a definition, not
 code.
 
+## Hearing
+
+`HearingSensor { Sensitivity, EarOffset }` is an ear. A `PerceptionStimulus
+{ Source, Position, Radius, Only }` is something to hear, staged on the
+authority with `StagePerceptionStimulus` or, from content, the
+`perception.stimulus` verb (`{source?, position?, radius, only?}`; without a
+position it happens where the source stands). The hearing pass runs after
+sight in `PerceptionSystem`, takes every stimulus staged since the last pass,
+and reports into the same frame under `perception.sense.hearing`:
+
+- An ear within `Radius × Sensitivity` hears it, with confidence falling from 1
+  at the source to 0 at that reach. Nothing occludes sound.
+- A stimulus with `Only` reaches that observer alone, wherever it is, at
+  confidence 1: being struck is heard by what was struck.
+- A source never hears itself. The observation's subject is the source, which
+  may be invalid for an anonymous sound.
+
+A stimulus staged before a tick's pass is heard that tick, after it the next,
+and each is heard once. Every ear's hearing scan is `Complete`.
+
+## Memory
+
+`ObservationMemory { RetainSeconds }` on an observer keeps up to eight
+entries, one per subject: the last observed position, a velocity measured
+from two observations at most 0.25 s apart, the sense and confidence, `Age`
+(seconds since last observed), `Tracked` (seconds observed without a
+lapse) and `Facing`, the way the subject faced when it was observed. An
+anonymous observation refreshes the remembered anonymous entry
+within 2 m of it, or starts one. A full memory replaces its oldest entry,
+except that subjects carrying its `Prefer` tag, or one beneath it, are
+replaced last and never for a subject without it, and an entry older than
+`RetainSeconds` is dropped. A squad that can see eight of its own members
+still remembers its enemy.
+
+`ObservationMemorySystem` runs in FixedLogic after `PerceptionSystem`, on the
+authority, over the logic partitions; `RegisterPerception` registers both. It
+copies out of the frame, so nothing it keeps outlives a tick's spans. Memory
+never interprets an entry: what counts as a threat is the reader's question.
+
+Queries, from the observer's memory:
+
+| Query | Arguments | Result |
+| --- | --- | --- |
+| `perception.remembers` | observer, subject | bool |
+| `perception.last_seen_position` | observer, subject | vector |
+| `perception.last_seen_velocity` | observer, subject | vector |
+| `perception.seconds_since_seen` | observer, subject | float |
+| `perception.seconds_tracked` | observer, subject | float |
+| `perception.nearest_remembered_tagged` | observer, tag | entity |
+
+### Sharing
+
+`ObservationSharing { group, radius, delay_seconds }` puts an observer in a
+group named by a gameplay tag. Each observation a member makes reaches every
+other member's memory after `delay_seconds`, if that member stands within
+`radius` of the one that made it (zero reaches all), under the
+`perception.sense.shared` sense and with the subject's facing as observed.
+Sightings of the group's own members are not passed on: the group already
+knows where its members are. A member's own sight in the same tick is never
+overwritten by what it is told, so a reader that asks whether a subject is in view still checks for
+sight. Members are visited in entity order, so sharing is deterministic. A
+squad's radio is a radius and half a second; a hive is zero and zero.
+
+They answer `Unavailable` off the authority or for an observer with no
+memory. A subject never remembered answers false for `remembers` and
+`Unavailable` for the rest. `nearest_remembered_tagged` skips subjects no
+longer alive. A remembered position is where the subject was; a reader that
+wants where it is now asks `perception.sees` first.
+
 ## Diagnostics
 
 `PerceptionStats` per tick: sensors, unusable sensors, candidates, rejected
@@ -155,7 +234,7 @@ also draws a green line to each seen sample, a red line to each blocking hit
 with the occluded remainder dimmed, and a marker at each observed position.
 The Perception panel in the debug overlay lists the counters and every
 observer with its coverage, and for the selected observer each candidate's
-outcome. That is enough to explain why any target was or was not seen.
+outcome and its memory. That is enough to explain why any target was or was not seen.
 
 ## Lifecycle and networking
 
@@ -180,13 +259,15 @@ C. Built. Authored queries, declared through `InstallEngineVocabulary` and
 D. Built. Debug lines (channels, extraction, pass, feature) on the
    colored-vertex pipeline the editor shares, perception drawing, and the
    Perception panel.
-E. Hearing: `HearingSensor`, stimuli staged from authored events by game
-   adapters, observations through the same frame. Separate follow-up.
+E. Built. Hearing: `HearingSensor`, staged stimuli and `perception.stimulus`,
+   observations through the same frame.
+F. Built. Memory: `ObservationMemory`, `ObservationMemorySystem` and the
+   memory queries.
 
 ## Not in v1
 
-Memory, appraisal, belief, alertness, behavior selection, communication,
+Appraisal, belief, alertness, behavior selection, communication,
 prediction, multiple sample points, lighting-aware concealment, sound
-propagation, parallel or multi-tick scanning, a sense registration framework,
+occlusion and propagation, parallel or multi-tick scanning, a sense registration framework,
 and a spatial index. Each waits for a real consumer or a measurement. None is
 excluded by the contract.

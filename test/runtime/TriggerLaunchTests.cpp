@@ -56,6 +56,12 @@ constexpr std::string_view kLaunch = R"({"commands": [{"verb": "movement.launch"
     "direction": {"const": [0, 0, 1], "frame": "self"},
     "speed": 10, "rise": 8}}]})";
 
+// Sideways, on top of the walk: a shove rather than a launch.
+constexpr std::string_view kShove = R"({"commands": [{"verb": "movement.impulse", "arguments": {
+    "target": {"port": "activator"},
+    "direction": {"const": [1, 0, 0]},
+    "speed": 5}}]})";
+
 struct LaunchHarness
 {
     EngineConfig Config;
@@ -267,4 +273,21 @@ TEST(TriggerLaunch, TheLaunchCanBeReplacedByAnotherVerbWithoutTouchingTheVolume)
     EXPECT_EQ(harness.Triggers->Stats().Activations, 1u);
     EXPECT_EQ(harness.Entities().TryGet<Responses>(bumper)->Disabled, 1u);
     EXPECT_LT(highest, 1.0f);
+}
+
+TEST(TriggerLaunch, AnImpulseAddsToTheWalkWhereALaunchWouldReplaceIt)
+{
+    LaunchHarness harness;
+    const EntityId walker = harness.Character(Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 0.0f, 1.0f));
+    (void)harness.Bumper(Vec3d(0.0f, 0.0f, 3.0f), 0.0f, Vec3d(1.0f, 0.25f, 0.5f), Vec3d(0.0f, 0.25f, 0.0f), kShove);
+
+    bool shoved = false;
+    for (int i = 0; i < 240 && !shoved; ++i)
+    {
+        harness.Step();
+        shoved = harness.Velocity(walker).X > 2.0f;
+    }
+    ASSERT_TRUE(shoved) << "the walker crossed the pad and was never shoved";
+    EXPECT_GT(harness.Velocity(walker).Z, 3.0f) << "it is still walking the way it was";
+    EXPECT_LT(harness.Velocity(walker).Y, 0.5f);
 }

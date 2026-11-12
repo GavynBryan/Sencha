@@ -41,5 +41,21 @@ void PhysicsStepSystem::Physics(PhysicsContext& ctx)
                             ctx.Config.Runtime.TransformForceFullPropagation);
     Bodies.SyncToPhysics(ctx.Entities, ctx.Partitions);
     Simulation.Step(dt, CollisionSteps);
+    ReportCapacityFailures();
     Bodies.SyncFromPhysics(ctx.Entities, ctx.Partitions);
+}
+
+void PhysicsStepSystem::ReportCapacityFailures()
+{
+    const PhysicsCapacityFailures& now = Simulation.GetCapacityFailures();
+    const bool failed = now.BodiesRefused != ReportedFailures.BodiesRefused
+        || now.OverflowedSteps != ReportedFailures.OverflowedSteps;
+    ReportedFailures = now;
+    if (failed && CapacityLog.Record() && Log != nullptr)
+    {
+        Log->Error("Physics capacity exceeded: {} bodies refused and {} steps dropped contacts so far",
+                   now.BodiesRefused, now.OverflowedSteps);
+    }
+    if (const auto ended = CapacityLog.EndPeriod(); ended.has_value() && Log != nullptr)
+        Log->Warn("Physics is within capacity again after {} ticks over it", ended->Periods);
 }

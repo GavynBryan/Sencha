@@ -6,6 +6,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/CharacterMoverPool.h>
+#include <physics/PhysicsQueries.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
 #include <movement/components/CharacterMovement.h>
@@ -405,4 +406,69 @@ TEST(CharacterMoverPoolStep, RestoreIsWhereTheNextSweepStartsFrom)
     EXPECT_NEAR(ecs.TryGet<LocalTransform>(player)->Value.Position.X, 4.0f, 1e-3f)
         << "the transform-only write survived a sweep, so this test can no "
            "longer tell a real correction from a lost one";
+}
+
+TEST(CharacterMoverPool, ACharacterPlacedUnderAnotherEntityBecomesARootWhereItStands)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    if (!ecs.IsRegistered<Parent>())
+        ecs.RegisterComponent<Parent>();
+    CharacterMoverPool pool(physics);
+
+    const EntityId placement = ecs.CreateEntity();
+    Transform3f placed;
+    placed.Position = Vec3d(10.0f, 0.0f, 0.0f);
+    placed.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), 3.14159265f);
+    ecs.AddComponent<LocalTransform>(placement, LocalTransform{ placed });
+    const EntityId character = SpawnCharacter(ecs, Vec3d(1.0f, 5.0f, 0.0f));
+    ecs.AddComponent<Parent>(character, Parent{ placement });
+
+    pool.Reconcile(ecs, ActivePartitions());
+    EXPECT_FALSE(ecs.HasComponent<Parent>(character));
+    const LocalTransform* rooted = ecs.TryGet<LocalTransform>(character);
+    ASSERT_NE(rooted, nullptr);
+    EXPECT_NEAR(rooted->Value.Position.X, 9.0f, 1e-4f);
+    EXPECT_NEAR(rooted->Value.Position.Y, 5.0f, 1e-4f);
+    EXPECT_NEAR(std::abs(rooted->Value.Rotation.Y), 1.0f, 1e-4f);
+
+    ecs.TryGet<MotionRequest>(character)->Velocity = Vec3d(6.0f, 0.0f, 0.0f);
+    pool.Drive(ecs, ActivePartitions(), kFixedDt, Vec3d::Zero());
+    EXPECT_GT(ecs.TryGet<LocalTransform>(character)->Value.Position.X, 9.0f);
+}
+
+TEST(CharacterMoverPool, ACharactersBodyIsStruckByQueriesAndCollidesWithNothing)
+{
+    PhysicsWorld physics;
+    AddStaticFloor(physics);
+
+    World ecs;
+    SetUpPhysics(ecs);
+    CharacterMoverPool pool(physics);
+    const EntityId character = SpawnCharacter(ecs, Vec3d(5.0f, 1.4f, 0.0f));
+    pool.Reconcile(ecs, ActivePartitions());
+
+    const PhysicsQueries queries(physics);
+    const RaycastHit struck = queries.Raycast(Vec3d(0.0f, 1.4f, 0.0f), Vec3d(1.0f, 0.0f, 0.0f), 20.0f,
+                                              PhysicsQueryFilter{});
+    ASSERT_TRUE(struck.Hit);
+    EXPECT_EQ(struck.Entity, character);
+    EXPECT_NEAR(struck.Point.X, 5.0f - CharacterController{}.Radius, 0.05f);
+
+    const RaycastHit passed = queries.Raycast(Vec3d(0.0f, 1.4f, 0.0f), Vec3d(1.0f, 0.0f, 0.0f), 20.0f,
+                                              PhysicsQueryFilter{ .IncludeCharacters = false });
+    EXPECT_FALSE(passed.Hit);
+
+    BodyDesc dropped;
+    dropped.Shape = CollisionShape::MakeSphere(0.2f);
+    dropped.Position = Vec3d(5.0f, 4.0f, 0.0f);
+    dropped.Motion = BodyMotion::Dynamic;
+    dropped.Layer = CollisionLayer::Moving;
+    const PhysicsBodyId ball = physics.AddBody(dropped);
+    for (int index = 0; index < 120; ++index)
+        physics.Step(kFixedDt);
+    EXPECT_LT(physics.GetBodyTransform(ball).Position.Y, 1.0f) << "it fell through the character onto the floor";
 }

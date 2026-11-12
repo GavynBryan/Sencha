@@ -11,14 +11,17 @@
 
 #include <physics/PhysicsTypes.h>
 
-// Object layers: one per CollisionLayer, same ordinal so conversion is a cast.
+// Object layers: one per CollisionLayer, same ordinal so conversion is a cast,
+// then CharacterBody: the body a character carries so queries can strike it.
+// It pairs with nothing, so it changes no contact and no character's motion.
 namespace PhysicsObjectLayers
 {
     static constexpr JPH::ObjectLayer Static = 0;
     static constexpr JPH::ObjectLayer Moving = 1;
     static constexpr JPH::ObjectLayer Character = 2;
     static constexpr JPH::ObjectLayer Trigger = 3;
-    static constexpr JPH::ObjectLayer Count = 4;
+    static constexpr JPH::ObjectLayer CharacterBody = 4;
+    static constexpr JPH::ObjectLayer Count = 5;
 }
 
 // Broadphase layers: the two coarse buckets the trees are split into.
@@ -46,7 +49,7 @@ public:
         case PhysicsObjectLayers::Static:
             return b == PhysicsObjectLayers::Moving || b == PhysicsObjectLayers::Character;
         case PhysicsObjectLayers::Moving:
-            return true;
+            return b != PhysicsObjectLayers::CharacterBody;
         case PhysicsObjectLayers::Character:
             return b == PhysicsObjectLayers::Static || b == PhysicsObjectLayers::Moving
                 || b == PhysicsObjectLayers::Trigger;
@@ -71,6 +74,7 @@ public:
         {
         case PhysicsObjectLayers::Moving:
         case PhysicsObjectLayers::Character:
+        case PhysicsObjectLayers::CharacterBody:
             return PhysicsBroadPhaseLayers::Moving;
         default:
             return PhysicsBroadPhaseLayers::NonMoving;

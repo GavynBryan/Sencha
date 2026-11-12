@@ -324,7 +324,8 @@ protected:
 
     [[nodiscard]] const AbilityRecord& AuthorityRecord() const
     {
-        return static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor)->Records[0];
+        return Authority.Entities.TryGetResource<AbilityActivations>()->Record(
+            *static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor), 0);
     }
 
     struct Tail
@@ -421,10 +422,12 @@ protected:
     bool ClientHeld[2] = {};
     std::vector<std::vector<InputActionEdge>> Commands;
 
-    [[nodiscard]] const ActiveAbilities& RemoteRecords() const
+    struct RecordsHeld
     {
-        return *static_cast<const World&>(Client.Entities).TryGet<ActiveAbilities>(Remote());
-    }
+        std::array<AbilityRecord, kAbilitySlotCapacity> Records;
+    };
+
+    [[nodiscard]] RecordsHeld RemoteRecords() const { return { AbilityRecordsOf(Client.Entities, Remote()) }; }
 
     // Steps `ticks` authority ticks, publishing every second one as the default cadence does.
     void Run(int ticks, bool delivered = true)
@@ -467,7 +470,7 @@ TEST_F(AbilityReplication, RecordsArriveInTheClientsOwnNames)
     (void)Publish();
     ASSERT_TRUE(Remote().IsValid());
     ASSERT_NE(Remote(), Actor) << "the same actor is a different entity here";
-    const AbilityRecord& record = RemoteRecords().Records[0];
+    const AbilityRecord record = RemoteRecords().Records[0];
     EXPECT_EQ(record.State, AbilityRecordState::Live);
     EXPECT_EQ(record.Key.Ability, Client.Entities.GetResource<AbilityRegistry>().Find("asset://abilities/automatic.sdata"))
         << "named by the client's id for the same ability";
@@ -691,9 +694,8 @@ TEST_F(AbilityReplication, SameTickStartsGetDistinctKeys)
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release },
            { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
     (void)Publish();
-    const ActiveAbilities& here = *static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor);
     std::vector<std::uint64_t> identities;
-    for (const AbilityRecord& record : here.Records)
+    for (const AbilityRecord& record : AbilityRecordsOf(Authority.Entities, Actor))
         if (record.State != AbilityRecordState::Free)
             identities.push_back(record.Identity);
     ASSERT_EQ(identities.size(), 2u) << "two presses in one tick are two activations";
@@ -760,6 +762,26 @@ TEST_F(AbilityReplication, RefusedPredictionEndsSustainedPresentation)
     Locksteps(12);
     EXPECT_EQ(Client.Glows.Held, 0) << "the authority started nothing for that press, so the glow goes";
     EXPECT_EQ(Client.Entities.GetResource<AbilityPredictionJournal>().Size(), 0u);
+    Locksteps(static_cast<int>(Client.Settings.LingerTicks) + 2);
+    EXPECT_EQ(Client.Entities.GetResource<AbilityActivations>().Stats().Live, 0u) << "a refused guess gives its slot back";
+}
+
+TEST_F(AbilityReplication, SnapshotsReuseAnActivationAndFreeOneTheAuthorityEnded)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    Step();
+    (void)Publish();
+    Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    (void)Publish();
+    const AbilityActivations& pool = Client.Entities.GetResource<AbilityActivations>();
+    ASSERT_EQ(pool.Stats().Live, 1u);
+    const std::uint64_t allocated = pool.Stats().Allocated;
+    (void)Publish();
+    (void)Publish();
+    EXPECT_EQ(pool.Stats().Live, 1u) << "a slot the wire still names keeps its activation";
+    EXPECT_EQ(pool.Stats().Allocated, allocated);
+    Run(40);
+    EXPECT_EQ(pool.Stats().Live, 0u) << "the record the wire no longer names is freed";
 }
 
 TEST_F(AbilityReplication, AGuessRunsOnlyWhatItsPredictionLevelAllows)
@@ -793,9 +815,10 @@ TEST_F(AbilityReplication, ASimulationLevelGuessHoldsWhatTheAuthorityWill)
 
 namespace
 {
-std::size_t CountRecords(const ActiveAbilities& active, bool predicted)
+template <typename Held>
+std::size_t CountRecords(const Held& held, bool predicted)
 {
-    return static_cast<std::size_t>(std::ranges::count_if(active.Records, [&](const AbilityRecord& record) {
+    return static_cast<std::size_t>(std::ranges::count_if(held.Records, [&](const AbilityRecord& record) {
         return record.State == AbilityRecordState::Live && record.Predicted == predicted;
     }));
 }
@@ -811,8 +834,7 @@ TEST_F(AbilityReplication, AClientsReleaseLeavesTheAuthoritysRecordAlone)
     Grant(kGlowing, "asset://abilities/glowing.sdata");
     Predict();
     ActiveAbilities& active = *Client.Entities.TryGet<ActiveAbilities>(Remote());
-    AbilityRecord& word = active.Records[0];
-    word = AbilityRecord{};
+    AbilityRecord& word = Client.Entities.GetResource<AbilityActivations>().Claim(active, 0, Remote()).Record;
     word.State = AbilityRecordState::Live;
     word.Key = { .CommandTick = ClientNow, .Ability = Client.Entities.GetResource<AbilityRegistry>().Find(
                                                "asset://abilities/glowing.sdata") };
@@ -821,8 +843,10 @@ TEST_F(AbilityReplication, AClientsReleaseLeavesTheAuthoritysRecordAlone)
     word.Identity = 99;
     ClientHeld[kGlowAction] = true;
     ClientTick({ { kGlowAction, InputEdgeKind::Release } });
-    EXPECT_EQ(word.State, AbilityRecordState::Live) << "the authority's record is only presented here";
-    EXPECT_FALSE(word.Released);
+    const AbilityRecord& after =
+        Client.Entities.GetResource<AbilityActivations>().Record(*Client.Entities.TryGet<ActiveAbilities>(Remote()), 0);
+    EXPECT_EQ(after.State, AbilityRecordState::Live) << "the authority's record is only presented here";
+    EXPECT_FALSE(after.Released);
 }
 
 TEST_F(AbilityReplication, AGuessCancelsOnlyGuesses)
@@ -888,8 +912,7 @@ TEST_F(AbilityReplication, TwoGrantsOfOneAbilityAreNamedApartOnEveryMachine)
     Step({ { kFire, InputEdgeKind::Press } });
     (void)Publish();
     std::vector<std::uint64_t> identities;
-    for (const AbilityRecord& record :
-         static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor)->Records)
+    for (const AbilityRecord& record : AbilityRecordsOf(Authority.Entities, Actor))
         if (record.State == AbilityRecordState::Live)
             identities.push_back(record.Identity);
     ASSERT_EQ(identities.size(), 2u);
@@ -926,6 +949,7 @@ TEST_F(AbilityReplication, AGuessedCueHidesOnlyTheAuthorityEntryItGuessed)
     const GameplayTagId shot = client.GetResource<GameplayTagRegistry>().FindTag("cue.shot");
     const EntityId struck = client.CreateEntity();
     const EntityId missed = client.CreateEntity();
+    client.AddComponent<AbilityPredictedCues>(Remote());
     (void)AppendAbilityCue(client.TryGet<AbilityPredictedCues>(Remote())->Log, CueAt(shot, ClientNow, struck));
     Client.Presenter->Present(client, ClientNow);
     ASSERT_EQ(Client.Showings.Counts.size(), 1u) << "the guess is shown at once";
@@ -966,4 +990,14 @@ TEST_F(AbilityReplication, NoGuessStartsThatTheJournalCannotDecide)
     Locksteps(24);
     EXPECT_EQ(journal.Size(), 0u);
     EXPECT_EQ(Client.Glows.Held, 0);
+}
+
+TEST_F(AbilityReplication, OnlyAPredictingActorCarriesGuessedCues)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    EXPECT_FALSE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
+    EXPECT_FALSE(Authority.Entities.HasComponent<AbilityPredictedCues>(Actor));
+    Predict();
+    ClientTick({});
+    EXPECT_TRUE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
 }

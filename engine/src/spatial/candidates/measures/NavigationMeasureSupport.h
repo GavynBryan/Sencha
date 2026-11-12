@@ -21,6 +21,8 @@ namespace candidate_operation
         NavigationFidelity Fidelity = NavigationFidelity::RegionEntry;
         float MaxCost = std::numeric_limits<float>::infinity();
         OutsideZone Outside = OutsideZone::Reject;
+        // Searches from this slot's first point rather than from the querier.
+        std::optional<std::uint8_t> From;
     };
 
     // One candidate's answer from navigation: its cost from the querier and
@@ -33,7 +35,8 @@ namespace candidate_operation
         NavStatus Search = NavStatus::Success;
     };
 
-    [[nodiscard]] NavigationAnswer AskNavigation(CandidateRun& run, const NavigationMeasureState& state, std::uint32_t row);
+    [[nodiscard]] NavigationAnswer AskNavigation(CandidateRun& run, const NavigationMeasureState& state, std::uint32_t row,
+                                                 const NavLocation* from = nullptr);
 
     [[nodiscard]] NavigationMeasureState ReadNavigationMeasure(const JsonValue& arguments,
                                                                std::string_view fidelityKey,

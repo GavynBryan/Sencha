@@ -134,6 +134,8 @@ namespace
                 .AddFloat("entry_radius", link.EntryRadius);
             AddVec3(fingerprint, "entry", link.Entry);
             AddVec3(fingerprint, "exit", link.Exit);
+            fingerprint.AddU32("anchored", link.Anchored ? 1u : 0u);
+            AddVec3(fingerprint, "anchor", link.Anchor);
         }
         return fingerprint.Value();
     }

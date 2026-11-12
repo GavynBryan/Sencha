@@ -267,6 +267,15 @@ approach velocity, so the outcome depends on how the character arrived): a
 launch is the same however the character came in. It is authority-only; a
 predicting client is corrected to it (`docs/gameplay/responses.md`).
 
+### Impulse
+
+`movement.impulse {target, direction, speed = 1, rise = 0}` adds
+`direction × speed` plus `rise` along the character's up axis to however it
+was moving, once, through `AddMotionImpulse`: a shove, a blast. A walker
+shoved sideways keeps walking forward. It reads its arguments as a launch
+does and is authority-only in the same way. Effect reactions push through
+the same function (`docs/gameplay/reactions.md`).
+
 Jump is carried by `MovementIntent.Jump` rather than an ability
 (`JumpExecutionSystem.h`): a predicting client replays its own movement from
 each tick's state and input, and the ability path spawned timed effect
@@ -307,6 +316,16 @@ those — so the same motor serves any up axis and any mode.
 `CharacterMoverPool::Drive` feeds it each character's `MotionRequest` and
 writes back position, achieved velocity, and support.
 
+Each character also carries an inner body on the `CharacterBody` layer, the
+same capsule, named by its entity. Physics queries strike it (rays, sweeps,
+overlaps, sight); it pairs with no layer, so it changes no contact and no
+motion. `PhysicsQueryFilter::IncludeCharacters` leaves it out.
+
+A character moves in world space and writes its `LocalTransform` as such, so a
+character is a root. One placed under another entity, as a prefab instance's
+members are under the instance, is detached when its mover binds, keeping
+where it stands (`CharacterMoverPool::Reconcile`).
+
 Config knobs (`CharacterMoverConfig`): capsule radius/height, slope limit,
 step height, ground-snap distance, skin width, push mass.
 
@@ -328,6 +347,10 @@ steps, as every provider's pull rule asks.
   when it does) or a point. Longer than its length, it forces a pull toward the
   anchor at its speed, never past taut in one step, so the character arrives at
   the rope's length.
+  Given `until`, a point along the rope, it is a reel: the length becomes that
+  point's distance from the anchor, and reaching it stops the character dead and
+  completes the tether, so letting go there drops the character rather than
+  throwing it.
 - **Mode:** a locomotion mode requested for the lease's scope; released, the
   character is asked back to free if it is still in the leased mode.
 

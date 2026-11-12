@@ -9,12 +9,15 @@
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
+#include <effects/EffectLifetimeSystem.h>
+#include <logic/EffectReactionSystem.h>
 #include <logic/ResponsesSystem.h>
 #include <logic/VerbRelaySystem.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
 #include <physics/PhysicsStepSystem.h>
+#include <line/ContactLineSystem.h>
 #include <projectile/ProjectileSystem.h>
 #include <effects/AttributeResolveSystem.h>
 #include <anim/AnimationRegistration.h>
@@ -738,6 +741,9 @@ void Engine::RequestExit(ExitSource source)
     if (ExitPending)
         return;
 
+    static constexpr const char* kExitSourceNames[] = { "window close", "menu", "console", "game" };
+    LoggingState.GetLogger<Engine>().Info("Exit requested by {}", kExitSourceNames[static_cast<std::size_t>(source)]);
+
     if (OnExitRequested && OnExitRequested(source) == ExitDecision::Defer)
     {
         ExitPending = true;
@@ -1450,6 +1456,15 @@ int Engine::Run(Game& game)
                                            .Presents = PresentsAWindow(Configuration),
                                            .Logging = &LoggingState });
 
+    // Every host answers effects with reactions: an entity whose EffectReactions
+    // name a profile is pushed and shaken in a process whose game registered
+    // nothing for it. After every engine pass that applies effects.
+    EngineSystems.Register<EffectReactionSystem>(
+        EffectReactionSystem::Services{ .DataAssets = &ContentState->Assets().DataAssets,
+                                        .Log = &LoggingState.GetLogger<EffectReactionSystem>() });
+    EngineSystems.After<EffectReactionSystem, EffectLifetimeSystem>();
+    EngineSystems.After<EffectReactionSystem, ResponsesSystem>();
+
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
     VocabularyBindings->BindPerception(*QueryDispatcherState);
@@ -1499,12 +1514,28 @@ int Engine::Run(Game& game)
                                             .Clock = &NetClockState,
                                             .Interpolation = &InterpolationState,
                                             .Console = &console.Registry(),
-                                            .Logging = &LoggingState });
+                                            .Logging = &LoggingState,
+                                            .Queries = QueryDispatcherState.get() });
             if (EngineSystems.Has<AbilitySystem>())
                 EngineSystems.After<ProjectileSystem, AbilitySystem>();
             if (EngineSystems.Has<AttributeResolveSystem>())
                 EngineSystems.After<AttributeResolveSystem, ProjectileSystem>();
+            EngineSystems.After<EffectReactionSystem, ProjectileSystem>();
             VocabularyBindings->BindProjectiles(projectiles, *VerbDispatcherState);
+
+            // After projectiles, whose stops it reads this tick; before attributes
+            // resolve, so what it strikes is resolved this tick too.
+            ContactLineSystem& lines = RegisterContactLineSystem(
+                EngineSystems, RuntimeWorldState->Entities(),
+                ContactLineSystem::Services{ .Physics = &physics->GetSimulation(),
+                                             .Prefabs = NetPrefabState.get(),
+                                             .Projectiles = &projectiles,
+                                             .Responses = EngineSystems.Get<ResponsesSystem>() });
+            EngineSystems.After<ContactLineSystem, ProjectileSystem>();
+            if (EngineSystems.Has<AttributeResolveSystem>())
+                EngineSystems.After<AttributeResolveSystem, ContactLineSystem>();
+            EngineSystems.After<EffectReactionSystem, ContactLineSystem>();
+            VocabularyBindings->BindContactLines(lines, *VerbDispatcherState, *QueryDispatcherState);
         }
         CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
             *RuntimeWorldState, ContentState->Assets().CandidateOperations,
@@ -1520,6 +1551,8 @@ int Engine::Run(Game& game)
     // After the game's, so whatever ordering constraints it declared already
     // exist when these are added.
     ContentState->RegisterSystems(EngineSystems);
+    if (PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>())
+        physics->SetLog(&LoggingState.GetLogger<PhysicsStepSystem>());
     EngineSystems.Init();
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 

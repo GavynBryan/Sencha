@@ -24,6 +24,16 @@ namespace DataField
         return field;
     }
 
+    inline DataFieldSchema OptionalNumber(std::string key, std::string display, std::string summary,
+                                          double fallback, double minimum)
+    {
+        DataFieldSchema field = Field(std::move(key), DataFieldKind::Float, std::move(display),
+                                      std::move(summary), false);
+        field.Default = fallback;
+        field.Numeric.Minimum = minimum;
+        return field;
+    }
+
     inline DataFieldSchema Enum(std::string key, std::string display, std::string summary,
                                 std::vector<DataEnumChoice> choices, bool required = true)
     {

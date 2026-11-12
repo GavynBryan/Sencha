@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <type_traits>
+#include <optional>
 #include <vector>
 
 // ─── Command kinds ───────────────────────────────────────────────────────────
@@ -178,6 +179,19 @@ private:
     World*               W;
     std::vector<Command> Commands;
     std::vector<uint8_t> PayloadArena;
+
+    // Which coalesced run last named an entity, indexed by entity index, so a
+    // repeated entity in one run is not moved twice.
+    struct RunClaim
+    {
+        std::uint32_t Run = 0;
+        std::uint32_t Item = 0;
+    };
+    std::vector<RunClaim> RunClaims;
+    std::uint32_t CurrentRun = 0;
+
+    // The run's earlier item for `entity`, or nothing after claiming it as `item`.
+    [[nodiscard]] std::optional<std::uint32_t> ClaimForRun(EntityId entity, std::uint32_t item);
 
     // Creations recorded so far, and which recording they belong to. Epoch starts
     // at one so a default-constructed PendingEntity never matches a live one.

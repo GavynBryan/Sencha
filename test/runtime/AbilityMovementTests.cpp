@@ -352,12 +352,26 @@ TEST_F(AbilityMovement, ATetherPullsTowardItsAnchorAndEndsWhenTheAnchorGoes)
         << "its anchor is gone, so it is";
 }
 
+TEST_F(AbilityMovement, ATetherRefusedForItsArrivalLeavesTheSlotAsItWas)
+{
+    const EntityId anchor = Entities.CreateEntity();
+    Steps(10);
+    const LeaseOwner holder{ .Entity = Character, .Key = 1 };
+    EXPECT_EQ(Lease(&MovementOperations::Tether, holder,
+                    { AuthoredValue::Entity(Character), AuthoredValue::Entity(anchor), AuthoredValue{},
+                      AuthoredValue::Float(2.0), AuthoredValue::Float(12.0),
+                      AuthoredValue::Vector({ .Components = { 1.0, 0.0, 0.0, 0.0 }, .Length = 3 }) }),
+              VerbAdmission::InvalidArguments)
+        << "an anchor with no place cannot say where the reel arrives";
+    EXPECT_FALSE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
+}
+
 TEST_F(AbilityMovement, APhaseWaitsForItsTimedBurstToComplete)
 {
     Grant(kLungeThenRecover);
     Steps(20);
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
-    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    const AbilityRecord& record = Entities.GetResource<AbilityActivations>().Record(*Entities.TryGet<ActiveAbilities>(Character), 0);
     Steps(13);
     EXPECT_EQ(record.Phase, 0u) << "still lunging: the burst has time left";
     Steps(4);
@@ -400,7 +414,7 @@ TEST_F(AbilityMovement, AGrappleEndsWhenWhatItGrabbedIsGone)
     Steps(10);
     Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
     Steps(5);
-    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    const AbilityRecord& record = Entities.GetResource<AbilityActivations>().Record(*Entities.TryGet<ActiveAbilities>(Character), 0);
     ASSERT_EQ(record.Phase, 1u) << "the trace struck the post, so it pulls";
     EXPECT_TRUE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
 
@@ -481,4 +495,32 @@ TEST_F(AbilityMovement, OverclockDilatesUntilItsEnergyRunsOutThenCoolsDown)
     Step({ { kFire, InputEdgeKind::Press } });
     Step();
     EXPECT_EQ(scale(), kActorTimeOne) << "not while cooling down";
+}
+
+TEST_F(AbilityMovement, AReelStopsTheCharacterAtItsPointAndCompletes)
+{
+    const Vec3d anchor(10.0f, 6.0f, 0.0f);
+    Steps(10);
+    const Vec3d start = Position(Character);
+    const Vec3d line = (anchor - start).Normalized();
+    const Vec3d until = start + line * 5.0f;
+    const LeaseOwner holder{ .Entity = Character, .Key = 1 };
+    ASSERT_EQ(Lease(&MovementOperations::Tether, holder,
+                    { AuthoredValue::Entity(Character), AuthoredValue{},
+                      AuthoredValue::Vector({ { anchor.X, anchor.Y, anchor.Z }, 3 }), AuthoredValue::Float(2.0),
+                      AuthoredValue::Float(12.0), AuthoredValue::Vector({ { until.X, until.Y, until.Z }, 3 }) }),
+              VerbAdmission::Accepted);
+    const auto held = [&] { return static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet(); };
+    int ticks = 0;
+    while (held() && ticks < 120)
+    {
+        Step();
+        ++ticks;
+    }
+    ASSERT_FALSE(held()) << "reaching its point completes the reel";
+    EXPECT_NEAR((Position(Character) - until).Magnitude(), 0.0f, 0.05f);
+    EXPECT_LT(ticks, 40) << "five metres at twelve metres a second";
+    Step();
+    EXPECT_LT(static_cast<const World&>(Entities).TryGet<KinematicState>(Character)->Velocity.Magnitude(), 1.0f)
+        << "stopped dead, so letting go drops it";
 }

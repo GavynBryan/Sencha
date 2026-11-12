@@ -23,7 +23,7 @@ MaterialHandle MaterialCache::Register(std::string_view name, const Material& ma
     if (name.empty())
         return Create(material);
 
-    if (MaterialHandle existing = FindRegisteredHandle(name); existing.IsValid())
+    if (MaterialHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
         return existing;
 
     MaterialEntry entry;
@@ -40,7 +40,7 @@ MaterialHandle MaterialCache::Register(std::string_view name,
     {
         // Existing entry already owns its own references; ownedTextures is
         // released on return.
-        if (MaterialHandle existing = FindRegisteredHandle(name); existing.IsValid())
+        if (MaterialHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
             return existing;
     }
 

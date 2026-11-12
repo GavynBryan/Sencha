@@ -120,7 +120,9 @@ name.
 
 `ActiveAbilities`, record
 : An actor's running and lingering activations, each named on every machine by
-  its activation identity.
+  its activation identity. `ActiveAbilities` holds a handle per slot; the record and
+  its locals live in the World's `AbilityActivations`, so an actor pays only for what
+  it is running.
 
 Op, lease, query
 : What a phase does: invoke a verb, hold a lease while the phase lasts, evaluate a
@@ -139,7 +141,8 @@ All in fixed logic, ordered with `After<>`:
 
 1. `ActorTimeSystem` -- each actor's clock from its time leases.
 2. `AbilitySystem` -- the pass ("Runtime"); on a client, its predicted pass.
-3. Movement's composition, then `AttributeResolveSystem` and `EffectLifetimeSystem`.
+3. Movement's composition, then `AttributeResolveSystem` and `EffectLifetimeSystem`,
+   then `EffectReactionSystem`.
 4. `AbilityPresentationSystem`, where something presents.
 
 ## Effects
@@ -169,8 +172,9 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   them; an effect whose target is gone ends on the next lifetime pass, as does one
   whose owner is gone.
 - **Owners, scale and removal.** `ApplyEffect` takes an optional `LeaseOwner`
-  (an entity plus an opaque key) and a scale that multiplies every modifier's
-  magnitude, whatever its op. Content applies effects through `effect.apply` and
+  (an entity plus an opaque key), a scale that multiplies every modifier's
+  magnitude, whatever its op, and an `EffectSource`: who applied it and the
+  strike's point and direction. Content applies effects through `effect.apply` and
   holds them through the `effect.hold` lease (`docs/gameplay/authored-api.md`). `RemoveEffect` ends one effect and
   `RemoveEffectsOwnedBy` ends everything an owner holds; neither may run inside a
   query.
@@ -181,6 +185,11 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
 - **The fold is canonical.** Floating-point folding depends on order, so modifiers
   fold per target in effect-definition order, then application order, never
   storage order.
+- **Kinds and the application log.** An effect definition's `kinds` are tags
+  that say what sort of effect it is; they are never granted. While a World holds
+  an `EffectApplicationLog`, each application that changes Base records its
+  source and each attribute's Base before and after, clamped. Reactions read it
+  (`docs/gameplay/reactions.md`).
 - **Costs fail closed.** `CheckEffectCosts` decides whether an actor can pay several
   costs together: deltas are summed per attribute first, a Base may not go below
   zero or the attribute's minimum (whichever is higher), and a missing definition,
@@ -204,7 +213,9 @@ An ability is content: an `ability.definition` data asset
   `on: complete`, or immediate; `to` a phase or `end`). `complete` waits until
   every hold of the phase that can finish on its own has (a lease whose
   definition `Completes`, as a timed `movement.burst` or a `movement.tether` does);
-  a phase that holds none is `complete_unheld`.
+  a phase that holds none is `complete_unheld`. A hold with `"scope": "activation"`
+  is kept past its phase and let go when the activation ends; it counts toward
+  `complete` only in the phase that declares it.
 - **Ops.** `invoke` a verb, `query` into a local, `set` a local, `commit` cost
   groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
@@ -254,7 +265,7 @@ the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
 every machine on the same tick.
 
-An actor with grants carries `ActiveAbilities`, `AbilityLocals`, `ActorTime` and a
+An actor with grants carries `ActiveAbilities`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
 input at all.
 
@@ -275,8 +286,9 @@ The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"
   binding says `on_interrupt: release`.
 
 `ability.activate`, `ability.cancel`, `ability.grant` and `ability.revoke` reach
-the same admission by name, through `AbilityRequestQueue` (bounded; a full queue
-answers `QueueFull`).
+the same admission by name, through `AbilityRequestQueue`. Every request a tick makes is
+heard: the queue drains each pass, so it holds one tick's asks. Only requests
+waiting on a dormant actor carry over, and those are capped.
 
 ## Runtime
 
@@ -441,7 +453,11 @@ effect-held grants stay with the authority.
 The guesses sit beside the authority's records, never over them. `ActiveAbilities`
 holds the authority's six records, which the codec sends and a snapshot rewrites,
 then `kAbilityGuessCapacity` slots for guesses, one per activation the authority can
-hold live, so a client can guess every start the authority admits.
+hold live, so a client can guess every start the authority admits. A slot's activation
+is freed when its record is; `ActiveAbilities` is replicated, so it may carry no
+lifecycle hooks, and each pass collects any activation whose owner is gone or no
+longer names it. Freed activations are kept for the next start, up to the larger of
+64 and a quarter of those live.
 `AbilityPredictionJournal` (a `PredictionJournal`) takes each guess as it starts
 and puts the guesses back after each snapshot. A guess the journal has no room
 for is not made (`PredictionFull`): with sixteen undecided, the client waits for
@@ -494,11 +510,10 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 9,016 bytes: `AbilityLocals` 4,560 (eight typed slots and an
-entity list for each of ten slots), `ActiveAbilities` 2,256, `AbilityPresentationState`
-624, `AbilityCueLog` and `AbilityPredictedCues` 584 each, `AbilityGrants` 392,
-`ActorTime` 16. The four guess slots are 2,912 of those bytes, empty everywhere but
-on the pawn a client predicts (`docs/deferred.md`).
+Per actor with grants, 1,712 bytes: `AbilityCueLog` 584, `AbilityPresentationState` 624,
+`AbilityGrants` 392, `ActiveAbilities` 96 (a handle per slot) and `ActorTime` 16. Each
+running or lingering activation adds 688 in `AbilityActivations`. The 584 bytes of
+`AbilityPredictedCues` are only on the actor a client predicts.
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |
 |---|---|---|---|

@@ -59,6 +59,9 @@ PointLightComponent
     SENCHA_TOOLTIP("How this light participates in baked lighting. Baking "
                    "happens when the zone cooks.")
     LightBakeContribution BakeContribution = LightBakeContribution::None;
+
+    // Runtime only: packed before every other live light when the budget is short.
+    bool PacksFirst = false;
 };
 
 #if !defined(SENCHA_CODEGEN)

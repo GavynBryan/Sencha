@@ -119,6 +119,18 @@ protected:
 
 // ─── Entity destruction ──────────────────────────────────────────────────────
 
+// A row that only moves still holds its component, so nothing is released.
+TEST_F(LifecycleHookTest, MovingARowBetweenArchetypesOrPartitionsFiresNoRemove)
+{
+    const EntityId e = world.CreateEntity();
+    world.AddComponent<HookFirst>(e, { 7 });
+    world.AddComponent<PlainData>(e);
+    world.RemoveComponent<PlainData>(e);
+    ASSERT_TRUE(world.MoveEntityToPartition(e, StoragePartitionId{ 3 }));
+    EXPECT_EQ(g_FirstRemoves, 0);
+    EXPECT_EQ(world.TryGet<HookFirst>(e)->Tag, 7);
+}
+
 TEST_F(LifecycleHookTest, DestroyEntityFiresOnRemove)
 {
     const EntityId e = world.CreateEntity();

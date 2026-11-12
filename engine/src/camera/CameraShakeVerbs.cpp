@@ -1,5 +1,6 @@
 #include <camera/CameraShakeVerbs.h>
 
+#include <authored/AuthoredValueTraits.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/AuthoredValue.h>
 #include <authored/VerbDispatcher.h>
@@ -95,10 +96,8 @@ VerbAdmission CameraShakeOperations::Start(const VerbInvocation& invocation, boo
                                .Scale = static_cast<float>(scale),
                                .Seed = static_cast<std::uint64_t>(seed),
                                .Point = std::nullopt };
-    AuthoredVectorValue point;
-    if (arguments->TryGetVector(Slot::Point, point) && point.Length == 3)
-        shake.Point = Vec3d(static_cast<float>(point.Components[0]), static_cast<float>(point.Components[1]),
-                            static_cast<float>(point.Components[2]));
+    if (Vec3d point; ReadAuthoredArgument(*arguments, Slot::Point, point))
+        shake.Point = point;
     state->Start(std::move(shake), { .Tick = tick + 1, .Alpha = 0.0, .TickSeconds = Clock->GetFixedDt() });
     return VerbAdmission::Accepted;
 }

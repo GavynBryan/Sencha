@@ -28,6 +28,7 @@
 #include <DeviceTestSupport.h>
 
 #include <assets/texture/Image.h>
+#include <core/json/JsonParser.h>
 #include <assets/texture/ImageLoader.h>
 
 #include <algorithm>
@@ -37,6 +38,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <optional>
@@ -63,6 +66,9 @@ struct GoldenScene
     // do something beyond loading a map says so here rather than growing a
     // boolean per capability.
     const char* ExtraArgs = "";
+
+    // Environment assignments for the run, for budgets a scene exercises.
+    const char* Environment = "";
 };
 
 [[nodiscard]] std::filesystem::path ReferenceDir()
@@ -132,7 +138,7 @@ struct GoldenScene
     // capture names a frame, so presentation timing does not affect what it is.
     const std::string command =
         std::string("cd ") + SENCHA_GOLDEN_CONTENT_ROOT
-        + " && SENCHA_PRESENT_MODE=IMMEDIATE " + SENCHA_GOLDEN_APP
+        + " && SENCHA_PRESENT_MODE=IMMEDIATE " + scene.Environment + " " + SENCHA_GOLDEN_APP
         // A reference image is of the scene, not of whatever window mode or
         // frame cap the developer running the suite last saved.
         + " --settings none"
@@ -522,4 +528,133 @@ TEST(GoldenImage, AHostImageDrawsWhereTheDocumentNamesIt)
 TEST(GoldenImage, BlendedMaterialStillBlends)
 {
     CheckScene({ .Name = "transparency", .Map = "levels/golden_transparency" });
+}
+
+namespace
+{
+// What the last settled frames of a crowd scene reported.
+struct CrowdCounters
+{
+    double FirstPose = 0;
+    double Refreshed = 0;
+    double Held = 0;
+    double Awaiting = 0;
+    double BindFallback = 0;
+    double PoseFailures = 0;
+    double ScratchFailures = 0;
+    double EssentialScratchFailures = 0;
+    double PassesSkipped = 0;
+    double InstancesDropped = 0;
+};
+
+[[nodiscard]] std::optional<CrowdCounters> RunCrowd(GoldenScene scene)
+{
+    const std::filesystem::path capture = std::filesystem::temp_directory_path() / "sencha_crowd_capture.json";
+    std::error_code ignored;
+    std::filesystem::remove(capture, ignored);
+    const std::string args = std::string(scene.ExtraArgs) + " +set render.profile.mode capture +set render.capture.output "
+        + capture.string();
+    scene.ExtraArgs = args.c_str();
+
+    const std::filesystem::path image = ReferenceDir() / (std::string(scene.Name) + ".counters.png");
+    if (!GenerateFixtures() || !ImportContent() || !CookScene(scene) || !RenderScene(scene, image))
+        return std::nullopt;
+    std::filesystem::remove(image, ignored);
+
+    std::ifstream file(capture, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const std::optional<JsonValue> root = JsonParse(text);
+    if (!root.has_value() || root->Find("frames") == nullptr)
+        return std::nullopt;
+    const auto& frames = root->Find("frames")->AsArray();
+    if (frames.size() < 60)
+        return std::nullopt;
+
+    CrowdCounters out;
+    const auto worst = [](double& slot, const JsonValue& frame, const char* key) {
+        slot = std::max(slot, frame.Find(key)->AsNumber());
+    };
+    const JsonValue& last = frames.back();
+    out.FirstPose = last.Find("skinned_first_pose_count")->AsNumber();
+    out.Refreshed = last.Find("skinned_refreshed_count")->AsNumber();
+    out.Held = last.Find("skinned_held_count")->AsNumber();
+    out.Awaiting = last.Find("skinned_awaiting_first_pose_count")->AsNumber();
+    for (std::size_t index = frames.size() - 60; index < frames.size(); ++index)
+    {
+        worst(out.BindFallback, frames[index], "skinned_bind_fallback_count");
+        worst(out.PoseFailures, frames[index], "skinned_pose_failures_count");
+        worst(out.ScratchFailures, frames[index], "scratch_alloc_failures_count");
+        for (const char* key : { "scratch_skinning_palettes_failures_count", "scratch_forward_view_uniforms_failures_count",
+                                 "scratch_forward_instance_data_failures_count", "scratch_ui_vertices_failures_count",
+                                 "scratch_ui_indices_failures_count" })
+            worst(out.EssentialScratchFailures, frames[index], key);
+        worst(out.PassesSkipped, frames[index], "passes_skipped_count");
+        worst(out.InstancesDropped, frames[index], "instances_dropped_count");
+    }
+    return out;
+}
+
+void ExpectNothingLost(const CrowdCounters& counters)
+{
+    EXPECT_EQ(counters.BindFallback, 0.0);
+    EXPECT_EQ(counters.PoseFailures, 0.0);
+    EXPECT_EQ(counters.ScratchFailures, 0.0);
+    EXPECT_EQ(counters.PassesSkipped, 0.0);
+    EXPECT_EQ(counters.InstancesDropped, 0.0);
+}
+} // namespace
+
+// One past the old 64-dispatch limit: every rig must be posed.
+TEST(GoldenImage, ACrowdPastTheOldDispatchLimitIsFullyPosed)
+{
+    CheckScene({ .Name = "skinned_crowd_65", .Map = "levels/golden_skinned_crowd_65", .EditorCook = true });
+}
+
+TEST(CrowdRendering, EveryInstanceWithinTheBudgetIsRefreshed)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display";
+    const auto counters = RunCrowd({ .Name = "crowd_65", .Map = "levels/golden_skinned_crowd_65", .EditorCook = true });
+    ASSERT_TRUE(counters.has_value());
+    ExpectNothingLost(*counters);
+    EXPECT_EQ(counters->Refreshed, 65.0);
+    EXPECT_EQ(counters->Held, 0.0);
+    EXPECT_EQ(counters->Awaiting, 0.0);
+}
+
+TEST(CrowdRendering, PastTheBudgetInstancesHoldAndNothingIsLost)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display";
+    const auto counters = RunCrowd({ .Name = "crowd_256", .Map = "levels/golden_skinned_crowd_256", .EditorCook = true });
+    ASSERT_TRUE(counters.has_value());
+    ExpectNothingLost(*counters);
+    EXPECT_EQ(counters->Refreshed, 128.0);
+    EXPECT_EQ(counters->Held, 128.0);
+    EXPECT_EQ(counters->Awaiting, 0.0);
+}
+
+TEST(CrowdRendering, ASmallerBudgetHoldsMoreAndStillLosesNothing)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display";
+    const auto counters = RunCrowd({ .Name = "crowd_budget", .Map = "levels/golden_skinned_crowd_65",
+                                     .EditorCook = true, .Environment = "SENCHA_SKINNED_DISPATCHES=8" });
+    ASSERT_TRUE(counters.has_value());
+    ExpectNothingLost(*counters);
+    EXPECT_EQ(counters->Refreshed, 8.0);
+    EXPECT_EQ(counters->Held, 57.0);
+}
+
+TEST(CrowdRendering, ASmallSliceLosesOnlyOptionalWork)
+{
+    if (!DisplayAvailable())
+        GTEST_SKIP() << "no display";
+    const auto counters = RunCrowd({ .Name = "crowd_small_slice", .Map = "levels/golden_skinned_crowd_256",
+                                     .EditorCook = true, .Environment = "SENCHA_FRAME_SCRATCH_BYTES=1048576" });
+    ASSERT_TRUE(counters.has_value());
+    EXPECT_EQ(counters->EssentialScratchFailures, 0.0);
+    EXPECT_EQ(counters->PassesSkipped, 0.0);
+    EXPECT_EQ(counters->InstancesDropped, 0.0);
+    EXPECT_EQ(counters->Refreshed, 128.0);
 }

@@ -57,6 +57,11 @@ namespace
         tags.Required = false;
         tags.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "tag", "Tag"));
 
+        DataFieldSchema kinds = MakeDataField(DataFieldKind::Array, "kinds", "Kinds",
+                                              "What sort of effect it is, for whatever reacts to it. Never granted.");
+        kinds.Required = false;
+        kinds.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "kind", "Kind"));
+
         DataSchema schema;
         schema.TypeName = std::string(kEffectDefinitionType);
         schema.DisplayName = "Effect";
@@ -81,6 +86,7 @@ namespace
         schema.Root.Children.push_back(std::move(timeScale));
         schema.Root.Children.push_back(std::move(modifiers));
         schema.Root.Children.push_back(std::move(tags));
+        schema.Root.Children.push_back(std::move(kinds));
         schema.Root.Children.push_back(AbilityGrantEntriesSchema("granted_abilities", "Granted abilities"));
         return schema;
     }
@@ -144,6 +150,18 @@ namespace
                 value->GrantedTags.push_back(tag.AsString());
             }
         }
+        if (const JsonValue* kinds = data.Find("kinds"); kinds != nullptr && kinds->IsArray())
+        {
+            for (std::size_t i = 0; i < kinds->AsArray().size(); ++i)
+            {
+                const JsonValue& kind = kinds->AsArray()[i];
+                if (!kind.IsString() || kind.AsString().empty())
+                    return { {}, {}, std::format("$.data.kinds[{}] A kind is a tag name.", i) };
+                if (std::ranges::find(value->Kinds, kind.AsString()) != value->Kinds.end())
+                    return { {}, {}, std::format("$.data.kinds[{}] '{}' is named twice.", i, kind.AsString()) };
+                value->Kinds.push_back(kind.AsString());
+            }
+        }
         if (value->GrantedTags.size() > kEffectGrantedTagCapacity)
             return { {}, {}, std::format("$.data.granted_tags An effect grants at most {} tags.",
                                          kEffectGrantedTagCapacity) };
@@ -205,6 +223,16 @@ bool ResolveEffectDeclaration(const EffectDeclaration& declaration,
             continue;
         }
         out.GrantedTags.push_back(tag);
+    }
+    for (const std::string& name : declaration.Kinds)
+    {
+        const GameplayTagId tag = tags.FindTag(name);
+        if (!tag.IsValid())
+        {
+            errors.push_back(std::format("no gameplay tag '{}'", name));
+            continue;
+        }
+        (void)out.Kinds.AddExact(tag);
     }
     return errors.size() == before;
 }

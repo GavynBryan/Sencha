@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <random>
 #include <string>
 #include <string_view>
 
@@ -188,5 +190,145 @@ TEST(ScratchTagCounters, EveryTagHasAStableName)
         const std::string_view name = ToString(static_cast<ScratchTag>(i));
         EXPECT_FALSE(name.empty());
         EXPECT_NE(name, "unknown");
+    }
+}
+
+namespace
+{
+constexpr std::uint64_t kSlice = 4096;
+
+ScratchPoolBudgets BudgetsForPools()
+{
+    ScratchPoolBudgets pools{};
+    pools[static_cast<std::size_t>(ScratchPool::MainView)].Floor = 256;
+    pools[static_cast<std::size_t>(ScratchPool::World)].Floor = 1024;
+    pools[static_cast<std::size_t>(ScratchPool::Ui)].Floor = 1024;
+    pools[static_cast<std::size_t>(ScratchPool::Skinning)].Floor = 512;
+    pools[static_cast<std::size_t>(ScratchPool::Skinning)].Cap = 1024;
+    return pools;
+}
+}
+
+TEST(FrameScratchPools, AFloorSurvivesWhateverOtherPoolsAllocatedFirst)
+{
+    FrameScratchRing ring(1, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+    while (ring.Allocate(64, 16, ScratchPool::Optional).IsValid()) {}
+    while (ring.Allocate(64, 16, ScratchPool::Skinning).IsValid()) {}
+    while (ring.Allocate(64, 16, ScratchPool::World).IsValid()) {}
+
+    EXPECT_TRUE(ring.Allocate(1024, 1, ScratchPool::Ui).IsValid());
+    EXPECT_TRUE(ring.Allocate(256, 1, ScratchPool::MainView).IsValid());
+}
+
+TEST(FrameScratchPools, EssentialPoolsCannotStarveEachOther)
+{
+    FrameScratchRing ring(1, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+    while (ring.Allocate(64, 16, ScratchPool::Ui).IsValid()) {}
+
+    EXPECT_TRUE(ring.Allocate(1024, 1, ScratchPool::World).IsValid());
+    EXPECT_TRUE(ring.Allocate(256, 1, ScratchPool::MainView).IsValid());
+    EXPECT_TRUE(ring.Allocate(512, 1, ScratchPool::Skinning).IsValid());
+}
+
+TEST(FrameScratchPools, OptionalWorkOnlyReachesTheSharedPool)
+{
+    FrameScratchRing ring(1, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+
+    EXPECT_EQ(ring.Available(ScratchPool::Optional, 1), kSlice - 256 - 1024 - 1024 - 512);
+    EXPECT_FALSE(ring.Allocate(kSlice - 256 - 1024 - 1024 - 512 + 1, 1, ScratchPool::Optional).IsValid());
+    EXPECT_TRUE(ring.Allocate(kSlice - 256 - 1024 - 1024 - 512, 1, ScratchPool::Optional).IsValid());
+    EXPECT_FALSE(ring.Allocate(1, 1, ScratchPool::Optional).IsValid());
+}
+
+TEST(FrameScratchPools, ACapLimitsAPoolEvenWithSharedRoomLeft)
+{
+    FrameScratchRing ring(1, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+
+    EXPECT_TRUE(ring.Allocate(1024, 1, ScratchPool::Skinning).IsValid());
+    EXPECT_FALSE(ring.Allocate(1, 1, ScratchPool::Skinning).IsValid());
+    EXPECT_EQ(ring.Available(ScratchPool::Skinning, 1), 0u);
+}
+
+TEST(FrameScratchPools, APartialGrantStopsShortOfOtherPoolsFloors)
+{
+    FrameScratchRing ring(1, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+
+    const FrameScratchRing::Grant grant = ring.AllocateElements(1000, 80, 16, ScratchPool::Optional);
+
+    EXPECT_EQ(grant.Bytes, 80u * ((kSlice - 256 - 1024 - 1024 - 512) / 80));
+    EXPECT_TRUE(ring.Allocate(1024, 1, ScratchPool::Ui).IsValid());
+}
+
+TEST(FrameScratchPools, UnusedFloorsReturnEachFrame)
+{
+    FrameScratchRing ring(2, kSlice, BudgetsForPools());
+    ring.BeginFrame();
+    ASSERT_TRUE(ring.Allocate(1024, 1, ScratchPool::Ui).IsValid());
+    ASSERT_FALSE(ring.Allocate(kSlice, 1, ScratchPool::Ui).IsValid());
+
+    ring.BeginFrame();
+    EXPECT_TRUE(ring.Allocate(1024, 1, ScratchPool::Ui).IsValid());
+}
+
+TEST(FrameScratchPools, PaddingIsChargedToTheRequester)
+{
+    ScratchPoolBudgets pools{};
+    pools[static_cast<std::size_t>(ScratchPool::Ui)].Floor = 256;
+    FrameScratchRing ring(1, 512, pools);
+    ring.BeginFrame();
+
+    ASSERT_TRUE(ring.Allocate(1, 1, ScratchPool::Optional).IsValid());
+    ASSERT_TRUE(ring.Allocate(255, 1, ScratchPool::Optional).IsValid());
+    EXPECT_FALSE(ring.Allocate(1, 1, ScratchPool::Optional).IsValid());
+
+    // The cursor sits at a 256 boundary, so the whole floor is still there.
+    EXPECT_TRUE(ring.Allocate(256, 256, ScratchPool::Ui).IsValid());
+}
+
+TEST(FrameScratchPools, FloorsLargerThanTheSliceAreScaledAndReported)
+{
+    ScratchPoolBudgets pools{};
+    pools[static_cast<std::size_t>(ScratchPool::Ui)].Floor = 8192;
+    pools[static_cast<std::size_t>(ScratchPool::World)].Floor = 8192;
+    FrameScratchRing ring(1, 4096, pools);
+    ring.BeginFrame();
+
+    EXPECT_TRUE(ring.FloorsWereScaled());
+    EXPECT_TRUE(ring.Allocate(2048, 1, ScratchPool::Ui).IsValid());
+    EXPECT_TRUE(ring.Allocate(2048, 1, ScratchPool::World).IsValid());
+}
+
+TEST(FrameScratchPools, RandomAllocationsNeverOverrunAndAlwaysHonourFloors)
+{
+    const ScratchPoolBudgets pools = BudgetsForPools();
+    std::mt19937 random(7);
+    for (int round = 0; round < 200; ++round)
+    {
+        FrameScratchRing ring(1, kSlice, pools);
+        ring.BeginFrame();
+        std::array<std::uint64_t, kScratchPoolCount> charged{};
+        for (int step = 0; step < 64; ++step)
+        {
+            const auto pool = static_cast<ScratchPool>(random() % kScratchPoolCount);
+            const std::uint64_t before = ring.GetUsedBytes();
+            const std::uint64_t size = 1 + random() % 200;
+            const std::uint64_t alignment = 1ull << (random() % 5);
+            if (ring.Allocate(size, alignment, pool).IsValid())
+                charged[static_cast<std::size_t>(pool)] += ring.GetUsedBytes() - before;
+            ASSERT_LE(ring.GetUsedBytes(), kSlice);
+        }
+        for (std::size_t index = 0; index < kScratchPoolCount; ++index)
+        {
+            const std::uint64_t floor = pools[index].Floor;
+            if (charged[index] < floor)
+            {
+                EXPECT_GE(ring.Available(static_cast<ScratchPool>(index), 1), floor - charged[index]);
+            }
+        }
     }
 }

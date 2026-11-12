@@ -1,19 +1,20 @@
 #include <projectile/ProjectileSystem.h>
 
 #include <abilities/AbilityCueLog.h>
+#include <authored/AuthoredQueryDispatcher.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <assets/runtime/AssetSystem.h>
 #include <attributes/AttributeSet.h>
+#include <authored/AuthoredNameResolver.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
-#include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/ResponsesSystem.h>
 #include <math/geometry/3d/ConeScatter.h>
+#include <math/geometry/3d/FacingRotation.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSpawnPrefab.h>
 #include <net/NetTickEstimator.h>
@@ -21,7 +22,9 @@
 #include <physics/CollisionShape.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsWorld.h>
-#include <physics/components/CharacterController.h>
+#include <physics/components/CharacterMoverLink.h>
+#include <physics/LevelGeometry.h>
+#include <physics/components/RigidBody.h>
 #include <projectile/ProjectileHit.h>
 #include <render/StaticMeshComponent.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
@@ -39,7 +42,6 @@
 
 namespace
 {
-constexpr float kPi = 3.14159265358979f;
 // How far past a contact a projectile that passes through resumes, so the next
 // sweep does not begin inside what it just struck.
 constexpr float kPassThroughStep = 0.001f;
@@ -48,91 +50,12 @@ constexpr float kPassThroughStep = 0.001f;
 constexpr float kSightLift = 0.02f;
 // Seconds of lifetime too few to fly.
 constexpr float kSpentLifetime = 1.0e-5f;
+// Ignored entities one tick's path may pass; a path crossing more flies on.
+constexpr std::size_t kMostPassedPerTick = 8;
 
 bool Finite(const Vec3d& v)
 {
     return std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z);
-}
-
-// The rotation that turns forward (+Z) onto `direction`. Direction alone does not
-// fix roll, so the roll is whichever the shortest arc gives.
-Quatf Facing(const Vec3d& direction)
-{
-    const Vec3d forward = Vec3d::Forward();
-    const float cosine = std::clamp(forward.Dot(direction), -1.0f, 1.0f);
-    const Vec3d axis = forward.Cross(direction);
-    if (axis.SqrMagnitude() > 1.0e-8f)
-        return Quatf::FromAxisAngle(axis.Normalized(), std::acos(cosine));
-    return cosine < 0.0f ? Quatf::FromAxisAngle(Vec3d::Up(), kPi) : Quatf::Identity();
-}
-
-// Where a ray first enters a capsule standing upright about `centre`, as a
-// distance along the ray, or nothing when it misses within `maxDistance`.
-// A ray starting inside reports zero.
-std::optional<float> RayCapsule(const Vec3d& origin, const Vec3d& direction, float maxDistance, const Vec3d& centre,
-                                float halfSegment, float radius)
-{
-    const Vec3d a = centre - Vec3d::Up() * halfSegment;
-    const Vec3d b = centre + Vec3d::Up() * halfSegment;
-    const float radiusSq = radius * radius;
-
-    // Inside already: the nearest point of the segment is within the radius.
-    {
-        const Vec3d ab = b - a;
-        const float length = ab.SqrMagnitude();
-        const float t = length > 0.0f ? std::clamp((origin - a).Dot(ab) / length, 0.0f, 1.0f) : 0.0f;
-        if ((origin - (a + ab * t)).SqrMagnitude() <= radiusSq)
-            return 0.0f;
-    }
-
-    std::optional<float> best;
-    auto consider = [&](float t) {
-        if (t >= 0.0f && t <= maxDistance && (!best || t < *best))
-            best = t;
-    };
-
-    // The cylinder between the caps: solve in the plane across the up axis.
-    const Vec3d up = Vec3d::Up();
-    const Vec3d offset = origin - a;
-    const Vec3d dPerp = direction - up * direction.Dot(up);
-    const Vec3d oPerp = offset - up * offset.Dot(up);
-    const float qa = dPerp.Dot(dPerp);
-    if (qa > 1.0e-12f)
-    {
-        const float qb = 2.0f * oPerp.Dot(dPerp);
-        const float qc = oPerp.Dot(oPerp) - radiusSq;
-        const float disc = qb * qb - 4.0f * qa * qc;
-        if (disc >= 0.0f)
-        {
-            const float t = (-qb - std::sqrt(disc)) / (2.0f * qa);
-            const float along = (offset + direction * t).Dot(up);
-            if (along >= 0.0f && along <= 2.0f * halfSegment)
-                consider(t);
-        }
-    }
-    // The caps.
-    for (const Vec3d& cap : { a, b })
-    {
-        const Vec3d m = origin - cap;
-        const float sb = m.Dot(direction);
-        const float sc = m.Dot(m) - radiusSq;
-        const float disc = sb * sb - sc;
-        if (disc >= 0.0f)
-            consider(-sb - std::sqrt(disc));
-    }
-    return best;
-}
-
-// The squared distance from `point` to an upright capsule's axis segment.
-float SegmentDistanceSq(const Vec3d& point, const Vec3d& centre, float halfSegment)
-{
-    const float along = std::clamp((point - centre).Dot(Vec3d::Up()), -halfSegment, halfSegment);
-    return (point - (centre + Vec3d::Up() * along)).SqrMagnitude();
-}
-
-float CapsuleHalfSegment(const CharacterController& character)
-{
-    return std::max(0.0f, character.Height * 0.5f - character.Radius);
 }
 
 bool Struck(const ProjectileMotion& motion, EntityId entity)
@@ -186,6 +109,8 @@ ProjectileSystem::ProjectileSystem(World& world, const Services& services)
         world.AddResource<ProjectileCount>();
     if (world.TryGetResource<ProjectileDefinitions>() == nullptr)
         world.AddResource<ProjectileDefinitions>();
+    if (world.TryGetResource<ProjectileStops>() == nullptr)
+        world.AddResource<ProjectileStops>();
     Scratch.reserve(256);
     Overlaps.reserve(64);
     if (Host.Console != nullptr)
@@ -198,6 +123,11 @@ AssetId ProjectileSystem::PrefabOf(std::string_view path) const
         return AssetId{};
     const AssetRecord* record = Host.Assets->Resolve(path, AssetType::Scene);
     return record != nullptr ? record->Id : AssetId{};
+}
+
+AssetId ProjectileSystem::PrefabOf(const AssetRef& reference) const
+{
+    return reference.Id.IsValid() ? reference.Id : PrefabOf(reference.Path);
 }
 
 std::uint64_t ProjectileSystem::NextSeed(EntityId instigator, std::uint64_t tick)
@@ -231,42 +161,33 @@ std::optional<std::uint32_t> ProjectileSystem::Resolve(AssetId prefab, EntityId 
 
     ResolvedProjectile resolved{ .Prefab = prefab, .Definition = *authored };
     Projectile& d = resolved.Definition;
-    std::string problem;
+    AuthoredNameResolver names(*Entities);
     if (!std::isfinite(d.Speed) || d.Speed <= 0.0f || !std::isfinite(d.Radius) || d.Radius < 0.0f
         || !std::isfinite(d.Lifetime) || d.Lifetime <= 0.0f || !std::isfinite(d.GravityScale)
         || !std::isfinite(d.SplashRadius) || d.SplashRadius < 0.0f)
-        problem = "its speed and lifetime must be positive, and its radius, gravity and splash finite";
+        names.Fail("its speed and lifetime must be positive, and its radius, gravity and splash finite");
     d.MaxHits = std::clamp<std::uint32_t>(d.MaxHits, 1u, static_cast<std::uint32_t>(kProjectileMaxHits));
 
-    const EffectRegistry* effects = Entities->TryGetResource<EffectRegistry>();
-    auto effect = [&](const InlineString<192>& name, EffectId& out) {
-        if (name.Empty() || !problem.empty())
-            return;
-        out = effects != nullptr ? effects->Find(name.View()) : EffectId{};
-        if (effects == nullptr || effects->Get(out) == nullptr)
-            problem = "no effect is declared as '" + std::string(name.View()) + "'";
-    };
-    effect(d.HitEffect, resolved.HitEffect);
-    effect(d.ScaledEffect, resolved.ScaledEffect);
-    effect(d.SplashEffect, resolved.SplashEffect);
+    names.Effect(d.HitEffect.View(), resolved.HitEffect);
+    names.Effect(d.ScaledEffect.View(), resolved.ScaledEffect);
+    names.Effect(d.SplashEffect.View(), resolved.SplashEffect);
+    names.Tag(d.PassesThrough.View(), resolved.PassesThrough);
+    names.Tag(d.HitKind.View(), resolved.HitKind);
+    names.Tag(d.ImpactCue.View(), resolved.ImpactCue);
+    names.Tag(d.Ignores.View(), resolved.Ignores);
+    if (!d.HitScaleQuery.Empty() && names.Resolved())
+    {
+        resolved.HitScale = Host.Queries != nullptr ? Host.Queries->Registry().Resolve(d.HitScaleQuery.View())
+                                                    : AuthoredQueryHandle{};
+        if (!resolved.HitScale.IsValid())
+            names.Fail("no authored query is declared as '" + std::string(d.HitScaleQuery.View()) + "'");
+    }
 
-    const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
-    auto tag = [&](const InlineString<64>& name, GameplayTagId& out) {
-        if (name.Empty() || !problem.empty())
-            return;
-        out = tags != nullptr ? tags->FindTag(name.View()) : GameplayTagId{};
-        if (!out.IsValid())
-            problem = "no gameplay tag is declared as '" + std::string(name.View()) + "'";
-    };
-    tag(d.PassesThrough, resolved.PassesThrough);
-    tag(d.HitKind, resolved.HitKind);
-    tag(d.ImpactCue, resolved.ImpactCue);
-
-    if (!problem.empty())
+    if (!names.Resolved())
     {
         if (Host.Logging != nullptr)
             Host.Logging->GetLogger<ProjectileSystem>().Error(
-                "Projectile prefab {} will not launch: {}", AssetIdToString(prefab), problem);
+                "Projectile prefab {} will not launch: {}", AssetIdToString(prefab), names.Problem());
         return std::nullopt;
     }
 
@@ -318,18 +239,6 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
     const ResolvedProjectile& definition = world.GetResource<ProjectileDefinitions>().Entries[*index];
 
     const Vec3d direction = ScatterInCone(launch.Direction.Normalized(), launch.SpreadDegrees, launch.Seed);
-    if (LocalTransform* local = world.TryGet<LocalTransform>(root))
-    {
-        local->Value.Position = launch.Origin;
-        local->Value.Rotation = Facing(direction);
-    }
-    // Its world pose is its local one: a projectile has no parent.
-    if (WorldTransform* placed = world.TryGet<WorldTransform>(root))
-    {
-        if (const LocalTransform* local = std::as_const(world).TryGet<LocalTransform>(root))
-            placed->Value = local->Value;
-    }
-
     world.AddComponent<ProjectileFlight>(root, ProjectileFlight{ .Instigator = launch.Instigator,
                                                                  .LaunchTick = launch.Tick != 0 ? launch.Tick
                                                                                                 : LastTick + 1,
@@ -337,15 +246,14 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
                                                                  .Shown = true });
     world.AddComponent<ProjectileMotion>(
         root, ProjectileMotion{ .Velocity = direction * (definition.Definition.Speed * launch.SpeedScale),
-                                .Remaining = definition.Definition.Lifetime,
+                                .Remaining = launch.MaxDistance > 0.0f
+                                    ? std::min(definition.Definition.Lifetime,
+                                               launch.MaxDistance / (definition.Definition.Speed * launch.SpeedScale))
+                                    : definition.Definition.Lifetime,
                                 .Magnitude = launch.Magnitude,
                                 .SplashScale = launch.SplashScale,
                                 .Definition = *index });
-    // Drawn between ticks, as anything moving every tick is; snapped, so it does
-    // not streak from wherever the prefab was built to the muzzle.
-    if (!world.HasComponent<WorldTransformHistory>(root))
-        world.AddComponent<WorldTransformHistory>(root, WorldTransformHistory{});
-    RequestTransformHistorySnap(world, root);
+    PlaceSpawnedRoot(world, root, launch.Origin, FacingRotation(direction));
     // Every machine draws it: the prefab names its body, and the root alone
     // travels, as for any replicated group.
     if (!world.HasComponent<NetReplicated>(root))
@@ -371,6 +279,7 @@ void ProjectileSystem::FixedLogic(FixedLogicContext& ctx)
     }
     if (Host.Physics == nullptr)
         return;
+    world.GetResource<ProjectileStops>().Entries.clear();
 
     // Gathered first: a strike applies effects and delivers, either of which can
     // make structural changes.
@@ -443,9 +352,13 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
 
     bool ended = false;
     Vec3d endNormal = -direction;
+    ProjectileStopKind stop = ProjectileStopKind::Expired;
+    std::array<EntityId, kMostPassedPerTick> passed{};
+    std::size_t passedCount = 0;
     while (remaining > 0.0f && !ended)
     {
-        const std::optional<Contact> contact = Sweep(state, definition, instigator, position, direction, remaining);
+        const std::optional<Contact> contact =
+            Sweep(state, definition, instigator, position, direction, remaining, std::span(passed.data(), passedCount));
         if (!contact.has_value())
         {
             position += direction * remaining;
@@ -454,6 +367,23 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         position += direction * contact->Distance;
         remaining -= contact->Distance;
 
+        if (contact->Entity.IsValid() && definition.Ignores.IsValid() && [&] {
+                const GameplayTagContainer* tags =
+                    std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
+                return tags != nullptr && tags->HasExact(definition.Ignores);
+            }())
+        {
+            if (passedCount == passed.size())
+            {
+                position += direction * remaining;
+                break;
+            }
+            passed[passedCount++] = contact->Entity;
+            continue;
+        }
+
+        // Asked before the strike, whose effects may end what was met.
+        const bool level = IsLevelGeometry(world, contact->Entity);
         const bool passes = contact->Entity.IsValid() && definition.PassesThrough.IsValid() && [&] {
             const GameplayTagContainer* tags =
                 std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
@@ -471,6 +401,7 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         }
         ended = true;
         endNormal = contact->Normal;
+        stop = level ? ProjectileStopKind::Level : ProjectileStopKind::Struck;
         Splash(state, definition, instigator, position, endNormal, now);
     }
 
@@ -493,23 +424,32 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
     *motion = state;
     local->Value.Position = position;
     if (state.Velocity.SqrMagnitude() > 1.0e-10f)
-        local->Value.Rotation = Facing(state.Velocity.Normalized());
+        local->Value.Rotation = FacingRotation(state.Velocity.Normalized());
     if (ended)
+    {
+        world.GetResource<ProjectileStops>().Entries.push_back(
+            ProjectileStop{ .Projectile = projectile, .Kind = stop, .Point = position, .Normal = endNormal });
         End(projectile, now.TickIndex);
+    }
 }
 
 std::optional<ProjectileSystem::Contact> ProjectileSystem::Sweep(const ProjectileMotion& motion,
                                                                  const ResolvedProjectile& definition,
                                                                  EntityId instigator, const Vec3d& from,
-                                                                 const Vec3d& direction, float distance)
+                                                                 const Vec3d& direction, float distance,
+                                                                 std::span<const EntityId> passed)
 {
-    std::array<EntityId, kProjectileMaxHits + 1> ignored{};
+    std::array<EntityId, kProjectileMaxHits + 1 + kMostPassedPerTick> ignored{};
     std::size_t count = 0;
     if (instigator.IsValid())
         ignored[count++] = instigator;
     for (std::uint8_t i = 0; i < motion.HitCount; ++i)
         ignored[count++] = motion.Hits[i];
-    const PhysicsQueryFilter filter{ .IncludeTriggers = false, .IgnoreEntities = { ignored.data(), count } };
+    for (const EntityId entity : passed)
+        ignored[count++] = entity;
+    const PhysicsQueryFilter filter{ .IncludeTriggers = false,
+                                     .IgnoreEntities = { ignored.data(), count },
+                                     .IncludeCharacters = definition.Definition.HitsCharacters };
 
     std::optional<Contact> nearest;
     const PhysicsQueries queries(*Host.Physics);
@@ -521,62 +461,17 @@ std::optional<ProjectileSystem::Contact> ProjectileSystem::Sweep(const Projectil
             nearest = Contact{ .Entity = hit.Entity,
                                .Distance = std::clamp(hit.Fraction, 0.0f, 1.0f) * distance,
                                .Point = hit.Point,
-                               .Normal = hit.Normal };
+                               .Normal = hit.Normal,
+                               .From = from,
+                               .Direction = direction };
     }
     else
     {
         const RaycastHit hit = queries.Raycast(from, direction, distance, filter);
         if (hit.Hit)
-            nearest = Contact{ .Entity = hit.Entity, .Distance = hit.Distance, .Point = hit.Point, .Normal = hit.Normal };
+            nearest = Contact{ .Entity = hit.Entity, .Distance = hit.Distance, .Point = hit.Point, .Normal = hit.Normal,
+                               .From = from, .Direction = direction };
     }
-
-    if (definition.Definition.HitsCharacters)
-        if (const std::optional<Contact> character =
-                SweepCharacters(motion, definition, instigator, from, direction, distance);
-            character.has_value() && (!nearest || character->Distance < nearest->Distance))
-            nearest = character;
-    return nearest;
-}
-
-std::optional<ProjectileSystem::Contact> ProjectileSystem::SweepCharacters(const ProjectileMotion& motion,
-                                                                           const ResolvedProjectile& definition,
-                                                                           EntityId instigator, const Vec3d& from,
-                                                                           const Vec3d& direction,
-                                                                           float distance)
-{
-    World& world = *Entities;
-    if (!world.IsRegistered<CharacterController>())
-        return std::nullopt;
-    if (!Characters)
-        Characters.emplace(world);
-
-    std::optional<Contact> nearest;
-    Characters->ForEachChunk([&](auto& view) {
-        auto shapes = view.template Read<CharacterController>();
-        auto poses = view.template Read<WorldTransform>();
-        for (std::uint32_t i = 0; i < view.Count(); ++i)
-        {
-            const EntityId entity = view.Entity(i);
-            if (entity == instigator || Struck(motion, entity))
-                continue;
-            const Vec3d centre = poses[i].Value.Position;
-            const float halfSegment = CapsuleHalfSegment(shapes[i]);
-            // A sphere meets a capsule where its centre meets the capsule grown
-            // by the sphere's radius.
-            const std::optional<float> t = RayCapsule(from, direction, distance, centre, halfSegment,
-                                                      shapes[i].Radius + definition.Definition.Radius);
-            if (!t.has_value() || (nearest && *t >= nearest->Distance))
-                continue;
-            const Vec3d at = from + direction * *t;
-            const float along = std::clamp((at - centre).Dot(Vec3d::Up()), -halfSegment, halfSegment);
-            Vec3d normal = at - (centre + Vec3d::Up() * along);
-            normal = normal.SqrMagnitude() > 1.0e-10f ? normal.Normalized() : -direction;
-            nearest = Contact{ .Entity = entity,
-                               .Distance = *t,
-                               .Point = at - normal * definition.Definition.Radius,
-                               .Normal = normal };
-        }
-    });
     return nearest;
 }
 
@@ -593,31 +488,59 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
     ++StrikeCount;
 
     const EntityId target = contact.Entity;
-    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now);
+    // Past the surface by a body's depth, so a part behind the one struck first is still crossed.
+    constexpr float kRegionDepth = 2.0f;
+    const std::optional<HitRegionHit> region =
+        Regions.Resolve(world, target, contact.From, contact.Direction, contact.Distance + kRegionDepth);
+    const GameplayTagId part = region ? region->Region : GameplayTagId{};
+    ApplyEffects(motion.Magnitude, definition, target, EffectId{}, now,
+                 EffectSource{ .Instigator = instigator,
+                               .Point = contact.Point,
+                               .Direction = contact.Direction,
+                               .HasPoint = true,
+                               .HasDirection = true },
+                 HitScale(definition, target, part));
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = instigator,
                                                             .Projectile = projectile,
                                                             .Kind = definition.HitKind,
                                                             .Point = contact.Point,
-                                                            .Normal = contact.Normal });
+                                                            .Normal = contact.Normal,
+                                                            .Region = part });
     return true;
 }
 
+float ProjectileSystem::HitScale(const ResolvedProjectile& definition, EntityId target, GameplayTagId region)
+{
+    if (!definition.HitScale.IsValid() || Host.Queries == nullptr)
+        return 1.0f;
+    ScaleArguments.Resize(3);
+    ScaleArguments.Set(0, AuthoredValue::Entity(target));
+    ScaleArguments.Set(1, AuthoredValue::Tag(region));
+    ScaleArguments.Set(2, AuthoredValue::Tag(definition.HitKind));
+    double scale = 1.0;
+    if (Host.Queries->Evaluate(definition.HitScale, ScaleArguments.Values(), ScaleAnswer) != AuthoredQueryStatus::Value
+        || !ScaleAnswer.TryGetFloat(scale) || !std::isfinite(scale) || scale < 0.0)
+        return 1.0f;
+    return static_cast<float>(scale);
+}
+
 void ProjectileSystem::ApplyEffects(float magnitude, const ResolvedProjectile& definition, EntityId target,
-                                    EffectId override, const FixedSimTime& now)
+                                    EffectId override, const FixedSimTime& now, const EffectSource& source,
+                                    float scale)
 {
     World& world = *Entities;
     if (!world.IsAlive(target) || !world.HasComponent<AttributeSet>(target))
         return;
     if (override.IsValid())
     {
-        (void)ApplyEffect(world, target, override, now, LeaseOwner{}, 1.0f);
+        (void)ApplyEffect(world, target, override, now, LeaseOwner{}, 1.0f, source);
         return;
     }
     if (definition.HitEffect.IsValid())
-        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, 1.0f);
+        (void)ApplyEffect(world, target, definition.HitEffect, now, LeaseOwner{}, scale, source);
     if (definition.ScaledEffect.IsValid() && magnitude > 0.0f && world.IsAlive(target))
-        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude);
+        (void)ApplyEffect(world, target, definition.ScaledEffect, now, LeaseOwner{}, magnitude * scale, source);
 }
 
 void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile& definition, EntityId instigator,
@@ -629,34 +552,11 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
     World& world = *Entities;
     std::array<EntityId, 1> self{ instigator };
     const PhysicsQueryFilter filter{ .IncludeTriggers = false,
-                                     .IgnoreEntities = { self.data(), instigator.IsValid() ? 1u : 0u } };
+                                     .IgnoreEntities = { self.data(), instigator.IsValid() ? 1u : 0u },
+                                     .IncludeCharacters = definition.Definition.HitsCharacters };
     const PhysicsQueries queries(*Host.Physics);
     Overlaps.clear();
     queries.OverlapShape(CollisionShape::MakeSphere(radius), point, Quatf::Identity(), Overlaps, filter);
-
-    // Characters have no body for the overlap to find.
-    if (definition.Definition.HitsCharacters && world.IsRegistered<CharacterController>())
-    {
-        if (!Characters)
-            Characters.emplace(world);
-        Characters->ForEachChunk([&](auto& view) {
-            auto shapes = view.template Read<CharacterController>();
-            auto poses = view.template Read<WorldTransform>();
-            for (std::uint32_t i = 0; i < view.Count(); ++i)
-            {
-                const EntityId entity = view.Entity(i);
-                const float reach = radius + shapes[i].Radius;
-                if (entity != instigator
-                    && SegmentDistanceSq(point, poses[i].Value.Position, CapsuleHalfSegment(shapes[i]))
-                           <= reach * reach)
-                    Overlaps.push_back(entity);
-            }
-        });
-    }
-    // In identity order, so a splash over several targets applies the same way
-    // on every run.
-    std::sort(Overlaps.begin(), Overlaps.end());
-    Overlaps.erase(std::unique(Overlaps.begin(), Overlaps.end()), Overlaps.end());
 
     for (const EntityId target : Overlaps)
     {
@@ -678,30 +578,24 @@ void ProjectileSystem::Splash(ProjectileMotion& motion, const ResolvedProjectile
             }
         }
         motion.Hits[motion.HitCount++] = target;
-        ApplyEffects(motion.Magnitude, definition, target, definition.SplashEffect, now);
+        // From the blast's centre, so a splash pushes outward.
+        ApplyEffects(motion.Magnitude, definition, target, definition.SplashEffect, now,
+                     EffectSource{ .Instigator = instigator, .Point = point, .HasPoint = true });
     }
 }
 
 void ProjectileSystem::Cue(EntityId instigator, EntityId projectile, GameplayTagId cue, const Vec3d& point,
                            const Vec3d& normal, EntityId target, std::uint64_t tick)
 {
-    if (!cue.IsValid() || !instigator.IsValid())
-        return;
-    World& world = *Entities;
-    AbilityCueLog* log = world.IsAlive(instigator) && world.IsRegistered<AbilityCueLog>()
-        ? world.TryGet<AbilityCueLog>(instigator)
-        : nullptr;
-    if (log == nullptr)
-        return;
-    // Named by the projectile and the tick, which no ability activation shares.
-    const std::uint64_t activation = 0x5052000000000000ull ^ (static_cast<std::uint64_t>(projectile.Index) << 24)
-                                   ^ (tick & 0xFFFFFFull);
-    (void)AppendAbilityCue(*log, AbilityCueEntry{ .Cue = cue,
-                                                  .Activation = activation,
-                                                  .Tick = tick,
-                                                  .Point = point,
-                                                  .Normal = normal,
-                                                  .Target = target });
+    constexpr std::uint16_t kProjectileCues = 0x5052;
+    AppendSourcedCue(*Entities, instigator, kProjectileCues, projectile,
+                     AbilityCueEntry{ .Cue = cue, .Tick = tick, .Point = point, .Normal = normal, .Target = target });
+}
+
+void ProjectileSystem::Recall(EntityId projectile, std::uint64_t tick)
+{
+    if (Entities->IsAlive(projectile) && Entities->HasComponent<ProjectileMotion>(projectile))
+        End(projectile, tick);
 }
 
 void ProjectileSystem::End(EntityId projectile, std::uint64_t tick)

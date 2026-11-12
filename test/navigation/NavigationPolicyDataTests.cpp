@@ -81,7 +81,7 @@ TEST(NavigationPolicyData, TraversalCostsSteerLinkChoice)
     EXPECT_EQ(crossing(nullptr), NavLinkId{ 0xA });
 
     NavigationPolicyData data;
-    data.TraversalCosts.push_back({ "navigation.traversal.jump", 1.0f, 50.0f });
+    data.TraversalCosts.push_back({ "navigation.traversal.jump", 1.0f, 50.0f , {} });
     const NavQueryPolicy dislikesJumping = BindNavigationPolicy(data, f.Tags);
     EXPECT_EQ(crossing(&dislikesJumping), NavLinkId{ 0xB });
 }

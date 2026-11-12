@@ -10,10 +10,12 @@
 class AbilityOperations;
 class ActorTimeOperations;
 class AnimRequestOperations;
+class AttachedLightOperations;
 class AttachmentOperations;
 class AudioOperations;
 class CameraFovScaleOperations;
 class CameraShakeOperations;
+class ContactLineSystem;
 class EffectOperations;
 class FixedSimulationLoop;
 class InteractUseOperations;
@@ -44,7 +46,8 @@ public:
     EngineVocabularyBindings(const EngineVocabularyBindings&) = delete;
     EngineVocabularyBindings& operator=(const EngineVocabularyBindings&) = delete;
 
-    // The perception.* queries, answered from this World's PerceptionFrame.
+    // The perception.* queries, answered from this World's PerceptionFrame, and
+    // the claims.* queries, from its ClaimBoard.
     void BindPerception(AuthoredQueryDispatcher& queries);
 
     // The navigation.* queries, answered from this World's agents' progress.
@@ -55,6 +58,9 @@ public:
 
     // projectile.launch, answered by `projectiles`, which must outlive this.
     void BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs);
+
+    // line.extend, line.cut and the line.* queries, answered by `lines`, which must outlive this.
+    void BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
 
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
@@ -69,6 +75,7 @@ private:
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;
     std::unique_ptr<AttachmentOperations> Attachments;
+    std::unique_ptr<AttachedLightOperations> AttachedLights;
     std::unique_ptr<CameraFovScaleOperations> FovScale;
     std::unique_ptr<CameraShakeOperations> Shake;
     std::unique_ptr<ResponseOperations> Responses;

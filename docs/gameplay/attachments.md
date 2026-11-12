@@ -104,6 +104,23 @@ release is a no-op. Acquiring again for the same holder changes the prop in
 place. The prop's owner is the lease's holder, so it ends with the holder's
 entity as well as with its release.
 
+`presentation.light` holds a point light on its target the same way: at its
+origin, or at a socket, with an optional `position` offset. It takes `color`,
+the steady `intensity`, `range`, and its presentation over time: `attack` and
+`release` in seconds, and an optional single pulse, `peak_scale` times the
+steady brightness at the start and settling back with a time constant of
+`pulse_seconds`. It fades over `release` once let go, so the light outlives
+the phase by that much. Set `packs_first` for a light the player must not lose
+when the frame is short of forward lights
+([lighting.md](../renderer/lighting.md#extraction-and-selection)).
+
+`AttachedLightState` (`attach/AttachedLight.h`) owns the presented brightness,
+and the light's own component holds only this frame's value, so no authored
+light is overwritten. It advances on the presentation clock, a suspended
+simulation holds it still, and it never writes a shadow. With
+`render.reduced_flashing` set, a light takes no pulse and its rise and fade last
+at least `kReducedFlashingRampSeconds`.
+
 ## Rendering
 
 A camera excluding an entity also excludes every entity `PresentedWith` it

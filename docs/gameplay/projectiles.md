@@ -31,6 +31,8 @@ like. Its fields:
 | `hit_kind` | a gameplay tag carried by `projectile.hit`, so responses tell one kind of shot from another |
 | `impact_cue` | a cue appended to the instigator's cue log wherever it strikes or ends |
 | `hits_characters`, `ends_with_instigator` | whether walking characters stop it; whether it ends when its instigator is gone |
+| `ignores` | a gameplay tag: what carries it is neither struck nor in the way |
+| `hit_scale_query` | an authored query `{target, region, kind}` whose number scales the hit and scaled effects, as the game reads where it struck; empty applies them as authored |
 
 Effects and tags are named, as `asset://effects/<name>.sdata` and tag names, and
 resolved the first time the prefab is launched. A name nobody declared refuses
@@ -78,13 +80,10 @@ strikes that tick is resolved that tick.
 
 Each tick the authority moves a flying projectile along the chord of its arc --
 exact for straight flight, within a tick's curvature for a falling one -- and
-sweeps its sphere along that chord against two things:
-
-- physics bodies, through `PhysicsQueries::SweepShape`, ignoring sensors, its
-  instigator and everything it has already struck;
-- walking characters, whose `CharacterVirtual` capsules no physics query sees.
-  Each `CharacterController` is an upright capsule about its entity's position,
-  tested analytically.
+sweeps its sphere along that chord through `PhysicsQueries::SweepShape`,
+ignoring sensors, its instigator and everything it has already struck. Walking
+characters are struck through the body each carries (`CharacterBody` in
+`docs/gameplay/movement.md`) unless `hits_characters` is false.
 
 Contacts are taken nearest first. Each is struck at most once in the
 projectile's life: its effects are applied, `projectile.hit` is delivered at it,
@@ -106,10 +105,32 @@ consequences are effects, the delivery and the cue, and nothing else: damage is
 an effect, death is the owning system's, and anything a struck entity does about
 being struck is its responses' (`docs/gameplay/responses.md`).
 
-`projectile.hit` carries `instigator`, `projectile`, `kind`, `point` and
-`normal`, with the instigator as its instigator. A hitscan weapon that means the
-same thing delivers the same `ProjectileHit` with no projectile, so a door that
-opens to any shot answers one event.
+`projectile.hit` carries `instigator`, `projectile`, `kind`, `point`, `normal`
+and `region`, with the instigator as its instigator. A hitscan weapon that means
+the same thing delivers the same `ProjectileHit` with no projectile, so a door
+that opens to any shot answers one event.
+
+## Hit regions
+
+A `HitRegion { region, shape, priority }` names a part of an entity: a shape in
+its own entity's frame and a gameplay tag. It belongs to its entity or its
+entity's parent, so a character's head is a child entity placed at the head. It
+collides with nothing and no query sees it.
+
+A strike resolves afterwards (`HitRegionResolver`, `physics/HitRegionResolver.h`):
+along the projectile's path from where it was this tick, past the contact by
+2 m, the part of the struck entity the ray enters first wins, ties going to the
+higher priority. `RaycastShape` in `physics/PhysicsQueries.h` is the one-shape
+ray test it uses. The region rides `projectile.hit`, and the projectile's
+`hit_scale_query`, if any, is asked `{target, region, kind}` before effects
+apply; an answer that is not a finite non-negative number applies them as
+authored. A strike that crosses no part has no region. Splash has none and is
+never scaled.
+
+What a region means is the game's: the engine never names a head. Regions sit
+where the entity stands, so they follow a character's capsule and turn, not its
+animation; regions anchored to joints wait for an animated enemy
+(`docs/deferred.md`).
 
 ## Across machines
 
@@ -148,8 +169,9 @@ struck. A client could not use it without second-guessing the authority.
   yet (`docs/deferred.md`).
 - **No lag compensation.** What a projectile strikes is decided against the
   authority's present, not against what the firer saw.
-- **No bounce, homing or attached flight.** A contact strikes, passes through,
-  or stops.
+- **No bounce or homing.** A contact strikes, passes through, or stops. What
+  stays attached after it stops is not a projectile: see `contact-lines.md`,
+  which reads `ProjectileStops` to learn how one ended.
 
 ## What it costs
 

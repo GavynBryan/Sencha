@@ -28,7 +28,8 @@ in [shaders.md](shaders.md#keeping-cpu-and-gpu-structs-in-sync).
 Runtime budgets, all cvars: `render.shadow.max_spot` (8),
 `render.shadow.max_point` (4), `render.shadow.max_views_per_frame` (12),
 `render.shadow.min_invalidated_views_per_frame` (1),
-`EngineGraphicsConfig::FrameScratchBytesPerFrame` (1 MiB per slice),
+`EngineGraphicsConfig::FrameScratchBytesPerFrame` (3 MiB per slice),
+`EngineGraphicsConfig::SkinnedPoseDispatchesPerFrame` (128),
 `EngineGraphicsConfig::FramesInFlight` (2).
 
 ## Device floor
@@ -198,7 +199,7 @@ under 12 ms. These are the numbers the counters are read against.
 | Shadow memory | 20 MiB fixed |
 | Probe memory per zone, default density | <= 2 MiB (typical room around 50 KiB) |
 | Frame UBO | <= 8 KiB (16 KiB hard line). Currently 5712 bytes |
-| Frame scratch slice | 2 MiB with shadows; high water under 75 percent in benchmarks |
+| Frame scratch slice | 3 MiB by default, with per-consumer floors (`vulkan-backend.md`, Frame scratch) |
 | CPU extraction (meshes + lights + casters) at 5k queue items | <= 1.2 ms |
 | Caster table diff, 3k casters, on-change slots resident | <= 0.10 ms |
 | `ShadowResidency` plus probe residency CPU | <= 0.15 ms |

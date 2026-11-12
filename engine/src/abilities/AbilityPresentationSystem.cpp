@@ -1,5 +1,7 @@
 #include <abilities/AbilityPresentationSystem.h>
 
+#include <abilities/AbilityActivations.h>
+
 #include <abilities/AbilityCapacity.h>
 
 #include <abilities/AbilityDefinition.h>
@@ -63,7 +65,8 @@ public:
         const ActiveAbilities* active = reader.TryGet<ActiveAbilities>(actor);
         const AbilityCueLog* log = reader.TryGet<AbilityCueLog>(actor);
         const AbilityPredictedCues* guessed = reader.TryGet<AbilityPredictedCues>(actor);
-        if (state == nullptr || active == nullptr || log == nullptr)
+        const AbilityActivations* activations = reader.TryGetResource<AbilityActivations>();
+        if (state == nullptr || active == nullptr || log == nullptr || activations == nullptr)
             return;
         const bool first = state->Follow == AbilityPresentationFollow::Unseen;
         if (guessed != nullptr)
@@ -77,7 +80,7 @@ public:
         for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         {
             static const AbilityRecord kNone{};
-            const AbilityRecord& record = IsAbilityRecordShadowed(*active, slot) ? kNone : active->Records[slot];
+            const AbilityRecord& record = IsAbilityRecordShadowed(*active, *activations, slot) ? kNone : activations->Record(*active, slot);
             state->Records[slot] = {};
             for (std::size_t was = 0; was < kAbilitySlotCapacity && record.State != AbilityRecordState::Free; ++was)
                 if (!carried[was] && previous[was].Activation == record.Identity && record.Identity != 0)

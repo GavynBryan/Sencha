@@ -4,6 +4,7 @@
 #include <attributes/AttributeResolve.h>
 #include <attributes/AttributeSet.h>
 #include <effects/ActiveEffect.h>
+#include <effects/EffectApplicationLog.h>
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -64,12 +65,32 @@ void ApplyModifier(float& value, ModifierOp op, float magnitude)
     }
 }
 
+// What one Base application changes, for the World's application log when it has one.
+struct BaseApplication
+{
+    EntityId Target;
+    EffectId Effect;
+    const EffectSource* Source = nullptr;
+};
+
 void ApplyModifiersToBase(
+    World& world,
+    const BaseApplication& application,
     AttributeSet& set,
     const EffectDefinition& def,
     float scale,
     const AttributeRegistry* attrReg)
 {
+    EffectApplicationLog* log = world.TryGetResource<EffectApplicationLog>();
+    if (log != nullptr)
+    {
+        log->Begin(application.Target, application.Effect,
+                   application.Source != nullptr ? *application.Source : EffectSource{}, scale);
+        for (const EffectModifier& m : def.Modifiers)
+            if (set.Has(m.Attr))
+                log->Note(m.Attr, set.GetBase(m.Attr));
+    }
+
     for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply, ModifierOp::Override })
         for (const EffectModifier& m : def.Modifiers)
             if (m.Op == op)
@@ -78,6 +99,8 @@ void ApplyModifiersToBase(
     if (attrReg != nullptr)
         for (int i = 0; i < set.Count; ++i)
             set.Base[i] = attrReg->Clamp(set.Ids[i], set.Base[i]);
+    if (log != nullptr)
+        log->Settle(set);
 }
 
 bool TargetIsActive(const World& world, EntityId target, const StoragePartitionSet* partitions)
@@ -148,7 +171,7 @@ void TickEffectsImpl(
                 if (ae.PeriodTicks > 0 && --ae.TicksToPeriod == 0)
                 {
                     if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
-                        ApplyModifiersToBase(*set, *def, ae.Scale, attrReg);
+                        ApplyModifiersToBase(world, { ae.Target, ae.Def }, *set, *def, ae.Scale, attrReg);
                     ae.TicksToPeriod = ae.PeriodTicks;
                 }
                 if (ae.RemainingTicks != kEffectNeverEnds && --ae.RemainingTicks == 0)
@@ -214,7 +237,7 @@ void FoldActiveEffectsImpl(
 } // namespace
 
 EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const FixedSimTime& now,
-                     LeaseOwner owner, float scale)
+                     LeaseOwner owner, float scale, const EffectSource& source)
 {
     const EffectRegistry* effReg =
         std::as_const(world).TryGetResource<EffectRegistry>();
@@ -229,7 +252,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         const AttributeRegistry* attrReg =
             std::as_const(world).TryGetResource<AttributeRegistry>();
         if (AttributeSet* set = world.TryGet<AttributeSet>(target))
-            ApplyModifiersToBase(*set, *def, scale, attrReg);
+            ApplyModifiersToBase(world, { target, effect, &source }, *set, *def, scale, attrReg);
         return {};
     }
 

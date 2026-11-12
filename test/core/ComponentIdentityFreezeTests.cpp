@@ -93,7 +93,6 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "sencha.attribute_set",                 0xCBAB285D411E9BC8ull },
     { "sencha.ability_grants",                0xED200FDB07495669ull },
     { "sencha.active_abilities",              0x2429C868EFBEF956ull },
-    { "sencha.ability_locals",                0x0594651A45B4FB4Eull },
     { "sencha.actor_time",                    0x779CF32D6039B666ull },
     { "sencha.aim_origin",                    0x15FDEA7DFC8BE3DDull },
     { "sencha.active_effect",                 0xE29C7992C1DB0669ull },
@@ -141,7 +140,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K'), 0x02E7F865828EE5CBull },
     { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N'), 0x75C60F44DC220B00ull },
     { "Nav Agent",           0x775C60F13B8FA8C4ull, MakeFourCC('N','A','G','T'), 0x2468E13CB665229Bull },
-    { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0x9164FAFA468AD95Full },
+    { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0xD0462B30022F2BE2ull },
     { "Nav Link State",      0xC634FEDD79698D79ull, MakeFourCC('N','L','S','T'), 0xF4222739CE2AEA8Eull },
     { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T'), 0x133C5B9C945CFC5Aull },
     { "SkinnedMesh",         0x1EE6CB7FBD7486D6ull, MakeFourCC('S','K','I','N'), 0x354907348BB3323Bull },
@@ -184,7 +183,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 // it is a deliberate act with a reason, never a side effect: the last move added
 // ProjectileFlight, so a launched projectile reaches every peer with its
 // instigator and the ticks it flew between.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xF0B06113864A587AULL;
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x851A0C9472A400A2ULL;
 
 struct EngineVocabulary
 {

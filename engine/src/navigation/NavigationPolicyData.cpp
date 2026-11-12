@@ -28,8 +28,12 @@ namespace
         add.Default = 0.0;
         add.Required = false;
         DataFieldSchema traversalCost = MakeDataField(DataFieldKind::Record, {}, "Traversal cost");
+        DataFieldSchema ability = MakeDataField(DataFieldKind::String, "ability", "Ability",
+                                                "The ability it crosses links of this kind with, for kinds crossed "
+                                                "by ability, by asset path.");
+        ability.Required = false;
         traversalCost.Children = { MakeDataField(DataFieldKind::GameplayTag, "kind", "Traversal kind"),
-                                   std::move(multiplier), std::move(add) };
+                                   std::move(multiplier), std::move(add), std::move(ability) };
 
         DataSchema schema;
         schema.TypeName = std::string(kNavigationPolicySubtype);
@@ -79,7 +83,9 @@ DataAssetCompileResult CompileNavigationPolicy(const JsonValue& data)
     for (const JsonValue& entry : ListAt(data, "traversal_costs"))
         policy->TraversalCosts.push_back({ entry.Find("kind")->AsString(),
                                            static_cast<float>(entry.NumberOr("multiplier", 1.0)),
-                                           static_cast<float>(entry.NumberOr("add", 0.0)) });
+                                           static_cast<float>(entry.NumberOr("add", 0.0)),
+                                           entry.Find("ability") != nullptr ? entry.Find("ability")->AsString()
+                                                                            : std::string{} });
     result.Value = std::move(policy);
     return result;
 }
@@ -104,7 +110,7 @@ NavQueryPolicy BindNavigationPolicy(const NavigationPolicyData& data,
             policy.ForbiddenAreas.push_back(id);
     for (const NavigationPolicyData::TraversalCost& cost : data.TraversalCosts)
         if (const GameplayTagId id = bind(cost.Kind); id.IsValid())
-            policy.TraversalCosts.push_back({ id, cost.Multiplier, cost.Add });
+            policy.TraversalCosts.push_back({ id, cost.Multiplier, cost.Add, cost.Ability });
     return policy;
 }
 

@@ -6,7 +6,9 @@
 #endif
 #include <abilities/AbilityPredictionJournal.h>
 #include <anim/AnimRequestJournal.h>
+#include <attach/AttachedLight.h>
 #include <attach/Attachment.h>
+#include <line/ContactLineSystem.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/PresentationPhase.h>
@@ -721,7 +723,10 @@ void Engine::RegisterSimulationFramePhases()
         engine.Tasks().DrainCompletions(budget);
         // After completions so a spawn whose worker just finished can publish
         // this frame; the pump itself enforces request order.
-        engine.Spawns().Pump();
+        {
+            const ScheduleFrameWorkScope timing(engine.Schedule(), "SpawnPump");
+            engine.Spawns().Pump();
+        }
         engine.World().FlushLifecycleRequests();
     });
 
@@ -1124,6 +1129,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     });
 
     driver.Register(FramePhase::ExtractRender, [&engine, &config](PhaseContext& ctx) {
+        const ScheduleFrameWorkScope timing(engine.Schedule(), "ExtractRender");
         // Before any extraction or recording reads the bundle, so one frame
         // sees exactly one profile mode.
         engine.ApplyPendingRenderProfileMode();
@@ -1134,6 +1140,9 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         // Before propagation, so what is attached is composed onto the pose its
         // body is drawn at in this same pass.
         PlaceAttachments(entities, ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
+        PlaceContactLines(entities, ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
+        PresentAttachedLights(entities, ctx.Runtime->GetSimulationClock(),
+                              ctx.Runtime->GetCurrentFrame().Presentation.Alpha);
 
         PropagateTransforms(
             entities,
@@ -1179,6 +1188,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     });
 
     driver.Register(FramePhase::Render, [&engine, &windows, windowId, &renderer, &frames, &swapchain](PhaseContext& ctx) {
+        const ScheduleFrameWorkScope timing(engine.Schedule(), "Render");
         const RenderFrameResult renderResult = renderer.DrawFrameScheduled();
         if (renderResult == RenderFrameResult::SwapchainOutOfDate
             || renderResult == RenderFrameResult::SurfaceSuboptimal)

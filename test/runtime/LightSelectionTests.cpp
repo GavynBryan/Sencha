@@ -368,6 +368,21 @@ TEST(SelectForwardLights, ABakedLightCanNeverEvictALiveOne)
     }
 }
 
+TEST(SelectForwardLights, ALightThatPacksFirstSurvivesAFullBudget)
+{
+    std::vector<ForwardLightCandidate> candidates;
+    for (std::uint32_t i = 0; i < kMaxForwardLights; ++i)
+        candidates.push_back(PointCandidateAt(i + 1, Vec<3>(0.0f, 0.0f, 1.0f), 100.0f));
+    PointLightComponent reveal = MakePoint(0.01f, 2.0f);
+    reveal.PacksFirst = true;
+    candidates.push_back(MakePointLightCandidate(MakeKey(1000), Vec<3>(0.0f, 0.0f, 500.0f), reveal, 1.0f));
+
+    const SelectionResult result = Select(candidates);
+
+    ASSERT_EQ(result.Lights.Count, kMaxForwardLights);
+    EXPECT_FLOAT_EQ(result.Lights.Lights[0].PositionRange.Z, 500.0f);
+}
+
 TEST(SelectForwardLights, ResetsPriorStateSoAFrameNeverInheritsTheLast)
 {
     const Vec<3> at(0.0f, 0.0f, 5.0f);

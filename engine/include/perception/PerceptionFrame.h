@@ -27,7 +27,11 @@ public:
     // A sense pass reports each observer it scanned between these two calls.
     void BeginScan(EntityId observer, GameplayTagId sense);
     void Add(EntityId subject, const Vec3d& position, float confidence);
+    // An earlier tick's observation, still standing; it keeps that tick.
+    void AddHeld(const Observation& observation);
     void EndScan(ScanCoverage coverage);
+    // The rows of the scan most recently begun.
+    [[nodiscard]] std::span<const Observation> LastScanRows() const;
 
     // After every sense pass has run for the tick.
     void Publish();

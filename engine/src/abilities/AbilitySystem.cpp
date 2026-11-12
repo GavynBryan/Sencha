@@ -48,6 +48,7 @@ namespace
         std::vector<EffectGrant> EffectGrants;
         std::vector<EntityId> Actors;
         std::vector<AbilityRequest> Requests;
+        std::unordered_map<EntityId, std::uint8_t, EntityIdHash> RequestsByActor;
         std::vector<std::string> Problems;
         AbilityPassBuffers Buffers;
     };
@@ -185,19 +186,29 @@ namespace
             return;
         scratch.Requests.swap(queue->Pending);
         queue->Pending.clear();
+        scratch.RequestsByActor.clear();
         for (std::size_t i = 0; i < scratch.Requests.size(); ++i)
         {
             const AbilityRequest& request = scratch.Requests[i];
-            if (!world.IsAlive(request.Actor) || !world.HasComponent<ActiveAbilities>(request.Actor)
-                || !world.HasComponent<AbilityLocals>(request.Actor))
+            // Counted per actor so a start's name owes nothing to what others asked.
+            std::uint8_t& asked = scratch.RequestsByActor[request.Actor];
+            const AbilityActivationKey key{ .CommandTick = pass.Tick(), .Ability = request.Ability,
+                                            .Origin = static_cast<std::uint8_t>(kAbilityRequestOrigin + asked) };
+            asked = std::min<std::uint8_t>(asked + 1, 0x7F);
+            if (!world.IsAlive(request.Actor) || !world.HasComponent<ActiveAbilities>(request.Actor))
                 continue;
             // A dormant actor keeps its request for the tick it wakes.
             if (partitions != nullptr && !partitions->Contains(world.GetEntityPartition(request.Actor)))
             {
-                (void)queue->Push(request);
+                if (queue->Pending.size() < kAbilityDormantRequestCapacity)
+                    queue->Push(request);
+                else
+                    pass.Trace({ .Actor = request.Actor, .Key = key, .Event = AbilityTraceEvent::Refused,
+                                 .Refusal = AbilityRefusal::Capacity });
                 continue;
             }
-            const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource };
+            const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource,
+                                      &world.GetResource<AbilityActivations>() };
             if (request.Kind == AbilityRequestKind::Cancel)
             {
                 for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
@@ -205,9 +216,6 @@ namespace
                         pass.End(actor, slot, AbilityEndReason::ExplicitCancel);
                 continue;
             }
-            const AbilityActivationKey key{
-                .CommandTick = pass.Tick(), .Ability = request.Ability,
-                .Origin = static_cast<std::uint8_t>(kAbilityRequestOrigin + std::min<std::size_t>(i, 0x7F)) };
             const AbilityGrants* grants = actor.Grants();
             const AbilityGrant* found = nullptr;
             for (std::uint8_t g = 0; grants != nullptr && g < grants->Count && found == nullptr; ++g)
@@ -291,6 +299,8 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
 {
     if (!world.IsRegistered<AbilityGrants>())
         return;
+    if (AbilityActivations* activations = world.TryGetResource<AbilityActivations>())
+        activations->CollectOrphans(world);
     // A client runs only its guesses at its own pawn, on that pawn's command timeline.
     const bool authority = IsSimulationAuthority(world);
     const PredictedSimulation* predicted = authority ? nullptr : world.TryGetResource<PredictedSimulation>();
@@ -320,7 +330,12 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
                 scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
         });
     else if (world.HasComponent<AbilityGrants>(predicted->Entity))
+    {
+        // Only the one actor this client predicts ever makes a guessed cue.
+        if (!world.HasComponent<AbilityPredictedCues>(predicted->Entity))
+            world.AddComponent<AbilityPredictedCues>(predicted->Entity);
         scratch.Actors.push_back(predicted->Entity);
+    }
 
     FixedSimTime tick = now;
     if (!authority)
@@ -332,11 +347,10 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         const InputActionSourceRef* ref =
             world.IsRegistered<InputActionSourceRef>() ? world.TryGet<InputActionSourceRef>(entity) : nullptr;
         return AbilityActor{ &world, entity, sources.TickFor(entity),
-                             ref != nullptr ? ref->Source : kLocalInputActionSource };
+                             ref != nullptr ? ref->Source : kLocalInputActionSource, &world.GetResource<AbilityActivations>() };
     };
     const auto ready = [&](EntityId entity) {
-        return world.IsAlive(entity) && world.HasComponent<ActiveAbilities>(entity)
-            && world.HasComponent<AbilityLocals>(entity);
+        return world.IsAlive(entity) && world.HasComponent<ActiveAbilities>(entity);
     };
 
     for (const EntityId entity : scratch.Actors)

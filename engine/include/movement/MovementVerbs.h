@@ -10,14 +10,11 @@
 
 class World;
 
-// Drive a character at a velocity while held, or for a time: a lunge, a dash, a launch.
 inline constexpr std::string_view kMovementBurstLease = "movement.burst";
-// Tie a character to an anchor while held, pulled toward it beyond the rope's length.
 inline constexpr std::string_view kMovementTetherLease = "movement.tether";
-// Put a character in a locomotion mode while held; letting go returns it to free.
 inline constexpr std::string_view kMovementModeLease = "movement.mode";
-// Set a character moving at a velocity once; it keeps that momentum afterwards.
 inline constexpr std::string_view kMovementLaunchVerb = "movement.launch";
+inline constexpr std::string_view kMovementImpulseVerb = "movement.impulse";
 
 void DeclareMovementVerbs(VerbRegistrationScope& scope);
 
@@ -37,6 +34,7 @@ public:
     VerbAdmission Tether(const VerbInvocation& invocation);
     VerbAdmission Mode(const VerbInvocation& invocation);
     VerbAdmission Launch(const VerbInvocation& invocation);
+    VerbAdmission Impulse(const VerbInvocation& invocation);
 
 private:
     // Whether `owner` still holds a slot of `T`, looked for on its own entity first.
@@ -66,4 +64,9 @@ inline VerbAdmission InvokeMovementMode(MovementOperations& operations, const Ve
 inline VerbAdmission InvokeMovementLaunch(MovementOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Launch(invocation);
+}
+
+inline VerbAdmission InvokeMovementImpulse(MovementOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.Impulse(invocation);
 }

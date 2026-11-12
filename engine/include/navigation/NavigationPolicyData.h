@@ -41,6 +41,7 @@ struct NavigationPolicyData
         std::string Kind;
         float Multiplier = 1.0f;
         float Add = 0.0f;
+        std::string Ability;
     };
 
     std::vector<AreaCost> AreaCosts;

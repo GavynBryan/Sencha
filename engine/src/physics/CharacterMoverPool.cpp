@@ -29,6 +29,21 @@ Vec3d ReadPosition(const World& world, EntityId entity)
     return Vec3d::Zero();
 }
 
+// The entity's pose in world space, from its own local transform and its
+// parents', so a character bound under a placed instance keeps where it stands.
+Transform3f ComposedPose(const World& world, EntityId entity)
+{
+    const LocalTransform* local = world.TryGet<LocalTransform>(entity);
+    Transform3f pose = local != nullptr ? local->Value : Transform3f::Identity();
+    for (const Parent* parent = world.TryGet<Parent>(entity); parent != nullptr && world.IsAlive(parent->Entity);
+         parent = world.TryGet<Parent>(parent->Entity))
+    {
+        if (const LocalTransform* above = world.TryGet<LocalTransform>(parent->Entity))
+            pose = above->Value * pose;
+    }
+    return pose;
+}
+
 // The motor's support classification and the movement component's are the same
 // three cases named in each layer's own vocabulary; neither depends on the
 // other's header.
@@ -81,6 +96,14 @@ struct CharacterMoverPool::State
         Without<ActorTimeDilated>>;
     std::optional<CharacterDriveQuery> DriveQuery;
     StoragePartitionSet ActivePartitions;
+
+    // Characters bound this reconcile that had a parent, with where they stand.
+    struct Detach
+    {
+        EntityId Entity;
+        Transform3f Pose;
+    };
+    std::vector<Detach> Unparented;
 
     uint32_t Allocate(EntityId owner)
     {
@@ -176,6 +199,15 @@ void CharacterMoverPool::Reconcile(
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
             const EntityId entity = view.Entity(index);
+            // The motor moves a character in world space and writes its local
+            // transform as such, so a character is a root: one placed under
+            // another entity leaves it here, where it stands.
+            if (world.IsRegistered<Parent>() && readOnly.TryGet<Parent>(entity) != nullptr)
+            {
+                Transform3f pose = ComposedPose(readOnly, entity);
+                pose.Scale = Vec3d::One();
+                state.Unparented.push_back({ entity, pose });
+            }
             const uint32_t slot = state.Allocate(entity);
             CharacterMoverConfig config;
             config.Radius = controllers[index].Radius;
@@ -184,10 +216,13 @@ void CharacterMoverPool::Reconcile(
             config.StepHeight = controllers[index].StepHeight;
             config.GroundSnapDistance = controllers[index].GroundSnapDistance;
             config.SkinWidth = controllers[index].SkinWidth;
+            config.Owner = entity;
             state.Slots[slot].Mover.emplace(
                 *Simulation,
                 config,
-                ReadPosition(readOnly, entity));
+                state.Unparented.empty() || state.Unparented.back().Entity != entity
+                    ? ReadPosition(readOnly, entity)
+                    : state.Unparented.back().Pose.Position);
             state.Commands.AddComponent<CharacterMoverLink>(
                 entity,
                 CharacterMoverLink{ slot });
@@ -213,7 +248,16 @@ void CharacterMoverPool::Reconcile(
         state.Release(slot);
     }
 
+    for (const State::Detach& detach : state.Unparented)
+        state.Commands.RemoveComponent<Parent>(detach.Entity);
     state.Commands.Flush();
+    for (const State::Detach& detach : state.Unparented)
+    {
+        if (LocalTransform* local = world.TryGet<LocalTransform>(detach.Entity))
+            local->Value = detach.Pose;
+        RequestTransformHistorySnap(world, detach.Entity);
+    }
+    state.Unparented.clear();
     state.ActivePartitions = partitions;
     LastStructuralVersion = world.StructuralVersion(partitions);
 }

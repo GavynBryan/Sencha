@@ -1,5 +1,8 @@
 #include <physics/PhysicsQueries.h>
 
+#include "JoltStartup.h"
+#include "PhysicsLayers.h"
+
 #include "PhysicsWorldImpl.h"
 
 #include <algorithm>
@@ -40,6 +43,8 @@ public:
     bool ShouldCollideLocked(const JPH::Body& body) const override
     {
         if (body.IsSensor() && !Filter.IncludeTriggers)
+            return false;
+        if (!Filter.IncludeCharacters && body.GetObjectLayer() == PhysicsObjectLayers::CharacterBody)
             return false;
         const EntityId entity = UnpackEntity(body.GetUserData());
         return std::find(Filter.IgnoreEntities.begin(), Filter.IgnoreEntities.end(), entity)
@@ -93,6 +98,24 @@ RaycastHit PhysicsQueries::Raycast(const Vec3d& origin,
 {
     assert(std::abs(unitDirection.SqrMagnitude() - 1.0) < 1e-3 && "Raycast direction must be normalized");
     return CastRay(*Simulation, origin, unitDirection, maxDistance, QueryBodyFilter{ filter });
+}
+
+std::optional<float> RaycastShape(const CollisionShape& shape, const Transform3f& pose, const Vec3d& origin,
+                                  const Vec3d& unitDirection, float maxDistance)
+{
+    // No world need exist yet to build the shape.
+    EnsureJoltRegistered();
+    const JPH::ShapeRefC jShape = BuildShape(ScaledCollisionShape(shape, pose.Scale));
+    if (jShape == nullptr || !(maxDistance > 0.0f))
+        return std::nullopt;
+    const Quatf inverse = pose.Rotation.Normalized().Inverse();
+    const Vec3d localOrigin = inverse.RotateVector(origin - pose.Position);
+    const Vec3d localReach = inverse.RotateVector(unitDirection * maxDistance);
+    const JPH::RayCast ray(ToJph(localOrigin), ToJph(localReach));
+    JPH::RayCastResult hit;
+    if (!jShape->CastRay(ray, JPH::SubShapeIDCreator(), hit))
+        return std::nullopt;
+    return hit.mFraction * maxDistance;
 }
 
 namespace
@@ -154,16 +177,10 @@ void CollideShape(const PhysicsWorld& world,
     query.CollideShape(jShape, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector, {}, {},
                        bodyFilter);
 
-    // Dedup in place using the caller's vector: gather every hit's entity, then
-    // sort + unique. One body maps to one entity, so this matches a by-body dedup
-    // without a per-call hash set. Order is unspecified by the contract.
     for (const JPH::CollideShapeResult& result : collector.mHits)
         out.push_back(EntityOf(system, result.mBodyID2));
 
-    std::sort(out.begin(), out.end(), [](EntityId a, EntityId b)
-    {
-        return a.Index != b.Index ? a.Index < b.Index : a.Generation < b.Generation;
-    });
+    std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 } // namespace

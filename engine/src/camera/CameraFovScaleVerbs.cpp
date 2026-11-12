@@ -20,16 +20,6 @@ constexpr std::size_t Release = 3;
 constexpr std::size_t Subject = 4;
 } // namespace Slot
 
-DataFieldSchema Seconds(std::string key, std::string label, std::string summary)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Float, std::move(key), std::move(label), std::move(summary));
-    field.Units = "s";
-    field.Required = false;
-    field.Default = 0.0;
-    field.Numeric.Minimum = 0.0;
-    return field;
-}
-
 VerbDefinition Cosmetic(std::string_view name, std::string displayName, std::string description, VerbKind kind)
 {
     VerbDefinition verb = MakeCosmeticVerb(name, std::move(displayName), std::move(description), "Camera", kind);
@@ -38,20 +28,11 @@ VerbDefinition Cosmetic(std::string_view name, std::string displayName, std::str
                                           "below one narrows, above one widens.");
     scale.Numeric.Minimum = kCameraFovScaleMin;
     scale.Numeric.Maximum = kCameraFovScaleMax;
-    verb.Arguments.Children = { std::move(scale), Seconds("attack", "Attack", "Easing to the scale."),
-                                Seconds("hold", "Hold", "At the scale, when not held by a lease."),
-                                Seconds("release", "Release", "Easing back to the camera's own."),
+    verb.Arguments.Children = { std::move(scale), CameraEffectSecondsField("attack", "Attack", "Easing to the scale."),
+                                CameraEffectSecondsField("hold", "Hold", "At the scale, when not held by a lease."),
+                                CameraEffectSecondsField("release", "Release", "Easing back to the camera's own."),
                                 CameraEffectSubjectField() };
     return verb;
-}
-
-bool ReadSeconds(const AuthoredArguments& arguments, std::size_t slot, float& out)
-{
-    double seconds = 0.0;
-    if (!arguments.TryGetFloat(slot, seconds))
-        return false;
-    out = static_cast<float>(seconds);
-    return true;
 }
 } // namespace
 
@@ -84,8 +65,8 @@ VerbAdmission CameraFovScaleOperations::Start(const VerbInvocation& invocation, 
     const AuthoredArguments* arguments = invocation.Arguments;
     double scale = 1.0;
     CameraEnvelope envelope;
-    if (arguments == nullptr || !arguments->TryGetFloat(Slot::Scale, scale) || !ReadSeconds(*arguments, Slot::Attack, envelope.Attack)
-        || !ReadSeconds(*arguments, Slot::Hold, envelope.Hold) || !ReadSeconds(*arguments, Slot::Release, envelope.Release)
+    if (arguments == nullptr || !arguments->TryGetFloat(Slot::Scale, scale) || !ReadCameraEffectSeconds(*arguments, Slot::Attack, envelope.Attack)
+        || !ReadCameraEffectSeconds(*arguments, Slot::Hold, envelope.Hold) || !ReadCameraEffectSeconds(*arguments, Slot::Release, envelope.Release)
         || !std::isfinite(scale) || scale < kCameraFovScaleMin || scale > kCameraFovScaleMax
         || !IsValidCameraEnvelope(envelope) || (held && !invocation.Owner.IsSet()))
         return VerbAdmission::InvalidArguments;

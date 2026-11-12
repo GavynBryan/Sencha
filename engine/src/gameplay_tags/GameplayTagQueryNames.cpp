@@ -23,3 +23,35 @@ GameplayTagQuery ResolveTagQuery(const GameplayTagQueryNames& names, const Gamep
     add(names.None, &GameplayTagQuery::AddNone);
     return query;
 }
+
+DataFieldSchema MakeTagQueryNamesField(std::string key, std::string displayName)
+{
+    const auto tagList = [](std::string listKey, std::string listName) {
+        DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(listKey), std::move(listName));
+        list.Required = false;
+        list.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "tag", "Tag"));
+        return list;
+    };
+    DataFieldSchema query = MakeDataField(DataFieldKind::Record, std::move(key), std::move(displayName));
+    query.Required = false;
+    query.Children.push_back(tagList("all", "All of"));
+    query.Children.push_back(tagList("any", "Any of"));
+    query.Children.push_back(tagList("none", "None of"));
+    return query;
+}
+
+GameplayTagQueryNames ReadTagQueryNames(const JsonValue& query)
+{
+    GameplayTagQueryNames names;
+    const auto read = [&query](std::string_view listKey, std::vector<std::string>& out) {
+        if (const JsonValue* list = query.Find(listKey))
+        {
+            for (const JsonValue& tag : list->AsArray())
+                out.push_back(tag.AsString());
+        }
+    };
+    read("all", names.All);
+    read("any", names.Any);
+    read("none", names.None);
+    return names;
+}

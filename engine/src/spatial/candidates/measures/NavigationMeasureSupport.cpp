@@ -28,7 +28,8 @@ namespace candidate_operation
         return state;
     }
 
-    NavigationAnswer AskNavigation(CandidateRun& run, const NavigationMeasureState& state, std::uint32_t row)
+    NavigationAnswer AskNavigation(CandidateRun& run, const NavigationMeasureState& state, std::uint32_t row,
+                                   const NavLocation* from)
     {
         NavLocation target;
         const CandidateMeasureStatus located = run.CandidateNav(row, target);
@@ -37,7 +38,7 @@ namespace candidate_operation
         if (located != CandidateMeasureStatus::Ok)
             return { located };
 
-        const std::optional<NavLocation> start = run.QuerierNav();
+        const std::optional<NavLocation> start = from != nullptr ? std::optional(*from) : run.QuerierNav();
         if (!start)
             return { CandidateMeasureStatus::Failed };
 

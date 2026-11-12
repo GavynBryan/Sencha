@@ -8,10 +8,12 @@
 #include <camera/CameraShakeVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
+#include <logic/ClaimVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
+#include <line/ContactLineSystem.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <projectile/ProjectileVerbs.h>
@@ -56,11 +58,13 @@ bool InstallEngineVocabulary(World& world)
     DeclareNavigationVerbs(scope);
     DeclareResponseVocabulary(scope, eventScope);
     DeclareProjectileVocabulary(scope, eventScope);
+    DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
 
     const bool engineDeclared = CommitTogether(scope, queryScope, eventScope);
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);
-    return engineDeclared && perceptionDeclared;
+    const bool claimsDeclared = InstallClaimVocabulary(world);
+    return engineDeclared && perceptionDeclared && claimsDeclared;
 }

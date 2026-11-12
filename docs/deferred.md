@@ -520,14 +520,16 @@ do the work and delete the entry.
   different scales colliding and an undilated body striking a dilated character
   (`CharactersAtDifferentScalesCollideConsistently`,
   `BodyStrikingADilatedCharacterUsesSimulationRate`). Neither happens at any scale
-  today: the character mover sets up no character-versus-character collision and
-  gives a character no inner body, so characters pass through each other and rigid
-  bodies pass through characters.
+  today: the character mover sets up no character-versus-character collision, and
+  a character's inner body is on `CharacterBody`, a layer queries strike and that
+  pairs with nothing, so characters pass through each other and rigid bodies pass
+  through characters.
 - **Where:** `engine/src/physics/CharacterMover.cpp` (`CharacterMover::Move`, the
   `CharacterVirtual` settings) and `test/runtime/ActorTimeInteractionTests.cpp`.
-- **Trigger:** characters gaining an inner body or character-versus-character
-  collision; the two tests are written with that change, against dilated characters
-  as well as undilated ones.
+- **Trigger:** a character's body taking part in contacts (pairing
+  `CharacterBody` with `Moving`) or character-versus-character collision; the two
+  tests are written with that change, against dilated characters as well as
+  undilated ones.
 
 ## Ending an ability on an authored event
 
@@ -556,19 +558,6 @@ do the work and delete the entry.
   knows the groups a guess would pay.
 - **Trigger:** the first HUD that shows a predicted pawn's ammo or energy, which is
   what reads the overlay.
-
-## Guess slots on actors no machine predicts
-
-- **What:** `ActiveAbilities` and `AbilityLocals` carry `kAbilityGuessCapacity`
-  guess slots on every actor with grants, but only the pawn a client predicts ever
-  fills them. On the authority, and for every other actor, they stay empty: 2,912
-  bytes per actor ("Costs" in `docs/gameplay/abilitykit.md`).
-- **Where:** `engine/include/abilities/AbilityCapacity.h`, the record arrays in
-  `ActiveAbilities.h` and `AbilityLocals.h`, `AbilityPass::ClaimSlot` and the
-  journal's `FreeGuessSlot` (`engine/src/abilities/AbilityPredictionJournal.cpp`).
-- **Trigger:** a measured memory or chunk-occupancy cost from ability actors, such
-  as an encounter whose actor count puts the per-actor bytes over a memory budget.
-  The change moves guesses into storage only the predicted pawn carries.
 
 ## Locomotion facts for a pawn this machine only receives
 
@@ -606,20 +595,6 @@ do the work and delete the entry.
 - **Multi-tick evaluation scheduler.**
   - *What's missing:* a budgeted scheduler that calls the same `Evaluate` on a subset of callers per tick.
   - *Trigger:* measured per-tick cost of real encounters exceeds budget.
-- **`walkable_width` measure.**
-  - *What's blocking it:* navigation exposes no distance-to-edge query (Detour has one).
-  - *Trigger:* a consumer needs corridor width, for example to avoid or prefer choke points.
-
-## Hearing
-
-- **What:** Stage E of `docs/plans/perception.md`: a `HearingSensor`, spatial
-  stimuli that game adapters stage from authored events, and a hearing pass
-  that reports into the same `PerceptionFrame`.
-- **Where:** `engine/src/perception/` beside `SightScan`; `PerceptionSystem`
-  runs each sense pass between `PerceptionFrame::Begin` and `Publish`, and the
-  frame already orders scans by observer and sense.
-- **Trigger:** the first game that needs an NPC to react to a sound, or the
-  roadmap's data-authored enemy gate if its encounter includes one.
 
 ## Sight candidate selection
 
@@ -886,12 +861,46 @@ described in `docs/navigation/runtime.md`, "Agents".
   by instigator and launch tick when that arrives, and retire the guess. The
   guess strikes nothing.
 
+## Hit regions that follow animation
+
+- **What:** a `HitRegion` sits where its entity stands, so a character's parts
+  follow its capsule and turn but not its pose. A region anchored to a joint
+  needs the pose on the authority, and `AnimPoseSystem` runs only where a pose
+  is presented (`AnimationHost::PresentsPose`).
+- **Where:** `physics/components/HitRegion.h`, `HitRegionResolver`; poses in
+  `anim/AnimPosePool.h`.
+- **Trigger:** the first animated character whose parts must move with its
+  pose, such as a crouch or a reaching arm a shot should miss. That consumer
+  decides whether a headless authority poses characters, and adds a socket to
+  `HitRegion` resolved through a simulation-side joint readback.
+
+## Effect reactions on a remote client
+
+- **What:** `EffectReactionSystem` runs on the authority. The shake it starts
+  is presented only by the authority's own views, so a struck remote player's
+  screen does not shake, and its push reaches a predicting client only as a
+  correction, which may snap.
+- **Where:** `logic/EffectReactionSystem.h`; cues reach clients through
+  `AbilityCueLog`; prediction corrections in `docs/gameplay/responses.md`.
+- **Trigger:** the first networked session where a remote player is struck.
+  It sends the shake as a cue to the struck player's machine and measures
+  whether a shove snaps there, carrying it in the predicted motion if it does.
+
+## An event for each effect application
+
+- **What:** content cannot answer an effect landing through `responses`; only
+  `EffectReactionSystem` reads the application log.
+- **Where:** `effects/EffectApplicationLog.h`.
+- **Trigger:** the first content that must answer an effect rather than a
+  strike, such as a sound for a heal. It declares an `effect.applied` event and
+  decides which attribute's change its payload carries.
+
 ## Lag-compensated projectile contacts
 
 - **What:** a projectile's contacts are decided against the authority's present.
   A target the firer saw at an interpolated, older pose is struck where the
   authority has it now.
-- **Where:** `ProjectileSystem::Sweep` and `SweepCharacters`.
+- **Where:** `ProjectileSystem::Sweep`.
 - **Trigger:** the same as hitscan lag compensation in `docs/plans/networking.md`:
   combat at internet latency where players notice. It needs a per-tick history of
   character capsules and body poses to sweep against.
@@ -980,3 +989,36 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a skinned mesh seen popping at a screen edge. Culling by posed bounds means
   posing before culling, which costs pose work for meshes that would have been culled.
 
+## A scale on a lasting effect's duration
+
+- **What:** a lasting effect's length is its definition's `seconds`, with nothing
+  at the application to lengthen or shorten it. `scale` multiplies magnitudes only.
+- **Where:** `ApplyEffect` (`engine/src/effects/EffectSystem.cpp`), `effect.apply`
+  (`engine/src/effects/EffectVerbs.cpp`).
+- **Trigger:** a game choosing a length by difficulty, which Loss Function plans
+  for its seizure effect (`assets/effects/prayer_seizure.sdata`). Add an optional
+  `duration_scale` to `effect.apply`, default 1, without touching `effect.hold`.
+
+## Contact lines on other machines
+
+- **What:** a contact line lives on the authority only, so a client neither draws
+  one nor knows its tip.
+- **Where:** `engine/src/line/ContactLineSystem.cpp`.
+- **Trigger:** the first game shipping a contact line in a networked session.
+  Replicate the line's root as a prefab, as `ProjectileSystem` does, with its stage
+  and instigator as a wire component like `ProjectileFlight`.
+
+## Cook-time generation of anchored navigation links
+
+- **What:** anchored links are hand-authored. The cook could sample walkable
+  borders, pair them within rope range and validate clearance, emitting the same
+  `NavLinkRecord`s.
+- **Where:** `engine/src/assets/cook/NavigationCook.cpp`, `navigation/tooling/NavMeshSnapshot.h`.
+- **Trigger:** the first level needing more anchored links than is reasonable to
+  place by hand. Nothing at runtime changes: routes already read the records.
+
+## Culling a posed mesh by its pose
+
+- **What:** skinned meshes frustum-cull against their rest bounds, so a limb posed outside those bounds can pop out at the edge of the view.
+- **Where:** `RenderExtractionSystem::EmitSkinnedMeshes`; `PosedWorldBounds` already computes the tighter bound per pose.
+- **Trigger:** a report of popping on an animated enemy. A cooked per-skeleton reach would change the mesh format, so it needs format treatment.

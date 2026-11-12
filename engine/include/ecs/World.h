@@ -10,14 +10,18 @@
 #include <ecs/StoragePartitionId.h>
 #include <ecs/StoragePartitionSet.h>
 
+#include <algorithm>
 #include <any>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <tuple>
 #include <typeindex>
 #include <type_traits>
@@ -84,6 +88,12 @@ class World
 
 public:
     World() = default;
+
+    // Shares chunk storage with every other World given the same pool.
+    explicit World(std::shared_ptr<ChunkBlockPool> blocks)
+        : ChunkBlocks(std::move(blocks))
+    {
+    }
 
     // Teardown order contract: live components' OnRemove hooks fire first,
     // while resources are still reachable, then resources are destroyed.
@@ -786,8 +796,10 @@ public:
 
     uint64_t RowMigrationCount() const { return RowMigrationCounter; }
 
+    [[nodiscard]] ChunkBlockPool::Counters ChunkBlockStats() const { return ChunkBlocks->Stats(); }
+
     // Chunk census, walked on demand — diagnostics and bench only, never per
-    // frame. EmptyChunkCount is the reclamation signal: slabs retained past the
+    // frame. EmptyChunkCount is the reclamation signal: headers retained past the
     // last row that needed them.
     size_t ChunkCount() const
     {
@@ -937,6 +949,24 @@ public:
         if (id >= Provisioning.size())
             return {};
         return Provisioning[id].DeclaredOwed;
+    }
+
+    // Fatal in every build: the alternative is writing past the end of a chunk.
+    [[noreturn]] void DieOfOversizedRow(std::vector<ComponentInfo> columns) const
+    {
+        std::ranges::sort(columns, std::ranges::greater{}, &ComponentInfo::Size);
+        std::size_t bytes = sizeof(EntityIndex);
+        std::string largest;
+        for (const ComponentInfo& column : columns)
+        {
+            bytes += column.Size;
+            if (largest.size() < 200 && column.Size > 0)
+                largest += std::string(ComponentMetas[column.Id].Name) + " " + std::to_string(column.Size) + ", ";
+        }
+        std::fprintf(stderr, "An entity's components need %zu bytes before padding across %zu components, more than one "
+                             "%zu byte chunk can hold. Largest: %s\n",
+                     bytes, columns.size(), ChunkSizeBytes, largest.c_str());
+        std::abort();
     }
 
     // Adds everything `id` owes that this World knows and `entity` does not
@@ -1173,6 +1203,8 @@ private:
     };
 
     EntityRegistry                          Entities;
+    // Before ArchetypeList: archetypes give their blocks back as they die.
+    std::shared_ptr<ChunkBlockPool> ChunkBlocks = std::make_shared<ChunkBlockPool>();
     std::vector<std::unique_ptr<Archetype>> ArchetypeList;
 
     // Index-aligned with ArchetypeList: the component ids in this archetype
@@ -1247,7 +1279,9 @@ private:
     void MoveFrom(World&& other)
     {
         Entities = std::move(other.Entities);
+        // Replaced archetypes release into the old pool, so it changes after them.
         ArchetypeList = std::move(other.ArchetypeList);
+        ChunkBlocks = other.ChunkBlocks;
         HookedRemoveIdsByArchetype = std::move(other.HookedRemoveIdsByArchetype);
         SignatureToArchetype = std::move(other.SignatureToArchetype);
         ComponentMetas = std::move(other.ComponentMetas);
@@ -1435,6 +1469,7 @@ private:
         auto arch = std::make_unique<Archetype>();
         arch->Signature = sig;
         arch->Id        = id;
+        arch->Blocks    = ChunkBlocks.get();
 
         std::vector<ComponentInfo> cols;
         std::vector<ComponentId>   hooked;
@@ -1448,6 +1483,8 @@ private:
         }
 
         arch->BuildLayout(cols);
+        if (!arch->RowsFitChunk())
+            DieOfOversizedRow(cols);
         SignatureToArchetype[sig] = id;
         ArchetypeList.push_back(std::move(arch));
         HookedRemoveIdsByArchetype.push_back(std::move(hooked));

@@ -50,21 +50,18 @@ struct SkinnedPoseDispatch
 class SkinnedPosePass
 {
 public:
-    // One descriptor set per dispatch per frame; the pool is sized for this
-    // many and Record drops jobs beyond it (the feature budgets first, so
-    // hitting the cap here is a policy failure worth the log).
-    static constexpr std::uint32_t kMaxDispatchesPerFrame = 64;
-
-    void Setup(const RendererServices& services);
+    // One descriptor set per dispatch per frame, so the pools hold `maxDispatches`.
+    void Setup(const RendererServices& services, std::uint32_t maxDispatches);
     // Posed-vertex buffers are the pass's own resource kind (GpuOnly, vertex
     // + storage), so their creation stays in the backend and the feature
     // above holds only the policy that decides when to ask for one.
     [[nodiscard]] BufferHandle CreatePosedBuffer(std::uint32_t vertexCount);
     void DestroyPosedBuffer(BufferHandle buffer);
-    // Records every dispatch and the write->vertex-read barrier. Returns how
-    // many jobs were recorded; the caller treats the rest as unposed.
-    std::uint32_t Record(const FrameContext& frame,
-                         std::span<const SkinnedPoseDispatch> dispatches);
+    [[nodiscard]] static std::uint64_t PosedBufferBytes(std::uint32_t vertexCount);
+    // Records the dispatches and the write->vertex-read barrier, setting
+    // `recorded[i]` for each one that made it.
+    void Record(const FrameContext& frame, std::span<const SkinnedPoseDispatch> dispatches,
+                std::span<std::uint8_t> recorded);
     void Teardown();
 
 private:
@@ -73,6 +70,7 @@ private:
     VulkanShaderCache* Shaders = nullptr;
     Logger* Log = nullptr;
     VkDevice Device = VK_NULL_HANDLE;
+    std::uint32_t MaxDispatches = 0;
     // minStorageBufferOffsetAlignment, queried at setup. Palette offsets are
     // pre-aligned upstream against the spec's 256-byte ceiling; this is what
     // proves that upstream promise against the device actually running.

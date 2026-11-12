@@ -40,6 +40,9 @@ struct CharacterMoverConfig
     float GroundSnapDistance = 0.25f;
 
     float SkinWidth = 0.02f;
+
+    // The entity a query names when it strikes the character's body.
+    EntityId Owner{};
 };
 
 enum class CharacterSupportKind : uint8_t

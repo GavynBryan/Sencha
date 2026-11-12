@@ -17,6 +17,7 @@ struct ForwardLightCandidate
     // evict one, and never requests a shadow slot. The GpuLight carries the
     // same fact as kGpuLightBakedBit for the shader's charted-receiver skip.
     bool Baked = false;
+    bool PacksFirst = false;
     bool WantsSpotShadow = false;
     bool WantsPointShadow = false;
     SpotShadowView SpotShadow;

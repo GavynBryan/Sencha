@@ -1,5 +1,6 @@
 #include <abilities/ActiveAbilitiesWire.h>
 
+#include <abilities/AbilityActivations.h>
 #include <abilities/AbilityRegistry.h>
 #include <ecs/World.h>
 
@@ -27,12 +28,16 @@ void ReplicationCodec<ActiveAbilities>::ToWire(const ReplicationWireContext& con
                                                ActiveAbilitiesWire& wire)
 {
     const AbilityRegistry* abilities = AbilitiesOf(context);
+    const AbilityActivations* activations =
+        context.Entities != nullptr ? context.Entities->TryGetResource<AbilityActivations>() : nullptr;
     const auto records = RecordsOf(wire);
     for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
     {
         ActiveAbilityWireRecord& out = *records[i];
         out = ActiveAbilityWireRecord{};
-        const AbilityRecord& record = active.Records[i];
+        if (activations == nullptr)
+            continue;
+        const AbilityRecord& record = activations->Record(active, i);
         if (record.State == AbilityRecordState::Free)
             continue;
         out.Ticks.Values[0] = record.Key.CommandTick;
@@ -56,15 +61,22 @@ void ReplicationCodec<ActiveAbilities>::FromWire(const ReplicationWireContext& c
                                                  ActiveAbilities& active)
 {
     const AbilityRegistry* abilities = AbilitiesOf(context);
+    AbilityActivations* activations =
+        context.Receiving != nullptr ? context.Receiving->TryGetResource<AbilityActivations>() : nullptr;
+    if (activations == nullptr)
+        return;
     const auto records = RecordsOf(wire);
     for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
     {
         const ActiveAbilityWireRecord& in = *records[i];
-        AbilityRecord& record = active.Records[i];
-        record = AbilityRecord{};
         const auto state = static_cast<AbilityRecordState>(static_cast<std::uint8_t>(in.Words.Values[1] >> 8));
         if (state == AbilityRecordState::Free)
+        {
+            activations->Free(active, i);
             continue;
+        }
+        AbilityRecord& record = activations->Ensure(active, i, context.Entity).Record;
+        record = AbilityRecord{};
         record.State = state;
         record.Key.CommandTick = in.Ticks.Values[0];
         record.Key.Ability = abilities != nullptr ? abilities->FindByWireKey(in.Words.Values[0]) : AbilityId{};

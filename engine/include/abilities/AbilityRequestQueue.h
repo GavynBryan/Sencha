@@ -26,16 +26,11 @@ struct AbilityRequest
     InvocationId Cause{};
 };
 
+// Drained by every ability pass, so it holds what one tick asked for and no asker
+// is ever turned away for lack of room.
 struct AbilityRequestQueue
 {
     std::vector<AbilityRequest> Pending;
 
-    // False when full: the asker hears no rather than a request vanishing.
-    [[nodiscard]] bool Push(const AbilityRequest& request)
-    {
-        if (Pending.size() >= kAbilityRequestCapacity)
-            return false;
-        Pending.push_back(request);
-        return true;
-    }
+    void Push(const AbilityRequest& request) { Pending.push_back(request); }
 };

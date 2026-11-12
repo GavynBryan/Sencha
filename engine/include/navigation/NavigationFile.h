@@ -28,7 +28,7 @@
 //=============================================================================
 
 inline constexpr std::uint32_t kNavigationFileMagic = MakeFourCC('S', 'N', 'A', 'V');
-inline constexpr std::uint32_t kNavigationFormatVersion = 1;
+inline constexpr std::uint32_t kNavigationFormatVersion = 2;
 
 inline constexpr std::uint32_t kNavChunkProfiles = MakeFourCC('P', 'R', 'O', 'F');
 inline constexpr std::uint32_t kNavChunkAreas = MakeFourCC('A', 'R', 'E', 'A');
@@ -67,6 +67,8 @@ struct NavLinkRecord
     float EntryRadius = 0.5f;
     Vec3d Entry = Vec3d::Zero();
     Vec3d Exit = Vec3d::Zero();
+    bool Anchored = false;
+    Vec3d Anchor = Vec3d::Zero();
 };
 
 struct NavigationFile

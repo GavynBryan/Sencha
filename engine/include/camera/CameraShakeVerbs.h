@@ -9,9 +9,7 @@ class FixedSimulationLoop;
 class VerbDispatcher;
 class World;
 
-// Shake the view once, by a camera.shake profile.
 inline constexpr std::string_view kCameraShakeVerb = "camera.shake";
-// Shake the view by a profile for as long as it is held, then release.
 inline constexpr std::string_view kCameraShakeHoldLease = "camera.shake.hold";
 
 void DeclareCameraShakeVerbs(VerbRegistrationScope& scope);

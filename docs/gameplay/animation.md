@@ -210,7 +210,8 @@ the binding.
 Gameplay values reach fact slots through `AnimFactProviders`, a World resource
 binding a slot name to a plain function over a const World. The runtime binds
 movement's (`BindMovementAnimFacts`: `Grounded`, `Speed`, `VerticalSpeed`, the
-engine schema's slots) in every host; a game binds its own. Adding an
+engine schema's slots, and `MoveForward` and `MoveRight`, planar velocity along
+the body's own axes, the axes of a directional blendspace) in every host; a game binds its own. Adding an
 animation-relevant value is one `Bind` or `BindField` call in game code, with
 no engine edit, and gathering is a call per slot per entity with no allocation
 and no virtual dispatch. A provider must produce the same value on a server
@@ -563,12 +564,13 @@ blended within the layer, over the joints its mask covers, at its weight:
   the reference to the pose, and the scale ratio, each scaled by the weight. A
   layer at its reference adds nothing.
 
-`AnimPoseState` holds how each layer absorbs changes: the playback it was last
-posed from, a crossfade's outgoing playback, and when the current blend began.
-Only a World that presents a pose carries it. The per-joint half
-(inertialization offsets, each layer's pose, and the composed pose of this tick
-and the one before, which render extraction interpolates between) is variable
-in size and lives in the World's `AnimPosePool`. `AnimPoseSystem` poses every
+A World that presents a pose carries `AnimPoseState`, which names a slot in the
+World's `AnimPosePool`. The slot holds what is sized by the rig: how each layer
+absorbs changes (the playback it was last posed from, a crossfade's outgoing
+playback, when the current blend began), inertialization offsets, and the
+composed pose of this tick and the one before, which render extraction
+interpolates between. Each layer's own pose lasts one evaluation, in per-worker
+scratch, unless the pool's `RetainLayerPoses` keeps it for a tool that shows it. `AnimPoseSystem` poses every
 rigged entity once per fixed tick, after movement. On the owner thread it
 assigns and shapes pool slots and resolves each entity's binding, the only work
 that touches shared state; it then evaluates entities across the job system,

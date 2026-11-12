@@ -1,9 +1,11 @@
 #pragma once
 
 #include <core/logging/LoggingProvider.h>
+#include <core/logging/RepeatedFailureLog.h>
 #include <graphics/BufferHandle.h>
 #include <graphics/FrameScratchRing.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -29,6 +31,8 @@ enum class ScratchTag : std::uint8_t
     ShadowInstanceTransforms,
     ForwardViewUniforms,
     ForwardInstanceData,
+    OutlineViewUniforms,
+    OutlineInstanceData,
     ImmediateVertices,
     UiVertices,
     UiIndices,
@@ -36,6 +40,25 @@ enum class ScratchTag : std::uint8_t
 };
 
 [[nodiscard]] std::string_view ToString(ScratchTag tag);
+
+[[nodiscard]] constexpr ScratchPool PoolOf(ScratchTag tag)
+{
+    switch (tag)
+    {
+    case ScratchTag::SkinningPalettes:    return ScratchPool::Skinning;
+    case ScratchTag::ForwardViewUniforms: return ScratchPool::MainView;
+    case ScratchTag::ForwardInstanceData: return ScratchPool::World;
+    case ScratchTag::UiVertices:
+    case ScratchTag::UiIndices:           return ScratchPool::Ui;
+    case ScratchTag::ShadowViewUniforms:
+    case ScratchTag::ShadowInstanceTransforms:
+    case ScratchTag::OutlineViewUniforms:
+    case ScratchTag::OutlineInstanceData:
+    case ScratchTag::ImmediateVertices:
+    case ScratchTag::Count:               return ScratchPool::Optional;
+    }
+    return ScratchPool::Optional;
+}
 
 // Per-consumer slice accounting. Used and failure counts describe the frame
 // being recorded; the high-water mark persists, which is what sizing a slice
@@ -136,6 +159,7 @@ public:
     {
         uint32_t FramesInFlight = 2;
         std::uint64_t BytesPerFrame = 1024 * 1024; // 1 MB per slice by default
+        ScratchPoolBudgets Pools{};
     };
 
     struct Allocation
@@ -201,6 +225,9 @@ public:
                                                            std::uint64_t stride,
                                                            ScratchTag tag);
 
+    // Content bytes the consumer could be granted now, before anything else allocates.
+    [[nodiscard]] std::uint64_t AvailableBytes(ScratchTag tag, std::uint64_t alignment) const;
+
     // -- Accessors ----------------------------------------------------------
 
     [[nodiscard]] BufferHandle GetBuffer() const { return RingBuffer; }
@@ -223,6 +250,8 @@ public:
 private:
     // Turns a ring offset into a binding plus a writable pointer.
     [[nodiscard]] Allocation MakeAllocation(const FrameScratchRing::Grant& grant) const;
+    // True when this failure starts a run of them for `tag`, the one to log.
+    [[nodiscard]] bool OpensFailureEpisode(ScratchTag tag);
 
     Logger& Log;
     VulkanBufferService* Buffers = nullptr;
@@ -234,5 +263,6 @@ private:
     // Slice geometry and cursors; this type owns only the memory behind them.
     FrameScratchRing Ring;
     ScratchTagCounters TagCounters;
+    std::array<RepeatedFailureLog, ScratchTagCounters::kTagCount> TagFailureLogs;
     std::uint64_t UniformAlignment = 256;
 };

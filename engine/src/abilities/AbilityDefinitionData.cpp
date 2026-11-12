@@ -506,11 +506,15 @@ namespace
             out.When = When(value, path);
             if (value.Find("lease") != nullptr)
             {
-                CheckFields(value, { "key", "lease", "when", "arguments", "targets" }, out.Key, path);
+                CheckFields(value, { "key", "lease", "when", "arguments", "targets", "scope" }, out.Key, path);
                 out.Kind = AbilityOpKind::Lease;
                 out.Operation = Text(value, "lease", out.Key, path, true);
                 out.Arguments = Arguments(value, out.Key, path);
                 out.Targets = Text(value, "targets", out.Key, path, false);
+                if (const std::string scope = Text(value, "scope", out.Key, path, false); scope == "activation")
+                    out.ForActivation = true;
+                else if (!scope.empty() && scope != "phase")
+                    Error("schema", out.Key, path, "a hold's scope is 'phase' or 'activation'");
                 return true;
             }
             out.Kind = Choice(value, "op", kOpKinds, out.Key, path, AbilityOpKind::Invoke);
@@ -1374,6 +1378,8 @@ namespace
         op.Children.push_back(Field(DataFieldKind::String, "into", "Into", "The local a query writes."));
         op.Children.push_back(Field(DataFieldKind::String, "local", "Local", "The local a set writes."));
         op.Children.push_back(Field(DataFieldKind::String, "targets", "Targets", "An entities local to repeat over."));
+        op.Children.push_back(Field(DataFieldKind::String, "scope", "Scope",
+                                    "A hold's lifetime: 'phase' (default) or 'activation'."));
         op.Children.push_back(Field(DataFieldKind::GameplayTag, "cue", "Cue"));
 
         DataFieldSchema transition = KeyedRecord("transition", "Transition");

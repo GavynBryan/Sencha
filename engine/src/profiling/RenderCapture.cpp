@@ -99,6 +99,14 @@ namespace
 			{ "scratch_bytes_per_frame", static_cast<double>(stats.ScratchBytesPerFrame) },
 			{ "scratch_alloc_failures_count", static_cast<double>(stats.ScratchAllocFailures) },
 			{ "passes_skipped_count", static_cast<double>(stats.PassesSkipped) },
+			{ "skinned_first_pose_count", static_cast<double>(stats.SkinnedFirstPose) },
+			{ "skinned_refreshed_count", static_cast<double>(stats.SkinnedRefreshed) },
+			{ "skinned_held_count", static_cast<double>(stats.SkinnedHeld) },
+			{ "skinned_awaiting_first_pose_count", static_cast<double>(stats.SkinnedAwaitingFirstPose) },
+			{ "skinned_bind_fallback_count", static_cast<double>(stats.SkinnedBindFallback) },
+			{ "skinned_pose_failures_count", static_cast<double>(stats.SkinnedPoseFailures) },
+			{ "posed_buffers_count", static_cast<double>(stats.PosedBuffers) },
+			{ "posed_buffer_bytes", static_cast<double>(stats.PosedBufferBytes) },
 		};
 		// Per-consumer slice columns, appended so the fixed set above keeps its
 		// order: a capture that shows the budget exhausted can then say which

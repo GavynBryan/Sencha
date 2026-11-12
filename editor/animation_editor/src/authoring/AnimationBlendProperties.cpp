@@ -53,16 +53,15 @@ std::vector<PropertyNode> AnimationBlendProperties::Nodes() const
     std::vector<PropertyNode> nodes{ AnimationLayerChoice(*rig, selected) };
 
     PropertyNode now = GroupProperty("now", "Blending now");
-    const AnimPoseState* state = session.SubjectPoseState();
     const AnimPosePool::Slot* slot = session.SubjectPose();
-    if (state == nullptr || slot == nullptr)
+    if (slot == nullptr)
         now.Children.push_back(NoteProperty("now.none", "Pose", rig->SkeletonPath.empty()
                                                                     ? "The rig names no skeleton, so nothing poses it."
                                                                     : "Nothing posed yet."));
     else
         for (std::size_t l = 0; l < rig->Layers.size() && l < slot->Layers; ++l)
             now.Children.push_back(NoteProperty(std::format("now.{}", l), rig->Layers[l].NameText,
-                                                BlendingNow(session, *slot, state->Layers[l], l)));
+                                                BlendingNow(session, *slot, slot->LayerStates[l], l)));
     nodes.push_back(std::move(now));
 
     if (const std::optional<AnimationBlendspaceView> space = AnimationBlendspaceOn(session, selected))

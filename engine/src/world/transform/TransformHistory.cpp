@@ -50,6 +50,22 @@ void RequestTransformHistorySnap(World& world, EntityId entity)
         history->Snap = true;
 }
 
+void PlaceSpawnedRoot(World& world, EntityId root, const Vec3d& position, std::optional<Quatf> rotation)
+{
+    const auto place = [&](Transform3f& pose) {
+        pose.Position = position;
+        if (rotation)
+            pose.Rotation = *rotation;
+    };
+    if (LocalTransform* local = world.TryGet<LocalTransform>(root))
+        place(local->Value);
+    if (WorldTransform* placed = world.TryGet<WorldTransform>(root))
+        place(placed->Value);
+    if (!world.HasComponent<WorldTransformHistory>(root))
+        world.AddComponent<WorldTransformHistory>(root, WorldTransformHistory{});
+    RequestTransformHistorySnap(world, root);
+}
+
 namespace
 {
 // A chain this deep is a cycle, which propagation refuses to order.

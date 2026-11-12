@@ -257,6 +257,45 @@ namespace
     }
 }
 
+namespace
+{
+    struct CreatedPlacement
+    {
+        EntityId Root;
+        EntityId Mount;
+        std::string_view Socket;
+        const AttachPlacement& Placement;
+    };
+
+    template <typename Content>
+    EntityId CreateAttached(World& world, const CreatedPlacement& at, const Content& content, AttachResult* result)
+    {
+        const auto report = [&](AttachResult why) {
+            if (result != nullptr)
+                *result = why;
+        };
+        if (!AttachmentsInstalled(world))
+        {
+            report(AttachResult::NotPresenting);
+            return {};
+        }
+        if (!world.IsAlive(at.Root))
+        {
+            report(AttachResult::NoRoot);
+            return {};
+        }
+        const EntityId entity = world.CreateEntity(world.GetEntityPartition(at.Root));
+        world.AddComponent<Content>(entity, content);
+        const AttachResult attached = at.Socket.empty() ? AttachToOrigin(world, at.Mount, entity, at.Placement)
+                                                        : AttachToSocket(world, at.Root, at.Socket, entity, at.Placement);
+        report(attached);
+        if (attached == AttachResult::Attached)
+            return entity;
+        world.DestroyEntity(entity);
+        return {};
+    }
+}
+
 void ComponentTraits<AttachmentSet>::OnRemove(const AttachmentSet& set, World& world, EntityId)
 {
     AttachmentRuntime* runtime = RuntimeOf(world);
@@ -366,37 +405,18 @@ void DestroyAttachmentsOf(World& world, PresentationWriterId writer)
 
 EntityId CreateMeshAttachment(World& world, const MeshAttachmentSpec& spec, AttachResult* result)
 {
-    const auto refuse = [&](AttachResult why) {
-        if (result != nullptr)
-            *result = why;
-        return EntityId{};
-    };
-    if (!AttachmentsInstalled(world))
-        return refuse(AttachResult::NotPresenting);
-    if (!world.IsAlive(spec.Root))
-        return refuse(AttachResult::NoRoot);
-
-    const EntityId entity = world.CreateEntity(world.GetEntityPartition(spec.Root));
     StaticMeshComponent mesh;
     mesh.Mesh = spec.Mesh;
     mesh.Materials = spec.Materials;
     mesh.Visible = spec.Visible;
     mesh.CastShadows = spec.CastShadows;
     mesh.AffectsBakedLighting = false;
-    world.AddComponent<StaticMeshComponent>(entity, mesh);
+    return CreateAttached(world, { spec.Root, MountOf(spec), spec.Socket, spec.Placement }, mesh, result);
+}
 
-    const EntityId mount = MountOf(spec);
-    const AttachResult attached = spec.Socket.empty()
-                                      ? AttachToOrigin(world, mount, entity, spec.Placement)
-                                      : AttachToSocket(world, spec.Root, spec.Socket, entity, spec.Placement);
-    if (attached != AttachResult::Attached)
-    {
-        world.DestroyEntity(entity);
-        return refuse(attached);
-    }
-    if (result != nullptr)
-        *result = attached;
-    return entity;
+EntityId CreateLightAttachment(World& world, const LightAttachmentSpec& spec, AttachResult* result)
+{
+    return CreateAttached(world, { spec.Root, spec.Root, spec.Socket, spec.Placement }, spec.Light, result);
 }
 
 AttachResult UpdateMeshAttachment(World& world, EntityId attached, const MeshAttachmentSpec& spec)

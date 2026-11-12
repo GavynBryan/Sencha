@@ -37,14 +37,16 @@ void AnimPosePool::Release(std::uint32_t handle, EntityId owner)
     Free.push_back(handle - 1);
 }
 
-void AnimPosePool::Slot::Shape(std::uint32_t joints, std::uint32_t layers)
+void AnimPosePool::Slot::Shape(std::uint32_t joints, std::uint32_t layers, bool retainLayerPoses)
 {
-    if (Joints == joints && Layers == layers)
+    const std::size_t layerPoseJoints = retainLayerPoses ? static_cast<std::size_t>(joints) * layers : 0;
+    if (Joints == joints && Layers == layers && LayerPoses.size() == layerPoseJoints)
         return;
     Joints = joints;
     Layers = layers;
     Offsets.assign(static_cast<std::size_t>(joints) * layers, AnimJointOffset{});
-    LayerPoses.assign(static_cast<std::size_t>(joints) * layers, Transform3f{});
+    LayerStates.assign(layers, AnimLayerPose{});
+    LayerPoses.assign(layerPoseJoints, Transform3f{});
     Current.assign(joints, Transform3f{});
     Previous.assign(joints, Transform3f{});
     HasCurrent = false;
@@ -59,11 +61,12 @@ std::span<const Mat4> AnimPosePool::Slot::PresentedModel(const SkeletonData& ske
     if (Presented.Built && Presented.Revision == Revision && Presented.Alpha == blend)
         return Presented.Model;
 
-    Presented.Local.resize(Current.size());
+    // One buffer per thread, the size of the largest rig, not one per entity.
+    static thread_local std::vector<Transform3f> local;
+    local.resize(Current.size());
     for (std::size_t j = 0; j < Current.size(); ++j)
-        Presented.Local[j] = HasPrevious && blend < 1.0f ? Transform3f::Interpolate(Previous[j], Current[j], blend)
-                                                          : Current[j];
-    BuildPosedModelTransforms(skeleton, Presented.Local, Presented.Model);
+        local[j] = HasPrevious && blend < 1.0f ? Transform3f::Interpolate(Previous[j], Current[j], blend) : Current[j];
+    BuildPosedModelTransforms(skeleton, local, Presented.Model);
     Presented.Revision = Revision;
     Presented.Alpha = blend;
     Presented.Built = true;

@@ -75,10 +75,9 @@ VerbAdmission AbilityOperations::Activate(const VerbInvocation& invocation)
     AbilityRequestQueue* queue = Entities->TryGetResource<AbilityRequestQueue>();
     if (queue == nullptr || !Read(*Entities, invocation, false, request))
         return VerbAdmission::InvalidArguments;
-    return queue->Push({ .Kind = AbilityRequestKind::Activate, .Actor = request.Target, .Ability = request.Ability,
-                         .Instigator = invocation.Instigator, .Cause = invocation.Id })
-        ? VerbAdmission::Accepted
-        : VerbAdmission::QueueFull;
+    queue->Push({ .Kind = AbilityRequestKind::Activate, .Actor = request.Target, .Ability = request.Ability,
+                  .Instigator = invocation.Instigator, .Cause = invocation.Id });
+    return VerbAdmission::Accepted;
 }
 
 VerbAdmission AbilityOperations::Cancel(const VerbInvocation& invocation)
@@ -87,10 +86,9 @@ VerbAdmission AbilityOperations::Cancel(const VerbInvocation& invocation)
     AbilityRequestQueue* queue = Entities->TryGetResource<AbilityRequestQueue>();
     if (queue == nullptr || !Read(*Entities, invocation, false, request))
         return VerbAdmission::InvalidArguments;
-    return queue->Push({ .Kind = AbilityRequestKind::Cancel, .Actor = request.Target, .Ability = request.Ability,
-                         .Instigator = invocation.Instigator, .Cause = invocation.Id })
-        ? VerbAdmission::Accepted
-        : VerbAdmission::QueueFull;
+    queue->Push({ .Kind = AbilityRequestKind::Cancel, .Actor = request.Target, .Ability = request.Ability,
+                  .Instigator = invocation.Instigator, .Cause = invocation.Id });
+    return VerbAdmission::Accepted;
 }
 
 VerbAdmission AbilityOperations::Grant(const VerbInvocation& invocation)

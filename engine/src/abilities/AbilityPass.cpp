@@ -1,5 +1,6 @@
 #include "AbilityPass.h"
 
+#include <authored/AuthoredValueTraits.h>
 #include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityLeases.h>
 #include <abilities/AbilityPredictionJournal.h>
@@ -70,9 +71,13 @@ bool AbilityPass::Live(const AbilityActor& actor, std::size_t slot) const
 
 bool AbilityPass::AuthorityRuns(const AbilityActor& actor, const AbilityRecord& guess) const
 {
-    return std::ranges::any_of(actor.Active().Records, [&](const AbilityRecord& record) {
-        return !record.Predicted && record.State == AbilityRecordState::Live && record.Identity == guess.Identity;
-    });
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+    {
+        const AbilityRecord& record = actor.Record(slot);
+        if (!record.Predicted && record.State == AbilityRecordState::Live && record.Identity == guess.Identity)
+            return true;
+    }
+    return false;
 }
 
 bool AbilityPass::Runs(const AbilityActor& actor, std::size_t slot) const
@@ -112,11 +117,11 @@ int AbilityPass::ClaimSlot(const AbilityActor& actor)
     int oldest = -1;
     for (std::size_t i = first; i < end; ++i)
     {
-        const AbilityRecord& record = active.Records[i];
+        const AbilityRecord& record = actor.Record(i);
         if (record.State == AbilityRecordState::Free && free < 0)
             free = static_cast<int>(i);
         else if (record.State == AbilityRecordState::Lingering && !(Predicting && AuthorityRuns(actor, record))
-                 && (oldest < 0 || record.Sequence < active.Records[oldest].Sequence))
+                 && (oldest < 0 || record.Sequence < actor.Record(oldest).Sequence))
             oldest = static_cast<int>(i);
     }
     if (free >= 0)
@@ -140,8 +145,8 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
     const ActiveAbilities& active = actor.Active();
     for (std::size_t i = 0; i < kAbilitySlotCapacity; ++i)
     {
-        const AbilityRecord& record = active.Records[i];
-        if (record.State != AbilityRecordState::Live || IsAbilityRecordShadowed(active, i))
+        const AbilityRecord& record = actor.Record(i);
+        if (record.State != AbilityRecordState::Live || IsAbilityRecordShadowed(active, *actor.Activations, i))
             continue;
         ++live;
         instances += record.Key.Ability == grant.Ability ? 1 : 0;
@@ -188,8 +193,7 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     const AbilityDefinition& definition = *Abilities->Get(grant.Ability);
 
     ActiveAbilities& active = actor.Active();
-    AbilityRecord& record = active.Records[slot];
-    record = AbilityRecord{};
+    AbilityRecord& record = actor.Activations->Claim(active, slot, actor.Entity).Record;
     record.Key = key;
     record.Grant = grant.Id;
     record.State = AbilityRecordState::Live;
@@ -200,7 +204,6 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     record.Sequence = active.NextSequence++;
     record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability), grant.Id);
     record.Predicted = Predicting;
-    actor.Locals(slot) = AbilityRecordLocals{};
     if (Predicting)
     {
         [[maybe_unused]] const bool tracked = Journal->Track(actor.Entity, record, actor.Locals(slot));
@@ -266,7 +269,7 @@ void AbilityPass::LeavePhase(const AbilityActor& actor, std::size_t slot, const 
 {
     if (runExit && !RunOps(actor, slot, definition, definition.Phases[actor.Record(slot).Phase].Exit))
         return;
-    ReleaseLeases(actor, slot);
+    ReleasePhaseAbilityLeases(Host.Verbs, actor.Entity, actor.Record(slot), definition, Now.TickIndex);
 }
 
 void AbilityPass::ReleaseLeases(const AbilityActor& actor, std::size_t slot)
@@ -290,10 +293,17 @@ bool AbilityPass::HoldsCompleted(const AbilityActor& actor, std::size_t slot)
         return false;
     const VerbRegistry& verbs = Host.Verbs->Registry();
     const AbilityRecord& record = actor.Record(slot);
+    const AbilityDefinition* definition = DefinitionOf(record);
+    if (definition == nullptr)
+        return false;
+    const std::vector<std::uint16_t>& phaseHolds = definition->Phases[record.Phase].Hold;
     bool completing = false;
     for (std::size_t i = 0; i < record.LeaseCount; ++i)
     {
         const AbilityHeldLease& held = record.Leases[i];
+        // A hold kept from an earlier phase says nothing about this one.
+        if (std::ranges::find(phaseHolds, static_cast<std::uint16_t>(held.Op)) == phaseHolds.end())
+            continue;
         if (!verbs.IsLive(held.Lease) || !verbs.Get(held.Lease)->Completes)
             continue;
         completing = true;
@@ -382,11 +392,9 @@ void AbilityPass::End(const AbilityActor& actor, std::size_t slot, AbilityEndRea
 AbilityPass::CuePlace AbilityPass::PlaceOf(const AuthoredValue& at)
 {
     const auto vector = [](const AuthoredValue& value) {
-        AuthoredVectorValue read;
-        return value.TryGetVector(read) ? Vec3d(static_cast<float>(read.Components[0]),
-                                                static_cast<float>(read.Components[1]),
-                                                static_cast<float>(read.Components[2]))
-                                        : Vec3d::Zero();
+        Vec3d read = Vec3d::Zero();
+        (void)AuthoredValueTraits<Vec3d>::Decode(value, read);
+        return read;
     };
     CuePlace place;
     // A hit is {hit, entity, point, normal}; an entity or a point stands alone.
@@ -568,14 +576,7 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
     if (!answered)
         return;
 
-    const auto vector = [](const AuthoredValue& from, Vec3d& to) {
-        AuthoredVectorValue read;
-        if (!from.TryGetVector(read))
-            return false;
-        to = Vec3d(static_cast<float>(read.Components[0]), static_cast<float>(read.Components[1]),
-                   static_cast<float>(read.Components[2]));
-        return true;
-    };
+    const auto vector = [](const AuthoredValue& from, Vec3d& to) { return AuthoredValueTraits<Vec3d>::Decode(from, to); };
     bool truth = false;
     std::int64_t whole = 0;
     switch (type)
@@ -703,9 +704,6 @@ void AbilityPass::Linger(const AbilityActor& actor)
         AbilityRecord& record = actor.Record(slot);
         if (record.State == AbilityRecordState::Lingering && (!Predicting || (record.Predicted && !AuthorityRuns(actor, record)))
             && Now.TickIndex >= record.EndTick + LingerTicks)
-        {
-            record = AbilityRecord{};
-            actor.Locals(slot) = AbilityRecordLocals{};
-        }
+            actor.Activations->Free(actor.Active(), slot);
     }
 }

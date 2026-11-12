@@ -50,6 +50,13 @@ struct BodyDesc
     float AngularDamping = 0.05f;
 };
 
+// Work the backend refused because a configured capacity ran out.
+struct PhysicsCapacityFailures
+{
+    uint64_t BodiesRefused = 0;
+    uint64_t OverflowedSteps = 0;
+};
+
 class PhysicsWorld
 {
 public:
@@ -64,6 +71,7 @@ public:
     void SetShapeCache(const CollisionShapeCache* cache);
 
     void Step(float dt, int collisionSteps = 1);
+    [[nodiscard]] const PhysicsCapacityFailures& GetCapacityFailures() const;
 
     // The acceleration every dynamic body falls with, before its gravity scale.
     [[nodiscard]] Vec3d GetGravity() const;

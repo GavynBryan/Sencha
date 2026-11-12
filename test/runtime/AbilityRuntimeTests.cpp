@@ -277,15 +277,18 @@ protected:
 
     [[nodiscard]] const AbilityRecord* LiveRecord(EntityId actor, AbilityId ability)
     {
-        for (const AbilityRecord& record : Entities.TryGet<ActiveAbilities>(actor)->Records)
-            if (record.State == AbilityRecordState::Live && record.Key.Ability == ability)
+        const ActiveAbilities& active = *Entities.TryGet<ActiveAbilities>(actor);
+        AbilityActivations& activations = Entities.GetResource<AbilityActivations>();
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+            if (const AbilityRecord& record = activations.Record(active, slot);
+                record.State == AbilityRecordState::Live && record.Key.Ability == ability)
                 return &record;
         return nullptr;
     }
 
     [[nodiscard]] std::size_t LiveCount(EntityId actor)
     {
-        const auto& records = Entities.TryGet<ActiveAbilities>(actor)->Records;
+        const auto records = AbilityRecordsOf(Entities, actor);
         return static_cast<std::size_t>(std::ranges::count(records, AbilityRecordState::Live, &AbilityRecord::State));
     }
 
@@ -764,7 +767,7 @@ TEST_F(AbilityRuntime, LingeringRecordsDoNotCountAsInstancesAndLeaveAfterTheirWi
     Step({ Release(kFire), Press(kFire) });
     EXPECT_EQ(Marks.Values.size(), 2u);
     const auto lingering = [&] {
-        const auto& records = Entities.TryGet<ActiveAbilities>(actor)->Records;
+        const auto records = AbilityRecordsOf(Entities, actor);
         return std::ranges::count(records, AbilityRecordState::Lingering, &AbilityRecord::State);
     };
     EXPECT_EQ(lingering(), 2);
@@ -798,6 +801,34 @@ TEST_F(AbilityRuntime, AModuleQueryGatesAnAbilityAndAModuleLeaseIsHeldAndRelease
     EXPECT_EQ(Held.Calls[2].second, Held.Calls[1].second) << "the newest hold is let go first";
     EXPECT_EQ(Held.Calls[3].second, Held.Calls[0].second);
     EXPECT_NE(Held.Calls[0].second, Held.Calls[1].second) << "each op holds under its own key";
+}
+
+TEST_F(AbilityRuntime, AHoldForTheActivationOutlivesItsPhase)
+{
+    const AbilityId kept = Define("asset://abilities/kept.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+        "phases": [
+          { "key": "p_first",
+            "hold": [ { "key": "o_kept", "lease": "test.hold", "scope": "activation" },
+                      { "key": "o_phase", "lease": "test.hold" } ],
+            "then": [ { "key": "t_next", "on": "timeout", "ticks": 1, "to": "p_second" } ] },
+          { "key": "p_second", "then": [ { "key": "t_end", "on": "release", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, kept);
+
+    Step({ Press(kFire) });
+    ASSERT_EQ(Held.Calls.size(), 2u);
+    const auto keptKey = Held.Calls[0].second;
+    const auto phaseKey = Held.Calls[1].second;
+    Step({});
+    Step({});
+    ASSERT_EQ(Held.Calls.size(), 3u) << "leaving the phase lets go of its own hold alone";
+    EXPECT_EQ(Held.Calls[2].first, LeaseStep::Release);
+    EXPECT_EQ(Held.Calls[2].second, phaseKey);
+    Step({ Release(kFire) });
+    ASSERT_EQ(Held.Calls.size(), 4u) << "the end of the activation lets go of the rest";
+    EXPECT_EQ(Held.Calls[3].first, LeaseStep::Release);
+    EXPECT_EQ(Held.Calls[3].second, keptKey);
 }
 
 TEST_F(AbilityRuntime, ARefusedLeaseEndsTheActivation)
@@ -941,7 +972,7 @@ TEST_F(AbilityRuntime, TwoGrantsOfOneAbilityStartTwoActivationsNamedApart)
     Grant(actor, watch, {}, "g_right");
     Step({ Press(kFire) });
     std::vector<std::uint64_t> identities;
-    for (const AbilityRecord& record : Entities.TryGet<ActiveAbilities>(actor)->Records)
+    for (const AbilityRecord& record : AbilityRecordsOf(Entities, actor))
         if (record.State == AbilityRecordState::Live)
             identities.push_back(record.Identity);
     ASSERT_EQ(identities.size(), 2u) << "one press, observed by both grants";
@@ -1036,12 +1067,12 @@ TEST_F(AbilityRuntime, RequestsActivateAndCancelByName)
     const EntityId actor = Actor();
     Grant(actor, charge);
     AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
-    ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge }));
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
     Step();
     const AbilityRecord* record = LiveRecord(actor, charge);
     ASSERT_NE(record, nullptr);
     EXPECT_GE(record->Key.Origin, kAbilityRequestOrigin);
-    ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge }));
+    queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge });
     Step();
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::ExplicitCancel);
 }
@@ -1248,6 +1279,170 @@ TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)
     EXPECT_EQ(skipped[0].Admission, VerbAdmission::UnresolvedReference) << "skipped for being gone, not for its guard";
 }
 
+// A hive's members all answer one death in the same tick.
+TEST_F(AbilityRuntime, EveryRequestOfATickIsHeardHoweverManyThereAre)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    std::vector<EntityId> actors;
+    for (int i = 0; i < 300; ++i)
+    {
+        actors.push_back(Actor());
+        Grant(actors.back(), charge, {}, "g_" + std::to_string(i));
+        queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actors.back(), .Ability = charge });
+    }
+    Step();
+    for (const EntityId actor : actors)
+        EXPECT_NE(LiveRecord(actor, charge), nullptr);
+}
+
+TEST_F(AbilityRuntime, AFinishedActivationLeavesThePoolWhenItsLingerEnds)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    Grant(actor, charge);
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    const AbilityActivations& pool = Entities.GetResource<AbilityActivations>();
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
+    Step();
+    EXPECT_EQ(pool.Stats().Live, 1u);
+    queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge });
+    Step();
+    EXPECT_EQ(pool.Stats().Live, 1u) << "it lingers for presentation";
+    Steps(static_cast<int>(Settings.LingerTicks) + 1);
+    EXPECT_EQ(pool.Stats().Live, 0u);
+}
+
+TEST_F(AbilityRuntime, AnActivationStaysPutWhenItsActorChangesRows)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    Grant(actor, charge);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
+    Step();
+    const AbilityRecord* before = LiveRecord(actor, charge);
+    ASSERT_NE(before, nullptr);
+    const std::uint64_t identity = before->Identity;
+
+    Entities.RemoveComponent<LookOrientation>(actor);
+    Entities.AddComponent<LookOrientation>(actor, LookOrientation{});
+    ASSERT_TRUE(Entities.MoveEntityToPartition(actor, StoragePartitionId{ 7 }));
+    Step();
+
+    EXPECT_EQ(LiveRecord(actor, charge), before) << "a row move carries the handle and leaves the activation";
+    EXPECT_EQ(before->Identity, identity);
+    EXPECT_EQ(Entities.GetResource<AbilityActivations>().Stats().Live, 1u);
+}
+
+TEST_F(AbilityRuntime, ADestroyedActorsActivationsAreCollectedAndItsHandlesGoStale)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    Grant(actor, charge);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
+    Step();
+    const ActiveAbilities remembered = *Entities.TryGet<ActiveAbilities>(actor);
+    AbilityActivations& pool = Entities.GetResource<AbilityActivations>();
+    ASSERT_EQ(pool.Stats().Live, 1u);
+
+    Entities.DestroyEntity(actor);
+    Step();
+    EXPECT_EQ(pool.Stats().Live, 0u);
+
+    const EntityId next = Actor();
+    Grant(next, charge);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = next, .Ability = charge });
+    Step();
+    ASSERT_EQ(pool.Stats().Live, 1u);
+    EXPECT_EQ(std::as_const(pool).Record(remembered, 0).State, AbilityRecordState::Free)
+        << "the slot was reused, so the old handle names nothing";
+}
+
+TEST_F(AbilityRuntime, AnActorGivenBackItsComponentDoesNotInheritActivations)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    Grant(actor, charge);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
+    Step();
+    Entities.RemoveComponent<ActiveAbilities>(actor);
+    Entities.AddComponent<ActiveAbilities>(actor, ActiveAbilities{});
+    Step();
+    EXPECT_EQ(Entities.GetResource<AbilityActivations>().Stats().Live, 0u);
+    EXPECT_EQ(LiveRecord(actor, charge), nullptr);
+}
+
+TEST_F(AbilityRuntime, WarmedUpCombatStartsActivationsWithoutAllocating)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    std::vector<EntityId> actors;
+    for (int i = 0; i < 32; ++i)
+    {
+        actors.push_back(Actor());
+        Grant(actors.back(), charge, {}, "g_" + std::to_string(i));
+    }
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    const AbilityActivations& pool = Entities.GetResource<AbilityActivations>();
+    const auto round = [&] {
+        for (const EntityId actor : actors)
+            queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = charge });
+        Step();
+        for (const EntityId actor : actors)
+            queue.Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = charge });
+        Step();
+    };
+    for (int i = 0; i < 3 * static_cast<int>(Settings.LingerTicks); ++i)
+        round();
+    const std::uint64_t warmed = pool.Stats().Allocated;
+    for (int i = 0; i < 200; ++i)
+        round();
+    EXPECT_EQ(pool.Stats().Allocated, warmed);
+    EXPECT_GE(pool.Stats().Reused, 200u * actors.size());
+}
+
+TEST_F(AbilityRuntime, SpareActivationsStayBoundedAfterABurst)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    std::vector<EntityId> actors;
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    for (int i = 0; i < 400; ++i)
+    {
+        actors.push_back(Actor());
+        Grant(actors.back(), charge, {}, "g_" + std::to_string(i));
+        queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actors.back(), .Ability = charge });
+    }
+    Step();
+    const AbilityActivations& pool = Entities.GetResource<AbilityActivations>();
+    ASSERT_EQ(pool.Stats().Live, 400u);
+    for (const EntityId actor : actors)
+        Entities.DestroyEntity(actor);
+    Step();
+    EXPECT_EQ(pool.Stats().Live, 0u);
+    EXPECT_EQ(pool.Stats().Spare, AbilityActivations::kRetention.Floor);
+}
+
+// One actor's requests name its starts apart, wherever others' fall in the queue.
+TEST_F(AbilityRuntime, ARequestsNameDependsOnlyOnItsOwnActor)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId first = Actor();
+    const EntityId second = Actor();
+    Grant(first, charge);
+    Grant(second, charge);
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = first, .Ability = charge });
+    queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = second, .Ability = charge });
+    Step();
+    ASSERT_NE(LiveRecord(first, charge), nullptr);
+    ASSERT_NE(LiveRecord(second, charge), nullptr);
+    EXPECT_EQ(LiveRecord(first, charge)->Key.Origin, kAbilityRequestOrigin);
+    EXPECT_EQ(LiveRecord(second, charge)->Key.Origin, kAbilityRequestOrigin);
+}
+
 TEST_F(AbilityRuntime, AFifthLiveRecordIsRefusedForCapacity)
 {
     std::vector<AbilityId> waits;
@@ -1259,7 +1454,7 @@ TEST_F(AbilityRuntime, AFifthLiveRecordIsRefusedForCapacity)
     for (int i = 0; i < 5; ++i)
     {
         Grant(actor, waits[i], {}, "g_" + std::to_string(i));
-        ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = waits[i] }));
+        queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = waits[i] });
     }
     Step();
     EXPECT_EQ(LiveCount(actor), 4u);

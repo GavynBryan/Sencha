@@ -49,12 +49,15 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
     if (!world.IsRegistered<SightSensor>() || !world.IsRegistered<SightTarget>())
     {
         Cursors.clear();
+        Held.clear();
+        HeldRows.clear();
         return;
     }
     Gather(world, partitions);
     stats.Sensors = static_cast<std::uint32_t>(Placed.size());
     stats.Targets = static_cast<std::uint32_t>(PlacedTargets.size());
 
+    const std::uint32_t interval = std::max(settings.ScanIntervalTicks, 1u);
     const PhysicsQueries physics(Physics);
     for (const PlacedObserver& observer : Placed)
     {
@@ -66,6 +69,13 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
         const SightObserver& eye = *observer.Eye;
         const bool traced = settings.Trace
             && (!settings.TracedObserver.IsValid() || settings.TracedObserver == observer.Entity);
+        const HeldScan* held = interval > 1 ? FindHeld(observer.Entity) : nullptr;
+        if (held != nullptr && !traced && (observer.Entity.Index + settings.Tick) % interval != 0)
+        {
+            Replay(world, *held, settings.Sense, frame);
+            ++stats.HeldScans;
+            continue;
+        }
         const EntityId ignore[] = { observer.Entity };
         const PhysicsQueryFilter filter{ .IgnoreEntities = ignore };
 
@@ -126,9 +136,42 @@ void SightScan::Run(const World& world, const StoragePartitionSet& partitions, c
         }
         frame.EndScan(coverage);
         stats.PartialScans += coverage == ScanCoverage::Partial ? 1u : 0u;
+        if (interval > 1)
+            Hold(observer.Entity, frame, coverage);
     }
     std::swap(Cursors, NextCursors);
     NextCursors.clear();
+    std::swap(Held, NextHeld);
+    std::swap(HeldRows, NextHeldRows);
+    NextHeld.clear();
+    NextHeldRows.clear();
+}
+
+const SightScan::HeldScan* SightScan::FindHeld(EntityId observer) const
+{
+    const auto found = std::ranges::lower_bound(Held, observer, {}, &HeldScan::Observer);
+    return found != Held.end() && found->Observer == observer ? &*found : nullptr;
+}
+
+void SightScan::Hold(EntityId observer, const PerceptionFrame& frame, ScanCoverage coverage)
+{
+    const std::span<const Observation> rows = frame.LastScanRows();
+    NextHeld.push_back({ observer, static_cast<std::uint32_t>(NextHeldRows.size()),
+                         static_cast<std::uint32_t>(rows.size()), coverage });
+    NextHeldRows.insert(NextHeldRows.end(), rows.begin(), rows.end());
+}
+
+void SightScan::Replay(const World& world, const HeldScan& held, GameplayTagId sense, PerceptionFrame& frame)
+{
+    frame.BeginScan(held.Observer, sense);
+    for (const Observation& row : std::span<const Observation>(HeldRows).subspan(held.First, held.Count))
+        if (world.IsAlive(row.Subject))
+            frame.AddHeld(row);
+    frame.EndScan(held.Coverage);
+    Hold(held.Observer, frame, held.Coverage);
+    const auto cursor = std::ranges::lower_bound(Cursors, held.Observer, {}, &RayCursor::Observer);
+    if (cursor != Cursors.end() && cursor->Observer == held.Observer)
+        NextCursors.push_back(*cursor);
 }
 
 void SightScan::GrantRays(EntityId observer, std::uint32_t raysPerObserver)

@@ -300,6 +300,18 @@ TEST(EngineScheduleOrderingDeath, AnEdgeBetweenSystemsSharingNoPhaseDies)
                  "share no frame phase");
 }
 
+TEST(EngineScheduleOrderingDeath, ACycleDiesAtInitInsteadOfDroppingSystems)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ScheduleHarness harness;
+    harness.Schedule.Register<FixedA>();
+    harness.Schedule.Register<FixedB>();
+    harness.Schedule.After<FixedA, FixedB>();
+    harness.Schedule.After<FixedB, FixedA>();
+
+    EXPECT_DEATH(harness.Schedule.Init(), "cycle");
+}
+
 TEST(EngineScheduleOrdering, AnEdgeWithinOnePhaseIsRecorded)
 {
     ScheduleHarness harness;
@@ -325,4 +337,51 @@ TEST(EngineScheduleOrdering, AnEdgeWithinOnePhaseIsRecorded)
     ASSERT_NE(a, CallLog.end());
     ASSERT_NE(b, CallLog.end());
     EXPECT_LT(a, b);
+}
+
+namespace
+{
+    struct TimedSystem
+    {
+        int Runs = 0;
+        void FixedLogic(FixedLogicContext&) { ++Runs; }
+    };
+
+    std::uint64_t TimedCalls(const EngineSchedule& schedule)
+    {
+        std::uint64_t calls = 0;
+        for (const ScheduleSystemTiming& timing : schedule.CollectTimings())
+            calls += timing.Calls;
+        return calls;
+    }
+}
+
+TEST(EngineScheduleTiming, CountsOnlyWhileEnabledAndResets)
+{
+    ScheduleHarness harness;
+    TimedSystem& system = harness.Schedule.Register<TimedSystem>();
+    harness.Schedule.Init();
+    const FrameZoneView& view = harness.BuildView();
+    FixedLogicContext ctx{
+        .Config = harness.Config,
+        .Runtime = harness.Runtime,
+        .Time = {},
+        .Entities = *view.Entities,
+        .Partitions = view.Logic,
+    };
+
+    harness.Schedule.RunFixedLogic(ctx);
+    EXPECT_EQ(TimedCalls(harness.Schedule), 0u);
+
+    harness.Schedule.SetTimingEnabled(true);
+    harness.Schedule.RunFixedLogic(ctx);
+    harness.Schedule.RunFixedLogic(ctx);
+    EXPECT_EQ(TimedCalls(harness.Schedule), 2u);
+    ASSERT_EQ(harness.Schedule.CollectTimings().size(), 1u);
+    EXPECT_STREQ(harness.Schedule.CollectTimings()[0].Phase, "FixedLogic");
+
+    harness.Schedule.ResetTimings();
+    EXPECT_EQ(TimedCalls(harness.Schedule), 0u);
+    EXPECT_EQ(system.Runs, 3);
+    harness.EndView();
 }

@@ -32,6 +32,7 @@
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityGrants.h>
+#include <abilities/AbilityActivations.h>
 #include <abilities/AbilityLocals.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilityRequestQueue.h>
@@ -53,7 +54,6 @@ using AbilityKitComponents = ComponentSet<
     ActiveEffect,
     AbilityGrants,
     ActiveAbilities,
-    AbilityLocals,
     AbilityCueLog,
     AbilityPredictedCues,
     AbilityPresentationState>;

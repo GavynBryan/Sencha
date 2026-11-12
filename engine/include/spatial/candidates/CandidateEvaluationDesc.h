@@ -3,24 +3,15 @@
 #include <spatial/candidates/CandidateCatalogs.h>
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
-#include <math/ResponseCurve.h>
+#include <math/ConsiderationRule.h>
 
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
 
 // A definition compiled with no World, shared by every World that binds it.
 // Authored form: docs/spatial/candidates.md.
-
-enum class CandidateCriterionMode : std::uint8_t
-{
-    // Rejects candidates whose value lies outside [Min, Max].
-    Require,
-    // Maps the value through Curve and weights it.
-    Score,
-};
 
 enum class CandidateSelectionMode : std::uint8_t
 {
@@ -53,14 +44,7 @@ struct CandidateCriterion
     CandidateAppliesTo AppliesTo = CandidateAppliesTo::Any;
     CandidateValueKind Value = CandidateValueKind::Scalar;
 
-    CandidateCriterionMode Mode = CandidateCriterionMode::Require;
-    float Min = -std::numeric_limits<float>::infinity();
-    float Max = std::numeric_limits<float>::infinity();
-    std::optional<ResponseCurve> Curve;
-    float Weight = 1.0f;
-
-    // Unmeasured candidates are rejected unless this is set.
-    std::optional<float> UnmeasuredScore;
+    ConsiderationRule Rule;
 
     // Position in the authored list; scores sum in this order.
     std::uint32_t AuthoredIndex = 0;

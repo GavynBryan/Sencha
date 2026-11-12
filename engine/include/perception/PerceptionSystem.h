@@ -25,6 +25,8 @@ struct SightStats
     std::uint32_t Untested = 0;
     std::uint32_t Raycasts = 0;
     std::uint32_t PartialScans = 0;
+    // Observers answering from their last scan this tick.
+    std::uint32_t HeldScans = 0;
 };
 
 // One candidate's fate, kept while debug drawing or the debug panel asks.
@@ -53,6 +55,9 @@ public:
     void FixedLogic(FixedLogicContext& ctx);
 
     [[nodiscard]] const SightStats& LastSightStats() const;
+    // Stimuli the last hearing pass took, and the observations ears made of them.
+    [[nodiscard]] std::uint32_t LastStimuli() const;
+    [[nodiscard]] std::uint32_t LastHeard() const;
 
     // Debug inspection. The trace is kept only while drawing is on or an
     // observer is selected; with a selection it holds that observer's rows.

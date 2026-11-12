@@ -164,14 +164,21 @@ namespace candidate_operation
     [[nodiscard]] CandidateGeneratorDefinition EntitiesGenerator();
     [[nodiscard]] CandidateGeneratorDefinition RingGenerator();
     [[nodiscard]] CandidateGeneratorDefinition GridGenerator();
+    [[nodiscard]] CandidateGeneratorDefinition SurfaceGenerator();
     [[nodiscard]] CandidateGeneratorDefinition ReachableGenerator();
     [[nodiscard]] CandidateMeasureDefinition DistanceMeasure();
     [[nodiscard]] CandidateMeasureDefinition HeightMeasure();
     [[nodiscard]] CandidateMeasureDefinition FacingMeasure();
+    [[nodiscard]] CandidateMeasureDefinition CrowdingMeasure();
+    [[nodiscard]] CandidateMeasureDefinition SeparationMeasure();
+    [[nodiscard]] CandidateMeasureDefinition LaneClearanceMeasure();
+    [[nodiscard]] CandidateMeasureDefinition BackstopMeasure();
     [[nodiscard]] CandidateMeasureDefinition EntityTagsMeasure();
     [[nodiscard]] CandidateMeasureDefinition ReachableMeasure();
     [[nodiscard]] CandidateMeasureDefinition TravelCostMeasure();
     [[nodiscard]] CandidateMeasureDefinition VisibilityMeasure();
     [[nodiscard]] CandidateMeasureDefinition RouteVisibilityMeasure();
+    [[nodiscard]] CandidateMeasureDefinition EdgeDistanceMeasure();
+    [[nodiscard]] CandidateMeasureDefinition EscapeRoutesMeasure();
     [[nodiscard]] CandidateMeasureDefinition AuthoredQueryMeasure();
 }

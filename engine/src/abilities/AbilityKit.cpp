@@ -1,5 +1,6 @@
 #include <abilities/AbilityKit.h>
 
+#include <abilities/AbilityActivations.h>
 #include <abilities/AbilityPredictionJournal.h>
 
 #include <abilities/AbilityGrantsSerializer.h>
@@ -60,6 +61,8 @@ void RegisterAbilityKit(World& world)
         world.AddResource<AbilityTrace>();
     if (!world.HasResource<AbilityPredictionJournal>())
         world.AddResource<AbilityPredictionJournal>();
+    if (!world.HasResource<AbilityActivations>())
+        world.AddResource<AbilityActivations>();
 }
 
 void RegisterAbilityKitSystems(EngineSchedule& schedule, const AbilityHost& host)

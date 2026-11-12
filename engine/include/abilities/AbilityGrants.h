@@ -4,7 +4,6 @@
 #include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityGrantId.h>
 #include <abilities/AbilityId.h>
-#include <abilities/AbilityLocals.h>
 #include <abilities/AbilityPresentationState.h>
 #include <abilities/ActiveAbilities.h>
 #include <ecs/ComponentAnnotations.h>
@@ -59,7 +58,7 @@ template<>
 struct ComponentTraits<AbilityGrants>
 {
     using DerivedComponents =
-        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPredictedCues, AbilityPresentationState,
+        std::tuple<ActiveAbilities, AbilityCueLog, AbilityPresentationState,
                    ActorTime, GameplayTagContainer>;
 };
 

@@ -45,20 +45,20 @@ namespace
 
             State.Slot = Pool.Allocate(EntityId{});
             Slot = Pool.Find(State.Slot, EntityId{});
-            Slot->Shape(2, 2);
+            Slot->Shape(2, 2, true);
             Slot->LayerPose(0)[0].Position = Vec3d(2.0f, 0.0f, 0.0f);
             Slot->LayerPose(1)[1].Position = Vec3d(5.0f, 0.0f, 0.0f);
             Slot->Current[0].Position = Vec3d(2.0f, 0.0f, 0.0f);
             Slot->Current[1].Position = Vec3d(5.0f, 0.0f, 0.0f);
             Slot->HasCurrent = true;
-            for (AnimLayerPose& layer : State.Layers)
+            for (AnimLayerPose& layer : Slot->LayerStates)
                 layer.Playing.Content = 0;
         }
 
         std::vector<Transform3f> Shown(const AnimationLayerDisplay& display)
         {
             std::vector<Transform3f> pose;
-            AnimationPreviewDisplayPose(AnimPoseSources{ &Rig, &Clips, &Skeleton }, *Slot, State, nullptr, display, 0,
+            AnimationPreviewDisplayPose(AnimPoseSources{ &Rig, &Clips, &Skeleton }, *Slot, nullptr, display, 0,
                                         1.0 / 60.0, Scratch, pose);
             return pose;
         }

@@ -2,6 +2,7 @@
 
 #include <camera/CameraSubject.h>
 #include <ecs/World.h>
+#include <time/SimClock.h>
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +20,11 @@ bool Duration(float seconds)
     return std::isfinite(seconds) && seconds >= 0.0f;
 }
 } // namespace
+
+CameraEffectClock CameraEffectClock::At(const FixedSimulationLoop& clock, double presentationAlpha)
+{
+    return { .Tick = clock.GetTickIndex(), .Alpha = presentationAlpha, .TickSeconds = clock.GetFixedDt() };
+}
 
 bool IsValidCameraEnvelope(const CameraEnvelope& envelope)
 {

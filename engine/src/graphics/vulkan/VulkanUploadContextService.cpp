@@ -82,6 +82,7 @@ void VulkanUploadContextService::DestroyResources()
 
 VkCommandBuffer VulkanUploadContextService::Begin()
 {
+    if (Wedged) return VK_NULL_HANDLE;
     if (UploadPool == VK_NULL_HANDLE) return VK_NULL_HANDLE;
 
     VkCommandBufferAllocateInfo info{};
@@ -148,11 +149,9 @@ bool VulkanUploadContextService::Submit(VkCommandBuffer cmd)
     if (result != VK_SUCCESS)
     {
         Log.Error("upload: vkWaitForFences failed ({})", static_cast<int>(result));
-        // On timeout the submission may still be executing, and freeing a
-        // pending command buffer is invalid use, so the buffer is leaked
-        // deliberately. Device loss retires the submission, so the free is
-        // legal there.
-        if (result != VK_TIMEOUT)
+        const UploadWaitResponse response = ClassifyUploadWait(result);
+        Wedged = response.Wedged;
+        if (response.FreeCommandBuffer)
             vkFreeCommandBuffers(Device, UploadPool, 1, &cmd);
         return false;
     }

@@ -40,7 +40,7 @@ struct CandidateDetail
 struct CandidateTraceCriterion
 {
     std::string Measure;
-    CandidateCriterionMode Mode = CandidateCriterionMode::Require;
+    ConsiderationMode Mode = ConsiderationMode::Require;
     std::uint32_t Evaluated = 0;
     std::uint32_t Rejected = 0;
     std::array<std::uint32_t, static_cast<std::size_t>(CandidateMeasureStatus::Count)> Statuses{};
@@ -73,6 +73,11 @@ struct CandidateTraceRow
     CandidateMeasureStatus RejectStatus = CandidateMeasureStatus::Ok;
     float Score = 0.0f;
 };
+
+class CandidateTrace;
+
+// The run's outcome, then each requirement: how many it rejected and why.
+[[nodiscard]] std::string DescribeCandidateTrace(const CandidateTrace& trace);
 
 class CandidateTrace
 {

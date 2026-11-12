@@ -31,6 +31,8 @@ struct NavLinkInfo
     float EntryRadius = 0.5f;
     Vec3d Entry = Vec3d::Zero();
     Vec3d Exit = Vec3d::Zero();
+    bool Anchored = false;
+    Vec3d Anchor = Vec3d::Zero();
     bool Enabled = true;
     float CostScale = 1.0f;
     // Bumped when usability, cost, or attachment changes; see NavValidateRoute.

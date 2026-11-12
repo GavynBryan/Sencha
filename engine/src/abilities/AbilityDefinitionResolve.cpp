@@ -503,6 +503,7 @@ namespace
             AbilityOp op;
             op.Key = declared.Key;
             op.Kind = declared.Kind;
+            op.ForActivation = declared.ForActivation;
             if (declared.When)
                 op.When = Condition(*declared.When, &declared);
             if (!declared.Targets.empty())

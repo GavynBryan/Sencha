@@ -44,6 +44,8 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/EffectReactions.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/decision/DecisionAgent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/Responses.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/VerbRelay.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/JumpState.h"
@@ -56,15 +58,20 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavAgent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/line/ContactLine.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavigationGeometry.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/participant/ParticipantControl.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/HearingSensor.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/ObservationMemory.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/ObservationSharing.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterController.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/CharacterMoverLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/Collider.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/HitRegion.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/PhysicsBodyLink.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/physics/components/RigidBody.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/projectile/Projectile.h"
@@ -492,6 +499,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # EngineConfig reaches a game module through GameConfigureContext, so its
     # sections are layout the module compiled against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/config/*.h"
+    # Engine holds the render stats by value, so their fields move members a
+    # module's inline accessors read.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/profiling/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/ecs/*.h"
     # The authored UI surface: a game holds UiScreenHandle, UiValue and the ids
     # by value and reaches the service through an inline Engine accessor, so
@@ -505,6 +515,14 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # invocation values by value.
     "${SENCHA_ENGINE_INCLUDE_DIR}/authored/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/*.h"
+    # A module holds bound selection tables and candidate evaluations by value,
+    # with the curves and tag queries inside them.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/selection/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/decision/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/ResponseCurve.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/ConsiderationRule.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagQuery.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagQueryNames.h"
     # Navigation queries: a game holds locations, regions, requests, and route
     # buffers by value and reaches the system through Schedule().Get<>().
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/*.h"

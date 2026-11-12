@@ -113,13 +113,27 @@ Projectile
 
     SENCHA_FIELD("hits_characters")
     SENCHA_LABEL("Hits characters")
-    SENCHA_TOOLTIP("It strikes walking characters, whose capsules no physics query sees.")
+    SENCHA_TOOLTIP("It strikes characters as well as bodies.")
     bool HitsCharacters = true;
 
     SENCHA_FIELD("ends_with_instigator")
     SENCHA_LABEL("Ends with instigator")
     SENCHA_TOOLTIP("It ends when whatever launched it is gone; otherwise it flies on.")
     bool EndsWithInstigator = false;
+
+    SENCHA_FIELD("hit_scale_query")
+    SENCHA_OPTIONAL
+    SENCHA_LABEL("Hit scale query")
+    SENCHA_TOOLTIP("An authored query {target, region, kind} whose number scales the effects a strike "
+                   "applies, as a game reads where it struck. Empty applies them as authored.")
+    InlineString<64> HitScaleQuery;
+
+    SENCHA_FIELD("ignores")
+    SENCHA_OPTIONAL
+    SENCHA_LABEL("Ignores")
+    SENCHA_TOOLTIP("A gameplay tag: an entity carrying it is neither struck nor stops it, as if it were not "
+                   "there. Empty ignores nothing.")
+    InlineString<64> Ignores;
 };
 
 static_assert(std::is_trivially_copyable_v<Projectile>, "Projectile must be trivially copyable to live in ECS chunks");

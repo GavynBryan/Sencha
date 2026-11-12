@@ -73,6 +73,10 @@ struct GraphicsServices
     GraphicsServices(const GraphicsServices&) = delete;
     GraphicsServices& operator=(const GraphicsServices&) = delete;
 
+    // How many skinned instances a frame poses, and the palette bytes they may use.
+    std::uint32_t SkinnedPoseDispatchesPerFrame = 0;
+    std::uint64_t SkinnedPaletteBytesPerFrame = 0;
+
     // True when every service in the chain initialized successfully.
     [[nodiscard]] bool IsValid() const;
 
@@ -87,10 +91,11 @@ private:
     GraphicsServices(LoggingProvider& logging,
                      const VulkanBootstrapPolicy& policy,
                      std::uint32_t framesInFlight,
-                     std::uint64_t scratchBytesPerFrame,
+                     const GpuFrameScratch::Config& scratch,
                      SdlWindow& window);
 
     static VulkanBootstrapPolicy BuildPolicy(const EngineConfig& config,
                                              SdlWindowService& windows);
     static std::uint32_t ResolveFramesInFlight(const EngineConfig& config);
+    static GpuFrameScratch::Config BuildScratchConfig(const EngineConfig& config);
 };

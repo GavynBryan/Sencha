@@ -1,6 +1,7 @@
 #include <perception/PerceptionRegistration.h>
 
 #include <app/EngineSchedule.h>
+#include <perception/ObservationMemorySystem.h>
 #include <perception/PerceptionSystem.h>
 #include <physics/PhysicsStepSystem.h>
 
@@ -13,4 +14,6 @@ void RegisterPerception(EngineSchedule& schedule, ConsoleRegistry* console)
     if (physics == nullptr)
         return;
     schedule.Register<PerceptionSystem>(physics->GetSimulation(), console);
+    schedule.Register<ObservationMemorySystem>();
+    schedule.After<ObservationMemorySystem, PerceptionSystem>();
 }

@@ -1,5 +1,7 @@
 #include <logic/InteractUse.h>
 
+#include <core/metadata/DataSchemaFields.h>
+#include <authored/AuthoredValueTraits.h>
 #include <ecs/World.h>
 #include <world/SimulationAuthority.h>
 
@@ -9,19 +11,6 @@
 
 namespace
 {
-Vec3d VectorOf(const AuthoredVectorValue& value)
-{
-    return Vec3d(static_cast<float>(value.Components[0]), static_cast<float>(value.Components[1]),
-                 static_cast<float>(value.Components[2]));
-}
-
-DataFieldSchema Vector(std::string key, std::string label, std::string summary)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Vector, std::move(key), std::move(label), std::move(summary));
-    field.VectorLength = 3;
-    field.Required = false;
-    return field;
-}
 } // namespace
 
 UseCandidate FindUseCandidate(ResponsesSystem& responses, const PhysicsQueries& physics, EntityId activator,
@@ -59,9 +48,9 @@ void DeclareInteractUseVocabulary(VerbRegistrationScope& verbs, AuthoredEventReg
         MakeDataField(DataFieldKind::Float, "range", "Range", "How far, in metres, the ray reaches.");
     range.Numeric.Minimum = 0.0;
     use.Arguments.Children.push_back(std::move(range));
-    use.Arguments.Children.push_back(Vector("origin", "Origin", "Where the ray starts. The activator's aim when absent."));
+    use.Arguments.Children.push_back(DataField::Vector("origin", "Origin", "Where the ray starts. The activator's aim when absent.", 3, false));
     DataFieldSchema direction =
-        Vector("direction", "Direction", "Which way the ray goes. The activator's aim when absent.");
+        DataField::Vector("direction", "Direction", "Which way the ray goes. The activator's aim when absent.", 3, false);
     direction.Editor.Widget = "direction";
     use.Arguments.Children.push_back(std::move(direction));
     (void)verbs.Declare(std::move(use));
@@ -99,12 +88,8 @@ VerbAdmission InteractUseOperations::Use(const VerbInvocation& invocation)
         return VerbAdmission::Refused;
 
     Aim ray = AimOf(*Entities, activator);
-    AuthoredVectorValue origin;
-    AuthoredVectorValue direction;
-    if (arguments->TryGetVector(2, origin) && origin.Length == 3)
-        ray.Origin = VectorOf(origin);
-    if (arguments->TryGetVector(3, direction) && direction.Length == 3)
-        ray.Direction = VectorOf(direction);
+    (void)ReadAuthoredArgument(*arguments, 2, ray.Origin);
+    (void)ReadAuthoredArgument(*arguments, 3, ray.Direction);
     const float length = ray.Direction.Magnitude();
     if (!(length > 1.0e-6f))
         return VerbAdmission::InvalidArguments;

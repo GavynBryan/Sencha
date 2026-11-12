@@ -11,6 +11,8 @@
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
+#include <line/ContactLineSystem.h>
+#include <logic/ClaimVocabulary.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
@@ -31,6 +33,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
     , Attachments(std::make_unique<AttachmentOperations>(entities))
+    , AttachedLights(std::make_unique<AttachedLightOperations>(entities, clock))
     , FovScale(std::make_unique<CameraFovScaleOperations>(entities, clock))
     , Shake(std::make_unique<CameraShakeOperations>(entities, clock, verbs))
     , Responses(std::make_unique<ResponseOperations>(entities, clock))
@@ -51,12 +54,14 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementLaunch>(catalog.Find(kMovementLaunchVerb), *Movement));
+    Verbs.push_back(verbs.Bind<&InvokeMovementImpulse>(catalog.Find(kMovementImpulseVerb), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeNavigationMoveTo>(catalog.Find(kNavigationMoveToVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeNavigationApproach>(catalog.Find(kNavigationApproachVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
     Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(catalog.Find(kPresentationAttachLease), *Attachments));
+    Verbs.push_back(verbs.Bind<&InvokePresentationLight>(catalog.Find(kPresentationLightLease), *AttachedLights));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(catalog.Find(kCameraFovScaleVerb), *FovScale));
     Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(catalog.Find(kCameraFovScaleHoldLease), *FovScale));
     Verbs.push_back(verbs.Bind<&InvokeCameraShake>(catalog.Find(kCameraShakeVerb), *Shake));
@@ -64,6 +69,8 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeResponsesEnable>(catalog.Find(kResponsesEnableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeResponsesDisable>(catalog.Find(kResponsesDisableVerb), *Responses));
     Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Responses));
+    Verbs.push_back(BindPerceptionVerbs(verbs, entities));
+    Verbs.push_back(BindClaimVerbs(verbs, entities));
 }
 
 EngineVocabularyBindings::~EngineVocabularyBindings()
@@ -76,6 +83,8 @@ void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
 {
     for (AuthoredQueryBindingToken& token : BindPerceptionQueries(queries, Entities))
         Queries.push_back(std::move(token));
+    for (AuthoredQueryBindingToken& token : BindClaimQueries(queries, Entities))
+        Queries.push_back(std::move(token));
 }
 
 void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
@@ -87,6 +96,16 @@ void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
 void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs)
 {
     Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
+}
+
+void EngineVocabularyBindings::BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs,
+                                                AuthoredQueryDispatcher& queries)
+{
+    Verbs.push_back(verbs.Bind<&InvokeLineExtend>(verbs.Registry().Find(kLineExtendLease), lines));
+    Verbs.push_back(verbs.Bind<&InvokeLineCut>(verbs.Registry().Find(kLineCutVerb), lines));
+    Verbs.push_back(verbs.Bind<&InvokeLineRetract>(verbs.Registry().Find(kLineRetractVerb), lines));
+    for (AuthoredQueryBindingToken& token : BindContactLineQueries(queries, lines))
+        Queries.push_back(std::move(token));
 }
 
 void EngineVocabularyBindings::BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses,
@@ -103,4 +122,6 @@ void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, Authored
                                                           std::as_const(*Physics)));
     Queries.push_back(queries.Bind<&EvaluatePhysicsOverlap>(queries.Registry().Find(kPhysicsOverlapQuery),
                                                             std::as_const(*Physics)));
+    Queries.push_back(queries.Bind<&EvaluatePhysicsClearPath>(queries.Registry().Find(kPhysicsClearPathQuery),
+                                                              std::as_const(*Physics)));
 }

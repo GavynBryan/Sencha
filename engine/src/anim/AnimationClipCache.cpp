@@ -19,7 +19,7 @@ AnimationClipHandle AnimationClipCache::Register(std::string_view name,
 
     // Existing entry already owns its own skeleton reference; ownedSkeleton
     // releases on return.
-    if (AnimationClipHandle existing = FindRegisteredHandle(name); existing.IsValid())
+    if (AnimationClipHandle existing = FindRegisteredHandle(name, /*addRef*/ true); existing.IsValid())
         return existing;
 
     AnimationClipEntry entry;

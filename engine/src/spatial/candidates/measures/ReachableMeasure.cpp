@@ -4,10 +4,16 @@ namespace candidate_operation
 {
     namespace
     {
-        CandidatePrepared PrepareReachable(const JsonValue& arguments, const CandidatePrepareContext&,
-                                           std::string_view, std::vector<std::string>&)
+        CandidatePrepared PrepareReachable(const JsonValue& arguments, const CandidatePrepareContext& context,
+                                           std::string_view subject, std::vector<std::string>& errors)
         {
-            const NavigationMeasureState state = ReadNavigationMeasure(arguments, "source", "exact");
+            NavigationMeasureState state = ReadNavigationMeasure(arguments, "source", "exact");
+            if (arguments.Find("from") != nullptr)
+            {
+                state.From = ReadSlot(arguments, "from", {}, context, subject, errors);
+                if (state.Fidelity != NavigationFidelity::Exact)
+                    errors.push_back(std::string(subject) + ": a search from a slot is exact");
+            }
             return Prepared(state, state.Fidelity == NavigationFidelity::Exact
                                        ? std::optional(CandidateCostClass::NavigationExact)
                                        : std::nullopt);
@@ -17,9 +23,21 @@ namespace candidate_operation
                               std::span<float> values, std::span<CandidateMeasureStatus> statuses)
         {
             const auto& reachable = *static_cast<const NavigationMeasureState*>(state);
+            std::optional<NavLocation> from;
+            if (reachable.From)
+            {
+                if (run.SlotSize(*reachable.From) > 0)
+                    from = run.ProjectNav(run.SlotPoint(*reachable.From, 0).Position);
+                if (!from)
+                {
+                    for (const std::uint32_t row : rows)
+                        statuses[row] = CandidateMeasureStatus::NotApplicable;
+                    return;
+                }
+            }
             for (const std::uint32_t row : rows)
             {
-                const NavigationAnswer answer = AskNavigation(run, reachable, row);
+                const NavigationAnswer answer = AskNavigation(run, reachable, row, from ? &*from : nullptr);
                 statuses[row] = answer.Status;
                 values[row] = IsMeasured(answer.Status) ? 1.0f : 0.0f;
                 if (run.TracingDetail())
@@ -33,12 +51,14 @@ namespace candidate_operation
         CandidateMeasureDefinition definition;
         definition.Name = "candidates.measure.reachable";
         definition.DisplayName = "Reachable";
-        definition.Description = "1 when the querier can walk to the candidate within the cost limit. The "
-                                 "reachable set is shared by the run; exact searches are charged to its budget.";
+        definition.Description = "1 when the querier, or with `from` a slot's first point, can walk to the candidate "
+                                 "within the cost limit. The reachable set is shared by the run; exact searches are "
+                                 "charged to its budget.";
         definition.Arguments = Record({ EnumField("source", "Source", { "reachable_set", "exact" }, "reachable_set"),
                                         FloatField("max_cost", "Maximum cost", std::nullopt, 0.0),
-                                        OutsideZoneField() });
+                                        OutsideZoneField(), SlotField("from", "From") });
         definition.Arguments.Children[1].Required = false;
+        definition.Arguments.Children[3].Required = false;
         definition.Cost = CandidateCostClass::NavigationBatch;
         definition.Value = CandidateValueKind::UnitInterval;
         definition.Prepare = PrepareReachable;

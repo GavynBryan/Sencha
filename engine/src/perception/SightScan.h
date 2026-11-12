@@ -1,5 +1,6 @@
 #pragma once
 
+#include <perception/PerceptionFrame.h>
 #include <perception/PerceptionSystem.h>
 
 #include <ecs/Query.h>
@@ -10,13 +11,15 @@
 #include <optional>
 #include <vector>
 
-class PerceptionFrame;
 class PhysicsWorld;
 
 struct SightScanSettings
 {
     GameplayTagId Sense;
     std::uint32_t RaysPerObserver = 32;
+    // An observer scans once in this many ticks, staggered by its id.
+    std::uint32_t ScanIntervalTicks = 1;
+    std::uint64_t Tick = 0;
     bool Trace = false;
     // Valid: trace only this observer.
     EntityId TracedObserver;
@@ -57,7 +60,19 @@ private:
     };
 
     void Gather(const World& world, const StoragePartitionSet& partitions);
+    // An observer's last scan, which stands until its next.
+    struct HeldScan
+    {
+        EntityId Observer;
+        std::uint32_t First = 0;
+        std::uint32_t Count = 0;
+        ScanCoverage Coverage = ScanCoverage::NotEvaluated;
+    };
+
     void GrantRays(EntityId observer, std::uint32_t raysPerObserver);
+    void Hold(EntityId observer, const PerceptionFrame& frame, ScanCoverage coverage);
+    [[nodiscard]] const HeldScan* FindHeld(EntityId observer) const;
+    void Replay(const World& world, const HeldScan& held, GameplayTagId sense, PerceptionFrame& frame);
 
     const PhysicsWorld& Physics;
     const World* QueriedWorld = nullptr;
@@ -69,6 +84,10 @@ private:
     std::vector<SightOutcome> Geometry;
     std::vector<std::uint32_t> InView;
     std::vector<std::uint8_t> Granted;
+    std::vector<HeldScan> Held;
+    std::vector<HeldScan> NextHeld;
+    std::vector<Observation> HeldRows;
+    std::vector<Observation> NextHeldRows;
     std::vector<RayCursor> Cursors;
     std::vector<RayCursor> NextCursors;
 };

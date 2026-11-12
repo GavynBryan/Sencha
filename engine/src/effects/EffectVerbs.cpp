@@ -1,5 +1,6 @@
 #include <effects/EffectVerbs.h>
 
+#include <authored/AuthoredValueTraits.h>
 #include <attributes/AttributeSet.h>
 #include <authored/AuthoredValue.h>
 #include <ecs/World.h>
@@ -23,8 +24,17 @@ namespace
         DataFieldSchema scale = MakeDataField(DataFieldKind::Float, "scale", "Scale",
                                               "Multiplies every modifier's magnitude.");
         scale.Default = 1.0;
+        DataFieldSchema instigator = MakeDataField(DataFieldKind::Entity, "instigator", "Instigator",
+                                                   "Who applied it, for whatever reacts to it.");
+        instigator.Required = false;
+        DataFieldSchema from = MakeDataField(DataFieldKind::Vector, "from", "From",
+                                             "Where it came from, for whatever reacts to it. The instigator when "
+                                             "absent.");
+        from.Required = false;
+        from.VectorLength = 3;
         DataFieldSchema arguments = EmptyVerbArguments();
-        arguments.Children = { std::move(target), std::move(effect), std::move(scale) };
+        arguments.Children = { std::move(target), std::move(effect), std::move(scale), std::move(instigator),
+                               std::move(from) };
         return arguments;
     }
 
@@ -33,6 +43,7 @@ namespace
         EntityId Target;
         EffectId Effect;
         float Scale = 1.0f;
+        EffectSource Source;
     };
 
     // Reads and checks the arguments both operations share.
@@ -44,6 +55,8 @@ namespace
             || !invocation.Arguments->TryGetDataAsset(1, effect) || !invocation.Arguments->TryGetFloat(2, scale))
             return VerbAdmission::InvalidArguments;
         out.Scale = static_cast<float>(scale);
+        (void)invocation.Arguments->TryGetEntity(3, out.Source.Instigator);
+        out.Source.HasPoint = ReadAuthoredArgument(*invocation.Arguments, 4, out.Source.Point);
 
         const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
         out.Effect = effects != nullptr ? effects->Find(effect->Path) : EffectId{};
@@ -93,7 +106,7 @@ VerbAdmission EffectOperations::Apply(const VerbInvocation& invocation)
     EffectRequest request;
     if (const VerbAdmission read = ReadRequest(*Entities, invocation, request); read != VerbAdmission::Accepted)
         return read;
-    (void)ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), {}, request.Scale);
+    (void)ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), {}, request.Scale, request.Source);
     return VerbAdmission::Accepted;
 }
 
@@ -110,7 +123,8 @@ VerbAdmission EffectOperations::Hold(const VerbInvocation& invocation)
     const EffectDefinition* definition = Entities->GetResource<EffectRegistry>().Get(request.Effect);
     if (definition->Duration == EffectDuration::Instant)
         return VerbAdmission::InvalidArguments;
-    return ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), invocation.Owner, request.Scale)
+    return ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), invocation.Owner, request.Scale,
+                       request.Source)
                .IsValid()
         ? VerbAdmission::Accepted
         : VerbAdmission::Refused;

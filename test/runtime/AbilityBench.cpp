@@ -146,13 +146,13 @@ void MeasureFootprint()
 {
     Recorder.Record("ability.bytes.grants", "bytes", sizeof(AbilityGrants));
     Recorder.Record("ability.bytes.active", "bytes", sizeof(ActiveAbilities));
-    Recorder.Record("ability.bytes.locals", "bytes", sizeof(AbilityLocals));
+    Recorder.Record("ability.bytes.activation", "bytes", sizeof(AbilityActivation));
     Recorder.Record("ability.bytes.cue_log", "bytes", sizeof(AbilityCueLog));
     Recorder.Record("ability.bytes.predicted_cues", "bytes", sizeof(AbilityPredictedCues));
     Recorder.Record("ability.bytes.presentation", "bytes", sizeof(AbilityPresentationState));
     Recorder.Record("ability.bytes.actor_time", "bytes", sizeof(ActorTime));
     Recorder.Record("ability.bytes.actor", "bytes",
-                    sizeof(AbilityGrants) + sizeof(ActiveAbilities) + sizeof(AbilityLocals) + sizeof(AbilityCueLog)
+                    sizeof(AbilityGrants) + sizeof(ActiveAbilities) + sizeof(AbilityCueLog)
                         + sizeof(AbilityPredictedCues) + sizeof(AbilityPresentationState) + sizeof(ActorTime));
 }
 

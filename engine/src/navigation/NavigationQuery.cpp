@@ -6,7 +6,11 @@
 #include "NavTileMeshBackend.h"
 #include "ZoneNavigationBackend.h"
 
+#include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <navigation/NavAgent.h>
 #include <navigation/NavTileMesh.h>
+#include <navigation/NavTraversal.h>
 #include <navigation/ZoneNavigation.h>
 #include <world/RuntimeWorld.h>
 
@@ -161,6 +165,8 @@ namespace
             step->Traversal = link.Traversal;
             step->Entry = from.Position;
             step->Exit = to.Position;
+            step->Anchored = link.Anchored;
+            step->Anchor = link.Anchor;
             step->EntryRadius = link.EntryRadius;
             step->Reversed = reversed;
             step->Cost = cost;
@@ -270,6 +276,37 @@ NavRaycastResult NavRaycast(const ZoneNavigation& zone, NavQueryContext& context
     result.Hit = hitFraction <= 1.0f;
     result.Fraction = result.Hit ? hitFraction : 1.0f;
     result.Point = start.Position + (target - start.Position) * result.Fraction;
+    result.Normal = FromFloats(normal);
+    return result;
+}
+
+NavEdgeDistanceResult NavDistanceToEdge(const ZoneNavigation& zone, NavQueryContext& context,
+                                        const NavQueryRequest& request, const NavLocation& start, float maxRadius)
+{
+    NavEdgeDistanceResult result;
+    Context& ctx = context.GetBackend();
+    NavQueryPlan plan;
+    result.Status = PlanNavQuery(zone, ctx, request, plan);
+    if (result.Status == NavStatus::Success)
+        result.Status = CheckEndpoint(plan, start, NavStatus::InvalidStart);
+    if (result.Status != NavStatus::Success)
+        return result;
+
+    float center[3];
+    CopyToDetour(start.Position, center);
+    float distance = 0.0f;
+    float point[3] = {};
+    float normal[3] = {};
+    const float radius = std::max(maxRadius, 0.0f);
+    if (dtStatusFailed(ctx.Query->findDistanceToWall(start.Ref, center, radius, &ctx.Filter, &distance, point,
+                                                     normal)))
+    {
+        result.Status = NavStatus::InvalidStart;
+        return result;
+    }
+    result.Distance = std::min(distance, radius);
+    result.Hit = distance < radius;
+    result.Point = FromFloats(point);
     result.Normal = FromFloats(normal);
     return result;
 }
@@ -413,6 +450,15 @@ NavProjectResult NavigationQuery::ProjectPoint(NavQueryContext& context,
                   { return NavProjectPoint(zone, context, request, point, halfExtents); });
 }
 
+NavEdgeDistanceResult NavigationQuery::DistanceToEdge(NavQueryContext& context, const NavQueryRequest& request,
+                                                      const NavLocation& start, float maxRadius) const
+{
+    NavEdgeDistanceResult unavailable;
+    unavailable.Status = NavStatus::ZoneUnavailable;
+    return InZone(request.Zone, unavailable, [&](const ZoneNavigation& zone)
+                  { return NavDistanceToEdge(zone, context, request, start, maxRadius); });
+}
+
 NavRaycastResult NavigationQuery::Raycast(NavQueryContext& context,
                                           const NavQueryRequest& request,
                                           const NavLocation& start,
@@ -430,6 +476,13 @@ NavStatus NavigationQuery::Reachable(NavQueryContext& context, const NavQueryReq
 {
     return InZone(request.Zone, NavStatus::ZoneUnavailable, [&](const ZoneNavigation& zone)
                   { return NavReachable(zone, context, request, start, end, diagnostics); });
+}
+
+NavReach NavigationQuery::CheckReach(NavQueryContext& context, const NavQueryRequest& request,
+                                     const NavReachCheck& check) const
+{
+    const ZoneNavigation* zone = FindZone(request.Zone);
+    return zone != nullptr ? NavCheckReach(*zone, context, request, check) : NavReach::StartOffNavigation;
 }
 
 NavCostResult NavigationQuery::TravelCost(NavQueryContext& context,
@@ -481,4 +534,33 @@ NavRouteValidity NavigationQuery::ValidateRoute(const NavRouteBuffer& route) con
 {
     return InZone(route.Zone, NavRouteValidity::ZoneUnavailable,
                   [&](const ZoneNavigation& zone) { return NavValidateRoute(zone, route); });
+}
+
+NavReach NavCheckReach(const ZoneNavigation& zone, NavQueryContext& context, const NavQueryRequest& request,
+                       const NavReachCheck& check)
+{
+    const NavProjectResult start = NavProjectPoint(zone, context, request, check.From, check.FromExtents);
+    if (start.Status != NavStatus::Success)
+        return NavReach::StartOffNavigation;
+    const NavProjectResult end = NavProjectPoint(zone, context, request, check.To, check.ToExtents);
+    const bool reaches = end.Status == NavStatus::Success
+        && (end.Location.Position - check.To).Magnitude() <= check.Tolerance
+        && NavReachable(zone, context, request, start.Location, end.Location) == NavStatus::Success;
+    return reaches ? NavReach::Reachable : NavReach::Unreachable;
+}
+
+std::optional<NavQueryRequest> NavAgentQueryRequest(const World& world, const RuntimeWorld& runtime, EntityId agent,
+                                                    std::span<GameplayTagId> capabilities)
+{
+    const std::optional<ZoneId> zone = runtime.ZoneOf(agent);
+    const NavAgent* config = world.TryGet<NavAgent>(agent);
+    const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+    if (!zone || config == nullptr || tags == nullptr)
+        return std::nullopt;
+    NavQueryRequest request;
+    request.Zone = *zone;
+    request.Profile = tags->FindTag(config->Profile.View());
+    if (const ZoneNavigation* navigation = FindZoneNavigation(runtime, *zone))
+        request.Capabilities = capabilities.first(CollectNavCapabilities(world, agent, *navigation, capabilities));
+    return request;
 }

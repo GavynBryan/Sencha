@@ -8,6 +8,8 @@
 #include <assets/static_mesh/StaticMeshVertex.h>
 #include <shaders/kSkinPoseCompSpv.h>
 
+#include <algorithm>
+
 namespace
 {
 // Must match skin_pose.comp.glsl's local_size_x.
@@ -19,8 +21,9 @@ struct SkinPosePush
 };
 } // namespace
 
-void SkinnedPosePass::Setup(const RendererServices& services)
+void SkinnedPosePass::Setup(const RendererServices& services, std::uint32_t maxDispatches)
 {
+    MaxDispatches = maxDispatches;
     Buffers = services.Buffers;
     Pipelines = services.Pipelines;
     Shaders = services.Shaders;
@@ -96,10 +99,10 @@ void SkinnedPosePass::Setup(const RendererServices& services)
     // allocate; a set lives exactly as long as its slot's recording.
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = kMaxDispatchesPerFrame * 4;
+    poolSize.descriptorCount = std::max(MaxDispatches, 1u) * 4;
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = kMaxDispatchesPerFrame;
+    poolInfo.maxSets = std::max(MaxDispatches, 1u);
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     for (VkDescriptorPool& pool : Pools)
@@ -119,12 +122,17 @@ BufferHandle SkinnedPosePass::CreatePosedBuffer(std::uint32_t vertexCount)
     if (Buffers == nullptr || vertexCount == 0)
         return {};
     return Buffers->Create(BufferCreateInfo{
-        .Size = static_cast<VkDeviceSize>(vertexCount) * sizeof(StaticMeshVertex),
+        .Size = PosedBufferBytes(vertexCount),
         .Usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .Memory = BufferMemory::GpuOnly,
         .DebugName = "Posed skinned vertices",
     });
+}
+
+std::uint64_t SkinnedPosePass::PosedBufferBytes(std::uint32_t vertexCount)
+{
+    return static_cast<std::uint64_t>(vertexCount) * sizeof(StaticMeshVertex);
 }
 
 void SkinnedPosePass::DestroyPosedBuffer(BufferHandle buffer)
@@ -133,31 +141,33 @@ void SkinnedPosePass::DestroyPosedBuffer(BufferHandle buffer)
         Buffers->Destroy(buffer);
 }
 
-std::uint32_t SkinnedPosePass::Record(const FrameContext& frame,
-                                      std::span<const SkinnedPoseDispatch> dispatches)
+void SkinnedPosePass::Record(const FrameContext& frame,
+                             std::span<const SkinnedPoseDispatch> dispatches,
+                             std::span<std::uint8_t> recordedFlags)
 {
     if (dispatches.empty() || Pipelines == nullptr || Buffers == nullptr
         || PipelineLayout == VK_NULL_HANDLE
         || frame.FrameInFlightIndex >= Pools.size())
     {
-        return 0;
+        return;
     }
     VkDescriptorPool pool = Pools[frame.FrameInFlightIndex];
     if (pool == VK_NULL_HANDLE)
-        return 0;
+        return;
 
     const VkPipeline pipeline = Pipelines->GetComputePipeline(
         ComputePipelineDesc{ ComputeShader, PipelineLayout });
     if (pipeline == VK_NULL_HANDLE)
-        return 0;
+        return;
 
     vkResetDescriptorPool(Device, pool, 0);
     vkCmdBindPipeline(frame.Cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
     std::uint32_t recorded = 0;
-    for (const SkinnedPoseDispatch& dispatch : dispatches)
+    for (std::size_t index = 0; index < dispatches.size(); ++index)
     {
-        if (recorded >= kMaxDispatchesPerFrame)
+        const SkinnedPoseDispatch& dispatch = dispatches[index];
+        if (recorded >= MaxDispatches)
             break;
         const VkBuffer rest = Buffers->GetBuffer(dispatch.RestVertices);
         const VkBuffer influences = Buffers->GetBuffer(dispatch.Influences);
@@ -217,6 +227,7 @@ std::uint32_t SkinnedPosePass::Record(const FrameContext& frame,
         vkCmdDispatch(frame.Cmd,
                       (dispatch.VertexCount + kWorkGroupSize - 1) / kWorkGroupSize,
                       1, 1);
+        recordedFlags[index] = 1;
         ++recorded;
     }
 
@@ -238,7 +249,6 @@ std::uint32_t SkinnedPosePass::Record(const FrameContext& frame,
         dependency.pMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(frame.Cmd, &dependency);
     }
-    return recorded;
 }
 
 void SkinnedPosePass::Teardown()

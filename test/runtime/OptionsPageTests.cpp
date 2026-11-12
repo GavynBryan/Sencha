@@ -64,7 +64,7 @@ TEST(OptionsPageTest, OnlyTheSettingsThisHostRegisteredGetRows)
     // Volume and sensitivity registered; no window, so no display mode, and no
     // frame cap because nothing registered r.target_fps here.
     EXPECT_EQ(LabelsOf(page, registry),
-              (std::vector<std::string>{ "Master Volume", "Look Sensitivity" }));
+              (std::vector<std::string>{ "Master Volume", "Look Sensitivity", "Reduced Flashing" }));
 }
 
 TEST(OptionsPageTest, ThePageIsCuratedRatherThanEveryArchivedCVar)
@@ -133,6 +133,29 @@ TEST(OptionsPageTest, ApplyingAChoiceLabelWritesTheValueItStandsFor)
     EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("borderless"))));
     EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("Sideways"))));
     EXPECT_EQ(std::get<std::string>(registry.FindCVar("window.mode")->CurrentValue), "fullscreen");
+}
+
+TEST(OptionsPageTest, AnOnOffChoiceWritesAndShowsABooleanCVar)
+{
+    ConsoleRegistry registry;
+    ASSERT_TRUE(registry.RegisterCVar({
+        .Name = "render.reduced_flashing",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        .Flags = CVarFlags::Archive,
+    }));
+
+    OptionsPage page;
+    page.InstallDefaults(registry);
+    ASSERT_EQ(page.Rows().size(), 1u);
+    EXPECT_EQ(page.Present(registry)[0].Value, "Off");
+
+    EXPECT_TRUE(page.Apply(registry, 0, UiValue(std::string("On"))));
+    EXPECT_TRUE(std::get<bool>(registry.FindCVar("render.reduced_flashing")->CurrentValue));
+    EXPECT_EQ(page.Present(registry)[0].Value, "On");
+    EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("On")))) << "already on";
 }
 
 TEST(OptionsPageTest, AFrameCapLabelMapsToTheNumberBehindIt)

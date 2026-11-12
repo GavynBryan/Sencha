@@ -38,6 +38,26 @@ using CompileDataAssetFn =
     std::function<DataAssetCompileResult(const JsonValue& data)>;
 using DataAssetResidentQueryFn = std::function<bool(std::string_view typeName)>;
 
+// Adapts a compiler that collects every problem: (data, Desc&, errors) -> bool.
+template <typename Desc, typename Compiler>
+[[nodiscard]] CompileDataAssetFn CompileCollectingErrors(Compiler compile)
+{
+    return [compile = std::move(compile)](const JsonValue& data)
+    {
+        DataAssetCompileResult result;
+        auto desc = std::make_shared<Desc>();
+        std::vector<std::string> errors;
+        if (!compile(data, *desc, errors))
+        {
+            for (const std::string& error : errors)
+                result.Error += result.Error.empty() ? error : "; " + error;
+            return result;
+        }
+        result.Value = std::move(desc);
+        return result;
+    };
+}
+
 struct DataAssetTypeRegistration
 {
     std::string Name;

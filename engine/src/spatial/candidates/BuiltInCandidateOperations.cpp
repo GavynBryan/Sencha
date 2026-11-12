@@ -8,6 +8,7 @@ void DeclareBuiltInCandidateOperations(CandidateMeasureRegistrationScope& measur
     (void)generators.Declare(EntitiesGenerator());
     (void)generators.Declare(RingGenerator());
     (void)generators.Declare(GridGenerator());
+    (void)generators.Declare(SurfaceGenerator());
     (void)generators.Declare(ReachableGenerator());
 
     (void)measures.Declare(DistanceMeasure());
@@ -18,5 +19,11 @@ void DeclareBuiltInCandidateOperations(CandidateMeasureRegistrationScope& measur
     (void)measures.Declare(TravelCostMeasure());
     (void)measures.Declare(VisibilityMeasure());
     (void)measures.Declare(RouteVisibilityMeasure());
+    (void)measures.Declare(EdgeDistanceMeasure());
+    (void)measures.Declare(EscapeRoutesMeasure());
+    (void)measures.Declare(CrowdingMeasure());
+    (void)measures.Declare(SeparationMeasure());
+    (void)measures.Declare(LaneClearanceMeasure());
+    (void)measures.Declare(BackstopMeasure());
     (void)measures.Declare(AuthoredQueryMeasure());
 }

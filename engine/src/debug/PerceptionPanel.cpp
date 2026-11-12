@@ -1,6 +1,7 @@
 #include <debug/PerceptionPanel.h>
 
 #include <ecs/World.h>
+#include <perception/ObservationMemory.h>
 #include <perception/PerceptionFrame.h>
 #include <perception/PerceptionSystem.h>
 
@@ -56,6 +57,7 @@ void PerceptionPanel::Draw()
     ImGui::Text("seen %u  blocked %u  out of range %u  outside cone %u  untested %u", stats.Seen,
                 stats.Blocked, stats.OutOfRange, stats.OutsideCone, stats.Untested);
     ImGui::Text("rays %u  partial scans %u", stats.Raycasts, stats.PartialScans);
+    ImGui::Text("stimuli %u  heard %u", Perception.LastStimuli(), Perception.LastHeard());
 
     const PerceptionFrame* frame = Entities.TryGetResource<PerceptionFrame>();
     const EntityId selected = Perception.SelectedObserver();
@@ -95,6 +97,39 @@ void PerceptionPanel::Draw()
             ImGui::TextUnformatted(OutcomeName(row.Outcome));
             ImGui::TableNextColumn();
             ImGui::Text("%.2f", (row.Sample - row.Eye).Magnitude());
+        }
+        ImGui::EndTable();
+    }
+
+    const ObservationMemory* memory = Entities.TryGet<ObservationMemory>(selected);
+    if (memory == nullptr)
+    {
+        ImGui::End();
+        return;
+    }
+    ImGui::SeparatorText("Memory");
+    if (ImGui::BeginTable("memory", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    {
+        ImGui::TableSetupColumn("subject");
+        ImGui::TableSetupColumn("position");
+        ImGui::TableSetupColumn("speed");
+        ImGui::TableSetupColumn("age / tracked");
+        ImGui::TableHeadersRow();
+        for (std::uint32_t index = 0; index < memory->Count; ++index)
+        {
+            const ObservationMemoryEntry& entry = memory->Entries[index];
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (entry.Subject.IsValid())
+                ImGui::Text("%u:%u", entry.Subject.Index, entry.Subject.Generation);
+            else
+                ImGui::TextUnformatted("anonymous");
+            ImGui::TableNextColumn();
+            ImGui::Text("%.1f %.1f %.1f", entry.Position.X, entry.Position.Y, entry.Position.Z);
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f", entry.Velocity.Magnitude());
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f / %.2f", entry.Age, entry.Tracked);
         }
         ImGui::EndTable();
     }

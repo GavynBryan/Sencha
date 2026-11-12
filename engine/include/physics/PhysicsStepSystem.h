@@ -1,5 +1,8 @@
 #pragma once
 
+#include <core/logging/LoggingProvider.h>
+#include <core/logging/RepeatedFailureLog.h>
+
 #include <physics/CharacterMoverPool.h>
 #include <physics/CollisionShapeCache.h>
 #include <physics/PhysicsWorld.h>
@@ -31,6 +34,7 @@ public:
     {
         return Bodies;
     }
+    void SetLog(Logger* log) { Log = log; }
 
 private:
     CollisionShapeCache Shapes;
@@ -38,4 +42,9 @@ private:
     RigidBodyBinding Bodies;
     CharacterMoverPool Characters;
     int CollisionSteps = 1;
+    Logger* Log = nullptr;
+    PhysicsCapacityFailures ReportedFailures;
+    RepeatedFailureLog CapacityLog;
+
+    void ReportCapacityFailures();
 };

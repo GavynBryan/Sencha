@@ -2,6 +2,7 @@
 
 #include <navigation/NavLinkComponent.h>
 #include <navigation/NavTileMesh.h>
+#include <navigation/NavTraversal.h>
 #include <navigation/NavigationFile.h>
 
 #include <algorithm>
@@ -55,6 +56,10 @@ namespace
             fail("nav.link.degenerate", "entry and exit coincide");
         if (link.Directions == 0 || (link.Directions & ~NavLinkDirectionBoth) != 0)
             fail("nav.link.direction_invalid", "direction bits are invalid");
+        if (link.Anchored && !Finite(link.Anchor))
+            fail("nav.link.anchor_nonfinite", "its rope anchor is not finite");
+        if (link.Anchored && link.Directions != NavLinkDirectionForward)
+            fail("nav.link.anchor_bidirectional", "an anchored link goes one way; author the return as its own link");
         if (link.Traversal.empty())
             fail("nav.link.traversal_empty", "names no traversal kind");
         if (!std::isfinite(link.BaseCost) || link.BaseCost < 0.0f
@@ -152,6 +157,11 @@ namespace
             };
             check(link.Entry, "nav.link.entry_unprojected", "entry");
             check(link.Exit, "nav.link.exit_unprojected", "exit");
+            if (link.Anchored && !NavAnchoredRelease(link.Entry, link.Exit, link.Anchor, mesh.Profile().Height))
+                AddLinkError(diagnostics, link.Id, "nav.link.anchor_misses_exit",
+                             std::format("the line from its entry to its anchor passes too far from above its exit "
+                                         "for profile '{}'",
+                                         profileName));
         }
     }
 

@@ -1,6 +1,7 @@
 #include <abilities/AbilityCueLog.h>
 
 #include <core/hash/Fnv1a.h>
+#include <ecs/World.h>
 
 std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry)
 {
@@ -13,6 +14,19 @@ std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry)
         ++log.Overwritten;
     slot = entry;
     return entry.Seq;
+}
+
+void AppendSourcedCue(World& world, EntityId instigator, std::uint16_t family, EntityId source,
+                      AbilityCueEntry entry)
+{
+    if (!entry.Cue.IsValid() || !world.IsAlive(instigator) || !world.IsRegistered<AbilityCueLog>())
+        return;
+    AbilityCueLog* log = world.TryGet<AbilityCueLog>(instigator);
+    if (log == nullptr)
+        return;
+    entry.Activation = (static_cast<std::uint64_t>(family) << 48) ^ (static_cast<std::uint64_t>(source.Index) << 24)
+                     ^ (entry.Tick & 0xFFFFFFull);
+    (void)AppendAbilityCue(*log, entry);
 }
 
 std::uint64_t AbilityCueOccurrence(const AbilityCueEntry& entry)

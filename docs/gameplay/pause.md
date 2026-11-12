@@ -291,7 +291,7 @@ appears only once a page exists, so it is never a button that does nothing.
 
 The page is a **curated table**, not a listing of every archived cvar — the ones
 carrying `Archive` are mostly engine tuning, and a page over all of them would be
-a developer panel wearing a player's name. Four rows ship:
+a developer panel wearing a player's name. Five rows ship:
 
 | Row | Cvar | Control | |
 |---|---|---|---|
@@ -299,6 +299,7 @@ a developer panel wearing a player's name. Four rows ship:
 | Look Sensitivity | `input.look_sensitivity` | slider 0.25–3 | multiplies whatever the binding was authored with |
 | Display Mode | `window.mode` | drop-down | Windowed / Borderless / Fullscreen |
 | Frame Rate Cap | `r.target_fps` | drop-down | Unlimited / 30 / 60 / 90 / 120 / 144 / 240 |
+| Reduced Flashing | `render.reduced_flashing` | drop-down | Off / On; takes the sudden pulse out of lights worn by bodies and slows their fades |
 
 **Each shell document has a preview model beside it** -- `pause.preview.json`,
 `options.preview.json` -- the declaration and sample values the host would

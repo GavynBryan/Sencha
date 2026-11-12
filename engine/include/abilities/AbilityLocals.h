@@ -1,7 +1,6 @@
 #pragma once
 
 #include <abilities/AbilityCapacity.h>
-#include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <math/Vec.h>
 
@@ -21,6 +20,7 @@ struct AbilityLocalValue
     EntityId Entity;
 };
 
+// Activation-local values. Never replicated: a predicting client computes its own.
 struct AbilityRecordLocals
 {
     AbilityLocalValue Values[kAbilityLocalCapacity] = {};
@@ -28,17 +28,3 @@ struct AbilityRecordLocals
     std::uint8_t EntityCount = 0;
     EntityId Entities[kAbilityEntityListCapacity] = {};
 };
-
-// Activation-local values, slot for slot with ActiveAbilities' records. Never
-// replicated: a predicting client computes its own.
-struct SENCHA_COMPONENT("sencha.ability_locals") AbilityLocals
-{
-    AbilityRecordLocals Records[kAbilitySlotCapacity] = {};
-};
-
-static_assert(std::is_trivially_copyable_v<AbilityLocals>,
-              "AbilityLocals must be trivially copyable to live in ECS chunks");
-
-#if !defined(SENCHA_CODEGEN)
-#  include <abilities/AbilityLocals.sencha.h>
-#endif

@@ -8,12 +8,14 @@
 #include <controller/ControllerComponentRegistration.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputComponentRegistration.h>
+#include <line/ContactLineRegistration.h>
 #include <logic/LogicRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <navigation/NavigationComponentRegistration.h>
 #include <net/NetComponentRegistration.h>
 #include <net/ReplicationLayout.h>
 #include <participant/ParticipantComponentRegistration.h>
+#include <perception/PerceptionComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <projectile/ProjectileRegistration.h>
 #include <render/RenderComponentRegistration.h>
@@ -49,7 +51,9 @@ namespace
         LogicComponents,
         AnimationComponents,
         SightComponents,
+        PerceptionComponents,
         ProjectileComponents,
+        ContactLineComponents,
         AttachmentComponents>;
 
     static_assert(EngineComponentSets::Owned,
@@ -102,7 +106,9 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
+    RegisterPerceptionComponents(registrar);
     RegisterProjectileComponents(registrar);
+    RegisterContactLineComponents(registrar);
     RegisterAttachmentComponents(registrar);
 }
 

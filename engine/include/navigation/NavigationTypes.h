@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 //=============================================================================
@@ -81,6 +82,9 @@ struct NavTraversalCost
     GameplayTagId Kind;
     float Multiplier = 1.0f;
     float Add = 0.0f;
+    // The ability this agent crosses links of the kind with, by name, for
+    // NavTraverseByAbility. Empty for none.
+    std::string Ability;
 };
 
 struct NavAreaCost
@@ -149,6 +153,9 @@ struct NavRouteStep
     GameplayTagId Traversal;
     Vec3d Entry = Vec3d::Zero();
     Vec3d Exit = Vec3d::Zero();
+    // A point the crossing hangs from, when its link names one.
+    bool Anchored = false;
+    Vec3d Anchor = Vec3d::Zero();
     // How close to Entry an agent must be to begin the traversal.
     float EntryRadius = 0.0f;
     // True when the link is crossed exit-to-entry of its authoring (a
@@ -274,6 +281,17 @@ struct NavRaycastResult
     bool Hit = false;
     // Fraction of the way to the target where walkable surface ends; 1 if not.
     float Fraction = 1.0f;
+    Vec3d Point = Vec3d::Zero();
+    Vec3d Normal = Vec3d::Zero();
+};
+
+struct NavEdgeDistanceResult
+{
+    NavStatus Status = NavStatus::NoPath;
+    // Distance across walkable surface to the nearest edge; the search radius
+    // when no edge lies within it.
+    float Distance = 0.0f;
+    bool Hit = false;
     Vec3d Point = Vec3d::Zero();
     Vec3d Normal = Vec3d::Zero();
 };
