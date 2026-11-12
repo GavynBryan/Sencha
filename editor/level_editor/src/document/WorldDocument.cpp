@@ -1017,6 +1017,30 @@ bool WorldDocument::SetGraphHopCount(GraphId graph, std::optional<int32_t> hopCo
     return false;
 }
 
+bool WorldDocument::SetWorldPresentation(PresentationSettingsLayer presentation)
+{
+    if (Manifest_.Presentation == presentation)
+        return false;
+    Manifest_.Presentation = std::move(presentation);
+    MarkManifestEdited();
+    return true;
+}
+
+bool WorldDocument::SetGraphPresentation(GraphId graph, PresentationSettingsLayer presentation)
+{
+    for (GraphRecord& record : Manifest_.Graphs)
+    {
+        if (record.Id != graph)
+            continue;
+        if (record.Presentation == presentation)
+            return false;
+        record.Presentation = std::move(presentation);
+        MarkManifestEdited();
+        return true;
+    }
+    return false;
+}
+
 bool WorldDocument::SetGraphRadius(GraphId graph, std::optional<double> radius)
 {
     for (GraphRecord& record : Manifest_.Graphs)

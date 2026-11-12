@@ -5,6 +5,7 @@
 #include "DocumentCookPaths.h"
 
 #include <core/json/JsonValue.h>
+#include <render/PresentationSettings.h>
 
 #include <filesystem>
 #include <vector>
@@ -25,4 +26,5 @@ struct DocumentCookContext;
     const std::vector<PendingCellMesh>& meshes,
     JsonValue::Array& cellEntities,
     const std::vector<CellCollisionEntry>& collisionEntries,
-    bool emitCollision);
+    bool emitCollision,
+    const PresentationSettingsLayer& presentation);

@@ -2,6 +2,8 @@
 
 #include <graphics/vulkan/VulkanDeviceService.h>
 
+#include <algorithm>
+
 namespace
 {
     // FNV-1a-ish combine — cheap and good enough for a cache of maybe ~16 samplers.
@@ -29,6 +31,12 @@ VulkanSamplerCache::VulkanSamplerCache(LoggingProvider& logging, VulkanDeviceSer
     : Log(logging.GetLogger<VulkanSamplerCache>())
     , Device(device.GetDevice())
 {
+    if (device.GetPhysicalDevice() != VK_NULL_HANDLE)
+    {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device.GetPhysicalDevice(), &properties);
+        MaxDeviceAnisotropy = properties.limits.maxSamplerAnisotropy;
+    }
     if (!device.IsValid())
     {
         Log.Error("VulkanSamplerCache: upstream device not valid");
@@ -84,7 +92,7 @@ VkSampler VulkanSamplerCache::CreateSampler(const SamplerDesc& desc)
     info.addressModeV = address(desc.AddressModeV);
     info.addressModeW = address(desc.AddressModeW);
     info.anisotropyEnable = desc.MaxAnisotropy > 0.0f ? VK_TRUE : VK_FALSE;
-    info.maxAnisotropy = desc.MaxAnisotropy;
+    info.maxAnisotropy = std::min(desc.MaxAnisotropy, MaxDeviceAnisotropy);
     info.compareEnable = VK_FALSE;
     info.compareOp = VK_COMPARE_OP_ALWAYS;
     info.minLod = 0.0f;

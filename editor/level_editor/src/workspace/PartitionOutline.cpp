@@ -1,15 +1,19 @@
 #include "workspace/PartitionOutline.h"
 
+#include "authoring/PresentationProperties.h"
+
 #include "document/EditorEntityRecipe.h"
 #include "document/commands/PlaceEntityCommand.h"
 #include "document/ZoneBounds.h"
 #include "document/commands/EditWorldManifestCommand.h"
 #include "document/commands/SetZoneBoundsCommand.h"
+#include "document/commands/ValueCommand.h"
 #include "properties/SettingProperties.h"
 #include "viewport/WorldViewSettings.h"
 #include "workspace/EditorWorkspace.h"
 #include "workspace/LevelLocation.h"
 
+#include <render/GamePresentationLayer.h>
 #include <zone/ZoneDemand.h>
 
 #include <algorithm>
@@ -282,7 +286,11 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     group.Children.push_back(NoteProperty("bounds", zone->BoundsOverridden ? "Bounds (set)" : "Bounds",
                                   std::format("{:g}, {:g}, {:g} to {:g}, {:g}, {:g}", min.X, min.Y, min.Z, max.X,
                                               max.Y, max.Z)));
-    return { std::move(group) };
+    if (document == nullptr)
+        return { std::move(group),
+                 NoteProperty("presentation", "Presentation", "Load the zone to edit its scene's settings") };
+    const PresentationLayerStack below = PresentationLayersAt(GameLayer(), &manifest, id, nullptr);
+    return { std::move(group), PresentationProperties(document->GetPresentation(), below.Layers()) };
 }
 
 std::vector<PropertyNode> PartitionOutline::GraphNodes(GraphId id) const
@@ -313,7 +321,8 @@ std::vector<PropertyNode> PartitionOutline::GraphNodes(GraphId id) const
                                          authored.HopCount.has_value(), "How many connections out zones preload"));
     group.Children.push_back(Inheritable("cap", "Resident cap", std::to_string(resolved.ResidentZoneCap),
                                          authored.ResidentZoneCap.has_value(), "Most zones resident at once"));
-    return { std::move(group) };
+    const PresentationLayerStack below = PresentationLayersAt(GameLayer(), &manifest, ZoneId{}, nullptr);
+    return { std::move(group), PresentationProperties(graph->Presentation, below.Layers()) };
 }
 
 std::vector<PropertyNode> PartitionOutline::WorldNodes() const
@@ -385,7 +394,57 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
         }
         group.Children.push_back(std::move(preview));
     }
-    return { std::move(group) };
+    const PresentationLayerStack below = PresentationLayersAt(GameLayer(), nullptr, ZoneId{}, nullptr);
+    return { std::move(group), PresentationProperties(manifest.Presentation, below.Layers()) };
+}
+
+const PresentationSettingsLayer* PartitionOutline::GameLayer() const
+{
+    return Workspace.GamePresentation != nullptr ? Workspace.GamePresentation->Get() : nullptr;
+}
+
+PropertyEditResult PartitionOutline::CommitPresentation(std::string_view key, std::string_view value)
+{
+    WorldDocument& world = Workspace.World;
+    const auto commit = [&](const PresentationSettingsLayer& current, auto&& apply) {
+        const std::optional<PresentationSettingsLayer> edited = EditPresentationLayer(current, key, value);
+        if (!edited.has_value())
+            return PropertyEditResult::Refused;
+        if (*edited == current)
+            return PropertyEditResult::Unchanged;
+        apply(*edited);
+        return PropertyEditResult::Applied;
+    };
+
+    switch (What())
+    {
+    case Picked::World:
+        return commit(world.Manifest().Presentation, [&](const PresentationSettingsLayer& edited) {
+            (void)Edit([&] { return world.SetWorldPresentation(edited); });
+        });
+    case Picked::Graph:
+    {
+        const GraphRecord* graph = FindGraph(world.Manifest(), PickedGraph);
+        if (graph == nullptr)
+            return PropertyEditResult::Gone;
+        return commit(graph->Presentation, [&](const PresentationSettingsLayer& edited) {
+            (void)Edit([&] { return world.SetGraphPresentation(PickedGraph, edited); });
+        });
+    }
+    case Picked::Zone:
+    {
+        const ZoneId zone = world.SelectedZone();
+        EditorDocument* document = world.IsZoneOpen(zone) ? world.ZoneDocument(zone) : nullptr;
+        if (document == nullptr)
+            return PropertyEditResult::Gone;
+        return commit(document->GetPresentation(), [&](const PresentationSettingsLayer& edited) {
+            Workspace.Commands.Execute(MakeSetPresentationCommand(document->GetPresentation(), edited, *document));
+        });
+    }
+    case Picked::None:
+    default:
+        return PropertyEditResult::Gone;
+    }
 }
 
 std::string PartitionOutline::ValueOf(std::string_view key) const
@@ -418,6 +477,8 @@ PropertyEditResult PartitionOutline::CommitEdit(std::string_view key, std::strin
     WorldDocument& world = Workspace.World;
     if (value == ValueOf(key))
         return PropertyEditResult::Unchanged;
+    if (IsPresentationKey(key))
+        return CommitPresentation(key, value);
     const auto applied = [](bool changed) { return changed ? PropertyEditResult::Applied : PropertyEditResult::Refused; };
     const auto count = [&](std::string_view text, int least) -> std::optional<std::optional<int32_t>> {
         if (text.empty())

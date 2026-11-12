@@ -95,6 +95,7 @@ int main(int argc, char** argv)
         *sceneJson,
         /*extraRefs*/ {},
         /*collisionCells*/ {},
+        /*presentation*/ {},
         serializers,
         [&outRoot](std::string_view assetPath) { return PhysicalPathFor(outRoot, assetPath); },
         cookedScenePath, &cookError);

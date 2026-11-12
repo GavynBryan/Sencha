@@ -91,6 +91,12 @@ bool MaterialCache::ReloadInPlace(std::string_view path,
     return true;
 }
 
+const MaterialShaderCatalog& MaterialCache::Shaders() const
+{
+    static const MaterialShaderCatalog none;
+    return ShaderTypes != nullptr ? *ShaderTypes : none;
+}
+
 const Material* MaterialCache::Get(MaterialHandle handle) const
 {
     const MaterialEntry* entry = Resolve(handle);

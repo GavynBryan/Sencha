@@ -6,6 +6,7 @@
 #include "PreviewBuffer.h"
 
 #include "document/EditorDocument.h"
+#include "document/FocusPresentation.h"
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 
@@ -24,6 +25,7 @@
 #include <render/outline/OutlineFrame.h>
 #include <render/skinned_mesh/SkinnedMeshComponent.h>
 #include "render/TargetImagePublish.h"
+#include "viewport/ViewClock.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
@@ -37,6 +39,7 @@
 
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/RenderTargetSession.h>
+#include <render/GamePresentationLayer.h>
 
 #include <optional>
 #include <variant>
@@ -48,6 +51,7 @@ constexpr OutlineStyleId kSelectionOutlineStyle{ 1 };
 
 constexpr std::string_view kCullBackfaces = "editor.cull_backfaces";
 constexpr std::string_view kBloomEnable = "editor.bloom.enable";
+constexpr std::string_view kPreviewPost = "editor.preview.post";
 // The interactive limit on pieces one brush's modifier stack may evaluate to.
 // Preview only: the cook uses the compile-time hard limit, so this never
 // changes whether a level cooks.
@@ -100,6 +104,7 @@ void EditorRenderFeature::RegisterCVars(ConsoleRegistry& console)
     };
     registerBool(kCullBackfaces, "Backface-cull the editor solid viewport to match play mode.");
     registerBool(kBloomEnable, "Editor: enable the selection bloom/glow pass.");
+    registerBool(kPreviewPost, "Editor: show the game's post effects, as the scene's settings resolve, in perspective views.");
     console.RegisterCVar({ .Name = std::string(kPieceBudget),
                            .Owner = "editor",
                            .Type = CVarType::Int,
@@ -304,6 +309,8 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     WideLines.Setup(services);
     Fills.Setup(services);
     Targets.Setup(services);
+    if (!PostEffects.Setup(services) && Log != nullptr)
+        Log->Warn("Viewport post effects failed to set up; views show no bloom");
     // After Targets and after Services carries the depth format the thumbnail
     // scopes declare.
     if (MaterialPath && RuntimeAssetsRef != nullptr)
@@ -317,7 +324,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
         Ghost.emplace(RuntimeAssetsRef, *LoggingRef);
         Drafts.emplace(RuntimeAssetsRef, *LoggingRef);
     }
-    Bloom.Setup(services);
+    (void)Bloom.Setup(services);
     Composition.Setup(services.Logging);
     ShadowAtlasReady = Composition.DeclarePoint("ShadowAtlasReady");
     if (Log != nullptr)
@@ -347,6 +354,8 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     GridStyleCache.FadeStart = Read(Console, kGridFadeStart);
 
     BloomEnabled = ReadCVarBool(Console, kBloomEnable, true);
+    PreviewPost = ReadCVarBool(Console, kPreviewPost, true);
+    PreviewSettings = FocusPresentation(World, GamePresentation != nullptr ? GamePresentation->Get() : nullptr);
     BloomParamsCache.Threshold = Read(Console, kBloomThreshold);
     BloomParamsCache.Intensity = Read(Console, kBloomIntensity);
     BloomParamsCache.Radius = Read(Console, kBloomRadius);
@@ -370,7 +379,7 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         LiveViewports.clear();
         ViewSlots.clear();
         PublishViewImages();
-        PruneViewportTargets();
+        PruneViewportTargets(frame);
         return;
     }
 
@@ -488,24 +497,25 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 
     // Separate loop on purpose: a declared view holds a pointer into ViewSlots,
     // and pushing to it above would move the ones already declared.
+    const double viewSeconds = EditorViewSeconds();
     for (ViewSlot& slot : ViewSlots)
+    {
+        // Built once here rather than by each renderer inside the view: same
+        // camera, same frame, one construction.
+        CameraRenderData camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width, slot.Target.Extent.height);
+        camera.TimeSeconds = viewSeconds;
         Composition.AddView({
-            .View = { .Name = "viewport",
-                      .Target = slot.Target.Display,
-                      // Built once here rather than by each renderer inside the
-                      // view: same camera, same frame, one construction.
-                      .Camera = slot.Viewport->CameraForExtent(slot.Target.Extent.width,
-                                                              slot.Target.Extent.height),
-                      .User = &slot },
+            .View = { .Name = "viewport", .Target = slot.Target.Display, .Camera = camera, .User = &slot },
             .Record = { [](void* self, const RenderFrame& context, const FrameView& view)
                         { static_cast<EditorRenderFeature*>(self)->RecordViewportView(*context.Backend, view); },
                         this },
             .DependsOn = viewDependsOn,
         });
+    }
 
     Composition.Execute(renderFrame);
     PublishViewImages();
-    PruneViewportTargets();
+    PruneViewportTargets(frame);
 }
 
 void EditorRenderFeature::PublishViewImages()
@@ -528,8 +538,9 @@ void EditorRenderFeature::PublishViewImages()
     }
 }
 
-void EditorRenderFeature::PruneViewportTargets()
+void EditorRenderFeature::PruneViewportTargets(const FrameContext& frame)
 {
+    PostEffects.Prune(LiveViewports, frame.Retirement);
     // Thumbnail targets are live as long as their entries are.
     if (Thumbnails)
     {
@@ -700,10 +711,21 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     const bool outlining = mask.has_value() && styleImage != UINT32_MAX;
     if (!outlining)
         Targets.NoteOutlineMaskQuiet(viewport.Id);
+    // As the sky: a perspective view shows the game's look, a working view and a
+    // debug channel do not.
+    const bool gameLook = PreviewPost && viewport.Orientation == ViewportOrientation::Perspective
+#ifdef SENCHA_ENABLE_RENDER_PROFILING
+                          && WorldView.DebugViewMode == RenderDebugView::None
+#endif
+        ;
+    const PresentationSettings preview = gameLook ? PreviewSettings : PresentationSettings{};
     RecordSceneThenDisplay(
         frame, targets, { { 0.05f, 0.09f, 0.12f, 1.0f } }, Output, ViewOutput,
         [&](const FrameContext& local) { DrawViewportScene(local, viewport, camera); },
-        !outlining ? std::function<void(const FrameContext&)>{} : [&](const FrameContext& between) {
+        [&](const FrameContext& between) {
+            PostEffects.Record(between, viewport.Id, preview, ViewOutput);
+            if (!outlining)
+                return;
             SelectionOutlines.UpdateScreenBounds(camera.ViewProjection);
             RecordOutlineMask(between,
                               OutlineMaskAttachments{ .MaskImage = mask->Mask.ColorImage,
@@ -945,7 +967,21 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
     // Outside the session: the bloom chain samples bloom[0], which the session's
     // exit is what makes readable.
-    Bloom.Record(frame, target, BloomParamsCache);
+    if (target.BloomImage[0] == VK_NULL_HANDLE || target.BloomImage[1] == VK_NULL_HANDLE)
+        return;
+    const auto plane = [&](std::size_t i) {
+        return BloomPlane{ target.BloomImage[i], target.BloomView[i], target.BloomAccess[i], target.BloomBindless[i],
+                           target.BloomExtent };
+    };
+    Bloom.Blur(frame, target.BloomBindless[0], target.BloomExtent, plane(1), plane(0), BloomParamsCache);
+
+    RenderTargetSession display(frame.Cmd, target.ColorImage, target.ColorLayout);
+    RenderScopeDesc desc{};
+    desc.Area.extent = target.Extent;
+    desc.Color.View = target.ColorView;
+    desc.ColorFormat = kSceneColorFormat;
+    const RenderScope scope(frame, desc);
+    Bloom.Composite(scope.Context(), target.BloomBindless[1], UINT32_MAX, BloomParamsCache.Intensity);
 }
 
 void EditorRenderFeature::Teardown()
@@ -955,6 +991,7 @@ void EditorRenderFeature::Teardown()
     PublishViewImages();
     Thumbnails.reset();
     Studio.reset();
+    PostEffects.Teardown();
     // Scene resources first: the brush GPU meshes and material refs below are
     // borrowed from the editor's asset caches, which outlive this feature only
     // because the host removes it before releasing them. Point the Solid body

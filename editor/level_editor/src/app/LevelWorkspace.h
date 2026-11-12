@@ -63,6 +63,8 @@ class ProblemList;
 class LightingDiagnostics;
 class HierarchyOutline;
 class PartitionOutline;
+class ScenePresentationSource;
+class GamePresentationLayer;
 class PropertyHandles;
 class EntityVerbs;
 class WorldExplorer;
@@ -187,6 +189,8 @@ private:
 
     // The engine's asset stack, which the application mounted the project into.
     RuntimeAssets* Assets = nullptr;
+    // The project's presentation layer, which the workspace's settings rows inherit.
+    std::unique_ptr<GamePresentationLayer> GamePresentation;
 
     DocumentSourceSet& Documents;
     std::unique_ptr<CommandStack> Commands;
@@ -230,6 +234,7 @@ private:
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
     std::unique_ptr<PartitionOutline> Partition;
+    std::unique_ptr<ScenePresentationSource> SceneSettings;
     std::unique_ptr<HierarchyOutline> Hierarchy;
     std::unique_ptr<LightingDiagnostics> Lighting;
     ActionCatalog& Catalog;

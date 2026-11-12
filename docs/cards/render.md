@@ -12,7 +12,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: presentation.
 
 - Mesh, light and camera components in the visible partitions, read by `RenderExtractionSystem` (`engine/include/render/extract/RenderExtractionSystem.h:118`), `LightExtractionSystem` (`engine/include/render/extract/LightExtractionSystem.h:34`) and `ShadowCasterExtractionSystem` (`engine/include/render/extract/ShadowCasterExtractionSystem.h:72`).
 - Resident materials and meshes, `MaterialCache` (`engine/include/render/MaterialCache.h:34`), from assets.
-- The presented view, `PresentedFrame` (`engine/include/camera/PresentedFrame.h:18`).
+- The presented view, `PresentedFrame` (`engine/include/camera/PresentedFrame.h:18`), including the moment it shows, which reaches materials as `CameraRenderData::TimeSeconds`.
+- Registered material shaders, `MaterialShaderCatalog` (`engine/include/render/MaterialShaderCatalog.h:35`), which materials name in place of the built-in shading.
 - Module dependencies: anim, app, assets, camera, components, core, debug, ecs, graphics, math, presentation, profiling, time, ui, world.
 
 ## 3. Outputs
@@ -37,6 +38,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: presentation.
 - Partition-set order does not change tie breaks: `LightExtraction.PartitionSetOrderDoesNotChangeTieBreaks` (`test/runtime/LightExtractionTests.cpp`).
 - Lights outside the active partitions are skipped: `LightExtraction.SkipsLightsOutsideTheActivePartitions` (`test/runtime/LightExtractionTests.cpp`).
 - A section whose material is not resident is skipped: `EmitMeshSections.SkipsASectionWhoseMaterialIsNotResident` (`test/runtime/MeshDrawInstanceTests.cpp`).
+- A material shader that does not fit the mesh interface is refused: `MaterialShaderCatalog.RefusesAShaderReadingInputsTheVertexStageDoesNotWrite` (`test/presentation/MaterialShaderCatalogTests.cpp`).
 
 ### Unchecked
 

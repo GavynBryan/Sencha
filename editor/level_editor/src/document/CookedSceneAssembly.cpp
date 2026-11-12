@@ -23,7 +23,8 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
                                const std::vector<PendingCellMesh>& meshes,
                                JsonValue::Array& cellEntities,
                                const std::vector<CellCollisionEntry>& collisionEntries,
-                               bool emitCollision)
+                               bool emitCollision,
+                               const PresentationSettingsLayer& presentation)
 {
     const DocumentArtifactCatalog& catalog = ctx.Catalog;
     const DocumentCookPaths& paths = ctx.Paths;
@@ -110,7 +111,7 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
         };
 
     std::string cookError;
-    if (!WriteCookedScene(cooked, catalog.SceneRefs(), collisionCells,
+    if (!WriteCookedScene(cooked, catalog.SceneRefs(), collisionCells, presentation,
             EditorSceneSerializers(), physicalPathFor, transaction.Stage(paths.Scene), &cookError))
     {
         result.Error = "CookDocument: " + cookError;

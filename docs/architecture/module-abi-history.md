@@ -749,6 +749,28 @@ extraction takes a `const World&`.
 
 ## v41
 
+**Material shaders.** `Game::OnRegisterMaterialShaders(MaterialShaderCatalog&)` is a new trailing
+vtable slot, and `Engine::MaterialShaders()` reaches the catalog, which `Engine` holds by value.
+`PostEffectCatalog` derives from the new `render/ShaderCatalog.h`. `Material` gains `Shader` and
+`ShaderParams`, and `MeshPushConstants` grows from 80 to 112 bytes with `Params`. The SDK installs
+`mesh_view.glsli` and `mesh_material.glsli`, which join the fingerprint with both catalog headers.
+
+**Time and blending.** `PresentationTime`, `PresentedFrame` and `CameraRenderData` gain the
+presented moment (`SimulationSeconds`, `TimeSeconds`), which reaches `ViewPositionTime.w`.
+Blended surfaces composite premultiplied, so their emission is no longer scaled by alpha.
+
+**Bloom.** `PostEffectDesc` and `PostEffectType` gain `Kind`, and the engine registers
+`sencha.bloom`. `ShaderCatalog` leaves the empty-shader check to each catalog, since a bloom
+type has none.
+
+**Presentation settings.** `LoadedLevel::Manifest()` reaches the loaded world's manifest, which
+gains `Presentation`, as `GraphRecord` does. `PresentationSettingsSystem` joins the engine's
+systems. Cooked scenes move to `.smap` version 2 for the optional `PRES` section, so every
+level recooks; `WriteCookedScene` takes the scene's layer. See
+[presentation-settings.md](../renderer/presentation-settings.md).
+
+## v42
+
 Mechanisms for enemies that sense, remember, choose and strike, for
 naming where a strike lands, and for answering the effects that land.
 
@@ -802,7 +824,7 @@ in every build. `AbilityGrants` and `ActiveAbilities` no longer derive
 `EngineSchedule` can time its systems (`SetTimingEnabled`, `CollectTimings`) and
 host work (`ScheduleFrameWorkScope`).
 
-## v42
+## v43
 
 **Lines and tethers.** `ContactLine` gains `max_length`, `leash_slack`,
 `rehit_seconds`, `slots` and `slot_spacing`, and `ContactLineState` what they need;
@@ -855,7 +877,7 @@ and the default scratch slice is 3 MiB. `RendererServices::Health`,
 outline tags. `SkinnedPoseFrameData` loses `Ready`, and `SkinnedPosePass::Setup`
 takes its dispatch capacity.
 
-## v43
+## v44
 
 **Decision agents.** A new component, `DecisionAgent`, holds what an entity choosing its own options tracks.
 `DecisionAgents` decides for every one from a `DecisionProfile` that a game embeds in its own profile. The game

@@ -22,6 +22,7 @@ bool CameraRenderDataSystem::Build(const PresentedFrame& frame,
     out.Projection = frame.ProjectionMatrix;
     out.ViewProjection = frame.ViewProjection;
     out.Position = frame.View.Pose.Position;
+    out.TimeSeconds = frame.SimulationSeconds;
     out.ViewFrustum = Frustum::FromViewProjection(out.ViewProjection);
     // Exclusion is optional vocabulary: an editor viewport camera and a bare
     // authored camera have none, and their worlds never register the type. A

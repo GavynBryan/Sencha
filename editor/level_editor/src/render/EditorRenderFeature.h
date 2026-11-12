@@ -6,12 +6,13 @@
 #include "EditorFillPipeline.h"
 #include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "EditorSolidPipeline.h"
-#include "EditorBloomPass.h"
+#include <graphics/vulkan/BloomPass.h>
 #include "render/EditorWideLinePipeline.h"
 #include "viewport/EditorViewport.h"
 #include "GpuGridRenderer.h"
 #include "IrradianceVolumeRenderer.h"
 #include "VolumeRenderer.h"
+#include "render/ViewportPostEffects.h"
 #include "render/ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
@@ -58,6 +59,7 @@
 class EditorScene;
 class EditorDocument;
 class WorldDocument;
+class GamePresentationLayer;
 class ManipulatorSession;
 class MeshEditService;
 class PlacementSession;
@@ -155,6 +157,9 @@ public:
         const EditorDocument* Base = nullptr;
     };
     void SetDraftSource(std::function<ShownDraft()> source) { DraftSource = std::move(source); }
+    // The project's presentation layer, beneath the world's and the focus scene's
+    // in the viewports' preview; none by default.
+    void SetGamePresentation(const GamePresentationLayer* game) { GamePresentation = game; }
 
     [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
     {
@@ -174,7 +179,7 @@ private:
     // The composition's entry point for a viewport view: recovers the slot the
     // view was declared with and renders it with the camera the view carries.
     // Drops targets for viewports not in LiveViewports.
-    void PruneViewportTargets();
+    void PruneViewportTargets(const FrameContext& frame);
     // Hands each rendered view's image to the UI under its host image; takes
     // back any whose view did not render readable this frame.
     void PublishViewImages();
@@ -217,6 +222,11 @@ private:
     // backdrop: a sky in a 2D working view describes nothing.
     SkyGradientPass        Sky;
     OutputTransformPass    Output;
+    ViewportPostEffects    PostEffects;
+    const GamePresentationLayer* GamePresentation = nullptr;
+    // The focus scene's resolved settings, and whether the views preview them.
+    PresentationSettings   PreviewSettings;
+    bool                   PreviewPost = true;
     // The selection's placed meshes, re-resolved each frame; the editor owns its style.
     OutlineFrame           SelectionOutlines;
     OutlineStyleImage      SelectionStyleImage;
@@ -316,7 +326,7 @@ private:
     std::vector<ViewSlot>  ViewSlots;
     std::vector<ViewportId> LiveViewports;
     std::vector<ViewImage> ViewImages;
-    EditorBloomPass        Bloom;
+    BloomPass              Bloom;
     bool                   BloomEnabled = true;     // editor.bloom.enable
     BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius
     RendererServices       Services{};

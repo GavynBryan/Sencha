@@ -31,6 +31,7 @@ code paths.
 | Shadows | Spot: one 2048 D16 quadtree atlas. Point: 4-cube D16 array, 512 per face |
 | Baked | Per-zone lightmap atlas (RGB9E5), AO plane (R8), L1 SH probe volumes (RGBA16F 3D) |
 | Transparency | Blend materials draw back-to-front per view, depth write off, after opaque |
+| Material shaders | A game registers [fragment shaders](material-shaders.md) that materials name in place of the built-in shading |
 | Post | [Post effects](post-effects.md) and the [outline](outlines.md) mask run in the `Post` phase. Exposure and the tonemap shoulder run in `OutputTransformPass` |
 | Directional lights | Not implemented |
 | Skinning | Compute pre-skin: one dispatch poses vertices, every later pass draws them as static geometry |
@@ -50,6 +51,7 @@ Read in this order on a first pass.
 | [shadows.md](shadows.md) | Atlas allocation, the residency arbiter, update policies, caster diff invalidation, sampling and bias |
 | [baked-lighting.md](baked-lighting.md) | Lightmap atlas, AO plane, probe volumes, zone-scoped residency, shader sampling |
 | [resources.md](resources.md) | Meshes, materials, material sets, textures, bindless slots, ref-counting and hot reload |
+| [presentation-settings.md](presentation-settings.md) | Bloom and the looks to come, authored in game, world, graph and scene layers and resolved at the play zone |
 | [mesh-overrides.md](mesh-overrides.md) | Reversible hides and material substitutions from independent writers, and how extraction applies them |
 | [shaders.md](shaders.md) | GLSL layout, include topology, offline compile and embed, CPU/GPU struct contracts, specialization |
 | [instrumentation.md](instrumentation.md) | Profile mode ladder, counters, CPU and GPU scopes, capture export, debug views, the bench harness |

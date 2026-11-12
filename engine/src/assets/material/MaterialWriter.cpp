@@ -95,6 +95,15 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
     if (description.CastShadows != defaults.CastShadows)
         root.emplace_back("cast_shadows", JsonValue(description.CastShadows));
 
+    if (!description.Shader.empty())
+    {
+        root.emplace_back("shader", JsonValue(description.Shader));
+        JsonValue::Array params;
+        for (const Vec4& param : description.ShaderParams)
+            params.push_back(FactorArray(param, 4));
+        root.emplace_back("shader_params", JsonValue(std::move(params)));
+    }
+
     return JsonValue(std::move(root));
 }
 

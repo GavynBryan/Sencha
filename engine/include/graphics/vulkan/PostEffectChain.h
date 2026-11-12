@@ -1,5 +1,6 @@
 #pragma once
 
+#include <graphics/vulkan/BloomPass.h>
 #include <graphics/vulkan/FullscreenPass.h>
 #include <graphics/vulkan/OutlineCompositePass.h>
 #include <graphics/vulkan/OutputTransformPass.h>
@@ -43,10 +44,12 @@ private:
     const PostEffectCatalog* Catalog = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     FullscreenPass Fullscreen;
+    BloomPass Bloom;
     OutputTransformPass Transform;
     OutlineCompositePass Outlines;
     RenderTargetStore Planes;
     RenderTargetId Plane[2];
+    RenderTargetId GlowPlane[2];
     std::vector<CompiledEffect> Compiled;
     QuietInterval Quiet;
 };

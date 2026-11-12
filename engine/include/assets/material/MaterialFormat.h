@@ -3,6 +3,9 @@
 #include <core/assets/AssetRef.h>
 #include <render/Material.h>
 
+#include <array>
+#include <string>
+
 //=============================================================================
 // MaterialDescription
 //
@@ -41,6 +44,9 @@ struct MaterialDescription
     bool DoubleSided = false;
     bool ReceiveShadows = true;
     bool CastShadows = true;
+
+    std::string Shader;
+    std::array<Vec4, kMaterialShaderParamCount> ShaderParams{};
 };
 
 inline constexpr uint32_t kSmatVersion = 2;

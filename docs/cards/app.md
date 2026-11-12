@@ -18,6 +18,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: world and frame.
 
 - `Engine` (`engine/include/app/Engine.h:83`): owns services, the frame loop, the unified world, the schedule and worker lanes; consumed by games and editors.
 - `EngineSchedule` (`engine/include/app/EngineSchedule.h:64`): the ordered system list every engine module registers into.
+- The material shader catalog, filled by `Game::OnRegisterMaterialShaders` (`engine/include/app/Game.h:104`) before content loads: consumed by render through `MaterialCache::Shaders`.
 - Phase contexts such as `ZoneResidencyContext` (`engine/include/app/GameContexts.h:74`): the structs scheduled systems receive.
 - The pause shell, `PauseState` (`engine/include/app/PauseState.h:47`) and `PauseMenuModel` (`engine/include/app/PauseMenuModel.h:64`): consumed within app by the pause menu, `engine/include/app/PauseMenu.h`.
 

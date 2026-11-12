@@ -25,6 +25,7 @@
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
 #include <navigation/NavigationPolicyData.h>
+#include <render/PresentationSettings.h>
 
 #include <string_view>
 #include <utility>
@@ -118,6 +119,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAbilityDefinitionData(DataTypes, DataSchemas);
     RegisterCuePresentationData(DataTypes, DataSchemas);
     RegisterCameraShakeData(DataTypes, DataSchemas);
+    RegisterPresentationSettingsData(DataTypes, DataSchemas);
     RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
     RegisterSelectionTableData(DataTypes, DataSchemas);
     RegisterEffectReactionProfileData(DataTypes, DataSchemas);

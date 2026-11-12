@@ -21,7 +21,8 @@ GameModuleRun::GameModuleRun(const GameModuleRunSettings& settings)
         config.Window.GraphicsApi = WindowGraphicsApi::None;
     config.Runtime.ApplicationShell = false;
     config.Runtime.ContentRoots = { settings.ContentRoot };
-    config.Runtime.TargetFps = settings.TargetFps;
+    if (settings.TargetFps)
+        config.Runtime.TargetFps = *settings.TargetFps;
     config.Console.UiEnabled = false;
     if (settings.Adjust)
         settings.Adjust(config);

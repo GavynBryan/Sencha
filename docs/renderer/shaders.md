@@ -124,9 +124,11 @@ what makes a second silent copy impossible rather than merely discouraged.
 
 ## Specialization constants
 
-`MATERIAL_UNLIT` (`constant_id = 0`, bool) and `MATERIAL_ALPHA_MASK`
-(`constant_id = 1`, bool) in `mesh_forward.frag.glsl`; the debug-view shader
-carries the mask constant too. The pipeline cache hashes fragment
+`MATERIAL_UNLIT` (`constant_id = 0`), `MATERIAL_ALPHA_MASK` (`constant_id = 1`)
+and `MATERIAL_BLEND` (`constant_id = 2`), all bool, declared once in
+`mesh_material.glsli` for every shader that includes it. `MeshOutput` there is the
+one place a mesh fragment's colour is assembled: the blend variant writes it
+premultiplied, so emission adds at full strength whatever the coverage. The pipeline cache hashes fragment
 specialization constants as part of the pipeline
 desc, so the eight opaque variants are distinct `VkPipeline` objects sharing
 two `VkShaderModule` objects.

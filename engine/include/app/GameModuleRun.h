@@ -17,7 +17,8 @@ struct GameModuleRunSettings
     std::string ContentRoot{};
     std::string Map{};
     std::uint64_t Frames = 0;
-    double TargetFps = 120.0;
+    // None keeps the rate the module configured.
+    std::optional<double> TargetFps = 120.0;
     // Off keeps the window the module configured.
     bool Headless = true;
     // Console lines run before the map loads, and after it.

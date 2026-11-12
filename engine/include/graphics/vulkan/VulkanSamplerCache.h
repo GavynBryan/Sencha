@@ -59,6 +59,7 @@ private:
 
     Logger& Log;
     VkDevice Device = VK_NULL_HANDLE;
+    float MaxDeviceAnisotropy = 1.0f;
     std::unordered_map<SamplerDesc, VkSampler, DescHash> Cache;
 
     [[nodiscard]] VkSampler CreateSampler(const SamplerDesc& desc);

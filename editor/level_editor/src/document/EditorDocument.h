@@ -11,6 +11,7 @@
 
 #include <core/assets/AssetRef.h>
 #include <core/json/JsonValue.h>
+#include <render/PresentationSettings.h>
 #include <world/registry/Registry.h>
 
 #include <cstdint>
@@ -275,6 +276,10 @@ public:
     [[nodiscard]] const AssetRef& GetDefaultMaterial() const;
     void SetDefaultMaterial(AssetRef material);
 
+    // The scene's layer of presentation settings; set through MakeSetPresentationCommand.
+    [[nodiscard]] const PresentationSettingsLayer& GetPresentation() const;
+    void SetPresentation(PresentationSettingsLayer presentation);
+
 private:
     // Builds the document's current source form: live values merged over the
     // retained source's trivia and unknowns. ToSceneText renders it; Save also
@@ -302,6 +307,7 @@ private:
     SceneSourceDocument Retained_;
 
     AssetRef DefaultMaterial{ AssetType::Material, "asset://materials/dev/gray.smat" };
+    PresentationSettingsLayer Presentation;
 
     // Always present (constructor-injected). The asset system and catalog are
     // non-owning and optional: null until SetAssetEnvironment (brush-only).

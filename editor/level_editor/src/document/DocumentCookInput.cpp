@@ -444,6 +444,7 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     std::vector<std::string> refused;
     snapshot.PassthroughScene = BuildPassthroughScene(
         document, logging, assetSystem, sceneIndices, refused);
+    snapshot.Presentation = document.GetPresentation();
     if (!refused.empty())
     {
         std::string message;

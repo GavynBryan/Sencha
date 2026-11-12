@@ -41,6 +41,8 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <optional>
 
 namespace
 {
@@ -276,19 +278,26 @@ void CheckScene(const GoldenScene& scene)
     return static_cast<int>(std::lround(encoded * 255.0f));
 }
 
-void CheckEmittedLevel(float emitted, float exposure)
+// Below 1, `coverage` blends the surface over a black sky.
+void CheckEmittedLevel(float emitted, float exposure, float coverage = 1.0f, std::string_view shaderKeys = {},
+                       std::optional<float> shown = std::nullopt)
 {
     if (!DisplayAvailable())
         GTEST_SKIP() << "no display; the golden images need a GPU to render against";
 
+    const bool blended = coverage < 1.0f;
     const std::filesystem::path material = std::filesystem::path(SENCHA_GOLDEN_CONTENT_ROOT) / "assets" / "materials"
         / "dev" / "generated_tonemap_ramp.smat";
     std::ofstream(material, std::ios::trunc)
         << "{ \"id\": \"7a3f10c2b95e4d18\", \"version\": 2, \"shading\": \"unlit\", "
-        << "\"base_color_factor\": [0, 0, 0, 1], \"emissive_factor\": [1, 1, 1], "
+        << (blended ? "\"alpha_mode\": \"blend\", " : "") << shaderKeys
+        << "\"base_color_factor\": [0, 0, 0, " << coverage << "], \"emissive_factor\": [1, 1, 1], "
         << "\"emissive_strength\": " << emitted << " }\n";
 
-    const std::string args = "+set render.exposure " + std::to_string(exposure);
+    std::string args = "+set render.exposure " + std::to_string(exposure);
+    if (blended)
+        for (const char* channel : { "sky_r", "sky_g", "sky_b", "ground_r", "ground_g", "ground_b" })
+            args += std::string(" +set render.ambient.") + channel + " 0";
     const GoldenScene scene{ .Name = "tonemap_ramp", .Map = "levels/golden_tonemap_ramp", .ExtraArgs = args.c_str() };
     ASSERT_TRUE(CookScene(scene));
     const std::filesystem::path capture = std::filesystem::temp_directory_path() / "sencha_tonemap_ramp.png";
@@ -297,7 +306,7 @@ void CheckEmittedLevel(float emitted, float exposure)
     ASSERT_TRUE(image.has_value());
 
     const std::size_t pixel = (static_cast<std::size_t>(image->Height / 2) * image->Width + image->Width / 2) * 4;
-    const int expected = ExpectedDisplayLevel(emitted, exposure);
+    const int expected = ExpectedDisplayLevel(shown.value_or(emitted), exposure);
     for (std::size_t channel = 0; channel < 3; ++channel)
         EXPECT_NEAR(static_cast<int>(image->Pixels[pixel + channel]), expected, 1)
             << "a surface emitting " << emitted << " at exposure " << exposure << ", channel " << channel;
@@ -352,6 +361,11 @@ TEST(GoldenImage, AnEffectAtWeightZeroIsNotScheduled)
 TEST(GoldenImage, ADisplayEffectRunsAfterTheTransform)
 {
     CheckScene({ .Name = "post_fade", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.fade 0.5" });
+}
+
+TEST(GoldenImage, BloomSpreadsTheLightAboveItsThreshold)
+{
+    CheckScene({ .Name = "post_bloom", .Map = "levels/shadow_probe", .ExtraArgs = "+set render_host.post.bloom 1" });
 }
 
 TEST(GoldenImage, ASceneEffectRunsBeforeTheTransform)
@@ -424,6 +438,24 @@ TEST(TonemapRamp, EachEmittedLevelLandsWhereTheFormulaSays)
 TEST(TonemapRamp, ExposureScalesBeforeTheShoulder)
 {
     CheckEmittedLevel(0.5f, 2.0f);
+}
+
+TEST(TonemapRamp, ABlendedSurfaceEmitsAtFullStrength)
+{
+    for (const float emitted : { 0.25f, 1.0f, 2.0f })
+        CheckEmittedLevel(emitted, 1.0f, 0.1f);
+}
+
+TEST(MaterialShader, ARegisteredShaderDrawsWithTheMaterialsParams)
+{
+    for (const float coverage : { 1.0f, 0.1f })
+        CheckEmittedLevel(0.0f, 1.0f, coverage,
+                          R"("shader": "render_host.params_emit", "shader_params": [[1, 1, 1, 0.75]], )", 0.75f);
+}
+
+TEST(MaterialShader, AnUnregisteredNameDrawsTheBuiltInShading)
+{
+    CheckEmittedLevel(0.75f, 1.0f, 1.0f, R"("shader": "nobody.registered", )");
 }
 
 // One scene covering as much of the renderer as a single frame can: cooked

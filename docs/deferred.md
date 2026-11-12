@@ -963,11 +963,12 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Authored post effects
 
-- **What:** a post effect's weight is driven from C++ every frame, on whatever clock its
-  writer picks, and `PostEffectContribution` carries its own `Held`/`Session` lifetime and
+- **What:** a transient post effect's weight is driven from C++ every frame, on whatever clock
+  its writer picks, and `PostEffectContribution` carries its own `Held`/`Session` lifetime and
   `RemainingWallSeconds`. Camera shakes already have an authored envelope and cosmetic verbs
-  (`CameraEffectTiming`, `CameraShakeVerbs`); post effects have neither, and Kyusu cannot show
-  or author one.
+  (`CameraEffectTiming`, `CameraShakeVerbs`); post effects have neither. A standing look, such
+  as a level's bloom, is authored already, as [presentation settings](renderer/presentation-settings.md);
+  this is about effects that come and go.
 - **Where:** `engine/include/render/post/PostEffectContributions.h`,
   `engine/src/camera/CameraShakeVerbs.cpp`.
 - **Impact:** a fade or a hit flash is C++ in the game, not data a designer tunes.

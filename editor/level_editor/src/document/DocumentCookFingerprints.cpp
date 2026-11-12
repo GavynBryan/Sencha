@@ -222,12 +222,14 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
     AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
     fp.Probe = probeIdentity.Value();
 
-    CookFingerprint documentFingerprint("document_cook", 10);
+    CookFingerprint documentFingerprint("document_cook", 11);
     documentFingerprint.AddDependency("brush_cells", fp.Brush)
         .AddDependency("placements", fp.Placements)
         .AddDependency("direct_lights", HashDirectLights(bakeLights))
         .AddU64("passthrough_scene",
-                HashBytes64(JsonStringify(snapshot.PassthroughScene, false)));
+                HashBytes64(JsonStringify(snapshot.PassthroughScene, false)))
+        .AddU64("presentation",
+                HashBytes64(JsonStringify(WritePresentationSettingsLayer(snapshot.Presentation), false)));
     if (!bakeLights.empty())
     {
         documentFingerprint.AddFloat("diffuse_wrap", lightmapParams.Shading.DiffuseWrap)

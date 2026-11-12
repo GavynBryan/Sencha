@@ -15,6 +15,7 @@ PresentedFrame ResolvePresentedFrame(const World& world,
     PresentedFrame frame;
     frame.FrameIndex = presentation.FrameIndex;
     frame.Alpha = presentation.Alpha;
+    frame.SimulationSeconds = presentation.SimulationSeconds;
     frame.Extent = extent;
     frame.Camera = camera;
     if (extent.IsEmpty() || !camera.IsValid() || !world.IsAlive(camera) || !world.IsRegistered<CameraComponent>())

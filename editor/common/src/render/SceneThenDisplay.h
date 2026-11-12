@@ -29,7 +29,8 @@ struct SceneDisplayTargets
 void OrderViewDepthAccess(VkCommandBuffer cmd, VkImage depth, VkFormat format);
 
 // One view's frame: `drawScene` into the scene target, `drawBetween` outside any scope
-// with the scene's depth readable, the output pass, then `drawDisplay` over its result
+// with the scene's colour, depth and `post` in its frame, so a post-effect chain can run
+// there, the output pass, then `drawDisplay` over its result
 // with that depth, in display-referred linear light. The one path an editor view renders
 // through, so none can skip the output pass. An empty `drawScene` means a view with no
 // scene: the display clears to `clear` and only `drawDisplay` runs. Either callback but
