@@ -1,6 +1,7 @@
 #ifdef SENCHA_ENABLE_UI
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
 #include <render/feature/UiRenderFeature.h>
+#include <render/feature/UiTextureRenderFeature.h>
 #endif
 #include <app/OptionsPage.h>
 #include <app/EngineVocabulary.h>
@@ -1561,6 +1562,7 @@ int Engine::Run(Game& game)
     // to ApplicationUi in OnStart, so authored surfaces draw over a host's own UI;
     // its id lets a later feature order against it.
     UiRenderFeature* uiFeature = nullptr;
+    UiTextureRenderFeature* uiTextureFeature = nullptr;
     if (UiState != nullptr && UiState->IsReady() && GraphicsState != nullptr)
     {
         RuntimeAssets& assets = ContentState->Assets();
@@ -1570,6 +1572,14 @@ int Engine::Run(Game& game)
             FeatureRegistration{ .Id = kUiRenderFeatureId });
         if (uiFeature == nullptr)
             LoggingState.GetLogger<Engine>().Error("the authored UI render feature did not register");
+        // Surfaces drawn into target textures, which materials sample: in the
+        // Offscreen phase, so every pass that draws the world reads them.
+        uiTextureFeature = renderer.AddFeature(
+            std::make_unique<UiTextureRenderFeature>(*UiState, assets.Textures.get(),
+                                                     assets.Materials.TargetTextures()),
+            FeatureRegistration{ .Id = kUiTextureRenderFeatureId });
+        if (uiTextureFeature == nullptr)
+            LoggingState.GetLogger<Engine>().Error("the UI target texture render feature did not register");
     }
 #endif
 
@@ -1666,6 +1676,14 @@ int Engine::Run(Game& game)
     if (uiFeature != nullptr && !GraphicsState->MainRenderer.RemoveFeature(uiFeature))
     {
         std::fputs("[engine] the authored UI render feature could not be removed; a feature "
+                   "depending on it outlived the game's OnShutdown\n", stderr);
+        std::abort();
+    }
+    // Its teardown withdraws what it published from the material cache's table,
+    // which goes with the content stack below.
+    if (uiTextureFeature != nullptr && !GraphicsState->MainRenderer.RemoveFeature(uiTextureFeature))
+    {
+        std::fputs("[engine] the UI target texture render feature could not be removed; a feature "
                    "depending on it outlived the game's OnShutdown\n", stderr);
         std::abort();
     }

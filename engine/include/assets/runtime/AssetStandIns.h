@@ -18,6 +18,10 @@ class TextureCache;
 // (UINT32_MAX) it is flat pink.
 [[nodiscard]] Material StandInMaterial(std::uint32_t checkerTextureIndex);
 
+// What a target texture samples while nothing writes it (render/TargetTextures.h):
+// one black texel, so an unwritten screen is off rather than lit.
+[[nodiscard]] TextureData UnwrittenTargetTexture();
+
 // The two kinds' stand-in operations: each puts its stand-in into the store
 // under `path` and yields the creation reference.
 [[nodiscard]] AssetLease PutStandInTexture(TextureCache& textures, std::string_view path);

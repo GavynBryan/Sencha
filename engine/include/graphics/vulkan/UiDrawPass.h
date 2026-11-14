@@ -3,6 +3,8 @@
 #include <graphics/RenderFeature.h>
 #include <graphics/ShaderHandle.h>
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/RenderScope.h>
+#include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/VulkanDescriptorCache.h>
 #include <render/ui/UiDrawFrame.h>
 
@@ -13,6 +15,13 @@
 #include <vector>
 
 class TextureCache;
+
+// The scope a surface draws into an offscreen target with: colour cleared to
+// `clear`, and the device's depth and stencil cleared and discarded, so a clip
+// mask behaves exactly as it does on the swapchain. Every feature drawing UI
+// into a target opens this one.
+[[nodiscard]] RenderScopeDesc UiTargetScope(const RenderTargetView& target, VkFormat colorFormat,
+                                            const RendererServices& services, VkClearColorValue clear);
 
 // Turns a recorded UiDrawFrame into draw commands. Names no render-domain type
 // of its own (cmake/CheckRenderIsolation.cmake); generated textures resolve

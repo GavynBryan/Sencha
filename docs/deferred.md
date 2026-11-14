@@ -193,6 +193,28 @@ do the work and delete the entry.
 - **Trigger:** the next change to how any of them allocates, resolves or frees
   a handle moves that owner onto `HandlePool` in the same change.
 
+## A target texture per viewer
+
+- **What:** a target texture is one picture per name, so every material naming
+  `target:health` shows the same health. Two local players each holding a rifle
+  would see the same screen. The route is a material per viewer, substituted
+  into each viewer's view model through a mesh override, each naming its own
+  target.
+- **Where:** `TargetTextureTable` (`render/TargetTextures.h`), and Loss
+  Function's `HealthTankHud`, which draws the local player's health.
+- **Trigger:** split screen, or a second local view of any kind. The engine has
+  one local subject and one active camera today.
+
+## Mips for a target texture seen from afar
+
+- **What:** a target texture has one level, sampled linearly. Close up, as on a
+  view model, that is right; a screen seen across a room minifies it and
+  shimmers.
+- **Where:** `UiTextureTargets::BindingFor`'s target description.
+- **Trigger:** the first target texture shown on a prop placed in a level, where
+  it can be seen from a distance. Generate the chain after a redraw, which is
+  rare, rather than every frame.
+
 ## Per-window scale of view handles
 
 - **What:** every authored surface takes its own window's scale, but the

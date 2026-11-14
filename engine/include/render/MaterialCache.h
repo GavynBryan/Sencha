@@ -3,6 +3,7 @@
 #include <core/assets/AssetCache.h>
 #include <core/handle/Owned.h>
 #include <render/Material.h>
+#include <render/TargetTextures.h>
 #include <render/TextureHandle.h>
 
 #include <cstdint>
@@ -76,6 +77,12 @@ public:
     [[nodiscard]] bool ResolvesShaders() const { return ShaderTypes != nullptr; }
     [[nodiscard]] const MaterialShaderCatalog& Shaders() const;
 
+    // The targets a material texture slot may name (`target:NAME`). Here
+    // because every material that names one and every pass that draws one
+    // already reach this cache.
+    [[nodiscard]] TargetTextureTable& TargetTextures() { return Targets; }
+    [[nodiscard]] const TargetTextureTable& TargetTextures() const { return Targets; }
+
 private:
     friend class AssetCache<MaterialCache, MaterialHandle, MaterialEntry, AssetType::Material>;
 
@@ -83,4 +90,5 @@ private:
     bool IsEntryLive(const MaterialEntry& entry) const;
 
     const MaterialShaderCatalog* ShaderTypes = nullptr;
+    TargetTextureTable Targets;
 };

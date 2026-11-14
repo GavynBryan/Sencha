@@ -149,4 +149,16 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     // registration order.
     RegisterAssetKind(Assets, AssetType::Font, FontLoader, &Fonts);
     RegisterAssetKind(Assets, AssetType::UiPackage, UiPackageLoader, &UiPackages);
+
+    if (Textures != nullptr)
+    {
+        const TextureData black = UnwrittenTargetTexture();
+        const TextureHandle handle =
+            Textures->CreateFromTextureData({}, black, TextureCache::SamplerForTextureData(black));
+        if (handle.IsValid())
+        {
+            UnwrittenTarget = TextureCacheHandle(Textures.get(), handle, TextureCacheHandle::NoAttachTag{});
+            Materials.TargetTextures().SetUnpublishedIndex(Textures->GetBindlessIndex(handle).Value);
+        }
+    }
 }

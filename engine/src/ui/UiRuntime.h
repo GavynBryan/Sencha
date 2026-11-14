@@ -107,6 +107,8 @@ public:
     [[nodiscard]] bool IsPointerOver(UiSurfaceId surface) const;
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
+    void SetSurfaceTexture(UiSurfaceId surface, std::string_view name);
+    [[nodiscard]] std::string_view GetSurfaceTexture(UiSurfaceId surface) const;
     void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
     [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
     void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
@@ -158,6 +160,7 @@ public:
     void ExtractRender();
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const { return DrawFrames; }
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
+    [[nodiscard]] const std::vector<UiTextureFrame>& TextureFrames() const { return TextureFrameList; }
     [[nodiscard]] UiTextureChanges TakeTextureChanges() { return std::exchange(ExtractedTextureChanges, {}); }
 
     // IUiTextureResolver: a content image resolves against the open screen's
@@ -223,6 +226,8 @@ private:
         std::optional<Rect2d> Placement;
         UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
         UiSurfaceDestination Destination = UiSurfaceDestination::Window;
+        // The target texture a Texture-destined surface draws into.
+        std::string Texture;
         // The platform window the surface lives on; 0 is the primary, which is
         // how every surface began and how a host that never names one is served.
         std::uint32_t WindowId = 0;
@@ -471,6 +476,7 @@ private:
     // list, because each one has exactly one consumer and that consumer asks
     // for it by name.
     std::vector<std::pair<UiSurfaceId, UiDrawFrame>> OffscreenFrames;
+    std::vector<UiTextureFrame> TextureFrameList;
     UiTextureChanges ExtractedTextureChanges;
 
     struct HostImage

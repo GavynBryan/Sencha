@@ -24,6 +24,19 @@ TextureData StandInTexture()
     return texture;
 }
 
+TextureData UnwrittenTargetTexture()
+{
+    TextureData texture;
+    texture.Format = TexturePixelFormat::RGBA8_SRGB;
+    texture.Usage = TextureUsage::BaseColor;
+    texture.Filter = TextureFilter::Nearest;
+    texture.Width = 1;
+    texture.Height = 1;
+    texture.Blob = { 0, 0, 0, 255 };
+    texture.Mips.push_back({ .Width = 1, .Height = 1, .Offset = 0, .ByteSize = texture.Blob.size() });
+    return texture;
+}
+
 Material StandInMaterial(std::uint32_t checkerTextureIndex)
 {
     Material material;

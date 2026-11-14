@@ -126,6 +126,35 @@ VkRect2D ClampScissor(const UiClipRect& clip, RenderExtent surface, VkExtent2D t
 }
 } // namespace
 
+RenderScopeDesc UiTargetScope(const RenderTargetView& target, VkFormat colorFormat,
+                              const RendererServices& services, VkClearColorValue clear)
+{
+    RenderScopeDesc scope{};
+    scope.Area.offset = { 0, 0 };
+    scope.Area.extent = target.Extent;
+    scope.Color.View = target.ColorView;
+    scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Color.Clear.color = clear;
+    scope.ColorFormat = colorFormat;
+    scope.Depth.View = target.DepthView;
+    scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    scope.Depth.Clear.depthStencil = { 1.0f, 0 };
+    scope.DepthFormat = services.DepthFormat;
+    if (services.StencilFormat != VK_FORMAT_UNDEFINED)
+    {
+        // Same image, its other aspect: cleared, discarded, and what the pass
+        // clips through, exactly as the swapchain frame binds it.
+        scope.Stencil.View = target.DepthView;
+        scope.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        scope.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        scope.Stencil.Clear.depthStencil = { 1.0f, 0 };
+        scope.StencilFormat = services.StencilFormat;
+    }
+    scope.Phase = RenderPhase::Offscreen;
+    return scope;
+}
+
 bool UiDrawPass::Setup(const RendererServices& services, TextureCache* textures)
 {
     Services = &services;

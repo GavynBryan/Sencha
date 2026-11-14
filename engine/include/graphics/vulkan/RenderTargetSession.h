@@ -88,8 +88,11 @@ public:
                         VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
     // A target consumed within the frame: its contents are discarded, and the
-    // write is ordered after whatever `access` says last touched it.
-    RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access);
+    // write is ordered after whatever `access` says last touched it. `depth`
+    // transitions as in the other constructor.
+    RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access,
+                        VkImage depth = VK_NULL_HANDLE,
+                        VkFormat depthFormat = VK_FORMAT_UNDEFINED);
 
     ~RenderTargetSession() { End(); }
 

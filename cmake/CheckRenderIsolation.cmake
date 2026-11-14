@@ -91,6 +91,7 @@ set(RENDER_DRIVER_BACKEND_PAIRS
     "/engine/include/render/feature/PostRenderFeature.h=graphics/vulkan/PostEffectChain.h"
     "/engine/include/render/feature/OutlineRenderFeature.h=graphics/vulkan/OutlineMaskTargets.h"
     "/engine/include/render/feature/UiRenderFeature.h=graphics/vulkan/UiDrawPass.h"
+    "/engine/include/render/feature/UiTextureRenderFeature.h=graphics/vulkan/UiTextureTargets.h"
     "/engine/include/render/feature/SkinnedPoseRenderFeature.h=graphics/vulkan/SkinnedPosePass.h"
     "/engine/include/render/feature/DebugLineRenderFeature.h=graphics/vulkan/DebugLinePass.h"
 )

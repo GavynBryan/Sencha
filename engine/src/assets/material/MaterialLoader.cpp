@@ -5,6 +5,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
+#include <render/TargetTextures.h>
 
 #include <format>
 #include <fstream>
@@ -59,6 +60,16 @@ namespace
     bool ReadTextureRef(const JsonValue& value, std::string_view key,
                         AssetRef& out, MaterialParseError* error)
     {
+        // `target:NAME` names a texture drawn at runtime (render/TargetTextures.h).
+        // It is not an asset, so it carries no id and the cook collects nothing
+        // from it.
+        if (value.IsString() && value.AsString().starts_with(kTargetTextureScheme))
+        {
+            if (!ParseTargetTextureRef(value.AsString()).has_value())
+                return Fail(error, std::format("'{}' names no target after '{}'", key, kTargetTextureScheme));
+            out = AssetRef{ AssetType::Texture, value.AsString() };
+            return true;
+        }
         std::optional<AssetRef> ref = AssetRefFromJson(value);
         if (!ref.has_value())
             return Fail(error, std::format("'{}' must be an asset path or an {{id, path}} reference", key));

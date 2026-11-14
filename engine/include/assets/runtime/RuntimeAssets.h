@@ -119,6 +119,9 @@ private:
     DataAssetLoader DataLoader;
     FontFaceAssetLoader FontLoader;
     UiPackageAssetLoader UiPackageLoader;
+    // What every unwritten target texture samples. After Textures, so it is
+    // released before the cache it lives in.
+    TextureCacheHandle UnwrittenTarget;
 
 public:
     AssetSystem Assets;

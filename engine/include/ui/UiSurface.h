@@ -28,10 +28,15 @@ using UiSurfaceId = Handle<struct UiSurfaceTag>;
 //              target, its size and its presentation are the host's; the
 //              runtime records the surface at the size the host set and says
 //              nothing about where the pixels go.
+//   Texture:   drawn by the engine into the target texture the surface names
+//              (UiService::SetSurfaceTexture), which a material samples as
+//              `target:NAME`: a screen on a prop. Never drawn to the window,
+//              and it hears no input, having no place in one.
 enum class UiSurfaceDestination : std::uint8_t
 {
     Window = 0,
     Offscreen,
+    Texture,
 };
 
 // What the runtime delivers to a surface. A host decides; the runtime obeys.

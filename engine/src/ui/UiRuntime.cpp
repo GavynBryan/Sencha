@@ -124,6 +124,7 @@ void UiRuntime::Shutdown()
     Surfaces.clear();
     DrawFrames.clear();
     OffscreenFrames.clear();
+    TextureFrameList.clear();
     PendingActions.clear();
     ActiveScreen = nullptr;
 }
@@ -368,8 +369,28 @@ void UiRuntime::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination 
     if (Surface* slot = ResolveSurface(surface))
     {
         slot->Destination = destination;
+        if (destination != UiSurfaceDestination::Texture)
+            slot->Texture.clear();
         RebuildInputOrder();
     }
+}
+
+void UiRuntime::SetSurfaceTexture(UiSurfaceId surface, std::string_view name)
+{
+    Surface* slot = ResolveSurface(surface);
+    if (slot == nullptr)
+        return;
+    // A texture has no place in any window, so nothing there can address it.
+    SetSurfaceInputPolicy(surface, UiSurfaceInputPolicy::Disabled);
+    slot->Destination = UiSurfaceDestination::Texture;
+    slot->Texture = std::string(name);
+    RebuildInputOrder();
+}
+
+std::string_view UiRuntime::GetSurfaceTexture(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? std::string_view(slot->Texture) : std::string_view{};
 }
 
 UiSurfaceDestination UiRuntime::GetSurfaceDestination(UiSurfaceId surface) const
@@ -954,6 +975,7 @@ void UiRuntime::ExtractRender()
 {
     DrawFrames.clear();
     OffscreenFrames.clear();
+    TextureFrameList.clear();
     ExtractedTextureChanges = {};
     if (!Ready)
         return;
@@ -977,10 +999,18 @@ void UiRuntime::ExtractRender()
         ActiveRenderSurface = {};
 
         UiDrawFrame frame = Recorder->EndFrame();
-        if (frame.IsEmpty())
-            continue;
         frame.WindowId = surface.WindowId;
         frame.Layer = surface.Layer;
+        // Empty or not: an empty one says the texture is to be cleared, its
+        // absence that the surface is gone.
+        if (surface.Destination == UiSurfaceDestination::Texture)
+        {
+            if (!surface.Texture.empty())
+                TextureFrameList.push_back({ .Texture = surface.Texture, .Frame = std::move(frame) });
+            continue;
+        }
+        if (frame.IsEmpty())
+            continue;
         // Published once, to one place. The window feature reads the list; a
         // host feature drawing this surface into its own target reads the
         // entry by surface, and never sees the same recording twice.

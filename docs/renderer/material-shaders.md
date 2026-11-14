@@ -51,6 +51,11 @@ shaders.
 { "version": 2, "shader": "game.surface", "shader_params": [[0.2, 0.6, 1.0, 4.0], [1, 0, 0, 0]] }
 ```
 
+Any texture slot may name a target texture, `"emissive_texture": "target:NAME"`, whose
+pixels something draws at runtime: a document on a screen
+([resources.md](resources.md#target-textures)). The shader samples it like any other
+slot.
+
 A material resolves the name when it loads. A name nothing registered logs a warning
 and draws with the built-in shading, as does a shader whose pipelines fail to build.
 

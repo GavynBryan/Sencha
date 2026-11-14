@@ -216,6 +216,61 @@ minimize, with the effect chain active. That run fails if step 3's barrier loses
 scope, but it still passes if step 4's does: the layer does not track reads through the bindless
 array. Between frames, the argument above and those unit tests are the evidence, not the layer.
 
+## Target textures
+
+A target texture is drawn at runtime and sampled by materials: a screen on a prop
+showing authored UI today, and a camera feed or a scope later. A material names one
+in any texture slot as `target:NAME`; whatever draws it publishes under the same
+name. Neither knows the other (`render/TargetTextures.h`).
+
+```json
+{ "version": 2, "emissive_texture": "target:health" }
+```
+
+**Why a material does not hold the index.** The pixels live in the writer's render
+target, whose bindless index changes whenever the target is rebuilt: on first use,
+on a resize, after a quiet interval frees it. Repointing the slot a material already
+samples would be a descriptor write to something an earlier frame still executing
+reads, which `UPDATE_AFTER_BIND` does not permit (only `UPDATE_UNUSED_WHILE_PENDING`
+relaxes it, and only for descriptors not in use). A material drawn every frame
+always has such a frame in flight. So the material stores an encoded id
+(`TargetTextureTable::EncodeSlot`, the high bit set), and `MeshForwardPass` resolves
+each texture slot per draw through `MaterialCache::TargetTextures()`. An ordinary
+index passes through unchanged; the cost is a compare per slot per draw.
+
+| State | What the slot samples |
+|---|---|
+| Nothing has published the name | the unwritten texture: one black texel `RuntimeAssets` creates, so a screen nothing draws is off rather than lit by the emissive slot's neutral white |
+| Published this frame | the writer's render target |
+| Withdrawn (its surface closed) | the unwritten texture again |
+
+**The writer's contract.** Publish every frame the target holds that frame's pixels,
+before the forward pass records, which an Offscreen-phase feature does by phase
+order. The image is a `WithinFrame` target (above), written and sampled inside one
+frame; a writer that skips a frame leaves the image in `SHADER_READ_ONLY_OPTIMAL`,
+and later reads of it need no barrier, so skipping is free.
+
+**Names** are interned for the table's lifetime. Authored content bounds how many
+there are; an unused name costs one entry. The cook collects nothing from a
+`target:` reference, and the material loader declares no dependency for it.
+
+The one writer today is `UiTextureRenderFeature`, which draws Texture-destined UI
+surfaces (`docs/ui/architecture.md` §13). It redraws a target only when its surface's
+recording differs from the one the image holds (`SameUiRecording`): an unchanged
+document records the same geometry blobs, so the comparison is pointer equality over
+a handful of commands. A screen whose content is still costs nothing on the GPU.
+
+**What it costs.** Per live texture: one colour image and one depth/stencil image at
+the surface's size (256 by 128 is about 0.3 MB together), one pass on the frames its
+content changes, and nothing on the frames it does not. A texture nothing shows is
+withdrawn at once and its images are freed after `QuietInterval`. Many distinct
+screens changing every frame would be many small passes; an atlas of tiles
+(`TextureProjectionPolicy`'s tile helpers) is the remedy if that is ever measured.
+
+**Not implemented**, recorded in `docs/deferred.md`: a target per viewer (two local
+players' screens showing different pictures), and mips for a target seen from far
+away.
+
 ## Hot reload
 
 Three caches implement in-place reload, all preserving the handle, slot,
