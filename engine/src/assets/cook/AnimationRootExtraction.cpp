@@ -84,6 +84,12 @@ namespace
 
 bool ExtractAnimationRootMotion(AnimationClipData& clip, const SkeletonData& skeleton, std::string* error)
 {
+    if (clip.DurationSeconds <= 0.0f)
+    {
+        if (error != nullptr)
+            *error = "the clip is a pose (every key at time 0), which travels nowhere";
+        return false;
+    }
     std::uint32_t root = 0;
     std::size_t roots = 0;
     for (std::size_t j = 0; j < skeleton.Joints.size(); ++j)

@@ -579,8 +579,11 @@ there are no workers. The inline order is the reference the parallel path must
 match.
 
 A slot's presented pose is its model-space pose between its last two ticks, at
-the share the entity is drawn at: the presentation alpha for an entity carrying
-`WorldTransformHistory`, else the last tick whole. `Slot::PresentedModel` builds
+the frame's presentation alpha, whatever places the entity: one with
+`WorldTransformHistory`, one presentation propagation hangs off a camera, or one
+standing where its last tick left it. A pose is made on the fixed tick, so
+drawing it at the last tick whole would step a viewmodel's animation at the
+tick rate while its camera glides. `Slot::PresentedModel` builds
 it on first request and keeps it until the slot's `Revision` (moved by every
 posed tick and every reshape) or the blend changes, so a frame builds each
 presented pose once however many readers draw from it. Render extraction builds

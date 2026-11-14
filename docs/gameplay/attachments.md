@@ -50,8 +50,8 @@ everything a writer made.
 `PlaceAttachments` runs every frame in `FramePhase::ExtractRender`, before
 presentation propagation. For each attachment at a joint it reads the root's
 presented model pose (`AnimPosePool::Slot::PresentedModel`, the same result the
-skinned palette is built from, at the same alpha: the presentation alpha for a
-root carrying `WorldTransformHistory`, else its last tick whole) and writes the
+skinned palette is built from, at the same alpha, the frame's presentation
+alpha) and writes the
 attachment's `LocalTransform`: joint, then socket offset, then the
 attachment's own offset. Propagation then composes the root's interpolated
 pose, so the attachment and whatever is mounted on it follow with no lag.

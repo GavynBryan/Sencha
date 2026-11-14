@@ -7,7 +7,9 @@
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -15,16 +17,18 @@
 // under SENCHA_ENABLE_COOK, never shipped.
 //
 // glTF 2.0 is the one mesh import path: .blend funnels through it via
-// headless Blender (BlendCook.h). Sources must be self-contained — .glb, or
-// .gltf with embedded data: URIs. External buffer files are rejected: the
-// cooked cache keys staleness on one source file's hash (Decision B), and a
-// sibling .bin that can change without the .gltf changing would rot it.
+// headless Blender (BlendCook.h). A source is a .glb, or a .gltf whose
+// buffers are embedded data: URIs or files beside it. External buffers are
+// read through ImportInput::Sources and listed in AdditionalSources, so the
+// cooked cache recooks when a .bin changes without its .gltf (Decision B).
+// Image URIs are never read: materials are authored .smat.
 //
 // Every cooked mesh carries Decision M tangents: authored TANGENT streams
 // are taken as-is (w snapped to ±1 — normalization is the cook's job, the
-// runtime never fixes data), sources with UVs get MikkTSpace tangents, and
-// UV-less sources get a deterministic normal-derived basis so the format
-// invariant (tangent w is ±1) holds for every vertex.
+// runtime never fixes data), sources with UVs get MikkTSpace tangents
+// (skinned ones too: influences ride the de-index and reweld with their
+// vertices), and UV-less sources get a deterministic normal-derived basis so
+// the format invariant (tangent w is ±1) holds for every vertex.
 //=============================================================================
 
 // Placement, naming and engine-frame rules: docs/assets/pipeline.md, "The glTF
@@ -79,17 +83,26 @@ struct ImportedGltfScene
     std::vector<ImportedAnimation> Animations;
 };
 
+// Answers a .gltf's external buffer: `uri` is the buffer's URI as authored,
+// percent-decoded, relative to the .gltf. False when it cannot be read.
+using GltfBufferReader = std::function<bool(std::string_view uri, std::vector<std::byte>& out)>;
+
 // Pure stage half: one parse → the full scene. Errors travel in `error`.
+// Without `readBuffer`, a source with external buffers is refused.
 [[nodiscard]] bool ImportGltfScene(std::span<const std::byte> bytes,
                                    ImportedGltfScene& out,
-                                   std::string* error = nullptr);
+                                   std::string* error = nullptr,
+                                   const GltfBufferReader& readBuffer = {});
 
 // MikkTSpace over one section's triangles: de-index, generate, re-weld
 // exact-duplicate vertices. Exposed for tests; the import calls it for
-// primitives that have UVs but no authored tangents.
+// primitives that have UVs but no authored tangents. `influences`, when
+// given, is per vertex and is carried through with its vertex, so a corner
+// welds only with one that agrees on both.
 [[nodiscard]] bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
                                            std::vector<uint32_t>& indices,
-                                           std::string* error = nullptr);
+                                           std::string* error = nullptr,
+                                           std::vector<MeshSkinInfluence>* influences = nullptr);
 
 // .glb/.gltf → cooked .smesh, .skmesh, .sskel and .sanim artifacts, named as
 // docs/assets/pipeline.md's glTF import contract tabulates.

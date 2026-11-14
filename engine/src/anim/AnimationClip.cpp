@@ -69,8 +69,9 @@ bool ValidateAnimationClipData(const AnimationClipData& clip, std::string* error
         return Fail(error, "clip skeleton path must be an asset:// path");
     if (clip.Tracks.empty())
         return Fail(error, "clip has no tracks");
-    if (!std::isfinite(clip.DurationSeconds) || clip.DurationSeconds <= 0.0f)
-        return Fail(error, "clip duration must be finite and positive");
+    // Zero is a pose; the key-time check below holds its keys at time 0.
+    if (!std::isfinite(clip.DurationSeconds) || clip.DurationSeconds < 0.0f)
+        return Fail(error, "clip duration must be finite and not negative");
 
     for (size_t trackIndex = 0; trackIndex < clip.Tracks.size(); ++trackIndex)
     {

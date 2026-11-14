@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
@@ -33,7 +34,7 @@ namespace
 {
     // Bump when the output changes for the same source bytes; every artifact
     // this importer cooked then recooks.
-    constexpr std::uint32_t kGltfMeshCookVersion = 6;
+    constexpr std::uint32_t kGltfMeshCookVersion = 7;
 
     struct CgltfFree
     {
@@ -188,11 +189,8 @@ namespace
 
     // Reads one primitive's geometry. When `outInfluences` is non-null the
     // primitive is treated as skinned: JOINTS_0/WEIGHTS_0 are read into
-    // influences (raw skin-local joints, the caller remaps), and a primitive
-    // that would need MikkTSpace tangents is rejected — skinned influences
-    // cannot ride the de-index/reweld, so skinned sources must carry tangents
-    // (or be UV-less). Re-export is cheap; a silent reweld that desyncs
-    // influences is a data-quality lie.
+    // influences (raw skin-local joints, the caller remaps), one per vertex,
+    // and they ride MikkTSpace's de-index and reweld with their vertices.
     bool ReadPrimitive(const cgltf_primitive& primitive,
                        std::string_view meshName,
                        size_t primitiveIndex,
@@ -239,10 +237,6 @@ namespace
                 return fail("skinned mesh primitive missing JOINTS_0/WEIGHTS_0");
             if (joints->count != positions->count || weights->count != positions->count)
                 return fail("JOINTS_0/WEIGHTS_0 counts do not match POSITION count");
-            if (tangents == nullptr && uvs != nullptr)
-                return fail("skinned mesh primitive needs authored TANGENT "
-                            "(re-export with tangents; cook-side tangents for skinned "
-                            "meshes would desync the influence stream)");
         }
 
         const cgltf_size vertexCount = positions->count;
@@ -329,14 +323,13 @@ namespace
         if (indices.empty() || indices.size() % 3 != 0)
             return fail("triangle index count must be a nonzero multiple of 3");
 
-        // Decision M: every cooked vertex carries a tangent. Skinned primitives
-        // never reach the MikkTSpace branch (rejected above), so influences
-        // stay aligned with the un-rewelded vertex order.
+        // Decision M: every cooked vertex carries a tangent. Influences go
+        // through the reweld beside their vertices, so they stay aligned.
         if (tangents == nullptr)
         {
             if (uvs != nullptr)
             {
-                if (!GenerateSectionTangents(vertices, indices, error))
+                if (!GenerateSectionTangents(vertices, indices, error, outInfluences))
                     return false;
             }
             else
@@ -880,10 +873,13 @@ namespace
         return true;
     }
 
-    // Parse a self-contained glTF and load its buffers. No base path is passed:
-    // a source must carry its own data (.glb or data: URIs) so the cooked
-    // cache's single-source-hash staleness stays honest.
-    bool ParseGltf(std::span<const std::byte> bytes, CgltfDataPtr& out, std::string* error)
+    // Parse a glTF and load its buffers. No base path is handed to cgltf: a
+    // buffer is a .glb's own chunk, a data: URI, or a file `readBuffer`
+    // answers, so every byte the cook reads goes through the driver and is
+    // part of the cooked cache's staleness (Decision B). `storage` owns the
+    // external buffers' bytes and must outlive `out`.
+    bool ParseGltf(std::span<const std::byte> bytes, const GltfBufferReader& readBuffer,
+                   std::vector<std::vector<std::byte>>& storage, CgltfDataPtr& out, std::string* error)
     {
         cgltf_options options{};
         cgltf_data* rawData = nullptr;
@@ -895,14 +891,48 @@ namespace
         }
         out.reset(rawData);
 
+        storage.clear();
+        storage.reserve(out->buffers_count);
+        for (cgltf_size i = 0; i < out->buffers_count; ++i)
+        {
+            cgltf_buffer& buffer = out->buffers[i];
+            if (buffer.data != nullptr || buffer.uri == nullptr || std::strncmp(buffer.uri, "data:", 5) == 0)
+                continue;
+            std::string uri(buffer.uri);
+            uri.resize(cgltf_decode_uri(uri.data()));
+            if (uri.find("://") != std::string::npos || (!uri.empty() && uri.front() == '/'))
+            {
+                SetError(error, std::format("buffer {} names '{}': a buffer file is named relative to the .gltf",
+                                            i, uri));
+                return false;
+            }
+            if (!readBuffer)
+            {
+                SetError(error, std::format("buffer {} is the external file '{}', and this import reads no "
+                                            "files beside the source (export a .glb, or embed it as a data: URI)",
+                                            i, uri));
+                return false;
+            }
+            std::vector<std::byte>& held = storage.emplace_back();
+            if (!readBuffer(uri, held))
+            {
+                SetError(error, std::format("buffer {} names '{}', which could not be read", i, uri));
+                return false;
+            }
+            if (held.size() < buffer.size)
+            {
+                SetError(error, std::format("buffer {} ('{}') holds {} bytes; the source says {}", i, uri,
+                                            held.size(), buffer.size));
+                return false;
+            }
+            buffer.data = held.data();
+            buffer.data_free_method = cgltf_data_free_method_none;
+        }
+
         result = cgltf_load_buffers(&options, out.get(), nullptr);
         if (result != cgltf_result_success)
         {
-            SetError(error,
-                     result == cgltf_result_unknown_format
-                         ? "external buffer URIs are not supported: export a self-contained "
-                           ".glb (or embed buffers as data: URIs)"
-                         : "glTF buffer load failed: " + CgltfResultMessage(result));
+            SetError(error, "glTF buffer load failed: " + CgltfResultMessage(result));
             return false;
         }
 
@@ -1157,8 +1187,14 @@ namespace
 
 bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
                              std::vector<uint32_t>& indices,
-                             std::string* error)
+                             std::string* error,
+                             std::vector<MeshSkinInfluence>* influences)
 {
+    if (influences != nullptr && influences->size() != vertices.size())
+    {
+        SetError(error, "tangent generation: one influence per vertex is required");
+        return false;
+    }
     if (indices.empty() || indices.size() % 3 != 0)
     {
         SetError(error, "tangent generation requires a nonzero multiple of 3 indices");
@@ -1197,20 +1233,29 @@ bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
 
     // Re-weld exact duplicates so the de-index doesn't triple the vertex
     // count where corners agree.
+    // A skinned corner welds only with one bound the same way, so each
+    // welded vertex keeps exactly its source vertex's influence.
     std::vector<StaticMeshVertex> welded;
+    std::vector<MeshSkinInfluence> weldedInfluences;
     std::vector<uint32_t> weldedIndices;
     weldedIndices.reserve(corners.size());
     std::unordered_map<uint64_t, std::vector<uint32_t>> candidatesByHash;
+    const auto sameInfluence = [](const MeshSkinInfluence& a, const MeshSkinInfluence& b) {
+        return std::ranges::equal(a.Joints, b.Joints) && std::ranges::equal(a.Weights, b.Weights);
+    };
 
-    for (const StaticMeshVertex& corner : corners)
+    for (std::size_t c = 0; c < corners.size(); ++c)
     {
+        const StaticMeshVertex& corner = corners[c];
+        const MeshSkinInfluence* influence = influences != nullptr ? &(*influences)[indices[c]] : nullptr;
         const uint64_t hash = HashBytes64(VertexBytes(corner));
         std::vector<uint32_t>& candidates = candidatesByHash[hash];
 
         uint32_t found = UINT32_MAX;
         for (const uint32_t candidate : candidates)
         {
-            if (std::memcmp(&welded[candidate], &corner, sizeof(StaticMeshVertex)) == 0)
+            if (std::memcmp(&welded[candidate], &corner, sizeof(StaticMeshVertex)) == 0
+                && (influence == nullptr || sameInfluence(weldedInfluences[candidate], *influence)))
             {
                 found = candidate;
                 break;
@@ -1220,6 +1265,8 @@ bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
         {
             found = static_cast<uint32_t>(welded.size());
             welded.push_back(corner);
+            if (influence != nullptr)
+                weldedInfluences.push_back(*influence);
             candidates.push_back(found);
         }
         weldedIndices.push_back(found);
@@ -1227,15 +1274,20 @@ bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
 
     vertices = std::move(welded);
     indices = std::move(weldedIndices);
+    if (influences != nullptr)
+        *influences = std::move(weldedInfluences);
     return true;
 }
 
-bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, std::string* error)
+bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, std::string* error,
+                     const GltfBufferReader& readBuffer)
 {
     out = {};
 
+    // Declared before `data`, which points into it until it is freed.
+    std::vector<std::vector<std::byte>> externalBuffers;
     CgltfDataPtr data;
-    if (!ParseGltf(bytes, data, error))
+    if (!ParseGltf(bytes, readBuffer, externalBuffers, data, error))
         return false;
 
     // Skeletons, one per skin. Keep each skin's skin-local → skeleton remap,
@@ -1500,9 +1552,22 @@ std::uint64_t GltfMeshImporter::CookIdentity() const
 
 ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWriter& output)
 {
+    // A .gltf's buffer files are named relative to it and read through the
+    // driver, which recooks this source when one of them changes.
+    std::vector<std::string> buffersRead;
+    const GltfBufferReader readBuffer = input.Sources == nullptr
+        ? GltfBufferReader{}
+        : GltfBufferReader{ [&](std::string_view uri, std::vector<std::byte>& out) {
+              const std::filesystem::path directory = std::filesystem::path(input.SourceRelPath).parent_path();
+              const std::string resolved = (directory / std::filesystem::path(uri)).lexically_normal().generic_string();
+              if (std::ranges::find(buffersRead, resolved) == buffersRead.end())
+                  buffersRead.push_back(resolved);
+              return input.Sources->ReadSource(resolved, out);
+          } };
+
     ImportedGltfScene scene;
     std::string error;
-    if (!ImportGltfScene(input.Bytes, scene, &error))
+    if (!ImportGltfScene(input.Bytes, scene, &error, readBuffer))
         return ImportResult{ .Error = "gltf import: " + error };
 
     MeshImportSettings settings;
@@ -1567,6 +1632,7 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     std::vector<std::string> skeletonPaths(scene.Skeletons.size());
 
     ImportResult result;
+    result.AdditionalSources = std::move(buffersRead);
     LoggingProvider silentLogging; // importers report, never log.
 
     // -- Skeletons --

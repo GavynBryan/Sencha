@@ -268,7 +268,9 @@ TEST(MeshCook, GlbContainerParses)
     EXPECT_EQ(scene.StaticMeshes[0].Geometry.Vertices.size(), 4u);
 }
 
-TEST(MeshCook, ExternalBufferUriIsRejected)
+// Without a reader for files beside it, a .gltf naming one cannot cook
+// (SkeletalCookTests cover the driver reading it).
+TEST(MeshCook, ExternalBufferUriNeedsASourceReader)
 {
     const std::string gltf = QuadGltfSkeleton(
         kQuadMeshNoTangents, R"({"byteLength":204,"uri":"external.bin"})");
@@ -276,7 +278,7 @@ TEST(MeshCook, ExternalBufferUriIsRejected)
     ImportedGltfScene scene;
     std::string error;
     EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
-    EXPECT_NE(error.find("external buffer"), std::string::npos) << error;
+    EXPECT_NE(error.find("'external.bin'"), std::string::npos) << error;
 }
 
 TEST(MeshCook, MalformedBytesAreRejected)
@@ -716,12 +718,8 @@ TEST(MeshCook, BlendImportsThroughHeadlessBlender)
     EXPECT_GE(loaded.Indices.size(), 36u);
 }
 
-// A rigged .blend must reach the runtime as a skinned mesh. The cook exports
-// tangents only for a skinned source, because the glTF importer rejects a
-// skinned primitive without authored TANGENT (cook-side MikkTSpace re-welds
-// vertices, which would desync the parallel influence stream). Without that
-// export the import fails outright, so this covers the asymmetry from the
-// authored file down to the loaded influences.
+// A rigged .blend must reach the runtime as a skinned mesh, from the authored
+// file down to the loaded influences.
 TEST(MeshCook, RiggedBlendImportsAsASkinnedMesh)
 {
     if (!BlenderAvailable())

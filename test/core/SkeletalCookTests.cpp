@@ -84,8 +84,10 @@ namespace
     // A two-joint rig (root, child at +Y) skinning one triangle, plus a
     // two-key rotation animation on the child. Skin joints are listed
     // [root, child]; the child node is the root node's child, so the cook's
-    // topological order keeps them in [root, child] too.
-    std::string BuildSkinnedAnimatedGltf()
+    // topological order keeps them in [root, child] too. With `externalBuffer`,
+    // the buffer is the file "rig data.bin" beside the source, its bytes
+    // written there, rather than a data: URI.
+    std::string BuildSkinnedAnimatedGltf(std::vector<std::byte>* externalBuffer = nullptr)
     {
         BlobBuilder blob;
         const auto pos = blob.Add<float>({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
@@ -124,8 +126,12 @@ namespace
         gltf += R"("animations":[{"name":"wave","channels":[)"
                 R"({"sampler":0,"target":{"node":1,"path":"rotation"}}],)"
                 R"("samplers":[{"input":7,"output":8,"interpolation":"LINEAR"}]}],)";
+        if (externalBuffer != nullptr)
+            *externalBuffer = blob.Data;
         gltf += R"("buffers":[{"byteLength":)" + std::to_string(blob.Data.size())
-                + R"(,"uri":"data:application/octet-stream;base64,)" + base64 + R"("}],)";
+                + (externalBuffer != nullptr
+                       ? std::string(R"(,"uri":"rig%20data.bin"}],)")
+                       : R"(,"uri":"data:application/octet-stream;base64,)" + base64 + R"("}],)");
         gltf += R"("bufferViews":[)"
                 + view(pos) + "," + view(nrm) + "," + view(tan) + "," + view(joints) + ","
                 + view(weights) + "," + view(idx) + "," + view(ibm) + "," + view(animIn) + ","
@@ -542,28 +548,34 @@ TEST(SkeletalCook, ImporterEmitsThreeArtifactKindsThatRoundTrip)
     EXPECT_EQ(loadedClip.Tracks.size(), 1u);
 }
 
-TEST(SkeletalCook, RejectsSkinnedMeshWithoutTangents)
+// A skinned primitive with UVs and no TANGENT gets MikkTSpace tangents, and
+// each vertex keeps its own influence through the de-index and reweld: two
+// corners alike in every attribute but bound to different joints stay apart.
+TEST(SkeletalCook, GeneratesTangentsForASkinnedMesh)
 {
-    // A skinned primitive with UV and no TANGENT would need MikkTSpace, whose
-    // de-index/reweld desyncs the influence stream — so the cook refuses and
-    // asks for a tangent re-export (Decision M / N).
+    // Two coplanar triangles about the origin, UVs following X and Y, so a
+    // corner at the origin gets the same tangent in both. Triangle A is bound
+    // to joint 0 and triangle B, sharing that corner's position, normal and
+    // UV, to joint 1.
     BlobBuilder blob;
-    const auto pos = blob.Add<float>({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
-    const auto nrm = blob.Add<float>({ 0, 0, 1, 0, 0, 1, 0, 0, 1 });
-    const auto uv = blob.Add<float>({ 0, 0, 1, 0, 0, 1 });
-    const auto joints = blob.Add<uint16_t>({ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
-    const auto weights = blob.Add<float>({ 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 });
-    const auto idx = blob.Add<uint16_t>({ 0, 1, 2 });
-    const auto ibm = blob.Add<float>({
-        1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 });
+    const auto pos = blob.Add<float>({ 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, -1, 0, 0 });
+    const auto nrm = blob.Add<float>({ 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 });
+    const auto uv = blob.Add<float>({ 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, -1, 0 });
+    const auto joints = blob.Add<uint16_t>({ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                             1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 });
+    const auto weights = blob.Add<float>({ 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+                                           1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 });
+    const auto idx = blob.Add<uint16_t>({ 0, 1, 2, 3, 4, 5 });
+    const auto ibm = blob.Add<float>({ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+                                       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 });
     const std::string base64 = Base64Encode(blob.Data);
     const auto view = [](const BlobBuilder::View& v) {
         return std::string("{\"buffer\":0,\"byteOffset\":") + std::to_string(v.Offset)
             + ",\"byteLength\":" + std::to_string(v.Length) + "}";
     };
-    const std::string gltf = std::string(R"({"asset":{"version":"2.0"},)")
-        + R"("nodes":[{"name":"j","children":[]},{"name":"body","mesh":0,"skin":0}],)"
-        + R"("skins":[{"joints":[0],"inverseBindMatrices":6}],)"
+    const std::string gltf = std::string(R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0,2]}],)")
+        + R"("nodes":[{"name":"a","children":[1]},{"name":"b"},{"name":"body","mesh":0,"skin":0}],)"
+        + R"("skins":[{"joints":[0,1],"inverseBindMatrices":6}],)"
         + R"("meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2,)"
           R"("JOINTS_0":3,"WEIGHTS_0":4},"indices":5}]}],)"
         + R"("buffers":[{"byteLength":)" + std::to_string(blob.Data.size())
@@ -571,18 +583,34 @@ TEST(SkeletalCook, RejectsSkinnedMeshWithoutTangents)
         + R"("bufferViews":[)" + view(pos) + "," + view(nrm) + "," + view(uv) + "," + view(joints)
         + "," + view(weights) + "," + view(idx) + "," + view(ibm) + "],"
         + R"("accessors":[)"
-          R"({"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},)"
-          R"({"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},)"
-          R"({"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"},)"
-          R"({"bufferView":3,"componentType":5123,"count":3,"type":"VEC4"},)"
-          R"({"bufferView":4,"componentType":5126,"count":3,"type":"VEC4"},)"
-          R"({"bufferView":5,"componentType":5123,"count":3,"type":"SCALAR"},)"
-          R"({"bufferView":6,"componentType":5126,"count":1,"type":"MAT4"}]})";
+          R"({"bufferView":0,"componentType":5126,"count":6,"type":"VEC3","min":[-1,0,0],"max":[1,1,0]},)"
+          R"({"bufferView":1,"componentType":5126,"count":6,"type":"VEC3"},)"
+          R"({"bufferView":2,"componentType":5126,"count":6,"type":"VEC2"},)"
+          R"({"bufferView":3,"componentType":5123,"count":6,"type":"VEC4"},)"
+          R"({"bufferView":4,"componentType":5126,"count":6,"type":"VEC4"},)"
+          R"({"bufferView":5,"componentType":5123,"count":6,"type":"SCALAR"},)"
+          R"({"bufferView":6,"componentType":5126,"count":2,"type":"MAT4"}]})";
 
     ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
-    EXPECT_NE(error.find("TANGENT"), std::string::npos) << error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.SkinnedModels.size(), 1u);
+    const ImportedSkinnedModel& model = scene.SkinnedModels[0];
+    ASSERT_EQ(model.Skinning.Influences.size(), model.Geometry.Vertices.size());
+    ASSERT_EQ(model.Geometry.Indices.size(), 6u);
+    // The origin corner of each triangle is its own vertex, as its joint differs.
+    EXPECT_EQ(model.Geometry.Vertices.size(), 6u);
+
+    for (std::size_t corner = 0; corner < model.Geometry.Indices.size(); ++corner)
+    {
+        const uint32_t vertex = model.Geometry.Indices[corner];
+        const MeshSkinInfluence& influence = model.Skinning.Influences[vertex];
+        EXPECT_EQ(influence.Weights[0], 255) << "corner " << corner;
+        EXPECT_EQ(influence.Joints[0], corner < 3 ? 0u : 1u) << "corner " << corner;
+        const Vec4& tangent = model.Geometry.Vertices[vertex].Tangent;
+        EXPECT_TRUE(tangent.W == 1.0f || tangent.W == -1.0f);
+        EXPECT_NEAR(Vec3d(tangent.X, tangent.Y, tangent.Z).Magnitude(), 1.0f, 1e-4f);
+    }
 }
 
 // -- Skeleton model space ------------------------------------------------------
@@ -1152,6 +1180,151 @@ TEST(SkeletalCook, JointNamesAreRequiredAndDistinct)
     const auto [sharedOk, shared] = importWith("Bone", "Bone");
     EXPECT_FALSE(sharedOk);
     EXPECT_NE(shared.find("two joints are named 'Bone'"), std::string::npos) << shared;
+}
+
+// -- External buffers ------------------------------------------------------------
+
+namespace
+{
+    // Hands out files from memory and records what it was asked for, as the
+    // cook driver does.
+    struct MemorySourceReader final : ISourceFileReader
+    {
+        std::map<std::string, std::vector<std::byte>> Files;
+        std::vector<std::string> Asked;
+
+        bool ReadSource(std::string_view relPath, std::vector<std::byte>& out) override
+        {
+            Asked.emplace_back(relPath);
+            const auto found = Files.find(std::string(relPath));
+            if (found == Files.end())
+                return false;
+            out = found->second;
+            return true;
+        }
+    };
+}
+
+// A .gltf's buffer file is read beside it, through the driver, and reported as
+// an additional source so a changed .bin recooks the .gltf.
+TEST(SkeletalCook, GltfReadsItsBufferFileThroughTheDriver)
+{
+    std::vector<std::byte> bin;
+    const std::string gltf = BuildSkinnedAnimatedGltf(&bin);
+    MemorySourceReader sources;
+    sources.Files["chars/rig data.bin"] = bin;
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "chars/hero.gltf", .Bytes = AsBytes(gltf), .Sources = &sources }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+    EXPECT_EQ(result.AdditionalSources, std::vector<std::string>{ "chars/rig data.bin" });
+    EXPECT_TRUE(output.Files.contains(".cooked/chars/hero.gltf.model:rig.skmesh"));
+    EXPECT_TRUE(output.Files.contains(".cooked/chars/hero.gltf.anim:wave.sanim"));
+
+    // The same source embedded cooks the same bytes.
+    MemoryCookOutputWriter embedded;
+    const std::string inline_ = BuildSkinnedAnimatedGltf();
+    ASSERT_TRUE(importer.Import(ImportInput{ .SourceRelPath = "chars/hero.gltf", .Bytes = AsBytes(inline_) }, embedded)
+                    .IsValid());
+    EXPECT_EQ(output.Files.at(".cooked/chars/hero.gltf.model:rig.skmesh"),
+              embedded.Files.at(".cooked/chars/hero.gltf.model:rig.skmesh"));
+}
+
+TEST(SkeletalCook, GltfBufferFileFailuresAreLocated)
+{
+    std::vector<std::byte> bin;
+    const std::string gltf = BuildSkinnedAnimatedGltf(&bin);
+    GltfMeshImporter importer;
+
+    // No reader: a caller cooking from memory cannot reach the file.
+    {
+        ImportedGltfScene scene;
+        std::string error;
+        EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+        EXPECT_NE(error.find("'rig data.bin'"), std::string::npos) << error;
+    }
+    // Missing.
+    {
+        MemorySourceReader sources;
+        MemoryCookOutputWriter output;
+        const ImportResult result = importer.Import(
+            ImportInput{ .SourceRelPath = "chars/hero.gltf", .Bytes = AsBytes(gltf), .Sources = &sources }, output);
+        EXPECT_FALSE(result.IsValid());
+        EXPECT_NE(result.Error.find("could not be read"), std::string::npos) << result.Error;
+    }
+    // Shorter than the buffer it backs.
+    {
+        MemorySourceReader sources;
+        sources.Files["chars/rig data.bin"] = std::vector<std::byte>(bin.begin(), bin.begin() + 8);
+        MemoryCookOutputWriter output;
+        const ImportResult result = importer.Import(
+            ImportInput{ .SourceRelPath = "chars/hero.gltf", .Bytes = AsBytes(gltf), .Sources = &sources }, output);
+        EXPECT_FALSE(result.IsValid());
+        EXPECT_NE(result.Error.find("holds 8 bytes"), std::string::npos) << result.Error;
+    }
+    // Outside the source's own tree.
+    {
+        std::string absolute = gltf;
+        absolute.replace(absolute.find("rig%20data.bin"), 14, "/etc/rig.bin");
+        MemorySourceReader sources;
+        MemoryCookOutputWriter output;
+        const ImportResult result = importer.Import(
+            ImportInput{ .SourceRelPath = "chars/hero.gltf", .Bytes = AsBytes(absolute), .Sources = &sources }, output);
+        EXPECT_FALSE(result.IsValid());
+        EXPECT_NE(result.Error.find("relative to the .gltf"), std::string::npos) << result.Error;
+        EXPECT_TRUE(sources.Asked.empty());
+    }
+}
+
+// -- Poses -----------------------------------------------------------------------
+
+// An animation keyed once, at time 0, is a pose: it cooks with duration 0 and
+// samples its key wherever it is played.
+TEST(SkeletalCook, SingleKeyAnimationCooksAsAPose)
+{
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity(), Mat4::MakeTranslation(0, -1, 0) });
+    const int times = builder.AddTimes({ 0.0f });
+    const int offset = builder.AddVec3s({ Vec3d(0.25f, 1.0f, 0.0f) });
+    const std::string gltf = builder.Build(
+        "[0,2]", R"([{"name":"Root","children":[1]},{"name":"Arm","translation":[0,1,0]},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[0,1],"inverseBindMatrices":{}}}])", ibm),
+        std::format(R"([{{"name":"open","channels":[{{"sampler":0,"target":{{"node":1,"path":"translation"}}}}],)"
+                    R"("samplers":[{{"input":{},"output":{}}}]}}])",
+                    times, offset));
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ "chars/hero.glb", AsBytes(gltf) }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    AnimationClipData clip;
+    SkeletonData skeleton;
+    std::string error;
+    ASSERT_TRUE(LoadSanimFromBytes(output.Files.at(".cooked/chars/hero.glb.anim:open.sanim"), clip, &error)) << error;
+    ASSERT_TRUE(LoadSskelFromBytes(output.Files.at(".cooked/chars/hero.glb.skel:rig.sskel"), skeleton, &error)) << error;
+    EXPECT_EQ(clip.DurationSeconds, 0.0f);
+
+    std::vector<Transform3f> pose;
+    for (const float at : { 0.0f, 0.3f, 10.0f })
+    {
+        SampleAnimationClip(clip, skeleton, at, pose);
+        ASSERT_EQ(pose.size(), 2u);
+        // The engine frame turns glTF half a turn about +Y, which a child's
+        // local offset does not see.
+        EXPECT_NEAR(pose[1].Position.X, 0.25f, 1e-5f) << at;
+        EXPECT_NEAR(pose[1].Position.Y, 1.0f, 1e-5f) << at;
+    }
+
+    // A pose travels nowhere, so root motion on one is refused.
+    MemoryCookOutputWriter refused;
+    const std::string meta = R"({"clips": {"open": {"root_motion": true}}})";
+    const ImportResult rooted = importer.Import(
+        ImportInput{ .SourceRelPath = "chars/hero.glb", .Bytes = AsBytes(gltf), .MetaBytes = AsBytes(meta) }, refused);
+    EXPECT_FALSE(rooted.IsValid());
+    EXPECT_NE(rooted.Error.find("pose"), std::string::npos) << rooted.Error;
 }
 
 #endif // SENCHA_ENABLE_COOK

@@ -264,6 +264,13 @@ What `ImportGltfScene` and `GltfMeshImporter` (`assets/cook/MeshCook.h`)
 guarantee today. The stage notes below record how it got here; where they
 disagree, this is the contract.
 
+- **Sources.** A `.glb`, or a `.gltf` whose buffers are data: URIs or files
+  named relative to it (the usual `.gltf` + `.bin`, or one `.bin` per
+  purpose). Buffer files are read through the driver's source reader and
+  recorded as the source's additional inputs, so editing a `.bin` recooks
+  the `.gltf` that names it. An absolute or scheme URI, a missing file, or a
+  file shorter than the buffer it backs is a located error. Image URIs are
+  never read: materials are authored `.smat`, textures `.png`.
 - **Engine frame.** glTF faces +Z and the engine faces -Z. The importer
   turns everything by one half turn about +Y (`assets/cook/GltfFrame.h`),
   through its geometry bake and its skeleton fold and nowhere else. Cooked
@@ -311,6 +318,9 @@ disagree, this is the contract.
 
   Two elements landing on one name fail the import with both named. A name
   never depends on discovery order.
+- **Poses.** An animation whose every key is at time 0 cooks as a pose:
+  a clip of duration 0 that samples its keys wherever it plays, and is
+  complete as soon as it starts. Root motion is refused on one.
 - **Clip events.** A source's clips take their events from its import
   sidecar (`<source>.meta`, `assets/cook/MeshImportSettings.h`), keyed by the
   name after `#anim:`, because the cooked clip is rebuilt on every import.
@@ -1221,15 +1231,16 @@ skips where it isn't installed). Decisions B and M made real:
   import path: cgltf (v1.15, single-header, the stb precedent) parses
   `.glb`/`.gltf`; each glTF mesh becomes a `StaticMeshData` with
   primitives as sections (`MaterialSlot` = primitive ordinal), geometry in
-  mesh-local space. **Sources must be self-contained** (.glb or data: URI
-  buffers); external `.bin` files are rejected with a pointed error,
-  because the cooked cache keys staleness on one source file's hash and a
-  sibling that changes without the source changing would rot it.
+  mesh-local space. Sources were self-contained (.glb or data: URI
+  buffers) until a `.gltf` could name its `.bin` files: they are now read
+  through the driver and kept in the cooked entry's additional sources, so
+  a sibling that changes without the source still recooks it.
 - **Tangents, three ways, every cooked vertex covered:** authored TANGENT
   streams pass through (w snapped to ±1 — normalization is the cook's
   job), sources with UVs get MikkTSpace (pinned commit, cook-only dep;
   de-index → generate → re-weld exact duplicates so flat geometry doesn't
-  triple its vertex count), and UV-less sources get a deterministic
+  triple its vertex count; a skinned vertex's influence rides with it and
+  is part of what a duplicate must match), and UV-less sources get a deterministic
   normal-derived basis. The MikkTSpace handedness is pinned by test: a +Z
   quad with U along +X must yield T = +X, w = +1.
 - **Artifact naming** (superseded by the import contract under Decision B:

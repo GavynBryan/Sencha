@@ -204,6 +204,32 @@ TEST(AnimationClipSerializer, ValidationRejectsBadTracks)
     AnimationClipData keyPastDuration = TwoKeyRotationClip();
     keyPastDuration.DurationSeconds = 0.5f; // last key at t=1.0
     EXPECT_FALSE(ValidateAnimationClipData(keyPastDuration, &error));
+
+    AnimationClipData negative = TwoKeyRotationClip();
+    negative.DurationSeconds = -1.0f;
+    EXPECT_FALSE(ValidateAnimationClipData(negative, &error));
+
+    // Duration 0 is a pose, and every key of one is at time 0.
+    AnimationClipData movingPose = TwoKeyRotationClip();
+    movingPose.DurationSeconds = 0.0f;
+    EXPECT_FALSE(ValidateAnimationClipData(movingPose, &error));
+}
+
+TEST(AnimationClipSerializer, PoseRoundTrips)
+{
+    AnimationClipData pose = TwoKeyRotationClip();
+    pose.DurationSeconds = 0.0f;
+    pose.Tracks[0].TimesSeconds = { 0.0f };
+    pose.Tracks[0].Values.resize(4);
+    std::string error;
+    ASSERT_TRUE(ValidateAnimationClipData(pose, &error)) << error;
+
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSanimToBytes(pose, bytes, &error)) << error;
+    AnimationClipData loaded;
+    ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_EQ(loaded.DurationSeconds, 0.0f);
+    EXPECT_EQ(loaded.Tracks[0].TimesSeconds, std::vector<float>{ 0.0f });
 }
 
 namespace

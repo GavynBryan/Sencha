@@ -495,7 +495,6 @@ void PlaceAttachments(World& world, double presentationAlpha)
     const AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
     const SkeletonCache* skeletons = bindings != nullptr ? bindings->SkeletonSource() : nullptr;
     const bool posed = world.IsRegistered<AnimPoseState>();
-    const bool interpolated = world.IsRegistered<WorldTransformHistory>();
 
     runtime->Rebind.clear();
     const World& reader = world;
@@ -528,9 +527,8 @@ void PlaceAttachments(World& world, double presentationAlpha)
             Mat4 joint;
             if (MatchSkinnedPose(slot, attachment.Skeleton, skeleton->Joints.size()) == SkinnedPoseMatch::Posed)
             {
-                const bool history = interpolated && reader.HasComponent<WorldTransformHistory>(attachment.Root);
-                joint = slot->PresentedModel(*skeleton, history ? static_cast<float>(presentationAlpha) : 1.0f)
-                            [attachment.Joint];
+                // The alpha the root's skin is drawn at, so the two agree.
+                joint = slot->PresentedModel(*skeleton, static_cast<float>(presentationAlpha))[attachment.Joint];
             }
             else
             {
