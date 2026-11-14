@@ -89,6 +89,8 @@ struct AnimationClipData
     // alone cannot know the skeleton's joint count.
     std::string SkeletonPath;
 
+    // Zero for a pose: every key at time 0, held for however long it plays.
+    // A pose is complete as soon as it starts and loops in place.
     float DurationSeconds = 0.0f;
 
     std::vector<AnimationJointTrack> Tracks;

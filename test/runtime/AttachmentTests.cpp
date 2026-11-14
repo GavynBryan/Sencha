@@ -67,13 +67,16 @@ TEST(Attachments, AnAttachmentFollowsTheJointAtThePoseItsBodyIsDrawnAt)
     EXPECT_EQ(reader.TryGet<PresentedWith>(rifle)->Root, fx.Body);
 }
 
-TEST(Attachments, ABodyWithoutHistoryIsPlacedAtItsLastTickWhole)
+// A pose is made on the fixed tick whatever places its body, so a body
+// without history (a camera's child, a prop) is posed between its last two
+// ticks too, as its skin is drawn.
+TEST(Attachments, ABodyWithoutHistoryIsPosedAtThePresentationAlpha)
 {
     AttachFixture fx;
     fx.Pose(fx.Body, Vec3d(1.0f, 0.0f, 0.0f), Vec3d(3.0f, 0.0f, 0.0f));
     const EntityId rifle = fx.Mesh("hand_r");
     PlaceAttachments(fx.Entities, 0.25);
-    ExpectNear(fx.Local(rifle).Position, Vec3d(3.0f, 1.0f, 0.5f));
+    ExpectNear(fx.Local(rifle).Position, Vec3d(1.5f, 1.0f, 0.5f));
 }
 
 TEST(Attachments, AnUnposedBodyCarriesItAtBind)

@@ -342,8 +342,11 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     CachedSkinnedQuery->ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto transforms = view.template Read<WorldTransform>();
-        // Drawn where the last tick left it, so posed as the last tick left it.
-        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; }, 1.0);
+        // Placed where the last tick or presentation propagation left it. Its
+        // pose is still the fixed tick's, so it is drawn between the last two
+        // ticks like every other pose: a camera's child animates smoothly.
+        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; },
+                         interpolationAlpha);
     });
 
     CachedSkinnedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
