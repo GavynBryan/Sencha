@@ -42,6 +42,8 @@ enum class GpuScope : std::uint8_t
     ShadowViews,
     SkinPose,
     ForwardOpaque,
+    // Authored surfaces drawn into target textures (UiTextureRenderFeature).
+    UiTextures,
     Count
 };
 

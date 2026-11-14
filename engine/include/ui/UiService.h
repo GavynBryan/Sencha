@@ -121,6 +121,12 @@ public:
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
 
+    // Sends the surface to the Texture destination, drawn into the target
+    // texture `name` that materials sample as `target:NAME`. Its input policy
+    // becomes Disabled. Another destination set later clears the name.
+    void SetSurfaceTexture(UiSurfaceId surface, std::string_view name);
+    [[nodiscard]] std::string_view GetSurfaceTexture(UiSurfaceId surface) const;
+
     // The platform window a surface lives on (0, the default, is the service's
     // own); it hears only that window's events and its frames name it
     // (docs/ui/architecture.md §13).
@@ -218,6 +224,10 @@ public:
     // Offscreen, drew nothing, or does not exist. Same lifetime as Frames():
     // valid from ExtractRender until the next.
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
+
+    // This frame's recordings of Texture-destined surfaces with a name, one per
+    // live surface whether or not it drew anything. Same lifetime as Frames().
+    [[nodiscard]] const std::vector<UiTextureFrame>& TextureFrames() const;
 
     // Generated textures this extraction minted and released, across every
     // surface, handed over once: whatever owns the GPU side takes them after

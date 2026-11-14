@@ -800,10 +800,25 @@ for a window that is no longer there, and one whose scale was never set treats
 swapchain in the `ApplicationUi` phase. `Offscreen` is published through
 `UiService::OffscreenFrame(surface)` and never drawn to the window; whichever
 host feature asked for it draws it into a target of its own with a `UiDrawPass`
-instance of its own. The engine learns only the split -- `ExtractRender` sorts
-recordings into two lists by destination. The target, its format and its
+instance of its own. For it the engine learns only the split -- `ExtractRender`
+sorts recordings into a list per destination. The target, its format and its
 presentation stay the host's, which is what `RenderTargetStore` and the host
 images already said about editor viewports.
+
+`Texture` is drawn by the engine, not a host: `UiService::SetSurfaceTexture(surface,
+name)` sends the surface there, and `UiTextureRenderFeature`, which the engine stages
+for every host with a device, draws it into the target texture `name` that materials
+sample as `target:NAME` (`docs/renderer/resources.md`, "Target textures"). A game puts
+a document on a screen in the world with a surface, a name and a material, and writes
+no render code. The texture surface hears no input, having no place in any window.
+Its recording is published every frame it lives, empty or not
+(`UiService::TextureFrames`), so the feature can tell a surface that drew nothing
+(clear the texture) from one that is gone (withdraw it). The feature redraws only on
+a frame the recording changed (`SameUiRecording`), and a surface is drawn at its own
+size, one pixel to a texel, so a screen's document is laid out for its texture.
+
+Both offscreen consumers open their target with `UiTargetScope`, so a document clips
+through the stencil identically on the window, in a preview and on a screen.
 
 The editor family's consumer is `UiSurfaceTargetRenderFeature`
 (`editor/common/src/render/`): one `Offscreen`-phase feature, N surface-to-target

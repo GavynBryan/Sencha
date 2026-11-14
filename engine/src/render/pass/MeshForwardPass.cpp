@@ -101,7 +101,8 @@ namespace
         return pipeline;
     }
 
-    MeshPushConstants MakePushConstants(const Material& material, const RenderQueueItem& item, Vec4 tint)
+    MeshPushConstants MakePushConstants(const Material& material, const RenderQueueItem& item, Vec4 tint,
+                                        const TargetTextureTable& targets)
     {
         MeshPushConstants push{};
         push.BaseColor = Vec4{ material.BaseColor.X * tint.X, material.BaseColor.Y * tint.Y,
@@ -112,10 +113,11 @@ namespace
         push.RoughnessFactor = material.RoughnessFactor;
         push.MetallicFactor = material.MetallicFactor;
         push.SpecularIntensity = material.SpecularIntensity;
-        push.BaseColorTextureIndex = material.BaseColorTextureIndex;
-        push.NormalTextureIndex = material.NormalTextureIndex;
-        push.OrmTextureIndex = material.OrmTextureIndex;
-        push.EmissiveTextureIndex = material.EmissiveTextureIndex;
+        // A slot naming a target samples what its writer published this frame.
+        push.BaseColorTextureIndex = targets.Resolve(material.BaseColorTextureIndex);
+        push.NormalTextureIndex = targets.Resolve(material.NormalTextureIndex);
+        push.OrmTextureIndex = targets.Resolve(material.OrmTextureIndex);
+        push.EmissiveTextureIndex = targets.Resolve(material.EmissiveTextureIndex);
         push.ReceiveShadows = material.ReceiveShadows ? 1u : 0u;
         push.LightmapTextureIndex = item.LightmapTextureIndex;
         push.AoTextureIndex = item.AoTextureIndex;
@@ -658,7 +660,7 @@ void MeshForwardPass::RecordItem(const FrameContext& frame, const DrawContext& c
         return;
 
     // Layout-scoped, so independent of whatever the submitter decides to rebind.
-    const MeshPushConstants push = MakePushConstants(*material, item, ctx.Tint);
+    const MeshPushConstants push = MakePushConstants(*material, item, ctx.Tint, ctx.Materials.TargetTextures());
     vkCmdPushConstants(frame.Cmd, PipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     ++LastStats.MaterialSwitches;
 

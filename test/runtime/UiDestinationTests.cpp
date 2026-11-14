@@ -142,3 +142,76 @@ TEST(UiDestination, AnUnknownSurfaceIsWindowDestinedAndHasNoRecording)
     EXPECT_EQ(f.Ui->GetSurfaceDestination(UiSurfaceId{}), UiSurfaceDestination::Window);
     EXPECT_EQ(f.Ui->OffscreenFrame(UiSurfaceId{}), nullptr);
 }
+
+TEST(UiDestination, ATextureSurfaceIsPublishedUnderItsTextureAndNowhereElse)
+{
+    Fixture f;
+    const UiSurfaceId window = f.OpenOn("window");
+    const UiSurfaceId screen = f.OpenOn("screen");
+    f.Ui->SetSurfaceTexture(screen, "ctx/diagnostic");
+    f.Frame();
+
+    EXPECT_EQ(f.Ui->GetSurfaceDestination(screen), UiSurfaceDestination::Texture);
+    EXPECT_EQ(f.Ui->GetSurfaceTexture(screen), "ctx/diagnostic");
+    EXPECT_EQ(f.Ui->Frames().size(), 1u) << "the texture surface was also handed to the window";
+    EXPECT_EQ(f.Ui->OffscreenFrame(screen), nullptr);
+    ASSERT_EQ(f.Ui->TextureFrames().size(), 1u);
+    EXPECT_EQ(f.Ui->TextureFrames()[0].Texture, "ctx/diagnostic");
+    EXPECT_FALSE(f.Ui->TextureFrames()[0].Frame.IsEmpty());
+    EXPECT_EQ(f.Ui->TextureFrames()[0].Frame.Surface.Width, 640u);
+    EXPECT_EQ(f.Ui->GetSurfaceTexture(window), "");
+}
+
+TEST(UiDestination, ATextureSurfaceHearsNoInput)
+{
+    // It has no place in any window for a point to land on.
+    Fixture f;
+    const UiSurfaceId screen = f.OpenOn("screen");
+    ASSERT_EQ(f.Ui->GetSurfaceInputPolicy(screen), UiSurfaceInputPolicy::Full);
+    f.Ui->SetSurfaceTexture(screen, "ctx/diagnostic");
+    EXPECT_EQ(f.Ui->GetSurfaceInputPolicy(screen), UiSurfaceInputPolicy::Disabled);
+}
+
+TEST(UiDestination, ATextureSurfaceThatDrawsNothingIsStillPublished)
+{
+    // Empty says "clear the texture"; absent says "the surface is gone".
+    Fixture f;
+    const UiSurfaceId screen = f.Ui->CreateSurface("screen", RenderExtent{ 256, 128 });
+    f.Ui->SetSurfaceTexture(screen, "ctx/diagnostic");
+    f.Frame();
+    ASSERT_EQ(f.Ui->TextureFrames().size(), 1u);
+    EXPECT_TRUE(f.Ui->TextureFrames()[0].Frame.IsEmpty());
+
+    f.Ui->DestroySurface(screen);
+    f.Frame();
+    EXPECT_TRUE(f.Ui->TextureFrames().empty());
+}
+
+TEST(UiDestination, AnotherDestinationClearsTheTexture)
+{
+    Fixture f;
+    const UiSurfaceId screen = f.OpenOn("screen");
+    f.Ui->SetSurfaceTexture(screen, "ctx/diagnostic");
+    f.Frame();
+    ASSERT_EQ(f.Ui->TextureFrames().size(), 1u);
+
+    f.Ui->SetSurfaceDestination(screen, UiSurfaceDestination::Window);
+    f.Frame();
+    EXPECT_EQ(f.Ui->GetSurfaceTexture(screen), "");
+    EXPECT_TRUE(f.Ui->TextureFrames().empty());
+    EXPECT_EQ(f.Ui->Frames().size(), 1u);
+}
+
+TEST(UiDestination, AnUnchangedDocumentRecordsTheSameFrameTwice)
+{
+    // What lets the texture feature skip a redraw on a frame nothing changed.
+    Fixture f;
+    const UiSurfaceId screen = f.OpenOn("screen");
+    f.Ui->SetSurfaceTexture(screen, "ctx/diagnostic");
+    f.Frame();
+    ASSERT_EQ(f.Ui->TextureFrames().size(), 1u);
+    const UiDrawFrame first = f.Ui->TextureFrames()[0].Frame;
+    f.Frame();
+    ASSERT_EQ(f.Ui->TextureFrames().size(), 1u);
+    EXPECT_TRUE(SameUiRecording(first, f.Ui->TextureFrames()[0].Frame));
+}

@@ -34,6 +34,31 @@ void BeginColor(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout)
                     // Read too: a pass compositing over the target loads it.
                     VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 }
+
+// Depth is cleared and discarded each pass, so its prior contents never matter
+// and UNDEFINED is the honest source layout.
+void BeginDepth(VkCommandBuffer cmd, VkImage depth, VkFormat depthFormat)
+{
+    if (depth == VK_NULL_HANDLE)
+        return;
+    VulkanBarriers::ImageTransition transition{};
+    transition.Image = depth;
+    transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    const bool hasStencil = FormatHasStencil(depthFormat);
+    transition.NewLayout = hasStencil
+        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    transition.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                        | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+    transition.DstStage = transition.SrcStage;
+    transition.SrcAccess = 0;
+    transition.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                         | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    transition.AspectMask = hasStencil
+        ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+        : VK_IMAGE_ASPECT_DEPTH_BIT;
+    VulkanBarriers::TransitionImage(cmd, transition);
+}
 } // namespace
 
 RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
@@ -51,31 +76,11 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color,
 
     BeginColor(Cmd, Color, *Layout);
 
-    if (depth != VK_NULL_HANDLE)
-    {
-        // Depth is cleared and discarded each pass, so its prior contents never
-        // matter and UNDEFINED is the honest source layout.
-        VulkanBarriers::ImageTransition transition{};
-        transition.Image = depth;
-        transition.OldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        const bool hasStencil = FormatHasStencil(depthFormat);
-        transition.NewLayout = hasStencil
-            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-            : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        transition.SrcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                            | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transition.DstStage = transition.SrcStage;
-        transition.SrcAccess = 0;
-        transition.DstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                             | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transition.AspectMask = hasStencil
-            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-            : VK_IMAGE_ASPECT_DEPTH_BIT;
-        VulkanBarriers::TransitionImage(Cmd, transition);
-    }
+    BeginDepth(Cmd, depth, depthFormat);
 }
 
-RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access)
+RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, RenderTargetAccess& access,
+                                         VkImage depth, VkFormat depthFormat)
     : Cmd(cmd)
     , Color(color)
     , Layout(&access.Layout)
@@ -87,6 +92,7 @@ RenderTargetSession::RenderTargetSession(VkCommandBuffer cmd, VkImage color, Ren
         return;
     }
     VulkanBarriers::TransitionImage(Cmd, WithinFrameWriteBarrier(Color, access));
+    BeginDepth(Cmd, depth, depthFormat);
 }
 
 void RenderTargetSession::End()

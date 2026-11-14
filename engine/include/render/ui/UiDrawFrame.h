@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -154,4 +155,25 @@ struct UiDrawFrame
     std::vector<UiDrawCommand> Commands;
 
     [[nodiscard]] bool IsEmpty() const { return Commands.empty(); }
+};
+
+// Whether two recordings draw the same pixels: the same surface size and the
+// same commands over the same geometry. The document engine keeps an element's
+// compiled geometry until the element changes, so an unchanged document records
+// the same blobs, and comparing them is comparing pointers. Generated texture
+// ids are never reused, so the same id is the same pixels. A host image is
+// whatever its host published this frame, so a recording naming one is never
+// the same as another (`NamesHostImage`).
+[[nodiscard]] bool SameUiRecording(const UiDrawFrame& a, const UiDrawFrame& b);
+[[nodiscard]] bool NamesHostImage(const UiDrawFrame& frame);
+
+// A Texture-destined surface's recording and the target texture it draws into
+// (render/TargetTextures.h). Published every frame the surface lives, empty or
+// not, so the feature drawing it can tell a surface that drew nothing this
+// frame, whose texture it clears, from one that is gone, whose texture it
+// withdraws.
+struct UiTextureFrame
+{
+    std::string Texture;
+    UiDrawFrame Frame;
 };

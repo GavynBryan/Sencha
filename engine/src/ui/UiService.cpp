@@ -266,6 +266,16 @@ UiSurfaceDestination UiService::GetSurfaceDestination(UiSurfaceId surface) const
     return Runtime->GetSurfaceDestination(surface);
 }
 
+void UiService::SetSurfaceTexture(UiSurfaceId surface, std::string_view name)
+{
+    Runtime->SetSurfaceTexture(surface, name);
+}
+
+std::string_view UiService::GetSurfaceTexture(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceTexture(surface);
+}
+
 void UiService::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId)
 {
     Runtime->SetSurfaceWindow(surface, platformWindowId);
@@ -304,6 +314,11 @@ UiInputCapture UiService::Capture(std::uint32_t platformWindowId) const
 const UiDrawFrame* UiService::OffscreenFrame(UiSurfaceId surface) const
 {
     return Runtime->OffscreenFrame(surface);
+}
+
+const std::vector<UiTextureFrame>& UiService::TextureFrames() const
+{
+    return Runtime->TextureFrames();
 }
 
 UiTextureChanges UiService::TakeTextureChanges()

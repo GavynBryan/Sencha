@@ -124,6 +124,7 @@ which is how the off path pays nothing.
 | `PhaseOutput` | `Renderer::RecordSwapchainPhases` around the present draw |
 | `ShadowViews` | `ShadowRenderFeature::OnDraw` |
 | `ForwardOpaque` | `MeshRenderFeature::OnDraw` |
+| `UiTextures` | `UiTextureTargets::Record`, only on a frame it redraws a target texture; absent on the frames it skips |
 
 Each scope is also wrapped in a `VK_EXT_debug_utils` label with the same name,
 so a RenderDoc or Nsight capture shows the same tree. Pipelines are given object

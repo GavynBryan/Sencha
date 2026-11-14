@@ -6,6 +6,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <assets/texture/TextureCache.h>
 #include <render/MaterialCache.h>
+#include <render/TargetTextures.h>
 
 #include <format>
 #include <optional>
@@ -60,7 +61,8 @@ AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSo
     for (const AssetRef* reference : { &desc.BaseColorTexture, &desc.NormalTexture,
                                        &desc.OrmTexture, &desc.EmissiveTexture })
     {
-        if (reference->IsValid())
+        // A target is drawn at runtime, not loaded, so nothing waits on it.
+        if (reference->IsValid() && !ParseTargetTextureRef(reference->Path).has_value())
             staging.Dependencies.push_back(*reference);
     }
 
@@ -181,6 +183,13 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
 {
     if (!ref.IsValid())
         return;
+
+    // Resolved per draw to whatever its writer published (render/TargetTextures.h).
+    if (const std::optional<std::string_view> target = ParseTargetTextureRef(ref.Path))
+    {
+        outIndex = TargetTextureTable::EncodeSlot(Materials->TargetTextures().Intern(*target));
+        return;
+    }
 
     // No texture cache at all is a process that was composed without one -- a
     // dedicated host reading the same materials it will never draw. Every

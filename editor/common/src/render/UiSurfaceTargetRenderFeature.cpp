@@ -162,29 +162,9 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
         RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout,
                                     target->DepthImage, Services.DepthFormat);
 
-        RenderScopeDesc scope{};
-        scope.Area.offset = { 0, 0 };
-        scope.Area.extent = target->Extent;
-        scope.Color.View = target->ColorView;
-        scope.Color.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        scope.Color.Clear.color = { { binding.Clear.X, binding.Clear.Y, binding.Clear.Z, 1.0f } };
-        scope.ColorFormat = kTargetColorFormat;
-        scope.Depth.View = target->DepthView;
-        scope.Depth.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        scope.Depth.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        scope.Depth.Clear.depthStencil = { 1.0f, 0 };
-        scope.DepthFormat = Services.DepthFormat;
-        if (Services.StencilFormat != VK_FORMAT_UNDEFINED)
-        {
-            // Same image, its other aspect: cleared, discarded, and what the
-            // pass clips through -- exactly as the swapchain frame binds it.
-            scope.Stencil.View = target->DepthView;
-            scope.Stencil.LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            scope.Stencil.StoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-            scope.Stencil.Clear.depthStencil = { 1.0f, 0 };
-            scope.StencilFormat = Services.StencilFormat;
-        }
-        scope.Phase = RenderPhase::Offscreen;
+        const RenderScopeDesc scope = UiTargetScope(
+            *target, kTargetColorFormat, Services,
+            VkClearColorValue{ { binding.Clear.X, binding.Clear.Y, binding.Clear.Z, 1.0f } });
 
         {
             const RenderScope rendering(frame, scope);

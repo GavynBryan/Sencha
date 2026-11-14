@@ -159,6 +159,21 @@ TEST(MaterialLoader, RejectsInvalidTexturePathAndAlphaMode)
         ParseOrDie(R"({"version": 2, "alpha_mode": "translucent"})"), desc));
 }
 
+TEST(MaterialLoader, ATargetTextureIsAcceptedAsWrittenAndNamesNoAsset)
+{
+    MaterialDescription desc;
+    ASSERT_TRUE(ParseMaterialJson(ParseOrDie(R"({
+        "version": 2,
+        "emissive_texture": "target:ctx/diagnostic"
+    })"), desc));
+    EXPECT_EQ(desc.EmissiveTexture.Path, "target:ctx/diagnostic");
+    EXPECT_FALSE(desc.EmissiveTexture.Id.IsValid());
+
+    MaterialParseError error;
+    EXPECT_FALSE(ParseMaterialJson(ParseOrDie(R"({ "version": 2, "emissive_texture": "target:" })"), desc, &error));
+    EXPECT_NE(error.Message.find("names no target"), std::string::npos) << error.Message;
+}
+
 TEST(MaterialLoader, LoadFromFileReportsMissingFile)
 {
     MaterialDescription desc;
@@ -327,6 +342,48 @@ TEST(AssetSystemMaterial, LoadsSmatFileWithNeutralTextureSlots)
     // No TextureCache: the slot stays at its neutral default rather than failing.
     EXPECT_EQ(material->BaseColorTextureIndex, UINT32_MAX);
     EXPECT_EQ(material->AlphaMode, MaterialAlphaMode::Blend);
+}
+
+TEST(AssetSystemMaterial, ATargetSlotResolvesThroughTheTableWithNoDependency)
+{
+    const TempFile file(R"({
+        "version": 2,
+        "emissive_texture": "target:ctx/diagnostic"
+    })");
+
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    MaterialCache materials;
+    materials.TargetTextures().SetUnpublishedIndex(5);
+    MaterialAssetLoader loader(logging, &materials, nullptr);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Material, loader, &materials);
+
+    ASSERT_TRUE(registry.Register(
+        MakeFileMaterialRecord(file.Path, "asset://materials/dev/screen.smat")));
+
+    // No texture asset named "target:..." exists; a dependency on one would fail the load.
+    const AssetLease handle = assets.LoadLease("asset://materials/dev/screen.smat", AssetType::Material);
+    ASSERT_TRUE(handle.IsValid());
+    const Material* material = materials.Get(MaterialHandle::FromToken(handle.OpaqueToken()));
+    ASSERT_NE(material, nullptr);
+
+    const TargetTextureTable& targets = materials.TargetTextures();
+    const TargetTextureId id = targets.Find("ctx/diagnostic");
+    ASSERT_TRUE(id.IsValid());
+    EXPECT_EQ(material->EmissiveTextureIndex, TargetTextureTable::EncodeSlot(id));
+    EXPECT_EQ(targets.Resolve(material->EmissiveTextureIndex), 5u);
+    materials.TargetTextures().Publish(id, 12);
+    EXPECT_EQ(targets.Resolve(material->EmissiveTextureIndex), 12u);
+}
+
+TEST(MaterialWriter, ATargetTextureRoundTrips)
+{
+    MaterialDescription desc;
+    ASSERT_TRUE(ParseMaterialJson(ParseOrDie(R"({ "version": 2, "base_color_texture": "target:ctx/diagnostic" })"), desc));
+    MaterialDescription reread;
+    ASSERT_TRUE(ParseMaterialJson(WriteMaterialJson(desc), reread));
+    EXPECT_EQ(reread.BaseColorTexture.Path, "target:ctx/diagnostic");
 }
 
 TEST(AssetSystemMaterial, SecondLoadReturnsSameHandle)
