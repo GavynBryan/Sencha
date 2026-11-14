@@ -311,6 +311,7 @@ void AnimRigBinder::BindLayers(const AnimRigData& rig)
         layer.NameText = rig.Layers[i].Name;
         layer.Name = tags != nullptr ? tags->FindTag(layer.NameText) : GameplayTagId{};
         layer.Mode = rig.Layers[i].Mode;
+        layer.Reference = rig.Layers[i].Reference;
         layer.Weight = rig.Layers[i].Weight;
         layer.Presentation = rig.Layers[i].Presentation;
         if (!rig.Layers[i].Idle.empty())

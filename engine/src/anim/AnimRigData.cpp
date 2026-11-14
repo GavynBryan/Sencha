@@ -43,6 +43,12 @@ namespace
         mode.EnumChoices = { { "override", "Override", "Replaces the pose under its mask" },
                              { "additive", "Additive", "Adds onto the pose under its mask" } };
         layer.Children.push_back(std::move(mode));
+        DataFieldSchema reference = Field("reference", DataFieldKind::Enum, "Measured from",
+                                          "What an additive layer's pose adds the difference from.", false);
+        reference.Default = std::string("first_frame");
+        reference.EnumChoices = { { "first_frame", "First frame", "Its content's first frame" },
+                                  { "bind", "Bind pose", "The skeleton's bind pose, so a single-frame pose adds itself" } };
+        layer.Children.push_back(std::move(reference));
         DataFieldSchema weight = Field("weight", DataFieldKind::Float, "Weight",
                                        "Constant weight.", false);
         weight.Default = 1.0;
@@ -197,6 +203,16 @@ namespace
             if (const JsonValue* mode = layers[i].Find("mode"))
                 layer.Mode = mode->AsString() == "additive" ? AnimLayerMode::Additive
                                                             : AnimLayerMode::Override;
+            if (const JsonValue* reference = layers[i].Find("reference"); reference != nullptr && reference->IsString())
+            {
+                layer.Reference = reference->AsString() == "bind" ? AnimAdditiveReference::Bind
+                                                                  : AnimAdditiveReference::FirstFrame;
+                if (layer.Mode != AnimLayerMode::Additive && layer.Reference != AnimAdditiveReference::FirstFrame)
+                {
+                    result.Error = path + ".reference Only an additive layer is measured from a reference.";
+                    return result;
+                }
+            }
             if (const JsonValue* weight = layers[i].Find("weight"))
                 layer.Weight = static_cast<float>(weight->AsNumber());
             if (const JsonValue* presentation = layers[i].Find("presentation");

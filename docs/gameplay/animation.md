@@ -595,10 +595,13 @@ blended within the layer, over the joints its mask covers, at its weight:
 
 - **Override** blends each covered joint toward the layer's pose, lerping
   translation and scale and slerping rotation.
-- **Additive** adds what the layer's pose changes from its reference pose, its
-  content's first frame: the translation difference, the local rotation from
-  the reference to the pose, and the scale ratio, each scaled by the weight. A
-  layer at its reference adds nothing.
+- **Additive** adds what the layer's pose changes from its reference pose: the
+  translation difference, the local rotation from the reference to the pose,
+  and the scale ratio, each scaled by the weight. A layer at its reference adds
+  nothing. The reference is the content's first frame, or with `"reference":
+  "bind"` the skeleton's bind pose, so a single-frame pose -- a lean, a held
+  item's sway -- adds what it changes from rest, and a blendspace of such poses
+  adds whatever mix its facts call for.
 
 A World that presents a pose carries `AnimPoseState`, which names a slot in the
 World's `AnimPosePool`. The slot holds what is sized by the rig: how each layer

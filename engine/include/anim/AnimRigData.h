@@ -17,6 +17,14 @@ enum class AnimLayerMode : std::uint8_t
     Additive,
 };
 
+// What an additive layer's pose is measured from: its content's first frame, or
+// the skeleton's bind pose, which lets a single-frame pose (a lean) add itself.
+enum class AnimAdditiveReference : std::uint8_t
+{
+    FirstFrame,
+    Bind,
+};
+
 // Applied in order to a mask that starts empty: a joint by skeleton name, with or
 // without its subtree, added or excluded.
 struct AnimMaskOp
@@ -31,6 +39,7 @@ struct AnimRigLayer
     // A gameplay tag naming the layer: Anim.Layer.Base, Anim.Layer.Upper.
     std::string Name;
     AnimLayerMode Mode = AnimLayerMode::Override;
+    AnimAdditiveReference Reference = AnimAdditiveReference::FirstFrame;
     // Constant weight; a weight rule in the selector replaces it.
     float Weight = 1.0f;
     // Empty makes the layer request-keyed: the newest request claiming it names the behavior.

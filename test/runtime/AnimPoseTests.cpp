@@ -373,3 +373,78 @@ TEST(AnimInertialization, ANearUnitRotationWithoutAnAxisIsAtRest)
     AnimApplyJointOffset(offset, 0.0f, pose);
     EXPECT_TRUE(pose.Rotation.NearlyEquals(target.Rotation));
 }
+
+namespace
+{
+    // One joint at x = 1 in its bind pose. The base layer holds it at x = 5; an
+    // additive layer plays a single-frame pose holding it at x = 3.
+    struct LeanFixture : AnimRigFixture
+    {
+        EntityId Entity;
+        std::unique_ptr<AnimPoseSystem> Poser = std::make_unique<AnimPoseSystem>(nullptr);
+
+        explicit LeanFixture(std::string_view reference)
+        {
+            for (const char* tag : { "Anim.Idle", "Anim.Lean", "anim.layer.lean" })
+                (void)Tags().RegisterTag(tag);
+            SkeletonData skeleton;
+            SkeletonJoint root;
+            root.Name = "root";
+            root.BindTranslation = Vec3d(1.0f, 0.0f, 0.0f);
+            skeleton.Joints.push_back(root);
+            (void)Skeletons.Register("asset://anim/lean.sskel", std::move(skeleton));
+            Pose("asset://anim/held.sanim", 5.0f);
+            Pose("asset://anim/lean.sanim", 3.0f);
+            (void)Load("asset://anim/lean.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+                { "tag": "Anim.Idle", "kind": "hold" }, { "tag": "Anim.Lean", "kind": "hold" } ] })");
+            (void)Load("asset://anim/lean.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/held.sanim" },
+                { "id": "lean", "behavior": "Anim.Lean", "clip": "asset://anim/lean.sanim" } ] })");
+            const DataAssetHandle rig = Load("asset://anim/lean.rig.sdata", kAnimRigType, std::format(R"({{
+                "skeleton": "asset://anim/lean.sskel",
+                "behaviors": [ "asset://anim/lean.behaviors.sdata" ], "slot_maps": [ "asset://anim/lean.slots.sdata" ],
+                "layers": [ {{ "name": "anim.layer.base", "idle": "Anim.Idle" }},
+                            {{ "name": "anim.layer.lean", "idle": "Anim.Lean", "mode": "additive" {} }} ] }})",
+                                                                                         reference));
+            EXPECT_TRUE(Bound(rig).Valid) << Describe(Bound(rig));
+            Entity = DrawnCharacter(rig);
+        }
+
+        void Pose(std::string_view path, float x)
+        {
+            AnimationClipData clip;
+            clip.SkeletonPath = "asset://anim/lean.sskel";
+            AnimationJointTrack track;
+            track.JointIndex = 0;
+            track.Path = AnimationChannelPath::Translation;
+            track.TimesSeconds = { 0.0f };
+            track.Values = { x, 0.0f, 0.0f };
+            clip.Tracks.push_back(std::move(track));
+            (void)Clips.Register(path, std::move(clip), Skeletons.AcquireOwned("asset://anim/lean.sskel"));
+        }
+
+        float X()
+        {
+            Tick();
+            Poser->Pose(Entities, Last(), kTick);
+            const World& reader = Entities;
+            const AnimPoseState* state = reader.TryGet<AnimPoseState>(Entity);
+            return Entities.GetResource<AnimPosePool>().Find(state->Slot, Entity)->Current[0].Position.X;
+        }
+    };
+}
+
+// Measured from the bind pose, a single-frame pose adds what it changes from
+// rest; measured from its own first frame, it is its own reference and adds nothing.
+TEST(AnimPose, AnAdditivePoseMeasuredFromTheBindPoseAddsItself)
+{
+    LeanFixture fromBind(R"(, "reference": "bind")");
+    EXPECT_FLOAT_EQ(fromBind.X(), 7.0f);
+    LeanFixture fromFirstFrame("");
+    EXPECT_FLOAT_EQ(fromFirstFrame.X(), 5.0f);
+
+    EXPECT_NE(fromBind.CompileError(kAnimRigType, R"({ "layers": [
+        { "name": "anim.layer.base", "reference": "bind" } ] })")
+                  .find("additive"),
+              std::string::npos);
+}

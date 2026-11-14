@@ -374,8 +374,19 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
         compose[l].Mask = bound.Mask;
         if (plays && bound.Mode == AnimLayerMode::Additive)
         {
-            SampleAnimPlayback(input.Sources, layer.Playing, now, dt, true, scratch, scratch.References[l]);
-            compose[l].Reference = scratch.References[l];
+            std::vector<Transform3f>& reference = scratch.References[l];
+            if (bound.Reference == AnimAdditiveReference::Bind)
+            {
+                const std::vector<SkeletonJoint>& joints = input.Sources.Skeleton->Joints;
+                reference.resize(joints.size());
+                for (std::size_t j = 0; j < joints.size(); ++j)
+                    reference[j] = Transform3f(joints[j].BindTranslation, joints[j].BindRotation, joints[j].BindScale);
+            }
+            else
+            {
+                SampleAnimPlayback(input.Sources, layer.Playing, now, dt, true, scratch, reference);
+            }
+            compose[l].Reference = reference;
         }
     }
 

@@ -86,6 +86,7 @@ struct AnimBoundLayer
     GameplayTagId Name;
     std::string NameText;
     AnimLayerMode Mode = AnimLayerMode::Override;
+    AnimAdditiveReference Reference = AnimAdditiveReference::FirstFrame;
     float Weight = 1.0f;
     // Index into AnimBoundRig::Selectors, or -1 for a request-keyed layer.
     int Selector = -1;
