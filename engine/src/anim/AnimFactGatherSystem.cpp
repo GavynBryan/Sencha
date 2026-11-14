@@ -1,6 +1,7 @@
 #include <anim/AnimFactGatherSystem.h>
 
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimFactSubject.h>
 #include <app/GameContexts.h>
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -16,6 +17,15 @@ void GatherAnimFacts(const World& world,
 {
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
     const bool hasTags = world.IsRegistered<GameplayTagContainer>();
+    EntityId subject;
+    if (rig.HasSubjectFacts && world.IsRegistered<AnimFactSubject>())
+    {
+        if (const AnimFactSubject* named = world.TryGet<AnimFactSubject>(entity);
+            named != nullptr && world.IsAlive(named->Subject))
+        {
+            subject = named->Subject;
+        }
+    }
     for (std::size_t slot = 0; slot < rig.Slots.size() && slot < values.size(); ++slot)
     {
         const AnimBoundFactSlot& bound = rig.Slots[slot];
@@ -29,9 +39,12 @@ void GatherAnimFacts(const World& world,
         }
         if (bound.Provider < 0 || providers == nullptr)
             continue;
+        const EntityId source = bound.FromSubject ? subject : entity;
+        if (!source.IsValid())
+            continue;
         const AnimFactProvider& provider = providers->At(bound.Provider);
         std::uint32_t value = 0;
-        if (provider.Read(world, entity, provider.Context, value))
+        if (provider.Read(world, source, provider.Context, value))
             values[slot] = value;
     }
     if (rig.Derivations.empty())

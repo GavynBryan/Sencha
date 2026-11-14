@@ -1,6 +1,7 @@
 #include <movement/MovementAnimFacts.h>
 
 #include <anim/AnimFactProviders.h>
+#include <components/StrideCycle.h>
 #include <math/Vec.h>
 #include <movement/components/CharacterFacts.h>
 #include <world/transform/TransformComponents.h>
@@ -80,5 +81,7 @@ bool BindMovementAnimFacts(AnimFactProviders& providers)
     bound = providers.Bind("VerticalSpeed", AnimFactKind::Float, &ReadVerticalSpeed) && bound;
     bound = providers.Bind("MoveForward", AnimFactKind::Float, &ReadMoveForward) && bound;
     bound = providers.Bind("MoveRight", AnimFactKind::Float, &ReadMoveRight) && bound;
+    bound = providers.BindField<&StrideCycle::Position>("StrideCycle") && bound;
+    bound = providers.BindField<&StrideCycle::GroundSpeed>("StrideSpeed") && bound;
     return bound;
 }

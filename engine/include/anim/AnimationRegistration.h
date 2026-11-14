@@ -2,6 +2,7 @@
 
 #include <anim/AnimContentState.h>
 #include <anim/AnimDecisionLog.h>
+#include <anim/AnimFactSubject.h>
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowState.h>
 #include <anim/AnimPoseState.h>
@@ -31,6 +32,7 @@ using AnimationComponents = ComponentSet<
     AnimFacts,
     AnimFactsLarge,
     AnimFactHistory,
+    AnimFactSubject,
     AnimSelectorState,
     AnimContentState,
     AnimEventCursor,

@@ -17,6 +17,9 @@ struct AnimFactSlotDecl
     // Exists only on the rendering machine (camera facing, a cosmetic seed). Other
     // facts derive from replicated state, so the snapshot is reconstructible.
     bool Local = false;
+    // Gathered from the entity's AnimFactSubject rather than the entity: a held
+    // item's rig reading its holder's stride.
+    bool FromSubject = false;
 };
 
 // Closed. Temporal windows are capped at kAnimMaxDerivationWindowMs, and every op
@@ -32,6 +35,8 @@ enum class AnimDerivationOp : std::uint8_t
     And,         // bool: every source true
     Or,          // bool: any source true
     Not,         // bool: the source false
+    Rate,        // float: how fast the source changes, per second
+    Spring,      // float: the source followed by a damped spring of period WindowMs
 };
 
 enum class AnimCompareOp : std::uint8_t
@@ -63,12 +68,13 @@ struct AnimDerivedFactDecl
     std::vector<AnimFactOperand> Sources;
 
     bool Rising = true;         // Edge
-    float WindowMs = 0.0f;      // Edge hold, TimeSince cap, MinDuration, Smooth tau
+    float WindowMs = 0.0f;      // Edge hold, TimeSince cap, MinDuration, Smooth tau, Spring period
     bool MatchValue = false;    // TimeSince
     float Enter = 0.0f;         // Hysteresis
     float Exit = 0.0f;          // Hysteresis
     AnimCompareOp Compare = AnimCompareOp::Gt;
     float Constant = 0.0f;      // Compare
+    float Damping = 1.0f;       // Spring: 1 settles without overshoot, less swings past
 
     [[nodiscard]] AnimFactKind ResultKind() const;
     // Temporal ops contribute their window to the schema's observation horizon.

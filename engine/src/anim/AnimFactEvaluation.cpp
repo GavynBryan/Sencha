@@ -134,6 +134,29 @@ namespace
         }
         case AnimDerivationOp::Not:
             return AnimFactFromBool(!ReadBool(values, derivation.Sources[0]));
+        case AnimDerivationOp::Rate:
+        {
+            const float input = ReadNumber(values, derivation);
+            const float previous = AnimFactToFloat(memory.LastInput);
+            memory.LastInput = AnimFactFromFloat(input);
+            const bool measured = memory.Seen && tickSeconds > 0.0;
+            return AnimFactFromFloat(measured ? static_cast<float>((input - previous) / tickSeconds) : 0.0f);
+        }
+        case AnimDerivationOp::Spring:
+        {
+            const float input = ReadNumber(values, derivation);
+            if (!memory.Seen)
+            {
+                memory.Value = input;
+                memory.Velocity = 0.0f;
+            }
+            else
+            {
+                StepSpring(memory.Value, memory.Velocity, input, tickSeconds, 1000.0f / derivation.WindowMs,
+                           derivation.Damping);
+            }
+            return AnimFactFromFloat(memory.Value);
+        }
         }
         return 0u;
     }

@@ -13,9 +13,9 @@
 namespace
 {
     constexpr std::array<std::string_view, 5> kKindNames{ "bool", "float", "int", "tag", "tagset" };
-    constexpr std::array<std::string_view, 9> kOpNames{
+    constexpr std::array<std::string_view, 11> kOpNames{
         "edge", "time_since", "hysteresis", "min_duration", "smooth",
-        "compare", "and", "or", "not" };
+        "compare", "and", "or", "not", "rate", "spring" };
     constexpr std::array<std::string_view, 6> kCompareNames{ "lt", "le", "gt", "ge", "eq", "ne" };
 
     template <std::size_t N>
@@ -57,6 +57,11 @@ namespace
                                       "Exists only on the rendering machine; may not change timing "
                                       "other machines depend on.",
                                       false));
+        slot.Children.push_back(DataField::Enum(
+            "from", "Read from", "Whose value the slot holds.",
+            { { "self", "The entity", "The entity playing the rig" },
+              { "subject", "Its subject", "The entity its AnimFactSubject names, such as a held item's holder" } },
+            false));
         DataFieldSchema slots = Field("slots", DataFieldKind::Array, "Slots",
                                       "Facts gameplay publishes.", false);
         slots.Editor.Widget = "cards";
@@ -76,7 +81,9 @@ namespace
               { "compare", "Compare", "The source against a constant" },
               { "and", "All of", "Every source true" },
               { "or", "Any of", "Any source true" },
-              { "not", "Not", "The source false" } }));
+              { "not", "Not", "The source false" },
+              { "rate", "Rate", "How fast the source changes, per second" },
+              { "spring", "Spring", "The source followed by a damped spring" } }));
         derived.Children.push_back(OperandRecord("source", false));
         DataFieldSchema sources = Field("sources", DataFieldKind::Array, "Sources",
                                         "Two or more operands, for All of and Any of.", false);
@@ -87,7 +94,8 @@ namespace
                                                { "falling", "Falling", "True to false" } },
                                              false));
         DataFieldSchema window = Field("window_ms", DataFieldKind::Float, "Window (ms)",
-                                       "Hold, cap, minimum duration, or smoothing time constant.",
+                                       "Hold, cap, minimum duration, smoothing time constant, or a "
+                                       "spring's period.",
                                        false);
         window.Numeric.Minimum = 0.0;
         window.Numeric.Maximum = kAnimMaxDerivationWindowMs;
@@ -106,6 +114,13 @@ namespace
             false));
         derived.Children.push_back(Field("constant", DataFieldKind::Float, "Constant",
                                          "What the source is compared against.", false));
+        DataFieldSchema damping = Field("damping", DataFieldKind::Float, "Damping",
+                                        "A spring's damping: 1 settles without overshoot, less swings "
+                                        "past and back.",
+                                        false);
+        damping.Numeric.Minimum = 0.0;
+        damping.Numeric.Maximum = 4.0;
+        derived.Children.push_back(std::move(damping));
         DataFieldSchema derivedList = Field("derived", DataFieldKind::Array, "Derived facts",
                                             "Facts computed from other facts.", false);
         derivedList.Editor.Widget = "cards";
@@ -189,6 +204,8 @@ namespace
                     *IndexOf(kKindNames, entry.Find("kind")->AsString()));
                 const JsonValue* local = entry.Find("local");
                 slot.Local = local != nullptr && local->AsBool();
+                const JsonValue* from = entry.Find("from");
+                slot.FromSubject = from != nullptr && from->IsString() && from->AsString() == "subject";
                 schema->Slots.push_back(std::move(slot));
             }
         }
@@ -279,6 +296,12 @@ namespace
                         *IndexOf(kCompareNames, compare->AsString()));
                     fact.Constant = NumberOr(entry, "constant", 0.0f);
                 }
+                fact.Damping = NumberOr(entry, "damping", 1.0f);
+                if (fact.Op == AnimDerivationOp::Spring && !(fact.Damping >= 0.0f && fact.Damping <= 4.0f))
+                {
+                    result.Error = path + ".damping A spring's damping is from 0 to 4.";
+                    return result;
+                }
                 schema->Derived.push_back(std::move(fact));
             }
         }
@@ -295,7 +318,8 @@ std::string_view AnimDerivationOpName(AnimDerivationOp op)
 
 AnimFactKind AnimDerivedFactDecl::ResultKind() const
 {
-    return Op == AnimDerivationOp::TimeSince || Op == AnimDerivationOp::Smooth
+    return Op == AnimDerivationOp::TimeSince || Op == AnimDerivationOp::Smooth || Op == AnimDerivationOp::Rate
+            || Op == AnimDerivationOp::Spring
         ? AnimFactKind::Float
         : AnimFactKind::Bool;
 }
@@ -303,7 +327,7 @@ AnimFactKind AnimDerivedFactDecl::ResultKind() const
 bool AnimDerivedFactDecl::IsTemporal() const
 {
     return Op == AnimDerivationOp::Edge || Op == AnimDerivationOp::TimeSince
-        || Op == AnimDerivationOp::MinDuration || Op == AnimDerivationOp::Smooth;
+        || Op == AnimDerivationOp::MinDuration || Op == AnimDerivationOp::Smooth || Op == AnimDerivationOp::Spring;
 }
 
 bool IsValidAnimFactName(std::string_view name)

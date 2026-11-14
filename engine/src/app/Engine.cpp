@@ -22,6 +22,7 @@
 #include <projectile/ProjectileSystem.h>
 #include <effects/AttributeResolveSystem.h>
 #include <anim/AnimationRegistration.h>
+#include <controller/LookAnimFacts.h>
 #include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
 #include <world/SimulationAuthority.h>
@@ -1166,9 +1167,10 @@ int Engine::Run(Game& game)
         // locomotion mode is declared once the game has, as the templates do.
         RegisterAbilityKit(entities);
         InstallAnimationVocabulary(entities);
-        // The engine's character facts read movement's components; a game without
-        // movement has no entity they answer for.
+        // The engine's character facts read movement's and the aim's components; a
+        // game without them has no entity they answer for.
         (void)BindMovementAnimFacts(entities.GetResource<AnimFactProviders>());
+        (void)BindLookAnimFacts(entities.GetResource<AnimFactProviders>());
         RegisterAnimationConsole(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);

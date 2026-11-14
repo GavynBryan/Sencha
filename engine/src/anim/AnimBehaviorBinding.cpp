@@ -35,6 +35,18 @@ void AnimRigBinder::BindBehaviors(const AnimRigData& rig)
                         "anim.behavior.unresolved"))
                     bound.InterruptTags.push_back(*interrupt);
             }
+            if (!decl.PhaseFact.empty())
+            {
+                const int slot = Out.FindSlot(decl.PhaseFact);
+                const AnimFactKind kind =
+                    slot >= 0 ? Out.Slots[static_cast<std::size_t>(slot)].Kind : AnimFactKind::Bool;
+                if (kind != AnimFactKind::Float && kind != AnimFactKind::Int)
+                    Error("anim.behavior.phase_fact", path, at + ".phase_fact",
+                          std::format("'{}' is not a number fact of this rig, so it cannot place '{}'.",
+                                      decl.PhaseFact, decl.Tag));
+                else
+                    bound.PhaseFactSlot = slot;
+            }
             if (!decl.SyncGroup.empty())
             {
                 if (std::optional<GameplayTagId> group =

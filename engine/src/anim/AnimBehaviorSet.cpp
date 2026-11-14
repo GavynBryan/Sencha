@@ -102,6 +102,9 @@ namespace
                                "How fast its clip plays: 1 as authored, negative backwards, 0 holds.")),
                 optional(Field("start_seconds", DataFieldKind::Float, "Start at",
                                "Seconds into its clip where it starts.")),
+                optional(Field("phase_fact", DataFieldKind::String, "Phase from fact",
+                               "A fact from 0 to 1 that places its content instead of time: a stride, "
+                               "a gauge. Cyclic content wraps; held content stops at either end.")),
                 optional(Field("event_weight", DataFieldKind::Float, "Event weight",
                                "Layer weight below which cosmetic events do not fire.")),
                 lifecycle("on_entered", "On entered", "Invoked when a layer enters this behavior."),
@@ -190,6 +193,17 @@ namespace
             {
                 result.Error = std::format("{}.rate A behavior's speed is a finite number and its start a "
                                            "non-negative one.",
+                                           at);
+                return result;
+            }
+            behavior.PhaseFact = text(&entry, "phase_fact").value_or(std::string{});
+            if (!behavior.PhaseFact.empty()
+                && (behavior.Kind == AnimBehaviorKind::Flow || behavior.Kind == AnimBehaviorKind::OneShot
+                    || behavior.RootMotion || behavior.Rate != 1.0f || behavior.StartSeconds != 0.0f))
+            {
+                result.Error = std::format("{}.phase_fact A fact places cyclic or held content, which then "
+                                           "takes no speed or start and moves nobody; a one-shot or a flow "
+                                           "ends on time, and root motion follows ticks.",
                                            at);
                 return result;
             }

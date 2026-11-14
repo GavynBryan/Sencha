@@ -33,6 +33,7 @@ struct AnimBoundFactSlot
     std::string Name;
     AnimFactKind Kind = AnimFactKind::Float;
     bool Local = false;
+    bool FromSubject = false;
     // The derivation writing this slot, or -1 when gameplay gathers it.
     int Derivation = -1;
     // The provider filling this slot in this World, or -1 to keep its given value.
@@ -64,6 +65,7 @@ struct AnimBoundDerivation
     float Enter = 0.0f;
     float Exit = 0.0f;
     float Constant = 0.0f;
+    float Damping = 1.0f;
 };
 
 struct AnimBoundParam
@@ -117,6 +119,8 @@ struct AnimBoundBehavior
     GameplayTagId Tag;
     std::string Name;
     AnimBehaviorDecl Policy;
+    // The fact slot placing its content, or -1 when time does.
+    int PhaseFactSlot = -1;
     std::vector<GameplayTagId> InterruptTags;
     GameplayTagId SyncGroup;
     std::string DeclaredIn;
@@ -332,13 +336,15 @@ struct AnimBoundRig
     std::unordered_map<std::string, RigSocketIndex, TransparentStringHash, std::equal_to<>> SocketsByName;
 
     bool HasFacts = false;
+    // Some slot is gathered from the entity's AnimFactSubject.
+    bool HasSubjectFacts = false;
     AnimFactCapacity Capacity = AnimFactCapacity::Small;
     std::vector<AnimBoundFactSlot> Slots;
     std::vector<AnimBoundDerivation> Derivations;
     // The longest temporal window: how long until every derived fact is exact.
     float HorizonMs = 0.0f;
     bool HasTemporalDerivations = false;
-    // Some derivation keeps memory tick to tick (every temporal op, and hysteresis), so
+    // Some derivation keeps memory tick to tick (every temporal op, hysteresis and rate), so
     // an entity needs AnimFactHistory.
     bool DerivationsKeepMemory = false;
 
