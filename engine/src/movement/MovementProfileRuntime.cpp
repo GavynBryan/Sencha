@@ -236,6 +236,7 @@ std::span<const MovementTuningField> MovementTuningFields()
         { "drag", &MovementTuningPatch::Drag, &ResolvedMovementTuning::Drag },
         { "gravity_scale", &MovementTuningPatch::GravityScale, &ResolvedMovementTuning::GravityScale },
         { "jump_speed", &MovementTuningPatch::JumpSpeed, &ResolvedMovementTuning::JumpSpeed },
+        { "stride_length", &MovementTuningPatch::StrideLength, &ResolvedMovementTuning::StrideLength },
     };
     return kFields;
 }

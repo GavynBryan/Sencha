@@ -98,7 +98,7 @@ struct Views
     CameraShakeState& Shake() { return Entities.GetResource<CameraShakeState>(); }
     CameraFovScaleState& Fov() { return Entities.GetResource<CameraFovScaleState>(); }
 
-    CameraShakeOffset ShakeAt(const CameraEffectClock& now)
+    CameraViewOffset ShakeAt(const CameraEffectClock& now)
     {
         Shake().Update(Entities, Camera, Vec3d::Zero(), now);
         return Shake().OffsetFor(Camera);
@@ -201,13 +201,13 @@ TEST(CameraEffectTiming, AHeldEffectStaysUntilLetGoThenReleasesFromWhereItWas)
 TEST(CameraShake, NoiseIsAFunctionOfTimeAndSeedAlone)
 {
     const CameraShakeProfile profile = Noisy();
-    const CameraShakeOffset a = EvaluateCameraShake(profile, 3, 0.137, 1.0f);
+    const CameraViewOffset a = EvaluateCameraShake(profile, 3, 0.137, 1.0f);
     EXPECT_EQ(a.Rotation, EvaluateCameraShake(profile, 3, 0.137, 1.0f).Rotation);
     EXPECT_NE(a.Rotation, EvaluateCameraShake(profile, 4, 0.137, 1.0f).Rotation);
     EXPECT_NE(a.Rotation, EvaluateCameraShake(profile, 3, 0.2, 1.0f).Rotation);
     for (float t = 0.0f; t < 2.0f; t += 0.01f)
     {
-        const CameraShakeOffset offset = EvaluateCameraShake(profile, 3, t, 1.0f);
+        const CameraViewOffset offset = EvaluateCameraShake(profile, 3, t, 1.0f);
         EXPECT_LE(std::abs(offset.Rotation.X), profile.Noise.Rotation.X + 1e-5f);
         EXPECT_LE(std::abs(offset.Translation.Y - profile.Kick.Translation.Y),
                   profile.Noise.Translation.Y + 1e-5f);
@@ -224,8 +224,8 @@ TEST(CameraShake, TheSameInstantShakesTheSameAtAnyFrameRate)
     slow.Shake().Start(OnceAt(100), At(101));
     for (int frame = 0; frame < 30; ++frame)
         (void)fast.ShakeAt(At(101 + frame / 4, (frame % 4) * 0.25));
-    const CameraShakeOffset fastOffset = fast.ShakeAt(At(108, 0.5));
-    const CameraShakeOffset slowOffset = slow.ShakeAt(At(108, 0.5));
+    const CameraViewOffset fastOffset = fast.ShakeAt(At(108, 0.5));
+    const CameraViewOffset slowOffset = slow.ShakeAt(At(108, 0.5));
     EXPECT_EQ(fastOffset.Rotation, slowOffset.Rotation);
     EXPECT_EQ(fastOffset.Translation, slowOffset.Translation);
 }
@@ -234,7 +234,7 @@ TEST(CameraShake, ASuspendedClockHoldsTheShakeWhereItIsAndResumesIt)
 {
     Views views;
     views.Shake().Start(OnceAt(100), At(101));
-    const CameraShakeOffset paused = views.ShakeAt(At(105, 0.3));
+    const CameraViewOffset paused = views.ShakeAt(At(105, 0.3));
     for (int frame = 0; frame < 120; ++frame)
         EXPECT_EQ(views.ShakeAt(At(105, 0.3)).Rotation, paused.Rotation) << "no tick, no alpha: no time";
     EXPECT_EQ(views.Shake().Count(), 1u);

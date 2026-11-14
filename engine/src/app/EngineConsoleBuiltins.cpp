@@ -3,8 +3,10 @@
 #include <app/DefaultRenderPipeline.h>
 #include <audio/AudioService.h>
 #include <attach/AttachedLight.h>
+#include <camera/CameraBobState.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>
+#include <camera/CameraTiltState.h>
 #include <controller/LookOrientation.h>
 #include <ecs/World.h>
 #include <platform/SdlWindow.h>
@@ -530,6 +532,39 @@ namespace EngineConsoleBuiltins
                 .OnChange = [world](const CVarChangeContext& ctx) {
                     if (CameraFovScaleState* state = world->TryGetResource<CameraFovScaleState>())
                         state->Settings.Intensity = static_cast<float>(std::get<double>(ctx.NewValue));
+                },
+            });
+            registry.RegisterCVar({
+                .Name = "camera.bob.scale",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = 1.0,
+                .Flags = CVarFlags::Archive,
+                .Help = "How much the view bobs with each step. 0 keeps it steady, 1 is as the game authored.",
+                .Source = { "player settings" },
+                .Min = 0.0,
+                .Max = 1.0,
+                .OnChange = [world](const CVarChangeContext& ctx) {
+                    if (CameraBobState* state = world->TryGetResource<CameraBobState>())
+                        state->Settings.Scale = static_cast<float>(std::get<double>(ctx.NewValue));
+                },
+            });
+            registry.RegisterCVar({
+                .Name = "camera.tilt.scale",
+                .Owner = "engine",
+                .Type = CVarType::Double,
+                .DefaultValue = 1.0,
+                .CurrentValue = 1.0,
+                .Flags = CVarFlags::Archive,
+                .Help = "How much the view leans into sideways movement. 0 keeps it level, 1 is as the game "
+                        "authored.",
+                .Source = { "player settings" },
+                .Min = 0.0,
+                .Max = 1.0,
+                .OnChange = [world](const CVarChangeContext& ctx) {
+                    if (CameraTiltState* state = world->TryGetResource<CameraTiltState>())
+                        state->Settings.Scale = static_cast<float>(std::get<double>(ctx.NewValue));
                 },
             });
             registry.RegisterCVar({

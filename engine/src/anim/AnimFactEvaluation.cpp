@@ -1,5 +1,7 @@
 #include <anim/AnimFactEvaluation.h>
 
+#include <math/Smoothing.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -108,9 +110,8 @@ namespace
             }
             else
             {
-                const double alpha =
-                    1.0 - std::exp(-(tickSeconds * 1000.0) / static_cast<double>(derivation.WindowMs));
-                memory.Value += static_cast<float>((input - memory.Value) * alpha);
+                memory.Value = ApproachExponentially(memory.Value, input, tickSeconds,
+                                                     static_cast<double>(derivation.WindowMs) / 1000.0);
             }
             return AnimFactFromFloat(memory.Value);
         }

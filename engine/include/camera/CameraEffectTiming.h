@@ -33,6 +33,24 @@ struct CameraEffectClock
     double TickSeconds = 1.0 / 60.0;
 
     [[nodiscard]] static CameraEffectClock At(const FixedSimulationLoop& clock, double presentationAlpha);
+    [[nodiscard]] double Seconds() const { return (static_cast<double>(Tick) + Alpha) * TickSeconds; }
+};
+
+// For an effect that eases toward a target: the presentation seconds since it last
+// stepped the same camera. None the first time a camera is stepped, after another
+// was, or when the clock did not move on.
+class CameraEffectStep
+{
+public:
+    // False on the first step of `camera`, when the effect starts over.
+    [[nodiscard]] bool Continues(EntityId camera) const { return Stepped && camera == Camera; }
+    double Advance(EntityId camera, const CameraEffectClock& now);
+    void Reset() { Stepped = false; Camera = {}; }
+
+private:
+    EntityId Camera;
+    double Seconds = 0.0;
+    bool Stepped = false;
 };
 
 // When one presented camera effect started, when it lets go, whose view it

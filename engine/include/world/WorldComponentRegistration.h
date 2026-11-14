@@ -3,6 +3,7 @@
 #include <world/ComponentRegistrar.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
+#include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 
@@ -19,6 +20,9 @@ using WorldComponents = ComponentSet<
     // Per-tick pose history for entities that opt into render interpolation.
     // Derived and runtime-only, like WorldTransform.
     WorldTransformHistory,
+    // What a drawn pose carries on to the children that inherit it.
+    PresentationOffset,
+    InheritsPresentationOffset,
     PersistentIdComponent,
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.

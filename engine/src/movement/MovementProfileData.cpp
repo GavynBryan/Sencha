@@ -43,7 +43,7 @@ namespace
         field.Summary = std::move(summary);
         field.Kind = DataFieldKind::Record;
         field.Required = false;
-        // Eight optional coefficients per operation, three operations per layer:
+        // Nine optional coefficients per operation, three operations per layer:
         // a button for every absent one would bury the few that are set.
         field.Editor.Widget = "compact";
         field.Children = {
@@ -55,6 +55,8 @@ namespace
             FloatField("drag", "Drag", "Velocity drag coefficient.", "1/s", 0.0),
             FloatField("gravity_scale", "Gravity scale", "Multiplier applied to world gravity.", "multiplier", 0.0),
             FloatField("jump_speed", "Jump speed", "Up-axis speed supplied by jump execution.", "m/s", 0.0),
+            FloatField("stride_length", "Stride length",
+                       "Ground one stride covers, a step with each foot. Zero counts no strides.", "m", 0.0),
         };
         // Multiplying starts at the identity, replacing and offsetting at zero,
         // so adding a coefficient never changes movement on its own.
@@ -257,6 +259,7 @@ namespace
         patch.Drag = OptionalFloat(*value, "drag");
         patch.GravityScale = OptionalFloat(*value, "gravity_scale");
         patch.JumpSpeed = OptionalFloat(*value, "jump_speed");
+        patch.StrideLength = OptionalFloat(*value, "stride_length");
         return patch;
     }
 

@@ -3,7 +3,7 @@
 The engine's camera vocabulary is small on purpose: a component that says an
 entity is a camera, a service that says which one is active, components that
 say what a camera leaves out of its picture and whose view it presents, a
-query, and two presentation effects that move or widen the view without moving
+query, and presentation effects that move, roll or widen the view without moving
 the camera. How a camera is placed, what it follows, and whose input turns it
 are a game's decisions, made in the game's systems.
 
@@ -28,7 +28,7 @@ are a game's decisions, made in the game's systems.
 - `FirstAuthoredCamera(world, partition)` (`camera/CameraQueries.h`) -- the
   first `CameraComponent` in a storage partition, for a level that authors its
   own view.
-- Camera shake and field-of-view scale -- below.
+- Presented effects -- shake, field-of-view scale, bob and tilt -- below.
 
 There is no rig, no mode, no follow system: those were one game's camera
 written into engine vocabulary, and they are gone.
@@ -89,8 +89,9 @@ reason to.
 
 ## Camera shake and field-of-view scale
 
-Two presentation effects change what the active camera shows without moving
-the camera. Both are cosmetic verbs a cue presentation, an animation event or a
+Four presentation effects change what the active camera shows without moving
+the camera. Shake and field-of-view scale are started by content; bob and tilt
+follow the camera's subject (below). Shake and scale are cosmetic verbs a cue presentation, an animation event or a
 response names, so a game adds one in data and writes no camera code. Each
 machine that presents runs its own: the cue that asked for one replicates as
 cues do (`docs/gameplay/abilitykit.md`, "Presentation"), and the effect itself
@@ -165,22 +166,63 @@ times. A multiple rather than an angle, so a camera whose field of view a game
 or a player set keeps it. Several multiply, the product held within
 `kCameraFovScaleMin` and `kCameraFovScaleMax`. It applies to perspective cameras.
 
+### Bob and tilt
+
+Two more effects move the view, and no content starts them: a camera carries
+them as authored components and they follow its subject. Each has its own player
+setting, `camera.bob.scale` and `camera.tilt.scale`, so someone made queasy by
+one can turn it down and keep the other.
+
+- `CameraBob` (`camera/CameraBob.h`) drops the view at each footfall of the
+  subject's stride and sways it a little to each side over a stride: `drop` and
+  `sway` in metres at full strength, `full_speed` the ground speed that reaches
+  it, and `response` the seconds the strength takes to follow a change of speed
+  or footing. It moves the view and never turns it, so what is centred stays
+  centred. The stride is the subject's `StrideCycle` (`components/StrideCycle.h`),
+  which movement counts by distance over the ground once the subject's movement
+  profile gives it a `stride_length` ([movement.md](movement.md)). A subject in
+  the air, or counting no strides, does not bob, and a camera that bobs reads the
+  same cycle a held model's rig can, so the two keep step.
+- `CameraTilt` (`camera/CameraTilt.h`) rolls the view into the subject's
+  sideways motion, up to `max_roll` at `full_speed`, following it over
+  `response` seconds. The motion is read from where the subject is drawn from
+  one frame to the next, so anything that carries it sideways tilts the view:
+  running, an air strafe, a push. A jump of more than `kCameraTiltMaxSpeed`
+  between frames is a teleport and tilts nothing.
+
+Both ease on the fixed clock's presentation time (`CameraEffectStep`), so they
+follow the same at any frame rate and hold still while the simulation is
+suspended. A camera that becomes active starts from where its subject is, with
+no ramp from the camera before it.
+
 ### Where they apply
 
 Publishing the frame's presented view (below) advances the effects to the
 frame's presentation time and sums them for the camera about to be drawn
 (`PresentCameraEffects`, `camera/CameraEffects.h`), so nothing runs where no
-window presents. `CameraRenderDataSystem::Build` then composes the shake into the pose it
-draws from, in the camera's own space, and scales the field of view it projects
+window presents. `CameraRenderDataSystem::Build` then composes the shake, bob and
+tilt into the pose it draws from, in the camera's own space (each is a
+`CameraViewOffset`, and they add), and scales the field of view it projects
 with. The camera's transform is never written, so aiming, traces and anything
 else that reads it see the camera where the simulation put it. The frustum is
-built from the shaken view, so culling agrees with what is drawn. A child of the
-camera, such as a held weapon, keeps its place in the world while the view
-moves around it.
+built from the moved view, so culling agrees with what is drawn.
 
-That view is `PresentCameraView` (`camera/PresentedView.h`): the shaken pose and
-the scaled, clamped field of view, which `Build` draws from and anything laid
-over the frame reads too. Because aiming reads the unshaken camera, a reticle at
+That view is `PresentCameraView` (`camera/PresentedView.h`): the moved pose, the
+offset that moved it, and the scaled, clamped field of view, which `Build` draws
+from and anything laid over the frame reads too.
+
+### Holding something in the view
+
+A child of the camera keeps its place in the world while the view moves around
+it, unless it carries `InheritsPresentationOffset`
+(`world/transform/PresentationOffset.h`). Publishing the frame writes the active
+camera's offset into its `PresentationOffset`, and presentation propagation
+composes a child that inherits it from the moved view rather than from the
+camera: a held weapon or a pair of arms stays where the picture is, through a
+recoil, a footfall or a lean, and anything mounted on it follows. Simulation
+propagation never applies the offset. `PresentationPoseOf` composes the same
+offset, the one written when the last frame was published. A camera that stops
+being presented carries an identity offset. Because aiming reads the unshaken camera, a reticle at
 the centre of the screen misreports the aim during a shake; one that follows it
 projects the camera's forward through the presented view with
 `ProjectDirectionToViewport` (`render/CameraProjection.h`).

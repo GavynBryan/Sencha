@@ -52,6 +52,7 @@ using MovementComponents = ComponentSet<
     MotionBursts,
     TetherSession,
     LocomotionModeLease,
+    StrideCycle,
     ClingSession,
     FlightSession>;
 

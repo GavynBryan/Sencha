@@ -27,6 +27,7 @@
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
 #include <movement/MovementTuningResolutionSystem.h>
+#include <movement/StrideCycleSystem.h>
 #include <movement/MovementTuningSourceSerializer.h>
 #include <world/ComponentRegistrar.h>
 
@@ -116,6 +117,8 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<MotionCompositionSystem>();
     schedule.Register<DilatedCharacterStepSystem>(*schedule.Get<FreeLocomotionSystem>(),
                                                  schedule.Get<PhysicsStepSystem>());
+    // After the motor, so a stride counts the ground the tick actually covered.
+    schedule.Register<StrideCycleSystem>();
 
     // The tick reads as one sentence: project last step's physical facts onto
     // tags, collect and apply mode transitions, resolve this tick's

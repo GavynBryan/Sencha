@@ -3,6 +3,7 @@
 #include <ecs/Chunk.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionSet.h>
+#include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 
@@ -36,6 +37,8 @@ struct PropagationEntry
     // its tick pose, so anything hanging off a moving body -- a camera, a held
     // object -- is drawn where the body is drawn and not where it last ticked.
     const WorldTransformHistory* ParentHistoryPtr = nullptr;
+    // Set only for a child that inherits its parent's presentation offset.
+    const PresentationOffset* ParentOffsetPtr = nullptr;
     Chunk* ChunkPtr = nullptr;
     // Set only when the parent is not itself in the order — an unparented root,
     // swept by the flat pass. Its world column's last-written frame is how this
