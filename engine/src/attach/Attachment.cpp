@@ -37,6 +37,17 @@ namespace
 
     AttachmentRuntime* RuntimeOf(World& world) { return world.TryGetResource<AttachmentRuntime>(); }
 
+    // A joint of `skeleton` in its root's model space as the root is drawn: posed
+    // as its skin is at `alpha`, or at bind when unposed or posing another skeleton.
+    Mat4 PresentedJointModel(const AnimPosePool::Slot* slot, SkeletonHandle handle, const SkeletonData& skeleton,
+                             std::uint32_t joint, double alpha, std::vector<Mat4>& bindScratch)
+    {
+        if (MatchSkinnedPose(slot, handle, skeleton.Joints.size()) == SkinnedPoseMatch::Posed)
+            return slot->PresentedModel(skeleton, static_cast<float>(alpha))[joint];
+        BuildBindModelTransforms(skeleton, bindScratch);
+        return bindScratch[joint];
+    }
+
     const AnimBoundRig* BoundRigOf(World& world, EntityId root)
     {
         if (!world.IsRegistered<AnimRig>())
@@ -524,18 +535,8 @@ void PlaceAttachments(World& world, double presentationAlpha)
 
             const AnimPosePool::Slot* slot =
                 state != nullptr && pool != nullptr ? pool->Find(state->Slot, attachment.Root) : nullptr;
-            Mat4 joint;
-            if (MatchSkinnedPose(slot, attachment.Skeleton, skeleton->Joints.size()) == SkinnedPoseMatch::Posed)
-            {
-                // The alpha the root's skin is drawn at, so the two agree.
-                joint = slot->PresentedModel(*skeleton, static_cast<float>(presentationAlpha))[attachment.Joint];
-            }
-            else
-            {
-                // Unposed, or posing another skeleton: drawn at bind, as the mesh is.
-                BuildBindModelTransforms(*skeleton, runtime->BindPose);
-                joint = runtime->BindPose[attachment.Joint];
-            }
+            const Mat4 joint = PresentedJointModel(slot, attachment.Skeleton, *skeleton, attachment.Joint,
+                                                   presentationAlpha, runtime->BindPose);
             locals[i].Value = Transform3f::FromMat4(joint) * attachment.SocketOffset * attachment.Offset;
         }
     });
@@ -564,4 +565,28 @@ void PlaceAttachments(World& world, double presentationAlpha)
         attachment->SocketOffset = rig->Sockets[index.Value].Offset;
         attachment->Skeleton = rig->Skeleton;
     }
+}
+
+std::optional<Transform3f> PresentedSocketPose(World& world, EntityId root, std::string_view socket,
+                                               double presentationAlpha)
+{
+    if (!world.IsAlive(root))
+        return std::nullopt;
+    const AnimBoundRig* rig = BoundRigOf(world, root);
+    const RigSocketIndex index = rig != nullptr ? rig->FindSocket(socket) : RigSocketIndex{};
+    const AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
+    const SkeletonCache* skeletons = bindings != nullptr ? bindings->SkeletonSource() : nullptr;
+    const SkeletonData* skeleton = skeletons != nullptr && rig != nullptr ? skeletons->Get(rig->Skeleton) : nullptr;
+    if (!index.IsValid() || skeleton == nullptr)
+        return std::nullopt;
+    const AnimBoundSocket& bound = rig->Sockets[index.Value];
+    if (bound.Joint >= skeleton->Joints.size())
+        return std::nullopt;
+
+    const AnimPoseState* state = world.IsRegistered<AnimPoseState>() ? world.TryGet<AnimPoseState>(root) : nullptr;
+    const AnimPosePool* pool = world.TryGetResource<AnimPosePool>();
+    const AnimPosePool::Slot* slot = state != nullptr && pool != nullptr ? pool->Find(state->Slot, root) : nullptr;
+    std::vector<Mat4> bindScratch;
+    const Mat4 joint = PresentedJointModel(slot, rig->Skeleton, *skeleton, bound.Joint, presentationAlpha, bindScratch);
+    return PresentationPoseOf(world, root, presentationAlpha) * Transform3f::FromMat4(joint) * bound.Offset;
 }

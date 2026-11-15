@@ -9,12 +9,17 @@
 //
 // How far through its walking cycle a character is, counted by distance covered
 // over the ground it stands on: Position runs from 0 to 1 over one stride, a
-// step with each foot, and wraps. Movement writes it once a tick; it lives here
-// so a camera's bob and a rig's cycle read one clock without depending on
-// movement. The previous tick's values are kept so a frame between ticks can be
-// drawn from a blend of the two.
+// step with each foot, and wraps. Opt-in: a character whose content carries one
+// has its strides counted, and no other character pays for it. Movement writes
+// it once a tick; it lives here so a camera's bob and a rig's cycle read one
+// clock without depending on movement. The previous tick's values are kept so a
+// frame between ticks can be drawn from a blend of the two. Nothing in it is
+// authored, so its schema has no fields: presence is the request.
 //=============================================================================
-struct SENCHA_COMPONENT("sencha.stride_cycle") StrideCycle
+struct SENCHA_COMPONENT("sencha.stride_cycle")
+       SENCHA_SCHEMA("StrideCycle")
+       SENCHA_SCENE_CHUNK("STRD")
+StrideCycle
 {
     float Position = 0.0f;
     float PreviousPosition = 0.0f;

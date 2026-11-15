@@ -67,6 +67,14 @@ No socket name is hashed per frame; the joint index is cached.
 A rebind is noticed from the root's `AnimPoseState::BindingGeneration`, one
 integer compare per attachment.
 
+Something that follows a socket without being worn -- a muzzle flash a game
+places itself, an overlay over a head -- reads `PresentedSocketPose(world, root,
+socket, alpha)`: the same joint at the same alpha, composed onto the root's
+presented pose and the socket's offset. Read after the frame is published (in
+`PresentationUpdate` or extraction), it is where that frame draws the socket,
+presentation offsets included; nothing comes back for a root with no bound rig or
+a socket its rig lacks.
+
 ## Lifetime
 
 Nothing scans for dead attachments. The body's `AttachmentSet` is the head of a

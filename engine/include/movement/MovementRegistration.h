@@ -1,6 +1,7 @@
 #pragma once
 
 #include <abilities/AbilitySystem.h>
+#include <components/StrideCycle.h>
 #include <app/EngineSchedule.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpState.h>

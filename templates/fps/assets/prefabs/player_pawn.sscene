@@ -38,6 +38,7 @@
         "MovementTuning": {
           "profile": "asset://data/player_movement.sdata"
         },
+        "StrideCycle": {},
         "CharacterMovement": {
           "mode": "movement.mode.free"
         },

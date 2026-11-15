@@ -405,3 +405,26 @@ TEST(Attachments, WhatAWornBodyAlreadyWearsHidesWithTheBodyWearingIt)
     EXPECT_EQ(reader.TryGet<PresentedWith>(pet)->Root, fx.Body);
     EXPECT_EQ(reader.TryGet<PresentedWith>(hat)->Root, fx.Body) << "attached first, still hidden with the outer body";
 }
+
+// An overlay or an effect that follows a socket reads the same place the socket's
+// attachment is drawn at, without being an attachment.
+TEST(Attachments, ASocketsPresentedPoseIsWhereItsAttachmentIsDrawn)
+{
+    AttachFixture fx;
+    fx.Entities.TryGet<LocalTransform>(fx.Body)->Value.Position = Vec3d(10.0f, 0.0f, 0.0f);
+    fx.Pose(fx.Body, Vec3d(1.0f, 0.0f, 0.0f), Vec3d(3.0f, 0.0f, 0.0f));
+    const EntityId rifle = fx.Mesh("hand_r");
+    PlaceAttachments(fx.Entities, 0.25);
+    StoragePartitionSet visible;
+    visible.Add(kZone);
+    fx.Entities.AdvanceFrame();
+    PropagateTransforms(fx.Entities, visible, TransformPropagationDomain::Presentation, false, 0.25);
+
+    const std::optional<Transform3f> socket = PresentedSocketPose(fx.Entities, fx.Body, "hand_r", 0.25);
+    ASSERT_TRUE(socket.has_value());
+    ExpectNear(socket->Position, Vec3d(11.5f, 1.0f, 0.5f));
+    ExpectNear(socket->Position, fx.Entities.TryGet<WorldTransform>(rifle)->Value.Position);
+
+    EXPECT_FALSE(PresentedSocketPose(fx.Entities, fx.Body, "no_such_socket", 0.25).has_value());
+    EXPECT_FALSE(PresentedSocketPose(fx.Entities, rifle, "hand_r", 0.25).has_value()) << "a body with no rig";
+}

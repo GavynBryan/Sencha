@@ -23,8 +23,9 @@ inline constexpr float kStrideCycleMaxAdvance = 0.45f;
 void AdvanceStrideCycle(StrideCycle& stride, const Vec3d& velocity, const Vec3d& surfaceVelocity,
                         const Vec3d& up, bool supported, float strideLength, float seconds);
 
-// Counts every character's stride after the tick's movement, from the motion the
-// motor achieved, the ground it ended on and the tick's resolved stride length.
+// Counts the stride of every character carrying a StrideCycle, after the tick's
+// movement: from the motion the motor achieved, the ground it ended on and the
+// tick's resolved stride length.
 class StrideCycleSystem
 {
 public:

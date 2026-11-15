@@ -1,6 +1,5 @@
 #pragma once
 
-#include <components/StrideCycle.h>
 #include <core/metadata/Field.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentAnnotations.h>
@@ -108,8 +107,7 @@ struct ComponentTraits<CharacterMovement>
         ActorTime,
         MotionBursts,
         TetherSession,
-        LocomotionModeLease,
-        StrideCycle>;
+        LocomotionModeLease>;
 };
 
 #if !defined(SENCHA_CODEGEN)

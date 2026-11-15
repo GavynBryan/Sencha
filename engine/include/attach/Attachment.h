@@ -2,11 +2,13 @@
 
 #include <attach/AttachmentComponents.h>
 #include <ecs/World.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <render/MaterialSetHandle.h>
 #include <render/PointLightComponent.h>
 #include <render/static_mesh/StaticMeshHandle.h>
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 class Logger;
@@ -92,6 +94,14 @@ void InstallAttachments(World& world, Logger* log);
 // Once per frame, before presentation propagation: ends what died, rebinds what
 // a rig reload moved, and places each joint attachment at its root's pose.
 void PlaceAttachments(World& world, double presentationAlpha);
+
+// Where `root`'s socket is drawn at `presentationAlpha`, in the world: the root's
+// presented pose, the joint as its skin is posed (at bind when it is not), and the
+// socket's offset. Read after the frame is published, it agrees with that frame's
+// picture, presentation offsets included. Nothing when the root has no bound rig
+// or the rig no such socket.
+[[nodiscard]] std::optional<Transform3f> PresentedSocketPose(World& world, EntityId root, std::string_view socket,
+                                                             double presentationAlpha);
 
 template <typename Visit>
 void ForEachAttachment(const World& world, EntityId root, Visit&& visit)

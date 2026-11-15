@@ -179,8 +179,9 @@ one can turn it down and keep the other.
   it, and `response` the seconds the strength takes to follow a change of speed
   or footing. It moves the view and never turns it, so what is centred stays
   centred. The stride is the subject's `StrideCycle` (`components/StrideCycle.h`),
-  which movement counts by distance over the ground once the subject's movement
-  profile gives it a `stride_length` ([movement.md](movement.md)). A subject in
+  which movement counts by distance over the ground for a subject that carries
+  one and whose movement profile gives it a `stride_length`
+  ([movement.md](movement.md)). A subject in
   the air, or counting no strides, does not bob, and a camera that bobs reads the
   same cycle a held model's rig can, so the two keep step.
 - `CameraTilt` (`camera/CameraTilt.h`) rolls the view into the subject's
@@ -263,7 +264,9 @@ they saw before it existed. Where an entity is drawn comes from
 `PresentationPoseOf` (`world/transform/TransformHistory.h`), which composes it
 from the same inputs propagation will and is right at any point after the ticks.
 Joint attachments are the exception: they are placed during extraction, so an
-overlay that follows one reads its pose from the frame before.
+overlay that follows one reads its pose from the frame before. An overlay that
+follows a socket reads `PresentedSocketPose` instead, which is this frame's
+([attachments.md](attachments.md#placement)).
 
 `PresentationUpdate` systems see the Visible partition set, the one extraction
 draws from, and a read-only `Frame`; anything that drives simulation or consumes
