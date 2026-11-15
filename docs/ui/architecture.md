@@ -336,6 +336,12 @@ has (96 of the 128 bytes every device guarantees), so a gradient costs one draw
 like any box and needs no pipeline of its own. Any other shader name, a
 `shader()` decorator, is outside the profile and reported.
 
+Gradients with the same colours share one ramp, so ten bar segments with one
+bevel upload it once. RmlUi compiles a gradient again every time its element
+resizes, so a ramp no gradient uses is released at the next extraction rather
+than at once: one compiled again in between keeps its texture, and an animated
+width costs no uploads.
+
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
 `SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`. The RCSS
 features that need them are **out of contract**: `box-shadow`,

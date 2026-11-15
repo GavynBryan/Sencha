@@ -75,20 +75,20 @@ class UiGradientTest : public testing::Test
 {
 protected:
     // Lays out one 200 x 40 px element, #g, at the surface's corner, styled by
-    // `style`, and extracts it.
-    void Open(std::string_view style)
+    // `style`, and extracts it. `more` adds markup and `moreStyle` its rules.
+    void Open(std::string_view style, std::string_view more = {}, std::string_view moreStyle = {})
     {
-        Root.WritePackage(R"(<rml><head><link type="text/rcss" href="screen.rcss"/></head>)"
-                          R"(<body><div id="g"/></body></rml>)",
+        Root.WritePackage(std::string(R"(<rml><head><link type="text/rcss" href="screen.rcss"/></head>)"
+                                      R"(<body><div id="g"/>)") + std::string(more) + "</body></rml>",
                           std::string("body { display: block; width: 100%; height: 100%; } "
                                       "#g { display: block; position: absolute; left: 0px; top: 0px; "
                                       "width: 200px; height: 40px; ")
-                              + std::string(style) + " }");
+                              + std::string(style) + " } " + std::string(moreStyle));
         ScanAssetsDirectory(Root.PathString(), Assets.Registry, Assets.Assets.Kinds());
         Ui = std::make_unique<UiService>(Logging, Assets.Assets, Assets.UiPackages, Assets.Fonts, nullptr);
         ASSERT_TRUE(Ui->IsReady());
-        const UiSurfaceId surface = Ui->CreateSurface("test", RenderExtent{ 400, 200 });
-        Screen = Ui->OpenScreen(surface, "asset://ui/screen.sui");
+        Surface = Ui->CreateSurface("test", RenderExtent{ 400, 200 });
+        Screen = Ui->OpenScreen(Surface, "asset://ui/screen.sui");
         ASSERT_TRUE(Screen.IsValid());
         Extract();
     }
@@ -100,6 +100,16 @@ protected:
         const UiTextureChanges changes = Ui->TakeTextureChanges();
         for (const UiTextureUpload& upload : changes.Uploads)
             Uploads.push_back(upload);
+    }
+
+    std::vector<const UiDrawCommand*> Gradients() const
+    {
+        std::vector<const UiDrawCommand*> found;
+        for (const UiDrawFrame& frame : Ui->Frames())
+            for (const UiDrawCommand& command : frame.Commands)
+                if (command.Gradient.has_value())
+                    found.push_back(&command);
+        return found;
     }
 
     // The one gradient command in the frame.
@@ -148,6 +158,7 @@ protected:
     ComponentSerializerRegistry Serializers;
     RuntimeAssets Assets{ Logging, Serializers, RuntimeAssets::ReferenceOnly{} };
     std::unique_ptr<UiService> Ui;
+    UiSurfaceId Surface;
     UiScreenHandle Screen;
     std::vector<UiTextureUpload> Uploads;
 };
@@ -279,4 +290,40 @@ TEST_F(UiGradientTest, ClosingTheScreenReleasesTheRamp)
     const UiTextureChanges changes = Ui->TakeTextureChanges();
     EXPECT_NE(std::find(changes.Released.begin(), changes.Released.end(), ramp), changes.Released.end())
         << "a closed screen's ramp stays resident";
+}
+
+TEST_F(UiGradientTest, GradientsWithTheSameColoursShareOneRamp)
+{
+    constexpr std::string_view kBevel = "decorator: linear-gradient(180deg, #fff1cf 0%, #e6b86c 50%, #7c5a28 100%);";
+    Open(kBevel, R"(<div id="h"/>)",
+         std::string("#h { display: block; position: absolute; left: 0px; top: 60px; width: 30px; height: 40px; ")
+             + std::string(kBevel) + " }");
+    const std::vector<const UiDrawCommand*> drawn = Gradients();
+    ASSERT_EQ(drawn.size(), 2u);
+    EXPECT_EQ(drawn[0]->Gradient->Ramp, drawn[1]->Gradient->Ramp)
+        << "two elements with one bevel uploaded it twice";
+    EXPECT_EQ(Uploads.size(), 1u);
+    // Shaped by their own boxes, though: one is wider than the other.
+    EXPECT_NE(drawn[0]->Geometry, drawn[1]->Geometry);
+}
+
+TEST_F(UiGradientTest, AResizedElementKeepsItsRamp)
+{
+    // The document engine compiles the gradient again for the new size; its
+    // colours are the same, so its ramp is too, and nothing is released.
+    // Half the surface wide: 200 px of 400, then 120 px of 240.
+    Open("width: 50%; decorator: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);");
+    ASSERT_NE(Gradient(), nullptr);
+    const UiGeneratedTextureId ramp = Gradient()->Gradient->Ramp;
+    const std::size_t uploaded = Uploads.size();
+    Ui->SetSurfaceSize(Surface, RenderExtent{ 240, 200 });
+    Ui->Update();
+    Ui->ExtractRender();
+    const UiTextureChanges changes = Ui->TakeTextureChanges();
+    ASSERT_NE(Gradient(), nullptr);
+    EXPECT_EQ(Gradient()->Gradient->Ramp, ramp);
+    EXPECT_NEAR(Gradient()->Gradient->Axis.X, 120.0f, 0.01f) << "the gradient did not follow the new size";
+    EXPECT_TRUE(changes.Uploads.empty()) << "a resize minted the same ramp again";
+    EXPECT_EQ(std::find(changes.Released.begin(), changes.Released.end(), ramp), changes.Released.end());
+    EXPECT_EQ(Uploads.size(), uploaded);
 }

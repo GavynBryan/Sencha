@@ -163,6 +163,19 @@ UiDrawFrame RmlRenderRecorder::EndFrame()
 
 UiTextureChanges RmlRenderRecorder::TakeTextureChanges()
 {
+    for (const UiGeneratedTextureId ramp : UnusedRamps)
+    {
+        const auto pixels = RampPixels.find(ramp);
+        if (pixels == RampPixels.end())
+            continue;
+        const auto record = Ramps.find(pixels->second);
+        if (record == Ramps.end() || record->second.Users > 0)
+            continue;
+        Changes.Released.push_back(ramp);
+        Ramps.erase(record);
+        RampPixels.erase(pixels);
+    }
+    UnusedRamps.clear();
     return std::exchange(Changes, UiTextureChanges{});
 }
 
@@ -404,12 +417,7 @@ Rml::CompiledShaderHandle RmlRenderRecorder::CompileShader(const Rml::String& na
     gradient.FirstStop = stops.front().position.number;
     gradient.LastStop = stops.back().position.number;
 
-    UiTextureUpload upload;
-    upload.Id = NextGeneratedId++;
-    upload.Size = RenderExtent{ kUiGradientRampTexels, 1 };
-    upload.PremultipliedRgba8 = BuildGradientRamp(stops);
-    gradient.Ramp = upload.Id;
-    Changes.Uploads.push_back(std::move(upload));
+    gradient.Ramp = AcquireRamp(BuildGradientRamp(stops));
 
     const std::uint64_t handle = NextShaderHandle++;
     Shaders.emplace(handle, gradient);
@@ -443,8 +451,36 @@ void RmlRenderRecorder::ReleaseShader(Rml::CompiledShaderHandle shader)
     const auto it = Shaders.find(static_cast<std::uint64_t>(shader));
     if (it == Shaders.end())
         return;
-    Changes.Released.push_back(it->second.Ramp);
+    ReleaseRamp(it->second.Ramp);
     Shaders.erase(it);
+}
+
+UiGeneratedTextureId RmlRenderRecorder::AcquireRamp(std::vector<std::byte> pixels)
+{
+    std::string key(reinterpret_cast<const char*>(pixels.data()), pixels.size());
+    RampRecord& record = Ramps[key];
+    if (record.Id == kInvalidUiGeneratedTexture)
+    {
+        UiTextureUpload upload;
+        upload.Id = NextGeneratedId++;
+        upload.Size = RenderExtent{ kUiGradientRampTexels, 1 };
+        upload.PremultipliedRgba8 = std::move(pixels);
+        record.Id = upload.Id;
+        RampPixels.emplace(upload.Id, std::move(key));
+        Changes.Uploads.push_back(std::move(upload));
+    }
+    ++record.Users;
+    return record.Id;
+}
+
+void RmlRenderRecorder::ReleaseRamp(UiGeneratedTextureId ramp)
+{
+    const auto pixels = RampPixels.find(ramp);
+    if (pixels == RampPixels.end())
+        return;
+    RampRecord& record = Ramps[pixels->second];
+    if (record.Users > 0 && --record.Users == 0)
+        UnusedRamps.push_back(ramp);
 }
 
 // -- Tier 2 ------------------------------------------------------------------

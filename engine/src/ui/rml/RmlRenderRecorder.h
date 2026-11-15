@@ -7,8 +7,10 @@
 #include <render/ui/UiDrawFrame.h>
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 class Logger;
 
@@ -110,6 +112,12 @@ public:
     // compiles to a UiGradient and a colour ramp uploaded as a generated
     // texture; a draw records the element's background shape painted with it.
     // Any other shader name is outside the profile and reported as such.
+    //
+    // Gradients with the same colours share one ramp: ten segments of a bar
+    // with one bevel upload it once. The document engine compiles a gradient
+    // again whenever its element resizes, so a ramp let go of is kept until
+    // the next TakeTextureChanges, and one compiled again before then keeps
+    // its texture rather than minting the same pixels anew.
     Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
                                             const Rml::Dictionary& parameters) override;
     void RenderShader(Rml::CompiledShaderHandle shader,
@@ -121,6 +129,10 @@ public:
     [[nodiscard]] std::uint32_t LiveShaderCount() const
     {
         return static_cast<std::uint32_t>(Shaders.size());
+    }
+    [[nodiscard]] std::uint32_t LiveRampCount() const
+    {
+        return static_cast<std::uint32_t>(Ramps.size());
     }
 
     // -- Tier 2: not implemented, and loud about it ---------------------------
@@ -147,6 +159,16 @@ private:
         UiTextureRef Ref;
     };
 
+    // A colour ramp, by its pixels, and how many compiled gradients use it.
+    struct RampRecord
+    {
+        UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
+        std::uint32_t Users = 0;
+    };
+
+    [[nodiscard]] UiGeneratedTextureId AcquireRamp(std::vector<std::byte> pixels);
+    void ReleaseRamp(UiGeneratedTextureId ramp);
+
     void ReportUnsupported(std::string_view feature);
     [[nodiscard]] UiTextureRef TextureRefFor(Rml::TextureHandle texture) const;
 
@@ -156,6 +178,11 @@ private:
     std::unordered_map<std::uint64_t, UiGeometryRef> Geometry;
     std::unordered_map<std::uint64_t, TextureRecord> Textures;
     std::unordered_map<std::uint64_t, UiGradient> Shaders;
+    std::unordered_map<std::string, RampRecord> Ramps;
+    std::unordered_map<UiGeneratedTextureId, std::string> RampPixels;
+    // Ramps no gradient uses any more, released at the next TakeTextureChanges
+    // unless one is compiled again first.
+    std::vector<UiGeneratedTextureId> UnusedRamps;
 
     // Never reused, so a handle that outlives its release reads as invalid
     // rather than as whichever resource took the slot.
