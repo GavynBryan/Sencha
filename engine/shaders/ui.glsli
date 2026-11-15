@@ -1,0 +1,36 @@
+// Mirrored by UiPushConstants in UiDrawPass.cpp.
+
+layout(push_constant) uniform UiPC {
+    // Surface pixels straight to clip space. Built on the CPU as
+    // orthographic * documentTransform * translate(commandTranslation), so the
+    // shader never has to know the order those compose in.
+    mat4 Mvp;
+    uint TextureIndex;
+    uint Flags;
+    vec2 GradientOrigin;
+    vec2 GradientAxis;
+    vec2 GradientStops;
+} pc;
+
+const uint kFlagHasTexture = 1u;
+const uint kFlagStraightAlphaTexture = 2u;
+const uint kFlagGradient = 4u;
+const uint kFlagGradientRepeating = 8u;
+const uint kGradientShapeShift = 4u;
+const uint kGradientShapeMask = 3u;
+const uint kGradientShapeRadial = 1u;
+const uint kGradientShapeConic = 2u;
+
+vec3 SrgbToLinear(vec3 srgb)
+{
+    vec3 low = srgb / 12.92;
+    vec3 high = pow((srgb + 0.055) / 1.055, vec3(2.4));
+    return mix(low, high, step(vec3(0.04045), srgb));
+}
+
+vec4 PremultipliedSrgbToLinear(vec4 premultiplied)
+{
+    float alpha = premultiplied.a;
+    vec3 straightSrgb = alpha > 0.0 ? premultiplied.rgb / alpha : vec3(0.0);
+    return vec4(SrgbToLinear(straightSrgb) * alpha, alpha);
+}

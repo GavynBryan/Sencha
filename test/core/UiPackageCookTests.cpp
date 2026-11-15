@@ -332,6 +332,10 @@ TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSour
 #blurred { filter: blur(3px); }
 #lit { decorator: linear-gradient(90deg, #e6b86c, #0000); }
 #stripes { decorator: repeating-linear-gradient(-45deg, #e6b86c 0px 4px, #0000 4px 8px); }
+#glow { decorator: radial-gradient(#e6b86c, #0000); }
+#dial { decorator: conic-gradient(#e6b86c, #0000); }
+#band { decorator: horizontal-gradient(#e6b86c #0000); }
+#fade { decorator: vertical-gradient(#e6b86c #0000); }
 )");
 
     ASSERT_TRUE(Cook(root).Ok);
@@ -345,8 +349,7 @@ TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSour
     };
     EXPECT_TRUE(reported("box-shadow"));
     EXPECT_TRUE(reported("filter"));
-    // Gradient decorators draw, so they are not reported.
-    EXPECT_FALSE(reported("gradient decorator"));
+    EXPECT_EQ(package.Unsupported.size(), 2u) << "a gradient decorator draws and is not reported";
 
     for (const UiUnsupportedFeature& note : package.Unsupported)
     {

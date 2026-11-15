@@ -323,24 +323,49 @@ draws it would have clipped unclipped, and says so once.
 
 **Gradients: `CompileShader` and `RenderShader`.** The `linear-gradient`,
 `radial-gradient` and `conic-gradient` decorators, plain or `repeating-`, draw.
-`horizontal-gradient` and `vertical-gradient` always did: they are vertex
-colours, Tier 1. A gradient compiles to a `UiGradient` (its shape, origin, axis
-and the span of its stops) and a colour ramp, `kUiGradientRampTexels` texels
-from the first stop to the last, minted as a generated texture and released
-with the decorator. A draw is the element's background shape, rounded corners
-included, with its UV the position in the element's box; `ui.frag.glsl` works
-out how far along the gradient each fragment is, the same way RmlUi's own
-reference backend does, and samples the ramp. The element's opacity rides in
-the vertex colour. The parameters fit in the push constants the pass already
-has (96 of the 128 bytes every device guarantees), so a gradient costs one draw
-like any box and needs no pipeline of its own. Any other shader name, a
-`shader()` decorator, is outside the profile and reported.
+`horizontal-gradient` and `vertical-gradient` always did: RmlUi draws them as
+plain geometry with vertex colours, Tier 1, and never asks for a shader. Any
+other shader name, a `shader()` decorator, is outside the profile and reported.
 
-Gradients with the same colours share one ramp, so ten bar segments with one
-bevel upload it once. RmlUi compiles a gradient again every time its element
-resizes, so a ramp no gradient uses is released at the next extraction rather
-than at once: one compiled again in between keeps its texture, and an animated
-width costs no uploads.
+A compiled gradient is a `UiGradient`, which describes its shape, and a colour
+ramp: `kUiGradientRampTexels` texels from the first stop to the last, minted as
+a generated texture. Reading the shader dictionary and building the ramp is a
+pure function (`engine/src/ui/rml/RmlGradient`); the recorder keeps only which
+compiled gradient a shader handle names. A gradient's draw command is the
+element's background shape, rounded corners included, with its UV the position
+in the element's box in pixels; its `Texture` is the ramp, so residency and
+recording comparison treat it as any generated texture, and its `Gradient` says
+how to read it. The element's opacity rides in the vertex colour.
+
+`UiGradient`'s fields, all in the box's pixels:
+
+| Shape  | `Origin`        | `Axis`                                 | Stops are fractions of |
+|--------|-----------------|----------------------------------------|------------------------|
+| Linear | the start point | the vector from the start to the end   | its length             |
+| Radial | the centre      | one over the radius, on each axis      | its radius             |
+| Conic  | the centre      | the cosine and sine of the start angle | a turn                 |
+
+A zero radius stores a very large inverse, which puts every point past the last
+stop. `ui.frag.glsl` works out how far along the gradient each fragment is the
+way RmlUi's own reference backend does, maps that onto the span between the
+first and last stops (wrapping when repeating, clamping otherwise), and samples
+the ramp between its end texel centres, so filtering never reaches past either
+end whatever the sampler's address mode. The ramp's width comes from the bound
+texture, not from a constant mirrored in the shader. The shape travels as a
+two-bit field of the push constants' `Flags`, holding the `UiGradientShape`
+value, so two shapes at once cannot be expressed. The parameters fit in the push
+constants the pass already has (within the 128 bytes every device guarantees, checked at compile time),
+so a gradient costs one draw like any box and needs no pipeline of its own. A
+gradient whose ramp is not resident is skipped rather than drawn flat white.
+
+Gradients with the same ramp pixels share one texture, so ten bar segments with
+one bevel upload it once (`engine/src/ui/GradientRampPool`). RmlUi compiles a
+gradient again every time its element resizes, so a ramp whose last gradient is
+released stays until the next `TakeTextureChanges` rather than going at once:
+one compiled again in between keeps its texture, and an animated width costs no
+uploads. The pool has no fixed limit: it holds one ramp per distinct set of
+colours that a live gradient uses, plus those let go of since the last
+extraction, so it is bounded by what the open documents author.
 
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
 `SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`. The RCSS

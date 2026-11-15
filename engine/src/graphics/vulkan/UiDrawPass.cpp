@@ -17,12 +17,13 @@
 #include <shaders/kUiVertSpv.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
+#include <optional>
 
 namespace
 {
-// Mirrors the block in ui.vert.glsl / ui.frag.glsl. One definition per stage
-// would drift; this is the single mirror, and both stages read the same range.
+// Mirrors UiPC in ui.glsli, which both stages include.
 struct UiPushConstants
 {
     float Mvp[16];
@@ -33,15 +34,20 @@ struct UiPushConstants
     float GradientStops[2];
 };
 
-// Inside the 128 bytes every Vulkan device guarantees for push constants.
-static_assert(sizeof(UiPushConstants) == 96 && sizeof(UiPushConstants) <= 128);
+constexpr std::size_t kGuaranteedPushConstantBytes = 128;
+static_assert(sizeof(UiPushConstants) <= kGuaranteedPushConstantBytes,
+              "UiPushConstants must fit the push constant range every Vulkan device offers");
+static_assert(offsetof(UiPushConstants, GradientOrigin) % 8 == 0,
+              "a vec2 in a GLSL push constant block starts on an 8-byte boundary");
 
 constexpr std::uint32_t kFlagHasTexture = 1u;
 constexpr std::uint32_t kFlagStraightAlphaTexture = 2u;
 constexpr std::uint32_t kFlagGradient = 4u;
-constexpr std::uint32_t kFlagGradientRadial = 8u;
-constexpr std::uint32_t kFlagGradientConic = 16u;
-constexpr std::uint32_t kFlagGradientRepeating = 32u;
+constexpr std::uint32_t kFlagGradientRepeating = 8u;
+constexpr std::uint32_t kGradientShapeShift = 4u;
+constexpr std::uint32_t kGradientShapeMask = 3u;
+static_assert(static_cast<std::uint32_t>(UiGradientShape::Conic) <= kGradientShapeMask,
+              "UiGradientShape outgrew its field in UiPushConstants::Flags");
 
 // Surface pixels to clip space: x right, y down, origin top left -- which is
 // what the document engine lays out in and what Vulkan's clip space already
@@ -107,6 +113,76 @@ void ComposeMvp(const float projection[16],
             out[col * 4 + row] = sum;
         }
     }
+}
+
+struct ResolvedTexture
+{
+    BindlessImageIndex Index;
+    bool StraightAlpha = false;
+};
+
+std::optional<ResolvedTexture> ResolveTexture(const UiTextureRef& texture,
+                                              const UiTextureResidency& residency,
+                                              TextureCache* textures)
+{
+    switch (texture.Kind)
+    {
+    case UiTextureKind::Content:
+        if (textures != nullptr)
+        {
+            const BindlessImageIndex index = textures->GetBindlessIndex(texture.Content);
+            if (index.IsValid())
+                return ResolvedTexture{ index, true };
+        }
+        return std::nullopt;
+    case UiTextureKind::Generated:
+        if (const std::optional<BindlessImageIndex> index = residency.FindGenerated(texture.Generated))
+            return ResolvedTexture{ *index, false };
+        return std::nullopt;
+    case UiTextureKind::Host:
+        // Straight alpha like content: a host image is a render target or an
+        // ordinary texture, never premultiplied by the document engine.
+        if (const std::optional<BindlessImageIndex> index = residency.FindHost(texture.Host))
+            return ResolvedTexture{ *index, true };
+        return std::nullopt;
+    case UiTextureKind::None:
+        break;
+    }
+    return std::nullopt;
+}
+
+void WriteGradient(const UiGradient& gradient, UiPushConstants& push)
+{
+    push.Flags = kFlagGradient | (static_cast<std::uint32_t>(gradient.Shape) << kGradientShapeShift)
+        | (gradient.Repeating ? kFlagGradientRepeating : 0u);
+    push.GradientOrigin[0] = gradient.Origin.X;
+    push.GradientOrigin[1] = gradient.Origin.Y;
+    push.GradientAxis[0] = gradient.Axis.X;
+    push.GradientAxis[1] = gradient.Axis.Y;
+    push.GradientStops[0] = gradient.FirstStop;
+    push.GradientStops[1] = gradient.LastStop;
+}
+
+std::optional<UiPushConstants> ResolvePaint(const UiDrawCommand& command,
+                                            const UiTextureResidency& residency,
+                                            TextureCache* textures)
+{
+    UiPushConstants push{};
+    const std::optional<ResolvedTexture> texture = ResolveTexture(command.Texture, residency, textures);
+    if (command.Gradient.has_value())
+    {
+        // Unlike a missing texture, which draws untextured, a gradient without its ramp would paint flat white.
+        if (!texture)
+            return std::nullopt;
+        push.TextureIndex = texture->Index.Value;
+        WriteGradient(*command.Gradient, push);
+    }
+    else if (texture)
+    {
+        push.TextureIndex = texture->Index.Value;
+        push.Flags = kFlagHasTexture | (texture->StraightAlpha ? kFlagStraightAlphaTexture : 0u);
+    }
+    return push;
 }
 
 VkRect2D ClampScissor(const UiClipRect& clip, RenderExtent surface, VkExtent2D target)
@@ -416,6 +492,9 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
     {
         if (!command.Geometry || command.Geometry->Indices.empty())
             continue;
+        std::optional<UiPushConstants> push = ResolvePaint(command, *Services->UiTextures, Textures);
+        if (!push)
+            continue;
 
         const bool writesMask = command.ClipMask != UiClipMaskOp::None;
         if (writesMask && !stencilAvailable)
@@ -495,63 +574,11 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
         std::memcpy(vertices.Mapped, blob.Vertices.data(), vertexBytes);
         std::memcpy(indices.Mapped, blob.Indices.data(), indexBytes);
 
-        UiPushConstants push{};
-        ComposeMvp(projection, command.Transform, command.Translation, push.Mvp);
-
-        if (command.Gradient.has_value())
-        {
-            // A gradient whose ramp is not resident would draw as flat white,
-            // which is worse than a frame without it.
-            const std::optional<BindlessImageIndex> ramp =
-                Services->UiTextures->FindGenerated(command.Gradient->Ramp);
-            if (!ramp)
-                continue;
-            const UiGradient& gradient = *command.Gradient;
-            push.TextureIndex = ramp->Value;
-            push.Flags = kFlagGradient
-                | (gradient.Shape == UiGradientShape::Radial ? kFlagGradientRadial : 0u)
-                | (gradient.Shape == UiGradientShape::Conic ? kFlagGradientConic : 0u)
-                | (gradient.Repeating ? kFlagGradientRepeating : 0u);
-            push.GradientOrigin[0] = gradient.Origin.X;
-            push.GradientOrigin[1] = gradient.Origin.Y;
-            push.GradientAxis[0] = gradient.Axis.X;
-            push.GradientAxis[1] = gradient.Axis.Y;
-            push.GradientStops[0] = gradient.FirstStop;
-            push.GradientStops[1] = gradient.LastStop;
-        }
-        else if (command.Texture.Kind == UiTextureKind::Content && Textures != nullptr)
-        {
-            const BindlessImageIndex index = Textures->GetBindlessIndex(command.Texture.Content);
-            if (index.IsValid())
-            {
-                push.TextureIndex = index.Value;
-                push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
-            }
-        }
-        else if (command.Texture.Kind == UiTextureKind::Generated)
-        {
-            if (const std::optional<BindlessImageIndex> index =
-                    Services->UiTextures->FindGenerated(command.Texture.Generated))
-            {
-                push.TextureIndex = index->Value;
-                push.Flags = kFlagHasTexture;
-            }
-        }
-        else if (command.Texture.Kind == UiTextureKind::Host)
-        {
-            // Straight alpha like content: a host image is a render target or an
-            // ordinary texture, never premultiplied by the document engine.
-            if (const std::optional<BindlessImageIndex> index =
-                    Services->UiTextures->FindHost(command.Texture.Host))
-            {
-                push.TextureIndex = index->Value;
-                push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
-            }
-        }
+        ComposeMvp(projection, command.Transform, command.Translation, push->Mvp);
 
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(push), &push);
+                           0, sizeof(*push), &*push);
 
         const VkRect2D scissor = ClampScissor(command.Clip, ui.Surface, frame.TargetExtent);
         if (scissor.extent.width == 0 || scissor.extent.height == 0)

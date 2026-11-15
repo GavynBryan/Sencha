@@ -1,129 +1,79 @@
-#include <gtest/gtest.h>
-
-#include <assets/runtime/RuntimeAssets.h>
-#include <assets/ui/UiPackage.h>
-#include <assets/ui/UiPackageSerializer.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/logging/LoggingProvider.h>
-#include <ui/UiService.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
+#include "UiScreenTest.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <random>
-#include <span>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
-// Gradient decorators: what a document asks for reaches the renderer as a
-// gradient over the element's own shape, with a colour ramp made once and
-// handed over like any generated texture, and released with the decorator.
 namespace
 {
-std::vector<std::byte> BytesOf(std::string_view text)
-{
-    std::vector<std::byte> out(text.size());
-    std::memcpy(out.data(), text.data(), text.size());
-    return out;
-}
-
-class TempAssetRoot
-{
-public:
-    TempAssetRoot()
-    {
-        Root = std::filesystem::temp_directory_path()
-               / ("sencha_ui_gradient_test_" + std::to_string(std::random_device{}()));
-        std::filesystem::create_directories(Root / "ui");
-    }
-    ~TempAssetRoot()
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(Root, ec);
-    }
-    TempAssetRoot(const TempAssetRoot&) = delete;
-    TempAssetRoot& operator=(const TempAssetRoot&) = delete;
-
-    void WritePackage(std::string_view markup, std::string_view style) const
-    {
-        UiPackage package;
-        package.RootDocumentName = "screen.rml";
-        package.Blobs.push_back({ .VirtualName = "screen.rml", .SourcePath = "ui/screen.rml",
-                                  .Kind = UiBlobKind::Document, .Bytes = BytesOf(markup) });
-        package.Blobs.push_back({ .VirtualName = "screen.rcss", .SourcePath = "ui/screen.rcss",
-                                  .Kind = UiBlobKind::StyleSheet, .Bytes = BytesOf(style) });
-        std::vector<std::byte> bytes;
-        ASSERT_TRUE(WriteSuiToBytes(package, bytes));
-        std::ofstream(Root / "ui" / "screen.sui", std::ios::binary)
-            .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    }
-    [[nodiscard]] std::string PathString() const { return Root.generic_string(); }
-
-private:
-    std::filesystem::path Root;
-};
-
 struct Texel
 {
     int R, G, B, A;
 };
 
-class UiGradientTest : public testing::Test
+struct Box
+{
+    std::string_view Style;
+    int Top = 0;
+    std::string_view Width = "200px";
+};
+
+constexpr int kBoxHeight = 40;
+
+class UiGradientTest : public UiScreenTest
 {
 protected:
-    // Lays out one 200 x 40 px element, #g, at the surface's corner, styled by
-    // `style`, and extracts it. `more` adds markup and `moreStyle` its rules.
-    void Open(std::string_view style, std::string_view more = {}, std::string_view moreStyle = {})
+    void Open(std::initializer_list<Box> boxes)
     {
-        Root.WritePackage(std::string(R"(<rml><head><link type="text/rcss" href="screen.rcss"/></head>)"
-                                      R"(<body><div id="g"/>)") + std::string(more) + "</body></rml>",
-                          std::string("body { display: block; width: 100%; height: 100%; } "
-                                      "#g { display: block; position: absolute; left: 0px; top: 0px; "
-                                      "width: 200px; height: 40px; ")
-                              + std::string(style) + " } " + std::string(moreStyle));
-        ScanAssetsDirectory(Root.PathString(), Assets.Registry, Assets.Assets.Kinds());
-        Ui = std::make_unique<UiService>(Logging, Assets.Assets, Assets.UiPackages, Assets.Fonts, nullptr);
-        ASSERT_TRUE(Ui->IsReady());
-        Surface = Ui->CreateSurface("test", RenderExtent{ 400, 200 });
-        Screen = Ui->OpenScreen(Surface, "asset://ui/screen.sui");
-        ASSERT_TRUE(Screen.IsValid());
+        std::string body;
+        std::string style;
+        for (std::size_t index = 0; index < boxes.size(); ++index)
+        {
+            const Box& box = *(boxes.begin() + index);
+            const std::string id = "box" + std::to_string(index);
+            body += "<div id=\"" + id + "\"/>";
+            style += "#" + id + " { display: block; position: absolute; left: 0px; top: " + std::to_string(box.Top)
+                + "px; width: " + std::string(box.Width) + "; height: " + std::to_string(kBoxHeight) + "px; "
+                + std::string(box.Style) + " } ";
+        }
+        ASSERT_TRUE(OpenScreen(body, style, RenderExtent{ 400, 200 }));
         Extract();
     }
 
-    void Extract()
+    void Open(std::string_view style) { Open({ Box{ style } }); }
+
+    UiTextureChanges Extract()
     {
         Ui->Update();
         Ui->ExtractRender();
-        const UiTextureChanges changes = Ui->TakeTextureChanges();
-        for (const UiTextureUpload& upload : changes.Uploads)
-            Uploads.push_back(upload);
+        UiTextureChanges changes = Ui->TakeTextureChanges();
+        Uploads.insert(Uploads.end(), changes.Uploads.begin(), changes.Uploads.end());
+        return changes;
     }
 
-    std::vector<const UiDrawCommand*> Gradients() const
+    std::vector<const UiDrawCommand*> Commands() const
     {
         std::vector<const UiDrawCommand*> found;
         for (const UiDrawFrame& frame : Ui->Frames())
             for (const UiDrawCommand& command : frame.Commands)
-                if (command.Gradient.has_value())
-                    found.push_back(&command);
+                found.push_back(&command);
         return found;
     }
 
-    // The one gradient command in the frame.
+    std::vector<const UiDrawCommand*> Gradients() const
+    {
+        std::vector<const UiDrawCommand*> found = Commands();
+        std::erase_if(found, [](const UiDrawCommand* command) { return !command->Gradient.has_value(); });
+        return found;
+    }
+
     const UiDrawCommand* Gradient() const
     {
-        const UiDrawCommand* found = nullptr;
-        for (const UiDrawFrame& frame : Ui->Frames())
-            for (const UiDrawCommand& command : frame.Commands)
-                if (command.Gradient.has_value())
-                {
-                    EXPECT_EQ(found, nullptr) << "more than one gradient was drawn";
-                    found = &command;
-                }
-        return found;
+        const std::vector<const UiDrawCommand*> found = Gradients();
+        EXPECT_LE(found.size(), 1u) << "more than one gradient was drawn";
+        return found.empty() ? nullptr : found.front();
     }
 
     const UiTextureUpload* Upload(UiGeneratedTextureId id) const
@@ -133,13 +83,10 @@ protected:
         return it != Uploads.end() ? &*it : nullptr;
     }
 
-    // The texel `index` of the gradient's ramp, as handed over.
     Texel Ramp(std::uint32_t index) const
     {
         const UiDrawCommand* command = Gradient();
-        if (command == nullptr)
-            return {};
-        const UiTextureUpload* upload = Upload(command->Gradient->Ramp);
+        const UiTextureUpload* upload = command != nullptr ? Upload(command->Texture.Generated) : nullptr;
         if (upload == nullptr)
             return {};
         const std::byte* texel = upload->PremultipliedRgba8.data() + static_cast<std::size_t>(index) * 4;
@@ -147,26 +94,19 @@ protected:
                  std::to_integer<int>(texel[2]), std::to_integer<int>(texel[3]) };
     }
 
-    void TearDown() override
-    {
-        if (Ui)
-            Ui->Shutdown();
-    }
-
-    TempAssetRoot Root;
-    LoggingProvider Logging;
-    ComponentSerializerRegistry Serializers;
-    RuntimeAssets Assets{ Logging, Serializers, RuntimeAssets::ReferenceOnly{} };
-    std::unique_ptr<UiService> Ui;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
     std::vector<UiTextureUpload> Uploads;
 };
 
+constexpr std::uint32_t kMiddle = kUiGradientRampTexels / 2;
 constexpr std::uint32_t kLast = kUiGradientRampTexels - 1;
+
+bool Released(const UiTextureChanges& changes, UiGeneratedTextureId id)
+{
+    return std::find(changes.Released.begin(), changes.Released.end(), id) != changes.Released.end();
+}
 } // namespace
 
-TEST_F(UiGradientTest, ALinearGradientIsRecordedOverTheElementsBoxWithItsRamp)
+TEST_F(UiGradientTest, ALinearGradientIsRecordedOverTheElementsBoxWithItsRampAsTheTexture)
 {
     Open("decorator: linear-gradient(90deg, #ff0000, #0000ff);");
     const UiDrawCommand* command = Gradient();
@@ -174,43 +114,37 @@ TEST_F(UiGradientTest, ALinearGradientIsRecordedOverTheElementsBoxWithItsRamp)
     const UiGradient& gradient = *command->Gradient;
     EXPECT_EQ(gradient.Shape, UiGradientShape::Linear);
     EXPECT_FALSE(gradient.Repeating);
-    // To the right, across the box's width.
     EXPECT_NEAR(gradient.Origin.X, 0.0f, 0.01f);
     EXPECT_NEAR(gradient.Axis.X, 200.0f, 0.01f);
     EXPECT_NEAR(gradient.Axis.Y, 0.0f, 0.01f);
     EXPECT_FLOAT_EQ(gradient.FirstStop, 0.0f);
     EXPECT_FLOAT_EQ(gradient.LastStop, 1.0f);
 
-    // The ramp is the texture, so residency and comparison treat it as one.
-    EXPECT_EQ(command->Texture.Kind, UiTextureKind::Generated);
-    EXPECT_EQ(command->Texture.Generated, gradient.Ramp);
-    const UiTextureUpload* ramp = Upload(gradient.Ramp);
+    ASSERT_EQ(command->Texture.Kind, UiTextureKind::Generated);
+    const UiTextureUpload* ramp = Upload(command->Texture.Generated);
     ASSERT_NE(ramp, nullptr) << "the ramp was never handed over";
     EXPECT_EQ(ramp->Size.Width, kUiGradientRampTexels);
     EXPECT_EQ(ramp->Size.Height, 1u);
     EXPECT_EQ(ramp->PremultipliedRgba8.size(), kUiGradientRampTexels * 4u);
 
-    // Its ends are the stops, its middle halfway between them in sRGB.
-    const Texel first = Ramp(0), last = Ramp(kLast), middle = Ramp(kUiGradientRampTexels / 2);
+    const Texel first = Ramp(0), last = Ramp(kLast), middle = Ramp(kMiddle);
     EXPECT_EQ(first.R, 255); EXPECT_EQ(first.B, 0); EXPECT_EQ(first.A, 255);
     EXPECT_EQ(last.R, 0); EXPECT_EQ(last.B, 255); EXPECT_EQ(last.A, 255);
-    EXPECT_NEAR(middle.R, 128, 1);
+    EXPECT_NEAR(middle.R, 128, 1) << "interpolated in sRGB, as CSS does";
     EXPECT_NEAR(middle.B, 127, 1);
 
-    // The geometry's UV is the position in the box, which the gradient is in.
     ASSERT_TRUE(command->Geometry);
     for (const UiVertex& vertex : command->Geometry->Vertices)
     {
-        EXPECT_NEAR(vertex.Uv.X, vertex.Position.X, 0.01f);
+        EXPECT_NEAR(vertex.Uv.X, vertex.Position.X, 0.01f) << "the UV is the position in the box";
         EXPECT_NEAR(vertex.Uv.Y, vertex.Position.Y, 0.01f);
     }
 }
 
 TEST_F(UiGradientTest, ColoursBlendWithTheirAlphaAsCssBlendsThem)
 {
-    // Premultiplied: fading red to clear never passes through dark red.
     Open("decorator: linear-gradient(90deg, #ff0000ff, #ff000000);");
-    const Texel middle = Ramp(kUiGradientRampTexels / 2);
+    const Texel middle = Ramp(kMiddle);
     EXPECT_NEAR(middle.A, 128, 1);
     EXPECT_NEAR(middle.R, middle.A, 1) << "a premultiplied red is as red as it is opaque";
     EXPECT_EQ(middle.G, 0);
@@ -223,9 +157,7 @@ TEST_F(UiGradientTest, ARepeatingGradientSpansOnePeriodOfStops)
     ASSERT_NE(command, nullptr);
     EXPECT_TRUE(command->Gradient->Repeating);
     EXPECT_FLOAT_EQ(command->Gradient->FirstStop, 0.0f);
-    // Eight pixels of a 200 px gradient line.
-    EXPECT_NEAR(command->Gradient->LastStop, 8.0f / 200.0f, 1e-4f);
-    // White for the first half of the period, black for the second.
+    EXPECT_NEAR(command->Gradient->LastStop, 8.0f / 200.0f, 1e-4f) << "eight pixels of a 200 px line";
     EXPECT_EQ(Ramp(kUiGradientRampTexels / 8).R, 255);
     EXPECT_EQ(Ramp(kUiGradientRampTexels * 7 / 8).R, 0);
 }
@@ -251,8 +183,7 @@ TEST_F(UiGradientTest, AConicGradientCarriesItsCentreAndStartingDirection)
     EXPECT_NEAR(command->Gradient->Origin.X, 100.0f, 0.01f);
     EXPECT_NEAR(command->Gradient->Origin.Y, 20.0f, 0.01f);
     EXPECT_NEAR(std::hypot(command->Gradient->Axis.X, command->Gradient->Axis.Y), 1.0f, 1e-5f);
-    // From 90 degrees: the turn starts a quarter round.
-    EXPECT_NEAR(command->Gradient->Axis.X, 0.0f, 1e-5f);
+    EXPECT_NEAR(command->Gradient->Axis.X, 0.0f, 1e-5f) << "from 90 degrees starts a quarter turn round";
 }
 
 TEST_F(UiGradientTest, AnElementsOpacityReachesTheGradientThroughItsVertexColour)
@@ -265,65 +196,78 @@ TEST_F(UiGradientTest, AnElementsOpacityReachesTheGradientThroughItsVertexColour
         EXPECT_NEAR(vertex.ColorSrgbPremultiplied[3], 127, 1);
 }
 
+TEST_F(UiGradientTest, StraightGradientsDrawAsVertexColoursWithNoShader)
+{
+    constexpr int kVerticalTop = 60;
+    Open({ Box{ "decorator: horizontal-gradient(#ff0000 #0000ff);" },
+           Box{ "decorator: vertical-gradient(#ff0000 #0000ff);", kVerticalTop } });
+    EXPECT_TRUE(Gradients().empty());
+    EXPECT_TRUE(Uploads.empty()) << "a straight gradient needs no ramp";
+
+    int horizontal = 0;
+    int vertical = 0;
+    for (const UiDrawCommand* command : Commands())
+    {
+        ASSERT_TRUE(command->Geometry);
+        ASSERT_FALSE(command->Geometry->Vertices.empty());
+        const auto top = [&](const UiVertex& vertex) { return command->Translation.Y + vertex.Position.Y; };
+        const bool isVertical = top(command->Geometry->Vertices.front()) >= kVerticalTop;
+        ++(isVertical ? vertical : horizontal);
+        for (const UiVertex& vertex : command->Geometry->Vertices)
+        {
+            const float along = isVertical ? (top(vertex) - kVerticalTop) / static_cast<float>(kBoxHeight)
+                                           : (command->Translation.X + vertex.Position.X) / 200.0f;
+            EXPECT_NEAR(vertex.ColorSrgbPremultiplied[0], 255.0f * (1.0f - along), 1.0f);
+            EXPECT_NEAR(vertex.ColorSrgbPremultiplied[2], 255.0f * along, 1.0f);
+        }
+    }
+    EXPECT_EQ(horizontal, 1);
+    EXPECT_EQ(vertical, 1);
+}
+
 TEST_F(UiGradientTest, AnUnchangedDocumentRecordsTheSameGradientAndUploadsNothingNew)
 {
     Open("decorator: linear-gradient(90deg, #ff0000, #0000ff);");
     ASSERT_FALSE(Ui->Frames().empty());
     const UiDrawFrame before = Ui->Frames().front();
-    const std::size_t uploaded = Uploads.size();
-    Extract();
+    EXPECT_TRUE(Extract().Uploads.empty()) << "the ramp was made again";
     ASSERT_FALSE(Ui->Frames().empty());
     EXPECT_TRUE(SameUiRecording(before, Ui->Frames().front()))
         << "a still gradient would redraw a texture surface every frame";
-    EXPECT_EQ(Uploads.size(), uploaded) << "the ramp was made again";
 }
 
 TEST_F(UiGradientTest, ClosingTheScreenReleasesTheRamp)
 {
     Open("decorator: linear-gradient(90deg, #ff0000, #0000ff);");
-    const UiDrawCommand* command = Gradient();
-    ASSERT_NE(command, nullptr);
-    const UiGeneratedTextureId ramp = command->Gradient->Ramp;
+    ASSERT_NE(Gradient(), nullptr);
+    const UiGeneratedTextureId ramp = Gradient()->Texture.Generated;
     Ui->CloseScreen(Screen);
-    Ui->Update();
-    Ui->ExtractRender();
-    const UiTextureChanges changes = Ui->TakeTextureChanges();
-    EXPECT_NE(std::find(changes.Released.begin(), changes.Released.end(), ramp), changes.Released.end())
-        << "a closed screen's ramp stays resident";
+    EXPECT_TRUE(Released(Extract(), ramp)) << "a closed screen's ramp stays resident";
 }
 
 TEST_F(UiGradientTest, GradientsWithTheSameColoursShareOneRamp)
 {
     constexpr std::string_view kBevel = "decorator: linear-gradient(180deg, #fff1cf 0%, #e6b86c 50%, #7c5a28 100%);";
-    Open(kBevel, R"(<div id="h"/>)",
-         std::string("#h { display: block; position: absolute; left: 0px; top: 60px; width: 30px; height: 40px; ")
-             + std::string(kBevel) + " }");
+    Open({ Box{ kBevel }, Box{ kBevel, 60, "30px" } });
     const std::vector<const UiDrawCommand*> drawn = Gradients();
     ASSERT_EQ(drawn.size(), 2u);
-    EXPECT_EQ(drawn[0]->Gradient->Ramp, drawn[1]->Gradient->Ramp)
+    EXPECT_EQ(drawn[0]->Texture.Generated, drawn[1]->Texture.Generated)
         << "two elements with one bevel uploaded it twice";
     EXPECT_EQ(Uploads.size(), 1u);
-    // Shaped by their own boxes, though: one is wider than the other.
-    EXPECT_NE(drawn[0]->Geometry, drawn[1]->Geometry);
+    EXPECT_NE(drawn[0]->Geometry, drawn[1]->Geometry) << "each is shaped by its own box";
 }
 
 TEST_F(UiGradientTest, AResizedElementKeepsItsRamp)
 {
-    // The document engine compiles the gradient again for the new size; its
-    // colours are the same, so its ramp is too, and nothing is released.
-    // Half the surface wide: 200 px of 400, then 120 px of 240.
-    Open("width: 50%; decorator: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);");
+    Open({ Box{ "decorator: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);", 0, "50%" } });
     ASSERT_NE(Gradient(), nullptr);
-    const UiGeneratedTextureId ramp = Gradient()->Gradient->Ramp;
-    const std::size_t uploaded = Uploads.size();
+    const UiGeneratedTextureId ramp = Gradient()->Texture.Generated;
+
     Ui->SetSurfaceSize(Surface, RenderExtent{ 240, 200 });
-    Ui->Update();
-    Ui->ExtractRender();
-    const UiTextureChanges changes = Ui->TakeTextureChanges();
+    const UiTextureChanges changes = Extract();
     ASSERT_NE(Gradient(), nullptr);
-    EXPECT_EQ(Gradient()->Gradient->Ramp, ramp);
+    EXPECT_EQ(Gradient()->Texture.Generated, ramp);
     EXPECT_NEAR(Gradient()->Gradient->Axis.X, 120.0f, 0.01f) << "the gradient did not follow the new size";
     EXPECT_TRUE(changes.Uploads.empty()) << "a resize minted the same ramp again";
-    EXPECT_EQ(std::find(changes.Released.begin(), changes.Released.end(), ramp), changes.Released.end());
-    EXPECT_EQ(Uploads.size(), uploaded);
+    EXPECT_FALSE(Released(changes, ramp));
 }
