@@ -40,7 +40,7 @@
 
 #include <app/EngineVocabularyBindings.h>
 
-#include <app/EngineContentRoot.h>
+#include <assets/runtime/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
 #include <app/PauseInputSystem.h>
@@ -117,40 +117,6 @@ namespace
     {
         return config.Window.GraphicsApi != WindowGraphicsApi::None;
     }
-}
-
-std::filesystem::path EngineContentRoot()
-{
-    const auto usable = [](const std::filesystem::path& candidate) {
-        std::error_code ec;
-        return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
-    };
-
-    // An override first, so a packaging layout this does not anticipate can
-    // be pointed at without a rebuild.
-    if (const char* override = SDL_getenv_unsafe("SENCHA_ENGINE_CONTENT");
-        override != nullptr && override[0] != '\0')
-    {
-        const std::filesystem::path path(override);
-        if (usable(path))
-            return path;
-    }
-
-    // Installed, beside the executable, next to where the templates land.
-    if (const char* base = SDL_GetBasePath(); base != nullptr)
-    {
-        const std::filesystem::path installed =
-            std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
-        if (usable(installed))
-            return installed.lexically_normal();
-    }
-
-#ifdef SENCHA_ENGINE_CONTENT_DIR
-    // In-tree. Defined only for a build from this source tree.
-    if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
-        return source;
-#endif
-    return {};
 }
 
 Engine::Engine(EngineConfig engineConfig)
@@ -675,6 +641,7 @@ VerbBindingEnvironment Engine::ShellBindingEnvironment() const
 
 void Engine::PublishSimulationAuthority()
 {
+    NetApplyConsoleAuthority(Console().Registry(), NetState.get());
     if (RuntimeWorldState == nullptr)
         return;
     ::World& entities = RuntimeWorldState->Entities();
@@ -714,21 +681,17 @@ void Engine::RefreshShellBindings()
     }
 }
 
-void Engine::SyncShellSurface()
+void Engine::PublishWindowView()
 {
 #ifdef SENCHA_ENABLE_UI
-    if (UiState == nullptr || !ShellSurface.IsValid() || PlatformState == nullptr)
+    if (UiState == nullptr || PlatformState == nullptr)
         return;
-    SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
+    const SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
     if (window == nullptr)
         return;
-
     const WindowExtent extent = window->GetExtent();
-    if (extent.Width == 0 || extent.Height == 0)
-        return;   // minimised; laying out against nothing collapses the document
-
-    UiState->SetSurfaceSize(ShellSurface, RenderExtent{ extent.Width, extent.Height });
-    UiState->SetSurfaceScale(ShellSurface, window->GetDisplayScale());
+    UiState->SetWindowView(0, UiWindowView{ RenderExtent{ extent.Width, extent.Height },
+                                            window->GetDisplayScale() });
 #endif
 }
 
@@ -1014,6 +977,7 @@ void Engine::DestroyNetSession()
 {
     NetState.reset();
     ResetNetSessionState();
+    PublishSimulationAuthority();
 }
 
 DefaultRenderPipeline* Engine::GetRenderPipeline()
@@ -1257,6 +1221,7 @@ int Engine::Run(Game& game)
         UiState = std::make_unique<UiService>(LoggingState, assets.Assets, assets.UiPackages,
                                               assets.Fonts, assets.Textures.get(), window);
     }
+    PublishWindowView();
 
     // The application shell, composed here rather than by the game.
     //
@@ -1274,10 +1239,7 @@ int Engine::Run(Game& game)
     if (Configuration.Runtime.ApplicationShell && UiState != nullptr && UiState->IsReady()
         && PlatformState != nullptr)
     {
-        SdlWindow* window = PlatformState->Windows.GetPrimaryWindow();
-        const WindowExtent extent = window != nullptr ? window->GetExtent() : WindowExtent{};
-        ShellSurface = UiState->CreateSurface(
-            "shell", RenderExtent{ extent.Width, extent.Height });
+        ShellSurface = UiState->CreateWindowSurface("shell");
 
         PauseMenuState = std::make_unique<PauseMenu>(
             *UiState, ShellSurface, PauseStateInstance, BackRouterInstance);

@@ -78,9 +78,6 @@ void NetApplyConsoleAuthority(ConsoleRegistry& registry, const NetSession* sessi
     if (session != nullptr && session->Role() != NetSessionRole::Standalone)
     {
         policy.InSession = true;
-        // A host holds authority the moment it binds; a client only once it is
-        // admitted, so a half-open connection does not silently unlock the
-        // console.
         policy.HasAuthority = session->Role() == NetSessionRole::Host;
         if (const CVarMetadata* cheats = registry.FindCVar("net.cheats"))
         {
@@ -390,6 +387,7 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
             // Whoever was already playing here is now the authority's own
             // participant, and peers have to be told about them.
             engine.ProjectSessionStart();
+            engine.PublishSimulationAuthority();
 
             result.Info("hosting on " + NetAddressToString(session->LocalAddress()));
             return result;
@@ -441,6 +439,8 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 result.Error("could not open a socket to " + text);
                 return result;
             }
+
+            engine.PublishSimulationAuthority();
 
             // Admission is several round trips away; the status command is how
             // the outcome is read, because a console command cannot block a

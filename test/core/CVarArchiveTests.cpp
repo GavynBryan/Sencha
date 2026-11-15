@@ -226,6 +226,22 @@ TEST_F(ArchiveFixture, AnEntryOfTheWrongShapeCostsItselfAndNotTheRestOfTheFile)
     EXPECT_FALSE(std::get<bool>(registry.FindCVar("render.sky.enabled")->CurrentValue));
 }
 
+TEST_F(ArchiveFixture, OnAndOffSavedAsTextLoadIntoABooleanSetting)
+{
+    WriteFile(R"({ "cvars": { "game.early": "on", "game.late": "off" } })");
+
+    ConsoleRegistry registry;
+    RegisterArchived(registry, "game.early", CVarType::Bool, false);
+
+    CVarArchive archive(FilePath());
+    archive.Load(registry, ConsolePhase::EngineReady);
+    EXPECT_TRUE(archive.LoadDiagnostics().empty());
+    EXPECT_TRUE(std::get<bool>(registry.FindCVar("game.early")->CurrentValue));
+
+    RegisterArchived(registry, "game.late", CVarType::Bool, true);
+    EXPECT_FALSE(std::get<bool>(registry.FindCVar("game.late")->CurrentValue));
+}
+
 TEST_F(ArchiveFixture, AnArchiveEntryCannotInvokeACommand)
 {
     // The settings file lives in a user-writable directory, so its format is a

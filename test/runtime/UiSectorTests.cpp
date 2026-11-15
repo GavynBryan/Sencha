@@ -1,4 +1,4 @@
-#include "UiScreenTest.h"
+#include <sencha/testing/UiLayoutTest.h>
 
 #include <math/Angle.h>
 
@@ -11,24 +11,24 @@
 // stroke, every edge with a fringe of falling coverage rather than a hard step.
 namespace
 {
-class UiSectorTest : public UiScreenTest
+class UiSectorTest : public UiLayoutTest
 {
 protected:
     // Draws `sector` (its attributes and style) in a 100px box at the surface's
     // corner, and returns every vertex recorded.
     std::vector<UiVertex> Draw(std::string_view attributes, std::string_view style)
     {
-        if (!OpenScreen(R"(<sector id="s" )" + std::string(attributes) + "/>",
+        if (!OpenMarkup(R"(<sector id="s" )" + std::string(attributes) + "/>",
                         "#s { display: block; position: absolute; left: 0px; top: 0px; "
                         "width: 100px; height: 100px; " + std::string(style) + " }",
-                        RenderExtent{ 200, 200 }))
+                        RenderExtent{ 200, 200 }).IsValid())
         {
             return {};
         }
-        Ui->Update();
-        Ui->ExtractRender();
+        Ui().Update();
+        Ui().ExtractRender();
         std::vector<UiVertex> vertices;
-        for (const UiDrawFrame& frame : Ui->Frames())
+        for (const UiDrawFrame& frame : Ui().Frames())
             for (const UiDrawCommand& command : frame.Commands)
                 if (command.Geometry)
                     vertices.insert(vertices.end(), command.Geometry->Vertices.begin(),

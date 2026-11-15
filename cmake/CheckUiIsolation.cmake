@@ -41,6 +41,7 @@ set(VIOLATIONS "")
 
 file(GLOB_RECURSE FIRST_PARTY_FILES
     "${REPO}/engine/include/*.h"
+    "${REPO}/engine/testing/*.h"
     "${REPO}/engine/src/*.h"
     "${REPO}/engine/src/*.cpp"
     "${REPO}/editor/*.h"

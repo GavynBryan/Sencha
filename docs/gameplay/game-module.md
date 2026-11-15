@@ -111,6 +111,27 @@ The engine does **not**:
   exists, and `Engine::ProjectSessionStart` stamps retroactively when hosting
   begins).
 
+## Console commands a session restricts
+
+A command that changes the world declares the session's rules in its flags
+rather than checking them in its callback. `ConsoleCommandFlags::Cheat` refuses
+it in a session while `net.cheats` is off, the host included;
+`ConsoleCommandFlags::AuthorityOnly` refuses it on a client. A command that
+mutates gameplay state carries both, as `scene.spawn` and `nav.agent.goto` do;
+a read-only verb such as a status report carries neither. Outside a session
+neither rule applies. `ConsoleRegistry::CheckSessionRules` applies them before
+the callback runs, with the same wording a refused `Cheat` or `Replicated` cvar
+gets, and a deferred command is judged when it runs rather than when it was
+queued. `map` and `world` carry neither: a client runs `map` itself when it is
+admitted.
+
+The console's `ConsoleAuthorityPolicy` and the World's `SimulationAuthority`
+are one answer read twice: `Engine::PublishSimulationAuthority` writes both from
+the session's role: at the start and end of the net pump, after a snapshot,
+in the frame's update, and the moment `host`, `connect` or `disconnect` changes
+the role. A callback therefore never needs to ask `IsSimulationAuthority` as
+well: while the console says there is no session, the World says it decides.
+
 ## Learning that a level arrived
 
 There is no level-loaded event. A load attaches a zone, and the attach reaches

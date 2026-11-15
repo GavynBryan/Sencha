@@ -85,6 +85,12 @@ public:
     [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size);
     void DestroySurface(UiSurfaceId surface);
 
+    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId = 0);
+    [[nodiscard]] bool FollowsWindow(UiSurfaceId surface) const;
+
+    void SetWindowView(std::uint32_t platformWindowId, UiWindowView view);
+    [[nodiscard]] std::optional<UiWindowView> GetWindowView(std::uint32_t platformWindowId = 0) const;
+
     // Re-lays-out every screen on the surface. Called on window resize and on a
     // UI scale change -- a retained document re-flows where a baked atlas
     // cannot, which is why UI scale is live here and not latched at startup.

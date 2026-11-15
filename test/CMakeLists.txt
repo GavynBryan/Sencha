@@ -105,7 +105,7 @@ set(SENCHA_TEST_TARGETS core_tests math_geometry_tests)
 
 if(RUNTIME_TEST_SOURCES)
     add_executable(runtime_tests ${RUNTIME_TEST_SOURCES})
-    target_link_libraries(runtime_tests PRIVATE sencha_engine test_allocation_counter GTest::gtest_main)
+    target_link_libraries(runtime_tests PRIVATE sencha_engine sencha::testing test_allocation_counter GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS runtime_tests)
 
     # A real loadable game module for the S2 boundary integration test. MODULE so

@@ -285,10 +285,19 @@ TEST(ShellDocument, TheOptionsDocumentReadsTheRowMembersTheRuntimeActuallyBinds)
     UiRow mode{ "Display Mode", "Windowed", "", true };
     mode.Control = UiRowControls::Choice;
     mode.Choices = { "Windowed", "Borderless", "Fullscreen" };
-    ASSERT_TRUE(ui.SetRows(screen, rows, std::vector<UiRow>{ volume, mode }));
+    UiRow flashing{ "Reduced Flashing", "Off", "", true };
+    flashing.Control = UiRowControls::Toggle;
+    flashing.Choices = { "Off", "On" };
+    ASSERT_TRUE(ui.SetRows(screen, rows, std::vector<UiRow>{ volume, mode, flashing }));
     ui.Update();
 
     ExpectEveryExpressionResolved(host);
+
+    std::size_t dropDowns = 0;
+    for (const UiElementInfo& element : ui.ElementTree(screen))
+        if (element.Tag == "select" && element.Boxes.Border.Width > 0.0f)
+            ++dropDowns;
+    EXPECT_EQ(dropDowns, 2u) << "the toggle row offers no control";
 }
 
 namespace

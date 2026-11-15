@@ -4,7 +4,7 @@
 
 #include "project/ProjectContentMount.h"
 
-#include <app/EngineContentRoot.h>
+#include <assets/runtime/EngineContentRoot.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>

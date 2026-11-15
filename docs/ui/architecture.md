@@ -550,6 +550,17 @@ Geometry bound from a model goes through `data-style-width` and friends, not an
 interpolated `style=""`: the engine substitutes data expressions in text and in
 `data-*` attributes only.
 
+**Every screen's expressions can bound a number.** Beside the document engine's
+own transforms (`format`, `round`, `to_upper`, `to_lower`), the runtime
+registers three on every surface's context: `value | min(a, ...)` and
+`value | max(a, ...)` take the least or greatest of the piped value and their
+arguments, and `value | clamp(low, high)` keeps it between the two -- so a bar
+bound as `data-style-width="(fill | clamp(0, 100)) + '%'"` never overruns its
+track whatever the host publishes. Values are read as numbers the way the
+document engine's own `format` reads them, so text that is not a number reads as
+0; a transform given too few values binds nothing and reports a warning naming
+it.
+
 **Two-way editing, without a control ever becoming authoritative.** A property
 declared `Editable` gets a setter, so a bound control -- a text field, a slider,
 a checkbox -- can write it. That write changes the *presentation copy* and
@@ -592,9 +603,9 @@ anyway still only writes the copy, and the host is still what decides whether a
 value read back becomes a change.
 
 A row also names the control a document should offer for it. `UiRow::Control`
-is a name: the runtime's own pages use `text` (the default), `range` and
-`choice` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and `Choices`
-for a drop-down, and a host's documents agree on any others with the host (the
+is a name: the runtime's own pages use `text` (the default), `range`,
+`choice` and `toggle` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and
+`Choices` for a drop-down or a toggle's two labels, and a host's documents agree on any others with the host (the
 editor's are in `presenters/RowControls.h`); a document branches with
 `data-if="row.editable && row.control == 'range'"`. `Editable`
 still says whether a control is offered at all; `Control` says which. The value
@@ -734,6 +745,24 @@ Registering them a second time from the cooked metadata would be a competing
 source of truth for what a face is called, so the runtime does not; the `.sfont`
 metadata is the default for registering a face programmatically instead.
 
+**The base stylesheet.** The document engine supplies no default styles: every
+element is inline and the body takes no size of its own. `engine/assets/ui/base.rcss`
+holds the defaults a document would otherwise repeat -- block display for
+`body`, `div`, `p` and the headings, and a body that fills its surface with no
+margin -- and nothing visual, no colour, font or spacing. A document links it
+by its content path, `<link type="text/rcss" href="/ui/base.rcss"/>`, from
+whichever content root it lives in, as the engine's `pause.rml` and
+`options.rml` do. The cook resolves a stylesheet, an include or any other input
+in the root being cooked first and in the engine's content root after it
+(`EngineContentRoot`), the order the runtime mounts them in, so a game's own
+`ui/base.rcss` shadows the engine's and a document in a game root reaches the
+engine's without a copy. Either way the sheet is recorded as the document's
+input: editing it recooks every document that links it, in every root, at the
+next cook, and a watched root's dependents are recooked when the engine's file
+changes (`SourceReloadRoots`). A test or tool outside the engine's tree whose
+executable cannot find the engine's content beside it names it with
+`SENCHA_ENGINE_CONTENT`.
+
 ## 12. The authoring loop
 
 ```
@@ -791,6 +820,22 @@ previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
 editor's own to it and shows the open document rebuilt on every save, with the
 diagnostics above among the editor's problems.
 
+### Testing a layout
+
+`sencha::testing` is the engine's header-only test support for a game's own
+tests; a game links it beside `sencha::engine` and the GoogleTest it finds
+itself, and it exists wherever the cook layer does. `UiLayout`
+(`sencha/testing/UiLayoutTest.h`) lays out a document from its sources with no
+window and no device: it holds a temporary content root (`Content()`, which
+copies a game's `assets/ui` in or writes files), cooks and mounts it as a game's
+root is cooked (`Mount`), and opens a `UiScreenDesc` on a surface at a size and
+scale (`Open`). After `Refresh` -- update and record, as a frame does -- it
+answers `BoxOf(id)`, `BoxesWithClass(name)` (the laid-out elements carrying a
+class, in document order), `Drew()` and `NoErrors()`, an assertion naming every
+error the layer reported. `UiLayoutTest` is the same as a fixture for a test
+with none of its own, and `OpenMarkup` writes a one-off document over the base
+stylesheet; the engine's own layout tests are written against it.
+
 ### The preview model
 
 The previewer opens a document against a preview model: what a host would
@@ -817,8 +862,8 @@ it, and closing UI Preview or the editor with an unsaved model asks first.
 arbitrated within a surface, so a dialog opened on a surface of its own would
 take focus from nothing while the screens it meant to block kept taking clicks.
 Kyusu creates one surface for its window and hands it to every authored
-controller; the surface tracks the window's size each frame, because a retained
-document re-flows on a resize where a baked font atlas cannot.
+controller; the surface follows the window, because a retained document
+re-flows on a resize where a baked font atlas cannot.
 
 **A surface lives on one platform window.** `SetSurfaceWindow(surface, id)`
 names it (0, the default, is the primary). The surface hears only that window's
@@ -841,11 +886,33 @@ its own feature after it with `DependsOn`. Layers order drawing and nothing
 else: input reaches surfaces by their input policy whatever their layer, which
 is why a lower layer's surface is normally `Disabled`.
 
-The engine creates one for the primary window and tracks its size and display
-scale every frame, which is what the application shell's pages open on. Tracking
-is not optional: a surface still holding the extent it was created with lays out
-for a window that is no longer there, and one whose scale was never set treats
-`dp` as `px` and renders half-size on a HiDPI display.
+**A surface can follow its window.** Whoever owns a window publishes what it
+measures, `SetWindowView(windowId, { extent, scale })`, and every surface made
+with `CreateWindowSurface(name, windowId)` takes each view as it arrives: created
+at the last one, resized and rescaled with every one after, and moved onto the
+new window's view by `SetSurfaceWindow`. A view with no area -- a minimised
+window -- is ignored, so a following surface keeps laying out against the last
+real one rather than collapsing. The engine publishes the primary window's view
+every frame (`Engine::PublishWindowView`, window 0), which is what the
+application shell's surface follows, and Kyusu's shell windows publish theirs
+with the editor's chosen UI scale. Following is not optional for a window's UI:
+a surface still holding the extent it was created with lays out for a window
+that is no longer there, and one whose scale was never set treats `dp` as `px`
+and renders half-size on a HiDPI display. A host that sizes a following surface
+by hand is overruled by the next view. The service keeps one view per window
+that has published, for its own lifetime: a handful of records, bounded by the
+windows a process opens.
+
+**One authored screen on a surface of its own** is `UiStandaloneScreen`
+(`ui/UiStandaloneScreen.h`): a HUD, an overlay, a screen on a prop. It opens the
+first time it is asked to once the UI service is ready -- over the window, as a
+following surface with the input policy given, once the window has published a
+view; or into a named target texture at a fixed extent -- and a screen that
+fails to open is not tried again until `Close`, which destroys its surface. It
+holds the service it opened on, so it must be closed before that service shuts
+down; a game closes it from its shutdown hook, as it would any lease. Calling
+its open every frame is the intended use: it costs a flag test once open, and a
+game never reads the window or includes a platform header to draw a HUD.
 
 **Where a surface's recording goes is the surface's `UiSurfaceDestination`.**
 `Window` (the default) is drawn by the engine's own `UiRenderFeature` into the

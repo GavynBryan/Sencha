@@ -1,6 +1,7 @@
 <rml>
 <head>
     <title>Pause</title>
+    <link type="text/rcss" href="/ui/base.rcss"/>
     <link type="text/rcss" href="pause.rcss"/>
 </head>
 <body data-model="pause">

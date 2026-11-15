@@ -4,8 +4,11 @@
 #include <assets/cook/ContentImporters.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
+#include <assets/runtime/EngineContentRoot.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <system_error>
 
 struct SourceReloadRoots::Root
 {
@@ -13,7 +16,18 @@ struct SourceReloadRoots::Root
     std::vector<std::string> Extensions;
     AssetSourceWatcher Watcher;
     AssetHotReloader Reloader;
+    bool EngineContent = false;
 };
+
+namespace
+{
+bool IsEngineContent(const std::string& root)
+{
+    const std::filesystem::path engine = EngineContentRoot();
+    std::error_code ec;
+    return !engine.empty() && std::filesystem::equivalent(engine, root, ec);
+}
+}
 
 SourceReloadRoots::SourceReloadRoots(LoggingProvider& logging,
                                      JobSystem* jobs,
@@ -48,6 +62,7 @@ void SourceReloadRoots::AddRoot(std::string root, std::vector<std::string> exten
         extensions,
         AssetSourceWatcher(Logging, root, extensions),
         AssetHotReloader(Logging, Assets, Registry, Importers->Registry(), Tasks, root),
+        IsEngineContent(root),
     });
     entry->Watcher.Initialize();
     Roots.push_back(std::move(entry));
@@ -73,7 +88,22 @@ std::size_t SourceReloadRoots::Poll(std::chrono::steady_clock::time_point now)
                 continue;
             root->Reloader.ReloadSource(source);
             ++reloaded;
+            if (root->EngineContent)
+                reloaded += ReloadEngineContentReaders(*root, source);
         }
+    }
+    return reloaded;
+}
+
+std::size_t SourceReloadRoots::ReloadEngineContentReaders(const Root& engine, std::string_view sourceRelPath)
+{
+    std::size_t reloaded = 0;
+    for (auto& root : Roots)
+    {
+        std::error_code ec;
+        if (root.get() == &engine || std::filesystem::exists(std::filesystem::path(root->Path) / sourceRelPath, ec))
+            continue;
+        reloaded += root->Reloader.ReloadDependents(sourceRelPath) ? 1 : 0;
     }
     return reloaded;
 }

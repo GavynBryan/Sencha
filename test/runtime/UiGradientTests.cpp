@@ -1,4 +1,4 @@
-#include "UiScreenTest.h"
+#include <sencha/testing/UiLayoutTest.h>
 
 #include <algorithm>
 #include <cmath>
@@ -22,7 +22,7 @@ struct Box
 
 constexpr int kBoxHeight = 40;
 
-class UiGradientTest : public UiScreenTest
+class UiGradientTest : public UiLayoutTest
 {
 protected:
     void Open(std::initializer_list<Box> boxes)
@@ -38,7 +38,7 @@ protected:
                 + "px; width: " + std::string(box.Width) + "; height: " + std::to_string(kBoxHeight) + "px; "
                 + std::string(box.Style) + " } ";
         }
-        ASSERT_TRUE(OpenScreen(body, style, RenderExtent{ 400, 200 }));
+        ASSERT_TRUE(OpenMarkup(body, style, RenderExtent{ 400, 200 }).IsValid());
         Extract();
     }
 
@@ -46,9 +46,9 @@ protected:
 
     UiTextureChanges Extract()
     {
-        Ui->Update();
-        Ui->ExtractRender();
-        UiTextureChanges changes = Ui->TakeTextureChanges();
+        Ui().Update();
+        Ui().ExtractRender();
+        UiTextureChanges changes = Ui().TakeTextureChanges();
         Uploads.insert(Uploads.end(), changes.Uploads.begin(), changes.Uploads.end());
         return changes;
     }
@@ -56,7 +56,7 @@ protected:
     std::vector<const UiDrawCommand*> Commands() const
     {
         std::vector<const UiDrawCommand*> found;
-        for (const UiDrawFrame& frame : Ui->Frames())
+        for (const UiDrawFrame& frame : Ui().Frames())
             for (const UiDrawCommand& command : frame.Commands)
                 found.push_back(&command);
         return found;
@@ -228,11 +228,11 @@ TEST_F(UiGradientTest, StraightGradientsDrawAsVertexColoursWithNoShader)
 TEST_F(UiGradientTest, AnUnchangedDocumentRecordsTheSameGradientAndUploadsNothingNew)
 {
     Open("decorator: linear-gradient(90deg, #ff0000, #0000ff);");
-    ASSERT_FALSE(Ui->Frames().empty());
-    const UiDrawFrame before = Ui->Frames().front();
+    ASSERT_FALSE(Ui().Frames().empty());
+    const UiDrawFrame before = Ui().Frames().front();
     EXPECT_TRUE(Extract().Uploads.empty()) << "the ramp was made again";
-    ASSERT_FALSE(Ui->Frames().empty());
-    EXPECT_TRUE(SameUiRecording(before, Ui->Frames().front()))
+    ASSERT_FALSE(Ui().Frames().empty());
+    EXPECT_TRUE(SameUiRecording(before, Ui().Frames().front()))
         << "a still gradient would redraw a texture surface every frame";
 }
 
@@ -241,7 +241,7 @@ TEST_F(UiGradientTest, ClosingTheScreenReleasesTheRamp)
     Open("decorator: linear-gradient(90deg, #ff0000, #0000ff);");
     ASSERT_NE(Gradient(), nullptr);
     const UiGeneratedTextureId ramp = Gradient()->Texture.Generated;
-    Ui->CloseScreen(Screen);
+    Ui().CloseScreen(Screen());
     EXPECT_TRUE(Released(Extract(), ramp)) << "a closed screen's ramp stays resident";
 }
 
@@ -263,7 +263,7 @@ TEST_F(UiGradientTest, AResizedElementKeepsItsRamp)
     ASSERT_NE(Gradient(), nullptr);
     const UiGeneratedTextureId ramp = Gradient()->Texture.Generated;
 
-    Ui->SetSurfaceSize(Surface, RenderExtent{ 240, 200 });
+    Ui().SetSurfaceSize(Surface(), RenderExtent{ 240, 200 });
     const UiTextureChanges changes = Extract();
     ASSERT_NE(Gradient(), nullptr);
     EXPECT_EQ(Gradient()->Texture.Generated, ramp);

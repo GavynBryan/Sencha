@@ -31,9 +31,29 @@ UiSurfaceId UiService::CreateSurface(std::string_view name, RenderExtent size)
     return Runtime->CreateSurface(name, size);
 }
 
+UiSurfaceId UiService::CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId)
+{
+    return Runtime->CreateWindowSurface(name, platformWindowId);
+}
+
 void UiService::DestroySurface(UiSurfaceId surface)
 {
     Runtime->DestroySurface(surface);
+}
+
+void UiService::SetWindowView(std::uint32_t platformWindowId, UiWindowView view)
+{
+    Runtime->SetWindowView(platformWindowId, view);
+}
+
+std::optional<UiWindowView> UiService::GetWindowView(std::uint32_t platformWindowId) const
+{
+    return Runtime->GetWindowView(platformWindowId);
+}
+
+bool UiService::FollowsWindow(UiSurfaceId surface) const
+{
+    return Runtime->FollowsWindow(surface);
 }
 
 void UiService::SetSurfaceSize(UiSurfaceId surface, RenderExtent size)

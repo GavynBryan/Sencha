@@ -97,10 +97,12 @@ struct ConsoleAuthorityPolicy
 
 enum class ConsoleCommandFlags : std::uint32_t
 {
-    None      = 0,
-    Developer = 1u << 0,
-    Hidden    = 1u << 1,
-    Unsafe    = 1u << 2,
+    None          = 0,
+    Developer     = 1u << 0,
+    Hidden        = 1u << 1,
+    Unsafe        = 1u << 2,
+    Cheat         = 1u << 3,
+    AuthorityOnly = 1u << 4,
 };
 
 inline ConsoleCommandFlags operator|(ConsoleCommandFlags a, ConsoleCommandFlags b)

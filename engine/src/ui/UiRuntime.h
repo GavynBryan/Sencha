@@ -93,7 +93,11 @@ public:
     void Shutdown();
 
     [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size);
+    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId);
     void DestroySurface(UiSurfaceId surface);
+    void SetWindowView(std::uint32_t platformWindowId, UiWindowView view);
+    [[nodiscard]] std::optional<UiWindowView> GetWindowView(std::uint32_t platformWindowId) const;
+    [[nodiscard]] bool FollowsWindow(UiSurfaceId surface) const;
     void SetSurfaceSize(UiSurfaceId surface, RenderExtent size);
     [[nodiscard]] RenderExtent GetSurfaceSize(UiSurfaceId surface) const;
 
@@ -232,6 +236,7 @@ private:
         // how every surface began and how a host that never names one is served.
         std::uint32_t WindowId = 0;
         std::uint8_t Layer = 0;
+        bool FollowsWindow = false;
 
         // The last pointer position delivered, in surface pixels. The document
         // engine is told where the pointer is on a move; a click has to be told
@@ -449,6 +454,18 @@ private:
     RmlWheelZoom WheelZoom;
     SDL_Window* PrimaryWindow = nullptr;
     std::uint32_t PrimaryWindowId = 0;
+
+    struct WindowViewRecord
+    {
+        std::uint32_t WindowId = 0;
+        UiWindowView View;
+    };
+    std::vector<WindowViewRecord> WindowViews;
+    [[nodiscard]] std::uint32_t WindowKey(std::uint32_t platformWindowId) const;
+    [[nodiscard]] const UiWindowView* FindWindowView(std::uint32_t windowKey) const;
+    void Resize(Surface& surface, RenderExtent size);
+    void Rescale(Surface& surface, float scale);
+    void ApplyWindowView(Surface& surface);
 
     // Whether an event from `eventWindow` is the surface's to hear. A windowless
     // event (a device, a key with nothing focused) belongs to the primary.

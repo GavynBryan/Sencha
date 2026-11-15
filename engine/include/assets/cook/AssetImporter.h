@@ -49,8 +49,6 @@ class ISourceFileReader
 public:
     virtual ~ISourceFileReader() = default;
 
-    // Reads `relPath` (assets-root-relative, generic separators). False when it
-    // does not exist or cannot be read -- which an importer should report as an
     // authoring error naming the file, not paper over.
     [[nodiscard]] virtual bool ReadSource(std::string_view relPath,
                                           std::vector<std::byte>& out) = 0;

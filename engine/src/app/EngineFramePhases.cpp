@@ -28,7 +28,6 @@
 #include <net/NetCVarSync.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/components/CharacterMoverLink.h>
-#include <net/NetConsoleCommands.h>
 #include <net/NetMessageRouter.h>
 #include <net/NetOwnership.h>
 #include <net/NetSession.h>
@@ -181,7 +180,7 @@ void Engine::RegisterNetFramePhases()
                     [&engine, wasClient = false, wasAdmitted = false](
                         PhaseContext& ctx) mutable {
         NetSession* session = engine.TryNet();
-        NetApplyConsoleAuthority(engine.Console().Registry(), session);
+        engine.PublishSimulationAuthority();
         if (session == nullptr)
         {
             // Destroyed via the console's own `disconnect`, which already
@@ -212,6 +211,7 @@ void Engine::RegisterNetFramePhases()
             session->SetAnnouncedMap(engine.Console().CurrentMap());
 
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
+        engine.PublishSimulationAuthority();
 
         // Everything that arrived, counted before anything decides what to do
         // with it: traffic a build refuses is still traffic it paid for, and a
@@ -862,16 +862,7 @@ void Engine::RegisterSimulationFramePhases()
                                    presentedExtent);
 
 #ifdef SENCHA_ENABLE_UI
-        // The window's size and display scale, every frame.
-        //
-        // A retained document re-flows where a baked atlas cannot, which is the
-        // whole reason these are live rather than latched at startup: going
-        // fullscreen, dragging between displays, or resizing all change what
-        // the document should lay out against, and a surface still holding the
-        // extent it was created with lays out for a window that is no longer
-        // there. Cheap to do unconditionally -- the runtime compares before it
-        // re-lays-out.
-        engine.SyncShellSurface();
+        engine.PublishWindowView();
         engine.PublishSimulationAuthority();
         engine.RefreshShellBindings();
 

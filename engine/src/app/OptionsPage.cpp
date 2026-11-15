@@ -93,6 +93,31 @@ namespace
             return std::nullopt;
         }
     }
+
+    const CVarMetadata* EditableCVar(const ConsoleRegistry& registry, const OptionRow& row)
+    {
+        const CVarMetadata* meta = registry.FindCVar(row.CVar);
+        return meta != nullptr && OptionControlSuits(row.Control, meta->Type) ? meta : nullptr;
+    }
+
+    std::string_view ToggleLabel(bool on)
+    {
+        return on ? kOptionToggleOn : kOptionToggleOff;
+    }
+}
+
+bool OptionControlSuits(OptionControl control, CVarType type)
+{
+    switch (control)
+    {
+    case OptionControl::Range:
+        return type == CVarType::Int || type == CVarType::Double;
+    case OptionControl::Choice:
+        return true;
+    case OptionControl::Toggle:
+        return type == CVarType::Bool;
+    }
+    return false;
 }
 
 void OptionsPage::InstallDefaults(const ConsoleRegistry& registry)
@@ -123,8 +148,8 @@ void OptionsPage::InstallDefaults(const ConsoleRegistry& registry)
                                 { "90", "90" }, { "120", "120" }, { "144", "144" },
                                 { "240", "240" } } },
         OptionRow{ .Label = "Reduced Flashing", .CVar = "render.reduced_flashing",
-                   .Control = OptionControl::Choice, .Step = 0.0, .Min = 0.0, .Max = 0.0,
-                   .Choices = { { "Off", "0" }, { "On", "1" } } },
+                   .Control = OptionControl::Toggle, .Step = 0.0, .Min = 0.0, .Max = 0.0,
+                   .Choices = {} },
     };
 
     for (const OptionRow& row : candidates)
@@ -142,12 +167,11 @@ std::vector<UiRow> OptionsPage::Present(const ConsoleRegistry& registry) const
 
     for (const OptionRow& row : Rows_)
     {
-        const CVarMetadata* meta = registry.FindCVar(row.CVar);
+        const CVarMetadata* meta = EditableCVar(registry, row);
         UiRow out;
         out.Label = row.Label;
         if (meta == nullptr)
         {
-            // The cvar went away under the page. Shown, not offered.
             presented.push_back(std::move(out));
             continue;
         }
@@ -165,6 +189,12 @@ std::vector<UiRow> OptionsPage::Present(const ConsoleRegistry& registry) const
             // control.
             out.Number = Snap(row, ReadCVarDouble(&registry, row.CVar, row.Min));
             out.Value = FormatScalar(out.Number);
+        }
+        else if (row.Control == OptionControl::Toggle)
+        {
+            out.Control = UiRowControls::Toggle;
+            out.Choices = { std::string(kOptionToggleOff), std::string(kOptionToggleOn) };
+            out.Value = ToggleLabel(ReadCVarBool(&registry, row.CVar, false));
         }
         else
         {
@@ -195,7 +225,7 @@ bool OptionsPage::Apply(ConsoleRegistry& registry, std::size_t index,
     if (index >= Rows_.size())
         return false;
     const OptionRow& row = Rows_[index];
-    const CVarMetadata* meta = registry.FindCVar(row.CVar);
+    const CVarMetadata* meta = EditableCVar(registry, row);
     if (meta == nullptr)
         return false;
 
@@ -224,6 +254,17 @@ bool OptionsPage::Apply(ConsoleRegistry& registry, std::size_t index,
     if (presented.Kind() != UiValueKind::String)
         return false;
     const std::string label(presented.AsString());
+
+    if (row.Control == OptionControl::Toggle)
+    {
+        if (label != kOptionToggleOn && label != kOptionToggleOff)
+            return false;
+        const bool next = label == kOptionToggleOn;
+        if (next == ReadCVarBool(&registry, row.CVar, false))
+            return false;
+        return registry.SetCVar(row.CVar, CVarValue{ next }, { "options" },
+                                ConsolePhase::EngineReady).Succeeded();
+    }
     const OptionChoice* current = CurrentChoice(registry, *meta, row);
     const auto it = std::find_if(row.Choices.begin(), row.Choices.end(),
                                  [&](const OptionChoice& c) { return c.Label == label; });

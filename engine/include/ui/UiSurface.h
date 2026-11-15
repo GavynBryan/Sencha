@@ -19,6 +19,14 @@
 //=============================================================================
 using UiSurfaceId = Handle<struct UiSurfaceTag>;
 
+struct UiWindowView
+{
+    RenderExtent Extent{};
+    float Scale = 1.0f;
+
+    friend bool operator==(const UiWindowView&, const UiWindowView&) = default;
+};
+
 // Where a surface's recording is published.
 //
 //   Window:    drawn by the engine's own render feature into the window, in the

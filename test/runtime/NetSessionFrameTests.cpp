@@ -6,7 +6,11 @@
 #include <core/console/ConsoleService.h>
 #include <net/NetSession.h>
 #include <net/UdpTransport.h>
+#include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 #include <SDL3/SDL.h>
+
+#include <vector>
 
 // The empty-session gate for the transport phase: two hosts, a real socket
 // each, and a handshake that completes because the frame pumped it.
@@ -532,4 +536,77 @@ TEST(NetSessionFrame, AHostFrameTellsItsSessionWhichWorldIsLoaded)
     EXPECT_EQ(client.AnnouncedMap(), kFixtureMap)
         << "the host's frame never told its session what it had loaded, so "
            "every joining client is admitted knowing nothing";
+}
+
+namespace
+{
+    struct AuthorityAnswer
+    {
+        bool WorldAuthoritative = true;
+        ConsoleAuthorityPolicy Console;
+    };
+
+    struct ConnectMidFrameSystem
+    {
+        Engine* Owner = nullptr;
+        std::vector<AuthorityAnswer>* Answers = nullptr;
+
+        void FrameUpdate(FrameUpdateContext&)
+        {
+            const auto answer = [this] {
+                return AuthorityAnswer{
+                    .WorldAuthoritative = IsSimulationAuthority(Owner->World().Entities()),
+                    .Console = Owner->Console().Registry().AuthorityPolicy(),
+                };
+            };
+            Answers->push_back(answer());
+            (void)Owner->Console().ExecuteLine("connect 127.0.0.1:9");
+            Answers->push_back(answer());
+            (void)Owner->Console().ExecuteLine("disconnect");
+            Answers->push_back(answer());
+            Owner->RequestExit();
+        }
+    };
+
+    class ConnectMidFrameGame final : public Game
+    {
+    public:
+        void OnConfigure(GameConfigureContext& ctx) override
+        {
+            ctx.Config.Window.GraphicsApi = WindowGraphicsApi::None;
+            ctx.Config.Debug.ConsoleLogging = false;
+        }
+
+        void OnRegisterSystems(SystemRegisterContext& ctx) override
+        {
+            ConnectMidFrameSystem& system = ctx.Schedule.Register<ConnectMidFrameSystem>();
+            system.Owner = &GetEngine();
+            system.Answers = &Answers;
+        }
+
+        std::vector<AuthorityAnswer> Answers;
+    };
+}
+
+TEST(NetSessionFrame, TheConsoleAndTheWorldAgreeOnAuthorityTheMomentTheRoleChanges)
+{
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    Application app(0, nullptr);
+    ConnectMidFrameGame game;
+    ASSERT_EQ(app.Run(game), 0);
+    ASSERT_EQ(game.Answers.size(), 3u);
+
+    const AuthorityAnswer& alone = game.Answers[0];
+    EXPECT_TRUE(alone.WorldAuthoritative);
+    EXPECT_FALSE(alone.Console.InSession);
+
+    const AuthorityAnswer& joining = game.Answers[1];
+    EXPECT_FALSE(joining.WorldAuthoritative) << "a client still believes it decides";
+    EXPECT_TRUE(joining.Console.InSession) << "the console still thinks there is no session";
+    EXPECT_FALSE(joining.Console.HasAuthority);
+
+    const AuthorityAnswer& left = game.Answers[2];
+    EXPECT_TRUE(left.WorldAuthoritative);
+    EXPECT_FALSE(left.Console.InSession);
 }

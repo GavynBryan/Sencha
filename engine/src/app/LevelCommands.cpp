@@ -98,6 +98,7 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Owner = "engine",
         .Usage = "scene.spawn <asset://...smap> [x y z]",
         .Help = "Spawn a cooked scene at the given position (origin by default).",
+        .Flags = ConsoleCommandFlags::Cheat | ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine](ConsoleExecutionContext&,
                               std::span<const std::string> args) {
@@ -129,6 +130,7 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Owner = "engine",
         .Usage = "scene.despawn <spawn id>",
         .Help = "Destroy a live scene spawn's entities.",
+        .Flags = ConsoleCommandFlags::Cheat | ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine](ConsoleExecutionContext&,
                               std::span<const std::string> args) {

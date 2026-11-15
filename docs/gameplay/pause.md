@@ -299,7 +299,7 @@ a developer panel wearing a player's name. Five rows ship:
 | Look Sensitivity | `input.look_sensitivity` | slider 0.25–3 | multiplies whatever the binding was authored with |
 | Display Mode | `window.mode` | drop-down | Windowed / Borderless / Fullscreen |
 | Frame Rate Cap | `r.target_fps` | drop-down | Unlimited / 30 / 60 / 90 / 120 / 144 / 240 |
-| Reduced Flashing | `render.reduced_flashing` | drop-down | Off / On; takes the sudden pulse out of lights worn by bodies and slows their fades |
+| Reduced Flashing | `render.reduced_flashing` | toggle | Off / On; takes the sudden pulse out of lights worn by bodies and slows their fades |
 
 **Each shell document has a preview model beside it** -- `pause.preview.json`,
 `options.preview.json` -- the declaration and sample values the host would
@@ -320,6 +320,12 @@ maps each label to the cvar value it stands for, so "Unlimited" is what the
 player reads and `0` is what the console gets. A current value no label stands
 for is presented as itself and appended to the choices, so the drop-down can
 select it rather than fall back to its first entry and report that as a change.
+A `Toggle` row edits a `Bool` cvar: it presents `toggle` with the labels Off and
+On, `options.rml` draws it as the drop-down over those two, and `Apply` takes a
+label and writes the boolean. A row whose cvar does not suit its control
+(`OptionControlSuits`: a range needs a number, a toggle a boolean, a choice
+takes any) is presented as a row whose cvar is missing is: its label, no
+control, and nothing written if the document reports a value for it anyway.
 
 Two facts about RmlUi decide the shape of the wiring:
 
@@ -383,7 +389,11 @@ The file is a record of assignments, not a script: the same JSON shape
 `engine.json`'s `cvars` section uses, read through the registry's ordinary set
 path. There is no route by which an entry becomes a console *command*, which
 matters for a file in a user-writable directory. Values are written as native
-JSON scalars, so a double reloads as the number that was saved.
+JSON scalars, so a double reloads as the number that was saved. A value whose
+JSON type is not the cvar's is read through the console's own parser, the path a
+not-yet-registered name already takes, so `"on"` saved while a setting was a
+string reloads into it once it is a boolean; text the parser refuses is a load
+diagnostic.
 
 Saving happens at explicit commit boundaries — the options page closing, and
 shutdown — never from a frame phase.

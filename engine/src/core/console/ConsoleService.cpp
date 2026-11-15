@@ -128,6 +128,9 @@ ConsoleResult ConsoleService::ExecuteTokensInternal(const std::vector<std::strin
         return result;
     }
 
+    if (ConsoleResult refusal = RegistryInstance.CheckSessionRules(*command); !refusal.Succeeded())
+        return refusal;
+
     if (commandName == "exec")
         return ExecuteScriptFile(args.size() > 1 ? args[1] : "", source, execDepth);
 

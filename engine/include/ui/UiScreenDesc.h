@@ -77,6 +77,7 @@ namespace UiRowControls
 inline constexpr std::string_view Text = "text";
 inline constexpr std::string_view Range = "range";
 inline constexpr std::string_view Choice = "choice";
+inline constexpr std::string_view Toggle = "toggle";
 } // namespace UiRowControls
 
 // Something to do about a row, offered beside it rather than as a row of its

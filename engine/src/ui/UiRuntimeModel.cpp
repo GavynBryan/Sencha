@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <limits>
+#include <optional>
 #include <utility>
+#include <vector>
 
 UiRuntime::RowListDefinition::RowListDefinition(Rml::VariableDefinition& row)
     : Rml::VariableDefinition(Rml::DataVariableType::Array)
@@ -87,6 +90,47 @@ bool IsBindableName(std::string_view name)
         return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
     });
 }
+
+std::optional<std::vector<double>> NumbersOf(const char* transform, const Rml::VariantList& arguments,
+                                             std::size_t least, std::size_t most)
+{
+    if (arguments.size() < least || arguments.size() > most)
+    {
+        Rml::Log::Message(Rml::Log::LT_WARNING, "Transform function '%s' was given %zu values, the piped one included.",
+                          transform, arguments.size());
+        return std::nullopt;
+    }
+    std::vector<double> numbers(arguments.size());
+    for (std::size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (!arguments[i].GetInto(numbers[i]))
+        {
+            Rml::Log::Message(Rml::Log::LT_WARNING, "Transform function '%s': value %zu is not a number.",
+                              transform, i);
+            return std::nullopt;
+        }
+    }
+    return numbers;
+}
+
+constexpr std::size_t kAnyCount = std::numeric_limits<std::size_t>::max();
+
+void RegisterNumericTransforms(Rml::DataModelConstructor& constructor)
+{
+    constructor.RegisterTransformFunc("min", [](const Rml::VariantList& arguments) -> Rml::Variant {
+        const auto numbers = NumbersOf("min", arguments, 2, kAnyCount);
+        return numbers ? Rml::Variant(std::ranges::min(*numbers)) : Rml::Variant();
+    });
+    constructor.RegisterTransformFunc("max", [](const Rml::VariantList& arguments) -> Rml::Variant {
+        const auto numbers = NumbersOf("max", arguments, 2, kAnyCount);
+        return numbers ? Rml::Variant(std::ranges::max(*numbers)) : Rml::Variant();
+    });
+    constructor.RegisterTransformFunc("clamp", [](const Rml::VariantList& arguments) -> Rml::Variant {
+        const auto numbers = NumbersOf("clamp", arguments, 3, 3);
+        return numbers ? Rml::Variant(std::min(std::max((*numbers)[0], (*numbers)[1]), (*numbers)[2]))
+                       : Rml::Variant();
+    });
+}
 } // namespace
 
 // Declared once per context: a second declaration silently leaves members unbound.
@@ -97,6 +141,8 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
     if (surface.ModelTypesDeclared)
         return;
     surface.ModelTypesDeclared = true;
+
+    RegisterNumericTransforms(constructor);
 
     (void)constructor.RegisterArray<std::vector<std::string>>();
     if (auto verb = constructor.RegisterStruct<UiRowVerb>())

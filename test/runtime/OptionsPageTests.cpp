@@ -135,7 +135,7 @@ TEST(OptionsPageTest, ApplyingAChoiceLabelWritesTheValueItStandsFor)
     EXPECT_EQ(std::get<std::string>(registry.FindCVar("window.mode")->CurrentValue), "fullscreen");
 }
 
-TEST(OptionsPageTest, AnOnOffChoiceWritesAndShowsABooleanCVar)
+TEST(OptionsPageTest, AToggleReadsAndWritesABooleanCVar)
 {
     ConsoleRegistry registry;
     ASSERT_TRUE(registry.RegisterCVar({
@@ -150,12 +150,88 @@ TEST(OptionsPageTest, AnOnOffChoiceWritesAndShowsABooleanCVar)
     OptionsPage page;
     page.InstallDefaults(registry);
     ASSERT_EQ(page.Rows().size(), 1u);
-    EXPECT_EQ(page.Present(registry)[0].Value, "Off");
+    EXPECT_EQ(page.Rows()[0].Control, OptionControl::Toggle);
+    UiRow row = page.Present(registry)[0];
+    EXPECT_TRUE(row.Editable);
+    EXPECT_EQ(row.Control, UiRowControls::Toggle);
+    EXPECT_EQ(row.Choices, (std::vector<std::string>{ "Off", "On" }));
+    EXPECT_EQ(row.Value, "Off");
+
+    const std::uint64_t before = registry.ArchiveRevision();
+    EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("Off")))) << "opening the page wrote";
+    EXPECT_EQ(registry.ArchiveRevision(), before);
 
     EXPECT_TRUE(page.Apply(registry, 0, UiValue(std::string("On"))));
     EXPECT_TRUE(std::get<bool>(registry.FindCVar("render.reduced_flashing")->CurrentValue));
     EXPECT_EQ(page.Present(registry)[0].Value, "On");
     EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("On")))) << "already on";
+
+    ASSERT_TRUE(registry.SetCVarFromString("render.reduced_flashing", "off", { "console" },
+                                           ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(page.Present(registry)[0].Value, "Off");
+
+    EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("Maybe"))));
+    EXPECT_FALSE(page.Apply(registry, 0, UiValue(true))) << "a toggle reports its label";
+    EXPECT_FALSE(std::get<bool>(registry.FindCVar("render.reduced_flashing")->CurrentValue));
+}
+
+TEST(OptionsPageTest, ARowWhoseCVarDoesNotSuitItsControlIsShownAndNotOffered)
+{
+    ConsoleRegistry registry;
+    ASSERT_TRUE(registry.RegisterCVar({
+        .Name = "game.hints",
+        .Owner = "game",
+        .Type = CVarType::String,
+        .DefaultValue = std::string("on"),
+        .CurrentValue = std::string("on"),
+        .Flags = CVarFlags::Archive,
+    }));
+    ASSERT_TRUE(registry.RegisterCVar({
+        .Name = "game.flag",
+        .Owner = "game",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+        .Flags = CVarFlags::Archive,
+    }));
+
+    OptionsPage page;
+    page.Rows() = {
+        OptionRow{ .Label = "Hints", .CVar = "game.hints", .Control = OptionControl::Toggle,
+                   .Step = 0.0, .Min = 0.0, .Max = 0.0, .Choices = {} },
+        OptionRow{ .Label = "Flag", .CVar = "game.flag", .Control = OptionControl::Range,
+                   .Step = 0.1, .Min = 0.0, .Max = 1.0, .Choices = {} },
+        OptionRow{ .Label = "Gone", .CVar = "game.gone", .Control = OptionControl::Toggle,
+                   .Step = 0.0, .Min = 0.0, .Max = 0.0, .Choices = {} },
+    };
+
+    const std::vector<UiRow> rows = page.Present(registry);
+    ASSERT_EQ(rows.size(), 3u);
+    for (const UiRow& row : rows)
+    {
+        EXPECT_FALSE(row.Editable) << row.Label;
+        EXPECT_EQ(row.Control, UiRowControls::Text) << row.Label;
+    }
+
+    const std::uint64_t before = registry.ArchiveRevision();
+    EXPECT_FALSE(page.Apply(registry, 0, UiValue(std::string("Off"))));
+    EXPECT_FALSE(page.Apply(registry, 1, UiValue(1.0)));
+    EXPECT_FALSE(page.Apply(registry, 2, UiValue(std::string("On"))));
+    EXPECT_EQ(registry.ArchiveRevision(), before);
+    EXPECT_EQ(std::get<std::string>(registry.FindCVar("game.hints")->CurrentValue), "on");
+}
+
+TEST(OptionsPageTest, WhichControlsSuitWhichCVars)
+{
+    EXPECT_TRUE(OptionControlSuits(OptionControl::Range, CVarType::Double));
+    EXPECT_TRUE(OptionControlSuits(OptionControl::Range, CVarType::Int));
+    EXPECT_FALSE(OptionControlSuits(OptionControl::Range, CVarType::Bool));
+    EXPECT_FALSE(OptionControlSuits(OptionControl::Range, CVarType::String));
+    EXPECT_TRUE(OptionControlSuits(OptionControl::Toggle, CVarType::Bool));
+    EXPECT_FALSE(OptionControlSuits(OptionControl::Toggle, CVarType::String));
+    EXPECT_FALSE(OptionControlSuits(OptionControl::Toggle, CVarType::Int));
+    for (const CVarType type : { CVarType::Bool, CVarType::Int, CVarType::Double, CVarType::String })
+        EXPECT_TRUE(OptionControlSuits(OptionControl::Choice, type));
 }
 
 TEST(OptionsPageTest, AFrameCapLabelMapsToTheNumberBehindIt)
