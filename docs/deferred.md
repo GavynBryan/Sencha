@@ -1044,3 +1044,26 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** skinned meshes frustum-cull against their rest bounds, so a limb posed outside those bounds can pop out at the edge of the view.
 - **Where:** `RenderExtractionSystem::EmitSkinnedMeshes`; `PosedWorldBounds` already computes the tighter bound per pose.
 - **Trigger:** a report of popping on an animated enemy. A cooked per-skeleton reach would change the mesh format, so it needs format treatment.
+
+## Smoothing the view over a step
+
+- **What:** the character mover climbs a ledge up to `StepHeight` (0.35 m) in
+  one tick, and a first-person camera parented to the body rises with it, so the
+  view pops up a stair rather than gliding.
+- **Where:** `engine/src/physics/CharacterMover.cpp` decides the step and reports
+  nothing about it; a presented camera effect beside `CameraBob`
+  (`camera/CameraBobState.h`) would ease the view back down over the step.
+- **Trigger:** content with stairs or ledges a player walks up in first person.
+  That needs the mover to report the height it stepped on the tick it stepped
+  (a neutral component like `StrideCycle`), and the camera effect to read it.
+
+## Strides of characters a machine does not simulate
+
+- **What:** `StrideCycle` counts from `KinematicState::Velocity`, which is
+  owner-only on the wire, so on a client every other player's stride stands
+  still: their rigs placed by `StrideCycle`, and any camera following them,
+  would not step.
+- **Where:** `StrideCycleSystem` (`engine/src/movement/StrideCycleSystem.cpp`).
+- **Trigger:** a spectator or third-person camera on a remote pawn, or a remote
+  rig placed by its stride. Counting from the presented position's motion over
+  the ground, rather than from velocity, serves both without sending anything.

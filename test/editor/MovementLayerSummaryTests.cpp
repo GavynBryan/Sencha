@@ -95,7 +95,7 @@ TEST(MovementLayerSummary, AuthoredNameWinsOverSynthesis)
 TEST(MovementLayerSummary, PatchesReadInApplicationOrder)
 {
     const std::vector<MovementCoefficientLabel> labels = TemplateLabels();
-    ASSERT_EQ(labels.size(), 8u);
+    ASSERT_EQ(labels.size(), 9u);
 
     MovementProfileLayer layer;
     layer.Set.Friction = 0.0f;
@@ -128,10 +128,12 @@ TEST(MovementLayerSummary, CoefficientsTrimTrailingZeros)
 TEST(MovementLayerSummary, LabelsComeFromTheRegisteredSchema)
 {
     const std::vector<MovementCoefficientLabel> labels = TemplateLabels();
-    ASSERT_EQ(labels.size(), 8u);
+    ASSERT_EQ(labels.size(), 9u);
     EXPECT_EQ(labels[0].Key, "max_speed");
     EXPECT_EQ(labels[0].Display, "Maximum speed");
     EXPECT_EQ(labels[0].Units, "m/s");
     EXPECT_EQ(labels[6].Key, "gravity_scale");
+    EXPECT_EQ(labels[8].Key, "stride_length");
+    EXPECT_EQ(labels[8].Units, "m");
     EXPECT_EQ(labels[6].Units, "multiplier");
 }
