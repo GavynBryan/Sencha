@@ -82,12 +82,14 @@ struct UiTextureRef
 };
 
 // Pixels for a generated texture, handed over the first extraction after it was
-// minted: RGBA8, premultiplied, converted once to linear (docs/ui/architecture.md §8).
+// minted: RGBA8 with premultiplied alpha. Converted once to linear
+// (docs/ui/architecture.md §8), except a gradient's colour ramp, which stays
+// sRGB and is decoded where the gradient is drawn (UiGradient).
 struct UiTextureUpload
 {
     UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
     RenderExtent Size{};
-    std::vector<std::byte> LinearPremultipliedRgba8;
+    std::vector<std::byte> PremultipliedRgba8;
 };
 
 // Generated textures minted and finished with since the previous extraction,
@@ -119,6 +121,47 @@ enum class UiClipMaskOp : std::uint8_t
     Intersect,    // narrow the mask to this geometry
 };
 
+// A gradient a command paints instead of a texture: a linear, radial or conic
+// gradient decorator. The geometry is the element's background shape, its UV the
+// position within the element's box in pixels, so `Origin` and `Axis` are in
+// those pixels too.
+//
+// The colours are a ramp: a row of texels from the first colour stop to the
+// last, made once when the document compiles the gradient. Interpolated in
+// premultiplied sRGB, as CSS interpolates, so what an author sees in a browser
+// is what draws. The ramp stays sRGB because 8-bit linear bands visibly in dark
+// gradients; the gradient path decodes each sample.
+enum class UiGradientShape : std::uint8_t
+{
+    Linear = 0,
+    Radial,
+    Conic,
+};
+
+// Texels in a ramp. A stop placed exactly is within half a texel of where it
+// was asked for over a gradient this many pixels long.
+inline constexpr std::uint32_t kUiGradientRampTexels = 512;
+
+struct UiGradient
+{
+    UiGradientShape Shape = UiGradientShape::Linear;
+    // Past the last stop, start again from the first.
+    bool Repeating = false;
+    // Linear: the start point. Radial and conic: the centre.
+    Vec2d Origin{};
+    // Linear: from the start point to the end. Radial: one over the radius on
+    // each axis. Conic: the cosine and sine of the angle it starts from.
+    Vec2d Axis{};
+    // Where along the gradient the first and last stops are, as fractions of
+    // its length (radial: of its radius; conic: of a turn). The ramp spans them.
+    float FirstStop = 0.0f;
+    float LastStop = 1.0f;
+    // The colour ramp, kUiGradientRampTexels by 1, premultiplied sRGB.
+    UiGeneratedTextureId Ramp = kInvalidUiGeneratedTexture;
+
+    bool operator==(const UiGradient&) const = default;
+};
+
 struct UiDrawCommand
 {
     UiGeometryRef Geometry;
@@ -135,6 +178,10 @@ struct UiDrawCommand
 
     // Whether colour output is tested against the current mask.
     bool ClipMaskEnabled = false;
+
+    // Set when the command paints a gradient. Its ramp is also `Texture`, so
+    // residency and recording comparison treat it like any generated texture.
+    std::optional<UiGradient> Gradient;
 };
 
 struct UiDrawFrame

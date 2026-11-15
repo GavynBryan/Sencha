@@ -26,6 +26,10 @@ layout(push_constant) uniform UiPC {
     mat4 Mvp;
     uint TextureIndex;
     uint Flags;
+    // A gradient's shape, read by the fragment stage only (ui.frag.glsl).
+    vec2 GradientOrigin;
+    vec2 GradientAxis;
+    vec2 GradientStops;
 } pc;
 
 vec3 SrgbToLinear(vec3 srgb)

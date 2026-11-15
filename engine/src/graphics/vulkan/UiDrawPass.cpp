@@ -28,10 +28,20 @@ struct UiPushConstants
     float Mvp[16];
     std::uint32_t TextureIndex;
     std::uint32_t Flags;
+    float GradientOrigin[2];
+    float GradientAxis[2];
+    float GradientStops[2];
 };
+
+// Inside the 128 bytes every Vulkan device guarantees for push constants.
+static_assert(sizeof(UiPushConstants) == 96 && sizeof(UiPushConstants) <= 128);
 
 constexpr std::uint32_t kFlagHasTexture = 1u;
 constexpr std::uint32_t kFlagStraightAlphaTexture = 2u;
+constexpr std::uint32_t kFlagGradient = 4u;
+constexpr std::uint32_t kFlagGradientRadial = 8u;
+constexpr std::uint32_t kFlagGradientConic = 16u;
+constexpr std::uint32_t kFlagGradientRepeating = 32u;
 
 // Surface pixels to clip space: x right, y down, origin top left -- which is
 // what the document engine lays out in and what Vulkan's clip space already
@@ -488,7 +498,28 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
         UiPushConstants push{};
         ComposeMvp(projection, command.Transform, command.Translation, push.Mvp);
 
-        if (command.Texture.Kind == UiTextureKind::Content && Textures != nullptr)
+        if (command.Gradient.has_value())
+        {
+            // A gradient whose ramp is not resident would draw as flat white,
+            // which is worse than a frame without it.
+            const std::optional<BindlessImageIndex> ramp =
+                Services->UiTextures->FindGenerated(command.Gradient->Ramp);
+            if (!ramp)
+                continue;
+            const UiGradient& gradient = *command.Gradient;
+            push.TextureIndex = ramp->Value;
+            push.Flags = kFlagGradient
+                | (gradient.Shape == UiGradientShape::Radial ? kFlagGradientRadial : 0u)
+                | (gradient.Shape == UiGradientShape::Conic ? kFlagGradientConic : 0u)
+                | (gradient.Repeating ? kFlagGradientRepeating : 0u);
+            push.GradientOrigin[0] = gradient.Origin.X;
+            push.GradientOrigin[1] = gradient.Origin.Y;
+            push.GradientAxis[0] = gradient.Axis.X;
+            push.GradientAxis[1] = gradient.Axis.Y;
+            push.GradientStops[0] = gradient.FirstStop;
+            push.GradientStops[1] = gradient.LastStop;
+        }
+        else if (command.Texture.Kind == UiTextureKind::Content && Textures != nullptr)
         {
             const BindlessImageIndex index = Textures->GetBindlessIndex(command.Texture.Content);
             if (index.IsValid())

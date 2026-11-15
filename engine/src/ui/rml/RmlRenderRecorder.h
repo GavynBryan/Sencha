@@ -106,6 +106,23 @@ public:
                           Rml::CompiledGeometryHandle geometry,
                           Rml::Vector2f translation) override;
 
+    // Gradient decorators: linear, radial and conic, plain or repeating. Each
+    // compiles to a UiGradient and a colour ramp uploaded as a generated
+    // texture; a draw records the element's background shape painted with it.
+    // Any other shader name is outside the profile and reported as such.
+    Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
+                                            const Rml::Dictionary& parameters) override;
+    void RenderShader(Rml::CompiledShaderHandle shader,
+                      Rml::CompiledGeometryHandle geometry,
+                      Rml::Vector2f translation,
+                      Rml::TextureHandle texture) override;
+    void ReleaseShader(Rml::CompiledShaderHandle shader) override;
+
+    [[nodiscard]] std::uint32_t LiveShaderCount() const
+    {
+        return static_cast<std::uint32_t>(Shaders.size());
+    }
+
     // -- Tier 2: not implemented, and loud about it ---------------------------
     //
     // The base class defaults are silent no-ops, which is the worst outcome: a
@@ -123,13 +140,6 @@ public:
     Rml::CompiledFilterHandle CompileFilter(const Rml::String& name,
                                             const Rml::Dictionary& parameters) override;
     void ReleaseFilter(Rml::CompiledFilterHandle filter) override;
-    Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
-                                            const Rml::Dictionary& parameters) override;
-    void RenderShader(Rml::CompiledShaderHandle shader,
-                      Rml::CompiledGeometryHandle geometry,
-                      Rml::Vector2f translation,
-                      Rml::TextureHandle texture) override;
-    void ReleaseShader(Rml::CompiledShaderHandle shader) override;
 
 private:
     struct TextureRecord
@@ -145,11 +155,13 @@ private:
 
     std::unordered_map<std::uint64_t, UiGeometryRef> Geometry;
     std::unordered_map<std::uint64_t, TextureRecord> Textures;
+    std::unordered_map<std::uint64_t, UiGradient> Shaders;
 
     // Never reused, so a handle that outlives its release reads as invalid
     // rather than as whichever resource took the slot.
     std::uint64_t NextGeometryHandle = 1;
     std::uint64_t NextTextureHandle = 1;
+    std::uint64_t NextShaderHandle = 1;
     UiGeneratedTextureId NextGeneratedId = 1;
 
     UiDrawFrame Frame;

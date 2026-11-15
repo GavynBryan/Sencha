@@ -151,6 +151,7 @@ void AddStyleSheet(UiSourceReferences& out, std::string_view path)
 // Constructs the supported profile does not cover. Each needs an optional
 // render-interface method Sencha does not implement, so authoring one produces
 // something that would silently not draw -- see docs/ui/architecture.md §7.
+// Gradient decorators are drawn and so are not here.
 struct UnsupportedConstruct
 {
     std::string_view Needle;
@@ -161,11 +162,6 @@ constexpr UnsupportedConstruct kUnsupported[] = {
     { "box-shadow", "box-shadow" },
     { "backdrop-filter", "backdrop-filter" },
     { "mask-image", "mask-image" },
-    { "linear-gradient", "gradient decorator" },
-    { "radial-gradient", "gradient decorator" },
-    { "conic-gradient", "gradient decorator" },
-    { "horizontal-gradient", "gradient decorator" },
-    { "vertical-gradient", "gradient decorator" },
 };
 
 void ScanUnsupported(std::string_view text, std::string_view sourcePath, UiSourceReferences& out)

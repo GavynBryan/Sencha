@@ -2,6 +2,9 @@
 
 #include <core/logging/Logger.h>
 
+#include <RmlUi/Core/DecorationTypes.h>
+#include <RmlUi/Core/Dictionary.h>
+
 #include <algorithm>
 #include <span>
 #include <array>
@@ -73,6 +76,54 @@ void ConvertPremultipliedSrgbToLinear(std::span<const Rml::byte> source,
         }
         out[i + 3] = static_cast<std::byte>(alpha);
     }
+}
+
+// A gradient's colour ramp: kUiGradientRampTexels texels from the first stop to
+// the last, each the colour CSS gives that point, in premultiplied sRGB. The
+// stops arrive resolved: positions are numbers along the gradient, never
+// decreasing.
+std::vector<std::byte> BuildGradientRamp(const Rml::ColorStopList& stops)
+{
+    std::vector<std::byte> ramp(static_cast<std::size_t>(kUiGradientRampTexels) * 4);
+    const float first = stops.front().position.number;
+    const float last = stops.back().position.number;
+    std::size_t segment = 1;
+    for (std::uint32_t texel = 0; texel < kUiGradientRampTexels; ++texel)
+    {
+        const float at = first + (last - first) * static_cast<float>(texel)
+            / static_cast<float>(kUiGradientRampTexels - 1);
+        while (segment + 1 < stops.size() && stops[segment].position.number < at)
+            ++segment;
+
+        Rml::ColourbPremultiplied colour = stops.back().color;
+        if (stops.size() > 1)
+        {
+            const Rml::ColorStop& from = stops[segment - 1];
+            const Rml::ColorStop& to = stops[segment];
+            const float span = to.position.number - from.position.number;
+            const float share = span > 0.0f ? std::clamp((at - from.position.number) / span, 0.0f, 1.0f)
+                                            : (at < to.position.number ? 0.0f : 1.0f);
+            const auto mix = [share](Rml::byte a, Rml::byte b) {
+                return static_cast<Rml::byte>(std::lround(static_cast<float>(a)
+                    + (static_cast<float>(b) - static_cast<float>(a)) * share));
+            };
+            colour = Rml::ColourbPremultiplied(mix(from.color.red, to.color.red),
+                                               mix(from.color.green, to.color.green),
+                                               mix(from.color.blue, to.color.blue),
+                                               mix(from.color.alpha, to.color.alpha));
+        }
+        std::byte* out = ramp.data() + static_cast<std::size_t>(texel) * 4;
+        out[0] = static_cast<std::byte>(colour.red);
+        out[1] = static_cast<std::byte>(colour.green);
+        out[2] = static_cast<std::byte>(colour.blue);
+        out[3] = static_cast<std::byte>(colour.alpha);
+    }
+    return ramp;
+}
+
+Vec2d ToVec2d(Rml::Vector2f value)
+{
+    return Vec2d{ value.x, value.y };
 }
 
 // Both sides use column-vector maths (M * v), but their storage orders are a
@@ -233,7 +284,7 @@ Rml::TextureHandle RmlRenderRecorder::GenerateTexture(Rml::Span<const Rml::byte>
     upload.Id = NextGeneratedId++;
     upload.Size = RenderExtent{ static_cast<std::uint32_t>(source_dimensions.x),
                                 static_cast<std::uint32_t>(source_dimensions.y) };
-    ConvertPremultipliedSrgbToLinear(source, upload.LinearPremultipliedRgba8);
+    ConvertPremultipliedSrgbToLinear(source, upload.PremultipliedRgba8);
 
     const std::uint64_t key = NextTextureHandle++;
     UiTextureRef ref;
@@ -307,6 +358,95 @@ void RmlRenderRecorder::RenderToClipMask(Rml::ClipMaskOperation operation,
     Frame.Commands.push_back(std::move(command));
 }
 
+// -- Gradients ---------------------------------------------------------------
+
+Rml::CompiledShaderHandle RmlRenderRecorder::CompileShader(const Rml::String& name,
+                                                           const Rml::Dictionary& parameters)
+{
+    UiGradient gradient;
+    if (name == "linear-gradient")
+    {
+        gradient.Shape = UiGradientShape::Linear;
+        const Rml::Vector2f start = Rml::Get(parameters, "p0", Rml::Vector2f(0.0f));
+        gradient.Origin = ToVec2d(start);
+        gradient.Axis = ToVec2d(Rml::Get(parameters, "p1", Rml::Vector2f(0.0f)) - start);
+    }
+    else if (name == "radial-gradient")
+    {
+        gradient.Shape = UiGradientShape::Radial;
+        gradient.Origin = ToVec2d(Rml::Get(parameters, "center", Rml::Vector2f(0.0f)));
+        const Rml::Vector2f radius = Rml::Get(parameters, "radius", Rml::Vector2f(1.0f));
+        // A zero radius puts every point past the last stop.
+        constexpr float kFar = 1.0e6f;
+        gradient.Axis = Vec2d{ radius.x > 0.0f ? 1.0f / radius.x : kFar,
+                               radius.y > 0.0f ? 1.0f / radius.y : kFar };
+    }
+    else if (name == "conic-gradient")
+    {
+        gradient.Shape = UiGradientShape::Conic;
+        gradient.Origin = ToVec2d(Rml::Get(parameters, "center", Rml::Vector2f(0.0f)));
+        const float angle = Rml::Get(parameters, "angle", 0.0f);
+        gradient.Axis = Vec2d{ std::cos(angle), std::sin(angle) };
+    }
+    else
+    {
+        ReportUnsupported("shader '" + name + "'");
+        return {};
+    }
+    gradient.Repeating = Rml::Get(parameters, "repeating", false);
+
+    const auto found = parameters.find("color_stop_list");
+    if (found == parameters.end() || found->second.GetType() != Rml::Variant::COLORSTOPLIST)
+        return {};
+    const Rml::ColorStopList& stops = found->second.GetReference<Rml::ColorStopList>();
+    if (stops.empty())
+        return {};
+    gradient.FirstStop = stops.front().position.number;
+    gradient.LastStop = stops.back().position.number;
+
+    UiTextureUpload upload;
+    upload.Id = NextGeneratedId++;
+    upload.Size = RenderExtent{ kUiGradientRampTexels, 1 };
+    upload.PremultipliedRgba8 = BuildGradientRamp(stops);
+    gradient.Ramp = upload.Id;
+    Changes.Uploads.push_back(std::move(upload));
+
+    const std::uint64_t handle = NextShaderHandle++;
+    Shaders.emplace(handle, gradient);
+    return static_cast<Rml::CompiledShaderHandle>(handle);
+}
+
+void RmlRenderRecorder::RenderShader(Rml::CompiledShaderHandle shader,
+                                     Rml::CompiledGeometryHandle geometry,
+                                     Rml::Vector2f translation,
+                                     Rml::TextureHandle)
+{
+    const auto compiled = Shaders.find(static_cast<std::uint64_t>(shader));
+    const auto it = Geometry.find(static_cast<std::uint64_t>(geometry));
+    if (compiled == Shaders.end() || it == Geometry.end())
+        return;
+
+    UiDrawCommand command;
+    command.Geometry = it->second;
+    command.Texture.Kind = UiTextureKind::Generated;
+    command.Texture.Generated = compiled->second.Ramp;
+    command.Gradient = compiled->second;
+    command.Translation = Vec2d{ translation.x, translation.y };
+    command.Clip = Clip;
+    command.Transform = Transform;
+    command.ClipMaskEnabled = ClipMaskEnabled;
+    Frame.Commands.push_back(std::move(command));
+}
+
+void RmlRenderRecorder::ReleaseShader(Rml::CompiledShaderHandle shader)
+{
+    const auto it = Shaders.find(static_cast<std::uint64_t>(shader));
+    if (it == Shaders.end())
+        return;
+    Changes.Released.push_back(it->second.Ramp);
+    Shaders.erase(it);
+}
+
 // -- Tier 2 ------------------------------------------------------------------
 
 void RmlRenderRecorder::ReportUnsupported(std::string_view feature)
@@ -363,20 +503,3 @@ void RmlRenderRecorder::ReleaseFilter(Rml::CompiledFilterHandle)
 {
 }
 
-Rml::CompiledShaderHandle RmlRenderRecorder::CompileShader(const Rml::String& name,
-                                                           const Rml::Dictionary&)
-{
-    ReportUnsupported("shader '" + name + "' (gradient decorators need this)");
-    return {};
-}
-
-void RmlRenderRecorder::RenderShader(Rml::CompiledShaderHandle,
-                                     Rml::CompiledGeometryHandle,
-                                     Rml::Vector2f,
-                                     Rml::TextureHandle)
-{
-}
-
-void RmlRenderRecorder::ReleaseShader(Rml::CompiledShaderHandle)
-{
-}

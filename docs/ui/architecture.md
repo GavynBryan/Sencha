@@ -321,11 +321,26 @@ pipelines.
 A device with no stencil-bearing depth format skips the mask writes, leaving the
 draws it would have clipped unclipped, and says so once.
 
+**Gradients: `CompileShader` and `RenderShader`.** The `linear-gradient`,
+`radial-gradient` and `conic-gradient` decorators, plain or `repeating-`, draw.
+`horizontal-gradient` and `vertical-gradient` always did: they are vertex
+colours, Tier 1. A gradient compiles to a `UiGradient` (its shape, origin, axis
+and the span of its stops) and a colour ramp, `kUiGradientRampTexels` texels
+from the first stop to the last, minted as a generated texture and released
+with the decorator. A draw is the element's background shape, rounded corners
+included, with its UV the position in the element's box; `ui.frag.glsl` works
+out how far along the gradient each fragment is, the same way RmlUi's own
+reference backend does, and samples the ramp. The element's opacity rides in
+the vertex colour. The parameters fit in the push constants the pass already
+has (96 of the 128 bytes every device guarantees), so a gradient costs one draw
+like any box and needs no pipeline of its own. Any other shader name, a
+`shader()` decorator, is outside the profile and reported.
+
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
-`SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`, `CompileShader`.
-The RCSS features that need them are **out of contract**: `box-shadow`,
-`filter`/`backdrop-filter`, `mask-image`, and **gradient decorators**. Gradients
-are authored as textures until Tier 2 lands.
+`SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`. The RCSS
+features that need them are **out of contract**: `box-shadow`,
+`filter`/`backdrop-filter` and `mask-image`. A soft shadow or glow is a
+gradient band behind the element.
 
 **Vector shapes: `<sector>`.** A box cannot be a ring, a pie slice or a petal,
 and faking one with clip masks fails in two ways. Mask edges are not
@@ -404,6 +419,12 @@ contract:
   uploaded as `R8G8B8A8_UNORM` holding linear premultiplied data.
 - **Content textures** loaded as ordinary assets are straight-alpha sRGB: they
   sample through an `_SRGB` view and are premultiplied in the shader.
+- **A gradient's ramp is the exception to linear upload.** Its texels are
+  interpolated between the stops in premultiplied sRGB, which is what CSS
+  specifies, so a gradient matches what its author sees in a browser. It is
+  uploaded still in sRGB, because 8-bit linear has too few dark levels: a
+  gradient between two near-blacks bands into visible steps. The gradient path
+  decodes each sample (unpremultiply, convert, repremultiply).
 - **Blend state:** `srcColor = ONE`, `dstColor = ONE_MINUS_SRC_ALPHA`,
   `srcAlpha = ONE`, `dstAlpha = ONE_MINUS_SRC_ALPHA`.
 
