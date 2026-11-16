@@ -8,6 +8,7 @@
 #include <ecs/ComponentId.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 #include <gameplay_tags/GameplayTagQueryNames.h>
+#include <math/ValueBounds.h>
 
 #include <cstdint>
 #include <optional>
@@ -75,7 +76,7 @@ enum class SequenceConditionKind : std::uint8_t
 {
     // An entity port carries every listed component and matches a tag query.
     Entity,
-    // A boolean query's answer is the one expected.
+    // A query's answer lies within bounds; true and false read as 1 and 0.
     Query,
     // A gameplay-tag port's tag matches a tag query, hierarchically.
     Tag,
@@ -89,7 +90,8 @@ struct SequenceConditionDesc
     GameplayTagQueryNames Tags;
     std::string Query;
     std::vector<SequenceArgumentDesc> Arguments;
-    bool Expect = true;
+    ValueBounds Require = ValueBounds::Exactly(1.0);
+    bool RequireAuthored = false;
 };
 
 enum class SequenceFailurePolicy : std::uint8_t
@@ -144,7 +146,7 @@ struct CompiledSequenceCondition
     bool HasTags = false;
     AuthoredQueryHandle Query;
     std::vector<CompiledSequenceValue> Arguments;
-    bool Expect = true;
+    ValueBounds Require;
 };
 
 struct CompiledSequenceCommand

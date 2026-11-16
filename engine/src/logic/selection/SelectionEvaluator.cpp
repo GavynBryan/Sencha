@@ -13,14 +13,8 @@ namespace
 {
     [[nodiscard]] float NumericValue(const AuthoredValue& answer)
     {
-        bool flag = false;
-        std::int64_t whole = 0;
         double number = 0.0;
-        if (answer.TryGetBool(flag))
-            return flag ? 1.0f : 0.0f;
-        if (answer.TryGetInt(whole))
-            return static_cast<float>(whole);
-        (void)answer.TryGetFloat(number);
+        (void)answer.TryGetNumber(number);
         return static_cast<float>(number);
     }
 

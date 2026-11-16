@@ -44,7 +44,7 @@ public:
         const std::string where = std::format("condition {}", index + 1);
         CompiledSequenceCondition out;
         out.Kind = desc.Kind;
-        out.Expect = desc.Expect;
+        out.Require = desc.Require;
         bool ok = true;
         if (desc.Kind == SequenceConditionKind::Tag)
         {
@@ -86,10 +86,15 @@ public:
             ok = query != nullptr;
             if (query != nullptr)
             {
-                const DataFieldSchema& result = Unwrapped(query->Result);
-                if (result.Kind != DataFieldKind::Bool)
+                const DataFieldKind answer = Unwrapped(query->Result).Kind;
+                if (answer != DataFieldKind::Bool && answer != DataFieldKind::Int && answer != DataFieldKind::Float)
                 {
-                    Report(where, std::format("'{}' answers no true or false", desc.Query));
+                    Report(where, std::format("'{}' answers neither true or false nor a number", desc.Query));
+                    ok = false;
+                }
+                else if (answer != DataFieldKind::Bool && !desc.RequireAuthored)
+                {
+                    Report(where, std::format("'{}' answers a number; 'require' says which", desc.Query));
                     ok = false;
                 }
                 ok = QueryArguments(*query, desc.Arguments, where, out.Arguments) && ok;

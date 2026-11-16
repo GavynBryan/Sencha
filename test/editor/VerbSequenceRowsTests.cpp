@@ -176,3 +176,19 @@ TEST_F(VerbSequenceRowsTest, AnOccurrencesTagIsConditionedOnWhereItHasATagPort)
     ASSERT_NE(Find(rows, "c0.tag"), nullptr);
     EXPECT_EQ(Find(rows, "c0.tag")->Value, "attack");
 }
+
+TEST_F(VerbSequenceRowsTest, ANumberQueryIsConditionedOnBoundsEitherOfWhichMayBeOpen)
+{
+    JsonValue sequence = Must(ActOnVerbSequence(EmptyVerbSequence(), Vocabulary, "conditions", "add",
+                                                "navigation.remaining"));
+    EXPECT_EQ(JsonStringify(*sequence.Find("conditions")->AsArray()[0].Find("require")), R"({"min":1})");
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "c0.require.max", "3"));
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "c0.require.min", ""));
+    EXPECT_EQ(JsonStringify(*sequence.Find("conditions")->AsArray()[0].Find("require")), R"({"max":3})");
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "c0.require.max", "three").has_value());
+
+    const std::vector<PropertyNode> rows = VerbSequenceRows(sequence, Vocabulary, {});
+    EXPECT_NE(Find(rows, "c0.require.min"), nullptr);
+    EXPECT_EQ(Find(rows, "c0.expect"), nullptr) << "a number query was offered true or false";
+}
