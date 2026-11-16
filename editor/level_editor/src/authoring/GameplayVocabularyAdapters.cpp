@@ -43,7 +43,7 @@ namespace
     // copyable values holding no handles, so a before/after pair is a complete
     // record and no lifecycle hook is owed anything.
     template <typename Component>
-    PropertyEditResult Commit(EditorComponentInspectorContext& context, const Component& before,
+    PropertyEditResult Commit(EditorComponentInspectorContext& context, Component before,
                               const Component& after)
     {
         context.Scene.SetComponent(context.Entity, after);
