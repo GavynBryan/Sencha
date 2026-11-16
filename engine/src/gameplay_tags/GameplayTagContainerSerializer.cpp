@@ -7,7 +7,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
-#include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <cstddef>
 #include <cstring>
@@ -18,14 +18,9 @@
 
 namespace
 {
-class GameplayTagContainerSerializer final : public IComponentSerializer
+class GameplayTagContainerSerializer final : public TypedComponentSerializer<GameplayTagContainer>
 {
 public:
-    ComponentTypeId TypeId() const override
-    {
-        return ResolveComponentTypeId<GameplayTagContainer>();
-    }
-
     std::string_view JsonKey() const override { return "GameplayTags"; }
     const DataFieldSchema* CompositionSchema() const override
     {
@@ -40,28 +35,6 @@ public:
     std::span<const RuntimeField> RuntimeFields() const override
     {
         return {};
-    }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        GameplayTagContainer value{};
-        std::vector<std::byte> bytes(sizeof(GameplayTagContainer));
-        std::memcpy(bytes.data(), &value, sizeof(GameplayTagContainer));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<GameplayTagContainer>())
-            registry.Components.RegisterComponent<GameplayTagContainer>();
-    }
-
-    bool HasComponent(
-        EntityId entity,
-        const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<GameplayTagContainer>()
-            && registry.Components.HasComponent<GameplayTagContainer>(entity);
     }
 
     bool Save(
@@ -84,19 +57,6 @@ public:
             && WriteGameplayTags(archive, *tags, *tagRegistry);
     }
 
-    bool Load(
-        IReadArchive& archive,
-        EntityId entity,
-        Registry& registry,
-        SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(
-            archive,
-            entity,
-            registry.Components,
-            context);
-    }
-
     bool LoadIntoWorld(
         IReadArchive& archive,
         EntityId entity,
@@ -108,11 +68,6 @@ public:
         if (tagRegistry == nullptr)
             return false;
 
-        // A batch importer creates the entity at its final archetype signature,
-        // so the column may already be present. Presence is then expected rather
-        // than a duplicate, and the value is written in place.
-        const bool preallocated = world.HasComponent<GameplayTagContainer>(entity);
-
         GameplayTagContainer tags{};
         std::vector<std::string> dropped;
         if (!ReadGameplayTags(archive, tags, *tagRegistry, &dropped))
@@ -122,21 +77,7 @@ public:
                 "gameplay tag '{}' is projected by {} and cannot be authored; it was not loaded", name,
                 tagRegistry->ProjectedBy(tagRegistry->FindTag(name)));
 
-        if (preallocated)
-            return world.InitializeComponent<GameplayTagContainer>(entity, tags);
-
-        world.AddComponent<GameplayTagContainer>(entity, tags);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<GameplayTagContainer>()
-            && registry.Components.HasComponent<GameplayTagContainer>(entity))
-        {
-            registry.Components.RemoveComponent<GameplayTagContainer>(entity);
-        }
-        return true;
+        return Place(world, entity, tags);
     }
 };
 } // namespace

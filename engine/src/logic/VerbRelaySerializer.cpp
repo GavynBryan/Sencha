@@ -11,6 +11,7 @@
 #include <logic/VerbRelay.h>
 #include <world/serialization/SceneAssetRef.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <cstddef>
 #include <cstring>
@@ -32,36 +33,15 @@ namespace
                                                        : world.AddResource<VerbRelayAuthoring>();
     }
 
-class VerbRelaySerializer final : public IComponentSerializer
+class VerbRelaySerializer final : public TypedComponentSerializer<VerbRelay>
 {
 public:
-    ComponentTypeId TypeId() const override { return ResolveComponentTypeId<VerbRelay>(); }
     std::string_view JsonKey() const override { return "verb_relay"; }
     std::uint32_t BinaryChunkId() const override { return MakeFourCC('V', 'R', 'L', 'Y'); }
 
     std::span<const RuntimeField> RuntimeFields() const override
     {
         return RuntimeFieldsOf<VerbRelay>();
-    }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        VerbRelay value{};
-        std::vector<std::byte> bytes(sizeof(VerbRelay));
-        std::memcpy(bytes.data(), &value, sizeof(VerbRelay));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<VerbRelay>())
-            registry.Components.RegisterComponent<VerbRelay>();
-    }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<VerbRelay>()
-            && registry.Components.HasComponent<VerbRelay>(entity);
     }
 
     bool Save(IWriteArchive& archive, EntityId entity, const World& world,
@@ -106,12 +86,6 @@ public:
         }
         archive.End();
         return archive.Ok();
-    }
-
-    bool Load(IReadArchive& archive, EntityId entity, Registry& registry,
-              SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(archive, entity, registry.Components, context);
     }
 
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
@@ -172,20 +146,7 @@ public:
                     bindingsPath);
         }
 
-        if (world.HasComponent<VerbRelay>(entity))
-            return world.InitializeComponent<VerbRelay>(entity, relay);
-        world.AddComponent<VerbRelay>(entity, relay);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<VerbRelay>()
-            && registry.Components.HasComponent<VerbRelay>(entity))
-        {
-            registry.Components.RemoveComponent<VerbRelay>(entity);
-        }
-        return true;
+        return Place(world, entity, relay);
     }
 };
 } // namespace

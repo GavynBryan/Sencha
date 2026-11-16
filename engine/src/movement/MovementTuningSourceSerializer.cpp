@@ -8,7 +8,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
-#include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/TypedComponentSerializer.h>
 #include <world/serialization/SceneAssetRef.h>
 
 #include <cstddef>
@@ -23,14 +23,9 @@ namespace
 {
     constexpr std::string_view kProfileKey = "profile";
 
-class MovementTuningSourceSerializer final : public IComponentSerializer
+class MovementTuningSourceSerializer final : public TypedComponentSerializer<MovementTuningSource>
 {
 public:
-    ComponentTypeId TypeId() const override
-    {
-        return ResolveComponentTypeId<MovementTuningSource>();
-    }
-
     std::string_view JsonKey() const override { return "MovementTuning"; }
     std::uint32_t BinaryChunkId() const override
     {
@@ -44,26 +39,6 @@ public:
     std::span<const RuntimeField> RuntimeFields() const override
     {
         return RuntimeFieldsOf<MovementTuningSource>();
-    }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        MovementTuningSource value{};
-        std::vector<std::byte> bytes(sizeof(MovementTuningSource));
-        std::memcpy(bytes.data(), &value, sizeof(MovementTuningSource));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<MovementTuningSource>())
-            registry.Components.RegisterComponent<MovementTuningSource>();
-    }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<MovementTuningSource>()
-            && registry.Components.HasComponent<MovementTuningSource>(entity);
     }
 
     bool Save(IWriteArchive& archive,
@@ -94,14 +69,6 @@ public:
 
         archive.End();
         return archive.Ok();
-    }
-
-    bool Load(IReadArchive& archive,
-              EntityId entity,
-              Registry& registry,
-              SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(archive, entity, registry.Components, context);
     }
 
     bool LoadIntoWorld(IReadArchive& archive,
@@ -159,21 +126,7 @@ public:
             }
         }
 
-        if (world.HasComponent<MovementTuningSource>(entity))
-            return world.InitializeComponent<MovementTuningSource>(entity, tuning);
-
-        world.AddComponent<MovementTuningSource>(entity, tuning);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<MovementTuningSource>()
-            && registry.Components.HasComponent<MovementTuningSource>(entity))
-        {
-            registry.Components.RemoveComponent<MovementTuningSource>(entity);
-        }
-        return true;
+        return Place(world, entity, tuning);
     }
 };
 } // namespace
