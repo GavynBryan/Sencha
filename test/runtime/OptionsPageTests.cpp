@@ -38,6 +38,24 @@ EngineAudioConfig DummyAudio()
         labels.push_back(row.Label);
     return labels;
 }
+
+OptionRow ToggleRow(std::string label)
+{
+    OptionRow row;
+    row.Label = std::move(label);
+    row.Control = OptionControl::Toggle;
+    return row;
+}
+
+void RegisterReducedFlashing(ConsoleRegistry& registry)
+{
+    ASSERT_TRUE(registry.RegisterCVar({
+        .Name = "render.reduced_flashing",
+        .Type = CVarType::Bool,
+        .DefaultValue = false,
+        .CurrentValue = false,
+    }));
+}
 }
 
 TEST(OptionsPageTest, AHostWithNoSettingsOffersNoRows)
@@ -196,14 +214,14 @@ TEST(OptionsPageTest, ARowWhoseCVarDoesNotSuitItsControlIsShownAndNotOffered)
     }));
 
     OptionsPage page;
-    page.Rows() = {
+    page.RegisterRows("game", {
         OptionRow{ .Label = "Hints", .CVar = "game.hints", .Control = OptionControl::Toggle,
                    .Step = 0.0, .Min = 0.0, .Max = 0.0, .Choices = {} },
         OptionRow{ .Label = "Flag", .CVar = "game.flag", .Control = OptionControl::Range,
                    .Step = 0.1, .Min = 0.0, .Max = 1.0, .Choices = {} },
         OptionRow{ .Label = "Gone", .CVar = "game.gone", .Control = OptionControl::Toggle,
                    .Step = 0.0, .Min = 0.0, .Max = 0.0, .Choices = {} },
-    };
+    });
 
     const std::vector<UiRow> rows = page.Present(registry);
     ASSERT_EQ(rows.size(), 3u);
@@ -383,12 +401,51 @@ TEST(OptionsPageTest, AGameCanAddARowOfItsOwn)
 
     OptionsPage page;
     page.InstallDefaults(registry);
-    page.Rows().push_back(OptionRow{
+    page.RegisterRows("game", { OptionRow{
         .Label = "Difficulty", .CVar = "game.difficulty", .Control = OptionControl::Choice,
         .Step = 0.0, .Min = 0.0, .Max = 0.0,
-        .Choices = { { "Normal", "normal" }, { "Hard", "hard" } } });
+        .Choices = { { "Normal", "normal" }, { "Hard", "hard" } } } });
 
     EXPECT_TRUE(page.Apply(registry, 0, UiValue(std::string("Hard"))));
     EXPECT_EQ(std::get<std::string>(registry.FindCVar("game.difficulty")->CurrentValue), "hard");
     EXPECT_EQ(LabelsOf(page, registry), (std::vector<std::string>{ "Difficulty" }));
+}
+
+TEST(OptionsPageTest, RegisteringAnOwnerAgainReplacesItsRowsWhereTheyStood)
+{
+    const ConsoleRegistry registry;
+    OptionsPage page;
+    page.RegisterRows("first", { ToggleRow("A"), ToggleRow("B") });
+    page.RegisterRows("second", { ToggleRow("C") });
+    page.RegisterRows("first", { ToggleRow("D") });
+    page.RegisterRows("first", { ToggleRow("D") });
+    EXPECT_EQ(LabelsOf(page, registry), (std::vector<std::string>{ "D", "C" }));
+}
+
+TEST(OptionsPageTest, UnregisteringAGameLeavesTheDefaultsAndEveryOtherOwner)
+{
+    ConsoleRegistry registry;
+    RegisterReducedFlashing(registry);
+    OptionsPage page;
+    page.InstallDefaults(registry);
+    page.RegisterRows("game.hud", { ToggleRow("Compass") });
+    page.RegisterRows("game.audio", { ToggleRow("Music") });
+
+    page.UnregisterOwner("game.hud");
+    page.UnregisterOwner("game.hud");
+    EXPECT_EQ(LabelsOf(page, registry), (std::vector<std::string>{ "Reduced Flashing", "Music" }));
+}
+
+TEST(OptionsPageTest, ReinstallingTheDefaultsKeepsAGamesRowsAfterThem)
+{
+    ConsoleRegistry registry;
+    RegisterReducedFlashing(registry);
+    OptionsPage page;
+    page.InstallDefaults(registry);
+    page.RegisterRows("game", { ToggleRow("Compass") });
+
+    page.InstallDefaults(registry);
+    EXPECT_EQ(LabelsOf(page, registry), (std::vector<std::string>{ "Reduced Flashing", "Compass" }));
+    page.UnregisterOwner(kEngineOwner);
+    EXPECT_EQ(LabelsOf(page, registry), (std::vector<std::string>{ "Compass" }));
 }

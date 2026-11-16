@@ -271,7 +271,7 @@ if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     # with their sidecars.
     target_link_libraries(editor_tests PRIVATE
         level_authoring ui_preview_authoring animation_authoring ability_authoring
-        material_editor data_editor ability_editor project_browser GTest::gtest_main)
+        material_editor data_editor ability_editor project_browser sencha::testing GTest::gtest_main)
     target_include_directories(editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     target_compile_definitions(editor_tests PRIVATE

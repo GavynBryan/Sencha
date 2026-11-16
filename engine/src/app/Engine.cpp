@@ -1239,7 +1239,7 @@ int Engine::Run(Game& game)
     if (Configuration.Runtime.ApplicationShell && UiState != nullptr && UiState->IsReady()
         && PlatformState != nullptr)
     {
-        ShellSurface = UiState->CreateWindowSurface("shell");
+        ShellSurface = UiState->CreateWindowSurface("shell", kUiStackOrderShell);
 
         PauseMenuState = std::make_unique<PauseMenu>(
             *UiState, ShellSurface, PauseStateInstance, BackRouterInstance);
@@ -1252,8 +1252,8 @@ int Engine::Run(Game& game)
         // The engine's own options page: the settings this host can actually
         // apply, which is whichever of them registered a cvar above.
         OptionsState.InstallDefaults(Console().Registry());
-        if (!OptionsState.Rows().empty())
-            menu.SetOptionsPage("asset://ui/options.rml");
+        menu.SetOptionsPage("asset://ui/options.rml");
+        (void)menu.SetOfferedWhile(kPauseOptions, [this] { return !OptionsState.Rows().empty(); });
 
         (void)menu.SetHandler(kPauseOptions, [this](PauseMenuContext& ctx) {
             // The page carries its own content and its own answer to a row

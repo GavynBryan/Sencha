@@ -6,6 +6,7 @@
 #include <core/console/ConsoleTypes.h>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -74,11 +75,12 @@ class OptionsPage
 {
 public:
     // The engine's own table, filtered to the cvars this process registered.
-    // A game replaces or extends it by editing Rows before the page opens.
     void InstallDefaults(const ConsoleRegistry& registry);
 
-    [[nodiscard]] std::vector<OptionRow>& Rows() { return Rows_; }
-    [[nodiscard]] const std::vector<OptionRow>& Rows() const { return Rows_; }
+    void RegisterRows(std::string_view owner, std::vector<OptionRow> rows);
+    void UnregisterOwner(std::string_view owner);
+
+    [[nodiscard]] std::span<const OptionRow> Rows() const { return Rows_; }
 
     // What the document presents: each row's label, the control it asks for,
     // and the value as the cvar stands now -- a Range snapped to its step, a
@@ -95,5 +97,14 @@ public:
     [[nodiscard]] UiScreenDesc Describe(std::string package) const;
 
 private:
+    struct OwnedRun
+    {
+        std::string Owner;
+        std::size_t Count = 0;
+    };
+
+    std::vector<OptionRow>::iterator EraseRowsOf(const OwnedRun& run);
+
     std::vector<OptionRow> Rows_;
+    std::vector<OwnedRun> Runs;
 };

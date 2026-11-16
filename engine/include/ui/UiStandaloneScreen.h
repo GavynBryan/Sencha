@@ -17,7 +17,7 @@ public:
     UiStandaloneScreen& operator=(const UiStandaloneScreen&) = delete;
 
     bool OpenOverWindow(UiService* ui, std::string_view surfaceName, const UiScreenDesc& desc,
-                        UiSurfaceInputPolicy input);
+                        UiSurfaceInputPolicy input, UiStackOrder order = kUiStackOrderDefault);
     bool OpenInTexture(UiService* ui, std::string_view surfaceName, const UiScreenDesc& desc,
                        RenderExtent extent, std::string_view texture);
     void Close();

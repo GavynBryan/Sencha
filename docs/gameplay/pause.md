@@ -287,7 +287,15 @@ than an entry that refuses.
 ## Options
 
 Not a special concept: a second page, on the stack Back already walks. The entry
-appears only once a page exists, so it is never a button that does nothing.
+appears only while the page has rows, so it is never a button that does nothing.
+Whether it appears is read from the rows each time the menu presents its entries,
+not decided once at startup: `Engine` gives the Options entry
+`SetOfferedWhile(kPauseOptions, ...)` over `OptionsPage::Rows()`, so a host with
+no settings of its own gains the entry when a game registers rows and loses it
+when the game unregisters them. Any entry can be offered this way;
+`PauseMenuModel::Labels`, `CommandAt` and `OfferedCommands` all read one filtered
+list, and `PauseMenu` republishes when the offered commands change while the
+menu is open.
 
 The page is a **curated table**, not a listing of every archived cvar — the ones
 carrying `Archive` are mostly engine tuning, and a page over all of them would be
@@ -343,6 +351,18 @@ Two facts about RmlUi decide the shape of the wiring:
 
 Slider changes apply live, per drag tick; the settings file is still written
 once, when the page closes.
+
+**Rows have an owner**, the same owner string the console uses for cvars and
+commands. `OptionsPage::RegisterRows(owner, rows)` sets that owner's rows, and
+registering the same owner again replaces them where they stood, so a module
+that registers twice never offers a row twice. `UnregisterOwner(owner)` removes
+them and nothing else, which is what a game module calls on shutdown beside
+`ConsoleRegistry::UnregisterOwner`. The engine's five rows are registered by
+`InstallDefaults` under `kEngineOwner` ("engine"), the console's own default
+owner, so reinstalling the defaults replaces only those and keeps them first,
+and a game removing its rows leaves them alone. Rows are offered in owner order:
+the defaults, then each owner in the order it first registered. `Rows()` is
+read-only; the index `Apply` takes is a position in it.
 
 **A row exists only if its cvar does**, and each cvar is registered only where
 the thing behind it exists. A headless host registers no display mode; a host

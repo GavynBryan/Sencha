@@ -6,6 +6,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ui/UiKeys.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -151,33 +152,12 @@ private:
     std::unique_ptr<UiService> Ui;
 };
 
-SDL_Event MouseButton(uint32_t type, float x, float y)
-{
-    SDL_Event event{};
-    event.type = type;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
 SDL_Event TextInput(const char* text)
 {
     SDL_Event event{};
     event.type = SDL_EVENT_TEXT_INPUT;
     event.text.text = text;
     return event;
-}
-
-void ClickAt(UiService& ui, float x, float y)
-{
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = x;
-    move.motion.y = y;
-    (void)ui.ProcessPlatformEvent(move);
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y));
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, x, y));
 }
 
 struct Fixture
@@ -203,7 +183,7 @@ struct Fixture
     // Focus the field and type, the way a person would.
     void TypeIntoField(const char* text)
     {
-        ClickAt(Ui(), 80.0f, 35.0f);
+        UiClickAt(Ui(), 80.0f, 35.0f);
         Ui().Update();
         (void)Ui().ProcessPlatformEvent(TextInput(text));
         Ui().Update();
@@ -237,7 +217,7 @@ TEST(UiControls, ApplyIsWhatTellsTheHostToRead)
     fixture.TypeIntoField("9");
     const std::string edited(fixture.Ui().GetValue(fixture.Screen, kSensitivity).AsString());
 
-    ClickAt(fixture.Ui(), 70.0f, 115.0f);
+    UiClickAt(fixture.Ui(), 70.0f, 115.0f);
     fixture.Ui().Update();
 
     const std::vector<UiAction> actions = fixture.Ui().DrainActions();
@@ -256,7 +236,7 @@ TEST(UiControls, CancelIsTheHostRepublishingWhatItStillHolds)
     fixture.TypeIntoField("9");
     ASSERT_NE(fixture.Ui().GetValue(fixture.Screen, kSensitivity).AsString(), "1.2");
 
-    ClickAt(fixture.Ui(), 190.0f, 115.0f);
+    UiClickAt(fixture.Ui(), 190.0f, 115.0f);
     fixture.Ui().Update();
 
     const std::vector<UiAction> actions = fixture.Ui().DrainActions();
@@ -323,13 +303,13 @@ TEST(UiControls, AFocusedFieldTakesTheKeyboardAndReleasesItOnBlur)
 
     EXPECT_FALSE(fixture.Ui().Capture().Keyboard);
 
-    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    UiClickAt(fixture.Ui(), 80.0f, 35.0f);
     fixture.Ui().Update();
     EXPECT_TRUE(fixture.Ui().Capture().Keyboard)
         << "a focused text field must take the keyboard, or typing reaches the game";
 
     // Clicking a plain button moves focus off the field.
-    ClickAt(fixture.Ui(), 70.0f, 115.0f);
+    UiClickAt(fixture.Ui(), 70.0f, 115.0f);
     fixture.Ui().Update();
     EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
         << "the field lost focus and the keyboard stayed captured";
@@ -344,11 +324,11 @@ TEST(UiControls, APressOnNothingTakesFocusOffTheField)
     Fixture fixture;
     ASSERT_TRUE(fixture.Screen.IsValid());
 
-    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    UiClickAt(fixture.Ui(), 80.0f, 35.0f);
     fixture.Ui().Update();
     ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
 
-    SDL_Event press = MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 600.0f, 500.0f);
+    SDL_Event press = UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, 600.0f, 500.0f);
     EXPECT_FALSE(fixture.Ui().ProcessPlatformEvent(press))
         << "a press on empty space must still reach whatever is behind the surface";
     fixture.Ui().Update();
@@ -366,7 +346,7 @@ TEST(UiControls, TakingKeysFromASurfaceTakesFocusOffItsField)
     ASSERT_TRUE(fixture.Screen.IsValid());
     const UiSurfaceId other = fixture.Ui().CreateSurface("other", RenderExtent{ 800, 600 });
 
-    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    UiClickAt(fixture.Ui(), 80.0f, 35.0f);
     fixture.Ui().Update();
     ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
 
@@ -619,7 +599,7 @@ TEST(UiControls, ARowsValueIsEditableAndReadBackByTheHost)
     fixture.Ui().Update();
 
     // Click the row's input and type. The field sits right of a 120px label.
-    ClickAt(fixture.Ui(), 200.0f, 12.0f);
+    UiClickAt(fixture.Ui(), 200.0f, 12.0f);
     fixture.Ui().Update();
 
     SDL_Event text{};
@@ -828,7 +808,7 @@ TEST(UiControls, ARangeReportsTheValueItMovedToInTheActionItself)
 
     // The track spans the control's 150px, right of a 100px label; a press
     // near its right end jumps the bar there.
-    ClickAt(fixture.Ui(), 100.0f + 150.0f * 0.9f, 10.0f);
+    UiClickAt(fixture.Ui(), 100.0f + 150.0f * 0.9f, 10.0f);
     fixture.Ui().Update();
 
     const std::vector<UiAction> actions = fixture.Ui().DrainActions(fixture.Screen);
@@ -851,7 +831,7 @@ TEST(UiControls, AChoiceChangesFromTheKeyboardAndReportsTheLabel)
 
     // Focus the drop-down, then step it: a focused select changes on Down
     // without the box being open, which is what a controller drives.
-    ClickAt(fixture.Ui(), 150.0f, 10.0f);
+    UiClickAt(fixture.Ui(), 150.0f, 10.0f);
     fixture.Ui().Update();
     (void)fixture.Ui().DrainActions(fixture.Screen);
     fixture.Press(SDL_SCANCODE_DOWN);
@@ -1095,7 +1075,7 @@ TEST(UiControls, AKeyADocumentReportsIsReadBackAsAUiKey)
     const UiScreenHandle screen = ui.OpenScreen(surface, desc);
     ASSERT_TRUE(screen.IsValid());
     ui.Update();
-    ClickAt(ui, 80.0f, 35.0f);
+    UiClickAt(ui, 80.0f, 35.0f);
     ui.Update();
 
     const auto pressed = [&](SDL_Scancode scancode) {

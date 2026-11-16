@@ -92,8 +92,9 @@ public:
     // member destruction order is not something this layer can decide.
     void Shutdown();
 
-    [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size);
-    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId);
+    [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size, UiStackOrder order);
+    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, UiStackOrder order,
+                                                  std::uint32_t platformWindowId);
     void DestroySurface(UiSurfaceId surface);
     void SetWindowView(std::uint32_t platformWindowId, UiWindowView view);
     [[nodiscard]] std::optional<UiWindowView> GetWindowView(std::uint32_t platformWindowId) const;
@@ -117,6 +118,8 @@ public:
     [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
     void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
     [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
+    void SetSurfaceStackOrder(UiSurfaceId surface, UiStackOrder order);
+    [[nodiscard]] UiStackOrder GetSurfaceStackOrder(UiSurfaceId surface) const;
 
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
@@ -236,6 +239,8 @@ private:
         // how every surface began and how a host that never names one is served.
         std::uint32_t WindowId = 0;
         std::uint8_t Layer = 0;
+        UiStackOrder StackOrder = kUiStackOrderDefault;
+        std::uint64_t CreationSequence = 0;
         bool FollowsWindow = false;
 
         // The last pointer position delivered, in surface pixels. The document
@@ -471,9 +476,10 @@ private:
     // event (a device, a key with nothing focused) belongs to the primary.
     [[nodiscard]] bool Hears(const Surface& surface, std::uint32_t eventWindow) const;
     // Indices into Surfaces, topmost first, the order events are offered in.
-    // Rebuilt when a surface is created or changes destination.
     std::vector<std::size_t> InputOrder;
-    void RebuildInputOrder();
+    std::vector<std::size_t> DrawOrder;
+    std::uint64_t NextCreationSequence = 0;
+    void RebuildStackOrder();
     [[nodiscard]] SDL_Window* WindowOf(const Surface& surface) const;
     [[nodiscard]] UiInputCapture CaptureOver(std::optional<std::uint32_t> window) const;
     std::unique_ptr<RmlRenderRecorder> Recorder;

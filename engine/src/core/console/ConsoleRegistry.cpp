@@ -153,7 +153,7 @@ bool ConsoleRegistry::RegisterCVar(CVarMetadata metadata, ConsoleResult* result)
 {
     metadata.Name = CanonicalConsoleName(metadata.Name);
     if (metadata.Owner.empty())
-        metadata.Owner = "engine";
+        metadata.Owner = kEngineOwner;
     if (metadata.Source.Description.empty())
         metadata.Source.Description = "registration";
 
@@ -195,7 +195,7 @@ bool ConsoleRegistry::RegisterCommand(ConsoleCommandMetadata metadata, ConsoleRe
 {
     metadata.Name = CanonicalConsoleName(metadata.Name);
     if (metadata.Owner.empty())
-        metadata.Owner = "engine";
+        metadata.Owner = kEngineOwner;
 
     if (!IsValidConsoleName(metadata.Name))
     {

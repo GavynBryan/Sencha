@@ -888,7 +888,7 @@ is why a lower layer's surface is normally `Disabled`.
 
 **A surface can follow its window.** Whoever owns a window publishes what it
 measures, `SetWindowView(windowId, { extent, scale })`, and every surface made
-with `CreateWindowSurface(name, windowId)` takes each view as it arrives: created
+with `CreateWindowSurface(name, order, windowId)` takes each view as it arrives: created
 at the last one, resized and rescaled with every one after, and moved onto the
 new window's view by `SetSurfaceWindow`. A view with no area -- a minimised
 window -- is ignored, so a following surface keeps laying out against the last
@@ -972,14 +972,37 @@ wheel, `Full` keys and text as well. A drag that started inside a placement keep
 the pointer until the button comes up, wherever it comes up, so a slider survives
 an overshoot; leaving the placement sends the document one mouse-leave.
 
+**A surface has a stack order.** `UiStackOrder` wraps an integer and is given
+at creation (`CreateSurface`, `CreateWindowSurface`, `UiStandaloneScreen::OpenOverWindow`)
+or later with `SetSurfaceStackOrder`; `kUiStackOrderDefault` (0) is what a host
+that never states one gets. It follows the name or size in every creation call,
+before a window id, because an order is stated far more often than a second
+window; being its own type, a window id left in its old place does not compile
+as an order. A higher order is drawn later and offered input
+first. Equal orders stack in creation order, the later surface on top. Creation
+is counted by the runtime, not read from the surface's slot, so a surface that
+closes and reopens lands above its equals rather than wherever a freed slot
+happens to sit, and a reused slot starts with nothing of the surface before
+it. `UiRuntime::RebuildStackOrder` is the one place the order is computed: the
+draw order (`ExtractRender` publishes frames in it) and the input order are both
+built there, whenever a surface is created, changes destination or changes
+order. This is not the layer above, which picks a render feature; within a
+layer's feature, frames are drawn in stack order.
+
+The application shell's surface (the pause and options menus, created by
+`Engine`) has `kUiStackOrderShell` (1,000,000). Games use orders below it, and
+should keep to a range they name once, such as -1000 to 1000, so a HUD's place is
+read from one table rather than from who registered first. Orders at or above
+`kUiStackOrderShell` are the engine's.
+
 **A window's own surfaces are above its offscreen ones.** Events are offered
 topmost first and stop at the first surface that consumes them. A window
 surface is drawn over everything its host composites, an offscreen surface's
-picture included, so window surfaces are asked first; within each kind,
-reverse creation order is the stacking. A previewed document placed under an
-editor's panels therefore never takes a click aimed at a panel, however late it
-was created. A surface under a consumed move is sent a mouse-leave, so nothing
-on it stays hovered.
+picture included, so window surfaces are asked first, whatever their stack
+order; within each kind, stack order decides. A previewed document placed under
+an editor's panels therefore never takes a click aimed at a panel, however late
+it was created. A surface under a consumed move is sent a mouse-leave, so
+nothing on it stays hovered.
 
 ### Inspection
 

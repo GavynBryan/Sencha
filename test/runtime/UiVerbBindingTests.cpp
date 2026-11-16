@@ -9,6 +9,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <ui/UiVerbBindings.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -121,27 +122,6 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
     };
     desc.Actions = { "panel_fire", "panel_pick", "panel_wrong" };
     return desc;
-}
-
-SDL_Event MouseButton(std::uint32_t type, float x, float y)
-{
-    SDL_Event event{};
-    event.type = type;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
-void ClickAt(UiService& ui, float x, float y)
-{
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = x;
-    move.motion.y = y;
-    (void)ui.ProcessPlatformEvent(move);
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y));
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, x, y));
 }
 
 // Records what it was asked to do, in order.
@@ -311,7 +291,7 @@ TEST(UiVerbBindings, AClickInTheDocumentReachesTheRegisteredOperation)
     ASSERT_TRUE(fixture.OpenScreenAndBind(MakeDesc(), WorkingMappings(), errors))
         << (errors.empty() ? std::string{} : errors.front());
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
 
     ASSERT_EQ(fixture.Fire.Calls.size(), 1u);
@@ -327,7 +307,7 @@ TEST(UiVerbBindings, ThePayloadTheDocumentSentBecomesTheTypedArgument)
     std::vector<std::string> errors;
     ASSERT_TRUE(fixture.OpenScreenAndBind(MakeDesc(), WorkingMappings(), errors));
 
-    ClickAt(*fixture.Ui, 70.0f, 75.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 75.0f);
     fixture.PumpFrame();
 
     ASSERT_EQ(fixture.Count.Calls.size(), 1u);
@@ -343,7 +323,7 @@ TEST(UiVerbBindings, APayloadOfAnotherKindIsRefusedRatherThanConverted)
     // The document sends the string property where the mapping declared a
     // number. Nothing here is in a position to decide that "seven" was meant
     // as a count.
-    ClickAt(*fixture.Ui, 70.0f, 115.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 115.0f);
     fixture.PumpFrame();
 
     EXPECT_TRUE(fixture.Count.Calls.empty());
@@ -405,14 +385,14 @@ TEST(UiVerbBindings, ClosingTheScreenEndsTheAssociation)
     std::vector<std::string> errors;
     ASSERT_TRUE(fixture.OpenScreenAndBind(MakeDesc(), WorkingMappings(), errors));
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
     ASSERT_EQ(fixture.Fire.Calls.size(), 1u);
 
     fixture.Controller->Close();
     EXPECT_FALSE(fixture.Controller->IsOpen());
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
     EXPECT_EQ(fixture.Fire.Calls.size(), 1u)
         << "a closed controller still dispatched a screen it no longer holds";
@@ -431,7 +411,7 @@ TEST(UiVerbBindings, ADeclarationReorderRecompilesTheScreenLocalIds)
     ASSERT_TRUE(fixture.OpenScreenAndBind(reordered, WorkingMappings(), errors))
         << (errors.empty() ? std::string{} : errors.front());
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
 
     ASSERT_EQ(fixture.Fire.Calls.size(), 1u);
@@ -461,7 +441,7 @@ TEST(UiVerbBindings, ABindingReplacedUnderAnOpenScreenIsNeverRunThroughTheOldMap
     std::vector<std::string> errors;
     ASSERT_TRUE(fixture.OpenScreenAndBind(MakeDesc(), WorkingMappings(), errors));
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
     ASSERT_EQ(fixture.Fire.Calls.size(), 1u);
 
@@ -479,7 +459,7 @@ TEST(UiVerbBindings, ABindingReplacedUnderAnOpenScreenIsNeverRunThroughTheOldMap
     fixture.Bindings.Instantiate(replacement, MakeVerbBindingEnvironment(fixture.Entities),
                                  errors);
 
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
     EXPECT_EQ(fixture.Fire.Calls.size(), 1u);
     EXPECT_TRUE(fixture.Count.Calls.empty()) << "the replacement ran through the old mapping";
@@ -495,7 +475,7 @@ TEST(UiVerbBindings, ABindingReplacedUnderAnOpenScreenIsNeverRunThroughTheOldMap
     replacement.Bindings.push_back(std::move(fire));
     fixture.Bindings.Instantiate(replacement, MakeVerbBindingEnvironment(fixture.Entities),
                                  errors);
-    ClickAt(*fixture.Ui, 70.0f, 35.0f);
+    UiClickAt(*fixture.Ui, 70.0f, 35.0f);
     fixture.PumpFrame();
     EXPECT_EQ(fixture.Fire.Calls.size(), 2u);
     EXPECT_TRUE(fixture.Controller->LastErrors().empty());

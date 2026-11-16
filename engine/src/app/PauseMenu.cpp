@@ -172,7 +172,8 @@ void PauseMenu::PublishTop()
     if (!screen.IsValid())
         return;
 
-    if (!ModelDirty)
+    std::vector<PauseCommandId> offered = Model_.OfferedCommands();
+    if (!ModelDirty && offered == PublishedCommands)
         return;
     (void)Ui.SetValue(screen, kTitle, UiValue(Model_.Title()));
     (void)Ui.SetArray(screen, kEntries, Model_.Labels());
@@ -181,10 +182,7 @@ void PauseMenu::PublishTop()
     // state: the document repeats over these rows and reports positions in
     // them, and a position only means a command while it is the ordering the
     // player is looking at.
-    PublishedCommands.clear();
-    PublishedCommands.reserve(Model_.Entries().size());
-    for (const PauseMenuEntry& entry : Model_.Entries())
-        PublishedCommands.push_back(entry.Command);
+    PublishedCommands = std::move(offered);
 
     ModelDirty = false;
 }

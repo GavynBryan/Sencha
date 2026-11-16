@@ -118,6 +118,15 @@ TEST_F(UiWindowSurfaceTest, AStandaloneScreenWaitsForTheServiceAndTheWindow)
     EXPECT_TRUE(NoErrors());
 }
 
+TEST_F(UiWindowSurfaceTest, AStandaloneScreenOpensAtTheStackOrderItIsGiven)
+{
+    Ui().SetWindowView(0, kDesk);
+    UiStandaloneScreen screen;
+    ASSERT_TRUE(screen.OpenOverWindow(&Ui(), "hud", Hud(), UiSurfaceInputPolicy::Disabled, UiStackOrder{ 12 }));
+    EXPECT_EQ(Ui().GetSurfaceStackOrder(screen.Surface()), UiStackOrder{ 12 });
+    screen.Close();
+}
+
 TEST_F(UiWindowSurfaceTest, ClosingAStandaloneScreenDestroysItsSurface)
 {
     Ui().SetWindowView(0, kDesk);

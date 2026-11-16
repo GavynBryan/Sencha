@@ -82,10 +82,12 @@ public:
 
     // -- surfaces ------------------------------------------------------------
 
-    [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size);
+    [[nodiscard]] UiSurfaceId CreateSurface(std::string_view name, RenderExtent size,
+                                            UiStackOrder order = kUiStackOrderDefault);
     void DestroySurface(UiSurfaceId surface);
 
-    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId = 0);
+    [[nodiscard]] UiSurfaceId CreateWindowSurface(std::string_view name, UiStackOrder order = kUiStackOrderDefault,
+                                                  std::uint32_t platformWindowId = 0);
     [[nodiscard]] bool FollowsWindow(UiSurfaceId surface) const;
 
     void SetWindowView(std::uint32_t platformWindowId, UiWindowView view);
@@ -143,6 +145,9 @@ public:
     // every window has). Layers order drawing only (docs/ui/architecture.md §13).
     void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
     [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
+
+    void SetSurfaceStackOrder(UiSurfaceId surface, UiStackOrder order);
+    [[nodiscard]] UiStackOrder GetSurfaceStackOrder(UiSurfaceId surface) const;
 
     // -- screens -------------------------------------------------------------
 

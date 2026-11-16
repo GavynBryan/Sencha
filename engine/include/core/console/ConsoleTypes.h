@@ -11,6 +11,8 @@
 
 class ConsoleRegistry;
 
+inline constexpr std::string_view kEngineOwner = "engine";
+
 enum class ConsolePhase : std::uint8_t
 {
     EngineReady,
@@ -190,7 +192,7 @@ using CVarChangeCallback = std::function<void(const CVarChangeContext&)>;
 struct CVarMetadata
 {
     std::string Name{};
-    std::string Owner = "engine";
+    std::string Owner{ kEngineOwner };
     CVarType Type = CVarType::String;
     CVarValue DefaultValue = std::string{};
     CVarValue CurrentValue = std::string{};
@@ -228,7 +230,7 @@ using ConsoleCommandCallback =
 struct ConsoleCommandMetadata
 {
     std::string Name{};
-    std::string Owner = "engine";
+    std::string Owner{ kEngineOwner };
     std::string Usage{};
     std::string Help{};
     std::vector<std::string> Examples{};

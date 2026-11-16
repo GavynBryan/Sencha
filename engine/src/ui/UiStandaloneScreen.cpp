@@ -3,13 +3,13 @@
 #include <ui/UiService.h>
 
 bool UiStandaloneScreen::OpenOverWindow(UiService* ui, std::string_view surfaceName, const UiScreenDesc& desc,
-                                        UiSurfaceInputPolicy input)
+                                        UiSurfaceInputPolicy input, UiStackOrder order)
 {
     if (Attempted)
         return IsOpen();
     if (ui == nullptr || !ui->IsReady() || !ui->GetWindowView().has_value())
         return false;
-    const UiSurfaceId surface = ui->CreateWindowSurface(surfaceName);
+    const UiSurfaceId surface = ui->CreateWindowSurface(surfaceName, order);
     ui->SetSurfaceInputPolicy(surface, input);
     OpenOn(*ui, surface, desc);
     return IsOpen();

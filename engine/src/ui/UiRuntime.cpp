@@ -31,6 +31,7 @@
 #include <cctype>
 #include <filesystem>
 #include <format>
+#include <numeric>
 #include <utility>
 
 namespace
@@ -122,6 +123,7 @@ void UiRuntime::Shutdown()
             Rml::RemoveContext(surface.Context->GetName());
     }
     Surfaces.clear();
+    RebuildStackOrder();
     DrawFrames.clear();
     OffscreenFrames.clear();
     TextureFrameList.clear();
@@ -207,7 +209,7 @@ UiDiagnosticLog::Attribution UiRuntime::SurfaceAttribution(std::size_t surfaceIn
     return { liveOnSurface == 1 ? only : UiScreenHandle{}, surfaceId };
 }
 
-UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size)
+UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size, UiStackOrder order)
 {
     if (!Ready)
         return {};
@@ -245,19 +247,22 @@ UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size)
     }
 
     context->GetRootElement()->AddEventListener(Rml::EventId::Mousescroll, &WheelZoom);
+    Surface fresh;
+    fresh.Generation = surface.Generation;
+    surface = std::move(fresh);
     surface.Name = std::move(contextName);
     surface.Size = size;
     surface.Context = context;
     surface.Live = true;
-    surface.ModelTypesDeclared = false;
-    surface.RowLists.reset();
-    surface.FollowsWindow = false;
-    RebuildInputOrder();
+    surface.StackOrder = order;
+    surface.CreationSequence = NextCreationSequence++;
+    RebuildStackOrder();
 
     return UiSurfaceId{ static_cast<std::uint32_t>(index + 1), surface.Generation };
 }
 
-UiSurfaceId UiRuntime::CreateWindowSurface(std::string_view name, std::uint32_t platformWindowId)
+UiSurfaceId UiRuntime::CreateWindowSurface(std::string_view name, UiStackOrder order,
+                                           std::uint32_t platformWindowId)
 {
     const UiWindowView* view = FindWindowView(WindowKey(platformWindowId));
     if (view == nullptr)
@@ -266,7 +271,7 @@ UiSurfaceId UiRuntime::CreateWindowSurface(std::string_view name, std::uint32_t 
         return {};
     }
     const UiWindowView current = *view;
-    const UiSurfaceId id = CreateSurface(name, current.Extent);
+    const UiSurfaceId id = CreateSurface(name, current.Extent, order);
     if (Surface* slot = ResolveSurface(id))
     {
         slot->WindowId = WindowKey(platformWindowId);
@@ -449,7 +454,7 @@ void UiRuntime::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination 
         slot->Destination = destination;
         if (destination != UiSurfaceDestination::Texture)
             slot->Texture.clear();
-        RebuildInputOrder();
+        RebuildStackOrder();
     }
 }
 
@@ -462,7 +467,7 @@ void UiRuntime::SetSurfaceTexture(UiSurfaceId surface, std::string_view name)
     SetSurfaceInputPolicy(surface, UiSurfaceInputPolicy::Disabled);
     slot->Destination = UiSurfaceDestination::Texture;
     slot->Texture = std::string(name);
-    RebuildInputOrder();
+    RebuildStackOrder();
 }
 
 std::string_view UiRuntime::GetSurfaceTexture(UiSurfaceId surface) const
@@ -515,6 +520,34 @@ std::uint8_t UiRuntime::GetSurfaceLayer(UiSurfaceId surface) const
 {
     const Surface* slot = ResolveSurface(surface);
     return slot != nullptr ? slot->Layer : 0;
+}
+
+void UiRuntime::SetSurfaceStackOrder(UiSurfaceId surface, UiStackOrder order)
+{
+    if (Surface* slot = ResolveSurface(surface))
+    {
+        slot->StackOrder = order;
+        RebuildStackOrder();
+    }
+}
+
+UiStackOrder UiRuntime::GetSurfaceStackOrder(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->StackOrder : kUiStackOrderDefault;
+}
+
+void UiRuntime::RebuildStackOrder()
+{
+    DrawOrder.resize(Surfaces.size());
+    std::iota(DrawOrder.begin(), DrawOrder.end(), std::size_t{ 0 });
+    std::ranges::sort(DrawOrder, {}, [this](std::size_t index) {
+        return std::pair{ Surfaces[index].StackOrder, Surfaces[index].CreationSequence };
+    });
+    InputOrder.assign(DrawOrder.rbegin(), DrawOrder.rend());
+    std::ranges::stable_partition(InputOrder, [this](std::size_t index) {
+        return Surfaces[index].Destination == UiSurfaceDestination::Window;
+    });
 }
 
 bool UiRuntime::Hears(const Surface& surface, std::uint32_t eventWindow) const
@@ -1060,7 +1093,7 @@ void UiRuntime::ExtractRender()
     if (!Ready)
         return;
 
-    for (std::size_t index = 0; index < Surfaces.size(); ++index)
+    for (const std::size_t index : DrawOrder)
     {
         const Surface& surface = Surfaces[index];
         if (!surface.Live || surface.Context == nullptr)
