@@ -45,7 +45,6 @@ namespace
         return verb;
     }
 
-    // An invalid holder is the world, as Held's is.
     bool HolderGone(const World& world, const std::optional<EntityId>& holder)
     {
         return holder.has_value() && holder->IsValid() && !world.IsAlive(*holder);

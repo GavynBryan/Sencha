@@ -15,7 +15,6 @@ class AuthoredEventDispatcher;
 class Logger;
 class World;
 
-// docs/gameplay/counters.md.
 inline constexpr std::string_view kCounterSetVerb = "counter.set";
 inline constexpr std::string_view kCounterAddVerb = "counter.add";
 inline constexpr std::string_view kCounterValueQuery = "counter.value";

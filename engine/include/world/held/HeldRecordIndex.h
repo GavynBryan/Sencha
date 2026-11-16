@@ -27,7 +27,6 @@ public:
     void HolderDeparted(EntityId holder);
     void NoteChanged(EntityId record);
 
-    // An invalid holder is the world.
     [[nodiscard]] std::span<const EntityId> RecordsOf(EntityId holder) const;
     [[nodiscard]] bool Lists(EntityId record) const { return Listings.contains(record); }
     // Invalid for a record of the world and for one whose holder has not arrived.
