@@ -42,9 +42,13 @@
 #include <world/SimulationTimeline.h>
 #include <world/transform/TransformComponents.h>
 
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityRequestQueue.h>
+#include <CounterCostProvider.h>
 
 #include <gtest/gtest.h>
+
+#include <tuple>
 
 #include <cstdlib>
 #include <iostream>
@@ -1104,6 +1108,107 @@ TEST_F(AbilityReplication, ATransientGrantReachesItsOwnerAndLeavesWithItsActivat
 
     Run(10);
     EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->Count, 0u);
+}
+
+// Stage 3's gate, on the owner's machine: each ring's grant resolves to the
+// authority's entry, with its power, and to the client's own copy of its ring.
+TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
+{
+    ClientPeer = kOwner;
+    constexpr std::string_view kFireball = R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "parameters": [ { "key": "power", "default": 0 } ],
+        "phases": [ { "key": "p_cast", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+    const auto declareRings = [&](Machine& machine) {
+        (void)machine.Define(kFireball, "asset://abilities/fireball.sdata");
+        std::vector<EffectId> rings;
+        for (const auto& [path, priority, power] : { std::tuple{ "asset://effects/ring_fire.sdata", 20, 10.0 },
+                                                      std::tuple{ "asset://effects/ring_ember.sdata", 21, 14.0 } })
+        {
+            EffectDefinition worn{};
+            worn.Duration = EffectDuration::Infinite;
+            const EffectId effect = machine.Entities.GetResource<EffectRegistry>().Define(path, worn);
+            DeclareEffectGrants(machine.Entities, effect,
+                                { AbilityGrantDeclaration{ .Key = "g_fireball", .Ability = "asset://abilities/fireball.sdata",
+                                                           .Override = { .Priority = priority },
+                                                           .Parameters = { { "power", power } } } });
+            rings.push_back(effect);
+        }
+        return rings;
+    };
+    (void)declareRings(Client);
+    const std::vector<EffectId> rings = declareRings(Authority);
+    std::vector<EntityId> worn;
+    for (const EffectId ring : rings)
+    {
+        const EntityId item = Authority.Entities.CreateEntity();
+        Authority.Entities.AddComponent<NetReplicated>(item);
+        (void)ApplyEffect(Authority.Entities, Actor, ring, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                          LeaseOwner{ .Entity = item });
+        worn.push_back(item);
+    }
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 2u);
+    const AbilityGrantEntries& entries = Client.Entities.GetResource<AbilityGrantEntries>();
+    for (std::size_t i = 0; i < worn.size(); ++i)
+    {
+        const EntityId mirror = ClientIds.TryResolve(Identity.TryFind(worn[i]));
+        ASSERT_TRUE(mirror.IsValid());
+        const auto grant = std::find_if(grants.Entries, grants.Entries + grants.Count,
+                                        [&](const AbilityGrant& held) { return held.Source == mirror; });
+        ASSERT_NE(grant, grants.Entries + grants.Count) << "each ring is its own grant's source";
+        const AbilityGrantEntry* entry = entries.Find(grant->Entry);
+        ASSERT_NE(entry, nullptr) << "bound, not held unbound";
+        EXPECT_EQ(entry->Parameters, (std::vector<AbilityGrantParameter>{ { "power", i == 0 ? 10.0 : 14.0 } }));
+    }
+}
+
+// A guess checks the arrow and the stamina against what its machine holds and
+// pays neither; the authority pays both.
+TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
+{
+    constexpr std::string_view kBowShot = R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "costs": [ { "key": "g_shot",
+                     "effects": [ { "data": "asset://effects/energy_10.sdata" } ],
+                     "resources": [ { "key": "r_arrow", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_draw",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_shot"] },
+                       { "key": "o_show", "op": "invoke", "verb": "test.show" } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+    for (Machine* machine : { &Authority, &Client })
+    {
+        ASSERT_TRUE(DeclareCounterCostProvider(machine->Entities));
+        const AttributeId energy = machine->Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+        EffectDefinition stamina{};
+        stamina.Modifiers = { { energy, ModifierOp::Add, -10.0f } };
+        machine->Entities.GetResource<EffectRegistry>().Define("asset://effects/energy_10.sdata", stamina);
+    }
+    const AttributeId energy = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+    (void)Authority.Entities.TryGet<AttributeSet>(Actor)->Add(energy, 100.0f);
+    Grant(kBowShot, "asset://abilities/bow_shot.sdata");
+    Authority.Entities.GetResource<Counters>().Held[Actor] = 1;
+    Predict();
+    Client.Entities.GetResource<Counters>().Held[Remote()] = 1;
+
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Showings.Total(), 1) << "the guess committed";
+    EXPECT_GE(Client.Entities.GetResource<Counters>().Checks, 1u);
+    EXPECT_EQ(Client.Entities.GetResource<Counters>().Held[Remote()], 1) << "a guess pays no arrow";
+    const AttributeId clientEnergy = Client.Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+    EXPECT_FLOAT_EQ(Client.Entities.TryGet<AttributeSet>(Remote())->GetBase(clientEnergy), 100.0f)
+        << "and no stamina";
+
+    Lockstep({ { kFire, InputEdgeKind::Release } });
+    Locksteps(10);
+    EXPECT_EQ(Authority.Entities.GetResource<Counters>().Held[Actor], 0);
+    EXPECT_FLOAT_EQ(Authority.Entities.TryGet<AttributeSet>(Actor)->GetBase(energy), 90.0f);
+    EXPECT_FLOAT_EQ(Client.Entities.TryGet<AttributeSet>(Remote())->GetBase(clientEnergy), 90.0f)
+        << "the authority's payment arrives";
 }
 
 // An entity is written whole or not at all, so a pawn whose owner-visible state

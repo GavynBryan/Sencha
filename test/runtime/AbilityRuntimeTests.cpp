@@ -1513,6 +1513,77 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
     EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Refused);
 }
 
+// Two rings, each an entity whose Infinite effect grants Fireball with its own
+// power and priority (docs/plans/composition-stage3-abilitykit.md, the gate).
+constexpr std::string_view kFireball = R"({
+    "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+    "parameters": [ { "key": "power", "default": 0 } ],
+    "phases": [ { "key": "p_cast",
+        "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "param": "power" } } } ],
+        "then": [ { "key": "t_loose", "on": "release", "to": "end" } ] } ] })";
+
+class TwoRings : public AbilityRuntime
+{
+protected:
+    void Wear(std::int32_t firePriority, std::int32_t emberPriority)
+    {
+        Fireball = Define("asset://abilities/fireball.sdata", kFireball);
+        Hero = Actor();
+        Fire = Ring("asset://effects/ring_fire.sdata", firePriority, 10.0);
+        Ember = Ring("asset://effects/ring_ember.sdata", emberPriority, 14.0);
+        Step();
+    }
+
+    EntityId Ring(std::string_view path, std::int32_t priority, double power)
+    {
+        EffectDefinition worn{};
+        worn.Duration = EffectDuration::Infinite;
+        const EffectId effect = Entities.GetResource<EffectRegistry>().Define(path, worn);
+        DeclareEffectGrants(Entities, effect,
+                            { AbilityGrantDeclaration{ .Key = "g_fireball", .Ability = "asset://abilities/fireball.sdata",
+                                                       .Override = { .Priority = priority },
+                                                       .Parameters = { { "power", power } } } });
+        const EntityId ring = Entities.CreateEntity();
+        (void)ApplyEffect(Entities, Hero, effect, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                          LeaseOwner{ .Entity = ring });
+        return ring;
+    }
+
+    AbilityId Fireball;
+    EntityId Hero;
+    EntityId Fire;
+    EntityId Ember;
+};
+
+TEST_F(TwoRings, APressCastsFromTheHigherSlotsRingAndFallsBackWhenItIsTakenOff)
+{
+    Wear(20, 21);
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(Hero)->Count, 2u) << "one entry each: their powers differ";
+
+    Step({ Press(kFire) });
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 14.0 }) << "the ember ring's power";
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, Hero, Ember));
+
+    ASSERT_EQ(RemoveEffectsOwnedBy(Entities, LeaseOwner{ .Entity = Ember }), 1u);
+    Steps(2);
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, Hero, Ember));
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Ended).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::GrantRevoked);
+
+    Step({ Release(kFire) });
+    Step({ Press(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 14.0, 10.0 })) << "the fire ring's power";
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, Hero, Fire));
+}
+
+TEST_F(TwoRings, RingsTiedOnPriorityCastNothingAndSaySo)
+{
+    Wear(20, 20);
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "nothing collapses silently";
+    EXPECT_FALSE(Traced(AbilityTraceEvent::BindingAmbiguous).empty());
+}
+
 TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
 {
     const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
