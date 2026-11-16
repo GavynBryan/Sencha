@@ -25,12 +25,9 @@ struct CompiledDataAsset
     std::vector<std::string> Sources;
 };
 
-// Stages a .sdata file through StageDataDefinition: envelope, composition,
-// schema, then the subtype's compiler. What the compiler returns is opaque
-// here; only the subtype knows its own value type, which is what lets a game
-// module add one without an engine edit. A definition that extends or includes
-// another reads those sources, so it composes when it commits, on the owner
-// thread, unless the caller staged it with a reader of its own.
+// Stages a .sdata file through StageDataDefinition; the compiled value is opaque
+// here, so a game module adds a subtype without an engine edit. A definition with
+// sources composes when it commits, on the owner thread, unless staged with a reader.
 class DataAssetLoader final : public IAssetStager
 {
 public:

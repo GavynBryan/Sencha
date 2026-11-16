@@ -6,21 +6,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <map>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-// Composes authored values: a composed base, then fragments, then a local patch.
-// The rules are in docs/assets/composition.md.
-//
-// Logical paths name a value the same way in every source: "$", then ".member",
-// "[index]" inside an array that composes by replacement, and "{key}" for a
-// keyed element.
+// Composes a base, then fragments, then a local patch (docs/assets/composition.md).
+// A logical path is "$", then ".member", "[index]" in an array that replaces whole,
+// and "{key}" for a keyed element.
 
 enum class CompositionLayer : std::uint8_t
 {
