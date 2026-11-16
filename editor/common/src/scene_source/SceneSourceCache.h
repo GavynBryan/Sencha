@@ -2,6 +2,7 @@
 
 #include "scene_source/SceneComposition.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -33,10 +34,10 @@ public:
     // it succeeded. One slot: the caller reports failures as it hits them.
     [[nodiscard]] const std::string& LastError() const { return LastError_; }
 
-    // Whether a resolve through this cache ever loaded `assetPath` --
-    // directly or as a nested source. This IS the dependency question: a
-    // document depends on exactly what its cache had to read.
-    [[nodiscard]] bool HasLoaded(std::string_view assetPath) const
+    // Whether a resolve through this cache ever asked for `assetPath` --
+    // directly or as a nested source, and whether or not it was there. This IS
+    // the dependency question: a document depends on exactly what it asked for.
+    [[nodiscard]] bool HasRequested(std::string_view assetPath) const
     {
         return Entries.contains(std::string(assetPath));
     }
@@ -54,12 +55,19 @@ public:
     }
 
 private:
+    enum class EntryState : std::uint8_t
+    {
+        Missing,
+        Unparsable,
+        Parsed,
+    };
+
     struct Entry
     {
         SceneSourceDocument Document;
         std::filesystem::file_time_type WriteTime{};
         std::uintmax_t Size = 0;
-        bool Valid = false;
+        EntryState State = EntryState::Missing;
     };
 
     std::vector<std::filesystem::path> Roots;

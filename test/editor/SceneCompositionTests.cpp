@@ -281,6 +281,43 @@ namespace
         EXPECT_EQ(untouched->Find("cooldown"), nullptr) << "one instance's override reached another";
     }
 
+    // In version 2 an instance patch's null removes, so a placement can drop a
+    // binding its prefab gives it and keep the rest.
+    TEST(SceneComposition, AVersionTwoInstanceRemovesAnInheritedResponseBinding)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/switch.sscene", R"({
+  format_version: 2,
+  entities: [
+    { id: '0000000000000001',
+      components: { responses: { bindings: {
+        shot: { on: 'game.struck', sequence: { conditions: [], commands: [ { verb: 'game.open' } ] } },
+        use: { on: 'game.used', sequence: { conditions: [], commands: [ { verb: 'game.toggle' } ] } },
+      } } } },
+  ],
+})");
+
+        std::string error;
+        const auto root = ParseSceneSource(R"({
+  format_version: 2,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/switch.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201' },
+      patch: { '0000000000000001': { responses: { bindings: { shot: null } } } } },
+  ],
+})", &error);
+        ASSERT_TRUE(root.has_value()) << error;
+
+        const auto result = ResolveSceneComposition(*root, sources, &error);
+        ASSERT_TRUE(result.has_value()) << error;
+        EXPECT_TRUE(result->Diagnostics.empty());
+        const Json5Value* bindings = FindEntity(*result, 0x201)->Components.Find("responses")->Find("bindings");
+        EXPECT_EQ(bindings->Find("shot"), nullptr) << "the placement's null did not remove the binding";
+        ASSERT_NE(bindings->Find("use"), nullptr);
+        EXPECT_EQ(bindings->Find("use")->Find("on")->Text, "game.used");
+    }
+
     TEST(SceneComposition, StructuralOverridesAddRemoveAndSuppress)
     {
         MemorySources sources;

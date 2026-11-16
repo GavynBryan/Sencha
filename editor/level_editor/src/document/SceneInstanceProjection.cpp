@@ -435,7 +435,7 @@ bool SceneInstanceProjection::DependsOnSource(std::string_view assetPath) const
     for (const SceneInstanceRecord& record : Records.Instances)
         if (record.Source == assetPath)
             return true;
-    return Sources_ != nullptr && Sources_->HasLoaded(assetPath);
+    return Sources_ != nullptr && Sources_->HasRequested(assetPath);
 }
 
 bool SceneInstanceProjection::ReloadSources(std::span<const std::string> assetPaths)
