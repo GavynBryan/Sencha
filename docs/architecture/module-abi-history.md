@@ -1056,3 +1056,8 @@ effect and tells once it has; `abilities/AbilityEffectGrants.h` declares
 `InstallAbilityGrantAdmission`, which `RegisterAbilityKit` installs. A granting
 effect whose grants would not fit is refused at application, and
 `ability.grant` leaves the room a reservation holds.
+
+**Transient grants.** `AbilityGrantKind` gains `Transient`, and
+`AbilityRequest` gains `Entry`, with the request kind `ActivateEntry`: a grant
+that lives as long as the one activation it was made for. The grant codec sends
+the kind as it always has.

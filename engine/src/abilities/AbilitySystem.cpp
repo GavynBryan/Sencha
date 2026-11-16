@@ -210,6 +210,33 @@ namespace
         return found;
     }
 
+    // Granted for this one start; a start refused takes the grant back at once.
+    void StartTransient(AbilityPass& pass, World& world, const AbilityActor& actor, const AbilityRequest& request,
+                        const AbilityActivationKey& key)
+    {
+        const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
+        const AbilityGrantEntry* entry = entries != nullptr ? entries->Find(request.Entry) : nullptr;
+        AbilityGrants* grants = world.TryGet<AbilityGrants>(request.Actor);
+        // A source that has gone since the request was asked for supplies nothing.
+        const bool sourceGone = request.Source.IsValid() && !world.IsAlive(request.Source);
+        const bool room = AbilityGrantRoom(world, request.Actor) > 0;
+        const AbilityGrantId id = entry != nullptr && grants != nullptr && !sourceGone && room
+            ? GrantAbility(*grants, entry->Ability, AbilityGrantKind::Transient, request.Entry, {}, request.Source)
+            : AbilityGrantId{};
+        if (!id.IsValid())
+        {
+            pass.Trace({ .Actor = request.Actor, .Key = key, .Event = AbilityTraceEvent::Refused,
+                         .Refusal = entry == nullptr || sourceGone ? AbilityRefusal::NotGranted : AbilityRefusal::Capacity });
+            return;
+        }
+        const AbilityGrant grant = *grants->Find(id);
+        AbilityActivationKey started = key;
+        started.Ability = entry->Ability;
+        if (pass.TryStart(actor, grant, started, kAbilityNoTrigger, request.Instigator) < 0)
+            if (AbilityGrants* held = world.TryGet<AbilityGrants>(request.Actor))
+                (void)RevokeAbilityGrant(*held, id);
+    }
+
     void Requests(AbilityPass& pass, World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch)
     {
         AbilityRequestQueue* queue = world.TryGetResource<AbilityRequestQueue>();
@@ -245,6 +272,11 @@ namespace
                 for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
                     if (pass.Runs(actor, slot) && actor.Record(slot).Key.Ability == request.Ability)
                         pass.End(actor, slot, AbilityEndReason::ExplicitCancel);
+                continue;
+            }
+            if (request.Kind == AbilityRequestKind::ActivateEntry)
+            {
+                StartTransient(pass, world, actor, request, key);
                 continue;
             }
             const AbilityGrant* found = RequestedGrant(world, actor, request);

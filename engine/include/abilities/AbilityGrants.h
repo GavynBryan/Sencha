@@ -24,6 +24,9 @@ enum class AbilityGrantKind : std::uint8_t
     Effect,
     // Granted at run time by a request (ability.grant).
     Request,
+    // Granted for one requested activation of an entry, and taken back once that
+    // activation ends.
+    Transient,
 };
 
 inline constexpr std::uint16_t kAbilityNoGrantEntry = 0xFFFF;

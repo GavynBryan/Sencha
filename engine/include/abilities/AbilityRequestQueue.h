@@ -12,6 +12,9 @@ enum class AbilityRequestKind : std::uint8_t
 {
     Activate,
     Cancel,
+    // Activates `Entry` through a transient grant from `Source`: what a menu's
+    // "use" does with an item's ability the actor is not granted.
+    ActivateEntry,
 };
 
 // Starts and cancels asked for by name rather than by input -- scripts, verbs,
@@ -26,6 +29,8 @@ struct AbilityRequest
     InvocationId Cause{};
     // Activate: only a grant this source supplied; none takes any.
     EntityId Source{};
+    // ActivateEntry: the grant entry it runs, in the World's AbilityGrantEntries.
+    std::uint16_t Entry = 0xFFFF;
 };
 
 // Drained by every ability pass, so it holds what one tick asked for and no asker

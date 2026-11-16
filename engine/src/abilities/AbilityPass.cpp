@@ -643,6 +643,19 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
 
 void AbilityPass::Sweep(const AbilityActor& actor)
 {
+    // A transient grant ends with its one activation; taken back here, where
+    // nothing is walking the table, rather than inside the End that ended it.
+    const auto runsThrough = [&](AbilityGrantId grant) {
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+            if (const AbilityRecord& record = actor.Record(slot);
+                record.State == AbilityRecordState::Live && record.Grant == grant)
+                return true;
+        return false;
+    };
+    if (AbilityGrants* grants = Predicting ? nullptr : Entities.TryGet<AbilityGrants>(actor.Entity))
+        for (std::uint8_t i = grants->Count; i-- > 0;)
+            if (grants->Entries[i].Kind == AbilityGrantKind::Transient && !runsThrough(grants->Entries[i].Id))
+                (void)RevokeAbilityGrant(*grants, grants->Entries[i].Id);
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))

@@ -342,6 +342,16 @@ to an action or not), and of two at that priority the one granted first. Its
 optional `source` takes only a grant that source supplied. `ability.grant` takes
 the same optional `source`.
 
+A request of kind `ActivateEntry` starts a grant entry the actor is not
+granted, from a `source`: what a menu's "use" does with an item's ability. The
+pass grants the entry as `Transient` and starts it, with the same admission,
+source and parameter rules as any grant. It is refused when its source has gone
+(`NotGranted`) or when the room left beside the effect reservations is none
+(`Capacity`). A refused start takes the grant back at once. Once its activation
+has ended, the next pass's sweep takes it back, so the grant table never shifts
+under a pass that is walking it: the grant outlives its activation by at most
+one tick.
+
 ## Runtime
 
 `AbilitySystem` runs once per fixed tick where the simulation is authoritative,

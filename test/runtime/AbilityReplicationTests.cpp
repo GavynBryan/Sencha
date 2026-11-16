@@ -42,6 +42,8 @@
 #include <world/SimulationTimeline.h>
 #include <world/transform/TransformComponents.h>
 
+#include <abilities/AbilityRequestQueue.h>
+
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -1080,6 +1082,28 @@ TEST_F(AbilityReplication, GrantsThatDifferInAParameterAreToldApartOnTheClient)
     const AbilityGrantEntry* arrived = clientEntries.Find(grants.Entries[0].Entry);
     ASSERT_NE(arrived, nullptr);
     EXPECT_EQ(arrived->Parameters, (std::vector<AbilityGrantParameter>{ { "power", 14.0 } }));
+}
+
+TEST_F(AbilityReplication, ATransientGrantReachesItsOwnerAndLeavesWithItsActivation)
+{
+    ClientPeer = kOwner;
+    constexpr std::string_view kSip = R"({ "phases": [ { "key": "p_sip",
+        "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
+    const AbilityId sip = Authority.Define(kSip, "asset://abilities/sip.sdata");
+    (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ "use", Client.Define(kSip, "asset://abilities/sip.sdata"), {} });
+    const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ "use", sip, {} });
+    Authority.Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::ActivateEntry, .Actor = Actor, .Ability = sip, .Instigator = {}, .Cause = {},
+          .Source = {}, .Entry = entry });
+    Step();
+    (void)Publish();
+    const AbilityGrants* grants = Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_NE(grants, nullptr);
+    ASSERT_EQ(grants->Count, 1u);
+    EXPECT_EQ(grants->Entries[0].Kind, AbilityGrantKind::Transient);
+
+    Run(10);
+    EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->Count, 0u);
 }
 
 // An entity is written whole or not at all, so a pawn whose owner-visible state

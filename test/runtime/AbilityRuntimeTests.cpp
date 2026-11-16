@@ -2067,6 +2067,92 @@ TEST_F(AbilityRuntime, AGrantingEffectIsRefusedWhenAppliedIfItsGrantsWouldNotFit
 
 // Room an effect reserved is not there to take: a grant asked for between the
 // effect's apply and the pass that grants it is refused, and the effect's lands.
+// Lasts three ticks, reading what it was used from.
+constexpr std::string_view kUse = R"({
+    "locals": [ { "key": "l_source", "type": "entity" } ],
+    "activation": [ { "key": "act_calm", "tags": { "none": ["State.Stunned"] } } ],
+    "phases": [ { "key": "p_drink",
+        "enter": [ { "key": "o_read", "op": "set", "local": "l_source", "from": { "port": "source" } } ],
+        "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, ATransientGrantLastsExactlyAsLongAsItsActivation)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    const EntityId potion = Entities.CreateEntity();
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = potion, .Entry = entry });
+    Step();
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Transient);
+    EXPECT_EQ(grants.Entries[0].Source, potion);
+    ASSERT_NE(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(LiveLocals(actor, drink)->Values[0].Entity, potion);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, potion));
+
+    Steps(4);
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u) << "the grant ended with its activation";
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::Completed);
+}
+
+TEST_F(AbilityRuntime, ARefusedTransientActivationLeavesNoGrant)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    (void)Entities.TryGet<GameplayTagContainer>(actor)->Grant(Tag("State.Stunned"));
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = Entities.CreateEntity(), .Entry = entry });
+    Step();
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::ActivationFailed);
+}
+
+TEST_F(AbilityRuntime, ATransientActivationFromASourceThatHasGoneIsNotGranted)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    const EntityId potion = Entities.CreateEntity();
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = potion, .Entry = entry });
+    Entities.DestroyEntity(potion);
+    Step();
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::NotGranted);
+}
+
+// The room an effect reserved is not a transient grant's either.
+TEST_F(AbilityRuntime, ATransientActivationDoesNotTakeRoomAnEffectReserved)
+{
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId last = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(last.IsValid());
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = {}, .Entry = entry });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::Capacity);
+    EXPECT_TRUE(HoldsGrantOf(actor, last));
+}
+
 TEST_F(AbilityRuntime, AGrantAskedForDoesNotTakeRoomAnEffectReserved)
 {
     const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
