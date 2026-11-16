@@ -50,6 +50,10 @@ public:
     [[nodiscard]] bool Owns(const DocumentRef& document) const;
     // False when `key` names none of its documents.
     bool Show(std::string_view key);
+    // Marks the field a problem names, brought into view while its document is active.
+    void Reveal(std::string_view key, std::string path);
+    // The revealed field when its document is the active one, else empty.
+    [[nodiscard]] std::string RevealedField() const;
     bool Open(std::string_view path);
     // Asks before the active document's changes go, then closes it; `closed`
     // hears its path once it has.
@@ -70,4 +74,6 @@ private:
     FilePathProperty FilePath;
     ProjectFileSteps* Files = nullptr;
     std::string OperationError;
+    std::string RevealedDocument;
+    std::string RevealedPath;
 };

@@ -109,7 +109,7 @@ bool DataWorkspace::RevealProblem(const Problem& problem)
         return false;
     (void)Sheet.Show(problem.Document->Key);
     ShowSheet();
-    Revealed = { problem.Document->Key, problem.Location };
+    Sheet.Reveal(problem.Document->Key, problem.Location);
     return true;
 }
 
@@ -180,7 +180,7 @@ WorkspaceSelectionFacet DataWorkspace::Selection()
     return { .Title = std::string(PathLeaf(document->VirtualPath())),
              .Actions = { "file.save", "data.view_source", "data.duplicate", "data.close", "data.delete" },
              .Sections = Sheet.Sections(ShowingSource ? &Source : nullptr),
-             .Focus = Revealed.Document == document->VirtualPath() ? Revealed.Path : std::string{},
+             .Focus = Sheet.RevealedField(),
              .Primary = true };
 }
 

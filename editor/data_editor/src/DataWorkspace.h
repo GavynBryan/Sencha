@@ -73,13 +73,6 @@ private:
         Creating,
     };
     CardSubject Subject = CardSubject::Document;
-    // The field a revealed problem names, brought into view while its document is shown.
-    struct RevealedField
-    {
-        std::string Document;
-        std::string Path;
-    };
-    RevealedField Revealed;
     // The active document shown as its source rather than as fields.
     bool ShowingSource = false;
     bool Visible = false;

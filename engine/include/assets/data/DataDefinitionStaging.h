@@ -24,9 +24,9 @@ struct DataDefinitionContext
     const DataSchemaRegistry* Schemas = nullptr;
     const AssetPathsById& Current;
     // Needed only by a definition that extends or includes another.
-    DataSourceReader Read;
+    DataSourceReader Read = {};
     // The definition's own path: what its diagnostics and provenance name.
-    std::string_view Asset;
+    std::string_view Asset = {};
     bool Provenance = false;
 };
 

@@ -4,6 +4,8 @@
 #include "data/DataResidentSync.h"
 #include "documents/DocumentSource.h"
 
+#include <assets/data/DataDefinitionStaging.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -77,6 +79,8 @@ public:
     // What a definition composes to now, its own and its sources' open working
     // copies read first; nothing when it cannot be read.
     [[nodiscard]] std::optional<JsonValue> ComposedData(std::string_view virtualPath) const;
+    // Where each of its composed values came from; nothing when it composes from nothing.
+    [[nodiscard]] std::optional<CompositionReport> CompositionOf(std::string_view virtualPath) const;
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);
@@ -118,7 +122,10 @@ private:
     [[nodiscard]] std::optional<std::size_t> IndexOf(const DataDocument& document) const;
     [[nodiscard]] bool CloseDocument(std::size_t index, DirtyDisposition disposition, std::string& error);
     DataDocument* Adopt(std::unique_ptr<DataDocument> document);
+    [[nodiscard]] std::optional<DataDefinitionStaging> StageCurrent(std::string_view virtualPath, bool provenance) const;
     void Recompose(DataDocument& document);
+    // A definition that is not open changed on disk: the open ones composed from it follow.
+    void RecomposeDependentsOf(const std::filesystem::path& file);
 
     RuntimeAssets& Assets;
     DocumentSourceSet& Sources;

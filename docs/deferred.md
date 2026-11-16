@@ -759,15 +759,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   borrows. That makes the borrow a real use-after-free, so the borrower is
   released in `Run`'s teardown in that change.
 
-## Rig sockets composed by name
-
-- **What:** a derived rig should add or patch a socket by its `name`. `main`
-  has no data composition, so `sockets` is a whole list today.
-- **Where:** the `sockets` array in `MakeSchema`, `engine/src/anim/AnimRigData.cpp`.
-- **Trigger:** `claude/composition` (data composition with array merge keys)
-  merging. Then set the array's merge key to `name` and add a composition test
-  that patches one socket of a base rig.
-
 ## Approach direction for sensor responses
 
 - **What:** a sensor response cannot ask which way its activator crossed the
@@ -1215,3 +1206,43 @@ described in `docs/navigation/runtime.md`, "Agents".
   entity counts exceed: a scene, or inventory replication under the D3
   relevance filter, whose publish no longer fits its frame budget. It is not a
   dependency of definition composition or of inventory.
+
+## Composing data definitions on the staging worker
+
+- **What:** a data definition that extends or includes others composes when it
+  commits, on the owner thread. That commit reads and parses each source file
+  synchronously, then composes, validates and compiles.
+  - Measured on the fixture content before the composition port, 500 runs
+    each:
+    - `hero.facts.sdata` commits in about 180 µs and `examples.facts.sdata` in
+      about 85 µs, each with one source;
+    - a plain definition commits in about 3 µs.
+  - Every commit reads its sources again; nothing is cached across commits.
+- **Where:**
+  - `DataAssetLoader::ComposePending` (`engine/src/assets/data/DataAssetLoader.cpp`).
+  - The worker cannot do this today. `IAssetStager::LoadStaged` receives only
+    the id-to-path snapshot, and nothing maps a source's asset path to its file.
+  - Moving the work needs a path-to-file snapshot beside `AssetPathsById`,
+    which changes the stager contract every kind implements.
+- **Trigger:** a content set or preload in which composition costs more than
+  1 ms of owner-thread time in one drain. At today's figures that is roughly
+  ten composing definitions committing together. Ability, effect and cue
+  variants authored as content (`CompositionGate` tests the shapes) are the
+  first consumer to measure.
+
+## Authoring an ability variant in the Ability Workbench
+
+- **What:** the Ability Workbench reads and edits a definition's own data, so
+  it does not take an ability that extends or includes another
+  (`AbilityWorkbench::Ability`).
+  - Kyusu shows such a variant in the generic document sheet, as it composes
+    and with provenance.
+  - Op arguments are not described by the ability schema, so that sheet has no
+    row for a variant's patched argument.
+  - The variant has no strip, element views or live preview.
+- **Where:** `editor/ability_editor/src/authoring/AbilityWorkbench.cpp` and
+  its element, argument and preview views, all of which read `AbilityData()`.
+  The composed value and provenance are on `DataDocument` (`ComposedData`,
+  `CompositionResult`), and sparse writes are in `data/DataPatch`.
+- **Trigger:** the first ability variant authored as content, or the
+  AbilityKit work that brings variants to the workbench.

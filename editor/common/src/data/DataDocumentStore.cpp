@@ -228,19 +228,36 @@ DataRootProvider DataDocumentStore::RootProvider() const
     return [this](std::string_view path) { return CurrentRoot(path); };
 }
 
-std::optional<JsonValue> DataDocumentStore::ComposedData(std::string_view virtualPath) const
+std::optional<DataDefinitionStaging> DataDocumentStore::StageCurrent(std::string_view virtualPath,
+                                                                     bool provenance) const
 {
     const std::optional<JsonValue> root = CurrentRoot(virtualPath);
     if (!root.has_value())
         return std::nullopt;
     DataSourceScope sources(RootProvider());
     const AssetPathsById current;
-    DataDefinitionStaging staged = StageDataDefinition(
-        *root, DataDefinitionContext{ .Types = Assets.DataTypes, .Schemas = &Assets.DataSchemas, .Current = current,
-                                      .Read = sources.Reader(), .Asset = virtualPath });
-    if (!staged.Data.IsObject())
+    return StageDataDefinition(*root, DataDefinitionContext{ .Types = Assets.DataTypes,
+                                                             .Schemas = &Assets.DataSchemas,
+                                                             .Current = current,
+                                                             .Read = sources.Reader(),
+                                                             .Asset = virtualPath,
+                                                             .Provenance = provenance });
+}
+
+std::optional<JsonValue> DataDocumentStore::ComposedData(std::string_view virtualPath) const
+{
+    std::optional<DataDefinitionStaging> staged = StageCurrent(virtualPath, false);
+    if (!staged || !staged->Data.IsObject())
         return std::nullopt;
-    return std::move(staged.Data);
+    return std::move(staged->Data);
+}
+
+std::optional<CompositionReport> DataDocumentStore::CompositionOf(std::string_view virtualPath) const
+{
+    std::optional<DataDefinitionStaging> staged = StageCurrent(virtualPath, true);
+    if (!staged || !staged->Composed)
+        return std::nullopt;
+    return std::move(staged->Composition);
 }
 
 std::vector<std::string> DataDocumentStore::DataAssetPaths(std::string_view subtype, DataAbstractPaths abstract) const
@@ -416,7 +433,20 @@ ExternalChange DataDocumentStore::FileChangedOnDisk(const std::filesystem::path&
             Changed(document);
         return ExternalChange::Adopted;
     }
+    RecomposeDependentsOf(file);
     return ExternalChange::NotOpen;
+}
+
+void DataDocumentStore::RecomposeDependentsOf(const std::filesystem::path& file)
+{
+    std::error_code ec;
+    const auto isFile = [&](const std::string& source) {
+        const AssetRecord* record = Assets.Registry.FindByPath(source);
+        return record != nullptr && std::filesystem::equivalent(record->FilePath, file, ec);
+    };
+    for (const Entry& entry : Open_)
+        if (std::ranges::any_of(entry.Document->CompositionSources(), isFile))
+            Recompose(*entry.Document);
 }
 
 bool DataDocumentStore::HoldsFile(const std::filesystem::path& file) const

@@ -45,6 +45,7 @@ public:
 
     // The ability being authored: the last ability document made active, which
     // stays open on the strip while another document, such as an effect, is shown.
+    // Never one that composes; that shows in the document sheet, as it composes.
     [[nodiscard]] DataDocument* Ability();
     [[nodiscard]] const DataDocument* Ability() const;
     [[nodiscard]] const JsonValue* AbilityData() const;

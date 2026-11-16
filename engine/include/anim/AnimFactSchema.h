@@ -81,10 +81,10 @@ struct AnimDerivedFactDecl
     [[nodiscard]] bool IsTemporal() const;
 };
 
+// One schema as it composes: a schema it extends contributes its slots and
+// derived facts first.
 struct AnimFactSchema
 {
-    // The schema this one extends ("asset://..."), or empty.
-    std::string Extends;
     std::vector<AnimFactSlotDecl> Slots;
     std::vector<AnimDerivedFactDecl> Derived;
 };

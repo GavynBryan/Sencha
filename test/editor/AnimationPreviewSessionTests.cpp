@@ -42,16 +42,20 @@ namespace
                            { "name": "Speed", "kind": "float" },
                            { "name": "VerticalSpeed", "kind": "float" },
                            { "name": "Dead", "kind": "bool" } ] })");
+            // As it composes over the engine's schema, which it extends.
             Load("asset://animation/hero.facts.sdata", kAnimFactSchemaType, R"({
-                "extends": "asset://animation/engine.facts.sdata",
-                "slots": [ { "name": "Stance", "kind": "tag" } ],
+                "slots": [ { "name": "Grounded", "kind": "bool" },
+                           { "name": "Speed", "kind": "float" },
+                           { "name": "VerticalSpeed", "kind": "float" },
+                           { "name": "Dead", "kind": "bool" },
+                           { "name": "Stance", "kind": "tag" } ],
                 "derived": [
                     { "name": "JustLanded", "op": "edge", "source": { "fact": "Grounded" },
                       "direction": "rising", "window_ms": 120 },
                     { "name": "Airborne", "op": "min_duration",
                       "source": { "fact": "Grounded", "not": true }, "window_ms": 80 },
                     { "name": "Moving", "op": "hysteresis", "source": { "fact": "Speed" },
-                      "enter": 1.0, "exit": 0.5 } ] })");
+                      "enter": 1.0, "exit": 0.5 } ] })", { "asset://animation/engine.facts.sdata" });
             Load("asset://animation/hero.requests.sdata", kAnimRequestSchemaType, R"({
                 "intents": [
                     { "intent": "anim.intent.reload", "params": [ { "name": "rate", "kind": "float" } ] },
@@ -62,11 +66,12 @@ namespace
                 "layers": [ { "name": "anim.layer.base" } ] })");
         }
 
-        void Load(std::string_view path, std::string_view type, std::string_view json)
+        void Load(std::string_view path, std::string_view type, std::string_view json,
+                  std::vector<std::string> sources = {})
         {
             const DataAssetCompileResult compiled = Types.Find(type)->Compile(*JsonParse(json));
             ASSERT_TRUE(compiled.IsValid()) << path << ": " << compiled.Error;
-            (void)Data.Register(path, std::string(type), compiled.Value);
+            (void)Data.Register(path, std::string(type), compiled.Value, {}, std::move(sources));
         }
 
         static void Vocabulary(World& world)
@@ -488,18 +493,20 @@ TEST(AnimationPreviewSession, FixtureTagsAreDeclaredAndRemovedLive)
     EXPECT_FALSE(session.UndeclareTag("game.intent.dash"));
 }
 
-TEST(AnimationRigOutline, ListsTheChainAndWhatIsMissing)
+TEST(AnimationRigOutline, ListsWhatTheFactsAreComposedFromAndWhatIsMissing)
 {
     PreviewFixture fx;
     const std::vector<AnimationRigDependency> rows = DescribeAnimationRigDependencies(fx.Data, kRig);
     ASSERT_EQ(rows.size(), 4u);
     EXPECT_EQ(rows[0].Role, "Rig");
     EXPECT_EQ(rows[1].Path, "asset://animation/hero.facts.sdata");
-    EXPECT_EQ(rows[2].Role, "Extends");
+    EXPECT_EQ(rows[2].Role, "Composed from");
+    EXPECT_EQ(rows[2].Path, "asset://animation/engine.facts.sdata");
     EXPECT_EQ(rows[2].Depth, 2);
+    EXPECT_EQ(rows[2].Status, AnimationRigDependency::State::OtherKind) << "a source need not be resident";
     EXPECT_EQ(rows[3].Role, "Requests");
-    for (const AnimationRigDependency& row : rows)
-        EXPECT_EQ(row.Status, AnimationRigDependency::State::Resident) << row.Path;
+    for (const std::size_t row : { 0u, 1u, 3u })
+        EXPECT_EQ(rows[row].Status, AnimationRigDependency::State::Resident) << rows[row].Path;
 
     fx.Load("asset://animation/broken.rig.sdata", kAnimRigType, R"({
         "facts": "asset://animation/absent.facts.sdata",
@@ -538,7 +545,9 @@ TEST(AnimationPreviewSession, TheFixtureScenarioRunsCleanThroughTheAssetPipeline
     AnimationPreviewSession session(assets.DataAssets, &assets.AnimationClips);
     ASSERT_TRUE(session.Open(*scenario));
     ASSERT_TRUE(session.Rig()->Valid) << FormatAnimDiagnostic(session.Rig()->Diagnostics.front());
-    EXPECT_EQ(session.Rig()->Slots.front().DeclaredIn, "asset://animation/engine.facts.sdata");
+    // An inherited fact is located in the schema the rig names, by its name.
+    EXPECT_EQ(session.Rig()->Slots.front().DeclaredIn, "asset://animation/hero.facts.sdata");
+    EXPECT_EQ(session.Rig()->Slots.front().DeclaredAt, "$.data.slots{Grounded}");
     const auto behavior = [&] {
         return std::string(session.Tags()->GetName(session.Content()->Layers[0].Behavior));
     };

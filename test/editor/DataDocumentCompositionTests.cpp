@@ -91,3 +91,15 @@ TEST_F(ComposedDocuments, AnOpenChildRecomposesWhenItsOpenBaseChanges)
     ASSERT_NE(effect, nullptr);
     EXPECT_EQ(effect->Modifiers[0].Magnitude, 25.0f) << "the resident child composes the base's working version";
 }
+
+TEST_F(ComposedDocuments, AnOpenChildRecomposesWhenItsClosedBaseChangesOnDisk)
+{
+    DataDocument& tunic = Open(kTunic);
+    ASSERT_TRUE(tunic.IsSemanticallyValid());
+
+    std::ofstream(Root / "effects" / "armor_base.sdata", std::ios::trunc) << Base("\"lots\"");
+    EXPECT_EQ(Store.FileChangedOnDisk(Root / "effects" / "armor_base.sdata"), ExternalChange::NotOpen)
+        << "the base itself is not open";
+    ASSERT_FALSE(tunic.IsSemanticallyValid()) << "the child still shows what its base used to be";
+    EXPECT_EQ(tunic.ValidationErrors().front().Path, "$.data.modifiers{m_armor}.magnitude");
+}

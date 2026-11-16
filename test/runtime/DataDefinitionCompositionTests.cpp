@@ -57,12 +57,14 @@ namespace
                                                                kEffectDefinitionType);
         }
 
-        // What the watcher does when `name` changes on disk.
-        void Changed(const std::string& name)
+        // What the watcher does when `name` changes on disk, in a host that keeps
+        // its own version of `held`.
+        void Changed(const std::string& name, std::string_view held = {})
         {
             AssetImporterRegistry importers;
             AsyncTaskQueue tasks{ 0 };
             AssetHotReloader reloader(Logging, Assets.Assets, Assets.Registry, importers, tasks, Root.generic_string());
+            reloader.SetHostHeld([held](const AssetRecord& record) { return record.Path == held; });
             reloader.ReloadSource("effects/" + name);
             (void)tasks.PumpWork();
             (void)tasks.DrainCompletions();
@@ -252,6 +254,27 @@ TEST(DataDefinitionComposition, AChainOfSixteenDefinitionsComposesAndSeventeenDo
     EXPECT_NE(seventeen.Errors.front().Message.find("deeper than 16"), std::string::npos);
 }
 
+TEST(DataDefinitionComposition, ADerivedRigPatchesOneSocketOfItsBaseByName)
+{
+    Memory memory;
+    memory.Add("asset://anim/hero.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
+        "behaviors": [ "asset://anim/s.behaviors.sdata" ], "slot_maps": [ "asset://anim/s.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" } ],
+        "sockets": [ { "name": "hand_r", "joint": "hand_r" }, { "name": "head", "joint": "head" } ] } })");
+
+    const DataDefinitionStaging rig = memory.Stage(R"({ "type": "animation.rig", "version": 1,
+        "extends": "asset://anim/hero.rig.sdata",
+        "data": { "sockets": { "hand_r": { "position": [ 0, 0.1, 0 ] }, "back": { "joint": "spine" } } } })");
+    ASSERT_TRUE(rig.Ok()) << rig.Errors.front().Path << " " << rig.Errors.front().Message;
+    const JsonValue::Array& sockets = rig.Data.Find("sockets")->AsArray();
+    ASSERT_EQ(sockets.size(), 3u);
+    EXPECT_EQ(sockets[0].Find("name")->AsString(), "hand_r");
+    EXPECT_EQ(sockets[0].Find("joint")->AsString(), "hand_r") << "the patched socket keeps what it does not restate";
+    ASSERT_NE(sockets[0].Find("position"), nullptr);
+    EXPECT_EQ(sockets[1].Find("name")->AsString(), "head");
+    EXPECT_EQ(sockets[2].Find("name")->AsString(), "back") << "a new socket follows the inherited ones";
+}
+
 TEST(DataDefinitionComposition, AnErrorAtAnInheritedValueNamesItsSourceAndItsKey)
 {
     Memory memory;
@@ -389,4 +412,20 @@ TEST(DataDefinitionComposition, OnlyAResidentChildIsNamedAsComposedFromItsBase)
               (std::vector<std::string>{ "asset://effects/tunic.sdata" }));
     tunic = {};
     EXPECT_TRUE(data->ComposedFrom("asset://effects/armor_base.sdata").empty());
+}
+
+TEST(DataDefinitionComposition, AChildTheHostHoldsIsLeftToTheHostWhenItsBaseChanges)
+{
+    Content content;
+    content.Write("armor_base.sdata", kArmorBase);
+    content.Write("tunic.sdata", R"({ "type": "effect.definition", "version": 1,
+        "extends": "asset://effects/armor_base.sdata", "data": {} })");
+    AssetLease tunic = content.Assets.Assets.LoadLease("asset://effects/tunic.sdata", AssetType::Data);
+    ASSERT_TRUE(tunic);
+    const std::uint64_t loaded = content.ReloadVersion(tunic);
+
+    content.Write("armor_base.sdata", R"({ "type": "effect.definition", "version": 1, "abstract": true,
+        "data": { "duration": "infinite", "modifiers": [] } })");
+    content.Changed("armor_base.sdata", "asset://effects/tunic.sdata");
+    EXPECT_EQ(content.ReloadVersion(tunic), loaded) << "an open document's working version must not be replaced by its file";
 }

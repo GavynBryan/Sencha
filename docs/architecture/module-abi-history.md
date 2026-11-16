@@ -991,3 +991,13 @@ a reader; `CompiledDataAsset` and `DataAssetEntry` carry `Sources`;
 answers the reverse. `AssetCommitResult` gains `Error`. A kind's `Reload`
 returns `AssetReloadOutcome`, and `AssetKindRegistration` gains `ComposedFrom`,
 which the hot reloader consults for every changed file. `PeekDataAssetEnvelope`.
+
+**Fact schemas compose.** `animation.fact_schema` is subtype version 2:
+`extends` moved from `data` to the envelope, and `slots` and `derived` are
+append-only lists keyed by name. A version-1 file is refused with the note
+`DataAssetTypeRegistration::Migration` carries, a new member; a game's version-1
+schema that never extended anything only changes its version. `AnimFactSchema`
+loses `Extends`; the binder's chain walk and `anim.fact.extends_cycle` and
+`anim.fact.duplicate_slot` are gone, and a bound slot's `DeclaredAt` names it by
+key. A rig's `sockets` compose by name. `DataAssetCache::GetCompositionSources`,
+`AssetHotReloader::SetHostHeld`, `SourceReloadRoots::SetHeldFilter`.

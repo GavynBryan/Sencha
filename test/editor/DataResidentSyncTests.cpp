@@ -7,12 +7,15 @@
 #include <anim/AnimFactSchema.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/json/JsonParser.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
+#include <iterator>
 #include <random>
 
 namespace
@@ -27,7 +30,7 @@ namespace
         LoggingProvider Logging;
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
-        DataResidentSync Sync{ Assets, {} };
+        DataResidentSync Sync{ Assets, [this](std::string_view path) { return FileRoot(path); } };
         std::unique_ptr<DataDocument> Game;
         std::unique_ptr<DataDocument> Other;
 
@@ -37,6 +40,9 @@ namespace
             Write("base.facts.sdata", "", "Grounded");
             Write("game.facts.sdata", "asset://animation/base.facts.sdata", "Crouched");
             Write("other.facts.sdata", "", "Wet");
+            std::ofstream(Root / "animation" / "game.rig.sdata")
+                << R"({ "type": "animation.rig", "version": 1, "data": { "facts": "asset://animation/game.facts.sdata",
+                        "layers": [ { "name": "anim.layer.base" } ] } })";
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
             Game = Open(kGame);
             Other = Open(kOther);
@@ -53,13 +59,22 @@ namespace
         [[nodiscard]] static std::string Envelope(std::string_view extends, std::string_view slot)
         {
             const std::string extendsField = extends.empty() ? "" : "\"extends\": \"" + std::string(extends) + "\", ";
-            return R"({ "type": "animation.fact_schema", "version": 1, "data": { )" + extendsField
-                + R"("slots": [ { "name": ")" + std::string(slot) + R"(", "kind": "bool" } ] } })";
+            return R"({ "type": "animation.fact_schema", "version": 2, )" + extendsField
+                + R"("data": { "slots": [ { "name": ")" + std::string(slot) + R"(", "kind": "bool" } ] } })";
         }
 
         void Write(const std::string& name, std::string_view extends, std::string_view slot) const
         {
             std::ofstream(Root / "animation" / name, std::ios::trunc) << Envelope(extends, slot);
+        }
+
+        [[nodiscard]] std::optional<JsonValue> FileRoot(std::string_view path) const
+        {
+            const AssetRecord* record = Assets.Registry.FindByPath(path);
+            if (record == nullptr)
+                return std::nullopt;
+            std::ifstream in(record->FilePath);
+            return JsonParse(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()));
         }
 
         std::unique_ptr<DataDocument> Open(std::string_view path)
@@ -201,16 +216,19 @@ TEST_F(ResidentFacts, ARefusedVersionKeepsTheLastValidOne)
 
 TEST_F(ResidentFacts, AnAppliedVersionReleasesAPushWaitingOnWhatItLoads)
 {
-    AssetLease game = Load(kGame);
+    constexpr std::string_view kRig = "asset://animation/game.rig.sdata";
+    std::unique_ptr<DataDocument> rig = Open(kRig);
+    AssetLease resident = Load(kRig);
     Commit(*Other, "Dry");
     EXPECT_FALSE(Sync.Push(*Other));
 
-    JsonValue root = Game->CopyRoot();
-    root.Find("data")->AsObject()[0].second = JsonValue(std::string(kOther));
-    Game->ReplaceRoot(std::move(root));
-    EXPECT_TRUE(Sync.Push(*Game));
+    JsonValue root = rig->CopyRoot();
+    *root.Find("data")->Find("facts") = JsonValue(std::string(kOther));
+    rig->ReplaceRoot(std::move(root));
+    EXPECT_TRUE(Sync.Push(*rig)) << "the rig's new facts load with it";
     EXPECT_EQ(ResidentSlot(kOther), "Dry");
     EXPECT_EQ(Status(*Other), DataResidentStatus::Current);
+    Sync.Forget(*rig);
 }
 
 TEST_F(ResidentFacts, RestoringFromFileDropsTheWorkingVersion)

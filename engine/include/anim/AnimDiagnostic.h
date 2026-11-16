@@ -18,7 +18,7 @@ struct AnimDiagnostic
     // "anim.fact.unknown_operand", "anim.rig.layer_unresolved", ...
     std::string Code;
     std::string AssetPath;
-    // A JSON path into the asset's data, "$.data.derived[2].source".
+    // A JSON path into the asset's data, "$.data.derived{JustLanded}.source".
     std::string FieldPath;
     std::string Message;
 };

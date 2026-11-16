@@ -116,6 +116,12 @@ bool DataAssetCache::HasResidentSubtype(std::string_view typeName) const
     return it != LiveSubtypeCounts.end() && it->second > 0;
 }
 
+std::span<const std::string> DataAssetCache::GetCompositionSources(DataAssetHandle handle) const
+{
+    const DataAssetEntry* entry = Resolve(handle);
+    return entry != nullptr ? std::span<const std::string>(entry->Sources) : std::span<const std::string>{};
+}
+
 std::vector<std::string> DataAssetCache::ComposedFrom(std::string_view source) const
 {
     const auto found = DependentsBySource.find(std::string(source));

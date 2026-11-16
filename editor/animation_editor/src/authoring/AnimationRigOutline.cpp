@@ -4,7 +4,6 @@
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
 
-#include <algorithm>
 
 namespace
 {
@@ -31,19 +30,11 @@ std::vector<AnimationRigDependency> DescribeAnimationRigDependencies(const DataA
     if (!rig->SkeletonPath.empty())
         rows.push_back({ "Skeleton", rig->SkeletonPath, 1, AnimationRigDependency::State::OtherKind });
 
-    std::vector<std::string> seen;
-    std::string schema = rig->FactSchemaPath;
-    int depth = 1;
-    while (!schema.empty() && std::find(seen.begin(), seen.end(), schema) == seen.end())
+    if (!rig->FactSchemaPath.empty())
     {
-        seen.push_back(schema);
-        rows.push_back({ depth == 1 ? "Facts" : "Extends", schema, depth,
-                         StateOf(data, schema, kAnimFactSchemaType) });
-        const AnimFactSchema* value = data.TryGet<AnimFactSchema>(data.Find(schema), kAnimFactSchemaType);
-        if (value == nullptr)
-            break;
-        schema = value->Extends;
-        ++depth;
+        rows.push_back({ "Facts", rig->FactSchemaPath, 1, StateOf(data, rig->FactSchemaPath, kAnimFactSchemaType) });
+        for (const std::string& source : data.GetCompositionSources(data.Find(rig->FactSchemaPath)))
+            rows.push_back({ "Composed from", source, 2, AnimationRigDependency::State::OtherKind });
     }
 
     if (!rig->RequestSchemaPath.empty())

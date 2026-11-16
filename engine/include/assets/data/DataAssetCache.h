@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -64,6 +65,8 @@ public:
     [[nodiscard]] uint64_t GetReloadVersion(DataAssetHandle handle) const;
     [[nodiscard]] std::string_view GetName(DataAssetHandle handle) const;
     [[nodiscard]] bool HasResidentSubtype(std::string_view typeName) const;
+    // The definitions an entry was composed from, transitively; empty for one with none.
+    [[nodiscard]] std::span<const std::string> GetCompositionSources(DataAssetHandle handle) const;
     // Resident paths composed from `source`, sorted; `source` need not be resident.
     [[nodiscard]] std::vector<std::string> ComposedFrom(std::string_view source) const;
 

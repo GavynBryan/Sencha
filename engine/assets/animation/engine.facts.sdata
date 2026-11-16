@@ -1,6 +1,6 @@
 {
     "type": "animation.fact_schema",
-    "version": 1,
+    "version": 2,
     "data": {
         "slots": [
             { "name": "Grounded", "kind": "bool" },

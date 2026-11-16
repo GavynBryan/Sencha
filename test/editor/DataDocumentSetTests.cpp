@@ -73,7 +73,7 @@ namespace
         void WriteFacts(const std::string& name, std::string_view slot) const
         {
             std::ofstream(Root / "animation" / name, std::ios::trunc)
-                << R"({ "type": "animation.fact_schema", "version": 1, "data": { "slots": [ { "name": ")"
+                << R"({ "type": "animation.fact_schema", "version": 2, "data": { "slots": [ { "name": ")"
                 << slot << R"(", "kind": "bool" } ] } })";
         }
 

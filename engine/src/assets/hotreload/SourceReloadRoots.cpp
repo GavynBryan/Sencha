@@ -5,6 +5,7 @@
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
 #include <assets/runtime/EngineContentRoot.h>
+#include <core/assets/AssetRegistry.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -65,6 +66,9 @@ void SourceReloadRoots::AddRoot(std::string root, std::vector<std::string> exten
         IsEngineContent(root),
     });
     entry->Watcher.Initialize();
+    entry->Reloader.SetHostHeld([this](const AssetRecord& record) {
+        return HeldFilter && HeldFilter(std::filesystem::path(record.FilePath));
+    });
     Roots.push_back(std::move(entry));
 }
 

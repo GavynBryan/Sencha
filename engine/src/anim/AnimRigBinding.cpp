@@ -17,11 +17,6 @@
 #include <format>
 #include <utility>
 
-namespace
-{
-    constexpr std::size_t kMaxSchemaChain = 8;
-}
-
 std::uint32_t AnimStableKey(std::string_view text)
 {
     return Fnv1a32(text);
@@ -62,94 +57,45 @@ std::optional<GameplayTagId> AnimRigBinder::ResolveTag(const std::string& name, 
     return id;
 }
 
-// The chain from the most basic schema to the rig's own, so base slots
-// take the first indices.
+// The schema the rig names, as it composes: a schema it extends contributes
+// its slots first, and every declared slot binds before any derived fact.
 void AnimRigBinder::BindFacts(const AnimRigData& rig)
 {
-    std::vector<std::pair<std::string, const AnimFactSchema*>> chain;
-    std::string path = rig.FactSchemaPath;
-    std::string referrer = Out.RigPath;
-    std::string field = "$.data.facts";
-    while (!path.empty())
+    const AnimFactSchema* schema =
+        Load<AnimFactSchema>(rig.FactSchemaPath, kAnimFactSchemaType, Out.RigPath, "$.data.facts");
+    if (schema == nullptr)
+        return;
+    for (const AnimFactSlotDecl& slot : schema->Slots)
     {
-        if (chain.size() == kMaxSchemaChain
-            || std::any_of(chain.begin(), chain.end(),
-                           [&](const auto& link) { return link.first == path; }))
-        {
-            Error("anim.fact.extends_cycle", referrer, field,
-                  std::format("The schema chain through '{}' loops or is deeper than {}.",
-                              path, kMaxSchemaChain));
-            return;
-        }
-        const AnimFactSchema* schema =
-            Load<AnimFactSchema>(path, kAnimFactSchemaType, referrer, field);
-        if (schema == nullptr)
-            return;
-        chain.emplace_back(path, schema);
-        referrer = path;
-        field = "$.data.extends";
-        path = schema->Extends;
+        AnimBoundFactSlot bound;
+        bound.Name = slot.Name;
+        bound.Kind = slot.Kind;
+        bound.Local = slot.Local;
+        bound.FromSubject = slot.FromSubject;
+        Out.HasSubjectFacts = Out.HasSubjectFacts || slot.FromSubject;
+        bound.DeclaredIn = rig.FactSchemaPath;
+        bound.DeclaredAt = std::format("$.data.slots{{{}}}", slot.Name);
+        Out.Slots.push_back(std::move(bound));
     }
-    std::reverse(chain.begin(), chain.end());
-
-    // Every declared slot first, across the whole chain, then every
-    // derived fact: a derivation may read a slot from anywhere in the
-    // chain, and a derived fact declared earlier.
-    for (const auto& [schemaPath, schema] : chain)
-    {
-        for (std::size_t i = 0; i < schema->Slots.size(); ++i)
-        {
-            const AnimFactSlotDecl& slot = schema->Slots[i];
-            if (Out.FindSlot(slot.Name) >= 0)
-            {
-                Error("anim.fact.duplicate_slot", schemaPath,
-                      std::format("$.data.slots[{}].name", i),
-                      std::format("'{}' is already declared by an earlier schema in the "
-                                  "chain; a schema extends by adding names, never by "
-                                  "redeclaring one.",
-                                  slot.Name));
-                continue;
-            }
-            AnimBoundFactSlot bound;
-            bound.Name = slot.Name;
-            bound.Kind = slot.Kind;
-            bound.Local = slot.Local;
-            bound.FromSubject = slot.FromSubject;
-            Out.HasSubjectFacts = Out.HasSubjectFacts || slot.FromSubject;
-            bound.DeclaredIn = schemaPath;
-            bound.DeclaredAt = std::format("$.data.slots[{}]", i);
-            Out.Slots.push_back(std::move(bound));
-        }
-    }
-    for (const auto& [schemaPath, schema] : chain)
-    {
-        for (std::size_t i = 0; i < schema->Derived.size(); ++i)
-            BindDerivation(schema->Derived[i], schemaPath, i);
-    }
+    for (const AnimDerivedFactDecl& derived : schema->Derived)
+        BindDerivation(derived, rig.FactSchemaPath);
 
     const std::size_t capacity = AnimFactSlotCount(Out.Capacity);
     if (Out.Slots.size() > capacity)
         Error("anim.fact.capacity", Out.RigPath, "$.data.fact_capacity",
-              std::format("The schema chain declares {} facts and this rig's storage "
+              std::format("The fact schema declares {} facts and this rig's storage "
                           "holds {}; use Large storage or publish fewer facts.",
                           Out.Slots.size(), capacity));
     if (Out.Derivations.size() > kAnimMaxDerivations)
         Error("anim.fact.derivation_capacity", Out.RigPath, "$.data.facts",
-              std::format("The schema chain declares {} derived facts, and at most {} are "
+              std::format("The fact schema declares {} derived facts, and at most {} are "
                           "allowed; derive less and publish more.",
                           Out.Derivations.size(), kAnimMaxDerivations));
 }
 
-void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::string& schemaPath,
-                    std::size_t index)
+void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::string& schemaPath)
 {
-    const std::string at = std::format("$.data.derived[{}]", index);
-    if (Out.FindSlot(decl.Name) >= 0)
-    {
-        Error("anim.fact.duplicate_slot", schemaPath, at + ".name",
-              std::format("'{}' is already a fact in this chain.", decl.Name));
-        return;
-    }
+    const std::string at = std::format("$.data.derived{{{}}}", decl.Name);
 
     AnimBoundDerivation derivation;
     derivation.Op = decl.Op;
@@ -185,7 +131,7 @@ void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::s
             // cycle and simply read as unknown.
             Error("anim.fact.unknown_operand", schemaPath, operandPath,
                   std::format("'{}' is not a slot or an earlier derived fact in this "
-                              "chain.",
+                              "schema.",
                               operand.Fact));
             return;
         }

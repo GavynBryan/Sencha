@@ -160,9 +160,11 @@ namespace
             }
             if (registration->CurrentVersion != staging.Version)
             {
-                AddError(staging.Errors, "$.version",
-                         std::format("data subtype '{}' supports version {}, file uses {}", staging.TypeName,
-                                     registration->CurrentVersion, staging.Version));
+                std::string message = std::format("data subtype '{}' supports version {}, file uses {}",
+                                                  staging.TypeName, registration->CurrentVersion, staging.Version);
+                if (staging.Version < registration->CurrentVersion && !registration->Migration.empty())
+                    message += std::format(". Version {}: {}", registration->CurrentVersion, registration->Migration);
+                AddError(staging.Errors, "$.version", std::move(message));
                 return false;
             }
             return true;

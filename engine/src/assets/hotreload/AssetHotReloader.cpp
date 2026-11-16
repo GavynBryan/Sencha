@@ -133,7 +133,7 @@ void AssetHotReloader::ReloadComposedFrom(std::string_view path)
         for (const std::string& dependent : kind.ComposedFrom(path))
         {
             const AssetRecord* record = Registry.FindByPath(dependent);
-            if (record == nullptr)
+            if (record == nullptr || (HostHeld && HostHeld(*record)))
                 continue;
             Log.Info("AssetHotReloader: '{}' changed; reloading '{}' which is composed from it", path, dependent);
             StageReload(*record);

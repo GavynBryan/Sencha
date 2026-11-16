@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <random>
 
 namespace
@@ -236,4 +237,24 @@ TEST_F(AbilityWorkbenchTest, TheAbilityStaysOpenWhileAnEffectIsShown)
     EXPECT_FALSE(Bench->ShowingAbility());
     ASSERT_TRUE(Bench->Open(kCharge, error));
     EXPECT_TRUE(Bench->ShowingAbility());
+}
+
+TEST_F(AbilityWorkbenchTest, AVariantIsShownComposedInTheSheetNotAsItsPatch)
+{
+    std::ofstream(Root / "abilities" / "charge_long.sdata") << R"({ "type": "ability.definition", "version": 1,
+        "extends": "asset://abilities/charge_release.sdata",
+        "data": { "phases": { "p_fire": { "enter": { "o_trace": { "arguments": { "range": { "const": 120.0 } } } } } } } })";
+    (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
+    std::string error;
+    ASSERT_TRUE(Bench->Open("asset://abilities/charge_long.sdata", error)) << error;
+    EXPECT_EQ(Bench->Ability(), nullptr) << "the workbench edits a definition whole, never its patch";
+    EXPECT_FALSE(Bench->ShowingAbility());
+
+    DataProperties sheet(Bench->Documents, [this] { return Bench->Documents.Active(); });
+    const std::vector<PropertyNode> nodes = sheet.Nodes();
+    const PropertyNode* query = Find(nodes, "$.data.phases{p_fire}.enter{o_trace}.query");
+    ASSERT_NE(query, nullptr) << "the sheet lays the variant out as it composes";
+    EXPECT_EQ(query->Value, "physics.trace");
+    EXPECT_NE(query->Descriptor.Tooltip.find("inherited from asset://abilities/charge_release.sdata"), std::string::npos)
+        << query->Descriptor.Tooltip;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -29,11 +30,17 @@ public:
     // untouched (best-effort, logged).
     void ReloadSource(std::string_view sourceRelPath);
 
+    // Assets whose version the host keeps itself, such as a document open in an
+    // editor: an edit to what one is composed from does not reload it from its
+    // file, since the host recomposes its own version.
+    void SetHostHeld(std::function<bool(const AssetRecord& record)> held) { HostHeld = std::move(held); }
+
+    // Re-cooks every source whose cook recorded this file as an input. True when
     // it found any, which is what tells ReloadSource the edit was meaningful
+    // even though the file is not an asset in its own right.
     bool ReloadDependents(std::string_view sourceRelPath);
 
 private:
-
     // Reloads every resident asset composed from `path`, which need not be
     // resident: an abstract base never is.
     void ReloadComposedFrom(std::string_view path);
@@ -47,4 +54,5 @@ private:
     const AssetImporterRegistry& Importers;
     AsyncTaskQueue& Tasks;
     std::string AssetsRoot;
+    std::function<bool(const AssetRecord& record)> HostHeld;
 };

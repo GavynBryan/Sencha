@@ -1,9 +1,9 @@
 {
     "id": "d6a169da77c5308f",
     "type": "animation.fact_schema",
-    "version": 1,
+    "version": 2,
+    "extends": "asset://animation/engine.facts.sdata",
     "data": {
-        "extends": "asset://animation/engine.facts.sdata",
         "slots": [
             { "name": "Crouched", "kind": "bool" }
         ],

@@ -43,7 +43,7 @@ struct DataPropertiesTest : testing::Test
     {
         std::filesystem::create_directories(Root / "animation");
         std::ofstream(Root / "animation" / "game.facts.sdata")
-            << R"({ "type": "animation.fact_schema", "version": 1, "data": { "slots": [ )"
+            << R"({ "type": "animation.fact_schema", "version": 2, "data": { "slots": [ )"
             << R"({ "name": "Crouched", "kind": "bool" }, { "name": "Speed", "kind": "float" } ] } })";
         (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
         Set = std::make_unique<DataDocumentSet>(
@@ -130,16 +130,16 @@ TEST_F(DataPropertiesTest, AnArraysVerbsAreSteps)
 
 TEST_F(DataPropertiesTest, AnAbsentOptionalMemberIsAddedFromItsRecord)
 {
-    EXPECT_EQ(Find("$.data.extends"), nullptr);
+    EXPECT_EQ(Find("$.data.derived"), nullptr);
     const PropertyNode* root = Find("$.data");
     ASSERT_NE(root, nullptr);
     ASSERT_FALSE(root->Descriptor.Verbs.empty());
-    EXPECT_EQ(Properties->Act("$.data", "add", "Extends"), PropertyEditResult::Applied);
-    const PropertyNode* extends = Find("$.data.extends");
-    ASSERT_NE(extends, nullptr);
-    EXPECT_EQ(extends->Descriptor.Kind, PropertyKind::Asset);
-    EXPECT_EQ(Properties->Act("$.data.extends", "remove", {}), PropertyEditResult::Applied);
-    EXPECT_EQ(Find("$.data.extends"), nullptr);
+    EXPECT_EQ(Properties->Act("$.data", "add", "Derived facts"), PropertyEditResult::Applied);
+    const PropertyNode* derived = Find("$.data.derived");
+    ASSERT_NE(derived, nullptr);
+    EXPECT_EQ(derived->Descriptor.Kind, PropertyKind::Group);
+    EXPECT_EQ(Properties->Act("$.data.derived", "remove", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(Find("$.data.derived"), nullptr);
 }
 
 TEST_F(DataPropertiesTest, ACancelledDragLeavesTheDocumentAsItWas)
@@ -165,7 +165,7 @@ TEST_F(DataPropertiesTest, TheSourceReplacesTheDocumentWhenItParsesAndSaysWhereW
     ASSERT_EQ(nodes.size(), 2u) << "the problem is said beside the source";
     ASSERT_TRUE(source.BeginEdit("source"));
     EXPECT_EQ(source.CommitEdit("source",
-                                R"({ "type": "animation.fact_schema", "version": 1, "data": { "slots": [] } })"),
+                                R"({ "type": "animation.fact_schema", "version": 2, "data": { "slots": [] } })"),
               PropertyEditResult::Applied);
     EXPECT_EQ(SlotCount(), 0u);
     EXPECT_EQ(source.Nodes().size(), 1u);

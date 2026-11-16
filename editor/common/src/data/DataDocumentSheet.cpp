@@ -73,6 +73,18 @@ std::vector<PropertySection> DataDocumentSheet::Sections(IPropertySource* fields
     return sections;
 }
 
+void DataDocumentSheet::Reveal(std::string_view key, std::string path)
+{
+    RevealedDocument = std::string(key);
+    RevealedPath = std::move(path);
+}
+
+std::string DataDocumentSheet::RevealedField() const
+{
+    const DataDocument* active = Set.Active();
+    return active != nullptr && active->VirtualPath() == RevealedDocument ? RevealedPath : std::string{};
+}
+
 void DataDocumentSheet::AppendOpen(WorkspaceDocumentFacet& facet) const
 {
     for (const DataDocument* document : Set.Documents())
