@@ -100,6 +100,43 @@ namespace
         return true;
     }
 
+    // An asset://...sscene reference, by path or by {id, path}.
+    bool ReadSceneRef(const Json5Value* value, std::string& path, AssetId& id, std::string* error,
+                      const std::string& what)
+    {
+        const std::optional<AssetRef> ref = value != nullptr ? AssetRefFromJson(Json5ToJson(*value)) : std::nullopt;
+        if (!ref.has_value() || !ref->Path.starts_with(kAssetPathPrefix) || !ref->Path.ends_with(".sscene"))
+            return Fail(error, what + " must be an asset://...sscene reference");
+        path = ref->Path;
+        id = ref->Id;
+        return true;
+    }
+
+    Json5Value SceneRefToJson5(const std::string& path, AssetId id)
+    {
+        return Json5FromJson(AssetRefToJson(AssetRef{ AssetType::Scene, path, id }));
+    }
+
+    // { "<entity id>": value }, read with `read` per entry.
+    template<typename T, typename Read>
+    bool ReadIdKeyed(const Json5Value& value, std::string_view key,
+                     std::vector<std::pair<PersistentEntityId, T>>& out, std::string* error, Read&& read)
+    {
+        if (!value.IsObject())
+            return Fail(error, "'" + std::string(key) + "' must be an object keyed by entity id");
+        for (const Json5Value::Member& member : value.Members)
+        {
+            const std::optional<PersistentEntityId> id = PersistentEntityIdFromString(member.first);
+            if (!id.has_value() || !IsAuthoredPersistentEntityId(*id))
+                return Fail(error, std::string(key) + ": '" + member.first + "' is not an authored entity id");
+            T entry;
+            if (!read(member.second, entry, std::string(key) + " " + member.first))
+                return false;
+            out.emplace_back(*id, std::move(entry));
+        }
+        return true;
+    }
+
     bool ReadInstance(const Json5Value& record, SceneInstanceRecord& out, std::string* error)
     {
         if (!record.IsObject())
@@ -308,7 +345,8 @@ namespace
             if (child == parent)
                 return Fail(error, std::string(what) + " " + SceneIdText(child)
                     + ": parents itself");
-            if (!parentable.contains(parent))
+            // An inherited parent is one only composition knows: it checks it.
+            if (!parentable.contains(parent) && document.Extends.empty())
                 return Fail(error, std::string(what) + " " + SceneIdText(child)
                     + ": parent " + SceneIdText(parent) + " does not exist");
             parentOf.emplace(child, parent);
@@ -415,7 +453,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
         (void)Fail(error, "missing 'format_version'");
         return std::nullopt;
     }
-    if (version->Number != static_cast<double>(SceneSourceDocument::Version))
+    if (version->Number != 1.0 && version->Number != static_cast<double>(SceneSourceDocument::Version))
     {
         (void)Fail(error, "unsupported format_version "
             + std::to_string(version->Number));
@@ -423,6 +461,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
     }
 
     SceneSourceDocument document;
+    document.FormatVersion = static_cast<std::uint32_t>(version->Number);
     document.LeadingComments = parsed->LeadingComments;
     document.TrailingComments = parsed->TrailingComments;
     document.EndComments = std::move(endComments);
@@ -494,6 +533,75 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                 document.Entities.push_back(std::move(entity));
             }
         }
+        else if (key == "extends" || key == "includes" || key == "abstract" || key == "patch" || key == "remove")
+        {
+            if (document.FormatVersion < 2)
+            {
+                (void)Fail(error, "'" + key + "' needs format_version 2");
+                return std::nullopt;
+            }
+            if (key == "extends" && !ReadSceneRef(&value, document.Extends, document.ExtendsId, error, "'extends'"))
+                return std::nullopt;
+            if (key == "abstract")
+            {
+                if (!value.IsBool())
+                {
+                    (void)Fail(error, "'abstract' must be true or false");
+                    return std::nullopt;
+                }
+                document.Abstract = value.Boolean;
+            }
+            if (key == "includes")
+            {
+                if (!value.IsArray())
+                {
+                    (void)Fail(error, "'includes' must be an array");
+                    return std::nullopt;
+                }
+                for (std::size_t i = 0; i < value.Elements.size(); ++i)
+                {
+                    const Json5Value& entry = value.Elements[i];
+                    const std::string what = "includes[" + std::to_string(i) + "]";
+                    SceneFragmentInclude include;
+                    std::uint64_t onto = 0;
+                    if (!entry.IsObject()
+                        || !ReadSceneRef(entry.Find("fragment"), include.Fragment, include.FragmentId, error,
+                                         what + " 'fragment'")
+                        || !ReadId(entry, "onto", false, onto, error, what))
+                    {
+                        if (!entry.IsObject())
+                            (void)Fail(error, what + " must be an object");
+                        return std::nullopt;
+                    }
+                    include.Onto = PersistentEntityId{ onto };
+                    document.Includes.push_back(std::move(include));
+                }
+            }
+            if (key == "patch"
+                && !ReadIdKeyed<Json5Value>(value, key, document.InheritedPatches, error,
+                                            [&](const Json5Value& entry, Json5Value& out, const std::string& what) {
+                                                if (!entry.IsObject())
+                                                    return Fail(error, what + ": a patch is an object of components");
+                                                out = entry;
+                                                return true;
+                                            }))
+                return std::nullopt;
+            if (key == "remove"
+                && !ReadIdKeyed<std::vector<std::string>>(
+                    value, key, document.InheritedRemovals, error,
+                    [&](const Json5Value& entry, std::vector<std::string>& out, const std::string& what) {
+                        if (!entry.IsArray())
+                            return Fail(error, what + ": a list of component names");
+                        for (const Json5Value& name : entry.Elements)
+                        {
+                            if (!name.IsString())
+                                return Fail(error, what + ": a list of component names");
+                            out.push_back(name.Text);
+                        }
+                        return true;
+                    }))
+                return std::nullopt;
+        }
         else if (key == "instances")
         {
             if (!value.IsArray())
@@ -526,8 +634,24 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
     root.LeadingComments = document.LeadingComments;
     root.TrailingComments = document.TrailingComments;
 
-    root.Members.emplace_back("format_version",
-        Json5Value(static_cast<double>(SceneSourceDocument::Version)));
+    root.Members.emplace_back("format_version", Json5Value(static_cast<double>(document.FormatVersion)));
+    if (document.Abstract)
+        root.Members.emplace_back("abstract", Json5Value(true));
+    if (!document.Extends.empty())
+        root.Members.emplace_back("extends", SceneRefToJson5(document.Extends, document.ExtendsId));
+    if (!document.Includes.empty())
+    {
+        Json5Value includes = Json5Value::MakeArray();
+        for (const SceneFragmentInclude& include : document.Includes)
+        {
+            Json5Value entry = Json5Value::MakeObject();
+            entry.Members.emplace_back("fragment", SceneRefToJson5(include.Fragment, include.FragmentId));
+            if (include.Onto.IsValid())
+                entry.Members.emplace_back("onto", Json5Value(SceneIdText(include.Onto.Value)));
+            includes.Elements.push_back(std::move(entry));
+        }
+        root.Members.emplace_back("includes", std::move(includes));
+    }
 
     if (document.Settings.IsObject() && !document.Settings.Members.empty())
         root.Members.emplace_back("settings", document.Settings);
@@ -548,6 +672,26 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
         entities.Elements.push_back(std::move(record));
     }
     root.Members.emplace_back("entities", std::move(entities));
+
+    if (!document.InheritedPatches.empty())
+    {
+        Json5Value patches = Json5Value::MakeObject();
+        for (const auto& [id, patch] : document.InheritedPatches)
+            patches.Members.emplace_back(SceneIdText(id.Value), patch);
+        root.Members.emplace_back("patch", std::move(patches));
+    }
+    if (!document.InheritedRemovals.empty())
+    {
+        Json5Value removals = Json5Value::MakeObject();
+        for (const auto& [id, names] : document.InheritedRemovals)
+        {
+            Json5Value list = Json5Value::MakeArray();
+            for (const std::string& name : names)
+                list.Elements.emplace_back(std::string(name));
+            removals.Members.emplace_back(SceneIdText(id.Value), std::move(list));
+        }
+        root.Members.emplace_back("remove", std::move(removals));
+    }
 
     if (!document.Instances.empty())
     {
@@ -633,4 +777,31 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
         root.Members.push_back(member);
 
     return Json5Write(root, document.EndComments);
+}
+
+namespace
+{
+    void CollectMemberNulls(const Json5Value& value, const std::string& path, std::vector<std::string>& out)
+    {
+        for (const Json5Value::Member& member : value.IsObject() ? value.Members : std::vector<Json5Value::Member>{})
+        {
+            const std::string at = path + "." + member.first;
+            if (member.second.IsNull())
+                out.push_back(at);
+            else
+                CollectMemberNulls(member.second, at, out);
+        }
+    }
+}
+
+std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document)
+{
+    std::vector<std::string> nulls;
+    if (document.FormatVersion >= SceneSourceDocument::Version)
+        return nulls;
+    for (const SceneInstanceRecord& instance : document.Instances)
+        for (const auto& [path, patch] : instance.Patches)
+            CollectMemberNulls(patch, SceneIdText(instance.Id.Value) + ": " + path.ToString(), nulls);
+    document.FormatVersion = SceneSourceDocument::Version;
+    return nulls;
 }
