@@ -1099,6 +1099,22 @@ if(SENCHA_ENABLE_VULKAN)
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
+# Test support a game's own tests link beside sencha::engine and GoogleTest,
+# which the game finds itself (docs/ui/architecture.md §12). Header-only, and
+# only where the cook layer exists, because it cooks the sources it lays out.
+if(SENCHA_ENABLE_COOK)
+    add_library(sencha_testing INTERFACE)
+    add_library(sencha::testing ALIAS sencha_testing)
+    target_include_directories(sencha_testing INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/testing>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+    target_link_libraries(sencha_testing INTERFACE sencha_engine)
+    set_target_properties(sencha_testing PROPERTIES EXPORT_NAME testing)
+    install(TARGETS sencha_testing EXPORT SenchaTargets)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/testing/sencha"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+
 # The exported target set: an out-of-tree project sees sencha::engine with the
 # install-tree include dir and SDL3/Vulkan as found dependencies.
 install(EXPORT SenchaTargets

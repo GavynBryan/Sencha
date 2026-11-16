@@ -1,6 +1,7 @@
 <rml>
 <head>
     <title>Options</title>
+    <link type="text/rcss" href="/ui/base.rcss"/>
     <link type="text/rcss" href="pause.rcss"/>
 </head>
 <body data-model="options">
@@ -16,7 +17,8 @@
                  the two listeners a change event reaches. The slider binds
                  row.number and the drop-down row.value: data-if hides a
                  control, it does not unbind it, and two bound controls writing
-                 one variable would fight over it. -->
+                 one variable would fight over it. A toggle is drawn as the
+                 drop-down over its two labels. -->
             <div id="entries">
                 <div class="entry setting" data-for="row : rows">
                     <span class="label">{{row.label}}</span>
@@ -26,7 +28,7 @@
                            data-value="row.number"
                            data-event-change="options_activate(it_index, ev.value)"/>
                     <select class="control choice" tab-index="auto"
-                            data-if="row.editable && row.control == 'choice'"
+                            data-if="row.editable && (row.control == 'choice' || row.control == 'toggle')"
                             data-value="row.value"
                             data-event-change="options_activate(it_index, ev.value)">
                         <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>

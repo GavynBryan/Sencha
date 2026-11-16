@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -123,25 +124,6 @@ UiScreenDesc MakeDesc(std::string_view path = "asset://ui/menu.sui")
     return desc;
 }
 
-SDL_Event MouseMove(float x, float y)
-{
-    SDL_Event event{};
-    event.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.x = x;
-    event.motion.y = y;
-    return event;
-}
-
-SDL_Event MouseButton(uint32_t type, float x, float y)
-{
-    SDL_Event event{};
-    event.type = type;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
 class UiTestHost
 {
 public:
@@ -161,15 +143,6 @@ private:
     RuntimeAssets Assets;
     std::unique_ptr<UiService> Ui;
 };
-
-// One click, aimed. Press and release both have to land on the element for the
-// engine to call it a click.
-void ClickAt(UiService& ui, float x, float y)
-{
-    (void)ui.ProcessPlatformEvent(MouseMove(x, y));
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y));
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, x, y));
-}
 
 void WritePackage(const TempAssetRoot& root, std::string_view relPath,
                   std::string_view rootName = "menu.rml", std::string_view markup = kMarkup,
@@ -194,7 +167,7 @@ TEST(UiInput, AClickOnAButtonBecomesTheActionTheHostDeclared)
     ASSERT_TRUE(screen.IsValid());
     ui.Update();
 
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
 
     const std::vector<UiAction> actions = ui.DrainActions();
@@ -217,7 +190,7 @@ TEST(UiInput, AClickOutsideTheButtonRaisesNothing)
     ASSERT_TRUE(ui.OpenScreen(surface, MakeDesc()).IsValid());
     ui.Update();
 
-    ClickAt(ui, 600.0f, 500.0f);
+    UiClickAt(ui, 600.0f, 500.0f);
     ui.Update();
     EXPECT_TRUE(ui.DrainActions().empty());
 }
@@ -235,10 +208,10 @@ TEST(UiInput, ThePointerOverAPanelIsReportedAsCaptured)
     ASSERT_TRUE(ui.OpenScreen(surface, MakeDesc()).IsValid());
     ui.Update();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(150.0f, 130.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 150.0f, 130.0f));
     EXPECT_TRUE(ui.Capture().Mouse) << "the pointer is over a panel and nothing said so";
 
-    (void)ui.ProcessPlatformEvent(MouseMove(600.0f, 500.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 600.0f, 500.0f));
     EXPECT_FALSE(ui.Capture().Mouse) << "the pointer left the panel and capture stuck";
 }
 
@@ -257,7 +230,7 @@ TEST(UiInput, AnOpenScreenDoesNotTakeTheKeyboardByItself)
     ui.Update();
 
     EXPECT_FALSE(ui.Capture().Keyboard);
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
     EXPECT_FALSE(ui.Capture().Keyboard)
         << "clicking a plain button took the keyboard from the game";
@@ -279,7 +252,7 @@ TEST(UiInput, EventsAreOfferedToTheTopmostSurfaceFirst)
     ASSERT_TRUE(upperScreen.IsValid());
     ui.Update();
 
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
 
     const std::vector<UiAction> actions = ui.DrainActions();
@@ -308,7 +281,7 @@ TEST(UiInput, AWindowsOwnSurfaceIsAboveAnOffscreenOneShownBeneathIt)
     ASSERT_TRUE(previewScreen.IsValid());
     ui.Update();
 
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
     const std::vector<UiAction> actions = ui.DrainActions();
     ASSERT_EQ(actions.size(), 1u);
@@ -373,7 +346,7 @@ TEST(UiInput, EventsReachNothingOnceEveryScreenIsClosed)
     ui.CloseScreen(screen);
     ui.Update();
 
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
     EXPECT_TRUE(ui.DrainActions().empty())
         << "a closed screen still answered a click";
@@ -398,7 +371,7 @@ TEST(UiInput, ClosingAScreenTakesTheActionsItHadNotDeliveredYet)
     ASSERT_TRUE(screen.IsValid());
     ui.Update();
 
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.CloseScreen(screen);
 
     EXPECT_TRUE(ui.DrainActions().empty())
@@ -418,7 +391,7 @@ TEST(UiInput, AnotherScreensQueuedActionsSurviveACloseBesideThem)
     const UiScreenHandle lower = ui.OpenScreen(surface, MakeDesc());
     ASSERT_TRUE(lower.IsValid());
     ui.Update();
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
 
     // A different model name, because a context holds one model per name: two
     // screens on a surface cannot both declare "menu". The pause stack's pages
@@ -438,11 +411,11 @@ namespace
 // A click in a given window: every event carries the id the platform stamps.
 void ClickInWindow(UiService& ui, std::uint32_t window, float x, float y)
 {
-    SDL_Event move = MouseMove(x, y);
+    SDL_Event move = UiPointerEvent(SDL_EVENT_MOUSE_MOTION, x, y);
     move.motion.windowID = window;
-    SDL_Event down = MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y);
+    SDL_Event down = UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y);
     down.button.windowID = window;
-    SDL_Event up = MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, x, y);
+    SDL_Event up = UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_UP, x, y);
     up.button.windowID = window;
     (void)ui.ProcessPlatformEvent(move);
     (void)ui.ProcessPlatformEvent(down);
@@ -498,7 +471,7 @@ TEST(UiInput, CaptureIsReportedPerWindow)
     ASSERT_TRUE(ui.OpenScreen(detached, MakeDesc()).IsValid());
     ui.Update();
 
-    SDL_Event move = MouseMove(150.0f, 130.0f);
+    SDL_Event move = UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 150.0f, 130.0f);
     move.motion.windowID = kDetached;
     (void)ui.ProcessPlatformEvent(move);
 
@@ -588,7 +561,7 @@ struct ScrollingScreen
     bool CtrlWheelAt(float x, float y)
     {
         UiService& ui = Host->Service();
-        (void)ui.ProcessPlatformEvent(MouseMove(x, y));
+        (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, x, y));
         SDL_SetModState(SDL_KMOD_LCTRL);
         const bool consumed = ui.ProcessPlatformEvent(Wheel(x, y, -3.0f));
         SDL_SetModState(SDL_KMOD_NONE);
@@ -604,18 +577,18 @@ TEST(UiInput, TheWheelIsConsumedOnlyWhereSomethingScrollsOrHoldsIt)
     ASSERT_TRUE(fixture.Screen.IsValid());
     UiService& ui = fixture.Host->Service();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(100.0f, 50.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 100.0f, 50.0f));
     EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -1.0f))) << "a list that scrolled let the wheel through";
 
-    (void)ui.ProcessPlatformEvent(MouseMove(350.0f, 50.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 350.0f, 50.0f));
     EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(350.0f, 50.0f, -1.0f)))
         << "a panel with nothing to scroll kept the wheel from what is beneath";
 
-    (void)ui.ProcessPlatformEvent(MouseMove(500.0f, 50.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 500.0f, 50.0f));
     EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(500.0f, 50.0f, -1.0f)))
         << "a panel that contains its overscroll let the wheel through";
 
-    (void)ui.ProcessPlatformEvent(MouseMove(600.0f, 400.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 600.0f, 400.0f));
     EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(600.0f, 400.0f, -1.0f)))
         << "a wheel over the pass-through root was kept from what is beneath";
 }
@@ -635,7 +608,7 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
     ASSERT_TRUE(fixture.Screen.IsValid());
     UiService& ui = fixture.Host->Service();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(400.0f, 300.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 400.0f, 300.0f));
     EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(400.0f, 300.0f, -1.0f)))
         << "a HUD's container took the wheel from the game beneath it";
 }
@@ -733,10 +706,10 @@ struct DragUnderButton
     void DragOverTheButton()
     {
         UiService& ui = Host->Service();
-        (void)ui.ProcessPlatformEvent(MouseMove(450.0f, 330.0f));
-        ASSERT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 450.0f, 330.0f)));
-        (void)ui.ProcessPlatformEvent(MouseMove(420.0f, 320.0f));
-        (void)ui.ProcessPlatformEvent(MouseMove(150.0f, 130.0f));
+        (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 450.0f, 330.0f));
+        ASSERT_TRUE(ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, 450.0f, 330.0f)));
+        (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 420.0f, 320.0f));
+        (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 150.0f, 130.0f));
     }
 
     [[nodiscard]] std::size_t DragsEnded()
@@ -755,10 +728,10 @@ TEST(UiInput, AReleaseOverAnotherSurfaceEndsTheDragItBelongsTo)
     UiService& ui = fixture.Host->Service();
     fixture.DragOverTheButton();
 
-    EXPECT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, 150.0f, 130.0f)));
+    EXPECT_TRUE(ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_UP, 150.0f, 130.0f)));
     ui.Update();
     EXPECT_EQ(fixture.DragsEnded(), 1u) << "the button above took the release, and the drag under it never ended";
-    (void)ui.ProcessPlatformEvent(MouseMove(700.0f, 550.0f));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 700.0f, 550.0f));
     EXPECT_FALSE(ui.Capture().Mouse) << "the handle's surface still holds the pointer";
 }
 
@@ -785,15 +758,15 @@ TEST(UiInput, AnEndedPressClicksNothing)
     ASSERT_TRUE(ui.OpenScreen(surface, MakeDesc()).IsValid());
     ui.Update();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(150.0f, 130.0f));
-    ASSERT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 150.0f, 130.0f)));
+    (void)ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, 150.0f, 130.0f));
+    ASSERT_TRUE(ui.ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, 150.0f, 130.0f)));
     ui.EndPointerGesture(0);
     ui.Update();
     EXPECT_TRUE(ui.DrainActions().empty()) << "ending the press clicked the button under it";
     EXPECT_FALSE(ui.Capture().Mouse);
 
     // And the surface takes the next press as its own again.
-    ClickAt(ui, 150.0f, 130.0f);
+    UiClickAt(ui, 150.0f, 130.0f);
     ui.Update();
     EXPECT_EQ(ui.DrainActions().size(), 1u);
 }

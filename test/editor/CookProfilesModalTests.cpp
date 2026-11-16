@@ -8,6 +8,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <project/ProjectContentMount.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -114,26 +115,6 @@ public:
         Ui->Update();
     }
 
-    void ClickAt(float x, float y)
-    {
-        SDL_Event move{};
-        move.type = SDL_EVENT_MOUSE_MOTION;
-        move.motion.x = x;
-        move.motion.y = y;
-        (void)Ui->ProcessPlatformEvent(move);
-
-        SDL_Event down{};
-        down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-        down.button.button = SDL_BUTTON_LEFT;
-        down.button.x = x;
-        down.button.y = y;
-        (void)Ui->ProcessPlatformEvent(down);
-
-        SDL_Event up = down;
-        up.type = SDL_EVENT_MOUSE_BUTTON_UP;
-        (void)Ui->ProcessPlatformEvent(up);
-    }
-
     UiService& Service() { return *Ui; }
     CookProfilesModal& Dialog() { return *Modal; }
 
@@ -181,7 +162,7 @@ TEST(CookProfilesModal, ClickingAProfileSelectsIt)
     UiService& ui = harness.Service();
     const UiScreenHandle screen = harness.Dialog().CurrentScreen();
     const Vec2d row = RowCentre(ui, screen, last);
-    harness.ClickAt(row.X, row.Y);
+    UiClickAt(harness.Service(), row.X, row.Y);
     harness.Frame();
 
     EXPECT_EQ(harness.Dialog().Editor().Selected(), static_cast<std::size_t>(last));

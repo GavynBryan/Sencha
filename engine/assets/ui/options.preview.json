@@ -17,7 +17,9 @@
         { "label": "Display Mode", "value": "Windowed", "editable": true, "control": "choice",
           "choices": ["Windowed", "Borderless", "Fullscreen"] },
         { "label": "Frame Rate Cap", "value": "Unlimited", "editable": true, "control": "choice",
-          "choices": ["Unlimited", "30", "60", "90", "120", "144", "240"] }
+          "choices": ["Unlimited", "30", "60", "90", "120", "144", "240"] },
+        { "label": "Reduced Flashing", "value": "Off", "editable": true, "control": "toggle",
+          "choices": ["Off", "On"] }
       ]
     }
   ],

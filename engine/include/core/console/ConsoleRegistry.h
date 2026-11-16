@@ -41,6 +41,7 @@ public:
     {
         return Authority;
     }
+    [[nodiscard]] ConsoleResult CheckSessionRules(const ConsoleCommandMetadata& command) const;
     ConsoleResult SetCVarFromString(std::string_view name,
                                     std::string_view value,
                                     ConsoleValueSource source,

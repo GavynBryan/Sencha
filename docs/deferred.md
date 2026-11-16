@@ -1154,3 +1154,18 @@ described in `docs/navigation/runtime.md`, "Agents".
   - a step up and a wall strike need the mover backend to report them.
 - **Trigger:** the first landing sound, fall damage, or a third landing tracker
   in game code.
+
+## Editor shell windows following their window's view
+
+- **What:** Kyusu's shell windows size their three surfaces by hand every frame
+  instead of following their window (`UiService::CreateWindowSurface` and
+  `SetWindowView`). They lay out at a scale of the editor's choosing
+  (`ChooseUiScale` over the user's UI scale preference), not the window's
+  display scale, and the engine already publishes the primary window's view
+  with the display scale, so two owners would publish one window's view.
+- **Where:** `ShellWindow::Update` in `editor/common/src/shell/ShellWindow.cpp`;
+  `Engine::PublishWindowView`; `docs/ui/architecture.md` §13.
+- **Trigger:** a UI scale setting the engine's window view carries (a player's
+  interface scale on the options page), at which point the editor sets that
+  preference instead of scaling its own surfaces, publishes views only for the
+  windows it owns, and creates its surfaces as following ones.

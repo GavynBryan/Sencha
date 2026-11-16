@@ -19,6 +19,7 @@
 #include <ecs/World.h>
 #include <input/InputContextSet.h>
 #include <runtime/RuntimeFrameLoop.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -97,26 +98,9 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
     return package;
 }
 
-SDL_Event MouseButton(std::uint32_t type, float x, float y)
-{
-    SDL_Event event{};
-    event.type = type;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
 void ClickRow(UiService& ui, std::size_t row)
 {
-    const float y = kRowTop + kRowHeight * static_cast<float>(row) + kRowHeight * 0.5f;
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = 150.0f;
-    move.motion.y = y;
-    (void)ui.ProcessPlatformEvent(move);
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 150.0f, y));
-    (void)ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, 150.0f, y));
+    UiClickAt(ui, 150.0f, kRowTop + kRowHeight * static_cast<float>(row) + kRowHeight * 0.5f);
 }
 
 // Stands in for the host's exit path: the engine's own quit operation needs an

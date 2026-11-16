@@ -3,6 +3,7 @@
 #include <core/handle/Handle.h>
 #include <graphics/RenderExtent.h>
 
+#include <compare>
 #include <cstdint>
 
 //=============================================================================
@@ -18,6 +19,24 @@
 // care which application hosts it.
 //=============================================================================
 using UiSurfaceId = Handle<struct UiSurfaceTag>;
+
+struct UiStackOrder
+{
+    std::int32_t Value = 0;
+
+    friend constexpr auto operator<=>(const UiStackOrder&, const UiStackOrder&) = default;
+};
+
+inline constexpr UiStackOrder kUiStackOrderDefault{ 0 };
+inline constexpr UiStackOrder kUiStackOrderShell{ 1'000'000 };
+
+struct UiWindowView
+{
+    RenderExtent Extent{};
+    float Scale = 1.0f;
+
+    friend bool operator==(const UiWindowView&, const UiWindowView&) = default;
+};
 
 // Where a surface's recording is published.
 //

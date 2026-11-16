@@ -15,6 +15,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -158,20 +159,7 @@ TEST(UiPreviewSession, PollIsTheOneDrainerAndKeepsHistories)
     EXPECT_EQ(session.Diagnostics().size(), after) << "nothing new, nothing added";
 
     // Actions the document raises land in the action history.
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = 50.0f;
-    move.motion.y = 20.0f;
-    (void)f.Ui->ProcessPlatformEvent(move);
-    SDL_Event down{};
-    down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-    down.button.button = SDL_BUTTON_LEFT;
-    down.button.x = 50.0f;
-    down.button.y = 20.0f;
-    (void)f.Ui->ProcessPlatformEvent(down);
-    SDL_Event up = down;
-    up.type = SDL_EVENT_MOUSE_BUTTON_UP;
-    (void)f.Ui->ProcessPlatformEvent(up);
+    UiClickAt(*f.Ui, 50.0f, 20.0f);
     f.Ui->Update();
     session.Poll();
     ASSERT_FALSE(session.Actions().empty()) << "the click on #button raised nothing";

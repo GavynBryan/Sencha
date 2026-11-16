@@ -82,12 +82,12 @@ struct UiTextureRef
 };
 
 // Pixels for a generated texture, handed over the first extraction after it was
-// minted: RGBA8, premultiplied, converted once to linear (docs/ui/architecture.md §8).
+// minted: RGBA8, premultiplied, linear except a gradient's ramp (docs/ui/architecture.md §8).
 struct UiTextureUpload
 {
     UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
     RenderExtent Size{};
-    std::vector<std::byte> LinearPremultipliedRgba8;
+    std::vector<std::byte> PremultipliedRgba8;
 };
 
 // Generated textures minted and finished with since the previous extraction,
@@ -119,6 +119,28 @@ enum class UiClipMaskOp : std::uint8_t
     Intersect,    // narrow the mask to this geometry
 };
 
+enum class UiGradientShape : std::uint8_t
+{
+    Linear = 0,
+    Radial,
+    Conic,
+};
+
+inline constexpr std::uint32_t kUiGradientRampTexels = 512;
+
+// What Origin, Axis and the stops mean for each shape: docs/ui/architecture.md §7.
+struct UiGradient
+{
+    UiGradientShape Shape = UiGradientShape::Linear;
+    bool Repeating = false;
+    Vec2d Origin{};
+    Vec2d Axis{};
+    float FirstStop = 0.0f;
+    float LastStop = 1.0f;
+
+    bool operator==(const UiGradient&) const = default;
+};
+
 struct UiDrawCommand
 {
     UiGeometryRef Geometry;
@@ -135,6 +157,9 @@ struct UiDrawCommand
 
     // Whether colour output is tested against the current mask.
     bool ClipMaskEnabled = false;
+
+    // Set when the command paints a gradient; `Texture` is then its colour ramp.
+    std::optional<UiGradient> Gradient;
 };
 
 struct UiDrawFrame

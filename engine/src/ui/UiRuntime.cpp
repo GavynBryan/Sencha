@@ -31,6 +31,7 @@
 #include <cctype>
 #include <filesystem>
 #include <format>
+#include <numeric>
 #include <utility>
 
 namespace
@@ -122,6 +123,7 @@ void UiRuntime::Shutdown()
             Rml::RemoveContext(surface.Context->GetName());
     }
     Surfaces.clear();
+    RebuildStackOrder();
     DrawFrames.clear();
     OffscreenFrames.clear();
     TextureFrameList.clear();
@@ -207,7 +209,7 @@ UiDiagnosticLog::Attribution UiRuntime::SurfaceAttribution(std::size_t surfaceIn
     return { liveOnSurface == 1 ? only : UiScreenHandle{}, surfaceId };
 }
 
-UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size)
+UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size, UiStackOrder order)
 {
     if (!Ready)
         return {};
@@ -245,15 +247,85 @@ UiSurfaceId UiRuntime::CreateSurface(std::string_view name, RenderExtent size)
     }
 
     context->GetRootElement()->AddEventListener(Rml::EventId::Mousescroll, &WheelZoom);
+    Surface fresh;
+    fresh.Generation = surface.Generation;
+    surface = std::move(fresh);
     surface.Name = std::move(contextName);
     surface.Size = size;
     surface.Context = context;
     surface.Live = true;
-    surface.ModelTypesDeclared = false;
-    surface.RowLists.reset();
-    RebuildInputOrder();
+    surface.StackOrder = order;
+    surface.CreationSequence = NextCreationSequence++;
+    RebuildStackOrder();
 
     return UiSurfaceId{ static_cast<std::uint32_t>(index + 1), surface.Generation };
+}
+
+UiSurfaceId UiRuntime::CreateWindowSurface(std::string_view name, UiStackOrder order,
+                                           std::uint32_t platformWindowId)
+{
+    const UiWindowView* view = FindWindowView(WindowKey(platformWindowId));
+    if (view == nullptr)
+    {
+        Log.Error("UiRuntime: surface '{}' follows a window that has published no view", name);
+        return {};
+    }
+    const UiWindowView current = *view;
+    const UiSurfaceId id = CreateSurface(name, current.Extent, order);
+    if (Surface* slot = ResolveSurface(id))
+    {
+        slot->WindowId = WindowKey(platformWindowId);
+        slot->FollowsWindow = true;
+        Rescale(*slot, current.Scale);
+    }
+    return id;
+}
+
+void UiRuntime::SetWindowView(std::uint32_t platformWindowId, UiWindowView view)
+{
+    if (view.Extent.Width == 0 || view.Extent.Height == 0)
+        return;
+    const std::uint32_t key = WindowKey(platformWindowId);
+    const auto record = std::ranges::find(WindowViews, key, &WindowViewRecord::WindowId);
+    if (record != WindowViews.end())
+        record->View = view;
+    else
+        WindowViews.push_back(WindowViewRecord{ key, view });
+    for (Surface& surface : Surfaces)
+        if (surface.Live && surface.FollowsWindow && surface.WindowId == key)
+            ApplyWindowView(surface);
+}
+
+std::optional<UiWindowView> UiRuntime::GetWindowView(std::uint32_t platformWindowId) const
+{
+    const UiWindowView* view = FindWindowView(WindowKey(platformWindowId));
+    return view != nullptr ? std::optional<UiWindowView>(*view) : std::nullopt;
+}
+
+bool UiRuntime::FollowsWindow(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr && slot->FollowsWindow;
+}
+
+std::uint32_t UiRuntime::WindowKey(std::uint32_t platformWindowId) const
+{
+    return platformWindowId == PrimaryWindowId ? 0 : platformWindowId;
+}
+
+const UiWindowView* UiRuntime::FindWindowView(std::uint32_t windowKey) const
+{
+    const auto record = std::ranges::find(WindowViews, windowKey, &WindowViewRecord::WindowId);
+    return record != WindowViews.end() ? &record->View : nullptr;
+}
+
+void UiRuntime::ApplyWindowView(Surface& surface)
+{
+    if (const UiWindowView* view = FindWindowView(surface.WindowId))
+    {
+        Resize(surface, view->Extent);
+        Rescale(surface, view->Scale);
+    }
 }
 
 void UiRuntime::DestroySurface(UiSurfaceId surface)
@@ -276,6 +348,7 @@ void UiRuntime::DestroySurface(UiSurfaceId surface)
     slot->Context = nullptr;
     slot->ModelTypesDeclared = false;
     slot->RowLists.reset();
+    slot->FollowsWindow = false;
     slot->Live = false;
     slot->Name.clear();
     ++slot->Generation;
@@ -283,14 +356,19 @@ void UiRuntime::DestroySurface(UiSurfaceId surface)
 
 void UiRuntime::SetSurfaceSize(UiSurfaceId surface, RenderExtent size)
 {
-    Surface* slot = ResolveSurface(surface);
-    if (slot == nullptr || size.Width == 0 || size.Height == 0)
+    if (Surface* slot = ResolveSurface(surface))
+        Resize(*slot, size);
+}
+
+void UiRuntime::Resize(Surface& surface, RenderExtent size)
+{
+    if (size.Width == 0 || size.Height == 0)
         return;
-    if (slot->Size.Width == size.Width && slot->Size.Height == size.Height)
+    if (surface.Size.Width == size.Width && surface.Size.Height == size.Height)
         return;
 
-    slot->Size = size;
-    slot->Context->SetDimensions(ToRmlDimensions(size));
+    surface.Size = size;
+    surface.Context->SetDimensions(ToRmlDimensions(size));
 }
 
 RenderExtent UiRuntime::GetSurfaceSize(UiSurfaceId surface) const
@@ -301,18 +379,23 @@ RenderExtent UiRuntime::GetSurfaceSize(UiSurfaceId surface) const
 
 void UiRuntime::SetSurfaceScale(UiSurfaceId surface, float scale)
 {
-    Surface* slot = ResolveSurface(surface);
+    if (Surface* slot = ResolveSurface(surface))
+        Rescale(*slot, scale);
+}
+
+void UiRuntime::Rescale(Surface& surface, float scale)
+{
     // Clamped rather than trusted: this comes from a display probe or a user
     // setting, and a zero or negative ratio collapses every authored length to
     // nothing with no obvious cause.
     const float clamped = std::clamp(scale, 0.25f, 8.0f);
-    if (slot == nullptr || slot->Scale == clamped)
+    if (surface.Scale == clamped)
         return;
 
-    slot->Scale = clamped;
+    surface.Scale = clamped;
     // Every authored length re-resolves against this, which is why UI scale is
     // live: a retained document re-flows.
-    slot->Context->SetDensityIndependentPixelRatio(clamped);
+    surface.Context->SetDensityIndependentPixelRatio(clamped);
 }
 
 float UiRuntime::GetSurfaceScale(UiSurfaceId surface) const
@@ -371,7 +454,7 @@ void UiRuntime::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination 
         slot->Destination = destination;
         if (destination != UiSurfaceDestination::Texture)
             slot->Texture.clear();
-        RebuildInputOrder();
+        RebuildStackOrder();
     }
 }
 
@@ -384,7 +467,7 @@ void UiRuntime::SetSurfaceTexture(UiSurfaceId surface, std::string_view name)
     SetSurfaceInputPolicy(surface, UiSurfaceInputPolicy::Disabled);
     slot->Destination = UiSurfaceDestination::Texture;
     slot->Texture = std::string(name);
-    RebuildInputOrder();
+    RebuildStackOrder();
 }
 
 std::string_view UiRuntime::GetSurfaceTexture(UiSurfaceId surface) const
@@ -404,7 +487,7 @@ void UiRuntime::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWind
     Surface* slot = ResolveSurface(surface);
     if (slot == nullptr)
         return;
-    const std::uint32_t window = platformWindowId == PrimaryWindowId ? 0 : platformWindowId;
+    const std::uint32_t window = WindowKey(platformWindowId);
     if (slot->WindowId == window)
         return;
     // Whatever the old window's pointer and focus were doing is not the new
@@ -417,6 +500,8 @@ void UiRuntime::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWind
     }
     slot->PointerInside = false;
     slot->WindowId = window;
+    if (slot->FollowsWindow)
+        ApplyWindowView(*slot);
 }
 
 std::uint32_t UiRuntime::GetSurfaceWindow(UiSurfaceId surface) const
@@ -435,6 +520,34 @@ std::uint8_t UiRuntime::GetSurfaceLayer(UiSurfaceId surface) const
 {
     const Surface* slot = ResolveSurface(surface);
     return slot != nullptr ? slot->Layer : 0;
+}
+
+void UiRuntime::SetSurfaceStackOrder(UiSurfaceId surface, UiStackOrder order)
+{
+    if (Surface* slot = ResolveSurface(surface))
+    {
+        slot->StackOrder = order;
+        RebuildStackOrder();
+    }
+}
+
+UiStackOrder UiRuntime::GetSurfaceStackOrder(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->StackOrder : kUiStackOrderDefault;
+}
+
+void UiRuntime::RebuildStackOrder()
+{
+    DrawOrder.resize(Surfaces.size());
+    std::iota(DrawOrder.begin(), DrawOrder.end(), std::size_t{ 0 });
+    std::ranges::sort(DrawOrder, {}, [this](std::size_t index) {
+        return std::pair{ Surfaces[index].StackOrder, Surfaces[index].CreationSequence };
+    });
+    InputOrder.assign(DrawOrder.rbegin(), DrawOrder.rend());
+    std::ranges::stable_partition(InputOrder, [this](std::size_t index) {
+        return Surfaces[index].Destination == UiSurfaceDestination::Window;
+    });
 }
 
 bool UiRuntime::Hears(const Surface& surface, std::uint32_t eventWindow) const
@@ -980,7 +1093,7 @@ void UiRuntime::ExtractRender()
     if (!Ready)
         return;
 
-    for (std::size_t index = 0; index < Surfaces.size(); ++index)
+    for (const std::size_t index : DrawOrder)
     {
         const Surface& surface = Surfaces[index];
         if (!surface.Live || surface.Context == nullptr)

@@ -11,6 +11,8 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include "ScopedEnv.h"
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -53,14 +55,14 @@ namespace
         AsyncTaskQueue Tasks{ 0 };
         AssetLease Package;
 
-        Fixture()
+        explicit Fixture(std::string_view stylesheet = "a.rcss")
             : Assets(Logging, Serializers, RuntimeAssets::ReferenceOnly{})
         {
             std::random_device rd;
             Root = std::filesystem::temp_directory_path()
                  / ("sencha_source_reload_" + std::to_string(rd()));
             WriteText(Root / "ui" / "a.rml",
-                      "<rml><head><link type=\"text/rcss\" href=\"a.rcss\"/></head>"
+                      "<rml><head><link type=\"text/rcss\" href=\"" + std::string(stylesheet) + "\"/></head>"
                       "<body><div id=\"box\"/></body></rml>");
             WriteText(Root / "ui" / "a.rcss", "#box { display: block; width: 10px; height: 10px; }");
 
@@ -189,4 +191,30 @@ TEST(SourceReloadRoots, AFilterRefusingAFileLeavesTheResidentAssetAlone)
     ASSERT_EQ(asked.size(), 1u);
     EXPECT_EQ(asked[0].lexically_normal(), (f.Root / "ui" / "a.rcss").lexically_normal());
     EXPECT_EQ(f.Version(), before) << "a refused change was re-cooked anyway";
+}
+
+TEST(SourceReloadRoots, AnEditToTheEnginesStylesheetRecooksTheGameDocumentsThatLinkIt)
+{
+    std::random_device rd;
+    const std::filesystem::path engine =
+        std::filesystem::temp_directory_path() / ("sencha_source_reload_engine_" + std::to_string(rd()));
+    WriteText(engine / "ui" / "base.rcss", "div { display: block; }");
+    const ScopedEnv engineRoot("SENCHA_ENGINE_CONTENT", engine.c_str());
+
+    Fixture f("/ui/base.rcss");
+    ASSERT_TRUE(f.Package.IsValid()) << "the game's document did not cook against the engine's stylesheet";
+    const std::uint64_t before = f.Version();
+
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" });
+    roots.AddRoot(engine.generic_string(), { ".rml", ".rcss" });
+
+    WriteText(engine / "ui" / "base.rcss", "div { display: block; margin: 0; }");
+    BumpMtime(engine / "ui" / "base.rcss");
+    EXPECT_GE(roots.Poll(Clock::now()), 1u);
+    f.Drain();
+    EXPECT_GT(f.Version(), before) << "the game's document still carries the engine's old stylesheet";
+
+    std::error_code ec;
+    std::filesystem::remove_all(engine, ec);
 }

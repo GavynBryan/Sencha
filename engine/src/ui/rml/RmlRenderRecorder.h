@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../GradientRampPool.h"
+
 #include <RmlUi/Core/RenderInterface.h>
 
 #include <graphics/RenderExtent.h>
@@ -7,8 +9,10 @@
 #include <render/ui/UiDrawFrame.h>
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 class Logger;
 
@@ -106,6 +110,14 @@ public:
                           Rml::CompiledGeometryHandle geometry,
                           Rml::Vector2f translation) override;
 
+    Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
+                                            const Rml::Dictionary& parameters) override;
+    void RenderShader(Rml::CompiledShaderHandle shader,
+                      Rml::CompiledGeometryHandle geometry,
+                      Rml::Vector2f translation,
+                      Rml::TextureHandle texture) override;
+    void ReleaseShader(Rml::CompiledShaderHandle shader) override;
+
     // -- Tier 2: not implemented, and loud about it ---------------------------
     //
     // The base class defaults are silent no-ops, which is the worst outcome: a
@@ -123,13 +135,6 @@ public:
     Rml::CompiledFilterHandle CompileFilter(const Rml::String& name,
                                             const Rml::Dictionary& parameters) override;
     void ReleaseFilter(Rml::CompiledFilterHandle filter) override;
-    Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
-                                            const Rml::Dictionary& parameters) override;
-    void RenderShader(Rml::CompiledShaderHandle shader,
-                      Rml::CompiledGeometryHandle geometry,
-                      Rml::Vector2f translation,
-                      Rml::TextureHandle texture) override;
-    void ReleaseShader(Rml::CompiledShaderHandle shader) override;
 
 private:
     struct TextureRecord
@@ -137,6 +142,13 @@ private:
         UiTextureRef Ref;
     };
 
+    struct CompiledShader
+    {
+        UiGradient Gradient;
+        UiGeneratedTextureId Ramp = kInvalidUiGeneratedTexture;
+    };
+
+    UiDrawCommand* RecordCommand(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation);
     void ReportUnsupported(std::string_view feature);
     [[nodiscard]] UiTextureRef TextureRefFor(Rml::TextureHandle texture) const;
 
@@ -145,11 +157,14 @@ private:
 
     std::unordered_map<std::uint64_t, UiGeometryRef> Geometry;
     std::unordered_map<std::uint64_t, TextureRecord> Textures;
+    std::unordered_map<std::uint64_t, CompiledShader> Shaders;
+    GradientRampPool Ramps;
 
     // Never reused, so a handle that outlives its release reads as invalid
     // rather than as whichever resource took the slot.
     std::uint64_t NextGeometryHandle = 1;
     std::uint64_t NextTextureHandle = 1;
+    std::uint64_t NextShaderHandle = 1;
     UiGeneratedTextureId NextGeneratedId = 1;
 
     UiDrawFrame Frame;

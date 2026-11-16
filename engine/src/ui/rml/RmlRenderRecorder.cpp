@@ -1,4 +1,5 @@
 #include "RmlRenderRecorder.h"
+#include "RmlGradient.h"
 
 #include <core/logging/Logger.h>
 
@@ -112,6 +113,7 @@ UiDrawFrame RmlRenderRecorder::EndFrame()
 
 UiTextureChanges RmlRenderRecorder::TakeTextureChanges()
 {
+    Ramps.ReleaseUnused(Changes);
     return std::exchange(Changes, UiTextureChanges{});
 }
 
@@ -149,22 +151,28 @@ UiTextureRef RmlRenderRecorder::TextureRefFor(Rml::TextureHandle texture) const
     return it != Textures.end() ? it->second.Ref : UiTextureRef{};
 }
 
-void RmlRenderRecorder::RenderGeometry(Rml::CompiledGeometryHandle geometry,
-                                       Rml::Vector2f translation,
-                                       Rml::TextureHandle texture)
+UiDrawCommand* RmlRenderRecorder::RecordCommand(Rml::CompiledGeometryHandle geometry,
+                                                Rml::Vector2f translation)
 {
     const auto it = Geometry.find(static_cast<std::uint64_t>(geometry));
     if (it == Geometry.end())
-        return;
+        return nullptr;
 
-    UiDrawCommand command;
+    UiDrawCommand& command = Frame.Commands.emplace_back();
     command.Geometry = it->second;
-    command.Texture = TextureRefFor(texture);
     command.Translation = Vec2d{ translation.x, translation.y };
     command.Clip = Clip;
     command.Transform = Transform;
     command.ClipMaskEnabled = ClipMaskEnabled;
-    Frame.Commands.push_back(std::move(command));
+    return &command;
+}
+
+void RmlRenderRecorder::RenderGeometry(Rml::CompiledGeometryHandle geometry,
+                                       Rml::Vector2f translation,
+                                       Rml::TextureHandle texture)
+{
+    if (UiDrawCommand* command = RecordCommand(geometry, translation))
+        command->Texture = TextureRefFor(texture);
 }
 
 void RmlRenderRecorder::ReleaseGeometry(Rml::CompiledGeometryHandle geometry)
@@ -233,7 +241,7 @@ Rml::TextureHandle RmlRenderRecorder::GenerateTexture(Rml::Span<const Rml::byte>
     upload.Id = NextGeneratedId++;
     upload.Size = RenderExtent{ static_cast<std::uint32_t>(source_dimensions.x),
                                 static_cast<std::uint32_t>(source_dimensions.y) };
-    ConvertPremultipliedSrgbToLinear(source, upload.LinearPremultipliedRgba8);
+    ConvertPremultipliedSrgbToLinear(source, upload.PremultipliedRgba8);
 
     const std::uint64_t key = NextTextureHandle++;
     UiTextureRef ref;
@@ -288,23 +296,60 @@ void RmlRenderRecorder::RenderToClipMask(Rml::ClipMaskOperation operation,
                                          Rml::CompiledGeometryHandle geometry,
                                          Rml::Vector2f translation)
 {
-    const auto it = Geometry.find(static_cast<std::uint64_t>(geometry));
-    if (it == Geometry.end())
+    UiDrawCommand* command = RecordCommand(geometry, translation);
+    if (command == nullptr)
         return;
 
-    UiDrawCommand command;
-    command.Geometry = it->second;
-    command.Translation = Vec2d{ translation.x, translation.y };
-    command.Clip = Clip;
-    command.Transform = Transform;
-    command.ClipMaskEnabled = ClipMaskEnabled;
     switch (operation)
     {
-    case Rml::ClipMaskOperation::Set:        command.ClipMask = UiClipMaskOp::Set; break;
-    case Rml::ClipMaskOperation::SetInverse: command.ClipMask = UiClipMaskOp::SetInverse; break;
-    case Rml::ClipMaskOperation::Intersect:  command.ClipMask = UiClipMaskOp::Intersect; break;
+    case Rml::ClipMaskOperation::Set:        command->ClipMask = UiClipMaskOp::Set; break;
+    case Rml::ClipMaskOperation::SetInverse: command->ClipMask = UiClipMaskOp::SetInverse; break;
+    case Rml::ClipMaskOperation::Intersect:  command->ClipMask = UiClipMaskOp::Intersect; break;
     }
-    Frame.Commands.push_back(std::move(command));
+}
+
+Rml::CompiledShaderHandle RmlRenderRecorder::CompileShader(const Rml::String& name,
+                                                           const Rml::Dictionary& parameters)
+{
+    const std::optional<UiGradientShape> shape = GradientShapeForShader(name);
+    if (!shape)
+    {
+        ReportUnsupported("shader '" + name + "'");
+        return {};
+    }
+    std::optional<CompiledGradient> compiled = CompileGradient(*shape, parameters);
+    if (!compiled)
+        return {};
+
+    const UiGeneratedTextureId ramp = Ramps.Acquire(std::move(compiled->RampPixels), NextGeneratedId, Changes);
+    const std::uint64_t handle = NextShaderHandle++;
+    Shaders.emplace(handle, CompiledShader{ compiled->Gradient, ramp });
+    return static_cast<Rml::CompiledShaderHandle>(handle);
+}
+
+void RmlRenderRecorder::RenderShader(Rml::CompiledShaderHandle shader,
+                                     Rml::CompiledGeometryHandle geometry,
+                                     Rml::Vector2f translation,
+                                     Rml::TextureHandle)
+{
+    const auto compiled = Shaders.find(static_cast<std::uint64_t>(shader));
+    if (compiled == Shaders.end())
+        return;
+    if (UiDrawCommand* command = RecordCommand(geometry, translation))
+    {
+        command->Texture.Kind = UiTextureKind::Generated;
+        command->Texture.Generated = compiled->second.Ramp;
+        command->Gradient = compiled->second.Gradient;
+    }
+}
+
+void RmlRenderRecorder::ReleaseShader(Rml::CompiledShaderHandle shader)
+{
+    const auto it = Shaders.find(static_cast<std::uint64_t>(shader));
+    if (it == Shaders.end())
+        return;
+    Ramps.Release(it->second.Ramp);
+    Shaders.erase(it);
 }
 
 // -- Tier 2 ------------------------------------------------------------------
@@ -363,20 +408,3 @@ void RmlRenderRecorder::ReleaseFilter(Rml::CompiledFilterHandle)
 {
 }
 
-Rml::CompiledShaderHandle RmlRenderRecorder::CompileShader(const Rml::String& name,
-                                                           const Rml::Dictionary&)
-{
-    ReportUnsupported("shader '" + name + "' (gradient decorators need this)");
-    return {};
-}
-
-void RmlRenderRecorder::RenderShader(Rml::CompiledShaderHandle,
-                                     Rml::CompiledGeometryHandle,
-                                     Rml::Vector2f,
-                                     Rml::TextureHandle)
-{
-}
-
-void RmlRenderRecorder::ReleaseShader(Rml::CompiledShaderHandle)
-{
-}

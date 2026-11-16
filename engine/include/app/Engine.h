@@ -157,6 +157,7 @@ public:
     // outlive it. Returns null if one already exists.
     [[nodiscard]] NetSession* CreateNetSession(INetTransport& transport);
     void DestroyNetSession();
+    void PublishSimulationAuthority();
     // Called once the session this process created is hosting. Every
     // participant admitted before it -- the person who played singleplayer and
     // then opened the game up -- gets the replication state a session-time
@@ -494,10 +495,7 @@ public:
     [[nodiscard]] PauseMenu* TryPauseMenu() { return PauseMenuState.get(); }
     [[nodiscard]] const PauseMenu* TryPauseMenu() const { return PauseMenuState.get(); }
 
-    // Tracks the primary window's size and display scale onto the shell's
-    // surface. Called once per frame by the frame pipeline; a host with no
-    // window or no UI does nothing.
-    void SyncShellSurface();
+    void PublishWindowView();
 
     [[nodiscard]] PauseState& Pause() { return PauseStateInstance; }
     [[nodiscard]] const PauseState& Pause() const { return PauseStateInstance; }
@@ -653,10 +651,6 @@ private:
     // and a removed one stops executing, and tells the shell's producers who
     // the local participant is now.
     void RefreshShellBindings();
-
-    // Once per frame: writes the World's SimulationAuthority from the session's
-    // role. One writer, here, so an operation never asks the session itself.
-    void PublishSimulationAuthority();
 
     void RegisterAuthoredEventCVars();
 

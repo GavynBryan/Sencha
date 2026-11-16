@@ -75,8 +75,8 @@ UiTextureResidency::Applied UiTextureResidency::Prepare(const GpuFrameRetirement
                 log->Error("could not create a generated UI texture");
             continue;
         }
-        if (!Services->Images->Upload(image, upload.LinearPremultipliedRgba8.data(),
-                                      upload.LinearPremultipliedRgba8.size()))
+        if (!Services->Images->Upload(image, upload.PremultipliedRgba8.data(),
+                                      upload.PremultipliedRgba8.size()))
         {
             Services->Images->Destroy(image);
             continue;

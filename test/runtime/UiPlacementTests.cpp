@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <ui/UiSurfacePlacement.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -159,21 +160,13 @@ struct Fixture
 
     void Move(Vec2d w)
     {
-        SDL_Event e{};
-        e.type = SDL_EVENT_MOUSE_MOTION;
-        e.motion.x = w.X;
-        e.motion.y = w.Y;
-        LastConsumed = Ui->ProcessPlatformEvent(e);
+        LastConsumed = Ui->ProcessPlatformEvent(UiPointerEvent(SDL_EVENT_MOUSE_MOTION, w.X, w.Y));
         Ui->Update();
     }
     void Button(Vec2d w, bool down)
     {
-        SDL_Event e{};
-        e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-        e.button.button = SDL_BUTTON_LEFT;
-        e.button.x = w.X;
-        e.button.y = w.Y;
-        LastConsumed = Ui->ProcessPlatformEvent(e);
+        LastConsumed = Ui->ProcessPlatformEvent(
+            UiPointerEvent(down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP, w.X, w.Y));
         Ui->Update();
     }
     void Click(Vec2d w)

@@ -22,9 +22,6 @@
  * take the mouse from the game. Interactive children opt back in below. */
 body
 {
-    display: block;
-    width: 100%;
-    height: 100%;
     pointer-events: none;
     font-family: Inter;
 }
@@ -56,7 +53,6 @@ body
 
 #panel
 {
-    display: block;
     /* Caps how wide it gets on a large display without pinning it on a small
      * one: a menu that stayed 340dp across a 4K screen reads as lost in it,
      * and one that grew to a third of an ultrawide reads as a web page. */
@@ -71,17 +67,13 @@ body
 
 #title
 {
-    display: block;
     font-size: 22dp;
     color: #e8eef5;
     margin-bottom: 22dp;
 }
 
-#entries { display: block; }
-
 .entry
 {
-    display: block;
     font-size: 17dp;
     color: #b9c6d4;
     padding: 11dp 14dp;
@@ -221,7 +213,6 @@ selectbox option:checked { color: #ffffff; background-color: #2b3b4c; }
 
 #hint
 {
-    display: block;
     margin-top: 14dp;
     font-size: 13dp;
     color: #6b7b8c;

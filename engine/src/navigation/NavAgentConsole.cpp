@@ -85,6 +85,7 @@ void RegisterNavigationAgentConsole(ConsoleRegistry& console, World& world)
         .Owner = "navigation",
         .Usage = "nav.agent.goto <agent> <x> <y> <z> | nav.agent.goto <agent> me",
         .Help = "Sends a navigation agent to a point, or to where this machine's player stands.",
+        .Flags = ConsoleCommandFlags::Cheat | ConsoleCommandFlags::AuthorityOnly,
         .Callback = [&world](ConsoleExecutionContext&, std::span<const std::string> args) {
             const std::optional<EntityId> agent = args.empty() ? std::nullopt : ParseAgentArgument(world, args[0]);
             if (!agent)
@@ -120,6 +121,7 @@ void RegisterNavigationAgentConsole(ConsoleRegistry& console, World& world)
         .Owner = "navigation",
         .Usage = "nav.agent.follow <agent> <entity|me>",
         .Help = "Has a navigation agent keep up with an entity, or with this machine's player.",
+        .Flags = ConsoleCommandFlags::Cheat | ConsoleCommandFlags::AuthorityOnly,
         .Callback = [&world](ConsoleExecutionContext&, std::span<const std::string> args) {
             const std::optional<EntityId> agent = args.size() == 2 ? ParseAgentArgument(world, args[0]) : std::nullopt;
             const std::optional<EntityId> subject = args.size() == 2 ? ParseSubjectArgument(world, args[1]) : std::nullopt;
@@ -134,6 +136,7 @@ void RegisterNavigationAgentConsole(ConsoleRegistry& console, World& world)
         .Owner = "navigation",
         .Usage = "nav.agent.stop <agent>",
         .Help = "Ends a navigation agent's order.",
+        .Flags = ConsoleCommandFlags::Cheat | ConsoleCommandFlags::AuthorityOnly,
         .Callback = [&world](ConsoleExecutionContext&, std::span<const std::string> args) {
             const std::optional<EntityId> agent = args.size() == 1 ? ParseAgentArgument(world, args[0]) : std::nullopt;
             if (!agent)

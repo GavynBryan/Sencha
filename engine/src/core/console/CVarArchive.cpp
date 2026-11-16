@@ -40,9 +40,6 @@ namespace
         return source;
     }
 
-    // A saved scalar as the text the console's own parser expects. Only used
-    // for a name no cvar claims yet, where there is no declared type to convert
-    // against; a registered cvar takes the typed path below instead.
     bool ScalarToText(const JsonValue& value, std::string& out)
     {
         if (value.IsBool())
@@ -65,10 +62,7 @@ namespace
         return false;
     }
 
-    // A saved scalar as the cvar's declared type. Nullopt when the file holds a
-    // shape the cvar cannot take -- a string where a number belongs, say --
-    // which is a diagnostic rather than a silent default.
-    std::optional<CVarValue> ScalarToValue(const JsonValue& value, CVarType type)
+    std::optional<CVarValue> NativeValue(const JsonValue& value, CVarType type)
     {
         switch (type)
         {
@@ -87,6 +81,14 @@ namespace
             return std::nullopt;
         }
         return std::nullopt;
+    }
+
+    std::optional<CVarValue> ScalarToValue(const JsonValue& value, CVarType type)
+    {
+        if (std::optional<CVarValue> native = NativeValue(value, type))
+            return native;
+        std::string text;
+        return ScalarToText(value, text) ? ParseCVarValue(type, text) : std::nullopt;
     }
 
     JsonValue ValueToJson(const CVarValue& value)

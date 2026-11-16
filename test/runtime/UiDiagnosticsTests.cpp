@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -154,23 +155,6 @@ std::vector<UiDiagnostic> OfKind(const std::vector<UiDiagnostic>& all, UiDiagnos
     return out;
 }
 
-void ClickAt(UiService& ui, float x, float y)
-{
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = x;
-    move.motion.y = y;
-    (void)ui.ProcessPlatformEvent(move);
-    SDL_Event down{};
-    down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-    down.button.button = SDL_BUTTON_LEFT;
-    down.button.x = x;
-    down.button.y = y;
-    (void)ui.ProcessPlatformEvent(down);
-    SDL_Event up = down;
-    up.type = SDL_EVENT_MOUSE_BUTTON_UP;
-    (void)ui.ProcessPlatformEvent(up);
-}
 } // namespace
 
 TEST(UiDiagnostics, AMissingBindingNamesTheVariableTheSurfaceAndTheOnlyScreen)
@@ -339,7 +323,7 @@ TEST(UiDiagnostics, AnUndeclaredActionIsReportedWhenItFiresAndNotBefore)
     EXPECT_TRUE(OfKind(f.Ui().DrainDiagnostics(), UiDiagnosticKind::EventCallbackMissing).empty())
         << "an action is observable only when its event fires; nothing has fired";
 
-    ClickAt(f.Ui(), 60.0f, 35.0f);
+    UiClickAt(f.Ui(), 60.0f, 35.0f);
     f.Ui().Update();
     const auto misses = OfKind(f.Ui().DrainDiagnostics(), UiDiagnosticKind::EventCallbackMissing);
     ASSERT_FALSE(misses.empty());

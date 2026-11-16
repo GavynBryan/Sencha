@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -225,20 +226,7 @@ TEST(UiHostStyle, ARestyleKeepsFocusAndWhatWasBeingTyped)
     Fixture fixture;
     ASSERT_TRUE(fixture.Screen.IsValid());
 
-    SDL_Event move{};
-    move.type = SDL_EVENT_MOUSE_MOTION;
-    move.motion.x = 90.0f;
-    move.motion.y = 10.0f;
-    (void)fixture.Service().ProcessPlatformEvent(move);
-    SDL_Event down{};
-    down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-    down.button.button = SDL_BUTTON_LEFT;
-    down.button.x = 90.0f;
-    down.button.y = 10.0f;
-    (void)fixture.Service().ProcessPlatformEvent(down);
-    SDL_Event up = down;
-    up.type = SDL_EVENT_MOUSE_BUTTON_UP;
-    (void)fixture.Service().ProcessPlatformEvent(up);
+    UiClickAt(fixture.Service(), 90.0f, 10.0f);
     fixture.Service().Update();
 
     SDL_Event typed{};

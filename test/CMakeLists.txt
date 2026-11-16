@@ -105,7 +105,7 @@ set(SENCHA_TEST_TARGETS core_tests math_geometry_tests)
 
 if(RUNTIME_TEST_SOURCES)
     add_executable(runtime_tests ${RUNTIME_TEST_SOURCES})
-    target_link_libraries(runtime_tests PRIVATE sencha_engine test_allocation_counter GTest::gtest_main)
+    target_link_libraries(runtime_tests PRIVATE sencha_engine sencha::testing test_allocation_counter GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS runtime_tests)
 
     # A real loadable game module for the S2 boundary integration test. MODULE so
@@ -271,7 +271,7 @@ if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     # with their sidecars.
     target_link_libraries(editor_tests PRIVATE
         level_authoring ui_preview_authoring animation_authoring ability_authoring
-        material_editor data_editor ability_editor project_browser GTest::gtest_main)
+        material_editor data_editor ability_editor project_browser sencha::testing GTest::gtest_main)
     target_include_directories(editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     target_compile_definitions(editor_tests PRIVATE

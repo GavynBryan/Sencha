@@ -321,11 +321,57 @@ pipelines.
 A device with no stencil-bearing depth format skips the mask writes, leaving the
 draws it would have clipped unclipped, and says so once.
 
+**Gradients: `CompileShader` and `RenderShader`.** The `linear-gradient`,
+`radial-gradient` and `conic-gradient` decorators, plain or `repeating-`, draw.
+`horizontal-gradient` and `vertical-gradient` always did: RmlUi draws them as
+plain geometry with vertex colours, Tier 1, and never asks for a shader. Any
+other shader name, a `shader()` decorator, is outside the profile and reported.
+
+A compiled gradient is a `UiGradient`, which describes its shape, and a colour
+ramp: `kUiGradientRampTexels` texels from the first stop to the last, minted as
+a generated texture. Reading the shader dictionary and building the ramp is a
+pure function (`engine/src/ui/rml/RmlGradient`); the recorder keeps only which
+compiled gradient a shader handle names. A gradient's draw command is the
+element's background shape, rounded corners included, with its UV the position
+in the element's box in pixels; its `Texture` is the ramp, so residency and
+recording comparison treat it as any generated texture, and its `Gradient` says
+how to read it. The element's opacity rides in the vertex colour.
+
+`UiGradient`'s fields, all in the box's pixels:
+
+| Shape  | `Origin`        | `Axis`                                 | Stops are fractions of |
+|--------|-----------------|----------------------------------------|------------------------|
+| Linear | the start point | the vector from the start to the end   | its length             |
+| Radial | the centre      | one over the radius, on each axis      | its radius             |
+| Conic  | the centre      | the cosine and sine of the start angle | a turn                 |
+
+A zero radius stores a very large inverse, which puts every point past the last
+stop. `ui.frag.glsl` works out how far along the gradient each fragment is the
+way RmlUi's own reference backend does, maps that onto the span between the
+first and last stops (wrapping when repeating, clamping otherwise), and samples
+the ramp between its end texel centres, so filtering never reaches past either
+end whatever the sampler's address mode. The ramp's width comes from the bound
+texture, not from a constant mirrored in the shader. The shape travels as a
+two-bit field of the push constants' `Flags`, holding the `UiGradientShape`
+value, so two shapes at once cannot be expressed. The parameters fit in the push
+constants the pass already has (within the 128 bytes every device guarantees, checked at compile time),
+so a gradient costs one draw like any box and needs no pipeline of its own. A
+gradient whose ramp is not resident is skipped rather than drawn flat white.
+
+Gradients with the same ramp pixels share one texture, so ten bar segments with
+one bevel upload it once (`engine/src/ui/GradientRampPool`). RmlUi compiles a
+gradient again every time its element resizes, so a ramp whose last gradient is
+released stays until the next `TakeTextureChanges` rather than going at once:
+one compiled again in between keeps its texture, and an animated width costs no
+uploads. The pool has no fixed limit: it holds one ramp per distinct set of
+colours that a live gradient uses, plus those let go of since the last
+extraction, so it is bounded by what the open documents author.
+
 **Tier 2 -- not implemented.** `PushLayer`/`CompositeLayers`/`PopLayer`,
-`SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`, `CompileShader`.
-The RCSS features that need them are **out of contract**: `box-shadow`,
-`filter`/`backdrop-filter`, `mask-image`, and **gradient decorators**. Gradients
-are authored as textures until Tier 2 lands.
+`SaveLayerAsTexture`, `SaveLayerAsMaskImage`, `CompileFilter`. The RCSS
+features that need them are **out of contract**: `box-shadow`,
+`filter`/`backdrop-filter` and `mask-image`. A soft shadow or glow is a
+gradient band behind the element.
 
 **Vector shapes: `<sector>`.** A box cannot be a ring, a pie slice or a petal,
 and faking one with clip masks fails in two ways. Mask edges are not
@@ -404,6 +450,12 @@ contract:
   uploaded as `R8G8B8A8_UNORM` holding linear premultiplied data.
 - **Content textures** loaded as ordinary assets are straight-alpha sRGB: they
   sample through an `_SRGB` view and are premultiplied in the shader.
+- **A gradient's ramp is the exception to linear upload.** Its texels are
+  interpolated between the stops in premultiplied sRGB, which is what CSS
+  specifies, so a gradient matches what its author sees in a browser. It is
+  uploaded still in sRGB, because 8-bit linear has too few dark levels: a
+  gradient between two near-blacks bands into visible steps. The gradient path
+  decodes each sample (unpremultiply, convert, repremultiply).
 - **Blend state:** `srcColor = ONE`, `dstColor = ONE_MINUS_SRC_ALPHA`,
   `srcAlpha = ONE`, `dstAlpha = ONE_MINUS_SRC_ALPHA`.
 
@@ -498,6 +550,17 @@ Geometry bound from a model goes through `data-style-width` and friends, not an
 interpolated `style=""`: the engine substitutes data expressions in text and in
 `data-*` attributes only.
 
+**Every screen's expressions can bound a number.** Beside the document engine's
+own transforms (`format`, `round`, `to_upper`, `to_lower`), the runtime
+registers three on every surface's context: `value | min(a, ...)` and
+`value | max(a, ...)` take the least or greatest of the piped value and their
+arguments, and `value | clamp(low, high)` keeps it between the two -- so a bar
+bound as `data-style-width="(fill | clamp(0, 100)) + '%'"` never overruns its
+track whatever the host publishes. Values are read as numbers the way the
+document engine's own `format` reads them, so text that is not a number reads as
+0; a transform given too few values binds nothing and reports a warning naming
+it.
+
 **Two-way editing, without a control ever becoming authoritative.** A property
 declared `Editable` gets a setter, so a bound control -- a text field, a slider,
 a checkbox -- can write it. That write changes the *presentation copy* and
@@ -540,9 +603,9 @@ anyway still only writes the copy, and the host is still what decides whether a
 value read back becomes a change.
 
 A row also names the control a document should offer for it. `UiRow::Control`
-is a name: the runtime's own pages use `text` (the default), `range` and
-`choice` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and `Choices`
-for a drop-down, and a host's documents agree on any others with the host (the
+is a name: the runtime's own pages use `text` (the default), `range`,
+`choice` and `toggle` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and
+`Choices` for a drop-down or a toggle's two labels, and a host's documents agree on any others with the host (the
 editor's are in `presenters/RowControls.h`); a document branches with
 `data-if="row.editable && row.control == 'range'"`. `Editable`
 still says whether a control is offered at all; `Control` says which. The value
@@ -682,6 +745,24 @@ Registering them a second time from the cooked metadata would be a competing
 source of truth for what a face is called, so the runtime does not; the `.sfont`
 metadata is the default for registering a face programmatically instead.
 
+**The base stylesheet.** The document engine supplies no default styles: every
+element is inline and the body takes no size of its own. `engine/assets/ui/base.rcss`
+holds the defaults a document would otherwise repeat -- block display for
+`body`, `div`, `p` and the headings, and a body that fills its surface with no
+margin -- and nothing visual, no colour, font or spacing. A document links it
+by its content path, `<link type="text/rcss" href="/ui/base.rcss"/>`, from
+whichever content root it lives in, as the engine's `pause.rml` and
+`options.rml` do. The cook resolves a stylesheet, an include or any other input
+in the root being cooked first and in the engine's content root after it
+(`EngineContentRoot`), the order the runtime mounts them in, so a game's own
+`ui/base.rcss` shadows the engine's and a document in a game root reaches the
+engine's without a copy. Either way the sheet is recorded as the document's
+input: editing it recooks every document that links it, in every root, at the
+next cook, and a watched root's dependents are recooked when the engine's file
+changes (`SourceReloadRoots`). A test or tool outside the engine's tree whose
+executable cannot find the engine's content beside it names it with
+`SENCHA_ENGINE_CONTENT`.
+
 ## 12. The authoring loop
 
 ```
@@ -739,6 +820,22 @@ previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
 editor's own to it and shows the open document rebuilt on every save, with the
 diagnostics above among the editor's problems.
 
+### Testing a layout
+
+`sencha::testing` is the engine's header-only test support for a game's own
+tests; a game links it beside `sencha::engine` and the GoogleTest it finds
+itself, and it exists wherever the cook layer does. `UiLayout`
+(`sencha/testing/UiLayoutTest.h`) lays out a document from its sources with no
+window and no device: it holds a temporary content root (`Content()`, which
+copies a game's `assets/ui` in or writes files), cooks and mounts it as a game's
+root is cooked (`Mount`), and opens a `UiScreenDesc` on a surface at a size and
+scale (`Open`). After `Refresh` -- update and record, as a frame does -- it
+answers `BoxOf(id)`, `BoxesWithClass(name)` (the laid-out elements carrying a
+class, in document order), `Drew()` and `NoErrors()`, an assertion naming every
+error the layer reported. `UiLayoutTest` is the same as a fixture for a test
+with none of its own, and `OpenMarkup` writes a one-off document over the base
+stylesheet; the engine's own layout tests are written against it.
+
 ### The preview model
 
 The previewer opens a document against a preview model: what a host would
@@ -765,8 +862,8 @@ it, and closing UI Preview or the editor with an unsaved model asks first.
 arbitrated within a surface, so a dialog opened on a surface of its own would
 take focus from nothing while the screens it meant to block kept taking clicks.
 Kyusu creates one surface for its window and hands it to every authored
-controller; the surface tracks the window's size each frame, because a retained
-document re-flows on a resize where a baked font atlas cannot.
+controller; the surface follows the window, because a retained document
+re-flows on a resize where a baked font atlas cannot.
 
 **A surface lives on one platform window.** `SetSurfaceWindow(surface, id)`
 names it (0, the default, is the primary). The surface hears only that window's
@@ -789,11 +886,33 @@ its own feature after it with `DependsOn`. Layers order drawing and nothing
 else: input reaches surfaces by their input policy whatever their layer, which
 is why a lower layer's surface is normally `Disabled`.
 
-The engine creates one for the primary window and tracks its size and display
-scale every frame, which is what the application shell's pages open on. Tracking
-is not optional: a surface still holding the extent it was created with lays out
-for a window that is no longer there, and one whose scale was never set treats
-`dp` as `px` and renders half-size on a HiDPI display.
+**A surface can follow its window.** Whoever owns a window publishes what it
+measures, `SetWindowView(windowId, { extent, scale })`, and every surface made
+with `CreateWindowSurface(name, order, windowId)` takes each view as it arrives: created
+at the last one, resized and rescaled with every one after, and moved onto the
+new window's view by `SetSurfaceWindow`. A view with no area -- a minimised
+window -- is ignored, so a following surface keeps laying out against the last
+real one rather than collapsing. The engine publishes the primary window's view
+every frame (`Engine::PublishWindowView`, window 0), which is what the
+application shell's surface follows, and Kyusu's shell windows publish theirs
+with the editor's chosen UI scale. Following is not optional for a window's UI:
+a surface still holding the extent it was created with lays out for a window
+that is no longer there, and one whose scale was never set treats `dp` as `px`
+and renders half-size on a HiDPI display. A host that sizes a following surface
+by hand is overruled by the next view. The service keeps one view per window
+that has published, for its own lifetime: a handful of records, bounded by the
+windows a process opens.
+
+**One authored screen on a surface of its own** is `UiStandaloneScreen`
+(`ui/UiStandaloneScreen.h`): a HUD, an overlay, a screen on a prop. It opens the
+first time it is asked to once the UI service is ready -- over the window, as a
+following surface with the input policy given, once the window has published a
+view; or into a named target texture at a fixed extent -- and a screen that
+fails to open is not tried again until `Close`, which destroys its surface. It
+holds the service it opened on, so it must be closed before that service shuts
+down; a game closes it from its shutdown hook, as it would any lease. Calling
+its open every frame is the intended use: it costs a flag test once open, and a
+game never reads the window or includes a platform header to draw a HUD.
 
 **Where a surface's recording goes is the surface's `UiSurfaceDestination`.**
 `Window` (the default) is drawn by the engine's own `UiRenderFeature` into the
@@ -853,14 +972,37 @@ wheel, `Full` keys and text as well. A drag that started inside a placement keep
 the pointer until the button comes up, wherever it comes up, so a slider survives
 an overshoot; leaving the placement sends the document one mouse-leave.
 
+**A surface has a stack order.** `UiStackOrder` wraps an integer and is given
+at creation (`CreateSurface`, `CreateWindowSurface`, `UiStandaloneScreen::OpenOverWindow`)
+or later with `SetSurfaceStackOrder`; `kUiStackOrderDefault` (0) is what a host
+that never states one gets. It follows the name or size in every creation call,
+before a window id, because an order is stated far more often than a second
+window; being its own type, a window id left in its old place does not compile
+as an order. A higher order is drawn later and offered input
+first. Equal orders stack in creation order, the later surface on top. Creation
+is counted by the runtime, not read from the surface's slot, so a surface that
+closes and reopens lands above its equals rather than wherever a freed slot
+happens to sit, and a reused slot starts with nothing of the surface before
+it. `UiRuntime::RebuildStackOrder` is the one place the order is computed: the
+draw order (`ExtractRender` publishes frames in it) and the input order are both
+built there, whenever a surface is created, changes destination or changes
+order. This is not the layer above, which picks a render feature; within a
+layer's feature, frames are drawn in stack order.
+
+The application shell's surface (the pause and options menus, created by
+`Engine`) has `kUiStackOrderShell` (1,000,000). Games use orders below it, and
+should keep to a range they name once, such as -1000 to 1000, so a HUD's place is
+read from one table rather than from who registered first. Orders at or above
+`kUiStackOrderShell` are the engine's.
+
 **A window's own surfaces are above its offscreen ones.** Events are offered
 topmost first and stop at the first surface that consumes them. A window
 surface is drawn over everything its host composites, an offscreen surface's
-picture included, so window surfaces are asked first; within each kind,
-reverse creation order is the stacking. A previewed document placed under an
-editor's panels therefore never takes a click aimed at a panel, however late it
-was created. A surface under a consumed move is sent a mouse-leave, so nothing
-on it stays hovered.
+picture included, so window surfaces are asked first, whatever their stack
+order; within each kind, stack order decides. A previewed document placed under
+an editor's panels therefore never takes a click aimed at a panel, however late
+it was created. A surface under a consumed move is sent a mouse-leave, so
+nothing on it stays hovered.
 
 ### Inspection
 

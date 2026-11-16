@@ -26,14 +26,35 @@ bool UiService::IsReady() const
     return Runtime->IsReady();
 }
 
-UiSurfaceId UiService::CreateSurface(std::string_view name, RenderExtent size)
+UiSurfaceId UiService::CreateSurface(std::string_view name, RenderExtent size, UiStackOrder order)
 {
-    return Runtime->CreateSurface(name, size);
+    return Runtime->CreateSurface(name, size, order);
+}
+
+UiSurfaceId UiService::CreateWindowSurface(std::string_view name, UiStackOrder order,
+                                           std::uint32_t platformWindowId)
+{
+    return Runtime->CreateWindowSurface(name, order, platformWindowId);
 }
 
 void UiService::DestroySurface(UiSurfaceId surface)
 {
     Runtime->DestroySurface(surface);
+}
+
+void UiService::SetWindowView(std::uint32_t platformWindowId, UiWindowView view)
+{
+    Runtime->SetWindowView(platformWindowId, view);
+}
+
+std::optional<UiWindowView> UiService::GetWindowView(std::uint32_t platformWindowId) const
+{
+    return Runtime->GetWindowView(platformWindowId);
+}
+
+bool UiService::FollowsWindow(UiSurfaceId surface) const
+{
+    return Runtime->FollowsWindow(surface);
 }
 
 void UiService::SetSurfaceSize(UiSurfaceId surface, RenderExtent size)
@@ -294,6 +315,16 @@ void UiService::SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer)
 std::uint8_t UiService::GetSurfaceLayer(UiSurfaceId surface) const
 {
     return Runtime->GetSurfaceLayer(surface);
+}
+
+void UiService::SetSurfaceStackOrder(UiSurfaceId surface, UiStackOrder order)
+{
+    Runtime->SetSurfaceStackOrder(surface, order);
+}
+
+UiStackOrder UiService::GetSurfaceStackOrder(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceStackOrder(surface);
 }
 
 UiHostImageId UiService::SetHostImage(std::string_view name, RenderExtent size)

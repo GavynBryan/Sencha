@@ -3,8 +3,12 @@
 #include <ui/UiScreenDesc.h>
 #include <ui/UiValue.h>
 
+#include <core/console/ConsoleTypes.h>
+
 #include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class ConsoleRegistry;
@@ -36,7 +40,11 @@ enum class OptionControl : std::uint8_t
     Range,
     // One of a fixed set, each shown by a label: a drop-down.
     Choice,
+    Toggle,
 };
+
+inline constexpr std::string_view kOptionToggleOff = "Off";
+inline constexpr std::string_view kOptionToggleOn = "On";
 
 // One entry of a Choice row: what the player reads, and what the cvar gets.
 // "Unlimited" is a label; "0" is a value; the document only ever sees labels.
@@ -61,27 +69,25 @@ struct OptionRow
     std::vector<OptionChoice> Choices;
 };
 
+[[nodiscard]] bool OptionControlSuits(OptionControl control, CVarType type);
+
 class OptionsPage
 {
 public:
     // The engine's own table, filtered to the cvars this process registered.
-    // A game replaces or extends it by editing Rows before the page opens.
     void InstallDefaults(const ConsoleRegistry& registry);
 
-    [[nodiscard]] std::vector<OptionRow>& Rows() { return Rows_; }
-    [[nodiscard]] const std::vector<OptionRow>& Rows() const { return Rows_; }
+    void RegisterRows(std::string_view owner, std::vector<OptionRow> rows);
+    void UnregisterOwner(std::string_view owner);
+
+    [[nodiscard]] std::span<const OptionRow> Rows() const { return Rows_; }
 
     // What the document presents: each row's label, the control it asks for,
     // and the value as the cvar stands now -- a Range snapped to its step, a
-    // Choice as the label of its current entry. A Choice whose current value
-    // has no entry is presented as itself, appended to the choices, so the
-    // control can show it and publishing changes nothing.
     [[nodiscard]] std::vector<UiRow> Present(const ConsoleRegistry& registry) const;
 
     // The document changed a row's control, and this is the value it now
     // shows. A Range takes the number, snapped and clamped to the row; a Choice
-    // takes a label and maps it to the value it stands for. Returns false
-    // without writing when the value is not one for this row -- and when it is
     // exactly what Present would show for the cvar as it stands, because the
     // document engine raises a change on publish as well as on input, and
     // opening the page must be a fixed point.
@@ -91,5 +97,14 @@ public:
     [[nodiscard]] UiScreenDesc Describe(std::string package) const;
 
 private:
+    struct OwnedRun
+    {
+        std::string Owner;
+        std::size_t Count = 0;
+    };
+
+    std::vector<OptionRow>::iterator EraseRowsOf(const OwnedRun& run);
+
     std::vector<OptionRow> Rows_;
+    std::vector<OwnedRun> Runs;
 };

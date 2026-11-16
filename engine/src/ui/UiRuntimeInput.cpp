@@ -260,19 +260,6 @@ void UiRuntime::EndPointerGesture(std::uint32_t platformWindowId)
             EndPress(surface);
 }
 
-void UiRuntime::RebuildInputOrder()
-{
-    // A window's own surfaces draw over everything its host composites, offscreen
-    // pictures included, so they are asked first; within each, reverse creation
-    // order is the z-order a host expects without having to state one.
-    InputOrder.resize(Surfaces.size());
-    for (std::size_t i = 0; i < InputOrder.size(); ++i)
-        InputOrder[i] = InputOrder.size() - 1 - i;
-    std::stable_partition(InputOrder.begin(), InputOrder.end(), [this](std::size_t index) {
-        return Surfaces[index].Destination == UiSurfaceDestination::Window;
-    });
-}
-
 UiInputCapture UiRuntime::Capture() const
 {
     return CaptureOver(std::nullopt);

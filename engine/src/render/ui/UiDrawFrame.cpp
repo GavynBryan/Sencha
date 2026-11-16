@@ -19,7 +19,7 @@ bool SameCommand(const UiDrawCommand& a, const UiDrawCommand& b)
 {
     return a.Geometry == b.Geometry && SameTexture(a.Texture, b.Texture) && a.Translation == b.Translation
         && SameClip(a.Clip, b.Clip) && a.Transform == b.Transform && a.ClipMask == b.ClipMask
-        && a.ClipMaskEnabled == b.ClipMaskEnabled;
+        && a.ClipMaskEnabled == b.ClipMaskEnabled && a.Gradient == b.Gradient;
 }
 } // namespace
 

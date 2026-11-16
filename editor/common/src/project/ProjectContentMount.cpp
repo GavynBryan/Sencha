@@ -3,7 +3,7 @@
 #include "project/Project.h"
 #include "project/ProjectFileSteps.h"
 
-#include <app/EngineContentRoot.h>
+#include <assets/runtime/EngineContentRoot.h>
 #include <assets/cook/ContentImporters.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/runtime/ContentMount.h>

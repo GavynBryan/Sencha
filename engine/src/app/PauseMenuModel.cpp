@@ -95,6 +95,15 @@ bool PauseMenuModel::SetEnabled(PauseCommandId command, bool enabled)
     return true;
 }
 
+bool PauseMenuModel::SetOfferedWhile(PauseCommandId command, std::function<bool()> offeredWhile)
+{
+    const std::size_t index = IndexOf(command);
+    if (index == kNoIndex)
+        return false;
+    Entries_[index].OfferedWhile = std::move(offeredWhile);
+    return true;
+}
+
 bool PauseMenuModel::Remove(PauseCommandId command)
 {
     const std::size_t index = IndexOf(command);
@@ -124,18 +133,36 @@ bool PauseMenuModel::MoveBefore(PauseCommandId command, PauseCommandId before)
     return true;
 }
 
+std::vector<const PauseMenuEntry*> PauseMenuModel::Offered() const
+{
+    std::vector<const PauseMenuEntry*> offered;
+    offered.reserve(Entries_.size());
+    for (const PauseMenuEntry& entry : Entries_)
+        if (!entry.OfferedWhile || entry.OfferedWhile())
+            offered.push_back(&entry);
+    return offered;
+}
+
 std::vector<std::string> PauseMenuModel::Labels() const
 {
     std::vector<std::string> labels;
-    labels.reserve(Entries_.size());
-    for (const PauseMenuEntry& entry : Entries_)
-        labels.push_back(entry.Label);
+    for (const PauseMenuEntry* entry : Offered())
+        labels.push_back(entry->Label);
     return labels;
+}
+
+std::vector<PauseCommandId> PauseMenuModel::OfferedCommands() const
+{
+    std::vector<PauseCommandId> commands;
+    for (const PauseMenuEntry* entry : Offered())
+        commands.push_back(entry->Command);
+    return commands;
 }
 
 PauseCommandId PauseMenuModel::CommandAt(std::size_t index) const
 {
-    return index < Entries_.size() ? Entries_[index].Command : PauseCommandId{};
+    const std::vector<PauseCommandId> commands = OfferedCommands();
+    return index < commands.size() ? commands[index] : PauseCommandId{};
 }
 
 const PauseCommandHandler* PauseMenuModel::Handler(PauseCommandId command) const

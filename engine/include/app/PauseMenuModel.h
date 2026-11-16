@@ -49,6 +49,7 @@ struct PauseMenuEntry
     PauseCommandId Command;
     // Presented, but refusing to run. A save entry with nothing to save.
     bool Enabled = true;
+    std::function<bool()> OfferedWhile;
 
     // The authored behaviour: a key into the shell's binding asset, resolved
     // against the World's catalog. Invalid means this entry runs its native
@@ -104,6 +105,7 @@ public:
 
     bool SetLabel(PauseCommandId command, std::string label);
     bool SetEnabled(PauseCommandId command, bool enabled);
+    bool SetOfferedWhile(PauseCommandId command, std::function<bool()> offeredWhile);
     bool Remove(PauseCommandId command);
 
     // Moves `command` to sit directly before `before`. By id, because a menu
@@ -114,6 +116,7 @@ public:
 
     // The labels, in order, as the document repeats over them.
     [[nodiscard]] std::vector<std::string> Labels() const;
+    [[nodiscard]] std::vector<PauseCommandId> OfferedCommands() const;
 
     // Which command the document meant by the row it reported. Invalid when the
     // index names no row, which is what a stale click after a reorder looks
@@ -131,6 +134,7 @@ public:
 
 private:
     [[nodiscard]] std::size_t IndexOf(PauseCommandId command) const;
+    [[nodiscard]] std::vector<const PauseMenuEntry*> Offered() const;
 
     std::string Title_ = "Paused";
     std::string RootPage_ = "asset://ui/pause.rml";

@@ -161,11 +161,6 @@ constexpr UnsupportedConstruct kUnsupported[] = {
     { "box-shadow", "box-shadow" },
     { "backdrop-filter", "backdrop-filter" },
     { "mask-image", "mask-image" },
-    { "linear-gradient", "gradient decorator" },
-    { "radial-gradient", "gradient decorator" },
-    { "conic-gradient", "gradient decorator" },
-    { "horizontal-gradient", "gradient decorator" },
-    { "vertical-gradient", "gradient decorator" },
 };
 
 void ScanUnsupported(std::string_view text, std::string_view sourcePath, UiSourceReferences& out)

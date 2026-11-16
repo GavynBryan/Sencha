@@ -27,6 +27,11 @@ namespace
         return result;
     }
 
+    ConsoleResult CheatRefusal(const std::string& name)
+    {
+        return Failure(ConsoleStatus::ValidationFailed, name + " is a cheat and net.cheats is off");
+    }
+
     CVarValidationResult ValidateRangeAndEnum(const CVarMetadata& metadata,
                                               const CVarValue& value)
     {
@@ -148,7 +153,7 @@ bool ConsoleRegistry::RegisterCVar(CVarMetadata metadata, ConsoleResult* result)
 {
     metadata.Name = CanonicalConsoleName(metadata.Name);
     if (metadata.Owner.empty())
-        metadata.Owner = "engine";
+        metadata.Owner = kEngineOwner;
     if (metadata.Source.Description.empty())
         metadata.Source.Description = "registration";
 
@@ -190,7 +195,7 @@ bool ConsoleRegistry::RegisterCommand(ConsoleCommandMetadata metadata, ConsoleRe
 {
     metadata.Name = CanonicalConsoleName(metadata.Name);
     if (metadata.Owner.empty())
-        metadata.Owner = "engine";
+        metadata.Owner = kEngineOwner;
 
     if (!IsValidConsoleName(metadata.Name))
     {
@@ -484,6 +489,17 @@ void ConsoleRegistry::ApplyPendingFor(CVarRecord& record)
     }
 }
 
+ConsoleResult ConsoleRegistry::CheckSessionRules(const ConsoleCommandMetadata& command) const
+{
+    if (!Authority.InSession)
+        return {};
+    if (HasFlag(command.Flags, ConsoleCommandFlags::AuthorityOnly) && !Authority.HasAuthority)
+        return Failure(ConsoleStatus::ValidationFailed, command.Name + " runs only on the server");
+    if (HasFlag(command.Flags, ConsoleCommandFlags::Cheat) && !Authority.CheatsEnabled)
+        return CheatRefusal(command.Name);
+    return {};
+}
+
 ConsoleResult ConsoleRegistry::SetRecord(CVarRecord& record,
                                          const CVarValue& value,
                                          ConsoleValueSource source,
@@ -519,10 +535,7 @@ ConsoleResult ConsoleRegistry::SetRecord(CVarRecord& record,
         // Checked regardless of authority: a listen-server host must not be
         // able to grant themselves what the other players cannot have.
         if (HasFlag(metadata.Flags, CVarFlags::Cheat) && !Authority.CheatsEnabled)
-        {
-            return Failure(ConsoleStatus::ValidationFailed,
-                           metadata.Name + " is a cheat and net.cheats is off");
-        }
+            return CheatRefusal(metadata.Name);
     }
 
     CVarValidationResult validation = ValidateRangeAndEnum(metadata, value);

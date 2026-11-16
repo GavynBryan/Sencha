@@ -9,6 +9,8 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 
+#include "ScopedEnv.h"
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -330,6 +332,12 @@ TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSour
 #panel { width: 10px; }
 #fancy { box-shadow: 2px 2px #000; }
 #blurred { filter: blur(3px); }
+#lit { decorator: linear-gradient(90deg, #e6b86c, #0000); }
+#stripes { decorator: repeating-linear-gradient(-45deg, #e6b86c 0px 4px, #0000 4px 8px); }
+#glow { decorator: radial-gradient(#e6b86c, #0000); }
+#dial { decorator: conic-gradient(#e6b86c, #0000); }
+#band { decorator: horizontal-gradient(#e6b86c #0000); }
+#fade { decorator: vertical-gradient(#e6b86c #0000); }
 )");
 
     ASSERT_TRUE(Cook(root).Ok);
@@ -343,6 +351,7 @@ TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSour
     };
     EXPECT_TRUE(reported("box-shadow"));
     EXPECT_TRUE(reported("filter"));
+    EXPECT_EQ(package.Unsupported.size(), 2u) << "a gradient decorator draws and is not reported";
 
     for (const UiUnsupportedFeature& note : package.Unsupported)
     {
@@ -419,6 +428,89 @@ TEST(UiPackageCook, AnIncludeThatCannotBeFilledIsRefused)
     cycle.Write("ui/a.rml", R"(<rml><body><include src="loop.rmlpart"/></body></rml>)");
     cycle.Write("ui/loop.rmlpart", R"(<include src="loop.rmlpart"/>)");
     EXPECT_FALSE(Cook(cycle).Ok);
+}
+
+namespace
+{
+constexpr std::string_view kLinksBase = R"(<rml>
+<head><link type="text/rcss" href="/ui/base.rcss"/></head>
+<body><div id="panel"/></body>
+</rml>)";
+
+std::string BlobText(const UiPackage& package, std::string_view name)
+{
+    const UiPackageBlob* blob = package.FindBlob(name);
+    return blob == nullptr ? std::string()
+                           : std::string(reinterpret_cast<const char*>(blob->Bytes.data()), blob->Bytes.size());
+}
+} // namespace
+
+TEST(UiPackageCook, AGameDocumentLinksAStylesheetFromTheEngineRoot)
+{
+    TempAssetRoot engine;
+    engine.Write("ui/base.rcss", "div { display: block; }\n");
+    const ScopedEnv engineRoot("SENCHA_ENGINE_CONTENT", engine.PathString().c_str());
+    TempAssetRoot game;
+    game.Write("ui/hud.rml", kLinksBase);
+
+    const CookRun run = Cook(game);
+    ASSERT_TRUE(run.Ok);
+    EXPECT_EQ(run.Stats.Failed, 0u);
+
+    UiPackage package;
+    ASSERT_TRUE(game.ReadPackage(".cooked/ui/hud.rml.sui", package));
+    EXPECT_EQ(BlobText(package, "/ui/base.rcss"), "div { display: block; }\n")
+        << "the engine's stylesheet is not in the package under the name the markup used";
+}
+
+TEST(UiPackageCook, EditingTheEnginesStylesheetRecooksTheGameDocumentsThatLinkIt)
+{
+    TempAssetRoot engine;
+    engine.Write("ui/base.rcss", "div { display: block; }\n");
+    const ScopedEnv engineRoot("SENCHA_ENGINE_CONTENT", engine.PathString().c_str());
+    TempAssetRoot game;
+    game.Write("ui/hud.rml", kLinksBase);
+    game.Write("ui/menu.rml", kLinksBase);
+
+    ASSERT_EQ(Cook(game).Stats.Imported, 2u);
+    EXPECT_EQ(Cook(game).Stats.CookedFresh, 2u);
+
+    engine.Write("ui/base.rcss", "div { display: block; margin: 0; }\n");
+    EXPECT_EQ(Cook(game).Stats.Imported, 2u)
+        << "an edit to the engine's stylesheet left the game's packages stale";
+
+    UiPackage package;
+    ASSERT_TRUE(game.ReadPackage(".cooked/ui/menu.rml.sui", package));
+    EXPECT_NE(BlobText(package, "/ui/base.rcss").find("margin"), std::string::npos);
+}
+
+TEST(UiPackageCook, AGameStylesheetAtTheSamePathShadowsTheEngines)
+{
+    TempAssetRoot engine;
+    engine.Write("ui/base.rcss", "div { display: block; }\n");
+    const ScopedEnv engineRoot("SENCHA_ENGINE_CONTENT", engine.PathString().c_str());
+    TempAssetRoot game;
+    game.Write("ui/hud.rml", kLinksBase);
+    ASSERT_EQ(Cook(game).Stats.Imported, 1u);
+
+    game.Write("ui/base.rcss", "div { display: inline; }\n");
+    EXPECT_EQ(Cook(game).Stats.Imported, 1u) << "the game's own sheet did not take over from the engine's";
+
+    UiPackage package;
+    ASSERT_TRUE(game.ReadPackage(".cooked/ui/hud.rml.sui", package));
+    EXPECT_EQ(BlobText(package, "/ui/base.rcss"), "div { display: inline; }\n");
+}
+
+TEST(UiPackageCook, AStylesheetNeitherRootHasIsStillAnError)
+{
+    TempAssetRoot engine;
+    const ScopedEnv engineRoot("SENCHA_ENGINE_CONTENT", engine.PathString().c_str());
+    TempAssetRoot game;
+    game.Write("ui/hud.rml", kLinksBase);
+
+    const CookRun run = Cook(game);
+    EXPECT_FALSE(run.Ok);
+    EXPECT_EQ(run.Stats.Failed, 1u);
 }
 
 #endif // SENCHA_ENABLE_COOK

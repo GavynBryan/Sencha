@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <app/OptionsPage.h>
 #include <app/PauseMenuModel.h>
 
 #include <string>
@@ -41,6 +42,28 @@ TEST(PauseMenuModelTest, OptionsAppearsOnlyWhenThereIsAPageBehindIt)
 
     model.SetOptionsPage({});
     EXPECT_EQ(LabelsOf(model), (std::vector<std::string>{ "Resume", "Exit to Desktop" }));
+}
+
+TEST(PauseMenuModelTest, OptionsFollowsTheRowsAsTheyStandWhenTheMenuIsRead)
+{
+    OptionsPage page;
+    PauseMenuModel model;
+    model.InstallDefaults("Exit to Desktop");
+    model.SetOptionsPage("asset://ui/options.rml");
+    ASSERT_TRUE(model.SetOfferedWhile(kPauseOptions, [&page] { return !page.Rows().empty(); }));
+    EXPECT_EQ(LabelsOf(model), (std::vector<std::string>{ "Resume", "Exit to Desktop" }));
+    EXPECT_EQ(model.CommandAt(1), kPauseExit);
+
+    OptionRow row;
+    row.Label = "Compass";
+    page.RegisterRows("game", { row });
+    EXPECT_EQ(LabelsOf(model), (std::vector<std::string>{ "Resume", "Options", "Exit to Desktop" }));
+    EXPECT_EQ(model.CommandAt(1), kPauseOptions);
+    EXPECT_EQ(model.OfferedCommands(), (std::vector<PauseCommandId>{ kPauseResume, kPauseOptions, kPauseExit }));
+
+    page.UnregisterOwner("game");
+    EXPECT_EQ(LabelsOf(model), (std::vector<std::string>{ "Resume", "Exit to Desktop" }));
+    EXPECT_EQ(model.CommandAt(1), kPauseExit);
 }
 
 TEST(PauseMenuModelTest, AHostThatCannotTerminateGetsNoWayOutEntry)

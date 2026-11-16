@@ -49,8 +49,6 @@ public:
     void AddRoot(std::string root, std::vector<std::string> extensions);
 
     // Polls every root at most once per Interval and re-cooks what changed.
-    // An import-settings sidecar edit re-cooks the source it describes.
-    // Returns how many sources were reloaded.
     std::size_t Poll(std::chrono::steady_clock::time_point now);
 
     // Re-cooks one source by hand. False when `root` is not one of ours.
@@ -73,6 +71,8 @@ public:
 
 private:
     struct Root;
+
+    std::size_t ReloadEngineContentReaders(const Root& engine, std::string_view sourceRelPath);
 
     LoggingProvider& Logging;
     AsyncTaskQueue& Tasks;

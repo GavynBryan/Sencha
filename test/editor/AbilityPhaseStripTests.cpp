@@ -9,6 +9,7 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <project/ProjectContentMount.h>
+#include <sencha/testing/UiPointerEvents.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -63,20 +64,7 @@ public:
 
     void Pointer(std::uint32_t type, float x, float y)
     {
-        SDL_Event event{};
-        event.type = type;
-        if (type == SDL_EVENT_MOUSE_MOTION)
-        {
-            event.motion.x = x;
-            event.motion.y = y;
-        }
-        else
-        {
-            event.button.button = SDL_BUTTON_LEFT;
-            event.button.x = x;
-            event.button.y = y;
-        }
-        (void)Ui->ProcessPlatformEvent(event);
+        (void)Ui->ProcessPlatformEvent(UiPointerEvent(type, x, y));
         Ui->Update();
     }
 
