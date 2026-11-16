@@ -1275,28 +1275,24 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** Kyusu authoring for prefab extends: the first designer who
   builds a prefab chain in Kyusu rather than by hand.
 
-## Entity references between a prefab's members
+## A response binding naming another member of its prefab
 
-- **What:** two places where one member of a prefab names another by its
-  persistent id and the reference does not follow the copy:
+- **What:** a response binding's `entity` argument names an entity by persistent
+  id and resolves through `PersistentEntityIndex` when it runs. It does not
+  follow a copy:
   - A spawn strips authored identity (`SmapPackageOptions::StripAuthoredIdentity`),
-    so a spawned member carries no persistent id, and a reference resolved
-    through `PersistentEntityIndex` (a verb binding's `entity` argument) finds
-    nothing. `claude/composition` resolves members against each other at
-    import (`SceneSerializationContext::PackageMembers`,
-    `World::AssignEmptyEntitySignature`, `PackageEntity::MemberId`), but its
-    only reader is the `PersistableRef` codec, which main does not have.
+    so a spawned member carries no id and a binding naming it finds nothing.
+    `PersistableRef` fields resolve between a spawn's members at import
+    (`SceneSerializationContext::PackageMembers`); a binding's argument does
+    not, because `ResponsesSerializer` keeps it as authored text.
   - A placement renames the `DataFieldKind::Entity` fields a component's
-    `CompositionSchema` declares. A response binding's `entity` argument is
-    not one: bindings are keyed by authored keys, which a record schema cannot
-    describe, so a placed prefab's binding still names the source's id.
-- **Where:** `engine/src/zone/ZonePackageImporter.cpp`,
-  `engine/src/world/scene/SmapFormat.cpp` (`BuildEntityPackageFromSmap`),
+    `CompositionSchema` declares. A binding's argument is not one: bindings are
+    keyed by authored keys, which a record schema cannot describe, so a placed
+    prefab's binding still names the source's id.
+- **Where:** `engine/src/logic/ResponsesSerializer.cpp`,
   `RenameMemberReferences` in
-  `editor/common/src/scene_source/SceneComposition.cpp`, and
-  `engine/src/logic/ResponsesSerializer.cpp`.
-- **Trigger:** `PersistableRef` and inventory merging (the import half lands
-  with it), or the first prefab whose response binding names another of its
+  `editor/common/src/scene_source/SceneComposition.cpp`.
+- **Trigger:** the first prefab whose response binding names another of its
   own members.
 
 ## Prefab harvest pins and keyed-list order

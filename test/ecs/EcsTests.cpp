@@ -314,6 +314,32 @@ TEST_F(EcsTest, EntitiesWithSameSignatureShareArchetype)
     EXPECT_EQ(count, 1);
 }
 
+// Every handle first, every row after: the empty entities around the one given
+// a row keep their places.
+TEST_F(EcsTest, AnEmptyEntityTakesItsRowAtItsSignature)
+{
+    const EntityId first = world.CreateEntity();
+    const EntityId second = world.CreateEntity();
+    const EntityId third = world.CreateEntity();
+    ArchetypeSignature posVel;
+    posVel.set(world.GetComponentId<Pos>());
+    posVel.set(world.GetComponentId<Vel>());
+
+    world.AssignEmptyEntitySignature(first, posVel);
+    ASSERT_TRUE(world.InitializeComponent<Pos>(first, { 1.f, 2.f, 3.f }));
+    ASSERT_TRUE(world.InitializeComponent<Vel>(first, { 4.f, 5.f, 6.f }));
+    world.AssignEmptyEntitySignature(third, ArchetypeSignature{});
+
+    EXPECT_EQ(world.TryGet<Pos>(first)->Y, 2.f);
+    EXPECT_EQ(world.TryGet<Vel>(first)->Z, 6.f);
+    EXPECT_FALSE(world.HasComponent<Pos>(second));
+    world.AddComponent<Pos>(third, { 9.f, 0.f, 0.f });
+    EXPECT_EQ(world.TryGet<Pos>(third)->X, 9.f);
+    world.DestroyEntity(second);
+    EXPECT_TRUE(world.IsAlive(first) && world.IsAlive(third));
+    EXPECT_EQ(world.TryGet<Pos>(first)->X, 1.f);
+}
+
 TEST_F(EcsTest, DataPreservedAcrossArchetypeTransition)
 {
     EntityId e = world.CreateEntity();

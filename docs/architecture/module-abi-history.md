@@ -1072,3 +1072,10 @@ declares the registry of one World's definitions named by asset path, which
 snapshot writer sends a persistent id as authored only outside the runtime
 namespace, and the package importer refuses a package entity holding a
 runtime-namespace id. No wire layout changes.
+
+**Persistable references.** `world/identity/PersistableRef.h` declares
+`PersistableRef`, `MakePersistableRef`, `ResolvePersistableRef`,
+`RefreshPersistableRef` and its scene codec. `SceneSerializationContext` gains
+`PackageMembers` (`PackageMember`), `PackageEntity` gains `MemberId`
+(`EntityBuildPackage::SetMemberId`), and `World` gains
+`AssignEmptyEntitySignature`.

@@ -100,6 +100,13 @@ this document. `SerializedEntityId` was removed with no consumers.
   Creation mints; adoption (`TrackEntity`) applies the liveness rule;
   `DestroyEntity` releases the id, which is what makes undo of a delete
   identity-preserving.
+- References: `PersistableRef` (`world/identity/PersistableRef.h`) holds the
+  target's id and the handle it last resolved to; a scene stores the id, and
+  the handle is found again through the index once the target is resident.
+  The importer makes every member's entity before it reads any component and
+  hands the codec the package's members by the id they were authored under
+  (`PackageMember`, `PackageEntity::MemberId`), so a reference between members
+  of a spawn, whose ids the spawn strips, finds that spawn's member.
 - Editor load validation: `EditorScene::ValidateIdentities` fails the load when
   a document's entities lack identity, share an id, or hold a reserved-namespace
   id. It only inspects; nothing on the load path mints.

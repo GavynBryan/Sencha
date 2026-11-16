@@ -342,6 +342,32 @@ bool ImportPackageIntoPartitionImpl(
     const bool worldHasTransforms =
         world.IsRegistered<LocalTransform>() && world.IsRegistered<WorldTransform>();
 
+    // Every member's handle exists before any component is read, so a reference
+    // from one member to another resolves whichever comes first. A skipped slot
+    // stays positionally aligned with the package's local ids; parent relations
+    // that touch it are dropped below.
+    std::vector<PackageMember> members;
+    for (const PackageEntity& packageEntity : package.Entities())
+    {
+        const bool skipped = zoneState != nullptr && packageEntity.PersistentId.IsValid()
+            && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId);
+        entities.push_back(skipped ? EntityId{} : world.CreateEntity(partition));
+        if (packageEntity.MemberId.IsValid())
+            members.push_back({ packageEntity.MemberId, entities.back(), packageEntity.PersistentId });
+    }
+    std::ranges::sort(members, {}, &PackageMember::Authored);
+    struct MembersInScope
+    {
+        SceneSerializationContext* Context;
+        ~MembersInScope()
+        {
+            if (Context != nullptr)
+                Context->PackageMembers = {};
+        }
+    } membersInScope{ sceneContext };
+    if (sceneContext != nullptr)
+        sceneContext->PackageMembers = members;
+
     ArchetypeSignature signature;
     // Reused across entities: an import of a thousand pawns should not allocate
     // a thousand owed lists.
@@ -350,12 +376,9 @@ bool ImportPackageIntoPartitionImpl(
     std::size_t packageIndex = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
-        if (zoneState != nullptr && packageEntity.PersistentId.IsValid()
-            && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId))
+        const EntityId entity = entities[packageIndex];
+        if (!entity.IsValid())
         {
-            // The slot stays positionally aligned with the package's local
-            // ids; parent relations that touch it are dropped below.
-            entities.push_back(EntityId{});
             ++packageIndex;
             continue;
         }
@@ -377,9 +400,7 @@ bool ImportPackageIntoPartitionImpl(
         // One row at its final archetype, then every column written in place.
         // Growing the entity component by component would migrate its row once
         // per component, each migration copying the columns added before it.
-        const EntityId entity =
-            world.CreateEntityWithSignature(partition, signature);
-        entities.push_back(entity);
+        world.AssignEmptyEntitySignature(entity, signature);
 
         for (const PackageComponent& component : packageEntity.Components)
         {
