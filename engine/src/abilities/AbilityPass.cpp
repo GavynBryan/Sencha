@@ -8,6 +8,7 @@
 #include <attributes/AttributeRegistry.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -233,8 +234,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         AbilityRecord& granted = actor.Record(slot);
         for (GameplayTagId tag : definition.OwnedTags)
         {
-            if (tags->StackCount(tag) == 0 && tags->Size() >= GameplayTagContainer::Capacity)
+            if (!tags->CanHold(tag))
+            {
+                NoteGameplayTagOverflow(Entities, actor.Entity, tag);
                 continue;
+            }
             tags->Grant(tag);
             granted.OwnedTags[granted.OwnedTagCount++] = tag;
         }

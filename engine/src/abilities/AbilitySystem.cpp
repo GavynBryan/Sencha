@@ -15,6 +15,7 @@
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <effects/ActiveEffect.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionVocabulary.h>
@@ -523,4 +524,6 @@ AbilitySystem::AbilitySystem(AbilityHost host)
 void AbilitySystem::FixedLogic(FixedLogicContext& ctx)
 {
     RunAbilityPass(ctx.Entities, Host, ctx.Time, &ctx.Partitions, Values);
+    if (Host.Logging != nullptr)
+        ReportGameplayTagOverflow(ctx.Entities, Host.Logging->GetLogger<GameplayTagOverflow>());
 }

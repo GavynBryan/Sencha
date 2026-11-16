@@ -8,6 +8,7 @@
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <time/ActorTime.h>
 #include <time/ActorTimeLeases.h>
 
@@ -330,10 +331,13 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     {
         for (GameplayTagId tag : def->GrantedTags)
         {
-            const bool fits = tag.IsValid()
-                && (tags->StackCount(tag) > 0 || tags->Size() < GameplayTagContainer::Capacity);
-            if (!fits || ae.GrantedTagCount == kEffectGrantedTagCapacity)
+            if (!tag.IsValid() || ae.GrantedTagCount == kEffectGrantedTagCapacity)
                 continue;
+            if (!tags->CanHold(tag))
+            {
+                NoteGameplayTagOverflow(world, target, tag);
+                continue;
+            }
             tags->Grant(tag);
             ae.GrantedTags[ae.GrantedTagCount++] = tag;
         }

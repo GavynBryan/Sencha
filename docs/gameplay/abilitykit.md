@@ -29,6 +29,15 @@ the minimum vocabulary, not its limit.
 `GameplayTagContainer`: up to 32 id-sorted tags with 16-bit stack counts, where a
 revoke decrements and the last stack removes.
 
+**Capacity.** 32 tags, a POD bound that keeps the container in a chunk row. A
+grant of a tag new to a full container (`CanHold` false) is refused, whatever
+writes it: an effect's granted tag, an ability's owned tag, or `tags.grant`.
+Each refusal is counted in the World's `GameplayTagOverflow` resource
+(`NoteGameplayTagOverflow`), and the ability system logs once when refusals
+begin, naming the first holder and tag, and once when a tick passes without
+one, with the total (`ReportGameplayTagOverflow`). Nothing else on the entity
+is affected; the refused tag is simply not held.
+
 Each tag's count holds a **baseline** within it: the stacks that persist.
 - Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the
   baseline.
@@ -198,7 +207,8 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
 - **Tags belong to the instance.** An effect records the tags it actually granted
   (up to `kEffectGrantedTagCapacity`; the registry refuses a definition granting
   more). Ending it revokes exactly those, whatever has become of the definition, and
-  a tag the container could not hold is neither granted nor revoked.
+  a tag the container could not hold is neither granted nor revoked, but counted
+  (see the container's capacity under D-A).
 - **The fold is canonical.** Floating-point folding depends on order, so modifiers
   fold per target in effect-definition order, then application order, never
   storage order.

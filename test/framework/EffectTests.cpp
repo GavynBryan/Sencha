@@ -7,6 +7,7 @@
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagSerialization.h>
 #include <core/serialization/JsonArchive.h>
@@ -366,6 +367,30 @@ TEST_F(EffectFixture, ATagTheContainerCannotHoldIsNeitherGrantedNorRevoked)
 
     RemoveEffect(world, applied);
     EXPECT_EQ(Tags(hero).Size(), GameplayTagContainer::Capacity);
+}
+
+// The boundary: the last free place takes the tag, and the one past it is
+// refused and counted rather than dropped unseen.
+TEST_F(EffectFixture, AFullContainerRefusingAnEffectsTagCountsIt)
+{
+    EntityId hero = MakeActor(100.0f, 5.0f);
+    for (std::uint8_t i = 0; i + 1 < GameplayTagContainer::Capacity; ++i)
+        Tags(hero).GrantBaseline(*tags->RegisterTag("Fill.T" + std::to_string(i)));
+    const GameplayTagId last = *tags->RegisterTag("State.Last");
+    const GameplayTagId extra = *tags->RegisterTag("State.Extra");
+
+    const EntityId fits = ApplyEffect(world, hero, Marker("Last", last, 0.0f), At(0));
+    EXPECT_TRUE(Tags(hero).HasExact(last));
+    EXPECT_EQ(world.TryGet<ActiveEffect>(fits)->GrantedTagCount, 1u);
+    EXPECT_FALSE(world.HasResource<GameplayTagOverflow>()) << "nothing was refused yet";
+
+    const EntityId refused = ApplyEffect(world, hero, Marker("Extra", extra, 0.0f), At(0));
+    EXPECT_FALSE(Tags(hero).HasExact(extra));
+    EXPECT_EQ(world.TryGet<ActiveEffect>(refused)->GrantedTagCount, 0u);
+    ASSERT_TRUE(world.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().Refused, 1u);
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().FirstHolder, hero);
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().FirstTag, extra);
 }
 
 TEST_F(EffectFixture, TheRegistryRefusesMoreGrantedTagsThanAnEffectRecords)

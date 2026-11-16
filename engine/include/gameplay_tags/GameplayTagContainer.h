@@ -60,6 +60,9 @@ struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
     bool SetContribution(GameplayTagId tag, std::uint16_t stacks);
 
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
+    // Whether a grant of `tag` would land: it is held already, or there is room.
+    // A writer refused here counts it (NoteGameplayTagOverflow).
+    [[nodiscard]] bool CanHold(GameplayTagId tag) const { return Count < Capacity || HasExact(tag); }
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t BaselineCount(GameplayTagId tag) const;
     // Of StackCount, the stacks above the baseline.

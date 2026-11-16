@@ -1103,3 +1103,9 @@ alone and `ReadGameplayTags` gains a `dropped` list. `GameplayTagRegistry` gains
 system, and `movement/MovementTags.h` declares `kModeTagProjection` and
 `kSupportTagProjection`. The container's local size moves the replication table
 hash; its wire image is unchanged, and the protocol stays 9.
+
+**Tag overflow.** `gameplay_tags/GameplayTagOverflow.h` declares
+`GameplayTagOverflow`, `NoteGameplayTagOverflow` and
+`ReportGameplayTagOverflow`; `GameplayTagContainer` gains `CanHold`. An
+effect's granted tag or an ability's owned tag that a full container refuses
+is counted, and `AbilitySystem` reports the count.

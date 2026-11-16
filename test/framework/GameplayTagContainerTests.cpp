@@ -1,8 +1,14 @@
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <core/logging/ILogSink.h>
+#include <core/logging/Logger.h>
 #include <ecs/World.h>
 
 #include <gtest/gtest.h>
+
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -153,4 +159,56 @@ TEST(GameplayTagContainer, IntegratesAsEcsComponentAndRegistryAsResource)
     // mutation persists in chunk storage
     EXPECT_TRUE(world.TryGet<GameplayTagContainer>(e)->HasExact(burning));
     EXPECT_EQ(world.TryGet<GameplayTagContainer>(e)->StackCount(burning), 1u);
+}
+
+TEST(GameplayTagContainer, AFullContainerHoldsOnlyWhatItAlreadyHas)
+{
+    GameplayTagRegistry reg;
+    GameplayTagContainer c{};
+    for (std::uint8_t i = 0; i + 1 < GameplayTagContainer::Capacity; ++i)
+        c.Grant(*reg.RegisterTag("Fill.T" + std::to_string(i)));
+    const GameplayTagId last = *reg.RegisterTag("Fill.Last");
+    const GameplayTagId extra = *reg.RegisterTag("Fill.Extra");
+    EXPECT_TRUE(c.CanHold(last)) << "one place left";
+    c.Grant(last);
+    EXPECT_FALSE(c.CanHold(extra));
+    EXPECT_TRUE(c.CanHold(last)) << "another stack of a held tag needs no place";
+}
+
+namespace
+{
+    struct Lines : ILogSink
+    {
+        std::vector<std::string> Written;
+        void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
+    };
+}
+
+// Refusals that recur every tick log once as they begin and once as they end,
+// and are counted between.
+TEST(GameplayTagOverflow, RefusalsAreReportedWhenTheyBeginAndEndAndCountedBetween)
+{
+    World world;
+    GameplayTagRegistry& reg = world.AddResource<GameplayTagRegistry>();
+    const GameplayTagId extra = *reg.RegisterTag("State.Extra");
+    const EntityId holder = world.CreateEntity();
+    Lines sink;
+    const Logger log("tags", { &sink });
+
+    ReportGameplayTagOverflow(world, log);
+    EXPECT_TRUE(sink.Written.empty()) << "nothing refused, nothing said";
+
+    for (int tick = 0; tick < 3; ++tick)
+    {
+        NoteGameplayTagOverflow(world, holder, extra);
+        NoteGameplayTagOverflow(world, holder, extra);
+        ReportGameplayTagOverflow(world, log);
+    }
+    ASSERT_EQ(sink.Written.size(), 1u) << "once as it began, not once a tick";
+    EXPECT_NE(sink.Written[0].find("State.Extra"), std::string::npos) << sink.Written[0];
+
+    ReportGameplayTagOverflow(world, log);
+    ASSERT_EQ(sink.Written.size(), 2u);
+    EXPECT_NE(sink.Written[1].find("6 refused"), std::string::npos) << sink.Written[1];
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().Refused, 6u);
 }
