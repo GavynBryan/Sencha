@@ -13,6 +13,7 @@
 #include <app/EngineSchedule.h>
 #include <app/LevelChange.h>
 #include <app/LoadedLevel.h>
+#include <save/SavedGames.h>
 #include <app/RuntimeContent.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/AuthoredQueryDispatcher.h>
@@ -394,6 +395,10 @@ public:
     [[nodiscard]] LevelChange& LevelChanges();
     [[nodiscard]] const LevelChange& LevelChanges() const;
 
+    // Writing and restoring saves. Live over the same span as Level().
+    [[nodiscard]] SavedGames& Saves();
+    [[nodiscard]] const SavedGames& Saves() const;
+
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
     {
@@ -688,6 +693,7 @@ private:
     // After the content it loads through, so it is destroyed before it.
     std::optional<LoadedLevel> LevelState;
     std::optional<LevelChange> LevelChangeState;
+    std::optional<SavedGames> SavedGameState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;

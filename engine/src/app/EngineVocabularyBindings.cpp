@@ -18,6 +18,8 @@
 #include <physics/PhysicsQueries.h>
 #include <projectile/ProjectileSystem.h>
 #include <projectile/ProjectileVerbs.h>
+#include <save/SavedGameVocabulary.h>
+#include <save/SavedGames.h>
 #include <time/ActorTimeVerbs.h>
 
 #include <utility>
@@ -77,6 +79,13 @@ EngineVocabularyBindings::~EngineVocabularyBindings()
 {
     Queries.clear();
     Verbs.clear();
+}
+
+void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher& verbs)
+{
+    const VerbRegistry& catalog = verbs.Registry();
+    Verbs.push_back(verbs.Bind<&InvokeSaveWrite>(catalog.Find(kSaveWriteVerb), saves));
+    Verbs.push_back(verbs.Bind<&InvokeSaveRestore>(catalog.Find(kSaveRestoreVerb), saves));
 }
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)

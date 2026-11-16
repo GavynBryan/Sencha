@@ -139,6 +139,7 @@ int main(int argc, char** argv)
         // --settings overrides either. The file inside is the game's to name.
         config.Console.SettingsRoot =
             ResolveSettingsRoot(arguments, (UserConfigDirectory() / "sencha").string());
+        config.Runtime.SavesRoot = ResolveSavesRoot(arguments, (UserDataDirectory() / "sencha").string());
         if (!contentRoots.empty())
             config.Runtime.ContentRoots = contentRoots;
         config.Window.Title = "Sencha";

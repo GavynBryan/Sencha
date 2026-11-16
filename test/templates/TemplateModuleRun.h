@@ -6,8 +6,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 //=============================================================================
 // `Probe` is a system the test registers on the engine before the run. It sees
@@ -18,13 +20,18 @@ template <typename Probe>
 class TemplateModuleRun
 {
 public:
-    TemplateModuleRun(std::string_view modulePath, std::string_view contentRoot, std::string_view map, int frames)
+    TemplateModuleRun(std::string_view modulePath, std::string_view contentRoot, std::string_view map, int frames,
+                      std::function<void(EngineConfig&)> adjust = {})
         : Runner(GameModuleRunSettings{ .Module = std::string(modulePath),
                                         .ContentRoot = std::string(contentRoot),
                                         .Map = std::string(map),
                                         .Frames = static_cast<std::uint64_t>(frames),
                                         .TargetFps = 1000.0,
-                                        .Adjust = [](EngineConfig& config) { config.Debug.ConsoleLogging = false; } })
+                                        .Adjust = [adjust = std::move(adjust)](EngineConfig& config) {
+                                            config.Debug.ConsoleLogging = false;
+                                            if (adjust)
+                                                adjust(config);
+                                        } })
     {
         if (!Runner.Loaded())
         {
