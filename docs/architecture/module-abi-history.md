@@ -1086,3 +1086,10 @@ component annotation: `ComponentDefinition` and `TypeSchema` may state
 `WorldComponentSchema::Entry` and `ReplicatedComponent` gain the flag, and
 `zone/ZonePackageImporter.h` declares `IsAuthorityMaterialized`. The flag is not
 part of the replication table hash.
+
+**Per-entity relevance.** `NetRelevanceAnchor` is a new engine component in
+`NetComponents` (`kNetRelevanceAnchorDepth`), and the change store's
+`EntityState` gains `Anchored`, `AnchorPastBound` and `RelevantPeer`.
+`ReplicationPeerState` gains `NoteSeeded`, and `NoteDeparted` voids what
+pending snapshots said about the entity. The anchor does not travel, so the
+replication table hash does not move.

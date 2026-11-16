@@ -2,7 +2,9 @@
 
 #include <core/identity/StrongId.h>
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/EntityId.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -97,6 +99,26 @@ NetDrivenBy
 
 static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
               "NetDrivenBy must be trivially copyable to live in ECS chunks");
+
+//-----------------------------------------------------------------------------
+// NetRelevanceAnchor
+//
+// Sends this entity only to the peer that owns the root of its anchor chain:
+// its anchor, that one's anchor if it has one, and so on. A root nobody owns,
+// a dead link, or a chain deeper than kNetRelevanceAnchorDepth makes it relevant
+// to no peer. A peer that stops being relevant is owed its destroy.
+//
+// The authority reads this; it does not travel.
+//-----------------------------------------------------------------------------
+inline constexpr std::size_t kNetRelevanceAnchorDepth = 8;
+
+struct SENCHA_COMPONENT("sencha.net_relevance_anchor") NetRelevanceAnchor
+{
+    EntityId Anchor;
+};
+
+static_assert(std::is_trivially_copyable_v<NetRelevanceAnchor>,
+              "NetRelevanceAnchor must be trivially copyable to live in ECS chunks");
 
 #if !defined(SENCHA_CODEGEN)
 #  include <net/NetReplicationComponents.sencha.h>

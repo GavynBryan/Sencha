@@ -5,6 +5,7 @@
 #include <ecs/World.h>
 #include <net/ClientPrediction.h>
 #include <net/NetOwnership.h>
+#include <net/NetReplicationComponents.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationCodec.h>
 #include <net/NetSession.h>
@@ -541,6 +542,14 @@ std::string NetFormatEntity(const NetEntityReportSources& sources, NetEntityId i
                       held->Owner, held->OwnerChangedAt);
     out += Line("; seen at gen %" PRIu64 " of %" PRIu64, held->SeenAt,
                 replication.PublishedState().Generation());
+    if (held->Anchored)
+    {
+        Section(out, "relevance");
+        out += held->RelevantPeer != 0 ? Line("anchored; sent to peer %u alone", held->RelevantPeer)
+             : held->AnchorPastBound
+                 ? Line("anchored; sent to no peer: its anchor chain is longer than %zu", kNetRelevanceAnchorDepth)
+                 : std::string("anchored; sent to no peer: its chain's root is gone or owned by none");
+    }
 
     if (held->Persistent.IsValid())
     {

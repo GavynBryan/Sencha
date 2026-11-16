@@ -235,6 +235,17 @@ void ReplicationPeerState::NoteDeparted(NetEntityId id)
         return;
     if (std::find(Departed.begin(), Departed.end(), id) == Departed.end())
         Departed.push_back(id);
+    // What snapshots in flight said about it is void: confirming one later must
+    // not make this peer look as though it still holds what it was told to drop.
+    for (SentSnapshot& snapshot : Pending)
+        std::erase_if(snapshot.Entities, [id](const auto& entry) { return entry.first == id; });
+}
+
+void ReplicationPeerState::NoteSeeded(NetEntityId id)
+{
+    std::erase(Departed, id);
+    for (SentSnapshot& snapshot : Pending)
+        std::erase(snapshot.Destroyed, id);
 }
 
 void ReplicationPeerState::RecordDestroysSent(std::uint32_t sequence,
@@ -473,6 +484,10 @@ namespace
     {
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
+        // An anchored entity reaches only the peer its chain makes relevant, which
+        // holds it as an owner does; serving order stays the owner's.
+        const bool seesOwnerFields =
+            isOwner || (ownerPeer != 0 && entity.Anchored && entity.RelevantPeer == ownerPeer);
         // A transfer makes owner-gated runs newly visible to one peer and newly
         // hidden from another without any of them having changed value, so the
         // fields' own history cannot express it.
@@ -525,7 +540,7 @@ namespace
             assert(component != nullptr && "store holds a component the layout lost");
 
             const std::uint64_t owed =
-                ReplicationOwedFields(*component, held, floor, ownershipMoved, isOwner);
+                ReplicationOwedFields(*component, held, floor, ownershipMoved, seesOwnerFields);
             masks.push_back(owed);
             owedAnything = owedAnything || owed != 0;
             bits += kComponentIndexBits
@@ -650,9 +665,16 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     //
     // Costs nothing for an entity the peer never had: NoteDeparted only owes a
     // destroy for one it was actually written to.
+    //
+    // An anchored entity is withheld the same way from every peer but the one
+    // its anchor chain's root belongs to.
+    const auto irrelevant = [&](const ReplicationChangeStore::EntityState& entity) {
+        return entity.Anchored
+            && (entity.RelevantPeer == kNetAuthorityPeer || entity.RelevantPeer != request.OwnerPeer);
+    };
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
     {
-        if (withheld(entity.Zone))
+        if (withheld(entity.Zone) || irrelevant(entity))
             peer.NoteDeparted(entity.Id);
     }
 
@@ -669,7 +691,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         // is owed: nothing is ever said about a room the peer has not confirmed
         // it holds. Not a budget decision and not a deferral -- there is nowhere
         // on that machine to put it, so there is nothing to defer.
-        if (withheld(entity.Zone))
+        if (withheld(entity.Zone) || irrelevant(entity))
             continue;
 
         PlannedEntity plan;
@@ -852,7 +874,11 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // sent state that never left the building.
     peer.RecordDestroysSent(request.Sequence, destroyed);
     for (const PlannedEntity* plan : sending)
+    {
         peer.RecordSent(request.Sequence, plan->Entity->Id, generation);
+        if (plan->Seeding)
+            peer.NoteSeeded(plan->Entity->Id);
+    }
 
     result.Ok = true;
     result.BytesWritten = writer.BytesWritten();

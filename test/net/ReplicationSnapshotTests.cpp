@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
 #include <movement/JumpState.h>
@@ -1454,6 +1457,176 @@ TEST(ReplicationVisibility, DestroyingAPrefabRootTakesItsGroup)
     EXPECT_FALSE(pair.Client.IsAlive(mirror));
     EXPECT_FALSE(pair.Client.IsAlive(child))
         << "the root's group outlived the entity the wire named";
+}
+
+//=============================================================================
+// Per-entity relevance
+//
+// An anchored entity reaches only the peer that owns the root of its anchor
+// chain: what a holder holds reaches that holder alone.
+//=============================================================================
+
+namespace
+{
+    struct Holding
+    {
+        EntityId Holder;
+        EntityId Held;
+    };
+
+    // A peer-owned holder and an entity anchored to it, on the authority.
+    Holding HeldBy(Pair& pair, std::uint32_t owner)
+    {
+        const EntityId holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        if (owner != kNetAuthorityPeer)
+            pair.Authority.AddComponent<NetOwner>(holder, NetOwner{ .Peer = owner });
+        const EntityId held = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(held, NetRelevanceAnchor{ .Anchor = holder });
+        return { holder, held };
+    }
+}
+
+TEST(ReplicationRelevance, AnAnchoredEntityReachesOnlyItsRootsOwner)
+{
+    Pair owner;
+    const Holding owned = HeldBy(owner, 5);
+    owner.Replicate(5);
+    EXPECT_TRUE(owner.Mirror(owned.Holder).IsValid());
+    EXPECT_TRUE(owner.Mirror(owned.Held).IsValid()) << "the owner sees what its holder holds";
+
+    // A peer joining later is seeded with the holder and nothing it holds.
+    Pair other;
+    const Holding notOwned = HeldBy(other, 5);
+    other.Replicate(6);
+    EXPECT_TRUE(other.Mirror(notOwned.Holder).IsValid());
+    EXPECT_FALSE(other.Mirror(notOwned.Held).IsValid());
+}
+
+TEST(ReplicationRelevance, NestedAnchorsFollowTheRootAndAnUnownedRootReachesNobody)
+{
+    Pair pair;
+    const Holding pack = HeldBy(pair, 5);
+    const EntityId contents = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetRelevanceAnchor>(contents, NetRelevanceAnchor{ .Anchor = pack.Held });
+    const Holding chest = HeldBy(pair, kNetAuthorityPeer);
+    pair.Replicate(5);
+    EXPECT_TRUE(pair.Mirror(contents).IsValid()) << "a bottle's contents reach the bottle's holder";
+    EXPECT_TRUE(pair.Mirror(chest.Holder).IsValid());
+    EXPECT_FALSE(pair.Mirror(chest.Held).IsValid()) << "an unowned chest's contents reach nobody";
+}
+
+// A chain longer than kNetRelevanceAnchorDepth reaches nobody, even when its
+// root is owned.
+TEST(ReplicationRelevance, AChainDeeperThanTheBoundReachesNobody)
+{
+    Pair pair;
+    const Holding first = HeldBy(pair, 5);
+    EntityId anchor = first.Held;
+    std::vector<EntityId> chain{ first.Held };
+    for (std::size_t depth = 1; depth <= kNetRelevanceAnchorDepth; ++depth)
+    {
+        const EntityId link = pair.SpawnReplicated(PoseAt(static_cast<float>(depth), 2.0f, 0.0f));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(link, NetRelevanceAnchor{ .Anchor = anchor });
+        chain.push_back(link);
+        anchor = link;
+    }
+    pair.Replicate(5);
+    EXPECT_TRUE(pair.Mirror(chain[kNetRelevanceAnchorDepth - 1]).IsValid()) << "the deepest link within the bound";
+    EXPECT_FALSE(pair.Mirror(chain[kNetRelevanceAnchorDepth]).IsValid()) << "one link past it";
+    const ReplicationChangeStore::EntityState* past =
+        pair.Changes.Find(pair.Identity.TryFind(chain[kNetRelevanceAnchorDepth]));
+    ASSERT_NE(past, nullptr);
+    EXPECT_TRUE(past->AnchorPastBound) << "said so, for the status report";
+    EXPECT_FALSE(pair.Changes.Find(pair.Identity.TryFind(chain[kNetRelevanceAnchorDepth - 1]))->AnchorPastBound);
+}
+
+TEST(ReplicationRelevance, OwnershipMovingTakesTheHeldEntityAwayAndBringsItBack)
+{
+    Pair pair;
+    const Holding pack = HeldBy(pair, 5);
+    pair.Replicate(5);
+    const EntityId first = pair.Mirror(pack.Held);
+    ASSERT_TRUE(first.IsValid());
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 6;
+    pair.Replicate(5);
+    EXPECT_FALSE(pair.Client.IsAlive(first)) << "the old owner still holds what it no longer may see";
+    EXPECT_TRUE(pair.Client.IsAlive(pair.Mirror(pack.Holder)));
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 5;
+    pair.Replicate(5);
+    const EntityId again = pair.Mirror(pack.Held);
+    ASSERT_TRUE(again.IsValid());
+    EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(again)) << "seeded whole, not as a delta";
+}
+
+// More destroys are owed than one snapshot carries, and the entities come back
+// before the last of them is sent. A destroy written after the seed would leave
+// the peer without what the authority believes it holds.
+TEST(ReplicationRelevance, ASeedSupersedesADestroyStillOwed)
+{
+    Pair pair;
+    const EntityId holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(holder, NetOwner{ .Peer = 5 });
+    std::vector<EntityId> held;
+    for (int i = 0; i < 40; ++i)
+    {
+        held.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 1.0f, 0.0f)));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(held.back(), NetRelevanceAnchor{ .Anchor = holder });
+    }
+    pair.Replicate(5);
+    ASSERT_TRUE(pair.Mirror(held.back()).IsValid());
+
+    pair.Authority.TryGet<NetOwner>(holder)->Peer = 6;
+    pair.Deliver = false;
+    pair.Replicate(5);
+    ASSERT_GT(pair.Peer.OwedDestroys().size(), 32u) << "the test needs more than one snapshot of destroys";
+
+    pair.Authority.TryGet<NetOwner>(holder)->Peer = 5;
+    pair.Deliver = true;
+    for (int i = 0; i < 4; ++i)
+        pair.Replicate(5);
+    for (const EntityId entity : held)
+        EXPECT_TRUE(pair.Client.IsAlive(pair.Mirror(entity))) << "destroyed after it was seeded again";
+    EXPECT_TRUE(pair.Peer.OwedDestroys().empty());
+}
+
+// An anchored entity's own owner-only state (a wand's charges) reaches the peer
+// its anchor chain reaches, as an owner's would.
+TEST(ReplicationRelevance, TheHolderSeesTheOwnerOnlyStateOfWhatItHolds)
+{
+    Pair pair;
+    AttributeId charges;
+    for (World* world : { &pair.Authority, &pair.Client })
+        charges = world->AddResource<AttributeRegistry>().RegisterAttribute("Charges", 0.0f, 10.0f, 0.0f);
+    const Holding wand = HeldBy(pair, 5);
+    pair.Authority.AddComponent<AttributeSet>(wand.Held);
+    (void)pair.Authority.TryGet<AttributeSet>(wand.Held)->Add(charges, 6.0f);
+    pair.Replicate(5);
+
+    const EntityId mirror = pair.Mirror(wand.Held);
+    ASSERT_TRUE(mirror.IsValid());
+    const AttributeSet* seen = pair.Client.TryGet<AttributeSet>(mirror);
+    ASSERT_NE(seen, nullptr);
+    EXPECT_EQ(seen->GetBase(charges), 6.0f);
+}
+
+TEST(ReplicationRelevance, ADespawnIsOwedOnlyToThePeerThatHeldIt)
+{
+    Pair owner;
+    const Holding owned = HeldBy(owner, 5);
+    owner.Replicate(5);
+    const EntityId mirror = owner.Mirror(owned.Held);
+    owner.Authority.DestroyEntity(owned.Held);
+    owner.Replicate(5);
+    EXPECT_FALSE(owner.Client.IsAlive(mirror));
+
+    Pair other;
+    const Holding notOwned = HeldBy(other, 5);
+    other.Replicate(6);
+    other.Authority.DestroyEntity(notOwned.Held);
+    other.Replicate(6);
+    EXPECT_TRUE(other.Peer.OwedDestroys().empty()) << "nothing is owed for what was never sent";
 }
 
 //=============================================================================

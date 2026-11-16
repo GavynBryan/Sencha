@@ -2297,6 +2297,23 @@ system's semantics until composition wires them in.
   attach later without protocol change.
 - **Sub-zone interest granularity and per-entity visibility culling.** Zone scope
   is the v1 answer (Section 8.5's trigger records the revisit).
+
+  *One per-entity rule has landed (`NetRelevanceAnchor`):*
+  - **The rule.** An anchored entity is sent only to the peer owning the root
+    of its anchor chain, and to no peer when that root has no owner, is gone,
+    or is more than `kNetRelevanceAnchorDepth` (8) links away. What a holder
+    holds reaches that holder alone, and that peer sees its owner-only fields
+    as an owner does.
+  - **Where it is decided.** The change store resolves each anchored entity's
+    relevant peer once per publish (`EntityState::RelevantPeer`, and
+    `AnchorPastBound` for a chain past the bound, which `net_entity` reports
+    for the entity). The writer withholds the entity, beside the zone check and
+    before planning, from every other peer.
+  - **Losing relevance** owes a destroy, as a revoked zone does, and voids what
+    snapshots still in flight said about the entity, so a late acknowledgement
+    cannot leave the peer believed to hold it. Regaining it seeds the entity
+    whole, and the seed supersedes any destroy of it still owed or in flight.
+  - **Visibility culling** by distance or sight is still not done.
 - **General-purpose stream compression.** Delta plus quantization first; trigger:
   measured bandwidth exceeding the envelope on a real world (then LZ4-class on the
   reliable channel only, still one codec path).

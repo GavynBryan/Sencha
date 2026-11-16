@@ -26,6 +26,29 @@ void ReplicationChangeStore::Reset()
     LastGeneration = 0;
 }
 
+namespace
+{
+    // The owner of the root an anchor chain ends at; zero for no peer.
+    std::uint32_t AnchoredPeer(const World& world, EntityId anchor, bool hasOwners, bool& pastBound)
+    {
+        pastBound = false;
+        for (std::size_t depth = 0; depth < kNetRelevanceAnchorDepth; ++depth)
+        {
+            if (!world.IsAlive(anchor))
+                return kNetAuthorityPeer;
+            if (const NetRelevanceAnchor* next = world.TryGet<NetRelevanceAnchor>(anchor))
+            {
+                anchor = next->Anchor;
+                continue;
+            }
+            const NetOwner* owner = hasOwners ? world.TryGet<NetOwner>(anchor) : nullptr;
+            return owner != nullptr ? owner->Peer : kNetAuthorityPeer;
+        }
+        pastBound = true;
+        return kNetAuthorityPeer;
+    }
+}
+
 void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layout,
                                     ReplicationAuthorityIdentity& identity,
                                     std::uint64_t generation,
@@ -80,6 +103,7 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
             authorityOnly.push_back(column.Column);
 
     const World& reading = world;
+    const bool hasAnchors = world.IsRegistered(ResolveComponentTypeId<NetRelevanceAnchor>());
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
     const bool hasPersistentIds =
         world.IsRegistered(ResolveComponentTypeId<PersistentIdComponent>());
@@ -125,6 +149,12 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                     authorityOnly, [&](ComponentId column) { return reading.HasComponent(entity, column); });
                 state.Persistent = authored != nullptr && !materialized ? authored->Id : PersistentEntityId{};
             }
+
+            const NetRelevanceAnchor* anchor = hasAnchors ? reading.TryGet<NetRelevanceAnchor>(entity) : nullptr;
+            state.Anchored = anchor != nullptr;
+            state.RelevantPeer =
+                anchor != nullptr ? AnchoredPeer(reading, anchor->Anchor, hasOwners, state.AnchorPastBound) : 0;
+            state.AnchorPastBound = anchor != nullptr && state.AnchorPastBound;
 
             std::uint32_t owner = 0;
             if (hasOwners)

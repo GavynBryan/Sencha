@@ -88,6 +88,12 @@ public:
         std::vector<RemovedComponent> Removed;
         // Zero when nobody owns it, which is everything the authority drives.
         std::uint32_t Owner = 0;
+        // Carries a NetRelevanceAnchor: sent to RelevantPeer alone, and to no
+        // peer when that is zero.
+        bool Anchored = false;
+        // Its chain ran past kNetRelevanceAnchorDepth, which reaches no peer.
+        bool AnchorPastBound = false;
+        std::uint32_t RelevantPeer = 0;
         // When ownership last moved. Whether a field is visible to a peer
         // depends on who owns the entity, and that is not something the field's
         // own change generation can express: a transfer makes owner-gated runs

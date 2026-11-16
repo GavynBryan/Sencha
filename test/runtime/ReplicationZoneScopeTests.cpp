@@ -117,10 +117,26 @@ namespace
             ASSERT_TRUE(LastApply.Ok())
                 << SnapshotApplyErrorToString(LastApply.Error);
 
+            if (HoldAcks)
+            {
+                Unacked.Observe(LastApply.Sequence);
+                return;
+            }
             NetSnapshotAck ack;
             ack.Observe(LastApply.Sequence);
             Peer.Acknowledge(ack);
         }
+
+        // The acknowledgements held back so far, arriving together.
+        void DeliverAcks()
+        {
+            Peer.Acknowledge(Unacked);
+            Unacked = NetSnapshotAck{};
+            HoldAcks = false;
+        }
+
+        bool HoldAcks = false;
+        NetSnapshotAck Unacked;
 
         // The client's copy of an authority entity, or invalid if it has none.
         [[nodiscard]] EntityId Mirror(EntityId entity) const
@@ -281,4 +297,30 @@ TEST(ReplicationZoneScope, AReopenedRoomIsSeededAgain)
     EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(mirror))
         << "the entity came back as a delta against state the client had "
            "already dropped";
+}
+
+// An acknowledgement of a snapshot sent before the peer lost an entity arrives
+// after the destroy went out. It must not make the peer look as though it still
+// holds the entity: if it did, the room reopening would send a delta against
+// state the client destroyed.
+TEST(ReplicationZoneScope, ALateAcknowledgementDoesNotRestoreWhatThePeerWasToldToDestroy)
+{
+    ScopedPair pair;
+    const EntityId inside = pair.Replicated(kNear);
+    pair.Grant(kNear);
+    pair.Ack(kNear);
+    pair.HoldAcks = true;
+    pair.Replicate();
+    ASSERT_TRUE(pair.ClientHas(inside));
+    pair.Revoke(kNear);
+    pair.Replicate();
+    ASSERT_FALSE(pair.ClientHas(inside));
+    pair.DeliverAcks();
+
+    pair.Grant(kNear);
+    pair.Ack(kNear);
+    pair.Replicate();
+    ASSERT_TRUE(pair.ClientHas(inside)) << "the reopened room's entity was never seeded again";
+    EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(pair.Mirror(inside)))
+        << "it came back as a delta against state the client had dropped";
 }

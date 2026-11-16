@@ -17,7 +17,8 @@ using NetComponents = ComponentSet<
     NetOwner,
     NetDrivenBy,
     NetSpawnPrefab,
-    NetParticipantIdentity>;
+    NetParticipantIdentity,
+    NetRelevanceAnchor>;
 
 inline void RegisterNetComponents(ComponentRegistrar& registrar)
 {
