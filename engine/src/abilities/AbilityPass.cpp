@@ -28,7 +28,13 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , Journal(predicting ? world.TryGetResource<AbilityPredictionJournal>() : nullptr)
     , Inputs(buffers.Inputs)
     , Answer(buffers.Answer)
-    , Costs(buffers.Costs)
+    , EffectCosts(buffers.EffectCosts)
+    , CostArguments(buffers.CostArguments)
+    , CostRows(buffers.CostRows)
+    , CostRowGroups(buffers.CostRowGroups)
+    , CostRowArguments(buffers.CostRowArguments)
+    , CostBatches(buffers.CostBatches)
+    , CostTranslating(buffers.CostTranslating)
     , Emitted(buffers.Emitted)
 {
     Emitted.clear();
@@ -158,7 +164,8 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
         return AbilityRefusal::Capacity;
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
-    if ((definition->StartGroups != 0 || cooldown) && !CheckCosts(actor, *definition, definition->StartGroups, cooldown).Paid)
+    if ((definition->StartGroups != 0 || cooldown)
+        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown, grant.Source).Paid)
         return AbilityRefusal::CostFailed;
     return AbilityRefusal::None;
 }
@@ -211,7 +218,13 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         assert(tracked && "the journal had room when the start was admitted");
     }
 
-    (void)Commit(actor, slot, definition, definition.StartGroups);
+    // Admission checked these costs against the same values; a start that still
+    // cannot pay ends rather than run unpaid.
+    if (!Commit(actor, slot, definition, definition.StartGroups).Paid)
+    {
+        End(actor, slot, AbilityEndReason::CommitFailed);
+        return -1;
+    }
     if (definition.Cooldown && definition.Cooldown->Start == AbilityCooldownStart::OnStart)
         StartCooldown(actor, slot, definition);
 

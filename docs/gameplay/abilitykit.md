@@ -240,7 +240,12 @@ An ability is content: an `ability.definition` data asset
 - **Locals.** Up to eight slots of typed values for one activation (`bool`, `int`,
   `float`, `vec3`, `entity`; `hit` and `entities` take two; one `entities` local).
 - **Costs and cooldown.** Cost groups paid at start or by a `commit`, once or per
-  pulse; a cooldown effect started on start, on a group's commit, or on end.
+  pulse; a cooldown effect started on start, on a group's commit, or on end. A
+  group's `effects` are Instant Add costs taken from its `target`: the `actor`
+  (the default) or the grant's `source`, as a clip lives on its weapon. Its
+  `resources` are paid through registered cost providers:
+  `{ "key", "provider", "arguments" }`, the arguments in the provider's schema
+  and from the same values an op takes.
 
 Every element carries a stable key. Compiling happens in two stages, both
 reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
@@ -368,9 +373,27 @@ owned tags revoked, an `on_end` cooldown started, exit ops never run; the record
 lingers for presentation with its reason and the element behind it.
 
 **Commit** pays cost groups atomically: every check (definitions, Instant Add
-shape, attribute floors summed per attribute, the cooldown's tag room) passes
-before anything applies, or nothing applies and the activation ends `CommitFailed`
-(unless the op says `on_fail: continue`). A `once` group already paid is a traced
+shape, attribute floors summed per target and attribute, each provider's batch,
+the cooldown's tag room) passes before anything applies, or nothing applies and
+the activation ends `CommitFailed` (unless the op says `on_fail: continue`).
+Every row of one provider across the committed groups goes to its `Check` in one
+call, so two groups each taking an arrow check for two. Applying runs the effect
+costs, then each provider's `Apply` in the order the definition first names it.
+A provider (`abilities/AbilityCostProviders.h`) is declared into the World's
+`AbilityCostProviderCatalog` through a registration scope, with an argument
+schema, a pure `Check` over its rows and an `Apply` that cannot fail after a
+passing check and changes no archetype. An ability naming one the catalog lacks
+is refused at declaration (`provider_unknown`). A resource has one owning
+provider. Another provider reaches it only by spending through it: it declares
+`SpendsThrough` (the owner's name) and a pure `Translate` in place of `Check` and
+`Apply`, and each of its rows becomes, once, a row of the owner's batch. Every
+row that reaches a resource in one commit is therefore checked as one spend, the
+apply spends exactly the rows checked, and no batch applies unless every batch
+passed. A translation that names nothing to spend fails its row's group. A
+translation leading to another translating provider is refused. A start's
+commit reads the same values admission checked, through the grant being
+admitted (its source and parameters); a start that still cannot pay ends
+`CommitFailed` rather than run unpaid. A `once` group already paid is a traced
 no-op. A cooldown of D ticks started on tick N blocks ticks N … N+D−1 and admits on
 N+D.
 

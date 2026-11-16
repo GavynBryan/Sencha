@@ -34,6 +34,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <AllocationCounter.h>
+#include <CounterCostProvider.h>
 
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
@@ -191,6 +192,14 @@ protected:
         QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsOverlap>(Queries->Registry().Find(kPhysicsOverlapQuery),
                                                                      std::as_const(Traces)));
         Host = AbilityHost{ .Verbs = Verbs.get(), .Queries = Queries.get() };
+    }
+
+    void DeclareCounters()
+    {
+        EXPECT_TRUE(DeclareCounterCostProvider(Entities));
+        EffectDefinition stamina{};
+        stamina.Modifiers = { { Energy, ModifierOp::Add, -10.0f } };
+        Entities.GetResource<EffectRegistry>().Define("asset://effects/energy_10.sdata", stamina);
     }
 
     AbilityId DefineData(std::string_view path, const JsonValue& data)
@@ -785,6 +794,241 @@ TEST_F(AbilityRuntime, AFailedCostIsRefusedAtAdmission)
     Step({ Press(kFire) });
     EXPECT_EQ(Traced(AbilityTraceEvent::Refused).size(), 2u);
     EXPECT_FLOAT_EQ(Base(actor, Ammo), 3.0f);
+}
+
+// One shot takes an arrow and ten stamina, both or neither.
+constexpr std::string_view kBowShot = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "costs": [ { "key": "g_shot",
+                 "effects": [ { "data": "asset://effects/energy_10.sdata" } ],
+                 "resources": [ { "key": "r_arrow", "provider": "test.counter",
+                                  "arguments": { "holder": { "port": "actor" } } } ] } ],
+    "phases": [ { "key": "p_draw",
+        "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_shot"] },
+                   { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+        "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, AnArrowAndStaminaArePaidTogetherOrNotAtAll)
+{
+    DeclareCounters();
+    const AbilityId shot = Define("asset://abilities/bow_shot.sdata", kBowShot);
+    const EntityId actor = Actor();
+    Grant(actor, shot);
+    Counters& quiver = Entities.GetResource<Counters>();
+
+    quiver.Held[actor] = 0;
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_TRUE(Marks.Values.empty());
+    EXPECT_FLOAT_EQ(Base(actor, Energy), 10.0f) << "no arrow: the stamina is untouched";
+
+    quiver.Held[actor] = 2;
+    Entities.TryGet<AttributeSet>(actor)->SetBase(Energy, 5.0f);
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_TRUE(Marks.Values.empty());
+    EXPECT_EQ(quiver.Held[actor], 2) << "no stamina: the arrows are untouched";
+
+    Entities.TryGet<AttributeSet>(actor)->SetBase(Energy, 10.0f);
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 1.0 });
+    EXPECT_EQ(quiver.Held[actor], 1);
+    EXPECT_FLOAT_EQ(Base(actor, Energy), 0.0f);
+}
+
+// Admission and the start commit read one activation's values: a start cost
+// counted by the grant's parameter is refused when the grant's value does not
+// fit, never admitted on the ability's default and then left unpaid.
+TEST_F(AbilityRuntime, AStartCostReadsTheGrantsParameterAtAdmission)
+{
+    DeclareCounters();
+    const AbilityId sip = Define("asset://abilities/sip.sdata", R"({
+        "parameters": [ { "key": "doses", "default": 1 } ],
+        "costs": [ { "key": "g_start", "when": "start",
+                     "resources": [ { "key": "r_dose", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" }, "count": { "param": "doses" } } } ] } ],
+        "phases": [ { "key": "p_sip",
+            "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), sip, AbilityGrantKind::Authored,
+                       Entities.GetResource<AbilityGrantEntries>().Intern(
+                           { .Key = "g", .Ability = sip, .Override = {}, .Parameters = { { "doses", 3.0 } } }));
+    Entities.GetResource<Counters>().Held[actor] = 2;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = sip });
+    Step();
+    EXPECT_TRUE(Marks.Values.empty()) << "it ran without paying its three doses";
+    EXPECT_EQ(Entities.GetResource<Counters>().Held[actor], 2);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::CostFailed);
+}
+
+namespace
+{
+// `test.quiver` spends what `test.counter` owns: one arrow from its `bearer`.
+bool TranslateQuiver(const World&, const AbilityCostRow& row, std::vector<AuthoredValue>& arguments)
+{
+    EntityId bearer;
+    if (row.Arguments.empty() || !row.Arguments[0].TryGetEntity(bearer) || !bearer.IsValid())
+        return false;
+    arguments.push_back(AuthoredValue::Entity(bearer));
+    arguments.push_back(AuthoredValue::Int(1));
+    return true;
+}
+
+AbilityCostProviderDefinition Quiver(std::string name, std::string spendsThrough)
+{
+    AbilityCostProviderDefinition quiver;
+    quiver.Name = std::move(name);
+    quiver.Arguments.Children = { MakeDataField(DataFieldKind::Entity, "bearer", "Bearer") };
+    quiver.SpendsThrough = std::move(spendsThrough);
+    quiver.Translate = &TranslateQuiver;
+    return quiver;
+}
+}
+
+// Two providers reaching one resource are one spend: the counter's batch checks
+// the quiver's translated row beside its own, and applies exactly those rows.
+TEST_F(AbilityRuntime, ARowSpentThroughAnotherProviderJoinsItsBatch)
+{
+    DeclareCounters();
+    {
+        AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.quiver");
+        ASSERT_TRUE(scope.Declare(Quiver("test.quiver", "test.counter")));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const AbilityId volley = Define("asset://abilities/volley.sdata", R"({
+        "costs": [ { "key": "g_volley",
+                     "resources": [ { "key": "r_nock", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" } } },
+                                    { "key": "r_draw", "provider": "test.quiver",
+                                      "arguments": { "bearer": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_loose",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_volley"] },
+                       { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, volley);
+    Counters& counters = Entities.GetResource<Counters>();
+    counters.Held[actor] = 1;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = volley });
+    Step();
+    EXPECT_TRUE(Marks.Values.empty()) << "one arrow cannot pay both rows";
+    EXPECT_EQ(counters.Held[actor], 1);
+
+    counters.Held[actor] = 2;
+    const std::size_t checks = counters.Checks;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = volley });
+    Step();
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 1.0 });
+    EXPECT_EQ(counters.Held[actor], 0);
+    EXPECT_EQ(counters.Checks, checks + 1) << "one batch for the one resource";
+}
+
+TEST_F(AbilityRuntime, AProviderOwnsItsResourceOrSpendsThroughAnotherNeverBoth)
+{
+    DeclareCounters();
+    AbilityCostProviderDefinition both = Quiver("test.both", "test.counter");
+    both.Check = &CheckCounters;
+    both.Apply = &ApplyCounters;
+    AbilityCostProviderDefinition neither;
+    neither.Name = "test.neither";
+    AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.bad");
+    EXPECT_FALSE(scope.Declare(std::move(both)));
+    EXPECT_FALSE(scope.Declare(std::move(neither)));
+    EXPECT_FALSE(scope.Declare(Quiver("test.self", "test.self")));
+}
+
+// A translation leading to another translation is a chain, which is refused at
+// the commit: its group fails rather than paying through two hops.
+TEST_F(AbilityRuntime, ASpendThroughATranslatingProviderFailsItsGroup)
+{
+    DeclareCounters();
+    {
+        AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.quiver");
+        ASSERT_TRUE(scope.Declare(Quiver("test.quiver", "test.counter")));
+        ASSERT_TRUE(scope.Declare(Quiver("test.sling", "test.quiver")));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const AbilityId sling = Define("asset://abilities/sling.sdata", R"({
+        "costs": [ { "key": "g_sling", "when": "start",
+                     "resources": [ { "key": "r_stone", "provider": "test.sling",
+                                      "arguments": { "bearer": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_throw", "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, sling);
+    Entities.GetResource<Counters>().Held[actor] = 5;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = sling });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, sling), nullptr);
+    EXPECT_EQ(Entities.GetResource<Counters>().Held[actor], 5);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::CostFailed);
+}
+
+TEST_F(AbilityRuntime, AProviderChecksEveryGroupsRowsInOneBatch)
+{
+    DeclareCounters();
+    const AbilityId volley = Define("asset://abilities/volley.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "costs": [ { "key": "g_left", "resources": [ { "key": "r_a", "provider": "test.counter",
+                                                       "arguments": { "holder": { "port": "actor" } } } ] },
+                   { "key": "g_right", "resources": [ { "key": "r_b", "provider": "test.counter",
+                                                        "arguments": { "holder": { "port": "actor" }, "count": 1 } } ] } ],
+        "phases": [ { "key": "p_loose",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_left", "g_right"] } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, volley);
+    Counters& quiver = Entities.GetResource<Counters>();
+    quiver.Held[actor] = 1;
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(quiver.Checks, 1u) << "once, with both groups' rows";
+    EXPECT_EQ(quiver.Held[actor], 1) << "one arrow does not pay for two";
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Ended).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::CommitFailed);
+}
+
+TEST_F(AbilityRuntime, ASourceTargetedEffectCostChargesTheSource)
+{
+    const AbilityId fire = Define("asset://abilities/clip_fire.sdata", R"({
+        "costs": [ { "key": "g_round", "target": "source", "effects": [ { "data": "asset://effects/ammo_1.sdata" } ] } ],
+        "phases": [ { "key": "p_fire", "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_round"] } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    const EntityId pistol = Entities.CreateEntity();
+    Entities.AddComponent<AttributeSet>(pistol);
+    Entities.TryGet<AttributeSet>(pistol)->Add(Ammo, 18.0f);
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), fire, AbilityGrantKind::Request,
+                       Entities.GetResource<AbilityGrantEntries>().Intern({ "g", fire, {} }), {}, pistol);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = fire });
+    Step();
+    EXPECT_FLOAT_EQ(Base(pistol, Ammo), 17.0f) << "the clip lives on the weapon";
+    EXPECT_FLOAT_EQ(Base(actor, Ammo), 3.0f);
+}
+
+TEST_F(AbilityRuntime, AnUnknownProviderOrArgumentIsRefusedAtDeclaration)
+{
+    DeclareCounters();
+    const auto refusal = [&](std::string_view json) {
+        const std::optional<JsonValue> data = JsonParse(json);
+        AbilityDeclaration declaration;
+        std::vector<AssetRef> dependencies;
+        std::vector<AbilityDiagnostic> diagnostics;
+        EXPECT_TRUE(CompileAbilityDeclaration(*data, declaration, dependencies, diagnostics)) << Describe(diagnostics);
+        AbilityDefinition definition;
+        EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/x.sdata",
+                                               MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
+        return diagnostics.empty() ? std::string{} : diagnostics.front().Code;
+    };
+    EXPECT_EQ(refusal(R"({ "costs": [ { "key": "g", "resources": [ { "key": "r", "provider": "test.nothing" } ] } ],
+        "phases": [ { "key": "p", "enter": [ { "key": "o", "op": "commit", "groups": ["g"] } ],
+                      "then": [ { "key": "t", "to": "end" } ] } ] })"),
+              "provider_unknown");
+    EXPECT_EQ(refusal(R"({ "costs": [ { "key": "g", "resources": [ { "key": "r", "provider": "test.counter",
+                                         "arguments": { "holder": { "port": "actor" }, "colour": 3 } } ] } ],
+        "phases": [ { "key": "p", "enter": [ { "key": "o", "op": "commit", "groups": ["g"] } ],
+                      "then": [ { "key": "t", "to": "end" } ] } ] })"),
+              "schema");
 }
 
 TEST_F(AbilityRuntime, StepBudgetEndsTheRecord)

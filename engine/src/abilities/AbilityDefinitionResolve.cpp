@@ -210,6 +210,9 @@ namespace
                               std::format("'{}' is not an Instant Add, so it cannot be a cost", path));
                     group.Effects.push_back(effect);
                 }
+                group.Target = declared.Target;
+                for (const AbilityCostResourceDecl& resource : declared.Resources)
+                    group.Resources.push_back(Resource(resource));
                 if (group.Timing == AbilityCostTiming::Start)
                     Out.StartGroups |= static_cast<std::uint8_t>(1u << g);
                 Out.Costs.push_back(std::move(group));
@@ -223,6 +226,24 @@ namespace
                     cooldown.Group = group->second;
                 Out.Cooldown = cooldown;
             }
+        }
+
+        AbilityCostResource Resource(const AbilityCostResourceDecl& declared)
+        {
+            AbilityCostResource resource;
+            resource.Key = declared.Key;
+            resource.Provider = Env.CostProviders != nullptr ? Env.CostProviders->Resolve(declared.Provider)
+                                                             : AbilityCostProviderHandle{};
+            const AbilityCostProviderDefinition* provider =
+                resource.Provider.Slot.IsValid() ? Env.CostProviders->Get(resource.Provider.Slot) : nullptr;
+            if (provider == nullptr)
+            {
+                Error("provider_unknown", declared.Key, declared.Path, std::format("no cost provider '{}'", declared.Provider));
+                return resource;
+            }
+            resource.Arguments =
+                OperationArguments(provider->Name, provider->Arguments, declared.Arguments, declared.Key, declared.Path);
+            return resource;
         }
 
         const AbilityLocalType* LocalType(const std::string& key) const
@@ -317,19 +338,19 @@ namespace
                 || (op.When->Kind == AbilityConditionKind::All && std::ranges::any_of(op.When->Children, matches));
         }
 
-        // Query arguments in the query's declared order, defaults where omitted.
-        std::vector<AbilityValue> QueryArguments(const AuthoredQueryDefinition& query,
-                                                 const std::vector<AbilityArgumentDecl>& arguments,
-                                                 std::string_view key, const std::string& path)
+        // An operation's arguments in its declared order, defaults where omitted.
+        std::vector<AbilityValue> OperationArguments(std::string_view operation, const DataFieldSchema& declaredArguments,
+                                                     const std::vector<AbilityArgumentDecl>& arguments,
+                                                     std::string_view key, const std::string& path)
         {
             std::vector<std::string_view> names;
             for (const AbilityArgumentDecl& argument : arguments)
                 names.push_back(argument.Name);
             std::vector<std::string_view> undeclared;
-            const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(query.Arguments, names, undeclared);
+            const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(declaredArguments, names, undeclared);
             for (const std::string_view name : undeclared)
                 Error("schema", key, path + ".arguments." + std::string(name),
-                      std::format("'{}' takes no argument '{}'", query.Name, name));
+                      std::format("'{}' takes no argument '{}'", operation, name));
             std::vector<AbilityValue> values;
             for (const AuthoredArgumentSlot& slot : slots)
             {
@@ -340,7 +361,7 @@ namespace
                     (void)Value(arguments[*slot.Given].Value, field, key, path + ".arguments." + field.Key, value);
                 else if (!CompileAuthoredDefault(field, std::format("ability '{}#{}'", Name, key), field.Key,
                                                  value.Constant, errors))
-                    Error("schema", key, path, std::format("'{}' needs an argument '{}'", query.Name, field.Key));
+                    Error("schema", key, path, std::format("'{}' needs an argument '{}'", operation, field.Key));
                 values.push_back(std::move(value));
             }
             return values;
@@ -426,7 +447,8 @@ namespace
                     if (query->Result.Kind != DataFieldKind::Bool)
                         Error("schema", declared.Key, declared.Path,
                               std::format("'{}' answers no yes-or-no, so it is not a condition", declared.Name));
-                    condition.Arguments = QueryArguments(*query, declared.Arguments, declared.Key, declared.Path);
+                    condition.Arguments =
+                        OperationArguments(query->Name, query->Arguments, declared.Arguments, declared.Key, declared.Path);
                 }
                 break;
             case AbilityConditionKind::Input:
@@ -530,7 +552,8 @@ namespace
                 if (const AuthoredQueryDefinition* query = FindQuery(declared.Operation, declared.Key, declared.Path,
                                                                      op.Query))
                 {
-                    op.Arguments = QueryArguments(*query, declared.Arguments, declared.Key, declared.Path);
+                    op.Arguments =
+                        OperationArguments(query->Name, query->Arguments, declared.Arguments, declared.Key, declared.Path);
                     const std::optional<AbilityLocalType> answer = LocalTypeFor(query->Result);
                     const AbilityLocalType* into = LocalType(declared.Local);
                     const auto numeric = [](AbilityLocalType type) {
@@ -657,6 +680,7 @@ AbilityResolveEnvironment MakeAbilityResolveEnvironment(const World& world)
     environment.Attributes = world.TryGetResource<AttributeRegistry>();
     environment.Effects = world.TryGetResource<EffectRegistry>();
     environment.Queries = FindAuthoredQueryRegistry(world);
+    environment.CostProviders = world.TryGetResource<AbilityCostProviderCatalog>();
     environment.Verbs = MakeVerbBindingEnvironment(world);
     environment.Components = &world;
     return environment;

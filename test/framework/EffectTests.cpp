@@ -447,12 +447,14 @@ TEST(EffectCost, CostsOnOneAttributeAreSummedBeforeTheyAreCompared)
     const EffectId second = w.fx->Register("SixtyB", half);
     const EntityId hero = w.MakeActor(100.0f, 5.0f);
 
-    const std::array one{ first };
-    EXPECT_TRUE(CheckEffectCosts(w.world, hero, one).Affordable());
+    const std::array one{ EffectCostRow{ hero, first } };
+    EXPECT_TRUE(CheckEffectCosts(w.world, one).Affordable());
 
-    const std::array both{ first, second };
-    const EffectCostCheck check = CheckEffectCosts(w.world, hero, both);
+    const std::array both{ EffectCostRow{ hero, first }, EffectCostRow{ hero, second } };
+    const EffectCostCheck check = CheckEffectCosts(w.world, both);
     EXPECT_EQ(check.Status, EffectCostStatus::Insufficient);
+    EXPECT_EQ(check.Target, hero);
+    EXPECT_EQ(check.Effect, first) << "the first cost on the attribute that ran short";
     EXPECT_EQ(check.Attribute, w.health);
     EXPECT_FLOAT_EQ(check.Needed, 120.0f);
     EXPECT_FLOAT_EQ(check.Available, 100.0f);
@@ -481,8 +483,8 @@ TEST(EffectCost, ACostFailsClosedOnAnythingMissingOrInexact)
     w.world.AddComponent<AttributeSet>(empty);
 
     const auto check = [&](EntityId actor, EffectId cost) {
-        const std::array costs{ cost };
-        return CheckEffectCosts(w.world, actor, costs).Status;
+        const std::array costs{ EffectCostRow{ actor, cost } };
+        return CheckEffectCosts(w.world, costs).Status;
     };
     EXPECT_EQ(check(hero, EffectId{ 99 }), EffectCostStatus::DefinitionMissing);
     EXPECT_EQ(check(hero, lastingFx), EffectCostStatus::NotAnInstantCost);
@@ -501,8 +503,25 @@ TEST(EffectCost, ACostNeverTakesAnUnboundedAttributeBelowZero)
     const EffectId cost = w.fx->Register("Costly", costly);
     const EntityId hero = w.MakeActor(100.0f, 5.0f);
 
-    const std::array costs{ cost };
-    EXPECT_EQ(CheckEffectCosts(w.world, hero, costs).Status, EffectCostStatus::Insufficient);
+    const std::array costs{ EffectCostRow{ hero, cost } };
+    EXPECT_EQ(CheckEffectCosts(w.world, costs).Status, EffectCostStatus::Insufficient);
+}
+
+TEST(EffectCost, CostsOnTwoTargetsAreSummedApart)
+{
+    EffectWorld w;
+    EffectDefinition half{};
+    half.Modifiers = { { w.health, ModifierOp::Add, -60.0f } };
+    const EffectId cost = w.fx->Register("Sixty", half);
+    const EntityId hero = w.MakeActor(100.0f, 5.0f);
+    const EntityId weapon = w.MakeActor(100.0f, 5.0f);
+
+    const std::array apart{ EffectCostRow{ hero, cost }, EffectCostRow{ weapon, cost } };
+    EXPECT_TRUE(CheckEffectCosts(w.world, apart).Affordable()) << "sixty from each, not a hundred and twenty from one";
+    const std::array together{ EffectCostRow{ hero, cost }, EffectCostRow{ weapon, cost }, EffectCostRow{ weapon, cost } };
+    const EffectCostCheck check = CheckEffectCosts(w.world, together);
+    EXPECT_EQ(check.Status, EffectCostStatus::Insufficient);
+    EXPECT_EQ(check.Target, weapon);
 }
 
 TEST_F(EffectFixture, AnApplicationRecordsWhatItChangedAsItLandedAndWhereItCameFrom)

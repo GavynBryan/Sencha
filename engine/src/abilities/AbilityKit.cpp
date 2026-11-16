@@ -1,6 +1,7 @@
 #include <abilities/AbilityKit.h>
 
 #include <abilities/AbilityActivations.h>
+#include <abilities/AbilityCostProviders.h>
 #include <abilities/AbilityPredictionJournal.h>
 
 #include <abilities/AbilityGrantsSerializer.h>
@@ -43,6 +44,8 @@ void InstallAbilityKitVocabulary(World& world)
         world.AddResource<AbilityRegistry>();
     if (!world.HasResource<AbilityGrantEntries>())
         world.AddResource<AbilityGrantEntries>();
+    if (!world.HasResource<AbilityCostProviderCatalog>())
+        world.AddResource<AbilityCostProviderCatalog>();
     if (!world.HasResource<CuePresentationLibrary>())
         world.AddResource<CuePresentationLibrary>();
 }

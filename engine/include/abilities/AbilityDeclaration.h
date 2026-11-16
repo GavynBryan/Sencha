@@ -260,6 +260,22 @@ enum class AbilityCostRepeat : std::uint8_t
     PerPulse,
 };
 
+// Who a group's effect costs are taken from.
+enum class AbilityCostTarget : std::uint8_t
+{
+    Actor,
+    Source,
+};
+
+// A registered resource a group pays, by provider name.
+struct AbilityCostResourceDecl
+{
+    std::string Key;
+    std::string Path;
+    std::string Provider;
+    std::vector<AbilityArgumentDecl> Arguments;
+};
+
 struct AbilityCostGroupDecl
 {
     std::string Key;
@@ -267,8 +283,10 @@ struct AbilityCostGroupDecl
     std::string Path;
     AbilityCostTiming Timing = AbilityCostTiming::Commit;
     AbilityCostRepeat Repeat = AbilityCostRepeat::Once;
+    AbilityCostTarget Target = AbilityCostTarget::Actor;
     // Effect definitions, by asset path.
     std::vector<std::string> Effects;
+    std::vector<AbilityCostResourceDecl> Resources;
 };
 
 enum class AbilityCooldownStart : std::uint8_t

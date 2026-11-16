@@ -132,6 +132,11 @@ constexpr Rejection kRejections[] = {
     { "duplicate parameter keys", "key_duplicate", "power", R"({
         "parameters": [ { "key": "power" }, { "key": "power" } ],
         "phases": [ { "key": "p_a", "then": [ { "key": "t_1", "to": "end" } ] } ] })" },
+    { "resource argument from an unknown local", "local_unknown", "r_arrow", R"({
+        "costs": [ { "key": "g_shot", "resources": [ { "key": "r_arrow", "provider": "test.counter",
+                                                        "arguments": { "holder": { "local": "l_none" } } } ] } ],
+        "phases": [ { "key": "p_a", "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_shot"] } ],
+            "then": [ { "key": "t_1", "to": "end" } ] } ] })" },
     { "conditions nested too deep", "capacity", "c_3", R"({
         "activation": [ { "key": "c_1", "all": [ { "key": "c_2", "any": [ { "key": "c_3", "not":
             { "key": "c_4", "tags": { "all": ["A"] } } } ] } ] } ],

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <abilities/AbilityCostProviders.h>
 #include <abilities/AbilityDeclaration.h>
 #include <attributes/AttributeId.h>
 #include <authored/AuthoredQueryId.h>
@@ -109,13 +110,23 @@ struct AbilityPhase
     std::vector<AbilityTransition> Then;
 };
 
+struct AbilityCostResource
+{
+    std::string Key;
+    AbilityCostProviderHandle Provider;
+    // One per argument the provider declares, in its order.
+    std::vector<AbilityValue> Arguments;
+};
+
 struct AbilityCostGroup
 {
     std::string Key;
     std::string Name;
     AbilityCostTiming Timing = AbilityCostTiming::Commit;
     AbilityCostRepeat Repeat = AbilityCostRepeat::Once;
+    AbilityCostTarget Target = AbilityCostTarget::Actor;
     std::vector<EffectId> Effects;
+    std::vector<AbilityCostResource> Resources;
 };
 
 struct AbilityCooldown

@@ -1317,3 +1317,15 @@ described in `docs/navigation/runtime.md`, "Agents".
   rebuilds in `editor/level_editor/src/document/`.
 - **Trigger:** a live-preview workflow in which a base and its placed children
   are on screen together while the base is edited.
+
+## Ability Workbench rows for cost provider arguments
+
+- **What:** a cost group's `resources` show their provider and arguments as
+  plain data. An op's arguments are laid out from the verb's or query's contract
+  (`editor/ability_editor/src/authoring/AbilityArguments.cpp`); a resource's are
+  not.
+- **Where:** `AbilityArgumentProperties` reads `AbilityOpContract`, which knows
+  ops only.
+- **Trigger:** the first cost provider content authors use, which is
+  inventory's item provider (composition Stage 4).
+- **Consumer:** item-cost abilities (an arrow per shot, a bottle per drink).

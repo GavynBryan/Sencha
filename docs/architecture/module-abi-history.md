@@ -1039,3 +1039,12 @@ gain `Precedence`, authored `precedence` (default 0): of the overrides of one
 attribute on one target the highest wins, and `effects/EffectSystem.h` declares
 `EffectOverrideTies`, where a tie at the top is recorded once per attribute and
 pair of definitions.
+
+**Cost providers.** `abilities/AbilityCostProviders.h` declares the cost
+provider catalog (`AbilityCostProviderCatalog`, its registration scope, and
+`AbilityCostProviderDefinition` with `Check` and `Apply`, or `SpendsThrough` and
+`Translate`), installed with the AbilityKit vocabulary. `AbilityCostGroupDecl`
+and `AbilityCostGroup` gain `Target` (`AbilityCostTarget`) and `Resources`, and
+`AbilityResolveEnvironment` gains `CostProviders`. `CheckEffectCosts` takes
+`EffectCostRow`s (a target and an effect each) in place of one actor and a list
+of effects, and `EffectCostCheck` gains `Target`.

@@ -49,6 +49,11 @@ namespace
         { "commit", AbilityCostTiming::Commit },
     } };
 
+    constexpr std::array<Named<AbilityCostTarget>, 2> kCostTargets{ {
+        { "actor", AbilityCostTarget::Actor },
+        { "source", AbilityCostTarget::Source },
+    } };
+
     constexpr std::array<Named<AbilityCostRepeat>, 2> kCostRepeats{ {
         { "once", AbilityCostRepeat::Once },
         { "per_pulse", AbilityCostRepeat::PerPulse },
@@ -861,18 +866,31 @@ namespace
                     AbilityCostGroupDecl group;
                     group.Path = path;
                     group.Key = Key(entry, path);
-                    CheckFields(entry, { "key", "name", "when", "repeat", "effects" }, group.Key, path);
+                    CheckFields(entry, { "key", "name", "when", "repeat", "target", "effects", "resources" }, group.Key, path);
                     group.Name = Text(entry, "name", group.Key, path, false);
                     group.Timing = Choice(entry, "when", kCostTimings, group.Key, path, AbilityCostTiming::Commit);
                     group.Repeat = Choice(entry, "repeat", kCostRepeats, group.Key, path, AbilityCostRepeat::Once);
+                    group.Target = Choice(entry, "target", kCostTargets, group.Key, path, AbilityCostTarget::Actor);
+                    if (const JsonValue* resources = entry.Find("resources"); resources != nullptr && resources->IsArray())
+                        for (std::size_t r = 0; r < resources->AsArray().size(); ++r)
+                        {
+                            const JsonValue& held = resources->AsArray()[r];
+                            AbilityCostResourceDecl resource;
+                            resource.Path = std::format("{}.resources[{}]", path, r);
+                            resource.Key = Key(held, resource.Path);
+                            CheckFields(held, { "key", "provider", "arguments" }, resource.Key, resource.Path);
+                            resource.Provider = Text(held, "provider", resource.Key, resource.Path, true);
+                            resource.Arguments = Arguments(held, resource.Key, resource.Path);
+                            group.Resources.push_back(std::move(resource));
+                        }
                     if (const JsonValue* effects = entry.Find("effects"); effects != nullptr && effects->IsArray())
                         for (std::size_t e = 0; e < effects->AsArray().size(); ++e)
                             if (std::string effect = DataReference(effects->AsArray()[e], group.Key,
                                                                    std::format("{}.effects[{}]", path, e));
                                 !effect.empty())
                                 group.Effects.push_back(std::move(effect));
-                    if (group.Effects.empty())
-                        Error("schema", group.Key, path, "a cost group names the effects it pays");
+                    if (group.Effects.empty() && group.Resources.empty())
+                        Error("schema", group.Key, path, "a cost group names the effects or resources it pays");
                     out.Costs.push_back(std::move(group));
                 }
             }
@@ -1022,8 +1040,18 @@ namespace
                 Report.Error("capacity", {}, "$.data.costs",
                              std::format("{} cost groups declared; limit {}", Declared.Costs.size(),
                                          kAbilityCostGroupCapacity));
+            std::unordered_set<std::string> resources;
             for (const AbilityCostGroupDecl& group : Declared.Costs)
+            {
                 Groups.emplace(group.Key, &group);
+                for (const AbilityCostResourceDecl& resource : group.Resources)
+                {
+                    Unique(resources, resource.Key, resource.Path, "cost resources");
+                    for (const AbilityArgumentDecl& argument : resource.Arguments)
+                        CheckValue(argument.Value, resource.Key, resource.Path + ".arguments." + argument.Name, nullptr,
+                                   "an argument");
+                }
+            }
             if (Declared.Cooldown && Declared.Cooldown->Start == AbilityCooldownStart::OnCommit)
             {
                 const auto found = Groups.find(Declared.Cooldown->Group);
@@ -1512,7 +1540,13 @@ namespace
         cost.Children.push_back(Field(DataFieldKind::String, "name", "Name"));
         cost.Children.push_back(Choices("when", "Paid", kCostTimings));
         cost.Children.push_back(Choices("repeat", "Repeat", kCostRepeats));
+        cost.Children.push_back(Choices("target", "Effects paid by", kCostTargets));
         cost.Children.push_back(List("effects", "Effects", effect, "data"));
+        DataFieldSchema resource = KeyedRecord("resource", "Resource");
+        resource.Children.push_back(
+            Field(DataFieldKind::String, "provider", "Provider", "The registered cost provider that pays it."));
+        resource.Children.push_back(Field(DataFieldKind::Record, "arguments", "Arguments"));
+        cost.Children.push_back(List("resources", "Resources", resource, "provider"));
 
         DataFieldSchema cooldown = Field(DataFieldKind::Record, "cooldown", "Cooldown");
         DataFieldSchema cooldownEffect = effect;
