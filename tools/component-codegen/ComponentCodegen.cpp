@@ -122,6 +122,7 @@ struct ComponentFacts
     std::string PlaceIcon;
     bool Replicated = false;
     bool Predicted = false;
+    bool AuthorityMaterialized = false;
     bool NonRemovable = false;
     std::vector<FieldFacts> Fields;
     std::vector<FieldQueryFacts> Queries;
@@ -279,6 +280,7 @@ public:
             else if (Split(text, "sencha.place_icon=", value))    facts.PlaceIcon = value;
             else if (text == "sencha.replicated")                 facts.Replicated = true;
             else if (text == "sencha.predicted")                  facts.Predicted = true;
+            else if (text == "sencha.authority_materialized")     facts.AuthorityMaterialized = true;
             else if (text == "sencha.non_removable")              facts.NonRemovable = true;
             else if (Split(text, "sencha.event=", value))         { event.Identity = value; isEvent = true; }
             else if (Split(text, "sencha.event_source=", value))  { event.Source = value; eventOnly = true; }
@@ -1397,6 +1399,8 @@ bool WriteCompanion(const std::string& path,
         }
         if (component.Replicated)   out << "    static constexpr bool Replicated = true;\n";
         if (component.Predicted)    out << "    static constexpr bool Predicted = true;\n";
+        if (component.AuthorityMaterialized)
+            out << "    static constexpr bool AuthorityMaterialized = true;\n";
         if (component.NonRemovable) out << "    static constexpr bool Removable = false;\n";
         if (!component.VisualMesh.empty())
             out << "    static constexpr std::string_view VisualMeshAsset = " << Quoted(component.VisualMesh) << ";\n";

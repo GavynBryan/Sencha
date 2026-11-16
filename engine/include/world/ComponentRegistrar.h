@@ -131,6 +131,10 @@ public:
         // The predicted set is a subset of the wire table: a client resumes
         // simulating a component from what the authority said about it, and a
         // component that does not travel has nothing to resume from.
+        static_assert(!ComponentIsAuthorityMaterialized<T> || ComponentIsReplicated<T>
+                          || ComponentHasReplicationCodec<T>,
+                      "An authority-materialized component must travel: a client never imports "
+                      "what carries it, so the wire is the only way it arrives.");
         static_assert(!ComponentIsPredicted<T> || ComponentIsReplicated<T>,
                       "A predicted component must also be replicated: prediction "
                       "resumes from the authority's value, which only arrives if "

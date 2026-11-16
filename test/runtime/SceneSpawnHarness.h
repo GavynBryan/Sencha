@@ -46,6 +46,28 @@ struct TypeSchema<SpawnMarker>
     }
 };
 
+// A component only the simulation authority creates: a machine that is not the
+// authority skips the entities that carry it, and the entities beneath them.
+struct MaterializedMarker
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<MaterializedMarker>
+{
+    static constexpr std::string_view Name = "materialized_marker";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('M', 'T', 'M', 'K');
+    static constexpr bool AuthorityMaterialized = true;
+
+    static auto Fields()
+    {
+        return std::tuple{
+            MakeField("value", &MaterializedMarker::Value),
+        };
+    }
+};
+
 struct SpawnHarness
 {
     SpawnHarness()
@@ -58,6 +80,7 @@ struct SpawnHarness
             schema.Add<PersistentIdComponent>();
             schema.Add<SceneInstance>();
             schema.Add<SpawnMarker>();
+            schema.Add<MaterializedMarker>();
             schema.Seal();
             return schema;
         }())
@@ -73,6 +96,9 @@ struct SpawnHarness
         RegisterEngineSceneSerializers(Serializers);
         EXPECT_EQ(Serializers.Register(
                       std::make_unique<ComponentSerializer<SpawnMarker>>()),
+                  ComponentSerializerRegistry::RegisterResult::Added);
+        EXPECT_EQ(Serializers.Register(
+                      std::make_unique<ComponentSerializer<MaterializedMarker>>()),
                   ComponentSerializerRegistry::RegisterResult::Added);
         RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
         Service.ConnectAssets(&Assets, &Scenes);

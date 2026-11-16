@@ -35,6 +35,8 @@
 #define SENCHA_SCENE_CHUNK(fourcc)   SENCHA_ANNOTATE("sencha.scene_chunk=" fourcc)
 #define SENCHA_REPLICATED            SENCHA_ANNOTATE("sencha.replicated")
 #define SENCHA_PREDICTED             SENCHA_ANNOTATE("sencha.predicted")
+// Created only by the simulation authority; a client receives it from the wire.
+#define SENCHA_AUTHORITY_MATERIALIZED SENCHA_ANNOTATE("sencha.authority_materialized")
 #define SENCHA_NON_REMOVABLE         SENCHA_ANNOTATE("sencha.non_removable")
 #define SENCHA_VISUAL_MESH(asset)    SENCHA_ANNOTATE("sencha.visual_mesh=" asset)
 // A thing of its own in a world: a tool may put an entity carrying just this

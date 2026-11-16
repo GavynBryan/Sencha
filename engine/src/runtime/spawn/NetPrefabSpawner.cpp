@@ -6,6 +6,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/scene/SceneInstanceGroup.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -159,6 +160,10 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
 
     if (const EntityId root = SingleRoot(world, created); root.IsValid())
         return root;
+    // A root only the authority materializes takes the whole prefab with it on a
+    // client: the wire binds a bare entity and fills it, as it does any spawn.
+    if (created.empty() && !IsSimulationAuthority(world))
+        return world.CreateEntity(partition);
 
     // Validated at Prepare, so reaching here means the package disagreed with
     // the contents it was built from.

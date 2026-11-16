@@ -15,6 +15,10 @@
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateStore.h>
 
+#include "SceneSpawnHarness.h"
+
+#include <world/SimulationAuthority.h>
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -408,5 +412,61 @@ TEST(ZonePackageIdentity, UnidentifiedEntitiesImportNormally)
         runtime, schema, ZoneId{ 54 }, package, LogicOnly(), &error))
         << error.Message;
     FinishResidency(runtime);
+    EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
+}
+
+// A client imports none of what only the authority materializes, and so does not
+// count it as authored: a zone that detaches would otherwise record it destroyed.
+TEST(ZonePackageIdentity, AClientImportSkipsWhatOnlyTheAuthorityMaterializes)
+{
+    const WorldComponentSchema schema = [] {
+        WorldComponentSchema made;
+        made.Add<PersistentIdComponent>();
+        made.Add<MaterializedMarker>();
+        made.Seal();
+        return made;
+    }();
+    RuntimeWorld runtime(schema);
+    runtime.Entities().SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+
+    EntityBuildPackage package;
+    const PackageEntityId chestContents = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(chestContents, { PersistentEntityId{ 0xa1 } }));
+    ASSERT_TRUE(package.SetPersistentId(chestContents, PersistentEntityId{ 0xa1 }));
+    ASSERT_TRUE(package.AddComponent<MaterializedMarker>(chestContents, { 7 }));
+    const PackageEntityId chest = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(chest, { PersistentEntityId{ 0xb1 } }));
+    ASSERT_TRUE(package.SetPersistentId(chest, PersistentEntityId{ 0xb1 }));
+
+    const ZoneId zone{ 60 };
+    ZoneImportError error;
+    ASSERT_TRUE(ImportZonePackage(runtime, schema, zone, package, LogicOnly(), &error)) << error.Message;
+    EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
+    const PersistentEntityIndex& index = runtime.Entities().GetResource<PersistentEntityIndex>();
+    EXPECT_TRUE(index.TryResolve(PersistentEntityId{ 0xb1 }).IsValid());
+    EXPECT_FALSE(index.TryResolve(PersistentEntityId{ 0xa1 }).IsValid());
+
+    ZoneStateStore& store = runtime.Entities().GetResource<ZoneStateStore>();
+    const std::array live{ PersistentEntityId{ 0xb1 } };
+    store.RecordCapture(zone, live, ZoneCapture::Detach);
+    EXPECT_FALSE(store.IsRecordedDestroyed(zone, PersistentEntityId{ 0xa1 }))
+        << "what the client never imported is not what it destroyed";
+}
+
+TEST(ZonePackageIdentity, TheAuthorityImportsWhatItMaterializes)
+{
+    const WorldComponentSchema schema = [] {
+        WorldComponentSchema made;
+        made.Add<PersistentIdComponent>();
+        made.Add<MaterializedMarker>();
+        made.Seal();
+        return made;
+    }();
+    RuntimeWorld runtime(schema);
+    EntityBuildPackage package;
+    const PackageEntityId contents = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<MaterializedMarker>(contents, { 7 }));
+    ZoneImportError error;
+    ASSERT_TRUE(ImportZonePackage(runtime, schema, ZoneId{ 61 }, package, LogicOnly(), &error)) << error.Message;
     EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
 }

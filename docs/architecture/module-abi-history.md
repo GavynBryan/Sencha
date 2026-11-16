@@ -1079,3 +1079,10 @@ runtime-namespace id. No wire layout changes.
 `PackageMembers` (`PackageMember`), `PackageEntity` gains `MemberId`
 (`EntityBuildPackage::SetMemberId`), and `World` gains
 `AssignEmptyEntitySignature`.
+
+**Authority-materialized components.** `SENCHA_AUTHORITY_MATERIALIZED` is a new
+component annotation: `ComponentDefinition` and `TypeSchema` may state
+`AuthorityMaterialized` (`ComponentIsAuthorityMaterialized`),
+`WorldComponentSchema::Entry` and `ReplicatedComponent` gain the flag, and
+`zone/ZonePackageImporter.h` declares `IsAuthorityMaterialized`. The flag is not
+part of the replication table hash.

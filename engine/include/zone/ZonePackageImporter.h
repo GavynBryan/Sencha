@@ -10,6 +10,7 @@
 
 class ComponentSerializerRegistry;
 class EntityBuildPackage;
+struct PackageEntity;
 class RuntimeWorld;
 struct SceneSerializationContext;
 class World;
@@ -32,7 +33,9 @@ struct ZoneImportError
 // zero under a zone's saved state.
 //
 // This is the common semantic kernel for persistent world-scene import and
-// hidden zone import.
+// hidden zone import. A World that is not the simulation authority imports no
+// member that carries an authority-materialized component, nor anything beneath
+// one: those arrive from the wire.
 [[nodiscard]] bool ImportPackageIntoPartition(
     World& world,
     const WorldComponentSchema& schema,
@@ -54,6 +57,9 @@ struct ZoneImportError
     SceneSerializationContext& sceneContext,
     ZoneImportError* error = nullptr,
     std::vector<EntityId>* created = nullptr);
+
+// Whether `entity` carries a component only the simulation authority creates.
+[[nodiscard]] bool IsAuthorityMaterialized(const WorldComponentSchema& schema, const PackageEntity& entity);
 
 // Imports into a hidden RuntimeWorld partition but does not publish it. Used by
 // AsyncZoneLoader so owner-thread cache/backend/entity finalization can still

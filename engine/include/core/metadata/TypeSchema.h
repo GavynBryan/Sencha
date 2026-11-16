@@ -69,6 +69,13 @@ namespace SchemaProjection
     {
         static constexpr bool Predicted = ComponentDefinition<T>::Predicted;
     };
+
+    template <typename T> struct Materialization {};
+    template <typename T> requires DefinitionIsAuthorityMaterialized<T>
+    struct Materialization<T>
+    {
+        static constexpr bool AuthorityMaterialized = ComponentDefinition<T>::AuthorityMaterialized;
+    };
 }
 
 template <typename T>
@@ -77,8 +84,21 @@ struct TypeSchema<T, void>
     : SchemaProjection::SceneChunk<T>
     , SchemaProjection::Replication<T>
     , SchemaProjection::Prediction<T>
+    , SchemaProjection::Materialization<T>
 {
     static constexpr std::string_view Name = ComponentDefinition<T>::SchemaName;
 
     static auto Fields() { return ComponentDefinition<T>::Fields(); }
 };
+
+// Created only by the simulation authority: a machine that is not the authority
+// never imports an entity carrying it, and receives the entity from the wire.
+// Declared as `static constexpr bool AuthorityMaterialized = true;` on the schema.
+template <typename T>
+inline constexpr bool ComponentIsAuthorityMaterialized = []
+{
+    if constexpr (requires { TypeSchema<T>::AuthorityMaterialized; })
+        return static_cast<bool>(TypeSchema<T>::AuthorityMaterialized);
+    else
+        return false;
+}();

@@ -72,6 +72,13 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
         });
     }
 
+    // An entity only the authority creates was never imported by a client, so
+    // its authored identity is nothing a client could recognise it by.
+    std::vector<ComponentId> authorityOnly;
+    for (const ResolvedComponent& column : columns)
+        if (column.Layout->AuthorityMaterialized)
+            authorityOnly.push_back(column.Column);
+
     const World& reading = world;
     const bool hasOwners = world.IsRegistered(ResolveComponentTypeId<NetOwner>());
     const bool hasPersistentIds =
@@ -113,11 +120,10 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
             // the store outlives neither.
             if (hasPersistentIds)
             {
-                if (const PersistentIdComponent* authored =
-                        reading.TryGet<PersistentIdComponent>(entity))
-                {
-                    state.Persistent = authored->Id;
-                }
+                const PersistentIdComponent* authored = reading.TryGet<PersistentIdComponent>(entity);
+                const bool materialized = std::ranges::any_of(
+                    authorityOnly, [&](ComponentId column) { return reading.HasComponent(entity, column); });
+                state.Persistent = authored != nullptr && !materialized ? authored->Id : PersistentEntityId{};
             }
 
             std::uint32_t owner = 0;

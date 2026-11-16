@@ -2605,6 +2605,43 @@ TEST(ReplicationAuthored, AnEntityWithARuntimeIdIsCreatedByTheWire)
     EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
 
+namespace
+{
+    // Replicated, and created only by the authority.
+    struct AuthorityOnlyThing
+    {
+        std::uint32_t Count = 0;
+    };
+}
+
+template <>
+struct TypeSchema<AuthorityOnlyThing>
+{
+    static constexpr std::string_view Name = "test.AuthorityOnlyThing";
+    static constexpr bool Replicated = true;
+    static constexpr bool AuthorityMaterialized = true;
+    static auto Fields() { return std::tuple{ MakeField("count", &AuthorityOnlyThing::Count) }; }
+};
+
+// A client never imports what only the authority materializes, so it has no
+// copy to recognise: the authored id is not sent, and the wire builds the entity.
+TEST(ReplicationAuthored, AnAuthoredEntityOnlyTheAuthorityMaterializesIsBuiltByTheWire)
+{
+    Pair pair([](ComponentRegistrar& components) { components.Add<AuthorityOnlyThing>(); });
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<PersistentIdComponent>(authority, PersistentIdComponent{ PersistentEntityId{ 0xC0FFEE } });
+    pair.Authority.AddComponent<AuthorityOnlyThing>(authority, AuthorityOnlyThing{ .Count = 3 });
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_NE(pair.Client.TryGet<AuthorityOnlyThing>(mirror), nullptr);
+    EXPECT_EQ(pair.Client.TryGet<AuthorityOnlyThing>(mirror)->Count, 3u);
+}
+
 // A world with no index at all -- every test world before this, and every
 // single-player one -- must not start deferring entities it would have built.
 TEST(ReplicationAuthored, AWorldWithoutAnIndexIsUnaffected)

@@ -34,6 +34,10 @@ template <typename T>
 concept DefinitionIsPredicted = HasComponentDefinition<T>
     && requires { ComponentDefinition<T>::Predicted; };
 
+template <typename T>
+concept DefinitionIsAuthorityMaterialized = HasComponentDefinition<T>
+    && requires { ComponentDefinition<T>::AuthorityMaterialized; };
+
 // The asset path rather than a built EditorVisual, so this header stays clear
 // of EditorVisual.h -- which includes this one to do the projecting.
 template <typename T>
