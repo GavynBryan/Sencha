@@ -5,6 +5,7 @@
 #include "documents/DocumentSource.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -21,6 +22,12 @@ struct RuntimeAssets;
 // it: their edits, saves, journal steps and resident assets. A view holds each
 // document it shows; the last to let go closes it, and a document with changes
 // is never dropped unless someone chose to.
+enum class DataAbstractPaths : std::uint8_t
+{
+    Exclude,
+    Include,
+};
+
 class DataDocumentStore final : public DocumentSource
 {
 public:
@@ -60,12 +67,19 @@ public:
     // An open document's working subtype or root wins over the file's.
     [[nodiscard]] std::string SubtypeOf(std::string_view virtualPath) const;
     [[nodiscard]] std::optional<JsonValue> CurrentRoot(std::string_view virtualPath) const;
-    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) const;
+    // Pickers offer concrete definitions; only an extends or includes picker
+    // offers the abstract ones too.
+    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype,
+                                                          DataAbstractPaths abstract = DataAbstractPaths::Exclude) const;
+    [[nodiscard]] bool IsAbstract(std::string_view virtualPath) const;
+    // Where a document reads the definitions it extends or includes.
+    [[nodiscard]] DataRootProvider RootProvider() const;
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);
     void Validate(DataDocument& document);
-    // Revalidates, keeps the resident asset on the committed version, and tells the observers.
+    // Revalidates, keeps the resident asset on the committed version, and tells the
+    // observers; so too for each open definition composed from this one.
     void Changed(DataDocument& document);
     [[nodiscard]] bool Reload(DataDocument& document, std::string& error);
     // True when a push that was waiting reached a resident asset.
@@ -101,6 +115,7 @@ private:
     [[nodiscard]] std::optional<std::size_t> IndexOf(const DataDocument& document) const;
     [[nodiscard]] bool CloseDocument(std::size_t index, DirtyDisposition disposition, std::string& error);
     DataDocument* Adopt(std::unique_ptr<DataDocument> document);
+    void Recompose(DataDocument& document);
 
     RuntimeAssets& Assets;
     DocumentSourceSet& Sources;

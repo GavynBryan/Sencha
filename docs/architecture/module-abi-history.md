@@ -980,3 +980,14 @@ grants whose entry a reload took off their effect, before it grants;
 `MergePolicy` (`DataMergePolicy`), which moves every later member;
 `DataValueRules` gains `RequireMembers`. `ValidateDataAgainstSchema` takes a
 `DataValidationMode`. `UnwrapDataField`, `DataFieldElement` and `ArrayMergeKey`.
+
+**Composed data definitions.** `StageDataDefinition`, `DataDefinitionContext`,
+`DataDefinitionStaging`, `DataSourceReader`, `IsAbstractDataDefinition` and
+`SplitCompileError` (`assets/data/DataDefinitionStaging.h`); the data loader and
+Kyusu both stage through it. A data envelope may name `extends`, `includes` and
+`abstract`. `DataAssetLoader::StageRoot` and `RuntimeAssets::StageDataRoot` take
+a reader; `CompiledDataAsset` and `DataAssetEntry` carry `Sources`;
+`DataAssetCache::Register` and `ReloadInPlace` take them and `ComposedFrom`
+answers the reverse. `AssetCommitResult` gains `Error`. A kind's `Reload`
+returns `AssetReloadOutcome`, and `AssetKindRegistration` gains `ComposedFrom`,
+which the hot reloader consults for every changed file. `PeekDataAssetEnvelope`.

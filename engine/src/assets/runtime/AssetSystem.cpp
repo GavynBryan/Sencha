@@ -115,6 +115,8 @@ AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
 
 std::string AssetSystem::CommitFailureReason(std::string_view path, const AssetCommitOutcome& outcome)
 {
+    if (!outcome.Error.empty())
+        return std::format("'{}': {}", path, outcome.Error);
     if (outcome.FailedDependency.empty())
         return std::format("'{}' was staged but could not be committed", path);
     if (outcome.FailedDependency == path)
@@ -267,8 +269,17 @@ bool AssetSystem::Reload(AssetStaging&& staged)
         return false;
     }
 
-    if (!kind->Reload(std::move(staged)))
+    AssetReloadOutcome reloaded = kind->Reload(std::move(staged));
+    if (!reloaded)
+    {
+        if (!reloaded.Error.empty())
+        {
+            std::string reason = std::format("'{}': {}", path, reloaded.Error);
+            Log.Error("AssetSystem: reload failed: {}", reason);
+            RecordFailure(path, type, std::move(reason));
+        }
         return false;
+    }
     ClearFailure(path, type);
     return true;
 }

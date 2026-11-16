@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <assets/data/DataAssetTypeRegistry.h>
+#include <assets/data/DataDefinitionStaging.h>
 #include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetStager.h>
 #include <core/json/JsonValue.h>
@@ -20,12 +21,16 @@ struct CompiledDataAsset
     std::string TypeName;
     uint32_t Version = 0;
     std::shared_ptr<const void> Value;
+    // The definitions it was composed from, transitively.
+    std::vector<std::string> Sources;
 };
 
-// Stages a .sdata file: parse, check the envelope, validate `data` against the
-// subtype's authoring schema, then hand it to the subtype's compiler. What the
-// compiler returns is opaque here; only the subtype knows its own value type,
-// which is what lets a game module add one without an engine edit.
+// Stages a .sdata file through StageDataDefinition: envelope, composition,
+// schema, then the subtype's compiler. What the compiler returns is opaque
+// here; only the subtype knows its own value type, which is what lets a game
+// module add one without an engine edit. A definition that extends or includes
+// another reads those sources, so it composes when it commits, on the owner
+// thread, unless the caller staged it with a reader of its own.
 class DataAssetLoader final : public IAssetStager
 {
 public:
@@ -37,20 +42,31 @@ public:
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source,
                                           const AssetPathsById& current) override;
-    // Stages an envelope already in memory, such as an editor's working copy.
+    // Stages an envelope already in memory, such as an editor's working copy,
+    // composing through `read` when given one.
     [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root,
-                                         const AssetPathsById& current);
+                                         const AssetPathsById& current, const DataSourceReader& read = {});
 
     // Loads the value's declared dependencies and has the entry hold them; one
     // that cannot load fails the commit and is named in the result.
     [[nodiscard]] AssetCommitResult<DataAssetHandle> CommitTyped(AssetStaging&& staged, AssetSystem& assets);
-    [[nodiscard]] bool CommitReload(AssetStaging&& staged, AssetSystem& assets);
+    [[nodiscard]] AssetReloadOutcome CommitReload(AssetStaging&& staged, AssetSystem& assets);
 
     // Refuses a value that declares dependencies.
     [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged);
     [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
+    // A definition with sources, waiting for the owner thread to compose it.
+    struct PendingComposition
+    {
+        JsonValue Root;
+    };
+
+    [[nodiscard]] AssetStaging StageDefinition(const AssetRecord& record, const JsonValue& root,
+                                               const AssetPathsById& current, const DataSourceReader& read);
+    // Composes a pending definition in place; the reason it failed, or empty.
+    [[nodiscard]] std::string ComposePending(AssetStaging& staged, AssetSystem& assets);
     // The dependency that did not load, or empty when every one did.
     [[nodiscard]] std::string LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
                                                std::vector<AssetLease>& out);

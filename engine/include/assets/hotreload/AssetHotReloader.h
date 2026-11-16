@@ -34,6 +34,10 @@ public:
 
 private:
 
+    // Reloads every resident asset composed from `path`, which need not be
+    // resident: an abstract base never is.
+    void ReloadComposedFrom(std::string_view path);
+
     void StageReload(const AssetRecord& record);
 
     Logger& Log;

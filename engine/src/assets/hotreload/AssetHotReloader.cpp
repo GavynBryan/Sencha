@@ -103,6 +103,7 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
         }
         if (Assets.IsResident(record->Path, record->Type))
             StageReload(*record);
+        ReloadComposedFrom(record->Path);
         return;
     }
 
@@ -120,6 +121,23 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
         if (!Assets.IsResident(path, record->Type))
             continue;
         StageReload(*record);
+    }
+}
+
+void AssetHotReloader::ReloadComposedFrom(std::string_view path)
+{
+    for (const AssetKindRegistration& kind : Assets.Kinds().Entries())
+    {
+        if (!kind.ComposedFrom)
+            continue;
+        for (const std::string& dependent : kind.ComposedFrom(path))
+        {
+            const AssetRecord* record = Registry.FindByPath(dependent);
+            if (record == nullptr)
+                continue;
+            Log.Info("AssetHotReloader: '{}' changed; reloading '{}' which is composed from it", path, dependent);
+            StageReload(*record);
+        }
     }
 }
 

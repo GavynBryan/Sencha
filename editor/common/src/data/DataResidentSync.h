@@ -1,5 +1,7 @@
 #pragma once
 
+#include "data/DataSourceScope.h"
+
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -26,7 +28,11 @@ struct DataResidentState
 class DataResidentSync
 {
 public:
-    explicit DataResidentSync(RuntimeAssets& assets) : Assets(assets) {}
+    DataResidentSync(RuntimeAssets& assets, DataRootProvider roots)
+        : Assets(assets)
+        , Roots(std::move(roots))
+    {
+    }
 
     DataResidentSync(const DataResidentSync&) = delete;
     DataResidentSync& operator=(const DataResidentSync&) = delete;
@@ -54,6 +60,7 @@ private:
     [[nodiscard]] bool Apply(const DataDocument& document);
 
     RuntimeAssets& Assets;
+    DataRootProvider Roots;
     std::vector<WaitingPush> Waiting;
     std::unordered_map<const DataDocument*, DataResidentState> States;
 };

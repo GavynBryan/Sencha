@@ -1,5 +1,6 @@
 #include <assets/data/DataAssetCache.h>
 
+#include <algorithm>
 #include <utility>
 
 DataAssetCache::DataAssetCache()
@@ -15,7 +16,8 @@ DataAssetCache::~DataAssetCache()
 DataAssetHandle DataAssetCache::Register(std::string_view path,
                                          std::string typeName,
                                          std::shared_ptr<const void> value,
-                                         std::vector<AssetLease> dependencies)
+                                         std::vector<AssetLease> dependencies,
+                                         std::vector<std::string> sources)
 {
     if (path.empty() || typeName.empty() || value == nullptr)
         return {};
@@ -27,19 +29,24 @@ DataAssetHandle DataAssetCache::Register(std::string_view path,
     entry.Value = std::move(value);
     entry.TypeName = std::move(typeName);
     entry.Dependencies = std::move(dependencies);
+    entry.Sources = std::move(sources);
     entry.ReloadVersion = 1;
     entry.Alive = true;
 
     DataAssetHandle handle = AllocNamedHandle(path, std::move(entry));
     if (handle.IsValid())
+    {
         ++LiveSubtypeCounts[std::string(GetSubtype(handle))];
+        IndexSources(*Resolve(handle));
+    }
     return handle;
 }
 
 bool DataAssetCache::ReloadInPlace(std::string_view path,
                                    std::string_view typeName,
                                    std::shared_ptr<const void> value,
-                                   std::vector<AssetLease> dependencies)
+                                   std::vector<AssetLease> dependencies,
+                                   std::vector<std::string> sources)
 {
     if (value == nullptr)
         return false;
@@ -52,6 +59,9 @@ bool DataAssetCache::ReloadInPlace(std::string_view path,
     // Swapped, so the old set is released when `dependencies` goes out of
     // scope, after the new one is already held.
     std::swap(entry->Dependencies, dependencies);
+    UnindexSources(*entry);
+    entry->Sources = std::move(sources);
+    IndexSources(*entry);
     ++entry->ReloadVersion;
     if (entry->ReloadVersion == 0)
         entry->ReloadVersion = 1;
@@ -106,8 +116,39 @@ bool DataAssetCache::HasResidentSubtype(std::string_view typeName) const
     return it != LiveSubtypeCounts.end() && it->second > 0;
 }
 
+std::vector<std::string> DataAssetCache::ComposedFrom(std::string_view source) const
+{
+    const auto found = DependentsBySource.find(std::string(source));
+    if (found == DependentsBySource.end())
+        return {};
+    std::vector<std::string> dependents = found->second;
+    std::ranges::sort(dependents);
+    return dependents;
+}
+
+void DataAssetCache::IndexSources(const DataAssetEntry& entry)
+{
+    for (const std::string& source : entry.Sources)
+        DependentsBySource[source].push_back(entry.PathKey);
+}
+
+void DataAssetCache::UnindexSources(const DataAssetEntry& entry)
+{
+    for (const std::string& source : entry.Sources)
+    {
+        const auto found = DependentsBySource.find(source);
+        if (found == DependentsBySource.end())
+            continue;
+        std::erase(found->second, entry.PathKey);
+        if (found->second.empty())
+            DependentsBySource.erase(found);
+    }
+}
+
 void DataAssetCache::OnFree(DataAssetEntry& entry)
 {
+    UnindexSources(entry);
+    entry.Sources.clear();
     auto it = LiveSubtypeCounts.find(entry.TypeName);
     if (it != LiveSubtypeCounts.end())
     {

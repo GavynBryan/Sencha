@@ -27,7 +27,7 @@ namespace
         LoggingProvider Logging;
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
-        DataResidentSync Sync{ Assets };
+        DataResidentSync Sync{ Assets, {} };
         std::unique_ptr<DataDocument> Game;
         std::unique_ptr<DataDocument> Other;
 

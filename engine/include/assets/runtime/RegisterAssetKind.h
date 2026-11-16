@@ -33,7 +33,7 @@ namespace AssetKindDetail
     };
 
     template<typename TLoader>
-    bool CommitReload(TLoader& loader, AssetStaging&& staged, AssetSystem& assets)
+    AssetReloadOutcome CommitReload(TLoader& loader, AssetStaging&& staged, AssetSystem& assets)
     {
         if constexpr (requires { loader.CommitReload(std::move(staged), assets); })
             return loader.CommitReload(std::move(staged), assets);
@@ -56,6 +56,8 @@ namespace AssetKindDetail
             auto committed = CommitTyped(loader, std::move(staged), assets);
             if constexpr (requires { committed.FailedDependency; })
             {
+                if (!committed.IsValid() && !committed.Error.empty())
+                    return AssetCommitOutcome::Failed(std::move(committed.Error));
                 if (!committed.IsValid())
                     return AssetCommitOutcome::DependencyFailed(std::move(committed.FailedDependency));
                 return AssetLease::Adopt(type, *cache, committed.Handle.ToToken());
@@ -74,6 +76,8 @@ namespace AssetKindDetail
                 return CommitReload(loader, std::move(staged), assets);
             };
         }
+        if constexpr (requires { cache->ComposedFrom(std::string_view{}); })
+            kind.ComposedFrom = [cache](std::string_view path) { return cache->ComposedFrom(path); };
         return kind;
     }
 

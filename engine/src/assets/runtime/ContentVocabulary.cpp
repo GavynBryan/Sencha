@@ -39,12 +39,18 @@ struct ContentDefinitionLeases
     std::vector<Entry> CuePresentations;
 };
 
+// Concrete definitions only: an abstract one is extended or included, never declared.
 std::vector<std::string> PathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
 {
     std::vector<std::string> paths;
     for (const auto& [path, record] : assets.Registry.Records())
-        if (record.Type == AssetType::Data && PeekDataAssetSubtype(assets.Assets.DefaultSource(), record) == subtype)
+    {
+        if (record.Type != AssetType::Data)
+            continue;
+        const DataAssetEnvelopePeek peek = PeekDataAssetEnvelope(assets.Assets.DefaultSource(), record);
+        if (peek.Subtype == subtype && !peek.Abstract)
             paths.push_back(path);
+    }
     std::ranges::sort(paths);
     return paths;
 }

@@ -127,10 +127,11 @@ public:
     AssetSystem Assets;
 
     // A data envelope already in memory staged for Assets.Reload, such as an
-    // editor's working copy of a resident asset.
-    [[nodiscard]] AssetStaging StageDataRoot(const AssetRecord& record, const JsonValue& root)
+    // editor's working copy of a resident asset, composing through `read`.
+    [[nodiscard]] AssetStaging StageDataRoot(const AssetRecord& record, const JsonValue& root,
+                                             const DataSourceReader& read = {})
     {
-        return DataLoader.StageRoot(record, root, *Registry.PathsById());
+        return DataLoader.StageRoot(record, root, *Registry.PathsById(), read);
     }
 
     // The windowed composition: every kind this engine knows is loadable.

@@ -22,6 +22,8 @@ struct DataAssetEntry
     // Leases on what the value's compile declared it depends on, held as long
     // as the value is.
     std::vector<AssetLease> Dependencies;
+    // The definitions the value was composed from, transitively.
+    std::vector<std::string> Sources;
     bool Alive = false;
 };
 
@@ -43,13 +45,15 @@ public:
     [[nodiscard]] DataAssetHandle Register(std::string_view path,
                                            std::string typeName,
                                            std::shared_ptr<const void> value,
-                                           std::vector<AssetLease> dependencies = {});
+                                           std::vector<AssetLease> dependencies = {},
+                                           std::vector<std::string> sources = {});
     // Replaces the value and its dependency set together; the new set is held
     // before the old one is released, so a dependency both share survives.
     [[nodiscard]] bool ReloadInPlace(std::string_view path,
                                      std::string_view typeName,
                                      std::shared_ptr<const void> value,
-                                     std::vector<AssetLease> dependencies = {});
+                                     std::vector<AssetLease> dependencies = {},
+                                     std::vector<std::string> sources = {});
 
     [[nodiscard]] DataAssetHandle Acquire(std::string_view path);
     [[nodiscard]] DataAssetCacheHandle AcquireOwned(std::string_view path);
@@ -60,6 +64,8 @@ public:
     [[nodiscard]] uint64_t GetReloadVersion(DataAssetHandle handle) const;
     [[nodiscard]] std::string_view GetName(DataAssetHandle handle) const;
     [[nodiscard]] bool HasResidentSubtype(std::string_view typeName) const;
+    // Resident paths composed from `source`, sorted; `source` need not be resident.
+    [[nodiscard]] std::vector<std::string> ComposedFrom(std::string_view source) const;
 
     template<typename T>
     [[nodiscard]] const T* TryGet(DataAssetHandle handle,
@@ -78,6 +84,9 @@ private:
 
     void OnFree(DataAssetEntry& entry);
     bool IsEntryLive(const DataAssetEntry& entry) const;
+    void IndexSources(const DataAssetEntry& entry);
+    void UnindexSources(const DataAssetEntry& entry);
 
     std::unordered_map<std::string, uint32_t> LiveSubtypeCounts;
+    std::unordered_map<std::string, std::vector<std::string>> DependentsBySource;
 };

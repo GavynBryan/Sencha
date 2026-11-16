@@ -1,7 +1,9 @@
 # Composition
 
 One operator composes authored values: a composed base, then fragments, then a
-local patch. Scene instance patches apply through it.
+local patch. Data definitions compose through it when they load and when Kyusu
+lays them out, and scene instance patches apply through it. Nothing composes at
+run time: systems see one ordinary compiled value.
 
 The operator is `ComposeLayers` in `core/composition/Composition.h`, a template
 over a small value-access trait (`CompositionValueTraits`). `JsonComposition.h`
@@ -56,7 +58,50 @@ When asked (`CompositionPolicy::Provenance`), the report records which layer and
 which asset set every composed leaf and keyed element, an empty record
 included, and what the local layer removed. A source's own provenance passes
 through, so an origin names the asset that authored a value, not the one that
-handed it on.
+handed it on. The runtime loader asks for provenance only to locate the errors
+of a definition that failed.
+
+## Data definitions
+
+A data definition's envelope may name a base and fragments beside `data`:
+
+```json
+{ "type": "effect.definition", "version": 1,
+  "extends": "asset://effects/armor_base.sdata",
+  "includes": [ "asset://effects/fragments/fire_resist.sdata" ],
+  "abstract": false,
+  "data": { "modifiers": { "m_armor": { "magnitude": 14 }, "m_speed": null } } }
+```
+
+- `extends` and `includes` are asset references in the usual form, resolved
+  through the build's id-to-path snapshot. Each names a definition of the same
+  subtype. `data` is the local patch.
+- A fragment may not extend (`include_extends`): it would bring what it
+  inherits as though it had written it, ranking that over the base and
+  conflicting falsely with other fragments. A fragment may include fragments.
+- Composition is refused, at the envelope field that named the source, for a
+  cycle, a chain deeper than 16 definitions, a source that does not exist or
+  does not compose, and a source of another subtype.
+- An `abstract` definition composes and validates partially (kinds, ranges and
+  keys, not required members, `DataValidationMode::Partial`), and is never
+  compiled. It does not load as a value, is never declared as vocabulary, and
+  pickers do not offer it, except for `extends` and `includes`.
+- A definition with none of these members loads exactly as before.
+
+`StageDataDefinition` (`assets/data/DataDefinitionStaging.h`) is the one path:
+it checks the envelope, composes, validates, compiles and names every error by
+an envelope path, with keyed elements named by key and inherited values by the
+asset they came from. The runtime loader and Kyusu's `DataDocument` both stage
+through it. It reads sources through a `DataSourceReader`: the file at run time,
+the open document's working copy in Kyusu.
+
+A runtime definition with sources composes when it commits, on the owner thread:
+a staging worker receives only the id-to-path snapshot and cannot read another
+definition's source. Each cache entry records the definitions it composed from,
+and `DataAssetCache::ComposedFrom` answers which resident definitions a path
+feeds. The hot reloader consults it for every changed file, resident or not, so
+editing an abstract base reloads its concrete children. A child that fails to
+recompose keeps its last good value and reports at its authored location.
 
 ## Scene instance patches
 
