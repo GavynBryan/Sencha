@@ -11,6 +11,10 @@
 #include <movement/MovementIntent.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementModeSystems.h>
+#include <movement/MovementTags.h>
+#include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
+#include <ecs/Query.h>
 
 #include <utility>
 
@@ -64,8 +68,15 @@ namespace
             WorldState.AddComponent<GameplayTagContainer>(entity, {});
             // The mailbox comes with the component that owes it.
             WorldState.AddComponent<CharacterMovement>(entity, CharacterMovement{ .Mode = Free });
-            WorldState.TryGet<GameplayTagContainer>(entity)->Grant(Modes->Find(Free)->ActiveTag);
+            ModeTagProjectionSystem{}.Step(WorldState);
             return entity;
+        }
+
+        // A transition, then the projection that tags its outcome, as the schedule orders them.
+        void Transition()
+        {
+            LocomotionModeTransitionSystem{}.Step(WorldState);
+            ModeTagProjectionSystem{}.Step(WorldState);
         }
     };
 }
@@ -106,7 +117,7 @@ TEST(MovementModeTransitionTest, CandidateBecomesSessionAtomically)
 
     ASSERT_TRUE(RequestLocomotionMode(
         fixture.WorldState, entity, fixture.Cling, ModeRequestClass::Explicit));
-    LocomotionModeTransitionSystem{}.Step(fixture.WorldState);
+    fixture.Transition();
 
     const CharacterMovement* movement =
         std::as_const(fixture.WorldState).TryGet<CharacterMovement>(entity);
@@ -133,7 +144,7 @@ TEST(MovementModeTransitionTest, MissingCandidateLeavesCurrentModeIntact)
 
     ASSERT_TRUE(RequestLocomotionMode(
         fixture.WorldState, entity, fixture.Cling, ModeRequestClass::Explicit));
-    LocomotionModeTransitionSystem{}.Step(fixture.WorldState);
+    fixture.Transition();
 
     const CharacterMovement* movement =
         std::as_const(fixture.WorldState).TryGet<CharacterMovement>(entity);
@@ -270,4 +281,159 @@ TEST(FreeLocomotionTest, GravityIntegratesOnlyWhenUnsupported)
         kinematic, stable, intent, tuning,
         Vec3d(0.0f, -10.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f), 1.0f);
     EXPECT_FLOAT_EQ(planted.Velocity.Y, 0.0f);
+}
+
+// D9: the active mode's tag is a contribution projected from the mode, so a
+// restored character is tagged with no transition, and its saved tags never
+// held the mode's.
+TEST(MovementModeTagTest, ARestoredModeIsTaggedWithoutATransition)
+{
+    ModeWorld fixture;
+    const EntityId entity = fixture.WorldState.CreateEntity();
+    fixture.WorldState.AddComponent<GameplayTagContainer>(entity, {});
+    fixture.WorldState.AddComponent<CharacterMovement>(entity, CharacterMovement{ .Mode = fixture.Flight });
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& tags = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity);
+    EXPECT_EQ(tags.StackCount(flight), 1u);
+    EXPECT_EQ(tags.BaselineCount(flight), 0u) << "a contribution, which a save leaves out";
+
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_EQ(tags.StackCount(flight), 1u) << "projected once, not once a pass";
+}
+
+TEST(MovementModeTagTest, AModeChangeMovesTheTag)
+{
+    ModeWorld fixture;
+    const EntityId entity = fixture.Spawn();
+    const GameplayTagId free = fixture.Modes->Find(fixture.Free)->ActiveTag;
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+
+    fixture.WorldState.TryGet<CharacterMovement>(entity)->Mode = fixture.Flight;
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& tags = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity);
+    EXPECT_FALSE(tags.HasExact(free));
+    EXPECT_EQ(tags.StackCount(flight), 1u);
+}
+
+// The projection owns its tags outright, so it sets them: whatever a decode
+// wrote (the authority's own projection, or a bad image), one stack is left.
+TEST(MovementModeTagTest, ADecodedContainerIsProjectedToOneStack)
+{
+    ModeWorld fixture;
+    const GameplayTagId free = fixture.Modes->Find(fixture.Free)->ActiveTag;
+    for (const std::uint16_t decoded : { std::uint16_t{ 1 }, std::uint16_t{ 2 } })
+    {
+        const EntityId seen = fixture.WorldState.CreateEntity();
+        fixture.WorldState.AddComponent<GameplayTagContainer>(seen, {});
+        fixture.WorldState.TryGet<GameplayTagContainer>(seen)->Grant(free, decoded);
+        fixture.WorldState.AddComponent<CharacterMovement>(seen, CharacterMovement{ .Mode = fixture.Free });
+        ModeTagProjectionSystem{}.Step(fixture.WorldState);
+        EXPECT_EQ(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(seen)->StackCount(free), 1u)
+            << "decoded with " << decoded;
+    }
+}
+
+// A predicted Free->Flight, then a snapshot decoding {free} and the rollback to Free.
+TEST(MovementModeTagTest, AProjectionOverADecodeAndARollbackHoldsOnlyTheActiveModesTag)
+{
+    ModeWorld fixture;
+    const GameplayTagId free = fixture.Modes->Find(fixture.Free)->ActiveTag;
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+    const EntityId predicted = fixture.Spawn();
+    fixture.WorldState.TryGet<CharacterMovement>(predicted)->Mode = fixture.Flight;
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    GameplayTagContainer& tags = *fixture.WorldState.TryGet<GameplayTagContainer>(predicted);
+    tags.Clear();
+    tags.Grant(free);
+    fixture.WorldState.TryGet<CharacterMovement>(predicted)->Mode = fixture.Free;
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& after = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(predicted);
+    EXPECT_EQ(after.StackCount(free), 1u);
+    EXPECT_FALSE(after.HasExact(flight));
+}
+
+TEST(MovementModeTagTest, AStillCharacterIsNotWrittenAgain)
+{
+    ModeWorld fixture;
+    (void)fixture.Spawn();
+    fixture.WorldState.AdvanceFrame();
+    const std::uint64_t settled = fixture.WorldState.CurrentFrame();
+    fixture.WorldState.AdvanceFrame();
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    Query<Read<GameplayTagContainer>, Changed<GameplayTagContainer>> changed(fixture.WorldState);
+    std::uint32_t written = 0;
+    changed.ForEachChunk([&](auto& view) { written += view.Count(); }, settled);
+    EXPECT_EQ(written, 0u);
+}
+
+// A client knows the mode only of what it predicts; another peer's character
+// keeps the tags the authority's projection sent.
+TEST(MovementModeTagTest, ACharacterThisMachineDoesNotPredictKeepsTheTagsItWasSent)
+{
+    ModeWorld fixture;
+    fixture.WorldState.AddResource<SimulationAuthority>(SimulationAuthority{ .Authoritative = false });
+    const GameplayTagId free = fixture.Modes->Find(fixture.Free)->ActiveTag;
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+    const EntityId proxy = fixture.WorldState.CreateEntity();
+    fixture.WorldState.AddComponent<GameplayTagContainer>(proxy, {});
+    fixture.WorldState.TryGet<GameplayTagContainer>(proxy)->Grant(flight);
+    fixture.WorldState.AddComponent<CharacterMovement>(proxy, CharacterMovement{ .Mode = fixture.Free });
+    const EntityId pawn = fixture.WorldState.CreateEntity();
+    fixture.WorldState.AddComponent<GameplayTagContainer>(pawn, {});
+    fixture.WorldState.AddComponent<CharacterMovement>(pawn, CharacterMovement{ .Mode = fixture.Free });
+    fixture.WorldState.AddResource<PredictedSimulation>(PredictedSimulation{ .Entity = pawn, .CommandTickOffset = 0 });
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& sent = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(proxy);
+    EXPECT_EQ(sent.StackCount(flight), 1u);
+    EXPECT_FALSE(sent.HasExact(free));
+    EXPECT_EQ(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(pawn)->StackCount(free), 1u)
+        << "what it predicts, it projects";
+}
+
+TEST(MovementModeTagTest, AModesTagIsProjectedAndItsRequestTagIsNot)
+{
+    ModeWorld fixture;
+    const LocomotionModeEntry& flight = *fixture.Modes->Find(fixture.Flight);
+    EXPECT_FALSE(fixture.Tags->ProjectedBy(flight.ActiveTag).empty());
+    EXPECT_TRUE(fixture.Tags->ProjectedBy(flight.RequestTag).empty()) << "a request is an authored mailbox";
+}
+
+// A request tag is a one-tick mailbox, consumed whole even where content
+// authored it, so it cannot request the mode again every tick.
+TEST(MovementModeTagTest, AnAuthoredModeRequestIsConsumedOnce)
+{
+    ModeWorld fixture;
+    const EntityId entity = fixture.Spawn();
+    const GameplayTagId request = fixture.Modes->Find(fixture.Flight)->RequestTag;
+    ASSERT_TRUE(request.IsValid());
+    fixture.WorldState.TryGet<GameplayTagContainer>(entity)->GrantBaseline(request);
+
+    ModeRequestCollectionSystem{}.Step(fixture.WorldState);
+    EXPECT_FALSE(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->HasExact(request));
+    EXPECT_TRUE(std::as_const(fixture.WorldState).TryGet<ModeTransitionRequest>(entity)->Pending);
+}
+
+// D9: movement.grounded is projected from support each tick, so it is a
+// contribution and a save leaves it out.
+TEST(MovementModeTagTest, GroundedIsAContribution)
+{
+    ModeWorld fixture;
+    fixture.WorldState.RegisterComponent<SupportState>();
+    const MovementTags& movementTags =
+        fixture.WorldState.AddResource<MovementTags>(RegisterMovementTags(*fixture.Tags));
+    const EntityId entity = fixture.Spawn();
+    fixture.WorldState.TryGet<SupportState>(entity)->Kind = SupportKind::Stable;
+
+    SupportTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& tags = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity);
+    EXPECT_TRUE(tags.HasExact(movementTags.Grounded));
+    EXPECT_EQ(tags.BaselineCount(movementTags.Grounded), 0u);
+    EXPECT_FALSE(fixture.Tags->ProjectedBy(movementTags.Grounded).empty());
+
+    fixture.WorldState.TryGet<SupportState>(entity)->Kind = SupportKind::None;
+    SupportTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_FALSE(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->HasExact(movementTags.Grounded))
+        << "airborne";
 }

@@ -1093,3 +1093,13 @@ part of the replication table hash.
 `ReplicationPeerState` gains `NoteSeeded`, and `NoteDeparted` voids what
 pending snapshots said about the entity. The anchor does not travel, so the
 replication table hash does not move.
+
+**Baseline tag stacks.** `GameplayTagContainer` gains `Baseline`, which adds 64
+bytes, and `GrantBaseline`, `RevokeBaseline`, `Erase`, `SetContribution`,
+`BaselineCount` and `ContributedCount`; `Grant` and `Revoke` are contributions,
+and a revoke never takes the baseline. The tag serializer writes the baseline
+alone and `ReadGameplayTags` gains a `dropped` list. `GameplayTagRegistry` gains
+`SetProjected` and `ProjectedBy`. `ModeTagProjectionSystem` is a new movement
+system, and `movement/MovementTags.h` declares `kModeTagProjection` and
+`kSupportTagProjection`. The container's local size moves the replication table
+hash; its wire image is unchanged, and the protocol stays 9.

@@ -4,6 +4,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagSerialization.h>
 
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace
@@ -99,7 +101,7 @@ public:
         IReadArchive& archive,
         EntityId entity,
         World& world,
-        SceneSerializationContext&) override
+        SceneSerializationContext& context) override
     {
         GameplayTagRegistry* tagRegistry =
             world.TryGetResource<GameplayTagRegistry>();
@@ -112,8 +114,13 @@ public:
         const bool preallocated = world.HasComponent<GameplayTagContainer>(entity);
 
         GameplayTagContainer tags{};
-        if (!ReadGameplayTags(archive, tags, *tagRegistry))
+        std::vector<std::string> dropped;
+        if (!ReadGameplayTags(archive, tags, *tagRegistry, &dropped))
             return false;
+        for (const std::string& name : dropped)
+            context.Logging->GetLogger<SceneSerializationContext>().Warn(
+                "gameplay tag '{}' is projected by {} and cannot be authored; it was not loaded", name,
+                tagRegistry->ProjectedBy(tagRegistry->FindTag(name)));
 
         if (preallocated)
             return world.InitializeComponent<GameplayTagContainer>(entity, tags);

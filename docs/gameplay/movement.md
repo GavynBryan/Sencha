@@ -44,10 +44,11 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 
 | # | System | Does |
 |---|--------|------|
-| 1 | `SupportTagProjectionSystem` | Mirrors last step's `SupportState` onto the `movement.grounded` tag. |
+| 1 | `SupportTagProjectionSystem` | Sets the `movement.grounded` tag from last step's `SupportState`. |
 | 2 | `AbilitySystem` (AbilityKit) | Runs abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
 | 3 | `ModeRequestCollectionSystem` | Consumes granted `movement.request.*` tags into the arbitrated transition mailbox. |
-| 4 | `LocomotionModeTransitionSystem` | Applies at most one mode transition per entity: exit old session, enter new, move the active tag. |
+| 4 | `LocomotionModeTransitionSystem` | Applies at most one mode transition per entity: exit old session, enter new, set the mode. |
+| 4a | `ModeTagProjectionSystem` | Sets the active mode's `movement.mode.*` tag to one stack and every other mode's to none. |
 | 5 | `AttributeResolveSystem`, then `MovementTuningResolutionSystem` | Resolves this tick's `ResolvedMovementTuning` from the profile layers against the current facts, mode, and tags. |
 | 6 | `FreeLocomotionSystem` (and any mode-owned locomotion system) | Writes `LocomotionOutput` for characters in its mode. |
 | 7 | `JumpExecutionSystem` (and any action producer) | Contributes to the override/impulse channels. |
@@ -142,8 +143,34 @@ tick. It collects requests first and applies them after iteration, because
 entry/exit hooks add and remove session components — a structural change that
 must not happen inside an active query. The sequence for an accepted request:
 exit the old mode's session, enter the new one (converting the staged candidate
-if the mode has one), set `CharacterMovement::Mode`, revoke every other mode's
-active tag, grant the target's.
+if the mode has one), set `CharacterMovement::Mode`.
+
+The active tag is a projection of the mode, not a write of the transition.
+Each mode's active tag, and `movement.grounded`, is **projected**
+(`GameplayTagRegistry::SetProjected`): its projection is its only writer.
+`ModeTagProjectionSystem` sets the active mode's tag to exactly one
+contributed stack and every other mode's to none (`SetContribution`); it
+reads first and writes only where the tags differ, so a still character's
+container is never written. Setting rather than adding covers every way a mode
+is set (a transition, a load, a rollback) and whatever a decode wrote. The
+stack is a contribution, so a save leaves it out and a restored character is
+tagged again with no transition.
+
+Because the projection is the only writer, nothing else may hold the tag:
+
+- a scene load drops a projected stack and reports it by name;
+- Kyusu neither offers nor accepts one;
+- an effect granting one, or an ability owning one, is refused at resolve;
+- `tags.grant` and `tags.revoke` refuse one.
+
+The authority projects every character. A client projects only what it
+predicts: it knows no other character's mode (`CharacterMovement::Mode` is
+owner-only), so another peer's character keeps the tags the authority's own
+projection sent. `SupportTagProjectionSystem` follows the same rules for
+`movement.grounded`.
+
+A request tag is not projected: it is a one-tick mailbox content may author,
+consumed whole (`Erase`).
 
 `CanEnter` runs **before** the current session is touched, so a candidate-based
 mode can validate its staged surface without disturbing the live state. A

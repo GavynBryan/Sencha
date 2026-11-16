@@ -29,6 +29,23 @@ the minimum vocabulary, not its limit.
 `GameplayTagContainer`: up to 32 id-sorted tags with 16-bit stack counts, where a
 revoke decrements and the last stack removes.
 
+Each tag's count holds a **baseline** within it: the stacks that persist.
+- Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the
+  baseline.
+- Effects and abilities contribute with `Grant` and withdraw with `Revoke`,
+  which never takes the baseline.
+- A save writes the baseline alone, so a restore followed by the effects being
+  applied again never holds a tag twice.
+- A replica decoded from the wire holds contributions only.
+
+A **projected** tag (`GameplayTagRegistry::SetProjected`) belongs to one
+projection, which sets its contribution outright (`SetContribution`) from state
+it owns: movement's mode and grounded tags (`docs/gameplay/movement.md`). It has
+no other writer. A scene load drops a projected stack and reports it, the editor
+refuses one, an effect's `granted_tags` or an ability's `owned_tags` naming one
+is refused at resolve (`tag_projected`), and `tags.grant` and `tags.revoke`
+refuse one.
+
 Hierarchical membership tests take the registry resource (`IsDescendantOf`). The
 heavy provenance in `CountedGameplayTagSet` (`GameplayTagSource` strings, grant
 handles) is **not** carried per-entity: the `ActiveEffect` entity that granted a

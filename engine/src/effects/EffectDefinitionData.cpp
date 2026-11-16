@@ -228,6 +228,12 @@ bool ResolveEffectDeclaration(const EffectDeclaration& declaration,
             errors.push_back(std::format("no gameplay tag '{}'", name));
             continue;
         }
+        if (const std::string_view projection = tags.ProjectedBy(tag); !projection.empty())
+        {
+            errors.push_back(std::format("gameplay tag '{}' is projected by {}; nothing else grants it", name,
+                                         projection));
+            continue;
+        }
         out.GrantedTags.push_back(tag);
     }
     for (const std::string& name : declaration.Kinds)

@@ -25,28 +25,45 @@ class GameplayTagRegistry;
 //
 // Scene persistence goes through a hand-written serializer
 // (GameplayTagContainerSerializer) rather than a schema, because the ids held
-// here are registration-order values.
+// here are registration-order values. It saves each tag's baseline alone
+// (docs/gameplay/abilitykit.md, D-A).
 //=============================================================================
 struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
 {
     static constexpr std::uint8_t Capacity = 32;
 
     GameplayTagId Tags[Capacity];
+    // Every stack held, baseline included.
     std::uint16_t Counts[Capacity];
+    // Of Counts, the stacks that persist.
+    std::uint16_t Baseline[Capacity];
     std::uint8_t  Count = 0;
 
-    // Grant `stacks` of `tag`. Returns true iff the tag was absent and is now
-    // present (a newly-appearing tag). Returns false on a no-op: an additional
-    // stack of a tag already present, an invalid tag, stacks == 0, or a full
-    // container faced with a new tag (asserts in debug).
+    // Contributes `stacks` of `tag`. True iff the tag was absent and is now
+    // present; false for another stack, an invalid tag, zero stacks, or a full
+    // container (asserts in debug).
     bool Grant(GameplayTagId tag, std::uint16_t stacks = 1);
 
-    // Revoke `stacks` of `tag`. Returns true iff the tag was present and the
-    // last stack was just removed (a newly-disappearing tag).
+    // Withdraws up to `stacks` contributed stacks of `tag`; never the baseline.
+    // Returns true iff the tag was present and the last stack was just removed.
     bool Revoke(GameplayTagId tag, std::uint16_t stacks = 1);
+
+    // Grant and Revoke for the stacks that persist.
+    bool GrantBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
+    bool RevokeBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
+
+    // Removes `tag` whatever holds it: a one-tick mailbox consumed.
+    bool Erase(GameplayTagId tag);
+
+    // Makes exactly `stacks` of `tag` contributed, never touching the baseline:
+    // how a projection writes its tags. True iff anything changed.
+    bool SetContribution(GameplayTagId tag, std::uint16_t stacks);
 
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
+    [[nodiscard]] std::uint16_t BaselineCount(GameplayTagId tag) const;
+    // Of StackCount, the stacks above the baseline.
+    [[nodiscard]] std::uint16_t ContributedCount(GameplayTagId tag) const;
 
     // True iff any held tag is `ancestor` or a descendant of it (holding
     // State.Stunned.Root satisfies a query for State.Stunned).

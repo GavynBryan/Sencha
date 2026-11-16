@@ -2349,3 +2349,24 @@ TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->Override.Action, std::optional<std::string>("Input.PrimaryFire"));
 }
+
+// An ability's owned tags are contributions while it runs; a projected tag has
+// only its projection to write it.
+TEST(AbilityDeclarationResolve, AProjectedTagIsNotOwned)
+{
+    World world;
+    RegisterAbilityKit(world);
+    GameplayTagRegistry& tags = world.GetResource<GameplayTagRegistry>();
+    tags.SetProjected(*tags.RegisterTag("movement.grounded"), "movement.support");
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*JsonParse(R"({ "owned_tags": [ "movement.grounded" ],
+        "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })"),
+                                          declaration, dependencies, diagnostics));
+    AbilityDefinition definition;
+    EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/projected.sdata",
+                                           MakeAbilityResolveEnvironment(world), definition, diagnostics));
+    ASSERT_FALSE(diagnostics.empty());
+    EXPECT_EQ(diagnostics.back().Code, "tag_projected");
+}

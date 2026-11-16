@@ -180,9 +180,9 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving
-// it is a deliberate act with a reason, never a side effect: the last move sent
-// a grant's source in place of the effect holding it.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xC95ADD35CFB49477ULL;
+// it is a deliberate act with a reason, never a side effect: the last move gave
+// the tag container its baseline stacks, which changed its local size.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0xEF1B06D1F69FE48CULL;
 
 struct EngineVocabulary
 {

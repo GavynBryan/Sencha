@@ -121,7 +121,7 @@ namespace
             PropertyNode tags = GroupProperty("tags", "Tags");
             std::vector<std::string> offered;
             ForEachRegistered<GameplayTagId>(*registry, [&](GameplayTagId tag) {
-                if (!held->HasExact(tag))
+                if (!held->HasExact(tag) && registry->ProjectedBy(tag).empty())
                     offered.emplace_back(registry->GetName(tag));
             });
             if (!offered.empty())

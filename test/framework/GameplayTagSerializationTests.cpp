@@ -1,6 +1,9 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagSerialization.h>
+#include <gameplay_tags/GameplayTagContainerWire.h>
+#include <net/ReplicationWireContext.h>
+#include <ecs/World.h>
 #include <core/serialization/JsonArchive.h>
 
 #include <gtest/gtest.h>
@@ -26,9 +29,9 @@ TEST(GameplayTagSerialization, RoundTripsByNameAcrossDifferingRegistries)
     const GameplayTagId burning = Register(saveReg, "State.Burning");
 
     GameplayTagContainer c{};
-    c.Grant(root, 2);
-    c.Grant(dash);
-    c.Grant(burning, 5);
+    c.GrantBaseline(root, 2);
+    c.GrantBaseline(dash);
+    c.GrantBaseline(burning, 5);
 
     JsonWriteArchive wa;
     ASSERT_TRUE(WriteGameplayTags(wa, c, saveReg));
@@ -56,8 +59,8 @@ TEST(GameplayTagSerialization, UnknownTagsAreSkippedNotFatal)
 {
     GameplayTagRegistry saveReg;
     GameplayTagContainer c{};
-    c.Grant(Register(saveReg, "Ability.Dash"));
-    c.Grant(Register(saveReg, "State.Burning"));
+    c.GrantBaseline(Register(saveReg, "Ability.Dash"));
+    c.GrantBaseline(Register(saveReg, "State.Burning"));
 
     JsonWriteArchive wa;
     ASSERT_TRUE(WriteGameplayTags(wa, c, saveReg));
@@ -87,4 +90,86 @@ TEST(GameplayTagSerialization, EmptyContainerRoundTrips)
     JsonReadArchive ra(jv);
     EXPECT_TRUE(ReadGameplayTags(ra, c2, reg));
     EXPECT_TRUE(c2.Empty());
+}
+
+// D9: what effects, abilities and projections contribute is derived again after
+// a load, so only the baseline is saved, and it loads as baseline.
+TEST(GameplayTagSerialization, OnlyTheBaselineIsSavedAndItLoadsAsBaseline)
+{
+    GameplayTagRegistry reg;
+    const GameplayTagId humanoid = Register(reg, "Creature.Humanoid");
+    const GameplayTagId burning = Register(reg, "State.Burning");
+
+    GameplayTagContainer c{};
+    c.GrantBaseline(humanoid);
+    c.Grant(humanoid);
+    c.Grant(burning, 2);
+    JsonWriteArchive wa;
+    ASSERT_TRUE(WriteGameplayTags(wa, c, reg));
+    const JsonValue jv = wa.TakeValue();
+
+    GameplayTagContainer loaded{};
+    JsonReadArchive ra(jv);
+    ASSERT_TRUE(ReadGameplayTags(ra, loaded, reg));
+    EXPECT_EQ(loaded.Size(), 1u);
+    EXPECT_EQ(loaded.StackCount(humanoid), 1u);
+    EXPECT_EQ(loaded.BaselineCount(humanoid), 1u);
+    EXPECT_FALSE(loaded.HasExact(burning));
+}
+
+// A projected tag is its projection's alone (movement's mode and grounded tags),
+// so a saved stack of one is content that cannot mean anything: dropped, and
+// said so.
+TEST(GameplayTagSerialization, AProjectedTagLoadsAsNothingAndIsReported)
+{
+    GameplayTagRegistry reg;
+    const GameplayTagId grounded = Register(reg, "movement.grounded");
+    const GameplayTagId humanoid = Register(reg, "Creature.Humanoid");
+    GameplayTagContainer c{};
+    c.GrantBaseline(grounded);
+    c.GrantBaseline(humanoid);
+    JsonWriteArchive wa;
+    ASSERT_TRUE(WriteGameplayTags(wa, c, reg));
+    const JsonValue jv = wa.TakeValue();
+
+    reg.SetProjected(grounded, "movement.support");
+    GameplayTagContainer loaded{};
+    std::vector<std::string> dropped;
+    JsonReadArchive ra(jv);
+    ASSERT_TRUE(ReadGameplayTags(ra, loaded, reg, &dropped));
+    EXPECT_FALSE(loaded.HasExact(grounded));
+    EXPECT_TRUE(loaded.HasExact(humanoid));
+    EXPECT_EQ(dropped, (std::vector<std::string>{ "movement.grounded" }));
+}
+
+// S5.1's audit row: a replica decoded from the wire holds the authority's
+// totals as contributions, so a client's save holds none of them.
+TEST(GameplayTagSerialization, AContainerDecodedFromTheWireHoldsNoBaselineAndSavesNothing)
+{
+    World authority;
+    GameplayTagRegistry& names = authority.AddResource<GameplayTagRegistry>();
+    const GameplayTagId humanoid = Register(names, "Creature.Humanoid");
+    const GameplayTagId burning = Register(names, "State.Burning");
+    GameplayTagContainer held{};
+    held.GrantBaseline(humanoid);
+    held.Grant(burning, 2);
+    GameplayTagContainerWire wire;
+    ReplicationCodec<GameplayTagContainer>::ToWire(
+        ReplicationWireContext{ .Entities = &authority, .Entity = {}, .Authority = nullptr, .Client = nullptr, .Unresolved = nullptr },
+        held, wire);
+
+    World client;
+    GameplayTagRegistry& theirs = client.AddResource<GameplayTagRegistry>();
+    (void)Register(theirs, "State.Burning");
+    const GameplayTagId theirHumanoid = Register(theirs, "Creature.Humanoid");
+    GameplayTagContainer decoded{};
+    ReplicationCodec<GameplayTagContainer>::FromWire(
+        ReplicationWireContext{ .Entities = &client, .Entity = {}, .Authority = nullptr, .Client = nullptr, .Unresolved = nullptr },
+        wire, decoded);
+    ASSERT_EQ(decoded.StackCount(theirHumanoid), 1u);
+    for (std::uint8_t i = 0; i < decoded.Count; ++i)
+        EXPECT_EQ(decoded.BaselineCount(decoded.Tags[i]), 0u);
+    JsonWriteArchive written;
+    ASSERT_TRUE(WriteGameplayTags(written, decoded, theirs));
+    EXPECT_EQ(written.TakeValue().Find("tags")->AsArray().size(), 0u);
 }

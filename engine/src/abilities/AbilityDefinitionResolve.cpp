@@ -127,6 +127,7 @@ namespace
                     Out.EntitiesLocal = static_cast<std::uint8_t>(i);
             }
             Out.OwnedTags = Tags(Declared.OwnedTags, "$.data.owned_tags");
+            RefuseProjected(Out.OwnedTags, "$.data.owned_tags");
             Out.CancelTags = Tags(Declared.CancelTags, "$.data.cancel_tags");
             Costs();
             for (const AbilityConditionDecl& condition : Declared.Activation)
@@ -151,6 +152,22 @@ namespace
             if (!tag.IsValid())
                 Error("tag_unknown", key, path, std::format("no gameplay tag '{}'", name));
             return tag;
+        }
+
+        // Owned tags are contributions while the ability runs; a projected tag
+        // has its projection as its only writer.
+        void RefuseProjected(std::vector<GameplayTagId>& tags, const std::string& path)
+        {
+            if (Env.Tags == nullptr)
+                return;
+            std::erase_if(tags, [&](GameplayTagId tag) {
+                const std::string_view projection = Env.Tags->ProjectedBy(tag);
+                if (!projection.empty())
+                    Error("tag_projected", {}, path,
+                          std::format("gameplay tag '{}' is projected by {}; nothing else grants it",
+                                      Env.Tags->GetName(tag), projection));
+                return !projection.empty();
+            });
         }
 
         std::vector<GameplayTagId> Tags(const std::vector<std::string>& names, const std::string& path)

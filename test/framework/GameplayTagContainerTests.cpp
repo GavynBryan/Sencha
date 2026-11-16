@@ -35,6 +35,66 @@ TEST(GameplayTagContainer, GrantRevokeStackTransitions)
     EXPECT_TRUE(c.Empty());
 }
 
+// D9: a contribution's revoke never takes what persists, and only the baseline's
+// own revoke does.
+TEST(GameplayTagContainer, AContributionNeverWithdrawsTheBaseline)
+{
+    TagFixture f;
+    GameplayTagContainer c{};
+    EXPECT_TRUE(c.GrantBaseline(f.Dash));
+    EXPECT_FALSE(c.Grant(f.Dash, 2));
+    EXPECT_EQ(c.StackCount(f.Dash), 3u);
+    EXPECT_EQ(c.BaselineCount(f.Dash), 1u);
+
+    EXPECT_FALSE(c.Revoke(f.Dash, 5)) << "only the two contributed stacks go";
+    EXPECT_EQ(c.StackCount(f.Dash), 1u);
+    EXPECT_FALSE(c.Revoke(f.Dash));
+    EXPECT_TRUE(c.HasExact(f.Dash));
+
+    c.Grant(f.Dash);
+    EXPECT_FALSE(c.RevokeBaseline(f.Dash)) << "the contribution keeps it present";
+    EXPECT_EQ(c.BaselineCount(f.Dash), 0u);
+    EXPECT_TRUE(c.Revoke(f.Dash));
+    EXPECT_TRUE(c.Empty());
+}
+
+TEST(GameplayTagContainer, EraseRemovesATagWhateverHoldsIt)
+{
+    TagFixture f;
+    GameplayTagContainer c{};
+    c.GrantBaseline(f.Dash);
+    c.Grant(f.Dash);
+    c.Grant(f.Root);
+    EXPECT_TRUE(c.Erase(f.Dash));
+    EXPECT_FALSE(c.HasExact(f.Dash));
+    EXPECT_TRUE(c.HasExact(f.Root));
+    EXPECT_FALSE(c.Erase(f.Dash));
+}
+
+// A projection's tags are its alone, so it sets their contribution outright:
+// exact whatever was there, idempotent, and never touching the baseline.
+TEST(GameplayTagContainer, SettingAContributionMakesItExact)
+{
+    TagFixture f;
+    GameplayTagContainer c{};
+    EXPECT_TRUE(c.SetContribution(f.Dash, 1));
+    EXPECT_EQ(c.StackCount(f.Dash), 1u);
+    EXPECT_FALSE(c.SetContribution(f.Dash, 1)) << "already so";
+    c.Grant(f.Dash, 2);
+    EXPECT_TRUE(c.SetContribution(f.Dash, 1));
+    EXPECT_EQ(c.StackCount(f.Dash), 1u) << "repaired";
+    c.GrantBaseline(f.Root);
+    EXPECT_TRUE(c.SetContribution(f.Root, 2));
+    EXPECT_EQ(c.StackCount(f.Root), 3u);
+    EXPECT_EQ(c.BaselineCount(f.Root), 1u);
+    EXPECT_TRUE(c.SetContribution(f.Root, 0));
+    EXPECT_EQ(c.StackCount(f.Root), 1u) << "the baseline stays";
+    EXPECT_TRUE(c.SetContribution(f.Dash, 0));
+    EXPECT_FALSE(c.HasExact(f.Dash));
+    EXPECT_FALSE(c.SetContribution(f.Dash, 0));
+    EXPECT_EQ(c.ContributedCount(f.Root), 0u);
+}
+
 TEST(GameplayTagContainer, HierarchicalQueryMatchesAncestors)
 {
     TagFixture f;

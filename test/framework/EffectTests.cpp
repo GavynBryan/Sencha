@@ -3,10 +3,13 @@
 #include <effects/ActiveEffect.h>
 #include <effects/EffectApplicationLog.h>
 #include <effects/EffectCost.h>
+#include <effects/EffectDefinitionData.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <gameplay_tags/GameplayTagSerialization.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
@@ -264,6 +267,29 @@ TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
 
     Pass(4); // long ends for tick 5
     EXPECT_FALSE(Tags(hero).HasExact(marked));
+}
+
+// An effect's tag saved with the actor would be held twice once the restored
+// actor's effects are applied again. Only the baseline is saved.
+TEST_F(EffectFixture, ARestoredActorHoldsAnEffectsTagOnceWhenTheEffectReturns)
+{
+    const GameplayTagId humanoid = *tags->RegisterTag("Creature.Humanoid");
+    const GameplayTagId marked = *tags->RegisterTag("State.Marked");
+    const EffectId mark = Marker("Mark", marked, 0.0f);
+    const EntityId hero = MakeActor(100.0f, 5.0f);
+    Tags(hero).GrantBaseline(humanoid);
+    ApplyEffect(world, hero, mark, At(0));
+
+    JsonWriteArchive saved;
+    ASSERT_TRUE(WriteGameplayTags(saved, Tags(hero), *tags));
+    const JsonValue scene = saved.TakeValue();
+    const EntityId restored = MakeActor(100.0f, 5.0f);
+    JsonReadArchive read(scene);
+    ASSERT_TRUE(ReadGameplayTags(read, Tags(restored), *tags));
+    ApplyEffect(world, restored, mark, At(1));
+
+    EXPECT_EQ(Tags(restored).StackCount(marked), 1u);
+    EXPECT_EQ(Tags(restored).StackCount(humanoid), 1u);
 }
 
 TEST_F(EffectFixture, RemovingAnEffectRevokesItsTags)
@@ -583,4 +609,22 @@ TEST_F(EffectFixture, APeriodFallingDueIsRecordedAndALastingFoldIsNot)
     ASSERT_EQ(log.Applications().size(), 1u);
     EXPECT_EQ(log.Applications()[0].Effect, poisoned);
     EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[0], health), -3.0f);
+}
+
+// A projected tag has one writer, its projection; an effect granting one would
+// have its stack set away every tick.
+TEST(EffectDeclarationResolve, AProjectedTagIsNotGranted)
+{
+    AttributeRegistry attributes;
+    GameplayTagRegistry tags;
+    tags.SetProjected(*tags.RegisterTag("movement.grounded"), "movement.support");
+    EffectDeclaration declaration;
+    declaration.Duration = EffectDuration::Infinite;
+    declaration.GrantedTags = { "movement.grounded" };
+    EffectDefinition definition;
+    std::vector<std::string> errors;
+    EXPECT_FALSE(ResolveEffectDeclaration(declaration, attributes, tags, definition, errors));
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("movement.support"), std::string::npos) << errors[0];
+    EXPECT_TRUE(definition.GrantedTags.empty());
 }

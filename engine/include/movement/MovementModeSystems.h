@@ -29,7 +29,7 @@ private:
 };
 
 // Applies at most one transition per entity per tick: exit the old session,
-// enter the new one, move the active tag. Rejected requests discard whatever
+// enter the new one, set the mode. Rejected requests discard whatever
 // candidate the target mode staged.
 class LocomotionModeTransitionSystem
 {
@@ -41,8 +41,20 @@ private:
     void StepImpl(World& world, const StoragePartitionSet* partitions);
 };
 
-// Mirrors the support fact onto movement.grounded so gameplay queries and
-// ability gating can read it, without support becoming a mode.
+// Sets the active mode's tag to one contributed stack and every other mode's to
+// none: the tags' only writer (docs/gameplay/movement.md).
+class ModeTagProjectionSystem
+{
+public:
+    void FixedLogic(FixedLogicContext& ctx);
+    void Step(World& world);
+
+private:
+    void StepImpl(World& world, const StoragePartitionSet* partitions);
+};
+
+// Sets movement.grounded from the support fact, as the mode projection does,
+// so queries can read it without support becoming a mode.
 class SupportTagProjectionSystem
 {
 public:

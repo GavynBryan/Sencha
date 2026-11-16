@@ -109,6 +109,7 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<SupportTagProjectionSystem>();
     schedule.Register<ModeRequestCollectionSystem>();
     schedule.Register<LocomotionModeTransitionSystem>();
+    schedule.Register<ModeTagProjectionSystem>();
     schedule.Register<MovementTuningResolutionSystem>(dataAssets, logging);
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
@@ -128,11 +129,12 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.After<AbilitySystem, SupportTagProjectionSystem>();
     schedule.After<ModeRequestCollectionSystem, AbilitySystem>();
     schedule.After<LocomotionModeTransitionSystem, ModeRequestCollectionSystem>();
+    schedule.After<ModeTagProjectionSystem, LocomotionModeTransitionSystem>();
 
     // Tuning resolution reads the mode chosen this tick and the attributes
     // effects have already resolved, so it follows both.
     schedule.After<AttributeResolveSystem, AbilitySystem>();
-    schedule.After<MovementTuningResolutionSystem, LocomotionModeTransitionSystem>();
+    schedule.After<MovementTuningResolutionSystem, ModeTagProjectionSystem>();
     schedule.After<MovementTuningResolutionSystem, AttributeResolveSystem>();
 
     schedule.After<FreeLocomotionSystem, MovementTuningResolutionSystem>();
