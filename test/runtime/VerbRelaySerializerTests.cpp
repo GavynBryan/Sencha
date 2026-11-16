@@ -42,7 +42,7 @@ protected:
     {
         JsonWriteArchive out;
         SceneSerializationContext context{ Logging };
-        EXPECT_TRUE(Serializer->Save(out, entity, Scene, context));
+        EXPECT_TRUE(Serializer->Save(out, entity, Scene.Components, context));
         return out.TakeValue();
     }
 

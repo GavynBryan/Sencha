@@ -500,7 +500,7 @@ EntitySnapshot EditorDocument::CaptureEntity(EntityId entity) const
             continue;
 
         JsonWriteArchive archive;
-        if (!serializer->Save(archive, entity, Registry_, context) || !archive.Ok())
+        if (!serializer->Save(archive, entity, Registry_.Components, context) || !archive.Ok())
             continue;
 
         JsonValue component = archive.TakeValue();
@@ -652,7 +652,7 @@ JsonValue EditorDocument::CaptureComponent(EntityId entity,
 {
     SceneSerializationContext context(Logging, Assets);
     JsonWriteArchive archive;
-    if (!serializer.Save(archive, entity, Registry_, context) || !archive.Ok())
+    if (!serializer.Save(archive, entity, Registry_.Components, context) || !archive.Ok())
         return {};
     return archive.TakeValue();
 }

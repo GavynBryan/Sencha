@@ -58,14 +58,14 @@ public:
 
     bool Save(IWriteArchive& archive,
               EntityId entity,
-              const Registry& registry,
+              const World& world,
               SceneSerializationContext&) const override
     {
-        if (!registry.Components.IsRegistered<CharacterMovement>())
+        if (!world.IsRegistered<CharacterMovement>())
             return true;
 
         const CharacterMovement* movement =
-            registry.Components.TryGet<CharacterMovement>(entity);
+            world.TryGet<CharacterMovement>(entity);
         if (movement == nullptr)
             return true;
 
@@ -75,7 +75,7 @@ public:
         // or an empty string: absence reads back as the free mode, which is
         // what an unnamed mode already means.
         if (const LocomotionModeRegistry* modes =
-                registry.Components.TryGetResource<LocomotionModeRegistry>())
+                world.TryGetResource<LocomotionModeRegistry>())
         {
             if (const LocomotionModeEntry* mode = modes->Find(movement->Mode))
                 archive.Field(kModeKey, std::string_view(mode->Name));

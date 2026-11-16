@@ -50,7 +50,7 @@ protected:
     {
         JsonWriteArchive out;
         SceneSerializationContext context{ Logging };
-        EXPECT_TRUE(Serializer->Save(out, entity, Scene, context));
+        EXPECT_TRUE(Serializer->Save(out, entity, Scene.Components, context));
         return out.TakeValue();
     }
 
@@ -136,7 +136,7 @@ TEST_F(ResponsesSerializerFixture, TheBinaryArchiveCarriesTheBindingsToo)
         BinaryWriter writer(bytes);
         BinaryWriteArchive out(writer);
         SceneSerializationContext context{ Logging };
-        ASSERT_TRUE(Serializer->Save(out, entity, Scene, context));
+        ASSERT_TRUE(Serializer->Save(out, entity, Scene.Components, context));
     }
     const EntityId copy = Scene.Components.CreateEntity();
     BinaryReader reader(bytes);

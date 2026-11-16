@@ -9,6 +9,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <world/serialization/SceneAssetRef.h>
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -190,10 +191,9 @@ public:
             && registry.Components.HasComponent<AbilityGrants>(entity);
     }
 
-    bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry,
+    bool Save(IWriteArchive& archive, EntityId entity, const World& world,
               SceneSerializationContext& context) const override
     {
-        const World& world = registry.Components;
         const AbilityGrants* grants = world.IsRegistered<AbilityGrants>() ? world.TryGet<AbilityGrants>(entity) : nullptr;
         if (grants == nullptr)
             return true;
@@ -207,17 +207,18 @@ public:
         if (abilities == nullptr || entries == nullptr)
             return false;
 
-        std::size_t authored = 0;
-        for (std::uint8_t i = 0; i < grants->Count; ++i)
-            authored += grants->Entries[i].Kind == AbilityGrantKind::Authored ? 1 : 0;
+        const auto lasting = [](const AbilityGrant& grant) {
+            return grant.Kind == AbilityGrantKind::Authored || grant.Kind == AbilityGrantKind::Request;
+        };
+        const auto count = std::count_if(grants->Entries, grants->Entries + grants->Count, lasting);
 
         archive.BeginObject(std::string_view{});
-        archive.BeginArray(kGrants, authored);
+        archive.BeginArray(kGrants, static_cast<std::size_t>(count));
         for (std::uint8_t i = 0; i < grants->Count; ++i)
         {
             const AbilityGrant& grant = grants->Entries[i];
             const AbilityGrantEntry* entry = entries->Find(grant.Entry);
-            if (grant.Kind != AbilityGrantKind::Authored || entry == nullptr)
+            if (!lasting(grant) || entry == nullptr)
                 continue;
             archive.BeginObject(std::string_view{});
             archive.Field(kKey, std::string_view(entry->Key));
