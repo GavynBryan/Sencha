@@ -2756,6 +2756,111 @@ TEST(ReplicationComponentCodec, AComponentNamingAnEntityNamesTheMirrorOnTheClien
     EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
 }
 
+// A snapshot that runs out of room sends what fits, so a component can name an
+// entity the client is sent only later. It lands naming nothing, then names the
+// entity once it arrives, though the component itself is not sent again.
+TEST(ReplicationComponentCodec, AnEntityNamedBeforeItArrivesIsNamedOnceItDoes)
+{
+    const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
+        pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = target, .Count = 3, .Local = 99 });
+        pair.Authority.AddComponent<Pointer>(target, Pointer{});
+        pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
+    };
+    std::size_t whole = 0;
+    {
+        Pair measure([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+        EntityId pointing;
+        EntityId target;
+        build(measure, pointing, target);
+        whole = measure.Replicate();
+    }
+
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    EntityId pointing;
+    EntityId target;
+    build(pair, pointing, target);
+    pair.Budget = whole - 1;
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(pointing);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_FALSE(pair.Mirror(target).IsValid()) << "the target must not fit the first snapshot";
+    EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
+
+    pair.Budget = kSnapshotBytes;
+    pair.Replicate();
+    ASSERT_TRUE(pair.Mirror(target).IsValid());
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, pair.Mirror(target));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 3u);
+    EXPECT_EQ(pair.ClientIdentity.Deferred().Size(), 0u) << "nothing waits once everything named has arrived";
+}
+
+// A delta to a component whose reference still waits lands on the image that
+// named the entity, so the reference is not erased by a change to something else.
+TEST(ReplicationComponentCodec, ADeltaKeepsAReferenceStillWaitingForItsEntity)
+{
+    const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
+        pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = target, .Count = 3, .Local = 99 });
+        pair.Authority.AddComponent<Pointer>(target, Pointer{});
+        pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
+    };
+    // The whole seed, and a snapshot carrying only the count's delta.
+    std::size_t whole = 0;
+    std::size_t delta = 0;
+    {
+        Pair measure([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+        EntityId pointing;
+        EntityId target;
+        build(measure, pointing, target);
+        whole = measure.Replicate();
+        measure.Authority.TryGet<Pointer>(pointing)->Count = 4;
+        delta = measure.Replicate();
+    }
+
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    EntityId pointing;
+    EntityId target;
+    build(pair, pointing, target);
+    pair.Budget = whole - 1;
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(pointing);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_FALSE(pair.Mirror(target).IsValid());
+
+    pair.Authority.TryGet<Pointer>(pointing)->Count = 4;
+    pair.Budget = delta;
+    pair.Replicate();
+    ASSERT_FALSE(pair.Mirror(target).IsValid()) << "the target must not fit the delta's snapshot either";
+    ASSERT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 4u);
+
+    pair.Budget = kSnapshotBytes;
+    pair.Replicate();
+    ASSERT_TRUE(pair.Mirror(target).IsValid());
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, pair.Mirror(target));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 4u);
+}
+
+TEST(ReplicationDeferredReferences, WhatWaitsIsBoundedAndForgottenWithItsHolder)
+{
+    ReplicationDeferredReferences deferred;
+    const std::byte image[] = { std::byte{ 1 } };
+    const std::uint64_t waiting[] = { 9 };
+    const ComponentTypeId type{ 3 };
+    for (std::uint32_t i = 0; i < ReplicationDeferredReferences::kCapacity + 2; ++i)
+        deferred.Remember(EntityId{ i, 1 }, type, image, waiting);
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity);
+    EXPECT_EQ(deferred.Forgotten(), 2u) << "the oldest go first";
+    EXPECT_EQ(deferred.All().front().Holder, (EntityId{ 2, 1 }));
+
+    deferred.Remember(EntityId{ 2, 1 }, type, image, {});
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity - 1) << "an image naming nothing unbound waits for nothing";
+    deferred.ForgetEntity(EntityId{ 3, 1 });
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity - 2);
+}
+
 // Naming an entity that does not replicate sends nothing rather than a number
 // that means something else on the other machine.
 TEST(ReplicationComponentCodec, AnUnreplicatedTargetArrivesAsNoEntity)

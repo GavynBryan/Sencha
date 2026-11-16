@@ -7,6 +7,7 @@
 #include <net/NetSnapshotAck.h>
 #include <net/NetZoneScope.h>
 #include <net/ReplicationCodec.h>
+#include <net/ReplicationDeferredReferences.h>
 #include <net/ReplicationLayout.h>
 
 #include <array>
@@ -257,7 +258,12 @@ public:
     {
         Entries.clear();
         Names.clear();
+        Waiting.Clear();
     }
+
+    // What arrived naming an entity not bound yet, applied again once it is.
+    [[nodiscard]] ReplicationDeferredReferences& Deferred() { return Waiting; }
+    [[nodiscard]] const ReplicationDeferredReferences& Deferred() const { return Waiting; }
 
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
     [[nodiscard]] const std::unordered_map<NetEntityId, EntityId>& All() const
@@ -268,6 +274,7 @@ public:
 private:
     std::unordered_map<NetEntityId, EntityId> Entries;
     std::unordered_map<EntityId, NetEntityId, EntityIdHash> Names;
+    ReplicationDeferredReferences Waiting;
 };
 
 //-----------------------------------------------------------------------------

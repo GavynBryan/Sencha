@@ -704,7 +704,16 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   entity the other machine was never sent travels as zero and arrives as no
   entity; it is not refused. Apply translates back after every entity in the
   snapshot exists, so a reference to an entity spawned later in the same message
-  resolves. The first user is `AnimRequestSet` (`anim/AnimRequestWire.h`).
+  resolves. A reference to an entity a later snapshot brings (one that did not
+  fit, or a grant's source the owner hears of after its grants) arrives as no
+  entity, and the client identity keeps that image
+  (`net/ReplicationDeferredReferences.h`, bounded at 64, oldest forgotten and
+  counted). When the entity binds, the image is translated again, since the
+  authority, which sent it whole, will not send it again; a delta to the
+  component meanwhile decodes onto that image, so it does not erase the
+  reference. A codec treats a reference that resolved late as the same
+  reference: an animation request is not observed twice. The first user is
+  `AnimRequestSet` (`anim/AnimRequestWire.h`).
 
 There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
 puts one component into storage, the scene serializers, and the replicated table at

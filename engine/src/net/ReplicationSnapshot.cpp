@@ -377,6 +377,8 @@ EntityId ReplicationWireContext::LocalEntity(std::uint64_t wire) const
     const EntityId entity = Client != nullptr      ? Client->TryResolve(id)
                           : Authority != nullptr ? Authority->TryResolve(id)
                                                  : EntityId{};
+    if (!entity.IsValid() && Client != nullptr && Unresolved != nullptr)
+        Unresolved->push_back(wire);
     return entity.IsValid() && Entities != nullptr && Entities->IsAlive(entity) ? entity : EntityId{};
 }
 
@@ -1178,6 +1180,15 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 std::memcpy(target.data(), decoded.data() + earlier->Offset,
                             component->Size);
             }
+            else if (const ReplicationDeferredReferences::Waiting* waiting =
+                         !spawned && component->ToWire != nullptr ? identity.Deferred().Find(entity, component->Type)
+                                                                  : nullptr;
+                     waiting != nullptr && waiting->Image.size() == component->Size)
+            {
+                // What this machine holds names nothing where a reference still
+                // waits, so the delta lands on the image that named it.
+                std::memcpy(target.data(), waiting->Image.data(), component->Size);
+            }
             else if (component->ToWire != nullptr)
             {
                 // A delta lands on the wire image of what this machine holds,
@@ -1320,6 +1331,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     {
         const EntityId entity = identity.TryResolve(id);
         identity.Unbind(id);
+        identity.Deferred().ForgetEntity(entity);
         // Poses held for an entity that is gone describe nothing, and the handle
         // will be handed out again to something else.
         if (request.Interpolation != nullptr && entity.IsValid())
@@ -1517,26 +1529,49 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
     // Translated onto the receiver's own value rather than defaults, so what
     // the codec does not carry -- and a prefab's settings on a spawn -- stays.
-    for (const CodecWrite& pending : codecWrites)
-    {
-        const PlannedComponent& slot = plannedComponents[pending.Slot];
-        const ReplicatedComponent& component = *slot.Layout;
+    std::vector<std::uint64_t> unresolved;
+    const auto translate = [&](EntityId entity, const ReplicatedComponent& component,
+                               std::span<const std::byte> image) {
         const ComponentId column = world.GetComponentIdByType(component.Type);
-        const bool present = world.HasComponent(pending.Entity, column);
+        const bool present = world.HasComponent(entity, column);
         codecLocal.assign(component.LocalSize, std::byte{});
-        const void* held = present ? world.GetComponentRaw(pending.Entity, column) : nullptr;
+        const void* held = present ? world.GetComponentRaw(entity, column) : nullptr;
         if (held != nullptr)
             std::memcpy(codecLocal.data(), held, component.LocalSize);
         else
             (void)schema.WriteDefaultBytes(component.Type, codecLocal);
-        const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = pending.Entity,
-                                              .Client = &identity };
-        component.FromWire(context, std::span(decoded.data() + slot.Offset, component.Size), codecLocal);
-        const bool wrote =
-            present ? schema.SetComponentBytes(world, pending.Entity, component.Type, codecLocal)
-                    : schema.ImportComponent(world, pending.Entity, component.Type, codecLocal);
+        unresolved.clear();
+        const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = entity,
+                                              .Client = &identity, .Unresolved = &unresolved };
+        component.FromWire(context, image, codecLocal);
+        const bool wrote = present ? schema.SetComponentBytes(world, entity, component.Type, codecLocal)
+                                   : schema.ImportComponent(world, entity, component.Type, codecLocal);
         assert(wrote && "a component the read half accepted would not write");
         (void)wrote;
+        identity.Deferred().Remember(entity, component.Type, image, unresolved);
+    };
+    for (const CodecWrite& pending : codecWrites)
+    {
+        const PlannedComponent& slot = plannedComponents[pending.Slot];
+        translate(pending.Entity, *slot.Layout, std::span(decoded.data() + slot.Offset, slot.Layout->Size));
+    }
+    // An image that named an entity this snapshot bound is translated again,
+    // though the authority, which sent it whole, will not send it again.
+    std::vector<ReplicationDeferredReferences::Waiting> bound;
+    for (const ReplicationDeferredReferences::Waiting& waiting : identity.Deferred().All())
+        if (std::ranges::any_of(waiting.Unresolved,
+                                [&](std::uint64_t wire) { return identity.TryResolve(NetEntityId{ wire }).IsValid(); }))
+            bound.push_back(waiting);
+    for (const ReplicationDeferredReferences::Waiting& waiting : bound)
+    {
+        const ReplicatedComponent* component = layout.Find(waiting.Type);
+        if (component == nullptr || !world.IsAlive(waiting.Holder)
+            || !world.HasComponent(waiting.Holder, world.GetComponentIdByType(waiting.Type)))
+        {
+            identity.Deferred().Remember(waiting.Holder, waiting.Type, {}, {});
+            continue;
+        }
+        translate(waiting.Holder, *component, waiting.Image);
     }
 
     // Every snapshot a predicting client applies is a chance to reconcile,

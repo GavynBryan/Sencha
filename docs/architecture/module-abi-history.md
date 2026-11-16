@@ -1019,3 +1019,8 @@ replication table hash does, and the protocol stays 9.
 takes the grant with the highest effective priority, then the lowest grant id;
 `AbilityEffectiveBinding::Priority` is resolved for an entry bound to no
 action. `ability.activate` and `ability.grant` take an optional `source`.
+
+**Late-bound references.** `ReplicationWireContext` gains `Unresolved`, and
+`ReplicationClientIdentity` holds the `ReplicationDeferredReferences`
+(`net/ReplicationDeferredReferences.h`) it translates again once an entity an
+image named binds. No wire layout changes.
