@@ -1061,3 +1061,8 @@ effect whose grants would not fit is refused at application, and
 `AbilityRequest` gains `Entry`, with the request kind `ActivateEntry`: a grant
 that lives as long as the one activation it was made for. The grant codec sends
 the kind as it always has.
+
+**Named definition registry.** `core/identity/NamedDefinitionRegistry.h`
+declares the registry of one World's definitions named by asset path, which
+`AbilityRegistry` now is; its members and their behaviour are unchanged, and
+`abilities/AbilityRegistry.cpp` is gone.
