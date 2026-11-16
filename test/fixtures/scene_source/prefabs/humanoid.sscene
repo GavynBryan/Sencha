@@ -1,0 +1,32 @@
+{
+  format_version: 1,
+  entities: [
+    {
+      id: "00000000000000a1",
+      components: {
+        Transform: {
+          local: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        Attributes: {
+          attributes: [
+            { name: "Health", base: 100 },
+            { name: "Stealth", base: 5 },
+          ],
+        },
+        GameplayTags: {
+          tags: [{ name: "Creature.Humanoid", stacks: 1 }],
+        },
+        responses: {
+          bindings: {
+            struck: { on: "game.struck", sequence: { conditions: [], commands: [] } },
+            used: { on: "game.used", sequence: { conditions: [], commands: [] } },
+          },
+        },
+      },
+    },
+  ],
+}

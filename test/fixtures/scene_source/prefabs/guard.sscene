@@ -1,0 +1,12 @@
+{
+  format_version: 2,
+  extends: "asset://prefabs/humanoid.sscene",
+  includes: [{ fragment: "asset://prefabs/fragments/alertable.sscene" }],
+  entities: [],
+  patch: {
+    "00000000000000a1": {
+      Attributes: { attributes: { Health: { base: 200 }, Stealth: null } },
+      responses: { bindings: { used: null } },
+    },
+  },
+}

@@ -1,0 +1,22 @@
+{
+  format_version: 2,
+  entities: [],
+  instances: [
+    {
+      id: "0000000000000200",
+      source: "asset://prefabs/guard.sscene",
+      transform: {
+        position: [8, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      },
+      entity_ids: { "00000000000000a1": "0000000000000201" },
+      patch: {
+        "00000000000000a1": {
+          GameplayTags: { tags: { "Creature.Humanoid.Guard": { stacks: 1 } } },
+          responses: { bindings: { struck: null } },
+        },
+      },
+    },
+  ],
+}

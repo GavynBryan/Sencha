@@ -5,12 +5,16 @@
 
 #include "scene_source/Json5Parser.h"
 #include "scene_source/SceneComposition.h"
+#include "scene_source/SceneSourceCache.h"
 
 #include <core/metadata/DataSchema.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <string>
 
@@ -432,3 +436,83 @@ TEST(ScenePrefabComposition, AFragmentThatExtendsAnotherIsNotIncluded)
     EXPECT_NE(Diagnostic(*result, "include_extends"), nullptr);
     EXPECT_EQ(Entity(*result, 0xa1)->Components.Find("Light"), nullptr);
 }
+
+namespace
+{
+const std::filesystem::path kFixtureRoot = std::filesystem::path(SENCHA_REPO_ROOT) / "test/fixtures/scene_source";
+
+std::string ReadFixture(std::string_view relative)
+{
+    std::ifstream in(kFixtureRoot / relative);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+const Json5Value* Binding(const ResolvedSceneEntity& entity, std::string_view key)
+{
+    return entity.Components.Find("responses")->Find("bindings")->Find(key);
+}
+} // namespace
+
+// A version-1 level on disk composes by the version-1 rules, keeps its version
+// when written, and composes to the same entities once it is version 2.
+TEST(ScenePrefabComposition, AVersionOneFixtureComposesTheSameBeforeAndAfterItsUpgrade)
+{
+    SceneSourceCache sources({ kFixtureRoot });
+    TableRules rules;
+    std::string error;
+    std::optional<SceneSourceDocument> level = ParseSceneSource(ReadFixture("levels/placed_v1.sscene"), &error);
+    ASSERT_TRUE(level.has_value()) << error;
+    EXPECT_EQ(level->FormatVersion, 1u);
+    EXPECT_NE(WriteSceneSource(*level).find("format_version: 1"), std::string::npos);
+
+    const auto before = ResolveSceneComposition(*level, sources, &error, &rules);
+    ASSERT_TRUE(before.has_value()) << error;
+    const ResolvedSceneEntity* placed = Entity(*before, 0x101);
+    ASSERT_NE(placed, nullptr);
+    EXPECT_EQ(Attribute(*placed, "Health")->Find("base")->Number, 150.0);
+    EXPECT_EQ(Attribute(*placed, "Stealth"), nullptr) << "a version-1 list patch replaces the list";
+    EXPECT_EQ(Binding(*placed, "struck")->Find("cooldown")->Number, 2.0);
+    EXPECT_NE(Binding(*placed, "used"), nullptr);
+
+    EXPECT_TRUE(UpgradeSceneSourceFormat(*level).empty());
+    std::optional<SceneSourceDocument> upgraded = ParseSceneSource(WriteSceneSource(*level), &error);
+    ASSERT_TRUE(upgraded.has_value()) << error;
+    EXPECT_EQ(upgraded->FormatVersion, 2u);
+    const auto after = ResolveSceneComposition(*upgraded, sources, &error, &rules);
+    ASSERT_TRUE(after.has_value()) << error;
+    ASSERT_EQ(after->Entities.size(), before->Entities.size());
+    for (std::size_t i = 0; i < before->Entities.size(); ++i)
+        EXPECT_TRUE(after->Entities[i].Components.SameValueAs(before->Entities[i].Components))
+            << PersistentEntityIdToString(before->Entities[i].Id);
+}
+
+// A version-2 level on disk places a prefab that extends a version-1 base and
+// includes a fragment: keyed lists merge by key and null removes, at each layer.
+TEST(ScenePrefabComposition, AVersionTwoFixtureComposesThroughEveryLayer)
+{
+    SceneSourceCache sources({ kFixtureRoot });
+    TableRules rules;
+    std::string error;
+    const std::string text = ReadFixture("levels/placed_v2.sscene");
+    std::optional<SceneSourceDocument> level = ParseSceneSource(text, &error);
+    ASSERT_TRUE(level.has_value()) << error;
+    EXPECT_EQ(level->FormatVersion, 2u);
+    const std::string written = WriteSceneSource(*level);
+    EXPECT_EQ(WriteSceneSource(*ParseSceneSource(written, &error)), written);
+
+    const auto result = ResolveSceneComposition(*level, sources, &error, &rules);
+    ASSERT_TRUE(result.has_value()) << error;
+    EXPECT_TRUE(result->Diagnostics.empty());
+    EXPECT_TRUE(result->DanglingOverrides.empty());
+    EXPECT_EQ(result->Sources.size(), 3u) << "the guard, its base and its fragment";
+    const ResolvedSceneEntity* guard = Entity(*result, 0x201);
+    ASSERT_NE(guard, nullptr);
+    EXPECT_EQ(Attribute(*guard, "Health")->Find("base")->Number, 200.0) << "the guard's keyed patch";
+    EXPECT_EQ(Attribute(*guard, "Stealth"), nullptr) << "the guard's null";
+    EXPECT_EQ(guard->Components.Find("Alertable")->Find("radius")->Number, 5.0) << "the fragment";
+    EXPECT_EQ(guard->Components.Find("GameplayTags")->Find("tags")->Elements.size(), 3u)
+        << "the base's tag, the fragment's, and the placement's";
+    EXPECT_EQ(Binding(*guard, "used"), nullptr) << "removed by the guard";
+    EXPECT_EQ(Binding(*guard, "struck"), nullptr) << "removed by the placement";
+}
+
