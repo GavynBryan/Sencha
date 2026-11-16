@@ -5,6 +5,8 @@
 
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <logic/CounterVocabulary.h>
 #include <movement/JumpState.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
@@ -20,6 +22,8 @@
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationSchemas.h>
 #include <net/ReplicationSnapshot.h>
+#include <world/held/HeldRecordIndex.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
@@ -1594,6 +1598,59 @@ TEST(ReplicationRelevance, TheHolderSeesTheOwnerOnlyStateOfWhatItHolds)
     const AttributeSet* seen = pair.Client.TryGet<AttributeSet>(mirror);
     ASSERT_NE(seen, nullptr);
     EXPECT_EQ(seen->GetBase(charges), 6.0f);
+}
+
+namespace
+{
+    struct Counted
+    {
+        EntityId Body;
+        EntityId BodysCounter;
+        EntityId WorldsCounter;
+        GameplayTagId Coins;
+    };
+
+    Counted CountersOn(Pair& pair)
+    {
+        Counted counted;
+        for (World* world : { &pair.Authority, &pair.Client })
+        {
+            counted.Coins = *world->AddResource<GameplayTagRegistry>().RegisterTag("star.course3.red_coins");
+            world->AddResource<PersistentEntityIndex>();
+            (void)InstallHeldRecords(*world);
+        }
+        counted.Body = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(counted.Body, NetOwner{ .Peer = 5 });
+        (void)WriteCounter(pair.Authority, counted.Coins, counted.Body, 3);
+        (void)WriteCounter(pair.Authority, counted.Coins, EntityId{}, 7);
+        counted.BodysCounter = FindCounter(pair.Authority, counted.Coins, counted.Body);
+        counted.WorldsCounter = FindCounter(pair.Authority, counted.Coins, EntityId{});
+        return counted;
+    }
+}
+
+TEST(ReplicationRelevance, AWorldCounterReachesEveryPeerAndABodysOnlyItsOwner)
+{
+    Pair owner;
+    const Counted owned = CountersOn(owner);
+    owner.Replicate(5);
+    const EntityId body = owner.Mirror(owned.Body);
+    ASSERT_TRUE(body.IsValid());
+    EXPECT_EQ(CounterValue(owner.Client, owned.Coins, body), 3);
+    EXPECT_EQ(CounterValue(owner.Client, owned.Coins, EntityId{}), 7);
+    EXPECT_EQ(owner.Client.GetResource<HeldRecordIndex>().HolderOf(owner.Mirror(owned.BodysCounter)), body)
+        << "the client lists what it is sent under the holder it is sent";
+
+    (void)WriteCounter(owner.Authority, owned.Coins, owned.Body, 4);
+    owner.Replicate(5);
+    EXPECT_EQ(CounterValue(owner.Client, owned.Coins, body), 4);
+
+    Pair other;
+    const Counted notOwned = CountersOn(other);
+    other.Replicate(6);
+    EXPECT_FALSE(other.Mirror(notOwned.BodysCounter).IsValid());
+    EXPECT_TRUE(other.Mirror(notOwned.WorldsCounter).IsValid());
+    EXPECT_EQ(CounterValue(other.Client, notOwned.Coins, EntityId{}), 7);
 }
 
 TEST(ReplicationRelevance, ADespawnIsOwedOnlyToThePeerThatHeldIt)

@@ -41,6 +41,7 @@
 #include <app/EngineVocabularyBindings.h>
 #include <core/text/Slug.h>
 #include <save/EngineSaveSections.h>
+#include <logic/CounterVocabulary.h>
 #include <save/SavedGameVocabulary.h>
 
 #include <assets/runtime/EngineContentRoot.h>
@@ -1479,6 +1480,8 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindSavedGames(*SavedGameState, *VerbDispatcherState);
     VocabularyBindings->BindPerception(*QueryDispatcherState);
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
+    VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,
+                                     LoggingState.GetLogger<CounterOperations>(), EventDispatcherState.get());
 
     // Only where a window presents: a server holds no attachments.
     if (PresentsAWindow(Configuration))

@@ -10,6 +10,7 @@
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ClaimVocabulary.h>
+#include <logic/CounterVocabulary.h>
 #include <save/SavedGameVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
@@ -66,6 +67,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareSavedGameVerbs(scope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
+    DeclareCounterVocabulary(scope, queryScope, eventScope);
 
     const bool engineDeclared = CommitTogether(scope, queryScope, eventScope);
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);

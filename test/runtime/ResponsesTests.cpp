@@ -16,6 +16,8 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <logic/Counter.h>
+#include <logic/CounterVocabulary.h>
 #include <logic/ResponseSet.h>
 #include <logic/ResponseVerbs.h>
 #include <logic/Responses.h>
@@ -26,6 +28,8 @@
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
+#include <world/held/Held.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
@@ -307,7 +311,10 @@ protected:
         registrar.Add<LocalTransform>();
         registrar.Add<WorldTransform>();
         registrar.Add<PersistentIdComponent>();
+        registrar.Add<Held>();
+        registrar.Add<Counter>();
         WorldState.AddResource<PersistentEntityIndex>();
+        (void)InstallHeldRecords(WorldState);
         ZoneState = &WorldState.AddResource<ZoneStateStore>();
         WorldState.AddResource<ZoneComponentMemories>();
 
@@ -770,6 +777,33 @@ TEST_F(ResponsesFixture, ANumberConditionHoldsWithinItsBoundsInclusive)
     ASSERT_EQ(Calls.size(), 2u);
     EXPECT_EQ(Calls[0].Target, two);
     EXPECT_EQ(Calls[1].Target, four);
+}
+
+TEST_F(ResponsesFixture, ACounterGatesAResponseThroughItsBounds)
+{
+    const GameplayTagId defeated = *Tags->RegisterTag("Boss.Warden.Defeated");
+    {
+        VerbRegistrationScope verbs(*Verbs, "counters");
+        AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(WorldState), "counters");
+        AuthoredEventRegistrationScope events(*FindAuthoredEventRegistry(WorldState), "counters");
+        DeclareCounterVocabulary(verbs, queries, events);
+        ASSERT_TRUE(CommitTogether(verbs, queries, events));
+    }
+    AuthoredQueryBindingToken counter = BindCounterQuery(*Queries, WorldState);
+    const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
+        "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Boss.Warden.Defeated"}},
+                        "require": {"min": 1}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "activator"}}}]})");
+    const EntityId early = WorldState.CreateEntity();
+    const EntityId late = WorldState.CreateEntity();
+
+    Step({ { door, early } });
+    (void)WriteCounter(WorldState, defeated, EntityId{}, 1);
+    Step({ { door, late } });
+
+    ASSERT_EQ(Calls.size(), 1u);
+    EXPECT_EQ(Calls[0].Target, late) << "the door opens only once the warden's counter is set";
+    counter.Reset();
 }
 
 TEST_F(ResponsesFixture, ANumberConditionWithoutBoundsIsRefusedWhenItCompiles)
