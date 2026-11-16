@@ -265,9 +265,10 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 ## Grants and input
 
 An actor runs only what it is granted: `AbilityGrants` holds up to sixteen grants,
-each an ability, a kind (authored on the actor, held by an effect, or made by a
-request) and an entry in the World's `AbilityGrantEntries`. An entry is the
-grant's stable key and its binding override; its effective binding is the
+each an ability, a kind (authored on the actor, held by an effect, made by a
+request, or transient: made for one requested activation) and an entry in the
+World's `AbilityGrantEntries`. An entry is the grant's stable key, its binding
+override and its parameters; its effective binding is the
 ability's `input_default` with every field the grant states replacing the
 ability's, resolved against the action vocabulary input publishes
 (`InputActionVocabulary`). The same ability is bound to different actions on two
@@ -288,15 +289,16 @@ ones are granted, so an actor whose table is full swaps one effect's grants for
 another's on one pass. Applying an effect reserves room for its grants
 (`AbilityGrantReservations`): `ApplyEffect` refuses a lasting effect whose grants
 would not fit beside the target's live grants and outstanding reservations, an
-ended effect's grant counting as free. The pass consumes the reservation when it
-grants. Grants stay deferred to the pass; the reservation only makes room
+ended effect's grant counting as free. A refused application returns no effect
+entity, so `effect.hold` refuses its lease. The pass consumes the reservation
+when it grants. Grants stay deferred to the pass; the reservation only makes room
 certain. AbilityKit reaches `ApplyEffect` through the World's
 `EffectApplicationAdmission`, so effects know nothing of grants. A request's
 grant (`ability.grant`) is refused rather than take room a reservation holds,
 and the reservations are bounded by the room they hold: at most
-`kAbilityGrantCapacity` per target. Only a grant
-nothing reserved, one whose room a later grant took, can still find none: it is
-retried every pass and traced once (`GrantRefused`, with the refusal).
+`kAbilityGrantCapacity` per target. Only a grant nothing reserved, one whose
+room a later grant took, can still find none: it is retried every pass and
+traced once (`GrantRefused`, with the refusal).
 
 A grant entry may set its ability's parameters:
 `"parameters": [ { "key": "power", "value": 14 } ]`, in a scene's grants and in
