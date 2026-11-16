@@ -1,6 +1,7 @@
 #pragma once
 
 #include <world/ComponentRegistrar.h>
+#include <world/held/Held.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/PresentationOffset.h>
@@ -25,6 +26,8 @@ using WorldComponents = ComponentSet<
     PresentationOffset,
     InheritsPresentationOffset,
     PersistentIdComponent,
+    // Which holder a record belongs to: docs/gameplay/held-records.md.
+    Held,
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.
     SceneInstance,

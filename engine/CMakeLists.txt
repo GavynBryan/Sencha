@@ -91,6 +91,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/SightComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTime.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTimeLeases.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/held/Held.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/PresentationOffset.h"

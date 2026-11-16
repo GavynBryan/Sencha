@@ -9,6 +9,7 @@
 #include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/scene/SceneInstanceIndex.h>
 #include <zone/ZoneStateMemory.h>
@@ -38,6 +39,7 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // Every driven world can resolve persistent identities; the identity
     // component's hooks maintain the index as zones import and detach.
     Entities_.AddResource<PersistentEntityIndex>();
+    InstallHeldRecords(Entities_);
 
     // Likewise scene instance groups: the component's own hooks keep the
     // index exact through streaming, spawning, and per-entity destruction.
@@ -352,6 +354,7 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
     // Before any departing partition goes, so whatever follows an entity that
     // moved out of one this frame leaves with it.
+    SettleHeldRecords(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 
     for (const ZoneResidencyChange& change : ProcessingChanges_)

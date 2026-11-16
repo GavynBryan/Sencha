@@ -28,7 +28,7 @@ struct SchemaCollisionB
     std::uint64_t Value = 0;
 };
 
-// Counts hook calls so a write can be shown not to make any.
+// Counts hook calls, so a write can be shown to make them as a replace does.
 struct SchemaHookCounts
 {
     static inline int Added = 0;
@@ -241,10 +241,9 @@ TEST(WorldComponentSchemaWrite, RefusesAnUnknownComponentType)
         BytesOf(incoming)));
 }
 
-// The reason replication refuses hooked components: a write here cannot run
-// OnAdd for what arrives or OnRemove for what it replaces. This proves the
-// behavior so the ban has something to point at.
-TEST(WorldComponentSchemaWrite, DoesNotRunLifecycleHooks)
+// A hooked component is overwritten as a replace: its hooks see the new value
+// arrive and the old one leave, so what they keep stays balanced.
+TEST(WorldComponentSchemaWrite, RunsLifecycleHooksAsAReplace)
 {
     const WorldComponentSchema schema = SealedSchema();
     World world;
@@ -262,9 +261,8 @@ TEST(WorldComponentSchemaWrite, DoesNotRunLifecycleHooks)
         world, entity, ResolveComponentTypeId<SchemaHooked>(), BytesOf(incoming)));
 
     EXPECT_EQ(world.TryGet<SchemaHooked>(entity)->Value, 99);
-    EXPECT_EQ(SchemaHookCounts::Added, 1) << "overwriting must not re-run OnAdd";
-    EXPECT_EQ(SchemaHookCounts::Removed, 0)
-        << "overwriting must not run OnRemove for the replaced value";
+    EXPECT_EQ(SchemaHookCounts::Added, 2) << "OnAdd runs for the value that arrived";
+    EXPECT_EQ(SchemaHookCounts::Removed, 1) << "OnRemove runs for the value it replaced";
 }
 
 // A value that arrives from the network has to look like a write to every
