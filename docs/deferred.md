@@ -1251,3 +1251,69 @@ described in `docs/navigation/runtime.md`, "Agents".
   - the local save: `EditorDocument::BuildSceneSource`.
 - **Trigger:** the first prefab that includes a fragment without extending a
   base.
+
+## Kyusu authoring for prefab extends
+
+- **What:** Kyusu loads, edits in place, saves and cooks a prefab that extends
+  another, but has no surface for the composition itself:
+  - choosing what a scene extends and includes, and whether it is abstract,
+    from its card (`SceneEnvelopeProperties`, an envelope command);
+  - saying in the component inspector where an inherited value came from
+    (the base or a fragment), from the resolver's provenance, which the
+    projection does not keep yet;
+  - "Revert to inherited" wording on the existing reset verbs, and Restore for
+    an inherited component removed here;
+  - the prefab explorer still lists abstract prefabs (placing one is refused).
+  Until then these members are written by hand, and Kyusu keeps them as read.
+- **Where:** `editor/level_editor/src/authoring/ComponentPropertySource.cpp`,
+  `SceneInstanceProjection` (provenance per element), `EditorDocument` (an
+  envelope setter and command), `SelectionSummary`; ported from
+  `claude/composition` 9ef2aa44 and a292c5f5.
+- **Trigger:** Kyusu authoring for prefab extends: the first designer who
+  builds a prefab chain in Kyusu rather than by hand.
+
+## Entity references between a prefab's members
+
+- **What:** two places where one member of a prefab names another by its
+  persistent id and the reference does not follow the copy:
+  - A spawn strips authored identity (`SmapPackageOptions::StripAuthoredIdentity`),
+    so a spawned member carries no persistent id, and a reference resolved
+    through `PersistentEntityIndex` (a verb binding's `entity` argument) finds
+    nothing. `claude/composition` resolves members against each other at
+    import (`SceneSerializationContext::PackageMembers`,
+    `World::AssignEmptyEntitySignature`, `PackageEntity::MemberId`), but its
+    only reader is the `PersistableRef` codec, which main does not have.
+  - A placement renames the `DataFieldKind::Entity` fields a component's
+    `CompositionSchema` declares. A response binding's `entity` argument is
+    not one: bindings are keyed by authored keys, which a record schema cannot
+    describe, so a placed prefab's binding still names the source's id.
+- **Where:** `engine/src/zone/ZonePackageImporter.cpp`,
+  `engine/src/world/scene/SmapFormat.cpp` (`BuildEntityPackageFromSmap`),
+  `RenameMemberReferences` in
+  `editor/common/src/scene_source/SceneComposition.cpp`, and
+  `engine/src/logic/ResponsesSerializer.cpp`.
+- **Trigger:** `PersistableRef` and inventory merging (the import half lands
+  with it), or the first prefab whose response binding names another of its
+  own members.
+
+## Prefab harvest pins and keyed-list order
+
+- **What:** Kyusu rebuilds a derived prefab's patches from a diff of live state
+  against the composed base. A value pinned equal to the base's (so a later
+  base change does not reach it) is dropped, and so is the order of a keyed
+  list. Data definitions keep both, because their patches are edited, not
+  diffed.
+- **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
+  `editor/common/src/scene_source/SceneComponentDiff.cpp`.
+- **Trigger:** the first prefab that must keep a value its base later changes,
+  or a keyed list whose order is meaningful (a priority list) on a derived
+  prefab.
+
+## Recomposing resident children while their base is edited
+
+- **What:** while a base prefab is edited in Kyusu, children of it that are
+  resident but not open keep their old composition until the base is saved.
+- **Where:** `SceneSourceCache` invalidation and `SceneInstanceProjection`
+  rebuilds in `editor/level_editor/src/document/`.
+- **Trigger:** a live-preview workflow in which a base and its placed children
+  are on screen together while the base is edited.

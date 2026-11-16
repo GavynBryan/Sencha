@@ -21,8 +21,8 @@ composed = Local( Includes( composed(base) ) )
   the inherited value. A member it states overrides, even when equal to the
   inherited value.
 - **`null` removes,** under `CompositionNull::Removes`. Removing a required
-  member is `cannot_clear_required`. Under `CompositionNull::IsAValue` (scene
-  instance patches, version 1) `null` is written as a value.
+  member is `cannot_clear_required`. Under `CompositionNull::IsAValue`
+  (version-1 scene instance patches) `null` is written as a value.
 - **Records merge member by member.** Anything else is written whole.
 - **Keyed arrays** merge by key. An array is keyed when its schema names a
   `MergeKey`, or when its element record has exactly one `StableKey` member.
@@ -129,8 +129,14 @@ choosing what it extends and includes and whether it is abstract.
   compose still records the sources it tried to read, so creating or fixing a
   missing or broken source re-checks it. Revealing a problem focuses its field.
 
-## Scene instance patches
+## Scenes
 
-A version-1 instance patch applies through `ApplyCompositionPatch` with no
-schema and `CompositionNull::IsAValue`: objects merge, anything else is written
-whole, and `null` is written. Keyed scene patches are not part of this format.
+Scene composition (`docs/editor/scene-composition.md`) uses the same operator.
+
+- A version-1 instance patch applies through `ApplyCompositionPatch` with no
+  schema and `CompositionNull::IsAValue`: objects merge, anything else is
+  written whole, and `null` is written.
+- A version-2 instance patch, and a prefab's own `patch` over what it extends
+  and includes, compose with `CompositionNull::Removes` and an entity schema
+  built from each component's `IComponentSerializer::CompositionSchema`, so a
+  component's keyed lists merge by key.
