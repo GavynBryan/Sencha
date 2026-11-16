@@ -1033,3 +1033,9 @@ and `AbilityValueDecl` gain `Parameter`, and `AbilityValueSource` gains
 `Parameter`. `AbilityGrantEntries::Parameters` answers an entry's resolved
 values. Scene grants and effect grant entries read and write `parameters`; a
 file without them loads as before.
+
+**Override precedence.** `EffectModifier` and `EffectDeclaration::Modifier`
+gain `Precedence`, authored `precedence` (default 0): of the overrides of one
+attribute on one target the highest wins, and `effects/EffectSystem.h` declares
+`EffectOverrideTies`, where a tie at the top is recorded once per attribute and
+pair of definitions.

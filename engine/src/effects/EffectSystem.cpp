@@ -35,10 +35,27 @@ struct EffectPassState
         float Scale = 1.0f;
     };
 
+    // The override one attribute of the target being folded holds so far.
+    struct Override
+    {
+        AttributeId Attribute;
+        std::int32_t Precedence = 0;
+        EffectId Def;
+    };
+
     std::uint64_t NextSequence = 1;
     std::vector<FoldEntry> Fold;
+    std::vector<Override> Overrides;
     std::vector<EntityId> Ending;
 };
+
+void RecordOverrideTie(World& world, const EffectOverrideTie& tie)
+{
+    EffectOverrideTies& ties = world.HasResource<EffectOverrideTies>() ? world.GetResource<EffectOverrideTies>()
+                                                                        : world.AddResource<EffectOverrideTies>();
+    if (std::ranges::find(ties.Seen, tie) == ties.Seen.end())
+        ties.Seen.push_back(tie);
+}
 
 EffectPassState& PassStateOf(World& world)
 {
@@ -216,7 +233,7 @@ void FoldActiveEffectsImpl(
              < std::tie(b.Target.Index, b.Target.Generation, b.Def.Value, b.Sequence);
     });
 
-    for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply, ModifierOp::Override })
+    for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply })
     {
         for (const EffectPassState::FoldEntry& entry : state.Fold)
         {
@@ -231,6 +248,39 @@ void FoldActiveEffectsImpl(
                 if (float* c = set->CurrentPtr(m.Attr))
                     ApplyModifier(*c, op, m.Magnitude * entry.Scale);
             }
+        }
+    }
+
+    // The fold is sorted by target, so what each attribute's override holds is
+    // reset when the target changes.
+    EntityId target;
+    state.Overrides.clear();
+    for (const EffectPassState::FoldEntry& entry : state.Fold)
+    {
+        const EffectDefinition* def = effReg->Get(entry.Def);
+        AttributeSet* set = world.TryGet<AttributeSet>(entry.Target);
+        if (def == nullptr || set == nullptr)
+            continue;
+        if (entry.Target != target)
+        {
+            target = entry.Target;
+            state.Overrides.clear();
+        }
+        for (const EffectModifier& m : def->Modifiers)
+        {
+            float* c = m.Op == ModifierOp::Override ? set->CurrentPtr(m.Attr) : nullptr;
+            if (c == nullptr)
+                continue;
+            const auto held = std::ranges::find(state.Overrides, m.Attr, &EffectPassState::Override::Attribute);
+            if (held != state.Overrides.end() && m.Precedence < held->Precedence)
+                continue;
+            if (held != state.Overrides.end() && m.Precedence == held->Precedence && held->Def != entry.Def)
+                RecordOverrideTie(world, { m.Attr, entry.Def, held->Def });
+            ApplyModifier(*c, ModifierOp::Override, m.Magnitude * entry.Scale);
+            if (held != state.Overrides.end())
+                *held = { m.Attr, m.Precedence, entry.Def };
+            else
+                state.Overrides.push_back({ m.Attr, m.Precedence, entry.Def });
         }
     }
 }

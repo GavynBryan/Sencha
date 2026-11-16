@@ -6,11 +6,31 @@
 #include <effects/EffectSource.h>
 #include <time/FrameClock.h>
 
+#include <attributes/AttributeId.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 class StoragePartitionSet;
 class World;
+
+// Overrides of one attribute that met at the top precedence on one target, each
+// pair once: the fold kept the later in its canonical order (`Kept`). A World
+// resource, made by the first tie.
+struct EffectOverrideTie
+{
+    AttributeId Attribute;
+    EffectId Kept;
+    EffectId Passed;
+
+    friend bool operator==(const EffectOverrideTie&, const EffectOverrideTie&) = default;
+};
+
+struct EffectOverrideTies
+{
+    std::vector<EffectOverrideTie> Seen;
+};
 
 // The effect entity a lasting effect spawns; none for an instant one. Its authored
 // seconds become whole ticks of `now`'s tick length, and `scale` multiplies every

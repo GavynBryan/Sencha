@@ -190,6 +190,13 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   an `EffectApplicationLog`, each application that changes Base records its
   source and each attribute's Base before and after, clamped. Reactions read it
   (`docs/gameplay/reactions.md`).
+- **Overrides have a precedence.** A lasting effect's `override` modifier may say
+  `precedence` (default 0). Of the overrides of one attribute on one target, the
+  highest wins: `Frozen` at 100 holds speed at 0 over `Sprint Boots` at 10, in
+  either order. At equal top precedence the later in the canonical order wins,
+  as with none, and the pair is recorded once in `EffectOverrideTies`, the trace
+  a dev view and an equip preview read. Instant and periodic effects write Base
+  in their own modifiers' order.
 - **Costs fail closed.** `CheckEffectCosts` decides whether an actor can pay several
   costs together: deltas are summed per attribute first, a Base may not go below
   zero or the attribute's minimum (whichever is higher), and a missing definition,

@@ -137,6 +137,24 @@ TEST(DataDefinitionComposition, AChildLoadsComposedOverItsBase)
     EXPECT_EQ(effect->Modifiers[0].Magnitude, 14.0f);
 }
 
+TEST(DataDefinitionComposition, AChildSetsAnInheritedModifiersPrecedence)
+{
+    Content content;
+    content.Write("armor_base.sdata", kArmorBase);
+    content.Write("frozen_armor.sdata", R"({ "type": "effect.definition", "version": 1,
+        "extends": "asset://effects/armor_base.sdata",
+        "data": { "modifiers": { "m_armor": { "op": "override", "precedence": 50 } } } })");
+
+    AssetLease frozen = content.Assets.Assets.LoadLease("asset://effects/frozen_armor.sdata", AssetType::Data);
+    ASSERT_TRUE(frozen) << content.FailureOf("asset://effects/frozen_armor.sdata");
+    const EffectDeclaration* effect = content.Effect(frozen);
+    ASSERT_NE(effect, nullptr);
+    const auto armor = std::ranges::find(effect->Modifiers, std::string("Armor"), &EffectDeclaration::Modifier::Attribute);
+    ASSERT_NE(armor, effect->Modifiers.end());
+    EXPECT_EQ(armor->Op, ModifierOp::Override);
+    EXPECT_EQ(armor->Precedence, 50);
+}
+
 TEST(DataDefinitionComposition, AnAbstractDefinitionNeverLoadsAsAValueOrIsListed)
 {
     Content content;

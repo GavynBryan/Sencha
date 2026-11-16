@@ -200,6 +200,53 @@ TEST_F(EffectFixture, FoldAppliesAddThenMultiplyThenOverride)
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 50.0f); // override wins last
 }
 
+TEST_F(EffectFixture, TheHighestPrecedenceOverrideWinsInEitherOrder)
+{
+    EffectDefinition frozen{};
+    frozen.Duration = EffectDuration::Infinite;
+    frozen.Modifiers = { { speed, ModifierOp::Override, 0.0f, 100 } };
+    EffectDefinition boots{};
+    boots.Duration = EffectDuration::Infinite;
+    boots.Modifiers = { { speed, ModifierOp::Override, 8.0f, 10 } };
+    const EffectId frozenFx = Define("Frozen", frozen);
+    const EffectId bootsFx = Define("SprintBoots", boots);
+
+    const EntityId first = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, first, frozenFx, At(0));
+    ApplyEffect(world, first, bootsFx, At(0));
+    const EntityId second = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, second, bootsFx, At(0));
+    ApplyEffect(world, second, frozenFx, At(0));
+    ResolveAttributesWithEffects(world);
+    EXPECT_FLOAT_EQ(Set(first).GetCurrent(speed), 0.0f);
+    EXPECT_FLOAT_EQ(Set(second).GetCurrent(speed), 0.0f);
+    EXPECT_EQ(world.TryGetResource<EffectOverrideTies>(), nullptr) << "nothing tied";
+}
+
+TEST_F(EffectFixture, OverridesTiedAtTheTopFoldAsBeforeAndAreRecordedOnce)
+{
+    EffectDefinition slow{};
+    slow.Duration = EffectDuration::Infinite;
+    slow.Modifiers = { { speed, ModifierOp::Override, 2.0f } };
+    EffectDefinition fast{};
+    fast.Duration = EffectDuration::Infinite;
+    fast.Modifiers = { { speed, ModifierOp::Override, 9.0f } };
+    const EffectId slowFx = Define("Slow", slow);
+    const EffectId fastFx = Define("Fast", fast);
+    const EntityId hero = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, hero, slowFx, At(0));
+    ApplyEffect(world, hero, fastFx, At(0));
+    for (int i = 0; i < 3; ++i)
+        ResolveAttributesWithEffects(world);
+    EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 9.0f) << "definition order, as with no precedence";
+    const EffectOverrideTies* ties = world.TryGetResource<EffectOverrideTies>();
+    ASSERT_NE(ties, nullptr);
+    ASSERT_EQ(ties->Seen.size(), 1u);
+    EXPECT_EQ(ties->Seen[0].Attribute, speed);
+    EXPECT_EQ(ties->Seen[0].Kept, fastFx);
+    EXPECT_EQ(ties->Seen[0].Passed, slowFx);
+}
+
 TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
 {
     const GameplayTagId marked = *tags->RegisterTag("State.Marked");
