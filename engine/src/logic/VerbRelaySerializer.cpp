@@ -64,17 +64,17 @@ public:
             && registry.Components.HasComponent<VerbRelay>(entity);
     }
 
-    bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry,
+    bool Save(IWriteArchive& archive, EntityId entity, const World& world,
               SceneSerializationContext& context) const override
     {
-        if (!registry.Components.IsRegistered<VerbRelay>())
+        if (!world.IsRegistered<VerbRelay>())
             return true;
-        const VerbRelay* relay = registry.Components.TryGet<VerbRelay>(entity);
+        const VerbRelay* relay = world.TryGet<VerbRelay>(entity);
         if (relay == nullptr)
             return true;
 
         const VerbRelayAuthoring* authoring =
-            registry.Components.TryGetResource<VerbRelayAuthoring>();
+            world.TryGetResource<VerbRelayAuthoring>();
         const VerbRelayAuthoring::Record* authored =
             authoring != nullptr ? authoring->Find(entity) : nullptr;
 

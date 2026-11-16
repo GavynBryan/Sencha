@@ -24,7 +24,7 @@ struct SavedGameSectionDefinition
 {
     std::string Name;
     std::uint32_t Version = 1;
-    std::function<JsonValue(const World&)> Capture;
+    std::function<JsonValue(World&)> Capture;
     // Once the restoring level change has installed zone state, before the level
     // arrives; given a section of Version or older.
     std::function<void(World&, std::uint32_t version, const JsonValue& data)> Restore;

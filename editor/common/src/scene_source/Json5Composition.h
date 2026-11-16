@@ -19,6 +19,7 @@ struct CompositionValueTraits<Json5Value>
 
     static Json5Value MakeObject() { return Json5Value::MakeObject(); }
     static Json5Value MakeArray() { return Json5Value::MakeArray(); }
+    static Json5Value MakeNull() { return Json5Value{}; }
     static Json5Value MakeString(std::string_view text) { return Json5Value(std::string(text)); }
 
     static Json5Value* FindMember(Json5Value& object, std::string_view key) { return object.FindMutable(key); }

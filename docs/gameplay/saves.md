@@ -27,7 +27,29 @@ what a save keeps is decided per entity by its zone state lifetime
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
   restore function. A section in a save that nothing registered is kept and
   written back by the next save, so content a newer build wrote survives an
-  older one.
+  older one. The engine registers two (`save/EngineSaveSections.h`):
+  `sencha.bodies` and `sencha.persistent_ids`.
+
+## Bodies
+
+The local participant's body is kept as a patch against the prefab it spawned
+from (`runtime/spawn/SceneSpawnOverlay.h`): for each component on its root, the
+difference between its scene form now and the prefab's cooked record, composed
+back by the operator prefabs use (`core/composition/CompositionPatch.h` is the
+inverse of `ComposeLayers`). A value the save did not change follows the prefab,
+so a retuned prefab still applies to old saves; a value it did change stays as
+saved. The patch leaves out what a spawn gives: identity, scene instance and
+placement. The body's root transform and persistent id travel beside it, and
+writing a save gives a body without an id one from the runtime mint.
+
+On restore the section fills `RestoredBodies`; the local participant's next body
+spawn (`ParticipantBodySpawns`) takes it: the spawn stands where the body stood,
+the patch is composed over the prefab's root before import, and the root gets
+its saved id once published. Grants made at run time by `ability.grant` are
+part of the patch and come back as authored grants; tags given with
+`tags.grant` are the container's baseline and come back; lasting effects do not.
+`sencha.persistent_ids` keeps the mint's counter, so a restored game never
+mints an id it already holds.
 
 ## Writing
 
@@ -78,7 +100,7 @@ must keep reading.
 
 ## Not yet
 
-Recorded in `docs/deferred.md`: entities created at run time (a body's state,
-items, anything dropped or deposited in a zone), changed fields of authored
-entities beyond what a component registers, and restoring inside a network
-session.
+Recorded in `docs/deferred.md`: a body's children and other participants'
+bodies, entities created at run time other than bodies (items, anything dropped
+or deposited in a zone), changed fields of authored entities beyond what a
+component registers, and restoring inside a network session.

@@ -65,19 +65,19 @@ public:
     bool Save(
         IWriteArchive& archive,
         EntityId entity,
-        const Registry& registry,
+        const World& world,
         SceneSerializationContext&) const override
     {
-        if (!registry.Components.IsRegistered<AttributeSet>())
+        if (!world.IsRegistered<AttributeSet>())
             return true;
 
         const AttributeSet* set =
-            registry.Components.TryGet<AttributeSet>(entity);
+            world.TryGet<AttributeSet>(entity);
         if (set == nullptr)
             return true;
 
         const AttributeRegistry* attributes =
-            registry.Components.TryGetResource<AttributeRegistry>();
+            world.TryGetResource<AttributeRegistry>();
         return attributes != nullptr
             && WriteAttributes(archive, *set, *attributes);
     }

@@ -171,6 +171,38 @@ public:
         return true;
     }
 
+    [[nodiscard]] const PackageComponent* FindComponent(PackageEntityId entity, ComponentTypeId type) const
+    {
+        if (!ContainsEntity(entity))
+            return nullptr;
+        const auto& components = Entities_[entity.Value].Components;
+        const auto found = std::find_if(components.begin(), components.end(),
+                                        [type](const PackageComponent& component) { return component.Type == type; });
+        return found != components.end() ? &*found : nullptr;
+    }
+
+    // Replaces the component's payload with `value`, or adds it.
+    bool SetSerializedComponent(PackageEntityId entity, ComponentTypeId type, JsonValue value)
+    {
+        if (!ContainsEntity(entity) || !type.IsValid())
+            return false;
+        auto& components = Entities_[entity.Value].Components;
+        const auto found = std::find_if(components.begin(), components.end(),
+                                        [type](const PackageComponent& component) { return component.Type == type; });
+        PackageComponent& target = found != components.end() ? *found : components.emplace_back();
+        target.Type = type;
+        target.RuntimeBytes.clear();
+        target.SerializedJson = std::move(value);
+        return true;
+    }
+
+    bool RemoveComponent(PackageEntityId entity, ComponentTypeId type)
+    {
+        return ContainsEntity(entity)
+            && std::erase_if(Entities_[entity.Value].Components,
+                             [type](const PackageComponent& component) { return component.Type == type; }) > 0;
+    }
+
     [[nodiscard]] bool ContainsEntity(PackageEntityId entity) const
     {
         return entity.IsValid() && entity.Value < Entities_.size();

@@ -90,7 +90,7 @@ namespace
         std::vector<std::byte> DefaultBytes() const override { return {}; }
         void RegisterStorage(Registry&) const override {}
         bool HasComponent(EntityId, const Registry&) const override { return false; }
-        bool Save(IWriteArchive&, EntityId, const Registry&,
+        bool Save(IWriteArchive&, EntityId, const World&,
                   SceneSerializationContext&) const override
         {
             return true;

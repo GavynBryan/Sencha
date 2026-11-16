@@ -1115,3 +1115,22 @@ is counted, and `AbilitySystem` reports the count.
 declared with the engine vocabulary after the ability verbs, which moves every
 later engine verb's place in the catalog. `EngineVocabularyBindings` gains
 `Tags`.
+
+## v49
+
+**Serializers save from the World.** `IComponentSerializer::Save` takes
+`const World&` in place of `const Registry&`, so a running World's entities can
+be written; editor and cook callers pass `Registry::Components`.
+
+**Bodies in saves.** `SceneSpawnService::RequestSpawn` takes a
+`SceneSpawnOverlay` (`runtime/spawn/SceneSpawnOverlay.h`): a patch composed over
+the scene's root before import and the persistent id the root gets once
+published, with `CaptureSpawnOverlay` and `ApplySpawnOverlay`.
+`RestoredBodies` (`participant_spawn/RestoredBodies.h`) holds the local
+participant's next body, which `ParticipantBodySpawns` takes.
+`RegisterEngineSaveSections` adds `sencha.bodies` and `sencha.persistent_ids`.
+`SavedGameSectionDefinition::Capture` takes `World&`. `PatchFrom`
+(`core/composition/CompositionPatch.h`) is the composition operator's inverse,
+and Kyusu's `DiffSceneComponents` uses it. `EntityBuildPackage` gains
+`FindComponent`, `SetSerializedComponent` and `RemoveComponent`. The ability
+grant serializer saves grants `ability.grant` made.

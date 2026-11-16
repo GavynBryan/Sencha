@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/StrongId.h>
+#include <runtime/spawn/SceneSpawnOverlay.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <jobs/AsyncTaskQueue.h>
@@ -90,11 +91,14 @@ public:
     // zone's partition so the spawn follows that zone's teardown. Always
     // returns a valid id; resolution failures surface through Status. An
     // OwnedByRoot scene with other than one root record ends Failed.
+    // `overlay` is composed over the scene's one root before it imports, and
+    // its id given to the root once it is published.
     [[nodiscard]] SceneSpawnId RequestSpawn(
         std::string_view sceneAssetPath,
         const Transform3f& root,
         StoragePartitionId partition = StoragePartitionId::Default(),
-        SceneSpawnLifetime lifetime = SceneSpawnLifetime::Independent);
+        SceneSpawnLifetime lifetime = SceneSpawnLifetime::Independent,
+        SceneSpawnOverlay overlay = {});
 
     // Ends a spawn whatever state it is in: a live group is destroyed at the
     // next pump; a request still staging or waiting is withdrawn and its

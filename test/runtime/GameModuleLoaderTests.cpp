@@ -95,7 +95,7 @@ TEST(GameModuleLoader, LoadsRealModuleAndRegistersGameComponentByStableIdentity)
     EXPECT_TRUE(s->HasComponent(e, registry));
 
     JsonWriteArchive out;
-    ASSERT_TRUE(s->Save(out, e, registry, sctx));
+    ASSERT_TRUE(s->Save(out, e, registry.Components, sctx));
     const JsonValue saved = out.TakeValue();
     const JsonValue* length = saved.Find("length");
     ASSERT_NE(length, nullptr);
@@ -187,7 +187,7 @@ TEST(GameModuleLoader, ModuleComponentRoundTripsThroughSceneJson)
         {
             found = true;
             JsonWriteArchive out;
-            ASSERT_TRUE(gs->Save(out, entity, loaded, sctx));
+            ASSERT_TRUE(gs->Save(out, entity, loaded.Components, sctx));
             const JsonValue saved = out.TakeValue();
             const JsonValue* length = saved.Find("length");
             ASSERT_NE(length, nullptr);

@@ -38,7 +38,7 @@ struct GrantsScene
     JsonValue Save()
     {
         JsonWriteArchive archive;
-        EXPECT_TRUE(Serializer->Save(archive, Actor, Scene, Context));
+        EXPECT_TRUE(Serializer->Save(archive, Actor, Scene.Components, Context));
         return archive.TakeValue();
     }
 
@@ -96,18 +96,23 @@ TEST(AbilityGrantsSerializer, AGrantKeepsItsParametersThroughASaveAndLoad)
     EXPECT_EQ(second.Entry(0).Parameters, first.Entry(0).Parameters);
 }
 
-TEST(AbilityGrantsSerializer, OnlyAuthoredGrantsAreSaved)
+TEST(AbilityGrantsSerializer, AuthoredAndRequestedGrantsAreSavedAndAnEffectsAreNot)
 {
     GrantsScene scene;
     ASSERT_TRUE(scene.Load(*JsonParse(kGrants)));
     AbilityGrants& grants = *scene.Scene.Components.TryGet<AbilityGrants>(scene.Actor);
-    const std::uint16_t entry = scene.Scene.Components.GetResource<AbilityGrantEntries>().Intern(
-        { "scripted", grants.Entries[1].Ability, {} });
-    ASSERT_TRUE(GrantAbility(grants, grants.Entries[1].Ability, AbilityGrantKind::Request, entry).IsValid());
+    AbilityGrantEntries& entries = scene.Scene.Components.GetResource<AbilityGrantEntries>();
+    const AbilityId ability = grants.Entries[1].Ability;
+    const std::uint16_t requested = entries.Intern({ "requested", ability, {} });
+    const std::uint16_t held = entries.Intern({ "held", ability, {} });
+    ASSERT_TRUE(GrantAbility(grants, ability, AbilityGrantKind::Request, requested).IsValid());
+    ASSERT_TRUE(GrantAbility(grants, ability, AbilityGrantKind::Effect, held).IsValid());
 
     const JsonValue saved = scene.Save();
     ASSERT_NE(saved.Find("grants"), nullptr);
-    EXPECT_EQ(saved.Find("grants")->AsArray().size(), 2u);
+    const JsonValue::Array& list = saved.Find("grants")->AsArray();
+    ASSERT_EQ(list.size(), 3u);
+    EXPECT_EQ(list[2].Find("key")->AsString(), "requested");
 }
 
 TEST(AbilityGrantsSerializer, AnUnknownBindingChoiceRefusesTheScene)

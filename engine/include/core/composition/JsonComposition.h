@@ -19,6 +19,7 @@ struct CompositionValueTraits<JsonValue>
 
     static JsonValue MakeObject() { return JsonValue(JsonValue::Object{}); }
     static JsonValue MakeArray() { return JsonValue(JsonValue::Array{}); }
+    static JsonValue MakeNull() { return JsonValue(); }
     static JsonValue MakeString(std::string_view text) { return JsonValue(std::string(text)); }
 
     static JsonValue* FindMember(JsonValue& object, std::string_view key) { return object.Find(key); }
