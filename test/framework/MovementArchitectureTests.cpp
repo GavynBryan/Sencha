@@ -72,7 +72,7 @@ namespace
             return entity;
         }
 
-        // A transition, then the projection that tags its outcome, as the schedule orders them.
+        // In schedule order: the transition, then the projection that tags its outcome.
         void Transition()
         {
             LocomotionModeTransitionSystem{}.Step(WorldState);
@@ -283,9 +283,7 @@ TEST(FreeLocomotionTest, GravityIntegratesOnlyWhenUnsupported)
     EXPECT_FLOAT_EQ(planted.Velocity.Y, 0.0f);
 }
 
-// D9: the active mode's tag is a contribution projected from the mode, so a
-// restored character is tagged with no transition, and its saved tags never
-// held the mode's.
+// The mode's tag is a contribution projected from the mode, never saved.
 TEST(MovementModeTagTest, ARestoredModeIsTaggedWithoutATransition)
 {
     ModeWorld fixture;
@@ -317,8 +315,7 @@ TEST(MovementModeTagTest, AModeChangeMovesTheTag)
     EXPECT_EQ(tags.StackCount(flight), 1u);
 }
 
-// The projection owns its tags outright, so it sets them: whatever a decode
-// wrote (the authority's own projection, or a bad image), one stack is left.
+// Whatever a decode wrote: the authority's projection, or a bad image.
 TEST(MovementModeTagTest, ADecodedContainerIsProjectedToOneStack)
 {
     ModeWorld fixture;
@@ -335,7 +332,6 @@ TEST(MovementModeTagTest, ADecodedContainerIsProjectedToOneStack)
     }
 }
 
-// A predicted Free->Flight, then a snapshot decoding {free} and the rollback to Free.
 TEST(MovementModeTagTest, AProjectionOverADecodeAndARollbackHoldsOnlyTheActiveModesTag)
 {
     ModeWorld fixture;
@@ -368,8 +364,7 @@ TEST(MovementModeTagTest, AStillCharacterIsNotWrittenAgain)
     EXPECT_EQ(written, 0u);
 }
 
-// A client knows the mode only of what it predicts; another peer's character
-// keeps the tags the authority's projection sent.
+// A client knows the mode only of what it predicts.
 TEST(MovementModeTagTest, ACharacterThisMachineDoesNotPredictKeepsTheTagsItWasSent)
 {
     ModeWorld fixture;
@@ -400,8 +395,7 @@ TEST(MovementModeTagTest, AModesTagIsProjectedAndItsRequestTagIsNot)
     EXPECT_TRUE(fixture.Tags->ProjectedBy(flight.RequestTag).empty()) << "a request is an authored mailbox";
 }
 
-// A request tag is a one-tick mailbox, consumed whole even where content
-// authored it, so it cannot request the mode again every tick.
+// Consumed whole even where content authored it, or it would request the mode every tick.
 TEST(MovementModeTagTest, AnAuthoredModeRequestIsConsumedOnce)
 {
     ModeWorld fixture;
@@ -415,8 +409,6 @@ TEST(MovementModeTagTest, AnAuthoredModeRequestIsConsumedOnce)
     EXPECT_TRUE(std::as_const(fixture.WorldState).TryGet<ModeTransitionRequest>(entity)->Pending);
 }
 
-// D9: movement.grounded is projected from support each tick, so it is a
-// contribution and a save leaves it out.
 TEST(MovementModeTagTest, GroundedIsAContribution)
 {
     ModeWorld fixture;

@@ -1023,8 +1023,7 @@ TEST_F(AbilityReplication, GrantsSharingAKeyAreToldApartOnTheClient)
     ClientPeer = kOwner;
     const AbilityId ability = Authority.Define(kCharging, "asset://abilities/charging.sdata");
     const AbilityId clientAbility = Client.Define(kCharging, "asset://abilities/charging.sdata");
-    // Two sources granting one ability under one key, bound apart. Both machines
-    // hold both entries, interned in the same order.
+    // Both machines intern both entries in the same order.
     const AbilityBindingDecl low{ .Priority = 1 };
     const AbilityBindingDecl high{ .Priority = 9 };
     AbilityGrantEntries& clientEntries = Client.Entities.GetResource<AbilityGrantEntries>();
@@ -1110,8 +1109,7 @@ TEST_F(AbilityReplication, ATransientGrantReachesItsOwnerAndLeavesWithItsActivat
     EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->Count, 0u);
 }
 
-// Stage 3's gate, on the owner's machine: each ring's grant resolves to the
-// authority's entry, with its power, and to the client's own copy of its ring.
+// On the owner's machine each ring's grant resolves to the authority's entry and the client's own ring.
 TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
 {
     ClientPeer = kOwner;
@@ -1166,8 +1164,6 @@ TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
     }
 }
 
-// A guess checks the arrow and the stamina against what its machine holds and
-// pays neither; the authority pays both.
 TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
 {
     constexpr std::string_view kBowShot = R"({
@@ -1211,9 +1207,7 @@ TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
         << "the authority's payment arrives";
 }
 
-// An entity is written whole or not at all, so a pawn whose owner-visible state
-// outgrows one datagram can never reach its owner. Loss Function's pawn: a
-// moving character with nine grants, four attributes and two tags.
+// An entity is written whole or not at all, so an owner seed over one datagram never arrives.
 TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
 {
     ClientPeer = kOwner;
@@ -1231,7 +1225,6 @@ TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
         }
         (void)attributes.Add(id, 50.0f);
     }
-    // A moving, owned, prefab-spawned character, as the pawn's other replicated state.
     World& world = Authority.Entities;
     world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
     world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
@@ -1256,9 +1249,7 @@ TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
     RecordProperty("seed_bytes", std::to_string(LastWrite.BytesWritten));
 }
 
-// The largest owner seed the kit's codecs can produce on a moving pawn: every
-// grant, attribute and tag slot full and an automatic firing. Measured, not
-// asserted; scripts/bench_replication.sh records it.
+// Measured, not asserted; scripts/bench_replication.sh records it.
 TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
 {
     if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)

@@ -1,9 +1,5 @@
 #pragma once
 
-// A RuntimeWorld with a scene asset stack and a SceneSpawnService, zero-thread,
-// for tests of what a spawn builds. SpawnMarker is a test component a scene can
-// carry so a test can tell its entities apart.
-
 #include <assets/runtime/AssetSystem.h>
 #include <assets/runtime/RegisterAssetKind.h>
 #include <assets/scene/SceneAssetLoader.h>
@@ -46,8 +42,6 @@ struct TypeSchema<SpawnMarker>
     }
 };
 
-// A component only the simulation authority creates: a machine that is not the
-// authority skips the entities that carry it, and the entities beneath them.
 struct MaterializedMarker
 {
     int Value = 0;
@@ -91,8 +85,6 @@ struct SpawnHarness
         , Assets(Logging, Registry)
         , Service(World, Schema, Serializers, Tasks, Logging)
     {
-        // The engine's own serializer set covers transform, identity,
-        // and scene_instance; the marker is this test's addition.
         RegisterEngineSceneSerializers(Serializers);
         EXPECT_EQ(Serializers.Register(
                       std::make_unique<ComponentSerializer<SpawnMarker>>()),
@@ -104,8 +96,7 @@ struct SpawnHarness
         Service.ConnectAssets(&Assets, &Scenes);
     }
 
-    // One full turn of the async drain: worker runs, completion commits,
-    // pump publishes.
+    // Worker runs, completion commits, pump publishes.
     void Turn()
     {
         (void)Tasks.PumpWork();

@@ -483,8 +483,6 @@ TEST(SceneSpawnService, RootOwnershipNeverReachesAGroupThisServiceDidNotSpawn)
 
 namespace
 {
-    // What the document cook writes on each member of a placement: the placed
-    // source and the placement's authored instance id.
     void StampPlacement(SmapEntityRecord& record)
     {
         record.Components.emplace_back(
@@ -515,8 +513,6 @@ TEST(SceneSpawnService, APlacedMemberSpawnsInTheSpawnsGroup)
     EXPECT_TRUE(world.GetAliveEntities().empty()) << "the despawn left the placed member behind";
 }
 
-// A variant authored as a prefab that places its base: every member, the root
-// included, was cooked with the placement's id.
 TEST(SceneSpawnService, APlacementRootSpawnsAsTheSpawnsRoot)
 {
     SpawnHarness h;

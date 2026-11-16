@@ -42,7 +42,6 @@ namespace
                            { "name": "Speed", "kind": "float" },
                            { "name": "VerticalSpeed", "kind": "float" },
                            { "name": "Dead", "kind": "bool" } ] })");
-            // As it composes over the engine's schema, which it extends.
             Load("asset://animation/hero.facts.sdata", kAnimFactSchemaType, R"({
                 "slots": [ { "name": "Grounded", "kind": "bool" },
                            { "name": "Speed", "kind": "float" },
@@ -545,7 +544,6 @@ TEST(AnimationPreviewSession, TheFixtureScenarioRunsCleanThroughTheAssetPipeline
     AnimationPreviewSession session(assets.DataAssets, &assets.AnimationClips);
     ASSERT_TRUE(session.Open(*scenario));
     ASSERT_TRUE(session.Rig()->Valid) << FormatAnimDiagnostic(session.Rig()->Diagnostics.front());
-    // An inherited fact is located in the schema the rig names, by its name.
     EXPECT_EQ(session.Rig()->Slots.front().DeclaredIn, "asset://animation/hero.facts.sdata");
     EXPECT_EQ(session.Rig()->Slots.front().DeclaredAt, "$.data.slots{Grounded}");
     const auto behavior = [&] {

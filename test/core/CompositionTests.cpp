@@ -31,9 +31,6 @@ namespace
         return list;
     }
 
-    // A definition with every shape the rules distinguish: scalars, a required
-    // member, a nested record, a StableKey list, an unkeyed list and an
-    // append-only list keyed by name.
     DataFieldSchema DefinitionSchema()
     {
         DataFieldSchema facts = List("facts", Record("", { Member(DataFieldKind::String, "name", true),
@@ -253,8 +250,6 @@ TEST(Composition, FragmentsThatAgreeComposeAndFragmentsThatDisagreeAreAnErrorUnt
         << "a local value is the explicit choice";
 }
 
-// A fragment may write a whole undescribed record that another writes one
-// member of; they conflict exactly where the two disagree.
 TEST(Composition, FragmentsConflictWhereAWholeRecordAndOneOfItsMembersDisagree)
 {
     const Composed agree = Compose({ .Base = std::string(kBase),

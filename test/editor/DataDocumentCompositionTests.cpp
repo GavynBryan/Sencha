@@ -1,6 +1,3 @@
-// An open definition composed from another open definition follows that one's
-// edits: its problems and its resident value recompose when the source changes.
-
 #include "data/DataDocumentStore.h"
 #include "documents/DocumentSourceSet.h"
 

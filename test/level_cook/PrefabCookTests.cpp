@@ -165,8 +165,6 @@ namespace
     }
 }
 
-// A prefab that extends another cooks flat: the runtime sees composed values,
-// and the base it read is recorded so a later edit to it recooks the child.
 TEST_F(PrefabCookTest, ADerivedPrefabCooksComposedAndRecooksWhenItsBaseIsSaved)
 {
     (void)AuthorPrefab("prefabs/bulb.sscene", Vec3d{ 0, 1, 0 });
@@ -224,9 +222,6 @@ namespace
     }
 }
 
-// A guard extends a humanoid and includes two fragments, an elite guard extends
-// the guard and patches one value; the elite guard cooks flat, as one spawnable
-// root, and records every scene it composed from.
 TEST_F(PrefabCookTest, AGuardChainCooksFlatAndRecordsItsSources)
 {
     WriteFile("prefabs/actors/humanoid.sscene", kHumanoid);

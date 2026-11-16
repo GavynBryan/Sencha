@@ -252,8 +252,7 @@ TEST(AbilityDefinitionData, APhasePresentsAtMostWhatALeaseKeyCanName)
     EXPECT_NE(over.Describe().find("present"), std::string::npos) << over.Describe();
 }
 
-// A grant entry's parameters resolve to a dense array per entry, sized by what
-// the ability declares, so the declaration is bounded.
+// Parameters resolve to a dense array per entry, so the declaration must be bounded.
 TEST(AbilityDefinitionData, AnAbilityDeclaresAtMostItsParameterCapacity)
 {
     const auto declaring = [](std::size_t count) {

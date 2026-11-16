@@ -171,9 +171,6 @@ TEST_F(DataPropertiesTest, TheSourceReplacesTheDocumentWhenItParsesAndSaysWhereW
     EXPECT_EQ(source.Nodes().size(), 1u);
 }
 
-// A definition that extends and includes others, laid out as it composes: each
-// row says where its value came from, an edit writes only what it changes, and
-// undo, redo and revert leave everything else inherited.
 namespace
 {
 constexpr std::string_view kBase = "asset://effects/armor_base.sdata";

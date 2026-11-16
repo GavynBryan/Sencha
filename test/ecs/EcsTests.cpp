@@ -314,8 +314,7 @@ TEST_F(EcsTest, EntitiesWithSameSignatureShareArchetype)
     EXPECT_EQ(count, 1);
 }
 
-// Every handle first, every row after: the empty entities around the one given
-// a row keep their places.
+// A batch holds every handle before it writes any row; empty neighbours keep their places.
 TEST_F(EcsTest, AnEmptyEntityTakesItsRowAtItsSignature)
 {
     const EntityId first = world.CreateEntity();

@@ -270,8 +270,7 @@ TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
     EXPECT_FALSE(Tags(hero).HasExact(marked));
 }
 
-// An effect's tag saved with the actor would be held twice once the restored
-// actor's effects are applied again. Only the baseline is saved.
+// Saved with the actor, the tag would be held twice once its effect is applied again.
 TEST_F(EffectFixture, ARestoredActorHoldsAnEffectsTagOnceWhenTheEffectReturns)
 {
     const GameplayTagId humanoid = *tags->RegisterTag("Creature.Humanoid");
@@ -369,8 +368,6 @@ TEST_F(EffectFixture, ATagTheContainerCannotHoldIsNeitherGrantedNorRevoked)
     EXPECT_EQ(Tags(hero).Size(), GameplayTagContainer::Capacity);
 }
 
-// The boundary: the last free place takes the tag, and the one past it is
-// refused and counted rather than dropped unseen.
 TEST_F(EffectFixture, AFullContainerRefusingAnEffectsTagCountsIt)
 {
     EntityId hero = MakeActor(100.0f, 5.0f);
@@ -636,8 +633,7 @@ TEST_F(EffectFixture, APeriodFallingDueIsRecordedAndALastingFoldIsNot)
     EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[0], health), -3.0f);
 }
 
-// A projected tag has one writer, its projection; an effect granting one would
-// have its stack set away every tick.
+// An effect granting a projected tag would have its stack set away every tick.
 TEST(EffectDeclarationResolve, AProjectedTagIsNotGranted)
 {
     AttributeRegistry attributes;

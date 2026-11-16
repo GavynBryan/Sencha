@@ -22,7 +22,6 @@ namespace
             + std::string(slot) + R"(", "kind": "bool" } ] } })";
     }
 
-    // A rig declares the fact schema it names as a dependency.
     std::string Rig(std::string_view facts)
     {
         return std::string(R"({ "type": "animation.rig", "version": 1, "data": { "facts": ")") + std::string(facts)

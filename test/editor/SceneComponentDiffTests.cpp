@@ -1,7 +1,3 @@
-// What an edited entity is written as, against what it inherits: the sparsest
-// patch that composes back to it, keyed lists by key with removed elements as
-// null, so a later change to anything it did not touch still reaches it.
-
 #include "scene_source/Json5Composition.h"
 #include "scene_source/Json5Parser.h"
 #include "scene_source/Json5Writer.h"
@@ -84,8 +80,7 @@ TEST(SceneComponentDiff, NothingChangedIsNothing)
     EXPECT_TRUE(diff.Removed.empty());
 }
 
-// A member cleared inside a component is written as its removal, so the
-// cleared value is not composed back from the base.
+// Otherwise the cleared value would compose back from the base.
 TEST(SceneComponentDiff, AMemberClearedInsideAComponentIsWrittenAsNull)
 {
     const Schemas schemas;
@@ -98,8 +93,6 @@ TEST(SceneComponentDiff, AMemberClearedInsideAComponentIsWrittenAsNull)
     EXPECT_TRUE(DiffSceneComponents(baseline, baseline, schemas.Fn()).Patch.Members.empty());
 }
 
-// A response binding deleted from a placed or inherited entity is written as
-// its removal, which a version-2 patch applies.
 TEST(SceneComponentDiff, ADeletedResponseBindingIsWrittenAsNull)
 {
     const Schemas schemas;

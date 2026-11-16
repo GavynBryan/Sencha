@@ -1,6 +1,3 @@
-// A diagnostic on a fact a schema inherits lands on the schema the rig names,
-// says which definition the fact came from, and its row reads as inherited.
-
 #include "authoring/AnimationRigProblems.h"
 #include "data/DataDocumentSet.h"
 #include "data/DataProperties.h"

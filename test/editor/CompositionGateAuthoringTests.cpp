@@ -1,6 +1,3 @@
-// A definition built from a fragment is authored in Kyusu as it composes, each
-// row saying which definition its value came from.
-
 #include "data/DataDocumentSet.h"
 #include "data/DataProperties.h"
 #include "documents/DocumentSourceSet.h"

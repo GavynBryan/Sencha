@@ -1,6 +1,3 @@
-// Real definitions built on others: each loads composed and follows its
-// source's edits through hot reload (docs/assets/composition.md).
-
 #include <gtest/gtest.h>
 
 #include <abilities/AbilityDefinitionData.h>

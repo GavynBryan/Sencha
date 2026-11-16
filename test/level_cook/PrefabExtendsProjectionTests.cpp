@@ -1,9 +1,3 @@
-// A prefab that extends another, edited in Kyusu: the inherited entities are
-// live under their own ids, an edit to one is written as the document's own
-// sparse patch and nothing else, a change to the base still reaches what the
-// child did not touch, and a local may hang beneath an inherited entity
-// (docs/plans/composition-stage2-prefab-extends.md).
-
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
@@ -38,7 +32,6 @@ protected:
         fs::remove_all(Root);
         fs::create_directories(Root / "props");
 
-        // The base: a post with a lamp beneath it, written by a real document.
         EditorDocument base(Logging);
         const EntityId post = base.GetScene().CreateEntity(Vec3d{ 0, 0, 0 });
         const EntityId light = base.GetScene().CreateEntity(Vec3d{ 0, 2, 0 });
@@ -195,8 +188,7 @@ TEST_F(PrefabExtendsProjectionTest, DeletingAnInheritedEntityDeletesOnlyWhatThis
     EXPECT_FALSE(FindById(derived, addedId).IsValid()) << "what this document added beneath it goes";
 }
 
-// What Kyusu harvests is version 2, so a version-1 level is moved to version 2
-// when it is opened and saved that way.
+// Kyusu harvests version 2.
 TEST_F(PrefabExtendsProjectionTest, AnOpenedVersionOneLevelIsSavedAsVersionTwo)
 {
     EditorDocument level = Load("{ format_version: 1, entities: [] }");
@@ -204,8 +196,6 @@ TEST_F(PrefabExtendsProjectionTest, AnOpenedVersionOneLevelIsSavedAsVersionTwo)
     EXPECT_NE(saved.find("format_version: 2"), std::string::npos) << saved;
 }
 
-// A child whose base is not there yet composes nothing from it, and the base
-// appearing is a change it is rebuilt for.
 TEST_F(PrefabExtendsProjectionTest, AChildIsRebuiltWhenItsMissingBaseAppears)
 {
     EditorDocument derived(Logging);

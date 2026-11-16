@@ -1,9 +1,4 @@
-// Records what many small replicated entities cost: the bytes each carries
-// through storage, persistent identity and replication, how fast they are made,
-// moved and destroyed, what an authority publish costs over them, and how long a
-// peer takes to be seeded with them. The entity is the shape an inventory entry
-// would have; nothing here is an inventory. Env-gated; run by
-// scripts/bench_replication.sh from the profile preset.
+// Env-gated; run by scripts/bench_replication.sh from the profile preset.
 
 #include "BenchRecorder.h"
 #include "AllocationCounter.h"
@@ -36,7 +31,7 @@
 
 namespace
 {
-    // An inventory entry's shape: the container it is in, what it is, how many.
+    // The shape an inventory entry would have; nothing here is an inventory.
     struct BenchEntry
     {
         EntityId Container;
@@ -100,8 +95,7 @@ namespace
 
     int Reps(int fallback) { return Bench::RepsFromEnvironment("SENCHA_REPLICATION_BENCH_REPS", fallback); }
 
-    // Live heap bytes (glibc). Chunks, the registry and every container below are
-    // heap allocations, so stage-to-stage differences are what each stage costs.
+    // Live heap bytes (glibc): every container below allocates on the heap.
     std::int64_t HeapBytes()
     {
         return static_cast<std::int64_t>(mallinfo2().uordblks);
@@ -114,9 +108,7 @@ namespace
         Replicated,         // and NetReplicated + NetOwner
     };
 
-    // An authority World of `count` entries spread over `containers` containers,
-    // each container owned by a peer, built at their final signature so no row
-    // migrates on the way.
+    // Built at the final signature, so no row migrates on the way.
     struct Authority
     {
         Authority()
@@ -169,9 +161,7 @@ namespace
         std::vector<EntityId> Entries;
     };
 
-    // Each peer is told only what it confirms, as a session's peers are; the
-    // client never applies here, it only acknowledges, so what is timed is the
-    // authority's half.
+    // The client only acknowledges, so what is timed is the authority's half.
     struct Publisher
     {
         Publisher(Authority& authority, std::size_t peers)
@@ -218,8 +208,6 @@ namespace
             return cost;
         }
 
-        // Publishes until every peer has confirmed every entity; the count of
-        // publishes it took.
         std::size_t Seed()
         {
             const std::size_t entities = World_.Entries.size();
@@ -346,9 +334,6 @@ namespace
         Recorder.Record(scenario + ".bytes_all_peers", "bytes", Bench::Median(bytes));
     }
 
-    // One peer, one container of `count` entries, at the shipping budget: how
-    // many publishes until the peer has confirmed them all, and how long that is
-    // at the default snapshot cadence.
     void MeasureSeeding(std::size_t count, std::size_t peers)
     {
         Authority authority;

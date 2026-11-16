@@ -1459,13 +1459,6 @@ TEST(ReplicationVisibility, DestroyingAPrefabRootTakesItsGroup)
         << "the root's group outlived the entity the wire named";
 }
 
-//=============================================================================
-// Per-entity relevance
-//
-// An anchored entity reaches only the peer that owns the root of its anchor
-// chain: what a holder holds reaches that holder alone.
-//=============================================================================
-
 namespace
 {
     struct Holding
@@ -1474,7 +1467,6 @@ namespace
         EntityId Held;
     };
 
-    // A peer-owned holder and an entity anchored to it, on the authority.
     Holding HeldBy(Pair& pair, std::uint32_t owner)
     {
         const EntityId holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
@@ -1494,7 +1486,6 @@ TEST(ReplicationRelevance, AnAnchoredEntityReachesOnlyItsRootsOwner)
     EXPECT_TRUE(owner.Mirror(owned.Holder).IsValid());
     EXPECT_TRUE(owner.Mirror(owned.Held).IsValid()) << "the owner sees what its holder holds";
 
-    // A peer joining later is seeded with the holder and nothing it holds.
     Pair other;
     const Holding notOwned = HeldBy(other, 5);
     other.Replicate(6);
@@ -1515,8 +1506,6 @@ TEST(ReplicationRelevance, NestedAnchorsFollowTheRootAndAnUnownedRootReachesNobo
     EXPECT_FALSE(pair.Mirror(chest.Held).IsValid()) << "an unowned chest's contents reach nobody";
 }
 
-// A chain longer than kNetRelevanceAnchorDepth reaches nobody, even when its
-// root is owned.
 TEST(ReplicationRelevance, AChainDeeperThanTheBoundReachesNobody)
 {
     Pair pair;
@@ -1560,9 +1549,7 @@ TEST(ReplicationRelevance, OwnershipMovingTakesTheHeldEntityAwayAndBringsItBack)
     EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(again)) << "seeded whole, not as a delta";
 }
 
-// More destroys are owed than one snapshot carries, and the entities come back
-// before the last of them is sent. A destroy written after the seed would leave
-// the peer without what the authority believes it holds.
+// A destroy written after the seed would leave the peer without what the authority believes it holds.
 TEST(ReplicationRelevance, ASeedSupersedesADestroyStillOwed)
 {
     Pair pair;
@@ -1591,8 +1578,6 @@ TEST(ReplicationRelevance, ASeedSupersedesADestroyStillOwed)
     EXPECT_TRUE(pair.Peer.OwedDestroys().empty());
 }
 
-// An anchored entity's own owner-only state (a wand's charges) reaches the peer
-// its anchor chain reaches, as an owner's would.
 TEST(ReplicationRelevance, TheHolderSeesTheOwnerOnlyStateOfWhatItHolds)
 {
     Pair pair;
@@ -2759,9 +2744,7 @@ TEST(ReplicationAuthored, ADynamicEntityIsStillCreatedByTheWire)
     EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
 
-// A runtime-minted id is identity the client never imported, so it cannot be
-// recognised: the entity is built by the wire, not deferred for an import that
-// will never come.
+// No client imported a runtime id, so nothing could ever recognise it.
 TEST(ReplicationAuthored, AnEntityWithARuntimeIdIsCreatedByTheWire)
 {
     Pair pair;
@@ -2780,7 +2763,6 @@ TEST(ReplicationAuthored, AnEntityWithARuntimeIdIsCreatedByTheWire)
 
 namespace
 {
-    // Replicated, and created only by the authority.
     struct AuthorityOnlyThing
     {
         std::uint32_t Count = 0;
@@ -2796,8 +2778,6 @@ struct TypeSchema<AuthorityOnlyThing>
     static auto Fields() { return std::tuple{ MakeField("count", &AuthorityOnlyThing::Count) }; }
 };
 
-// A client never imports what only the authority materializes, so it has no
-// copy to recognise: the authored id is not sent, and the wire builds the entity.
 TEST(ReplicationAuthored, AnAuthoredEntityOnlyTheAuthorityMaterializesIsBuiltByTheWire)
 {
     Pair pair([](ComponentRegistrar& components) { components.Add<AuthorityOnlyThing>(); });
@@ -2986,9 +2966,7 @@ TEST(ReplicationComponentCodec, AComponentNamingAnEntityNamesTheMirrorOnTheClien
     EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
 }
 
-// A snapshot that runs out of room sends what fits, so a component can name an
-// entity the client is sent only later. It lands naming nothing, then names the
-// entity once it arrives, though the component itself is not sent again.
+// A snapshot out of room sends what fits, so a reference can arrive before its entity.
 TEST(ReplicationComponentCodec, AnEntityNamedBeforeItArrivesIsNamedOnceItDoes)
 {
     const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
@@ -3026,8 +3004,6 @@ TEST(ReplicationComponentCodec, AnEntityNamedBeforeItArrivesIsNamedOnceItDoes)
     EXPECT_EQ(pair.ClientIdentity.Deferred().Size(), 0u) << "nothing waits once everything named has arrived";
 }
 
-// A delta to a component whose reference still waits lands on the image that
-// named the entity, so the reference is not erased by a change to something else.
 TEST(ReplicationComponentCodec, ADeltaKeepsAReferenceStillWaitingForItsEntity)
 {
     const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
@@ -3037,7 +3013,6 @@ TEST(ReplicationComponentCodec, ADeltaKeepsAReferenceStillWaitingForItsEntity)
         pair.Authority.AddComponent<Pointer>(target, Pointer{});
         pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
     };
-    // The whole seed, and a snapshot carrying only the count's delta.
     std::size_t whole = 0;
     std::size_t delta = 0;
     {

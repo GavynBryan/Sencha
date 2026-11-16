@@ -1,7 +1,3 @@
-// A data definition that extends or includes another loads as one composed
-// value; an abstract one never loads as a value; every failure names the field
-// that authored it. Rules: docs/assets/composition.md.
-
 #include <gtest/gtest.h>
 
 #include <assets/data/DataAssetSubtype.h>
@@ -57,8 +53,6 @@ namespace
                                                                kEffectDefinitionType);
         }
 
-        // What the watcher does when `name` changes on disk, in a host that keeps
-        // its own version of `held`.
         void Changed(const std::string& name, std::string_view held = {})
         {
             AssetImporterRegistry importers;
@@ -84,8 +78,6 @@ namespace
         }
     };
 
-    // Stages `root` against an in-memory set of definitions, as Kyusu stages a
-    // working copy against open documents.
     struct Memory
     {
         LoggingProvider Logging;
@@ -321,9 +313,6 @@ TEST(DataDefinitionComposition, AComposedChildsCompileErrorIsSplitAtItsPath)
     EXPECT_EQ(whole.Path, "$.data") << "a message with no path belongs to the definition, not an invented field";
 }
 
-// Every data asset in the tree that neither extends nor includes stages exactly
-// as it did before composition existed: no composition runs, its data reaches
-// the compiler untouched, and it composes from nothing.
 TEST(DataDefinitionComposition, DefinitionsWithoutSourcesStageAsTheyAlwaysHave)
 {
     Memory memory;
@@ -353,8 +342,7 @@ TEST(DataDefinitionComposition, DefinitionsWithoutSourcesStageAsTheyAlwaysHave)
     EXPECT_GT(staged, 20u) << "the gate should cover the tree's content, not an empty set";
 }
 
-// An abstract base is never resident, so nothing would reload because it changed;
-// its resident children recompose anyway.
+// An abstract base is never resident, so nothing would reload because it changed.
 TEST(DataDefinitionComposition, EditingANonResidentBaseRecomposesItsResidentChild)
 {
     Content content;

@@ -1,6 +1,3 @@
-// A problem is shown by the workspace whose document it is, and one in a
-// document no workspace has open yet by a workspace that can open it.
-
 #include "problems/ProblemList.h"
 #include "problems/ProblemReveal.h"
 #include "workspaces/IWorkspace.h"

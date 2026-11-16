@@ -379,8 +379,7 @@ TEST(ZonePackageIdentity, ComponentWithoutMetadataFailsImport)
         << error.Message;
 }
 
-// Only the runtime mint hands out ids with bit 63; content holding one could
-// collide with what the mint hands out next.
+// Content holding a runtime-namespace id could collide with what the mint hands out next.
 TEST(ZonePackageIdentity, ARuntimeNamespaceIdInContentFailsImport)
 {
     const WorldComponentSchema schema = IdentityOnlySchema();
@@ -415,8 +414,7 @@ TEST(ZonePackageIdentity, UnidentifiedEntitiesImportNormally)
     EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
 }
 
-// A client imports none of what only the authority materializes, and so does not
-// count it as authored: a zone that detaches would otherwise record it destroyed.
+// Counted as authored, it would be recorded destroyed when the zone detaches.
 TEST(ZonePackageIdentity, AClientImportSkipsWhatOnlyTheAuthorityMaterializes)
 {
     const WorldComponentSchema schema = [] {

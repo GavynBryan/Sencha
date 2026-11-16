@@ -252,7 +252,6 @@ protected:
         return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
     }
 
-    // `count` Infinite effects, each granting an instant ability of its own.
     std::vector<EffectId> DefineGrantingEffects(std::size_t count)
     {
         EffectDefinition lasting{};
@@ -796,7 +795,6 @@ TEST_F(AbilityRuntime, AFailedCostIsRefusedAtAdmission)
     EXPECT_FLOAT_EQ(Base(actor, Ammo), 3.0f);
 }
 
-// One shot takes an arrow and ten stamina, both or neither.
 constexpr std::string_view kBowShot = R"({
     "input_default": { "action": "Input.PrimaryFire" },
     "costs": [ { "key": "g_shot",
@@ -834,9 +832,7 @@ TEST_F(AbilityRuntime, AnArrowAndStaminaArePaidTogetherOrNotAtAll)
     EXPECT_FLOAT_EQ(Base(actor, Energy), 0.0f);
 }
 
-// Admission and the start commit read one activation's values: a start cost
-// counted by the grant's parameter is refused when the grant's value does not
-// fit, never admitted on the ability's default and then left unpaid.
+// Admitted on the ability's default, the start would be left unpaid.
 TEST_F(AbilityRuntime, AStartCostReadsTheGrantsParameterAtAdmission)
 {
     DeclareCounters();
@@ -863,7 +859,6 @@ TEST_F(AbilityRuntime, AStartCostReadsTheGrantsParameterAtAdmission)
 
 namespace
 {
-// `test.quiver` spends what `test.counter` owns: one arrow from its `bearer`.
 bool TranslateQuiver(const World&, const AbilityCostRow& row, std::vector<AuthoredValue>& arguments)
 {
     EntityId bearer;
@@ -885,8 +880,6 @@ AbilityCostProviderDefinition Quiver(std::string name, std::string spendsThrough
 }
 }
 
-// Two providers reaching one resource are one spend: the counter's batch checks
-// the quiver's translated row beside its own, and applies exactly those rows.
 TEST_F(AbilityRuntime, ARowSpentThroughAnotherProviderJoinsItsBatch)
 {
     DeclareCounters();
@@ -937,8 +930,6 @@ TEST_F(AbilityRuntime, AProviderOwnsItsResourceOrSpendsThroughAnotherNeverBoth)
     EXPECT_FALSE(scope.Declare(Quiver("test.self", "test.self")));
 }
 
-// A translation leading to another translation is a chain, which is refused at
-// the commit: its group fails rather than paying through two hops.
 TEST_F(AbilityRuntime, ASpendThroughATranslatingProviderFailsItsGroup)
 {
     DeclareCounters();
@@ -1513,8 +1504,7 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
     EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Refused);
 }
 
-// Two rings, each an entity whose Infinite effect grants Fireball with its own
-// power and priority (docs/plans/composition-stage3-abilitykit.md, the gate).
+// Two rings, each an entity whose Infinite effect grants Fireball with its own power and priority.
 constexpr std::string_view kFireball = R"({
     "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
     "parameters": [ { "key": "power", "default": 0 } ],
@@ -1611,7 +1601,6 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
 }
 
-// Held while the alternate fire is: what it reads as its source, in a local.
 constexpr std::string_view kReadSource = R"({
     "input_default": { "action": "Input.AltFire", "policy": "press_release" },
     "locals": [ { "key": "l_source", "type": "entity" } ],
@@ -1708,7 +1697,6 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
     EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, ring));
 }
 
-// Marks its grant's power, or its own default of 5.
 constexpr std::string_view kPowered = R"({
     "input_default": { "action": "Input.PrimaryFire" },
     "parameters": [ { "key": "power", "default": 5 } ],
@@ -2136,9 +2124,7 @@ TEST_F(AbilityRuntime, AGrantingEffectIsRefusedWhenAppliedIfItsGrantsWouldNotFit
     EXPECT_EQ(Entities.GetResource<AbilityGrantReservations>().Size(), 0u) << "the pass consumed the reservation";
 }
 
-// Room an effect reserved is not there to take: a grant asked for between the
-// effect's apply and the pass that grants it is refused, and the effect's lands.
-// Lasts three ticks, reading what it was used from.
+// A grant asked for between an effect's apply and its pass must not take the room the effect reserved.
 constexpr std::string_view kUse = R"({
     "locals": [ { "key": "l_source", "type": "entity" } ],
     "activation": [ { "key": "act_calm", "tags": { "none": ["State.Stunned"] } } ],
@@ -2202,7 +2188,6 @@ TEST_F(AbilityRuntime, ATransientActivationFromASourceThatHasGoneIsNotGranted)
     EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::NotGranted);
 }
 
-// The room an effect reserved is not a transient grant's either.
 TEST_F(AbilityRuntime, ATransientActivationDoesNotTakeRoomAnEffectReserved)
 {
     const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
@@ -2337,7 +2322,6 @@ TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
     Step();
     ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
 
-    // A content reload declares the effect again, with its edited binding.
     DeclareEffectGrants(Entities, equipped,
                         { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
                                                    .Override = { .Action = "Input.PrimaryFire" } } });
@@ -2350,8 +2334,7 @@ TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
     EXPECT_EQ(entry->Override.Action, std::optional<std::string>("Input.PrimaryFire"));
 }
 
-// An ability's owned tags are contributions while it runs; a projected tag has
-// only its projection to write it.
+// A projected tag has only its projection to write it.
 TEST(AbilityDeclarationResolve, AProjectedTagIsNotOwned)
 {
     World world;

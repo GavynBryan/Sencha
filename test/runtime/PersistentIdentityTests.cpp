@@ -20,7 +20,6 @@
 #include <tuple>
 #include <vector>
 
-// One member of a prefab naming another, as a purse names the guard holding it.
 struct MemberLink
 {
     PersistableRef Target;
@@ -295,8 +294,6 @@ TEST(PersistableRef, AnEntityWithNoIdentityIsHeldButNotPersistable)
     EXPECT_FALSE(held.Target.IsValid());
 }
 
-// A prefab's members name each other by the ids they were authored under. A
-// spawn strips those ids, and each spawn's reference still finds its own member.
 TEST(PersistableRef, AReferenceBetweenASpawnsMembersFindsThatSpawnsMember)
 {
     const WorldComponentSchema schema = [] {

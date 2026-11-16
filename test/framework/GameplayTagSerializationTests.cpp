@@ -92,8 +92,7 @@ TEST(GameplayTagSerialization, EmptyContainerRoundTrips)
     EXPECT_TRUE(c2.Empty());
 }
 
-// D9: what effects, abilities and projections contribute is derived again after
-// a load, so only the baseline is saved, and it loads as baseline.
+// Contributions are derived again after a load.
 TEST(GameplayTagSerialization, OnlyTheBaselineIsSavedAndItLoadsAsBaseline)
 {
     GameplayTagRegistry reg;
@@ -117,9 +116,7 @@ TEST(GameplayTagSerialization, OnlyTheBaselineIsSavedAndItLoadsAsBaseline)
     EXPECT_FALSE(loaded.HasExact(burning));
 }
 
-// A projected tag is its projection's alone (movement's mode and grounded tags),
-// so a saved stack of one is content that cannot mean anything: dropped, and
-// said so.
+// A saved stack of a projected tag cannot mean anything.
 TEST(GameplayTagSerialization, AProjectedTagLoadsAsNothingAndIsReported)
 {
     GameplayTagRegistry reg;
@@ -142,8 +139,7 @@ TEST(GameplayTagSerialization, AProjectedTagLoadsAsNothingAndIsReported)
     EXPECT_EQ(dropped, (std::vector<std::string>{ "movement.grounded" }));
 }
 
-// S5.1's audit row: a replica decoded from the wire holds the authority's
-// totals as contributions, so a client's save holds none of them.
+// A replica holds the authority's totals as contributions.
 TEST(GameplayTagSerialization, AContainerDecodedFromTheWireHoldsNoBaselineAndSavesNothing)
 {
     World authority;

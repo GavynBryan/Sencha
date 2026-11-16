@@ -281,8 +281,6 @@ namespace
         EXPECT_EQ(untouched->Find("cooldown"), nullptr) << "one instance's override reached another";
     }
 
-    // In version 2 an instance patch's null removes, so a placement can drop a
-    // binding its prefab gives it and keep the rest.
     TEST(SceneComposition, AVersionTwoInstanceRemovesAnInheritedResponseBinding)
     {
         MemorySources sources;
@@ -472,10 +470,7 @@ namespace
 })";
 }
 
-// What a version-1 patch means, pinned before composition moved to the shared
-// operator: objects merge member by member, a list is replaced whole, null is
-// written as a value, a new member goes last, and a patch's comments travel
-// with the values it writes.
+// Pinned before composition moved to the shared operator.
 TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole)
 {
     MemorySources sources;

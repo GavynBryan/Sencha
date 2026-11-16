@@ -1,8 +1,3 @@
-// A prefab that extends another adopts its entities and ids, takes fragments
-// onto its root or a named entity, and patches and removes what it inherits,
-// with keyed lists merged by key; every way that can go wrong is reported
-// (docs/plans/composition-stage2-prefab-extends.md).
-
 #include "scene_source/Json5Parser.h"
 #include "scene_source/SceneComposition.h"
 #include "scene_source/SceneSourceCache.h"
@@ -41,7 +36,6 @@ private:
     std::map<std::string, SceneSourceDocument> Docs;
 };
 
-// What the editor's serializer registry and World would say, as a table.
 class TableRules final : public ISceneComponentRules
 {
 public:
@@ -98,8 +92,7 @@ constexpr std::string_view kTorch = R"({
   entities: [ { id: '00000000000000f2', components: { Light: { intensity: 3 } } } ],
 })";
 
-// A post and what is tethered to it: the tether names the post by the post's
-// id in this document.
+// The tether names the post by the post's id in this document.
 constexpr std::string_view kTethered = R"({
   format_version: 2,
   entities: [
@@ -356,9 +349,7 @@ TEST(ScenePrefabComposition, AReferenceToAMemberThePlacementDropsIsReported)
     EXPECT_EQ(dangling->Path, "0000000000000202");
 }
 
-// A version-1 level that places a prefab, edited in Kyusu. The edit is harvested
-// as a version-2 patch, so opening the level moves it to version 2: read by the
-// version-1 rules, the keyed patch would replace the tag list with an object.
+// Read by the version-1 rules, the harvested keyed patch would replace the tag list with an object.
 TEST(ScenePrefabComposition, AnOpenedVersionOneLevelTakesAHarvestedKeyedPatchByKey)
 {
     Composed composed;
@@ -388,8 +379,7 @@ TEST(ScenePrefabComposition, AnOpenedVersionOneLevelTakesAHarvestedKeyedPatchByK
     EXPECT_EQ(tags->Elements.size(), 2u) << "the inherited tag stays beside the added one";
 }
 
-// A removal list is checked against what remains once all of it goes, so its
-// order cannot decide whether it is allowed.
+// The list's order must not decide whether a removal is allowed.
 TEST(ScenePrefabComposition, RemovingAComponentWithEverythingThatOwesItIsAllowedInAnyOrder)
 {
     Composed composed;
@@ -405,8 +395,6 @@ TEST(ScenePrefabComposition, RemovingAComponentWithEverythingThatOwesItIsAllowed
     EXPECT_EQ(humanoid->Components.Find("AbilityGrants"), nullptr);
 }
 
-// The base deleted the entity a local hung beneath: the child still composes,
-// says so, and leaves the local a root for the author to place again.
 TEST(ScenePrefabComposition, ALocalWhoseInheritedParentIsGoneIsReportedNotFatal)
 {
     Composed composed;
@@ -453,8 +441,6 @@ const Json5Value* Binding(const ResolvedSceneEntity& entity, std::string_view ke
 }
 } // namespace
 
-// A version-1 level on disk composes by the version-1 rules, keeps its version
-// when written, and composes to the same entities once it is version 2.
 TEST(ScenePrefabComposition, AVersionOneFixtureComposesTheSameBeforeAndAfterItsUpgrade)
 {
     SceneSourceCache sources({ kFixtureRoot });
@@ -486,8 +472,6 @@ TEST(ScenePrefabComposition, AVersionOneFixtureComposesTheSameBeforeAndAfterItsU
             << PersistentEntityIdToString(before->Entities[i].Id);
 }
 
-// A version-2 level on disk places a prefab that extends a version-1 base and
-// includes a fragment: keyed lists merge by key and null removes, at each layer.
 TEST(ScenePrefabComposition, AVersionTwoFixtureComposesThroughEveryLayer)
 {
     SceneSourceCache sources({ kFixtureRoot });

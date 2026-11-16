@@ -776,9 +776,6 @@ TEST(AnimReplication, ImpulseRequestPresentsRemotely)
     EXPECT_EQ(session.Authority.BehaviorName(session.Prop), "Anim.Idle");
 }
 
-// A request whose source had not arrived is translated again once it does. The
-// request is the same one, so a presentation that already observed it does not
-// start it again.
 TEST(AnimReplication, ARequestWhoseSourceArrivesLateIsNotObservedTwice)
 {
     World world;

@@ -1,7 +1,3 @@
-// A component whose scene form holds a keyed list declares the key, so a
-// prefab patches one element by key instead of replacing the list
-// (docs/plans/composition-stage2-prefab-extends.md).
-
 #include <gtest/gtest.h>
 
 #include <abilities/AbilityGrantsSerializer.h>

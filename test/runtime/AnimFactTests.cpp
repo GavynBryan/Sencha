@@ -75,8 +75,6 @@ namespace
         GameplayTagRegistry& Tags() { return Entities.GetResource<GameplayTagRegistry>(); }
         AnimRigBindings& Bindings() { return Entities.GetResource<AnimRigBindings>(); }
 
-        // Stages a definition as the loader does: composed over what it extends
-        // from the definitions written so far.
         DataDefinitionStaging Stage(std::string_view path, std::string_view type, std::string_view data,
                                     std::string_view extends = {})
         {
@@ -111,8 +109,6 @@ namespace
             return Data.Register(path, std::string(type), staged.Value, {}, std::move(staged.Sources));
         }
 
-        // A source changing on disk: it reloads, and so does every resident
-        // definition composed from it.
         void Reload(std::string_view path, std::string_view type, std::string_view data)
         {
             DataDefinitionStaging staged = Stage(path, type, data);
@@ -127,7 +123,6 @@ namespace
             }
         }
 
-        // A schema and a rig naming it; the schema is left out when it does not compose.
         DataAssetHandle Rig(std::string_view schemaData,
                             std::string_view rigExtra = {},
                             std::string_view name = "game",
@@ -244,7 +239,6 @@ TEST(AnimRigBinding, MergesTheChainBaseFirstAndResolvesNames)
     ASSERT_EQ(bound.Slots.size(), expected.size());
     for (std::size_t i = 0; i < expected.size(); ++i)
         EXPECT_EQ(bound.Slots[i].Name, expected[i]) << i;
-    // Every slot is located in the schema the rig names, by name, inherited or not.
     EXPECT_EQ(bound.Slots[0].DeclaredIn, "asset://animation/game.facts.sdata");
     EXPECT_EQ(bound.Slots[0].DeclaredAt, "$.data.slots{Grounded}");
     EXPECT_EQ(bound.Slots[4].DeclaredAt, "$.data.slots{Crouched}");

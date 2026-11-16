@@ -127,7 +127,6 @@ namespace
             Peer.Acknowledge(ack);
         }
 
-        // The acknowledgements held back so far, arriving together.
         void DeliverAcks()
         {
             Peer.Acknowledge(Unacked);
@@ -299,10 +298,7 @@ TEST(ReplicationZoneScope, AReopenedRoomIsSeededAgain)
            "already dropped";
 }
 
-// An acknowledgement of a snapshot sent before the peer lost an entity arrives
-// after the destroy went out. It must not make the peer look as though it still
-// holds the entity: if it did, the room reopening would send a delta against
-// state the client destroyed.
+// Otherwise the room reopening would send a delta against state the client destroyed.
 TEST(ReplicationZoneScope, ALateAcknowledgementDoesNotRestoreWhatThePeerWasToldToDestroy)
 {
     ScopedPair pair;

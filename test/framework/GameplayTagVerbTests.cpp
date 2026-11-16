@@ -1,6 +1,3 @@
-// tags.grant and tags.revoke: the baseline they write, what they refuse, and
-// what they leave to effects.
-
 #include <abilities/GameplayTagVerbs.h>
 #include <authored/AuthoredValue.h>
 #include <core/serialization/JsonArchive.h>
@@ -90,8 +87,6 @@ TEST_F(GameplayTagVerbTest, AGrantIsBaselineAndARevokeTakesItBack)
     EXPECT_EQ(Operations.Revoke(Invocation(Target, Unlocked)), VerbAdmission::Refused) << "nothing left to take";
 }
 
-// What an effect contributes is the effect's: a revoke does not take it, and a
-// save does not keep it.
 TEST_F(GameplayTagVerbTest, AnEffectsTagIsNeitherRevokedNorSaved)
 {
     Entities.AddComponent<GameplayTagContainer>(Target);
@@ -115,8 +110,6 @@ TEST_F(GameplayTagVerbTest, AProjectedTagIsRefused)
     EXPECT_TRUE(TagsOf(Target) == nullptr || !TagsOf(Target)->HasExact(Grounded));
 }
 
-// The boundary: the last free place takes the tag, the one past it is refused and
-// counted, and another stack of a held tag still lands.
 TEST_F(GameplayTagVerbTest, AFullContainerRefusesANewTagAndCountsIt)
 {
     Entities.AddComponent<GameplayTagContainer>(Target);

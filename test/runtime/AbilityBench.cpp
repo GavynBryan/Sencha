@@ -150,9 +150,7 @@ TickCost MedianTickMs(std::size_t actors, bool firing, int reps)
     return { Bench::Median(pass), Bench::Median(presentation) };
 }
 
-// Lasting effects at equipment scale: every actor holds `PerActor` Infinite
-// effects, each folding one modifier, and the first of them also grant
-// `GrantsPerEffect` abilities each, as many as a 16-grant table has room for.
+// Lasting effects at equipment scale, as many granting as a 16-grant table has room for.
 struct EffectLoad
 {
     std::size_t Actors = 0;
@@ -216,7 +214,6 @@ EffectCost MedianEffectCostMs(const EffectLoad& load, int reps)
         }
     }
 
-    // One owner's effect ended, which walks every effect to find it, then put back.
     std::vector<double> removal;
     const EntityId first = crowd.Actors.front();
     for (int rep = 0; rep < reps; ++rep)

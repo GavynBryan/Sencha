@@ -41,8 +41,6 @@ TEST(GameplayTagContainer, GrantRevokeStackTransitions)
     EXPECT_TRUE(c.Empty());
 }
 
-// D9: a contribution's revoke never takes what persists, and only the baseline's
-// own revoke does.
 TEST(GameplayTagContainer, AContributionNeverWithdrawsTheBaseline)
 {
     TagFixture f;
@@ -77,8 +75,6 @@ TEST(GameplayTagContainer, EraseRemovesATagWhateverHoldsIt)
     EXPECT_FALSE(c.Erase(f.Dash));
 }
 
-// A projection's tags are its alone, so it sets their contribution outright:
-// exact whatever was there, idempotent, and never touching the baseline.
 TEST(GameplayTagContainer, SettingAContributionMakesItExact)
 {
     TagFixture f;
@@ -184,8 +180,6 @@ namespace
     };
 }
 
-// Refusals that recur every tick log once as they begin and once as they end,
-// and are counted between.
 TEST(GameplayTagOverflow, RefusalsAreReportedWhenTheyBeginAndEndAndCountedBetween)
 {
     World world;

@@ -1,8 +1,6 @@
 #pragma once
 
-// `test.counter`: a cost provider over counts held per entity, standing in for an
-// item provider. Arguments: `holder` (entity), `count` (int, default 1). Checks
-// counts calls, so a test can see one batch per provider per commit.
+// Arguments: `holder` (entity), `count` (int, default 1).
 
 #include <abilities/AbilityCostProviders.h>
 #include <ecs/World.h>
@@ -49,7 +47,6 @@ inline void ApplyCounters(World& world, std::span<const AbilityCostRow> rows)
     }
 }
 
-// Declares the provider into `world`'s catalog and gives the World its counts.
 inline bool DeclareCounterCostProvider(World& world)
 {
     world.AddResource<Counters>();

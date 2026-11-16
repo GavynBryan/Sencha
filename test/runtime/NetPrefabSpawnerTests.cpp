@@ -212,9 +212,7 @@ TEST_F(NetPrefabSpawnerTest, WithNoAssetSystemEveryPrefabIsUnavailable)
             .IsValid());
 }
 
-// A prefab that places another cooks its placed members, root included, with
-// the placement's authored instance id. The spawned root must still name the
-// spawned prefab: that is the identity a host replicates to its peers.
+// The spawned root's identity is what a host replicates to its peers.
 TEST(NetPrefabSpawnerGroup, APlacedRootNamesTheSpawnedPrefab)
 {
     SpawnHarness h;
@@ -257,7 +255,6 @@ TEST(NetPrefabSpawnerGroup, APlacedRootNamesTheSpawnedPrefab)
 
 namespace
 {
-    // A prefab of three: a root, a materialized child, and the child's own child.
     SmapContents RootMaterializedChildGrandchild(bool materializedRoot)
     {
         const auto component = [](std::string_view name, double value) {
@@ -281,9 +278,7 @@ namespace
     std::size_t Alive(const World& world) { return world.GetAliveEntities().size(); }
 }
 
-// A client built every member of a net-spawned prefab, so a member the authority
-// creates and replicates on its own arrived twice. A client skips what only the
-// authority materializes, and everything beneath it.
+// A client that built every member got what the authority replicates on its own twice.
 TEST(NetPrefabSpawnerGroup, AClientSkipsWhatOnlyTheAuthorityMaterializes)
 {
     SpawnHarness h;
@@ -311,8 +306,6 @@ TEST(NetPrefabSpawnerGroup, AClientSkipsWhatOnlyTheAuthorityMaterializes)
     spawner.ConnectAssets(nullptr, nullptr);
 }
 
-// A prefab whose root only the authority materializes builds nothing of its own
-// on a client: the wire binds to a bare entity, as it would to any spawn.
 TEST(NetPrefabSpawnerGroup, AMaterializedRootIsABareEntityOnAClient)
 {
     SpawnHarness h;
