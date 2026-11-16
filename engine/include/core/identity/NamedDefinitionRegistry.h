@@ -12,10 +12,8 @@
 #include <vector>
 
 // One World's definitions of one kind, named by the asset path that declares
-// them. A name is given an id the first time anything refers to it, so a
-// reference read before its definition is declared, or one whose definition
-// failed to compile, keeps its id and its name; the definition arrives, and is
-// replaced on reload, under that id.
+// them. A name gets its id the first time anything refers to it, so a reference
+// read before its definition arrives, or after it fails to compile, keeps it.
 template<typename Id, typename Definition>
 class NamedDefinitionRegistry
 {

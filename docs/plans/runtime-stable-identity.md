@@ -135,6 +135,10 @@ this document. `SerializedEntityId` was removed with no consumers.
   authored baseline is released at detach because every import restates it,
   so retained memory tracks deviation rather than zones visited; a capture
   with no baseline is ignored rather than treated as "everything survived". A
+  machine that is not the simulation authority neither imports nor counts as
+  authored a member carrying an authority-materialized component
+  (`SENCHA_AUTHORITY_MATERIALIZED`, `docs/core-systems-map.md`), so its detach
+  never records that member destroyed. A
   suppressed parent leaves its child unparented, matching how destruction
   orphans rather than cascades. The world scene of a partitioned world is
   remembered under its own scope, and captured when the world unloads.

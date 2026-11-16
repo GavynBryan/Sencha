@@ -370,9 +370,8 @@ bool ImportPackageIntoPartitionImpl(
     const std::vector<bool> authorityOnly = AuthorityOnlyMembers(world, schema, package);
 
     // Every member's handle exists before any component is read, so a reference
-    // from one member to another resolves whichever comes first. A skipped slot
-    // stays positionally aligned with the package's local ids; parent relations
-    // that touch it are dropped below.
+    // between members resolves whichever comes first. A skipped slot stays
+    // aligned with the package's local ids; its parent relations are dropped below.
     std::vector<PackageMember> members;
     for (const PackageEntity& packageEntity : package.Entities())
     {

@@ -2313,6 +2313,11 @@ system's semantics until composition wires them in.
     snapshots still in flight said about the entity, so a late acknowledgement
     cannot leave the peer believed to hold it. Regaining it seeds the entity
     whole, and the seed supersedes any destroy of it still owed or in flight.
+  - **Cost.** Each anchored entity walks its chain once per publish: at most
+    eight component lookups, and nothing for an entity without an anchor. The
+    branch this was ported from measured the filter at 1.05 ms against 5.5 ms
+    of writes for 10,000 entities over 16 peers; it has not been measured
+    again on this line.
   - **Visibility culling** by distance or sight is still not done.
 - **General-purpose stream compression.** Delta plus quantization first; trigger:
   measured bandwidth exceeding the envelope on a real world (then LZ4-class on the
