@@ -4,8 +4,6 @@
 
 class World;
 
-// What composition needs to know about a component, answered from the editor's
-// serializer registry and the components this World registered.
 class EditorSceneComponentRules final : public ISceneComponentRules
 {
 public:

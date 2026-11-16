@@ -15,12 +15,6 @@
 
 class World;
 
-// What a cost group pays besides attributes: registered resources a commit checks
-// and applies in one transaction with its effect costs
-// (docs/gameplay/abilitykit.md, "Costs").
-
-// One resource a commit pays: who pays, from what grant source, and the
-// resource's arguments in its provider's declared order.
 struct AbilityCostRow
 {
     EntityId Actor;
@@ -31,22 +25,16 @@ struct AbilityCostRow
 struct AbilityCostProviderCheck
 {
     bool Affordable = true;
-    // The first row that cannot be paid.
     std::uint32_t Row = 0;
 };
 
-// Every row of one commit at once, so the provider sums what rows share. Pure.
 using AbilityCostCheckFn = AbilityCostProviderCheck (*)(const World& world, std::span<const AbilityCostRow> rows);
 // Runs only after every check of the commit passed, on the owner thread, with
 // nothing between; it cannot fail, and changes no archetype.
 using AbilityCostApplyFn = void (*)(World& world, std::span<const AbilityCostRow> rows);
-// `row` as a row of the provider it spends through: that provider's arguments,
-// appended to `arguments`. False when the row names nothing to spend. Pure.
 using AbilityCostTranslateFn = bool (*)(const World& world, const AbilityCostRow& row,
                                         std::vector<AuthoredValue>& arguments);
 
-// A provider owns its resource (Check, Apply) or spends another's through it
-// (SpendsThrough, Translate): docs/gameplay/abilitykit.md, "Commit".
 struct AbilityCostProviderDefinition
 {
     std::string Name;
@@ -79,7 +67,6 @@ struct AbilityCostProviderCatalogTraits
     }
 };
 
-// A World resource, installed with the AbilityKit vocabulary.
 using AbilityCostProviderCatalog = AuthoredCatalog<AbilityCostProviderCatalogTraits>;
 using AbilityCostProviderRegistrationScope = AuthoredRegistrationScope<AbilityCostProviderCatalogTraits>;
 using AbilityCostProviderHandle = AbilityCostProviderCatalog::Handle;

@@ -71,9 +71,16 @@ placement drops is `dangling_member_reference`.
 A fragment states its values itself: one that `extends` another is refused
 with `include_extends`, since what it inherits would land as what it wrote. A
 fragment goes only onto an inherited entity (`fragment_target`,
-`docs/deferred.md`). A local whose inherited parent the base no longer has is
-`dangling_parent` and composes as a root, so the document still opens to be
-fixed.
+`docs/deferred.md`): its values would be saved into a local as the local's own.
+A local whose inherited parent the base no longer has is `dangling_parent` and
+composes as a root, so the document still opens to be fixed.
+
+The resolver returns nothing on a structural failure: a source reference that
+does not resolve, a cycle through the source graph (a document already being
+resolved is met again), or a local entity reusing an inherited id, which would
+make every patch and parent naming it ambiguous. Without component rules
+(`ISceneComponentRules`) every component composes by the version-1 rules and no
+removal is checked.
 
 What the resolver reports:
 - composition diagnostics;
@@ -91,7 +98,9 @@ remain.
 - **Harvest.** `DiffSceneComponents` writes an inherited entity's edits as the
   document's `patch`: only what changed, keyed lists by key, removed elements
   and cleared members `null`. Dropped components become `remove`. Placement
-  overrides are harvested by the same diff.
+  overrides are harvested by the same diff. Patch entries for ids the projection
+  did not produce carry over. Brush geometry never crosses documents through a
+  diff (`IsDocumentLocalComponent`): it names ids in its own document's sidecar.
 - **Structure.** Deleting an inherited entity deletes only what the document
   authored beneath it. Reparenting one is refused. Both cases are
   `EditorDocument::IsSourced`.
@@ -105,6 +114,8 @@ inherited value came from with revert and restore, are not built yet
 
 - The cook records the scenes a document composed from as the index entry's
   additional sources, by path.
+- A document depends on every source its resolve asked for, found or not
+  (`SceneSourceCache::HasRequested`), so creating a missing source rebuilds it.
 - Saving a scene in Kyusu re-projects the open documents composed from it,
   and recooks the cooked documents that recorded it
   (`RecookComposedDependents`), on the owner thread, skipped while a cook runs.

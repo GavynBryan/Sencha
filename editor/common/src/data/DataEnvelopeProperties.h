@@ -12,9 +12,6 @@
 
 class DataDocument;
 
-// A data definition's envelope as properties: what it extends, what it
-// includes, and whether it is abstract, keyed by envelope path ("$.extends",
-// "$.includes[1]", "$.abstract") as staging reports their problems.
 class DataEnvelopeProperties final : public IPropertySource
 {
 public:
@@ -33,7 +30,6 @@ public:
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:
-    // The document's root with `rewrite` applied to its envelope; false refuses.
     PropertyEditResult Rewrite(const std::function<bool(JsonValue::Object& envelope)>& rewrite, DataEdit edit);
     [[nodiscard]] JsonValue Reference(std::string_view path) const;
 

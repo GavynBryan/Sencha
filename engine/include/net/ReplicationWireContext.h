@@ -19,7 +19,6 @@ struct ReplicationWireContext
     EntityId Entity;
     ReplicationAuthorityIdentity* Authority = nullptr;
     const ReplicationClientIdentity* Client = nullptr;
-    // Where a client's decode lists the wire entities it has not been sent yet.
     std::vector<std::uint64_t>* Unresolved = nullptr;
 
     // Its NetEntityId, or zero for an entity that is not replicated.

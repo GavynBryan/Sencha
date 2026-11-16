@@ -24,7 +24,6 @@ std::string PathOf(const JsonValue* reference)
     return ref.has_value() ? ref->Path : std::string{};
 }
 
-// The include "$.includes[3]" names, or nothing for any other key.
 std::optional<std::size_t> IncludeIndex(std::string_view key)
 {
     if (!key.starts_with(kIncludes) || key.size() < kIncludes.size() + 3 || key[kIncludes.size()] != '['
@@ -43,7 +42,6 @@ JsonValue* MemberOf(JsonValue::Object& envelope, std::string_view key)
     return found != envelope.end() ? &found->second : nullptr;
 }
 
-// Sets an envelope member, a new one ahead of the data so the file reads in order.
 void SetMember(JsonValue::Object& envelope, std::string_view key, JsonValue value)
 {
     if (JsonValue* held = MemberOf(envelope, key))

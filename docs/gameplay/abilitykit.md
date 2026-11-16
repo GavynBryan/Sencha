@@ -335,7 +335,13 @@ A grant entry may set its ability's parameters:
 an effect's `granted_abilities`. They are part of the entry's content, so two
 entries that differ only in a parameter are two entries on every machine. A
 parameter the ability does not declare is reported when the bindings are
-resolved, as an unknown action is, and the default stands.
+resolved, as an unknown action is, and the default stands. An entry crosses the
+wire as one key: its stable key, binding and parameters written as text in a
+fixed field order, numbers in shortest round-trip form, then hashed, so every
+machine of one protocol computes the same key. Two entries of one ability with
+the same key would be one entry on the wire, so the second is refused
+(`kAbilityGrantEntryRefusal`); machines declaring the same content in the same
+order refuse the same one.
 
 Each grant names its **source**: the entity its activations read through the
 `source` port. An effect's grant has the effect's `LeaseOwner` entity (an

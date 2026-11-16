@@ -11,7 +11,6 @@ bool RevealProblemIn(std::span<IWorkspace* const> workspaces, const Problem& pro
     for (IWorkspace* workspace : workspaces)
         if (owns(*workspace) && workspace->RevealProblem(problem))
             return true;
-    // A document none of them has open yet: one that can open it shows it.
     for (IWorkspace* workspace : workspaces)
         if (!owns(*workspace) && workspace->RevealProblem(problem))
             return true;

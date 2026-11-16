@@ -15,10 +15,6 @@
 #include <utility>
 #include <vector>
 
-// Composes a base, then fragments, then a local patch (docs/assets/composition.md).
-// A logical path is "$", then ".member", "[index]" in an array that replaces whole,
-// and "{key}" for a keyed element.
-
 enum class CompositionLayer : std::uint8_t
 {
     Base,
@@ -26,7 +22,6 @@ enum class CompositionLayer : std::uint8_t
     Local,
 };
 
-// What `null` in a patch means: the member is removed, or it is written.
 enum class CompositionNull : std::uint8_t
 {
     Removes,
@@ -53,7 +48,6 @@ struct CompositionReport
 {
     std::vector<CompositionDiagnostic> Diagnostics;
     CompositionProvenance Provenance;
-    // Members and keyed elements the local layer removed.
     std::vector<std::string> Removed;
 };
 
@@ -74,17 +68,12 @@ struct CompositionLayerInput
 {
     const V* Value = nullptr;
     std::string_view Asset;
-    // The source's own provenance when it was composed, so an origin names the
-    // asset that authored the value rather than the one that passed it on.
     const CompositionProvenance* Provenance = nullptr;
 };
 
-// The origin recorded for `path`, or for its nearest ancestor that has one.
 [[nodiscard]] const CompositionOrigin* FindCompositionOrigin(const CompositionProvenance& provenance,
                                                              std::string_view path);
 
-// The logical path of `indexPath` (as schema validation writes it) in a composed
-// value: keyed elements named by key instead of position.
 [[nodiscard]] std::string CompositionLogicalPath(const JsonValue& composed, const DataFieldSchema& root,
                                                  std::string_view indexPath);
 
@@ -183,7 +172,6 @@ namespace CompositionDetail
             node = UnwrapDataField(node);
             if (T::IsObject(value) && (node == nullptr || node->Kind == DataFieldKind::Record))
             {
-                // An empty record is a value of its own: a tag, a marker.
                 bool members = false;
                 T::ForEachMember(value, [&](std::string_view name, const V& member) {
                     members = true;
@@ -214,8 +202,6 @@ namespace CompositionDetail
             RecordOrigin(path);
         }
 
-        // An include's write that disagrees with an earlier include's at the same
-        // path, unless the local layer then wrote that path or an ancestor.
         void ReportConflicts(std::string_view localAsset)
         {
             for (const Conflict& conflict : Conflicts)
@@ -278,8 +264,6 @@ namespace CompositionDetail
 
         void NoteIncludeWrite(const std::string& path, const V& value)
         {
-            // Another include may have written this path, or a whole record
-            // above it, or a member below it: they conflict where they overlap.
             for (const auto& [written, earlier] : IncludeWrites)
             {
                 if (earlier.Include == CurrentInclude)
@@ -305,7 +289,6 @@ namespace CompositionDetail
             IncludeWrites.try_emplace(path, IncludeWrite{ CurrentInclude, std::string(CurrentAsset), value });
         }
 
-        // The value `relative` (".a.b") names inside `value`, through records.
         [[nodiscard]] static const V* MemberAt(const V& value, std::string_view relative)
         {
             const V* at = &value;
@@ -518,7 +501,6 @@ namespace CompositionDetail
     };
 }
 
-// One patch onto `target`, as the local layer of `asset`.
 template <typename V>
 void ApplyCompositionPatch(V& target, const V& patch, std::string_view asset, const CompositionPolicy& policy,
                            CompositionReport& report)
@@ -528,7 +510,6 @@ void ApplyCompositionPatch(V& target, const V& patch, std::string_view asset, co
     composer.Merge(target, patch, policy.Schema, "$");
 }
 
-// A composed base (or none), then fragments, then the local patch.
 template <typename V>
 [[nodiscard]] V ComposeLayers(const CompositionLayerInput<V>* base, std::span<const CompositionLayerInput<V>> includes,
                               const CompositionLayerInput<V>& local, const CompositionPolicy& policy,

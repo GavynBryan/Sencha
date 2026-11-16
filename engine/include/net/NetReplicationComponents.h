@@ -100,9 +100,7 @@ NetDrivenBy
 static_assert(std::is_trivially_copyable_v<NetDrivenBy>,
               "NetDrivenBy must be trivially copyable to live in ECS chunks");
 
-// Sends this entity only to the peer owning the root of its anchor chain; an
-// unowned or dead root, or a chain past kNetRelevanceAnchorDepth, reaches no
-// peer (docs/plans/networking.md). The authority reads it; it does not travel.
+// Read by the authority alone; it does not travel.
 inline constexpr std::size_t kNetRelevanceAnchorDepth = 8;
 
 struct SENCHA_COMPONENT("sencha.net_relevance_anchor") NetRelevanceAnchor

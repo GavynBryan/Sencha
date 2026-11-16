@@ -91,9 +91,6 @@ struct TypeSchema<T, void>
     static auto Fields() { return ComponentDefinition<T>::Fields(); }
 };
 
-// Created only by the simulation authority: a machine that is not the authority
-// never imports an entity carrying it, and receives the entity from the wire.
-// Declared as `static constexpr bool AuthorityMaterialized = true;` on the schema.
 template <typename T>
 inline constexpr bool ComponentIsAuthorityMaterialized = []
 {

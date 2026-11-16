@@ -160,8 +160,6 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
 
     if (const EntityId root = SingleRoot(world, created); root.IsValid())
         return root;
-    // A root only the authority materializes takes the whole prefab with it on a
-    // client: the wire binds a bare entity and fills it, as it does any spawn.
     if (created.empty() && !IsSimulationAuthority(world))
         return world.CreateEntity(partition);
 

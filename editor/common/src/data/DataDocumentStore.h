@@ -69,24 +69,16 @@ public:
     // An open document's working subtype or root wins over the file's.
     [[nodiscard]] std::string SubtypeOf(std::string_view virtualPath) const;
     [[nodiscard]] std::optional<JsonValue> CurrentRoot(std::string_view virtualPath) const;
-    // Pickers offer concrete definitions; only an extends or includes picker
-    // offers the abstract ones too.
     [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype,
                                                           DataAbstractPaths abstract = DataAbstractPaths::Exclude) const;
     [[nodiscard]] bool IsAbstract(std::string_view virtualPath) const;
-    // Where a document reads the definitions it extends or includes.
     [[nodiscard]] DataRootProvider RootProvider() const;
-    // What a definition composes to now, its own and its sources' open working
-    // copies read first; nothing when it cannot be read.
     [[nodiscard]] std::optional<JsonValue> ComposedData(std::string_view virtualPath) const;
-    // Where each of its composed values came from; nothing when it composes from nothing.
     [[nodiscard]] std::optional<CompositionReport> CompositionOf(std::string_view virtualPath) const;
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);
     void Validate(DataDocument& document);
-    // Revalidates, keeps the resident asset on the committed version, and tells the
-    // observers; so too for each open definition composed from this one.
     void Changed(DataDocument& document);
     [[nodiscard]] bool Reload(DataDocument& document, std::string& error);
     // True when a push that was waiting reached a resident asset.
@@ -124,7 +116,6 @@ private:
     DataDocument* Adopt(std::unique_ptr<DataDocument> document);
     [[nodiscard]] std::optional<DataDefinitionStaging> StageCurrent(std::string_view virtualPath, bool provenance) const;
     void Recompose(DataDocument& document);
-    // A definition that is not open changed on disk: the open ones composed from it follow.
     void RecomposeDependentsOf(const std::filesystem::path& file);
 
     RuntimeAssets& Assets;

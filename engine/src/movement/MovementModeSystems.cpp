@@ -18,8 +18,6 @@
 
 namespace
 {
-    // The authority knows every character's mode; a client only what it
-    // predicts, so another peer's keeps the tags the authority sent.
     bool ProjectsHere(const World& world, EntityId entity)
     {
         return IsSimulationAuthority(world) || IsLocallyPredicted(world, entity);
@@ -214,8 +212,6 @@ void ModeTagProjectionSystem::StepImpl(World& world, const StoragePartitionSet* 
         });
     };
 
-    // Read first, written only where the tags differ from the mode, so a still
-    // character's tags never read as changed.
     std::vector<EntityId> unsettled;
     Query<Read<CharacterMovement>, Read<GameplayTagContainer>> query(world);
     const auto visit = [&](auto& view)

@@ -6,8 +6,6 @@
 
 class GameplayTagRegistry;
 
-// The projections that own movement's tags (GameplayTagRegistry::SetProjected):
-// each mode's active tag, from the mode, and movement.grounded, from support.
 inline constexpr std::string_view kModeTagProjection = "movement.mode";
 inline constexpr std::string_view kSupportTagProjection = "movement.support";
 

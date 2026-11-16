@@ -7,17 +7,13 @@
 
 class World;
 
-// The counter of the runtime half of persistent identity (bit 63), which no
-// editor writes. A World resource, added by the first mint.
 struct PersistentIdMint
 {
     std::uint64_t Next = 1;
 };
 
-// Invalid where this World is not the simulation authority: only the
-// authority creates identity.
+// Authority only: invalid where this World is not the simulation authority.
 [[nodiscard]] PersistentEntityId MintRuntimePersistentId(World& world);
 
-// `entity`'s persistent id, minting one on the authority when it has none.
-// Invalid on another machine, or for an entity that is not alive.
+// Mints only on the authority; invalid elsewhere for an entity without an id.
 PersistentEntityId EnsurePersistentId(World& world, EntityId entity);

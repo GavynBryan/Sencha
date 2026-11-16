@@ -132,8 +132,7 @@ public:
     // said once and forgotten leaves a client holding an entity that will never
     // be mentioned again, because the authority has nothing left to mention.
     void NoteDeparted(NetEntityId id);
-    // A seed written to this peer supersedes any destroy of it still owed or in
-    // flight, so neither a later destroy nor an older acknowledgement undoes it.
+    // Supersedes any destroy of `id` still owed or in flight to this peer.
     void NoteSeeded(NetEntityId id);
     [[nodiscard]] std::span<const NetEntityId> OwedDestroys() const
     {
@@ -264,7 +263,6 @@ public:
         Waiting.Clear();
     }
 
-    // What arrived naming an entity not bound yet, applied again once it is.
     [[nodiscard]] ReplicationDeferredReferences& Deferred() { return Waiting; }
     [[nodiscard]] const ReplicationDeferredReferences& Deferred() const { return Waiting; }
 

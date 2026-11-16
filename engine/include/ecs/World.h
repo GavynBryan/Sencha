@@ -286,8 +286,6 @@ public:
         return id;
     }
 
-    // Gives an entity with no components the row CreateEntityWithSignature would
-    // have made, so a batch can hold every handle before it writes any row.
     void AssignEmptyEntitySignature(EntityId entity, const ArchetypeSignature& sig)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0

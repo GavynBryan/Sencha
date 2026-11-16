@@ -10,8 +10,6 @@
 
 namespace
 {
-    // The definition a field's value came from when the asset inherits it, read
-    // once per asset.
     class InheritedFrom
     {
     public:

@@ -28,7 +28,6 @@ void ReplicationChangeStore::Reset()
 
 namespace
 {
-    // The owner of the root an anchor chain ends at; zero for no peer.
     std::uint32_t AnchoredPeer(const World& world, EntityId anchor, bool hasOwners, bool& pastBound)
     {
         pastBound = false;
@@ -95,8 +94,6 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
         });
     }
 
-    // An entity only the authority creates was never imported by a client, so
-    // its authored identity is nothing a client could recognise it by.
     std::vector<ComponentId> authorityOnly;
     for (const ResolvedComponent& column : columns)
         if (column.Layout->AuthorityMaterialized)

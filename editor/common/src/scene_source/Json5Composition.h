@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <string>
 
-// Scene source composes through the shared operator, comments travelling with
-// the values a patch writes.
 template <>
 struct CompositionValueTraits<Json5Value>
 {

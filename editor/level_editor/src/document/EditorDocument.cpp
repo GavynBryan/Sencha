@@ -377,7 +377,6 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         return false;
     }
 
-    // What Kyusu harvests is version 2, so the document it lands in must be.
     for (const std::string& path : UpgradeSceneSourceFormat(*parsed))
         Logging.GetLogger<EditorDocument>().Warn(
             "scene source: {} was written as null, which this version reads as removing it", path);

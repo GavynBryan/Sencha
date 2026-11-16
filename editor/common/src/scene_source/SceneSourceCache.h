@@ -34,9 +34,6 @@ public:
     // it succeeded. One slot: the caller reports failures as it hits them.
     [[nodiscard]] const std::string& LastError() const { return LastError_; }
 
-    // Whether a resolve through this cache ever asked for `assetPath` --
-    // directly or as a nested source, and whether or not it was there. This IS
-    // the dependency question: a document depends on exactly what it asked for.
     [[nodiscard]] bool HasRequested(std::string_view assetPath) const
     {
         return Entries.contains(std::string(assetPath));

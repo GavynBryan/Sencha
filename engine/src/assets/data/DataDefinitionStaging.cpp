@@ -17,7 +17,6 @@ namespace
         errors.push_back(DataValidationError{ std::move(path), std::move(message) });
     }
 
-    // "$" and "$.x" are paths inside `data`; the envelope's are "$.data" and "$.data.x".
     std::string InEnvelope(std::string_view dataPath)
     {
         return dataPath.size() <= 1 ? std::string("$.data") : "$.data" + std::string(dataPath.substr(1));
@@ -30,7 +29,6 @@ namespace
         return envelopePath.starts_with("$.data") ? "$" + std::string(envelopePath.substr(6)) : std::string();
     }
 
-    // A reference's asset path, through the id when this build knows it.
     std::optional<std::string> ReferencedPath(const JsonValue& value, const AssetPathsById& current)
     {
         const JsonValue resolved = ResolveAssetRefs(value, current);
@@ -85,8 +83,6 @@ namespace
             Stack.pop_back();
             if (!staging.Ok())
             {
-                // What it tried to read, so whoever watches its sources re-checks it
-                // when a missing or broken one is created or fixed.
                 staging.Sources = Attempted;
                 return staging;
             }
@@ -264,8 +260,6 @@ namespace
         std::vector<std::string> Attempted;
     };
 
-    // A composed definition's error at an index path, named by key and by the
-    // asset that authored the value.
     DataValidationError Authored(const DataValidationError& error, const DataDefinitionStaging& staging,
                                  const CompositionProvenance* provenance, const DataSchema* schema,
                                  std::string_view asset)
@@ -301,8 +295,6 @@ DataDefinitionStaging StageDataDefinition(const JsonValue& root, const DataDefin
             found.push_back({ InEnvelope(error.Path), error.Message });
     }
 
-    // A compiler sees data its schema accepted, which is the only precondition it
-    // can be written against; an abstract definition is never compiled.
     const DataAssetTypeRegistration* registration = context.Types.Find(staging.TypeName);
     if (found.empty() && !staging.Abstract)
     {
@@ -322,7 +314,6 @@ DataDefinitionStaging StageDataDefinition(const JsonValue& root, const DataDefin
     if (found.empty())
         return staging;
 
-    // Provenance is only worth computing for a definition that failed.
     const CompositionProvenance* provenance = nullptr;
     DataDefinitionStaging traced;
     if (staging.Composed)

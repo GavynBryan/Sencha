@@ -17,9 +17,8 @@
 //=============================================================================
 // SceneInstance
 //
-// Which placed scene an entity came from: a cooked placement's members name the
-// innermost placement (nesting lives in the authored instance records), a runtime
-// spawn's members all name the spawn. SceneInstanceIndex keeps groups addressable.
+// Which placed scene an entity came from: the innermost cooked placement, or the
+// runtime spawn. SceneInstanceIndex keeps groups addressable.
 //=============================================================================
 
 // Stable identity of one placed scene instance within its containing scene.

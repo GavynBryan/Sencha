@@ -22,8 +22,6 @@ bool WriteGameplayTags(IWriteArchive& archive,
                        const GameplayTagContainer& tags,
                        const GameplayTagRegistry& registry);
 
-// A projected tag (GameplayTagRegistry::SetProjected) is its projection's
-// alone, so a stack of one is not loaded; its name goes to `dropped`.
 bool ReadGameplayTags(IReadArchive& archive,
                       GameplayTagContainer& tags,
                       const GameplayTagRegistry& registry,

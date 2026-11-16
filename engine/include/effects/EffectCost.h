@@ -21,7 +21,6 @@ enum class EffectCostStatus : std::uint8_t
     Insufficient,
 };
 
-// One Instant cost, and who pays it.
 struct EffectCostRow
 {
     EntityId Target;
@@ -31,7 +30,6 @@ struct EffectCostRow
 struct EffectCostCheck
 {
     EffectCostStatus Status = EffectCostStatus::Affordable;
-    // Who, which cost and which attribute the first failure names.
     EntityId Target{};
     EffectId Effect{};
     AttributeId Attribute{};
@@ -41,7 +39,4 @@ struct EffectCostCheck
     [[nodiscard]] bool Affordable() const { return Status == EffectCostStatus::Affordable; }
 };
 
-// Whether every row can be paid together, without taking any Base below zero or
-// below the attribute's minimum, whichever is higher. Deltas are summed per target
-// and attribute first; anything missing fails closed. Pure.
 [[nodiscard]] EffectCostCheck CheckEffectCosts(const World& world, std::span<const EffectCostRow> costs);

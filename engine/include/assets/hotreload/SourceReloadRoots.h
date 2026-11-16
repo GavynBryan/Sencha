@@ -64,8 +64,6 @@ public:
         ReloadFilter = std::move(filter);
     }
 
-    // Whether the host holds its own version of a file, so a change to what that
-    // asset is composed from leaves it to the host (AssetHotReloader::SetHostHeld).
     void SetHeldFilter(std::function<bool(const std::filesystem::path& file)> held) { HeldFilter = std::move(held); }
 
     [[nodiscard]] std::size_t RootCount() const { return Roots.size(); }

@@ -114,7 +114,6 @@ struct ReplicatedComponent
     // order, or a width. Folding it in would refuse a handshake between builds
     // that understand each other perfectly.
     bool Predicted = false;
-    // Only the authority creates what carries it, so the authored id never travels.
     bool AuthorityMaterialized = false;
     std::vector<ReplicatedField> Fields;
 };

@@ -142,8 +142,6 @@ std::string ElementName(const DataFieldSchema& array)
     return element == nullptr || element->DisplayName.empty() ? std::string("Element") : element->DisplayName;
 }
 
-// An array's element as it is listed: by what the author called it when the
-// schema says which member does, otherwise by `fallback`.
 std::string ElementLabel(const DataFieldSchema& array, const JsonValue& item, std::string fallback)
 {
     if (const JsonValue* title = !array.Editor.TitleKey.empty() && item.IsObject() ? item.Find(array.Editor.TitleKey)
@@ -174,7 +172,6 @@ PropertyKind KindOf(const DataFieldSchema& field)
     }
 }
 
-// Where a composing definition's values came from, for its rows.
 struct Inheritance
 {
     const CompositionReport& Report;
@@ -196,14 +193,12 @@ std::optional<Inheritance> InheritanceOf(const DataDocument& document, const Dat
     return inheritance;
 }
 
-// What a composing document's edits are placed against; null for one with no sources.
 const JsonValue* ComposedOf(const DataDocument& document)
 {
     return document.CompositionResult() != nullptr && document.ComposedData().IsObject() ? &document.ComposedData()
                                                                                          : nullptr;
 }
 
-// A row's path in the composition report, which is rooted at the data object.
 std::string ReportPath(std::string_view path)
 {
     return "$" + std::string(path.substr(kDataPathRoot.size()));
@@ -327,7 +322,6 @@ private:
         node.Descriptor.Step = field.Numeric.Step.value_or(field.Kind == DataFieldKind::Int ? 1.0 : 0.0);
     }
 
-    // Where the row's value came from, and the verbs that follow from it.
     void Annotate(PropertyNode& node, const std::string& path) const
     {
         if (Composing == nullptr || path == kDataPathRoot)
@@ -355,7 +349,6 @@ private:
                                            != Composing->Report.Removed.end();
     }
 
-    // What this definition removed, shown as its source has it and left alone.
     static void RemovedRows(std::vector<PropertyNode>& out, const JsonValue& value, const DataFieldSchema& field,
                             const std::string& path, std::string label)
     {
@@ -400,8 +393,6 @@ private:
         }
     }
 
-    // A keyed list of a composing definition: each element named by its key, an
-    // inherited one removable, and what this definition removed shown in place.
     void KeyedElements(PropertyNode& array, const JsonValue& value, const DataFieldSchema& field,
                        const DataFieldSchema& element, const DataFieldSchema& key, const std::string& path) const
     {
@@ -449,8 +440,6 @@ private:
     const Inheritance* Composing = nullptr;
 };
 
-// Removes what `path` names from a composing definition: an inherited value by a
-// null, which composition reads as its removal; one set only here by erasing it.
 PropertyEditResult RemoveComposed(JsonValue& data, const DataFieldSchema& root, const JsonValue* composed,
                                   const JsonValue& inherited, std::string_view path)
 {
@@ -466,7 +455,6 @@ PropertyEditResult RemoveComposed(JsonValue& data, const DataFieldSchema& root, 
     const std::string& name = steps->back().Key;
     if (holder.Value->IsArray())
     {
-        // A keyed list this definition states whole: leaving the element out removes it.
         const JsonValue* element = FindKeyedElement(*holder.Value, Unwrapped(*holder.Field), name);
         if (element == nullptr)
             return PropertyEditResult::Gone;
@@ -483,7 +471,6 @@ PropertyEditResult RemoveComposed(JsonValue& data, const DataFieldSchema& root, 
     return PropertyEditResult::Applied;
 }
 
-// The element path whose key `path` edits, when it edits a keyed element's key.
 std::optional<std::string_view> RenamedElement(std::string_view path, const DataFieldSchema& root)
 {
     const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
@@ -737,7 +724,6 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
                 if (element == nullptr)
                     return false;
                 JsonValue fresh = CreateDefaultDataValue(*element);
-                // A composing definition adds to a keyed list it patches by key.
                 if (const DataFieldSchema* keyField = ArrayMergeKey(field); keyField != nullptr && held.IsObject())
                 {
                     JsonValue* stated = fresh.IsObject() ? fresh.Find(keyField->Key) : nullptr;

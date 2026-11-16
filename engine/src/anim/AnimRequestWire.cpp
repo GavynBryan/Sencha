@@ -104,8 +104,9 @@ void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& co
         request.CancelReason = static_cast<AnimCancelReason>(static_cast<std::uint8_t>(shape >> 16));
         request.AnchorSection = static_cast<std::uint8_t>(shape >> 24);
         request.Received = received;
-        // A source that arrived since the last image names the same request.
-        const bool sameSource = before.Id.Source == request.Id.Source || !before.Id.Source.IsValid();
+        const bool sourceUnchanged = before.Id.Source == request.Id.Source;
+        const bool sourceArrivedSince = !before.Id.Source.IsValid();
+        const bool sameSource = sourceUnchanged || sourceArrivedSince;
         request.Observed = received && before.Received && before.Observed && sameSource
                         && before.Id.Sequence == request.Id.Sequence && before.StartTick == request.StartTick;
     }

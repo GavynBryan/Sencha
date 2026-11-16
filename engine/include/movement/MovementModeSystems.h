@@ -41,8 +41,6 @@ private:
     void StepImpl(World& world, const StoragePartitionSet* partitions);
 };
 
-// Sets the active mode's tag to one contributed stack and every other mode's to
-// none: the tags' only writer (docs/gameplay/movement.md).
 class ModeTagProjectionSystem
 {
 public:
@@ -53,8 +51,6 @@ private:
     void StepImpl(World& world, const StoragePartitionSet* partitions);
 };
 
-// Sets movement.grounded from the support fact, as the mode projection does,
-// so queries can read it without support becoming a mode.
 class SupportTagProjectionSystem
 {
 public:

@@ -52,8 +52,6 @@ namespace
         return components;
     }
 
-    // A version-1 patch: objects merge member by member, anything else is
-    // written whole, null included. What it does not mention stays the source's.
     void ApplyVersionOnePatch(Json5Value& target, const Json5Value& patch)
     {
         CompositionReport report;
@@ -61,8 +59,6 @@ namespace
                               CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue }, report);
     }
 
-    // The schema an entity's components compose by: each component that
-    // declares one under its JSON key; the rest compose by the version-1 rules.
     DataFieldSchema EntitySchema(const ISceneComponentRules* rules, std::initializer_list<const Json5Value*> layers)
     {
         DataFieldSchema entity = MakeDataField(DataFieldKind::Record, {}, {});
@@ -83,7 +79,6 @@ namespace
         return entity;
     }
 
-    // Calls `visit` on the text of every Entity-kind value the schema reaches.
     template <typename Visit>
     void VisitEntityReferences(Json5Value& value, const DataFieldSchema& schema, const Visit& visit)
     {
@@ -113,8 +108,6 @@ namespace
         }
     }
 
-    // A composition diagnostic about one entity's components, addressed by the
-    // entity's id: "$.Alertable.radius" becomes "<id>.Alertable.radius".
     CompositionDiagnostic AtEntity(CompositionDiagnostic diagnostic, PersistentEntityId entity)
     {
         diagnostic.Path = SceneIdText(entity.Value) + diagnostic.Path.substr(1);
@@ -184,8 +177,6 @@ namespace
                 SceneCompositionResult base;
                 if (!ResolveNested(document.Extends, base, out))
                     return false;
-                // The base's own placements are flattened: what it composed is
-                // this document's, addressed by id, its baseline what it inherits.
                 for (ResolvedSceneEntity& entity : base.Entities)
                 {
                     entity.IsInherited = true;
@@ -227,8 +218,6 @@ namespace
         const ISceneComponentRules* Rules = nullptr;
         std::vector<std::string> Stack; // sources in flight, for cycle detection
 
-        // Another document resolved through its own expansion, with what it
-        // reported folded outward. A document already in flight is a cycle.
         [[nodiscard]] bool ResolveNested(const std::string& path, SceneCompositionResult& nested,
                                          SceneCompositionResult& out)
         {
@@ -260,10 +249,6 @@ namespace
                 out.Sources.push_back(path);
         }
 
-        // A local entity reusing an inherited id would make every patch and
-        // parent naming it ambiguous. A parent nothing defines, as when the base
-        // deleted it, is reported and the local is left a root, so the document
-        // still opens to be fixed.
         [[nodiscard]] bool CheckLocalsAgainst(const SceneSourceDocument& document,
                                               const std::unordered_set<std::uint64_t>& inherited,
                                               std::unordered_set<std::uint64_t>& orphaned,
@@ -290,7 +275,6 @@ namespace
             return true;
         }
 
-        // The entity a fragment without `onto` goes onto: the one root.
         [[nodiscard]] static const ResolvedSceneEntity* RootOf(const SceneCompositionResult& out)
         {
             const ResolvedSceneEntity* root = nullptr;
@@ -312,8 +296,6 @@ namespace
             std::string Asset;
         };
 
-        // Fragments and the root patch over the entities they name, then the
-        // removals: base, includes, local, as the operator composes them.
         [[nodiscard]] bool ComposeLayers(const SceneSourceDocument& document, std::string_view asset,
                                          SceneCompositionResult& out)
         {
@@ -334,8 +316,6 @@ namespace
                                                 "'" + include.Fragment + "' is not one entity; a fragment is" });
                     continue;
                 }
-                // What a fragment inherits would land as what it wrote, outranking
-                // this prefab's base and clashing with other fragments.
                 if (const SceneSourceDocument* source = Sources.Find(include.Fragment);
                     source != nullptr && !source->Extends.empty())
                 {
@@ -356,7 +336,6 @@ namespace
                     }
                     target = root->Id.Value;
                 }
-                // A fragment onto a local would be saved into it as the local's own.
                 if (const auto onto = std::ranges::find(out.Entities, PersistentEntityId{ target }, &ResolvedSceneEntity::Id);
                     onto != out.Entities.end() && !onto->IsInherited)
                 {
@@ -406,8 +385,6 @@ namespace
                            std::string_view asset, SceneCompositionResult& out) const
         {
             const Json5Value nothing = Json5Value::MakeObject();
-            // An inherited entity's own components are the base; a local's are
-            // its local layer, with the fragments beneath it.
             const Json5Value own = entity.Components;
             const Json5Value& local = entity.IsInherited ? (patch != nullptr ? *patch : nothing) : own;
             std::vector<CompositionLayerInput<Json5Value>> includes;
@@ -436,8 +413,6 @@ namespace
                 out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
         }
 
-        // Checked against what stays once the whole list goes, so the list's
-        // order cannot decide it. A component kept keeps what it owes.
         void Remove(ResolvedSceneEntity& entity, const std::vector<std::string>& names, std::string_view asset,
                     SceneCompositionResult& out) const
         {
@@ -501,8 +476,6 @@ namespace
             return true;
         }
 
-        // The source's members name each other by the source's ids; each
-        // placement's copies name each other by the ids it minted.
         void RenameMemberReferences(const SceneInstanceRecord& instance, const SourceIndex& index,
                                     std::size_t firstSource, SceneCompositionResult& out) const
         {

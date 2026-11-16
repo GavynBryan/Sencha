@@ -127,7 +127,7 @@ public:
     AssetSystem Assets;
 
     // A data envelope already in memory staged for Assets.Reload, such as an
-    // editor's working copy of a resident asset, composing through `read`.
+    // editor's working copy of a resident asset.
     [[nodiscard]] AssetStaging StageDataRoot(const AssetRecord& record, const JsonValue& root,
                                              const DataSourceReader& read = {})
     {

@@ -100,7 +100,6 @@ namespace
         return true;
     }
 
-    // An asset://...sscene reference, by path or by {id, path}.
     bool ReadSceneRef(const Json5Value* value, std::string& path, AssetId& id, std::string* error,
                       const std::string& what)
     {
@@ -117,7 +116,6 @@ namespace
         return Json5FromJson(AssetRefToJson(AssetRef{ AssetType::Scene, path, id }));
     }
 
-    // { "<entity id>": value }, read with `read` per entry.
     template<typename T, typename Read>
     bool ReadIdKeyed(const Json5Value& value, std::string_view key,
                      std::vector<std::pair<PersistentEntityId, T>>& out, std::string* error, Read&& read)
@@ -345,7 +343,6 @@ namespace
             if (child == parent)
                 return Fail(error, std::string(what) + " " + SceneIdText(child)
                     + ": parents itself");
-            // An inherited parent is one only composition knows: it checks it.
             if (!parentable.contains(parent) && document.Extends.empty())
                 return Fail(error, std::string(what) + " " + SceneIdText(child)
                     + ": parent " + SceneIdText(parent) + " does not exist");

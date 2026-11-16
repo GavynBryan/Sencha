@@ -79,7 +79,6 @@ bool StageDocumentIndex(const DocumentCookContext& ctx, std::string_view sourceR
     entry.SourceRelPath = std::string(sourceRel);
     entry.SourceId = ReadStatedId(assetsRoot / std::string(sourceRel)).value_or(AssetId{});
     entry.InputFingerprint = documentHash;
-    // Size and time stay unknown: what a source edit recooks is found by path.
     for (const std::string& source : composedFrom)
         entry.AdditionalSources.push_back({ .RelPath = std::string(ContentRelativePath(source)) });
     for (CookedArtifact& artifact : catalog.Artifacts())

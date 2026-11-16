@@ -76,9 +76,7 @@ struct IComponentSerializer
     // empty label when it is not a thing of its own. Pure tooling metadata.
     virtual ComponentPlacementFacts Placement() const { return {}; }
 
-    // How the component's scene form composes when a prefab extends or includes
-    // another: which lists merge by which member. Null composes by the
-    // version-1 rules. Pure tooling metadata.
+    // Which lists of the scene form merge by which member. Pure tooling metadata.
     virtual const DataFieldSchema* CompositionSchema() const { return nullptr; }
 
     // Last, so every virtual added above moves its slots: an ABI break.

@@ -55,9 +55,6 @@ struct AssetKindRegistration
     // cannot reload.
     std::function<AssetReloadOutcome(AssetStaging&&)> Reload;
 
-    // Resident paths of this kind whose value was composed from `path`, so an
-    // edit to it reloads them though it may not be resident itself. Empty when
-    // the kind composes from nothing.
     std::function<std::vector<std::string>(std::string_view path)> ComposedFrom;
 
     // Puts the kind's stand-in under `path` in its store and yields the creation

@@ -90,8 +90,6 @@ struct SceneInstanceRecord
     AssetId SourceId{};
 };
 
-// A fragment this document includes: its one entity's components merge onto
-// the root entity, or onto `Onto` when it names one.
 struct SceneFragmentInclude
 {
     std::string Fragment; // asset://....sscene
@@ -101,20 +99,13 @@ struct SceneFragmentInclude
 
 struct SceneSourceDocument
 {
-    // The version this build writes. Version 1 reads as it always has: an
-    // instance patch replaces lists whole and writes null as a value.
     static constexpr std::uint32_t Version = 2;
 
     std::uint32_t FormatVersion = Version;
-    // Version 2: the document this one extends, whose entities and ids it
-    // adopts; the fragments it includes; and whether it is only ever extended
-    // or included (docs/plans/composition-stage2-prefab-extends.md).
     std::string Extends;
     AssetId ExtendsId{};
     std::vector<SceneFragmentInclude> Includes;
     bool Abstract = false;
-    // Version 2: sparse patches and component removals for inherited entities,
-    // keyed by their adopted ids.
     std::vector<std::pair<PersistentEntityId, Json5Value>> InheritedPatches;
     std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> InheritedRemovals;
 
@@ -140,9 +131,6 @@ struct SceneSourceDocument
 // unmodified parse reproduces the same bytes the canonical writer produced.
 [[nodiscard]] std::string WriteSceneSource(const SceneSourceDocument& document);
 
-// Moves an older document to the version this build writes. Versions 1 and 2
-// differ only in an instance patch's null, which 1 writes as a value and 2 reads
-// as a removal; each one is returned, as "<instance>: <path>".
 [[nodiscard]] std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document);
 
 // The transform shape the format speaks ({position, rotation, scale}), shared

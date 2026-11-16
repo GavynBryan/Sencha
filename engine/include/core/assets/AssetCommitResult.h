@@ -41,7 +41,6 @@ struct AssetCommitResult
 // The type-erased form a registered kind's commit returns.
 using AssetCommitOutcome = AssetCommitResult<AssetLease>;
 
-// What an in-place reload did, and why it did not when the kind can say.
 struct AssetReloadOutcome
 {
     bool Reloaded = false;

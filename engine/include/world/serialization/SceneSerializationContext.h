@@ -9,14 +9,6 @@
 class AssetSystem;
 class LoggingProvider;
 
-//=============================================================================
-// SceneSerializationContext
-//
-// Explicit dependencies used by scene field codecs to convert stable persisted
-// references into runtime handles, and runtime handles back into stable refs.
-//=============================================================================
-// A member of the package being imported: the id the package's references name
-// it by, the entity it became, and the id it carries (none when stripped).
 struct PackageMember
 {
     PersistentEntityId Authored;
@@ -24,6 +16,12 @@ struct PackageMember
     PersistentEntityId Carried;
 };
 
+//=============================================================================
+// SceneSerializationContext
+//
+// Explicit dependencies used by scene field codecs to convert stable persisted
+// references into runtime handles, and runtime handles back into stable refs.
+//=============================================================================
 struct SceneSerializationContext
 {
     SceneSerializationContext(LoggingProvider& logging, AssetSystem* assets = nullptr)

@@ -219,8 +219,6 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         assert(tracked && "the journal had room when the start was admitted");
     }
 
-    // Admission checked these costs against the same values; a start that still
-    // cannot pay ends rather than run unpaid.
     if (!Commit(actor, slot, definition, definition.StartGroups).Paid)
     {
         End(actor, slot, AbilityEndReason::CommitFailed);
@@ -647,8 +645,7 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
 
 void AbilityPass::Sweep(const AbilityActor& actor)
 {
-    // A transient grant ends with its one activation; taken back here, where
-    // nothing is walking the table, rather than inside the End that ended it.
+    // Not inside End: the grant table must not shift under a pass walking it.
     const auto runsThrough = [&](AbilityGrantId grant) {
         for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
             if (const AbilityRecord& record = actor.Record(slot);

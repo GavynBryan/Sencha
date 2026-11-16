@@ -152,9 +152,8 @@ class EntityBuildPackage;
 
 struct SmapPackageOptions
 {
-    // Drop persistent_id, scene_instance and persistent id import metadata. A
-    // spawn is a transient group of its own (v1): it keeps neither authored ids
-    // nor the placement ids cooked inside its scene.
+    // Drop persistent_id, scene_instance and their import metadata: a spawn is a
+    // transient group of its own (v1).
     bool StripAuthoredIdentity = false;
 };
 

@@ -34,7 +34,6 @@ public:
         std::size_t Size = 0;
         std::size_t Alignment = 1;
         bool IsTag = false;
-        // Only the simulation authority creates entities carrying it.
         bool AuthorityMaterialized = false;
 
         // Everything this component owes, transitively, computed at Seal from

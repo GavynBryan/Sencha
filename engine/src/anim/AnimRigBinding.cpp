@@ -57,8 +57,7 @@ std::optional<GameplayTagId> AnimRigBinder::ResolveTag(const std::string& name, 
     return id;
 }
 
-// The schema the rig names, as it composes: a schema it extends contributes
-// its slots first, and every declared slot binds before any derived fact.
+// Every declared slot binds before any derived fact.
 void AnimRigBinder::BindFacts(const AnimRigData& rig)
 {
     const AnimFactSchema* schema =

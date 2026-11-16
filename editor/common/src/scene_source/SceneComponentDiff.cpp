@@ -20,7 +20,6 @@ const Json5Value* ElementKeyed(const Json5Value& list, const DataFieldSchema& ke
     return nullptr;
 }
 
-// Nullopt when nothing differs; a null value removes what the baseline holds.
 std::optional<Json5Value> DiffValue(const Json5Value& live, const Json5Value& baseline, const DataFieldSchema* node);
 
 std::optional<Json5Value> DiffKeyed(const Json5Value& live, const Json5Value& baseline, const DataFieldSchema& list,

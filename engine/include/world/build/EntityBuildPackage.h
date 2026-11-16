@@ -56,8 +56,6 @@ struct PackageEntity
     // metadata, not a second source of truth.
     PersistentEntityId PersistentId;
 
-    // The id references between this package's members name it by: PersistentId,
-    // unless the build stripped authored identity and the member carries none.
     PersistentEntityId MemberId;
 
     // Set by SetParent; a package parent is single and final.

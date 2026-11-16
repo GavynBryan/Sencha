@@ -25,47 +25,35 @@ class GameplayTagRegistry;
 //
 // Scene persistence goes through a hand-written serializer
 // (GameplayTagContainerSerializer) rather than a schema, because the ids held
-// here are registration-order values. It saves each tag's baseline alone
-// (docs/gameplay/abilitykit.md, D-A).
+// here are registration-order values.
 //=============================================================================
 struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
 {
     static constexpr std::uint8_t Capacity = 32;
 
     GameplayTagId Tags[Capacity];
-    // Every stack held, baseline included.
     std::uint16_t Counts[Capacity];
-    // Of Counts, the stacks that persist.
+    // Within Counts: the stacks that persist.
     std::uint16_t Baseline[Capacity];
     std::uint8_t  Count = 0;
 
-    // Contributes `stacks` of `tag`. True iff the tag was absent and is now
-    // present; false for another stack, an invalid tag, zero stacks, or a full
-    // container (asserts in debug).
+    // True iff the tag was absent and is now present; asserts in debug when full.
     bool Grant(GameplayTagId tag, std::uint16_t stacks = 1);
 
-    // Withdraws up to `stacks` contributed stacks of `tag`; never the baseline.
-    // Returns true iff the tag was present and the last stack was just removed.
+    // Never takes the baseline. True iff the last stack was just removed.
     bool Revoke(GameplayTagId tag, std::uint16_t stacks = 1);
 
-    // Grant and Revoke for the stacks that persist.
     bool GrantBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
     bool RevokeBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
 
-    // Removes `tag` whatever holds it: a one-tick mailbox consumed.
     bool Erase(GameplayTagId tag);
 
-    // Makes exactly `stacks` of `tag` contributed, never touching the baseline:
-    // how a projection writes its tags. True iff anything changed.
     bool SetContribution(GameplayTagId tag, std::uint16_t stacks);
 
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
-    // Whether a grant of `tag` would land: it is held already, or there is room.
-    // A writer refused here counts it (NoteGameplayTagOverflow).
     [[nodiscard]] bool CanHold(GameplayTagId tag) const { return Count < Capacity || HasExact(tag); }
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t BaselineCount(GameplayTagId tag) const;
-    // Of StackCount, the stacks above the baseline.
     [[nodiscard]] std::uint16_t ContributedCount(GameplayTagId tag) const;
 
     // True iff any held tag is `ancestor` or a descendant of it (holding

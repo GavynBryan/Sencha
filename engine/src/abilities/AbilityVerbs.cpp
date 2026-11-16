@@ -116,7 +116,6 @@ VerbAdmission AbilityOperations::Grant(const VerbInvocation& invocation)
     const std::uint16_t entry = entries->Intern({ std::string(request.Key), request.Ability, {} });
     if (entry == kAbilityNoGrantEntry)
         return VerbAdmission::Refused;
-    // Room an applied effect reserved for its grants is not this request's.
     if (AbilityGrantRoom(*Entities, request.Target) == 0)
         return VerbAdmission::Refused;
     if (!Entities->HasComponent<AbilityGrants>(request.Target))

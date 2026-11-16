@@ -23,7 +23,6 @@ struct DataAssetEntry
     // Leases on what the value's compile declared it depends on, held as long
     // as the value is.
     std::vector<AssetLease> Dependencies;
-    // The definitions the value was composed from, transitively.
     std::vector<std::string> Sources;
     bool Alive = false;
 };
@@ -65,9 +64,7 @@ public:
     [[nodiscard]] uint64_t GetReloadVersion(DataAssetHandle handle) const;
     [[nodiscard]] std::string_view GetName(DataAssetHandle handle) const;
     [[nodiscard]] bool HasResidentSubtype(std::string_view typeName) const;
-    // The definitions an entry was composed from, transitively; empty for one with none.
     [[nodiscard]] std::span<const std::string> GetCompositionSources(DataAssetHandle handle) const;
-    // Resident paths composed from `source`, sorted; `source` need not be resident.
     [[nodiscard]] std::vector<std::string> ComposedFrom(std::string_view source) const;
 
     template<typename T>

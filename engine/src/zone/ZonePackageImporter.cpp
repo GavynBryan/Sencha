@@ -260,9 +260,6 @@ ZoneStateForgetting ForgettingOf(const World& world, EntityId entity,
     return found != byInstance.end() ? found->second : ZoneStateForgetting::Never;
 }
 
-// The members a machine that is not the authority skips: each carrying an
-// authority-materialized component, and its whole subtree, so no kept member
-// ever loses its parent.
 std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentSchema& schema,
                                        const EntityBuildPackage& package)
 {
@@ -356,7 +353,6 @@ bool ImportPackageIntoPartitionImpl(
         }
         parented[relation.Child.Value] = true;
     }
-    // Only the mint hands out runtime-namespace ids; one in content would collide with a minted one.
     for (const PackageEntity& packageEntity : package.Entities())
         if (packageEntity.PersistentId.IsValid() && !IsAuthoredPersistentEntityId(packageEntity.PersistentId))
             return fail("Package entity holds a persistent id from the runtime namespace.");
@@ -369,9 +365,7 @@ bool ImportPackageIntoPartitionImpl(
 
     const std::vector<bool> authorityOnly = AuthorityOnlyMembers(world, schema, package);
 
-    // Every member's handle exists before any component is read, so a reference
-    // between members resolves whichever comes first. A skipped slot stays
-    // aligned with the package's local ids; its parent relations are dropped below.
+    // Every member's handle exists before any component is read, so references between members resolve.
     std::vector<PackageMember> members;
     for (const PackageEntity& packageEntity : package.Entities())
     {

@@ -36,7 +36,6 @@ struct EffectPassState
         float Scale = 1.0f;
     };
 
-    // The override one attribute of the target being folded holds so far.
     struct Override
     {
         AttributeId Attribute;
@@ -252,8 +251,7 @@ void FoldActiveEffectsImpl(
         }
     }
 
-    // The fold is sorted by target, so what each attribute's override holds is
-    // reset when the target changes.
+    // The fold is sorted by target: overrides reset when the target changes.
     EntityId target;
     state.Overrides.clear();
     for (const EffectPassState::FoldEntry& entry : state.Fold)

@@ -38,7 +38,6 @@ std::uint16_t GameplayTagContainer::StackCount(GameplayTagId tag) const
 
 namespace
 {
-    // Inserts `tag` at its sorted place with no stacks; -1 when it cannot.
     int Insert(GameplayTagContainer& tags, GameplayTagId tag)
     {
         const int i = LowerBound(tags.Tags, tags.Count, tag);
@@ -78,8 +77,6 @@ namespace
         return static_cast<std::uint16_t>(std::min<std::uint32_t>(std::uint32_t{ held } + added, 0xFFFFu));
     }
 
-    // Takes up to `stacks` of the baseline, or of what is contributed above it;
-    // true iff the tag went.
     bool Withdraw(GameplayTagContainer& tags, GameplayTagId tag, std::uint16_t stacks, bool fromBaseline)
     {
         if (stacks == 0)

@@ -5,9 +5,6 @@
 
 #include <cstdint>
 
-// Gives every entity of a spawn's package the spawn's group identity. False when
-// any entity already carries one, which a package built with
-// SmapPackageOptions::StripAuthoredIdentity never does.
 [[nodiscard]] inline bool StampSpawnGroup(EntityBuildPackage& package, SceneInstance group)
 {
     bool stamped = true;

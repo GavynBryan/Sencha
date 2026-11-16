@@ -14,7 +14,6 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
     {
         LastError_ = "source '" + std::string(assetPath)
             + "' was not found under any content root";
-        // Kept, so the document that asked is rebuilt when the file appears.
         Entries.insert_or_assign(std::string(assetPath), Entry{});
         return nullptr;
     }

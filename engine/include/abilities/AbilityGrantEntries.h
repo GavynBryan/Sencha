@@ -14,9 +14,6 @@ class AbilityRegistry;
 class GameplayTagRegistry;
 class InputActionRegistry;
 
-// One authored grant: which ability, under which stable key, what of its binding
-// the grant overrides, and its parameters by name. A prefab spawned sixteen times
-// interns one entry.
 struct AbilityGrantEntry
 {
     std::string Key;
@@ -45,7 +42,6 @@ struct AbilityEffectiveBinding
     AbilityInterrupt OnInterrupt = AbilityInterrupt::Cancel;
 };
 
-// What a refused intern means, for declaration diagnostics.
 inline constexpr std::string_view kAbilityGrantEntryRefusal =
     "was refused: the grant entry table is full, or another entry of its ability has the same wire key";
 
@@ -55,20 +51,13 @@ class AbilityGrantEntries
 {
 public:
     // The index of an entry equal to `entry`, adding it if new. kAbilityNoGrantEntry
-    // when the table is full, or when another entry of the same ability has the
-    // same wire key.
+    // when the table is full or another entry of its ability has the same wire key.
     std::uint16_t Intern(AbilityGrantEntry entry);
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
-    // An entry crosses the wire as the NameWireKey of its key, binding and
-    // parameters, so two entries that differ in any are told apart on every machine.
     [[nodiscard]] std::uint32_t WireKey(std::uint16_t index) const;
-    // The entry for `ability` with that wire key; kAbilityNoGrantEntry when this
-    // World interned none.
     [[nodiscard]] std::uint16_t FindByWireKey(std::uint32_t key, AbilityId ability) const;
     [[nodiscard]] const AbilityEffectiveBinding* Binding(std::uint16_t index) const;
-    // Every parameter its ability declares, in declared order: the entry's value or
-    // the default. Empty until the ability is declared.
     [[nodiscard]] std::span<const double> Parameters(std::uint16_t index) const;
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
 

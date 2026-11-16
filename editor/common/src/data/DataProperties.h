@@ -15,8 +15,8 @@ class IDataSubtypeAuthoring;
 struct DataFieldSchema;
 
 // A data document's "data" object as properties, laid out by its authoring
-// schema (as it composes, when it does) and keyed by JSON path; each edit runs
-// in the document's own transaction (editor/ARCHITECTURE.md, Data workspace).
+// schema and keyed by JSON path ("$.data.layers[1].speed"); each edit runs in
+// the document's own transaction (editor/ARCHITECTURE.md, Data workspace).
 class DataProperties final : public IPropertySource
 {
 public:
@@ -45,7 +45,6 @@ private:
     using Rewriter = std::function<PropertyEditResult(JsonValue& data, const DataDocument& document,
                                                       const DataFieldSchema& root)>;
 
-    // The document's root with `rewrite` applied to its own data, kept when it applies.
     PropertyEditResult Rewrite(const Rewriter& rewrite, DataEdit edit);
     // The document's root with `change` applied to the value at `key`.
     PropertyEditResult Change(std::string_view key,

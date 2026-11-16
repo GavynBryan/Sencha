@@ -15,8 +15,6 @@ namespace
         return (groups >> group) & 1u;
     }
 
-    // The provider whose batch a resource joins: its own, or the one it spends
-    // through; null when either is undeclared, or for a chain.
     const AbilityCostProviderDefinition* SpenderOf(const AbilityCostProviderCatalog& catalog,
                                                    const AbilityCostProviderDefinition& named)
     {
@@ -73,8 +71,6 @@ AbilityCommitResult AbilityPass::CheckCosts(const AbilityActor& actor, std::size
     return { .Paid = true };
 }
 
-// One batch per spending provider, a translated row joining its target's once,
-// so the apply spends exactly what was checked; the failing group, if any.
 std::optional<std::uint8_t> AbilityPass::CheckResources(const AbilityActor& actor, std::size_t slot,
                                                         const AbilityDefinition& definition, std::uint8_t groups,
                                                         EntityId source)

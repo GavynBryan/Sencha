@@ -45,7 +45,6 @@ LocomotionModeId LocomotionModeRegistry::RegisterImpl(
     const auto requestTag = Tags.RegisterTag(RequestTagName(name));
     if (!activeTag.has_value() || !requestTag.has_value())
         return {};
-    // Projected from the mode; the request tag stays an authored mailbox.
     Tags.SetProjected(*activeTag, kModeTagProjection);
 
     const LocomotionModeId id{ static_cast<uint32_t>(Modes.size() + 1) };

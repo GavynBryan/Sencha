@@ -9,12 +9,9 @@
 #include <string_view>
 #include <unordered_map>
 
-// A data definition's current root by asset path: an open document's working
-// copy, else its file.
 using DataRootProvider = std::function<std::optional<JsonValue>(std::string_view path)>;
 
-// One staging's view of its sources: each read once and held until the scope
-// ends, so the definitions composition holds stay put while it composes.
+// Holds every source it read until it ends: composition points into them.
 class DataSourceScope
 {
 public:

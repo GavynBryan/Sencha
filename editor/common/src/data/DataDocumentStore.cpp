@@ -299,8 +299,6 @@ void DataDocumentStore::Validate(DataDocument& document)
 void DataDocumentStore::Changed(DataDocument& document)
 {
     Recompose(document);
-    // Sources are transitive, so every open definition composed from this one
-    // is found here and none needs to cascade further.
     for (const Entry& entry : Open_)
     {
         DataDocument& dependent = *entry.Document;

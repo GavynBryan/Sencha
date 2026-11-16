@@ -24,8 +24,6 @@ enum class AbilityGrantKind : std::uint8_t
     Effect,
     // Granted at run time by a request (ability.grant).
     Request,
-    // Granted for one requested activation of an entry, and taken back once that
-    // activation ends.
     Transient,
 };
 
@@ -36,10 +34,8 @@ struct AbilityGrant
     AbilityGrantId Id;
     AbilityId Ability;
     AbilityGrantKind Kind = AbilityGrantKind::Authored;
-    // Kind == Effect: the effect entity whose life bounds it. The authority's alone.
+    // Set for Kind == Effect on the authority alone.
     EntityId Holder;
-    // What the grant came from, as its activations read it: an effect's owner, a
-    // request's source; none for an authored grant.
     EntityId Source;
     // Its entry in the World's AbilityGrantEntries: key, override, effective binding.
     std::uint16_t Entry = kAbilityNoGrantEntry;

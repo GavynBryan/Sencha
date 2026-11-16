@@ -48,7 +48,6 @@ struct EffectModifier
     AttributeId Attr;
     ModifierOp Op = ModifierOp::Add;
     float Magnitude = 0.0f;
-    // Override only: of the overrides of one attribute on one target, the highest wins.
     std::int32_t Precedence = 0;
 };
 

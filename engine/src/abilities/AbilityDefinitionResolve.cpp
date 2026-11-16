@@ -154,8 +154,6 @@ namespace
             return tag;
         }
 
-        // Owned tags are contributions while the ability runs; a projected tag
-        // has its projection as its only writer.
         void RefuseProjected(std::vector<GameplayTagId>& tags, const std::string& path)
         {
             if (Env.Tags == nullptr)
@@ -355,7 +353,6 @@ namespace
                 || (op.When->Kind == AbilityConditionKind::All && std::ranges::any_of(op.When->Children, matches));
         }
 
-        // An operation's arguments in its declared order, defaults where omitted.
         std::vector<AbilityValue> OperationArguments(std::string_view operation, const DataFieldSchema& declaredArguments,
                                                      const std::vector<AbilityArgumentDecl>& arguments,
                                                      std::string_view key, const std::string& path)

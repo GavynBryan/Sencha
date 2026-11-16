@@ -61,8 +61,6 @@ public:
                                  bool forceRebuild = false,
                                  std::string levelName = {});
     void Cancel();
-    // Recooks the cooked documents that composed from these saved scene
-    // sources (asset://...sscene). Waits for nothing: skipped while a cook runs.
     void RecookDependents(std::span<const std::string> savedSources);
 
     [[nodiscard]] std::vector<CookProfile> AvailableProfiles() const;

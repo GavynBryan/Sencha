@@ -101,7 +101,10 @@ definition's source. Each cache entry records the definitions it composed from,
 and `DataAssetCache::ComposedFrom` answers which resident definitions a path
 feeds. The hot reloader consults it for every changed file, resident or not, so
 editing an abstract base reloads its concrete children. A child that fails to
-recompose keeps its last good value and reports at its authored location.
+recompose keeps its last good value and reports at its authored location. An
+asset whose version the host keeps itself, such as a definition open in Kyusu
+(`AssetHotReloader::SetHostHeld`), is not reloaded from its file when a source
+changes: the host recomposes its working copy.
 
 ## Authoring in Kyusu
 

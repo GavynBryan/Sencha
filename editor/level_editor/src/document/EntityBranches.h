@@ -21,8 +21,6 @@ class EditorScene;
 // Every entity in the branches of `roots`, parents before children, each once.
 // A root inside another root's branch rides along with it.
 [[nodiscard]] std::vector<EntityId> CollectBranches(const EditorScene& scene, std::span<const EntityId> roots);
-// What deleting `roots` removes: their branches, less what a base this document
-// extends authored, which stays.
 [[nodiscard]] std::vector<EntityId> CollectDeletableBranches(const EditorDocument& document,
                                                              std::span<const EntityId> roots);
 

@@ -16,8 +16,6 @@ bool IsKeyedList(const DataFieldSchema& field)
     return field.Kind == DataFieldKind::Array && ArrayMergeKey(field) != nullptr;
 }
 
-// What a member the patch lacks starts as: empty where a source supplies it, so
-// only what is written next is set here; whole where a patch can only replace.
 JsonValue Seed(const DataFieldSchema& member, const JsonValue* composed)
 {
     if (composed == nullptr)

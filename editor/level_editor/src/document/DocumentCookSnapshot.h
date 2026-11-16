@@ -45,8 +45,6 @@ struct DocumentCookSnapshot
 {
     JsonValue PassthroughScene;
     PresentationSettingsLayer Presentation;
-    // The scene sources the document composed from, as asset paths: the cook
-    // index records them so an edit to one recooks this document.
     std::vector<std::string> ComposedFrom;
     LightingCookParams Lighting;
     std::vector<CookBrushGeometry> Brushes;

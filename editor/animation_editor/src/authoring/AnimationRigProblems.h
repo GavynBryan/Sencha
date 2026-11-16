@@ -15,8 +15,8 @@ class DataDocumentStore;
 inline constexpr std::string_view kUndeclaredAnimationNames = "undeclared names";
 
 // The rig's and the scenario's diagnostics as the editor's problems, each in
-// the data document it was found in (naming where an inherited value came
-// from), and the names nothing declares as one problem more.
+// the data document it was found in when it was found in one, and the names
+// the content uses that nothing declares as one problem more.
 [[nodiscard]] std::vector<Problem> AnimationRigProblems(std::span<const AnimDiagnostic> diagnostics,
                                                         std::span<const std::string> undeclared,
                                                         DataDocumentStore& store);

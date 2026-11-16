@@ -77,7 +77,6 @@ private:
 
 // Whether `actor` has a live activation of `ability`.
 [[nodiscard]] bool IsAbilityLive(const World& world, EntityId actor, AbilityId ability);
-// Whether `actor` runs an activation through a grant `source` supplied.
 [[nodiscard]] bool HasLiveActivationFrom(const World& world, EntityId actor, EntityId source);
 
 // What an actor's slots hold, by value, for tools and tests rather than per-tick code.

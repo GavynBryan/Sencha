@@ -21,8 +21,7 @@ namespace
         return override ? *override : fallback ? *fallback : otherwise;
     }
 
-    // The entry's key and binding as text, every field by name or number and in a
-    // fixed order, so its key is the same on every machine of one protocol.
+    // Fixed field order and text forms: the key must match on every machine of one protocol.
     std::uint32_t EntryWireKey(const AbilityGrantEntry& entry)
     {
         constexpr char kField = '\x1f';
@@ -53,7 +52,6 @@ namespace
                 for (const std::string& name : *names)
                     (text += name) += kItem;
             }
-        // Shortest round-trip text, which is the same on every conforming library.
         if (!entry.Parameters.empty())
         {
             text += kField;
@@ -95,8 +93,6 @@ std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
         return static_cast<std::uint16_t>(found - Entries.begin());
     if (Entries.size() >= kAbilityNoGrantEntry)
         return kAbilityNoGrantEntry;
-    // Two entries of one ability with one wire key would be one entry on the wire.
-    // Machines declaring the same content in the same order refuse the same one.
     const std::uint32_t key = EntryWireKey(entry);
     if (FindByWireKey(key, entry.Ability) != kAbilityNoGrantEntry)
         return kAbilityNoGrantEntry;
@@ -170,7 +166,6 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
         static const std::optional<AbilityBindingDecl> kNone;
         const AbilityBindingDecl merged = EffectiveAbilityBinding(
             slot.Entry.Override, definition != nullptr ? definition->InputDefault : kNone);
-        // A request chooses among grants by priority, bound to an action or not.
         slot.Binding.Priority = *merged.Priority;
         if (!merged.Action)
             continue;

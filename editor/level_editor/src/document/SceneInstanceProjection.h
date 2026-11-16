@@ -38,8 +38,6 @@ struct SceneProjectionDiagnostics
     std::string ResolveError; // cycle or unresolvable source: nothing expanded
     std::vector<std::string> MissingIds;
     std::vector<std::string> DanglingOverrides;
-    // What did not compose: fragments that disagree, a removal another
-    // component owes, as "<code> <path>: <message>".
     std::vector<std::string> Composition;
     [[nodiscard]] bool Clean() const
     {
@@ -117,14 +115,11 @@ public:
     void Reset();
 
     [[nodiscard]] bool DependsOnSource(std::string_view assetPath) const;
-    // The documents the last expansion read, transitively.
     [[nodiscard]] const std::vector<std::string>& ComposedFrom() const { return ComposedFrom_; }
     // Invalidates the named sources and re-projects if any of them mattered.
     bool ReloadSources(std::span<const std::string> assetPaths);
 
     [[nodiscard]] bool IsMember(EntityId entity) const;
-    // Adopted from the prefab this document extends: edited in place into
-    // the document's own patch, never restructured.
     [[nodiscard]] bool IsInherited(EntityId entity) const;
     [[nodiscard]] bool IsRoot(EntityId entity) const;
     // The owning placement's id for a projected entity, root and added children
@@ -196,7 +191,6 @@ private:
         std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
     void AbsorbAuthoredChildren(
         std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
-    // Inherited entities' edits into the document's own patch and removals.
     void HarvestInherited(const PersistentEntityIndex& index);
     [[nodiscard]] SceneComponentSchemaFn SchemaOf() const;
     void FoldHarvestsIntoRecords(

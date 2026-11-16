@@ -7,15 +7,12 @@
 
 class World;
 
-// Give or take stacks of a tag an entity keeps: its baseline, which saves, as
-// level data's permanent grants (an unlock) need. Never a projected tag.
 inline constexpr std::string_view kTagsGrantVerb = "tags.grant";
 inline constexpr std::string_view kTagsRevokeVerb = "tags.revoke";
 
 void DeclareGameplayTagVerbs(VerbRegistrationScope& scope);
 
-// Both run on the simulation authority only. A grant of a tag new to a full
-// container is refused and counted (GameplayTagOverflow).
+// Both run on the simulation authority only.
 class GameplayTagOperations
 {
 public:

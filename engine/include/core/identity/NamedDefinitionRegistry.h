@@ -11,16 +11,12 @@
 #include <utility>
 #include <vector>
 
-// One World's definitions of one kind, named by the asset path that declares
-// them. A name gets its id the first time anything refers to it, so a reference
-// read before its definition arrives, or after it fails to compile, keeps it.
 template<typename Id, typename Definition>
 class NamedDefinitionRegistry
 {
 public:
     NamedDefinitionRegistry() { Entries.push_back(Entry{}); }
 
-    // The id for `name`, minted if new. Invalid only for an empty name.
     Id Reserve(std::string_view name)
     {
         if (name.empty())
@@ -35,7 +31,6 @@ public:
         return id;
     }
 
-    // Replaces whatever `name` held and keeps its id.
     Id Define(std::string_view name, Definition definition)
     {
         const Id id = Reserve(name);
@@ -47,7 +42,6 @@ public:
         return id;
     }
 
-    // Leaves the name reserved and the definition gone.
     void Undefine(Id id)
     {
         if (!IsKnown(id) || Entries[id.Value].Defined == nullptr)
@@ -63,7 +57,6 @@ public:
         return it == IdsByName.end() ? Id{} : it->second;
     }
 
-    // Null for an unknown id or a reserved name nothing has defined.
     [[nodiscard]] const Definition* Get(Id id) const { return IsKnown(id) ? Entries[id.Value].Defined.get() : nullptr; }
     [[nodiscard]] std::string_view GetName(Id id) const
     {
@@ -71,12 +64,8 @@ public:
     }
     [[nodiscard]] bool IsKnown(Id id) const { return id.IsValid() && id.Value < Entries.size(); }
 
-    // Moves each time `id` is defined or undefined, so a user can tell that the
-    // definition it started from has gone.
     [[nodiscard]] std::uint32_t Revision(Id id) const { return IsKnown(id) ? Entries[id.Value].Revision : 0; }
 
-    // Its name's wire key, which names the same definition on every machine;
-    // zero for an unknown id. A key two names share finds nothing.
     [[nodiscard]] std::uint32_t WireKey(Id id) const { return IsKnown(id) ? NameWireKey(Entries[id.Value].Name) : 0u; }
     [[nodiscard]] Id FindByWireKey(std::uint32_t key) const
     {
@@ -86,7 +75,6 @@ public:
 
     [[nodiscard]] std::size_t Size() const { return Entries.size() - 1; }
 
-    // Moves whenever a definition is defined or undefined.
     [[nodiscard]] std::uint64_t Generation() const { return Generation_; }
 
 private:

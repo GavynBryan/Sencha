@@ -39,9 +39,6 @@ public:
     // is read against, and makes the write it is waiting to make.
     void Update();
     [[nodiscard]] bool ClaimPlatformEvent(const SDL_Event& event);
-    // The active document's card: its file, what it extends and includes, its
-    // fields (or `fields` in their place), and its subtype's previews; none
-    // without an active document.
     [[nodiscard]] std::vector<PropertySection> Sections(IPropertySource* fields = nullptr);
 
     void AppendOpen(WorkspaceDocumentFacet& facet) const;
@@ -50,9 +47,7 @@ public:
     [[nodiscard]] bool Owns(const DocumentRef& document) const;
     // False when `key` names none of its documents.
     bool Show(std::string_view key);
-    // Marks the field a problem names, brought into view while its document is active.
     void Reveal(std::string_view key, std::string path);
-    // The revealed field when its document is the active one, else empty.
     [[nodiscard]] std::string RevealedField() const;
     bool Open(std::string_view path);
     // Asks before the active document's changes go, then closes it; `closed`

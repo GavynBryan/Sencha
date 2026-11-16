@@ -423,8 +423,6 @@ void SceneInstanceProjection::Harvest()
     FoldHarvestsIntoRecords(*index, byInstance);
 }
 
-// An inherited entity's edits are the document's own patch and removals, by
-// id. Entries for ids this projection did not produce carry over.
 void SceneInstanceProjection::HarvestInherited(const PersistentEntityIndex& index)
 {
     SceneSerializationContext context(Logging, Assets);
@@ -582,7 +580,6 @@ void SceneInstanceProjection::AbsorbAuthoredChildren(
             else
                 crossedLocal = true;
         }
-        // Beneath an inherited entity, a local is just a local of this document.
         if (anchor == nullptr || anchor->Inherited)
             continue;
         if (crossedLocal)

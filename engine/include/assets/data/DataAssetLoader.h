@@ -21,13 +21,11 @@ struct CompiledDataAsset
     std::string TypeName;
     uint32_t Version = 0;
     std::shared_ptr<const void> Value;
-    // The definitions it was composed from, transitively.
     std::vector<std::string> Sources;
 };
 
-// Stages a .sdata file through StageDataDefinition; the compiled value is opaque
-// here, so a game module adds a subtype without an engine edit. A definition with
-// sources composes when it commits, on the owner thread, unless staged with a reader.
+// The compiled value is opaque here, so a game module adds a subtype without an engine edit.
+// A definition with sources composes when it commits, on the owner thread, unless given a reader.
 class DataAssetLoader final : public IAssetStager
 {
 public:
@@ -39,8 +37,7 @@ public:
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source,
                                           const AssetPathsById& current) override;
-    // Stages an envelope already in memory, such as an editor's working copy,
-    // composing through `read` when given one.
+    // Stages an envelope already in memory, such as an editor's working copy.
     [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root,
                                          const AssetPathsById& current, const DataSourceReader& read = {});
 
@@ -54,7 +51,6 @@ public:
     [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
-    // A definition with sources, waiting for the owner thread to compose it.
     struct PendingComposition
     {
         JsonValue Root;
@@ -62,7 +58,6 @@ private:
 
     [[nodiscard]] AssetStaging StageDefinition(const AssetRecord& record, const JsonValue& root,
                                                const AssetPathsById& current, const DataSourceReader& read);
-    // Composes a pending definition in place; the reason it failed, or empty.
     [[nodiscard]] std::string ComposePending(AssetStaging& staged, AssetSystem& assets);
     // The dependency that did not load, or empty when every one did.
     [[nodiscard]] std::string LoadDependencies(const AssetStaging& staged, AssetSystem& assets,

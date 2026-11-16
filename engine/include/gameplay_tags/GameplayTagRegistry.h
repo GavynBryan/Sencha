@@ -50,10 +50,7 @@ public:
     void SetReplicatedToAll(GameplayTagId id, bool replicated);
     [[nodiscard]] bool IsReplicatedToAll(GameplayTagId id) const;
 
-    // Marks a tag as one projection's alone (docs/gameplay/abilitykit.md,
-    // "projected"); `projection` names it in diagnostics.
     void SetProjected(GameplayTagId id, std::string_view projection);
-    // The projection that owns the tag; empty when none does.
     [[nodiscard]] std::string_view ProjectedBy(GameplayTagId id) const;
 
 private:

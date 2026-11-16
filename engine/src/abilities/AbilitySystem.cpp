@@ -48,8 +48,6 @@ namespace
         Query<Read<AbilityGrants>> Granted;
         std::optional<Query<Read<ActiveEffect>>> Effects;
         std::vector<EffectGrant> EffectGrants;
-        // Effect grants that found no room, this pass and the last: a refusal is
-        // traced the first pass it happens, not every pass it is retried.
         std::vector<EffectGrant> Refused;
         std::vector<EffectGrant> StillRefused;
         std::vector<EntityId> Actors;
@@ -185,7 +183,6 @@ namespace
         }
     }
 
-    // The highest effective priority, then the lowest grant id; with a source, only its grants.
     const AbilityGrant* RequestedGrant(const World& world, const AbilityActor& actor, const AbilityRequest& request)
     {
         const AbilityGrants* grants = actor.Grants();
@@ -211,14 +208,12 @@ namespace
         return found;
     }
 
-    // Granted for this one start; a start refused takes the grant back at once.
     void StartTransient(AbilityPass& pass, World& world, const AbilityActor& actor, const AbilityRequest& request,
                         const AbilityActivationKey& key)
     {
         const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
         const AbilityGrantEntry* entry = entries != nullptr ? entries->Find(request.Entry) : nullptr;
         AbilityGrants* grants = world.TryGet<AbilityGrants>(request.Actor);
-        // A source that has gone since the request was asked for supplies nothing.
         const bool sourceGone = request.Source.IsValid() && !world.IsAlive(request.Source);
         const bool room = AbilityGrantRoom(world, request.Actor) > 0;
         const AbilityGrantId id = entry != nullptr && grants != nullptr && !sourceGone && room
@@ -293,8 +288,6 @@ namespace
         scratch.Requests.clear();
     }
 
-    // An effect grant ends with its effect, and when a reload declared the
-    // effect's grants again without its entry.
     void RevokeEndedEffectGrants(World& world, const AbilityEffectGrants* table, EntityId actor)
     {
         AbilityGrants& grants = *world.TryGet<AbilityGrants>(actor);
@@ -322,8 +315,6 @@ namespace
 
     // An actor holds an effect's grants while the effect lasts: granted the pass after
     // it applies, revoked the pass after it ends, so both machines agree on the tick.
-    // Ended effects give their grants back first, so a full table makes room for a
-    // replacement on the same pass.
     void SyncEffectGrants(World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch,
                           const FixedSimTime& now)
     {

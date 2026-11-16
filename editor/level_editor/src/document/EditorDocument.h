@@ -147,11 +147,7 @@ public:
     {
         return Projection.IsRoot(entity);
     }
-    // Adopted from the prefab this document extends.
     [[nodiscard]] bool IsInherited(EntityId entity) const { return Projection.IsInherited(entity); }
-    // An entity a source supplies, a placement member or an inherited one:
-    // its edits are overrides of the source, and its place in the hierarchy
-    // is the source's.
     [[nodiscard]] bool IsSourced(EntityId entity) const
     {
         return Projection.IsMember(entity) || Projection.IsInherited(entity);
@@ -214,9 +210,7 @@ public:
     // its file is known by under the content roots, or empty for an unsaved
     // document or one outside them.
     [[nodiscard]] std::string SourceAssetPath() const;
-    // Only ever extended or included: never cooked or placed.
     [[nodiscard]] bool IsAbstract() const { return Retained_.Abstract; }
-    // Every scene source this document's composition read, transitively.
     [[nodiscard]] const std::vector<std::string>& ComposedFrom() const { return Projection.ComposedFrom(); }
 
     // Records fresh ids for every instance path resolution reported missing

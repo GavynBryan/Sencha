@@ -235,8 +235,6 @@ void ReplicationPeerState::NoteDeparted(NetEntityId id)
         return;
     if (std::find(Departed.begin(), Departed.end(), id) == Departed.end())
         Departed.push_back(id);
-    // What snapshots in flight said about it is void: confirming one later must
-    // not make this peer look as though it still holds what it was told to drop.
     for (SentSnapshot& snapshot : Pending)
         std::erase_if(snapshot.Entities, [id](const auto& entry) { return entry.first == id; });
 }
@@ -484,8 +482,6 @@ namespace
     {
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
-        // An anchored entity reaches only the peer its chain makes relevant, which
-        // holds it as an owner does; serving order stays the owner's.
         const bool seesOwnerFields =
             isOwner || (ownerPeer != 0 && entity.Anchored && entity.RelevantPeer == ownerPeer);
         // A transfer makes owner-gated runs newly visible to one peer and newly
@@ -506,8 +502,7 @@ namespace
         // it might still have to recognise its own copy rather than build one.
         // The bit itself is unconditional: a reader cannot infer what a writer
         // knew about its floor, and a bit the two disagree about is the rest of
-        // the snapshot read at the wrong offset. A runtime-minted id was never
-        // imported anywhere, so there is no copy to recognise.
+        // the snapshot read at the wrong offset.
         const bool sendAuthored = IsAuthoredPersistentEntityId(entity.Persistent) && !peer.Knows(entity.Id);
         bits += kAuthoredPresentBits;
         if (sendAuthored)
@@ -665,9 +660,6 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     //
     // Costs nothing for an entity the peer never had: NoteDeparted only owes a
     // destroy for one it was actually written to.
-    //
-    // An anchored entity is withheld the same way from every peer but the one
-    // its anchor chain's root belongs to.
     const auto irrelevant = [&](const ReplicationChangeStore::EntityState& entity) {
         return entity.Anchored
             && (entity.RelevantPeer == kNetAuthorityPeer || entity.RelevantPeer != request.OwnerPeer);
@@ -1212,8 +1204,6 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                                                                   : nullptr;
                      waiting != nullptr && waiting->Image.size() == component->Size)
             {
-                // What this machine holds names nothing where a reference still
-                // waits, so the delta lands on the image that named it.
                 std::memcpy(target.data(), waiting->Image.data(), component->Size);
             }
             else if (component->ToWire != nullptr)
@@ -1582,8 +1572,6 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         const PlannedComponent& slot = plannedComponents[pending.Slot];
         translate(pending.Entity, *slot.Layout, std::span(decoded.data() + slot.Offset, slot.Layout->Size));
     }
-    // An image that named an entity this snapshot bound is translated again,
-    // though the authority, which sent it whole, will not send it again.
     std::vector<ReplicationDeferredReferences::Waiting> bound;
     for (const ReplicationDeferredReferences::Waiting& waiting : identity.Deferred().All())
         if (std::ranges::any_of(waiting.Unresolved,

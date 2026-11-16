@@ -114,7 +114,6 @@ struct AbilityCostResource
 {
     std::string Key;
     AbilityCostProviderHandle Provider;
-    // One per argument the provider declares, in its order.
     std::vector<AbilityValue> Arguments;
 };
 

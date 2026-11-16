@@ -13,7 +13,6 @@ struct AbilityGrantsWireWords
     std::uint32_t Values[4 * kAbilityGrantCapacity] = {};
 };
 
-// Per grant: its source, as a wire entity.
 struct AbilityGrantsWireSources
 {
     std::uint64_t Values[kAbilityGrantCapacity] = {};

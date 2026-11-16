@@ -17,7 +17,6 @@ struct AttributeDelta
 {
     AttributeId Attribute;
     float Delta = 0.0f;
-    // The first cost on the attribute, which a shortfall names.
     EffectId First;
 };
 
@@ -34,7 +33,6 @@ bool IsInstantCost(const EffectDefinition& def)
 
 namespace
 {
-// One target's rows: the deltas of every row it pays, summed per attribute.
 EffectCostCheck CheckTarget(const World& world, EntityId target, std::span<const EffectCostRow> costs)
 {
     const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();

@@ -41,7 +41,6 @@ enum class AbilityPort : std::uint8_t
     TimeScale,
     // The current element of an op's `targets`.
     Target,
-    // What the activation's grant came from.
     Source,
 };
 
@@ -70,7 +69,6 @@ enum class AbilityValueSource : std::uint8_t
     Constant,
     Port,
     Local,
-    // A number the activation's grant entry supplies, else the ability's default.
     Parameter,
 };
 
@@ -231,8 +229,6 @@ struct AbilityPhaseDecl
     std::vector<AbilityTransitionDecl> Then;
 };
 
-// A number every grant of the ability may set; the same for every instance of
-// what grants it (docs/gameplay/abilitykit.md, "Grants and input").
 struct AbilityParameterDecl
 {
     std::string Key;
@@ -260,14 +256,12 @@ enum class AbilityCostRepeat : std::uint8_t
     PerPulse,
 };
 
-// Who a group's effect costs are taken from.
 enum class AbilityCostTarget : std::uint8_t
 {
     Actor,
     Source,
 };
 
-// A registered resource a group pays, by provider name.
 struct AbilityCostResourceDecl
 {
     std::string Key;
@@ -354,8 +348,6 @@ struct AbilityGrantParameter
     friend bool operator==(const AbilityGrantParameter&, const AbilityGrantParameter&) = default;
 };
 
-// One grant as content states it: under a stable key, an ability asset, what of
-// its binding this grant overrides, and its values for the ability's parameters.
 struct AbilityGrantDeclaration
 {
     std::string Key;

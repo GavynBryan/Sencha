@@ -39,8 +39,7 @@ struct ContentDefinitionLeases
     std::vector<Entry> CuePresentations;
 };
 
-// Concrete definitions only: an abstract one is extended or included, never declared.
-std::vector<std::string> PathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
+std::vector<std::string> ConcretePathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
 {
     std::vector<std::string> paths;
     for (const auto& [path, record] : assets.Registry.Records())
@@ -164,7 +163,7 @@ using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entr
 void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
                 std::vector<ContentDefinitionLeases::Entry>* held, DeclareFn declare, std::vector<std::string>& errors)
 {
-    for (const std::string& path : PathsOfSubtype(assets, subtype))
+    for (const std::string& path : ConcretePathsOfSubtype(assets, subtype))
     {
         if (reload == ContentVocabularyReload::Once)
         {
@@ -183,7 +182,7 @@ void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload rel
 GameplayTagDeclarations ContentTagDeclarations(RuntimeAssets& assets, std::vector<std::string>& errors)
 {
     GameplayTagDeclarations all;
-    for (const std::string& path : PathsOfSubtype(assets, kGameplayTagDeclarationsType))
+    for (const std::string& path : ConcretePathsOfSubtype(assets, kGameplayTagDeclarationsType))
     {
         // Held only while its names are read: a registered name outlives it.
         const AssetLease lease = assets.Assets.LoadLease(path, AssetType::Data);
@@ -222,7 +221,7 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
 
     if (AttributeRegistry* attributes = world.TryGetResource<AttributeRegistry>())
     {
-        for (const std::string& path : PathsOfSubtype(assets, kAttributeDeclarationsType))
+        for (const std::string& path : ConcretePathsOfSubtype(assets, kAttributeDeclarationsType))
         {
             const AssetLease lease = assets.Assets.LoadLease(path, AssetType::Data);
             const AttributeDeclarations* declarations =
