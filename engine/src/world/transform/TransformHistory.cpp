@@ -2,6 +2,7 @@
 
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
+#include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 
 #include <cstdint>
@@ -71,6 +72,17 @@ namespace
 // A chain this deep is a cycle, which propagation refuses to order.
 constexpr int kMaxPresentationDepth = 64;
 
+Transform3f InheritedPresentationOffset(const World& world, EntityId child, EntityId parent)
+{
+    if (!world.IsRegistered<InheritsPresentationOffset>() || !world.IsRegistered<PresentationOffset>()
+        || !world.HasComponent<InheritsPresentationOffset>(child))
+    {
+        return Transform3f::Identity();
+    }
+    const PresentationOffset* offset = world.TryGet<PresentationOffset>(parent);
+    return offset != nullptr ? offset->Value : Transform3f::Identity();
+}
+
 Transform3f PresentationPoseAt(const World& world, EntityId entity, double alpha, int depth)
 {
     if (!entity.IsValid() || !world.IsAlive(entity))
@@ -91,7 +103,8 @@ Transform3f PresentationPoseAt(const World& world, EntityId entity, double alpha
         {
             return local->Value;
         }
-        return PresentationPoseAt(world, parent->Entity, alpha, depth + 1) * local->Value;
+        return PresentationPoseAt(world, parent->Entity, alpha, depth + 1)
+               * InheritedPresentationOffset(world, entity, parent->Entity) * local->Value;
     }
     if (world.IsRegistered<WorldTransform>())
     {

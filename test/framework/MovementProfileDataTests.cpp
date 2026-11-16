@@ -88,6 +88,40 @@ TEST(MovementProfileData, OrderedLayersResolveAndTrace)
     EXPECT_TRUE(resolved.Trace[2].Matched);
 }
 
+TEST(MovementProfileData, AStrideLengthIsUnsetUntilALayerGivesOne)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    const auto profile = CompileProfile(types, schemas, R"({
+        "name": "strides",
+        "layers": [
+            { "set": { "stride_length": 2.4 } },
+            { "when": { "tags": { "all": ["movement.crouched"] } }, "scale": { "stride_length": 0.5 } }
+        ],
+        "modes": []
+    })");
+    ASSERT_NE(profile, nullptr);
+    GameplayTagRegistry tags;
+    const auto crouched = tags.RegisterTag("movement.crouched");
+    ASSERT_TRUE(crouched.has_value());
+    const MovementProfileBindResult bound = BindMovementProfile(
+        *profile, tags, [](std::string_view) { return LocomotionModeId{ 1 }; });
+    ASSERT_TRUE(bound.IsValid()) << bound.Error;
+
+    GameplayTagContainer standing;
+    MovementResolveContext context;
+    context.Mode = LocomotionModeId{ 1 };
+    context.Tags = &standing;
+    EXPECT_FLOAT_EQ(ResolveMovementTuning(*bound.Profile, context, 7.0f, false).Tuning.StrideLength, 2.4f);
+
+    GameplayTagContainer crouching;
+    crouching.Grant(*crouched);
+    context.Tags = &crouching;
+    EXPECT_FLOAT_EQ(ResolveMovementTuning(*bound.Profile, context, 7.0f, false).Tuning.StrideLength, 1.2f);
+
+    EXPECT_FLOAT_EQ(ResolvedMovementTuning{}.StrideLength, 0.0f);
+}
+
 TEST(MovementProfileData, LayerNamesSurviveCompileAndBind)
 {
     DataAssetTypeRegistry types;
@@ -188,7 +222,7 @@ TEST(MovementProfileData, TraceSnapshotsRecordPerLayerEffectiveValues)
 TEST(MovementProfileData, TuningFieldTableCoversEveryCoefficient)
 {
     const std::span<const MovementTuningField> fields = MovementTuningFields();
-    ASSERT_EQ(fields.size(), 8u);
+    ASSERT_EQ(fields.size(), 9u);
 
     // Every row must address a distinct pair; a copy-paste slip in the table
     // would otherwise silently drop or double-apply a coefficient.

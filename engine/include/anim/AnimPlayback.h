@@ -45,6 +45,12 @@ void RetimeAnimPlayback(AnimPlayback& playback, AnimTick now, double tickSeconds
 
 [[nodiscard]] double AnimPlaybackSeconds(const AnimPlayback& playback, AnimTick tick, double tickSeconds);
 
+// For content a fact places: re-anchors the playback so the tick before `now` stays
+// where it was and `now` lands at `phase` of the clip, going forward the short way
+// round a cycle. A step backward jumps there and plays nothing on the way. The
+// instance keeps its start, so it stays the same instance to events and the pose.
+void FollowAnimPlaybackPhase(AnimPlayback& playback, float phase, AnimTick now, double tickSeconds);
+
 // The first tick at or past the end: forward at its length, backward at its start, and
 // never the tick it began, so a sequence always moves forward in time. kAnimNoTick for
 // cyclic or held playback.

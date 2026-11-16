@@ -114,6 +114,8 @@ void AnimRigBinder::BindFacts(const AnimRigData& rig)
             bound.Name = slot.Name;
             bound.Kind = slot.Kind;
             bound.Local = slot.Local;
+            bound.FromSubject = slot.FromSubject;
+            Out.HasSubjectFacts = Out.HasSubjectFacts || slot.FromSubject;
             bound.DeclaredIn = schemaPath;
             bound.DeclaredAt = std::format("$.data.slots[{}]", i);
             Out.Slots.push_back(std::move(bound));
@@ -158,6 +160,7 @@ void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::s
     derivation.Enter = decl.Enter;
     derivation.Exit = decl.Exit;
     derivation.Constant = decl.Constant;
+    derivation.Damping = decl.Damping;
 
     if (decl.Sources.size() > kAnimMaxDerivationSources)
     {
@@ -234,7 +237,7 @@ void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::s
         Out.HasTemporalDerivations = true;
         Out.HorizonMs = std::max(Out.HorizonMs, decl.WindowMs);
     }
-    if (decl.IsTemporal() || decl.Op == AnimDerivationOp::Hysteresis)
+    if (decl.IsTemporal() || decl.Op == AnimDerivationOp::Hysteresis || decl.Op == AnimDerivationOp::Rate)
         Out.DerivationsKeepMemory = true;
     Out.Derivations.push_back(derivation);
 }
@@ -308,6 +311,7 @@ void AnimRigBinder::BindLayers(const AnimRigData& rig)
         layer.NameText = rig.Layers[i].Name;
         layer.Name = tags != nullptr ? tags->FindTag(layer.NameText) : GameplayTagId{};
         layer.Mode = rig.Layers[i].Mode;
+        layer.Reference = rig.Layers[i].Reference;
         layer.Weight = rig.Layers[i].Weight;
         layer.Presentation = rig.Layers[i].Presentation;
         if (!rig.Layers[i].Idle.empty())

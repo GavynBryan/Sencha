@@ -13,7 +13,8 @@
           "friction": 6,
           "stop_speed": 1,
           "jump_speed": 6.9,
-          "gravity_scale": 2.07
+          "gravity_scale": 2.07,
+          "stride_length": 2.4
         }
       },
       {

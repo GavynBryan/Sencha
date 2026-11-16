@@ -66,6 +66,38 @@ double AnimPlaybackSeconds(const AnimPlayback& playback, AnimTick tick, double t
                             static_cast<double>(playback.DurationSeconds), playback.Cyclic);
 }
 
+void FollowAnimPlaybackPhase(AnimPlayback& playback, float phase, AnimTick now, double tickSeconds)
+{
+    const double duration = static_cast<double>(playback.DurationSeconds);
+    const double target = static_cast<double>(phase) * duration;
+    if (now <= playback.StartTick)
+    {
+        playback.Rate = 0.0f;
+        playback.OffsetSeconds = static_cast<float>(target);
+        playback.RetimedTick = kAnimNoTick;
+        return;
+    }
+    // Where the previous tick left it, read before the anchor below replaces how.
+    const double before = AnimPlaceSeconds(AnimElapsedSeconds(playback, now - 1, tickSeconds), duration,
+                                           playback.Cyclic);
+    playback.Rate = 0.0f;
+    double step = target - before;
+    if (playback.Cyclic && duration > 0.0)
+    {
+        if (step < 0.0)
+            step += duration;
+        if (step > duration * 0.5)
+            step -= duration;
+    }
+    playback.RetimedTick = now - 1;
+    playback.RetimedSeconds = before;
+    const double perTick = tickSeconds * static_cast<double>(playback.TimeScale);
+    if (step < 0.0 || !(perTick > 0.0))
+        playback.RetimedSeconds = target;
+    else
+        playback.Rate = static_cast<float>(step / perTick);
+}
+
 AnimTick AnimPlaybackEndTick(const AnimPlayback& playback, double tickSeconds)
 {
     if (playback.Cyclic || playback.Rate == 0.0f || playback.TimeScale <= 0.0f)

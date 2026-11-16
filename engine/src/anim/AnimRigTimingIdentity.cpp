@@ -100,6 +100,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const AnimationClip
         h.Text(slot.Name);
         h.Plain(slot.Kind);
         h.Plain(slot.Local);
+        h.Plain(slot.FromSubject);
         h.Plain(slot.Derivation);
     }
     for (const AnimBoundDerivation& derivation : rig.Derivations)
@@ -119,6 +120,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const AnimationClip
         h.Plain(derivation.Enter);
         h.Plain(derivation.Exit);
         h.Plain(derivation.Constant);
+        h.Plain(derivation.Damping);
     }
 
     for (const AnimBoundIntent& intent : rig.Intents)
@@ -152,6 +154,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const AnimationClip
         h.Plain(behavior.Policy.LateJoin);
         h.Plain(behavior.Policy.Rate);
         h.Plain(behavior.Policy.StartSeconds);
+        h.Plain(behavior.PhaseFactSlot);
         h.Plain(behavior.Policy.RootMotion);
         h.Event(behavior.Entered);
         h.Event(behavior.Exited);

@@ -3,7 +3,6 @@
 #include <core/hash/SplitMix64.h>
 #include <ecs/World.h>
 #include <presentation/HeldEffects.h>
-#include <math/Angle.h>
 #include <math/ResponseCurve.h>
 
 #include <algorithm>
@@ -66,26 +65,14 @@ float FalloffAt(const CameraShakeInstance& shake, Vec3d cameraPosition)
 }
 } // namespace
 
-CameraShakeOffset EvaluateCameraShake(const CameraShakeProfile& profile, std::uint64_t seed, double elapsed,
-                                      float level)
+CameraViewOffset EvaluateCameraShake(const CameraShakeProfile& profile, std::uint64_t seed, double elapsed,
+                                     float level)
 {
     if (level <= 0.0f)
         return {};
     const double x = elapsed * profile.Frequency;
     return { .Rotation = Channels(profile.Kick, profile.Noise, true, seed, x) * level,
              .Translation = Channels(profile.Kick, profile.Noise, false, seed, x) * level };
-}
-
-Transform3f ApplyCameraShake(const Transform3f& pose, const CameraShakeOffset& offset)
-{
-    if (offset.IsIdentity())
-        return pose;
-    const Quatf turn = Quatf::FromPitchYawRoll(ToRadians(offset.Rotation.X), ToRadians(offset.Rotation.Y),
-                                               ToRadians(offset.Rotation.Z));
-    Transform3f shaken = pose;
-    shaken.Position = pose.Position + pose.Rotation.RotateVector(offset.Translation);
-    shaken.Rotation = (pose.Rotation * turn).Normalized();
-    return shaken;
 }
 
 void CameraShakeState::Start(CameraShakeInstance shake, const CameraEffectClock& now)
@@ -113,7 +100,7 @@ void CameraShakeState::Update(const World& world, EntityId camera, Vec3d cameraP
             continue;
         const double elapsed = shake.Timing.Elapsed(now);
         const float level = shake.Timing.Level(elapsed) * shake.Scale * FalloffAt(shake, cameraPosition);
-        const CameraShakeOffset one = EvaluateCameraShake(shake.Profile, shake.Seed, elapsed, level);
+        const CameraViewOffset one = EvaluateCameraShake(shake.Profile, shake.Seed, elapsed, level);
         Presented.Rotation += one.Rotation;
         Presented.Translation += one.Translation;
     }
@@ -121,7 +108,7 @@ void CameraShakeState::Update(const World& world, EntityId camera, Vec3d cameraP
     Presented.Translation = Clamp(Presented.Translation * Settings.Scale, Settings.MaxOffset);
 }
 
-CameraShakeOffset CameraShakeState::OffsetFor(EntityId camera) const
+CameraViewOffset CameraShakeState::OffsetFor(EntityId camera) const
 {
-    return camera.IsValid() && camera == PresentedCamera ? Presented : CameraShakeOffset{};
+    return camera.IsValid() && camera == PresentedCamera ? Presented : CameraViewOffset{};
 }

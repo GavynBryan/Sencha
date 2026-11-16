@@ -64,6 +64,9 @@ struct SENCHA_COMPONENT("sencha.resolved_movement_tuning") ResolvedMovementTunin
     // Seconds a jump locks out the next one. Part of movement feel, so it is
     // resolved with the rest of it rather than authored somewhere else.
     float JumpCooldownSeconds = 0.15f;
+    // Metres of ground one stride covers, a step with each foot; zero counts no
+    // strides (StrideCycle).
+    float StrideLength = 0.0f;
 };
 
 #if !defined(SENCHA_CODEGEN)

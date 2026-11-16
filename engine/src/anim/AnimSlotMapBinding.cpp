@@ -105,6 +105,12 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
                 content = BindFlowContent(decl.Flow, path, at + ".flow");
                 if (content < 0)
                     continue;
+                if (const AnimBoundBehavior* policy = Out.FindBehavior(*behavior);
+                    policy != nullptr && policy->PhaseFactSlot >= 0)
+                    Error("anim.behavior.phase_fact", path, at + ".flow",
+                          std::format("'{}' is placed by a fact, and a flow plays its sections on the tick "
+                                      "clock.",
+                                      decl.Behavior));
             }
             else if (!decl.Blendspace.empty())
             {

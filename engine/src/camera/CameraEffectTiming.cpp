@@ -26,6 +26,16 @@ CameraEffectClock CameraEffectClock::At(const FixedSimulationLoop& clock, double
     return { .Tick = clock.GetTickIndex(), .Alpha = presentationAlpha, .TickSeconds = clock.GetFixedDt() };
 }
 
+double CameraEffectStep::Advance(EntityId camera, const CameraEffectClock& now)
+{
+    const double seconds = now.Seconds();
+    const double elapsed = Continues(camera) ? seconds - Seconds : 0.0;
+    Camera = camera;
+    Seconds = seconds;
+    Stepped = true;
+    return elapsed > 0.0 ? elapsed : 0.0;
+}
+
 bool IsValidCameraEnvelope(const CameraEnvelope& envelope)
 {
     return Duration(envelope.Attack) && Duration(envelope.Hold) && Duration(envelope.Release);

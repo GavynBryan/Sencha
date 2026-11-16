@@ -901,3 +901,45 @@ TEST(AnimEvents, ABlendspaceCrossesItsHeaviestSamplesMarksOncePerLoop)
     ASSERT_EQ(h.Footsteps.Calls.size(), 2u);
     EXPECT_EQ(h.Footsteps.Calls[1].Tick - h.Footsteps.Calls[0].Tick, 30u);
 }
+
+// A cycle a fact places crosses a mark when the fact carries it past, once each
+// time, and never on a step backward or while the fact holds still.
+TEST(AnimEvents, ACycleAFactPlacesCrossesItsMarksAsTheFactPassesThem)
+{
+    EventHarness h;
+    h.BindFootstep();
+    h.Fx.Clip("asset://anim/walk.sanim", 1.0f, { Event(5, 0.25f, "anim.footstep", GrassInputs()) });
+    (void)h.Fx.Load("asset://anim/pe.facts.sdata", kAnimFactSchemaType,
+                    R"({ "slots": [ { "name": "Speed", "kind": "float" } ] })");
+    (void)h.Fx.Load("asset://anim/ev.bindings.sdata", kVerbBindingsTypeName, kBindings);
+    (void)h.Fx.Load("asset://anim/pe.behaviors.sdata", kAnimBehaviorSetType,
+                    R"({ "behaviors": [ { "tag": "Anim.Walk", "kind": "cyclic", "phase_fact": "Speed" } ] })");
+    (void)h.Fx.Load("asset://anim/ev.slots.sdata", kAnimSlotMapType, kSlots);
+    const DataAssetHandle rig = h.Fx.Load("asset://anim/pe.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/pe.facts.sdata",
+        "behaviors": [ "asset://anim/pe.behaviors.sdata" ], "slot_maps": [ "asset://anim/ev.slots.sdata" ],
+        "bindings": [ "asset://anim/ev.bindings.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Walk" } ] })");
+    ASSERT_TRUE(h.Fx.Bound(rig).Valid) << AnimRigFixture::Describe(h.Fx.Bound(rig));
+    const EntityId walker = h.Fx.Character(rig);
+    const auto stride = [&](std::initializer_list<float> phases) {
+        for (const float phase : phases)
+        {
+            h.Fx.Motion(walker).Speed = phase;
+            h.Step();
+        }
+    };
+
+    stride({ 0.0f, 0.1f, 0.2f });
+    EXPECT_TRUE(h.Footsteps.Calls.empty());
+    stride({ 0.3f });
+    ASSERT_EQ(h.Footsteps.Calls.size(), 1u);
+    stride({ 0.3f, 0.3f, 0.3f, 0.6f, 0.9f, 0.1f, 0.2f });
+    EXPECT_EQ(h.Footsteps.Calls.size(), 1u);
+    stride({ 0.35f });
+    EXPECT_EQ(h.Footsteps.Calls.size(), 2u);
+    stride({ 0.2f });
+    EXPECT_EQ(h.Footsteps.Calls.size(), 2u) << "a step backward plays nothing";
+    stride({ 0.3f });
+    EXPECT_EQ(h.Footsteps.Calls.size(), 3u);
+}

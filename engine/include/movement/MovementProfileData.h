@@ -28,6 +28,7 @@ struct MovementTuningPatch
     std::optional<float> Drag;
     std::optional<float> GravityScale;
     std::optional<float> JumpSpeed;
+    std::optional<float> StrideLength;
 };
 
 struct MovementLayerCondition

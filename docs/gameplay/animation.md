@@ -210,13 +210,34 @@ the binding.
 Gameplay values reach fact slots through `AnimFactProviders`, a World resource
 binding a slot name to a plain function over a const World. The runtime binds
 movement's (`BindMovementAnimFacts`: `Grounded`, `Speed`, `VerticalSpeed`, the
-engine schema's slots, and `MoveForward` and `MoveRight`, planar velocity along
-the body's own axes, the axes of a directional blendspace) in every host; a game binds its own. Adding an
+engine schema's slots, `MoveForward` and `MoveRight`, planar velocity along
+the body's own axes, the axes of a directional blendspace, and `StrideCycle` and
+`StrideSpeed`, where in its stride the character is and how fast it covers the
+ground, from `components/StrideCycle.h`) and the aim's (`BindLookAnimFacts`:
+`LookYaw` and `LookPitch`, in radians, yaw as a running total that never wraps)
+in every host; a game binds its own. Adding an
 animation-relevant value is one `Bind` or `BindField` call in game code, with
 no engine edit, and gathering is a call per slot per entity with no allocation
 and no virtual dispatch. A provider must produce the same value on a server
 with animation compiled out: it reads gameplay components and nothing about
 what is playing. One that needed to know would be selector or flow state.
+
+A slot declared `"from": "subject"` is gathered from another entity: the one
+the rigged entity's `AnimFactSubject` names (`anim/AnimFactSubject.h`). A held
+rifle's rig reads its holder's `StrideCycle` and `LookYaw` this way, through the
+same providers, so nothing about the holder is copied onto the item. The game
+names the subject when it makes the item; with none, or a dead one, the slot
+keeps its last value. Slots of the entity's own sit beside them, so one rig reads
+its own pose tag and its holder's stride.
+
+Two derivations shape a number over time. `rate` is how fast its source
+changes, per second, from the last tick to this one: the turn rate of `LookYaw`.
+`spring` follows its source as a damped spring with a natural period of
+`window_ms` and a `damping` from 0 to 4: at 1 it arrives without passing the
+source, and below 1 it swings past and settles back, which is what gives a held
+item weight when a turn stops. Both keep memory, so an entity using them carries
+`AnimFactHistory`. A spring converges at the rate its period sets rather than
+becoming exact, as smoothing does.
 
 `EvaluateAnimDerivations` runs a bound rig's derivations in declaration order,
 so each reads values already final for the tick. It is pure over its
@@ -484,6 +505,21 @@ Content time itself is a function of ticks, so a zone that wakes shows its
 content where the ticks put it, not where it stopped; only the marks it passed
 while asleep are skipped.
 
+**Placed by a fact.** A behavior that names a `phase_fact` is placed where that
+number fact says, from 0 to 1, rather than where the ticks since it began would
+put it: a stride, a gauge, a door's open fraction. Cyclic content wraps the fact
+round its length and held content stops at either end, completing at the last.
+A one-shot, a flow, root motion, a speed or a start are refused alongside it,
+since each of them is timed by ticks. A clip's playback is re-anchored each tick
+(`FollowAnimPlaybackPhase`): the tick before stays where it was and this tick
+lands where the fact says, going forward the short way round the cycle, so the
+event pass crosses exactly the marks the fact carried it past and the instance
+stays one instance to events and to the pose. A step backward jumps there and
+crosses nothing; a fact that holds still holds the clip still. A blendspace takes
+the fact as its phase and has no speed of its own between ticks. Marks follow
+the fact as each machine reads it, so a fact that is not replicated -- a stride a
+client counts -- plays its cosmetic marks where that client sees them.
+
 **Actor time.** A playback also carries the scale of its actor's time
 (`TimeScale`; see `docs/core-systems-map.md`). Content resolution reads the
 entity's scale on each tick from its time leases (`ActorScaleOnTick`) and, when it
@@ -559,10 +595,13 @@ blended within the layer, over the joints its mask covers, at its weight:
 
 - **Override** blends each covered joint toward the layer's pose, lerping
   translation and scale and slerping rotation.
-- **Additive** adds what the layer's pose changes from its reference pose, its
-  content's first frame: the translation difference, the local rotation from
-  the reference to the pose, and the scale ratio, each scaled by the weight. A
-  layer at its reference adds nothing.
+- **Additive** adds what the layer's pose changes from its reference pose: the
+  translation difference, the local rotation from the reference to the pose,
+  and the scale ratio, each scaled by the weight. A layer at its reference adds
+  nothing. The reference is the content's first frame, or with `"reference":
+  "bind"` the skeleton's bind pose, so a single-frame pose -- a lean, a held
+  item's sway -- adds what it changes from rest, and a blendspace of such poses
+  adds whatever mix its facts call for.
 
 A World that presents a pose carries `AnimPoseState`, which names a slot in the
 World's `AnimPosePool`. The slot holds what is sized by the rig: how each layer

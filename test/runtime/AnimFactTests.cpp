@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimFactSubject.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimRigCompositionSystem.h>
 #include <anim/AnimFactProviders.h>
@@ -13,6 +14,9 @@
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <components/StrideCycle.h>
+#include <controller/LookAnimFacts.h>
+#include <controller/LookOrientation.h>
 #include <movement/MovementAnimFacts.h>
 #include <movement/components/CharacterFacts.h>
 #include <world/ComponentRegistrar.h>
@@ -57,6 +61,8 @@ namespace
             RegisterAnimationComponents(registrar);
             Entities.RegisterComponent<SupportState>();
             Entities.RegisterComponent<KinematicState>();
+            Entities.RegisterComponent<StrideCycle>();
+            Entities.RegisterComponent<LookOrientation>();
             InstallAnimationVocabulary(Entities);
             Entities.SetResource(AnimRigBindings{ &Data, nullptr });
 
@@ -503,6 +509,70 @@ TEST(AnimFactDerivation, SmoothConvergesAtItsTimeConstant)
     EXPECT_NEAR(d.Float("SmoothSpeed"), 10.0f * (1.0f - std::exp(-1.0f)), 1e-3f);
 }
 
+TEST(AnimFactDerivation, RateIsHowFastTheSourceChangesPerSecond)
+{
+    AnimFixture fx;
+    const AnimBoundRig& rig = fx.Bound(fx.DerivedRig(R"([
+        { "name": "Accel", "op": "rate", "source": { "fact": "Speed" } } ])"));
+    ASSERT_TRUE(rig.Valid) << Describe(rig);
+    EXPECT_TRUE(rig.DerivationsKeepMemory);
+    EXPECT_FALSE(rig.HasTemporalDerivations);
+    Driver d(rig);
+
+    d.Set("Speed", 4.0f);
+    d.Step(0);
+    EXPECT_FLOAT_EQ(d.Float("Accel"), 0.0f) << "nothing to measure against on the first tick";
+    d.Set("Speed", 4.5f);
+    d.Step(1);
+    EXPECT_NEAR(d.Float("Accel"), 30.0f, 1e-3f);
+    d.Step(2);
+    EXPECT_FLOAT_EQ(d.Float("Accel"), 0.0f);
+    d.Set("Speed", 4.0f);
+    d.Step(3);
+    EXPECT_NEAR(d.Float("Accel"), -30.0f, 1e-3f);
+}
+
+TEST(AnimFactDerivation, ASpringFollowsAStepOvershootingByItsDamping)
+{
+    AnimFixture fx;
+    const AnimBoundRig& rig = fx.Bound(fx.DerivedRig(R"([
+        { "name": "Loose", "op": "spring", "source": { "fact": "Speed" }, "window_ms": 250, "damping": 0.3 },
+        { "name": "Firm", "op": "spring", "source": { "fact": "Speed" }, "window_ms": 250 } ])"));
+    ASSERT_TRUE(rig.Valid) << Describe(rig);
+    Driver d(rig);
+
+    d.Step(0);
+    d.Set("Speed", 1.0f);
+    float looseMost = 0.0f;
+    float firmMost = 0.0f;
+    for (AnimTick t = 1; t <= 120; ++t)
+    {
+        d.Step(t);
+        looseMost = std::max(looseMost, d.Float("Loose"));
+        firmMost = std::max(firmMost, d.Float("Firm"));
+    }
+    EXPECT_GT(looseMost, 1.3f) << "a loose spring swings well past its target";
+    EXPECT_LE(firmMost, 1.0f + 1e-4f) << "a critically damped one arrives without passing it";
+    EXPECT_NEAR(d.Float("Loose"), 1.0f, 1e-2f);
+    EXPECT_NEAR(d.Float("Firm"), 1.0f, 1e-3f);
+}
+
+TEST(AnimFactDerivation, ASpringNeedsAPeriodAndADampingItCanSettleWith)
+{
+    AnimFixture fx;
+    const auto error = [&](std::string_view derived) {
+        return fx.Types.Find(kAnimFactSchemaType)
+            ->Compile(*JsonParse(std::format(R"({{ "slots": [ {{ "name": "X", "kind": "float" }} ], "derived": {} }})",
+                                             derived)))
+            .Error;
+    };
+    EXPECT_NE(error(R"([ { "name": "S", "op": "spring", "source": { "fact": "X" } } ])").find("window_ms"),
+              std::string::npos);
+    EXPECT_NE(error(R"([ { "name": "S", "op": "spring", "source": { "fact": "X" }, "window_ms": 100, "damping": 9 } ])")
+                  .find("damping"),
+              std::string::npos);
+}
+
 TEST(AnimFactDerivation, CompareAndCombinators)
 {
     AnimFixture fx;
@@ -636,6 +706,45 @@ TEST(AnimFactGather, FillsProvidedSlotsThenDerives)
     EXPECT_FLOAT_EQ(AnimFactToFloat(at("Speed")), 5.0f);
     EXPECT_FLOAT_EQ(AnimFactToFloat(at("VerticalSpeed")), -2.0f);
     EXPECT_TRUE(AnimFactToBool(at("Falling")));
+}
+
+TEST(AnimFactGather, ASubjectSlotIsReadFromTheEntityItsSubjectNames)
+{
+    AnimFixture fx;
+    ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
+    ASSERT_TRUE(BindLookAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
+    const DataAssetHandle rig = fx.Rig(R"({
+        "extends": "asset://animation/engine.facts.sdata",
+        "slots": [ { "name": "StrideCycle", "kind": "float", "from": "subject" },
+                   { "name": "LookYaw", "kind": "float", "from": "subject" } ] })");
+    const AnimBoundRig& bound = fx.Bound(rig);
+    ASSERT_TRUE(bound.Valid) << Describe(bound);
+    EXPECT_TRUE(bound.HasSubjectFacts);
+
+    const EntityId holder = fx.Entities.CreateEntity();
+    fx.Entities.AddComponent(holder, StrideCycle{ .Position = 0.3f });
+    fx.Entities.AddComponent(holder, LookOrientation{ .Yaw = 7.0f });
+    fx.Entities.AddComponent(holder, KinematicState{ .Velocity = Vec3d(9.0f, 0.0f, 0.0f) });
+    const EntityId held = fx.Entities.CreateEntity();
+    fx.Entities.AddComponent(held, AnimRig{ rig });
+    fx.Entities.AddComponent(held, AnimFactSubject{ holder });
+
+    AnimRigCompositionSystem composition(true);
+    composition.Compose(fx.Entities);
+    AnimFactGatherSystem gather;
+    gather.Gather(fx.Entities, 1, kTick);
+    const auto at = [&](std::string_view slot) {
+        return AnimFactToFloat(
+            fx.Entities.TryGet<AnimFacts>(held)->Values[static_cast<std::size_t>(bound.FindSlot(slot))]);
+    };
+    EXPECT_FLOAT_EQ(at("StrideCycle"), 0.3f);
+    EXPECT_FLOAT_EQ(at("LookYaw"), 7.0f);
+    EXPECT_FLOAT_EQ(at("Speed"), 0.0f) << "a slot of its own reads the held entity, which has no motion";
+
+    // With its subject gone, a subject slot keeps what it last read.
+    fx.Entities.DestroyEntity(holder);
+    gather.Gather(fx.Entities, 2, kTick);
+    EXPECT_FLOAT_EQ(at("StrideCycle"), 0.3f);
 }
 
 TEST(AnimFactGather, AnInvalidRigGathersNothing)

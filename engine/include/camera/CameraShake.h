@@ -2,6 +2,7 @@
 
 #include <camera/CameraEffectTiming.h>
 #include <camera/CameraShakeProfile.h>
+#include <camera/CameraViewOffset.h>
 #include <math/geometry/3d/Transform3d.h>
 
 #include <cstddef>
@@ -9,23 +10,10 @@
 #include <optional>
 #include <vector>
 
-// How far the view is moved from its camera this frame, in the camera's own
-// space: degrees of pitch, yaw and roll, and metres right, up and back.
-struct CameraShakeOffset
-{
-    Vec3d Rotation = Vec3d::Zero();
-    Vec3d Translation = Vec3d::Zero();
-
-    [[nodiscard]] bool IsIdentity() const { return Rotation == Vec3d::Zero() && Translation == Vec3d::Zero(); }
-};
-
 // One profile's offset `elapsed` seconds in, at envelope `level`. A pure
 // function of its arguments: the noise is a function of time and seed.
-[[nodiscard]] CameraShakeOffset EvaluateCameraShake(const CameraShakeProfile& profile, std::uint64_t seed,
-                                                    double elapsed, float level);
-
-// The pose a camera is drawn from once `offset` moves it.
-[[nodiscard]] Transform3f ApplyCameraShake(const Transform3f& pose, const CameraShakeOffset& offset);
+[[nodiscard]] CameraViewOffset EvaluateCameraShake(const CameraShakeProfile& profile, std::uint64_t seed,
+                                                   double elapsed, float level);
 
 struct CameraShakeSettings
 {
@@ -65,10 +53,10 @@ public:
 
     [[nodiscard]] std::size_t Count() const { return Shakes.size(); }
     // This frame's offset for `camera`; identity for any other camera.
-    [[nodiscard]] CameraShakeOffset OffsetFor(EntityId camera) const;
+    [[nodiscard]] CameraViewOffset OffsetFor(EntityId camera) const;
 
 private:
     std::vector<CameraShakeInstance> Shakes;
-    CameraShakeOffset Presented;
+    CameraViewOffset Presented;
     EntityId PresentedCamera;
 };

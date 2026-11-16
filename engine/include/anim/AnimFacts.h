@@ -39,9 +39,11 @@ struct AnimDerivationMemory
 {
     // The last value the derivation read, and whether it has read one.
     std::uint32_t LastInput = 0;
+    // A spring's velocity; beside LastInput so the record keeps its size.
+    float Velocity = 0.0f;
     // The tick of the last kept transition: an edge, a match, a condition starting to hold.
     AnimTick MarkTick = kAnimNoTick;
-    // A smoothed value; a hysteresis latch as 0/1.
+    // A smoothed value or a spring's position; a hysteresis latch as 0/1.
     float Value = 0.0f;
     bool Seen = false;
 };

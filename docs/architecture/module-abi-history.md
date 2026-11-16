@@ -897,3 +897,21 @@ and `DataField::OptionalNumber`.
 `AbilityActivations`. `presentation/HeldEffects.h` starts, releases and retires held lights, shakes and pulses.
 Also new: `AuthoredNameResolver`, `AppendSourcedCue`, `PlaceSpawnedRoot`, `ProjectileStops::Find`, and
 `ProjectileSystem::PrefabOf(AssetRef)`. Overlap queries return each entity once, in identity order.
+
+## v45
+
+**View motion.** New components: `StrideCycle` (opt-in, authored), `CameraBob`,
+`CameraTilt`, `PresentationOffset`, `InheritsPresentationOffset` and
+`AnimFactSubject`, which move every later component's dense index and wire key.
+`ResolvedMovementTuning` gains `StrideLength`, `MovementTuningPatch` a
+`stride_length`. `PresentedView` gains `Offset`. `CameraShakeOffset` is
+`CameraViewOffset` (`camera/CameraViewOffset.h`), and `ApplyCameraShake` is
+`ApplyCameraViewOffset`. `PropagationEntry` gains `ParentOffsetPtr`.
+
+**Animation.** Fact slots `from: subject`; the `rate` and `spring` derivations,
+with `AnimDerivedFactDecl::Damping`; `AnimDerivationMemory` reorders to hold a
+spring's velocity at the same size. A behavior's `phase_fact` and
+`FollowAnimPlaybackPhase`. A layer's additive `reference`. `BindLookAnimFacts`,
+and movement's `StrideCycle` and `StrideSpeed` facts.
+
+**Sockets.** `PresentedSocketPose`.

@@ -1044,3 +1044,113 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** skinned meshes frustum-cull against their rest bounds, so a limb posed outside those bounds can pop out at the edge of the view.
 - **Where:** `RenderExtractionSystem::EmitSkinnedMeshes`; `PosedWorldBounds` already computes the tighter bound per pose.
 - **Trigger:** a report of popping on an animated enemy. A cooked per-skeleton reach would change the mesh format, so it needs format treatment.
+
+## Smoothing the view over a step
+
+- **What:** the character mover climbs a ledge up to `StepHeight` (0.35 m) in
+  one tick, and a first-person camera parented to the body rises with it, so the
+  view pops up a stair rather than gliding.
+- **Where:** `engine/src/physics/CharacterMover.cpp` decides the step and reports
+  nothing about it; a presented camera effect beside `CameraBob`
+  (`camera/CameraBobState.h`) would ease the view back down over the step.
+- **Trigger:** content with stairs or ledges a player walks up in first person.
+  That needs the mover to report the height it stepped on the tick it stepped
+  (a neutral component like `StrideCycle`), and the camera effect to read it.
+
+## Strides of characters a machine does not simulate
+
+- **What:** `StrideCycle` counts from `KinematicState::Velocity`, which is
+  owner-only on the wire, so on a client every other player's stride stands
+  still: their rigs placed by `StrideCycle`, and any camera following them,
+  would not step.
+- **Where:** `StrideCycleSystem` (`engine/src/movement/StrideCycleSystem.cpp`).
+- **Trigger:** a spectator or third-person camera on a remote pawn, or a remote
+  rig placed by its stride. Counting from the presented position's motion over
+  the ground, rather than from velocity, serves both without sending anything.
+
+## Movement occurrences: a landing and what answers it
+
+- **What:** detecting a landing once, with its impact, and letting gameplay,
+  presentation, animation and other machines answer it. Nothing detects one
+  today; Loss Function tracks landings twice in game code
+  (`MovementNoiseState`, and Vector's descent landing count).
+- **Findings**, each checked against the tree:
+  - *Detection needs no stored state.* `CharacterMoverPool::Sweep` is the one
+    place that overwrites `SupportState` and `KinematicState`, and it holds both
+    the old and the new values. Arriving on stable ground, and the velocity the
+    contact took away, are a pure function there. The same comparison gives
+    leaving the ground, starting or ending a slide (`Steep`), and striking a
+    wall (velocity lost along a contact normal). A step up is not in
+    `CharacterMoveResult`; that needs the backend to report it.
+  - *Prediction replays the mover.* `Sweep` runs live (`Drive`, and
+    `StepScaledCharacterTick` for dilated characters) and again in
+    `PawnStateReplay`, which re-runs every unanswered tick after every snapshot.
+    Detection inside it would fire once per replay. So the step returns what it
+    detected and its caller decides: live callers forward it, the replay drops
+    it. Both components are restored from the snapshot before a replay, so
+    detection stays a function of agreed state. A landing that replay moves to
+    another tick is not presented again; one only replay finds is never
+    presented on the owner, whose own view never showed it.
+  - *The channel already exists.* Abilitykit's rule D-F says transient
+    notifications are a per-tick record a system pulls. `EffectApplicationLog`
+    (written as effects land, read by `EffectReactionSystem` in fixed logic,
+    cleared once a tick) and `ProjectileStops` are that shape. A per-tick
+    contact log written by the live callers needs no new event framework.
+  - *Gameplay and presentation are adapters, not sources.* Authored events
+    (`AuthoredEventDispatcher`) carry content rules, and responses run only on
+    the authority; cues carry what viewers see. Both would read the one log,
+    and the mover knows neither. This matches the deferred effect-application
+    event and remote reactions below.
+  - *Presentation needs a tick-to-frame bridge.* A per-tick log is cleared each
+    tick and a frame can run several, so a presentation consumer runs per tick:
+    it starts tick-timed effects, as `EffectReactionSystem` starts shakes, or it
+    appends a cue.
+  - *Cues are exactly-once only within bounds* (`AbilityPresentationSystem.cpp`).
+    A ring of `kAbilityCueLogCapacity` (8) loses entries on overrun, counted in
+    `Overwritten`. First sight presents only entries younger than
+    `kAbilityCueWindowTicks` (30). A predicted cue is matched to the authority's
+    by activation, op, tick, target and ordinal: a guess a tick off presents
+    twice, a refused guess has already been presented, and 16 guesses are
+    remembered. Abilities escape replay duplication because the ability pass is
+    not re-run in reconciliation (`AbilityPredictionJournal` restores guesses).
+    `AppendSourcedCue` has no predicted path; projectiles and lines do not
+    predict.
+  - *Remote machines cannot detect landings themselves.* A pawn they only
+    receive arrives without support or velocity (owner-only, see "Locomotion
+    facts for a pawn this machine only receives"). Either the authority sends
+    the landings a game chooses as cues, or that entry's decision sends support
+    to everyone, which still carries no fall speed.
+  - *Animation has its own channels.* A body's land-then-idle must stay on facts
+    (`Grounded` with an `edge` derivation) so a late joiner reconstructs it. A
+    cosmetic reaction rides a cue through `anim.present`. An authoritative one
+    is an Impulse request, which replicates and is observed once. The CTX
+    rifle's in-hand landing dip is a spring on vertical speed and needs no
+    occurrence at all.
+  - *Costs* (sizes measured against this build): `AbilityCueLog` 584 B and
+    `AbilityPresentationState` 624 B on every actor with `ActiveAbilities`,
+    `AbilityPredictedCues` 584 B on a predicting pawn. A landing cue adds no
+    memory where the log already is. A character without abilities would need
+    about 1.3 KB to carry cues, too much for a crowd. On the wire one new entry
+    sends three u64, three u32, a 48-bit point and a 24-bit normal, about 45
+    bytes per peer before compression; not measured. A per-tick log costs
+    nothing per entity.
+- **Recommendation:** `Sweep` returns contact changes (landed, with the velocity
+  lost, point, normal and surface; left the ground; slide began or ended; wall
+  struck) as a value. Live callers append them to a per-tick log; the replay
+  drops them. Games read the log and decide what a landing means: Loss
+  Function's movement noise reads it in place of its own tracking, a game's
+  thresholds pick which landings are hard and which cue to append, and the
+  sound, dust or view dip are cue presentations in data.
+- **Unresolved:**
+  - a landing's strength on a cue: `AbilityCueEntry` has no magnitude, and
+    adding one costs every cue; separate cues per severity keep the thresholds
+    in game data, which is preferred;
+  - the owner's own landing: presented at once from its live log, the
+    authority's cue must not present it again. Either the owner records it in
+    `AbilityPredictedCues` under the authority's occurrence identity (correct
+    only when the ticks agree), or the presenter skips replicated movement cues
+    for the entity it predicts;
+  - the cue log lives in `abilities/` and only on actors with abilities;
+  - a step up and a wall strike need the mover backend to report them.
+- **Trigger:** the first landing sound, fall damage, or a third landing tracker
+  in game code.

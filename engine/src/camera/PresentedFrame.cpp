@@ -5,7 +5,23 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <time/FrameClock.h>
+#include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformHistory.h>
+
+namespace
+{
+// Carries the view to what the camera holds. Added the first time a camera
+// presents one, so a camera that is never offset carries none.
+void WritePresentationOffset(World& world, EntityId camera, const Transform3f& offset)
+{
+    if (!camera.IsValid() || !world.IsAlive(camera) || !world.IsRegistered<PresentationOffset>())
+        return;
+    if (PresentationOffset* current = world.TryGet<PresentationOffset>(camera))
+        current->Value = offset;
+    else if (offset != Transform3f::Identity())
+        world.AddComponent<PresentationOffset>(camera, PresentationOffset{ offset });
+}
+} // namespace
 
 PresentedFrame ResolvePresentedFrame(const World& world,
                                      EntityId camera,
@@ -68,6 +84,9 @@ const PresentedFrame& PublishPresentedFrame(World& world,
     PresentedFrame resolved = ResolvePresentedFrame(world, camera, extent, presentation);
     if (resolved.Valid && !visible.Contains(world.GetEntityPartition(camera)))
         resolved.Valid = false;
+    if (published.Camera != camera)
+        WritePresentationOffset(world, published.Camera, Transform3f::Identity());
+    WritePresentationOffset(world, camera, resolved.Valid ? resolved.View.Offset : Transform3f::Identity());
     resolved.Publication = published.Publication + 1;
     published = resolved;
     return published;

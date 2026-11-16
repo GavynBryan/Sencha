@@ -15,6 +15,7 @@
 #include <render/extract/Camera.h>
 #include <time/FrameClock.h>
 #include <time/SimClock.h>
+#include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 #include <world/transform/TransformPropagation.h>
@@ -65,6 +66,8 @@ struct Rig
         Entities.RegisterComponent<Parent>();
         Entities.RegisterComponent<WorldTransformHistory>();
         Entities.RegisterComponent<CameraComponent>();
+        Entities.RegisterComponent<PresentationOffset>();
+        Entities.RegisterComponent<InheritsPresentationOffset>();
         Visible.Add(StoragePartitionId::Default());
 
         Body = Entities.CreateEntity();
@@ -321,6 +324,49 @@ TEST(PresentedFrame, ExtractionPublishesAgainForAnotherFrameOrAnotherCamera)
     const PresentedFrame& switched = EnsurePresentedFrame(rig.Entities, rig.Clock, Frame(2, 0.75), { 640, 480 }, rig.Visible);
     EXPECT_EQ(switched.Camera, other);
     EXPECT_EQ(switched.Placed.Position, Vec3d(0.0f, 10.0f, 0.0f));
+}
+
+TEST(PresentedFrame, AChildThatInheritsTheOffsetIsDrawnWhereTheViewIsAndSimulatedWhereTheCameraIs)
+{
+    Rig rig;
+    rig.Entities.AddComponent<InheritsPresentationOffset>(rig.Held, {});
+    const EntityId fixed = rig.Entities.CreateEntity();
+    rig.Entities.AddComponent(fixed, LocalTransform{ At(Vec3d(-0.3f, -0.2f, -0.5f)) });
+    rig.Entities.AddComponent(fixed, WorldTransform{});
+    rig.Entities.AddComponent(fixed, Parent{ rig.Camera });
+    rig.ShakeAndPulse();
+    for (int tick = 0; tick < 6; ++tick)
+        rig.Tick();
+
+    const PresentationTime now = Frame(4, 0.5);
+    const PresentedFrame& frame = PublishPresentedFrame(rig.Entities, rig.Clock, now, kExtent, rig.Visible);
+    ASSERT_TRUE(frame.Valid);
+    ASSERT_GT((frame.View.Pose.Position - frame.Placed.Position).Magnitude(), 1e-4f);
+    rig.PropagateForPresentation(now.Alpha);
+
+    const auto expectAt = [](const Transform3f& from, Vec3d local, const Transform3f& drawn) {
+        const Vec3d expected = from.Position + from.Rotation.RotateVector(local);
+        EXPECT_NEAR((drawn.Position - expected).Magnitude(), 0.0f, 1e-5f);
+    };
+    const Transform3f held = rig.Entities.TryGet<WorldTransform>(rig.Held)->Value;
+    expectAt(frame.View.Pose, Vec3d(0.3f, -0.2f, -0.5f), held);
+    EXPECT_NEAR(std::abs(held.Rotation.Dot(frame.View.Pose.Rotation)), 1.0f, 1e-5f);
+    ExpectSame(PresentationPoseOf(rig.Entities, rig.Held, now.Alpha), held);
+    expectAt(frame.Placed, Vec3d(-0.3f, -0.2f, -0.5f), rig.Entities.TryGet<WorldTransform>(fixed)->Value);
+
+    rig.Entities.AdvanceFrame();
+    PropagateTransforms(rig.Entities, rig.Visible, TransformPropagationDomain::Simulation);
+    expectAt(rig.Entities.TryGet<WorldTransform>(rig.Camera)->Value, Vec3d(0.3f, -0.2f, -0.5f),
+             rig.Entities.TryGet<WorldTransform>(rig.Held)->Value);
+
+    // A camera no longer presented carries nothing to what it holds.
+    const EntityId other = rig.Entities.CreateEntity();
+    rig.Entities.AddComponent(other, LocalTransform{ At(Vec3d(0.0f, 10.0f, 0.0f)) });
+    rig.Entities.AddComponent(other, WorldTransform{});
+    rig.Entities.AddComponent(other, CameraComponent{});
+    rig.Entities.GetResource<ActiveCameraService>().SetActive(other);
+    (void)PublishPresentedFrame(rig.Entities, rig.Clock, Frame(5, 0.5), kExtent, rig.Visible);
+    ExpectSame(rig.Entities.TryGet<PresentationOffset>(rig.Camera)->Value, Transform3f::Identity());
 }
 
 TEST(PresentedFrame, NothingToDrawIsAnInvalidFrame)

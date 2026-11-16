@@ -276,6 +276,11 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
             }
             if (now <= through)
                 continue;
+            // A fact that steps a placed phase backward plays nothing on the way.
+            const AnimBoundBehavior* placing = rig.FindBehavior(layer.Behavior);
+            if (placing != nullptr && placing->PhaseFactSlot >= 0 && layer.Phase < previousPhase
+                && previousPhase - layer.Phase < 0.5f)
+                continue;
             const double from = static_cast<double>(previousPhase) * length;
             const double until = phase.Cyclic && layer.Phase < previousPhase ? at + length : at;
             crossMarks(layer.Clip, phase, AnimCrossedStretch{ from, until, false, through + 1 < now });

@@ -110,6 +110,9 @@ struct AnimBehaviorDecl
     // Flows play on the tick clock and take neither.
     float Rate = 1.0f;
     float StartSeconds = 0.0f;
+    // A float fact that says where in its content the behavior is, from 0 to 1, in
+    // place of time: a stride, a gauge, a door's open fraction. Empty for time.
+    std::string PhaseFact;
     // Layer weight below which cosmetic events on this behavior's content do not fire.
     float EventWeight = 0.5f;
     std::optional<AnimLifecycleDecl> OnEntered;

@@ -54,6 +54,7 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 | 8 | `RootMotionSystem` | Asks the World's `RootMotionSource` how each character is carried this tick; force-writes the planar channel and the turn. |
 | 9 | `MotionCompositionSystem` | Composes the single `MotionRequest`; clears the channel mailboxes. |
 | 10 | `CharacterControllerSystem` → `CharacterMoverPool::Drive` (Physics phase) | Collide-and-slide against the request; writes back `LocalTransform`, achieved `KinematicState`, and the new `SupportState`. |
+| 11 | `StrideCycleSystem` (PostFixed phase) | Counts the `StrideCycle` of each character that carries one, from the ground the tick covered. |
 
 Facts therefore describe the *previous* step: locomotion at tick N reads the
 support and velocity the motor produced at tick N-1. That one-tick latency is
@@ -75,6 +76,7 @@ Components (all POD, `engine/include/movement/MovementComponents.h`):
 | `LocomotionOutput` | the active mode's locomotion system | composition | Velocity plus up axis plus gravity scale. Exactly one writer per entity per tick. |
 | `MotionAxisOverride` | action producers via `MotionComposition.h` helpers | composition | One-tick mailbox; planar/up channels, first-write-wins, forced variants replace. |
 | `MotionImpulse` | `AddMotionImpulse` | composition | One-tick additive velocity (knockback, explosions). |
+| `StrideCycle` | `StrideCycleSystem` only | camera bob, rigs, anything keyed to footfalls | How far through its stride a character is (0 to 1, a step with each foot, then wraps), counted by distance over the ground it stands on at the tick's resolved `stride_length`, and the speed across that ground. Opt-in: a character carries one only when its content says so (`"StrideCycle": {}` in a prefab), so a crowd of characters nobody watches from inside pays nothing. A neutral component (`components/StrideCycle.h`) so cameras and animation read it without depending on movement. In the air, or with a stride length of zero (the default), it holds its place and reports no ground speed. Never replicated: each machine counts what it sees, so a client's replay does not count a stride twice. |
 | `MotionRequest` | `MotionCompositionSystem` only (a dilated character's step writes its last step's) | `CharacterMoverPool`, path followers | The single composed motor request. `PlanarOverridden` records that an action, root motion or held motion replaced locomotion's planar velocity. |
 | `ModeTransitionRequest` | `RequestLocomotionMode` | transition system | The arbitrated transition mailbox. |
 | mode session components (`ClingSession`, …) | mode registry hooks | that mode's systems | Added on entry, removed on exit; see Modes. |
@@ -225,6 +227,12 @@ Within a layer each coefficient applies `set`, then `scale`, then `add`.
 Authored order is the conflict-resolution rule — later layers win. Neutral
 values (`set`/`add` 0, `scale` 1) mean an authored-but-untouched coefficient
 never changes movement on its own.
+
+`stride_length` is the one coefficient movement itself does not use: it is the
+ground one stride covers, which `StrideCycleSystem` counts footfalls by. Stride
+length grows with speed in a real gait, so a profile that walks and runs gives
+the slower layer (a crouch, a walk tag) a shorter stride rather than letting the
+cadence fall with speed.
 
 The coefficient list exists in exactly one place: the `MovementTuningFields()`
 table in `MovementProfileRuntime.cpp`. Layer application, the authoring schema,

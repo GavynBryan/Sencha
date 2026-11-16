@@ -1,8 +1,10 @@
 #include <world/RuntimeWorld.h>
 
 #include <attach/AttachedLight.h>
+#include <camera/CameraBobState.h>
 #include <camera/CameraFovScale.h>
 #include <camera/CameraShake.h>
+#include <camera/CameraTiltState.h>
 #include <components/ActiveCameraService.h>
 #include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
@@ -29,6 +31,8 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // machine, never replicated, never read by the simulation.
     Entities_.AddResource<CameraShakeState>();
     Entities_.AddResource<CameraFovScaleState>();
+    Entities_.AddResource<CameraBobState>();
+    Entities_.AddResource<CameraTiltState>();
     Entities_.AddResource<AttachedLightState>();
 
     // Every driven world can resolve persistent identities; the identity

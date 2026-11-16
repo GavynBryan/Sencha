@@ -258,6 +258,9 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
     const bool historyRegistered = Target.IsRegistered<WorldTransformHistory>();
     const ComponentId historyId =
         historyRegistered ? Target.GetComponentId<WorldTransformHistory>() : ComponentId{};
+    const bool offsetRegistered =
+        Target.IsRegistered<PresentationOffset>() && Target.IsRegistered<InheritsPresentationOffset>();
+    const ComponentId offsetId = offsetRegistered ? Target.GetComponentId<PresentationOffset>() : ComponentId{};
 
     for (PropagationEntry& entry : order)
     {
@@ -265,6 +268,7 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
         entry.WorldPtr = nullptr;
         entry.ParentWorldPtr = nullptr;
         entry.ParentHistoryPtr = nullptr;
+        entry.ParentOffsetPtr = nullptr;
         entry.ChunkPtr = nullptr;
         entry.ParentChunkPtr = nullptr;
         entry.LocalCol = UINT32_MAX;
@@ -306,6 +310,16 @@ void TransformPropagationSystem::ResolveAddresses(PropagationOrderCache& cache)
             {
                 entry.ParentHistoryPtr = reinterpret_cast<const WorldTransformHistory*>(
                     parentLoc.ChunkPtr->ColumnData(historyCol)) + parentLoc.Row;
+            }
+        }
+
+        if (offsetRegistered && Target.HasComponent<InheritsPresentationOffset>(entry.Child))
+        {
+            const uint32_t offsetCol = parentLoc.ChunkPtr->FindColumn(offsetId);
+            if (offsetCol != UINT32_MAX)
+            {
+                entry.ParentOffsetPtr = reinterpret_cast<const PresentationOffset*>(
+                    parentLoc.ChunkPtr->ColumnData(offsetCol)) + parentLoc.Row;
             }
         }
 
@@ -373,29 +387,23 @@ void TransformPropagationSystem::SweepOrder(
                              entry.ParentWorldCol) >= lastSweep;
         const bool localDirty =
             entry.ChunkPtr->ColumnLastWrittenFrame(entry.LocalCol) >= lastSweep;
-        // A blend changes every frame even when nothing moved.
+        // A blend, and a presented view, change every frame even when nothing moved.
         const bool interpolated = presentation && entry.ParentHistoryPtr != nullptr;
+        const bool offset = presentation && entry.ParentOffsetPtr != nullptr;
 
-        if (!fullSweep && !resumed && !parentDirty && !localDirty && !interpolated)
+        if (!fullSweep && !resumed && !parentDirty && !localDirty && !interpolated && !offset)
             continue;
 
         dirty[index] = 1;
 
+        Transform3f parentPose = Transform3f::Identity();
         if (interpolated)
-        {
-            entry.WorldPtr->Value =
-                ResolvePresentationPose(*entry.ParentHistoryPtr, presentationAlpha)
-                * entry.LocalPtr->Value;
-        }
+            parentPose = ResolvePresentationPose(*entry.ParentHistoryPtr, presentationAlpha);
         else if (entry.ParentWorldPtr != nullptr)
-        {
-            entry.WorldPtr->Value =
-                entry.ParentWorldPtr->Value * entry.LocalPtr->Value;
-        }
-        else
-        {
-            entry.WorldPtr->Value = entry.LocalPtr->Value;
-        }
+            parentPose = entry.ParentWorldPtr->Value;
+        if (offset)
+            parentPose = parentPose * entry.ParentOffsetPtr->Value;
+        entry.WorldPtr->Value = parentPose * entry.LocalPtr->Value;
 
         entry.ChunkPtr->BumpColumnVersion(entry.WorldCol, frame);
     }

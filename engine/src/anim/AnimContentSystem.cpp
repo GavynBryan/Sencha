@@ -43,6 +43,22 @@ namespace
         return bound != nullptr ? bound->Policy : asAuthored;
     }
 
+    // Where a behavior's fact places its content: wrapped round a cycle, held between
+    // the ends otherwise. Nothing when the behavior's time is its ticks'.
+    std::optional<float> FactPhase(const AnimBoundRig& rig, GameplayTagId behavior,
+                                   std::span<const std::uint32_t> facts)
+    {
+        const AnimBoundBehavior* bound = rig.FindBehavior(behavior);
+        if (bound == nullptr || bound->PhaseFactSlot < 0
+            || static_cast<std::size_t>(bound->PhaseFactSlot) >= facts.size())
+            return std::nullopt;
+        const auto slot = static_cast<std::size_t>(bound->PhaseFactSlot);
+        float value = AnimFactToNumber(rig.Slots[slot].Kind, facts[slot]);
+        if (!std::isfinite(value))
+            value = 0.0f;
+        return IsCyclic(bound->Policy.Kind) ? value - std::floor(value) : std::clamp(value, 0.0f, 1.0f);
+    }
+
     void Log(AnimDecisionLog* log, AnimTick now, std::size_t layer, AnimDecisionCause cause,
              AnimChangeReason reason, const AnimLayerContent& state)
     {
@@ -482,9 +498,13 @@ namespace
         std::array<float, kAnimBlendspaceMaxSamples> weights{};
         AnimBlendspaceWeights(space, at, weights);
         const float duration = AnimBlendspaceDuration(rig, space, weights);
-        const float rate = PlaybackOf(rig, layer.Behavior).Rate;
+        const std::optional<float> placed = FactPhase(rig, layer.Behavior, facts);
+        // Placed content has no speed of its own: between ticks the pose holds the phase.
+        const float rate = placed ? 0.0f : PlaybackOf(rig, layer.Behavior).Rate;
         const AnimBehaviorKind kind = KindOf(rig, layer.Behavior);
-        if (step.Entry.StartNormalized)
+        if (placed)
+            layer.Phase = *placed;
+        else if (step.Entry.StartNormalized)
             layer.Phase = *step.Entry.StartNormalized;
         else if (duration > 0.0f)
             layer.Phase += static_cast<float>(step.TickSeconds * rate * layer.Playback.TimeScale / duration);
@@ -498,7 +518,8 @@ namespace
         }
         else
         {
-            layer.ContentComplete = rate > 0.0f ? layer.Phase >= 1.0f - kEndSlack
+            layer.ContentComplete = placed ? layer.Phase >= 1.0f
+                                  : rate > 0.0f ? layer.Phase >= 1.0f - kEndSlack
                                   : rate < 0.0f ? layer.Phase <= kEndSlack
                                                 : false;
             layer.Phase = layer.ContentComplete ? (rate > 0.0f ? 1.0f : 0.0f) : std::clamp(layer.Phase, 0.0f, 1.0f);
@@ -513,11 +534,15 @@ namespace
         layer.TimeSeconds = layer.Phase * duration;
     }
 
-    void AdvanceClipLayer(const LayerStep& step, AnimLayerContent& layer)
+    void AdvanceClipLayer(const LayerStep& step, std::span<const std::uint32_t> facts, AnimLayerContent& layer)
     {
         const AnimBehaviorKind kind = KindOf(step.Rig, layer.Behavior);
+        const std::optional<float> placed = FactPhase(step.Rig, layer.Behavior, facts);
         layer.Clip = layer.Content;
-        layer.Playback.Rate = PlaybackOf(step.Rig, layer.Behavior).Rate;
+        // Placed content keeps last tick's rate until FollowAnimPlaybackPhase has read
+        // where that tick left it.
+        if (!placed)
+            layer.Playback.Rate = PlaybackOf(step.Rig, layer.Behavior).Rate;
         layer.Playback.DurationSeconds = DurationOf(step.Rig, layer.Content);
         layer.Playback.Cyclic = IsCyclic(kind);
         if (layer.Content == kAnimNoContent || layer.Playback.DurationSeconds <= 0.0f)
@@ -527,8 +552,11 @@ namespace
             layer.ContentComplete = layer.Behavior.IsValid() && kind != AnimBehaviorKind::Cyclic;
             return;
         }
+        if (placed)
+            FollowAnimPlaybackPhase(layer.Playback, *placed, step.Now, step.TickSeconds);
         layer.TimeSeconds = static_cast<float>(AnimPlaybackSeconds(layer.Playback, step.Now, step.TickSeconds));
-        layer.ContentComplete = AnimPlaybackEnded(layer.Playback, step.Now, step.TickSeconds);
+        layer.ContentComplete = placed ? kind != AnimBehaviorKind::Cyclic && *placed >= 1.0f
+                                       : AnimPlaybackEnded(layer.Playback, step.Now, step.TickSeconds);
     }
 
     // Closed over what a slot row resolves to: a flow, a blendspace or a clip.
@@ -548,7 +576,7 @@ namespace
         if (spaceIndex >= 0)
             AdvanceBlendspaceLayer(step, spaceIndex, facts, layer);
         else
-            AdvanceClipLayer(step, layer);
+            AdvanceClipLayer(step, facts, layer);
     }
 
     // The one place animation writes gameplay's request set.
