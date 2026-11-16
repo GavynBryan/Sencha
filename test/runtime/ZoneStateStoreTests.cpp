@@ -10,12 +10,16 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
+#include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateStore.h>
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <initializer_list>
 #include <span>
 #include <vector>
 
@@ -58,17 +62,25 @@ std::size_t AliveCount(const World& world)
 {
     return world.GetAliveEntities().size();
 }
+
+std::vector<AuthoredEntityState> Authored(std::initializer_list<std::uint64_t> ids,
+                                          ZoneStateForgetting forgotten = ZoneStateForgetting::Never)
+{
+    std::vector<AuthoredEntityState> authored;
+    for (const std::uint64_t id : ids)
+        authored.push_back(AuthoredEntityState{ PersistentEntityId{ id }, forgotten });
+    return authored;
+}
 } // namespace
 
 TEST(ZoneStateStore, CaptureDiffsAuthoredAgainstLive)
 {
     ZoneStateStore store;
-    const std::array authored{ PersistentEntityId{ 0xa }, PersistentEntityId{ 0xb },
-                               PersistentEntityId{ 0xc } };
+    const std::vector authored = Authored({ 0xa, 0xb, 0xc });
     store.RecordAuthoredSet(ZoneId{ 1 }, authored);
 
     const std::array live{ PersistentEntityId{ 0xb }, PersistentEntityId{ 0xc } };
-    store.RecordDetachCapture(ZoneId{ 1 }, live);
+    store.RecordCapture(ZoneId{ 1 }, live, ZoneCapture::Detach);
 
     EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
     EXPECT_FALSE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xb }));
@@ -79,19 +91,18 @@ TEST(ZoneStateStore, CaptureDiffsAuthoredAgainstLive)
 TEST(ZoneStateStore, CaptureAccumulatesAcrossResidencies)
 {
     ZoneStateStore store;
-    const std::array authored{ PersistentEntityId{ 0xa }, PersistentEntityId{ 0xb },
-                               PersistentEntityId{ 0xc } };
+    const std::vector authored = Authored({ 0xa, 0xb, 0xc });
 
     // First residency destroys A. The re-import records the same authored set
     // (a property of the cooked artifact) and its live set lacks both the
     // suppressed A and the newly destroyed B.
     store.RecordAuthoredSet(ZoneId{ 1 }, authored);
     const std::array firstLive{ PersistentEntityId{ 0xb }, PersistentEntityId{ 0xc } };
-    store.RecordDetachCapture(ZoneId{ 1 }, firstLive);
+    store.RecordCapture(ZoneId{ 1 }, firstLive, ZoneCapture::Detach);
 
     store.RecordAuthoredSet(ZoneId{ 1 }, authored);
     const std::array secondLive{ PersistentEntityId{ 0xc } };
-    store.RecordDetachCapture(ZoneId{ 1 }, secondLive);
+    store.RecordCapture(ZoneId{ 1 }, secondLive, ZoneCapture::Detach);
 
     EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
     EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xb }));
@@ -102,23 +113,23 @@ TEST(ZoneStateStore, CaptureWithoutAuthoredRecordIsIgnored)
 {
     ZoneStateStore store;
     const std::array live{ PersistentEntityId{ 0xb } };
-    store.RecordDetachCapture(ZoneId{ 7 }, live);
+    store.RecordCapture(ZoneId{ 7 }, live, ZoneCapture::Detach);
     EXPECT_EQ(store.RecordedDestroyedCount(ZoneId{ 7 }), 0u);
 }
 
 TEST(ZoneStateStore, RepeatedCaptureWithoutReimportKeepsTheDeviation)
 {
     ZoneStateStore store;
-    const std::array authored{ PersistentEntityId{ 0xa }, PersistentEntityId{ 0xb } };
+    const std::vector authored = Authored({ 0xa, 0xb });
     store.RecordAuthoredSet(ZoneId{ 1 }, authored);
     const std::array live{ PersistentEntityId{ 0xb } };
-    store.RecordDetachCapture(ZoneId{ 1 }, live);
+    store.RecordCapture(ZoneId{ 1 }, live, ZoneCapture::Detach);
     ASSERT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
 
     // Only an import supplies a baseline, so a capture without one has nothing
     // to diff. Recomputing from an empty baseline would read as "everything
     // survived" and quietly resurrect A.
-    store.RecordDetachCapture(ZoneId{ 1 }, {});
+    store.RecordCapture(ZoneId{ 1 }, {}, ZoneCapture::Detach);
 
     EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
     EXPECT_EQ(store.RecordedDestroyedCount(ZoneId{ 1 }), 1u);
@@ -127,13 +138,115 @@ TEST(ZoneStateStore, RepeatedCaptureWithoutReimportKeepsTheDeviation)
 TEST(ZoneStateStore, ClearRestoresAuthoredReplay)
 {
     ZoneStateStore store;
-    const std::array authored{ PersistentEntityId{ 0xa } };
+    const std::vector authored = Authored({ 0xa });
     store.RecordAuthoredSet(ZoneId{ 1 }, authored);
-    store.RecordDetachCapture(ZoneId{ 1 }, {});
+    store.RecordCapture(ZoneId{ 1 }, {}, ZoneCapture::Detach);
     ASSERT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
 
     store.Clear();
     EXPECT_FALSE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
+}
+
+TEST(ZoneStateStore, WhatIsForgottenAtDetachIsNotRecordedWhenTheZoneLeaves)
+{
+    ZoneStateStore store;
+    store.RecordAuthoredSet(ZoneId{ 1 }, Authored({ 0xa }, ZoneStateForgetting::AtDetach));
+    store.RecordCapture(ZoneId{ 1 }, {}, ZoneCapture::Live);
+    EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa })) << "gone while the zone stays";
+
+    store.RecordCapture(ZoneId{ 1 }, {}, ZoneCapture::Detach);
+    EXPECT_FALSE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
+}
+
+TEST(ZoneStateStore, ALiveCaptureKeepsTheAuthoredSetForTheNext)
+{
+    ZoneStateStore store;
+    store.RecordAuthoredSet(ZoneId{ 1 }, Authored({ 0xa, 0xb }));
+    const std::array first{ PersistentEntityId{ 0xa }, PersistentEntityId{ 0xb } };
+    store.RecordCapture(ZoneId{ 1 }, first, ZoneCapture::Live);
+    const std::array second{ PersistentEntityId{ 0xb } };
+    store.RecordCapture(ZoneId{ 1 }, second, ZoneCapture::Live);
+    EXPECT_TRUE(store.IsRecordedDestroyed(ZoneId{ 1 }, PersistentEntityId{ 0xa }));
+}
+
+TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
+{
+    ZoneStateStore store;
+    std::vector authored = Authored({ 0x30, 0x10, 0x20 });
+    authored.push_back(AuthoredEntityState{ PersistentEntityId{ 0x40 }, ZoneStateForgetting::AtRestore });
+    store.RecordAuthoredSet(ZoneId{ 9 }, authored);
+    store.RecordAuthoredSet(ZoneId{ 3 }, Authored({ 0x50 }));
+    const std::array bytes{ std::byte{ 1 }, std::byte{ 2 } };
+    store.RecordComponentState(ZoneId{ 9 }, PersistentEntityId{ 0x20 }, ComponentTypeId{ 7 }, 2, bytes);
+    store.RecordComponentState(ZoneId{ 9 }, PersistentEntityId{ 0x40 }, ComponentTypeId{ 7 }, 2, bytes);
+    store.RecordCapture(ZoneId{ 9 }, std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
+    store.RecordCapture(ZoneId{ 3 }, {}, ZoneCapture::Live);
+
+    const std::vector<DurableZoneState> durable = store.ExportDurable();
+    ASSERT_EQ(durable.size(), 2u);
+    EXPECT_EQ(durable[0].Zone, ZoneId{ 3 });
+    EXPECT_EQ(durable[1].Zone, ZoneId{ 9 });
+    EXPECT_EQ(durable[1].Destroyed, (std::vector{ PersistentEntityId{ 0x10 }, PersistentEntityId{ 0x30 } }))
+        << "0x40 is forgotten at restore and 0x20 lives";
+    ASSERT_EQ(durable[1].Components.size(), 1u);
+    EXPECT_EQ(durable[1].Components[0].Entity, PersistentEntityId{ 0x20 });
+    EXPECT_EQ(durable[1].Components[0].Version, 2);
+
+    ZoneStateStore restored;
+    restored.RecordAuthoredSet(ZoneId{ 5 }, Authored({ 0x60 }));
+    restored.RecordCapture(ZoneId{ 5 }, {}, ZoneCapture::Detach);
+    restored.Install(durable);
+    EXPECT_EQ(restored.ExportDurable(), durable);
+    EXPECT_FALSE(restored.IsRecordedDestroyed(ZoneId{ 5 }, PersistentEntityId{ 0x60 })) << "install replaces";
+}
+
+TEST(ZoneStateMemory, AChildTakesItsParentsLifetimeAndIsForgottenAtRestore)
+{
+    WorldComponentSchema schema;
+    schema.Add<PersistentIdComponent>();
+    schema.Add<LocalTransform>();
+    schema.Add<WorldTransform>();
+    schema.Add<Parent>();
+    schema.Add<ZoneStateLifetime>();
+    schema.Seal();
+    RuntimeWorld runtime(schema);
+
+    const ZoneId zone{ 44 };
+    const PersistentEntityId enemy{ 0x500 };
+    const PersistentEntityId weapon{ 0x501 };
+    const PersistentEntityId gate{ 0x600 };
+    const auto package = [&] {
+        EntityBuildPackage built;
+        const PackageEntityId root = built.CreateEntity();
+        EXPECT_TRUE(built.AddComponent<PersistentIdComponent>(root, { enemy }));
+        EXPECT_TRUE(built.SetPersistentId(root, enemy));
+        EXPECT_TRUE(built.AddComponent<ZoneStateLifetime>(root, { ZoneStateForgetting::AtRestore }));
+        const PackageEntityId child = built.CreateEntity();
+        EXPECT_TRUE(built.AddComponent<PersistentIdComponent>(child, { weapon }));
+        EXPECT_TRUE(built.SetPersistentId(child, weapon));
+        EXPECT_TRUE(built.SetParent(child, root));
+        const PackageEntityId kept = built.CreateEntity();
+        EXPECT_TRUE(built.AddComponent<PersistentIdComponent>(kept, { gate }));
+        EXPECT_TRUE(built.SetPersistentId(kept, gate));
+        return built;
+    };
+
+    ZoneImportError error;
+    ASSERT_TRUE(ImportZonePackage(runtime, schema, zone, package(), LogicOnly(), &error)) << error.Message;
+    FinishResidency(runtime);
+    auto* index = runtime.Entities().TryGetResource<PersistentEntityIndex>();
+    runtime.Entities().DestroyEntity(index->TryResolve(weapon));
+    runtime.Entities().DestroyEntity(index->TryResolve(enemy));
+    runtime.Entities().DestroyEntity(index->TryResolve(gate));
+    ASSERT_TRUE(runtime.RequestDetach(zone));
+    runtime.FlushLifecycleRequests();
+    FinishResidency(runtime);
+
+    ZoneStateStore& store = runtime.Entities().GetResource<ZoneStateStore>();
+    EXPECT_TRUE(store.IsRecordedDestroyed(zone, weapon)) << "gone for the session";
+    const std::vector<DurableZoneState> durable = store.ExportDurable();
+    ASSERT_EQ(durable.size(), 1u);
+    EXPECT_EQ(durable[0].Destroyed, std::vector{ gate }) << "only the gate is never forgotten";
 }
 
 TEST(ZoneStateMemory, DestroyedEntityStaysDestroyedAcrossRestream)

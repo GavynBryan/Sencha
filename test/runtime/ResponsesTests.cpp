@@ -29,6 +29,7 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <cmath>
@@ -308,6 +309,7 @@ protected:
         registrar.Add<PersistentIdComponent>();
         WorldState.AddResource<PersistentEntityIndex>();
         ZoneState = &WorldState.AddResource<ZoneStateStore>();
+        WorldState.AddResource<ZoneComponentMemories>();
 
         Tags = &WorldState.AddResource<GameplayTagRegistry>();
         Red = *Tags->RegisterTag("Test.Red");
@@ -1353,22 +1355,22 @@ TEST_F(ResponsesFixture, AZoneRemembersConsumedAndDisabledBindingsAcrossUnloadAn
     ASSERT_EQ(SetEnabled(placed, "use", false), VerbAdmission::Accepted);
     const Responses before = StateOf(placed);
 
-    Residency(ZoneResidencyChangeKind::Detaching, zone);
+    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ placed }, ZoneCapture::Detach);
     WorldState.DestroyEntity(placed);
-    EXPECT_FALSE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).empty());
+    EXPECT_FALSE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
 
     // The zone comes back: the entity as authored, then its remembered state.
     const EntityId reloaded = Place(bindings, zone);
     WorldState.AddComponent<PersistentIdComponent>(reloaded, PersistentIdComponent{ identity });
     EXPECT_EQ(StateOf(reloaded).Consumed, 0u);
-    Residency(ZoneResidencyChangeKind::Attached, zone);
+    RestoreZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded });
     EXPECT_EQ(StateOf(reloaded).Consumed, before.Consumed);
     EXPECT_EQ(StateOf(reloaded).Disabled, before.Disabled);
 
     // Back as authored, the zone forgets it.
     *WorldState.TryGet<Responses>(reloaded) = Responses{ StateOf(reloaded).Set, 0, 0 };
-    Residency(ZoneResidencyChangeKind::Detaching, zone);
-    EXPECT_TRUE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).empty());
+    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded }, ZoneCapture::Detach);
+    EXPECT_TRUE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
 }
 
 // ---------------------------------------------------------------------------

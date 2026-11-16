@@ -3,6 +3,7 @@
 #include <app/LevelReference.h>
 #include <ecs/EntityId.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneStateStore.h>
 
 #include <cstdint>
 #include <optional>
@@ -38,6 +39,8 @@ struct LevelChangeRequest
     LevelReference Level;
     // A world's starting zone; the manifest's start zone when absent or unknown.
     std::optional<ZoneId> Focus{};
+    // What zones remember as the level loads; none is the level as authored.
+    std::vector<DurableZoneState> ZoneState{};
 };
 
 // docs/gameplay/game-module.md, "Changing level".

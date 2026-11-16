@@ -115,15 +115,42 @@ this document. `SerializedEntityId` was removed with no consumers.
 - Zone state memory: `zone/ZoneStateStore.h`, a World resource added by
   `RuntimeWorld`. Import records the authored id set and suppresses
   recorded-destroyed entities (`ZonePackageImporter`, using per-entity
-  identity lifted into `ZonePackageEntity` at package build); detach diffs
-  live ids against the authored set inside `FinalizeResidencyProcessing`
-  while entities are still alive. Destroyed-is-remembered is computed as
-  authored minus live, so repeated residencies accumulate without a union
-  step. The authored baseline is released at capture because every import
-  restates it, so retained memory tracks deviation rather than zones visited;
-  a capture with no baseline is ignored rather than treated as "everything
-  survived". A suppressed parent leaves its child unparented, matching how
-  destruction orphans rather than cascades.
+  identity lifted into `ZonePackageEntity` at package build); capture diffs
+  live ids against the authored set while entities are still alive, at detach
+  inside `FinalizeResidencyProcessing` and on demand for a save
+  (`LoadedLevel::CaptureState`). Both go through `CaptureZoneState`
+  (`zone/ZoneStateMemory.h`). Destroyed-is-remembered is computed as authored
+  minus live, so repeated residencies accumulate without a union step. The
+  authored baseline is released at detach because every import restates it,
+  so retained memory tracks deviation rather than zones visited; a capture
+  with no baseline is ignored rather than treated as "everything survived". A
+  suppressed parent leaves its child unparented, matching how destruction
+  orphans rather than cascades. The world scene of a partitioned world is
+  remembered under its own scope, and captured when the world unloads.
+- Component state: a component's owner registers a `ZoneComponentMemory`, a
+  versioned byte form with a capture and a restore function. Capture records
+  it for every identified entity that differs from authored; the importer
+  restores it on the entities it creates. Responses are the first user.
+
+### Zone state lifetime
+
+The zone record alone cannot tell a killed enemy from a taken pickup: both are
+authored entities that are gone. `ZoneStateLifetime`, authored on an entity,
+says when the zone forgets it was destroyed or changed:
+
+| `forgotten` | Destroyed, it stays gone | Use |
+|---|---|---|
+| `never` (no component) | for good, and in saves | pickups, doors, switches, bosses |
+| `at_restore` | until a save is restored or the level restarts | enemies that return when the player rests |
+| `at_detach` | until its zone unloads | enemies that return when the player comes back |
+
+A child takes its nearest ancestor's lifetime, and an entity of a placed
+prefab without one of its own takes the one authored elsewhere in the same
+placement, so marking a prefab's root marks the whole enemy. The importer
+works each entity's lifetime out when it imports the zone and the store keeps
+it beside the authored id, because a destroyed entity is not there to ask.
+Only what is never forgotten is durable: `ZoneStateStore::ExportDurable` is
+what a save keeps, and `Install` replaces the store with it.
 
 Worlds without the resources (editor documents, minimal fixtures) skip all of
 it; the import and detach paths check for the store and for component
@@ -131,10 +158,9 @@ registration before doing any work. Nothing here runs per frame.
 
 ## 4. Deferred, with owners
 
-- **Save serialization of the store** stays with roadmap Track A item 8: the
-  overlay becomes durable by serializing `ZoneStateStore` records plus a
-  global record. The in-session store is deliberately serialization-shaped
-  (plain id sets keyed by zone).
+- **Save serialization of the store** shipped with saves
+  (`docs/gameplay/saves.md`): the durable part of every zone's record is
+  written to the save and installed when it is restored.
 - **Changed-field capture and off-thread overlay serialization** stay with
   Track C item 5 (stateful detach). The capture point it needs is the one this
   slice added in `FinalizeResidencyProcessing`.
