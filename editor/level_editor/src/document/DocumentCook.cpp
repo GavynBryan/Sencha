@@ -241,7 +241,7 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
         return result;
 
     if (!StageDocumentIndex(ctx, sourceRel, geometryHash, runReferencedAssets,
-                            std::move(pendingImports)))
+                            std::move(pendingImports), snapshot.ComposedFrom))
         return result;
 
     result.CellCount = cells.size();

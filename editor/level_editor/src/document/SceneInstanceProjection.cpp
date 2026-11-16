@@ -177,6 +177,7 @@ void SceneInstanceProjection::Expand()
     }
     Elements.clear();
     Diagnostics_ = SceneProjectionDiagnostics{};
+    ComposedFrom_.clear();
 
     if (Records.Instances.empty() && Records.Extends.empty() && Records.Includes.empty())
         return;
@@ -200,6 +201,7 @@ void SceneInstanceProjection::Expand()
             PersistentEntityIdToString(PersistentEntityId{ instance.Value })
             + ": " + path.ToString());
     Diagnostics_.DanglingOverrides = resolved->DanglingOverrides;
+    ComposedFrom_ = resolved->Sources;
     for (const CompositionDiagnostic& diagnostic : resolved->Diagnostics)
         Diagnostics_.Composition.push_back(diagnostic.Code + " " + diagnostic.Path + ": " + diagnostic.Message);
 

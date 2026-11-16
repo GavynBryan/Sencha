@@ -10,6 +10,8 @@
 #include "DocumentImportPublisher.h"
 #include "project/ProjectFiles.h"
 
+#include <core/assets/AssetPath.h>
+
 #include <core/hash/ContentHash.h>
 
 #include <cstdint>
@@ -39,7 +41,7 @@ namespace
 
 bool StageDocumentIndex(const DocumentCookContext& ctx, std::string_view sourceRel,
                         std::uint64_t documentHash, bool runReferencedAssets,
-                        PendingAssetImport pendingImports)
+                        PendingAssetImport pendingImports, std::span<const std::string> composedFrom)
 {
     DocumentArtifactCatalog& catalog = ctx.Catalog;
     const DocumentCookPaths& paths = ctx.Paths;
@@ -77,6 +79,9 @@ bool StageDocumentIndex(const DocumentCookContext& ctx, std::string_view sourceR
     entry.SourceRelPath = std::string(sourceRel);
     entry.SourceId = ReadStatedId(assetsRoot / std::string(sourceRel)).value_or(AssetId{});
     entry.InputFingerprint = documentHash;
+    // Size and time stay unknown: what a source edit recooks is found by path.
+    for (const std::string& source : composedFrom)
+        entry.AdditionalSources.push_back({ .RelPath = std::string(ContentRelativePath(source)) });
     for (CookedArtifact& artifact : catalog.Artifacts())
     {
         // Preserved artifacts already exist in the active tree, so hash them in

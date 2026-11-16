@@ -31,6 +31,8 @@ bool EditorDocument::CanPlaceSceneSource(std::string_view source, std::string* e
         why = "a scene is not placed inside itself";
     else if (SceneSourceCache& sources = Projection.Sources(); sources.Find(source) == nullptr)
         why = sources.LastError();
+    else if (sources.Find(source)->Abstract)
+        why = "'" + std::string(source) + "' is abstract: it is extended or included, never placed";
     if (error != nullptr)
         *error = why;
     return why.empty();

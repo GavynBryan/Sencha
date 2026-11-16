@@ -117,6 +117,8 @@ public:
     void Reset();
 
     [[nodiscard]] bool DependsOnSource(std::string_view assetPath) const;
+    // The documents the last expansion read, transitively.
+    [[nodiscard]] const std::vector<std::string>& ComposedFrom() const { return ComposedFrom_; }
     // Invalidates the named sources and re-projects if any of them mattered.
     bool ReloadSources(std::span<const std::string> assetPaths);
 
@@ -213,5 +215,6 @@ private:
     std::unordered_map<std::uint64_t, ProjectedElement> Elements;
     std::unordered_set<std::uint64_t> AbsorbedIds_;
     SceneProjectionDiagnostics Diagnostics_;
+    std::vector<std::string> ComposedFrom_;
     std::function<void()> Observer;
 };

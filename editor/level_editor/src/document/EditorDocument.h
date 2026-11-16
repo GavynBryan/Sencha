@@ -214,6 +214,10 @@ public:
     // its file is known by under the content roots, or empty for an unsaved
     // document or one outside them.
     [[nodiscard]] std::string SourceAssetPath() const;
+    // Only ever extended or included: never cooked or placed.
+    [[nodiscard]] bool IsAbstract() const { return Retained_.Abstract; }
+    // Every scene source this document's composition read, transitively.
+    [[nodiscard]] const std::vector<std::string>& ComposedFrom() const { return Projection.ComposedFrom(); }
 
     // Records fresh ids for every instance path resolution reported missing
     // (a source that grew since the placement was recorded), then re-projects.

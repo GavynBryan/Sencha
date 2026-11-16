@@ -221,3 +221,13 @@ TEST_F(PrefabExtendsProjectionTest, AChildIsRebuiltWhenItsMissingBaseAppears)
     EXPECT_TRUE(derived.ReloadDependentSources(appeared));
     EXPECT_TRUE(FindById(derived, PostId).IsValid()) << "the base's entities arrive once it does";
 }
+
+TEST_F(PrefabExtendsProjectionTest, AnAbstractPrefabIsNeverPlaced)
+{
+    std::ofstream(Root / "props/glow.sscene")
+        << "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }";
+    EditorDocument level = Load("{ format_version: 2, entities: [] }");
+    std::string error;
+    EXPECT_FALSE(level.PlaceSceneInstance("asset://props/glow.sscene", Transform3f::Identity(), {}, &error).IsValid());
+    EXPECT_NE(error.find("abstract"), std::string::npos) << error;
+}
