@@ -25,6 +25,7 @@ public:
     void Untrack(EntityId record);
     void HolderArrived(PersistentEntityId id, EntityId holder);
     void HolderDeparted(EntityId holder);
+    void Await(EntityId record, PersistentEntityId holder);
     void NoteChanged(EntityId record);
 
     [[nodiscard]] std::span<const EntityId> RecordsOf(EntityId holder) const;
@@ -33,7 +34,12 @@ public:
     [[nodiscard]] EntityId HolderOf(EntityId record) const;
     [[nodiscard]] PersistentEntityId AwaitedHolderOf(EntityId record) const;
     [[nodiscard]] std::uint32_t Revision(EntityId holder) const;
+    // 1 for a record whose holder is no record; the walks stop past kHeldDeepestNesting.
+    [[nodiscard]] int Depth(EntityId entity) const;
+    [[nodiscard]] int Height(EntityId entity) const;
     [[nodiscard]] std::vector<EntityId> AllRecords() const;
+    [[nodiscard]] std::vector<EntityId> Holders() const;
+    [[nodiscard]] std::vector<EntityId> AwaitingRecords() const;
     [[nodiscard]] std::size_t Count() const { return Listings.size(); }
 
     // One past the holder's last record; the last position once that is taken,
