@@ -7,6 +7,7 @@
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityKit.h>
+#include <abilities/AbilityRequestQueue.h>
 #include <abilities/AbilityVerbs.h>
 #include <app/EngineVocabulary.h>
 #include <anim/AnimRequestVerbs.h>
@@ -1302,6 +1303,95 @@ constexpr std::string_view kReadSource = R"({
     "phases": [ { "key": "p_hold",
         "enter": [ { "key": "o_read", "op": "set", "local": "l_source", "from": { "port": "source" } } ],
         "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, ARequestTakesTheHighestPriorityGrantThenTheLowestId)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    const EntityId low = Entities.CreateEntity();
+    const EntityId high = Entities.CreateEntity();
+    const EntityId later = Entities.CreateEntity();
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const auto grant = [&](std::int32_t priority, EntityId source) {
+        const std::uint16_t entry = entries.Intern({ "g_" + std::to_string(priority), read, { .Priority = priority } });
+        return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), read, AbilityGrantKind::Request, entry, {}, source);
+    };
+    (void)grant(20, low);
+    const AbilityGrantId top = grant(21, high);
+    (void)grant(21, later);
+    const auto request = [&](EntityId source) {
+        Entities.GetResource<AbilityRequestQueue>().Push(
+            { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = read, .Source = source });
+        Step();
+    };
+
+    request({});
+    ASSERT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_EQ(LiveRecord(actor, read)->Grant, top) << "the highest priority, and of two at it the first granted";
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = read });
+    Step();
+
+    request(low);
+    ASSERT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, low)) << "a source names its grant exactly";
+}
+
+TEST_F(AbilityRuntime, ARequestFromASourceWithNoSuchGrantIsNotGranted)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    Grant(actor, read);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = read, .Source = Entities.CreateEntity() });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, read), nullptr);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).front().Refusal, AbilityRefusal::NotGranted);
+}
+
+TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    const EntityId ring = Entities.CreateEntity();
+    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
+    const auto invoke = [&](std::string_view verb, bool keyed) {
+        VerbBindingDesc desc;
+        desc.Key = std::string(verb) + ".test";
+        desc.KeyId = MakeVerbBindingKey(desc.Key);
+        desc.VerbName = std::string(verb);
+        desc.Inputs = { "target", "source" };
+        const auto argument = [](std::string key, VerbArgumentSource from, std::string text) {
+            VerbBindingArgument made;
+            made.Key = std::move(key);
+            made.Source = from;
+            made.Text = std::move(text);
+            return made;
+        };
+        desc.Arguments = { argument("target", VerbArgumentSource::Input, "target"),
+                           argument("ability", VerbArgumentSource::DataAsset, "asset://abilities/read_source.sdata"),
+                           argument("source", VerbArgumentSource::Input, "source") };
+        if (keyed)
+        {
+            desc.Arguments.push_back(argument("key", VerbArgumentSource::Literal, {}));
+            desc.Arguments.back().Literal = JsonValue("ringed");
+        }
+        CompiledVerbBinding binding;
+        std::vector<std::string> errors;
+        EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), binding, errors))
+            << (errors.empty() ? "" : errors.front());
+        const AuthoredValue inputs[] = { AuthoredValue::Entity(actor), AuthoredValue::Entity(ring) };
+        return Verbs->Invoke(binding, std::span(inputs)).Status;
+    };
+
+    EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Entries[0].Source, ring);
+    EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
+    Step();
+    EXPECT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, ring));
+}
 
 TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
 {

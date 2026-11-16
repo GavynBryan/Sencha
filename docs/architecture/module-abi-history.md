@@ -1014,3 +1014,8 @@ after the holder, `AbilityPort` gains `Source`, and `HasLiveActivationFrom`
 joins `IsAbilityLive`. The grants wire sends the source in place of the holding
 effect (`AbilityGrantsWireSources`, field `sources`): no bytes change, the
 replication table hash does, and the protocol stays 9.
+
+**Request selection.** `AbilityRequest` gains `Source`. An activation request
+takes the grant with the highest effective priority, then the lowest grant id;
+`AbilityEffectiveBinding::Priority` is resolved for an entry bound to no
+action. `ability.activate` and `ability.grant` take an optional `source`.

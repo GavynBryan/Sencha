@@ -184,6 +184,32 @@ namespace
         }
     }
 
+    // The highest effective priority, then the lowest grant id; with a source, only its grants.
+    const AbilityGrant* RequestedGrant(const World& world, const AbilityActor& actor, const AbilityRequest& request)
+    {
+        const AbilityGrants* grants = actor.Grants();
+        const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
+        if (grants == nullptr || entries == nullptr)
+            return nullptr;
+        const AbilityGrant* found = nullptr;
+        std::int32_t foundPriority = 0;
+        for (std::uint8_t g = 0; g < grants->Count; ++g)
+        {
+            const AbilityGrant& grant = grants->Entries[g];
+            if (grant.Ability != request.Ability || (request.Source.IsValid() && grant.Source != request.Source))
+                continue;
+            const AbilityEffectiveBinding* binding = entries->Binding(grant.Entry);
+            const std::int32_t priority = binding != nullptr ? binding->Priority : 0;
+            if (found == nullptr || priority > foundPriority
+                || (priority == foundPriority && grant.Id.Value < found->Id.Value))
+            {
+                found = &grant;
+                foundPriority = priority;
+            }
+        }
+        return found;
+    }
+
     void Requests(AbilityPass& pass, World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch)
     {
         AbilityRequestQueue* queue = world.TryGetResource<AbilityRequestQueue>();
@@ -221,11 +247,7 @@ namespace
                         pass.End(actor, slot, AbilityEndReason::ExplicitCancel);
                 continue;
             }
-            const AbilityGrants* grants = actor.Grants();
-            const AbilityGrant* found = nullptr;
-            for (std::uint8_t g = 0; grants != nullptr && g < grants->Count && found == nullptr; ++g)
-                if (grants->Entries[g].Ability == request.Ability)
-                    found = &grants->Entries[g];
+            const AbilityGrant* found = RequestedGrant(world, actor, request);
             if (found == nullptr)
             {
                 pass.Trace({ .Actor = request.Actor, .Key = key, .Event = AbilityTraceEvent::Refused,

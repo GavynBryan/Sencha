@@ -302,7 +302,11 @@ The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"
 `ability.activate`, `ability.cancel`, `ability.grant` and `ability.revoke` reach
 the same admission by name, through `AbilityRequestQueue`. Every request a tick makes is
 heard: the queue drains each pass, so it holds one tick's asks. Only requests
-waiting on a dormant actor carry over, and those are capped.
+waiting on a dormant actor carry over, and those are capped. An activation request
+runs through the grant of that ability with the highest effective priority (bound
+to an action or not), and of two at that priority the one granted first. Its
+optional `source` takes only a grant that source supplied. `ability.grant` takes
+the same optional `source`.
 
 ## Runtime
 

@@ -135,6 +135,8 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
         static const std::optional<AbilityBindingDecl> kNone;
         const AbilityBindingDecl merged = EffectiveAbilityBinding(
             slot.Entry.Override, definition != nullptr ? definition->InputDefault : kNone);
+        // A request chooses among grants by priority, bound to an action or not.
+        slot.Binding.Priority = *merged.Priority;
         if (!merged.Action)
             continue;
         const InputActionId id = actions != nullptr ? actions->Find(*merged.Action) : InputActionId{};
@@ -160,7 +162,6 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
         }
         slot.Binding.Action = static_cast<std::uint8_t>(index);
         slot.Binding.Policy = *merged.Policy;
-        slot.Binding.Priority = *merged.Priority;
         slot.Binding.Consume = *merged.Consume;
         slot.Binding.WhenBlocked = *merged.WhenBlocked;
         slot.Binding.OnInterrupt = *merged.OnInterrupt;

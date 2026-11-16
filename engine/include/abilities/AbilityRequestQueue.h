@@ -24,6 +24,8 @@ struct AbilityRequest
     AbilityId Ability{};
     EntityId Instigator{};
     InvocationId Cause{};
+    // Activate: only a grant this source supplied; none takes any.
+    EntityId Source{};
 };
 
 // Drained by every ability pass, so it holds what one tick asked for and no asker
