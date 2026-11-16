@@ -7,11 +7,13 @@
 
 #include "authoring/EditorComponentAdapter.h"
 #include "authoring/GameplayVocabularyAdapters.h"
+#include "authoring/HeldEditorAdapter.h"
 #include "authoring/ResponsesEditorAdapter.h"
 #include "authoring/WorldDockEditorAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
+#include "document/EntityLabel.h"
 #include "document/WorldDocument.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/ValueCommand.h"
@@ -24,7 +26,10 @@
 #include <core/logging/LoggingProvider.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryComponents.h>
 #include <movement/components/CharacterMovement.h>
+#include <world/held/Held.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -128,12 +133,20 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     EXPECT_TRUE(adapters.Register(MakeAbilityGrantsEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeCharacterMovementEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeResponsesEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeItemEntryEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeItemContainerEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeItemPickupEditorAdapter()));
+    EXPECT_TRUE(adapters.Register(MakeHeldEditorAdapter()));
 
     for (const ComponentTypeId type : {
              ResolveComponentTypeId<GameplayTagContainer>(),
              ResolveComponentTypeId<AttributeSet>(),
              ResolveComponentTypeId<AbilityGrants>(),
              ResolveComponentTypeId<CharacterMovement>(),
+             ResolveComponentTypeId<ItemEntry>(),
+             ResolveComponentTypeId<ItemContainer>(),
+             ResolveComponentTypeId<ItemPickup>(),
+             ResolveComponentTypeId<Held>(),
          })
     {
         EXPECT_NE(adapters.Find(type), nullptr);
@@ -203,4 +216,74 @@ TEST_F(ComponentEditCommandTest, UndoingAnInspectorEditPutsBackWhatTheEntityHad)
 
     Commands.Undo();
     EXPECT_EQ(Components().TryGet<GameplayTagContainer>(entity)->Size(), 0u) << "undo restored the edited value";
+}
+
+// An entry's item is chosen by its definition's asset, and the choice undoes.
+TEST_F(ComponentEditCommandTest, AnEntrysItemIsChosenByNameAndUndone)
+{
+    WorldDocument world(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    World& components = Components();
+    ItemRegistry& items = components.GetResource<ItemRegistry>();
+    const ItemId arrow = items.Reserve("asset://items/arrow.sdata");
+    const ItemId bolt = items.Reserve("asset://items/bolt.sdata");
+    const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+    components.AddComponent<ItemEntry>(entity, ItemEntry{ .Definition = arrow, .Count = 5 });
+
+    const std::unique_ptr<IEditorComponentAdapter> entries = MakeItemEntryEditorAdapter();
+    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = entity };
+    ASSERT_EQ(entries->SetInspectorValue(context, "definition", "asset://items/bolt.sdata"), PropertyEditResult::Applied);
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Definition, bolt);
+    EXPECT_EQ(entries->SetInspectorValue(context, "definition", "asset://items/none.sdata"), PropertyEditResult::Refused);
+    Commands.Undo();
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Definition, arrow);
+
+    ASSERT_EQ(entries->SetInspectorValue(context, "count", "12"), PropertyEditResult::Applied);
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 12u);
+    Commands.Undo();
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 5u);
+}
+
+// "This chest holds 3 arrows" is authored by picking the chest as the entry's
+// holder, among the document's entities, never itself or what it holds.
+TEST_F(ComponentEditCommandTest, AHeldRecordsHolderIsPickedAmongTheDocumentsEntitiesAndUndone)
+{
+    WorldDocument world(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    World& components = Components();
+    const auto identified = [&](PersistentEntityId id) {
+        const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+        if (components.HasComponent<PersistentIdComponent>(entity))
+            components.TryGet<PersistentIdComponent>(entity)->Id = id;
+        else
+            components.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
+        return entity;
+    };
+    const EntityId chest = identified(PersistentEntityId{ 0xC4E57 });
+    const EntityId arrows = identified(PersistentEntityId{ 0xA770 });
+    components.AddComponent<Held>(arrows, Held{});
+    const EntityId inside = identified(PersistentEntityId{ 0x1D1E });
+    components.AddComponent<Held>(inside, Held{ .Holder = { .Entity = arrows, .Target = PersistentEntityId{ 0xA770 } } });
+
+    const std::unique_ptr<IEditorComponentAdapter> held = MakeHeldEditorAdapter();
+    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = arrows };
+    const std::vector<PropertyNode> rows = held->InspectorNodes(context);
+    ASSERT_FALSE(rows.empty());
+    const std::vector<std::string>& choices = rows.front().Descriptor.Choices;
+    const std::string chestLabel = EntityLabel(Document, chest) + " (00000000000c4e57)";
+    EXPECT_EQ(choices.front(), "The world");
+    EXPECT_NE(std::ranges::find(choices, chestLabel), choices.end());
+    EXPECT_EQ(std::ranges::find(choices, EntityLabel(Document, arrows) + " (000000000000a770)"), choices.end());
+    EXPECT_EQ(std::ranges::find(choices, EntityLabel(Document, inside) + " (0000000000001d1e)"), choices.end())
+        << "a record cannot be held by what it holds";
+
+    ASSERT_EQ(held->SetInspectorValue(context, "holder", chestLabel), PropertyEditResult::Applied);
+    EXPECT_EQ(components.TryGet<Held>(arrows)->Holder.Target, PersistentEntityId{ 0xC4E57 });
+    EXPECT_EQ(held->SetInspectorValue(context, "holder", "Nobody here"), PropertyEditResult::Refused);
+    Commands.Undo();
+    EXPECT_FALSE(components.TryGet<Held>(arrows)->Holder.Target.IsValid());
 }

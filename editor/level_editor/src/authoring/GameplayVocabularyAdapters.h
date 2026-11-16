@@ -5,7 +5,7 @@
 //=============================================================================
 // Inspectors for the components whose values are registry-resolved names.
 //
-// Four of them, in one file, because they are one mechanism: each reads a world
+// In one file because they are one mechanism: each reads a world
 // resource that defines the vocabulary, draws rows of names rather than
 // numbers, and commits a whole-component value. They share the row widgets and
 // they change together. Their editing rules live in GameplayVocabularyEdits.h,
@@ -20,3 +20,6 @@
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeAttributeSetEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter();
+[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter();
+[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter();
+[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemPickupEditorAdapter();

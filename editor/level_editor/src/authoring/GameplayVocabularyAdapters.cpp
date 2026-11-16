@@ -1,10 +1,7 @@
 #include "GameplayVocabularyAdapters.h"
 
+#include "ComponentValueCommit.h"
 #include "GameplayVocabularyEdits.h"
-#include "commands/CommandStack.h"
-#include "document/EditorDocument.h"
-#include "document/EditorScene.h"
-#include "document/commands/ValueCommand.h"
 #include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
@@ -15,6 +12,7 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryComponents.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
 
@@ -37,22 +35,6 @@ namespace
     {
         for (std::uint32_t value = 1; value <= registry.Size(); ++value)
             visit(Id{ value });
-    }
-
-    // One undoable whole-component write. These components are small trivially
-    // copyable values holding no handles, so a before/after pair is a complete
-    // record and no lifecycle hook is owed anything.
-    template <typename Component>
-    PropertyEditResult Commit(EditorComponentInspectorContext& context, Component before,
-                              const Component& after)
-    {
-        context.Scene.SetComponent(context.Entity, after);
-        context.Commands.Execute(std::make_unique<ValueCommand<Component>>(
-            before, after,
-            [&scene = context.Scene, entity = context.Entity](const Component& value)
-            { scene.SetComponent(entity, value); },
-            context.Document));
-        return PropertyEditResult::Applied;
     }
 
     // A name the registry no longer knows, which authored content can outlive:
@@ -176,7 +158,7 @@ namespace
                 return PropertyEditResult::Gone;
             }
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
         }
 
         PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
@@ -196,7 +178,7 @@ namespace
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
         }
 
     private:
@@ -264,7 +246,7 @@ namespace
             AttributeSet working = *held;
             const PropertyEditResult result = Refusal.Report(
                 context.Ref(), SetAttributeBase(working, *registry, AttributeId{ *id }, static_cast<float>(*base)));
-            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
         }
 
         PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
@@ -293,7 +275,7 @@ namespace
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
         }
 
     private:
@@ -370,7 +352,7 @@ namespace
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
         }
 
     private:
@@ -426,7 +408,137 @@ namespace
             CharacterMovement after = *held;
             if (!SetLocomotionMode(after, *modes, value).Changed)
                 return PropertyEditResult::Unchanged;
-            return Commit(context, *held, after);
+            return CommitComponentValue(context, *held, after);
+        }
+    };
+
+    constexpr std::string_view kAnything = "Anything";
+
+    PropertyNode ItemDefinitionRow(const World& world, ItemId definition)
+    {
+        const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+        std::vector<std::string> names;
+        if (items != nullptr)
+            ForEachRegistered<ItemId>(*items, [&](ItemId id) { names.push_back(DisplayName(items->GetName(id))); });
+        const std::string current = DisplayName(items != nullptr ? items->GetName(definition) : std::string_view{});
+        if (std::ranges::find(names, current) == names.end())
+            names.push_back(current);
+        const std::vector<std::string_view> options(names.begin(), names.end());
+        return ChoiceProperty("definition", "Item", options,
+                              static_cast<std::size_t>(std::ranges::find(names, current) - names.begin()),
+                              "Which item this is, by the asset that declares it.");
+    }
+
+    template <typename Counted>
+    class CountedItemEditorAdapter final : public IEditorComponentAdapter
+    {
+    public:
+        explicit CountedItemEditorAdapter(std::string_view countTooltip)
+            : CountTooltip(countTooltip)
+        {
+        }
+
+        ComponentTypeId Type() const override { return ResolveComponentTypeId<Counted>(); }
+        bool AuthorsInspectorRows() const override { return true; }
+
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const Counted* held = world.TryGet<Counted>(context.Entity);
+            if (held == nullptr)
+                return {};
+            return { ItemDefinitionRow(world, held->Definition),
+                     NumberProperty("count", "Count", static_cast<double>(held->Count), 0.0, 4294967295.0, 1.0,
+                                    std::string(CountTooltip)) };
+        }
+
+        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                             std::string_view value) const override
+        {
+            World& world = context.Scene.GetRegistry().Components;
+            const Counted* held = std::as_const(world).TryGet<Counted>(context.Entity);
+            if (held == nullptr)
+                return PropertyEditResult::Gone;
+            Counted after = *held;
+            if (key == "definition")
+            {
+                const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+                after.Definition = items != nullptr ? items->Find(value) : ItemId{};
+                if (!after.Definition.IsValid())
+                    return PropertyEditResult::Refused;
+            }
+            else if (key == "count")
+            {
+                const std::optional<double> count = ParseNumber(value, 0.0, 4294967295.0);
+                if (!count)
+                    return PropertyEditResult::Refused;
+                after.Count = static_cast<std::uint32_t>(*count);
+            }
+            else
+                return PropertyEditResult::Gone;
+            if (after.Definition == held->Definition && after.Count == held->Count)
+                return PropertyEditResult::Unchanged;
+            return CommitComponentValue(context, *held, after);
+        }
+
+    private:
+        std::string_view CountTooltip;
+    };
+
+    class ItemContainerEditorAdapter final : public IEditorComponentAdapter
+    {
+    public:
+        ComponentTypeId Type() const override { return ResolveComponentTypeId<ItemContainer>(); }
+        bool AuthorsInspectorRows() const override { return true; }
+
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const ItemContainer* container = world.TryGet<ItemContainer>(context.Entity);
+            if (container == nullptr)
+                return {};
+            std::vector<std::string> names{ std::string(kAnything) };
+            std::size_t current = 0;
+            if (const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+                ForEachRegistered<GameplayTagId>(*tags, [&](GameplayTagId tag) {
+                    if (tag == container->Accepts)
+                        current = names.size();
+                    names.emplace_back(tags->GetName(tag));
+                });
+            const std::vector<std::string_view> options(names.begin(), names.end());
+            return { NumberProperty("capacity", "Holds", static_cast<double>(container->Capacity), 0.0, 65535.0, 1.0,
+                                    "Entries it holds at most; zero is as many as a capacity can say."),
+                     ChoiceProperty("accepts", "Accepts", options, current,
+                                    "An item must carry this tag, or one beneath it.") };
+        }
+
+        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                             std::string_view value) const override
+        {
+            World& world = context.Scene.GetRegistry().Components;
+            const ItemContainer* held = std::as_const(world).TryGet<ItemContainer>(context.Entity);
+            if (held == nullptr)
+                return PropertyEditResult::Gone;
+            ItemContainer after = *held;
+            if (key == "capacity")
+            {
+                const std::optional<double> capacity = ParseNumber(value, 0.0, 65535.0);
+                if (!capacity)
+                    return PropertyEditResult::Refused;
+                after.Capacity = static_cast<std::uint16_t>(*capacity);
+            }
+            else if (key == "accepts")
+            {
+                const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+                after.Accepts = value == kAnything || tags == nullptr ? GameplayTagId{} : tags->FindTag(value);
+                if (value != kAnything && !after.Accepts.IsValid())
+                    return PropertyEditResult::Refused;
+            }
+            else
+                return PropertyEditResult::Gone;
+            if (after.Capacity == held->Capacity && after.Accepts == held->Accepts)
+                return PropertyEditResult::Unchanged;
+            return CommitComponentValue(context, *held, after);
         }
     };
 }
@@ -449,4 +561,20 @@ std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter()
 std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter()
 {
     return std::make_unique<CharacterMovementEditorAdapter>();
+}
+
+std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter()
+{
+    return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds; zero is spent.");
+}
+
+std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter()
+{
+    return std::make_unique<ItemContainerEditorAdapter>();
+}
+
+std::unique_ptr<IEditorComponentAdapter> MakeItemPickupEditorAdapter()
+{
+    return std::make_unique<CountedItemEditorAdapter<ItemPickup>>(
+        "How many units taking it gives, when it holds no entry of its own.");
 }
