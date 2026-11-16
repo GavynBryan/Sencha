@@ -17,17 +17,19 @@ class NamedDefinitionRegistry
 public:
     NamedDefinitionRegistry() { Entries.push_back(Entry{}); }
 
+    // Invalid for a name whose wire key another name holds: the wire could not tell them apart.
     Id Reserve(std::string_view name)
     {
         if (name.empty())
             return Id{};
         if (const auto existing = IdsByName.find(std::string(name)); existing != IdsByName.end())
             return existing->second;
+        if (IdsByWireKey.contains(NameWireKey(name)))
+            return Id{};
         const Id id{ static_cast<decltype(Id{}.Value)>(Entries.size()) };
         Entries.push_back(Entry{ std::string(name), nullptr, 0 });
         IdsByName.emplace(Entries.back().Name, id);
-        if (const auto [key, inserted] = IdsByWireKey.emplace(NameWireKey(name), id); !inserted)
-            key->second = Id{};
+        IdsByWireKey.emplace(NameWireKey(name), id);
         return id;
     }
 
@@ -71,6 +73,12 @@ public:
     {
         const auto it = IdsByWireKey.find(key);
         return it != IdsByWireKey.end() ? it->second : Id{};
+    }
+
+    [[nodiscard]] std::string_view WireKeyHolder(std::string_view name) const
+    {
+        const std::string_view holder = GetName(FindByWireKey(NameWireKey(name)));
+        return holder == name ? std::string_view{} : holder;
     }
 
     [[nodiscard]] std::size_t Size() const { return Entries.size() - 1; }

@@ -115,6 +115,14 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
             errors.push_back(std::format("{}: grant '{}' {}", entry.Path, key, kAbilityGrantEntryRefusal));
 }
 
+template <typename Registry>
+std::string WireKeyCollision(const Registry& registry, std::string_view path)
+{
+    return std::format("{} travels under the same 32-bit wire key as {}, so a peer could not tell them apart; "
+                       "rename one",
+                       path, registry.WireKeyHolder(path));
+}
+
 // A reload that no longer resolves keeps the definition that last did, and says why.
 void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
                     std::vector<std::string>& errors)
@@ -137,10 +145,10 @@ void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases
         if (diagnostic.Severity == AbilityDiagnosticSeverity::Error)
             errors.push_back(std::format("{}: {} {} {}: {}", entry.Path, diagnostic.Code, diagnostic.ElementKey,
                                          diagnostic.Path, diagnostic.Message));
-    if (resolved)
-        (void)abilities->Define(entry.Path, std::move(definition));
-    else
-        (void)abilities->Reserve(entry.Path);
+    const AbilityId ability = resolved ? abilities->Define(entry.Path, std::move(definition))
+                                       : abilities->Reserve(entry.Path);
+    if (!ability.IsValid())
+        errors.push_back(WireKeyCollision(*abilities, entry.Path));
 }
 
 void DeclareCuePresentation(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
