@@ -1066,3 +1066,9 @@ the kind as it always has.
 declares the registry of one World's definitions named by asset path, which
 `AbilityRegistry` now is; its members and their behaviour are unchanged, and
 `abilities/AbilityRegistry.cpp` is gone.
+
+**Runtime persistent ids.** `world/identity/PersistentIdMint.h` declares
+`PersistentIdMint`, `MintRuntimePersistentId` and `EnsurePersistentId`. The
+snapshot writer sends a persistent id as authored only outside the runtime
+namespace, and the package importer refuses a package entity holding a
+runtime-namespace id. No wire layout changes.

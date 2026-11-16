@@ -42,13 +42,17 @@ through a dedicated `SceneFieldCodec` because JSON numbers cannot hold 64 bits
 and the archive layer truncates integrals to u32. The codec is strict: anything
 that is not a nonzero 16-digit lowercase hex value fails the parse.
 
-**Bit 63 is the runtime namespace.** Editor mints keep it clear. A future
-deterministic runtime allocator (persistent identity for dynamically spawned
-entities, minted per save as a counter, never from wall clock or addresses)
-owns the high half and can never collide with authored content. The reservation
+**Bit 63 is the runtime namespace.** Editor mints keep it clear. The runtime
+allocator, `MintRuntimePersistentId` (`world/identity/PersistentIdMint.h`), owns
+the high half and can never collide with authored content. It mints from a
+counter held as World state (`PersistentIdMint`), never from the wall clock or
+addresses, and only where the simulation is authoritative; a client is refused
+with an invalid id. `EnsurePersistentId` returns an entity's id, minting one on
+the authority when it has none. The snapshot writer never sends a runtime id as
+an authored one, since no client imported a copy to recognise. The reservation
 is enforced, not just documented: `IsAuthoredPersistentEntityId` gates editor
-load validation and the world cook, so authored content holding a reserved id
-is rejected rather than cooked.
+load validation, the world cook, and the package importer, so content holding a
+reserved id is rejected rather than cooked or imported.
 
 **Reading a file never mints.** Minting happens when the editor creates or
 adopts an entity; a load only validates. A document whose entities lack
@@ -168,11 +172,11 @@ registration before doing any work. Nothing here runs per frame.
   rides `MoveEntityToPartition` plus a residency record in the store. Trigger:
   the first design need that moves an authored entity between zones at
   runtime.
-- **Runtime mint allocator** for persistent dynamic spawns: bit 63 namespace,
-  a per-save counter. Trigger: the save system needs a dropped item to
-  persist. The namespace is enforced on authored content (editor load, world
-  cook); a hand-edited *cooked* scene can still carry a reserved id into the
-  runtime index, which becomes this allocator's boundary to close.
+- **Runtime mint allocator**: shipped (`MintRuntimePersistentId`, above). A
+  hand-edited cooked scene can no longer carry a reserved id into the runtime
+  index: the importer refuses the package. The counter is not saved, because
+  nothing a save keeps names a runtime id yet; saving what was created at run
+  time (`docs/deferred.md`) saves it with the first such entity.
 - **Prefabs** (Track D item 1): a placed instance mints its own
   `PersistentEntityId` like any authored entity; the template it instantiates
   is an `AssetId`. Nothing in this slice constrains prefab internals.

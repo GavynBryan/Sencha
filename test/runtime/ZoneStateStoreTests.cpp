@@ -375,6 +375,24 @@ TEST(ZonePackageIdentity, ComponentWithoutMetadataFailsImport)
         << error.Message;
 }
 
+// Only the runtime mint hands out ids with bit 63; content holding one could
+// collide with what the mint hands out next.
+TEST(ZonePackageIdentity, ARuntimeNamespaceIdInContentFailsImport)
+{
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+    const PersistentEntityId reserved{ PersistentEntityIdRuntimeBit | 0x1 };
+    EntityBuildPackage package;
+    const PackageEntityId local = package.CreateEntity();
+    ASSERT_TRUE(package.AddComponent<PersistentIdComponent>(local, { reserved }));
+    ASSERT_TRUE(package.SetPersistentId(local, reserved));
+
+    ZoneImportError error;
+    EXPECT_FALSE(ImportZonePackage(runtime, schema, ZoneId{ 55 }, package, LogicOnly(), &error));
+    EXPECT_NE(error.Message.find("runtime namespace"), std::string::npos) << error.Message;
+    EXPECT_EQ(AliveCount(runtime.Entities()), 0u);
+}
+
 TEST(ZonePackageIdentity, UnidentifiedEntitiesImportNormally)
 {
     // Cook-generated content (cell meshes, lightmap entities) carries no

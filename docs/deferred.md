@@ -1169,8 +1169,11 @@ described in `docs/navigation/runtime.md`, "Agents".
   saved, and a runtime entity in a zone is destroyed unrecorded when the zone
   unloads.
 - **Where:** `save/SavedGames.cpp` (`Write`), `zone/ZoneStateStore.h`.
-- **Trigger:** saving a body's progression or an inventory, which needs the
-  runtime persistent id mint and a body saved as a patch against its prefab.
+- **Trigger:** saving a body's progression or an inventory, which needs a body
+  saved as a patch against its prefab. The runtime persistent id mint exists
+  (`world/identity/PersistentIdMint.h`), but its counter (`PersistentIdMint`)
+  is World state no save keeps: the first saved runtime entity saves the
+  counter with it, or a restored game mints ids it already holds.
 
 ## Unknown save chunks are dropped on rewrite
 

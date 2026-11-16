@@ -2,6 +2,8 @@
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentIdMint.h>
+#include <world/SimulationAuthority.h>
 
 #include <gtest/gtest.h>
 
@@ -147,4 +149,42 @@ TEST(PersistentIdentity, ZoneDetachClearsExactlyItsEntries)
     EXPECT_EQ(IndexOf(runtime).TryResolve(inSecond), secondEntity);
     EXPECT_EQ(IndexOf(runtime).TryResolve(inPersistent), persistentEntity);
     EXPECT_EQ(IndexOf(runtime).Count(), 2u);
+}
+
+TEST(PersistentIdMint, MintsAreUniqueAndInTheRuntimeNamespace)
+{
+    World world;
+    const PersistentEntityId first = MintRuntimePersistentId(world);
+    const PersistentEntityId second = MintRuntimePersistentId(world);
+    EXPECT_TRUE(first.IsValid());
+    EXPECT_NE(first, second);
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(first)) << "never an id an editor could have written";
+    EXPECT_NE(first.Value & PersistentEntityIdRuntimeBit, 0u);
+}
+
+TEST(PersistentIdMint, OnlyTheSimulationAuthorityMints)
+{
+    World world;
+    world.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+    EXPECT_FALSE(MintRuntimePersistentId(world).IsValid());
+}
+
+TEST(PersistentIdMint, AnEntityKeepsTheIdItHasAndGainsOneOnlyOnTheAuthority)
+{
+    RuntimeWorld runtime(IdentitySchema());
+    World& world = runtime.Entities();
+    const EntityId authored = world.CreateEntity();
+    world.AddComponent<PersistentIdComponent>(authored, { PersistentEntityId{ 0x4411 } });
+    EXPECT_EQ(EnsurePersistentId(world, authored), PersistentEntityId{ 0x4411 });
+
+    const EntityId spawned = world.CreateEntity();
+    const PersistentEntityId minted = EnsurePersistentId(world, spawned);
+    ASSERT_TRUE(minted.IsValid());
+    EXPECT_EQ(IndexOf(runtime).TryResolve(minted), spawned);
+    EXPECT_EQ(EnsurePersistentId(world, spawned), minted) << "a second call finds the first";
+
+    world.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+    const EntityId received = world.CreateEntity();
+    EXPECT_FALSE(EnsurePersistentId(world, received).IsValid());
+    EXPECT_FALSE(world.HasComponent<PersistentIdComponent>(received));
 }

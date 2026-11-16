@@ -331,6 +331,10 @@ bool ImportPackageIntoPartitionImpl(
         }
         parented[relation.Child.Value] = true;
     }
+    // Only the mint hands out runtime-namespace ids; one in content would collide with a minted one.
+    for (const PackageEntity& packageEntity : package.Entities())
+        if (packageEntity.PersistentId.IsValid() && !IsAuthoredPersistentEntityId(packageEntity.PersistentId))
+            return fail("Package entity holds a persistent id from the runtime namespace.");
 
     // Resolved once: per entity these are two hash lookups that cannot change
     // mid-import, because component registration is sealed before any entity

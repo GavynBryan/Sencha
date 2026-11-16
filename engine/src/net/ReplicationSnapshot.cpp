@@ -491,8 +491,9 @@ namespace
         // it might still have to recognise its own copy rather than build one.
         // The bit itself is unconditional: a reader cannot infer what a writer
         // knew about its floor, and a bit the two disagree about is the rest of
-        // the snapshot read at the wrong offset.
-        const bool sendAuthored = entity.Persistent.IsValid() && !peer.Knows(entity.Id);
+        // the snapshot read at the wrong offset. A runtime-minted id was never
+        // imported anywhere, so there is no copy to recognise.
+        const bool sendAuthored = IsAuthoredPersistentEntityId(entity.Persistent) && !peer.Knows(entity.Id);
         bits += kAuthoredPresentBits;
         if (sendAuthored)
             bits += VarUIntBits(entity.Persistent.Value);

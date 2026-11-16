@@ -19,6 +19,7 @@
 #include <net/ReplicationSnapshot.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -2582,6 +2583,25 @@ TEST(ReplicationAuthored, ADynamicEntityIsStillCreatedByTheWire)
     EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
     EXPECT_EQ(pair.LastApply.AuthoredBound, 0u);
     EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
+}
+
+// A runtime-minted id is identity the client never imported, so it cannot be
+// recognised: the entity is built by the wire, not deferred for an import that
+// will never come.
+TEST(ReplicationAuthored, AnEntityWithARuntimeIdIsCreatedByTheWire)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    const PersistentEntityId minted = MintRuntimePersistentId(pair.Authority);
+    ASSERT_TRUE(minted.IsValid());
+    pair.Authority.AddComponent<PersistentIdComponent>(authority, PersistentIdComponent{ minted });
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
     EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
 
