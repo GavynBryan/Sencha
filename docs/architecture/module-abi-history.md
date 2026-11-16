@@ -1048,3 +1048,11 @@ and `AbilityCostGroup` gain `Target` (`AbilityCostTarget`) and `Resources`, and
 `AbilityResolveEnvironment` gains `CostProviders`. `CheckEffectCosts` takes
 `EffectCostRow`s (a target and an effect each) in place of one actor and a list
 of effects, and `EffectCostCheck` gains `Target`.
+
+**Grant reservations.** `effects/EffectSystem.h` declares
+`EffectApplicationAdmission`, which `ApplyEffect` asks before it spawns a lasting
+effect and tells once it has; `abilities/AbilityEffectGrants.h` declares
+`AbilityGrantReservations`, `AbilityGrantRoom` and
+`InstallAbilityGrantAdmission`, which `RegisterAbilityKit` installs. A granting
+effect whose grants would not fit is refused at application, and
+`ability.grant` leaves the room a reservation holds.

@@ -32,7 +32,17 @@ struct EffectOverrideTies
     std::vector<EffectOverrideTie> Seen;
 };
 
-// The effect entity a lasting effect spawns; none for an instant one. Its authored
+// How a layer above effects keeps room for what a lasting effect brings (the
+// grants AbilityKit holds for it): asked before the effect is applied, told once
+// it is. A World resource; without one every application is admitted.
+struct EffectApplicationAdmission
+{
+    bool (*Admit)(World& world, EntityId target, EffectId effect) = nullptr;
+    void (*Applied)(World& world, EntityId target, EffectId effect, EntityId instance) = nullptr;
+};
+
+// The effect entity a lasting effect spawns; none for an instant one, or for a
+// lasting one the World's EffectApplicationAdmission refuses. Its authored
 // seconds become whole ticks of `now`'s tick length, and `scale` multiplies every
 // modifier's magnitude, whatever its op. `source` is recorded with what an
 // application changes, in the World's EffectApplicationLog when it has one.

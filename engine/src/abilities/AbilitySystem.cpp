@@ -346,6 +346,8 @@ namespace
                 TraceGrantRefused(world, pending, ability, now);
         }
         std::swap(scratch.Refused, scratch.StillRefused);
+        if (AbilityGrantReservations* reservations = world.TryGetResource<AbilityGrantReservations>())
+            reservations->Release(world);
     }
 
     void RefreshBindings(World& world, AbilityGrantEntries& entries, std::vector<std::string>& problems)

@@ -2044,22 +2044,105 @@ TEST_F(AbilityRuntime, AFullGrantTableSwapsOneEffectsGrantForAnothersOnOneTick)
         << "the new effect's grant waited a pass for room the ended effect was still holding";
 }
 
-TEST_F(AbilityRuntime, AnEffectGrantThatDoesNotFitIsTracedOnce)
+TEST_F(AbilityRuntime, AGrantingEffectIsRefusedWhenAppliedIfItsGrantsWouldNotFit)
 {
     const EntityId actor = Actor();
     const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
     std::vector<EntityId> held;
-    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kAbilityGrantCapacity - 1);
+
+    // Room for one, asked for twice in one tick: the first reserved it.
+    const EntityId first = ApplyNow(actor, granting[kAbilityGrantCapacity - 1]);
+    const EntityId second = ApplyNow(actor, granting[kAbilityGrantCapacity]);
+    ASSERT_TRUE(first.IsValid());
+    EXPECT_FALSE(second.IsValid()) << "refused when applied, not left to fail in the pass";
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, first));
+    EXPECT_TRUE(Traced(AbilityTraceEvent::GrantRefused).empty());
+    EXPECT_EQ(Entities.GetResource<AbilityGrantReservations>().Size(), 0u) << "the pass consumed the reservation";
+}
+
+// Room an effect reserved is not there to take: a grant asked for between the
+// effect's apply and the pass that grants it is refused, and the effect's lands.
+TEST_F(AbilityRuntime, AGrantAskedForDoesNotTakeRoomAnEffectReserved)
+{
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId last = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(last.IsValid());
+
+    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
+    VerbBindingDesc desc;
+    desc.Key = "grant.test";
+    desc.KeyId = MakeVerbBindingKey(desc.Key);
+    desc.VerbName = std::string(kAbilityGrantVerb);
+    desc.Inputs = { "target" };
+    VerbBindingArgument target;
+    target.Key = "target";
+    target.Source = VerbArgumentSource::Input;
+    target.Text = "target";
+    VerbBindingArgument ability;
+    ability.Key = "ability";
+    ability.Source = VerbArgumentSource::DataAsset;
+    ability.Text = "asset://abilities/charge.sdata";
+    VerbBindingArgument key;
+    key.Key = "key";
+    key.Literal = JsonValue("scripted");
+    desc.Arguments = { target, ability, key };
+    CompiledVerbBinding binding;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), binding, errors));
+    const AuthoredValue input = AuthoredValue::Entity(actor);
+    EXPECT_EQ(Verbs->Invoke(binding, std::span(&input, 1)).Status, VerbAdmission::Refused)
+        << "the last slot is the reserved effect's";
+
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, last));
+    EXPECT_TRUE(Traced(AbilityTraceEvent::GrantRefused).empty());
+}
+
+TEST_F(AbilityRuntime, AReservationEndsWithAnEffectRemovedBeforeThePass)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId withdrawn = ApplyNow(actor, granting[kAbilityGrantCapacity - 1]);
+    ASSERT_TRUE(RemoveEffect(Entities, withdrawn));
+    const EntityId replacement = ApplyNow(actor, granting[kAbilityGrantCapacity]);
+    ASSERT_TRUE(replacement.IsValid()) << "a removed effect reserves nothing";
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, replacement));
+    EXPECT_EQ(Entities.GetResource<AbilityGrantReservations>().Size(), 0u);
+}
+
+// Only a grant nothing reserved can find no room: one taken after the effect applied.
+TEST_F(AbilityRuntime, AnUnreservedEffectGrantThatDoesNotFitIsTracedOnce)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
         held.push_back(ApplyNow(actor, granting[i]));
     Step();
     const EntityId late = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(late.IsValid());
+    (void)Grant(actor, Define("asset://abilities/squatter.sdata", kGrantedInstant), {}, "g_squat");
     Steps(3);
 
     const std::vector<AbilityTraceRecord> refused = Traced(AbilityTraceEvent::GrantRefused);
     ASSERT_EQ(refused.size(), 1u) << "a grant with no room is reported once, not every pass it waits";
     EXPECT_EQ(refused.front().Actor, actor);
     EXPECT_EQ(refused.front().Key.Ability, Entities.GetResource<AbilityRegistry>().Find(
-                                               "asset://abilities/granted_" + std::to_string(kAbilityGrantCapacity) + ".sdata"));
+                                               "asset://abilities/granted_" + std::to_string(kAbilityGrantCapacity - 1) + ".sdata"));
     EXPECT_EQ(refused.front().Refusal, AbilityRefusal::Capacity);
 
     ASSERT_TRUE(RemoveEffect(Entities, held.front()));

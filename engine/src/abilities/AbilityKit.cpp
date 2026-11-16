@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityActivations.h>
 #include <abilities/AbilityCostProviders.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityPredictionJournal.h>
 
 #include <abilities/AbilityGrantsSerializer.h>
@@ -60,6 +61,7 @@ void RegisterAbilityKit(World& world)
     InstallAbilityKitVocabulary(world);
     if (!world.HasResource<AbilityRequestQueue>())
         world.AddResource<AbilityRequestQueue>();
+    InstallAbilityGrantAdmission(world);
     if (!world.HasResource<AbilityTrace>())
         world.AddResource<AbilityTrace>();
     if (!world.HasResource<AbilityPredictionJournal>())

@@ -306,6 +306,10 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         return {};
     }
 
+    const EffectApplicationAdmission* admission = std::as_const(world).TryGetResource<EffectApplicationAdmission>();
+    if (admission != nullptr && admission->Admit != nullptr && !admission->Admit(world, target, effect))
+        return {};
+
     ActiveEffect ae{};
     ae.Target = target;
     ae.Def = effect;
@@ -349,6 +353,8 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
                                     std::llround(static_cast<double>(def->TimeScale) * static_cast<double>(kActorTimeOne)),
                                     now.TickIndex);
     }
+    if (admission != nullptr && admission->Applied != nullptr)
+        admission->Applied(world, target, effect, fx);
     return fx;
 }
 

@@ -285,8 +285,18 @@ the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
 every machine on the same tick. Ended effects give their grants back before new
 ones are granted, so an actor whose table is full swaps one effect's grants for
-another's on one pass. A grant with no room is retried every pass and traced once
-(`GrantRefused`, with the refusal).
+another's on one pass. Applying an effect reserves room for its grants
+(`AbilityGrantReservations`): `ApplyEffect` refuses a lasting effect whose grants
+would not fit beside the target's live grants and outstanding reservations, an
+ended effect's grant counting as free. The pass consumes the reservation when it
+grants. Grants stay deferred to the pass; the reservation only makes room
+certain. AbilityKit reaches `ApplyEffect` through the World's
+`EffectApplicationAdmission`, so effects know nothing of grants. A request's
+grant (`ability.grant`) is refused rather than take room a reservation holds,
+and the reservations are bounded by the room they hold: at most
+`kAbilityGrantCapacity` per target. Only a grant
+nothing reserved, one whose room a later grant took, can still find none: it is
+retried every pass and traced once (`GrantRefused`, with the refusal).
 
 A grant entry may set its ability's parameters:
 `"parameters": [ { "key": "power", "value": 14 } ]`, in a scene's grants and in
