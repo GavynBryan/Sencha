@@ -817,17 +817,6 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** LevelFlow, the first consumer with many source-filtered
   subscriptions, or a producer that publishes a per-contact event globally.
 
-## Removing an inherited response binding
-
-- **What:** bindings are an object keyed by binding key, so a prefab instance
-  overrides one binding by patching `responses.bindings.<key>`. Version-1
-  composition reads `null` as a value, so an instance cannot remove a binding
-  it inherits; it can disable it (`"enabled": false`).
-- **Where:** `logic/ResponseSet.cpp` (reading bindings) and scene composition
-  (`editor/common/src/scene_source/SceneComposition.cpp`).
-- **Trigger:** `claude/composition`'s version-2 patches (where `null` removes)
-  merging, or a designer needing an instance without an inherited behavior.
-
 ## Marking an event's instigator by annotation
 
 - **What:** `AuthoredEventDefinition::Instigator` names the payload field a
@@ -1246,3 +1235,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   `CompositionResult`), and sparse writes are in `data/DataPatch`.
 - **Trigger:** the first ability variant authored as content, or the
   AbilityKit work that brings variants to the workbench.
+
+## A fragment included onto a prefab's own entity
+
+- **What:** a fragment may go only onto an entity the prefab inherits.
+  Aimed at one of the prefab's own entities, it is refused with
+  `fragment_target`.
+  - Supporting it means saving that entity as the difference from what the
+    fragment supplies, not whole, which the local save path does not do.
+  - Until then, a prefab that wants a fragment on its own root extends a base
+    that owns the root.
+- **Where:**
+  - the resolver: `ComposeLayers` in
+    `editor/common/src/scene_source/SceneComposition.cpp`;
+  - the local save: `EditorDocument::BuildSceneSource`.
+- **Trigger:** the first prefab that includes a fragment without extending a
+  base.

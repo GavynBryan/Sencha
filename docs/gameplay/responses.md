@@ -101,7 +101,9 @@ event or verb a module no longer declares is reported, not dropped.
 That is the FPS template's bumper (`levels/bumper.sscene`). Bindings are an
 object keyed by stable keys (letters, digits, `_`, `-`): the key is a binding's
 identity, so a prefab instance overrides one binding by patching
-`bindings.<key>` and leaves the others as inherited. A binding's members:
+`bindings.<key>` and leaves the others as inherited. In a version-2 scene,
+`bindings.<key>: null` removes an inherited binding, from a placement's patch
+or a derived prefab's (`docs/editor/scene-composition.md`). A binding's members:
 `on` (required), `enabled` (default true), `once` (default false), `cooldown`
 in seconds, `cooldown_scope` (`"binding"` or `"instigator"`), and `sequence`.
 At most 32 bindings; more are refused with the entity's name.

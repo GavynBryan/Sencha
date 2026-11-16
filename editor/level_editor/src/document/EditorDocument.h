@@ -147,6 +147,15 @@ public:
     {
         return Projection.IsRoot(entity);
     }
+    // Adopted from the prefab this document extends.
+    [[nodiscard]] bool IsInherited(EntityId entity) const { return Projection.IsInherited(entity); }
+    // An entity a source supplies, a placement member or an inherited one:
+    // its edits are overrides of the source, and its place in the hierarchy
+    // is the source's.
+    [[nodiscard]] bool IsSourced(EntityId entity) const
+    {
+        return Projection.IsMember(entity) || Projection.IsInherited(entity);
+    }
     // The source path of the placement the entity belongs to, empty for
     // entities outside any projection.
     [[nodiscard]] std::string SceneInstanceSourceOf(EntityId entity) const;

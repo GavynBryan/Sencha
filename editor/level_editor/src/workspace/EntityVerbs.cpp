@@ -67,7 +67,7 @@ void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
                 std::vector<EntityId> children = SelectedEntities(w);
                 std::erase(children, parent);
                 std::erase_if(children, [&](EntityId child) {
-                    return doc.GetScene().IsAncestorOf(child, parent) || doc.IsSceneInstanceMember(child);
+                    return doc.GetScene().IsAncestorOf(child, parent) || doc.IsSourced(child);
                 });
                 if (auto command = MakeReparentEntitiesCommand(children, parent, ReparentTransformRule::KeepWorld,
                                                                doc.GetScene(), doc))

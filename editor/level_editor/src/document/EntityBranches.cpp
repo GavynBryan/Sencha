@@ -61,6 +61,13 @@ std::vector<EntityId> CollectBranches(const EditorScene& scene, std::span<const 
     return members;
 }
 
+std::vector<EntityId> CollectDeletableBranches(const EditorDocument& document, std::span<const EntityId> roots)
+{
+    std::vector<EntityId> members = CollectBranches(document.GetScene(), roots);
+    std::erase_if(members, [&](EntityId member) { return document.IsInherited(member); });
+    return members;
+}
+
 BranchCopy CaptureBranchCopy(const EditorDocument& document, std::span<const EntityId> sources,
                              DuplicateBranchPolicy branch, const SnapshotRemap& remap)
 {
