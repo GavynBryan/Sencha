@@ -65,14 +65,14 @@ std::vector<ProjectFile> AbilityWorkbench::Abilities() const
 
 DataDocument* AbilityWorkbench::Ability()
 {
-    DataDocument* ability = AbilityPath.empty() ? nullptr : Documents.Find(AbilityPath);
-    return ability != nullptr && ability->Subtype() == kAbilityDefinitionType ? ability : nullptr;
+    return const_cast<DataDocument*>(static_cast<const AbilityWorkbench*>(this)->Ability());
 }
 
 const DataDocument* AbilityWorkbench::Ability() const
 {
     const DataDocument* ability = AbilityPath.empty() ? nullptr : Documents.Find(AbilityPath);
-    return ability != nullptr && ability->Subtype() == kAbilityDefinitionType ? ability : nullptr;
+    return ability != nullptr && ability->Subtype() == kAbilityDefinitionType && !ability->Composes() ? ability
+                                                                                                       : nullptr;
 }
 
 bool AbilityWorkbench::ShowingAbility() const

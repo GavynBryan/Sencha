@@ -132,6 +132,14 @@ swaps new data into an existing cache slot in place, so handles never change
 and components see updated data through their existing references. A kind whose
 loader has none simply registers no reload operation.
 
+A reload that fails keeps the entry's last good value; when the kind can say why,
+the reason lands in `AssetSystem::LoadFailures()` under the asset's path. A kind
+whose values compose from other assets (data definitions that extend or include
+others) also registers `ComposedFrom`, which names the resident assets composed
+from a given path. The reloader uses it to reload those dependents when that
+path changes, even when the changed asset is not resident itself, as an
+abstract base never is.
+
 ---
 
 ## Layer 3: Caches
@@ -355,6 +363,16 @@ when it submits the stage (`IAssetStager::LoadStaged`, every caller). Every host
 compiles a data asset through `CompileDataAsset`, which hands the compiler paths
 only.
 
+Before it compiles, a data definition is staged by `StageDataDefinition`
+(`assets/data/DataDefinitionStaging.h`), the one path the runtime loader and
+Kyusu share. It composes the definition over the definitions its envelope
+`extends` and `includes`, validates the result, and names every error by an
+envelope path with keyed elements named by key and inherited values by the
+asset they came from. A runtime definition with sources composes when it
+commits, on the owner thread, because a staging worker holds only the id-to-path
+snapshot. An `abstract` definition never loads as a value. The rules are in
+`docs/assets/composition.md`.
+
 ---
 
 ## Dev-only systems
@@ -385,7 +403,7 @@ shared theme recooks every document that imports it, checked by
 | Class | Role |
 |-------|------|
 | `AssetSourceWatcher` | Polls source files by mtime, confirms with content hash (ignores touch-only saves). |
-| `AssetHotReloader` | Given a changed file: re-cooks if needed, then calls `CommitReload()` on the loader to swap data in place. Handles never change — components see new data through existing refs. |
+| `AssetHotReloader` | Given a changed file: re-cooks if needed, then calls `CommitReload()` on the loader to swap data in place, and reloads every resident asset a kind's `ComposedFrom` names for that file. Handles never change — components see new data through existing refs. |
 
 ---
 

@@ -660,7 +660,15 @@ New component:
    default as `ToRadians(60.0f)` from `<math/Angle.h>`. Untagged members are
    invisible to the schema, so adding one never changes the scene format or
    the wire layout. `SENCHA_SCENE_CHUNK("XXXX")` makes it persist into scenes,
-   `SENCHA_REPLICATED` puts it on the wire.
+   `SENCHA_REPLICATED` puts it on the wire. `SENCHA_AUTHORITY_MATERIALIZED`
+   says only the simulation authority creates what carries it:
+   - a machine that is not the authority imports none of those entities, nor
+     anything parented beneath one, from a level, a zone or a prefab, and does
+     not count them among the zone's authored entities;
+   - a prefab whose root carries it is a bare entity there, which the wire fills;
+   - the writer never sends such an entity's authored id;
+   - the component must travel (a static assertion says so), since the wire is
+     the only way it arrives.
 4. List the header under `sencha_generate_component_metadata(...)` in the
    owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
    `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of

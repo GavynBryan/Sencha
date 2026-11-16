@@ -3,6 +3,7 @@
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
+#include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/CuePresentationLibrary.h>
 #include <assets/data/DataAssetSubtype.h>
@@ -38,12 +39,17 @@ struct ContentDefinitionLeases
     std::vector<Entry> CuePresentations;
 };
 
-std::vector<std::string> PathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
+std::vector<std::string> ConcretePathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
 {
     std::vector<std::string> paths;
     for (const auto& [path, record] : assets.Registry.Records())
-        if (record.Type == AssetType::Data && PeekDataAssetSubtype(assets.Assets.DefaultSource(), record) == subtype)
+    {
+        if (record.Type != AssetType::Data)
+            continue;
+        const DataAssetEnvelopePeek peek = PeekDataAssetEnvelope(assets.Assets.DefaultSource(), record);
+        if (peek.Subtype == subtype && !peek.Abstract)
             paths.push_back(path);
+    }
     std::ranges::sort(paths);
     return paths;
 }
@@ -105,7 +111,8 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
     if (!effect.IsValid())
         errors.push_back(std::format("{}: the effect registry refused it", entry.Path));
     else
-        DeclareEffectGrants(world, effect, declaration->GrantedAbilities);
+        for (const std::string& key : DeclareEffectGrants(world, effect, declaration->GrantedAbilities))
+            errors.push_back(std::format("{}: grant '{}' {}", entry.Path, key, kAbilityGrantEntryRefusal));
 }
 
 // A reload that no longer resolves keeps the definition that last did, and says why.
@@ -156,7 +163,7 @@ using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entr
 void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
                 std::vector<ContentDefinitionLeases::Entry>* held, DeclareFn declare, std::vector<std::string>& errors)
 {
-    for (const std::string& path : PathsOfSubtype(assets, subtype))
+    for (const std::string& path : ConcretePathsOfSubtype(assets, subtype))
     {
         if (reload == ContentVocabularyReload::Once)
         {
@@ -175,7 +182,7 @@ void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload rel
 GameplayTagDeclarations ContentTagDeclarations(RuntimeAssets& assets, std::vector<std::string>& errors)
 {
     GameplayTagDeclarations all;
-    for (const std::string& path : PathsOfSubtype(assets, kGameplayTagDeclarationsType))
+    for (const std::string& path : ConcretePathsOfSubtype(assets, kGameplayTagDeclarationsType))
     {
         // Held only while its names are read: a registered name outlives it.
         const AssetLease lease = assets.Assets.LoadLease(path, AssetType::Data);
@@ -214,7 +221,7 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
 
     if (AttributeRegistry* attributes = world.TryGetResource<AttributeRegistry>())
     {
-        for (const std::string& path : PathsOfSubtype(assets, kAttributeDeclarationsType))
+        for (const std::string& path : ConcretePathsOfSubtype(assets, kAttributeDeclarationsType))
         {
             const AssetLease lease = assets.Assets.LoadLease(path, AssetType::Data);
             const AttributeDeclarations* declarations =

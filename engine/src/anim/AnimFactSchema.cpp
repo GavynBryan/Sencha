@@ -66,6 +66,8 @@ namespace
                                       "Facts gameplay publishes.", false);
         slots.Editor.Widget = "cards";
         slots.Editor.TitleKey = "name";
+        slots.MergeKey = "name";
+        slots.MergePolicy = DataMergePolicy::AppendOnly;
         slots.Children.push_back(std::move(slot));
 
         DataFieldSchema derived = Field({}, DataFieldKind::Record, "Derived fact", {});
@@ -125,11 +127,9 @@ namespace
                                             "Facts computed from other facts.", false);
         derivedList.Editor.Widget = "cards";
         derivedList.Editor.TitleKey = "name";
+        derivedList.MergeKey = "name";
+        derivedList.MergePolicy = DataMergePolicy::AppendOnly;
         derivedList.Children.push_back(std::move(derived));
-
-        DataFieldSchema extends = Field("extends", DataFieldKind::DataAssetRef, "Extends",
-                                        "The schema whose slots come first.", false);
-        extends.Reference.DataSubtype = std::string(kAnimFactSchemaType);
 
         DataSchema schema;
         schema.TypeName = std::string(kAnimFactSchemaType);
@@ -137,7 +137,6 @@ namespace
         schema.Description =
             "Typed slots gameplay publishes for animation rules, and facts derived from them.";
         schema.Root.Kind = DataFieldKind::Record;
-        schema.Root.Children.push_back(std::move(extends));
         schema.Root.Children.push_back(std::move(slots));
         schema.Root.Children.push_back(std::move(derivedList));
         return schema;
@@ -182,13 +181,6 @@ namespace
             names.push_back(name);
             return true;
         };
-
-        if (const JsonValue* extends = data.Find("extends");
-            extends != nullptr && extends->IsString() && !extends->AsString().empty())
-        {
-            schema->Extends = extends->AsString();
-            result.Dependencies.push_back(AssetRef{ AssetType::Data, schema->Extends });
-        }
 
         if (const JsonValue* slots = data.Find("slots"); slots != nullptr)
         {
@@ -352,7 +344,9 @@ bool IsValidAnimFactName(std::string_view name)
 
 void RegisterAnimFactSchema(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas)
 {
-    if (!types.Register({ std::string(kAnimFactSchemaType), 1, Compile }))
+    if (!types.Register({ std::string(kAnimFactSchemaType), 2, Compile,
+                          "'extends' moved from 'data' to beside it, as every data definition "
+                          "extends another." }))
         return;
     if (!schemas.Register(MakeSchema()))
         (void)types.Unregister(kAnimFactSchemaType);

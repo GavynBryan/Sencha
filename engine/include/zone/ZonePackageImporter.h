@@ -10,6 +10,7 @@
 
 class ComponentSerializerRegistry;
 class EntityBuildPackage;
+struct PackageEntity;
 class RuntimeWorld;
 struct SceneSerializationContext;
 class World;
@@ -54,6 +55,8 @@ struct ZoneImportError
     SceneSerializationContext& sceneContext,
     ZoneImportError* error = nullptr,
     std::vector<EntityId>* created = nullptr);
+
+[[nodiscard]] bool IsAuthorityMaterialized(const WorldComponentSchema& schema, const PackageEntity& entity);
 
 // Imports into a hidden RuntimeWorld partition but does not publish it. Used by
 // AsyncZoneLoader so owner-thread cache/backend/entity finalization can still

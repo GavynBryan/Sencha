@@ -24,8 +24,10 @@ std::vector<AssetFieldCandidate> FindAssetFieldCandidates(
     std::erase_if(entries, [&](const AssetFieldCandidate& entry)
     {
         const AssetRecord* record = catalog.FindByPath(entry.Path);
-        return record == nullptr
-            || PeekDataAssetSubtype(assets.DefaultSource(), *record) != field.DataSubtype;
+        if (record == nullptr)
+            return true;
+        const DataAssetEnvelopePeek peek = PeekDataAssetEnvelope(assets.DefaultSource(), *record);
+        return peek.Subtype != field.DataSubtype || peek.Abstract;
     });
     return entries;
 }

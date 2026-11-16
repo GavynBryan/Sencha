@@ -19,6 +19,8 @@ namespace
     constexpr std::string_view kKey = "key";
     constexpr std::string_view kAbility = "ability";
     constexpr std::string_view kBinding = "binding";
+    constexpr std::string_view kParameters = "parameters";
+    constexpr std::string_view kValue = "value";
 
     template<typename E, std::size_t N>
     void ReadChoice(IReadArchive& archive, std::string_view field, const std::array<AbilityNamed<E>, N>& names,
@@ -95,6 +97,37 @@ namespace
         archive.End();
     }
 
+    void ReadParameters(IReadArchive& archive, std::vector<AbilityGrantParameter>& parameters)
+    {
+        std::size_t count = 0;
+        archive.BeginArray(kParameters, count);
+        for (std::size_t i = 0; i < count && archive.Ok(); ++i)
+        {
+            AbilityGrantParameter parameter;
+            archive.BeginObject(std::string_view{});
+            archive.Field(kKey, parameter.Key);
+            archive.Field(kValue, parameter.Value);
+            archive.End();
+            parameters.push_back(std::move(parameter));
+        }
+        archive.End();
+    }
+
+    void WriteParameters(IWriteArchive& archive, const std::vector<AbilityGrantParameter>& parameters)
+    {
+        if (parameters.empty())
+            return;
+        archive.BeginArray(kParameters, parameters.size());
+        for (const AbilityGrantParameter& parameter : parameters)
+        {
+            archive.BeginObject(std::string_view{});
+            archive.Field(kKey, std::string_view(parameter.Key));
+            archive.Field(kValue, parameter.Value);
+            archive.End();
+        }
+        archive.End();
+    }
+
     void WriteBinding(IWriteArchive& archive, const AbilityBindingDecl& binding)
     {
         if (binding == AbilityBindingDecl{})
@@ -124,6 +157,16 @@ class AbilityGrantsSerializer final : public IComponentSerializer
 public:
     ComponentTypeId TypeId() const override { return ResolveComponentTypeId<AbilityGrants>(); }
     std::string_view JsonKey() const override { return "AbilityGrants"; }
+    const DataFieldSchema* CompositionSchema() const override
+    {
+        static const DataFieldSchema schema = [] {
+            DataFieldSchema grants = MakeKeyedListRecordSchema(std::string(kGrants), std::string(kKey));
+            grants.Children.front().Children.front().Children.push_back(
+                std::move(MakeKeyedListRecordSchema(std::string(kParameters), std::string(kKey)).Children.front()));
+            return grants;
+        }();
+        return &schema;
+    }
     std::uint32_t BinaryChunkId() const override { return MakeFourCC('A', 'B', 'G', 'R'); }
     std::span<const RuntimeField> RuntimeFields() const override { return {}; }
 
@@ -181,6 +224,7 @@ public:
             if (!WriteSceneAssetRef(archive, kAbility, AssetType::Data, abilities->GetName(grant.Ability), context))
                 return false;
             WriteBinding(archive, entry->Override);
+            WriteParameters(archive, entry->Parameters);
             archive.End();
         }
         archive.End();
@@ -223,6 +267,8 @@ public:
             entry.Ability = abilities->Reserve(path);
             if (archive.HasField(kBinding))
                 ReadBinding(archive, entry.Override);
+            if (archive.HasField(kParameters))
+                ReadParameters(archive, entry.Parameters);
             archive.End();
             const AbilityId ability = entry.Ability;
             const std::uint16_t index = entries->Intern(std::move(entry));

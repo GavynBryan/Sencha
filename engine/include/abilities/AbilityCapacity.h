@@ -21,6 +21,7 @@ inline constexpr std::size_t kAbilityLocalSlotCapacity = 8;
 inline constexpr std::size_t kAbilityLocalCapacity = kAbilityLocalSlotCapacity;
 inline constexpr std::size_t kAbilityEntityListCapacity = 8;
 
+inline constexpr std::size_t kAbilityParameterCapacity = 8;
 inline constexpr std::size_t kAbilityPhaseCapacity = 16;
 inline constexpr std::size_t kAbilityCostGroupCapacity = 8;
 inline constexpr std::size_t kAbilityRecordLeaseCapacity = 8;

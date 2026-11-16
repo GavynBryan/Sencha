@@ -38,7 +38,6 @@ struct AnimBoundFactSlot
     int Derivation = -1;
     // The provider filling this slot in this World, or -1 to keep its given value.
     int Provider = -1;
-    // The schema asset and the field path of the declaration.
     std::string DeclaredIn;
     std::string DeclaredAt;
 };

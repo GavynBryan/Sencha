@@ -8,6 +8,7 @@
 #include <attributes/AttributeRegistry.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -28,7 +29,13 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , Journal(predicting ? world.TryGetResource<AbilityPredictionJournal>() : nullptr)
     , Inputs(buffers.Inputs)
     , Answer(buffers.Answer)
-    , Costs(buffers.Costs)
+    , EffectCosts(buffers.EffectCosts)
+    , CostArguments(buffers.CostArguments)
+    , CostRows(buffers.CostRows)
+    , CostRowGroups(buffers.CostRowGroups)
+    , CostRowArguments(buffers.CostRowArguments)
+    , CostBatches(buffers.CostBatches)
+    , CostTranslating(buffers.CostTranslating)
     , Emitted(buffers.Emitted)
 {
     Emitted.clear();
@@ -134,6 +141,7 @@ int AbilityPass::ClaimSlot(const AbilityActor& actor)
 AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const AbilityGrant& grant, std::uint16_t& failing)
 {
     failing = kAbilityNoCondition;
+    Admitting = grant;
     const AbilityDefinition* definition = Abilities != nullptr ? Abilities->Get(grant.Ability) : nullptr;
     if (definition == nullptr || definition->Phases.empty())
         return AbilityRefusal::Undefined;
@@ -157,7 +165,8 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
         return AbilityRefusal::Capacity;
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
-    if ((definition->StartGroups != 0 || cooldown) && !CheckCosts(actor, *definition, definition->StartGroups, cooldown).Paid)
+    if ((definition->StartGroups != 0 || cooldown)
+        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown, grant.Source).Paid)
         return AbilityRefusal::CostFailed;
     return AbilityRefusal::None;
 }
@@ -210,7 +219,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         assert(tracked && "the journal had room when the start was admitted");
     }
 
-    (void)Commit(actor, slot, definition, definition.StartGroups);
+    if (!Commit(actor, slot, definition, definition.StartGroups).Paid)
+    {
+        End(actor, slot, AbilityEndReason::CommitFailed);
+        return -1;
+    }
     if (definition.Cooldown && definition.Cooldown->Start == AbilityCooldownStart::OnStart)
         StartCooldown(actor, slot, definition);
 
@@ -219,8 +232,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         AbilityRecord& granted = actor.Record(slot);
         for (GameplayTagId tag : definition.OwnedTags)
         {
-            if (tags->StackCount(tag) == 0 && tags->Size() >= GameplayTagContainer::Capacity)
+            if (!tags->CanHold(tag))
+            {
+                NoteGameplayTagOverflow(Entities, actor.Entity, tag);
                 continue;
+            }
             tags->Grant(tag);
             granted.OwnedTags[granted.OwnedTagCount++] = tag;
         }
@@ -629,6 +645,18 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
 
 void AbilityPass::Sweep(const AbilityActor& actor)
 {
+    // Not inside End: the grant table must not shift under a pass walking it.
+    const auto runsThrough = [&](AbilityGrantId grant) {
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+            if (const AbilityRecord& record = actor.Record(slot);
+                record.State == AbilityRecordState::Live && record.Grant == grant)
+                return true;
+        return false;
+    };
+    if (AbilityGrants* grants = Predicting ? nullptr : Entities.TryGet<AbilityGrants>(actor.Entity))
+        for (std::uint8_t i = grants->Count; i-- > 0;)
+            if (grants->Entries[i].Kind == AbilityGrantKind::Transient && !runsThrough(grants->Entries[i].Id))
+                (void)RevokeAbilityGrant(*grants, grants->Entries[i].Id);
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))

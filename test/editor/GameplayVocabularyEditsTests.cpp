@@ -79,6 +79,7 @@ TEST(GameplayVocabularyEdits, StacksAreSetOutrightRatherThanAddedTo)
 
     EXPECT_TRUE(SetTagStacks(tags, id, 5).Changed);
     EXPECT_EQ(tags.StackCount(id), 5u);
+    EXPECT_EQ(tags.BaselineCount(id), 5u) << "an edit is authored, so it persists";
     EXPECT_TRUE(SetTagStacks(tags, id, 1).Changed);
     EXPECT_EQ(tags.StackCount(id), 1u);
 
@@ -205,4 +206,16 @@ TEST(GameplayVocabularyEdits, AnUnknownLocomotionModeNameIsTheFreeMode)
     EXPECT_EQ(movement.Mode, free);
     EXPECT_FALSE(SetLocomotionMode(movement, modes, "").Changed);
     EXPECT_EQ(movement.Mode, free);
+}
+
+TEST(GameplayVocabularyEdits, AProjectedTagIsNotAuthored)
+{
+    GameplayTagRegistry registry;
+    const GameplayTagId grounded = *registry.RegisterTag("movement.grounded");
+    registry.SetProjected(grounded, "movement.support");
+    GameplayTagContainer tags{};
+    const VocabularyEdit refused = GrantTagByName(tags, registry, "movement.grounded");
+    EXPECT_FALSE(refused.Changed);
+    EXPECT_NE(refused.Error.find("movement.support"), std::string::npos) << refused.Error;
+    EXPECT_TRUE(tags.Empty());
 }

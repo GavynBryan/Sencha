@@ -1,5 +1,7 @@
 #include "data/DataDocument.h"
 
+#include <assets/data/DataDefinitionStaging.h>
+
 #include "identity/RandomKey.h"
 
 #include "commands/ICommand.h"
@@ -32,16 +34,6 @@ namespace
     bool HasExplicitDefault(const DataDefaultValue& value)
     {
         return !std::holds_alternative<std::monostate>(value);
-    }
-
-    void AddValidation(std::vector<DataValidationError>& errors,
-                       std::string path,
-                       std::string message)
-    {
-        errors.push_back(DataValidationError{
-            .Path = std::move(path),
-            .Message = std::move(message),
-        });
     }
 }
 
@@ -338,76 +330,20 @@ bool DataDocument::Reload(const DataAssetTypeRegistry& types,
 void DataDocument::Validate(const DataAssetTypeRegistry& types,
                             const DataSchemaRegistry& schemas)
 {
-    Errors.clear();
-    if (!WorkingRoot.IsObject())
-    {
-        AddValidation(Errors, "$", "data asset root must be an object");
-        return;
-    }
-
-    const JsonValue* typeValue = WorkingRoot.Find("type");
-    const JsonValue* versionValue = WorkingRoot.Find("version");
-    const JsonValue* dataValue = WorkingRoot.Find("data");
-    if (typeValue == nullptr || !typeValue->IsString())
-        AddValidation(Errors, "$.type", "required string field is missing");
-    if (versionValue == nullptr || !versionValue->IsNumber()
-        || versionValue->AsNumber() < 1.0
-        || std::floor(versionValue->AsNumber()) != versionValue->AsNumber())
-    {
-        AddValidation(Errors, "$.version", "required positive integer field is missing");
-    }
-    if (dataValue == nullptr)
-        AddValidation(Errors, "$.data", "required data field is missing");
-    if (!Errors.empty())
-        return;
-
-    const std::string& typeName = typeValue->AsString();
-    const DataAssetTypeRegistration* type = types.Find(typeName);
-    if (type == nullptr)
-    {
-        AddValidation(Errors, "$.type", "unknown data asset subtype");
-        return;
-    }
-
-    const uint32_t version = static_cast<uint32_t>(versionValue->AsNumber());
-    if (version != type->CurrentVersion)
-    {
-        AddValidation(Errors, "$.version",
-                      "file version does not match the registered subtype version");
-    }
-
-    bool schemaValid = true;
-    if (const DataSchema* schema = schemas.Find(typeName))
-    {
-        std::vector<DataValidationError> schemaErrors;
-        schemaValid = ValidateDataAgainstSchema(*dataValue, *schema, schemaErrors);
-        for (DataValidationError& schemaError : schemaErrors)
-        {
-            if (schemaError.Path == "$")
-                schemaError.Path = "$.data";
-            else if (schemaError.Path.starts_with("$."))
-                schemaError.Path.insert(1, ".data");
-            Errors.push_back(std::move(schemaError));
-        }
-    }
-
-    // A compiler sees data its schema accepted, which is the order the runtime
-    // loader binds in and the only precondition a compiler can be written
-    // against. Subtypes come from the loaded game module, so running one over a
-    // shape it was promised it would never see puts arbitrary code a bad field
-    // type away from taking the editor down with it.
-    if (!schemaValid)
-        return;
-
     // Checking a document asks what shape its references have, not where their
     // assets now are.
-    DataAssetCompileResult compiled = CompileDataAsset(*type, *dataValue, AssetPathsById{});
-    if (!compiled.IsValid())
-    {
-        Errors.push_back(compiled.Error.empty()
-            ? DataValidationError{ "$.data", "subtype compiler returned no value" }
-            : SplitCompileError(std::move(compiled.Error)));
-    }
+    const AssetPathsById current;
+    DataSourceScope sources(Roots);
+    DataDefinitionStaging staged = StageDataDefinition(
+        WorkingRoot, DataDefinitionContext{ .Types = types, .Schemas = &schemas, .Current = current,
+                                            .Read = sources.Reader(), .Asset = AssetPath, .Provenance = true });
+    Errors = std::move(staged.Errors);
+    Composed = std::move(staged.Data);
+    Inherited = std::move(staged.Inherited);
+    Sources = std::move(staged.Sources);
+    Composition.reset();
+    if (staged.Composed)
+        Composition = std::move(staged.Composition);
 }
 
 const DataValidationError* FindValidationErrorAt(
@@ -425,30 +361,6 @@ const DataValidationError* FindValidationErrorAt(
         }
     }
     return nullptr;
-}
-
-DataValidationError SplitCompileError(std::string message)
-{
-    // Subtype compilers format their errors as "<json-path> <what went wrong>".
-    // Recovering the path lands the error on the field that owns it; collapsing
-    // every one onto "$.data" put them all on the document root, where a form
-    // cannot mark the offending card.
-    if (!message.starts_with("$."))
-        return DataValidationError{ "$.data", std::move(message) };
-
-    const auto pathEnd = message.find_first_not_of(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.$[]");
-    if (pathEnd == std::string::npos)
-        return DataValidationError{ std::move(message), std::string() };
-
-    std::string path = message.substr(0, pathEnd);
-    std::string rest = message.substr(pathEnd);
-    if (const auto textStart = rest.find_first_not_of(" \t");
-        textStart != std::string::npos)
-    {
-        rest.erase(0, textStart);
-    }
-    return DataValidationError{ std::move(path), std::move(rest) };
 }
 
 void DataDocument::ApplyRoot(JsonValue root)

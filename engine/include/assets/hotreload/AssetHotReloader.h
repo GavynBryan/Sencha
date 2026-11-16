@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -29,10 +30,15 @@ public:
     // untouched (best-effort, logged).
     void ReloadSource(std::string_view sourceRelPath);
 
+    void SetHostHeld(std::function<bool(const AssetRecord& record)> held) { HostHeld = std::move(held); }
+
+    // Re-cooks every source whose cook recorded this file as an input. True when
     // it found any, which is what tells ReloadSource the edit was meaningful
+    // even though the file is not an asset in its own right.
     bool ReloadDependents(std::string_view sourceRelPath);
 
 private:
+    void ReloadComposedFrom(std::string_view path);
 
     void StageReload(const AssetRecord& record);
 
@@ -43,4 +49,5 @@ private:
     const AssetImporterRegistry& Importers;
     AsyncTaskQueue& Tasks;
     std::string AssetsRoot;
+    std::function<bool(const AssetRecord& record)> HostHeld;
 };

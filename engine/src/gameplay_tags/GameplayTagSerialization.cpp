@@ -20,13 +20,18 @@ bool WriteGameplayTags(IWriteArchive& archive,
                        const GameplayTagContainer& tags,
                        const GameplayTagRegistry& registry)
 {
+    std::size_t persisted = 0;
+    for (int i = 0; i < tags.Count; ++i)
+        persisted += tags.Baseline[i] > 0 ? 1 : 0;
     archive.BeginObject(std::string_view{});
-    archive.BeginArray(std::string_view{ "tags" }, tags.Count);
+    archive.BeginArray(std::string_view{ "tags" }, persisted);
     for (int i = 0; i < tags.Count; ++i)
     {
+        if (tags.Baseline[i] == 0)
+            continue;
         archive.BeginObject(std::string_view{});
         archive.Field(std::string_view{ "name" }, registry.GetName(tags.Tags[i]));
-        archive.Field(std::string_view{ "stacks" }, static_cast<std::uint32_t>(tags.Counts[i]));
+        archive.Field(std::string_view{ "stacks" }, static_cast<std::uint32_t>(tags.Baseline[i]));
         archive.End();
     }
     archive.End(); // tags array
@@ -36,7 +41,8 @@ bool WriteGameplayTags(IWriteArchive& archive,
 
 bool ReadGameplayTags(IReadArchive& archive,
                       GameplayTagContainer& tags,
-                      const GameplayTagRegistry& registry)
+                      const GameplayTagRegistry& registry,
+                      std::vector<std::string>* dropped)
 {
     tags.Clear();
 
@@ -57,8 +63,14 @@ bool ReadGameplayTags(IReadArchive& archive,
         const GameplayTagId id = registry.FindTag(name);
         if (!id.IsValid())
             continue; // tag not in this registry's vocabulary: skip, keep loading
+        if (!registry.ProjectedBy(id).empty())
+        {
+            if (dropped != nullptr)
+                dropped->push_back(std::move(name));
+            continue;
+        }
 
-        tags.Grant(id, static_cast<std::uint16_t>(stacks == 0 ? 1u : stacks));
+        tags.GrantBaseline(id, static_cast<std::uint16_t>(stacks == 0 ? 1u : stacks));
     }
     archive.End(); // tags array
     archive.End(); // root object

@@ -186,3 +186,21 @@ TEST_F(ComponentEditCommandTest, ARefusalNoteStaysWithTheEntityInItsDocument)
     EXPECT_EQ(notes(refused), 1);
     EXPECT_EQ(notes(elsewhere), 0);
 }
+
+TEST_F(ComponentEditCommandTest, UndoingAnInspectorEditPutsBackWhatTheEntityHad)
+{
+    WorldDocument world(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+    Components().AddComponent<GameplayTagContainer>(entity, GameplayTagContainer{});
+
+    const std::unique_ptr<IEditorComponentAdapter> tags = MakeGameplayTagEditorAdapter();
+    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = entity };
+    ASSERT_EQ(tags->SetInspectorValue(context, "new", "Test.Undone"), PropertyEditResult::Applied);
+    ASSERT_EQ(Components().TryGet<GameplayTagContainer>(entity)->Size(), 1u);
+
+    Commands.Undo();
+    EXPECT_EQ(Components().TryGet<GameplayTagContainer>(entity)->Size(), 0u) << "undo restored the edited value";
+}

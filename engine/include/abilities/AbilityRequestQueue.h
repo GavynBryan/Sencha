@@ -12,6 +12,7 @@ enum class AbilityRequestKind : std::uint8_t
 {
     Activate,
     Cancel,
+    ActivateEntry,
 };
 
 // Starts and cancels asked for by name rather than by input -- scripts, verbs,
@@ -24,6 +25,8 @@ struct AbilityRequest
     AbilityId Ability{};
     EntityId Instigator{};
     InvocationId Cause{};
+    EntityId Source{};
+    std::uint16_t Entry = 0xFFFF;
 };
 
 // Drained by every ability pass, so it holds what one tick asked for and no asker

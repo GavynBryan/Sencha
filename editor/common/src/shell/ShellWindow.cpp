@@ -6,6 +6,7 @@
 #include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
 #include "problems/ProblemList.h"
+#include "problems/ProblemReveal.h"
 #include "project/AssetKinds.h"
 #include "properties/PropertyEditSession.h"
 #include "shell/ColorPicker.h"
@@ -681,10 +682,7 @@ void ShellWindow::RevealProblem(std::string_view index)
     for (const WorkspaceKind& kind : Services.Workspaces.Kinds())
         if (IWorkspace* open = Services.Workspaces.Find(kind.Id); open != nullptr && open != active)
             asked.push_back(open);
-    for (IWorkspace* workspace : asked)
-        if (!problem.Document.has_value() || workspace->OwnsDocument(*problem.Document))
-            if (workspace->RevealProblem(problem))
-                return;
+    (void)RevealProblemIn(asked, problem);
 }
 
 void ShellWindow::EscapeFront()

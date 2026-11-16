@@ -1,9 +1,20 @@
 #pragma once
 
+#include <core/identity/Id.h>
+#include <ecs/EntityId.h>
+
 #include <cassert>
+#include <span>
 
 class AssetSystem;
 class LoggingProvider;
+
+struct PackageMember
+{
+    PersistentEntityId Authored;
+    EntityId Entity;
+    PersistentEntityId Carried;
+};
 
 //=============================================================================
 // SceneSerializationContext
@@ -22,4 +33,6 @@ struct SceneSerializationContext
 
     AssetSystem* Assets = nullptr;
     LoggingProvider* Logging = nullptr;
+    // Set by the importer for one package, sorted by Authored.
+    std::span<const PackageMember> PackageMembers;
 };

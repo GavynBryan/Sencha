@@ -56,6 +56,8 @@ struct PackageEntity
     // metadata, not a second source of truth.
     PersistentEntityId PersistentId;
 
+    PersistentEntityId MemberId;
+
     // Set by SetParent; a package parent is single and final.
     bool HasParent = false;
 };
@@ -143,6 +145,15 @@ public:
         if (!ContainsEntity(entity))
             return false;
         Entities_[entity.Value].PersistentId = id;
+        Entities_[entity.Value].MemberId = id;
+        return true;
+    }
+
+    bool SetMemberId(PackageEntityId entity, PersistentEntityId id)
+    {
+        if (!ContainsEntity(entity))
+            return false;
+        Entities_[entity.Value].MemberId = id;
         return true;
     }
 

@@ -100,6 +100,7 @@ namespace
                                         "Named places on the skeleton that things attach to.", false);
         sockets.Editor.Widget = "cards";
         sockets.Editor.TitleKey = "name";
+        sockets.MergeKey = "name";
         sockets.Children.push_back(std::move(socket));
 
         DataSchema schema;

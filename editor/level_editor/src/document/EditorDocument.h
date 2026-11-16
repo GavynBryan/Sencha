@@ -147,6 +147,11 @@ public:
     {
         return Projection.IsRoot(entity);
     }
+    [[nodiscard]] bool IsInherited(EntityId entity) const { return Projection.IsInherited(entity); }
+    [[nodiscard]] bool IsSourced(EntityId entity) const
+    {
+        return Projection.IsMember(entity) || Projection.IsInherited(entity);
+    }
     // The source path of the placement the entity belongs to, empty for
     // entities outside any projection.
     [[nodiscard]] std::string SceneInstanceSourceOf(EntityId entity) const;
@@ -205,6 +210,8 @@ public:
     // its file is known by under the content roots, or empty for an unsaved
     // document or one outside them.
     [[nodiscard]] std::string SourceAssetPath() const;
+    [[nodiscard]] bool IsAbstract() const { return Retained_.Abstract; }
+    [[nodiscard]] const std::vector<std::string>& ComposedFrom() const { return Projection.ComposedFrom(); }
 
     // Records fresh ids for every instance path resolution reported missing
     // (a source that grew since the placement was recorded), then re-projects.

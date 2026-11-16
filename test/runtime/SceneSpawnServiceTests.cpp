@@ -23,6 +23,7 @@
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
+#include "SceneSpawnHarness.h"
 #include "SmapSceneFixture.h"
 
 #include <gtest/gtest.h>
@@ -36,80 +37,8 @@
 #include <string>
 #include <vector>
 
-struct SpawnMarker
-{
-    int Value = 0;
-};
-
-template <>
-struct TypeSchema<SpawnMarker>
-{
-    static constexpr std::string_view Name = "spawn_marker";
-    static constexpr std::uint32_t SceneChunkId = MakeFourCC('S', 'P', 'M', 'K');
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("value", &SpawnMarker::Value),
-        };
-    }
-};
-
 namespace
 {
-    struct SpawnHarness
-    {
-        SpawnHarness()
-            : Tasks(0)
-            , Schema([] {
-                WorldComponentSchema schema;
-                schema.Add<LocalTransform>();
-                schema.Add<WorldTransform>();
-                schema.Add<Parent>();
-                schema.Add<PersistentIdComponent>();
-                schema.Add<SceneInstance>();
-                schema.Add<SpawnMarker>();
-                schema.Seal();
-                return schema;
-            }())
-            , World(Schema)
-            , Registry(Logging)
-            , Scenes(Logging)
-            , SceneLoader(Logging, &Scenes, &Serializers)
-            , Assets(Logging, Registry)
-            , Service(World, Schema, Serializers, Tasks, Logging)
-        {
-            // The engine's own serializer set covers transform, identity,
-            // and scene_instance; the marker is this test's addition.
-            RegisterEngineSceneSerializers(Serializers);
-            EXPECT_EQ(Serializers.Register(
-                          std::make_unique<ComponentSerializer<SpawnMarker>>()),
-                      ComponentSerializerRegistry::RegisterResult::Added);
-            RegisterAssetKind(Assets, AssetType::Scene, SceneLoader, &Scenes);
-            Service.ConnectAssets(&Assets, &Scenes);
-        }
-
-        // One full turn of the async drain: worker runs, completion commits,
-        // pump publishes.
-        void Turn()
-        {
-            (void)Tasks.PumpWork();
-            (void)Tasks.DrainCompletions();
-            Service.Pump();
-        }
-
-        LoggingProvider Logging;
-        AsyncTaskQueue Tasks;
-        ComponentSerializerRegistry Serializers;
-        WorldComponentSchema Schema;
-        RuntimeWorld World;
-        AssetRegistry Registry;
-        SceneCache Scenes;
-        SceneAssetLoader SceneLoader;
-        AssetSystem Assets;
-        SceneSpawnService Service;
-    };
-
     // A two-entity scene: a root at (1,2,3) with an authored persistent id,
     // and a child parented to it.
     [[nodiscard]] SmapContents MakeSpawnContents()
@@ -550,4 +479,51 @@ TEST(SceneSpawnService, RootOwnershipNeverReachesAGroupThisServiceDidNotSpawn)
 
     DestroySceneInstance(world, replicatedGroup);
     EXPECT_FALSE(world.IsAlive(replicatedChild));
+}
+
+namespace
+{
+    void StampPlacement(SmapEntityRecord& record)
+    {
+        record.Components.emplace_back(
+            MakeComponentTypeId("scene_instance"),
+            JsonValue(JsonValue::Object{
+                { "source", JsonValue(std::string("asset://prefabs/bulb.sscene")) },
+                { "id", JsonValue(std::string("00000000000000f0")) } }));
+    }
+}
+
+TEST(SceneSpawnService, APlacedMemberSpawnsInTheSpawnsGroup)
+{
+    SpawnHarness h;
+    SmapContents contents = MakeSpawnContents();
+    StampPlacement(contents.Entities[1]);
+    TempSmapScene scene(h.Registry, h.Serializers, contents, "placed");
+
+    const SceneSpawnId id = h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    h.Turn();
+    ASSERT_EQ(h.Service.Status(id), SceneSpawnStatus::Live);
+    ASSERT_EQ(h.Service.Entities(id).size(), 2u) << "the placed member is outside the spawn's group";
+    World& world = h.World.Entities();
+    for (EntityId entity : h.Service.Entities(id))
+        EXPECT_NE(world.TryGet<SceneInstance>(entity)->Id.Value & SceneInstanceIdRuntimeBit, 0u);
+
+    ASSERT_TRUE(h.Service.RequestDespawn(id));
+    h.Service.Pump();
+    EXPECT_TRUE(world.GetAliveEntities().empty()) << "the despawn left the placed member behind";
+}
+
+TEST(SceneSpawnService, APlacementRootSpawnsAsTheSpawnsRoot)
+{
+    SpawnHarness h;
+    SmapContents contents = MakeSpawnContents();
+    StampPlacement(contents.Entities[0]);
+    StampPlacement(contents.Entities[1]);
+    TempSmapScene scene(h.Registry, h.Serializers, contents, "variant");
+
+    const SceneSpawnId id = SpawnOwned(h, scene.Path);
+    h.Turn();
+    ASSERT_EQ(h.Service.Status(id), SceneSpawnStatus::Live);
+    EXPECT_TRUE(h.Service.Root(id).IsValid());
+    EXPECT_EQ(h.Service.Entities(id).size(), 2u);
 }

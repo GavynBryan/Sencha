@@ -1,6 +1,7 @@
 #include <movement/LocomotionMode.h>
 
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/MovementTags.h>
 
 #include <algorithm>
 #include <string>
@@ -44,6 +45,7 @@ LocomotionModeId LocomotionModeRegistry::RegisterImpl(
     const auto requestTag = Tags.RegisterTag(RequestTagName(name));
     if (!activeTag.has_value() || !requestTag.has_value())
         return {};
+    Tags.SetProjected(*activeTag, kModeTagProjection);
 
     const LocomotionModeId id{ static_cast<uint32_t>(Modes.size() + 1) };
     Modes.push_back(LocomotionModeEntry{

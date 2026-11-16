@@ -381,6 +381,13 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     // Anything unresolved -- a source that failed, a path with no recorded id,
     // an override aimed at nothing -- would cook a scene that silently differs
     // from what the placement means, so it refuses instead.
+    if (document.IsAbstract())
+    {
+        if (error != nullptr)
+            *error = "'" + document.SourceAssetPath()
+                + "' is abstract: it is extended or included, never cooked";
+        return std::nullopt;
+    }
     if (const auto& projection = document.GetProjectionDiagnostics();
         !projection.Clean())
     {
@@ -391,6 +398,8 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
             message += " [missing id] " + missing;
         for (const std::string& dangling : projection.DanglingOverrides)
             message += " [dangling override] " + dangling;
+        for (const std::string& composition : projection.Composition)
+            message += " [composition] " + composition;
         if (error != nullptr)
             *error = message;
         return std::nullopt;
@@ -442,6 +451,7 @@ std::optional<DocumentCookInput> CollectDocumentCookInput(
     AssetSystem* assetSystem = assets != nullptr ? &assets->Assets : nullptr;
     std::unordered_map<EntityIndex, std::uint32_t> sceneIndices;
     std::vector<std::string> refused;
+    snapshot.ComposedFrom = document.ComposedFrom();
     snapshot.PassthroughScene = BuildPassthroughScene(
         document, logging, assetSystem, sceneIndices, refused);
     snapshot.Presentation = document.GetPresentation();

@@ -169,6 +169,7 @@ void ProjectSession::WatchSources()
     sources->SetReloadFilter([this](const std::filesystem::path& file) {
         return Journal.FileChangedOnDisk(file) != ExternalChange::Held;
     });
+    sources->SetHeldFilter([this](const std::filesystem::path& file) { return Journal.HoldsFile(file); });
     const std::vector<std::string> extensions{ ".smat", ".sdata", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" };
     for (const ContentRootPaths& root : Host.Content().Roots())
         sources->AddRoot(root.Authored.string(), extensions);

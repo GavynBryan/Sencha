@@ -25,6 +25,11 @@ public:
     }
 
     std::string_view JsonKey() const override { return "Attributes"; }
+    const DataFieldSchema* CompositionSchema() const override
+    {
+        static const DataFieldSchema schema = MakeKeyedListRecordSchema("attributes", "name");
+        return &schema;
+    }
     std::uint32_t BinaryChunkId() const override
     {
         return MakeFourCC('A', 'T', 'T', 'R');

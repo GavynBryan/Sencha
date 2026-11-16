@@ -46,6 +46,7 @@ enum class AbilityTraceEvent : std::uint8_t
     Blocked,
     // A commit paid nothing, because a once group was already paid.
     AlreadyCommitted,
+    GrantRefused,
 };
 
 // Compact ids only: the definitions they index can reload, and an inspector resolves

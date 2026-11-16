@@ -63,6 +63,8 @@ struct DataAssetTypeRegistration
     std::string Name;
     uint32_t CurrentVersion = 1;
     CompileDataAssetFn Compile;
+    // Shown to an author whose file predates CurrentVersion.
+    std::string Migration = {};
 };
 
 // Compiles `data` with every asset reference in it read as the path its asset

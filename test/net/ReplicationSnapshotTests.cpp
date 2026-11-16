@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
 #include <movement/JumpState.h>
@@ -19,6 +22,7 @@
 #include <net/ReplicationSnapshot.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformHistory.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -1455,6 +1459,161 @@ TEST(ReplicationVisibility, DestroyingAPrefabRootTakesItsGroup)
         << "the root's group outlived the entity the wire named";
 }
 
+namespace
+{
+    struct Holding
+    {
+        EntityId Holder;
+        EntityId Held;
+    };
+
+    Holding HeldBy(Pair& pair, std::uint32_t owner)
+    {
+        const EntityId holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        if (owner != kNetAuthorityPeer)
+            pair.Authority.AddComponent<NetOwner>(holder, NetOwner{ .Peer = owner });
+        const EntityId held = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(held, NetRelevanceAnchor{ .Anchor = holder });
+        return { holder, held };
+    }
+}
+
+TEST(ReplicationRelevance, AnAnchoredEntityReachesOnlyItsRootsOwner)
+{
+    Pair owner;
+    const Holding owned = HeldBy(owner, 5);
+    owner.Replicate(5);
+    EXPECT_TRUE(owner.Mirror(owned.Holder).IsValid());
+    EXPECT_TRUE(owner.Mirror(owned.Held).IsValid()) << "the owner sees what its holder holds";
+
+    Pair other;
+    const Holding notOwned = HeldBy(other, 5);
+    other.Replicate(6);
+    EXPECT_TRUE(other.Mirror(notOwned.Holder).IsValid());
+    EXPECT_FALSE(other.Mirror(notOwned.Held).IsValid());
+}
+
+TEST(ReplicationRelevance, NestedAnchorsFollowTheRootAndAnUnownedRootReachesNobody)
+{
+    Pair pair;
+    const Holding pack = HeldBy(pair, 5);
+    const EntityId contents = pair.SpawnReplicated(PoseAt(2.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetRelevanceAnchor>(contents, NetRelevanceAnchor{ .Anchor = pack.Held });
+    const Holding chest = HeldBy(pair, kNetAuthorityPeer);
+    pair.Replicate(5);
+    EXPECT_TRUE(pair.Mirror(contents).IsValid()) << "a bottle's contents reach the bottle's holder";
+    EXPECT_TRUE(pair.Mirror(chest.Holder).IsValid());
+    EXPECT_FALSE(pair.Mirror(chest.Held).IsValid()) << "an unowned chest's contents reach nobody";
+}
+
+TEST(ReplicationRelevance, AChainDeeperThanTheBoundReachesNobody)
+{
+    Pair pair;
+    const Holding first = HeldBy(pair, 5);
+    EntityId anchor = first.Held;
+    std::vector<EntityId> chain{ first.Held };
+    for (std::size_t depth = 1; depth <= kNetRelevanceAnchorDepth; ++depth)
+    {
+        const EntityId link = pair.SpawnReplicated(PoseAt(static_cast<float>(depth), 2.0f, 0.0f));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(link, NetRelevanceAnchor{ .Anchor = anchor });
+        chain.push_back(link);
+        anchor = link;
+    }
+    pair.Replicate(5);
+    EXPECT_TRUE(pair.Mirror(chain[kNetRelevanceAnchorDepth - 1]).IsValid()) << "the deepest link within the bound";
+    EXPECT_FALSE(pair.Mirror(chain[kNetRelevanceAnchorDepth]).IsValid()) << "one link past it";
+    const ReplicationChangeStore::EntityState* past =
+        pair.Changes.Find(pair.Identity.TryFind(chain[kNetRelevanceAnchorDepth]));
+    ASSERT_NE(past, nullptr);
+    EXPECT_TRUE(past->AnchorPastBound) << "said so, for the status report";
+    EXPECT_FALSE(pair.Changes.Find(pair.Identity.TryFind(chain[kNetRelevanceAnchorDepth - 1]))->AnchorPastBound);
+}
+
+TEST(ReplicationRelevance, OwnershipMovingTakesTheHeldEntityAwayAndBringsItBack)
+{
+    Pair pair;
+    const Holding pack = HeldBy(pair, 5);
+    pair.Replicate(5);
+    const EntityId first = pair.Mirror(pack.Held);
+    ASSERT_TRUE(first.IsValid());
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 6;
+    pair.Replicate(5);
+    EXPECT_FALSE(pair.Client.IsAlive(first)) << "the old owner still holds what it no longer may see";
+    EXPECT_TRUE(pair.Client.IsAlive(pair.Mirror(pack.Holder)));
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 5;
+    pair.Replicate(5);
+    const EntityId again = pair.Mirror(pack.Held);
+    ASSERT_TRUE(again.IsValid());
+    EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(again)) << "seeded whole, not as a delta";
+}
+
+// A destroy written after the seed would leave the peer without what the authority believes it holds.
+TEST(ReplicationRelevance, ASeedSupersedesADestroyStillOwed)
+{
+    Pair pair;
+    const EntityId holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(holder, NetOwner{ .Peer = 5 });
+    std::vector<EntityId> held;
+    for (int i = 0; i < 40; ++i)
+    {
+        held.push_back(pair.SpawnReplicated(PoseAt(static_cast<float>(i), 1.0f, 0.0f)));
+        pair.Authority.AddComponent<NetRelevanceAnchor>(held.back(), NetRelevanceAnchor{ .Anchor = holder });
+    }
+    pair.Replicate(5);
+    ASSERT_TRUE(pair.Mirror(held.back()).IsValid());
+
+    pair.Authority.TryGet<NetOwner>(holder)->Peer = 6;
+    pair.Deliver = false;
+    pair.Replicate(5);
+    ASSERT_GT(pair.Peer.OwedDestroys().size(), 32u) << "the test needs more than one snapshot of destroys";
+
+    pair.Authority.TryGet<NetOwner>(holder)->Peer = 5;
+    pair.Deliver = true;
+    for (int i = 0; i < 4; ++i)
+        pair.Replicate(5);
+    for (const EntityId entity : held)
+        EXPECT_TRUE(pair.Client.IsAlive(pair.Mirror(entity))) << "destroyed after it was seeded again";
+    EXPECT_TRUE(pair.Peer.OwedDestroys().empty());
+}
+
+TEST(ReplicationRelevance, TheHolderSeesTheOwnerOnlyStateOfWhatItHolds)
+{
+    Pair pair;
+    AttributeId charges;
+    for (World* world : { &pair.Authority, &pair.Client })
+        charges = world->AddResource<AttributeRegistry>().RegisterAttribute("Charges", 0.0f, 10.0f, 0.0f);
+    const Holding wand = HeldBy(pair, 5);
+    pair.Authority.AddComponent<AttributeSet>(wand.Held);
+    (void)pair.Authority.TryGet<AttributeSet>(wand.Held)->Add(charges, 6.0f);
+    pair.Replicate(5);
+
+    const EntityId mirror = pair.Mirror(wand.Held);
+    ASSERT_TRUE(mirror.IsValid());
+    const AttributeSet* seen = pair.Client.TryGet<AttributeSet>(mirror);
+    ASSERT_NE(seen, nullptr);
+    EXPECT_EQ(seen->GetBase(charges), 6.0f);
+}
+
+TEST(ReplicationRelevance, ADespawnIsOwedOnlyToThePeerThatHeldIt)
+{
+    Pair owner;
+    const Holding owned = HeldBy(owner, 5);
+    owner.Replicate(5);
+    const EntityId mirror = owner.Mirror(owned.Held);
+    owner.Authority.DestroyEntity(owned.Held);
+    owner.Replicate(5);
+    EXPECT_FALSE(owner.Client.IsAlive(mirror));
+
+    Pair other;
+    const Holding notOwned = HeldBy(other, 5);
+    other.Replicate(6);
+    other.Authority.DestroyEntity(notOwned.Held);
+    other.Replicate(6);
+    EXPECT_TRUE(other.Peer.OwedDestroys().empty()) << "nothing is owed for what was never sent";
+}
+
 //=============================================================================
 // Hostile input
 //
@@ -2585,6 +2744,57 @@ TEST(ReplicationAuthored, ADynamicEntityIsStillCreatedByTheWire)
     EXPECT_TRUE(pair.Mirror(authority).IsValid());
 }
 
+// No client imported a runtime id, so nothing could ever recognise it.
+TEST(ReplicationAuthored, AnEntityWithARuntimeIdIsCreatedByTheWire)
+{
+    Pair pair;
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    const PersistentEntityId minted = MintRuntimePersistentId(pair.Authority);
+    ASSERT_TRUE(minted.IsValid());
+    pair.Authority.AddComponent<PersistentIdComponent>(authority, PersistentIdComponent{ minted });
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    EXPECT_EQ(pair.LastApply.EntitiesSpawned, 1u);
+    EXPECT_TRUE(pair.Mirror(authority).IsValid());
+}
+
+namespace
+{
+    struct AuthorityOnlyThing
+    {
+        std::uint32_t Count = 0;
+    };
+}
+
+template <>
+struct TypeSchema<AuthorityOnlyThing>
+{
+    static constexpr std::string_view Name = "test.AuthorityOnlyThing";
+    static constexpr bool Replicated = true;
+    static constexpr bool AuthorityMaterialized = true;
+    static auto Fields() { return std::tuple{ MakeField("count", &AuthorityOnlyThing::Count) }; }
+};
+
+TEST(ReplicationAuthored, AnAuthoredEntityOnlyTheAuthorityMaterializesIsBuiltByTheWire)
+{
+    Pair pair([](ComponentRegistrar& components) { components.Add<AuthorityOnlyThing>(); });
+    pair.Authority.AddResource<PersistentEntityIndex>();
+    pair.Client.AddResource<PersistentEntityIndex>();
+    const EntityId authority = pair.SpawnReplicated(PoseAt(5.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<PersistentIdComponent>(authority, PersistentIdComponent{ PersistentEntityId{ 0xC0FFEE } });
+    pair.Authority.AddComponent<AuthorityOnlyThing>(authority, AuthorityOnlyThing{ .Count = 3 });
+    pair.Replicate();
+
+    EXPECT_EQ(pair.LastApply.AuthoredDeferred, 0u);
+    const EntityId mirror = pair.Mirror(authority);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_NE(pair.Client.TryGet<AuthorityOnlyThing>(mirror), nullptr);
+    EXPECT_EQ(pair.Client.TryGet<AuthorityOnlyThing>(mirror)->Count, 3u);
+}
+
 // A world with no index at all -- every test world before this, and every
 // single-player one -- must not start deferring entities it would have built.
 TEST(ReplicationAuthored, AWorldWithoutAnIndexIsUnaffected)
@@ -2754,6 +2964,106 @@ TEST(ReplicationComponentCodec, AComponentNamingAnEntityNamesTheMirrorOnTheClien
     pair.Authority.TryGet<Pointer>(pointing)->Target = EntityId{};
     pair.Replicate();
     EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
+}
+
+// A snapshot out of room sends what fits, so a reference can arrive before its entity.
+TEST(ReplicationComponentCodec, AnEntityNamedBeforeItArrivesIsNamedOnceItDoes)
+{
+    const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
+        pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = target, .Count = 3, .Local = 99 });
+        pair.Authority.AddComponent<Pointer>(target, Pointer{});
+        pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
+    };
+    std::size_t whole = 0;
+    {
+        Pair measure([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+        EntityId pointing;
+        EntityId target;
+        build(measure, pointing, target);
+        whole = measure.Replicate();
+    }
+
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    EntityId pointing;
+    EntityId target;
+    build(pair, pointing, target);
+    pair.Budget = whole - 1;
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(pointing);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_FALSE(pair.Mirror(target).IsValid()) << "the target must not fit the first snapshot";
+    EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
+
+    pair.Budget = kSnapshotBytes;
+    pair.Replicate();
+    ASSERT_TRUE(pair.Mirror(target).IsValid());
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, pair.Mirror(target));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 3u);
+    EXPECT_EQ(pair.ClientIdentity.Deferred().Size(), 0u) << "nothing waits once everything named has arrived";
+}
+
+TEST(ReplicationComponentCodec, ADeltaKeepsAReferenceStillWaitingForItsEntity)
+{
+    const auto build = [](Pair& pair, EntityId& pointing, EntityId& target) {
+        pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = target, .Count = 3, .Local = 99 });
+        pair.Authority.AddComponent<Pointer>(target, Pointer{});
+        pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
+    };
+    std::size_t whole = 0;
+    std::size_t delta = 0;
+    {
+        Pair measure([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+        EntityId pointing;
+        EntityId target;
+        build(measure, pointing, target);
+        whole = measure.Replicate();
+        measure.Authority.TryGet<Pointer>(pointing)->Count = 4;
+        delta = measure.Replicate();
+    }
+
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    EntityId pointing;
+    EntityId target;
+    build(pair, pointing, target);
+    pair.Budget = whole - 1;
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(pointing);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_FALSE(pair.Mirror(target).IsValid());
+
+    pair.Authority.TryGet<Pointer>(pointing)->Count = 4;
+    pair.Budget = delta;
+    pair.Replicate();
+    ASSERT_FALSE(pair.Mirror(target).IsValid()) << "the target must not fit the delta's snapshot either";
+    ASSERT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 4u);
+
+    pair.Budget = kSnapshotBytes;
+    pair.Replicate();
+    ASSERT_TRUE(pair.Mirror(target).IsValid());
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, pair.Mirror(target));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 4u);
+}
+
+TEST(ReplicationDeferredReferences, WhatWaitsIsBoundedAndForgottenWithItsHolder)
+{
+    ReplicationDeferredReferences deferred;
+    const std::byte image[] = { std::byte{ 1 } };
+    const std::uint64_t waiting[] = { 9 };
+    const ComponentTypeId type{ 3 };
+    for (std::uint32_t i = 0; i < ReplicationDeferredReferences::kCapacity + 2; ++i)
+        deferred.Remember(EntityId{ i, 1 }, type, image, waiting);
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity);
+    EXPECT_EQ(deferred.Forgotten(), 2u) << "the oldest go first";
+    EXPECT_EQ(deferred.All().front().Holder, (EntityId{ 2, 1 }));
+
+    deferred.Remember(EntityId{ 2, 1 }, type, image, {});
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity - 1) << "an image naming nothing unbound waits for nothing";
+    deferred.ForgetEntity(EntityId{ 3, 1 });
+    EXPECT_EQ(deferred.Size(), ReplicationDeferredReferences::kCapacity - 2);
 }
 
 // Naming an entity that does not replicate sends nothing rather than a number

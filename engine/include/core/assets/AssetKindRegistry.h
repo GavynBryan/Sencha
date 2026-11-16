@@ -53,7 +53,9 @@ struct AssetKindRegistration
 
     // Swaps a resident entry in place, keeping its handle. Empty when the kind
     // cannot reload.
-    std::function<bool(AssetStaging&&)> Reload;
+    std::function<AssetReloadOutcome(AssetStaging&&)> Reload;
+
+    std::function<std::vector<std::string>(std::string_view path)> ComposedFrom;
 
     // Puts the kind's stand-in under `path` in its store and yields the creation
     // reference (docs/assets/pipeline.md, Decision P). Requires Reload, which is

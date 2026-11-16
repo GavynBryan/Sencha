@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,6 +61,7 @@ public:
                                  bool forceRebuild = false,
                                  std::string levelName = {});
     void Cancel();
+    void RecookDependents(std::span<const std::string> savedSources);
 
     [[nodiscard]] std::vector<CookProfile> AvailableProfiles() const;
     void RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner);

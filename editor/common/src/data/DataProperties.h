@@ -42,6 +42,10 @@ public:
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:
+    using Rewriter = std::function<PropertyEditResult(JsonValue& data, const DataDocument& document,
+                                                      const DataFieldSchema& root)>;
+
+    PropertyEditResult Rewrite(const Rewriter& rewrite, DataEdit edit);
     // The document's root with `change` applied to the value at `key`.
     PropertyEditResult Change(std::string_view key,
                               const std::function<bool(JsonValue& value, const DataFieldSchema&)>& change, DataEdit edit);

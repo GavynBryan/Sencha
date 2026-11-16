@@ -21,10 +21,16 @@ enum class EffectCostStatus : std::uint8_t
     Insufficient,
 };
 
+struct EffectCostRow
+{
+    EntityId Target;
+    EffectId Effect;
+};
+
 struct EffectCostCheck
 {
     EffectCostStatus Status = EffectCostStatus::Affordable;
-    // The cost or attribute the first failure names.
+    EntityId Target{};
     EffectId Effect{};
     AttributeId Attribute{};
     float Needed = 0.0f;
@@ -33,8 +39,4 @@ struct EffectCostCheck
     [[nodiscard]] bool Affordable() const { return Status == EffectCostStatus::Affordable; }
 };
 
-// Whether `actor` can pay every cost in `costs` together, without taking any Base
-// below zero or below the attribute's minimum, whichever is higher. Deltas are
-// summed per attribute first; anything missing fails closed. Pure.
-[[nodiscard]] EffectCostCheck CheckEffectCosts(const World& world, EntityId actor,
-                                               std::span<const EffectId> costs);
+[[nodiscard]] EffectCostCheck CheckEffectCosts(const World& world, std::span<const EffectCostRow> costs);

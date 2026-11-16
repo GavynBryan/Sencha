@@ -1,6 +1,7 @@
 #include <assets/data/DataAssetLoader.h>
 
 #include <assets/runtime/AssetSystem.h>
+#include <core/assets/AssetSource.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <format>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 
 DataAssetLoader::DataAssetLoader(LoggingProvider& logging,
@@ -47,7 +49,7 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
 }
 
 AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonValue& root,
-                                        const AssetPathsById& current)
+                                        const AssetPathsById& current, const DataSourceReader& read)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -56,78 +58,68 @@ AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonVal
         staging.Error = "structured data services are not configured";
         return staging;
     }
-    if (!root.IsObject())
+    if (IsAbstractDataDefinition(root))
     {
-        staging.Error = "data asset root must be an object";
+        staging.Error = std::format("'{}' is abstract; extend or include it", record.Path);
         return staging;
     }
+    const bool composes = root.IsObject() && (root.Find("extends") != nullptr || root.Find("includes") != nullptr);
+    if (composes && !read)
+    {
+        staging.Payload = PendingComposition{ root };
+        return staging;
+    }
+    return StageDefinition(record, root, current, read);
+}
 
-    const JsonValue* typeValue = root.Find("type");
-    const JsonValue* versionValue = root.Find("version");
-    const JsonValue* dataValue = root.Find("data");
-    if (typeValue == nullptr || !typeValue->IsString())
+AssetStaging DataAssetLoader::StageDefinition(const AssetRecord& record, const JsonValue& root,
+                                              const AssetPathsById& current, const DataSourceReader& read)
+{
+    AssetStaging staging;
+    staging.Record = record;
+    DataDefinitionStaging staged = StageDataDefinition(
+        root, DataDefinitionContext{ .Types = *Types, .Schemas = Schemas, .Current = current, .Read = read,
+                                     .Asset = record.Path });
+    if (!staged.Ok())
     {
-        staging.Error = "data asset requires string field 'type'";
+        staging.Error = FormatDataValidationErrors(staged.Errors);
         return staging;
     }
-    if (versionValue == nullptr || !versionValue->IsNumber()
-        || versionValue->AsNumber() < 1.0
-        || std::floor(versionValue->AsNumber()) != versionValue->AsNumber())
-    {
-        staging.Error = "data asset requires positive integer field 'version'";
-        return staging;
-    }
-    if (dataValue == nullptr)
-    {
-        staging.Error = "data asset requires field 'data'";
-        return staging;
-    }
-
-    const std::string& typeName = typeValue->AsString();
-    const uint32_t version = static_cast<uint32_t>(versionValue->AsNumber());
-    const DataAssetTypeRegistration* registration = Types->Find(typeName);
-    if (registration == nullptr)
-    {
-        staging.Error = std::format("unknown data asset subtype '{}'", typeName);
-        return staging;
-    }
-    if (registration->CurrentVersion != version)
-    {
-        staging.Error = std::format("data subtype '{}' supports version {}, file uses {}",
-                                    typeName, registration->CurrentVersion, version);
-        return staging;
-    }
-
-    if (Schemas != nullptr)
-    {
-        if (const DataSchema* schema = Schemas->Find(typeName))
-        {
-            std::vector<DataValidationError> errors;
-            if (!ValidateDataAgainstSchema(*dataValue, *schema, errors))
-            {
-                staging.Error = std::format("data schema validation failed: {}",
-                                            FormatDataValidationErrors(errors));
-                return staging;
-            }
-        }
-    }
-
-    DataAssetCompileResult compiled = CompileDataAsset(*registration, *dataValue, current);
-    if (!compiled.IsValid())
-    {
-        staging.Error = compiled.Error.empty()
-            ? std::format("data subtype '{}' compiler returned no value", typeName)
-            : std::move(compiled.Error);
-        return staging;
-    }
-
     CompiledDataAsset payload;
-    payload.TypeName = typeName;
-    payload.Version = version;
-    payload.Value = std::move(compiled.Value);
-    staging.Dependencies = std::move(compiled.Dependencies);
+    payload.TypeName = std::move(staged.TypeName);
+    payload.Version = staged.Version;
+    payload.Value = std::move(staged.Value);
+    payload.Sources = std::move(staged.Sources);
+    staging.Dependencies = std::move(staged.Dependencies);
     staging.Payload = std::move(payload);
     return staging;
+}
+
+std::string DataAssetLoader::ComposePending(AssetStaging& staged, AssetSystem& assets)
+{
+    const PendingComposition* pending = std::any_cast<PendingComposition>(&staged.Payload);
+    if (pending == nullptr)
+        return {};
+    std::unordered_map<std::string, JsonValue> sources;
+    const DataSourceReader read = [&](std::string_view path) -> const JsonValue* {
+        if (const auto found = sources.find(std::string(path)); found != sources.end())
+            return &found->second;
+        const AssetRecord* record = assets.Resolve(path, AssetType::Data);
+        std::vector<std::byte> bytes;
+        if (record == nullptr || !ReadAssetBytes(assets.DefaultSource(), *record, bytes))
+            return nullptr;
+        std::optional<JsonValue> root =
+            JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+        if (!root.has_value())
+            return nullptr;
+        return &sources.emplace(std::string(path), std::move(*root)).first->second;
+    };
+    const JsonValue root = pending->Root;
+    AssetStaging composed = StageDefinition(staged.Record, root, *assets.PathsById(), read);
+    if (!composed.IsValid())
+        return composed.Error;
+    staged = std::move(composed);
+    return {};
 }
 
 std::string DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
@@ -175,6 +167,8 @@ std::string DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetS
 
 AssetCommitResult<DataAssetHandle> DataAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
+    if (std::string failed = ComposePending(staged, assets); !failed.empty())
+        return AssetCommitResult<DataAssetHandle>::Failed(std::move(failed));
     std::vector<AssetLease> dependencies;
     if (staged.IsValid())
         if (std::string failed = LoadDependencies(staged, assets, dependencies); !failed.empty())
@@ -182,16 +176,26 @@ AssetCommitResult<DataAssetHandle> DataAssetLoader::CommitTyped(AssetStaging&& s
     return Commit(std::move(staged), std::move(dependencies));
 }
 
-bool DataAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& assets)
+AssetReloadOutcome DataAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& assets)
 {
+    if (std::string failed = ComposePending(staged, assets); !failed.empty())
+        return AssetReloadOutcome::Failed(std::move(failed));
     std::vector<AssetLease> dependencies;
-    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies).empty())
-        return false;
+    if (staged.IsValid())
+        if (std::string failed = LoadDependencies(staged, assets, dependencies); !failed.empty())
+            return AssetReloadOutcome::Failed(std::format("depends on '{}', which did not load", failed));
     return Reload(std::move(staged), std::move(dependencies));
 }
 
 DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged)
 {
+    if (std::any_cast<PendingComposition>(&staged.Payload) != nullptr)
+    {
+        Log.Error("DataAssetLoader: '{}' extends or includes another definition and must commit through the "
+                  "asset system",
+                  staged.Record.Path);
+        return {};
+    }
     if (!staged.Dependencies.empty())
     {
         Log.Error("DataAssetLoader: '{}' declares dependencies and must commit through the "
@@ -204,6 +208,8 @@ DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged)
 
 bool DataAssetLoader::CommitReload(AssetStaging&& staged)
 {
+    if (std::any_cast<PendingComposition>(&staged.Payload) != nullptr)
+        return false;
     if (!staged.Dependencies.empty())
     {
         Log.Error("DataAssetLoader: '{}' declares dependencies and must reload through the "
@@ -238,7 +244,8 @@ DataAssetHandle DataAssetLoader::Commit(AssetStaging&& staged, std::vector<Asset
     DataAssetHandle handle = Cache->Register(staged.Record.Path,
                                              std::move(compiled->TypeName),
                                              std::move(compiled->Value),
-                                             std::move(dependencies));
+                                             std::move(dependencies),
+                                             std::move(compiled->Sources));
     if (!handle.IsValid())
         Log.Error("DataAssetLoader: failed to register '{}'", staged.Record.Path);
     return handle;
@@ -256,5 +263,6 @@ bool DataAssetLoader::Reload(AssetStaging&& staged, std::vector<AssetLease> depe
     return Cache->ReloadInPlace(staged.Record.Path,
                                 compiled->TypeName,
                                 std::move(compiled->Value),
-                                std::move(dependencies));
+                                std::move(dependencies),
+                                std::move(compiled->Sources));
 }

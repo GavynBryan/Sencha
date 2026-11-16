@@ -70,7 +70,7 @@ namespace
                 const SubjectResolution subjects = ResolveEntitySubjects(document, *arguments.Find("subjects"));
                 if (!subjects.Resolved())
                     return SubjectRefusal(subjects);
-                const std::vector<EntityId> doomed = CollectBranches(document.GetScene(), subjects.Entities);
+                const std::vector<EntityId> doomed = CollectDeletableBranches(document, subjects.Entities);
                 for (const EntityId entity : doomed)
                     recorder.Touch(entity);
                 for (const EntityId entity : std::views::reverse(doomed))

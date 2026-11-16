@@ -29,6 +29,35 @@ the minimum vocabulary, not its limit.
 `GameplayTagContainer`: up to 32 id-sorted tags with 16-bit stack counts, where a
 revoke decrements and the last stack removes.
 
+**Capacity.** 32 tags, a POD bound that keeps the container in a chunk row. A
+grant of a tag new to a full container (`CanHold` false) is refused, whatever
+writes it: an effect's granted tag, an ability's owned tag, or `tags.grant`.
+Each refusal is counted in the World's `GameplayTagOverflow` resource
+(`NoteGameplayTagOverflow`), and the ability system logs once when refusals
+begin, naming the first holder and tag, and once when a tick passes without
+one, with the total (`ReportGameplayTagOverflow`). Nothing else on the entity
+is affected; the refused tag is simply not held.
+
+Each tag's count holds a **baseline** within it: the stacks that persist.
+- Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the
+  baseline; `tags.revoke` takes it back. These verbs are how level data gives
+  an entity a permanent, saved tag (an unlock): authority only, at most what
+  the target keeps for a revoke, and an entity with no tags gains a container
+  on its first grant (`docs/gameplay/authored-api.md`).
+- Effects and abilities contribute with `Grant` and withdraw with `Revoke`,
+  which never takes the baseline.
+- A save writes the baseline alone, so a restore followed by the effects being
+  applied again never holds a tag twice.
+- A replica decoded from the wire holds contributions only.
+
+A **projected** tag (`GameplayTagRegistry::SetProjected`) belongs to one
+projection, which sets its contribution outright (`SetContribution`) from state
+it owns: movement's mode and grounded tags (`docs/gameplay/movement.md`). It has
+no other writer. A scene load drops a projected stack and reports it, the editor
+refuses one, an effect's `granted_tags` or an ability's `owned_tags` naming one
+is refused at resolve (`tag_projected`), and `tags.grant` and `tags.revoke`
+refuse one.
+
 Hierarchical membership tests take the registry resource (`IsDescendantOf`). The
 heavy provenance in `CountedGameplayTagSet` (`GameplayTagSource` strings, grant
 handles) is **not** carried per-entity: the `ActiveEffect` entity that granted a
@@ -181,7 +210,8 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
 - **Tags belong to the instance.** An effect records the tags it actually granted
   (up to `kEffectGrantedTagCapacity`; the registry refuses a definition granting
   more). Ending it revokes exactly those, whatever has become of the definition, and
-  a tag the container could not hold is neither granted nor revoked.
+  a tag the container could not hold is neither granted nor revoked, but counted
+  (see the container's capacity under D-A).
 - **The fold is canonical.** Floating-point folding depends on order, so modifiers
   fold per target in effect-definition order, then application order, never
   storage order.
@@ -190,6 +220,13 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   an `EffectApplicationLog`, each application that changes Base records its
   source and each attribute's Base before and after, clamped. Reactions read it
   (`docs/gameplay/reactions.md`).
+- **Overrides have a precedence.** A lasting effect's `override` modifier may say
+  `precedence` (default 0). Of the overrides of one attribute on one target, the
+  highest wins: `Frozen` at 100 holds speed at 0 over `Sprint Boots` at 10, in
+  either order. At equal top precedence the later in the canonical order wins,
+  as with none, and the pair is recorded once in `EffectOverrideTies`, the trace
+  a dev view and an equip preview read. Instant and periodic effects write Base
+  in their own modifiers' order.
 - **Costs fail closed.** `CheckEffectCosts` decides whether an actor can pay several
   costs together: deltas are summed per attribute first, a Base may not go below
   zero or the attribute's minimum (whichever is higher), and a missing definition,
@@ -220,12 +257,25 @@ An ability is content: an `ability.definition` data asset
   groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
   `asset`, `entity`), a `port` (`actor`, `instigator`, `aim.origin`,
-  `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`, and
-  `target` inside an op with `targets`) or a `local` (with `field` on a hit).
+  `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`,
+  `source`, and `target` inside an op with `targets`), a `local` (with `field`
+  on a hit), or a `param`. `source` is the entity the activation's grant came from (below);
+  like `target` and entity locals, it may be dead or absent, so an operation
+  that needs a component on it needs an `entity` guard.
+- **Parameters.** Up to eight numbers (`kAbilityParameterCapacity`; a ninth is
+  refused at declaration), `[ { "key", "default" } ]`, that each grant may set. A `{ "param": key }` value reads the grant's, else the default.
+  They are per-definition numbers, the same for every instance of what grants
+  the ability. A value that varies per instance belongs on the source, read
+  through `source`.
 - **Locals.** Up to eight slots of typed values for one activation (`bool`, `int`,
   `float`, `vec3`, `entity`; `hit` and `entities` take two; one `entities` local).
 - **Costs and cooldown.** Cost groups paid at start or by a `commit`, once or per
-  pulse; a cooldown effect started on start, on a group's commit, or on end.
+  pulse; a cooldown effect started on start, on a group's commit, or on end. A
+  group's `effects` are Instant Add costs taken from its `target`: the `actor`
+  (the default) or the grant's `source`, as a clip lives on its weapon. Its
+  `resources` are paid through registered cost providers:
+  `{ "key", "provider", "arguments" }`, the arguments in the provider's schema
+  and from the same values an op takes.
 
 Every element carries a stable key. Compiling happens in two stages, both
 reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
@@ -245,9 +295,10 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 ## Grants and input
 
 An actor runs only what it is granted: `AbilityGrants` holds up to sixteen grants,
-each an ability, a kind (authored on the actor, held by an effect, or made by a
-request) and an entry in the World's `AbilityGrantEntries`. An entry is the
-grant's stable key and its binding override; its effective binding is the
+each an ability, a kind (authored on the actor, held by an effect, made by a
+request, or transient: made for one requested activation) and an entry in the
+World's `AbilityGrantEntries`. An entry is the grant's stable key, its binding
+override and its parameters; its effective binding is the
 ability's `input_default` with every field the grant states replacing the
 ability's, resolved against the action vocabulary input publishes
 (`InputActionVocabulary`). The same ability is bound to different actions on two
@@ -263,7 +314,42 @@ A lasting effect may hold grants too: an `effect.definition`'s
 Infinite effect granting its abilities. The pass grants them to the effect's target
 the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
-every machine on the same tick.
+every machine on the same tick. Ended effects give their grants back before new
+ones are granted, so an actor whose table is full swaps one effect's grants for
+another's on one pass. Applying an effect reserves room for its grants
+(`AbilityGrantReservations`): `ApplyEffect` refuses a lasting effect whose grants
+would not fit beside the target's live grants and outstanding reservations, an
+ended effect's grant counting as free. A refused application returns no effect
+entity, so `effect.hold` refuses its lease. The pass consumes the reservation
+when it grants. Grants stay deferred to the pass; the reservation only makes room
+certain. AbilityKit reaches `ApplyEffect` through the World's
+`EffectApplicationAdmission`, so effects know nothing of grants. A request's
+grant (`ability.grant`) is refused rather than take room a reservation holds,
+and the reservations are bounded by the room they hold: at most
+`kAbilityGrantCapacity` per target. Only a grant nothing reserved, one whose
+room a later grant took, can still find none: it is retried every pass and
+traced once (`GrantRefused`, with the refusal).
+
+A grant entry may set its ability's parameters:
+`"parameters": [ { "key": "power", "value": 14 } ]`, in a scene's grants and in
+an effect's `granted_abilities`. They are part of the entry's content, so two
+entries that differ only in a parameter are two entries on every machine. A
+parameter the ability does not declare is reported when the bindings are
+resolved, as an unknown action is, and the default stands. An entry crosses the
+wire as one key: its stable key, binding and parameters written as text in a
+fixed field order, numbers in shortest round-trip form, then hashed, so every
+machine of one protocol computes the same key. Two entries of one ability with
+the same key would be one entry on the wire, so the second is refused
+(`kAbilityGrantEntryRefusal`); machines declaring the same content in the same
+order refuse the same one.
+
+Each grant names its **source**: the entity its activations read through the
+`source` port. An effect's grant has the effect's `LeaseOwner` entity (an
+equipped item, for instance), a request's grant the `source` it was asked with,
+and an authored grant none. The effect entity holding a grant (`Holder`) is the
+authority's alone. `HasLiveActivationFrom(world, actor, source)` says whether
+anything that source supplied is still running; like `IsAbilityLive`, it reads
+the World's `AbilityActivations`.
 
 An actor with grants carries `ActiveAbilities`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
@@ -288,7 +374,21 @@ The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"
 `ability.activate`, `ability.cancel`, `ability.grant` and `ability.revoke` reach
 the same admission by name, through `AbilityRequestQueue`. Every request a tick makes is
 heard: the queue drains each pass, so it holds one tick's asks. Only requests
-waiting on a dormant actor carry over, and those are capped.
+waiting on a dormant actor carry over, and those are capped. An activation request
+runs through the grant of that ability with the highest effective priority (bound
+to an action or not), and of two at that priority the one granted first. Its
+optional `source` takes only a grant that source supplied. `ability.grant` takes
+the same optional `source`.
+
+A request of kind `ActivateEntry` starts a grant entry the actor is not
+granted, from a `source`: what a menu's "use" does with an item's ability. The
+pass grants the entry as `Transient` and starts it, with the same admission,
+source and parameter rules as any grant. It is refused when its source has gone
+(`NotGranted`) or when the room left beside the effect reservations is none
+(`Capacity`). A refused start takes the grant back at once. Once its activation
+has ended, the next pass's sweep takes it back, so the grant table never shifts
+under a pass that is walking it: the grant outlives its activation by at most
+one tick.
 
 ## Runtime
 
@@ -331,9 +431,27 @@ owned tags revoked, an `on_end` cooldown started, exit ops never run; the record
 lingers for presentation with its reason and the element behind it.
 
 **Commit** pays cost groups atomically: every check (definitions, Instant Add
-shape, attribute floors summed per attribute, the cooldown's tag room) passes
-before anything applies, or nothing applies and the activation ends `CommitFailed`
-(unless the op says `on_fail: continue`). A `once` group already paid is a traced
+shape, attribute floors summed per target and attribute, each provider's batch,
+the cooldown's tag room) passes before anything applies, or nothing applies and
+the activation ends `CommitFailed` (unless the op says `on_fail: continue`).
+Every row of one provider across the committed groups goes to its `Check` in one
+call, so two groups each taking an arrow check for two. Applying runs the effect
+costs, then each provider's `Apply` in the order the definition first names it.
+A provider (`abilities/AbilityCostProviders.h`) is declared into the World's
+`AbilityCostProviderCatalog` through a registration scope, with an argument
+schema, a pure `Check` over its rows and an `Apply` that cannot fail after a
+passing check and changes no archetype. An ability naming one the catalog lacks
+is refused at declaration (`provider_unknown`). A resource has one owning
+provider. Another provider reaches it only by spending through it: it declares
+`SpendsThrough` (the owner's name) and a pure `Translate` in place of `Check` and
+`Apply`, and each of its rows becomes, once, a row of the owner's batch. Every
+row that reaches a resource in one commit is therefore checked as one spend, the
+apply spends exactly the rows checked, and no batch applies unless every batch
+passed. A translation that names nothing to spend fails its row's group. A
+translation leading to another translating provider is refused. A start's
+commit reads the same values admission checked, through the grant being
+admitted (its source and parameters); a start that still cannot pay ends
+`CommitFailed` rather than run unpaid. A `once` group already paid is a traced
 no-op. A cooldown of D ticks started on tick N blocks ticks N … N+D−1 and admits on
 N+D.
 
@@ -413,8 +531,11 @@ records (`ActiveAbilities` derives both), and presents them with the same
 
 The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
 (each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
-key, found in the owner's own interned entries; a grant whose entry the owner has
-not interned is held but bound to no input), `AttributeSet` (attributes by name)
+key and binding together, found in the owner's own interned entries, so two grants
+of one ability under one key and bound apart stay apart; a grant whose entry the
+owner has not interned is held but bound to no input, and a table refuses to
+intern a second entry of one ability with the same wire key; each grant's source
+as a wire entity), `AttributeSet` (attributes by name)
 and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
 `gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
 machine instead, without their stack counts: what other players' presentation
@@ -525,6 +646,21 @@ Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a 
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
 mark at which a query is worth parallelising, so it stays serial. A firing actor
 costs a peer 340 B/s ("Replication").
+
+Under many lasting effects, each folding one modifier and some granting abilities
+(the shape equipment gives content), measured before the composition work was
+ported onto pooled activations, so rerun `scripts/bench_abilities.sh` for current
+figures:
+
+| Actors | Infinite effects | Pass, none granting | Pass, granting | Resolve | `RemoveEffectsOwnedBy` |
+|---|---|---|---|---|---|
+| 100 | 600 | 0.032 ms | 0.047–0.063 ms | 0.019 ms | 0.0003 ms |
+| 256 | 1,536 | 0.081 ms | 0.121–0.164 ms | 0.048 ms | 0.0007 ms |
+| 256 | 5,120 | 0.083 ms | 0.173–0.191 ms | 0.168 ms | 0.0021 ms |
+
+Granting effects add up to about 0.11 ms of grant synchronisation to the pass;
+resolve is about 0.03 µs per effect. Method and the full table:
+`docs/plans/evidence/entry-entities/results.md`.
 
 ## Architectural smells
 

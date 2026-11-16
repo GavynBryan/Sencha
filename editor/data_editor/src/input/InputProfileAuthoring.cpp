@@ -135,13 +135,13 @@ std::optional<BindingKey> BindingOf(std::string_view key)
     const bool shape = key.ends_with(kShapeSuffix);
     const std::string_view path = shape ? key.substr(0, key.size() - kShapeSuffix.size()) : key;
     const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
-    if (!steps.has_value() || steps->size() < 4 || (*steps)[0].Key != "contexts" || !(*steps)[1].Index.has_value()
-        || (*steps)[2].Key != "bindings" || !(*steps)[3].Index.has_value())
+    if (!steps.has_value() || steps->size() < 4 || (*steps)[0].Key != "contexts" || (*steps)[1].Kind != DataPathStepKind::Index
+        || (*steps)[2].Key != "bindings" || (*steps)[3].Kind != DataPathStepKind::Index)
         return std::nullopt;
-    const std::string binding = std::format("$.data.contexts[{}].bindings[{}]", *(*steps)[1].Index, *(*steps)[3].Index);
+    const std::string binding = std::format("$.data.contexts[{}].bindings[{}]", (*steps)[1].Index, (*steps)[3].Index);
     if (shape)
         return steps->size() == 4 ? std::optional<BindingKey>({ binding, std::string(kShapeSuffix) }) : std::nullopt;
-    return steps->size() == 5 && !(*steps)[4].Index.has_value() ? std::optional<BindingKey>({ binding, (*steps)[4].Key })
+    return steps->size() == 5 && (*steps)[4].Kind == DataPathStepKind::Member ? std::optional<BindingKey>({ binding, (*steps)[4].Key })
                                                                 : std::nullopt;
 }
 

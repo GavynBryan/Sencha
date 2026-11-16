@@ -64,6 +64,8 @@ public:
         ReloadFilter = std::move(filter);
     }
 
+    void SetHeldFilter(std::function<bool(const std::filesystem::path& file)> held) { HeldFilter = std::move(held); }
+
     [[nodiscard]] std::size_t RootCount() const { return Roots.size(); }
     [[nodiscard]] std::size_t WatchedFileCount() const;
 
@@ -82,4 +84,5 @@ private:
     std::vector<std::unique_ptr<Root>> Roots;
     std::chrono::steady_clock::time_point NextPoll{};
     std::function<bool(const std::filesystem::path& file)> ReloadFilter;
+    std::function<bool(const std::filesystem::path& file)> HeldFilter;
 };

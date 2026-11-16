@@ -45,6 +45,11 @@ namespace
         DataFieldSchema magnitude = MakeDataField(DataFieldKind::Float, "magnitude", "Magnitude");
         magnitude.Default = 0.0;
         modifier.Children.push_back(std::move(magnitude));
+        DataFieldSchema precedence = MakeDataField(DataFieldKind::Int, "precedence", "Precedence",
+                                                   "Of two overrides of one attribute, the higher wins.");
+        precedence.Default = std::int64_t{ 0 };
+        precedence.Required = false;
+        modifier.Children.push_back(std::move(precedence));
 
         DataFieldSchema modifiers = MakeDataField(DataFieldKind::Array, "modifiers", "Modifiers");
         modifiers.Required = false;
@@ -134,6 +139,7 @@ namespace
                             : op == "override" ? ModifierOp::Override
                                                : ModifierOp::Add;
                 modifier.Magnitude = NumberOr(entry, "magnitude", 0.0f);
+                modifier.Precedence = static_cast<std::int32_t>(NumberOr(entry, "precedence", 0.0f));
                 value->Modifiers.push_back(std::move(modifier));
             }
         }
@@ -212,7 +218,7 @@ bool ResolveEffectDeclaration(const EffectDeclaration& declaration,
             errors.push_back(std::format("no attribute '{}'", modifier.Attribute));
             continue;
         }
-        out.Modifiers.push_back({ attribute, modifier.Op, modifier.Magnitude });
+        out.Modifiers.push_back({ attribute, modifier.Op, modifier.Magnitude, modifier.Precedence });
     }
     for (const std::string& name : declaration.GrantedTags)
     {
@@ -220,6 +226,12 @@ bool ResolveEffectDeclaration(const EffectDeclaration& declaration,
         if (!tag.IsValid())
         {
             errors.push_back(std::format("no gameplay tag '{}'", name));
+            continue;
+        }
+        if (const std::string_view projection = tags.ProjectedBy(tag); !projection.empty())
+        {
+            errors.push_back(std::format("gameplay tag '{}' is projected by {}; nothing else grants it", name,
+                                         projection));
             continue;
         }
         out.GrantedTags.push_back(tag);

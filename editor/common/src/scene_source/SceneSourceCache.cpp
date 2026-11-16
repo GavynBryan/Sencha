@@ -14,7 +14,7 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
     {
         LastError_ = "source '" + std::string(assetPath)
             + "' was not found under any content root";
-        Entries.erase(std::string(assetPath));
+        Entries.insert_or_assign(std::string(assetPath), Entry{});
         return nullptr;
     }
 
@@ -24,10 +24,10 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
 
     const std::string key(assetPath);
     if (const auto found = Entries.find(key);
-        found != Entries.end()
+        found != Entries.end() && found->second.State != EntryState::Missing
         && found->second.WriteTime == writeTime && found->second.Size == size)
     {
-        if (found->second.Valid)
+        if (found->second.State == EntryState::Parsed)
             return &found->second.Document;
         LastError_ = "source '" + key + "' failed to parse previously";
         return nullptr;
@@ -46,15 +46,16 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
             ParseSceneSource(buffer.str(), &parseError))
     {
         entry.Document = std::move(*parsed);
-        entry.Valid = true;
+        entry.State = EntryState::Parsed;
     }
     else
     {
+        entry.State = EntryState::Unparsable;
         LastError_ = "source '" + key + "': " + parseError;
     }
 
     const auto [slot, inserted] = Entries.insert_or_assign(key, std::move(entry));
-    return slot->second.Valid ? &slot->second.Document : nullptr;
+    return slot->second.State == EntryState::Parsed ? &slot->second.Document : nullptr;
 }
 
 bool SceneSourceCache::ChangedOnDisk() const
@@ -62,6 +63,12 @@ bool SceneSourceCache::ChangedOnDisk() const
     for (const auto& [assetPath, entry] : Entries)
     {
         const std::filesystem::path file = ResolveSceneSourceFile(Roots, assetPath);
+        if (entry.State == EntryState::Missing)
+        {
+            if (!file.empty())
+                return true;
+            continue;
+        }
         std::error_code ec;
         if (file.empty() || std::filesystem::last_write_time(file, ec) != entry.WriteTime
             || std::filesystem::file_size(file, ec) != entry.Size)

@@ -1,9 +1,11 @@
 #include "data/DataDocumentStore.h"
 
 #include "data/DataAssetFiles.h"
+#include "data/DataSourceScope.h"
 #include "documents/DocumentSourceSet.h"
 
 #include <assets/data/DataAssetSubtype.h>
+#include <assets/data/DataDefinitionStaging.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
@@ -17,7 +19,7 @@
 DataDocumentStore::DataDocumentStore(RuntimeAssets& assets, DocumentSourceSet& sources)
     : Assets(assets)
     , Sources(sources)
-    , Resident(assets)
+    , Resident(assets, RootProvider())
 {
     Sources.AddSource(*this);
 }
@@ -39,7 +41,11 @@ DataDocument* DataDocumentStore::Open(std::string_view virtualPath, std::string&
     }
     std::unique_ptr<DataDocument> document =
         DataDocument::Open(record->FilePath, record->Path, Assets.DataTypes, Assets.DataSchemas, &error);
-    return document != nullptr ? Adopt(std::move(document)) : nullptr;
+    if (document == nullptr)
+        return nullptr;
+    document->SetSourceRoots(RootProvider());
+    Validate(*document);
+    return Adopt(std::move(document));
 }
 
 DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::filesystem::path& contentRoot,
@@ -66,6 +72,7 @@ DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::fil
         return nullptr;
     }
     std::unique_ptr<DataDocument> document = DataDocument::Create(file, virtualPath, *type, *schema, data);
+    document->SetSourceRoots(RootProvider());
     Validate(*document);
     if (!document->Save(&error))
         return nullptr;
@@ -194,6 +201,15 @@ std::string DataDocumentStore::SubtypeOf(std::string_view virtualPath) const
         : std::string();
 }
 
+bool DataDocumentStore::IsAbstract(std::string_view virtualPath) const
+{
+    if (const DataDocument* open = Find(virtualPath))
+        return IsAbstractDataDefinition(open->Root());
+    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
+    return record != nullptr && record->Type == AssetType::Data
+        && PeekDataAssetEnvelope(Assets.Assets.DefaultSource(), *record).Abstract;
+}
+
 std::optional<JsonValue> DataDocumentStore::CurrentRoot(std::string_view virtualPath) const
 {
     if (const DataDocument* open = Find(virtualPath))
@@ -207,12 +223,54 @@ std::optional<JsonValue> DataDocumentStore::CurrentRoot(std::string_view virtual
     return JsonParse(text.str());
 }
 
-std::vector<std::string> DataDocumentStore::DataAssetPaths(std::string_view subtype) const
+DataRootProvider DataDocumentStore::RootProvider() const
+{
+    return [this](std::string_view path) { return CurrentRoot(path); };
+}
+
+std::optional<DataDefinitionStaging> DataDocumentStore::StageCurrent(std::string_view virtualPath,
+                                                                     bool provenance) const
+{
+    const std::optional<JsonValue> root = CurrentRoot(virtualPath);
+    if (!root.has_value())
+        return std::nullopt;
+    DataSourceScope sources(RootProvider());
+    const AssetPathsById current;
+    return StageDataDefinition(*root, DataDefinitionContext{ .Types = Assets.DataTypes,
+                                                             .Schemas = &Assets.DataSchemas,
+                                                             .Current = current,
+                                                             .Read = sources.Reader(),
+                                                             .Asset = virtualPath,
+                                                             .Provenance = provenance });
+}
+
+std::optional<JsonValue> DataDocumentStore::ComposedData(std::string_view virtualPath) const
+{
+    std::optional<DataDefinitionStaging> staged = StageCurrent(virtualPath, false);
+    if (!staged || !staged->Data.IsObject())
+        return std::nullopt;
+    return std::move(staged->Data);
+}
+
+std::optional<CompositionReport> DataDocumentStore::CompositionOf(std::string_view virtualPath) const
+{
+    std::optional<DataDefinitionStaging> staged = StageCurrent(virtualPath, true);
+    if (!staged || !staged->Composed)
+        return std::nullopt;
+    return std::move(staged->Composition);
+}
+
+std::vector<std::string> DataDocumentStore::DataAssetPaths(std::string_view subtype, DataAbstractPaths abstract) const
 {
     std::vector<std::string> paths;
     for (const auto& [path, record] : Assets.Registry.Records())
-        if (record.Type == AssetType::Data && (subtype.empty() || SubtypeOf(path) == subtype))
-            paths.push_back(path);
+    {
+        if (record.Type != AssetType::Data || (!subtype.empty() && SubtypeOf(path) != subtype))
+            continue;
+        if (abstract == DataAbstractPaths::Exclude && IsAbstract(path))
+            continue;
+        paths.push_back(path);
+    }
     std::ranges::sort(paths);
     return paths;
 }
@@ -239,6 +297,18 @@ void DataDocumentStore::Validate(DataDocument& document)
 }
 
 void DataDocumentStore::Changed(DataDocument& document)
+{
+    Recompose(document);
+    for (const Entry& entry : Open_)
+    {
+        DataDocument& dependent = *entry.Document;
+        const std::vector<std::string>& sources = dependent.CompositionSources();
+        if (&dependent != &document && std::ranges::find(sources, document.VirtualPath()) != sources.end())
+            Recompose(dependent);
+    }
+}
+
+void DataDocumentStore::Recompose(DataDocument& document)
 {
     Validate(document);
     const bool residentChanged = Resident.Push(document);
@@ -361,7 +431,20 @@ ExternalChange DataDocumentStore::FileChangedOnDisk(const std::filesystem::path&
             Changed(document);
         return ExternalChange::Adopted;
     }
+    RecomposeDependentsOf(file);
     return ExternalChange::NotOpen;
+}
+
+void DataDocumentStore::RecomposeDependentsOf(const std::filesystem::path& file)
+{
+    std::error_code ec;
+    const auto isFile = [&](const std::string& source) {
+        const AssetRecord* record = Assets.Registry.FindByPath(source);
+        return record != nullptr && std::filesystem::equivalent(record->FilePath, file, ec);
+    };
+    for (const Entry& entry : Open_)
+        if (std::ranges::any_of(entry.Document->CompositionSources(), isFile))
+            Recompose(*entry.Document);
 }
 
 bool DataDocumentStore::HoldsFile(const std::filesystem::path& file) const

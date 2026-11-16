@@ -29,6 +29,7 @@ std::string_view EventName(AbilityTraceEvent event)
     case AbilityTraceEvent::BindingAmbiguous: return "Ambiguous";
     case AbilityTraceEvent::Blocked: return "Blocked";
     case AbilityTraceEvent::AlreadyCommitted: return "Already paid";
+    case AbilityTraceEvent::GrantRefused: return "Grant refused";
     }
     return "Event";
 }
@@ -88,6 +89,7 @@ std::string Describe(const AbilityTraceRecord& record, const Names& names, const
     case AbilityTraceEvent::Skipped: return names.Op(record.Element);
     case AbilityTraceEvent::Cue:
         return tags != nullptr && record.Cue.IsValid() ? std::string(tags->GetName(record.Cue)) : std::string("cue");
+    case AbilityTraceEvent::GrantRefused: return std::string(AbilityRefusalName(record.Refusal));
     default: return {};
     }
 }

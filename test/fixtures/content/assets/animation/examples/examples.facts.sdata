@@ -1,9 +1,9 @@
 {
     "id": "3ec8b27d57245022",
     "type": "animation.fact_schema",
-    "version": 1,
+    "version": 2,
+    "extends": "asset://animation/engine.facts.sdata",
     "data": {
-        "extends": "asset://animation/engine.facts.sdata",
         "slots": [
             {
                 "name": "AmmoFull",

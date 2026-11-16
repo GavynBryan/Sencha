@@ -36,7 +36,7 @@ namespace
         {
             std::filesystem::remove_all(Root);
             std::filesystem::create_directories(Root / "anim");
-            Write("walker.facts.sdata", R"({ "type": "animation.fact_schema", "version": 1, "data": {
+            Write("walker.facts.sdata", R"({ "type": "animation.fact_schema", "version": 2, "data": {
                 "slots": [ { "name": "Speed", "kind": "float" } ] } })");
             Write("walker.behaviors.sdata", R"({ "type": "animation.behavior_set", "version": 1, "data": {
                 "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" },

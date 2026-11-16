@@ -8,9 +8,21 @@
 #include <movement/MovementTags.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
+#include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
 
+#include <algorithm>
+#include <cassert>
 #include <utility>
 #include <vector>
+
+namespace
+{
+    bool ProjectsHere(const World& world, EntityId entity)
+    {
+        return IsSimulationAuthority(world) || IsLocallyPredicted(world, entity);
+    }
+}
 
 void ModeRequestCollectionSystem::Step(World& world)
 {
@@ -46,7 +58,7 @@ void ModeRequestCollectionSystem::StepImpl(World& world, const StoragePartitionS
                 // let arbitration own the outcome.
                 (void)RequestLocomotionMode(world, view.Entity(i), mode.Id,
                                             ModeRequestClass::Explicit);
-                tags.Revoke(mode.RequestTag);
+                tags.Erase(mode.RequestTag);
             }
         }
     };
@@ -168,26 +180,67 @@ void LocomotionModeTransitionSystem::StepImpl(World& world,
                 transition.Target->EnterSession(world, transition.Entity);
         }
 
-        CharacterMovement* movement = world.TryGet<CharacterMovement>(transition.Entity);
-        GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(transition.Entity);
-        if (movement == nullptr || tags == nullptr)
-            continue;
-        movement->Mode = transition.Target->Id;
-
-        for (const LocomotionModeEntry& mode : modes->Entries())
-        {
-            if (mode.ActiveTag.IsValid() && mode.Id != transition.Target->Id)
-                tags->Revoke(mode.ActiveTag);
-        }
-        if (transition.Target->ActiveTag.IsValid()
-            && !tags->HasExact(transition.Target->ActiveTag))
-        {
-            tags->Grant(transition.Target->ActiveTag);
-        }
+        if (CharacterMovement* movement = world.TryGet<CharacterMovement>(transition.Entity))
+            movement->Mode = transition.Target->Id;
     }
 }
 
 void LocomotionModeTransitionSystem::FixedLogic(FixedLogicContext& ctx)
+{
+    StepImpl(ctx.Entities, &ctx.Partitions);
+}
+
+void ModeTagProjectionSystem::Step(World& world)
+{
+    StepImpl(world, nullptr);
+}
+
+void ModeTagProjectionSystem::StepImpl(World& world, const StoragePartitionSet* partitions)
+{
+    if (!world.IsRegistered<CharacterMovement>() || !world.IsRegistered<GameplayTagContainer>())
+        return;
+    const LocomotionModeRegistry* modes = std::as_const(world).TryGetResource<LocomotionModeRegistry>();
+    if (modes == nullptr)
+        return;
+
+    const auto stacksFor = [](const LocomotionModeEntry& entry, LocomotionModeId mode) {
+        return static_cast<std::uint16_t>(entry.Id == mode ? 1 : 0);
+    };
+    const auto settled = [&](const GameplayTagContainer& tags, LocomotionModeId mode) {
+        return std::ranges::all_of(modes->Entries(), [&](const LocomotionModeEntry& entry) {
+            return !entry.ActiveTag.IsValid() || tags.ContributedCount(entry.ActiveTag) == stacksFor(entry, mode);
+        });
+    };
+
+    std::vector<EntityId> unsettled;
+    Query<Read<CharacterMovement>, Read<GameplayTagContainer>> query(world);
+    const auto visit = [&](auto& view)
+    {
+        const auto movements = view.template Read<CharacterMovement>();
+        const auto containers = view.template Read<GameplayTagContainer>();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
+            if (!settled(containers[i], movements[i].Mode) && ProjectsHere(world, view.Entity(i)))
+                unsettled.push_back(view.Entity(i));
+    };
+    if (partitions != nullptr)
+        query.ForEachChunkIn(*partitions, visit);
+    else
+        query.ForEachChunk(visit);
+
+    for (const EntityId entity : unsettled)
+    {
+        const LocomotionModeId mode = std::as_const(world).TryGet<CharacterMovement>(entity)->Mode;
+        GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(entity);
+        for (const LocomotionModeEntry& entry : modes->Entries())
+            if (entry.ActiveTag.IsValid())
+            {
+                assert(tags.BaselineCount(entry.ActiveTag) == 0 && "a projected tag is never authored");
+                (void)tags.SetContribution(entry.ActiveTag, stacksFor(entry, mode));
+            }
+    }
+}
+
+void ModeTagProjectionSystem::FixedLogic(FixedLogicContext& ctx)
 {
     StepImpl(ctx.Entities, &ctx.Partitions);
 }
@@ -209,28 +262,32 @@ void SupportTagProjectionSystem::StepImpl(World& world, const StoragePartitionSe
     if (movementTags == nullptr || !movementTags->Grounded.IsValid())
         return;
 
-    Query<Read<SupportState>, Write<GameplayTagContainer>> query(world);
+    const GameplayTagId grounded = movementTags->Grounded;
+    std::vector<EntityId> unsettled;
+    Query<Read<SupportState>, Read<GameplayTagContainer>> query(world);
     const auto visit = [&](auto& view)
     {
         const auto supports = view.template Read<SupportState>();
-        auto containers = view.template Write<GameplayTagContainer>();
-
+        const auto containers = view.template Read<GameplayTagContainer>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            GameplayTagContainer& tags = containers[i];
-            const bool grounded = supports[i].Kind == SupportKind::Stable;
-            const bool held = tags.HasExact(movementTags->Grounded);
-            if (grounded && !held)
-                tags.Grant(movementTags->Grounded);
-            else if (!grounded && held)
-                tags.Revoke(movementTags->Grounded);
+            const std::uint16_t stacks = supports[i].Kind == SupportKind::Stable ? 1 : 0;
+            if (containers[i].ContributedCount(grounded) != stacks && ProjectsHere(world, view.Entity(i)))
+                unsettled.push_back(view.Entity(i));
         }
     };
-
     if (partitions != nullptr)
         query.ForEachChunkIn(*partitions, visit);
     else
         query.ForEachChunk(visit);
+
+    for (const EntityId entity : unsettled)
+    {
+        const bool stable = std::as_const(world).TryGet<SupportState>(entity)->Kind == SupportKind::Stable;
+        GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(entity);
+        assert(tags.BaselineCount(grounded) == 0 && "a projected tag is never authored");
+        (void)tags.SetContribution(grounded, stable ? 1 : 0);
+    }
 }
 
 void SupportTagProjectionSystem::FixedLogic(FixedLogicContext& ctx)

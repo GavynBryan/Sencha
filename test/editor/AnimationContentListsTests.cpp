@@ -18,8 +18,8 @@ TEST(AnimationContentLists, ListsDataAssetsBySubtypeAndOthersByKind)
     const std::filesystem::path root = std::filesystem::temp_directory_path()
         / ("sencha_content_lists_" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(root);
-    std::ofstream(root / "b.sdata") << R"({ "type": "animation.fact_schema", "version": 1, "data": { "slots": [] } })";
-    std::ofstream(root / "a.sdata") << R"({ "type": "animation.fact_schema", "version": 1, "data": { "slots": [] } })";
+    std::ofstream(root / "b.sdata") << R"({ "type": "animation.fact_schema", "version": 2, "data": { "slots": [] } })";
+    std::ofstream(root / "a.sdata") << R"({ "type": "animation.fact_schema", "version": 2, "data": { "slots": [] } })";
     std::ofstream(root / "custom.sdata") << R"({ "type": "game.custom", "version": 1, "data": {} })";
 
     LoggingProvider logging;

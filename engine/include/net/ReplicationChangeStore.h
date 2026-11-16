@@ -88,6 +88,9 @@ public:
         std::vector<RemovedComponent> Removed;
         // Zero when nobody owns it, which is everything the authority drives.
         std::uint32_t Owner = 0;
+        bool Anchored = false;
+        bool AnchorPastBound = false;
+        std::uint32_t RelevantPeer = 0;
         // When ownership last moved. Whether a field is visible to a peer
         // depends on who owns the entity, and that is not something the field's
         // own change generation can express: a transfer makes owner-gated runs

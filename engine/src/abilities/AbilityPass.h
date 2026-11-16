@@ -14,9 +14,12 @@
 #include <time/ActorTime.h>
 #include <time/FrameClock.h>
 
+#include <abilities/AbilityCostProviders.h>
+#include <effects/EffectCost.h>
 #include <effects/EffectId.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 class AbilityPredictionJournal;
@@ -56,12 +59,25 @@ struct AbilityCueEmission
     std::uint8_t Count = 0;
 };
 
+struct AbilityCostBatch
+{
+    const AbilityCostProviderDefinition* Provider = nullptr;
+    std::uint32_t Begin = 0;
+    std::uint32_t End = 0;
+};
+
 // What one pass reuses from the last, as a World resource.
 struct AbilityPassBuffers
 {
     std::vector<AuthoredValue> Inputs;
     AuthoredValue Answer;
-    std::vector<EffectId> Costs;
+    std::vector<EffectCostRow> EffectCosts;
+    std::vector<AuthoredValue> CostArguments;
+    std::vector<AbilityCostRow> CostRows;
+    std::vector<std::uint8_t> CostRowGroups;
+    std::vector<std::uint32_t> CostRowArguments;
+    std::vector<AbilityCostBatch> CostBatches;
+    std::vector<AuthoredValue> CostTranslating;
     std::vector<AbilityCueEmission> Emitted;
 };
 
@@ -119,13 +135,18 @@ private:
     [[nodiscard]] double Number(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                                 const AbilityValue& value);
     [[nodiscard]] EntityId EntityOf(const AbilityActor& actor, std::size_t slot, const AbilityValue& value) const;
+    [[nodiscard]] const AbilityGrant* GrantOf(const AbilityActor& actor, std::size_t slot) const;
     [[nodiscard]] std::uint64_t PhaseTicks(const AbilityActor& actor, const AbilityRecord& record,
                                            const AbilityDefinition& definition) const;
     [[nodiscard]] std::uint64_t ClockOf(const AbilityActor& actor, AbilityTimeDomain domain) const;
 
     // Costs (AbilityCommit.cpp).
-    [[nodiscard]] AbilityCommitResult CheckCosts(const AbilityActor& actor, const AbilityDefinition& definition,
-                                                 std::uint8_t groups, bool cooldown);
+    [[nodiscard]] AbilityCommitResult CheckCosts(const AbilityActor& actor, std::size_t slot,
+                                                 const AbilityDefinition& definition, std::uint8_t groups,
+                                                 bool cooldown, EntityId source);
+    [[nodiscard]] std::optional<std::uint8_t> CheckResources(const AbilityActor& actor, std::size_t slot,
+                                                             const AbilityDefinition& definition, std::uint8_t groups,
+                                                             EntityId source);
     AbilityCommitResult Commit(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                                std::uint8_t groups);
     void StartCooldown(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition);
@@ -177,9 +198,17 @@ private:
 
     // The op being run with `targets`, and its current element.
     EntityId Target;
+    // Valid only while a grant is admitted, before it has a record.
+    AbilityGrant Admitting{};
     // Borrowed from the World's AbilityPassBuffers, so a warm pass allocates nothing.
     std::vector<AuthoredValue>& Inputs;
     AuthoredValue& Answer;
-    std::vector<EffectId>& Costs;
+    std::vector<EffectCostRow>& EffectCosts;
+    std::vector<AuthoredValue>& CostArguments;
+    std::vector<AbilityCostRow>& CostRows;
+    std::vector<std::uint8_t>& CostRowGroups;
+    std::vector<std::uint32_t>& CostRowArguments;
+    std::vector<AbilityCostBatch>& CostBatches;
+    std::vector<AuthoredValue>& CostTranslating;
     std::vector<AbilityCueEmission>& Emitted;
 };

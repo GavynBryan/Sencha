@@ -1,0 +1,13 @@
+{
+  format_version: 2,
+  abstract: true,
+  entities: [
+    {
+      id: "00000000000000f1",
+      components: {
+        Alertable: { radius: 5 },
+        GameplayTags: { tags: [{ name: "Creature.Alert", stacks: 1 }] },
+      },
+    },
+  ],
+}

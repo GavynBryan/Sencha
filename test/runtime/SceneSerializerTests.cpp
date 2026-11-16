@@ -371,8 +371,9 @@ TEST(SceneSerializer, TagsAndAttributesRoundTripByName)
     EntityId entity = source.Components.CreateEntity();
     AddTransform(source, entity, MakeTransform(0.0f, 0.0f, 0.0f));
 
+    // Authored, so it persists; a contribution would not be saved.
     GameplayTagContainer tags{};
-    ASSERT_TRUE(tags.Grant(*controlled));
+    ASSERT_TRUE(tags.GrantBaseline(*controlled));
     source.Components.AddComponent(entity, tags);
 
     AttributeSet attributes{};

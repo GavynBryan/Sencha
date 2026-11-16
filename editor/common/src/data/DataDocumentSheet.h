@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/DataDocumentSet.h"
+#include "data/DataEnvelopeProperties.h"
 #include "data/DataProperties.h"
 #include "data/DataSubtypeAuthoring.h"
 #include "problems/ProblemList.h"
@@ -38,8 +39,6 @@ public:
     // is read against, and makes the write it is waiting to make.
     void Update();
     [[nodiscard]] bool ClaimPlatformEvent(const SDL_Event& event);
-    // The active document's card: its file, its fields (or `fields` in their
-    // place), and its subtype's previews; none without an active document.
     [[nodiscard]] std::vector<PropertySection> Sections(IPropertySource* fields = nullptr);
 
     void AppendOpen(WorkspaceDocumentFacet& facet) const;
@@ -48,6 +47,8 @@ public:
     [[nodiscard]] bool Owns(const DocumentRef& document) const;
     // False when `key` names none of its documents.
     bool Show(std::string_view key);
+    void Reveal(std::string_view key, std::string path);
+    [[nodiscard]] std::string RevealedField() const;
     bool Open(std::string_view path);
     // Asks before the active document's changes go, then closes it; `closed`
     // hears its path once it has.
@@ -64,7 +65,10 @@ private:
     PromptQueue::Asker Prompts;
     DataSubtypeAuthoringRegistry Authoring;
     DataProperties Properties;
+    DataEnvelopeProperties Envelope;
     FilePathProperty FilePath;
     ProjectFileSteps* Files = nullptr;
     std::string OperationError;
+    std::string RevealedDocument;
+    std::string RevealedPath;
 };

@@ -235,6 +235,15 @@ void ReplicationPeerState::NoteDeparted(NetEntityId id)
         return;
     if (std::find(Departed.begin(), Departed.end(), id) == Departed.end())
         Departed.push_back(id);
+    for (SentSnapshot& snapshot : Pending)
+        std::erase_if(snapshot.Entities, [id](const auto& entry) { return entry.first == id; });
+}
+
+void ReplicationPeerState::NoteSeeded(NetEntityId id)
+{
+    std::erase(Departed, id);
+    for (SentSnapshot& snapshot : Pending)
+        std::erase(snapshot.Destroyed, id);
 }
 
 void ReplicationPeerState::RecordDestroysSent(std::uint32_t sequence,
@@ -377,6 +386,8 @@ EntityId ReplicationWireContext::LocalEntity(std::uint64_t wire) const
     const EntityId entity = Client != nullptr      ? Client->TryResolve(id)
                           : Authority != nullptr ? Authority->TryResolve(id)
                                                  : EntityId{};
+    if (!entity.IsValid() && Client != nullptr && Unresolved != nullptr)
+        Unresolved->push_back(wire);
     return entity.IsValid() && Entities != nullptr && Entities->IsAlive(entity) ? entity : EntityId{};
 }
 
@@ -471,6 +482,8 @@ namespace
     {
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
+        const bool seesOwnerFields =
+            isOwner || (ownerPeer != 0 && entity.Anchored && entity.RelevantPeer == ownerPeer);
         // A transfer makes owner-gated runs newly visible to one peer and newly
         // hidden from another without any of them having changed value, so the
         // fields' own history cannot express it.
@@ -490,7 +503,7 @@ namespace
         // The bit itself is unconditional: a reader cannot infer what a writer
         // knew about its floor, and a bit the two disagree about is the rest of
         // the snapshot read at the wrong offset.
-        const bool sendAuthored = entity.Persistent.IsValid() && !peer.Knows(entity.Id);
+        const bool sendAuthored = IsAuthoredPersistentEntityId(entity.Persistent) && !peer.Knows(entity.Id);
         bits += kAuthoredPresentBits;
         if (sendAuthored)
             bits += VarUIntBits(entity.Persistent.Value);
@@ -522,7 +535,7 @@ namespace
             assert(component != nullptr && "store holds a component the layout lost");
 
             const std::uint64_t owed =
-                ReplicationOwedFields(*component, held, floor, ownershipMoved, isOwner);
+                ReplicationOwedFields(*component, held, floor, ownershipMoved, seesOwnerFields);
             masks.push_back(owed);
             owedAnything = owedAnything || owed != 0;
             bits += kComponentIndexBits
@@ -647,9 +660,13 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     //
     // Costs nothing for an entity the peer never had: NoteDeparted only owes a
     // destroy for one it was actually written to.
+    const auto irrelevant = [&](const ReplicationChangeStore::EntityState& entity) {
+        return entity.Anchored
+            && (entity.RelevantPeer == kNetAuthorityPeer || entity.RelevantPeer != request.OwnerPeer);
+    };
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
     {
-        if (withheld(entity.Zone))
+        if (withheld(entity.Zone) || irrelevant(entity))
             peer.NoteDeparted(entity.Id);
     }
 
@@ -666,7 +683,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         // is owed: nothing is ever said about a room the peer has not confirmed
         // it holds. Not a budget decision and not a deferral -- there is nowhere
         // on that machine to put it, so there is nothing to defer.
-        if (withheld(entity.Zone))
+        if (withheld(entity.Zone) || irrelevant(entity))
             continue;
 
         PlannedEntity plan;
@@ -849,7 +866,11 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // sent state that never left the building.
     peer.RecordDestroysSent(request.Sequence, destroyed);
     for (const PlannedEntity* plan : sending)
+    {
         peer.RecordSent(request.Sequence, plan->Entity->Id, generation);
+        if (plan->Seeding)
+            peer.NoteSeeded(plan->Entity->Id);
+    }
 
     result.Ok = true;
     result.BytesWritten = writer.BytesWritten();
@@ -1178,6 +1199,13 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 std::memcpy(target.data(), decoded.data() + earlier->Offset,
                             component->Size);
             }
+            else if (const ReplicationDeferredReferences::Waiting* waiting =
+                         !spawned && component->ToWire != nullptr ? identity.Deferred().Find(entity, component->Type)
+                                                                  : nullptr;
+                     waiting != nullptr && waiting->Image.size() == component->Size)
+            {
+                std::memcpy(target.data(), waiting->Image.data(), component->Size);
+            }
             else if (component->ToWire != nullptr)
             {
                 // A delta lands on the wire image of what this machine holds,
@@ -1320,6 +1348,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     {
         const EntityId entity = identity.TryResolve(id);
         identity.Unbind(id);
+        identity.Deferred().ForgetEntity(entity);
         // Poses held for an entity that is gone describe nothing, and the handle
         // will be handed out again to something else.
         if (request.Interpolation != nullptr && entity.IsValid())
@@ -1517,26 +1546,47 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
 
     // Translated onto the receiver's own value rather than defaults, so what
     // the codec does not carry -- and a prefab's settings on a spawn -- stays.
-    for (const CodecWrite& pending : codecWrites)
-    {
-        const PlannedComponent& slot = plannedComponents[pending.Slot];
-        const ReplicatedComponent& component = *slot.Layout;
+    std::vector<std::uint64_t> unresolved;
+    const auto translate = [&](EntityId entity, const ReplicatedComponent& component,
+                               std::span<const std::byte> image) {
         const ComponentId column = world.GetComponentIdByType(component.Type);
-        const bool present = world.HasComponent(pending.Entity, column);
+        const bool present = world.HasComponent(entity, column);
         codecLocal.assign(component.LocalSize, std::byte{});
-        const void* held = present ? world.GetComponentRaw(pending.Entity, column) : nullptr;
+        const void* held = present ? world.GetComponentRaw(entity, column) : nullptr;
         if (held != nullptr)
             std::memcpy(codecLocal.data(), held, component.LocalSize);
         else
             (void)schema.WriteDefaultBytes(component.Type, codecLocal);
-        const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = pending.Entity,
-                                              .Client = &identity };
-        component.FromWire(context, std::span(decoded.data() + slot.Offset, component.Size), codecLocal);
-        const bool wrote =
-            present ? schema.SetComponentBytes(world, pending.Entity, component.Type, codecLocal)
-                    : schema.ImportComponent(world, pending.Entity, component.Type, codecLocal);
+        unresolved.clear();
+        const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = entity,
+                                              .Client = &identity, .Unresolved = &unresolved };
+        component.FromWire(context, image, codecLocal);
+        const bool wrote = present ? schema.SetComponentBytes(world, entity, component.Type, codecLocal)
+                                   : schema.ImportComponent(world, entity, component.Type, codecLocal);
         assert(wrote && "a component the read half accepted would not write");
         (void)wrote;
+        identity.Deferred().Remember(entity, component.Type, image, unresolved);
+    };
+    for (const CodecWrite& pending : codecWrites)
+    {
+        const PlannedComponent& slot = plannedComponents[pending.Slot];
+        translate(pending.Entity, *slot.Layout, std::span(decoded.data() + slot.Offset, slot.Layout->Size));
+    }
+    std::vector<ReplicationDeferredReferences::Waiting> bound;
+    for (const ReplicationDeferredReferences::Waiting& waiting : identity.Deferred().All())
+        if (std::ranges::any_of(waiting.Unresolved,
+                                [&](std::uint64_t wire) { return identity.TryResolve(NetEntityId{ wire }).IsValid(); }))
+            bound.push_back(waiting);
+    for (const ReplicationDeferredReferences::Waiting& waiting : bound)
+    {
+        const ReplicatedComponent* component = layout.Find(waiting.Type);
+        if (component == nullptr || !world.IsAlive(waiting.Holder)
+            || !world.HasComponent(waiting.Holder, world.GetComponentIdByType(waiting.Type)))
+        {
+            identity.Deferred().Remember(waiting.Holder, waiting.Type, {}, {});
+            continue;
+        }
+        translate(waiting.Holder, *component, waiting.Image);
     }
 
     // Every snapshot a predicting client applies is a chance to reconcile,

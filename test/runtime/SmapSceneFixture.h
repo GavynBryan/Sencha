@@ -27,7 +27,8 @@ public:
     TempSmapScene(AssetRegistry& registry,
                   const ComponentSerializerRegistry& serializers,
                   const SmapContents& contents,
-                  std::string_view name)
+                  std::string_view name,
+                  AssetId id = {})
     {
         std::vector<std::byte> bytes;
         SmapError error;
@@ -48,6 +49,7 @@ public:
             .SourceKind = AssetSourceKind::File,
             .Path = Path,
             .FilePath = File.generic_string(),
+            .Id = id,
         }));
     }
 

@@ -120,10 +120,7 @@ ReparentTargets ResolveReparentTargets(std::span<const EntityId> entities, Entit
     {
         if (!scene.HasEntity(entity))
             continue;
-        // A placement member's position in its structure comes from the
-        // source; there is no override a reparent could land in. Break the
-        // instance to restructure. The root is the placement itself and moves freely.
-        if (document.IsSceneInstanceMember(entity))
+        if (document.IsSourced(entity))
             return { {}, ReparentRefusal::PlacementMember };
         if (newParent.IsValid() && (newParent == entity || scene.IsAncestorOf(entity, newParent)))
             return { {}, ReparentRefusal::Cycle };

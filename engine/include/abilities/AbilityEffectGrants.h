@@ -1,10 +1,13 @@
 #pragma once
 
 #include <abilities/AbilityDeclaration.h>
+#include <ecs/EntityId.h>
 #include <effects/EffectId.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 class World;
@@ -24,6 +27,31 @@ private:
     std::size_t Granting = 0;
 };
 
+class AbilityGrantReservations
+{
+public:
+    struct Reservation
+    {
+        EntityId Target;
+        EntityId Effect;
+        std::uint8_t Count = 0;
+    };
+
+    void Reserve(EntityId target, EntityId effect, std::uint8_t count);
+    [[nodiscard]] std::size_t HeldFor(const World& world, EntityId target) const;
+    void Release(const World& world);
+
+    [[nodiscard]] std::size_t Size() const { return Entries.size(); }
+
+private:
+    std::vector<Reservation> Entries;
+};
+
+[[nodiscard]] std::size_t AbilityGrantRoom(const World& world, EntityId target);
+
+void InstallAbilityGrantAdmission(World& world);
+
 // Records what `effect` grants, reserving every ability it names. Replaces what it
 // granted before, so a reloaded effect's next application grants the new list.
-void DeclareEffectGrants(World& world, EffectId effect, const std::vector<AbilityGrantDeclaration>& grants);
+std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
+                                             const std::vector<AbilityGrantDeclaration>& grants);

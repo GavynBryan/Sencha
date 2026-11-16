@@ -23,7 +23,11 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
+#include <movement/JumpState.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetSpawnPrefab.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <time/ActorTimeLeases.h>
@@ -38,7 +42,16 @@
 #include <world/SimulationTimeline.h>
 #include <world/transform/TransformComponents.h>
 
+#include <abilities/AbilityEffectGrants.h>
+#include <abilities/AbilityRequestQueue.h>
+#include <CounterCostProvider.h>
+
 #include <gtest/gtest.h>
+
+#include <tuple>
+
+#include <cstdlib>
+#include <iostream>
 
 #include <algorithm>
 #include <initializer_list>
@@ -287,9 +300,9 @@ protected:
         write.Sequence = Peer.NextSnapshotSequence();
         write.OwnerPeer = ClientPeer;
         write.CommandAck = Now > 0 ? Now - 1 : 0;
-        const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
-        EXPECT_TRUE(written.Ok);
-        return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(written.BytesWritten) };
+        LastWrite = ReplicationWriteSnapshot(write, std::span(Scratch).subspan(0, Budget));
+        EXPECT_TRUE(LastWrite.Ok);
+        return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(LastWrite.BytesWritten) };
     }
 
     void Apply(const std::vector<std::byte>& bytes)
@@ -451,6 +464,9 @@ protected:
     NetSnapshotAck Ack;
     std::uint64_t Generation = 0;
     std::vector<std::byte> Scratch = std::vector<std::byte>(64 * 1024);
+    // How much of Scratch one snapshot may fill; a shipping session's is kNetMaxSnapshotBytes.
+    std::size_t Budget = Scratch.size();
+    SnapshotWriteResult LastWrite;
     EntityId Actor;
     std::uint64_t Now = 0;
     bool Held[2] = {};
@@ -1000,4 +1016,273 @@ TEST_F(AbilityReplication, OnlyAPredictingActorCarriesGuessedCues)
     Predict();
     ClientTick({});
     EXPECT_TRUE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
+}
+
+TEST_F(AbilityReplication, GrantsSharingAKeyAreToldApartOnTheClient)
+{
+    ClientPeer = kOwner;
+    const AbilityId ability = Authority.Define(kCharging, "asset://abilities/charging.sdata");
+    const AbilityId clientAbility = Client.Define(kCharging, "asset://abilities/charging.sdata");
+    // Both machines intern both entries in the same order.
+    const AbilityBindingDecl low{ .Priority = 1 };
+    const AbilityBindingDecl high{ .Priority = 9 };
+    AbilityGrantEntries& clientEntries = Client.Entities.GetResource<AbilityGrantEntries>();
+    (void)clientEntries.Intern({ "g", clientAbility, low });
+    (void)clientEntries.Intern({ "g", clientAbility, high });
+    AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
+    (void)entries.Intern({ "g", ability, low });
+    const std::uint16_t granted = entries.Intern({ "g", ability, high });
+    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    const AbilityGrantEntry* entry = clientEntries.Find(grants.Entries[0].Entry);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->Override.Priority, std::optional<std::int32_t>(9))
+        << "the client bound the grant to the other source's entry";
+}
+
+TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
+{
+    ClientPeer = kOwner;
+    Grant(kShot, "asset://abilities/shot.sdata");
+    const EntityId ring = Authority.Entities.CreateEntity();
+    Authority.Entities.AddComponent<NetReplicated>(ring);
+    Authority.Entities.TryGet<AbilityGrants>(Actor)->Entries[0].Source = ring;
+    Step();
+    (void)Publish();
+
+    const EntityId remoteRing = ClientIds.TryResolve(Identity.TryFind(ring));
+    ASSERT_TRUE(remoteRing.IsValid());
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Source, remoteRing);
+    EXPECT_FALSE(grants.Entries[0].Holder.IsValid()) << "what holds a grant stays on the authority";
+}
+
+TEST_F(AbilityReplication, GrantsThatDifferInAParameterAreToldApartOnTheClient)
+{
+    ClientPeer = kOwner;
+    const AbilityId ability = Authority.Define(kShot, "asset://abilities/shot.sdata");
+    const AbilityId clientAbility = Client.Define(kShot, "asset://abilities/shot.sdata");
+    const auto entry = [](AbilityId id, double power) {
+        return AbilityGrantEntry{ .Key = "g", .Ability = id, .Override = {}, .Parameters = { { "power", power } } };
+    };
+    AbilityGrantEntries& clientEntries = Client.Entities.GetResource<AbilityGrantEntries>();
+    (void)clientEntries.Intern(entry(clientAbility, 10.0));
+    (void)clientEntries.Intern(entry(clientAbility, 14.0));
+    AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
+    (void)entries.Intern(entry(ability, 10.0));
+    const std::uint16_t granted = entries.Intern(entry(ability, 14.0));
+    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    const AbilityGrantEntry* arrived = clientEntries.Find(grants.Entries[0].Entry);
+    ASSERT_NE(arrived, nullptr);
+    EXPECT_EQ(arrived->Parameters, (std::vector<AbilityGrantParameter>{ { "power", 14.0 } }));
+}
+
+TEST_F(AbilityReplication, ATransientGrantReachesItsOwnerAndLeavesWithItsActivation)
+{
+    ClientPeer = kOwner;
+    constexpr std::string_view kSip = R"({ "phases": [ { "key": "p_sip",
+        "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
+    const AbilityId sip = Authority.Define(kSip, "asset://abilities/sip.sdata");
+    (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ "use", Client.Define(kSip, "asset://abilities/sip.sdata"), {} });
+    const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ "use", sip, {} });
+    Authority.Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::ActivateEntry, .Actor = Actor, .Ability = sip, .Instigator = {}, .Cause = {},
+          .Source = {}, .Entry = entry });
+    Step();
+    (void)Publish();
+    const AbilityGrants* grants = Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_NE(grants, nullptr);
+    ASSERT_EQ(grants->Count, 1u);
+    EXPECT_EQ(grants->Entries[0].Kind, AbilityGrantKind::Transient);
+
+    Run(10);
+    EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->Count, 0u);
+}
+
+// On the owner's machine each ring's grant resolves to the authority's entry and the client's own ring.
+TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
+{
+    ClientPeer = kOwner;
+    constexpr std::string_view kFireball = R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "parameters": [ { "key": "power", "default": 0 } ],
+        "phases": [ { "key": "p_cast", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+    const auto declareRings = [&](Machine& machine) {
+        (void)machine.Define(kFireball, "asset://abilities/fireball.sdata");
+        std::vector<EffectId> rings;
+        for (const auto& [path, priority, power] : { std::tuple{ "asset://effects/ring_fire.sdata", 20, 10.0 },
+                                                      std::tuple{ "asset://effects/ring_ember.sdata", 21, 14.0 } })
+        {
+            EffectDefinition worn{};
+            worn.Duration = EffectDuration::Infinite;
+            const EffectId effect = machine.Entities.GetResource<EffectRegistry>().Define(path, worn);
+            DeclareEffectGrants(machine.Entities, effect,
+                                { AbilityGrantDeclaration{ .Key = "g_fireball", .Ability = "asset://abilities/fireball.sdata",
+                                                           .Override = { .Priority = priority },
+                                                           .Parameters = { { "power", power } } } });
+            rings.push_back(effect);
+        }
+        return rings;
+    };
+    (void)declareRings(Client);
+    const std::vector<EffectId> rings = declareRings(Authority);
+    std::vector<EntityId> worn;
+    for (const EffectId ring : rings)
+    {
+        const EntityId item = Authority.Entities.CreateEntity();
+        Authority.Entities.AddComponent<NetReplicated>(item);
+        (void)ApplyEffect(Authority.Entities, Actor, ring, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                          LeaseOwner{ .Entity = item });
+        worn.push_back(item);
+    }
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 2u);
+    const AbilityGrantEntries& entries = Client.Entities.GetResource<AbilityGrantEntries>();
+    for (std::size_t i = 0; i < worn.size(); ++i)
+    {
+        const EntityId mirror = ClientIds.TryResolve(Identity.TryFind(worn[i]));
+        ASSERT_TRUE(mirror.IsValid());
+        const auto grant = std::find_if(grants.Entries, grants.Entries + grants.Count,
+                                        [&](const AbilityGrant& held) { return held.Source == mirror; });
+        ASSERT_NE(grant, grants.Entries + grants.Count) << "each ring is its own grant's source";
+        const AbilityGrantEntry* entry = entries.Find(grant->Entry);
+        ASSERT_NE(entry, nullptr) << "bound, not held unbound";
+        EXPECT_EQ(entry->Parameters, (std::vector<AbilityGrantParameter>{ { "power", i == 0 ? 10.0 : 14.0 } }));
+    }
+}
+
+TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
+{
+    constexpr std::string_view kBowShot = R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "costs": [ { "key": "g_shot",
+                     "effects": [ { "data": "asset://effects/energy_10.sdata" } ],
+                     "resources": [ { "key": "r_arrow", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_draw",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_shot"] },
+                       { "key": "o_show", "op": "invoke", "verb": "test.show" } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+    for (Machine* machine : { &Authority, &Client })
+    {
+        ASSERT_TRUE(DeclareCounterCostProvider(machine->Entities));
+        const AttributeId energy = machine->Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+        EffectDefinition stamina{};
+        stamina.Modifiers = { { energy, ModifierOp::Add, -10.0f } };
+        machine->Entities.GetResource<EffectRegistry>().Define("asset://effects/energy_10.sdata", stamina);
+    }
+    const AttributeId energy = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+    (void)Authority.Entities.TryGet<AttributeSet>(Actor)->Add(energy, 100.0f);
+    Grant(kBowShot, "asset://abilities/bow_shot.sdata");
+    Authority.Entities.GetResource<Counters>().Held[Actor] = 1;
+    Predict();
+    Client.Entities.GetResource<Counters>().Held[Remote()] = 1;
+
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Showings.Total(), 1) << "the guess committed";
+    EXPECT_GE(Client.Entities.GetResource<Counters>().Checks, 1u);
+    EXPECT_EQ(Client.Entities.GetResource<Counters>().Held[Remote()], 1) << "a guess pays no arrow";
+    const AttributeId clientEnergy = Client.Entities.GetResource<AttributeRegistry>().FindAttribute("Energy");
+    EXPECT_FLOAT_EQ(Client.Entities.TryGet<AttributeSet>(Remote())->GetBase(clientEnergy), 100.0f)
+        << "and no stamina";
+
+    Lockstep({ { kFire, InputEdgeKind::Release } });
+    Locksteps(10);
+    EXPECT_EQ(Authority.Entities.GetResource<Counters>().Held[Actor], 0);
+    EXPECT_FLOAT_EQ(Authority.Entities.TryGet<AttributeSet>(Actor)->GetBase(energy), 90.0f);
+    EXPECT_FLOAT_EQ(Client.Entities.TryGet<AttributeSet>(Remote())->GetBase(clientEnergy), 90.0f)
+        << "the authority's payment arrives";
+}
+
+// An entity is written whole or not at all, so an owner seed over one datagram never arrives.
+TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
+{
+    ClientPeer = kOwner;
+    Budget = kNetMaxSnapshotBytes;
+    for (int i = 0; i < 9; ++i)
+        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
+    for (const char* name : { "Energy", "Health", "Ammo", "MoveSpeed" })
+    {
+        AttributeId id = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute(name);
+        if (!id.IsValid())
+        {
+            id = Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+            (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+        }
+        (void)attributes.Add(id, 50.0f);
+    }
+    World& world = Authority.Entities;
+    world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+    world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
+    *world.TryGet<SupportState>(Actor) = SupportState{ .Surface = {},
+                                                       .ContactPoint = Vec3d(4.0f, -1.0f, 0.5f),
+                                                       .Normal = Vec3d(0.0f, 1.0f, 0.0f),
+                                                       .SurfaceVelocity = Vec3d(0.5f, 0.0f, 0.0f),
+                                                       .Kind = SupportKind::Stable };
+    world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
+    world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
+    world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
+    world.TryGet<LookOrientation>(Actor)->Yaw = 1.25f;
+    Step();
+    GameplayTagContainer& tags = *Authority.Entities.TryGet<GameplayTagContainer>(Actor);
+    const GameplayTagRegistry& names = Authority.Entities.GetResource<GameplayTagRegistry>();
+    (void)tags.Grant(names.FindTag("State.Charged"));
+    (void)tags.Grant(names.FindTag("Weapon.Firing"));
+
+    (void)Publish();
+    EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);
+    EXPECT_EQ(LastWrite.EntitiesWritten, 1u);
+    RecordProperty("seed_bytes", std::to_string(LastWrite.BytesWritten));
+}
+
+// Measured, not asserted; scripts/bench_replication.sh records it.
+TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
+{
+    if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)
+        GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)";
+    ClientPeer = kOwner;
+    Budget = kNetMaxSnapshotBytes;
+    Grant(kAutomatic, "asset://abilities/automatic.sdata", "g_fire");
+    for (std::size_t i = 1; i < kAbilityGrantCapacity; ++i)
+        Grant(kGlowing, "asset://abilities/glow_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
+    for (std::size_t i = 0; i < AttributeSet::Capacity; ++i)
+    {
+        const std::string name = "Bench.Attribute." + std::to_string(i);
+        (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+        (void)attributes.Add(Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name), 7.5f + static_cast<float>(i));
+    }
+    World& world = Authority.Entities;
+    world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+    world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
+    world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
+    world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
+    world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
+    Step({ { kFire, InputEdgeKind::Press } });
+    Steps(3);
+    GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(Actor);
+    for (std::size_t i = tags.Count; i < GameplayTagContainer::Capacity; ++i)
+    {
+        const std::string name = "Bench.Tag." + std::to_string(i);
+        (void)Client.Entities.GetResource<GameplayTagRegistry>().RegisterTag(name);
+        (void)tags.Grant(*world.GetResource<GameplayTagRegistry>().RegisterTag(name));
+    }
+
+    (void)Publish();
+    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetMaxSnapshotBytes
+              << ", written " << LastWrite.EntitiesWritten << ", unsendable " << LastWrite.EntitiesUnsendable << "\n";
 }

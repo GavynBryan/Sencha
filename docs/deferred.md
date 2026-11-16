@@ -759,15 +759,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   borrows. That makes the borrow a real use-after-free, so the borrower is
   released in `Run`'s teardown in that change.
 
-## Rig sockets composed by name
-
-- **What:** a derived rig should add or patch a socket by its `name`. `main`
-  has no data composition, so `sockets` is a whole list today.
-- **Where:** the `sockets` array in `MakeSchema`, `engine/src/anim/AnimRigData.cpp`.
-- **Trigger:** `claude/composition` (data composition with array merge keys)
-  merging. Then set the array's merge key to `name` and add a composition test
-  that patches one socket of a base rig.
-
 ## Approach direction for sensor responses
 
 - **What:** a sensor response cannot ask which way its activator crossed the
@@ -825,17 +816,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   publish and drain beside delivery.
 - **Trigger:** LevelFlow, the first consumer with many source-filtered
   subscriptions, or a producer that publishes a per-contact event globally.
-
-## Removing an inherited response binding
-
-- **What:** bindings are an object keyed by binding key, so a prefab instance
-  overrides one binding by patching `responses.bindings.<key>`. Version-1
-  composition reads `null` as a value, so an instance cannot remove a binding
-  it inherits; it can disable it (`"enabled": false`).
-- **Where:** `logic/ResponseSet.cpp` (reading bindings) and scene composition
-  (`editor/common/src/scene_source/SceneComposition.cpp`).
-- **Trigger:** `claude/composition`'s version-2 patches (where `null` removes)
-  merging, or a designer needing an instance without an inherited behavior.
 
 ## Marking an event's instigator by annotation
 
@@ -1189,8 +1169,11 @@ described in `docs/navigation/runtime.md`, "Agents".
   saved, and a runtime entity in a zone is destroyed unrecorded when the zone
   unloads.
 - **Where:** `save/SavedGames.cpp` (`Write`), `zone/ZoneStateStore.h`.
-- **Trigger:** saving a body's progression or an inventory, which needs the
-  runtime persistent id mint and a body saved as a patch against its prefab.
+- **Trigger:** saving a body's progression or an inventory, which needs a body
+  saved as a patch against its prefab. The runtime persistent id mint exists
+  (`world/identity/PersistentIdMint.h`), but its counter (`PersistentIdMint`)
+  is World state no save keeps: the first saved runtime entity saves the
+  counter with it, or a restored game mints ids it already holds.
 
 ## Unknown save chunks are dropped on rewrite
 
@@ -1199,3 +1182,149 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/save/SavedGame.cpp`.
 - **Trigger:** a second chunk kind added after format 1. Then either fold new
   data into sections or keep unknown chunks' bytes in `SavedGame`.
+
+## Replication change store copies every live entity each publish
+
+- **What:** `ReplicationChangeStore::Update` copies every live `EntityState`,
+  with its per-component byte and generation vectors, into `LiveEntities` on
+  every publish, then sorts it. Measured on the profile preset, before the
+  composition port: about five allocations and 0.18 us per replicated entity
+  per publish, whether or not anything changed
+  (`docs/plans/evidence/entry-entities/results.md`; `scripts/bench_replication.sh`
+  measures it again).
+- **Where:** `engine/src/net/ReplicationChangeStore.cpp` (`Update`, the
+  `LiveEntities` rebuild), `engine/include/net/ReplicationChangeStore.h`.
+- **Trigger:** a measured publish cost or allocation budget that replicated
+  entity counts exceed: a scene, or inventory replication under the D3
+  relevance filter, whose publish no longer fits its frame budget. It is not a
+  dependency of definition composition or of inventory.
+
+## Composing data definitions on the staging worker
+
+- **What:** a data definition that extends or includes others composes when it
+  commits, on the owner thread. That commit reads and parses each source file
+  synchronously, then composes, validates and compiles.
+  - Measured on the fixture content before the composition port, 500 runs
+    each:
+    - `hero.facts.sdata` commits in about 180 µs and `examples.facts.sdata` in
+      about 85 µs, each with one source;
+    - a plain definition commits in about 3 µs.
+  - Every commit reads its sources again; nothing is cached across commits.
+- **Where:**
+  - `DataAssetLoader::ComposePending` (`engine/src/assets/data/DataAssetLoader.cpp`).
+  - The worker cannot do this today. `IAssetStager::LoadStaged` receives only
+    the id-to-path snapshot, and nothing maps a source's asset path to its file.
+  - Moving the work needs a path-to-file snapshot beside `AssetPathsById`,
+    which changes the stager contract every kind implements.
+- **Trigger:** a content set or preload in which composition costs more than
+  1 ms of owner-thread time in one drain. At today's figures that is roughly
+  ten composing definitions committing together. Ability, effect and cue
+  variants authored as content (`CompositionGate` tests the shapes) are the
+  first consumer to measure.
+
+## Authoring an ability variant in the Ability Workbench
+
+- **What:** the Ability Workbench reads and edits a definition's own data, so
+  it does not take an ability that extends or includes another
+  (`AbilityWorkbench::Ability`).
+  - Kyusu shows such a variant in the generic document sheet, as it composes
+    and with provenance.
+  - Op arguments are not described by the ability schema, so that sheet has no
+    row for a variant's patched argument.
+  - The variant has no strip, element views or live preview.
+- **Where:** `editor/ability_editor/src/authoring/AbilityWorkbench.cpp` and
+  its element, argument and preview views, all of which read `AbilityData()`.
+  The composed value and provenance are on `DataDocument` (`ComposedData`,
+  `CompositionResult`), and sparse writes are in `data/DataPatch`.
+- **Trigger:** the first ability variant authored as content, or the
+  AbilityKit work that brings variants to the workbench.
+
+## A fragment included onto a prefab's own entity
+
+- **What:** a fragment may go only onto an entity the prefab inherits.
+  Aimed at one of the prefab's own entities, it is refused with
+  `fragment_target`.
+  - Supporting it means saving that entity as the difference from what the
+    fragment supplies, not whole, which the local save path does not do.
+  - Until then, a prefab that wants a fragment on its own root extends a base
+    that owns the root.
+- **Where:**
+  - the resolver: `ComposeLayers` in
+    `editor/common/src/scene_source/SceneComposition.cpp`;
+  - the local save: `EditorDocument::BuildSceneSource`.
+- **Trigger:** the first prefab that includes a fragment without extending a
+  base.
+
+## Kyusu authoring for prefab extends
+
+- **What:** Kyusu loads, edits in place, saves and cooks a prefab that extends
+  another, but has no surface for the composition itself:
+  - choosing what a scene extends and includes, and whether it is abstract,
+    from its card (`SceneEnvelopeProperties`, an envelope command);
+  - saying in the component inspector where an inherited value came from
+    (the base or a fragment), from the resolver's provenance, which the
+    projection does not keep yet;
+  - "Revert to inherited" wording on the existing reset verbs, and Restore for
+    an inherited component removed here;
+  - the prefab explorer still lists abstract prefabs (placing one is refused).
+  Until then these members are written by hand, and Kyusu keeps them as read.
+- **Where:** `editor/level_editor/src/authoring/ComponentPropertySource.cpp`,
+  `SceneInstanceProjection` (provenance per element), `EditorDocument` (an
+  envelope setter and command), `SelectionSummary`; ported from
+  `claude/composition` 9ef2aa44 and a292c5f5.
+- **Trigger:** Kyusu authoring for prefab extends: the first designer who
+  builds a prefab chain in Kyusu rather than by hand.
+
+## A response binding naming another member of its prefab
+
+- **What:** a response binding's `entity` argument names an entity by persistent
+  id and resolves through `PersistentEntityIndex` when it runs. It does not
+  follow a copy:
+  - A spawn strips authored identity (`SmapPackageOptions::StripAuthoredIdentity`),
+    so a spawned member carries no id and a binding naming it finds nothing.
+    `PersistableRef` fields resolve between a spawn's members at import
+    (`SceneSerializationContext::PackageMembers`); a binding's argument does
+    not, because `ResponsesSerializer` keeps it as authored text.
+  - A placement renames the `DataFieldKind::Entity` fields a component's
+    `CompositionSchema` declares. A binding's argument is not one: bindings are
+    keyed by authored keys, which a record schema cannot describe, so a placed
+    prefab's binding still names the source's id.
+- **Where:** `engine/src/logic/ResponsesSerializer.cpp`,
+  `RenameMemberReferences` in
+  `editor/common/src/scene_source/SceneComposition.cpp`.
+- **Trigger:** the first prefab whose response binding names another of its
+  own members.
+
+## Prefab harvest pins and keyed-list order
+
+- **What:** Kyusu rebuilds a derived prefab's patches from a diff of live state
+  against the composed base. A value pinned equal to the base's (so a later
+  base change does not reach it) is dropped, and so is the order of a keyed
+  list. Data definitions keep both, because their patches are edited, not
+  diffed.
+- **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
+  `editor/common/src/scene_source/SceneComponentDiff.cpp`.
+- **Trigger:** the first prefab that must keep a value its base later changes,
+  or a keyed list whose order is meaningful (a priority list) on a derived
+  prefab.
+
+## Recomposing resident children while their base is edited
+
+- **What:** while a base prefab is edited in Kyusu, children of it that are
+  resident but not open keep their old composition until the base is saved.
+- **Where:** `SceneSourceCache` invalidation and `SceneInstanceProjection`
+  rebuilds in `editor/level_editor/src/document/`.
+- **Trigger:** a live-preview workflow in which a base and its placed children
+  are on screen together while the base is edited.
+
+## Ability Workbench rows for cost provider arguments
+
+- **What:** a cost group's `resources` show their provider and arguments as
+  plain data. An op's arguments are laid out from the verb's or query's contract
+  (`editor/ability_editor/src/authoring/AbilityArguments.cpp`); a resource's are
+  not.
+- **Where:** `AbilityArgumentProperties` reads `AbilityOpContract`, which knows
+  ops only.
+- **Trigger:** the first cost provider content authors use, which is
+  inventory's item provider (composition Stage 4).
+- **Consumer:** item-cost abilities (an arrow per shot, a bottle per drink).

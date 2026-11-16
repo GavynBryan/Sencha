@@ -83,8 +83,6 @@ struct AnimDerivedFactDecl
 
 struct AnimFactSchema
 {
-    // The schema this one extends ("asset://..."), or empty.
-    std::string Extends;
     std::vector<AnimFactSlotDecl> Slots;
     std::vector<AnimDerivedFactDecl> Derived;
 };

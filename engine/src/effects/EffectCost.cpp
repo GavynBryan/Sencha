@@ -17,6 +17,7 @@ struct AttributeDelta
 {
     AttributeId Attribute;
     float Delta = 0.0f;
+    EffectId First;
 };
 
 bool IsInstantCost(const EffectDefinition& def)
@@ -30,40 +31,44 @@ bool IsInstantCost(const EffectDefinition& def)
 }
 } // namespace
 
-EffectCostCheck CheckEffectCosts(const World& world, EntityId actor, std::span<const EffectId> costs)
+namespace
 {
-    if (costs.empty())
-        return {};
-
+EffectCostCheck CheckTarget(const World& world, EntityId target, std::span<const EffectCostRow> costs)
+{
     const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
     const AttributeRegistry* attributes = world.TryGetResource<AttributeRegistry>();
-    const AttributeSet* set = world.TryGet<AttributeSet>(actor);
+    const AttributeSet* set = world.IsAlive(target) && world.IsRegistered<AttributeSet>()
+                                ? world.TryGet<AttributeSet>(target)
+                                : nullptr;
 
-    // Every attribute a cost names is in the actor's set, so the set's capacity
+    // Every attribute a cost names is in the target's set, so the set's capacity
     // bounds the distinct attributes.
     std::array<AttributeDelta, AttributeSet::Capacity> deltas{};
     std::size_t deltaCount = 0;
 
-    for (EffectId cost : costs)
+    for (const EffectCostRow& row : costs)
     {
-        const EffectDefinition* def = effects != nullptr ? effects->Get(cost) : nullptr;
+        if (row.Target != target)
+            continue;
+        const EffectDefinition* def = effects != nullptr ? effects->Get(row.Effect) : nullptr;
         if (def == nullptr)
-            return { .Status = EffectCostStatus::DefinitionMissing, .Effect = cost };
+            return { .Status = EffectCostStatus::DefinitionMissing, .Target = target, .Effect = row.Effect };
         if (!IsInstantCost(*def))
-            return { .Status = EffectCostStatus::NotAnInstantCost, .Effect = cost };
+            return { .Status = EffectCostStatus::NotAnInstantCost, .Target = target, .Effect = row.Effect };
         if (set == nullptr)
-            return { .Status = EffectCostStatus::AttributeSetMissing, .Effect = cost };
+            return { .Status = EffectCostStatus::AttributeSetMissing, .Target = target, .Effect = row.Effect };
 
         for (const EffectModifier& modifier : def->Modifiers)
         {
             if (attributes == nullptr || !attributes->IsKnown(modifier.Attr) || !set->Has(modifier.Attr))
-                return { .Status = EffectCostStatus::AttributeMissing, .Effect = cost, .Attribute = modifier.Attr };
+                return { .Status = EffectCostStatus::AttributeMissing, .Target = target, .Effect = row.Effect,
+                         .Attribute = modifier.Attr };
 
             std::size_t slot = 0;
             while (slot < deltaCount && deltas[slot].Attribute != modifier.Attr)
                 ++slot;
             if (slot == deltaCount)
-                deltas[deltaCount++] = { modifier.Attr, 0.0f };
+                deltas[deltaCount++] = { modifier.Attr, 0.0f, row.Effect };
             deltas[slot].Delta += modifier.Magnitude;
         }
     }
@@ -77,9 +82,26 @@ EffectCostCheck CheckEffectCosts(const World& world, EntityId actor, std::span<c
         const float available = set->GetBase(delta.Attribute) - floor;
         if (available < -delta.Delta)
             return { .Status = EffectCostStatus::Insufficient,
+                     .Target = target,
+                     .Effect = delta.First,
                      .Attribute = delta.Attribute,
                      .Needed = -delta.Delta,
                      .Available = available };
+    }
+    return {};
+}
+} // namespace
+
+EffectCostCheck CheckEffectCosts(const World& world, std::span<const EffectCostRow> costs)
+{
+    for (std::size_t i = 0; i < costs.size(); ++i)
+    {
+        const bool seen = std::any_of(costs.begin(), costs.begin() + static_cast<std::ptrdiff_t>(i),
+                                      [&](const EffectCostRow& earlier) { return earlier.Target == costs[i].Target; });
+        if (seen)
+            continue;
+        if (const EffectCostCheck check = CheckTarget(world, costs[i].Target, costs); !check.Affordable())
+            return check;
     }
     return {};
 }

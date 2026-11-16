@@ -278,6 +278,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
 | `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
 | `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
+| `tags.grant`, `tags.revoke {target, tag, stacks = 1}` | verb | gameplay / authority only | stacks of a tag the target keeps (its baseline), which a save keeps: a permanent grant from level data, such as an unlock. A revoke takes at most what the target keeps, never what an effect or ability holds. Both refuse a projected tag, and a grant refuses a tag new to a full container (`docs/gameplay/abilitykit.md`, D-A) |
 | `time.scale {target, scale}` | lease | gameplay / simulation | the actor's time scaled while held (`docs/core-systems-map.md`) |
 | `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time; completes when they run out |
 | `movement.tether {target, anchor?, point?, length = 2, speed = 12, until?}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends, or on reaching `until` |

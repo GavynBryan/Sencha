@@ -286,6 +286,24 @@ public:
         return id;
     }
 
+    void AssignEmptyEntitySignature(EntityId entity, const ArchetypeSignature& sig)
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "AssignEmptyEntitySignature called while a query/lifecycle hook is active.");
+        assert(Entities.IsAlive(entity));
+        const EntityLocation loc = Entities.GetLocation(entity);
+        assert(ArchetypeList[loc.ArchetypeId]->Signature.none());
+        if (sig.none())
+            return;
+        BumpStructural(loc.Partition);
+        Archetype* arch = GetOrCreateArchetype(sig);
+        auto [ci, ri] = arch->AddRow(entity.Index, loc.Partition, FrameCounter);
+        const EntityIndex moved = ArchetypeList[loc.ArchetypeId]->RemoveRow(loc.ChunkIndex, loc.RowIndex);
+        if (moved != InvalidEntityIndex)
+            Entities.SetLocationByIndex(moved, loc);
+        Entities.SetLocation(entity, EntityLocation{ arch->Id, ci, ri, loc.Partition });
+    }
+
     // Writes a component into a row whose archetype already carries its column,
     // and fires OnAdd exactly as AddComponent would. The counterpart to
     // CreateEntityWithSignature: together they build an entity at its final

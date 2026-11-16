@@ -13,6 +13,7 @@ DataDocumentSheet::DataDocumentSheet(DataDocumentSet& documents, PromptQueue& pr
     : Set(documents)
     , Prompts(prompts.MakeAsker())
     , Properties(documents, [this] { return Set.Active(); }, &Authoring)
+    , Envelope(documents, [this] { return Set.Active(); })
     , FilePath(
           [this] {
               const DataDocument* document = Set.Active();
@@ -64,11 +65,24 @@ std::vector<PropertySection> DataDocumentSheet::Sections(IPropertySource* fields
     if (document == nullptr)
         return {};
     std::vector<PropertySection> sections{ { .Heading = {}, .Source = &FilePath },
+                                           { .Heading = {}, .Source = &Envelope },
                                            { .Heading = {}, .Source = fields != nullptr ? fields : &Properties } };
     if (authoring != nullptr)
         for (const PropertySection& section : authoring->Sections(*document))
             sections.push_back(section);
     return sections;
+}
+
+void DataDocumentSheet::Reveal(std::string_view key, std::string path)
+{
+    RevealedDocument = std::string(key);
+    RevealedPath = std::move(path);
+}
+
+std::string DataDocumentSheet::RevealedField() const
+{
+    const DataDocument* active = Set.Active();
+    return active != nullptr && active->VirtualPath() == RevealedDocument ? RevealedPath : std::string{};
 }
 
 void DataDocumentSheet::AppendOpen(WorkspaceDocumentFacet& facet) const

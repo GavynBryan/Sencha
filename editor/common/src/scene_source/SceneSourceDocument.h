@@ -90,9 +90,24 @@ struct SceneInstanceRecord
     AssetId SourceId{};
 };
 
+struct SceneFragmentInclude
+{
+    std::string Fragment; // asset://....sscene
+    AssetId FragmentId{};
+    PersistentEntityId Onto{};
+};
+
 struct SceneSourceDocument
 {
-    static constexpr std::uint32_t Version = 1;
+    static constexpr std::uint32_t Version = 2;
+
+    std::uint32_t FormatVersion = Version;
+    std::string Extends;
+    AssetId ExtendsId{};
+    std::vector<SceneFragmentInclude> Includes;
+    bool Abstract = false;
+    std::vector<std::pair<PersistentEntityId, Json5Value>> InheritedPatches;
+    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> InheritedRemovals;
 
     std::vector<SceneSourceEntity> Entities;
     std::vector<SceneInstanceRecord> Instances;
@@ -115,6 +130,8 @@ struct SceneSourceDocument
 // Renders the document in the canonical style. Deterministic: writing an
 // unmodified parse reproduces the same bytes the canonical writer produced.
 [[nodiscard]] std::string WriteSceneSource(const SceneSourceDocument& document);
+
+[[nodiscard]] std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document);
 
 // The transform shape the format speaks ({position, rotation, scale}), shared
 // with composition so the synthetic root's component carries exactly what a

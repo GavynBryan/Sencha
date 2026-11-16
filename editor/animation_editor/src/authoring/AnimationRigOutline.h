@@ -6,7 +6,6 @@
 #include <string_view>
 #include <vector>
 
-// Non-data assets such as the skeleton report OtherKind, without a residency status.
 struct AnimationRigDependency
 {
     enum class State : unsigned char
@@ -23,6 +22,5 @@ struct AnimationRigDependency
     State Status = State::Resident;
 };
 
-// Fact schemas are listed in extends order; a looping chain stops at the repeat.
 [[nodiscard]] std::vector<AnimationRigDependency> DescribeAnimationRigDependencies(
     const DataAssetCache& data, std::string_view rigPath);

@@ -428,7 +428,14 @@ bool WorldDocument::Save()
 {
     if (WorldMode_)
         return SaveWorld();
-    return LegacyDocument_->Save();
+    if (!LegacyDocument_->Save())
+        return false;
+    if (std::string source = LegacyDocument_->SourceAssetPath(); !source.empty())
+    {
+        const std::string saved[] = { std::move(source) };
+        PropagateSavedSources(saved);
+    }
+    return true;
 }
 
 bool WorldDocument::SaveAs(std::string_view path)

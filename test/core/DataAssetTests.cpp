@@ -424,7 +424,7 @@ TEST(DataAsset, RejectsUnknownSubtypeAndSchemaViolation)
                    "data":{"speed":200.0,"label":"invalid"}})");
     AssetStaging invalid = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     EXPECT_FALSE(invalid.IsValid());
-    EXPECT_NE(invalid.Error.find("$.speed"), std::string::npos);
+    EXPECT_NE(invalid.Error.find("$.data.speed"), std::string::npos);
 }
 
 TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
@@ -506,7 +506,7 @@ TEST(DataAssetKind, AFailedLoadKeepsItsReasonUntilTheAssetLoads)
     EXPECT_FALSE(assets.LoadLease(file.Record().Path, AssetType::Data).IsValid());
     ASSERT_EQ(assets.LoadFailures().size(), 1u);
     EXPECT_EQ(assets.LoadFailures()[0].Path, file.Record().Path);
-    EXPECT_NE(assets.LoadFailures()[0].Reason.find("$.speed"), std::string::npos);
+    EXPECT_NE(assets.LoadFailures()[0].Reason.find("$.data.speed"), std::string::npos);
     EXPECT_NE(assets.LoadFailuresVersion(), before);
 
     file.Write(R"({"type":"test.definition","version":1,"data":{"speed":3.0,"label":"fixed"}})");

@@ -41,6 +41,7 @@ enum class AbilityPort : std::uint8_t
     TimeScale,
     // The current element of an op's `targets`.
     Target,
+    Source,
 };
 
 enum class AbilityLocalType : std::uint8_t
@@ -68,6 +69,7 @@ enum class AbilityValueSource : std::uint8_t
     Constant,
     Port,
     Local,
+    Parameter,
 };
 
 struct AbilityValueDecl
@@ -77,6 +79,7 @@ struct AbilityValueDecl
     AbilityPort Port = AbilityPort::Actor;
     std::string Local;
     AbilityHitField Field = AbilityHitField::None;
+    std::string Parameter;
 };
 
 struct AbilityArgumentDecl
@@ -226,6 +229,13 @@ struct AbilityPhaseDecl
     std::vector<AbilityTransitionDecl> Then;
 };
 
+struct AbilityParameterDecl
+{
+    std::string Key;
+    std::string Path;
+    double Default = 0.0;
+};
+
 struct AbilityLocalDecl
 {
     std::string Key;
@@ -246,6 +256,20 @@ enum class AbilityCostRepeat : std::uint8_t
     PerPulse,
 };
 
+enum class AbilityCostTarget : std::uint8_t
+{
+    Actor,
+    Source,
+};
+
+struct AbilityCostResourceDecl
+{
+    std::string Key;
+    std::string Path;
+    std::string Provider;
+    std::vector<AbilityArgumentDecl> Arguments;
+};
+
 struct AbilityCostGroupDecl
 {
     std::string Key;
@@ -253,8 +277,10 @@ struct AbilityCostGroupDecl
     std::string Path;
     AbilityCostTiming Timing = AbilityCostTiming::Commit;
     AbilityCostRepeat Repeat = AbilityCostRepeat::Once;
+    AbilityCostTarget Target = AbilityCostTarget::Actor;
     // Effect definitions, by asset path.
     std::vector<std::string> Effects;
+    std::vector<AbilityCostResourceDecl> Resources;
 };
 
 enum class AbilityCooldownStart : std::uint8_t
@@ -314,13 +340,20 @@ struct AbilityBindingDecl
     friend bool operator==(const AbilityBindingDecl&, const AbilityBindingDecl&) = default;
 };
 
-// One grant as content states it: under a stable key, an ability asset, and what
-// of its binding this grant overrides.
+struct AbilityGrantParameter
+{
+    std::string Key;
+    double Value = 0.0;
+
+    friend bool operator==(const AbilityGrantParameter&, const AbilityGrantParameter&) = default;
+};
+
 struct AbilityGrantDeclaration
 {
     std::string Key;
     std::string Ability;
     AbilityBindingDecl Override;
+    std::vector<AbilityGrantParameter> Parameters{};
 };
 
 enum class AbilityPredictionLevel : std::uint8_t
@@ -342,6 +375,7 @@ struct AbilityDeclaration
     std::vector<std::string> CancelTags;
     std::uint8_t Instances = 1;
     std::vector<AbilityLocalDecl> Locals;
+    std::vector<AbilityParameterDecl> Parameters;
     std::vector<AbilityCostGroupDecl> Costs;
     std::optional<AbilityCooldownDecl> Cooldown;
     std::vector<AbilityPhaseDecl> Phases;

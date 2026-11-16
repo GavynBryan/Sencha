@@ -67,7 +67,7 @@ struct AnimRigBinder
     }
 
     void BindFacts(const AnimRigData& rig);
-    void BindDerivation(const AnimDerivedFactDecl& decl, const std::string& schemaPath, std::size_t index);
+    void BindDerivation(const AnimDerivedFactDecl& decl, const std::string& schemaPath);
     void BindProviders();
     void BindRequests(const AnimRigData& rig);
     void BindLayers(const AnimRigData& rig);

@@ -3,6 +3,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
@@ -259,8 +260,28 @@ ZoneStateForgetting ForgettingOf(const World& world, EntityId entity,
     return found != byInstance.end() ? found->second : ZoneStateForgetting::Never;
 }
 
+std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentSchema& schema,
+                                       const EntityBuildPackage& package)
+{
+    std::vector<bool> skipped(package.EntityCount(), false);
+    if (IsSimulationAuthority(world))
+        return skipped;
+    std::size_t index = 0;
+    for (const PackageEntity& entity : package.Entities())
+        skipped[index++] = IsAuthorityMaterialized(schema, entity);
+    for (bool grew = true; grew;)
+    {
+        grew = false;
+        for (const PackageParent& relation : package.Parents())
+            if (skipped[relation.Parent.Value] && !skipped[relation.Child.Value])
+                grew = skipped[relation.Child.Value] = true;
+    }
+    return skipped;
+}
+
 std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
-                                                std::span<const EntityId> entities, const ZoneStateStore& store,
+                                                std::span<const EntityId> entities,
+                                                const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
                                                 ZoneId scope)
 {
     std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
@@ -276,8 +297,9 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const Entity
     std::size_t index = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
+        const bool materializedElsewhere = authorityOnly[index];
         const EntityId entity = entities[index++];
-        if (!packageEntity.PersistentId.IsValid())
+        if (materializedElsewhere || !packageEntity.PersistentId.IsValid())
             continue;
         const ZoneStateForgetting forgotten = !entity.IsValid() ? store.ForgettingOf(scope, packageEntity.PersistentId)
                                               : lifetimes        ? ForgettingOf(world, entity, byInstance)
@@ -331,12 +353,41 @@ bool ImportPackageIntoPartitionImpl(
         }
         parented[relation.Child.Value] = true;
     }
+    for (const PackageEntity& packageEntity : package.Entities())
+        if (packageEntity.PersistentId.IsValid() && !IsAuthoredPersistentEntityId(packageEntity.PersistentId))
+            return fail("Package entity holds a persistent id from the runtime namespace.");
 
     // Resolved once: per entity these are two hash lookups that cannot change
     // mid-import, because component registration is sealed before any entity
     // exists.
     const bool worldHasTransforms =
         world.IsRegistered<LocalTransform>() && world.IsRegistered<WorldTransform>();
+
+    const std::vector<bool> authorityOnly = AuthorityOnlyMembers(world, schema, package);
+
+    // Every member's handle exists before any component is read, so references between members resolve.
+    std::vector<PackageMember> members;
+    for (const PackageEntity& packageEntity : package.Entities())
+    {
+        const bool skipped = authorityOnly[entities.size()]
+            || (zoneState != nullptr && packageEntity.PersistentId.IsValid()
+                && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId));
+        entities.push_back(skipped ? EntityId{} : world.CreateEntity(partition));
+        if (packageEntity.MemberId.IsValid())
+            members.push_back({ packageEntity.MemberId, entities.back(), packageEntity.PersistentId });
+    }
+    std::ranges::sort(members, {}, &PackageMember::Authored);
+    struct MembersInScope
+    {
+        SceneSerializationContext* Context;
+        ~MembersInScope()
+        {
+            if (Context != nullptr)
+                Context->PackageMembers = {};
+        }
+    } membersInScope{ sceneContext };
+    if (sceneContext != nullptr)
+        sceneContext->PackageMembers = members;
 
     ArchetypeSignature signature;
     // Reused across entities: an import of a thousand pawns should not allocate
@@ -346,12 +397,9 @@ bool ImportPackageIntoPartitionImpl(
     std::size_t packageIndex = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
-        if (zoneState != nullptr && packageEntity.PersistentId.IsValid()
-            && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId))
+        const EntityId entity = entities[packageIndex];
+        if (!entity.IsValid())
         {
-            // The slot stays positionally aligned with the package's local
-            // ids; parent relations that touch it are dropped below.
-            entities.push_back(EntityId{});
             ++packageIndex;
             continue;
         }
@@ -373,9 +421,7 @@ bool ImportPackageIntoPartitionImpl(
         // One row at its final archetype, then every column written in place.
         // Growing the entity component by component would migrate its row once
         // per component, each migration copying the columns added before it.
-        const EntityId entity =
-            world.CreateEntityWithSignature(partition, signature);
-        entities.push_back(entity);
+        world.AssignEmptyEntitySignature(entity, signature);
 
         for (const PackageComponent& component : packageEntity.Components)
         {
@@ -429,7 +475,7 @@ bool ImportPackageIntoPartitionImpl(
             stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr)
     {
         const std::vector<AuthoredEntityState> authored =
-            AuthoredStates(world, package, entities, *mutableState, stateScope);
+            AuthoredStates(world, package, entities, authorityOnly, *mutableState, stateScope);
         if (!authored.empty())
             mutableState->RecordAuthoredSet(stateScope, authored);
         std::vector<EntityId> live;
@@ -635,4 +681,12 @@ bool ImportZonePackage(
         true,
         participation,
         error);
+}
+
+bool IsAuthorityMaterialized(const WorldComponentSchema& schema, const PackageEntity& entity)
+{
+    return std::ranges::any_of(entity.Components, [&](const PackageComponent& component) {
+        const WorldComponentSchema::Entry* entry = schema.Find(component.Type);
+        return entry != nullptr && entry->AuthorityMaterialized;
+    });
 }

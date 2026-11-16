@@ -24,6 +24,7 @@ struct EffectDeclaration
         std::string Attribute;
         ModifierOp Op = ModifierOp::Add;
         float Magnitude = 0.0f;
+        std::int32_t Precedence = 0;
     };
 
     EffectDuration Duration = EffectDuration::Instant;

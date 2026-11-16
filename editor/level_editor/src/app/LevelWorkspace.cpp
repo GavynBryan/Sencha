@@ -545,6 +545,8 @@ void LevelWorkspace::BuildUi()
         MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
         ExplorerRows.Offer(Catalog, ActionHandlers, MaterialsExplorer->Row());
         Workspace->World.OnSourcesSaved = [this](std::span<const std::string> saved) {
+            if (CookRuntime != nullptr)
+                CookRuntime->GetSession().RecookDependents(saved);
             if (RenderFeature == nullptr)
                 return;
             if (SceneThumbnailCache* cache = RenderFeature->SceneThumbnails())
