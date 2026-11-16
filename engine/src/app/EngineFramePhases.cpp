@@ -738,7 +738,9 @@ void Engine::RegisterSimulationFramePhases()
 
     driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext& ctx) {
         RuntimeWorld& runtimeWorld = engine.World();
+        engine.Saves().Commit();
         engine.LevelChanges().Commit();
+        engine.Saves().RestoreSections();
 
         // Streaming first, so a room a grant asked for this frame reaches
         // residency processing in this one rather than the next.

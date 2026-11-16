@@ -1180,3 +1180,22 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a co-op game that changes level, rests or restores a save with a
   second player connected. Then announce level changes to admitted peers and
   release and request their bodies through the same change.
+
+## Saving what was created at run time
+
+- **What:** a save keeps only how authored entities differ (destroyed, and the
+  component state their owners register). A body's attributes and grants,
+  items, and anything created, dropped or deposited at run time are not
+  saved, and a runtime entity in a zone is destroyed unrecorded when the zone
+  unloads.
+- **Where:** `save/SavedGames.cpp` (`Write`), `zone/ZoneStateStore.h`.
+- **Trigger:** saving a body's progression or an inventory, which needs the
+  runtime persistent id mint and a body saved as a patch against its prefab.
+
+## Unknown save chunks are dropped on rewrite
+
+- **What:** `DecodeSavedGame` skips a chunk it does not know, and the next
+  write does not carry it. Unknown sections are kept; unknown chunks are not.
+- **Where:** `engine/src/save/SavedGame.cpp`.
+- **Trigger:** a second chunk kind added after format 1. Then either fold new
+  data into sections or keep unknown chunks' bytes in `SavedGame`.

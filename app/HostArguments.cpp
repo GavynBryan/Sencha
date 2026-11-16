@@ -30,17 +30,35 @@ HostArguments ParseHostArguments(int& argc, char** argv)
             out.Settings = argv[++read];
             continue;
         }
+        if (std::strcmp(arg, "--saves") == 0 && hasValue)
+        {
+            out.Saves = argv[++read];
+            continue;
+        }
         argv[write++] = argv[read];
     }
     argc = write;
     return out;
 }
 
+namespace
+{
+    std::string ResolveUserRoot(const std::optional<std::string>& named, bool headless, std::string_view platformRoot)
+    {
+        if (named.has_value())
+            return *named == "none" ? std::string{} : *named;
+        if (headless)
+            return {};
+        return std::string(platformRoot);
+    }
+}
+
 std::string ResolveSettingsRoot(const HostArguments& arguments, std::string_view platformRoot)
 {
-    if (arguments.Settings.has_value())
-        return *arguments.Settings == "none" ? std::string{} : *arguments.Settings;
-    if (arguments.Headless)
-        return {};
-    return std::string(platformRoot);
+    return ResolveUserRoot(arguments.Settings, arguments.Headless, platformRoot);
+}
+
+std::string ResolveSavesRoot(const HostArguments& arguments, std::string_view platformRoot)
+{
+    return ResolveUserRoot(arguments.Saves, arguments.Headless, platformRoot);
 }

@@ -937,3 +937,22 @@ are `Require`, and a query condition may bound a number.
 `AuthoredValue::TryGetNumber`.
 
 **Files.** `WriteFileBytes` replaces a file in one step; `WriteFileText`.
+
+## v47
+
+**Saves.** `Engine::Saves()` returns `SavedGames` (`save/SavedGames.h`):
+write and restore requests, registered sections, the `save.write` and
+`save.restore` verbs. `SavedGame`, `EncodeSavedGame` and `DecodeSavedGame`,
+`SaveSlotFiles`. `EngineRuntimeConfig::SavesRoot`; `UserDataDirectory()`.
+`LevelChangeRequest::ZoneState`. `LoadedLevel::CaptureState`.
+
+**Zone state.** `ZoneStateLifetime` joins the world components after
+`SceneInstance`, which moves every later component's dense index and wire key.
+`ZoneStateStore` records each entity's lifetime and versioned component state,
+captures live or at detach (`RecordCapture` replaces `RecordDetachCapture`),
+and exports and installs its durable part. `ZoneComponentMemories` and
+`CaptureZoneState` / `RestoreZoneState` (`zone/ZoneStateMemory.h`).
+`ResponsesSystem` no longer captures or restores zone state itself.
+
+**Files.** `HashedChunkFileWriter` and `ReadHashedChunkFile`
+(`core/serialization/HashedChunkFile.h`); `SlugOf` (`core/text/Slug.h`).

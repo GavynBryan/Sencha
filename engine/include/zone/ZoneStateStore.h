@@ -3,127 +3,85 @@
 #include <core/identity/Id.h>
 #include <ecs/ComponentTypeId.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneStateLifetime.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-//=============================================================================
-// ZoneStateStore
-//
-// In-session memory of how each zone's live state deviates from its cooked
-// scene, keyed by persistent entity identity. The zone import path records the
-// authored id set and suppresses recorded-destroyed entities on re-import; the
-// detach path captures the deviation by diffing live ids against the authored
-// set. Unload therefore stops meaning forget: a pickup taken before a zone
-// streamed out is still gone when it streams back in.
-//
-// What survives between residencies is the deviation, not the baseline: the
-// authored set lives only for the span of one residency because every import
-// restates it from the cooked artifact. Retained memory therefore tracks how
-// much state has actually changed, not how much of the world has been visited.
-//
-// This is the runtime half of the zone state overlay. Serializing records for
-// save files and capturing changed component fields extend this store; they do
-// not replace it.
-//=============================================================================
+struct DurableComponentState
+{
+    PersistentEntityId Entity;
+    ComponentTypeId Type;
+    std::uint16_t Version = 0;
+    std::vector<std::byte> Bytes;
+
+    friend bool operator==(const DurableComponentState&, const DurableComponentState&) = default;
+};
+
+// What a zone never forgets, in id order: the part a save keeps.
+struct DurableZoneState
+{
+    ZoneId Zone;
+    std::vector<PersistentEntityId> Destroyed;
+    std::vector<DurableComponentState> Components;
+
+    friend bool operator==(const DurableZoneState&, const DurableZoneState&) = default;
+};
+
+struct AuthoredEntityState
+{
+    PersistentEntityId Id;
+    ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+};
+
+struct RememberedComponentState
+{
+    std::uint16_t Version = 0;
+    std::span<const std::byte> Bytes;
+};
+
+enum class ZoneCapture : std::uint8_t
+{
+    // The zone stays; what it authored stays known.
+    Live,
+    // The zone is leaving: what is forgotten at detach goes, and so does the
+    // authored set, which the next import restates.
+    Detach,
+};
+
+// How each zone's live state deviates from its cooked scene, keyed by
+// persistent identity: docs/plans/runtime-stable-identity.md.
 class ZoneStateStore
 {
 public:
-    // Called on successful zone import with every persistent id the cooked
-    // scene authored, before suppression. The set is a property of the cooked
-    // artifact, so re-recording on each import is idempotent while staying
-    // correct across a recook that added or removed entities.
-    void RecordAuthoredSet(ZoneId zone, std::span<const PersistentEntityId> authored)
-    {
-        ZoneStateRecord& record = Zones_[zone];
-        record.Authored.clear();
-        record.Authored.reserve(authored.size());
-        for (const PersistentEntityId id : authored)
-            if (id.IsValid())
-                record.Authored.insert(id.Value);
-    }
+    // At import, with every entity the cooked scene authored, those this import
+    // suppressed included.
+    void RecordAuthoredSet(ZoneId zone, std::span<const AuthoredEntityState> authored);
 
-    // Called at detach while the zone's entities are still alive. Destroyed is
-    // recomputed as authored-minus-live: entities suppressed on import are not
-    // live either, so accumulated destruction survives any number of
-    // unload/reload cycles without a union step.
-    void RecordDetachCapture(ZoneId zone, std::span<const PersistentEntityId> live)
-    {
-        const auto it = Zones_.find(zone);
-        if (it == Zones_.end())
-            return;
+    // While the zone's entities are alive: authored minus live is destroyed.
+    void RecordCapture(ZoneId zone, std::span<const PersistentEntityId> live, ZoneCapture capture);
 
-        ZoneStateRecord& record = it->second;
-        // Without a baseline there is nothing to diff against, and recomputing
-        // from an empty one would read as "everything survived" and erase the
-        // deviation already recorded. Only an import can supply a baseline.
-        if (record.Authored.empty())
-            return;
+    [[nodiscard]] bool IsRecordedDestroyed(ZoneId zone, PersistentEntityId id) const;
+    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneId zone) const;
+    // Never for an entity this store has no record of.
+    [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneId zone, PersistentEntityId id) const;
 
-        std::unordered_set<std::uint64_t> liveSet;
-        liveSet.reserve(live.size());
-        for (const PersistentEntityId id : live)
-            liveSet.insert(id.Value);
+    void RecordComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type, std::uint16_t version,
+                              std::span<const std::byte> state);
+    void ForgetComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type);
+    // Empty bytes when nothing was recorded.
+    [[nodiscard]] RememberedComponentState ComponentState(ZoneId zone, PersistentEntityId id,
+                                                          ComponentTypeId type) const;
 
-        record.Destroyed.clear();
-        for (const std::uint64_t authored : record.Authored)
-            if (!liveSet.contains(authored))
-                record.Destroyed.insert(authored);
-
-        // The baseline is a property of the cooked artifact, restated by every
-        // import, so holding it between residencies would make this store grow
-        // with zones visited rather than with state that actually deviates.
-        record.Authored.clear();
-    }
-
-    [[nodiscard]] bool IsRecordedDestroyed(ZoneId zone, PersistentEntityId id) const
-    {
-        const auto it = Zones_.find(zone);
-        return it != Zones_.end() && it->second.Destroyed.contains(id.Value);
-    }
-
-    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneId zone) const
-    {
-        const auto it = Zones_.find(zone);
-        return it != Zones_.end() ? it->second.Destroyed.size() : 0;
-    }
-
-    // State a system captured for one component of one entity as its zone
-    // detached, in whatever form that system reads back when the zone next
-    // attaches. Like the destroyed set it is a deviation: the system forgets a
-    // record once the entity is back as authored, so memory follows change.
-    void RecordComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type,
-                              std::span<const std::byte> state)
-    {
-        std::vector<std::byte>& record = Zones_[zone].Components[ComponentStateKey{ id.Value, type.Value }];
-        record.assign(state.begin(), state.end());
-    }
-
-    void ForgetComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type)
-    {
-        if (const auto it = Zones_.find(zone); it != Zones_.end())
-            it->second.Components.erase(ComponentStateKey{ id.Value, type.Value });
-    }
-
-    // Empty when nothing was recorded.
-    [[nodiscard]] std::span<const std::byte> ComponentState(ZoneId zone, PersistentEntityId id,
-                                                            ComponentTypeId type) const
-    {
-        const auto it = Zones_.find(zone);
-        if (it == Zones_.end())
-            return {};
-        const auto found = it->second.Components.find(ComponentStateKey{ id.Value, type.Value });
-        return found != it->second.Components.end() ? std::span<const std::byte>(found->second)
-                                                    : std::span<const std::byte>();
-    }
-
-    // Reset-to-authored: the next import of every zone replays the cooked
-    // scene unmodified.
+    // Reset-to-authored: the next import of every zone replays the cooked scene.
     void Clear() { Zones_.clear(); }
+
+    [[nodiscard]] std::vector<DurableZoneState> ExportDurable() const;
+    // Replaces everything with `durable`.
+    void Install(std::span<const DurableZoneState> durable);
 
 private:
     struct ComponentStateKey
@@ -141,12 +99,19 @@ private:
         }
     };
 
-    struct ZoneStateRecord
+    struct ComponentRecord
     {
-        std::unordered_set<std::uint64_t> Authored;
-        std::unordered_set<std::uint64_t> Destroyed;
-        std::unordered_map<ComponentStateKey, std::vector<std::byte>, ComponentStateKeyHash> Components;
+        ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+        std::uint16_t Version = 0;
+        std::vector<std::byte> Bytes;
     };
 
-    std::unordered_map<ZoneId, ZoneStateRecord> Zones_;
+    struct ZoneRecord
+    {
+        std::unordered_map<std::uint64_t, ZoneStateForgetting> Authored;
+        std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
+        std::unordered_map<ComponentStateKey, ComponentRecord, ComponentStateKeyHash> Components;
+    };
+
+    std::unordered_map<ZoneId, ZoneRecord> Zones_;
 };

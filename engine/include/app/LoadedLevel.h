@@ -89,6 +89,10 @@ public:
     [[nodiscard]] LevelResidency Residency() const;
     [[nodiscard]] bool IsCooked(const LevelReference& level) const;
 
+    // Brings zone state memory up to date with every resident zone and the
+    // world scene, as an unload would, without unloading.
+    void CaptureState();
+
     // The zone a loaded scene occupies, or the world's focus zone. Invalid
     // with nothing loaded.
     [[nodiscard]] ZoneId PlayZone() const;

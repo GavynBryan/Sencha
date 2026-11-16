@@ -92,6 +92,9 @@ struct EngineRuntimeConfig
     // one, so the first root that claims a virtual path owns it.
     std::vector<std::string> ContentRoots{ "assets" };
 
+    // Empty keeps saves in memory for the session: docs/gameplay/saves.md, "The file".
+    std::string SavesRoot;
+
     // A flag the process host raises when it is told to stop -- a signal it
     // caught, most often. Null when nothing outside the engine can ask.
     //

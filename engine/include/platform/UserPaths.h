@@ -10,3 +10,7 @@
 // A directory and not a file: what lives under it is decided by whoever owns
 // the file -- the console names its archive, the launcher its catalog.
 [[nodiscard]] std::filesystem::path UserConfigDirectory();
+
+// Where a user's own data lives: $XDG_DATA_HOME, else $HOME/.local/share,
+// else the working directory. Saves belong here, not beside settings.
+[[nodiscard]] std::filesystem::path UserDataDirectory();

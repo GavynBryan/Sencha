@@ -201,9 +201,10 @@ authority-only and refuse on a client.
 ### What persists
 
 Bindings are scene data. Runtime state -- disabled and consumed bits -- is
-remembered by the zone: when a zone detaches, each entity whose bindings differ
-from authored is recorded in `ZoneStateStore` by persistent identity and
-binding key, and restored when the zone attaches again. A binding is restored
+remembered by the zone: when a zone detaches or a save is written, each entity
+whose bindings differ from authored is recorded in `ZoneStateStore` by
+persistent identity and binding key, through the `ZoneComponentMemory` responses
+register, and restored when the zone is imported again. A binding is restored
 only if its authored text is unchanged; changing a binding's text starts it as
 authored. Cooldowns and waiting responses are transient. The same rule applies
 when an entity's bindings change at runtime or in Kyusu: state follows the

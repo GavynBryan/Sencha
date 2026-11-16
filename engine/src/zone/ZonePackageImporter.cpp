@@ -5,10 +5,13 @@
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <algorithm>
@@ -16,6 +19,7 @@
 #include <cstring>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -238,6 +242,51 @@ bool ImportComponent(
     return true;
 }
 
+// An entity's own lifetime, else the nearest ancestor's, else the one authored
+// elsewhere in the placed scene it belongs to.
+ZoneStateForgetting ForgettingOf(const World& world, EntityId entity,
+                                 const std::unordered_map<std::uint64_t, ZoneStateForgetting>& byInstance)
+{
+    for (EntityId at = entity; at.IsValid() && world.IsAlive(at);)
+    {
+        if (const ZoneStateLifetime* lifetime = world.TryGet<ZoneStateLifetime>(at))
+            return lifetime->Forgotten;
+        const Parent* parent = world.IsRegistered<Parent>() ? world.TryGet<Parent>(at) : nullptr;
+        at = parent != nullptr ? parent->Entity : EntityId{};
+    }
+    const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(entity) : nullptr;
+    const auto found = instance != nullptr ? byInstance.find(instance->Id.Value) : byInstance.end();
+    return found != byInstance.end() ? found->second : ZoneStateForgetting::Never;
+}
+
+std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
+                                                std::span<const EntityId> entities, const ZoneStateStore& store,
+                                                ZoneId scope)
+{
+    std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
+    const bool lifetimes = world.IsRegistered<ZoneStateLifetime>();
+    if (lifetimes && world.IsRegistered<SceneInstance>())
+        for (const EntityId entity : entities)
+            if (const ZoneStateLifetime* lifetime = entity.IsValid() ? world.TryGet<ZoneStateLifetime>(entity) : nullptr)
+                if (const SceneInstance* instance = world.TryGet<SceneInstance>(entity))
+                    byInstance.emplace(instance->Id.Value, lifetime->Forgotten);
+
+    std::vector<AuthoredEntityState> authored;
+    authored.reserve(package.EntityCount());
+    std::size_t index = 0;
+    for (const PackageEntity& packageEntity : package.Entities())
+    {
+        const EntityId entity = entities[index++];
+        if (!packageEntity.PersistentId.IsValid())
+            continue;
+        const ZoneStateForgetting forgotten = !entity.IsValid() ? store.ForgettingOf(scope, packageEntity.PersistentId)
+                                              : lifetimes        ? ForgettingOf(world, entity, byInstance)
+                                                                 : ZoneStateForgetting::Never;
+        authored.push_back(AuthoredEntityState{ packageEntity.PersistentId, forgotten });
+    }
+    return authored;
+}
+
 bool ImportPackageIntoPartitionImpl(
     World& world,
     const WorldComponentSchema& schema,
@@ -379,13 +428,15 @@ bool ImportPackageIntoPartitionImpl(
     if (auto* mutableState =
             stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr)
     {
-        std::vector<PersistentEntityId> authored;
-        authored.reserve(package.EntityCount());
-        for (const PackageEntity& packageEntity : package.Entities())
-            if (packageEntity.PersistentId.IsValid())
-                authored.push_back(packageEntity.PersistentId);
+        const std::vector<AuthoredEntityState> authored =
+            AuthoredStates(world, package, entities, *mutableState, stateScope);
         if (!authored.empty())
             mutableState->RecordAuthoredSet(stateScope, authored);
+        std::vector<EntityId> live;
+        for (const EntityId entity : entities)
+            if (entity.IsValid())
+                live.push_back(entity);
+        RestoreZoneState(world, stateScope, live);
     }
 
     // The caller's own record of what it made -- which entity is the root, and
