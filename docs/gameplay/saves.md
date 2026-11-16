@@ -27,8 +27,8 @@ what a save keeps is decided per entity by its zone state lifetime
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
   restore function. A section in a save that nothing registered is kept and
   written back by the next save, so content a newer build wrote survives an
-  older one. The engine registers two (`save/EngineSaveSections.h`):
-  `sencha.bodies` and `sencha.persistent_ids`.
+  older one. The engine registers three (`save/EngineSaveSections.h`), in this
+  order: `sencha.bodies`, `sencha.held` and `sencha.persistent_ids`.
 
 ## Bodies
 
@@ -50,6 +50,29 @@ part of the patch and come back as authored grants; tags given with
 `tags.grant` are the container's baseline and come back; lasting effects do not.
 `sencha.persistent_ids` keeps the mint's counter, so a restored game never
 mints an id it already holds.
+
+## Held records
+
+`sencha.held` (`save/HeldRecordSaves.h`) keeps what is saved beyond bodies: a
+closure from roots. The roots are the world and the local participant's body;
+the members are the records the held-record index lists under a root, then
+what those records hold, to the nesting bound (`docs/gameplay/held-records.md`).
+Counters are kept this way and so, once it lands, is inventory.
+
+Each record is kept whole, not as a patch: its persistent id, and every
+component a serializer saves, in scene form through the same serializers a
+scene uses. Its `Held` names its holder by persistent id. Capturing gives a
+record or a holder without a persistent id one from the runtime mint, which is
+why the section is captured before `sencha.persistent_ids`.
+
+Restoring destroys every held record the index lists, the old session's, at
+once, so none can collide with a saved id; then it creates each saved record in
+the persistent partition with its id and its components. A record of the world
+is listed at once. A record of a body waits for an entity with its holder's
+persistent id: the restored body arrives later, takes its saved id, and its
+records move under it, follow it into its partition and become relevant to its
+owner. A saved record that does not load whole, such as a counter naming a tag
+the content no longer declares, is not restored and is reported.
 
 ## Writing
 
@@ -101,6 +124,7 @@ must keep reading.
 ## Not yet
 
 Recorded in `docs/deferred.md`: a body's children and other participants'
-bodies, entities created at run time other than bodies (items, anything dropped
-or deposited in a zone), changed fields of authored entities beyond what a
-component registers, and restoring inside a network session.
+bodies and what they hold, records held by entities other than the world and
+the local body (anything dropped or deposited in a zone), changed fields of
+authored entities beyond what a component registers, and restoring inside a
+network session.

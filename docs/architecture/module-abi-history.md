@@ -1134,3 +1134,33 @@ participant's next body, which `ParticipantBodySpawns` takes.
 and Kyusu's `DiffSceneComponents` uses it. `EntityBuildPackage` gains
 `FindComponent`, `SetSerializedComponent` and `RemoveComponent`. The ability
 grant serializer saves grants `ability.grant` made.
+
+## v50
+
+**Held records.** New component `Held` (`world/held/Held.h`): a record entity's
+holder, a `PersistableRef` where invalid is the world, and its position.
+`HeldRecordIndex` (`world/held/HeldRecordIndex.h`) is a World resource kept by
+`Held`'s hooks and by `PersistentIdComponent`'s; `HoldRecord`,
+`SettleHeldRecords`, `DestroyHeldRecords` and `InstallHeldRecords`
+(`world/held/HeldRecords.h`) are the World operations. `RuntimeWorld` installs
+the index and a `PartitionFollowers` resource, and settles held records before
+it dispatches partition moves. `RegisterEngineSaveSections` adds `sencha.held`
+(`save/HeldRecordSaves.h`) between `sencha.bodies` and
+`sencha.persistent_ids`.
+
+**Counters.** New component `Counter` (`logic/Counter.h`) in
+`LogicComponents`, with its serializer and codec. Verbs `counter.set` and
+`counter.add`, query `counter.value`, event `counter.changed`
+(`logic/CounterVocabulary.h`), bound by
+`EngineVocabularyBindings::BindCounters`, whose `Entities` member is now a
+mutable `World&`. `TypedComponentSerializer<T>`
+(`world/serialization/TypedComponentSerializer.h`) holds what every
+hand-written serializer did alike (identity, defaults, storage, `Load`,
+`Remove`); the engine's seven and the counter's derive from it.
+
+**Hooked components on the wire.** `WorldComponentSchema::SetComponentBytes`
+overwrites a component with lifecycle hooks as `ReplaceComponent` does, firing
+its hooks; `ReplicationLayout::AddCodec` accepts a hooked component, while
+`Add` (bytes on the wire) still refuses one. The replicated table gains `Held`
+and `Counter`, which changes its hash; no wire layout of an existing component
+changed, so the protocol stays at 9.

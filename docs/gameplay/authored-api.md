@@ -287,6 +287,9 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.impulse {target, direction, speed = 1, rise = 0}` | verb | gameplay / authority only | that velocity added to the character's once (`docs/gameplay/movement.md`, "Impulse") |
 | `claims.hold {group, claim, count = 1, share = 0}` | lease | gameplay / authority only | a place in a group's claim while held (`docs/gameplay/claims.md`) |
 | `claims.count {group, claim}`, `claims.held {holder, group, claim}` | query | | how many places are held; whether an entity holds one |
+| `counter.set {name, value, holder?}`, `counter.add {name, amount = 1, holder?}` | verb | gameplay / authority only | a named number of the world or of the holder, kept by saves; zero unsets it, and a value past a 32-bit integer is held at its bound (`docs/gameplay/counters.md`) |
+| `counter.value {name, holder?}` | query | — | the counter's value, zero when unset; test it with `require` |
+| `counter.changed {name, value, holder}` | event | published to the World's dispatcher, source the holder | a verb changed a counter; zero when it was unset |
 | `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
 | `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
 | `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |
