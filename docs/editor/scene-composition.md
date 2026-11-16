@@ -21,8 +21,9 @@ merge through the shared operator (`docs/assets/composition.md`).
 ## Format versions
 
 `format_version` is the scene source format (`SceneSourceDocument::Version`,
-2). It is not the cooked `.smap` version, which moves on its own (`kSmapVersion`)
-and is unchanged by composition: a derived prefab cooks to an ordinary flat map.
+2). The cooked `.smap` has its own version (`kSmapVersion`, also 2 since it
+gained the presentation section); the two move independently. Composition
+leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
 
 - Both versions read. The `extends`, `includes`, `abstract`, `patch` and
   `remove` members in a version-1 file are refused, not kept as unknown.

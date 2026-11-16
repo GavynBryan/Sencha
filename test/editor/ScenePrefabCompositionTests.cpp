@@ -515,4 +515,3 @@ TEST(ScenePrefabComposition, AVersionTwoFixtureComposesThroughEveryLayer)
     EXPECT_EQ(Binding(*guard, "used"), nullptr) << "removed by the guard";
     EXPECT_EQ(Binding(*guard, "struck"), nullptr) << "removed by the placement";
 }
-

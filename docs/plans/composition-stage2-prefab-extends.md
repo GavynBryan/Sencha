@@ -68,8 +68,8 @@ format is unchanged by this stage.
 - For a whole entity, the resolver builds one record schema whose members are
   each component's schema under its `JsonKey`, so one `ComposeLayers` call
   composes all of an entity's components.
-- **ABI.** `IComponentSerializer` is fingerprinted. This joins the
-  unreleased v29 bump and is recorded in `module-abi-history.md`.
+- **ABI.** `IComponentSerializer` is fingerprinted. On main this is recorded
+  under v48 in `module-abi-history.md`.
 
 ### Format version 2
 
@@ -215,8 +215,9 @@ Each step lands test first and is committed on its own.
 
 - **Version-1 scenes.** Read and compose unchanged. Saved by Kyusu, they
   become version 2 and compose to the same entities.
-- **Runtime.** `.smap` is unchanged (`kSmapVersion` 1).
-- **ABI.** `IComponentSerializer` gains one virtual, within the v29 bump.
+- **Runtime.** `.smap` is unchanged by this stage. Its version (`kSmapVersion`)
+  is the cooked format's and is not the scene source version.
+- **ABI.** `IComponentSerializer` gains one virtual, recorded under v48 on main.
 
 ## Decisions taken in this plan
 
