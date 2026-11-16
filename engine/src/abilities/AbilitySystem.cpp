@@ -46,6 +46,10 @@ namespace
         Query<Read<AbilityGrants>> Granted;
         std::optional<Query<Read<ActiveEffect>>> Effects;
         std::vector<EffectGrant> EffectGrants;
+        // Effect grants that found no room, this pass and the last: a refusal is
+        // traced the first pass it happens, not every pass it is retried.
+        std::vector<EffectGrant> Refused;
+        std::vector<EffectGrant> StillRefused;
         std::vector<EntityId> Actors;
         std::vector<AbilityRequest> Requests;
         std::unordered_map<EntityId, std::uint8_t, EntityIdHash> RequestsByActor;
@@ -233,11 +237,52 @@ namespace
         scratch.Requests.clear();
     }
 
+    // An effect grant ends with its effect, and when a reload declared the
+    // effect's grants again without its entry.
+    void RevokeEndedEffectGrants(World& world, const AbilityEffectGrants* table, EntityId actor)
+    {
+        AbilityGrants& grants = *world.TryGet<AbilityGrants>(actor);
+        for (std::uint8_t i = grants.Count; i-- > 0;)
+        {
+            const AbilityGrant& grant = grants.Entries[i];
+            if (grant.Kind != AbilityGrantKind::Effect)
+                continue;
+            const ActiveEffect* effect = world.IsAlive(grant.Effect) ? world.TryGet<ActiveEffect>(grant.Effect) : nullptr;
+            if (effect == nullptr || table == nullptr || std::ranges::find(table->Of(effect->Def), grant.Entry) == table->Of(effect->Def).end())
+                (void)RevokeAbilityGrant(grants, grant.Id);
+        }
+    }
+
+    void TraceGrantRefused(World& world, const AbilityPassScratch::EffectGrant& refused, AbilityId ability,
+                           const FixedSimTime& now)
+    {
+        if (AbilityTrace* trace = world.TryGetResource<AbilityTrace>())
+            trace->Record({ .Tick = now.TickIndex,
+                            .Actor = refused.Target,
+                            .Key = { .CommandTick = now.TickIndex, .Ability = ability },
+                            .Event = AbilityTraceEvent::GrantRefused,
+                            .Refusal = ability.IsValid() ? AbilityRefusal::Capacity : AbilityRefusal::Undefined });
+    }
+
     // An actor holds an effect's grants while the effect lasts: granted the pass after
     // it applies, revoked the pass after it ends, so both machines agree on the tick.
-    void SyncEffectGrants(World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch)
+    // Ended effects give their grants back first, so a full table makes room for a
+    // replacement on the same pass.
+    void SyncEffectGrants(World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch,
+                          const FixedSimTime& now)
     {
+        scratch.Actors.clear();
+        scratch.Granted.ForEachChunk([&](auto& view) {
+            if (partitions != nullptr && !partitions->Contains(view.Partition()))
+                return;
+            const EntityIndex* indices = view.Entities();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
+        });
         const AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
+        for (const EntityId actor : scratch.Actors)
+            RevokeEndedEffectGrants(world, table, actor);
+
         const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
         if (table == nullptr || table->Empty() || entries == nullptr || !world.IsRegistered<ActiveEffect>())
             return;
@@ -251,6 +296,7 @@ namespace
                 for (const std::uint16_t entry : table->Of(effects[i].Def))
                     scratch.EffectGrants.push_back({ effects[i].Target, world.ResolveEntityIndex(indices[i]), entry });
         });
+        scratch.StillRefused.clear();
         for (const AbilityPassScratch::EffectGrant& pending : scratch.EffectGrants)
         {
             if (!world.IsAlive(pending.Target)
@@ -263,22 +309,19 @@ namespace
                 return grant.Kind == AbilityGrantKind::Effect && grant.Effect == pending.Effect
                     && grant.Entry == pending.Entry;
             });
-            if (!held)
-                (void)GrantAbility(grants, entries->Find(pending.Entry)->Ability, AbilityGrantKind::Effect,
-                                   pending.Entry, pending.Effect);
+            if (held)
+                continue;
+            const AbilityId ability = entries->Find(pending.Entry)->Ability;
+            if (GrantAbility(grants, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect).IsValid())
+                continue;
+            scratch.StillRefused.push_back(pending);
+            const bool known = std::ranges::any_of(scratch.Refused, [&](const AbilityPassScratch::EffectGrant& refused) {
+                return refused.Effect == pending.Effect && refused.Entry == pending.Entry;
+            });
+            if (!known)
+                TraceGrantRefused(world, pending, ability, now);
         }
-    }
-
-    void RevokeEndedEffectGrants(World& world, EntityId actor)
-    {
-        AbilityGrants& grants = *world.TryGet<AbilityGrants>(actor);
-        for (std::uint8_t i = grants.Count; i-- > 0;)
-        {
-            const AbilityGrant& grant = grants.Entries[i];
-            if (grant.Kind == AbilityGrantKind::Effect
-                && (!world.IsAlive(grant.Effect) || !world.HasComponent<ActiveEffect>(grant.Effect)))
-                (void)RevokeAbilityGrant(grants, grant.Id);
-        }
+        std::swap(scratch.Refused, scratch.StillRefused);
     }
 
     void RefreshBindings(World& world, AbilityGrantEntries& entries, std::vector<std::string>& problems)
@@ -316,7 +359,7 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         for (const std::string& problem : scratch.Problems)
             host.Logging->GetLogger<AbilitySystem>().Warn("{}", problem);
     if (authority)
-        SyncEffectGrants(world, partitions, scratch);
+        SyncEffectGrants(world, partitions, scratch, now);
 
     // Operations create and destroy entities, so the actors are gathered first and
     // nothing runs inside the query.
@@ -357,8 +400,6 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     {
         if (!ready(entity))
             continue;
-        if (authority)
-            RevokeEndedEffectGrants(world, entity);
         pass.Sweep(actorOf(entity));
     }
 

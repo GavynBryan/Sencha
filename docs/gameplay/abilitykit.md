@@ -263,7 +263,10 @@ A lasting effect may hold grants too: an `effect.definition`'s
 Infinite effect granting its abilities. The pass grants them to the effect's target
 the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
-every machine on the same tick.
+every machine on the same tick. Ended effects give their grants back before new
+ones are granted, so an actor whose table is full swaps one effect's grants for
+another's on one pass. A grant with no room is retried every pass and traced once
+(`GrantRefused`, with the refusal).
 
 An actor with grants carries `ActiveAbilities`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
@@ -413,8 +416,10 @@ records (`ActiveAbilities` derives both), and presents them with the same
 
 The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
 (each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
-key, found in the owner's own interned entries; a grant whose entry the owner has
-not interned is held but bound to no input), `AttributeSet` (attributes by name)
+key and binding together, found in the owner's own interned entries, so two grants
+of one ability under one key and bound apart stay apart; a grant whose entry the
+owner has not interned is held but bound to no input, and a table refuses to
+intern a second entry of one ability with the same wire key), `AttributeSet` (attributes by name)
 and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
 `gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
 machine instead, without their stack counts: what other players' presentation
@@ -525,6 +530,21 @@ Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a 
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
 mark at which a query is worth parallelising, so it stays serial. A firing actor
 costs a peer 340 B/s ("Replication").
+
+Under many lasting effects, each folding one modifier and some granting abilities
+(the shape equipment gives content), measured before the composition work was
+ported onto pooled activations, so rerun `scripts/bench_abilities.sh` for current
+figures:
+
+| Actors | Infinite effects | Pass, none granting | Pass, granting | Resolve | `RemoveEffectsOwnedBy` |
+|---|---|---|---|---|---|
+| 100 | 600 | 0.032 ms | 0.047–0.063 ms | 0.019 ms | 0.0003 ms |
+| 256 | 1,536 | 0.081 ms | 0.121–0.164 ms | 0.048 ms | 0.0007 ms |
+| 256 | 5,120 | 0.083 ms | 0.173–0.191 ms | 0.168 ms | 0.0021 ms |
+
+Granting effects add up to about 0.11 ms of grant synchronisation to the pass;
+resolve is about 0.03 µs per effect. Method and the full table:
+`docs/plans/evidence/entry-entities/results.md`.
 
 ## Architectural smells
 

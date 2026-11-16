@@ -152,11 +152,10 @@ class EntityBuildPackage;
 
 struct SmapPackageOptions
 {
-    // Drop authored persistent identity entirely: no import metadata and no
-    // persistent_id component. A runtime spawn is transient (v1), so a
-    // spawned copy must not collide with authored identity or participate in
-    // zone state memory.
-    bool StripPersistentIdentity = false;
+    // Drop persistent_id, scene_instance and persistent id import metadata. A
+    // spawn is a transient group of its own (v1): it keeps neither authored ids
+    // nor the placement ids cooked inside its scene.
+    bool StripAuthoredIdentity = false;
 };
 
 // Converts parsed contents into detached package entities: serialized

@@ -22,20 +22,29 @@ std::span<const std::uint16_t> AbilityEffectGrants::Of(EffectId effect) const
                                                               : std::span<const std::uint16_t>{};
 }
 
-void DeclareEffectGrants(World& world, EffectId effect, const std::vector<AbilityGrantDeclaration>& grants)
+std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
+                                             const std::vector<AbilityGrantDeclaration>& grants)
 {
+    std::vector<std::string> refused;
     AbilityRegistry* abilities = world.TryGetResource<AbilityRegistry>();
     AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
     if (abilities == nullptr || entries == nullptr)
-        return;
+    {
+        for (const AbilityGrantDeclaration& grant : grants)
+            refused.push_back(grant.Key);
+        return refused;
+    }
     std::vector<std::uint16_t> granted;
     for (const AbilityGrantDeclaration& grant : grants)
     {
         const std::uint16_t entry = entries->Intern({ grant.Key, abilities->Reserve(grant.Ability), grant.Override });
         if (entry != kAbilityNoGrantEntry)
             granted.push_back(entry);
+        else
+            refused.push_back(grant.Key);
     }
     AbilityEffectGrants& table = world.HasResource<AbilityEffectGrants>() ? world.GetResource<AbilityEffectGrants>()
                                                                           : world.AddResource<AbilityEffectGrants>();
     table.Set(effect, std::move(granted));
+    return refused;
 }

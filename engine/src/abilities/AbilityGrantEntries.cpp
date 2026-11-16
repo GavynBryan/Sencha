@@ -19,6 +19,41 @@ namespace
     {
         return override ? *override : fallback ? *fallback : otherwise;
     }
+
+    // The entry's key and binding as text, every field by name or number and in a
+    // fixed order, so its key is the same on every machine of one protocol.
+    std::uint32_t EntryWireKey(const AbilityGrantEntry& entry)
+    {
+        constexpr char kField = '\x1f';
+        constexpr char kItem = '\x1e';
+        std::string text = entry.Key;
+        const auto field = [&](char tag, const auto& value) {
+            text += kField;
+            text += tag;
+            if (value)
+                text += std::to_string(static_cast<std::int64_t>(*value));
+        };
+        const AbilityBindingDecl& binding = entry.Override;
+        text += kField;
+        text += 'a';
+        if (binding.Action)
+            text += *binding.Action;
+        field('p', binding.Policy);
+        field('r', binding.Priority);
+        field('c', binding.Consume);
+        field('w', binding.WhenBlocked);
+        field('i', binding.OnInterrupt);
+        text += kField;
+        text += 'x';
+        if (binding.Context)
+            for (const std::vector<std::string>* names : { &binding.Context->All, &binding.Context->Any, &binding.Context->None })
+            {
+                text += kItem;
+                for (const std::string& name : *names)
+                    (text += name) += kItem;
+            }
+        return NameWireKey(text);
+    }
 }
 
 AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
@@ -45,7 +80,12 @@ std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
         return static_cast<std::uint16_t>(found - Entries.begin());
     if (Entries.size() >= kAbilityNoGrantEntry)
         return kAbilityNoGrantEntry;
-    Entries.push_back(Slot{ std::move(entry), {} });
+    // Two entries of one ability with one wire key would be one entry on the wire.
+    // Machines declaring the same content in the same order refuse the same one.
+    const std::uint32_t key = EntryWireKey(entry);
+    if (FindByWireKey(key, entry.Ability) != kAbilityNoGrantEntry)
+        return kAbilityNoGrantEntry;
+    Entries.push_back(Slot{ std::move(entry), {}, key });
     Stale = true;
     return static_cast<std::uint16_t>(Entries.size() - 1);
 }
@@ -58,9 +98,14 @@ const AbilityGrantEntry* AbilityGrantEntries::Find(std::uint16_t index) const
 std::uint16_t AbilityGrantEntries::FindByWireKey(std::uint32_t key, AbilityId ability) const
 {
     for (std::size_t i = 0; i < Entries.size(); ++i)
-        if (Entries[i].Entry.Ability == ability && NameWireKey(Entries[i].Entry.Key) == key)
+        if (Entries[i].Entry.Ability == ability && Entries[i].WireKey == key)
             return static_cast<std::uint16_t>(i);
     return kAbilityNoGrantEntry;
+}
+
+std::uint32_t AbilityGrantEntries::WireKey(std::uint16_t index) const
+{
+    return index < Entries.size() ? Entries[index].WireKey : 0u;
 }
 
 const AbilityEffectiveBinding* AbilityGrantEntries::Binding(std::uint16_t index) const

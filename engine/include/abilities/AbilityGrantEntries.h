@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class AbilityRegistry;
@@ -41,18 +42,26 @@ struct AbilityEffectiveBinding
     AbilityInterrupt OnInterrupt = AbilityInterrupt::Cancel;
 };
 
+// What a refused intern means, for declaration diagnostics.
+inline constexpr std::string_view kAbilityGrantEntryRefusal =
+    "was refused: the grant entry table is full, or another entry of its ability has the same wire key";
+
 // The World's grant entries and their effective bindings. Bindings rebuild when the
 // abilities, the action vocabulary or the gameplay tags they were resolved against change.
 class AbilityGrantEntries
 {
 public:
     // The index of an entry equal to `entry`, adding it if new. kAbilityNoGrantEntry
-    // when the table is full.
+    // when the table is full, or when another entry of the same ability has the
+    // same wire key.
     std::uint16_t Intern(AbilityGrantEntry entry);
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
-    // The first entry for `ability` whose key's NameWireKey is `key`, as another
-    // machine names the grant; kAbilityNoGrantEntry when this World interned none.
+    // An entry crosses the wire as the NameWireKey of its key and binding, so two
+    // entries that differ only in binding are told apart on every machine.
+    [[nodiscard]] std::uint32_t WireKey(std::uint16_t index) const;
+    // The entry for `ability` with that wire key; kAbilityNoGrantEntry when this
+    // World interned none.
     [[nodiscard]] std::uint16_t FindByWireKey(std::uint32_t key, AbilityId ability) const;
     [[nodiscard]] const AbilityEffectiveBinding* Binding(std::uint16_t index) const;
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
@@ -68,6 +77,7 @@ private:
     {
         AbilityGrantEntry Entry;
         AbilityEffectiveBinding Binding;
+        std::uint32_t WireKey = 0;
     };
 
     std::vector<Slot> Entries;

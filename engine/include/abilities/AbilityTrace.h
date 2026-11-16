@@ -46,6 +46,9 @@ enum class AbilityTraceEvent : std::uint8_t
     Blocked,
     // A commit paid nothing, because a once group was already paid.
     AlreadyCommitted,
+    // A lasting effect's grant found no room on its target; Refusal says why. Traced
+    // the first pass it is refused, and retried every pass until it fits.
+    GrantRefused,
 };
 
 // Compact ids only: the definitions they index can reload, and an inspector resolves

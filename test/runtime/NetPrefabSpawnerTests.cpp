@@ -27,6 +27,9 @@
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
+#include "SceneSpawnHarness.h"
+#include "SmapSceneFixture.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -206,4 +209,47 @@ TEST_F(NetPrefabSpawnerTest, WithNoAssetSystemEveryPrefabIsUnavailable)
     EXPECT_FALSE(
         Spawner->Instantiate(PawnId, Runtime->Entities(), PersistentStoragePartition)
             .IsValid());
+}
+
+// A prefab that places another cooks its placed members, root included, with
+// the placement's authored instance id. The spawned root must still name the
+// spawned prefab: that is the identity a host replicates to its peers.
+TEST(NetPrefabSpawnerGroup, APlacedRootNamesTheSpawnedPrefab)
+{
+    SpawnHarness h;
+    const auto placed = [](SmapEntityRecord& record, double marker) {
+        record.Components.emplace_back(MakeComponentTypeId("spawn_marker"),
+                                       JsonValue(JsonValue::Object{ { "value", JsonValue(marker) } }));
+        record.Components.emplace_back(
+            MakeComponentTypeId("scene_instance"),
+            JsonValue(JsonValue::Object{
+                { "source", JsonValue(std::string("asset://prefabs/bulb.sscene")) },
+                { "id", JsonValue(std::string("00000000000000f0")) } }));
+    };
+    SmapContents contents;
+    SmapEntityRecord root;
+    placed(root, 1.0);
+    contents.Entities.push_back(std::move(root));
+    SmapEntityRecord child;
+    child.Parent = 0;
+    placed(child, 2.0);
+    contents.Entities.push_back(std::move(child));
+    const AssetId sceneId{ 0x5EEDu };
+    TempSmapScene scene(h.Registry, h.Serializers, contents, "net_variant", sceneId);
+
+    NetPrefabSpawner spawner(h.Schema, h.Serializers, h.Logging);
+    spawner.ConnectAssets(&h.Assets, &h.Scenes);
+    ASSERT_EQ(spawner.Prepare(sceneId), NetPrefabReadiness::Ready);
+
+    World& world = h.World.Entities();
+    const EntityId spawned = spawner.Instantiate(sceneId, world, PersistentStoragePartition);
+    ASSERT_TRUE(spawned.IsValid());
+    const SceneInstance* group = world.TryGet<SceneInstance>(spawned);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->Source, sceneId) << "the root names the placed prefab, which peers would be told to spawn";
+    EXPECT_NE(group->Id.Value & SceneInstanceIdRuntimeBit, 0u);
+
+    spawner.Despawn(world, spawned);
+    EXPECT_TRUE(world.GetAliveEntities().empty());
+    spawner.ConnectAssets(nullptr, nullptr);
 }

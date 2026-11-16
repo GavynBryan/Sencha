@@ -105,6 +105,9 @@ InputActionEdge Interrupt(std::uint8_t action) { return { action, InputEdgeKind:
 constexpr std::uint8_t kFire = 0;
 constexpr std::uint8_t kAlt = 1;
 
+constexpr std::string_view kGrantedInstant = R"({
+    "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+
 class AbilityRuntime : public ::testing::Test
 {
 protected:
@@ -237,6 +240,36 @@ protected:
         AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
         const std::uint16_t entry = entries.Intern({ std::move(key), ability, std::move(over) });
         return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
+    }
+
+    // `count` Infinite effects, each granting an instant ability of its own.
+    std::vector<EffectId> DefineGrantingEffects(std::size_t count)
+    {
+        EffectDefinition lasting{};
+        lasting.Duration = EffectDuration::Infinite;
+        std::vector<EffectId> effects;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::string ability = "asset://abilities/granted_" + std::to_string(i) + ".sdata";
+            (void)Define(ability, kGrantedInstant);
+            const EffectId effect = Entities.GetResource<EffectRegistry>().Define(
+                "asset://effects/granting_" + std::to_string(i) + ".sdata", lasting);
+            DeclareEffectGrants(Entities, effect, { AbilityGrantDeclaration{ .Key = "g", .Ability = ability, .Override = {} } });
+            effects.push_back(effect);
+        }
+        return effects;
+    }
+
+    EntityId ApplyNow(EntityId target, EffectId effect)
+    {
+        return ApplyEffect(Entities, target, effect, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now });
+    }
+
+    [[nodiscard]] bool HoldsGrantOf(EntityId actor, EntityId effect)
+    {
+        const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+        return std::any_of(grants.Entries, grants.Entries + grants.Count,
+                           [&](const AbilityGrant& grant) { return grant.Effect == effect; });
     }
 
     // One fixed tick in the schedule's order: the actor clock, the ability pass,
@@ -1519,4 +1552,89 @@ TEST_F(AbilityRuntime, APhasesTimeoutRunsInItsActorsTime)
     EXPECT_NE(LiveRecord(actor, waiting), nullptr) << "half way through its own ten ticks";
     Steps(10);
     EXPECT_EQ(LiveRecord(actor, waiting), nullptr);
+}
+
+TEST_F(AbilityRuntime, AFullGrantTableSwapsOneEffectsGrantForAnothersOnOneTick)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kAbilityGrantCapacity);
+
+    ASSERT_TRUE(RemoveEffect(Entities, held.front()));
+    const EntityId newcomer = ApplyNow(actor, granting.back());
+    Step();
+
+    EXPECT_FALSE(HoldsGrantOf(actor, held.front())) << "an ended effect's grant outlived the pass after it ended";
+    EXPECT_TRUE(HoldsGrantOf(actor, newcomer))
+        << "the new effect's grant waited a pass for room the ended effect was still holding";
+}
+
+TEST_F(AbilityRuntime, AnEffectGrantThatDoesNotFitIsTracedOnce)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    const EntityId late = ApplyNow(actor, granting.back());
+    Steps(3);
+
+    const std::vector<AbilityTraceRecord> refused = Traced(AbilityTraceEvent::GrantRefused);
+    ASSERT_EQ(refused.size(), 1u) << "a grant with no room is reported once, not every pass it waits";
+    EXPECT_EQ(refused.front().Actor, actor);
+    EXPECT_EQ(refused.front().Key.Ability, Entities.GetResource<AbilityRegistry>().Find(
+                                               "asset://abilities/granted_" + std::to_string(kAbilityGrantCapacity) + ".sdata"));
+    EXPECT_EQ(refused.front().Refusal, AbilityRefusal::Capacity);
+
+    ASSERT_TRUE(RemoveEffect(Entities, held.front()));
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, late));
+    EXPECT_EQ(Traced(AbilityTraceEvent::GrantRefused).size(), 1u);
+}
+
+TEST_F(AbilityRuntime, AnEffectGrantTheEntryTableRefusesIsReportedNotDropped)
+{
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition weapon{};
+    weapon.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/weapon.sdata", weapon);
+    // These two keys share one FNV-1a wire key, so the wire could not tell them apart.
+    const std::vector<std::string> refused = DeclareEffectGrants(
+        Entities, equipped,
+        { AbilityGrantDeclaration{ .Key = "k32728", .Ability = "asset://abilities/charge.sdata", .Override = {} },
+          AbilityGrantDeclaration{ .Key = "k261234", .Ability = "asset://abilities/charge.sdata", .Override = {} } });
+    EXPECT_EQ(refused, (std::vector<std::string>{ "k261234" }));
+    EXPECT_EQ(Entities.GetResource<AbilityEffectGrants>().Of(equipped).size(), 1u);
+}
+
+TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
+{
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition weapon{};
+    weapon.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/weapon.sdata", weapon);
+    DeclareEffectGrants(Entities, equipped,
+                        { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                   .Override = { .Action = "Input.AltFire" } } });
+    const EntityId actor = Actor();
+    (void)ApplyNow(actor, equipped);
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
+
+    // A content reload declares the effect again, with its edited binding.
+    DeclareEffectGrants(Entities, equipped,
+                        { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                   .Override = { .Action = "Input.PrimaryFire" } } });
+    Step();
+
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u) << "the reloaded grant was added beside the one it replaces";
+    const AbilityGrantEntry* entry = Entities.GetResource<AbilityGrantEntries>().Find(grants.Entries[0].Entry);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->Override.Action, std::optional<std::string>("Input.PrimaryFire"));
 }

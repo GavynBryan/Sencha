@@ -23,7 +23,11 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
+#include <movement/JumpState.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
 #include <net/NetReplicationComponents.h>
+#include <net/NetSpawnPrefab.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <time/ActorTimeLeases.h>
@@ -39,6 +43,9 @@
 #include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
+
+#include <cstdlib>
+#include <iostream>
 
 #include <algorithm>
 #include <initializer_list>
@@ -287,9 +294,9 @@ protected:
         write.Sequence = Peer.NextSnapshotSequence();
         write.OwnerPeer = ClientPeer;
         write.CommandAck = Now > 0 ? Now - 1 : 0;
-        const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
-        EXPECT_TRUE(written.Ok);
-        return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(written.BytesWritten) };
+        LastWrite = ReplicationWriteSnapshot(write, std::span(Scratch).subspan(0, Budget));
+        EXPECT_TRUE(LastWrite.Ok);
+        return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(LastWrite.BytesWritten) };
     }
 
     void Apply(const std::vector<std::byte>& bytes)
@@ -451,6 +458,9 @@ protected:
     NetSnapshotAck Ack;
     std::uint64_t Generation = 0;
     std::vector<std::byte> Scratch = std::vector<std::byte>(64 * 1024);
+    // How much of Scratch one snapshot may fill; a shipping session's is kNetMaxSnapshotBytes.
+    std::size_t Budget = Scratch.size();
+    SnapshotWriteResult LastWrite;
     EntityId Actor;
     std::uint64_t Now = 0;
     bool Held[2] = {};
@@ -1000,4 +1010,116 @@ TEST_F(AbilityReplication, OnlyAPredictingActorCarriesGuessedCues)
     Predict();
     ClientTick({});
     EXPECT_TRUE(Client.Entities.HasComponent<AbilityPredictedCues>(Remote()));
+}
+
+TEST_F(AbilityReplication, GrantsSharingAKeyAreToldApartOnTheClient)
+{
+    ClientPeer = kOwner;
+    const AbilityId ability = Authority.Define(kCharging, "asset://abilities/charging.sdata");
+    const AbilityId clientAbility = Client.Define(kCharging, "asset://abilities/charging.sdata");
+    // Two sources granting one ability under one key, bound apart. Both machines
+    // hold both entries, interned in the same order.
+    const AbilityBindingDecl low{ .Priority = 1 };
+    const AbilityBindingDecl high{ .Priority = 9 };
+    AbilityGrantEntries& clientEntries = Client.Entities.GetResource<AbilityGrantEntries>();
+    (void)clientEntries.Intern({ "g", clientAbility, low });
+    (void)clientEntries.Intern({ "g", clientAbility, high });
+    AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
+    (void)entries.Intern({ "g", ability, low });
+    const std::uint16_t granted = entries.Intern({ "g", ability, high });
+    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    const AbilityGrantEntry* entry = clientEntries.Find(grants.Entries[0].Entry);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->Override.Priority, std::optional<std::int32_t>(9))
+        << "the client bound the grant to the other source's entry";
+}
+
+// An entity is written whole or not at all, so a pawn whose owner-visible state
+// outgrows one datagram can never reach its owner. Loss Function's pawn: a
+// moving character with nine grants, four attributes and two tags.
+TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
+{
+    ClientPeer = kOwner;
+    Budget = kNetMaxSnapshotBytes;
+    for (int i = 0; i < 9; ++i)
+        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
+    for (const char* name : { "Energy", "Health", "Ammo", "MoveSpeed" })
+    {
+        AttributeId id = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute(name);
+        if (!id.IsValid())
+        {
+            id = Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+            (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+        }
+        (void)attributes.Add(id, 50.0f);
+    }
+    // A moving, owned, prefab-spawned character, as the pawn's other replicated state.
+    World& world = Authority.Entities;
+    world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+    world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
+    *world.TryGet<SupportState>(Actor) = SupportState{ .Surface = {},
+                                                       .ContactPoint = Vec3d(4.0f, -1.0f, 0.5f),
+                                                       .Normal = Vec3d(0.0f, 1.0f, 0.0f),
+                                                       .SurfaceVelocity = Vec3d(0.5f, 0.0f, 0.0f),
+                                                       .Kind = SupportKind::Stable };
+    world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
+    world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
+    world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
+    world.TryGet<LookOrientation>(Actor)->Yaw = 1.25f;
+    Step();
+    GameplayTagContainer& tags = *Authority.Entities.TryGet<GameplayTagContainer>(Actor);
+    const GameplayTagRegistry& names = Authority.Entities.GetResource<GameplayTagRegistry>();
+    (void)tags.Grant(names.FindTag("State.Charged"));
+    (void)tags.Grant(names.FindTag("Weapon.Firing"));
+
+    (void)Publish();
+    EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);
+    EXPECT_EQ(LastWrite.EntitiesWritten, 1u);
+    RecordProperty("seed_bytes", std::to_string(LastWrite.BytesWritten));
+}
+
+// The largest owner seed the kit's codecs can produce on a moving pawn: every
+// grant, attribute and tag slot full and an automatic firing. Measured, not
+// asserted; scripts/bench_replication.sh records it.
+TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
+{
+    if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)
+        GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)";
+    ClientPeer = kOwner;
+    Budget = kNetMaxSnapshotBytes;
+    Grant(kAutomatic, "asset://abilities/automatic.sdata", "g_fire");
+    for (std::size_t i = 1; i < kAbilityGrantCapacity; ++i)
+        Grant(kGlowing, "asset://abilities/glow_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
+    for (std::size_t i = 0; i < AttributeSet::Capacity; ++i)
+    {
+        const std::string name = "Bench.Attribute." + std::to_string(i);
+        (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+        (void)attributes.Add(Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name), 7.5f + static_cast<float>(i));
+    }
+    World& world = Authority.Entities;
+    world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+    world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
+    world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
+    world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
+    world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
+    Step({ { kFire, InputEdgeKind::Press } });
+    Steps(3);
+    GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(Actor);
+    for (std::size_t i = tags.Count; i < GameplayTagContainer::Capacity; ++i)
+    {
+        const std::string name = "Bench.Tag." + std::to_string(i);
+        (void)Client.Entities.GetResource<GameplayTagRegistry>().RegisterTag(name);
+        (void)tags.Grant(*world.GetResource<GameplayTagRegistry>().RegisterTag(name));
+    }
+
+    (void)Publish();
+    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetMaxSnapshotBytes
+              << ", written " << LastWrite.EntitiesWritten << ", unsendable " << LastWrite.EntitiesUnsendable << "\n";
 }

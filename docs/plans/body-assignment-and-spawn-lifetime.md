@@ -165,7 +165,11 @@ importer already guarantee for a spawn:
   package relation becomes a `Parent` component (`ZonePackageImporter.cpp`).
   The importer is all-or-nothing.
 - Every package entity is stamped with the spawn's `SceneInstance` before
-  import. The group is therefore exactly the imported entities.
+  import. The group is therefore exactly the imported entities. The package
+  is built with `SmapPackageOptions::StripAuthoredIdentity`, which drops the
+  placement ids the cook stamped on members of placements inside the spawned
+  scene, so no member keeps an authored group; a stamp that is refused anyway
+  fails the spawn.
 
 The service checks the scene **before publication**. When the build settles
 (owner thread, at the drain), `CountRootRecords(*build->Contents())` must be

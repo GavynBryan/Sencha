@@ -2,7 +2,6 @@
 
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityRegistry.h>
-#include <core/hash/Fnv1a.h>
 #include <ecs/World.h>
 
 void ReplicationCodec<AbilityGrants>::ToWire(const ReplicationWireContext& context, const AbilityGrants& grants,
@@ -17,11 +16,10 @@ void ReplicationCodec<AbilityGrants>::ToWire(const ReplicationWireContext& conte
     for (std::uint8_t i = 0; i < grants.Count; ++i)
     {
         const AbilityGrant& grant = grants.Entries[i];
-        const AbilityGrantEntry* entry = entries != nullptr ? entries->Find(grant.Entry) : nullptr;
         std::uint32_t* words = &wire.Words.Values[4 * i];
         words[0] = grant.Id.Value;
         words[1] = abilities != nullptr ? abilities->WireKey(grant.Ability) : 0u;
-        words[2] = entry != nullptr ? NameWireKey(entry->Key) : 0u;
+        words[2] = entries != nullptr ? entries->WireKey(grant.Entry) : 0u;
         words[3] = static_cast<std::uint32_t>(grant.Kind);
         wire.Effects.Values[i] = context.WireEntity(grant.Effect);
     }

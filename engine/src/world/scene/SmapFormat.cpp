@@ -693,8 +693,9 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
                                     + HexId(type.Value) + ".");
                 return false;
             }
-            if (options.StripPersistentIdentity
-                && serializer->JsonKey() == "persistent_id")
+            if (options.StripAuthoredIdentity
+                && (serializer->JsonKey() == "persistent_id"
+                    || serializer->JsonKey() == "scene_instance"))
                 continue;
             if (!built.AddSerializedJson(entity, type, payload))
             {
@@ -706,7 +707,7 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
             }
         }
 
-        if (!options.StripPersistentIdentity && record.Persistent.IsValid())
+        if (!options.StripAuthoredIdentity && record.Persistent.IsValid())
             (void)built.SetPersistentId(entity, record.Persistent);
     }
 

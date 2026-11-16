@@ -1,10 +1,13 @@
 // Records what the ability kit costs: the bytes each actor carries, the ability
-// pass per tick over idle and firing actors, and presenting them. Env-gated;
+// pass per tick over idle and firing actors, presenting them, and the pass,
+// attribute resolve and owner removal under many lasting effects. Env-gated;
 // scripts/bench_abilities.sh runs it from the profile preset.
 
 #include "BenchRecorder.h"
 
+#include <abilities/AbilityCapacity.h>
 #include <abilities/AbilityDefinitionData.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityPresentationSystem.h>
@@ -16,7 +19,10 @@
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
 #include <controller/LookOrientation.h>
+#include <attributes/AttributeRegistry.h>
 #include <core/json/JsonParser.h>
+#include <effects/EffectRegistry.h>
+#include <effects/EffectSystem.h>
 #include <input/InputActionRegistry.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
@@ -85,6 +91,7 @@ struct Crowd
             Entities.AddComponent<InputActionSourceRef>(actor, InputActionSourceRef{});
             Entities.AddComponent<AbilityGrants>(actor, AbilityGrants{});
             (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
+            Actors.push_back(actor);
         }
     }
 
@@ -106,6 +113,7 @@ struct Crowd
     AbilityHost Host;
     AbilitySettings Settings;
     std::unique_ptr<AbilityPresentationSystem> Presenter;
+    std::vector<EntityId> Actors;
     std::uint64_t Now = 0;
 };
 
@@ -140,6 +148,100 @@ TickCost MedianTickMs(std::size_t actors, bool firing, int reps)
         }
     }
     return { Bench::Median(pass), Bench::Median(presentation) };
+}
+
+// Lasting effects at equipment scale: every actor holds `PerActor` Infinite
+// effects, each folding one modifier, and the first of them also grant
+// `GrantsPerEffect` abilities each, as many as a 16-grant table has room for.
+struct EffectLoad
+{
+    std::size_t Actors = 0;
+    std::size_t PerActor = 0;
+    std::size_t GrantsPerEffect = 0;
+};
+
+struct EffectCost
+{
+    double Pass = 0.0;
+    double Resolve = 0.0;
+    double RemoveOwned = 0.0;
+};
+
+EffectCost MedianEffectCostMs(const EffectLoad& load, int reps)
+{
+    Crowd crowd(load.Actors);
+    World& world = crowd.Entities;
+    const AttributeId armor = world.GetResource<AttributeRegistry>().RegisterAttribute("Armor", 0.0f, 1.0e6f, 0.0f);
+    EffectDefinition modifier{};
+    modifier.Duration = EffectDuration::Infinite;
+    modifier.Modifiers = { { armor, ModifierOp::Add, 1.0f } };
+    EffectRegistry& effects = world.GetResource<EffectRegistry>();
+    const EffectId plain = effects.Define("asset://bench/armor.sdata", modifier);
+    const EffectId granting = effects.Define("asset://bench/armor_granting.sdata", modifier);
+    std::vector<AbilityGrantDeclaration> granted;
+    for (std::size_t g = 0; g < load.GrantsPerEffect; ++g)
+        granted.push_back({ .Key = std::format("g{}", g), .Ability = "asset://bench/automatic.sdata", .Override = {} });
+    DeclareEffectGrants(world, granting, granted);
+    // The crowd's own grant takes one of the sixteen.
+    const std::size_t grantingPerActor =
+        load.GrantsPerEffect == 0 ? 0 : std::min(load.PerActor, (kAbilityGrantCapacity - 1) / load.GrantsPerEffect);
+    const auto effectFor = [&](std::size_t index) { return index < grantingPerActor ? granting : plain; };
+
+    const FixedSimTime applied{ .DeltaSeconds = kTickSeconds, .TickIndex = crowd.Now };
+    for (const EntityId actor : crowd.Actors)
+    {
+        world.AddComponent<AttributeSet>(actor);
+        (void)world.TryGet<AttributeSet>(actor)->Add(armor, 0.0f);
+        for (std::size_t e = 0; e < load.PerActor; ++e)
+            (void)ApplyEffect(world, actor, effectFor(e), applied, LeaseOwner{ actor, e });
+    }
+
+    std::vector<double> pass;
+    std::vector<double> resolve;
+    for (int tick = 0; tick < 60 + reps; ++tick, ++crowd.Now)
+    {
+        crowd.Input({}, false);
+        AdvanceActorTime(world, crowd.Now);
+        auto start = Bench::Clock::now();
+        RunAbilityPass(world, crowd.Host, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = crowd.Now }, nullptr,
+                       crowd.Settings);
+        const double passMs = Bench::MillisecondsSince(start);
+        start = Bench::Clock::now();
+        ResolveAttributesWithEffects(world);
+        const double resolveMs = Bench::MillisecondsSince(start);
+        if (tick >= 60)
+        {
+            pass.push_back(passMs);
+            resolve.push_back(resolveMs);
+        }
+    }
+
+    // One owner's effect ended, which walks every effect to find it, then put back.
+    std::vector<double> removal;
+    const EntityId first = crowd.Actors.front();
+    for (int rep = 0; rep < reps; ++rep)
+    {
+        const auto start = Bench::Clock::now();
+        (void)RemoveEffectsOwnedBy(world, LeaseOwner{ first, 0 });
+        removal.push_back(Bench::MillisecondsSince(start));
+        (void)ApplyEffect(world, first, effectFor(0), applied, LeaseOwner{ first, 0 });
+    }
+    return { Bench::Median(pass), Bench::Median(resolve), Bench::Median(removal) };
+}
+
+void MeasureEffectScale()
+{
+    for (const std::size_t actors : { std::size_t{ 100 }, std::size_t{ 256 } })
+        for (const std::size_t perActor : { std::size_t{ 6 }, std::size_t{ 20 } })
+            for (const std::size_t grants : { std::size_t{ 0 }, std::size_t{ 1 }, std::size_t{ 4 } })
+            {
+                const EffectCost cost = MedianEffectCostMs({ actors, perActor, grants }, Reps(240));
+                const std::string scenario =
+                    std::format("actors_{}.effects_{}.grants_{}", actors, actors * perActor, grants);
+                Recorder.Record("effects.pass." + scenario, "ms", cost.Pass);
+                Recorder.Record("effects.resolve." + scenario, "ms", cost.Resolve);
+                Recorder.Record("effects.remove_owned." + scenario, "ms", cost.RemoveOwned);
+            }
 }
 
 void MeasureFootprint()
@@ -181,6 +283,7 @@ TEST(AbilityBench, Generate)
     Recorder.Clear();
     MeasureFootprint();
     MeasureTicks();
+    MeasureEffectScale();
 
     ASSERT_TRUE(Recorder.WriteJson(json)) << "cannot write " << json.generic_string();
     std::filesystem::path csv = json;

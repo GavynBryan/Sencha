@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 class World;
@@ -26,4 +27,6 @@ private:
 
 // Records what `effect` grants, reserving every ability it names. Replaces what it
 // granted before, so a reloaded effect's next application grants the new list.
-void DeclareEffectGrants(World& world, EffectId effect, const std::vector<AbilityGrantDeclaration>& grants);
+// Returns the keys the entry table refused, which the effect does not grant.
+std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
+                                             const std::vector<AbilityGrantDeclaration>& grants);

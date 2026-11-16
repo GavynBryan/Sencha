@@ -3,6 +3,7 @@
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
+#include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/CuePresentationLibrary.h>
 #include <assets/data/DataAssetSubtype.h>
@@ -105,7 +106,8 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
     if (!effect.IsValid())
         errors.push_back(std::format("{}: the effect registry refused it", entry.Path));
     else
-        DeclareEffectGrants(world, effect, declaration->GrantedAbilities);
+        for (const std::string& key : DeclareEffectGrants(world, effect, declaration->GrantedAbilities))
+            errors.push_back(std::format("{}: grant '{}' {}", entry.Path, key, kAbilityGrantEntryRefusal));
 }
 
 // A reload that no longer resolves keeps the definition that last did, and says why.

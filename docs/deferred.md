@@ -1199,3 +1199,19 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/save/SavedGame.cpp`.
 - **Trigger:** a second chunk kind added after format 1. Then either fold new
   data into sections or keep unknown chunks' bytes in `SavedGame`.
+
+## Replication change store copies every live entity each publish
+
+- **What:** `ReplicationChangeStore::Update` copies every live `EntityState`,
+  with its per-component byte and generation vectors, into `LiveEntities` on
+  every publish, then sorts it. Measured on the profile preset, before the
+  composition port: about five allocations and 0.18 us per replicated entity
+  per publish, whether or not anything changed
+  (`docs/plans/evidence/entry-entities/results.md`; `scripts/bench_replication.sh`
+  measures it again).
+- **Where:** `engine/src/net/ReplicationChangeStore.cpp` (`Update`, the
+  `LiveEntities` rebuild), `engine/include/net/ReplicationChangeStore.h`.
+- **Trigger:** a measured publish cost or allocation budget that replicated
+  entity counts exceed: a scene, or inventory replication under the D3
+  relevance filter, whose publish no longer fits its frame budget. It is not a
+  dependency of definition composition or of inventory.

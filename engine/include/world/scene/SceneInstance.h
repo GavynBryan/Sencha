@@ -17,12 +17,9 @@
 //=============================================================================
 // SceneInstance
 //
-// Which placed scene an entity came from. Carried by every member of a cooked
-// placement and of a runtime spawn alike, so "this prefab, as a unit" has one
-// meaning regardless of how the entity got here. Names the innermost owning
-// instance; nesting is recovered from the authored instance records, not by
-// stacking components. A SceneInstanceIndex resource keeps the live group
-// addressable through this component's own lifecycle hooks.
+// Which placed scene an entity came from: a cooked placement's members name the
+// innermost placement (nesting lives in the authored instance records), a runtime
+// spawn's members all name the spawn. SceneInstanceIndex keeps groups addressable.
 //=============================================================================
 
 // Stable identity of one placed scene instance within its containing scene.

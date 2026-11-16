@@ -956,3 +956,20 @@ and exports and installs its durable part. `ZoneComponentMemories` and
 
 **Files.** `HashedChunkFileWriter` and `ReadHashedChunkFile`
 (`core/serialization/HashedChunkFile.h`); `SlugOf` (`core/text/Slug.h`).
+
+## v48
+
+**Spawn group identity.** `SmapPackageOptions::StripPersistentIdentity` is
+`StripAuthoredIdentity` and also drops `scene_instance`, so every member of a
+spawned prefab, placed members included, joins the spawn's group. A refused
+group stamp fails the spawn.
+
+**Grant entry wire identity.** `AbilityGrantEntries` names an entry on the wire
+by the `NameWireKey` of its key and binding (`WireKey`), not of its key alone,
+and `Intern` refuses a second entry of one ability with the same wire key
+(`kAbilityGrantEntryRefusal`). `DeclareEffectGrants` returns the keys it could
+not intern, and content declaration reports them. The grant codec's layout is
+unchanged, so the replication table hash does not move; the word's meaning does,
+so `kNetProtocolVersion` is 9. The ability pass revokes ended effect grants, and
+grants whose entry a reload took off their effect, before it grants;
+`AbilityTraceEvent` appends `GrantRefused`.

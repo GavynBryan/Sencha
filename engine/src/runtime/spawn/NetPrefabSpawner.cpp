@@ -13,6 +13,8 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/ZonePackageImporter.h>
 
+#include "SpawnGroupStamp.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -117,7 +119,7 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
     // another's. The scene is already resident, so this is a decode of parsed
     // data rather than a file read.
     ScenePackageBuild build(*Assets, *Scenes, *record);
-    build.Build(Serializers, SmapPackageOptions{ .StripPersistentIdentity = true });
+    build.Build(Serializers, SmapPackageOptions{ .StripAuthoredIdentity = true });
     if (!build.Settle())
     {
         RefuseOnce(scene, build.Error());
@@ -131,9 +133,12 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
         build.ReleaseScene();
         return EntityId{};
     }
-    for (std::uint32_t i = 0; i < package->EntityCount(); ++i)
-        (void)package->AddComponent(PackageEntityId{ i },
-                                    SceneInstance{ scene, instance });
+    if (!StampSpawnGroup(*package, SceneInstance{ scene, instance }))
+    {
+        build.ReleaseScene();
+        RefuseOnce(scene, "an entity already carries a group identity");
+        return EntityId{};
+    }
 
     std::vector<EntityId> created;
     ZoneImportError importError;
