@@ -10,6 +10,6 @@
 //   "AbilityGrants": { "grants": [ { "key": "g_primary", "ability": <asset ref>,
 //                                    "binding": { "action": "Input.AltFire", ... } } ] }
 //
-// Only authored grants are saved; grants an effect or a request made are run-time
-// facts. JSON only, like every scene field that names an asset.
+// Authored grants and those an ability.grant request made are saved, and load as
+// authored; a grant an effect holds comes back with its effect. JSON only.
 [[nodiscard]] std::unique_ptr<IComponentSerializer> MakeAbilityGrantsSerializer();

@@ -304,8 +304,9 @@ ability's, resolved against the action vocabulary input publishes
 (`InputActionVocabulary`). The same ability is bound to different actions on two
 pawns by two grants, never by a copy. Grant ids are minted per actor and never
 reused, so revoking one grant ends exactly the activations it started. Scenes
-save authored grants by key, ability asset and override
-(`abilities/AbilityGrantsSerializer.h`); an ability a scene names before anything
+and saves keep authored grants and those `ability.grant` made, by key, ability
+asset and override (`abilities/AbilityGrantsSerializer.h`), and load both as
+authored; a grant an effect holds comes back with its effect; an ability a scene names before anything
 declared it keeps its name.
 
 A lasting effect may hold grants too: an `effect.definition`'s

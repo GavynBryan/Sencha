@@ -6,6 +6,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/scene/SceneInstanceGroup.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -52,6 +53,7 @@ struct SceneSpawnService::Request
     Transform3f Root;
     StoragePartitionId Partition;
     SceneSpawnLifetime Lifetime = SceneSpawnLifetime::Independent;
+    PersistentEntityId RootId;
     EntityId RootEntity;
     Phase State = Phase::Staging;
     // Ended before it was published; the pump discards rather than instantiates.
@@ -110,7 +112,8 @@ SceneSpawnService::Request* SceneSpawnService::FindRequest(SceneSpawnId id) cons
 SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
                                              const Transform3f& root,
                                              StoragePartitionId partition,
-                                             SceneSpawnLifetime lifetime)
+                                             SceneSpawnLifetime lifetime,
+                                             SceneSpawnOverlay overlay)
 {
     auto request = std::make_unique<Request>();
     request->Id = SceneSpawnId{ NextSpawnValue++ };
@@ -119,6 +122,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     request->Root = root;
     request->Partition = partition;
     request->Lifetime = lifetime;
+    request->RootId = overlay.RootId;
 
     Request* record = request.get();
     Requests.push_back(std::move(request));
@@ -149,21 +153,26 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     auto build = std::make_shared<ScenePackageBuild>(*Assets, *Scenes, *asset);
     const SceneInstanceId instance = record->Instance;
     const AssetId source = record->Source;
-    (void)Tasks.Submit<int>(
+    (void)Tasks.Submit<std::string>(
         // Work, on a task thread: parse and package build against immutable
         // inputs; serializer registration is sealed before spawns run.
-        [this, build, instance, source]() {
+        [this, build, instance, source, overlay = std::move(overlay)]() {
             build->Build(Serializers,
                          SmapPackageOptions{ .StripAuthoredIdentity = true });
 
             // Every spawned entity carries its group identity; the index
             // hooks make the spawn addressable the moment it imports.
             EntityBuildPackage* package = build->Package();
-            return package == nullptr || StampSpawnGroup(*package, SceneInstance{ source, instance }) ? 0 : 1;
+            std::string refused;
+            if (package == nullptr || !ApplySpawnOverlay(*package, overlay, Serializers, refused))
+                return refused;
+            if (!StampSpawnGroup(*package, SceneInstance{ source, instance }))
+                return std::string("an entity already carries a group identity");
+            return std::string();
         },
         // Commit, on the owner thread at the drain: record the product; the
         // pump publishes in request order.
-        [this, build, id = record->Id](int stampRefused) {
+        [this, build, id = record->Id](std::string refused) {
             Request* pending = FindRequest(id);
             if (pending == nullptr)
                 return;
@@ -176,12 +185,11 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
                     pending->ScenePath, pending->Error);
                 return;
             }
-            if (stampRefused != 0)
+            if (!refused.empty())
             {
                 build->ReleaseScene();
                 pending->State = Request::Phase::Failed;
-                pending->Error = "an entity of '" + pending->ScenePath
-                    + "' already carries a group identity";
+                pending->Error = "'" + pending->ScenePath + "': " + refused;
                 Logging.GetLogger<SceneSpawnService>().Error(
                     "SceneSpawnService: spawn refused: {}", pending->Error);
                 return;
@@ -325,6 +333,8 @@ void SceneSpawnService::Instantiate(Request& request)
         }
         request.RootEntity = SingleRoot(world, Entities(request.Id));
         request.State = Request::Phase::Live;
+        if (request.RootId.IsValid() && request.RootEntity.IsValid() && world.IsRegistered<PersistentIdComponent>())
+            world.AddComponent<PersistentIdComponent>(request.RootEntity, PersistentIdComponent{ request.RootId });
 
         if (request.Lifetime == SceneSpawnLifetime::OwnedByRoot)
         {

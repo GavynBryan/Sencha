@@ -1163,17 +1163,14 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Saving what was created at run time
 
-- **What:** a save keeps only how authored entities differ (destroyed, and the
-  component state their owners register). A body's attributes and grants,
-  items, and anything created, dropped or deposited at run time are not
-  saved, and a runtime entity in a zone is destroyed unrecorded when the zone
-  unloads.
-- **Where:** `save/SavedGames.cpp` (`Write`), `zone/ZoneStateStore.h`.
-- **Trigger:** saving a body's progression or an inventory, which needs a body
-  saved as a patch against its prefab. The runtime persistent id mint exists
-  (`world/identity/PersistentIdMint.h`), but its counter (`PersistentIdMint`)
-  is World state no save keeps: the first saved runtime entity saves the
-  counter with it, or a restored game mints ids it already holds.
+- **What:** a save keeps the local participant's body root as a patch against
+  its prefab (`sencha.bodies`). It does not keep the body's children, another
+  participant's body, or any other entity created at run time; a runtime entity
+  in a zone is destroyed unrecorded when the zone unloads.
+- **Where:** `save/EngineSaveSections.cpp`, `runtime/spawn/SceneSpawnOverlay.h`,
+  `zone/ZoneStateStore.h`.
+- **Trigger:** items held by a body or left in a zone (inventory), a body whose
+  children carry state, or a second player restored in co-op.
 
 ## Unknown save chunks are dropped on rewrite
 

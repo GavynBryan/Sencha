@@ -1,6 +1,7 @@
 #include <participant_spawn/ParticipantBodySpawns.h>
 
 #include <core/logging/Logger.h>
+#include <participant_spawn/RestoredBodies.h>
 #include <ecs/World.h>
 
 #include <algorithm>
@@ -44,9 +45,18 @@ void ParticipantBodySpawns::StartSpawn(EntityId participant)
     const auto selected = Select(std::as_const(Entities), participant);
     if (!selected)
         return;
+    Transform3f root = selected->Root;
+    SceneSpawnOverlay overlay;
+    if (RestoredBodies* restored = Entities.TryGetResource<RestoredBodies>();
+        restored != nullptr && restored->Local.has_value() && participant == LocalParticipantOf(Entities))
+    {
+        root = restored->Local->Root;
+        overlay = std::move(restored->Local->Overlay);
+        restored->Local.reset();
+    }
     const SceneSpawnId spawn = Spawns.RequestSpawn(
-        selected->ScenePath, selected->Root, selected->Partition,
-        SceneSpawnLifetime::OwnedByRoot);
+        selected->ScenePath, root, selected->Partition,
+        SceneSpawnLifetime::OwnedByRoot, std::move(overlay));
     Pending.emplace(participant, PendingSpawn{ spawn, selected->ScenePath });
 }
 
