@@ -326,7 +326,10 @@ std::uint64_t ReplicationOwedFields(
             run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
         const bool gated =
             component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
-        if (moved || (gated && ownershipMoved))
+        // A run still at the default it was added with is what any peer holds
+        // already, so an ownership move newly showing it to one says nothing.
+        const bool everMoved = run < held.ChangedAt.size() && held.ChangedAt[run] != 0;
+        if (moved || (gated && ownershipMoved && everMoved))
             owed |= (std::uint64_t{ 1 } << run);
     }
     return owed & ReplicationVisibleFields(component, forOwner);

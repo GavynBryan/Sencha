@@ -51,12 +51,17 @@ struct NetPeerZoneInterest
 // per peer, which is the term that decides how many players fit.
 inline constexpr std::uint32_t kNetDefaultSnapshotInterval = 2;
 
-// The most one snapshot can be. A snapshot rides the unreliable channel, so it
-// has to fit a single datagram: there is no fragmentation to fall back on, and
-// no point resending, because the next snapshot supersedes this one before a
-// resend could arrive. Anything that does not fit is deferred to the next.
+// The most one snapshot can be: the largest message the unreliable channel
+// fragments. An entity is written whole or not at all, so this also bounds the
+// largest entity a peer can be sent.
 inline constexpr std::size_t kNetMaxSnapshotBytes =
-    kNetMaxPayloadBytes - kNetPayloadKindBytes;
+    kNetMaxUnreliableMessageBytes - kNetPayloadKindBytes;
+// What one snapshot may fill unless `net.snapshot_bytes` says otherwise: four
+// datagrams, so about 140 KB/s per peer at the default 30 Hz. It is the ceiling
+// a peer being seeded is filled to; a peer that is up to date is sent only what
+// moved. What does not fit is deferred to the next snapshot.
+inline constexpr std::size_t kNetDefaultSnapshotBytes =
+    4 * kNetMaxUnreliableFragmentPayloadBytes - kNetPayloadKindBytes;
 
 // Smallest budget worth offering. Below roughly this a snapshot is envelope and
 // little else, and entities start failing to fit one at a time.
@@ -366,7 +371,7 @@ private:
     // the rest of the session.
     std::uint64_t LastPublishedTick = 0;
     bool HasPublished = false;
-    std::size_t Budget = kNetMaxSnapshotBytes;
+    std::size_t Budget = kNetDefaultSnapshotBytes;
     PublishStats Published;
     // Reused across peers and frames. Sized once to the largest datagram a
     // channel will fragment for us, so publishing allocates nothing per frame.

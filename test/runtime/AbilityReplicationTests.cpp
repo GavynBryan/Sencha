@@ -464,7 +464,7 @@ protected:
     NetSnapshotAck Ack;
     std::uint64_t Generation = 0;
     std::vector<std::byte> Scratch = std::vector<std::byte>(64 * 1024);
-    // How much of Scratch one snapshot may fill; a shipping session's is kNetMaxSnapshotBytes.
+    // How much of Scratch one snapshot may fill; a shipping session's is kNetDefaultSnapshotBytes.
     std::size_t Budget = Scratch.size();
     SnapshotWriteResult LastWrite;
     EntityId Actor;
@@ -1211,7 +1211,7 @@ TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
 TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
 {
     ClientPeer = kOwner;
-    Budget = kNetMaxSnapshotBytes;
+    Budget = kNetDefaultSnapshotBytes;
     for (int i = 0; i < 9; ++i)
         Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
     AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
@@ -1255,7 +1255,7 @@ TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
     if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)
         GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)";
     ClientPeer = kOwner;
-    Budget = kNetMaxSnapshotBytes;
+    Budget = kNetDefaultSnapshotBytes;
     Grant(kAutomatic, "asset://abilities/automatic.sdata", "g_fire");
     for (std::size_t i = 1; i < kAbilityGrantCapacity; ++i)
         Grant(kGlowing, "asset://abilities/glow_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
@@ -1283,6 +1283,6 @@ TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
     }
 
     (void)Publish();
-    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetMaxSnapshotBytes
+    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetDefaultSnapshotBytes
               << ", written " << LastWrite.EntitiesWritten << ", unsendable " << LastWrite.EntitiesUnsendable << "\n";
 }

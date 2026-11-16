@@ -3164,3 +3164,19 @@ TEST(ReplicationComponentCodec, RunsAtTheirDefaultAreNotSentOnFirstSight)
     EXPECT_FALSE(idle.Target.IsValid());
     EXPECT_EQ(counted.Count, 3u);
 }
+
+// An owner-only run still at the default it was added with is what any peer
+// holds already, so a first send to the owner costs what it costs anyone else.
+TEST(ReplicationSnapshot, AnOwnerIsNotSentOwnerOnlyFieldsStillAtTheirDefault)
+{
+    std::size_t bytes[2] = {};
+    for (const std::uint32_t viewer : { 5u, 6u })
+    {
+        Pair pair;
+        const EntityId wearer = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(wearer, NetOwner{ .Peer = 5 });
+        pair.Authority.AddComponent<AttributeSet>(wearer);
+        bytes[viewer - 5] = pair.Replicate(viewer);
+    }
+    EXPECT_EQ(bytes[0], bytes[1]);
+}

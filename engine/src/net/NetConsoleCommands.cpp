@@ -245,8 +245,8 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
         .Name = "net.snapshot_bytes",
         .Owner = "engine",
         .Type = CVarType::Int,
-        .DefaultValue = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
-        .CurrentValue = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
+        .DefaultValue = static_cast<std::int64_t>(kNetDefaultSnapshotBytes),
+        .CurrentValue = static_cast<std::int64_t>(kNetDefaultSnapshotBytes),
         // The authority's: it is the machine paying this per peer, and it is
         // the one number that decides how much of a link a full session takes.
         // Not replicated, because nothing on a client behaves differently for
@@ -258,8 +258,7 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                 "the link the authority takes to get it there.",
         .Source = { "engine defaults" },
         .Min = static_cast<std::int64_t>(kNetMinSnapshotBytes),
-        // A snapshot has to fit one datagram; there is no fragmentation behind
-        // it and no resend, so a larger budget would simply not arrive.
+        // The largest message the unreliable channel fragments.
         .Max = static_cast<std::int64_t>(kNetMaxSnapshotBytes),
         .OnChange = [&engine](const CVarChangeContext& change) {
             if (const std::int64_t* bytes =
