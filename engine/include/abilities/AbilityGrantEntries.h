@@ -5,6 +5,7 @@
 #include <gameplay_tags/GameplayTagQuery.h>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,13 +14,15 @@ class AbilityRegistry;
 class GameplayTagRegistry;
 class InputActionRegistry;
 
-// One authored grant: which ability, under which stable key, and what of its
-// binding the grant overrides. A prefab spawned sixteen times interns one entry.
+// One authored grant: which ability, under which stable key, what of its binding
+// the grant overrides, and its parameters by name. A prefab spawned sixteen times
+// interns one entry.
 struct AbilityGrantEntry
 {
     std::string Key;
     AbilityId Ability;
     AbilityBindingDecl Override;
+    std::vector<AbilityGrantParameter> Parameters{};
 
     friend bool operator==(const AbilityGrantEntry&, const AbilityGrantEntry&) = default;
 };
@@ -57,13 +60,16 @@ public:
     std::uint16_t Intern(AbilityGrantEntry entry);
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
-    // An entry crosses the wire as the NameWireKey of its key and binding, so two
-    // entries that differ only in binding are told apart on every machine.
+    // An entry crosses the wire as the NameWireKey of its key, binding and
+    // parameters, so two entries that differ in any are told apart on every machine.
     [[nodiscard]] std::uint32_t WireKey(std::uint16_t index) const;
     // The entry for `ability` with that wire key; kAbilityNoGrantEntry when this
     // World interned none.
     [[nodiscard]] std::uint16_t FindByWireKey(std::uint32_t key, AbilityId ability) const;
     [[nodiscard]] const AbilityEffectiveBinding* Binding(std::uint16_t index) const;
+    // Every parameter its ability declares, in declared order: the entry's value or
+    // the default. Empty until the ability is declared.
+    [[nodiscard]] std::span<const double> Parameters(std::uint16_t index) const;
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
 
     // Re-resolves every binding when anything it was resolved against moved. A name
@@ -77,6 +83,7 @@ private:
     {
         AbilityGrantEntry Entry;
         AbilityEffectiveBinding Binding;
+        std::vector<double> Parameters;
         std::uint32_t WireKey = 0;
     };
 

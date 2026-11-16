@@ -1393,6 +1393,65 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
     EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, ring));
 }
 
+// Marks its grant's power, or its own default of 5.
+constexpr std::string_view kPowered = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "parameters": [ { "key": "power", "default": 5 } ],
+    "phases": [ { "key": "p_fire",
+        "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "param": "power" } } } ],
+        "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, AnAbilityReadsItsGrantsParameterElseItsDefault)
+{
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const EntityId strong = Actor();
+    const EntityId plain = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(strong), powered, AbilityGrantKind::Authored,
+                       entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 14.0 } } }));
+    Grant(plain, powered);
+
+    Step({ Press(kFire), Release(kFire) });
+    std::ranges::sort(Marks.Values);
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 5.0, 14.0 }));
+}
+
+TEST_F(AbilityRuntime, EntriesThatDifferOnlyInAParameterAreTwoEntries)
+{
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const std::uint16_t fire = entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 10.0 } } });
+    const std::uint16_t ember = entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 14.0 } } });
+    ASSERT_NE(fire, kAbilityNoGrantEntry);
+    ASSERT_NE(ember, kAbilityNoGrantEntry);
+    EXPECT_NE(fire, ember);
+    EXPECT_NE(entries.WireKey(fire), entries.WireKey(ember));
+    const std::uint16_t again = entries.Intern(
+        { .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 10.0 } } });
+    EXPECT_EQ(again, fire);
+}
+
+TEST_F(AbilityRuntime, AGrantParameterItsAbilityDoesNotDeclareIsReported)
+{
+    std::vector<std::string> lines;
+    struct Captured : ILogSink
+    {
+        std::vector<std::string>* Lines = nullptr;
+        void Write(LogLevel, std::string_view, std::string_view message) override { Lines->emplace_back(message); }
+    };
+    LoggingProvider logging;
+    logging.AddSink<Captured>().Lines = &lines;
+    Host.Logging = &logging;
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    const EntityId actor = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), powered, AbilityGrantKind::Authored,
+                       Entities.GetResource<AbilityGrantEntries>().Intern(
+                           { .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "pwer", 14.0 } } }));
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 5.0 })) << "the default stands";
+    EXPECT_EQ(std::ranges::count_if(lines, [](const std::string& line) { return line.find("pwer") != std::string::npos; }), 1);
+}
+
 TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
 {
     const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);

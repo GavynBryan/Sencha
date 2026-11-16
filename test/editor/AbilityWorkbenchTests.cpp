@@ -185,6 +185,24 @@ TEST_F(AbilityWorkbenchTest, AnOpsArgumentsAreLaidOutFromItsContractAndSetAsStep
         << "one step each: back to the first local the switch to a local took";
 }
 
+TEST_F(AbilityWorkbenchTest, ANumberArgumentCanReadAParameter)
+{
+    ASSERT_TRUE(Bench->Edit([](JsonValue& data) {
+        SetMember(data, "parameters", *JsonParse(R"([ { "key": "reach", "default": 80 } ])"));
+        return true;
+    }));
+    AbilityArgumentProperties arguments(*Bench, {});
+    Bench->Select("o_trace");
+    ASSERT_EQ(arguments.CommitEdit("arg.range.source", "Parameter"), PropertyEditResult::Applied);
+    EXPECT_EQ(ReadMemberString(ArgumentOf("o_trace", "range"), "param"), "reach");
+    const std::vector<PropertyNode> nodes = arguments.Nodes();
+    EXPECT_EQ(Find(nodes, "arg.range.source")->Value, "Parameter");
+    EXPECT_EQ(Find(nodes, "arg.range.value")->Value, "reach");
+    EXPECT_EQ(arguments.CommitEdit("arg.range.value", "nowhere"), PropertyEditResult::Refused);
+    EXPECT_EQ(arguments.CommitEdit("arg.origin.source", "Parameter"), PropertyEditResult::Refused)
+        << "a parameter is a number, and an origin is a point";
+}
+
 TEST_F(AbilityWorkbenchTest, AnUnguardedRecipientIsFixedWithOneStep)
 {
     ASSERT_TRUE(Bench->Edit([](JsonValue& data) { return SetAbilityGuard(data, "o_damage", JsonValue()).empty(); }));

@@ -81,6 +81,21 @@ TEST(AbilityGrantsSerializer, AGrantKeepsItsKeyAbilityAndOverrideThroughASaveAnd
     EXPECT_EQ(second.Entry(1).Key, "g_plain");
 }
 
+TEST(AbilityGrantsSerializer, AGrantKeepsItsParametersThroughASaveAndLoad)
+{
+    GrantsScene first;
+    ASSERT_TRUE(first.Load(*JsonParse(R"({ "grants": [
+        { "key": "g_fireball", "ability": "asset://abilities/fireball.sdata", "parameters": [ { "key": "power", "value": 14 }, { "key": "arc", "value": 0.5 } ] } ] })")));
+    ASSERT_EQ(first.Grants().Count, 1u);
+    EXPECT_EQ(first.Entry(0).Parameters,
+              (std::vector<AbilityGrantParameter>{ { "arc", 0.5 }, { "power", 14.0 } }))
+        << "by name, whatever order they were written in";
+
+    GrantsScene second;
+    ASSERT_TRUE(second.Load(first.Save()));
+    EXPECT_EQ(second.Entry(0).Parameters, first.Entry(0).Parameters);
+}
+
 TEST(AbilityGrantsSerializer, OnlyAuthoredGrantsAreSaved)
 {
     GrantsScene scene;

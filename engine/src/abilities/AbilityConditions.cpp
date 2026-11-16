@@ -5,6 +5,7 @@
 #include <authored/AuthoredQueryDispatcher.h>
 #include <controller/Aim.h>
 #include <gameplay_tags/EntityMatch.h>
+#include <abilities/AbilityGrantEntries.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -117,6 +118,17 @@ double AbilityPass::Number(const AbilityActor& actor, std::size_t slot, const Ab
         return slot < kAbilitySlotCapacity && value.Local != kAbilityNoLocal
             ? actor.Locals(slot).Values[value.Local].Number
             : 0.0;
+    case AbilityValueSource::Parameter:
+    {
+        if (value.Parameter >= definition.Parameters.size())
+            return 0.0;
+        const AbilityGrant* grant = GrantOf(actor, slot);
+        const AbilityGrantEntries* entries = std::as_const(Entities).TryGetResource<AbilityGrantEntries>();
+        const std::span<const double> supplied =
+            grant != nullptr && entries != nullptr ? entries->Parameters(grant->Entry) : std::span<const double>{};
+        return value.Parameter < supplied.size() ? supplied[value.Parameter]
+                                                 : definition.Parameters[value.Parameter].Default;
+    }
     case AbilityValueSource::Port:
     {
         if (slot >= kAbilitySlotCapacity)
@@ -151,6 +163,11 @@ void AbilityPass::Evaluate(const AbilityActor& actor, std::size_t slot, const Ab
     if (value.Source == AbilityValueSource::Constant)
     {
         out = value.Constant;
+        return;
+    }
+    if (value.Source == AbilityValueSource::Parameter)
+    {
+        out = NumberAs(Number(actor, slot, definition, value), value.As);
         return;
     }
     if (value.Source == AbilityValueSource::Port)

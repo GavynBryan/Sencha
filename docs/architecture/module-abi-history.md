@@ -1024,3 +1024,12 @@ action. `ability.activate` and `ability.grant` take an optional `source`.
 `ReplicationClientIdentity` holds the `ReplicationDeferredReferences`
 (`net/ReplicationDeferredReferences.h`) it translates again once an entity an
 image named binds. No wire layout changes.
+
+**Grant parameters.** `AbilityGrantDeclaration` and `AbilityGrantEntry` gain
+`Parameters` (`AbilityGrantParameter`), which join an entry's content and its
+wire key; `AbilityDeclaration` and `AbilityDefinition` gain `Parameters`
+(`AbilityParameterDecl`, at most `kAbilityParameterCapacity`), `AbilityValue`
+and `AbilityValueDecl` gain `Parameter`, and `AbilityValueSource` gains
+`Parameter`. `AbilityGrantEntries::Parameters` answers an entry's resolved
+values. Scene grants and effect grant entries read and write `parameters`; a
+file without them loads as before.

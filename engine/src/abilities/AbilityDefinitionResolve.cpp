@@ -119,6 +119,7 @@ namespace
             Out.Prediction = Declared.Prediction;
             Out.CancelOnReload = Declared.CancelOnReload;
             Out.Locals = Declared.Locals;
+            Out.Parameters = Declared.Parameters;
             for (std::size_t i = 0; i < Declared.Locals.size(); ++i)
             {
                 LocalIndex.emplace(Declared.Locals[i].Key, static_cast<std::uint8_t>(i));
@@ -245,6 +246,8 @@ namespace
                 default: return Shape::Number;
                 }
             }
+            if (value.Source == AbilityValueSource::Parameter)
+                return Shape::Number;
             if (value.Source != AbilityValueSource::Local)
                 return std::nullopt;
             const AbilityLocalType* type = LocalType(value.Local);
@@ -277,6 +280,10 @@ namespace
             if (declared.Source == AbilityValueSource::Local)
                 if (const auto found = LocalIndex.find(declared.Local); found != LocalIndex.end())
                     out.Local = found->second;
+            if (declared.Source == AbilityValueSource::Parameter)
+                if (const auto found = std::ranges::find(Declared.Parameters, declared.Parameter, &AbilityParameterDecl::Key);
+                    found != Declared.Parameters.end())
+                    out.Parameter = static_cast<std::uint8_t>(found - Declared.Parameters.begin());
             if (declared.Source == AbilityValueSource::Constant)
             {
                 std::vector<std::string> errors;

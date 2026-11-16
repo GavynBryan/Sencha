@@ -8,6 +8,7 @@
 #include <input/InputActionRegistry.h>
 
 #include <algorithm>
+#include <charconv>
 #include <format>
 #include <limits>
 #include <utility>
@@ -52,6 +53,19 @@ namespace
                 for (const std::string& name : *names)
                     (text += name) += kItem;
             }
+        // Shortest round-trip text, which is the same on every conforming library.
+        if (!entry.Parameters.empty())
+        {
+            text += kField;
+            text += 'v';
+            char number[32];
+            for (const AbilityGrantParameter& parameter : entry.Parameters)
+            {
+                const auto written = std::to_chars(number, number + sizeof(number), parameter.Value);
+                ((text += kItem) += parameter.Key) += kItem;
+                text.append(number, written.ptr);
+            }
+        }
         return NameWireKey(text);
     }
 }
@@ -75,6 +89,7 @@ AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
 
 std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
 {
+    std::ranges::sort(entry.Parameters, {}, &AbilityGrantParameter::Key);
     const auto found = std::ranges::find(Entries, entry, &Slot::Entry);
     if (found != Entries.end())
         return static_cast<std::uint16_t>(found - Entries.begin());
@@ -85,7 +100,7 @@ std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
     const std::uint32_t key = EntryWireKey(entry);
     if (FindByWireKey(key, entry.Ability) != kAbilityNoGrantEntry)
         return kAbilityNoGrantEntry;
-    Entries.push_back(Slot{ std::move(entry), {}, key });
+    Entries.push_back(Slot{ std::move(entry), {}, {}, key });
     Stale = true;
     return static_cast<std::uint16_t>(Entries.size() - 1);
 }
@@ -113,6 +128,11 @@ const AbilityEffectiveBinding* AbilityGrantEntries::Binding(std::uint16_t index)
     return index < Entries.size() ? &Entries[index].Binding : nullptr;
 }
 
+std::span<const double> AbilityGrantEntries::Parameters(std::uint16_t index) const
+{
+    return index < Entries.size() ? std::span<const double>(Entries[index].Parameters) : std::span<const double>{};
+}
+
 void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputActionRegistry* actions,
                                   std::uint64_t actionsRevision, const GameplayTagRegistry& tags,
                                   std::vector<std::string>& problems)
@@ -132,6 +152,21 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
     {
         slot.Binding = AbilityEffectiveBinding{};
         const AbilityDefinition* definition = abilities.Get(slot.Entry.Ability);
+        slot.Parameters.clear();
+        if (definition != nullptr)
+        {
+            for (const AbilityParameterDecl& declared : definition->Parameters)
+                slot.Parameters.push_back(declared.Default);
+            for (const AbilityGrantParameter& parameter : slot.Entry.Parameters)
+            {
+                const auto found = std::ranges::find(definition->Parameters, parameter.Key, &AbilityParameterDecl::Key);
+                if (found != definition->Parameters.end())
+                    slot.Parameters[static_cast<std::size_t>(found - definition->Parameters.begin())] = parameter.Value;
+                else
+                    problems.push_back(std::format("grant '{}' of '{}': no parameter '{}'", slot.Entry.Key,
+                                                   abilities.GetName(slot.Entry.Ability), parameter.Key));
+            }
+        }
         static const std::optional<AbilityBindingDecl> kNone;
         const AbilityBindingDecl merged = EffectiveAbilityBinding(
             slot.Entry.Override, definition != nullptr ? definition->InputDefault : kNone);

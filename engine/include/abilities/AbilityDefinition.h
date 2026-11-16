@@ -23,6 +23,7 @@
 inline constexpr std::uint16_t kAbilityNoCondition = 0xFFFF;
 inline constexpr std::uint8_t kAbilityEndPhase = 0xFF;
 inline constexpr std::uint8_t kAbilityNoLocal = 0xFF;
+inline constexpr std::uint8_t kAbilityNoParameter = 0xFF;
 
 struct AbilityValue
 {
@@ -31,6 +32,7 @@ struct AbilityValue
     AbilityPort Port = AbilityPort::Actor;
     std::uint8_t Local = kAbilityNoLocal;
     AbilityHitField Field = AbilityHitField::None;
+    std::uint8_t Parameter = kAbilityNoParameter;
     // The kind a number is handed on as: what the field it feeds declares.
     DataFieldKind As = DataFieldKind::Float;
 };
@@ -137,6 +139,7 @@ struct AbilityDefinition
     std::uint8_t Instances = 1;
     std::vector<AbilityLocalDecl> Locals;
     std::uint8_t EntitiesLocal = kAbilityNoLocal;
+    std::vector<AbilityParameterDecl> Parameters;
     std::vector<AbilityOp> Ops;
     std::vector<AbilityPhase> Phases;
     std::vector<AbilityCostGroup> Costs;

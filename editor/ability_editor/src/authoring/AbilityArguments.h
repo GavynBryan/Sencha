@@ -24,6 +24,7 @@ enum class AbilityArgumentSource : std::uint8_t
     Constant,
     Port,
     Local,
+    Parameter,
 };
 
 // The sources an argument of `field` may take: a constant where one can be

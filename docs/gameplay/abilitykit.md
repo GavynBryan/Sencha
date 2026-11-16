@@ -221,10 +221,15 @@ An ability is content: an `ability.definition` data asset
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
   `asset`, `entity`), a `port` (`actor`, `instigator`, `aim.origin`,
   `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`,
-  `source`, and `target` inside an op with `targets`) or a `local` (with `field`
-  on a hit). `source` is the entity the activation's grant came from (below);
+  `source`, and `target` inside an op with `targets`), a `local` (with `field`
+  on a hit), or a `param`. `source` is the entity the activation's grant came from (below);
   like `target` and entity locals, it may be dead or absent, so an operation
   that needs a component on it needs an `entity` guard.
+- **Parameters.** Up to eight numbers (`kAbilityParameterCapacity`; a ninth is
+  refused at declaration), `[ { "key", "default" } ]`, that each grant may set. A `{ "param": key }` value reads the grant's, else the default.
+  They are per-definition numbers, the same for every instance of what grants
+  the ability. A value that varies per instance belongs on the source, read
+  through `source`.
 - **Locals.** Up to eight slots of typed values for one activation (`bool`, `int`,
   `float`, `vec3`, `entity`; `hit` and `entities` take two; one `entities` local).
 - **Costs and cooldown.** Cost groups paid at start or by a `commit`, once or per
@@ -270,6 +275,13 @@ every machine on the same tick. Ended effects give their grants back before new
 ones are granted, so an actor whose table is full swaps one effect's grants for
 another's on one pass. A grant with no room is retried every pass and traced once
 (`GrantRefused`, with the refusal).
+
+A grant entry may set its ability's parameters:
+`"parameters": [ { "key": "power", "value": 14 } ]`, in a scene's grants and in
+an effect's `granted_abilities`. They are part of the entry's content, so two
+entries that differ only in a parameter are two entries on every machine. A
+parameter the ability does not declare is reported when the bindings are
+resolved, as an unknown action is, and the default stands.
 
 Each grant names its **source**: the entity its activations read through the
 `source` port. An effect's grant has the effect's `LeaseOwner` entity (an

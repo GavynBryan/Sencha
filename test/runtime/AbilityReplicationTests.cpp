@@ -1057,6 +1057,31 @@ TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
     EXPECT_FALSE(grants.Entries[0].Holder.IsValid()) << "what holds a grant stays on the authority";
 }
 
+TEST_F(AbilityReplication, GrantsThatDifferInAParameterAreToldApartOnTheClient)
+{
+    ClientPeer = kOwner;
+    const AbilityId ability = Authority.Define(kShot, "asset://abilities/shot.sdata");
+    const AbilityId clientAbility = Client.Define(kShot, "asset://abilities/shot.sdata");
+    const auto entry = [](AbilityId id, double power) {
+        return AbilityGrantEntry{ .Key = "g", .Ability = id, .Override = {}, .Parameters = { { "power", power } } };
+    };
+    AbilityGrantEntries& clientEntries = Client.Entities.GetResource<AbilityGrantEntries>();
+    (void)clientEntries.Intern(entry(clientAbility, 10.0));
+    (void)clientEntries.Intern(entry(clientAbility, 14.0));
+    AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
+    (void)entries.Intern(entry(ability, 10.0));
+    const std::uint16_t granted = entries.Intern(entry(ability, 14.0));
+    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    const AbilityGrantEntry* arrived = clientEntries.Find(grants.Entries[0].Entry);
+    ASSERT_NE(arrived, nullptr);
+    EXPECT_EQ(arrived->Parameters, (std::vector<AbilityGrantParameter>{ { "power", 14.0 } }));
+}
+
 // An entity is written whole or not at all, so a pawn whose owner-visible state
 // outgrows one datagram can never reach its owner. Loss Function's pawn: a
 // moving character with nine grants, four attributes and two tags.

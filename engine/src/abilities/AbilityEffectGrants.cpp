@@ -37,7 +37,8 @@ std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
     std::vector<std::uint16_t> granted;
     for (const AbilityGrantDeclaration& grant : grants)
     {
-        const std::uint16_t entry = entries->Intern({ grant.Key, abilities->Reserve(grant.Ability), grant.Override });
+        const std::uint16_t entry =
+            entries->Intern({ grant.Key, abilities->Reserve(grant.Ability), grant.Override, grant.Parameters });
         if (entry != kAbilityNoGrantEntry)
             granted.push_back(entry);
         else

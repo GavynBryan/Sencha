@@ -123,6 +123,15 @@ constexpr Rejection kRejections[] = {
         "phases": [ { "key": "p_a", "then": [ { "key": "t_1", "to": "end" } ] } ] })" },
     { "zero-tick timeout", "schema", "t_1", R"({ "phases": [
         { "key": "p_a", "then": [ { "key": "t_1", "on": "timeout", "to": "end" } ] } ] })" },
+    { "unknown parameter", "param_unknown", "o_mark", R"({
+        "parameters": [ { "key": "power", "default": 10 } ],
+        "phases": [ { "key": "p_a",
+            "enter": [ { "key": "o_mark", "op": "set", "local": "l_n", "from": { "param": "pwer" } } ],
+            "then": [ { "key": "t_1", "to": "end" } ] } ],
+        "locals": [ { "key": "l_n", "type": "float" } ] })" },
+    { "duplicate parameter keys", "key_duplicate", "power", R"({
+        "parameters": [ { "key": "power" }, { "key": "power" } ],
+        "phases": [ { "key": "p_a", "then": [ { "key": "t_1", "to": "end" } ] } ] })" },
     { "conditions nested too deep", "capacity", "c_3", R"({
         "activation": [ { "key": "c_1", "all": [ { "key": "c_2", "any": [ { "key": "c_3", "not":
             { "key": "c_4", "tags": { "all": ["A"] } } } ] } ] } ],
@@ -236,4 +245,22 @@ TEST(AbilityDefinitionData, APhasePresentsAtMostWhatALeaseKeyCanName)
     const Compiled over = phaseWith(kAbilityMaxPhasePresents + 1);
     EXPECT_FALSE(over.Ok);
     EXPECT_NE(over.Describe().find("present"), std::string::npos) << over.Describe();
+}
+
+// A grant entry's parameters resolve to a dense array per entry, sized by what
+// the ability declares, so the declaration is bounded.
+TEST(AbilityDefinitionData, AnAbilityDeclaresAtMostItsParameterCapacity)
+{
+    const auto declaring = [](std::size_t count) {
+        std::string list;
+        for (std::size_t i = 0; i < count; ++i)
+            list += std::format(R"({}{{ "key": "n_{}", "default": {} }})", i == 0 ? "" : ", ", i, i);
+        return Compile(std::format(R"({{ "parameters": [ {} ],
+            "phases": [ {{ "key": "p_a", "then": [ {{ "key": "t_1", "to": "end" }} ] }} ] }})",
+                                   list));
+    };
+    EXPECT_TRUE(declaring(kAbilityParameterCapacity).Ok) << declaring(kAbilityParameterCapacity).Describe();
+    const Compiled over = declaring(kAbilityParameterCapacity + 1);
+    EXPECT_FALSE(over.Ok);
+    ASSERT_NE(over.Find("capacity"), nullptr) << over.Describe();
 }
