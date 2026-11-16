@@ -222,7 +222,7 @@ TEST(RuntimeWorldMigration, WhatFollowsAnEntityLeavesADepartingZoneWithIt)
         EntityId Body;
         EntityId Item;
     } link{ body, held };
-    (void)entities.AddResource<PartitionFollowers>().Register(
+    (void)entities.GetResource<PartitionFollowers>().Register(
         &link, [](void* context, World& world, std::span<const EntityPartitionMove> moves) {
             const Held& pair = *static_cast<const Held*>(context);
             for (const EntityPartitionMove& move : moves)

@@ -13,13 +13,16 @@ class ActorTimeOperations;
 class AnimRequestOperations;
 class AttachedLightOperations;
 class AttachmentOperations;
+class AuthoredEventDispatcher;
 class AudioOperations;
 class CameraFovScaleOperations;
 class CameraShakeOperations;
 class ContactLineSystem;
+class CounterOperations;
 class EffectOperations;
 class FixedSimulationLoop;
 class InteractUseOperations;
+class Logger;
 class MovementOperations;
 class NavigationOperations;
 class PhysicsQueries;
@@ -35,7 +38,7 @@ class World;
 //
 // The engine's own operations bound into one World's dispatchers: animation
 // requests, effects, actor time, abilities, movement, navigation orders, triggers,
-// audio and camera effects, the perception and navigation queries, and the physics queries once a physics world answers them. The runtime and an editor preview both run a World
+// audio and camera effects, counters, the perception and navigation queries, and the physics queries once a physics world answers them. The runtime and an editor preview both run a World
 // this way, so both run the same behaviour behind the same names. The bindings
 // are released before the operations they call.
 //=============================================================================
@@ -67,11 +70,16 @@ public:
     // save.write and save.restore, answered by `saves`, which must outlive this.
     void BindSavedGames(SavedGames& saves, VerbDispatcher& verbs);
 
+    // counter.set, counter.add and counter.value; `events`, which may be null,
+    // hears counter.changed and must outlive this.
+    void BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,
+                      AuthoredEventDispatcher* events);
+
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
 
 private:
-    const World& Entities;
+    World& Entities;
     std::unique_ptr<AnimRequestOperations> Animation;
     std::unique_ptr<EffectOperations> Effects;
     std::unique_ptr<ActorTimeOperations> Time;
@@ -87,6 +95,7 @@ private:
     std::unique_ptr<ResponseOperations> Responses;
     std::unique_ptr<PhysicsQueries> Physics;
     std::unique_ptr<InteractUseOperations> Interaction;
+    std::unique_ptr<CounterOperations> Counters;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;
 };

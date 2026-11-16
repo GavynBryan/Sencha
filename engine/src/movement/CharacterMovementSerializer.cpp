@@ -6,7 +6,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MovementTuning.h>
-#include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <cstddef>
 #include <cstring>
@@ -20,14 +20,9 @@ namespace
 {
     constexpr std::string_view kModeKey = "mode";
 
-class CharacterMovementSerializer final : public IComponentSerializer
+class CharacterMovementSerializer final : public TypedComponentSerializer<CharacterMovement>
 {
 public:
-    ComponentTypeId TypeId() const override
-    {
-        return ResolveComponentTypeId<CharacterMovement>();
-    }
-
     std::string_view JsonKey() const override { return "CharacterMovement"; }
     std::uint32_t BinaryChunkId() const override
     {
@@ -35,26 +30,6 @@ public:
     }
 
     std::span<const RuntimeField> RuntimeFields() const override { return {}; }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        CharacterMovement value{};
-        std::vector<std::byte> bytes(sizeof(CharacterMovement));
-        std::memcpy(bytes.data(), &value, sizeof(CharacterMovement));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<CharacterMovement>())
-            registry.Components.RegisterComponent<CharacterMovement>();
-    }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<CharacterMovement>()
-            && registry.Components.HasComponent<CharacterMovement>(entity);
-    }
 
     bool Save(IWriteArchive& archive,
               EntityId entity,
@@ -83,14 +58,6 @@ public:
 
         archive.End();
         return archive.Ok();
-    }
-
-    bool Load(IReadArchive& archive,
-              EntityId entity,
-              Registry& registry,
-              SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(archive, entity, registry.Components, context);
     }
 
     bool LoadIntoWorld(IReadArchive& archive,
@@ -129,21 +96,7 @@ public:
             }
         }
 
-        if (world.HasComponent<CharacterMovement>(entity))
-            return world.InitializeComponent<CharacterMovement>(entity, movement);
-
-        world.AddComponent<CharacterMovement>(entity, movement);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<CharacterMovement>()
-            && registry.Components.HasComponent<CharacterMovement>(entity))
-        {
-            registry.Components.RemoveComponent<CharacterMovement>(entity);
-        }
-        return true;
+        return Place(world, entity, movement);
     }
 };
 } // namespace

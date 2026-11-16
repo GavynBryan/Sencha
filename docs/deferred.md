@@ -844,10 +844,13 @@ described in `docs/navigation/runtime.md`, "Agents".
   partition itself (`MoveContents` in `engine/src/inventory/Inventory.cpp`), and
   only when inventory places the container. A container moved by anyone else
   (`RuntimeWorld::MoveEntityToPersistent`) leaves its contents behind.
-- **Where:** `ecs/PartitionFollowers.h` is the general mechanism; inventory lives
-  on `claude/composition`, which `main` does not have yet.
-- **Trigger:** `claude/composition` merging. Register inventory's index as a
-  partition follower and delete `MoveContents`.
+- **Where:** the mechanism now exists: `Held` and `HeldRecordIndex`
+  (`world/held/`) list records under their holder and register a partition
+  follower that moves them with it (`docs/gameplay/held-records.md`). Inventory
+  lives on `claude/composition`, which `main` does not have yet.
+- **Trigger:** inventory landing on `main`. Entries carry `Held` in place of
+  `ItemEntry::Container` and `Position`, `HoldRecord` places them, and
+  `MoveContents`, `ItemContainerIndex` and its sweep are deleted.
 
 ## Predicting a firer's own projectile
 
@@ -1164,13 +1167,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Saving what was created at run time
 
 - **What:** a save keeps the local participant's body root as a patch against
-  its prefab (`sencha.bodies`). It does not keep the body's children, another
-  participant's body, or any other entity created at run time; a runtime entity
-  in a zone is destroyed unrecorded when the zone unloads.
-- **Where:** `save/EngineSaveSections.cpp`, `runtime/spawn/SceneSpawnOverlay.h`,
-  `zone/ZoneStateStore.h`.
-- **Trigger:** items held by a body or left in a zone (inventory), a body whose
-  children carry state, or a second player restored in co-op.
+  its prefab (`sencha.bodies`) and the records held by the world and by that
+  body, with what they hold (`sencha.held`). It does not keep the body's
+  children, another participant's body or what it holds, records held by any
+  other entity (a chest, an NPC), or any other entity created at run time; a
+  runtime entity in a zone is destroyed unrecorded when the zone unloads.
+- **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
+  `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateStore.h`.
+- **Trigger:** items left in a zone container (inventory's "added" record kind
+  in the zone record), a body whose children carry state, a counter held by an
+  NPC that must outlive its zone, or a second player restored in co-op.
 
 ## Unknown save chunks are dropped on rewrite
 
@@ -1325,3 +1331,74 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first cost provider content authors use, which is
   inventory's item provider (composition Stage 4).
 - **Consumer:** item-cost abilities (an arrow per shot, a bottle per drink).
+
+## Totals of counters under a name
+
+- **What:** `counter.value` reads one counter. Nothing sums the counters whose
+  names lie under a tag, such as every `star.*` for a gate that needs seven
+  stars from any course.
+- **Where:** `logic/CounterVocabulary.h`; names are gameplay tags, so
+  `GameplayTagRegistry::IsDescendantOf` already answers "under".
+- **Trigger:** content that gates on a sum across names. Then add
+  `counter.total {name, holder?}` summing the holder's counters at or beneath
+  the name.
+
+## Clearing many counters at once
+
+- **What:** counters are set one at a time; nothing clears every counter under
+  a name or of a holder.
+- **Where:** `logic/CounterVocabulary.cpp`.
+- **Trigger:** a quest that resets its own state, a new-game-plus, or a run
+  that starts over. Then add `counter.clear {name, holder?}`, publishing
+  `counter.changed` for each counter it unsets.
+
+## An entity reacting to a counter changing elsewhere
+
+- **What:** `counter.changed` reaches native subscribers of the World's event
+  dispatcher. A response answers occurrences delivered at its own entity, so
+  level data cannot open a gate the moment the last switch's counter is set;
+  it can only test the counter when something is delivered to the gate.
+- **Where:** `logic/CounterVocabulary.cpp` (the publish),
+  `logic/ResponsesSystem.h` (delivery at an entity).
+- **Trigger:** content that must react to progress made somewhere else without
+  being touched, such as a gate opening once every switch in a room is thrown.
+  Then let an entity subscribe its responses to a global event, filtered by a
+  condition, through one mechanism rather than one per event.
+
+## Journals and objectives
+
+- **What:** counters hold quest stages, but nothing presents them: no journal,
+  objective list or text keyed by a counter's value.
+- **Where:** `docs/gameplay/counters.md`; presentation would read
+  `HeldRecordIndex` revisions or subscribe to `counter.changed`.
+- **Trigger:** a game that shows the player its quests or objectives.
+
+## Counters that outlive a save slot
+
+- **What:** every counter belongs to one save. Nothing holds progress shared by
+  every slot of a profile: an unlocked costume, a finished-once flag.
+- **Where:** `save/HeldRecordSaves.cpp`; held records have one root per save.
+- **Trigger:** a game with unlocks that carry across save slots. Then give the
+  profile a root of its own, saved beside the slots rather than in them.
+
+## What a death without a save keeps
+
+- **What:** a death with no save restarts the level from authored content
+  (`LevelChange`). Counters the world holds survive it: they are runtime
+  entities in the persistent partition, which the level change does not own.
+  Counters a body holds go with the released body. A game that restores its
+  last save on death gets both back as saved.
+- **Where:** `app/LevelChange.cpp`, `world/held/HeldRecords.cpp`.
+- **Trigger:** a game whose death must reset the world's progress without a
+  save (a run that starts over), or keep a body's (a counter of deaths). Then
+  let the level change request say what happens to held records, defaulting to
+  today's behaviour.
+
+## Counter changes on a client
+
+- **What:** `counter.changed` is published where the verb ran, on the
+  authority. A client is sent the counter's record but no event; a client HUD
+  reads `counter.value` or watches its holder's `HeldRecordIndex` revision.
+- **Where:** `logic/CounterVocabulary.cpp`, `world/held/HeldRecordIndex.h`.
+- **Trigger:** a client presentation that must react to a counter changing
+  rather than poll it, such as a co-op HUD popup when a star is collected.

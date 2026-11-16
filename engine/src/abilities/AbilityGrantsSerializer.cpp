@@ -8,6 +8,7 @@
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/serialization/SceneAssetRef.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <algorithm>
 #include <cstring>
@@ -153,10 +154,9 @@ namespace
         archive.End();
     }
 
-class AbilityGrantsSerializer final : public IComponentSerializer
+class AbilityGrantsSerializer final : public TypedComponentSerializer<AbilityGrants>
 {
 public:
-    ComponentTypeId TypeId() const override { return ResolveComponentTypeId<AbilityGrants>(); }
     std::string_view JsonKey() const override { return "AbilityGrants"; }
     const DataFieldSchema* CompositionSchema() const override
     {
@@ -170,26 +170,6 @@ public:
     }
     std::uint32_t BinaryChunkId() const override { return MakeFourCC('A', 'B', 'G', 'R'); }
     std::span<const RuntimeField> RuntimeFields() const override { return {}; }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        AbilityGrants value{};
-        std::vector<std::byte> bytes(sizeof(AbilityGrants));
-        std::memcpy(bytes.data(), &value, sizeof(AbilityGrants));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<AbilityGrants>())
-            registry.Components.RegisterComponent<AbilityGrants>();
-    }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<AbilityGrants>()
-            && registry.Components.HasComponent<AbilityGrants>(entity);
-    }
 
     bool Save(IWriteArchive& archive, EntityId entity, const World& world,
               SceneSerializationContext& context) const override
@@ -231,11 +211,6 @@ public:
         archive.End();
         archive.End();
         return archive.Ok();
-    }
-
-    bool Load(IReadArchive& archive, EntityId entity, Registry& registry, SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(archive, entity, registry.Components, context);
     }
 
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
@@ -282,17 +257,7 @@ public:
         if (!archive.Ok())
             return false;
 
-        if (world.HasComponent<AbilityGrants>(entity))
-            return world.InitializeComponent<AbilityGrants>(entity, grants);
-        world.AddComponent<AbilityGrants>(entity, grants);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<AbilityGrants>() && registry.Components.HasComponent<AbilityGrants>(entity))
-            registry.Components.RemoveComponent<AbilityGrants>(entity);
-        return true;
+        return Place(world, entity, grants);
     }
 };
 } // namespace
