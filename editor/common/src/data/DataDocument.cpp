@@ -339,6 +339,7 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
                                             .Read = sources.Reader(), .Asset = AssetPath, .Provenance = true });
     Errors = std::move(staged.Errors);
     Composed = std::move(staged.Data);
+    Inherited = std::move(staged.Inherited);
     Sources = std::move(staged.Sources);
     Composition.reset();
     if (staged.Composed)

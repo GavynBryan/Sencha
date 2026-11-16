@@ -20,7 +20,7 @@ constexpr std::string_view kSubtype = "movement.profile";
 bool IsTagElement(std::string_view key)
 {
     const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(key);
-    if (!steps.has_value() || steps->size() < 5 || !steps->back().Index.has_value())
+    if (!steps.has_value() || steps->size() < 5 || steps->back().Kind != DataPathStepKind::Index)
         return false;
     const std::string& list = (*steps)[steps->size() - 2].Key;
     return (*steps)[steps->size() - 3].Key == "tags" && (list == "all" || list == "any" || list == "none");

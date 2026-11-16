@@ -2,11 +2,14 @@
 
 #include "data/DataDocument.h"
 #include "data/DataDocumentSet.h"
+#include "data/DataPatch.h"
 #include "data/DataPath.h"
 #include "data/DataSubtypeAuthoring.h"
+#include "identity/RandomKey.h"
 #include "properties/SettingProperties.h"
 
 #include <core/assets/AssetRefCodec.h>
+#include <core/composition/Composition.h>
 #include <core/metadata/DataSchema.h>
 
 #include <algorithm>
@@ -27,22 +30,9 @@ std::string Label(const DataFieldSchema& field)
     return field.Units.empty() ? DataFieldDisplayName(field) : std::format("{} ({})", DataFieldDisplayName(field), field.Units);
 }
 
-const DataFieldSchema* Element(const DataFieldSchema& field)
-{
-    return field.Children.size() == 1 ? &field.Children.front() : nullptr;
-}
-
-const DataFieldSchema* Member(const DataFieldSchema& record, std::string_view key)
-{
-    const auto found = std::ranges::find(record.Children, key, &DataFieldSchema::Key);
-    return found != record.Children.end() ? &*found : nullptr;
-}
-
-// The schema a value is read by: an optional member's value is its child's.
 const DataFieldSchema& Unwrapped(const DataFieldSchema& field)
 {
-    const DataFieldSchema* child = field.Kind == DataFieldKind::Optional ? Element(field) : nullptr;
-    return child != nullptr ? *child : field;
+    return *UnwrapDataField(&field);
 }
 
 // The field `path` names, read from the schema alone (not unwrapped).
@@ -55,65 +45,13 @@ const DataFieldSchema* FieldAt(const DataFieldSchema& root, std::string_view pat
     for (const DataPathStep& step : *steps)
     {
         const DataFieldSchema& reading = Unwrapped(*field);
-        field = !step.Index.has_value()                 ? Member(reading, step.Key)
-                : reading.Kind == DataFieldKind::Array ? Element(reading)
-                                                       : nullptr;
+        field = step.Kind == DataPathStepKind::Member ? FindChild(reading, step.Key)
+              : reading.Kind == DataFieldKind::Array  ? DataFieldElement(reading)
+                                                      : nullptr;
         if (field == nullptr)
             return nullptr;
     }
     return field;
-}
-
-struct Located
-{
-    JsonValue* Value = nullptr;
-    const DataFieldSchema* Field = nullptr;
-};
-
-// The value at `path` under `data` and the field that describes it (not
-// unwrapped). With `create`, a missing member is made from its default on the
-// way, as writing a required member the file does not yet hold must.
-Located Locate(JsonValue& data, const DataFieldSchema& root, std::string_view path, bool create)
-{
-    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
-    if (!steps.has_value())
-        return {};
-    JsonValue* value = &data;
-    const DataFieldSchema* field = &root;
-    for (const DataPathStep& step : *steps)
-    {
-        const DataFieldSchema& reading = Unwrapped(*field);
-        if (step.Index.has_value())
-        {
-            const DataFieldSchema* element = Element(reading);
-            if (reading.Kind != DataFieldKind::Array || element == nullptr || !value->IsArray()
-                || *step.Index >= value->AsArray().size())
-                return {};
-            value = &value->AsArray()[*step.Index];
-            field = element;
-            continue;
-        }
-        const DataFieldSchema* member = Member(reading, step.Key);
-        if (member == nullptr)
-            return {};
-        if (!value->IsObject())
-        {
-            if (!create)
-                return {};
-            *value = JsonValue(JsonValue::Object{});
-        }
-        JsonValue* next = value->Find(step.Key);
-        if (next == nullptr)
-        {
-            if (!create)
-                return {};
-            value->AsObject().emplace_back(step.Key, CreateDefaultDataValue(*member));
-            next = &value->AsObject().back().second;
-        }
-        value = next;
-        field = member;
-    }
-    return { value, field };
 }
 
 std::string ChoiceLabel(const DataEnumChoice& choice)
@@ -198,18 +136,26 @@ std::optional<JsonValue> Parse(std::string_view text, const DataFieldSchema& fie
     }
 }
 
-// An array's element as it is listed: counted from one and named after the
-// element, or by what the author called it when the schema says which member does.
-std::string ElementLabel(const DataFieldSchema& array, const JsonValue& item, std::size_t index)
+std::string ElementName(const DataFieldSchema& array)
 {
-    const DataFieldSchema* element = Element(array);
-    const std::string name = element == nullptr || element->DisplayName.empty() ? std::string("Element")
-                                                                                 : element->DisplayName;
+    const DataFieldSchema* element = DataFieldElement(array);
+    return element == nullptr || element->DisplayName.empty() ? std::string("Element") : element->DisplayName;
+}
+
+// An array's element as it is listed: by what the author called it when the
+// schema says which member does, otherwise by `fallback`.
+std::string ElementLabel(const DataFieldSchema& array, const JsonValue& item, std::string fallback)
+{
     if (const JsonValue* title = !array.Editor.TitleKey.empty() && item.IsObject() ? item.Find(array.Editor.TitleKey)
                                                                                    : nullptr;
         title != nullptr && title->IsString() && !title->AsString().empty())
         return title->AsString();
-    return std::format("{} {}", name, index + 1);
+    return fallback;
+}
+
+std::string NumberedLabel(const DataFieldSchema& array, std::size_t index)
+{
+    return std::format("{} {}", ElementName(array), index + 1);
 }
 
 PropertyKind KindOf(const DataFieldSchema& field)
@@ -228,10 +174,68 @@ PropertyKind KindOf(const DataFieldSchema& field)
     }
 }
 
+// Where a composing definition's values came from, for its rows.
+struct Inheritance
+{
+    const CompositionReport& Report;
+    const JsonValue& Inherited;
+    const DataFieldSchema& Root;
+    std::vector<std::string> Includes;
+};
+
+std::optional<Inheritance> InheritanceOf(const DataDocument& document, const DataSchema& schema)
+{
+    const CompositionReport* report = document.CompositionResult();
+    if (report == nullptr || !document.ComposedData().IsObject())
+        return std::nullopt;
+    Inheritance inheritance{ *report, document.InheritedData(), schema.Root, {} };
+    if (const JsonValue* includes = document.Root().Find("includes"); includes != nullptr && includes->IsArray())
+        for (const JsonValue& entry : includes->AsArray())
+            if (const std::optional<AssetRef> ref = AssetRefFromJson(entry); ref && !ref->Path.empty())
+                inheritance.Includes.push_back(ref->Path);
+    return inheritance;
+}
+
+// What a composing document's edits are placed against; null for one with no sources.
+const JsonValue* ComposedOf(const DataDocument& document)
+{
+    return document.CompositionResult() != nullptr && document.ComposedData().IsObject() ? &document.ComposedData()
+                                                                                         : nullptr;
+}
+
+// A row's path in the composition report, which is rooted at the data object.
+std::string ReportPath(std::string_view path)
+{
+    return "$" + std::string(path.substr(kDataPathRoot.size()));
+}
+
+std::string Provenance(const CompositionOrigin& origin)
+{
+    switch (origin.Layer)
+    {
+    case CompositionLayer::Local:   return "set here";
+    case CompositionLayer::Base:    return std::format("inherited from {}", origin.Asset);
+    case CompositionLayer::Include: return std::format("from {}", origin.Asset);
+    }
+    return {};
+}
+
+void Freeze(PropertyNode& node)
+{
+    node.Descriptor.ReadOnly = true;
+    node.Descriptor.Verbs.clear();
+    for (PropertyNode& child : node.Children)
+        Freeze(child);
+}
+
 class Layout
 {
 public:
-    explicit Layout(std::span<const DataValidationError> errors) : Errors(errors) {}
+    Layout(std::span<const DataValidationError> errors, const Inheritance* inheritance)
+        : Errors(errors)
+        , Composing(inheritance)
+    {
+    }
 
     void Members(std::vector<PropertyNode>& out, const JsonValue& value, const DataFieldSchema& record,
                  const std::string& path) const
@@ -240,6 +244,12 @@ public:
         {
             const std::string memberPath = path + "." + member.Key;
             const JsonValue* held = value.IsObject() ? value.Find(member.Key) : nullptr;
+            if (held == nullptr && IsRemoved(memberPath))
+            {
+                if (const JsonValue* inherited = FindDataValue(Composing->Inherited, Composing->Root, memberPath))
+                    RemovedRows(out, *inherited, member, memberPath, Label(member));
+                continue;
+            }
             if (held == nullptr && !member.Required)
                 continue;
             const JsonValue shown = held != nullptr ? *held : CreateDefaultDataValue(member);
@@ -255,7 +265,7 @@ public:
     {
         if (field.Kind == DataFieldKind::Optional)
         {
-            const DataFieldSchema* child = Element(field);
+            const DataFieldSchema* child = DataFieldElement(field);
             PropertyNode on = ToggleProperty(path + kSwitch, std::move(label), !value.IsNull(), field.Summary);
             Describe(on, field);
             out.push_back(std::move(on));
@@ -295,6 +305,7 @@ public:
             if (field.Kind == DataFieldKind::DataAssetRef && !node.Value.empty())
                 node.Descriptor.Verbs.push_back({ .Id = "open", .Label = "Open" });
         }
+        Annotate(node, path);
         out.push_back(std::move(node));
         for (const DataValidationError& error : Errors)
             if (error.Path == path)
@@ -316,19 +327,67 @@ private:
         node.Descriptor.Step = field.Numeric.Step.value_or(field.Kind == DataFieldKind::Int ? 1.0 : 0.0);
     }
 
+    // Where the row's value came from, and the verbs that follow from it.
+    void Annotate(PropertyNode& node, const std::string& path) const
+    {
+        if (Composing == nullptr || path == kDataPathRoot)
+            return;
+        const std::string reported = ReportPath(path);
+        const CompositionOrigin* origin = FindCompositionOrigin(Composing->Report.Provenance, reported);
+        if (origin == nullptr)
+            return;
+        const std::string from = Provenance(*origin);
+        node.Descriptor.Tooltip =
+            node.Descriptor.Tooltip.empty() ? from : std::format("{} — {}", from, node.Descriptor.Tooltip);
+        if (origin->Layer == CompositionLayer::Local
+            && FindDataValue(Composing->Inherited, Composing->Root, path) != nullptr)
+            node.Descriptor.Verbs.push_back({ .Id = "revert", .Label = "Revert to inherited" });
+        const bool conflicted = std::ranges::any_of(Composing->Report.Diagnostics, [&](const CompositionDiagnostic& found) {
+            return found.Code == "include_conflict" && found.Path == reported;
+        });
+        if (conflicted && !Composing->Includes.empty())
+            node.Descriptor.Verbs.push_back({ .Id = "take", .Label = "Take value from", .Choices = Composing->Includes });
+    }
+
+    [[nodiscard]] bool IsRemoved(const std::string& path) const
+    {
+        return Composing != nullptr && std::ranges::find(Composing->Report.Removed, ReportPath(path))
+                                           != Composing->Report.Removed.end();
+    }
+
+    // What this definition removed, shown as its source has it and left alone.
+    static void RemovedRows(std::vector<PropertyNode>& out, const JsonValue& value, const DataFieldSchema& field,
+                            const std::string& path, std::string label)
+    {
+        const std::size_t first = out.size();
+        Layout(std::span<const DataValidationError>{}, nullptr).Field(out, value, field, path, std::move(label));
+        for (std::size_t row = first; row < out.size(); ++row)
+        {
+            Freeze(out[row]);
+            out[row].Descriptor.Tooltip = "removed here";
+        }
+        if (first < out.size())
+            out[first].Descriptor.Verbs.push_back({ .Id = "restore", .Label = "Restore" });
+    }
+
     void Elements(PropertyNode& array, const JsonValue& value, const DataFieldSchema& field, const std::string& path) const
     {
-        const DataFieldSchema* element = Element(field);
+        const DataFieldSchema* element = DataFieldElement(field);
         if (element == nullptr)
             return;
-        const std::string name = element->DisplayName.empty() ? std::string("Element") : element->DisplayName;
-        array.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add " + name });
+        array.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add " + ElementName(field) });
+        if (const DataFieldSchema* key = Composing != nullptr ? ArrayMergeKey(field) : nullptr)
+        {
+            KeyedElements(array, value, field, *element, *key, path);
+            return;
+        }
         const std::size_t count = value.IsArray() ? value.AsArray().size() : 0;
         for (std::size_t index = 0; index < count; ++index)
         {
             const JsonValue& item = value.AsArray()[index];
             const std::size_t first = array.Children.size();
-            Field(array.Children, item, *element, std::format("{}[{}]", path, index), ElementLabel(field, item, index));
+            Field(array.Children, item, *element, std::format("{}[{}]", path, index),
+                  ElementLabel(field, item, NumberedLabel(field, index)));
             if (first >= array.Children.size())
                 continue;
             std::vector<PropertyVerb>& verbs = array.Children[first].Descriptor.Verbs;
@@ -341,8 +400,103 @@ private:
         }
     }
 
+    // A keyed list of a composing definition: each element named by its key, an
+    // inherited one removable, and what this definition removed shown in place.
+    void KeyedElements(PropertyNode& array, const JsonValue& value, const DataFieldSchema& field,
+                       const DataFieldSchema& element, const DataFieldSchema& key, const std::string& path) const
+    {
+        const JsonValue* inherited = FindDataValue(Composing->Inherited, Composing->Root, path);
+        const bool appendOnly = field.MergePolicy == DataMergePolicy::AppendOnly;
+        const JsonValue::Array none;
+        for (const JsonValue& item : value.IsArray() ? value.AsArray() : none)
+        {
+            const JsonValue* stated = item.IsObject() ? item.Find(key.Key) : nullptr;
+            if (stated == nullptr || !stated->IsString())
+                continue;
+            const std::string name = stated->AsString();
+            const std::string elementPath = path + "{" + name + "}";
+            const std::size_t first = array.Children.size();
+            Field(array.Children, item, element, elementPath, ElementLabel(field, item, name));
+            if (first >= array.Children.size())
+                continue;
+            PropertyNode& card = array.Children[first];
+            const bool isInherited = inherited != nullptr && FindKeyedElement(*inherited, field, name) != nullptr;
+            if (appendOnly && isInherited)
+                Freeze(card);
+            else
+                card.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove" });
+            if (isInherited)
+                for (PropertyNode& row : card.Children)
+                    if (row.Key == elementPath + "." + key.Key)
+                        row.Descriptor.ReadOnly = true;
+        }
+        if (inherited == nullptr)
+            return;
+        const std::string under = ReportPath(path) + "{";
+        for (const std::string& removed : Composing->Report.Removed)
+        {
+            if (!removed.starts_with(under) || !removed.ends_with('}'))
+                continue;
+            const std::string name = removed.substr(under.size(), removed.size() - under.size() - 1);
+            if (name.find_first_of(".[{}") != std::string::npos)
+                continue;
+            if (const JsonValue* item = FindKeyedElement(*inherited, field, name))
+                RemovedRows(array.Children, *item, element, path + "{" + name + "}", ElementLabel(field, *item, name));
+        }
+    }
+
     std::span<const DataValidationError> Errors;
+    const Inheritance* Composing = nullptr;
 };
+
+// Removes what `path` names from a composing definition: an inherited value by a
+// null, which composition reads as its removal; one set only here by erasing it.
+PropertyEditResult RemoveComposed(JsonValue& data, const DataFieldSchema& root, const JsonValue* composed,
+                                  const JsonValue& inherited, std::string_view path)
+{
+    if (FindDataValue(inherited, root, path) == nullptr)
+        return EraseFromPatch(data, root, path) ? PropertyEditResult::Applied : PropertyEditResult::Gone;
+    const std::optional<std::string_view> parent = DataPathParent(path);
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
+    if (!parent || !steps || steps->empty() || steps->back().Kind == DataPathStepKind::Index)
+        return PropertyEditResult::Refused;
+    const DataPatchLocation holder = LocateInPatch(data, composed, root, *parent, true);
+    if (holder.Value == nullptr)
+        return PropertyEditResult::Gone;
+    const std::string& name = steps->back().Key;
+    if (holder.Value->IsArray())
+    {
+        // A keyed list this definition states whole: leaving the element out removes it.
+        const JsonValue* element = FindKeyedElement(*holder.Value, Unwrapped(*holder.Field), name);
+        if (element == nullptr)
+            return PropertyEditResult::Gone;
+        JsonValue::Array& elements = holder.Value->AsArray();
+        elements.erase(elements.begin() + (element - elements.data()));
+        return PropertyEditResult::Applied;
+    }
+    if (!holder.Value->IsObject())
+        return PropertyEditResult::Gone;
+    if (JsonValue* held = holder.Value->Find(name))
+        *held = JsonValue();
+    else
+        holder.Value->AsObject().emplace_back(name, JsonValue());
+    return PropertyEditResult::Applied;
+}
+
+// The element path whose key `path` edits, when it edits a keyed element's key.
+std::optional<std::string_view> RenamedElement(std::string_view path, const DataFieldSchema& root)
+{
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
+    const std::optional<std::string_view> element = DataPathParent(path);
+    if (!steps || steps->size() < 2 || !element || (*steps)[steps->size() - 2].Kind != DataPathStepKind::Keyed)
+        return std::nullopt;
+    const std::optional<std::string_view> list = DataPathParent(*element);
+    const DataFieldSchema* field = list ? FieldAt(root, *list) : nullptr;
+    const DataFieldSchema* key = field != nullptr ? ArrayMergeKey(Unwrapped(*field)) : nullptr;
+    if (key == nullptr || key->Key != steps->back().Key)
+        return std::nullopt;
+    return element;
+}
 } // namespace
 
 std::string DataFieldDisplayName(const DataFieldSchema& field)
@@ -354,28 +508,35 @@ std::vector<PropertyNode> DataProperties::Nodes() const
 {
     const DataDocument* document = Shown ? Shown() : nullptr;
     const DataSchema* schema = document != nullptr ? Documents.Store().SchemaOf(*document) : nullptr;
-    const JsonValue* data = document != nullptr ? document->Data() : nullptr;
-    if (schema == nullptr || data == nullptr)
+    const JsonValue* local = document != nullptr ? document->Data() : nullptr;
+    if (schema == nullptr || local == nullptr)
         return {};
+    const std::optional<Inheritance> inheritance = InheritanceOf(*document, *schema);
+    const JsonValue& data = inheritance ? document->ComposedData() : *local;
     std::vector<PropertyNode> nodes;
-    const Layout layout(document->ValidationErrors());
+    const Layout layout(document->ValidationErrors(), inheritance ? &*inheritance : nullptr);
     if (const std::string scope = Scope ? Scope() : std::string{}; !scope.empty())
     {
         const DataFieldSchema* field = FieldAt(schema->Root, scope);
-        const JsonValue* value = FindDataValue(*data, scope);
-        if (field == nullptr || value == nullptr)
+        const JsonValue* value = FindDataValue(data, schema->Root, scope);
+        const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(scope);
+        if (field == nullptr || value == nullptr || !steps || steps->empty())
             return {};
         const std::optional<std::string_view> parent = DataPathParent(scope);
-        const std::optional<std::size_t> index = DataPathLastIndex(scope);
-        const DataFieldSchema* list = parent && index ? FieldAt(schema->Root, *parent) : nullptr;
-        layout.Field(nodes, *value, *field, scope,
-                     list != nullptr ? ElementLabel(Unwrapped(*list), *value, *index) : Label(Unwrapped(*field)));
+        const DataFieldSchema* list = parent ? FieldAt(schema->Root, *parent) : nullptr;
+        const DataPathStep& last = steps->back();
+        std::string label = Label(Unwrapped(*field));
+        if (list != nullptr && last.Kind == DataPathStepKind::Index)
+            label = ElementLabel(Unwrapped(*list), *value, NumberedLabel(Unwrapped(*list), last.Index));
+        else if (list != nullptr && last.Kind == DataPathStepKind::Keyed)
+            label = ElementLabel(Unwrapped(*list), *value, last.Key);
+        layout.Field(nodes, *value, *field, scope, std::move(label));
     }
     else
     {
         // The root as one group named for the asset's type, so its absent optional
         // members have somewhere to be added from.
-        layout.Field(nodes, *data, schema->Root, std::string(kDataPathRoot),
+        layout.Field(nodes, data, schema->Root, std::string(kDataPathRoot),
                      schema->DisplayName.empty() ? schema->TypeName : schema->DisplayName);
     }
     if (const IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
@@ -388,9 +549,7 @@ IDataSubtypeAuthoring* DataProperties::AuthoringOf(const DataDocument& document)
     return Subtypes != nullptr ? Subtypes->Find(document.Subtype()) : nullptr;
 }
 
-PropertyEditResult DataProperties::Change(std::string_view key,
-                                          const std::function<bool(JsonValue&, const DataFieldSchema&)>& change,
-                                          DataEdit edit)
+PropertyEditResult DataProperties::Rewrite(const Rewriter& rewrite, DataEdit edit)
 {
     DataDocument* document = Shown ? Shown() : nullptr;
     const DataSchema* schema = document != nullptr ? Documents.Store().SchemaOf(*document) : nullptr;
@@ -400,13 +559,22 @@ PropertyEditResult DataProperties::Change(std::string_view key,
     JsonValue* data = root.Find("data");
     if (data == nullptr)
         return PropertyEditResult::Gone;
-    const Located at = Locate(*data, schema->Root, key, true);
-    if (at.Value == nullptr)
-        return PropertyEditResult::Gone;
-    if (!change(*at.Value, *at.Field))
-        return PropertyEditResult::Refused;
-    Documents.ApplyEdit(*document, std::move(root), edit);
-    return PropertyEditResult::Applied;
+    const PropertyEditResult result = rewrite(*data, *document, schema->Root);
+    if (result == PropertyEditResult::Applied)
+        Documents.ApplyEdit(*document, std::move(root), edit);
+    return result;
+}
+
+PropertyEditResult DataProperties::Change(std::string_view key,
+                                          const std::function<bool(JsonValue&, const DataFieldSchema&)>& change,
+                                          DataEdit edit)
+{
+    return Rewrite([&](JsonValue& data, const DataDocument& document, const DataFieldSchema& root) {
+        const DataPatchLocation at = LocateInPatch(data, ComposedOf(document), root, key, true);
+        if (at.Value == nullptr)
+            return PropertyEditResult::Gone;
+        return change(*at.Value, *at.Field) ? PropertyEditResult::Applied : PropertyEditResult::Refused;
+    }, edit);
 }
 
 PropertyEditResult DataProperties::Replace(JsonValue data, DataEdit edit)
@@ -448,12 +616,20 @@ PropertyEditResult DataProperties::PreviewEdit(std::string_view key, std::string
     if (key.ends_with(kSwitch))
         return Change(key.substr(0, key.size() - 1), [value](JsonValue& held, const DataFieldSchema& field) {
             const std::optional<bool> on = ParseToggle(value);
-            const DataFieldSchema* child = Element(field);
+            const DataFieldSchema* child = DataFieldElement(field);
             if (!on.has_value() || child == nullptr)
                 return false;
             held = *on ? CreateDefaultDataValue(*child) : JsonValue();
             return true;
         }, DataEdit::Preview);
+    if (const DataDocument* document = Shown ? Shown() : nullptr; document != nullptr && ComposedOf(*document))
+        if (const DataSchema* schema = Documents.Store().SchemaOf(*document))
+            if (const std::optional<std::string_view> element = RenamedElement(key, schema->Root))
+                return Rewrite([&](JsonValue& data, const DataDocument& shown, const DataFieldSchema& root) {
+                    return RenameKeyedElement(data, shown.InheritedData(), root, *element, value)
+                        ? PropertyEditResult::Applied
+                        : PropertyEditResult::Refused;
+                }, DataEdit::Preview);
     return Change(key, [this, value](JsonValue& held, const DataFieldSchema& field) {
         std::optional<JsonValue> parsed = Parse(value, Unwrapped(field));
         if (!parsed.has_value())
@@ -518,11 +694,14 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
             if (performed != DataSubtypeEdit::NotMine)
                 return PropertyEditResultOf(performed);
         }
+    const DataDocument* document = Shown ? Shown() : nullptr;
+    const DataSchema* schema = document != nullptr ? Documents.Store().SchemaOf(*document) : nullptr;
+    if (schema == nullptr || document->Data() == nullptr)
+        return PropertyEditResult::Gone;
     if (verb == "open")
     {
-        const DataDocument* document = Shown ? Shown() : nullptr;
-        const JsonValue* data = document != nullptr ? document->Data() : nullptr;
-        const JsonValue* held = data != nullptr ? FindDataValue(*data, key) : nullptr;
+        const JsonValue& data = ComposedOf(*document) != nullptr ? document->ComposedData() : *document->Data();
+        const JsonValue* held = FindDataValue(data, schema->Root, key);
         const std::optional<AssetRef> ref = held != nullptr ? AssetRefFromJson(*held) : std::nullopt;
         if (!ref || ref->Path.empty())
             return PropertyEditResult::Gone;
@@ -530,17 +709,49 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
         return Documents.OpenOrFocus(ref->Path, error) != nullptr ? PropertyEditResult::Applied
                                                                   : PropertyEditResult::Refused;
     }
+    if (verb == "revert" || verb == "restore")
+        return Rewrite([&](JsonValue& data, const DataDocument&, const DataFieldSchema& root) {
+            return EraseFromPatch(data, root, key) ? PropertyEditResult::Applied : PropertyEditResult::Gone;
+        }, DataEdit::Step);
+    if (verb == "take")
+    {
+        const std::optional<JsonValue> fragment = Documents.Store().ComposedData(choice);
+        const JsonValue* taken = fragment ? FindDataValue(*fragment, schema->Root, key) : nullptr;
+        if (taken == nullptr)
+            return PropertyEditResult::Refused;
+        return Change(key, [value = *taken](JsonValue& held, const DataFieldSchema&) {
+            held = value;
+            return true;
+        }, DataEdit::Step);
+    }
+    if (verb == "remove" && ComposedOf(*document) != nullptr)
+        return Rewrite([&](JsonValue& data, const DataDocument& shown, const DataFieldSchema& root) {
+            return RemoveComposed(data, root, ComposedOf(shown), shown.InheritedData(), key);
+        }, DataEdit::Step);
     if (verb == "add")
         return Change(key, [choice](JsonValue& held, const DataFieldSchema& described) {
             const DataFieldSchema& field = Unwrapped(described);
             if (field.Kind == DataFieldKind::Array)
             {
-                const DataFieldSchema* element = Element(field);
+                const DataFieldSchema* element = DataFieldElement(field);
                 if (element == nullptr)
                     return false;
+                JsonValue fresh = CreateDefaultDataValue(*element);
+                // A composing definition adds to a keyed list it patches by key.
+                if (const DataFieldSchema* keyField = ArrayMergeKey(field); keyField != nullptr && held.IsObject())
+                {
+                    JsonValue* stated = fresh.IsObject() ? fresh.Find(keyField->Key) : nullptr;
+                    if (stated == nullptr)
+                        return false;
+                    if (!stated->IsString() || stated->AsString().empty())
+                        *stated = JsonValue(MintStableKey());
+                    const std::string name = stated->AsString();
+                    held.AsObject().emplace_back(name, std::move(fresh));
+                    return true;
+                }
                 if (!held.IsArray())
                     held = JsonValue(JsonValue::Array{});
-                held.AsArray().push_back(CreateDefaultDataValue(*element));
+                held.AsArray().push_back(std::move(fresh));
                 return true;
             }
             const auto member = std::ranges::find_if(field.Children, [choice](const DataFieldSchema& child) {
@@ -561,20 +772,20 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
         return PropertyEditResult::Gone;
     const DataPathStep step = steps->back();
     return Change(*parent, [&](JsonValue& held, const DataFieldSchema& described) {
-        if (verb == "remove" && !step.Index.has_value() && held.IsObject())
+        if (verb == "remove" && step.Kind == DataPathStepKind::Member && held.IsObject())
         {
             std::erase_if(held.AsObject(), [&](const auto& member) { return member.first == step.Key; });
             return true;
         }
-        if (!step.Index.has_value() || !held.IsArray() || *step.Index >= held.AsArray().size())
+        if (step.Kind != DataPathStepKind::Index || !held.IsArray() || step.Index >= held.AsArray().size())
             return false;
         JsonValue::Array& array = held.AsArray();
-        const std::size_t index = *step.Index;
+        const std::size_t index = step.Index;
         const auto at = array.begin() + static_cast<std::ptrdiff_t>(index);
         if (verb == "duplicate")
         {
             JsonValue copy = *at;
-            if (const DataFieldSchema* element = Element(Unwrapped(described)))
+            if (const DataFieldSchema* element = DataFieldElement(Unwrapped(described)))
                 RemintStableKeys(copy, *element);
             array.insert(at + 1, std::move(copy));
         }

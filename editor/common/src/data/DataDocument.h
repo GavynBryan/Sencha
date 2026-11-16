@@ -112,6 +112,8 @@ public:
     // The definition as it composes with its sources; its own data when it has none.
     [[nodiscard]] const JsonValue& ComposedData() const { return Composed; }
     [[nodiscard]] bool Composes() const { return Composition.has_value(); }
+    // What its sources compose to alone; empty unless it composes.
+    [[nodiscard]] const JsonValue& InheritedData() const { return Inherited; }
     // The definitions it composed from at its last validation, transitively.
     [[nodiscard]] const std::vector<std::string>& CompositionSources() const { return Sources; }
     // Where each composed value came from; only for a definition with sources.
@@ -157,6 +159,7 @@ private:
     std::vector<DataValidationError> Errors;
     DataRootProvider Roots;
     JsonValue Composed;
+    JsonValue Inherited;
     std::optional<CompositionReport> Composition;
     std::vector<std::string> Sources;
 };

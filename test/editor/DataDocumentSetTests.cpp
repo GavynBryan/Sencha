@@ -405,9 +405,9 @@ TEST_F(FactDocuments, TheSheetRunsWhatTheSubtypeAddsWhereverItIsShown)
     EXPECT_TRUE(sheet.ClaimPlatformEvent(press));
 
     const std::vector<PropertySection> sections = sheet.Sections();
-    ASSERT_EQ(sections.size(), 3u) << "its file, its fields and the subtype's preview";
-    EXPECT_EQ(sections[1].Source, &sheet.Fields());
-    EXPECT_EQ(sections[2].Heading, "Preview");
+    ASSERT_EQ(sections.size(), 4u) << "its file, its envelope, its fields and the subtype's preview";
+    EXPECT_EQ(sections[2].Source, &sheet.Fields());
+    EXPECT_EQ(sections[3].Heading, "Preview");
 
     WorkspaceDocumentFacet facet;
     sheet.AppendOpen(facet);

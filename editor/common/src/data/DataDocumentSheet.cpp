@@ -13,6 +13,7 @@ DataDocumentSheet::DataDocumentSheet(DataDocumentSet& documents, PromptQueue& pr
     : Set(documents)
     , Prompts(prompts.MakeAsker())
     , Properties(documents, [this] { return Set.Active(); }, &Authoring)
+    , Envelope(documents, [this] { return Set.Active(); })
     , FilePath(
           [this] {
               const DataDocument* document = Set.Active();
@@ -64,6 +65,7 @@ std::vector<PropertySection> DataDocumentSheet::Sections(IPropertySource* fields
     if (document == nullptr)
         return {};
     std::vector<PropertySection> sections{ { .Heading = {}, .Source = &FilePath },
+                                           { .Heading = {}, .Source = &Envelope },
                                            { .Heading = {}, .Source = fields != nullptr ? fields : &Properties } };
     if (authoring != nullptr)
         for (const PropertySection& section : authoring->Sections(*document))

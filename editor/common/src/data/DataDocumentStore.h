@@ -74,6 +74,9 @@ public:
     [[nodiscard]] bool IsAbstract(std::string_view virtualPath) const;
     // Where a document reads the definitions it extends or includes.
     [[nodiscard]] DataRootProvider RootProvider() const;
+    // What a definition composes to now, its own and its sources' open working
+    // copies read first; nothing when it cannot be read.
+    [[nodiscard]] std::optional<JsonValue> ComposedData(std::string_view virtualPath) const;
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);

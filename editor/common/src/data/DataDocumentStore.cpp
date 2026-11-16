@@ -1,9 +1,11 @@
 #include "data/DataDocumentStore.h"
 
 #include "data/DataAssetFiles.h"
+#include "data/DataSourceScope.h"
 #include "documents/DocumentSourceSet.h"
 
 #include <assets/data/DataAssetSubtype.h>
+#include <assets/data/DataDefinitionStaging.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
@@ -224,6 +226,21 @@ std::optional<JsonValue> DataDocumentStore::CurrentRoot(std::string_view virtual
 DataRootProvider DataDocumentStore::RootProvider() const
 {
     return [this](std::string_view path) { return CurrentRoot(path); };
+}
+
+std::optional<JsonValue> DataDocumentStore::ComposedData(std::string_view virtualPath) const
+{
+    const std::optional<JsonValue> root = CurrentRoot(virtualPath);
+    if (!root.has_value())
+        return std::nullopt;
+    DataSourceScope sources(RootProvider());
+    const AssetPathsById current;
+    DataDefinitionStaging staged = StageDataDefinition(
+        *root, DataDefinitionContext{ .Types = Assets.DataTypes, .Schemas = &Assets.DataSchemas, .Current = current,
+                                      .Read = sources.Reader(), .Asset = virtualPath });
+    if (!staged.Data.IsObject())
+        return std::nullopt;
+    return std::move(staged.Data);
 }
 
 std::vector<std::string> DataDocumentStore::DataAssetPaths(std::string_view subtype, DataAbstractPaths abstract) const

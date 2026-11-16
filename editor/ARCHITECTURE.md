@@ -244,7 +244,15 @@ fields laid out by the schema through `data/DataProperties` (a property per
 JSON path; array and record verbs; validation errors as notes beside their
 field and as problems), or its JSON through `DataSourceText` (View Source).
 A new asset is a `DataCreation` card; files move by their path property
-(`properties/FilePathProperty`, shared with Materials). A subtype makes its
+(`properties/FilePathProperty`, shared with Materials). Above the fields, `data/DataEnvelopeProperties` chooses what the
+definition extends and includes and whether it is abstract. A definition that
+composes is laid out as it composes: a keyed list's element is addressed by its
+key (`$.data.modifiers{m_armor}`, `data/DataPath`), each row's detail says
+where its value came from, and an edit writes only what it changes into the
+definition's own data (`data/DataPatch`). Revert, remove, restore and taking a
+fragment's value are row verbs. A change to an open definition revalidates the
+open definitions composed from it. The rules are in
+`docs/assets/composition.md`. A subtype makes its
 documents read as what they are through `data/DataSubtypeAuthoring`: it
 reshapes the laid-out properties, takes the writes, candidates and verbs whose
 meaning it knows (`Perform` for a verb that changes the data, as one step),

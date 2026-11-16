@@ -103,6 +103,30 @@ feeds. The hot reloader consults it for every changed file, resident or not, so
 editing an abstract base reloads its concrete children. A child that fails to
 recompose keeps its last good value and reports at its authored location.
 
+## Authoring in Kyusu
+
+A definition that composes is laid out as it composes (`DataProperties` over
+`DataDocument::ComposedData`), with `DataEnvelopeProperties` above the fields
+choosing what it extends and includes and whether it is abstract.
+
+- A keyed element is addressed by its key (`$.data.modifiers{m_armor}`,
+  `DataPath`), so a row exists for an element the local data lacks.
+- Each row's detail says where its value came from: set here, inherited from
+  the base, or from a fragment.
+- An edit writes the sparsest local patch (`DataPatch`): editing one field of
+  an inherited element writes a map-form entry holding only that field and the
+  records on its path, so a later change to a sibling in the base still reaches
+  the child. Only a member absent from the patch and every source is created
+  from its default.
+- Revert to inherited erases the local member and every record or keyed entry
+  it leaves empty. Remove writes `key: null`; restore erases that `null`; a
+  removed element shows read-only, reading "removed here". Where two fragments
+  conflict, a row offers each fragment's value to write locally.
+- An element this definition adds can be renamed, which re-keys its patch
+  entry; an inherited element's key is read-only.
+- A change to an open definition revalidates the open definitions composed
+  from it. Revealing a problem focuses its field.
+
 ## Scene instance patches
 
 A version-1 instance patch applies through `ApplyCompositionPatch` with no

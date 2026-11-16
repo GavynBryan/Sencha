@@ -19,16 +19,16 @@ struct SectionPlace
 
     [[nodiscard]] bool IsMember(std::string_view key) const
     {
-        return Rest.size() == 1 && !Rest.front().Index && Rest.front().Key == key;
+        return Rest.size() == 1 && Rest.front().Kind == DataPathStepKind::Member && Rest.front().Key == key;
     }
 };
 
 std::optional<SectionPlace> SectionOf(std::string_view key)
 {
     std::optional<std::vector<DataPathStep>> steps = ParseDataPath(key);
-    if (!steps || steps->size() < 2 || (*steps)[0].Key != "sections" || !(*steps)[1].Index)
+    if (!steps || steps->size() < 2 || (*steps)[0].Key != "sections" || (*steps)[1].Kind != DataPathStepKind::Index)
         return std::nullopt;
-    return SectionPlace{ .Section = *(*steps)[1].Index, .Rest = { steps->begin() + 2, steps->end() } };
+    return SectionPlace{ .Section = (*steps)[1].Index, .Rest = { steps->begin() + 2, steps->end() } };
 }
 
 std::vector<std::string> Tags(const JsonValue& data, std::size_t after = 0)
@@ -72,7 +72,8 @@ void RefineAll(std::vector<PropertyNode>& nodes, const JsonValue& data, const An
         const std::optional<SectionPlace> place = SectionOf(node.Key);
         if (!place)
             continue;
-        if (place->Rest.size() == 3 && place->Rest[0].Key == "branches" && place->Rest[1].Index
+        if (place->Rest.size() == 3 && place->Rest[0].Key == "branches"
+            && place->Rest[1].Kind == DataPathStepKind::Index
             && place->Rest[2].Key == "to")
             ChooseAmong(node, Tags(data, place->Section + 1));
         else if (place->IsMember("count_intent"))

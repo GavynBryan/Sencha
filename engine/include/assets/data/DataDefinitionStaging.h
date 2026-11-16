@@ -38,6 +38,9 @@ struct DataDefinitionStaging
     bool Composed = false;
     // The composed `data`.
     JsonValue Data;
+    // What its sources compose to, as though it set nothing; only when
+    // provenance is asked.
+    JsonValue Inherited;
     CompositionReport Composition;
     // Every definition composition read, bases and fragments, transitively.
     std::vector<std::string> Sources;
