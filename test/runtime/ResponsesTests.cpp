@@ -191,6 +191,32 @@ private:
     GameplayTagId Red;
 };
 
+// How many stacks of Test.Red the entity carries: a number a condition bounds.
+class StacksQuery
+{
+public:
+    explicit StacksQuery(const World& world, GameplayTagId red)
+        : Entities(world)
+        , Red(red)
+    {
+    }
+
+    static AuthoredQueryStatus Evaluate(const StacksQuery& self, std::span<const AuthoredValue> arguments,
+                                        AuthoredValue& result)
+    {
+        EntityId target;
+        if (arguments.empty() || !arguments[0].TryGetEntity(target) || !self.Entities.IsAlive(target))
+            return AuthoredQueryStatus::Unavailable;
+        const GameplayTagContainer* tags = self.Entities.TryGet<GameplayTagContainer>(target);
+        result = AuthoredValue::Int(tags != nullptr ? tags->StackCount(self.Red) : 0);
+        return AuthoredQueryStatus::Value;
+    }
+
+private:
+    const World& Entities;
+    GameplayTagId Red;
+};
+
 // A record answer: how far, and which way. Exercises a value read from a
 // query's member.
 class ReachQuery
@@ -317,6 +343,11 @@ protected:
             red.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "target", "Target"));
             red.Result = MakeDataField(DataFieldKind::Bool, "result", "Red");
             (void)scope.Declare(std::move(red));
+            AuthoredQueryDefinition stacks;
+            stacks.Name = "test.stacks";
+            stacks.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "target", "Target"));
+            stacks.Result = MakeDataField(DataFieldKind::Int, "result", "Stacks");
+            (void)scope.Declare(std::move(stacks));
             AuthoredQueryDefinition reach;
             reach.Name = "test.reach";
             reach.Result = AuthoredRecordRoot();
@@ -333,6 +364,7 @@ protected:
         Refuse = std::make_unique<RecordingOperation>("test.refuse", Calls, VerbAdmission::Refused);
         Operations = std::make_unique<ResponseOperations>(WorldState, Loop);
         RedAnswer = std::make_unique<RedQuery>(WorldState, Red);
+        StacksAnswer = std::make_unique<StacksQuery>(WorldState, Red);
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.record"), *Record));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.second"), *Second));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.refuse"), *Refuse));
@@ -342,6 +374,8 @@ protected:
         Tokens.push_back(Dispatcher->Bind<&InvokeTriggerInteract>(Verbs->Find(kTriggerInteractVerb), *Operations));
         QueryToken = Queries->Bind<&RedQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.is_red"),
                                                        *RedAnswer);
+        StacksToken = Queries->Bind<&StacksQuery::Evaluate>(
+            FindAuthoredQueryRegistry(WorldState)->Find("test.stacks"), *StacksAnswer);
         ReachToken = Queries->Bind<&ReachQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.reach"),
                                                          Reach);
 
@@ -358,6 +392,7 @@ protected:
     {
         Schedule.Shutdown();
         QueryToken.Reset();
+        StacksToken.Reset();
         ReachToken.Reset();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
@@ -469,6 +504,8 @@ protected:
     std::unique_ptr<RedQuery> RedAnswer;
     std::vector<VerbBindingToken> Tokens;
     AuthoredQueryBindingToken QueryToken;
+    std::unique_ptr<StacksQuery> StacksAnswer;
+    AuthoredQueryBindingToken StacksToken;
     ReachQuery Reach;
     AuthoredQueryBindingToken ReachToken;
     SensorOverlaps* Overlaps = nullptr;
@@ -705,6 +742,48 @@ TEST_F(ResponsesFixture, ConditionsFilterTheActivatorByComponentTagAndQuery)
     EXPECT_EQ(Calls[1].Verb, "test.second");
     EXPECT_EQ(Calls[1].Target, plain);
     EXPECT_EQ(System->Stats().Gated, 3u);
+}
+
+TEST_F(ResponsesFixture, ANumberConditionHoldsWithinItsBoundsInclusive)
+{
+    const EntityId volume = PlaceSensor(kSensorEnterEvent, R"({
+        "conditions": [{"query": "test.stacks", "arguments": {"target": {"port": "activator"}},
+                        "require": {"min": 2, "max": 4}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "activator"}}}]})");
+    const auto carrying = [&](std::uint16_t stacks) {
+        const EntityId entity = WorldState.CreateEntity();
+        GameplayTagContainer tags;
+        if (stacks > 0)
+            tags.Grant(Red, stacks);
+        WorldState.AddComponent<GameplayTagContainer>(entity, tags);
+        return entity;
+    };
+    const EntityId none = carrying(0);
+    const EntityId two = carrying(2);
+    const EntityId four = carrying(4);
+    const EntityId five = carrying(5);
+
+    Step({ { volume, none }, { volume, two }, { volume, four }, { volume, five } });
+
+    ASSERT_EQ(Calls.size(), 2u);
+    EXPECT_EQ(Calls[0].Target, two);
+    EXPECT_EQ(Calls[1].Target, four);
+}
+
+TEST_F(ResponsesFixture, ANumberConditionWithoutBoundsIsRefusedWhenItCompiles)
+{
+    const EntityId volume = PlaceSensor(kSensorEnterEvent, R"({
+        "conditions": [{"query": "test.stacks", "arguments": {"target": {"port": "activator"}}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "activator"}}}]})");
+
+    Step({ { volume, WorldState.CreateEntity() } });
+
+    EXPECT_TRUE(Calls.empty());
+    const ResponseDefinitions& definitions = ResponseDefinitionsOf(WorldState);
+    const auto diagnostics =
+        definitions.Sequences.Diagnostics(definitions.Sets.Bindings(StateOf(volume).Set).front().Sequence);
+    ASSERT_EQ(diagnostics.size(), 1u);
+    EXPECT_NE(diagnostics[0].find("'require' says which"), std::string::npos) << diagnostics[0];
 }
 
 TEST_F(ResponsesFixture, AValueMayBeGivenInTheEntitysFrameAndScaled)

@@ -177,7 +177,13 @@ std::vector<std::string> InstantVerbs(const VerbSequenceVocabulary& vocabulary, 
     return names;
 }
 
-std::vector<std::string> TruthQueries(const VerbSequenceVocabulary& vocabulary)
+bool AnswersANumber(const AuthoredQueryDefinition& query)
+{
+    const DataFieldKind kind = UnwrappedField(query.Result).Kind;
+    return kind == DataFieldKind::Int || kind == DataFieldKind::Float;
+}
+
+std::vector<std::string> ConditionQueries(const VerbSequenceVocabulary& vocabulary)
 {
     std::vector<std::string> names;
     if (vocabulary.Queries == nullptr)
@@ -185,10 +191,21 @@ std::vector<std::string> TruthQueries(const VerbSequenceVocabulary& vocabulary)
     for (const AuthoredQueryId id : vocabulary.Queries->Live())
     {
         const AuthoredQueryDefinition& query = *vocabulary.Queries->Get(id);
-        if (UnwrappedField(query.Result).Kind == DataFieldKind::Bool)
+        if (UnwrappedField(query.Result).Kind == DataFieldKind::Bool || AnswersANumber(query))
             names.push_back(query.Name);
     }
     return names;
+}
+
+JsonValue StartingRequire()
+{
+    return JsonValue(JsonValue::Object{ { "min", JsonValue(1.0) } });
+}
+
+std::string BoundText(const JsonValue* require, std::string_view bound)
+{
+    const JsonValue* value = require != nullptr ? FindMember(*require, bound) : nullptr;
+    return value != nullptr && value->IsNumber() ? NumberText(value->AsNumber()) : std::string();
 }
 
 std::vector<std::string_view> Views(const std::vector<std::string>& strings)
@@ -286,14 +303,25 @@ PropertyNode ConditionRow(const JsonValue& condition, std::size_t index, std::si
         PropertyNode row = GroupProperty(prefix, query != nullptr && !query->DisplayName.empty()
                                                      ? query->DisplayName
                                                      : name);
-        std::vector<std::string> queries = TruthQueries(vocabulary);
+        std::vector<std::string> queries = ConditionQueries(vocabulary);
         if (std::ranges::find(queries, name) == queries.end())
             queries.push_back(name);
         const std::vector<std::string_view> options = Views(queries);
         row.Children.push_back(ChoiceProperty(prefix + ".query", "Query", options, IndexOf(options, name)));
-        const JsonValue* expect = FindMember(condition, "expect");
-        row.Children.push_back(ToggleProperty(prefix + ".expect", "Holds when true",
-                                              expect == nullptr || !expect->IsBool() || expect->AsBool()));
+        if (query != nullptr && AnswersANumber(*query))
+        {
+            const JsonValue* require = FindMember(condition, "require");
+            row.Children.push_back(TextProperty(prefix + ".require.min", "At least", BoundText(require, "min"),
+                                                "Holds when the answer is at least this; empty sets no floor."));
+            row.Children.push_back(TextProperty(prefix + ".require.max", "At most", BoundText(require, "max"),
+                                                "Holds when the answer is at most this; empty sets no ceiling."));
+        }
+        else
+        {
+            const JsonValue* expect = FindMember(condition, "expect");
+            row.Children.push_back(ToggleProperty(prefix + ".expect", "Holds when true",
+                                                  expect == nullptr || !expect->IsBool() || expect->AsBool()));
+        }
         if (query != nullptr)
             ArgumentRows(prefix, query->Arguments, FindMember(condition, "arguments"), vocabulary.Ports, false, row);
         return Movable(std::move(row), index, count);
@@ -488,7 +516,7 @@ std::vector<PropertyNode> VerbSequenceRows(const JsonValue& sequence, const Verb
         addCondition.Choices.emplace_back(kTagCondition);
         addCondition.ChoiceNotes.emplace_back("A tag the occurrence carries, such as the attack that made it.");
     }
-    for (const std::string& query : TruthQueries(vocabulary))
+    for (const std::string& query : ConditionQueries(vocabulary))
     {
         addCondition.Choices.push_back(query);
         addCondition.ChoiceNotes.emplace_back();
@@ -597,6 +625,27 @@ std::optional<JsonValue> SetVerbSequenceValue(const JsonValue& sequence, const V
             return std::nullopt;
         SetMember(target, "query", JsonValue(std::string(value)));
         SetMember(target, "arguments", JsonValue(JsonValue::Object{}));
+        EraseMember(target, "expect");
+        EraseMember(target, "require");
+        if (AnswersANumber(*query))
+            SetMember(target, "require", StartingRequire());
+        return edited;
+    }
+    if (rest == "require.min" || rest == "require.max")
+    {
+        const std::string_view bound = rest.substr(std::string_view("require.").size());
+        if (FindMember(target, "require") == nullptr)
+            SetMember(target, "require", JsonValue(JsonValue::Object{}));
+        JsonValue& require = *FindMember(target, "require");
+        if (value.find_first_not_of(' ') == std::string_view::npos)
+        {
+            EraseMember(require, bound);
+            return edited;
+        }
+        const std::optional<double> number = ParseNumber(value);
+        if (!number)
+            return std::nullopt;
+        SetMember(require, bound, JsonValue(*number));
         return edited;
     }
     if (rest == "expect")
@@ -674,10 +723,12 @@ std::optional<JsonValue> ActOnVerbSequence(const JsonValue& sequence, const Verb
         const AuthoredQueryDefinition* query = QueryNamed(vocabulary, choice);
         if (query == nullptr)
             return std::nullopt;
-        list.push_back(JsonValue(JsonValue::Object{ { "query", JsonValue(std::string(choice)) },
-                                                    { "arguments", StartingArguments(query->Arguments,
-                                                                                     vocabulary.Ports,
-                                                                                     vocabulary.StartingPort) } }));
+        JsonValue added(JsonValue::Object{ { "query", JsonValue(std::string(choice)) },
+                                           { "arguments", StartingArguments(query->Arguments, vocabulary.Ports,
+                                                                            vocabulary.StartingPort) } });
+        if (AnswersANumber(*query))
+            SetMember(added, "require", StartingRequire());
+        list.push_back(std::move(added));
         return edited;
     }
 

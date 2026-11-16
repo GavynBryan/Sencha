@@ -11,6 +11,7 @@
 #include <net/NetMessageRouter.h>
 #include <net/NetSession.h>
 #include <app/EngineSchedule.h>
+#include <app/LevelChange.h>
 #include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
 #include <authored/AuthoredEventDispatcher.h>
@@ -271,6 +272,8 @@ public:
     ParticipantControlChange SetParticipantControlSubject(
         EntityId participant, EntityId subject);
 
+    ParticipantBodyRelease ReleaseParticipantBody(EntityId participant);
+
     // Gives up this process's own player, if it has one. What it was driving is
     // let go of and its body reaped through the ordinary policy.
     //
@@ -385,6 +388,11 @@ public:
     // game decides by watching the residency changes the load publishes.
     [[nodiscard]] LoadedLevel& Level();
     [[nodiscard]] const LoadedLevel& Level() const;
+
+    // Replacing what is loaded, deferred to the zone-residency phase. Live over
+    // the same span as Level().
+    [[nodiscard]] LevelChange& LevelChanges();
+    [[nodiscard]] const LevelChange& LevelChanges() const;
 
     [[nodiscard]] RuntimeFrameLoop& Runtime() { return RuntimeLoop; }
     [[nodiscard]] const RuntimeFrameLoop& Runtime() const
@@ -679,6 +687,7 @@ private:
     bool PrimaryWindowFocused = true;
     // After the content it loads through, so it is destroyed before it.
     std::optional<LoadedLevel> LevelState;
+    std::optional<LevelChange> LevelChangeState;
     RuntimeFrameLoop RuntimeLoop;
     ConsoleStartupScript StartupScript;
     std::unique_ptr<FrameDriver> FrameDriverInstance;

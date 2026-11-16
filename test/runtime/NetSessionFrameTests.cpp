@@ -325,7 +325,8 @@ namespace
         void OnShutdown(GameShutdownContext&) override
         {
             Connected = Session != nullptr && Session->IsConnected();
-            CurrentMap = GetEngine().Console().CurrentMap();
+            if (const std::optional<LevelReference>& loaded = GetEngine().Level().Loaded())
+                CurrentMap = loaded->Name;
         }
 
         NetSession& HostSession;

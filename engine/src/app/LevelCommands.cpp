@@ -34,14 +34,11 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Usage = "map <path>",
         .Help = "Load a cooked scene as the play map.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&console, &engine](ConsoleExecutionContext&,
+        .Callback = [&engine](ConsoleExecutionContext&,
                                         std::span<const std::string> args) {
             if (args.size() != 1)
                 return Usage("usage: map <path>");
-            ConsoleResult result = engine.Level().LoadScene(args[0]);
-            if (result.Status == ConsoleStatus::Ok)
-                console.NoteLoadedMap(args[0]);
-            return result;
+            return engine.Level().LoadScene(args[0]);
         },
     });
 
@@ -51,16 +48,13 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Usage = "world <name>",
         .Help = "Load a cooked partitioned world and stream its zones.",
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&console, &engine](ConsoleExecutionContext&,
+        .Callback = [&engine](ConsoleExecutionContext&,
                                         std::span<const std::string> args) {
             if (args.size() != 1)
                 return Usage("usage: world <name>");
             // Focus follows the manifest's start zone. A game that knows
             // better -- a saved position -- calls LoadWorld itself.
-            ConsoleResult result = engine.Level().LoadWorld(args[0], std::nullopt);
-            if (result.Status == ConsoleStatus::Ok)
-                console.NoteLoadedMap(args[0]);
-            return result;
+            return engine.Level().LoadWorld(args[0], std::nullopt);
         },
     });
 

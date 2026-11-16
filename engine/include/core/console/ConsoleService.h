@@ -31,18 +31,10 @@ public:
                                    ConsoleValueSource source);
 
     void SetQuitHandler(std::function<void()> handler) { QuitHandler = std::move(handler); }
-    // Recorded by whoever owns the `map` command, so a profiling capture can
-    // say what it was measuring. The console does not load anything itself.
-    void NoteLoadedMap(std::string name) { LoadedMap = std::move(name); }
     void SetClearOutputHandler(std::function<void()> handler)
     {
         ClearOutputHandler = std::move(handler);
     }
-
-    // The map name the last successful `map` command requested. Empty until
-    // one succeeds. Identifies what a profiling capture was measuring, which
-    // no other engine-owned state records.
-    [[nodiscard]] const std::string& CurrentMap() const { return LoadedMap; }
 
     [[nodiscard]] const std::vector<ConsoleCommandLine>& DeferredCommands() const
     {
@@ -65,6 +57,5 @@ private:
     std::vector<ConsoleCommandLine> Deferred;
     std::function<void()> QuitHandler;
     std::function<void()> ClearOutputHandler;
-    std::string LoadedMap;
     int ExecRecursionLimit = 8;
 };

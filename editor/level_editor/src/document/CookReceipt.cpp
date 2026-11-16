@@ -1,6 +1,7 @@
 #include "CookReceipt.h"
 
 #include <core/assets/AssetRegistry.h>
+#include <core/io/FileBytes.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 
@@ -244,23 +245,7 @@ bool SaveDocumentCookReceipt(const std::filesystem::path& path,
     std::filesystem::create_directories(path.parent_path(), ec);
     if (ec)
         return Fail(error, "could not create cook receipt directory");
-    std::filesystem::path temporary = path;
-    temporary += ".tmp";
-    {
-        std::ofstream file(temporary, std::ios::trunc);
-        if (!file.is_open())
-            return Fail(error, "could not write cook receipt '" + temporary.generic_string() + "'");
-        file << JsonStringify(WriteDocumentCookReceipt(receipt), true);
-        if (!file.good())
-            return Fail(error, "cook receipt write failed '" + temporary.generic_string() + "'");
-    }
-    std::filesystem::rename(temporary, path, ec);
-    if (ec)
-    {
-        std::filesystem::remove(path, ec);
-        ec.clear();
-        std::filesystem::rename(temporary, path, ec);
-    }
-    return !ec || Fail(error, "could not replace cook receipt '" + path.generic_string() + "'");
+    return WriteFileText(path, JsonStringify(WriteDocumentCookReceipt(receipt), true))
+        || Fail(error, "could not write cook receipt '" + path.generic_string() + "'");
 }
 

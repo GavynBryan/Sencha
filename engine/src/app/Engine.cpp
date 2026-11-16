@@ -347,7 +347,7 @@ bool Engine::Initialize()
 
 bool Engine::RunScopeReleased() const
 {
-    bool released = !ContentState.has_value() && !LevelState.has_value()
+    bool released = !ContentState.has_value() && !LevelState.has_value() && !LevelChangeState.has_value()
         && VocabularyBindings == nullptr && ResumeOperation == nullptr
         && QuitOperation == nullptr;
 #ifdef SENCHA_ENABLE_UI
@@ -509,6 +509,20 @@ const LoadedLevel& Engine::Level() const
     assert(LevelState.has_value()
            && "Engine::Level: valid from just before OnStart to just after OnShutdown");
     return *LevelState;
+}
+
+LevelChange& Engine::LevelChanges()
+{
+    assert(LevelChangeState.has_value()
+           && "Engine::LevelChanges: valid from just before OnStart to just after OnShutdown");
+    return *LevelChangeState;
+}
+
+const LevelChange& Engine::LevelChanges() const
+{
+    assert(LevelChangeState.has_value()
+           && "Engine::LevelChanges: valid from just before OnStart to just after OnShutdown");
+    return *LevelChangeState;
 }
 
 bool Engine::InstantiateShellBindings()
@@ -928,6 +942,13 @@ ParticipantControlChange Engine::SetParticipantControlSubject(
         RuntimeWorldState->Entities(), participant, subject);
 }
 
+ParticipantBodyRelease Engine::ReleaseParticipantBody(EntityId participant)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.ReleaseBody(RuntimeWorldState->Entities(), participant);
+}
+
 SessionParticipantRetirement Engine::RetireParticipant(EntityId participant)
 {
     if (RuntimeWorldState == nullptr)
@@ -1197,6 +1218,7 @@ int Engine::Run(Game& game)
     ContentState->Publish(RuntimeWorldState->Entities());
     VerbDispatcherState->SetDataAssets(&ContentState->Assets().DataAssets);
     LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
+    LevelChangeState.emplace(*this);
 
     // The player's own settings, before the shell that offers them and before
     // the saved values are applied: the shell asks which of them this host
@@ -1670,6 +1692,7 @@ int Engine::Run(Game& game)
     // withdrawn while it is still mapped, and only then does the stack go.
     // The level goes before the content it loaded through, and its detaches
     // run while the game's zone-residency systems are still registered.
+    LevelChangeState.reset();
     LevelState->Unload();
     LevelState.reset();
     ContentState->Disconnect(RuntimeWorldState->Entities());
@@ -1749,7 +1772,8 @@ void Engine::PublishCaptureEnvironment()
           std::to_string(Configuration.Graphics.FrameScratchBytesPerFrame) },
         { "build_sha", SENCHA_BUILD_SHA },
         { "build_type", SENCHA_BUILD_TYPE },
-        { "map", ConsoleState != nullptr ? ConsoleState->CurrentMap() : std::string{} },
+        { "map", LevelState.has_value() && LevelState->Loaded().has_value() ? LevelState->Loaded()->Name
+                                                                             : std::string{} },
         { "present_wait", GraphicsState->Frames.IsPresentWaitEnabled() ? "true" : "false" },
         { "display_refresh_hz", std::to_string(refreshHz) },
     });

@@ -142,6 +142,19 @@ bool AuthoredValue::TryGetFloat(double& out) const
     return true;
 }
 
+bool AuthoredValue::TryGetNumber(double& out) const
+{
+    bool flag = false;
+    std::int64_t whole = 0;
+    if (TryGetBool(flag))
+        out = flag ? 1.0 : 0.0;
+    else if (TryGetInt(whole))
+        out = static_cast<double>(whole);
+    else
+        return TryGetFloat(out);
+    return true;
+}
+
 bool AuthoredValue::TryGetString(std::string_view& out) const
 {
     if (Kind_ != AuthoredValueKind::String)

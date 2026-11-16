@@ -73,7 +73,9 @@ Each binding is a card: what it **Answers**, **Starts enabled**, **Once**,
 **Cooldown** and what the cooldown applies to (the binding, or each
 instigator), then **Only when** -- conditions, all of which must hold -- and
 **Then** -- commands in order. *Add Condition* offers "Entity has…", "Tag is…"
-where the event carries a tag, and every true-or-false query. Each argument
+where the event carries a tag, and every query that answers true or false or a
+number. A number query holds when its answer lies within **At least** and
+**At most**; either may be left empty. Each argument
 comes from a constant, a port, or an entity by its persistent identity; new
 commands start aimed at the event's instigator, as a bumper launches whoever
 entered it. **Problems** lists what does not resolve against the project's
@@ -111,6 +113,16 @@ per field of its event's payload, by the field's name and kind: an entity, a
 vector, a gameplay tag, a number. A tag condition, `{"tag": "<port>", "tags":
 {"all", "any", "none"}}`, matches a tag port hierarchically, so an attack
 tagged `lf.ctx.attack.charge.strong` satisfies `any: [lf.ctx.attack.charge]`.
+
+### Query conditions
+
+`{"query": "<name>", "arguments": {...}, "require": {"min", "max"}}` holds when
+the answer lies within the bounds, inclusive; a missing bound is open. A true or
+false answer reads as 1 or 0, and `"expect": true` is shorthand for
+`"require": {"expect": true}`, the default for those. A query that answers a
+number has to say its bounds. The `require` block is the one selection tables
+use (`math/ValueBounds.h`), and numbers compare as doubles, exactly for any
+integer a query can answer below 2^53.
 
 ## Runtime semantics
 
@@ -287,5 +299,6 @@ keys a sequence's rows so an edit names what it changes: `conditions` and
 `commands` are the lists, `c<i>` and `k<i>` their entries; a command has
 `k<i>.verb`, `k<i>.on_failure` and `k<i>.arg.<name>.source|value|frame`; a
 condition has `c<i>.entity`, `c<i>.tag`, `c<i>.has`, `c<i>.tags.all|any|none`,
-`c<i>.query`, `c<i>.expect` and `c<i>.arg.<name>.source|value`. A value typed
+`c<i>.query`, `c<i>.expect` (true-or-false queries), `c<i>.require.min|max` (number
+queries; empty clears) and `c<i>.arg.<name>.source|value`. A value typed
 for an argument nothing sets yet sets it as a constant.
