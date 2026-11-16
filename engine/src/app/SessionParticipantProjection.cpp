@@ -235,6 +235,15 @@ void SessionParticipantProjection::ProjectControl(
                                         NetDrivenBy{ .Peer = peer });
 }
 
+ParticipantBodyRelease SessionParticipantProjection::ReleaseBody(World& world, EntityId participant)
+{
+    const std::uint32_t peer = PeerOf(world, participant);
+    ParticipantBodyRelease release = Lifecycle.ReleaseBody(world, participant);
+    if (release.Released)
+        RemoveDrivenBy(world, release.ReleasedSubject, peer);
+    return release;
+}
+
 SessionParticipantRetirement SessionParticipantProjection::RetireParticipant(
     World& world, EntityId participant)
 {

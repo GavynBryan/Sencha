@@ -71,6 +71,7 @@ public:
     void ProjectSessionStart(World& world);
     ParticipantControlChange SetControlSubject(
         World& world, EntityId participant, EntityId subject);
+    ParticipantBodyRelease ReleaseBody(World& world, EntityId participant);
     SessionParticipantRetirement RetireParticipant(
         World& world, EntityId participant);
     // Peer-bound participants can only leave through this path. It also clears

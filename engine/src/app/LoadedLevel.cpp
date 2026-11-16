@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <system_error>
 #include <utility>
 
 namespace
@@ -66,6 +67,11 @@ LoadedLevel::LoadedLevel(Engine& engine, RuntimeContent& content, Logger& log)
 
 LoadedLevel::~LoadedLevel() = default;
 
+std::string LoadedLevel::WorldManifestPath(std::string_view worldName) const
+{
+    return CookedRoot() + "/worlds/" + std::string(worldName) + ".sworld.json";
+}
+
 std::string LoadedLevel::CookedRoot() const
 {
     const std::span<const ContentRootPaths> roots = Content.Roots();
@@ -82,6 +88,27 @@ bool LoadedLevel::IsLoaded() const
 const WorldPartitionManifest* LoadedLevel::Manifest() const
 {
     return Partition.has_value() && Partition->HasManifest() ? &Partition->Manifest() : nullptr;
+}
+
+LevelResidency LoadedLevel::Residency() const
+{
+    if (!Current.has_value())
+        return LevelResidency::Unloaded;
+    const ZoneId zone = PlayZone();
+    const RuntimeZoneRecord* record = zone.IsValid() ? Host.World().FindZone(zone) : nullptr;
+    if (record != nullptr && record->State == RuntimeZoneLoadState::Resident)
+        return LevelResidency::Resident;
+    if (SceneLoaded && record == nullptr && !ZoneLoader->IsLoading(kPlayZone))
+        return LevelResidency::Failed;
+    return LevelResidency::Loading;
+}
+
+bool LoadedLevel::IsCooked(const LevelReference& level) const
+{
+    if (level.Kind == LevelKind::Scene)
+        return Content.Assets().Assets.Resolve(AssetPathOf(level.Name + ".smap"), AssetType::Scene) != nullptr;
+    std::error_code ignored;
+    return std::filesystem::is_regular_file(WorldManifestPath(level.Name), ignored);
 }
 
 ZoneId LoadedLevel::PlayZone() const
@@ -238,6 +265,7 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
     }
 
     SceneLoaded = true;
+    Current = LevelReference{ .Kind = LevelKind::Scene, .Name = std::string(mapName) };
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;
 }
@@ -258,8 +286,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
         return result;
     }
 
-    const std::string manifestPath =
-        CookedRoot() + "/worlds/" + std::string(worldName) + ".sworld.json";
+    const std::string manifestPath = WorldManifestPath(worldName);
     std::string parseError;
     const std::optional<JsonValue> json =
         JsonParseFile(manifestPath, &parseError);
@@ -414,6 +441,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
     // whoever this machine drives and, in a session, around every connected
     // player -- and offers each peer only its own neighbourhood.
     Host.SetWorldStreaming(&*Partition, &*ZoneLoader);
+    Current = LevelReference{ .Kind = LevelKind::World, .Name = std::string(worldName) };
 
     result.Info("loading world '" + std::string(worldName) + "'");
     return result;
@@ -535,6 +563,6 @@ void LoadedLevel::Unload()
     Host.SetWorldStreaming(nullptr, nullptr);
     Partition.reset();
     PendingCollision.clear();
-    PhysicsShapes = nullptr;
     SceneLoaded = false;
+    Current.reset();
 }

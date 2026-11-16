@@ -915,3 +915,25 @@ spring's velocity at the same size. A behavior's `phase_fact` and
 and movement's `StrideCycle` and `StrideSpeed` facts.
 
 **Sockets.** `PresentedSocketPose`.
+
+## v46
+
+**Level change.** `Engine::LevelChanges()` returns the new `LevelChange`
+(`app/LevelChange.h`), which replaces what is loaded as one deferred request
+with observable outcomes. `LoadedLevel` gains `Loaded()` (a `LevelReference`,
+`app/LevelReference.h`) and `Residency()`, and keeps its collision connection
+across `Unload`. `ConsoleService::NoteLoadedMap` and `CurrentMap` are gone:
+the loaded level is the one record of what is loaded.
+
+**Participants.** `ParticipantLifecycle::ReleaseBody`, the session
+projection's `ReleaseBody` and `Engine::ReleaseParticipantBody` let a body go
+and keep its participant; `Retire` is that release followed by destroying the
+participant.
+
+**Conditions and bounds.** `ValueBounds` (`math/ValueBounds.h`) is the
+authored `require` block. `ConsiderationRule::Min` and `Max` are its
+`Bounds`. `SequenceConditionDesc::Expect` and `CompiledSequenceCondition::Expect`
+are `Require`, and a query condition may bound a number.
+`AuthoredValue::TryGetNumber`.
+
+**Files.** `WriteFileBytes` replaces a file in one step; `WriteFileText`.

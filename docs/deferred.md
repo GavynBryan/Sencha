@@ -1169,3 +1169,14 @@ described in `docs/navigation/runtime.md`, "Agents".
   interface scale on the options page), at which point the editor sets that
   preference instead of scaling its own surfaces, publishes views only for the
   windows it owns, and creates its surfaces as following ones.
+
+## Changing level inside a network session
+
+- **What:** `LevelChange::Request` refuses while a session runs, because a peer
+  is told which map to load only when it is admitted (`NetSession`'s announced
+  map) and would stay on the old level.
+- **Where:** `engine/src/app/LevelChange.cpp`; the announcement in
+  `engine/src/app/EngineFramePhases.cpp`.
+- **Trigger:** a co-op game that changes level, rests or restores a save with a
+  second player connected. Then announce level changes to admitted peers and
+  release and request their bodies through the same change.

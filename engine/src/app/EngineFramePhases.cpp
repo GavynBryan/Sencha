@@ -58,6 +58,12 @@
 
 namespace
 {
+    [[nodiscard]] std::string LoadedLevelName(const Engine& engine)
+    {
+        const std::optional<LevelReference>& loaded = engine.Level().Loaded();
+        return loaded.has_value() ? loaded->Name : std::string();
+    }
+
     // An event with no window -- a key while nothing is focused, a device --
     // belongs to the primary as much as to anything.
     [[nodiscard]] bool IsPrimaryWindowEvent(const SDL_Event& event, std::uint32_t primaryWindow)
@@ -205,10 +211,10 @@ void Engine::RegisterNetFramePhases()
         // What this authority is serving, refreshed before the pump that hands
         // out admissions: a peer accepted during this Pump is told the map this
         // process has loaded as of now, rather than as of the last frame. The
-        // console owns which map was loaded; the session owns what it announces;
-        // this is the only place the two meet.
+        // loaded level owns which map was loaded; the session owns what it
+        // announces; this is the only place the two meet.
         if (session->Role() == NetSessionRole::Host)
-            session->SetAnnouncedMap(engine.Console().CurrentMap());
+            session->SetAnnouncedMap(LoadedLevelName(engine));
 
         const std::vector<NetSession::Delivery> deliveries = session->Pump(now);
         engine.PublishSimulationAuthority();
@@ -339,7 +345,7 @@ void Engine::RegisterNetFramePhases()
             // handler directly, so the map a session brought in is recorded the
             // same way one typed at the console is.
             const std::string& announced = session->AnnouncedMap();
-            const std::string& loaded = engine.Console().CurrentMap();
+            const std::string loaded = LoadedLevelName(engine);
             if (announced.empty())
             {
                 // An authority hosting before it loaded anything. It has nothing
@@ -732,6 +738,7 @@ void Engine::RegisterSimulationFramePhases()
 
     driver.Register(FramePhase::ZoneResidency, [&engine, &config](PhaseContext& ctx) {
         RuntimeWorld& runtimeWorld = engine.World();
+        engine.LevelChanges().Commit();
 
         // Streaming first, so a room a grant asked for this frame reaches
         // residency processing in this one rather than the next.
@@ -755,6 +762,7 @@ void Engine::RegisterSimulationFramePhases()
         };
         engine.Schedule().RunZoneResidency(residency);
         runtimeWorld.FinalizeResidencyProcessing();
+        engine.LevelChanges().Advance();
     });
 
     driver.Register(FramePhase::ScheduleTicks, [&engine, &config](PhaseContext& ctx) {
