@@ -269,7 +269,7 @@ protected:
     {
         const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
         return std::any_of(grants.Entries, grants.Entries + grants.Count,
-                           [&](const AbilityGrant& grant) { return grant.Effect == effect; });
+                           [&](const AbilityGrant& grant) { return grant.Holder == effect; });
     }
 
     // One fixed tick in the schedule's order: the actor clock, the ability pass,
@@ -316,6 +316,17 @@ protected:
             if (const AbilityRecord& record = activations.Record(active, slot);
                 record.State == AbilityRecordState::Live && record.Key.Ability == ability)
                 return &record;
+        return nullptr;
+    }
+
+    [[nodiscard]] const AbilityRecordLocals* LiveLocals(EntityId actor, AbilityId ability)
+    {
+        const ActiveAbilities& active = *Entities.TryGet<ActiveAbilities>(actor);
+        AbilityActivations& activations = Entities.GetResource<AbilityActivations>();
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+            if (const AbilityRecord& record = activations.Record(active, slot);
+                record.State == AbilityRecordState::Live && record.Key.Ability == ability)
+                return &activations.Locals(active, slot);
         return nullptr;
     }
 
@@ -1274,7 +1285,7 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
     ASSERT_EQ(grants.Count, 1u);
     EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Effect);
-    EXPECT_EQ(grants.Entries[0].Effect, held);
+    EXPECT_EQ(grants.Entries[0].Holder, held);
 
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u) << "granted once, not once per pass";
@@ -1282,6 +1293,73 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
+}
+
+// Held while the alternate fire is: what it reads as its source, in a local.
+constexpr std::string_view kReadSource = R"({
+    "input_default": { "action": "Input.AltFire", "policy": "press_release" },
+    "locals": [ { "key": "l_source", "type": "entity" } ],
+    "phases": [ { "key": "p_hold",
+        "enter": [ { "key": "o_read", "op": "set", "local": "l_source", "from": { "port": "source" } } ],
+        "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    EffectDefinition worn{};
+    worn.Duration = EffectDuration::Infinite;
+    const EffectId ring = Entities.GetResource<EffectRegistry>().Define("asset://effects/ring.sdata", worn);
+    DeclareEffectGrants(Entities, ring,
+                        { AbilityGrantDeclaration{ .Key = "g_read", .Ability = "asset://abilities/read_source.sdata", .Override = {} } });
+    const EntityId actor = Actor();
+    const EntityId wornRing = Entities.CreateEntity();
+    const EntityId held = ApplyEffect(Entities, actor, ring, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                                      LeaseOwner{ .Entity = wornRing });
+
+    Step({ Press(kAlt) });
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Holder, held);
+    EXPECT_EQ(grants.Entries[0].Source, wornRing);
+    const AbilityRecordLocals* locals = LiveLocals(actor, read);
+    ASSERT_NE(locals, nullptr);
+    EXPECT_EQ(locals->Values[0].Entity, wornRing);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, wornRing));
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, actor, actor));
+
+    Step({ Release(kAlt) });
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, actor, wornRing));
+}
+
+TEST_F(AbilityRuntime, AnAuthoredGrantHasNoSource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    Grant(actor, read);
+    Step({ Press(kAlt) });
+    const AbilityRecordLocals* locals = LiveLocals(actor, read);
+    ASSERT_NE(locals, nullptr);
+    EXPECT_FALSE(locals->Values[0].Entity.IsValid());
+}
+
+TEST_F(AbilityRuntime, ASourceHandedToAnOperationNeedsAGuard)
+{
+    const std::optional<JsonValue> data = JsonParse(R"({
+        "phases": [ { "key": "p_go",
+            "enter": [ { "key": "o_spend", "op": "invoke", "verb": "effect.apply",
+                         "arguments": { "target": { "port": "source" },
+                                        "effect": { "data": "asset://effects/ammo_1.sdata" } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    ASSERT_TRUE(data.has_value());
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*data, declaration, dependencies, diagnostics)) << Describe(diagnostics);
+    AbilityDefinition definition;
+    EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/spend.sdata",
+                                           MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
+    EXPECT_TRUE(std::ranges::any_of(diagnostics, [](const AbilityDiagnostic& d) { return d.Code == "unguarded_recipient"; }))
+        << Describe(diagnostics);
 }
 
 TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)

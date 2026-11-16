@@ -238,7 +238,8 @@ namespace
                 {
                 case AbilityPort::Actor:
                 case AbilityPort::Instigator:
-                case AbilityPort::Target: return Shape::Entity;
+                case AbilityPort::Target:
+                case AbilityPort::Source: return Shape::Entity;
                 case AbilityPort::AimOrigin:
                 case AbilityPort::AimDirection: return Shape::Vector;
                 default: return Shape::Number;
@@ -487,7 +488,7 @@ namespace
                     (void)Value(argument->Value, destination.Expected, declared.Key, path, value);
                     const std::string& identity = Unwrapped(destination.Expected).Reference.ComponentIdentity;
                     const bool fromLocal = argument->Value.Source == AbilityValueSource::Local
-                        || argument->Value.Port == AbilityPort::Target;
+                        || argument->Value.Port == AbilityPort::Target || argument->Value.Port == AbilityPort::Source;
                     if (!identity.empty() && fromLocal && Unwrapped(destination.Expected).Kind == DataFieldKind::Entity
                         && !Guarded(declared, argument->Value, identity))
                         Error("unguarded_recipient", declared.Key, path,

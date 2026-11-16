@@ -134,6 +134,7 @@ int AbilityPass::ClaimSlot(const AbilityActor& actor)
 AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const AbilityGrant& grant, std::uint16_t& failing)
 {
     failing = kAbilityNoCondition;
+    Admitting = grant;
     const AbilityDefinition* definition = Abilities != nullptr ? Abilities->Get(grant.Ability) : nullptr;
     if (definition == nullptr || definition->Phases.empty())
         return AbilityRefusal::Undefined;

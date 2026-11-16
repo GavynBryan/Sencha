@@ -1007,3 +1007,10 @@ key. A rig's `sockets` compose by name. `DataAssetCache::GetCompositionSources`,
 destructor: a record schema saying how the component's scene form composes when
 a prefab extends or includes another, or a placement patches it (which lists
 merge by which member). `MakeKeyedListRecordSchema` builds the common shape.
+
+**Grant source.** `AbilityGrant` renames `Effect` to `Holder` and gains
+`Source`, which changes `AbilityGrants`' layout; `GrantAbility` takes the source
+after the holder, `AbilityPort` gains `Source`, and `HasLiveActivationFrom`
+joins `IsAbilityLive`. The grants wire sends the source in place of the holding
+effect (`AbilityGrantsWireSources`, field `sources`): no bytes change, the
+replication table hash does, and the protocol stays 9.

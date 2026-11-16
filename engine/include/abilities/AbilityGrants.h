@@ -33,8 +33,11 @@ struct AbilityGrant
     AbilityGrantId Id;
     AbilityId Ability;
     AbilityGrantKind Kind = AbilityGrantKind::Authored;
-    // Kind == Effect: the effect entity holding it.
-    EntityId Effect;
+    // Kind == Effect: the effect entity whose life bounds it. The authority's alone.
+    EntityId Holder;
+    // What the grant came from, as its activations read it: an effect's owner, a
+    // request's source; none for an authored grant.
+    EntityId Source;
     // Its entry in the World's AbilityGrantEntries: key, override, effective binding.
     std::uint16_t Entry = kAbilityNoGrantEntry;
 };
@@ -64,7 +67,7 @@ struct ComponentTraits<AbilityGrants>
 
 // Invalid when the component is full or `ability` is invalid.
 AbilityGrantId GrantAbility(AbilityGrants& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId effect = {});
+                            EntityId holder = {}, EntityId source = {});
 bool RevokeAbilityGrant(AbilityGrants& grants, AbilityGrantId id);
 
 #if !defined(SENCHA_CODEGEN)

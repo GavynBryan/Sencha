@@ -974,7 +974,7 @@ namespace
         static bool IsEntityFromLocal(const AbilityValueDecl& value, const AbilityLocalType* type)
         {
             if (value.Source == AbilityValueSource::Port)
-                return value.Port == AbilityPort::Target;
+                return value.Port == AbilityPort::Target || value.Port == AbilityPort::Source;
             if (value.Source != AbilityValueSource::Local || type == nullptr)
                 return false;
             return *type == AbilityLocalType::Entity

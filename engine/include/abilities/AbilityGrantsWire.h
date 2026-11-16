@@ -13,8 +13,8 @@ struct AbilityGrantsWireWords
     std::uint32_t Values[4 * kAbilityGrantCapacity] = {};
 };
 
-// Per grant: the effect holding it, as a wire entity.
-struct AbilityGrantsWireEffects
+// Per grant: its source, as a wire entity.
+struct AbilityGrantsWireSources
 {
     std::uint64_t Values[kAbilityGrantCapacity] = {};
 };
@@ -24,7 +24,7 @@ struct AbilityGrantsWireEffects
 struct AbilityGrantsWire
 {
     AbilityGrantsWireWords Words;
-    AbilityGrantsWireEffects Effects;
+    AbilityGrantsWireSources Sources;
     std::uint32_t NextId = 1;
 };
 
@@ -36,7 +36,7 @@ struct PackedScalarGroup<AbilityGrantsWireWords>
 };
 
 template <>
-struct PackedScalarGroup<AbilityGrantsWireEffects>
+struct PackedScalarGroup<AbilityGrantsWireSources>
 {
     static constexpr std::size_t Count = kAbilityGrantCapacity;
     using Component = std::uint64_t;
@@ -49,7 +49,7 @@ struct TypeSchema<AbilityGrantsWire>
     static auto Fields()
     {
         return std::tuple{ MakeField("words", &AbilityGrantsWire::Words).OwnerOnly(),
-                           MakeField("effects", &AbilityGrantsWire::Effects).OwnerOnly(),
+                           MakeField("sources", &AbilityGrantsWire::Sources).OwnerOnly(),
                            MakeField("next_id", &AbilityGrantsWire::NextId).OwnerOnly() };
     }
 };

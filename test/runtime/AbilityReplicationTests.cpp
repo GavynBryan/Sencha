@@ -1039,6 +1039,24 @@ TEST_F(AbilityReplication, GrantsSharingAKeyAreToldApartOnTheClient)
         << "the client bound the grant to the other source's entry";
 }
 
+TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
+{
+    ClientPeer = kOwner;
+    Grant(kShot, "asset://abilities/shot.sdata");
+    const EntityId ring = Authority.Entities.CreateEntity();
+    Authority.Entities.AddComponent<NetReplicated>(ring);
+    Authority.Entities.TryGet<AbilityGrants>(Actor)->Entries[0].Source = ring;
+    Step();
+    (void)Publish();
+
+    const EntityId remoteRing = ClientIds.TryResolve(Identity.TryFind(ring));
+    ASSERT_TRUE(remoteRing.IsValid());
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Source, remoteRing);
+    EXPECT_FALSE(grants.Entries[0].Holder.IsValid()) << "what holds a grant stays on the authority";
+}
+
 // An entity is written whole or not at all, so a pawn whose owner-visible state
 // outgrows one datagram can never reach its owner. Loss Function's pawn: a
 // moving character with nine grants, four attributes and two tags.

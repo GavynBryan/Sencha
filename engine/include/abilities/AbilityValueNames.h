@@ -6,7 +6,7 @@
 
 // The persisted names of an ability value's choices: the ports a value reads,
 // the types a local holds, and the fields of a hit.
-inline constexpr std::array<AbilityNamed<AbilityPort>, 9> kAbilityPortNames{ {
+inline constexpr std::array<AbilityNamed<AbilityPort>, 10> kAbilityPortNames{ {
     { "actor", AbilityPort::Actor },
     { "instigator", AbilityPort::Instigator },
     { "aim.origin", AbilityPort::AimOrigin },
@@ -16,6 +16,7 @@ inline constexpr std::array<AbilityNamed<AbilityPort>, 9> kAbilityPortNames{ {
     { "pulse", AbilityPort::Pulse },
     { "time.scale", AbilityPort::TimeScale },
     { "target", AbilityPort::Target },
+    { "source", AbilityPort::Source },
 } };
 
 inline constexpr std::array<AbilityNamed<AbilityLocalType>, 7> kAbilityLocalTypeNames{ {

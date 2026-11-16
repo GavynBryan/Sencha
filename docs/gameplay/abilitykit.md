@@ -220,8 +220,11 @@ An ability is content: an `ability.definition` data asset
   groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
   `asset`, `entity`), a `port` (`actor`, `instigator`, `aim.origin`,
-  `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`, and
-  `target` inside an op with `targets`) or a `local` (with `field` on a hit).
+  `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`,
+  `source`, and `target` inside an op with `targets`) or a `local` (with `field`
+  on a hit). `source` is the entity the activation's grant came from (below);
+  like `target` and entity locals, it may be dead or absent, so an operation
+  that needs a component on it needs an `entity` guard.
 - **Locals.** Up to eight slots of typed values for one activation (`bool`, `int`,
   `float`, `vec3`, `entity`; `hit` and `entities` take two; one `entities` local).
 - **Costs and cooldown.** Cost groups paid at start or by a `commit`, once or per
@@ -267,6 +270,14 @@ every machine on the same tick. Ended effects give their grants back before new
 ones are granted, so an actor whose table is full swaps one effect's grants for
 another's on one pass. A grant with no room is retried every pass and traced once
 (`GrantRefused`, with the refusal).
+
+Each grant names its **source**: the entity its activations read through the
+`source` port. An effect's grant has the effect's `LeaseOwner` entity (an
+equipped item, for instance), a request's grant the `source` it was asked with,
+and an authored grant none. The effect entity holding a grant (`Holder`) is the
+authority's alone. `HasLiveActivationFrom(world, actor, source)` says whether
+anything that source supplied is still running; like `IsAbilityLive`, it reads
+the World's `AbilityActivations`.
 
 An actor with grants carries `ActiveAbilities`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
@@ -419,7 +430,8 @@ The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
 key and binding together, found in the owner's own interned entries, so two grants
 of one ability under one key and bound apart stay apart; a grant whose entry the
 owner has not interned is held but bound to no input, and a table refuses to
-intern a second entry of one ability with the same wire key), `AttributeSet` (attributes by name)
+intern a second entry of one ability with the same wire key; each grant's source
+as a wire entity), `AttributeSet` (attributes by name)
 and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
 `gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
 machine instead, without their stack counts: what other players' presentation

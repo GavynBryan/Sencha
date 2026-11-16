@@ -41,6 +41,7 @@ namespace
             EntityId Target;
             EntityId Effect;
             std::uint16_t Entry = kAbilityNoGrantEntry;
+            EntityId Source;
         };
 
         Query<Read<AbilityGrants>> Granted;
@@ -247,7 +248,7 @@ namespace
             const AbilityGrant& grant = grants.Entries[i];
             if (grant.Kind != AbilityGrantKind::Effect)
                 continue;
-            const ActiveEffect* effect = world.IsAlive(grant.Effect) ? world.TryGet<ActiveEffect>(grant.Effect) : nullptr;
+            const ActiveEffect* effect = world.IsAlive(grant.Holder) ? world.TryGet<ActiveEffect>(grant.Holder) : nullptr;
             if (effect == nullptr || table == nullptr || std::ranges::find(table->Of(effect->Def), grant.Entry) == table->Of(effect->Def).end())
                 (void)RevokeAbilityGrant(grants, grant.Id);
         }
@@ -294,7 +295,8 @@ namespace
             const EntityIndex* indices = view.Entities();
             for (std::uint32_t i = 0; i < view.Count(); ++i)
                 for (const std::uint16_t entry : table->Of(effects[i].Def))
-                    scratch.EffectGrants.push_back({ effects[i].Target, world.ResolveEntityIndex(indices[i]), entry });
+                    scratch.EffectGrants.push_back(
+                        { effects[i].Target, world.ResolveEntityIndex(indices[i]), entry, effects[i].Owner.Entity });
         });
         scratch.StillRefused.clear();
         for (const AbilityPassScratch::EffectGrant& pending : scratch.EffectGrants)
@@ -306,13 +308,13 @@ namespace
                 world.AddComponent<AbilityGrants>(pending.Target, AbilityGrants{});
             AbilityGrants& grants = *world.TryGet<AbilityGrants>(pending.Target);
             const bool held = std::any_of(grants.Entries, grants.Entries + grants.Count, [&](const AbilityGrant& grant) {
-                return grant.Kind == AbilityGrantKind::Effect && grant.Effect == pending.Effect
+                return grant.Kind == AbilityGrantKind::Effect && grant.Holder == pending.Effect
                     && grant.Entry == pending.Entry;
             });
             if (held)
                 continue;
             const AbilityId ability = entries->Find(pending.Entry)->Ability;
-            if (GrantAbility(grants, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect).IsValid())
+            if (GrantAbility(grants, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect, pending.Source).IsValid())
                 continue;
             scratch.StillRefused.push_back(pending);
             const bool known = std::ranges::any_of(scratch.Refused, [&](const AbilityPassScratch::EffectGrant& refused) {

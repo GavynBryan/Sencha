@@ -41,6 +41,8 @@ enum class AbilityPort : std::uint8_t
     TimeScale,
     // The current element of an op's `targets`.
     Target,
+    // What the activation's grant came from.
+    Source,
 };
 
 enum class AbilityLocalType : std::uint8_t

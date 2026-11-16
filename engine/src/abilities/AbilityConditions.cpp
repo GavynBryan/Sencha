@@ -59,6 +59,14 @@ std::uint64_t AbilityPass::PhaseTicks(const AbilityActor& actor, const AbilityRe
     return now > record.PhaseStart ? now - record.PhaseStart : 0;
 }
 
+const AbilityGrant* AbilityPass::GrantOf(const AbilityActor& actor, std::size_t slot) const
+{
+    if (slot >= kAbilitySlotCapacity)
+        return Admitting.Id.IsValid() ? &Admitting : nullptr;
+    const AbilityGrants* grants = actor.Grants();
+    return grants != nullptr ? grants->Find(actor.Record(slot).Grant) : nullptr;
+}
+
 EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, const AbilityValue& value) const
 {
     if (value.Source == AbilityValueSource::Port)
@@ -69,6 +77,11 @@ EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, cons
         case AbilityPort::Instigator:
             return slot < kAbilitySlotCapacity ? actor.Record(slot).Instigator : actor.Entity;
         case AbilityPort::Target: return Target;
+        case AbilityPort::Source:
+        {
+            const AbilityGrant* grant = GrantOf(actor, slot);
+            return grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
+        }
         default: return EntityId{};
         }
     }
@@ -146,7 +159,8 @@ void AbilityPass::Evaluate(const AbilityActor& actor, std::size_t slot, const Ab
         {
         case AbilityPort::Actor:
         case AbilityPort::Instigator:
-        case AbilityPort::Target: out = AuthoredValue::Entity(EntityOf(actor, slot, value)); return;
+        case AbilityPort::Target:
+        case AbilityPort::Source: out = AuthoredValue::Entity(EntityOf(actor, slot, value)); return;
         case AbilityPort::AimOrigin: out = VectorOf(AimOf(Entities, actor.Entity).Origin); return;
         case AbilityPort::AimDirection: out = VectorOf(AimOf(Entities, actor.Entity).Direction); return;
         default: out = NumberAs(Number(actor, slot, definition, value), value.As); return;
