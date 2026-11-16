@@ -1001,3 +1001,9 @@ loses `Extends`; the binder's chain walk and `anim.fact.extends_cycle` and
 `anim.fact.duplicate_slot` are gone, and a bound slot's `DeclaredAt` names it by
 key. A rig's `sockets` compose by name. `DataAssetCache::GetCompositionSources`,
 `AssetHotReloader::SetHostHeld`, `SourceReloadRoots::SetHeldFilter`.
+
+**Scene composition schemas.** `IComponentSerializer` gains
+`CompositionSchema()`, a new virtual with a default declared before the
+destructor: a record schema saying how the component's scene form composes when
+a prefab extends or includes another, or a placement patches it (which lists
+merge by which member). `MakeKeyedListRecordSchema` builds the common shape.

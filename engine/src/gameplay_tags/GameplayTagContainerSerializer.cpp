@@ -25,6 +25,11 @@ public:
     }
 
     std::string_view JsonKey() const override { return "GameplayTags"; }
+    const DataFieldSchema* CompositionSchema() const override
+    {
+        static const DataFieldSchema schema = MakeKeyedListRecordSchema("tags", "name");
+        return &schema;
+    }
     std::uint32_t BinaryChunkId() const override
     {
         return MakeFourCC('G', 'T', 'A', 'G');

@@ -124,6 +124,11 @@ class AbilityGrantsSerializer final : public IComponentSerializer
 public:
     ComponentTypeId TypeId() const override { return ResolveComponentTypeId<AbilityGrants>(); }
     std::string_view JsonKey() const override { return "AbilityGrants"; }
+    const DataFieldSchema* CompositionSchema() const override
+    {
+        static const DataFieldSchema schema = MakeKeyedListRecordSchema("grants", "key");
+        return &schema;
+    }
     std::uint32_t BinaryChunkId() const override { return MakeFourCC('A', 'B', 'G', 'R'); }
     std::span<const RuntimeField> RuntimeFields() const override { return {}; }
 

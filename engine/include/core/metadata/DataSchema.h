@@ -195,6 +195,10 @@ struct DataValueRules
 // An array's element schema or an optional's child; null for any other field.
 [[nodiscard]] const DataFieldSchema* DataFieldElement(const DataFieldSchema& field);
 
+// A record holding one list whose elements merge by `elementKey`: the scene
+// form of a component such as { "tags": [ { "name": ... } ] }.
+[[nodiscard]] DataFieldSchema MakeKeyedListRecordSchema(std::string listKey, std::string elementKey);
+
 // The element member an array's composition is keyed by, or null for an array
 // that composes by replacement.
 [[nodiscard]] const DataFieldSchema* ArrayMergeKey(const DataFieldSchema& array);

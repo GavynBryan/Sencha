@@ -380,6 +380,18 @@ DataFieldSchema MakeDataField(DataFieldKind kind, std::string key, std::string d
     return field;
 }
 
+DataFieldSchema MakeKeyedListRecordSchema(std::string listKey, std::string elementKey)
+{
+    DataFieldSchema element = MakeDataField(DataFieldKind::Record, {}, {});
+    element.Children.push_back(MakeDataField(DataFieldKind::String, elementKey, elementKey));
+    DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(listKey), {});
+    list.MergeKey = std::move(elementKey);
+    list.Children.push_back(std::move(element));
+    DataFieldSchema record = MakeDataField(DataFieldKind::Record, {}, {});
+    record.Children.push_back(std::move(list));
+    return record;
+}
+
 const DataFieldSchema* UnwrapDataField(const DataFieldSchema* field)
 {
     while (field != nullptr && field->Kind == DataFieldKind::Optional && field->Children.size() == 1)
