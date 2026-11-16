@@ -152,7 +152,7 @@ bool NormalizeDataValue(const JsonValue* value,
             const JsonValue fallback = DefaultAsJson(field.Default);
             return NormalizeDataValue(&fallback, field, path, rules, out, errors);
         }
-        if (field.Required)
+        if (field.Required && rules.RequireMembers)
         {
             AddError(errors, path, "required field is missing");
             return false;
@@ -380,6 +380,18 @@ DataFieldSchema MakeDataField(DataFieldKind kind, std::string key, std::string d
     return field;
 }
 
+const DataFieldSchema* UnwrapDataField(const DataFieldSchema* field)
+{
+    while (field != nullptr && field->Kind == DataFieldKind::Optional && field->Children.size() == 1)
+        field = &field->Children.front();
+    return field;
+}
+
+const DataFieldSchema* DataFieldElement(const DataFieldSchema& field)
+{
+    return field.Children.size() == 1 ? &field.Children.front() : nullptr;
+}
+
 const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view key)
 {
     for (const DataFieldSchema& child : parent.Children)
@@ -392,11 +404,13 @@ const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view
 
 bool ValidateDataAgainstSchema(const JsonValue& value,
                                const DataSchema& schema,
-                               std::vector<DataValidationError>& errors)
+                               std::vector<DataValidationError>& errors,
+                               DataValidationMode mode)
 {
     const size_t errorCount = errors.size();
     DataValueRules rules;
     rules.AllowUnknownFields = schema.AllowUnknownFields;
+    rules.RequireMembers = mode == DataValidationMode::Complete;
     const bool valid = NormalizeDataValue(&value, schema.Root, "$", rules, nullptr, errors);
     return valid && errors.size() == errorCount;
 }
@@ -447,6 +461,27 @@ const DataSchema* DataSchemaRegistry::Find(std::string_view typeName) const
             return schema.TypeName == typeName;
         });
     return it == Schemas.end() ? nullptr : &*it;
+}
+
+const DataFieldSchema* ArrayMergeKey(const DataFieldSchema& array)
+{
+    if (array.Kind != DataFieldKind::Array || array.Children.size() != 1)
+        return nullptr;
+    const DataFieldSchema& element = array.Children.front();
+    if (element.Kind != DataFieldKind::Record)
+        return nullptr;
+    if (!array.MergeKey.empty())
+        return FindChild(element, array.MergeKey);
+    const DataFieldSchema* key = nullptr;
+    for (const DataFieldSchema& member : element.Children)
+    {
+        if (member.Kind != DataFieldKind::StableKey)
+            continue;
+        if (key != nullptr)
+            return nullptr;
+        key = &member;
+    }
+    return key;
 }
 
 std::span<const DataSchema> DataSchemaRegistry::Entries() const

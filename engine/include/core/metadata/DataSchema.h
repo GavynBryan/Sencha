@@ -98,6 +98,15 @@ struct DataEditorHint
     bool Multiline = false;
 };
 
+// How a keyed array's elements compose (docs/assets/composition.md).
+enum class DataMergePolicy : uint8_t
+{
+    // A patch may change, add or remove an inherited element.
+    Override,
+    // A patch may only add elements; an inherited key is never redeclared or removed.
+    AppendOnly,
+};
+
 struct DataFieldSchema
 {
     std::string Key;
@@ -117,6 +126,11 @@ struct DataFieldSchema
     std::vector<DataFieldSchema> Children;
     std::vector<DataEnumChoice> EnumChoices;
     uint32_t VectorLength = 3;
+
+    // Array: the element member that keys composition. Empty means the element's
+    // one StableKey member, if it has exactly one.
+    std::string MergeKey;
+    DataMergePolicy MergePolicy = DataMergePolicy::Override;
 
     bool Required = true;
     bool Advanced = false;
@@ -152,6 +166,9 @@ struct DataValidationError
 struct DataValueRules
 {
     bool AllowUnknownFields = false;
+    // False for an abstract definition, which leaves required members to what
+    // extends it: kinds, ranges and keys are checked all the same.
+    bool RequireMembers = true;
     // An absent member takes its declared default before it is checked.
     bool FillDefaults = false;
     // Asset, data asset, tag and entity fields: empty to accept, otherwise why
@@ -171,9 +188,30 @@ struct DataValueRules
                                       JsonValue* out,
                                       std::vector<DataValidationError>& errors);
 
+// The schema a field's value is read by: an optional's child, through any
+// number of optionals; the field itself otherwise. Null for null.
+[[nodiscard]] const DataFieldSchema* UnwrapDataField(const DataFieldSchema* field);
+
+// An array's element schema or an optional's child; null for any other field.
+[[nodiscard]] const DataFieldSchema* DataFieldElement(const DataFieldSchema& field);
+
+// The element member an array's composition is keyed by, or null for an array
+// that composes by replacement.
+[[nodiscard]] const DataFieldSchema* ArrayMergeKey(const DataFieldSchema& array);
+
+// Partial checks kinds, ranges and keys but not that required members are
+// present: what an abstract definition, which exists only to be extended, is
+// held to.
+enum class DataValidationMode : uint8_t
+{
+    Complete,
+    Partial,
+};
+
 [[nodiscard]] bool ValidateDataAgainstSchema(const JsonValue& value,
                                              const DataSchema& schema,
-                                             std::vector<DataValidationError>& errors);
+                                             std::vector<DataValidationError>& errors,
+                                             DataValidationMode mode = DataValidationMode::Complete);
 
 // One line naming the first few errors, for load and compile messages.
 [[nodiscard]] std::string FormatDataValidationErrors(std::span<const DataValidationError> errors);

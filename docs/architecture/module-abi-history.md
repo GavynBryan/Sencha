@@ -973,3 +973,10 @@ unchanged, so the replication table hash does not move; the word's meaning does,
 so `kNetProtocolVersion` is 9. The ability pass revokes ended effect grants, and
 grants whose entry a reload took off their effect, before it grants;
 `AbilityTraceEvent` appends `GrantRefused`.
+
+**Composition operator.** `core/composition/Composition.h` (`ComposeLayers`,
+`ApplyCompositionPatch`, `CompositionReport`, `CompositionLogicalPath`) and
+`JsonComposition.h`; `JsonEquals`. `DataFieldSchema` gains `MergeKey` and
+`MergePolicy` (`DataMergePolicy`), which moves every later member;
+`DataValueRules` gains `RequireMembers`. `ValidateDataAgainstSchema` takes a
+`DataValidationMode`. `UnwrapDataField`, `DataFieldElement` and `ArrayMergeKey`.

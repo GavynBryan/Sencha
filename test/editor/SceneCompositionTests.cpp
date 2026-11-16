@@ -423,3 +423,61 @@ namespace
         EXPECT_NE(error.find("cycle"), std::string::npos);
     }
 } // namespace
+
+namespace
+{
+    constexpr std::string_view kEmitterSource = R"({
+  format_version: 1,
+  entities: [
+    { id: '0000000000000001',
+      components: { Emitter: { colors: [1, 2, 3], shape: { r: 1 }, label: 'x' } } },
+  ],
+})";
+}
+
+// What a version-1 patch means, pinned before composition moved to the shared
+// operator: objects merge member by member, a list is replaced whole, null is
+// written as a value, a new member goes last, and a patch's comments travel
+// with the values it writes.
+TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole)
+{
+    MemorySources sources;
+    sources.Add("asset://props/emitter.sscene", kEmitterSource);
+    std::string error;
+    const auto root = ParseSceneSource(R"({
+  format_version: 1,
+  entities: [],
+  instances: [
+    { id: '0000000000000020', source: 'asset://props/emitter.sscene',
+      entity_ids: { '0000000000000001': '0000000000000021' },
+      patch: { '0000000000000001': { Emitter: {
+        colors: [9],
+        shape: { s: 2 },
+        label: null,
+        // added by the room
+        extra: 7,
+      } } } },
+  ],
+})", &error);
+    ASSERT_TRUE(root.has_value()) << error;
+
+    const auto result = ResolveSceneComposition(*root, sources, &error);
+    ASSERT_TRUE(result.has_value()) << error;
+    const ResolvedSceneEntity* entity = FindEntity(*result, 0x21);
+    ASSERT_NE(entity, nullptr);
+    const Json5Value* emitter = entity->Components.Find("Emitter");
+    ASSERT_NE(emitter, nullptr);
+
+    ASSERT_EQ(emitter->Find("colors")->Elements.size(), 1u);
+    EXPECT_EQ(emitter->Find("colors")->Elements[0].Number, 9.0);
+    EXPECT_EQ(emitter->Find("shape")->Find("r")->Number, 1.0);
+    EXPECT_EQ(emitter->Find("shape")->Find("s")->Number, 2.0);
+    ASSERT_NE(emitter->Find("label"), nullptr);
+    EXPECT_TRUE(emitter->Find("label")->IsNull());
+
+    ASSERT_EQ(emitter->Members.size(), 4u);
+    EXPECT_EQ(emitter->Members.back().first, "extra");
+    EXPECT_EQ(emitter->Members.back().second.Number, 7.0);
+    ASSERT_EQ(emitter->Members.back().second.LeadingComments.size(), 1u);
+    EXPECT_NE(emitter->Members.back().second.LeadingComments[0].find("added by the room"), std::string::npos);
+}

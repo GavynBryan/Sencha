@@ -1,5 +1,7 @@
 #include "scene_source/SceneComposition.h"
 
+#include "scene_source/Json5Composition.h"
+
 #include <cassert>
 #include <unordered_map>
 #include <unordered_set>
@@ -49,22 +51,13 @@ namespace
         return components;
     }
 
-    // Objects merge member-by-member; anything else replaces atomically. The
-    // patch is sparse on purpose: what it does not mention stays the source's.
-    void MergeInto(Json5Value& target, const Json5Value& patch)
+    // A version-1 patch: objects merge member by member, anything else is
+    // written whole, null included. What it does not mention stays the source's.
+    void ApplyVersionOnePatch(Json5Value& target, const Json5Value& patch)
     {
-        if (!target.IsObject() || !patch.IsObject())
-        {
-            target = patch;
-            return;
-        }
-        for (const Json5Value::Member& member : patch.Members)
-        {
-            if (Json5Value* existing = target.FindMutable(member.first))
-                MergeInto(*existing, member.second);
-            else
-                target.Members.push_back(member);
-        }
+        CompositionReport report;
+        ApplyCompositionPatch(target, patch, std::string_view{},
+                              CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue }, report);
     }
 
     //-------------------------------------------------------------------------
@@ -233,7 +226,7 @@ namespace
 
             applyByPath(instance.Patches,
                 [](ResolvedSceneEntity& entity, const Json5Value& patch)
-                { MergeInto(entity.Components, patch); });
+                { ApplyVersionOnePatch(entity.Components, patch); });
             applyByPath(instance.AddedComponents,
                 [](ResolvedSceneEntity& entity, const Json5Value& added)
                 {
