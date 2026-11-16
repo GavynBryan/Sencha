@@ -103,3 +103,14 @@ TEST_F(ComposedDocuments, AnOpenChildRecomposesWhenItsClosedBaseChangesOnDisk)
     ASSERT_FALSE(tunic.IsSemanticallyValid()) << "the child still shows what its base used to be";
     EXPECT_EQ(tunic.ValidationErrors().front().Path, "$.data.modifiers{m_armor}.magnitude");
 }
+
+TEST_F(ComposedDocuments, AnOpenChildWhoseBaseDidNotComposeIsCheckedAgainWhenTheBaseIsFixed)
+{
+    std::ofstream(Root / "effects" / "armor_base.sdata", std::ios::trunc) << "{ not a definition";
+    DataDocument& tunic = Open(kTunic);
+    ASSERT_FALSE(tunic.IsSemanticallyValid());
+
+    std::ofstream(Root / "effects" / "armor_base.sdata", std::ios::trunc) << Base("10");
+    (void)Store.FileChangedOnDisk(Root / "effects" / "armor_base.sdata");
+    EXPECT_TRUE(tunic.IsSemanticallyValid()) << "the child still reports the base it could not read";
+}

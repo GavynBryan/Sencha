@@ -124,8 +124,10 @@ choosing what it extends and includes and whether it is abstract.
   conflict, a row offers each fragment's value to write locally.
 - An element this definition adds can be renamed, which re-keys its patch
   entry; an inherited element's key is read-only.
-- A change to an open definition revalidates the open definitions composed
-  from it. Revealing a problem focuses its field.
+- A change to an open definition, or to a definition's file on disk,
+  revalidates the open definitions composed from it. A definition that did not
+  compose still records the sources it tried to read, so creating or fixing a
+  missing or broken source re-checks it. Revealing a problem focuses its field.
 
 ## Scene instance patches
 

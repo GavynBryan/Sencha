@@ -84,7 +84,12 @@ namespace
                     composedIncludes.push_back(std::move(*composed));
             Stack.pop_back();
             if (!staging.Ok())
+            {
+                // What it tried to read, so whoever watches its sources re-checks it
+                // when a missing or broken one is created or fixed.
+                staging.Sources = Attempted;
                 return staging;
+            }
 
             for (const auto* group : { &composedBase, &composedIncludes })
                 for (const DataDefinitionStaging& source : *group)
@@ -214,6 +219,7 @@ namespace
                          std::format("composition is deeper than {} definitions", kMaxCompositionDepth));
                 return std::nullopt;
             }
+            NoteAttempted(source.Path);
             const JsonValue* root = Context.Read ? Context.Read(source.Path) : nullptr;
             if (root == nullptr)
             {
@@ -229,6 +235,8 @@ namespace
                 return std::nullopt;
             }
             DataDefinitionStaging composed = Stage(*root, source.Path, provenance);
+            for (const std::string& path : composed.Sources)
+                NoteAttempted(path);
             if (!composed.Ok())
             {
                 const DataValidationError& first = composed.Errors.front();
@@ -245,8 +253,15 @@ namespace
             return composed;
         }
 
+        void NoteAttempted(const std::string& path)
+        {
+            if (std::ranges::find(Attempted, path) == Attempted.end())
+                Attempted.push_back(path);
+        }
+
         const DataDefinitionContext& Context;
         std::vector<std::string> Stack;
+        std::vector<std::string> Attempted;
     };
 
     // A composed definition's error at an index path, named by key and by the
