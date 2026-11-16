@@ -1,6 +1,7 @@
 #include <app/EngineVocabularyBindings.h>
 
 #include <abilities/AbilityVerbs.h>
+#include <abilities/GameplayTagVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
@@ -31,6 +32,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Effects(std::make_unique<EffectOperations>(entities, clock))
     , Time(std::make_unique<ActorTimeOperations>(entities, clock))
     , Abilities(std::make_unique<AbilityOperations>(entities))
+    , Tags(std::make_unique<GameplayTagOperations>(entities))
     , Movement(std::make_unique<MovementOperations>(entities))
     , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
@@ -52,6 +54,8 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeAbilityCancel>(catalog.Find(kAbilityCancelVerb), *Abilities));
     Verbs.push_back(verbs.Bind<&InvokeAbilityGrant>(catalog.Find(kAbilityGrantVerb), *Abilities));
     Verbs.push_back(verbs.Bind<&InvokeAbilityRevoke>(catalog.Find(kAbilityRevokeVerb), *Abilities));
+    Verbs.push_back(verbs.Bind<&InvokeTagsGrant>(catalog.Find(kTagsGrantVerb), *Tags));
+    Verbs.push_back(verbs.Bind<&InvokeTagsRevoke>(catalog.Find(kTagsRevokeVerb), *Tags));
     Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));

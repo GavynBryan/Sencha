@@ -40,7 +40,10 @@ is affected; the refused tag is simply not held.
 
 Each tag's count holds a **baseline** within it: the stacks that persist.
 - Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the
-  baseline.
+  baseline; `tags.revoke` takes it back. These verbs are how level data gives
+  an entity a permanent, saved tag (an unlock): authority only, at most what
+  the target keeps for a revoke, and an entity with no tags gains a container
+  on its first grant (`docs/gameplay/authored-api.md`).
 - Effects and abilities contribute with `Grant` and withdraw with `Revoke`,
   which never takes the baseline.
 - A save writes the baseline alone, so a restore followed by the effects being

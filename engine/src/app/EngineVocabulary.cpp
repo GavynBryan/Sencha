@@ -1,6 +1,7 @@
 #include <app/EngineVocabulary.h>
 
 #include <abilities/AbilityVerbs.h>
+#include <abilities/GameplayTagVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
@@ -50,6 +51,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareAnimRequestVerbs(scope);
     DeclareEffectVerbs(scope);
     DeclareAbilityVerbs(scope);
+    DeclareGameplayTagVerbs(scope);
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);

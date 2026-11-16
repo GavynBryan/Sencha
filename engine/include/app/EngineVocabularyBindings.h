@@ -8,6 +8,7 @@
 #include <vector>
 
 class AbilityOperations;
+class GameplayTagOperations;
 class ActorTimeOperations;
 class AnimRequestOperations;
 class AttachedLightOperations;
@@ -75,6 +76,7 @@ private:
     std::unique_ptr<EffectOperations> Effects;
     std::unique_ptr<ActorTimeOperations> Time;
     std::unique_ptr<AbilityOperations> Abilities;
+    std::unique_ptr<GameplayTagOperations> Tags;
     std::unique_ptr<MovementOperations> Movement;
     std::unique_ptr<NavigationOperations> Navigation;
     std::unique_ptr<AudioOperations> Audio;

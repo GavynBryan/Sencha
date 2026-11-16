@@ -1109,3 +1109,9 @@ hash; its wire image is unchanged, and the protocol stays 9.
 `ReportGameplayTagOverflow`; `GameplayTagContainer` gains `CanHold`. An
 effect's granted tag or an ability's owned tag that a full container refuses
 is counted, and `AbilitySystem` reports the count.
+
+**Tag verbs.** `abilities/GameplayTagVerbs.h` declares the `tags.grant` and
+`tags.revoke` verbs (`DeclareGameplayTagVerbs`, `GameplayTagOperations`),
+declared with the engine vocabulary after the ability verbs, which moves every
+later engine verb's place in the catalog. `EngineVocabularyBindings` gains
+`Tags`.
