@@ -1,7 +1,9 @@
 # Held records
 
 A held record is an entity owned by another entity, its holder, or by the world.
-A counter is one (`docs/gameplay/counters.md`); an inventory entry is the next.
+A counter is one (`docs/gameplay/counters.md`); an inventory entry is another
+(`docs/gameplay/inventory.md`), and an entry that is a container holds records
+of its own.
 The relation is one component and one index, so everything that is "a keyed
 record owned by a holder" is saved, replicated, ordered and cleaned up the same
 way.
@@ -10,7 +12,7 @@ way.
 |---|---|---|
 | `Held` | `world/held/Held.h` | the relation on the record: its holder and its position |
 | `HeldRecordIndex` | `world/held/HeldRecordIndex.h` | holder to records in order, record to holder, a revision per holder |
-| `HoldRecord`, `SettleHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
+| `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
 | `sencha.held` | `save/HeldRecordSaves.h` | the save section (`docs/gameplay/saves.md`) |
 
 ## The relation
@@ -46,10 +48,16 @@ A holder is therefore always an identified entity on the authority:
 id, and its identity leaving is how the index learns it was destroyed.
 
 Each holder has a revision that moves when a record is listed or unlisted
-beneath it, or when `NoteChanged(record)` says a record beneath it changed (a
-counter's value); it moves for every holder up a nested chain, at most
-`kHeldDeepestNesting` (64) deep. A view of a holder's records keeps the
-revision it was built from and rebuilds when it moves.
+beneath it, or when `NoteHeldRecordChanged(world, record)` says a record
+beneath it changed (a counter's value, an entry's count); it moves for every
+holder up a nested chain, at most `kHeldDeepestNesting` (64) deep. A view of a
+holder's records keeps the revision it was built from and rebuilds when it
+moves.
+
+Records nest at most `kHeldDeepestNesting` levels: `Depth(entity)` counts the
+records from a record up to the first holder that is not one, and
+`Height(entity)` the levels beneath. A user that nests records (inventory)
+refuses to place one past the bound; walks up or down stop there.
 
 ## Settling
 
@@ -75,6 +83,55 @@ Records follow their holder across storage partitions through
 `PartitionFollowers`: when a holder moves, what it holds moves with it, and
 what those hold on the next round.
 
+## Authored records
+
+A record a scene authored carries an authored persistent id, which its zone
+uses to tell what it made from what is gone. Once the record is no longer what
+the scene authored, it must not keep that id, or the zone would make the
+authored one again beside it (after a rest, or the zone streaming back in):
+
+- `HoldRecord` moving a record to another holder, and `NoteHeldRecordChanged`,
+  give a record carrying an authored id a runtime one from the mint, and so
+  for what it holds, whose `Held` follows the new id;
+- moving to another holder also takes the record and what it holds out of the
+  spawn group they were placed with, so a guard despawning does not take a
+  purse a thief now holds.
+
+The zone then records the authored id destroyed at its next capture, and the
+record is a runtime record from then on.
+
+## Records of authored holders
+
+A runtime record held by an authored entity (a deposit in a placed chest) is
+part of how the zone differs from its content, and is kept with it:
+
+- **Detach.** Before a zone's partition is destroyed, `ParkHeldRecords` lists
+  each runtime record held by an authored holder there as awaiting that
+  holder's id and moves it to the persistent partition; what it holds follows
+  it. A record the zone authored is not parked: the zone makes it again. A
+  holder its zone forgets at detach (`ZoneStateLifetime` until detach) keeps
+  nothing.
+- **While away**, a parked record is anchored to nothing, reaching no peer,
+  and does no work.
+- **Import.** The holder's identity arriving lists its parked records under it
+  again; they settle into its partition and its relevance.
+- **Saves** keep parked records and runtime records of resident authored
+  holders (`docs/gameplay/saves.md`, "Held records").
+- **Level change.** A parked record belongs to its zone's memory, so a level
+  change, which installs new zone state, destroys every record still waiting
+  (`DestroyAwaitingHeldRecords`); a restore brings back the saved ones.
+
+The zone state store itself is unchanged: a parked record is a live entity, not
+a byte record, so it needs no codec and the save file format is the same.
+
+## Authoring
+
+In Kyusu, a `Held` component's holder is a choice among the document's
+identified entities, never the record itself or what it holds, or the world;
+its position is a number. A placed prefab's members name each other by that
+placement's ids: `Held`'s schema declares its holder an entity reference, so
+composition renames it (`docs/editor/scene-composition.md`).
+
 ## Replication
 
 `Held` travels through a codec: the holder as a wire entity (zero for the world
@@ -90,6 +147,8 @@ world until its holder's entity reaches it.
 
 ## Saves
 
-What a save keeps is a closure from roots: the world and the local
-participant's body, the records listed under them, and what those records hold,
-to the nesting bound. `docs/gameplay/saves.md`, "Held records".
+What a save keeps is a closure from roots: the world, the local participant's
+body and every authored holder, the runtime records listed under them and those
+waiting for a holder, and what those records hold, to the nesting bound.
+Restoring destroys every runtime record first; what content authored stays.
+`docs/gameplay/saves.md`, "Held records".

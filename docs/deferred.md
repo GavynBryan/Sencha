@@ -838,20 +838,6 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a producer admitting thousands of responses a tick, or a memory
   budget pass over the simulation.
 
-## Inventory contents follow their container through partition followers
-
-- **What:** inventory moves a container's contents into the container's
-  partition itself (`MoveContents` in `engine/src/inventory/Inventory.cpp`), and
-  only when inventory places the container. A container moved by anyone else
-  (`RuntimeWorld::MoveEntityToPersistent`) leaves its contents behind.
-- **Where:** the mechanism now exists: `Held` and `HeldRecordIndex`
-  (`world/held/`) list records under their holder and register a partition
-  follower that moves them with it (`docs/gameplay/held-records.md`). Inventory
-  lives on `claude/composition`, which `main` does not have yet.
-- **Trigger:** inventory landing on `main`. Entries carry `Held` in place of
-  `ItemEntry::Container` and `Position`, `HoldRecord` places them, and
-  `MoveContents`, `ItemContainerIndex` and its sweep are deleted.
-
 ## Predicting a firer's own projectile
 
 - **What:** a client sees its own projectile only when the authority's arrives,
@@ -1167,16 +1153,20 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Saving what was created at run time
 
 - **What:** a save keeps the local participant's body root as a patch against
-  its prefab (`sencha.bodies`) and the records held by the world and by that
-  body, with what they hold (`sencha.held`). It does not keep the body's
-  children, another participant's body or what it holds, records held by any
-  other entity (a chest, an NPC), or any other entity created at run time; a
-  runtime entity in a zone is destroyed unrecorded when the zone unloads.
+  its prefab (`sencha.bodies`) and the runtime records held by the world, by
+  that body and by authored holders, with what they hold (`sencha.held`). It
+  does not keep the body's children, another participant's body or what it
+  holds, records held by a runtime entity other than the local body (a dropped
+  item's pickup, a spawned NPC), or any other entity created at run time; a
+  runtime entity in a zone that is not a record of an authored holder is
+  destroyed unrecorded when the zone unloads.
 - **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
+  `world/held/HeldRecords.cpp` (`ParkHeldRecords`),
   `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateStore.h`.
-- **Trigger:** items left in a zone container (inventory's "added" record kind
-  in the zone record), a body whose children carry state, a counter held by an
-  NPC that must outlive its zone, or a second player restored in co-op.
+- **Trigger:** a body whose children carry state, a counter or item held by a
+  spawned NPC that must outlive its zone, a dropped item that must stay where
+  it fell (see "A dropped item's world scene"), or a second player restored in
+  co-op.
 
 ## Unknown save chunks are dropped on rewrite
 
@@ -1329,7 +1319,8 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `AbilityArgumentProperties` reads `AbilityOpContract`, which knows
   ops only.
 - **Trigger:** the first cost provider content authors use, which is
-  inventory's item provider (composition Stage 4).
+  inventory's item provider (composition Stage 4). The provider is declared
+  since inventory landed; no content authors an item cost yet.
 - **Consumer:** item-cost abilities (an arrow per shot, a bottle per drink).
 
 ## Totals of counters under a name
@@ -1402,3 +1393,96 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `logic/CounterVocabulary.cpp`, `world/held/HeldRecordIndex.h`.
 - **Trigger:** a client presentation that must react to a counter changing
   rather than poll it, such as a co-op HUD popup when a star is collected.
+
+## Item display data
+
+- **What:** an `item.definition` has a name and tags, and nothing a menu shows:
+  no icon, description or sort category.
+- **Where:** `inventory/ItemDefinitionData.cpp` (schema and compile),
+  `inventory/ItemDefinition.h`.
+- **Trigger:** the first inventory screen or pickup prompt that shows an item.
+  Then add display fields to the definition, read by presentation only.
+
+## A dropped item's world scene
+
+- **What:** `Inventory::Drop` makes a bare pickup with a transform holding the
+  entry. Nothing spawns a visible scene for it, and a pickup dropped into a
+  zone, with its entry, is destroyed unrecorded when the zone unloads.
+- **Where:** `inventory/Inventory.cpp` (`Drop`); the branch's definition field
+  `world` (a scene by asset path) was left out because nothing spawned it.
+- **Trigger:** a game whose dropped items are seen and picked back up in the
+  world, or must stay where they fell across a zone's round trip. Then give
+  definitions a world scene spawned as the pickup's presentation, and keep a
+  zone's runtime pickups with the zone the way records of authored holders are
+  kept.
+
+## Predicting gives and transfers
+
+- **What:** only the authority changes an inventory; a client sees a give,
+  take or transfer when the snapshot carrying it arrives.
+- **Where:** `inventory/Inventory.cpp`; the prediction journal abilities use
+  (`abilities/AbilityPredictionJournal.h`).
+- **Trigger:** a networked game whose inventory screen must answer a move
+  before the round trip, such as a co-op shooter's quick swap.
+
+## Weight, volume and grid rules
+
+- **What:** a container admits by tag (`Accepts`) and entry count
+  (`Capacity`). Nothing weighs, measures or places an entry on a grid.
+- **Where:** `inventory/Inventory.cpp` (`Admission`, `HasRoom`).
+- **Trigger:** a survival game with carry weight, or an RPG with a grid
+  inventory. Then add destination admission beside accepts and capacity, as
+  data a container carries, consulted by the same admission step.
+
+## Inventory change events
+
+- **What:** nothing announces that an inventory changed. Native code watches a
+  holder's `HeldRecordIndex::Revision`; level data cannot react.
+- **Where:** `inventory/Inventory.cpp`, `world/held/HeldRecordIndex.h`.
+- **Trigger:** a HUD that pops up on a pickup, or a response that answers an
+  item arriving. Then publish `inventory.changed {holder, definition, count}`
+  from the operations, as `counter.changed` is.
+
+## Possessions that outlive a body
+
+- **What:** an entry held by a body goes when the body is destroyed (its held
+  records settle away). A death without a save loses them; nothing drops them
+  as a corpse's loot or keeps them for the next body.
+- **Where:** `world/held/HeldRecords.cpp` (a departed holder's records),
+  `inventory/Inventory.h` (`ItemChangeClass::Forced` moves).
+- **Trigger:** a game whose death drops what the body held (a corpse run) or
+  keeps it for the respawned body without a save. Then move the body's entries
+  with a forced transfer before it is released.
+
+## Shared containers
+
+- **What:** `MayUseItem` lets an actor use what it holds, however deep. A
+  container several actors use, such as a party's bag or a co-op team's stash,
+  answers no to all but its holder.
+- **Where:** `inventory/Inventory.cpp` (`MayUseItem`); every use, item cost and
+  equip asks it.
+- **Trigger:** a co-op or party game whose players draw from one bag. Then
+  extend `MayUseItem` with the sharing rule, and nothing else.
+
+## Held records parked for an import that is cancelled
+
+- **What:** a record waiting for its authored holder moves into the holder's
+  partition when the holder's identity arrives, even while the zone is still
+  importing hidden. If that import is cancelled, the partition is destroyed
+  and the record with it.
+- **Where:** `world/held/HeldRecords.cpp`, `zone/AsyncZoneLoader.cpp`.
+- **Trigger:** an import cancelled after its entities were made (a finalize
+  failure) in a zone where something was deposited. Then settle a record whose
+  holder lies in a hidden partition only once the zone is published.
+
+## Authoring a container's contents from the container
+
+- **What:** Kyusu authors "this chest holds 3 arrows" as an entity with
+  `ItemEntry` and `Held`, whose holder is picked from a list of the document's
+  identified entities. There is no "add item" on the chest itself, and no
+  picking the holder in the view; a large level makes the list long.
+- **Where:** `editor/level_editor/src/authoring/HeldEditorAdapter.cpp`,
+  `GameplayVocabularyAdapters.cpp` (the item rows).
+- **Trigger:** the owner's walkthrough of authoring a stocked chest, or a level
+  whose holder list is too long to read. Then add a container verb that makes
+  an entry held by it, and picking in the view.

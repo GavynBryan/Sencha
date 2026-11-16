@@ -1164,3 +1164,38 @@ its hooks; `ReplicationLayout::AddCodec` accepts a hooked component, while
 `Add` (bytes on the wire) still refuses one. The replicated table gains `Held`
 and `Counter`, which changes its hash; no wire layout of an existing component
 changed, so the protocol stays at 9.
+
+## v51
+
+**Inventory.** New components `ItemEntry`, `ItemContainer` and `ItemPickup`
+(`inventory/InventoryComponents.h`) in `InventoryComponents`, registered after
+`LogicComponents`, with their serializers and `ItemEntry`'s codec. An entry's
+container and position are its `Held`. `ItemRegistry` (`inventory/ItemDefinition.h`)
+and the `item.definition` data type; `Inventory` operations and reads
+(`inventory/Inventory.h`); `InventorySystem`; the `inventory.item` cost
+provider; verbs `inventory.take`, `inventory.give`, `inventory.transfer`,
+`inventory.drop`, `inventory.use` and query `inventory.count`, bound by
+`EngineVocabularyBindings::BindInventory`. `InstallInventoryVocabulary` runs in
+the engine host, Kyusu documents and the ability preview.
+
+**Held records.** `NoteHeldRecordChanged`, `ParkHeldRecords` and
+`DestroyAwaitingHeldRecords` join `world/held/HeldRecords.h`;
+`HeldRecordIndex` gains `Await`, `Holders`, `AwaitingRecords`, `Depth` and
+`Height`. `HoldRecord` to another holder, and a noted change, give a record
+carrying an authored id a runtime one. `DestroyHeldRecords` leaves records
+with authored ids. `CaptureHeldRecords` also keeps runtime records of authored
+holders and records waiting for a holder. `HasAuthoredPersistentId`
+(`world/identity/PersistentIdMint.h`).
+
+**Composition.** `ComponentSerializer<T>::CompositionSchema` declares the
+fields whose `SceneFieldCodec` names a `CompositionKind`; `PersistableRef`'s
+names `Entity`, so `Held`'s holder is renamed by a placement.
+`WriteSceneDefinitionRef` and `ReadSceneDefinitionRef`
+(`world/serialization/SceneAssetRef.h`).
+
+**Names.** `NamedDefinitionRegistry::Reserve` refuses a name whose wire key
+another name holds, and `WireKeyHolder` names that other; content declaration
+reports the refusal for abilities and items.
+
+The replicated table gains `ItemEntry`, which changes its hash; no wire layout
+of an existing component changed, so the protocol stays at 9.
