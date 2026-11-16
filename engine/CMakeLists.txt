@@ -48,6 +48,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/inventory/InventoryComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/Counter.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/EffectReactions.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/decision/DecisionAgent.h"

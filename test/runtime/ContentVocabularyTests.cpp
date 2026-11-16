@@ -20,6 +20,7 @@
 #include <ecs/World.h>
 #include <effects/EffectDefinitionData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryKit.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
@@ -459,4 +460,30 @@ TEST(ContentVocabulary, ACuePresentationNamingAnAssetOfAnotherKindIsReported)
     DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
     EXPECT_TRUE(Mentions(errors, "'asset://b/look.smat' is a Material asset; the verb wants Scene"))
         << (errors.empty() ? std::string("no error") : errors.front());
+}
+
+// Item definitions travel as a 32-bit key of their path: a second path under a
+// key the first holds is reported where content declares it, never left to miss
+// on the wire.
+TEST(ContentVocabulary, TwoItemsWhoseWireKeysCollideAreReported)
+{
+    ASSERT_EQ(NameWireKey("asset://items/i975248.sdata"), NameWireKey("asset://items/i1396044.sdata"));
+    Content content;
+    std::filesystem::create_directories(content.Root / "items");
+    content.Write("items/i975248.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Ring" } })");
+    content.Write("items/i1396044.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Rope" } })");
+    content.Scan();
+    VocabularyWorld world;
+    InstallInventoryVocabulary(world.Entities);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors.front().find("asset://items/i975248.sdata"), std::string::npos) << errors.front();
+    EXPECT_NE(errors.front().find("asset://items/i1396044.sdata"), std::string::npos) << errors.front();
+    const ItemRegistry& items = world.Entities.GetResource<ItemRegistry>();
+    const ItemId first = items.Find("asset://items/i1396044.sdata");
+    ASSERT_NE(items.Get(first), nullptr);
+    EXPECT_FALSE(items.Find("asset://items/i975248.sdata").IsValid());
+    EXPECT_EQ(items.FindByWireKey(items.WireKey(first)), first) << "the first keeps its key";
 }

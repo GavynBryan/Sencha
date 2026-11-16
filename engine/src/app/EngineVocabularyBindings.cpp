@@ -8,6 +8,7 @@
 #include <camera/CameraFovScaleVerbs.h>
 #include <camera/CameraShakeVerbs.h>
 #include <effects/EffectVerbs.h>
+#include <inventory/InventoryVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
@@ -101,6 +102,18 @@ void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQuery
     Verbs.push_back(verbs.Bind<&InvokeCounterSet>(catalog.Find(kCounterSetVerb), *Counters));
     Verbs.push_back(verbs.Bind<&InvokeCounterAdd>(catalog.Find(kCounterAddVerb), *Counters));
     Queries.push_back(BindCounterQuery(queries, std::as_const(Entities)));
+}
+
+void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
+{
+    Items = std::make_unique<InventoryOperations>(Entities);
+    const VerbRegistry& catalog = verbs.Registry();
+    Verbs.push_back(verbs.Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), *Items));
+    Verbs.push_back(verbs.Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), *Items));
+    Verbs.push_back(verbs.Bind<&InvokeInventoryTransfer>(catalog.Find(kInventoryTransferVerb), *Items));
+    Verbs.push_back(verbs.Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), *Items));
+    Verbs.push_back(verbs.Bind<&InvokeInventoryUse>(catalog.Find(kInventoryUseVerb), *Items));
+    Queries.push_back(BindInventoryQuery(queries, std::as_const(Entities)));
 }
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)

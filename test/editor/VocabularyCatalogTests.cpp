@@ -21,6 +21,7 @@
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ClaimVocabulary.h>
+#include <inventory/InventoryVocabulary.h>
 #include <logic/CounterVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
@@ -86,7 +87,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 45u);
+    ASSERT_EQ(verbs.size(), 50u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -127,16 +128,23 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[40].Name, kSaveRestoreVerb);
     EXPECT_EQ(verbs[41].Name, kCounterSetVerb);
     EXPECT_EQ(verbs[42].Name, kCounterAddVerb);
-    EXPECT_EQ(verbs[43].Name, kPerceptionStimulusVerb);
-    EXPECT_EQ(verbs[44].Name, kClaimsHoldLease);
+    EXPECT_EQ(verbs[43].Name, kInventoryTakeVerb);
+    EXPECT_EQ(verbs[44].Name, kInventoryGiveVerb);
+    EXPECT_EQ(verbs[45].Name, kInventoryTransferVerb);
+    EXPECT_EQ(verbs[46].Name, kInventoryDropVerb);
+    EXPECT_EQ(verbs[47].Name, kInventoryUseVerb);
+    EXPECT_EQ(verbs[48].Name, kPerceptionStimulusVerb);
+    EXPECT_EQ(verbs[49].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 27u);
+    ASSERT_EQ(queries.size(), 28u);
     EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
     EXPECT_EQ(queries[6].Name, kPhysicsOverlapQuery);
     EXPECT_EQ(queries[8].Name, kNavigationPhaseQuery);
     EXPECT_EQ(queries[9].Name, kNavigationFailureQuery);
     EXPECT_EQ(queries[10].Name, kNavigationRemainingQuery);
     EXPECT_EQ(queries[15].Name, kCounterValueQuery);
+    EXPECT_EQ(queries[16].Name, kInventoryCountQuery);
+    EXPECT_EQ(queries[16].ArgumentCount, 4u);
 }
 
 TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
@@ -144,8 +152,8 @@ TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    // After the physics, navigation and counter queries, which the engine's own scope declares first.
-    ASSERT_EQ(queries.size(), 27u);
+    // After the physics, navigation, counter and inventory queries, which the engine's own scope declares first.
+    ASSERT_EQ(queries.size(), 28u);
     const std::size_t sees = static_cast<std::size_t>(std::ranges::find(queries, std::string(kSeesQuery), &VocabularyCatalog::QueryRow::Name) - queries.begin());
     ASSERT_LT(sees, queries.size());
     EXPECT_EQ(queries[sees + 0].Name, kSeesQuery);
@@ -174,10 +182,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 46u);
-    EXPECT_EQ(verbs[45].Name, kModuleVerb);
-    EXPECT_EQ(verbs[45].Provider, "spike");
-    EXPECT_EQ(verbs[45].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 51u);
+    EXPECT_EQ(verbs[50].Name, kModuleVerb);
+    EXPECT_EQ(verbs[50].Provider, "spike");
+    EXPECT_EQ(verbs[50].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -217,7 +225,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 45u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 50u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

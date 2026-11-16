@@ -7,6 +7,7 @@
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
+#include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 
 #include <utility>
@@ -14,10 +15,11 @@
 VocabularyCatalog::VocabularyCatalog()
 {
     // The registries a module's hook may fill: tags, attributes, abilities,
-    // modes -- what Kyusu gives a document, for the same reason. A module
+    // items, modes -- what Kyusu gives a document, for the same reason. A module
     // declaring a tag into a World with no tag registry would be told nothing.
     RegisterMovement(Metadata);
     InstallAbilityKitVocabulary(Metadata);
+    InstallInventoryVocabulary(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
     (void)InstallEngineVocabulary(Metadata);
