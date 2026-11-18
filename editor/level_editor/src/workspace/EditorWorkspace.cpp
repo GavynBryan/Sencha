@@ -13,6 +13,7 @@
 
 #include "EditorTheme.h"
 #include "authoring/GameplayVocabularyAdapters.h"
+#include "authoring/EquipmentStateEditorAdapter.h"
 #include "authoring/HeldEditorAdapter.h"
 #include "authoring/BrushModifierEditorAdapter.h"
 
@@ -227,6 +228,7 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeItemContainerEditorAdapter());
     Affordances->Registry().Register(MakeItemPickupEditorAdapter());
     Affordances->Registry().Register(MakeHeldEditorAdapter());
+    Affordances->Registry().Register(MakeEquipmentStateEditorAdapter());
     Affordances->Registry().Register(MakeResponsesEditorAdapter());
     Affordances->Registry().Register(MakeColliderEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());

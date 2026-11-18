@@ -26,19 +26,6 @@ namespace
         PersistableRef Holder;
     };
 
-    bool LiesWithin(const World& world, EntityId entity, EntityId record)
-    {
-        EntityId at = entity;
-        for (int depth = 0; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
-        {
-            if (at == record)
-                return true;
-            const Held* held = world.TryGet<Held>(at);
-            at = held != nullptr ? ResolvePersistableRef(world, held->Holder) : EntityId{};
-        }
-        return false;
-    }
-
     std::vector<HolderChoice> HolderChoices(const EditorComponentInspectorContext& context)
     {
         const World& world = std::as_const(context.Scene.GetRegistry()).Components;
@@ -49,7 +36,7 @@ namespace
             for (std::uint32_t row = 0; row < view.Count(); ++row)
             {
                 const EntityId entity = view.Entity(row);
-                if (!ids[row].Id.IsValid() || LiesWithin(world, entity, context.Entity))
+                if (!ids[row].Id.IsValid() || IsHeldWithin(world, entity, context.Entity))
                     continue;
                 choices.push_back({ std::format("{} ({})", EntityLabel(context.Document, entity),
                                                 PersistentEntityIdToString(ids[row].Id)),
@@ -119,6 +106,19 @@ namespace
             return CommitComponentValue(context, *held, after);
         }
     };
+}
+
+bool IsHeldWithin(const World& world, EntityId entity, EntityId holder)
+{
+    EntityId at = entity;
+    for (int depth = 0; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
+    {
+        if (at == holder)
+            return true;
+        const Held* held = world.TryGet<Held>(at);
+        at = held != nullptr ? ResolvePersistableRef(world, held->Holder) : EntityId{};
+    }
+    return false;
 }
 
 std::unique_ptr<IEditorComponentAdapter> MakeHeldEditorAdapter()
