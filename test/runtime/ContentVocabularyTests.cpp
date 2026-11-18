@@ -20,6 +20,7 @@
 #include <ecs/World.h>
 #include <effects/EffectDefinitionData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <equipment/EquipmentKit.h>
 #include <inventory/InventoryKit.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -486,4 +487,28 @@ TEST(ContentVocabulary, TwoItemsWhoseWireKeysCollideAreReported)
     ASSERT_NE(items.Get(first), nullptr);
     EXPECT_FALSE(items.Find("asset://items/i975248.sdata").IsValid());
     EXPECT_EQ(items.FindByWireKey(items.WireKey(first)), first) << "the first keeps its key";
+}
+
+TEST(ContentVocabulary, TwoLayoutsWhoseWireKeysCollideAreReported)
+{
+    ASSERT_EQ(NameWireKey("asset://items/i975248.sdata"), NameWireKey("asset://items/i1396044.sdata"));
+    Content content;
+    std::filesystem::create_directories(content.Root / "items");
+    constexpr std::string_view kLayout =
+        R"({ "type": "equipment.layout", "version": 1, "data": { "slots": [ { "key": "hand" } ] } })";
+    content.Write("items/i975248.sdata", kLayout);
+    content.Write("items/i1396044.sdata", kLayout);
+    content.Scan();
+    VocabularyWorld world;
+    InstallInventoryVocabulary(world.Entities);
+    InstallEquipmentVocabulary(world.Entities);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors.front().find("asset://items/i975248.sdata"), std::string::npos) << errors.front();
+    EXPECT_NE(errors.front().find("asset://items/i1396044.sdata"), std::string::npos) << errors.front();
+    const EquipmentLayoutRegistry& layouts = world.Entities.GetResource<EquipmentLayoutRegistry>();
+    EXPECT_NE(layouts.Get(layouts.Find("asset://items/i1396044.sdata")), nullptr);
+    EXPECT_FALSE(layouts.Find("asset://items/i975248.sdata").IsValid());
 }

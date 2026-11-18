@@ -146,6 +146,21 @@ TEST(EquipmentLayout, AMalformedLayoutIsRefusedWithWhere)
         << "an item naming ring would reach the slot and never the group";
 }
 
+TEST(EquipmentLayout, ALayoutHoldsThirtyTwoSlotsAndRefusesOneMore)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterEquipmentLayoutData(types, schemas);
+    const auto refusal = [&](std::size_t slots) {
+        std::string json = R"({ "slots": [)";
+        for (std::size_t i = 0; i < slots; ++i)
+            json += std::string(i == 0 ? "" : ",") + R"({ "key": "s)" + std::to_string(i) + R"(" })";
+        return types.Find(kEquipmentLayoutType)->Compile(*JsonParse(json + "] }")).Error;
+    };
+    EXPECT_EQ(refusal(kMaxEquipmentSlots), "");
+    EXPECT_NE(refusal(kMaxEquipmentSlots + 1).find("at most 32 slots"), std::string::npos);
+}
+
 TEST(EquipmentLayout, AGroupNamesItsSlotsInLayoutOrder)
 {
     World world;
@@ -265,6 +280,31 @@ TEST(EquipmentScene, ARecordNamingASlotTheLayoutLacksRefusesTheScene)
     EXPECT_FALSE(loads(R"({ "layout": "asset://equipment/humanoid.sdata", "next_key": 2,
         "records": [ { "key": 1, "definition": "asset://items/ring.sdata", "slots": [ "ring.left", "ring.left" ] } ] })"))
         << "one slot named twice";
+}
+
+TEST(EquipmentScene, ASceneWithMoreRecordsThanAWearerHoldsIsRefused)
+{
+    SceneWorld world;
+    World& entities = world.Scene.Components;
+    EquipmentLayout many;
+    for (std::size_t i = 0; i <= kEquipmentRecordCapacity; ++i)
+    {
+        many.Slots.emplace_back();
+        many.Slots.back().Key = "c" + std::to_string(i);
+    }
+    (void)entities.GetResource<EquipmentLayoutRegistry>().Define("asset://equipment/charms.sdata", std::move(many));
+    const std::unique_ptr<IComponentSerializer> serializer = MakeEquipmentStateSerializer();
+    const auto loads = [&](std::size_t records) {
+        std::string json = R"({ "layout": "asset://equipment/charms.sdata", "next_key": 99, "records": [)";
+        for (std::size_t i = 0; i < records; ++i)
+            json += std::string(i == 0 ? "" : ",") + R"({ "key": )" + std::to_string(i + 1)
+                + R"(, "definition": "asset://items/charm.sdata", "slots": [ "c)" + std::to_string(i) + R"(" ] })";
+        const std::optional<JsonValue> value = JsonParse(json + "] }");
+        JsonReadArchive read(*value);
+        return serializer->LoadIntoWorld(read, entities.CreateEntity(), entities, world.Context);
+    };
+    EXPECT_TRUE(loads(kEquipmentRecordCapacity));
+    EXPECT_FALSE(loads(kEquipmentRecordCapacity + 1));
 }
 
 namespace
@@ -524,6 +564,99 @@ TEST_F(EquipmentTest, EveryRefusalLeavesTheWorldAsItWas)
     const ItemId bracelet = items.Define("asset://items/bracelet.sdata",
                                          ItemDefinition{ .Name = "Bracelet", .Occupies = { "ring" } });
     EXPECT_EQ(refusal(Give(bracelet)), EquipmentRefusal::NotAccepted) << "it carries no ring tag";
+}
+
+TEST_F(EquipmentTest, AnEquipWhoseTagsFindNoRoomInTheWearersContainerIsRefused)
+{
+    World& world = Entities();
+    GameplayTagRegistry& names = world.GetResource<GameplayTagRegistry>();
+    EffectDefinition marked{};
+    marked.Duration = EffectDuration::Infinite;
+    marked.GrantedTags = { *names.RegisterTag("Mark.A"), *names.RegisterTag("Mark.B") };
+    const EffectId marks = world.GetResource<EffectRegistry>().Define("asset://effects/marks.sdata", marked);
+    const ItemId band = world.GetResource<ItemRegistry>().Define(
+        "asset://items/band.sdata",
+        ItemDefinition{ .Name = "Band", .Tags = { Ring }, .Occupies = { "ring" }, .EquipEffects = { { marks, 1.0f } } });
+    Declare();
+    GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(Hero);
+    for (int i = 0; tags.Count < GameplayTagContainer::Capacity - 1; ++i)
+        (void)tags.GrantBaseline(*names.RegisterTag("Fill.T" + std::to_string(i)));
+    const EntityId first = Give(band);
+    const EquipmentState before = State();
+    EXPECT_EQ(Gear().Equip(Hero, first, "ring.left").Refusal, EquipmentRefusal::TagRoom) << "two tags, one place";
+    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(EffectsOn(), 0u);
+
+    (void)world.TryGet<GameplayTagContainer>(Hero)->RevokeBaseline(names.FindTag("Fill.T0"));
+    ASSERT_EQ(Gear().Equip(Hero, first, "ring.left").Refusal, EquipmentRefusal::None) << "two tags, two places";
+    EXPECT_EQ(std::as_const(world).TryGet<GameplayTagContainer>(Hero)->Count, GameplayTagContainer::Capacity);
+    EXPECT_EQ(Gear().Equip(Hero, Give(band), "ring.right").Refusal, EquipmentRefusal::None) << "tags it already holds";
+    EXPECT_EQ(Gear().Equip(Hero, Give(band), "ring.left").Refusal, EquipmentRefusal::None)
+        << "what it replaces leaves the room it takes";
+}
+
+TEST_F(EquipmentTest, AnEquipWhoseEffectModifiesAnAttributeTheWearerLacksIsRefused)
+{
+    World& world = Entities();
+    const AttributeId might = world.GetResource<AttributeRegistry>().RegisterAttribute("Might", 0.0f, 100.0f, 0.0f);
+    EffectDefinition strong{};
+    strong.Duration = EffectDuration::Infinite;
+    strong.Modifiers = { { might, ModifierOp::Add, 4.0f } };
+    const EffectId strength = world.GetResource<EffectRegistry>().Define("asset://effects/strength.sdata", strong);
+    const ItemId band = world.GetResource<ItemRegistry>().Define(
+        "asset://items/might_band.sdata",
+        ItemDefinition{ .Name = "Band", .Tags = { Ring }, .Occupies = { "ring" }, .EquipEffects = { { strength, 1.0f } } });
+    Declare();
+    const EntityId entry = Give(band);
+    const EquipmentState before = State();
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::MissingAttribute) << "no attribute set at all";
+    world.AddComponent<AttributeSet>(Hero, AttributeSet{});
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::MissingAttribute);
+    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(EffectsOn(), 0u);
+
+    (void)world.TryGet<AttributeSet>(Hero)->Add(might, 1.0f);
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None);
+}
+
+TEST_F(EquipmentTest, AWearerHoldsSixteenRecordsAndRefusesTheSeventeenth)
+{
+    World& world = Entities();
+    EquipmentLayout many;
+    for (std::size_t i = 0; i <= kEquipmentRecordCapacity; ++i)
+    {
+        many.Slots.emplace_back();
+        many.Slots.back().Key = "charm.c" + std::to_string(i);
+    }
+    const EquipmentLayoutId layout =
+        world.GetResource<EquipmentLayoutRegistry>().Define("asset://equipment/charms.sdata", std::move(many));
+    const ItemId charm = world.GetResource<ItemRegistry>().Define(
+        "asset://items/charm.sdata", ItemDefinition{ .Name = "Charm", .Occupies = { "charm" } });
+    world.TryGet<EquipmentState>(Hero)->Layout = layout;
+    for (std::size_t i = 0; i < kEquipmentRecordCapacity; ++i)
+        ASSERT_EQ(Gear().Equip(Hero, Give(charm)).Refusal, EquipmentRefusal::None) << i;
+    ASSERT_EQ(State().Count, kEquipmentRecordCapacity);
+
+    const EntityId extra = Give(charm);
+    const EquipmentState before = State();
+    EXPECT_EQ(Gear().Equip(Hero, extra).Refusal, EquipmentRefusal::Full) << "a free slot, and no record to hold it";
+    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(Gear().Equip(Hero, extra, "charm.c0").Refusal, EquipmentRefusal::None) << "a swap needs no new record";
+}
+
+TEST_F(EquipmentTest, AnEquipFillsTheSixteenthGrantAndRefusesTheSeventeenth)
+{
+    World& world = Entities();
+    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
+    const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
+    while (filling.Count < kAbilityGrantCapacity - 1)
+        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
+    ASSERT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.left").Refusal, EquipmentRefusal::None) << "the sixteenth";
+    EXPECT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.right").Refusal, EquipmentRefusal::GrantRoom)
+        << "reserved before the pass grants it";
+    Step();
+    EXPECT_EQ(std::as_const(world).TryGet<AbilityGrants>(Hero)->Count, kAbilityGrantCapacity);
+    EXPECT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.right").Refusal, EquipmentRefusal::GrantRoom);
 }
 
 TEST_F(EquipmentTest, ReconcilingTwiceChangesNothingAndRestoresWhatWasLost)

@@ -208,10 +208,10 @@ void DeclareEquipmentLayout(RuntimeAssets& assets, World& world, ContentDefiniti
     const bool resolved = ResolveEquipmentLayoutDeclaration(*declaration, world, layout, unresolved);
     for (const std::string& message : unresolved)
         errors.push_back(std::format("{}: {}", entry.Path, message));
-    if (resolved)
-        (void)RedefineEquipmentLayout(world, entry.Path, std::move(layout));
-    else
-        (void)layouts->Reserve(entry.Path);
+    const EquipmentLayoutId id = resolved ? RedefineEquipmentLayout(world, entry.Path, std::move(layout))
+                                          : layouts->Reserve(entry.Path);
+    if (!id.IsValid())
+        errors.push_back(WireKeyCollision(*layouts, entry.Path));
 }
 
 using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);

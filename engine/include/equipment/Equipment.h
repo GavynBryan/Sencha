@@ -27,6 +27,8 @@ enum class EquipmentRefusal : std::uint8_t
     Locked,
     Full,
     GrantRoom,
+    TagRoom,
+    MissingAttribute,
     NotMaintained,
     Undeclared,
 };
