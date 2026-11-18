@@ -1,8 +1,11 @@
 #include "EquipmentStateEditorAdapter.h"
 
-#include "ComponentValueCommit.h"
 #include "HeldEditorAdapter.h"
+#include "commands/CommandStack.h"
+#include "document/EditorDocument.h"
+#include "document/EditorScene.h"
 #include "document/EntityLabel.h"
+#include "document/commands/ValueCommand.h"
 #include "properties/SettingProperties.h"
 
 #include <ecs/Query.h>
@@ -64,46 +67,42 @@ namespace
         return choices;
     }
 
-    void RemoveRecord(EquipmentState& state, std::size_t index)
+    // As an unequip does: the last record takes the place of the one removed.
+    void RemoveRecordsWhere(EquipmentRecordList& worn, auto&& matches)
     {
-        state.Records[index] = state.Records[state.Count - 1];
-        state.Records[--state.Count] = EquipmentRecord{};
-    }
-
-    void RemoveRecordsWhere(EquipmentState& state, auto&& matches)
-    {
-        for (std::size_t i = state.Count; i-- > 0;)
-            if (matches(state.Records[i]))
-                RemoveRecord(state, i);
+        for (std::size_t i = worn.Records.size(); i-- > 0;)
+            if (matches(worn.Records[i]))
+            {
+                worn.Records[i] = worn.Records.back();
+                worn.Records.pop_back();
+            }
     }
 
     // The record an equip of `entry` into `slot` would leave, replacing what holds its slots.
-    bool Wear(const World& world, const EquipmentLayout& layout, EquipmentState& state, const EntryChoice& entry,
+    bool Wear(const World& world, const EquipmentLayout& layout, EquipmentRecordList& worn, const EntryChoice& entry,
               std::uint8_t slot)
     {
         const ItemDefinition* item = FindItemDefinition(world, entry.Definition);
-        RemoveRecordsWhere(state, [&](const EquipmentRecord& record) { return record.Source.Target == entry.Entry.Target; });
+        RemoveRecordsWhere(worn, [&](const EquipmentRecord& record) { return record.Source.Target == entry.Entry.Target; });
         std::uint32_t slots = 0;
         std::uint8_t primary = kNoEquipmentSlot;
         if (item == nullptr
-            || ResolveEquipmentSlots(world, layout, state, *item, layout.Slots[slot].Key, slots, primary)
+            || ResolveEquipmentSlots(world, layout, worn.Records, *item, layout.Slots[slot].Key, slots, primary)
                 != EquipmentRefusal::None)
             return false;
-        RemoveRecordsWhere(state, [&](const EquipmentRecord& record) { return (record.Slots & slots) != 0; });
-        if (state.Count == kEquipmentRecordCapacity)
-            return false;
-        state.Records[state.Count++] = EquipmentRecord{ .Key = state.NextKey++, .Definition = entry.Definition,
-                                                        .Slots = slots, .Primary = primary, .Source = entry.Entry,
-                                                        .Derivation = EquipmentDerivation::Pending };
+        RemoveRecordsWhere(worn, [&](const EquipmentRecord& record) { return (record.Slots & slots) != 0; });
+        worn.Records.push_back(EquipmentRecord{ .Key = worn.NextKey++, .Definition = entry.Definition, .Slots = slots,
+                                                .Primary = primary, .Source = entry.Entry,
+                                                .Derivation = EquipmentDerivation::Pending });
         return true;
     }
 
-    const EquipmentRecord* RecordHolding(const EquipmentState& state, std::uint8_t slot)
+    const EquipmentRecord* RecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot)
     {
-        const auto found = std::ranges::find_if(state.Records, state.Records + state.Count, [&](const EquipmentRecord& record) {
+        const auto found = std::ranges::find_if(records, [&](const EquipmentRecord& record) {
             return ((record.Slots >> slot) & 1u) != 0;
         });
-        return found != state.Records + state.Count ? found : nullptr;
+        return found != records.end() ? &*found : nullptr;
     }
 
     PropertyNode LayoutRow(const World& world, EquipmentLayoutId layout)
@@ -122,14 +121,14 @@ namespace
     }
 
     PropertyNode SlotRow(const EditorComponentInspectorContext& context, const EquipmentLayout& layout,
-                         const EquipmentState& state, std::uint8_t slot)
+                         std::span<const EquipmentRecord> records, std::uint8_t slot)
     {
         const std::vector<EntryChoice> choices = EntryChoices(context, layout, slot);
         std::vector<std::string> labels{ std::string(kEmpty) };
         for (const EntryChoice& choice : choices)
             labels.push_back(choice.Label);
         std::size_t current = 0;
-        if (const EquipmentRecord* record = RecordHolding(state, slot))
+        if (const EquipmentRecord* record = RecordHolding(records, slot))
         {
             const auto worn = std::ranges::find(choices, record->Source.Target,
                                                 [](const EntryChoice& choice) { return choice.Entry.Target; });
@@ -161,7 +160,7 @@ namespace
             std::vector<PropertyNode> rows{ LayoutRow(world, state->Layout) };
             if (const EquipmentLayout* layout = FindEquipmentLayout(world, state->Layout))
                 for (std::size_t slot = 0; slot < layout->Slots.size(); ++slot)
-                    rows.push_back(SlotRow(context, *layout, *state, static_cast<std::uint8_t>(slot)));
+                    rows.push_back(SlotRow(context, *layout, EquipmentRecordsOf(world, *state), static_cast<std::uint8_t>(slot)));
             return rows;
         }
 
@@ -172,7 +171,8 @@ namespace
             const EquipmentState* held = world.TryGet<EquipmentState>(context.Entity);
             if (held == nullptr)
                 return PropertyEditResult::Gone;
-            EquipmentState after = *held;
+            const EquipmentRecordList before = CopyEquipment(world, context.Entity);
+            EquipmentRecordList after = before;
             if (key == "layout")
             {
                 const EquipmentLayoutRegistry* layouts = world.TryGetResource<EquipmentLayoutRegistry>();
@@ -194,7 +194,7 @@ namespace
                 {
                     const std::vector<EntryChoice> choices = EntryChoices(context, *layout, slot);
                     const auto chosen = std::ranges::find(choices, value, &EntryChoice::Label);
-                    const EquipmentRecord* worn = RecordHolding(*held, slot);
+                    const EquipmentRecord* worn = RecordHolding(before.Records, slot);
                     if (chosen != choices.end() && worn != nullptr && worn->Source.Target == chosen->Entry.Target)
                         return PropertyEditResult::Unchanged;
                     if (chosen == choices.end() || !Wear(world, *layout, after, *chosen, slot))
@@ -203,9 +203,16 @@ namespace
             }
             else
                 return PropertyEditResult::Gone;
-            if (after.Layout == held->Layout && after.Count == held->Count && after.NextKey == held->NextKey)
+            if (after.Layout == before.Layout && after.Records.size() == before.Records.size()
+                && after.NextKey == before.NextKey)
                 return PropertyEditResult::Unchanged;
-            return CommitComponentValue(context, *held, after);
+            context.Commands.Execute(std::make_unique<ValueCommand<EquipmentRecordList>>(
+                before, after,
+                [&scene = context.Scene, entity = context.Entity](const EquipmentRecordList& worn) {
+                    SetEquipment(scene.GetRegistry().Components, entity, worn);
+                },
+                context.Document));
+            return PropertyEditResult::Applied;
         }
     };
 }

@@ -120,19 +120,21 @@ namespace
         return instance;
     }
 
-    std::size_t RecordHolding(const EquipmentState& state, std::uint8_t slot)
+    constexpr std::size_t kNoRecord = static_cast<std::size_t>(-1);
+
+    std::size_t RecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot)
     {
-        for (std::size_t i = 0; i < state.Count; ++i)
-            if ((state.Records[i].Slots >> slot) & 1u)
+        for (std::size_t i = 0; i < records.size(); ++i)
+            if ((records[i].Slots >> slot) & 1u)
                 return i;
-        return kEquipmentRecordCapacity;
+        return kNoRecord;
     }
 
-    std::uint32_t HeldSlots(const EquipmentState& state)
+    std::uint32_t HeldSlots(std::span<const EquipmentRecord> records)
     {
         std::uint32_t held = 0;
-        for (std::size_t i = 0; i < state.Count; ++i)
-            held |= state.Records[i].Slots;
+        for (const EquipmentRecord& record : records)
+            held |= record.Slots;
         return held;
     }
 
@@ -151,13 +153,13 @@ namespace
     }
 }
 
-EquipmentRefusal ResolveEquipmentSlots(const World& world, const EquipmentLayout& layout, const EquipmentState& state,
-                                       const ItemDefinition& item, std::string_view asked, std::uint32_t& mask,
-                                       std::uint8_t& primary)
+EquipmentRefusal ResolveEquipmentSlots(const World& world, const EquipmentLayout& layout,
+                                       std::span<const EquipmentRecord> records, const ItemDefinition& item,
+                                       std::string_view asked, std::uint32_t& mask, std::uint8_t& primary)
 {
     mask = 0;
     primary = kNoEquipmentSlot;
-    const std::uint32_t held = HeldSlots(state);
+    const std::uint32_t held = HeldSlots(records);
     for (std::size_t n = 0; n < item.Occupies.size(); ++n)
     {
         const std::vector<std::uint8_t> candidates = EquipmentSlotsNamed(layout, item.Occupies[n]);
@@ -196,11 +198,8 @@ void EndMaintained(World& world, const EquipmentRecord& record)
 
 void EndEquipmentRecord(World& world, EntityId wearer, std::size_t index)
 {
-    // Ending effects can move the wearer's row.
-    EndMaintained(world, world.TryGet<EquipmentState>(wearer)->Records[index]);
-    EquipmentState& state = *world.TryGet<EquipmentState>(wearer);
-    state.Records[index] = state.Records[state.Count - 1];
-    state.Records[--state.Count] = EquipmentRecord{};
+    EndMaintained(world, EquipmentRecord(EquipmentRecordsOf(world, wearer)[index]));
+    RemoveEquipmentRecord(world, wearer, index);
 }
 
 bool EquipmentWearerLocked(const World& world, EntityId wearer)
@@ -242,32 +241,31 @@ EquipmentResult Equipment::Equip(EntityId wearer, EntityId entry, std::string_vi
         return Refused(EquipmentRefusal::NotPermitted);
     if (item->Occupies.empty())
         return Refused(EquipmentRefusal::NotEquippable);
-    for (std::size_t i = 0; i < state->Count; ++i)
-        if (ResolvePersistableRef(world, state->Records[i].Source) == entry)
+    const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+    for (const EquipmentRecord& record : records)
+        if (ResolvePersistableRef(world, record.Source) == entry)
             return Refused(EquipmentRefusal::AlreadyEquipped);
     if (EquipmentWearerLocked(world, wearer))
         return Refused(EquipmentRefusal::Locked);
 
     std::uint32_t slots = 0;
     std::uint8_t primary = kNoEquipmentSlot;
-    if (const EquipmentRefusal refusal = ResolveEquipmentSlots(world, *layout, *state, *item, slot, slots, primary);
+    if (const EquipmentRefusal refusal = ResolveEquipmentSlots(world, *layout, records, *item, slot, slots, primary);
         refusal != EquipmentRefusal::None)
         return Refused(refusal);
 
     // Checked against the state after what it replaces has ended.
     std::vector<std::size_t> replaced;
     std::vector<EntityId> ending;
-    for (std::size_t i = 0; i < state->Count; ++i)
-        if (state->Records[i].Slots & slots)
+    for (std::size_t i = 0; i < records.size(); ++i)
+        if (records[i].Slots & slots)
         {
-            if (EquipmentRecordLocked(world, wearer, state->Records[i]))
+            if (EquipmentRecordLocked(world, wearer, records[i]))
                 return Refused(EquipmentRefusal::Locked);
             replaced.push_back(i);
-            for (const EntityId effect : Maintained(world, state->Records[i]))
+            for (const EntityId effect : Maintained(world, records[i]))
                 ending.push_back(effect);
         }
-    if (state->Count - replaced.size() + 1 > kEquipmentRecordCapacity)
-        return Refused(EquipmentRefusal::Full);
     std::vector<std::uint16_t> worn;
     for (const ItemEquipEffect& equipped : item->EquipEffects)
     {
@@ -291,14 +289,13 @@ EquipmentResult Equipment::Equip(EntityId wearer, EntityId entry, std::string_vi
     const PersistableRef source{ entry, EnsurePersistentId(world, entry) };
     for (auto it = replaced.rbegin(); it != replaced.rend(); ++it)
         EndEquipmentRecord(world, wearer, *it);
-    EquipmentState& wearing = *world.TryGet<EquipmentState>(wearer);
-    const EquipmentRecord record{ .Key = wearing.NextKey++,
+    const EquipmentRecord record{ .Key = world.TryGet<EquipmentState>(wearer)->NextKey++,
                                   .Definition = definition,
                                   .Slots = slots,
                                   .Primary = primary,
                                   .Source = source,
                                   .Derivation = EquipmentDerivation::Maintained };
-    wearing.Records[wearing.Count++] = record;
+    AddEquipmentRecord(world, wearer, record);
     for (const ItemEquipEffect& equipped : item->EquipEffects)
     {
         [[maybe_unused]] const EntityId instance =
@@ -318,12 +315,13 @@ EquipmentResult Equipment::Unequip(EntityId wearer, std::string_view slot, ItemC
     const std::uint8_t index = layout != nullptr ? FindEquipmentSlot(*layout, slot) : kNoEquipmentSlot;
     if (index == kNoEquipmentSlot)
         return Refused(EquipmentRefusal::NoSlot);
-    const std::size_t record = RecordHolding(*state, index);
-    if (record == kEquipmentRecordCapacity)
+    const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+    const std::size_t record = RecordHolding(records, index);
+    if (record == kNoRecord)
         return Refused(EquipmentRefusal::Missing);
-    if (change == ItemChangeClass::Requested && EquipmentRecordLocked(world, wearer, state->Records[record]))
+    if (change == ItemChangeClass::Requested && EquipmentRecordLocked(world, wearer, records[record]))
         return Refused(EquipmentRefusal::Locked);
-    const std::uint32_t key = state->Records[record].Key;
+    const std::uint32_t key = records[record].Key;
     EndEquipmentRecord(world, wearer, record);
     return { .Refusal = EquipmentRefusal::None, .Record = key };
 }
@@ -339,9 +337,9 @@ EquipmentResult Equipment::Cycle(EntityId wearer, std::string_view group)
     if (slots.empty())
         return Refused(EquipmentRefusal::NoSlot);
     const EquipmentSlot& first = layout->Slots[slots.front()];
-    const std::size_t holding = RecordHolding(*state, slots.front());
-    const EntityId current =
-        holding < kEquipmentRecordCapacity ? ResolvePersistableRef(world, state->Records[holding].Source) : EntityId{};
+    const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+    const std::size_t holding = RecordHolding(records, slots.front());
+    const EntityId current = holding != kNoRecord ? ResolvePersistableRef(world, records[holding].Source) : EntityId{};
 
     std::vector<EntityId> fits;
     for (const EntityId entry : HeldEntries(world, wearer))
@@ -349,9 +347,8 @@ EquipmentResult Equipment::Cycle(EntityId wearer, std::string_view group)
         const ItemEntry& candidate = *world.TryGet<ItemEntry>(entry);
         const ItemDefinition* item = FindItemDefinition(world, candidate.Definition);
         bool wornElsewhere = false;
-        for (std::size_t i = 0; i < state->Count; ++i)
-            wornElsewhere = wornElsewhere
-                || (i != holding && ResolvePersistableRef(world, state->Records[i].Source) == entry);
+        for (std::size_t i = 0; i < records.size(); ++i)
+            wornElsewhere = wornElsewhere || (i != holding && ResolvePersistableRef(world, records[i].Source) == entry);
         const std::vector<std::uint8_t> named = item != nullptr && !item->Occupies.empty()
             ? EquipmentSlotsNamed(*layout, item->Occupies.front())
             : std::vector<std::uint8_t>{};
@@ -372,19 +369,18 @@ EquipmentResult Equipment::Cycle(EntityId wearer, std::string_view group)
         if (const EquipmentResult equipped = Equip(wearer, next, key); equipped.Refusal == EquipmentRefusal::None)
             return equipped;
     }
-    if (current.IsValid() || holding < kEquipmentRecordCapacity)
+    if (current.IsValid() || holding != kNoRecord)
         return Unequip(wearer, key);
     return Refused(EquipmentRefusal::Missing);
 }
 
 namespace
 {
-    std::size_t RecordIndex(const EquipmentState& state, std::uint32_t key)
+    std::size_t RecordIndex(const World& world, EntityId wearer, std::uint32_t key)
     {
-        for (std::size_t i = 0; i < state.Count; ++i)
-            if (state.Records[i].Key == key)
-                return i;
-        return kEquipmentRecordCapacity;
+        const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
+        const auto found = std::ranges::find(records, key, &EquipmentRecord::Key);
+        return found != records.end() ? static_cast<std::size_t>(found - records.begin()) : kNoRecord;
     }
 
     bool Representable(const World& world, const EquipmentLayout& layout, const ItemDefinition& item,
@@ -406,7 +402,7 @@ namespace
 
     EquipmentDerivation Derive(World& world, EntityId wearer, std::size_t index, const FixedSimTime& now)
     {
-        const EquipmentRecord record = world.TryGet<EquipmentState>(wearer)->Records[index];
+        const EquipmentRecord record = EquipmentRecordsOf(world, wearer)[index];
         const EquipmentLayout* layout = FindEquipmentLayout(world, std::as_const(world).TryGet<EquipmentState>(wearer)->Layout);
         const ItemDefinition* item = FindItemDefinition(world, record.Definition);
         if (layout == nullptr || item == nullptr)
@@ -477,16 +473,16 @@ namespace
 
     void DeriveRecord(World& world, EntityId wearer, std::uint32_t key, const FixedSimTime& now)
     {
-        const EquipmentState* state = std::as_const(world).TryGet<EquipmentState>(wearer);
-        const std::size_t index = state != nullptr ? RecordIndex(*state, key) : kEquipmentRecordCapacity;
-        if (index == kEquipmentRecordCapacity)
+        const std::size_t index = RecordIndex(world, wearer, key);
+        if (index == kNoRecord)
             return;
-        const EquipmentDerivation was = state->Records[index].Derivation;
+        const EquipmentDerivation was = EquipmentRecordsOf(world, wearer)[index].Derivation;
         const EquipmentDerivation derived = Derive(world, wearer, index, now);
-        const std::size_t at = RecordIndex(*std::as_const(world).TryGet<EquipmentState>(wearer), key);
-        if (at == kEquipmentRecordCapacity)
+        const std::size_t at = RecordIndex(world, wearer, key);
+        if (at == kNoRecord)
             return;
-        world.TryGet<EquipmentState>(wearer)->Records[at].Derivation = derived;
+        if (derived != was)
+            EditEquipmentRecords(world, wearer)[at].Derivation = derived;
         if (IsRefused(derived) && derived != was)
             if (AbilityTrace* trace = world.TryGetResource<AbilityTrace>())
                 trace->Record({ .Tick = now.TickIndex,
@@ -499,10 +495,9 @@ namespace
 
     std::vector<std::uint32_t> RecordKeys(const World& world, EntityId wearer)
     {
-        const EquipmentState* state = StateOf(world, wearer);
         std::vector<std::uint32_t> keys;
-        for (std::size_t i = 0; state != nullptr && i < state->Count; ++i)
-            keys.push_back(state->Records[i].Key);
+        for (const EquipmentRecord& record : EquipmentRecordsOf(world, wearer))
+            keys.push_back(record.Key);
         return keys;
     }
 }
@@ -515,27 +510,27 @@ std::size_t ReconcileEquipment(World& world, EntityId wearer, const FixedSimTime
     for (const std::uint32_t key : RecordKeys(world, wearer))
     {
         DeriveRecord(world, wearer, key, now);
-        const EquipmentState& state = *std::as_const(world).TryGet<EquipmentState>(wearer);
-        const std::size_t index = RecordIndex(state, key);
-        refused += index != kEquipmentRecordCapacity && IsRefused(state.Records[index].Derivation) ? 1 : 0;
+        const std::size_t index = RecordIndex(world, wearer, key);
+        refused += index != kNoRecord && IsRefused(EquipmentRecordsOf(world, wearer)[index].Derivation) ? 1 : 0;
     }
     return refused;
 }
 
 void DeriveDueEquipmentRecords(World& world, EntityId wearer, const FixedSimTime& now)
 {
+    const auto due = [&](const EquipmentRecord& record) {
+        if (record.Derivation == EquipmentDerivation::Pending)
+            return true;
+        const ItemDefinition* item = FindItemDefinition(world, record.Definition);
+        return record.Derivation == EquipmentDerivation::RefusedForRoom && item != nullptr
+            && GrantsWanted(world, item->EquipEffects) <= AbilityGrantRoom(world, wearer);
+    };
+    if (std::ranges::none_of(EquipmentRecordsOf(world, wearer), due))
+        return;
     for (const std::uint32_t key : RecordKeys(world, wearer))
     {
-        const EquipmentState& state = *std::as_const(world).TryGet<EquipmentState>(wearer);
-        const std::size_t index = RecordIndex(state, key);
-        if (index == kEquipmentRecordCapacity)
-            continue;
-        const EquipmentRecord& record = state.Records[index];
-        const ItemDefinition* item = FindItemDefinition(world, record.Definition);
-        const bool due = record.Derivation == EquipmentDerivation::Pending
-            || (record.Derivation == EquipmentDerivation::RefusedForRoom && item != nullptr
-                && GrantsWanted(world, item->EquipEffects) <= AbilityGrantRoom(world, wearer));
-        if (due)
+        const std::size_t index = RecordIndex(world, wearer, key);
+        if (index != kNoRecord && due(EquipmentRecordsOf(world, wearer)[index]))
             DeriveRecord(world, wearer, key, now);
     }
 }
@@ -565,9 +560,8 @@ EquipmentLayoutId RedefineEquipmentLayout(World& world, std::string_view name, E
     for (const EntityId wearer : wearers)
         for (const std::uint32_t key : RecordKeys(world, wearer))
         {
-            EquipmentState& state = *world.TryGet<EquipmentState>(wearer);
-            const std::size_t index = RecordIndex(state, key);
-            EquipmentRecord& record = state.Records[index];
+            const std::size_t index = RecordIndex(world, wearer, key);
+            EquipmentRecord& record = EditEquipmentRecords(world, wearer)[index];
             std::uint32_t slots = 0;
             bool kept = record.Primary < moved.size() && moved[record.Primary] != kNoEquipmentSlot;
             for (std::uint32_t mask = record.Slots; kept && mask != 0; mask &= mask - 1)

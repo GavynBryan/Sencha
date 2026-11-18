@@ -653,10 +653,18 @@ void AbilityPass::Sweep(const AbilityActor& actor)
                 return true;
         return false;
     };
-    if (AbilityGrants* grants = Predicting ? nullptr : Entities.TryGet<AbilityGrants>(actor.Entity))
-        for (std::uint8_t i = grants->Count; i-- > 0;)
-            if (grants->Entries[i].Kind == AbilityGrantKind::Transient && !runsThrough(grants->Entries[i].Id))
-                (void)RevokeAbilityGrant(*grants, grants->Entries[i].Id);
+    if (!Predicting)
+    {
+        std::span<const AbilityGrant> grants = actor.Grants();
+        for (std::size_t i = grants.size(); i-- > 0;)
+        {
+            const AbilityGrant grant = grants[i];
+            if (grant.Kind != AbilityGrantKind::Transient || runsThrough(grant.Id))
+                continue;
+            (void)RevokeAbilityGrant(Entities, actor.Entity, grant.Id);
+            grants = actor.Grants();
+        }
+    }
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))
@@ -677,8 +685,7 @@ void AbilityPass::Sweep(const AbilityActor& actor)
             }
             record.Revision = Abilities->Revision(record.Key.Ability);
         }
-        const AbilityGrants* grants = actor.Grants();
-        if (grants == nullptr || grants->Find(record.Grant) == nullptr)
+        if (actor.Grant(record.Grant) == nullptr)
         {
             End(actor, slot, AbilityEndReason::GrantRevoked);
             continue;

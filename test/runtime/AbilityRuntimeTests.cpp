@@ -250,7 +250,7 @@ protected:
     {
         AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
         const std::uint16_t entry = entries.Intern({ std::move(key), ability, std::move(over) });
-        return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
+        return GrantAbility(Entities, actor, ability, AbilityGrantKind::Authored, entry);
     }
 
     std::vector<EffectId> DefineGrantingEffects(std::size_t count)
@@ -277,8 +277,8 @@ protected:
 
     [[nodiscard]] bool HoldsGrantOf(EntityId actor, EntityId effect)
     {
-        const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-        return std::any_of(grants.Entries, grants.Entries + grants.Count,
+        const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+        return std::any_of(grants.begin(), grants.end(),
                            [&](const AbilityGrant& grant) { return grant.Holder == effect; });
     }
 
@@ -846,7 +846,7 @@ TEST_F(AbilityRuntime, AStartCostReadsTheGrantsParameterAtAdmission)
             "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
             "then": [ { "key": "t_end", "to": "end" } ] } ] })");
     const EntityId actor = Actor();
-    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), sip, AbilityGrantKind::Authored,
+    (void)GrantAbility(Entities, actor, sip, AbilityGrantKind::Authored,
                        Entities.GetResource<AbilityGrantEntries>().Intern(
                            { .Key = "g", .Ability = sip, .Override = {}, .Parameters = { { "doses", 3.0 } } }));
     Entities.GetResource<Counters>().Held[actor] = 2;
@@ -989,7 +989,7 @@ TEST_F(AbilityRuntime, ASourceTargetedEffectCostChargesTheSource)
     const EntityId pistol = Entities.CreateEntity();
     Entities.AddComponent<AttributeSet>(pistol);
     Entities.TryGet<AttributeSet>(pistol)->Add(Ammo, 18.0f);
-    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), fire, AbilityGrantKind::Request,
+    (void)GrantAbility(Entities, actor, fire, AbilityGrantKind::Request,
                        Entities.GetResource<AbilityGrantEntries>().Intern({ "g", fire, {} }), {}, pistol);
     Entities.GetResource<AbilityRequestQueue>().Push(
         { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = fire });
@@ -1182,6 +1182,85 @@ TEST_F(AbilityRuntime, BindingsResolveByPriorityConsumeAndObserve)
     EXPECT_EQ(Marks.Values, (std::vector<double>{ 2.0, 3.0 }));
 }
 
+// An actor's grants are a list as long as what it is granted: a press takes the
+// highest priority among forty, wherever it was granted.
+TEST_F(AbilityRuntime, AnActorWithFortyGrantsStartsTheOneWithTheHighestPriority)
+{
+    const EntityId actor = Actor();
+    constexpr int kGrants = 40;
+    constexpr int kTop = 27;
+    std::vector<AbilityGrantId> granted;
+    for (int i = 0; i < kGrants; ++i)
+    {
+        const std::string marking = R"({ "input_default": { "action": "Input.PrimaryFire" },
+            "phases": [ { "key": "p_fire", "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark",
+                "arguments": { "value": { "const": )" + std::to_string(i) + R"( } } } ],
+                "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+        const AbilityId ability = Define("asset://abilities/mark_" + std::to_string(i) + ".sdata", marking);
+        granted.push_back(Grant(actor, ability, { .Priority = i == kTop ? 1000 : i }, "g_" + std::to_string(i)));
+        ASSERT_TRUE(granted.back().IsValid()) << i;
+    }
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kGrants);
+
+    Step({ Press(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ kTop }));
+
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, granted[kTop]));
+    Marks.Values.clear();
+    Step({ Release(kFire), Press(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ kGrants - 1 })) << "the next highest, once the top grant has gone";
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kGrants - 1);
+}
+
+// kAbilityGrantCapacity is what an owner can be sent: the grant past it is refused
+// and changes nothing, and an id is never minted twice.
+TEST_F(AbilityRuntime, AnActorHoldsEveryGrantItsOwnerCanBeSentAndTheNextIsRefused)
+{
+    const EntityId actor = Actor();
+    const AbilityId instant = Define("asset://abilities/instant.sdata", kInstant);
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        ASSERT_TRUE(Grant(actor, instant, {}, "g_" + std::to_string(i)).IsValid()) << i;
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kAbilityGrantCapacity);
+    EXPECT_EQ(AbilityGrantRoom(Entities, actor), 0u);
+
+    const AbilityGrantList before = CopyAbilityGrants(Entities, actor);
+    EXPECT_FALSE(Grant(actor, instant, {}, "g_over").IsValid());
+    const AbilityGrantList after = CopyAbilityGrants(Entities, actor);
+    EXPECT_EQ(after.Entries.size(), kAbilityGrantCapacity);
+    EXPECT_EQ(after.NextId, before.NextId) << "a refused grant mints no id";
+
+    const AbilityGrantId last = before.Entries.back().Id;
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, last));
+    EXPECT_EQ(AbilityGrantRoom(Entities, actor), 1u);
+    const AbilityGrantId again = Grant(actor, instant, {}, "g_again");
+    ASSERT_TRUE(again.IsValid());
+    EXPECT_GT(again.Value, last.Value) << "an id is never reused";
+}
+
+// A row names its grants in the World's AbilityGrantLists; the list goes with the row.
+TEST_F(AbilityRuntime, AnActorsGrantListIsFreedWithTheActor)
+{
+    const AbilityGrantLists& lists = Entities.GetResource<AbilityGrantLists>();
+    const std::size_t before = lists.Stats().Live;
+    const EntityId actor = Actor();
+    EXPECT_EQ(lists.Stats().Live, before) << "an actor granted nothing holds no list";
+    const AbilityId instant = Define("asset://abilities/instant.sdata", kInstant);
+    for (int i = 0; i < 3; ++i)
+        ASSERT_TRUE(Grant(actor, instant, {}, "g_" + std::to_string(i)).IsValid());
+    EXPECT_EQ(lists.Stats().Live, before + 1);
+
+    const EntityId twin = Actor();
+    SetAbilityGrants(Entities, twin, CopyAbilityGrants(Entities, actor));
+    EXPECT_EQ(lists.Stats().Live, before + 2) << "a copy is its own list";
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, twin, AbilityGrantsOf(Entities, twin)[0].Id));
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 3u);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(twin)->Count, 2u);
+
+    Entities.DestroyEntity(actor);
+    Entities.RemoveComponent<AbilityGrants>(twin);
+    EXPECT_EQ(lists.Stats().Live, before);
+}
+
 TEST_F(AbilityRuntime, EqualPriorityExclusivesStartNothingAndTrace)
 {
     const AbilityId a = Define("asset://abilities/a.sdata", kInstant);
@@ -1307,7 +1386,7 @@ TEST_F(AbilityRuntime, RevokingOneGrantEndsOnlyItsActivations)
     Grant(actor, charge, { .Action = "Input.AltFire" }, "g_2");
     Step({ Press(kFire), Press(kAlt) });
     EXPECT_EQ(LiveCount(actor), 1u) << "instances: 1 across both grants";
-    ASSERT_TRUE(RevokeAbilityGrant(*Entities.TryGet<AbilityGrants>(actor), first));
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, first));
     Step();
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
     Step({ Release(kFire), Release(kAlt), Press(kAlt) });
@@ -1589,10 +1668,10 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     const EntityId held = ApplyEffect(Entities, actor, equipped, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now });
     Step({ Press(kAlt) });
     EXPECT_NE(LiveRecord(actor, charge), nullptr) << "granted in the pass after it applied, bound as the effect says";
-    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-    ASSERT_EQ(grants.Count, 1u);
-    EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Effect);
-    EXPECT_EQ(grants.Entries[0].Holder, held);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+    ASSERT_EQ(grants.size(), 1u);
+    EXPECT_EQ(grants[0].Kind, AbilityGrantKind::Effect);
+    EXPECT_EQ(grants[0].Holder, held);
 
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u) << "granted once, not once per pass";
@@ -1619,7 +1698,7 @@ TEST_F(AbilityRuntime, ARequestTakesTheHighestPriorityGrantThenTheLowestId)
     AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
     const auto grant = [&](std::int32_t priority, EntityId source) {
         const std::uint16_t entry = entries.Intern({ "g_" + std::to_string(priority), read, { .Priority = priority } });
-        return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), read, AbilityGrantKind::Request, entry, {}, source);
+        return GrantAbility(Entities, actor, read, AbilityGrantKind::Request, entry, {}, source);
     };
     (void)grant(20, low);
     const AbilityGrantId top = grant(21, high);
@@ -1691,7 +1770,7 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
 
     EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
     ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
-    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Entries[0].Source, ring);
+    EXPECT_EQ(AbilityGrantsOf(Entities, actor)[0].Source, ring);
     EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
     Step();
     EXPECT_NE(LiveRecord(actor, read), nullptr);
@@ -1711,7 +1790,7 @@ TEST_F(AbilityRuntime, AnAbilityReadsItsGrantsParameterElseItsDefault)
     AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
     const EntityId strong = Actor();
     const EntityId plain = Actor();
-    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(strong), powered, AbilityGrantKind::Authored,
+    (void)GrantAbility(Entities, strong, powered, AbilityGrantKind::Authored,
                        entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 14.0 } } }));
     Grant(plain, powered);
 
@@ -1748,7 +1827,7 @@ TEST_F(AbilityRuntime, AGrantParameterItsAbilityDoesNotDeclareIsReported)
     Host.Logging = &logging;
     const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
     const EntityId actor = Actor();
-    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), powered, AbilityGrantKind::Authored,
+    (void)GrantAbility(Entities, actor, powered, AbilityGrantKind::Authored,
                        Entities.GetResource<AbilityGrantEntries>().Intern(
                            { .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "pwer", 14.0 } } }));
     Step({ Press(kFire), Release(kFire) });
@@ -1770,10 +1849,10 @@ TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
                                       LeaseOwner{ .Entity = wornRing });
 
     Step({ Press(kAlt) });
-    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-    ASSERT_EQ(grants.Count, 1u);
-    EXPECT_EQ(grants.Entries[0].Holder, held);
-    EXPECT_EQ(grants.Entries[0].Source, wornRing);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+    ASSERT_EQ(grants.size(), 1u);
+    EXPECT_EQ(grants[0].Holder, held);
+    EXPECT_EQ(grants[0].Source, wornRing);
     const AbilityRecordLocals* locals = LiveLocals(actor, read);
     ASSERT_NE(locals, nullptr);
     EXPECT_EQ(locals->Values[0].Entity, wornRing);
@@ -2037,8 +2116,8 @@ TEST_F(AbilityRuntime, GrantIdsSurviveTheRemovalOfOthers)
     ASSERT_NE(LiveRecord(actor, charge), nullptr);
     EXPECT_EQ(LiveRecord(actor, charge)->Grant, kept);
 
-    ASSERT_TRUE(RevokeAbilityGrant(*Entities.TryGet<AbilityGrants>(actor), first));
-    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Entries[0].Id, kept) << "the survivor moved, its id did not";
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, first));
+    EXPECT_EQ(AbilityGrantsOf(Entities, actor)[0].Id, kept) << "the survivor moved, its id did not";
     const AbilityGrantId later = Grant(actor, primary, { .Action = "Input.AltFire" }, "g_first");
     EXPECT_NE(later, first) << "an id is never handed out twice";
     Step();
@@ -2143,10 +2222,10 @@ TEST_F(AbilityRuntime, ATransientGrantLastsExactlyAsLongAsItsActivation)
                                                        .Ability = drink, .Instigator = {}, .Cause = {},
                                                        .Source = potion, .Entry = entry });
     Step();
-    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-    ASSERT_EQ(grants.Count, 1u);
-    EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Transient);
-    EXPECT_EQ(grants.Entries[0].Source, potion);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+    ASSERT_EQ(grants.size(), 1u);
+    EXPECT_EQ(grants[0].Kind, AbilityGrantKind::Transient);
+    EXPECT_EQ(grants[0].Source, potion);
     ASSERT_NE(LiveRecord(actor, drink), nullptr);
     EXPECT_EQ(LiveLocals(actor, drink)->Values[0].Entity, potion);
     EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, potion));
@@ -2328,9 +2407,9 @@ TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
                                                    .Override = { .Action = "Input.PrimaryFire" } } });
     Step();
 
-    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-    ASSERT_EQ(grants.Count, 1u) << "the reloaded grant was added beside the one it replaces";
-    const AbilityGrantEntry* entry = Entities.GetResource<AbilityGrantEntries>().Find(grants.Entries[0].Entry);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+    ASSERT_EQ(grants.size(), 1u) << "the reloaded grant was added beside the one it replaces";
+    const AbilityGrantEntry* entry = Entities.GetResource<AbilityGrantEntries>().Find(grants[0].Entry);
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->Override.Action, std::optional<std::string>("Input.PrimaryFire"));
 }
@@ -2416,8 +2495,8 @@ TEST_F(AbilityRuntime, AnEffectInstanceGrantsThroughEntriesOfItsOwn)
 
     Step();
     const auto holds = [&](EntityId instance, std::uint16_t entry) {
-        const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
-        return std::any_of(grants.Entries, grants.Entries + grants.Count, [&](const AbilityGrant& grant) {
+        const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
+        return std::any_of(grants.begin(), grants.end(), [&](const AbilityGrant& grant) {
             return grant.Holder == instance && grant.Entry == entry;
         });
     };

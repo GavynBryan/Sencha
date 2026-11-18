@@ -166,8 +166,7 @@ AbilityCommitResult AbilityPass::Commit(const AbilityActor& actor, std::size_t s
     if (payable == 0 && !cooldown)
         return { .Paid = true };
 
-    const AbilityGrants* grants = actor.Grants();
-    const AbilityGrant* grant = grants != nullptr ? grants->Find(record.Grant) : nullptr;
+    const AbilityGrant* grant = actor.Grant(record.Grant);
     const EntityId source = grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
     const AbilityCommitResult check = CheckCosts(actor, slot, definition, payable, cooldown, source);
     if (!check.Paid)

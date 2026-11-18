@@ -217,11 +217,12 @@ TEST(EquipmentScene, ARecordIsSavedByPathSlotNameAndIdentity)
     World& world = first.Scene.Components;
     const ItemId ring = world.GetResource<ItemRegistry>().Reserve("asset://items/ring.sdata");
     const EntityId wearer = world.CreateEntity();
-    EquipmentState state{ .Layout = first.Humanoid, .Count = 1, .NextKey = 8, .Records = {} };
-    state.Records[0] = EquipmentRecord{ .Key = 7, .Definition = ring, .Slots = (1u << 2) | (1u << 1), .Primary = 2,
-                                        .Source = { .Entity = {}, .Target = PersistentEntityId{ 0x5A0D } },
-                                        .Derivation = EquipmentDerivation::Maintained };
-    world.AddComponent<EquipmentState>(wearer, state);
+    SetEquipment(world, wearer,
+                 { .Layout = first.Humanoid,
+                   .NextKey = 8,
+                   .Records = { EquipmentRecord{ .Key = 7, .Definition = ring, .Slots = (1u << 2) | (1u << 1), .Primary = 2,
+                                                 .Source = { .Entity = {}, .Target = PersistentEntityId{ 0x5A0D } },
+                                                 .Derivation = EquipmentDerivation::Maintained } } });
     const std::unique_ptr<IComponentSerializer> serializer = MakeEquipmentStateSerializer();
     JsonWriteArchive written;
     ASSERT_TRUE(serializer->Save(written, wearer, first.Scene.Components, first.Context));
@@ -237,7 +238,7 @@ TEST(EquipmentScene, ARecordIsSavedByPathSlotNameAndIdentity)
     EXPECT_EQ(loaded.GetResource<EquipmentLayoutRegistry>().GetName(restored->Layout), "asset://equipment/humanoid.sdata");
     EXPECT_EQ(restored->NextKey, 8u);
     ASSERT_EQ(restored->Count, 1u);
-    const EquipmentRecord& record = restored->Records[0];
+    const EquipmentRecord& record = EquipmentRecordsOf(loaded, copy)[0];
     EXPECT_EQ(record.Key, 7u);
     EXPECT_EQ(loaded.GetResource<ItemRegistry>().GetName(record.Definition), "asset://items/ring.sdata");
     EXPECT_EQ(record.Slots, (1u << 2) | (1u << 1));
@@ -429,6 +430,8 @@ namespace
         Equipment Gear() { return Equipment(Entities(), FixedSimTime{ .DeltaSeconds = 1.0 / 60.0, .TickIndex = Now }); }
 
         const EquipmentState& State() { return *std::as_const(Entities()).TryGet<EquipmentState>(Hero); }
+        std::span<const EquipmentRecord> Records() { return EquipmentRecordsOf(Entities(), Hero); }
+        EquipmentRecordList Worn() { return CopyEquipment(Entities(), Hero); }
 
         // The equipment pass, then the inventory's, as the schedule orders them.
         void Pass()
@@ -441,10 +444,9 @@ namespace
         std::vector<const AbilityGrant*> GrantsOf(AbilityId ability)
         {
             std::vector<const AbilityGrant*> found;
-            const AbilityGrants& grants = *std::as_const(Entities()).TryGet<AbilityGrants>(Hero);
-            for (std::uint8_t i = 0; i < grants.Count; ++i)
-                if (grants.Entries[i].Ability == ability)
-                    found.push_back(&grants.Entries[i]);
+            for (const AbilityGrant& grant : AbilityGrantsOf(Entities(), Hero))
+                if (grant.Ability == ability)
+                    found.push_back(&grant);
             return found;
         }
 
@@ -474,8 +476,8 @@ TEST_F(EquipmentTest, TwoRingsWearTheirSlotsBindingsAndTheItemsParameters)
     ASSERT_EQ(Gear().Equip(Hero, first).Refusal, EquipmentRefusal::None);
     ASSERT_EQ(Gear().Equip(Hero, second).Refusal, EquipmentRefusal::None) << "the group's next free slot";
     ASSERT_EQ(State().Count, 2u);
-    EXPECT_EQ(State().Records[0].Primary, 2u);
-    EXPECT_EQ(State().Records[1].Primary, 3u);
+    EXPECT_EQ(Records()[0].Primary, 2u);
+    EXPECT_EQ(Records()[1].Primary, 3u);
     Step();
 
     const std::vector<const AbilityGrant*> bolts = GrantsOf(Bolt);
@@ -498,10 +500,10 @@ TEST_F(EquipmentTest, ATwoHandedItemIsOneRecordInTwoSlots)
     const EquipmentResult equipped = Gear().Equip(Hero, sword);
     ASSERT_EQ(equipped.Refusal, EquipmentRefusal::None);
     ASSERT_EQ(State().Count, 1u);
-    EXPECT_EQ(State().Records[0].Slots, 0b11u);
-    EXPECT_EQ(State().Records[0].Primary, 0u);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), sword);
-    EXPECT_TRUE(State().Records[0].Source.Target.IsValid()) << "a record's source is persistable";
+    EXPECT_EQ(Records()[0].Slots, 0b11u);
+    EXPECT_EQ(Records()[0].Primary, 0u);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), sword);
+    EXPECT_TRUE(Records()[0].Source.Target.IsValid()) << "a record's source is persistable";
 
     ASSERT_EQ(Gear().Unequip(Hero, "hand.off").Refusal, EquipmentRefusal::None) << "either slot names it";
     EXPECT_EQ(State().Count, 0u);
@@ -512,10 +514,9 @@ TEST_F(EquipmentTest, ASwapAtAFullGrantTableFitsWhatItReplacesAndNoMore)
 {
     // Fill the table to two short of full with grants nothing will release.
     World& world = Entities();
-    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
-    while (filling.Count < kAbilityGrantCapacity - 2)
-        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
+    while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity - 2)
+        (void)GrantAbility(world, Hero, Slash, AbilityGrantKind::Authored, filler);
     const EntityId sword = Give(Greatsword);
     ASSERT_EQ(Gear().Equip(Hero, sword).Refusal, EquipmentRefusal::None) << "two grants into two free places";
     Step();
@@ -525,13 +526,13 @@ TEST_F(EquipmentTest, ASwapAtAFullGrantTableFitsWhatItReplacesAndNoMore)
     const EntityId other = Give(Greatsword);
     ASSERT_EQ(Gear().Equip(Hero, other).Refusal, EquipmentRefusal::None) << "two for two";
     Step();
-    EXPECT_EQ(ResolvePersistableRef(world, State().Records[0].Source), other);
+    EXPECT_EQ(ResolvePersistableRef(world, Records()[0].Source), other);
 
     // A ring in a free slot replaces nothing, so its grant finds no room.
     const EntityId ring = Give(RingItem);
-    const EquipmentState before = State();
+    const EquipmentRecordList before = Worn();
     EXPECT_EQ(Gear().Equip(Hero, ring).Refusal, EquipmentRefusal::GrantRoom);
-    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0) << "a refusal changes nothing";
+    EXPECT_EQ(before, Worn()) << "a refusal changes nothing";
 }
 
 TEST_F(EquipmentTest, EveryRefusalLeavesTheWorldAsItWas)
@@ -542,10 +543,10 @@ TEST_F(EquipmentTest, EveryRefusalLeavesTheWorldAsItWas)
     Entities().AddComponent<ItemContainer>(stranger, ItemContainer{});
     const EntityId theirs = Inventory(Entities()).Give(stranger, RingItem, 1).Entry;
     const auto refusal = [&](EntityId entry, std::string_view slot = {}) {
-        const EquipmentState before = State();
+        const EquipmentRecordList before = Worn();
         const std::size_t effects = EffectsOn();
         const EquipmentRefusal result = Gear().Equip(Hero, entry, slot).Refusal;
-        EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+        EXPECT_EQ(before, Worn());
         EXPECT_EQ(EffectsOn(), effects);
         return result;
     };
@@ -582,9 +583,9 @@ TEST_F(EquipmentTest, AnEquipWhoseTagsFindNoRoomInTheWearersContainerIsRefused)
     for (int i = 0; tags.Count < GameplayTagContainer::Capacity - 1; ++i)
         (void)tags.GrantBaseline(*names.RegisterTag("Fill.T" + std::to_string(i)));
     const EntityId first = Give(band);
-    const EquipmentState before = State();
+    const EquipmentRecordList before = Worn();
     EXPECT_EQ(Gear().Equip(Hero, first, "ring.left").Refusal, EquipmentRefusal::TagRoom) << "two tags, one place";
-    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(before, Worn());
     EXPECT_EQ(EffectsOn(), 0u);
 
     (void)world.TryGet<GameplayTagContainer>(Hero)->RevokeBaseline(names.FindTag("Fill.T0"));
@@ -608,22 +609,24 @@ TEST_F(EquipmentTest, AnEquipWhoseEffectModifiesAnAttributeTheWearerLacksIsRefus
         ItemDefinition{ .Name = "Band", .Tags = { Ring }, .Occupies = { "ring" }, .EquipEffects = { { strength, 1.0f } } });
     Declare();
     const EntityId entry = Give(band);
-    const EquipmentState before = State();
+    const EquipmentRecordList before = Worn();
     EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::MissingAttribute) << "no attribute set at all";
     world.AddComponent<AttributeSet>(Hero, AttributeSet{});
     EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::MissingAttribute);
-    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(before, Worn());
     EXPECT_EQ(EffectsOn(), 0u);
 
     (void)world.TryGet<AttributeSet>(Hero)->Add(might, 1.0f);
     EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None);
 }
 
-TEST_F(EquipmentTest, AWearerHoldsSixteenRecordsAndRefusesTheSeventeenth)
+// A record holds a slot of its own, so a layout's slots are the only bound on
+// what a wearer wears: with every one taken, the next equip swaps.
+TEST_F(EquipmentTest, AWearerWearsARecordInEverySlotALayoutCanHaveAndTheNextEquipSwaps)
 {
     World& world = Entities();
     EquipmentLayout many;
-    for (std::size_t i = 0; i <= kEquipmentRecordCapacity; ++i)
+    for (std::size_t i = 0; i < kMaxEquipmentSlots; ++i)
     {
         many.Slots.emplace_back();
         many.Slots.back().Key = "charm.c" + std::to_string(i);
@@ -638,20 +641,32 @@ TEST_F(EquipmentTest, AWearerHoldsSixteenRecordsAndRefusesTheSeventeenth)
     ASSERT_EQ(State().Count, kEquipmentRecordCapacity);
 
     const EntityId extra = Give(charm);
-    const EquipmentState before = State();
-    EXPECT_EQ(Gear().Equip(Hero, extra).Refusal, EquipmentRefusal::Full) << "a free slot, and no record to hold it";
-    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
-    EXPECT_EQ(Gear().Equip(Hero, extra, "charm.c0").Refusal, EquipmentRefusal::None) << "a swap needs no new record";
+    const EntityId first = ResolvePersistableRef(world, Records()[0].Source);
+    EXPECT_EQ(Gear().Equip(Hero, extra).Refusal, EquipmentRefusal::None) << "no slot is free, so it takes the group's first";
+    EXPECT_EQ(State().Count, kEquipmentRecordCapacity) << "a swap needs no new record";
+    const auto wears = [&](EntityId entry) {
+        return std::ranges::any_of(Records(), [&](const EquipmentRecord& record) {
+            return ResolvePersistableRef(world, record.Source) == entry;
+        });
+    };
+    EXPECT_TRUE(wears(extra));
+    EXPECT_FALSE(wears(first));
+    std::uint32_t held = 0;
+    for (const EquipmentRecord& record : Records())
+    {
+        EXPECT_EQ(held & record.Slots, 0u) << "no slot is held twice";
+        held |= record.Slots;
+    }
+    EXPECT_EQ(held, 0xFFFFFFFFu);
 }
 
-TEST_F(EquipmentTest, AnEquipFillsTheSixteenthGrantAndRefusesTheSeventeenth)
+TEST_F(EquipmentTest, AnEquipFillsTheLastGrantAndRefusesTheNext)
 {
     World& world = Entities();
-    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
-    while (filling.Count < kAbilityGrantCapacity - 1)
-        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
-    ASSERT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.left").Refusal, EquipmentRefusal::None) << "the sixteenth";
+    while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity - 1)
+        (void)GrantAbility(world, Hero, Slash, AbilityGrantKind::Authored, filler);
+    ASSERT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.left").Refusal, EquipmentRefusal::None) << "the last";
     EXPECT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.right").Refusal, EquipmentRefusal::GrantRoom)
         << "reserved before the pass grants it";
     Step();
@@ -669,7 +684,7 @@ TEST_F(EquipmentTest, ReconcilingTwiceChangesNothingAndRestoresWhatWasLost)
     EXPECT_EQ(EffectsOn(), 1u) << "applied once, not once a reconcile";
 
     // A restore brings the record back without what it maintained.
-    (void)RemoveEffectsOwnedBy(Entities(), EquipmentRecordOwner(sword, State().Records[0].Key));
+    (void)RemoveEffectsOwnedBy(Entities(), EquipmentRecordOwner(sword, Records()[0].Key));
     EXPECT_EQ(EffectsOn(), 0u);
     EXPECT_EQ(ReconcileEquipment(Entities(), Hero, now), 0u);
     EXPECT_EQ(EffectsOn(), 1u);
@@ -683,11 +698,11 @@ TEST_F(EquipmentTest, CyclingWalksTheContainerAndUnequipsWhenNothingElseFits)
     (void)Give(Pebble);
     const EntityId second = Give(Greatsword);
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), first);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), first);
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), second) << "the pebble is passed over";
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), second) << "the pebble is passed over";
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), first) << "it wraps";
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), first) << "it wraps";
     ASSERT_EQ(State().Count, 1u);
 }
 
@@ -729,7 +744,7 @@ TEST_F(EquipmentTest, ASpentSourceReleasesOrHoldsAsItsSlotSays)
     }
     Pass();
     ASSERT_EQ(State().Count, 1u) << "the ring's slot releases";
-    const EquipmentRecord& held = State().Records[0];
+    const EquipmentRecord& held = Records()[0];
     EXPECT_EQ(held.Definition, Bomb);
     EXPECT_FALSE(ResolvePersistableRef(Entities(), held.Source).IsValid()) << "the bomb's slot holds, sourceless";
     EXPECT_EQ(EffectsOn(), 0u) << "a record with no source maintains nothing";
@@ -737,7 +752,7 @@ TEST_F(EquipmentTest, ASpentSourceReleasesOrHoldsAsItsSlotSays)
 
     const EntityId more = Give(Bomb);
     Pass();
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), more) << "a pickup takes the held slot";
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), more) << "a pickup takes the held slot";
     EXPECT_EQ(EffectsOn(), 1u) << "and maintains from it";
 }
 
@@ -779,12 +794,12 @@ TEST_F(EquipmentTest, ADestroyedSourceEndsItsRecord)
 TEST_F(EquipmentTest, AnAuthoredRecordIsReconciledOnce)
 {
     const EntityId sword = Give(Greatsword);
-    EquipmentState& state = *Entities().TryGet<EquipmentState>(Hero);
-    state.Records[0] = EquipmentRecord{ .Key = 1, .Definition = Greatsword, .Slots = 0b11u, .Primary = 0,
-                                        .Source = MakePersistableRef(Entities(), sword),
-                                        .Derivation = EquipmentDerivation::Pending };
-    state.Count = 1;
-    state.NextKey = 2;
+    EquipmentRecordList authored = Worn();
+    authored.Records = { EquipmentRecord{ .Key = 1, .Definition = Greatsword, .Slots = 0b11u, .Primary = 0,
+                                          .Source = MakePersistableRef(Entities(), sword),
+                                          .Derivation = EquipmentDerivation::Pending } };
+    authored.NextKey = 2;
+    SetEquipment(Entities(), Hero, authored);
     EXPECT_EQ(EffectsOn(), 0u);
     Pass();
     EXPECT_EQ(EffectsOn(), 1u);
@@ -807,7 +822,7 @@ TEST_F(EquipmentTest, AReloadedDefinitionIsDerivedAgain)
     (void)Entities().GetResource<ItemRegistry>().Define("asset://items/ring.sdata", stronger);
     Pass();
     EXPECT_EQ(EffectsOn(), 1u);
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::Maintained);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::Maintained);
 }
 
 namespace
@@ -1038,15 +1053,10 @@ namespace
         // The grant behind the hero's one live activation of `ability`.
         const AbilityGrant* LiveGrantOf(AbilityId ability)
         {
-            const AbilityGrants& grants = *std::as_const(Entities()).TryGet<AbilityGrants>(Hero);
             for (const AbilityRecord& record : AbilityRecordsOf(Entities(), Hero))
-            {
-                if (record.State != AbilityRecordState::Live || record.Key.Ability != ability)
-                    continue;
-                for (std::uint8_t g = 0; g < grants.Count; ++g)
-                    if (grants.Entries[g].Id == record.Grant)
-                        return &grants.Entries[g];
-            }
+                if (record.State == AbilityRecordState::Live && record.Key.Ability == ability)
+                    if (const AbilityGrant* grant = FindAbilityGrant(AbilityGrantsOf(Entities(), Hero), record.Grant))
+                        return grant;
             return nullptr;
         }
 
@@ -1126,13 +1136,13 @@ TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
     EXPECT_TRUE(Traced(AbilityTraceEvent::Ended).back().EndReason != AbilityEndReason::GrantRevoked)
         << "the throw finished on its own";
     ASSERT_EQ(State().Count, 1u) << "use.x holds";
-    EXPECT_FALSE(ResolvePersistableRef(Entities(), State().Records[0].Source).IsValid());
+    EXPECT_FALSE(ResolvePersistableRef(Entities(), Records()[0].Source).IsValid());
     EXPECT_FALSE(Entities().IsAlive(grenade));
     EXPECT_EQ(EffectsOn(), 0u);
 
     const EntityId more = Inventory(Entities()).Give(Hero, Grenade, 2).Entry;
     Step();
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), more);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), more);
     EXPECT_EQ(EffectsOn(), 1u);
     Step();
     Request(Throw);
@@ -1156,7 +1166,7 @@ TEST_F(EquipmentGateTest, ABottleStaysWornWhileItsContentsAreDrunk)
     for (int i = 0; i < 3; ++i)
         Step();
     ASSERT_EQ(State().Count, 1u);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), bottle) << "the bottle stays assigned";
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), bottle) << "the bottle stays assigned";
     const std::size_t refusedBefore = Traced(AbilityTraceEvent::Refused).size();
     Request(Sip);
     Step();
@@ -1211,7 +1221,7 @@ TEST_F(EquipmentGateTest, ARestoreReconcilesToWhatWasWorn)
 
     // The restore: what persisted comes back, what was derived does not.
     const EquipmentLayoutId layout = State().Layout;
-    for (const EquipmentRecord& record : std::vector(State().Records, State().Records + State().Count))
+    for (const EquipmentRecord& record : std::vector(Records().begin(), Records().end()))
         (void)RemoveEffectsOwnedBy(Entities(), EquipmentRecordOwner(record.Source.Entity, record.Key));
     Entities().RemoveComponent<EquipmentState>(Hero);
     Entities().TryGet<GameplayTagContainer>(Hero)->Clear();
@@ -1590,18 +1600,18 @@ TEST_F(EquipmentTest, AnEquipEffectRedefinedInstantIsRefusedAndMaintainsNothingU
     (void)world.GetResource<EffectRegistry>().Define("asset://effects/glow.sdata", instant);
     Step();
     ASSERT_EQ(State().Count, 1u) << "still worn";
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::RefusedByContent);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::RefusedByContent);
     EXPECT_EQ(EffectsOn(), 0u) << "inactive";
     EXPECT_FLOAT_EQ(std::as_const(world).TryGet<AttributeSet>(Hero)->GetBase(power), 1.0f) << "never applied as Instant";
-    const EquipmentState before = State();
+    const EquipmentRecordList before = Worn();
     EXPECT_EQ(Gear().Equip(Hero, Give(RingItem)).Refusal, EquipmentRefusal::NotMaintained);
-    EXPECT_EQ(std::memcmp(&before, &State(), sizeof(EquipmentState)), 0);
+    EXPECT_EQ(before, Worn());
 
     EffectDefinition lasting{};
     lasting.Duration = EffectDuration::Infinite;
     (void)world.GetResource<EffectRegistry>().Define("asset://effects/glow.sdata", lasting);
     Step();
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::Maintained);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::Maintained);
     EXPECT_EQ(EffectsOn(), 1u);
 }
 
@@ -1637,7 +1647,7 @@ TEST_F(EquipmentTest, ALayoutReloadKeepsALiveRecordOnTheSlotsItHeldByKey)
     Step();
     const EquipmentLayout& now = *Entities().GetResource<EquipmentLayoutRegistry>().Get(Body);
     ASSERT_EQ(State().Count, 1u);
-    EXPECT_EQ(now.Slots[State().Records[0].Primary].Key, "ring.left");
+    EXPECT_EQ(now.Slots[Records()[0].Primary].Key, "ring.left");
     EXPECT_EQ(EffectsOn(), 1u);
 }
 
@@ -1652,7 +1662,7 @@ TEST_F(EquipmentTest, ALayoutReloadThatRemovesASlotEndsTheRecordItHeldAndTheScen
     (void)RedefineEquipmentLayout(Entities(), "asset://equipment/body.sdata", std::move(layout));
     Step();
     ASSERT_EQ(State().Count, 1u) << "the ring's slot went; the sword's stayed";
-    EXPECT_EQ(State().Records[0].Definition, Greatsword);
+    EXPECT_EQ(Records()[0].Definition, Greatsword);
     EXPECT_EQ(EffectsOn(), 1u);
     LoggingProvider logging;
     SceneSerializationContext context{ logging };
@@ -1679,17 +1689,16 @@ TEST_F(EquipmentTest, ALayoutReloadThatMovesASlotsPriorityWearsTheGrantAtTheNewO
 TEST_F(EquipmentTest, ARecordRefusedForRoomIsTracedOnceAndDerivedOnceThereIsRoom)
 {
     World& world = Entities();
-    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
-    while (filling.Count < kAbilityGrantCapacity)
-        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
+    while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity)
+        (void)GrantAbility(world, Hero, Slash, AbilityGrantKind::Authored, filler);
     const EntityId ring = Give(RingItem);
-    EquipmentState& state = *world.TryGet<EquipmentState>(Hero);
-    state.Records[0] = EquipmentRecord{ .Key = 1, .Definition = RingItem, .Slots = 1u << 2, .Primary = 2,
-                                        .Source = MakePersistableRef(world, ring),
-                                        .Derivation = EquipmentDerivation::Pending };
-    state.Count = 1;
-    state.NextKey = 2;
+    EquipmentRecordList authored = Worn();
+    authored.Records = { EquipmentRecord{ .Key = 1, .Definition = RingItem, .Slots = 1u << 2, .Primary = 2,
+                                          .Source = MakePersistableRef(world, ring),
+                                          .Derivation = EquipmentDerivation::Pending } };
+    authored.NextKey = 2;
+    SetEquipment(world, Hero, authored);
     const auto refusals = [&] {
         std::size_t count = 0;
         world.GetResource<AbilityTrace>().Records().ForEach([&](const AbilityTraceRecord& record) {
@@ -1699,12 +1708,12 @@ TEST_F(EquipmentTest, ARecordRefusedForRoomIsTracedOnceAndDerivedOnceThereIsRoom
     };
     Pass();
     Pass();
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::RefusedForRoom);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::RefusedForRoom);
     EXPECT_EQ(EffectsOn(), 0u);
     EXPECT_EQ(refusals(), 1u) << "once, as it became refused";
-    *world.TryGet<AbilityGrants>(Hero) = AbilityGrants{};
+    SetAbilityGrants(world, Hero, AbilityGrantList{});
     Pass();
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::Maintained);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::Maintained);
     EXPECT_EQ(EffectsOn(), 1u);
 }
 
@@ -1715,15 +1724,14 @@ TEST_F(EquipmentTest, AReloadThatDoesNotFitLeavesTheOldEffectsAsTheyWere)
     World& world = Entities();
     ASSERT_EQ(Gear().Equip(Hero, Give(RingItem)).Refusal, EquipmentRefusal::None);
     Step();
-    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
-    while (filling.Count < kAbilityGrantCapacity)
-        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
+    while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity)
+        (void)GrantAbility(world, Hero, Slash, AbilityGrantKind::Authored, filler);
     (void)DeclareEffectGrants(world, Glow, { { .Key = "g_bolt", .Ability = "asset://abilities/bolt.sdata", .Override = {} },
                                              { .Key = "g_more", .Ability = "asset://abilities/slash.sdata", .Override = {} } });
     Step();
     Step();
-    EXPECT_EQ(State().Records[0].Derivation, EquipmentDerivation::RefusedForRoom);
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::RefusedForRoom);
     EXPECT_EQ(EffectsOn(), 1u);
     EXPECT_EQ(GrantsOf(Bolt).size(), 1u) << "the old derivation's grant, as it was";
 }
@@ -1790,9 +1798,9 @@ namespace
             const EquipmentState& state = *std::as_const(Entities()).TryGet<EquipmentState>(wearer);
             const std::uint8_t index =
                 FindEquipmentSlot(*Entities().GetResource<EquipmentLayoutRegistry>().Get(state.Layout), slot);
-            for (std::size_t i = 0; i < state.Count; ++i)
-                if ((state.Records[i].Slots >> index) & 1u)
-                    return ResolvePersistableRef(Entities(), state.Records[i].Source);
+            for (const EquipmentRecord& record : EquipmentRecordsOf(Entities(), state))
+                if ((record.Slots >> index) & 1u)
+                    return ResolvePersistableRef(Entities(), record.Source);
             return {};
         }
 
@@ -1882,23 +1890,22 @@ TEST_F(EquipmentTest, CyclingPassesOverAnItemWhoseOccupiesDoesNotCoverTheSlot)
     (void)Give(wand);
     const EntityId sword = Give(Greatsword);
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None);
-    EXPECT_EQ(ResolvePersistableRef(Entities(), State().Records[0].Source), sword);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), sword);
 }
 
 TEST_F(EquipmentTest, CyclingSkipsACandidateTheEquipRefuses)
 {
     World& world = Entities();
-    AbilityGrants& filling = *world.TryGet<AbilityGrants>(Hero);
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
-    while (filling.Count < kAbilityGrantCapacity)
-        (void)GrantAbility(filling, Slash, AbilityGrantKind::Authored, filler);
+    while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity)
+        (void)GrantAbility(world, Hero, Slash, AbilityGrantKind::Authored, filler);
     const ItemId club = world.GetResource<ItemRegistry>().Define(
         "asset://items/club.sdata", ItemDefinition{ .Name = "Club", .Tags = { Weapon }, .Occupies = { "hand.main" } });
     Declare();
     (void)Give(Greatsword);
     const EntityId stick = Give(club);
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None) << "the greatsword's grants do not fit";
-    EXPECT_EQ(ResolvePersistableRef(world, State().Records[0].Source), stick);
+    EXPECT_EQ(ResolvePersistableRef(world, Records()[0].Source), stick);
 }
 
 // What a person asks for and what the World decides (docs/gameplay/equipment.md,
@@ -2200,9 +2207,8 @@ TEST_F(EquipmentGateTest, WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttribu
     EXPECT_EQ(stacks(again.Shining), 2u) << "nothing contributed twice";
     EXPECT_EQ(stacks(again.Warded), 1u);
     EXPECT_FLOAT_EQ(power(), 6.0f);
-    const AbilityGrants& grants = *std::as_const(restored).TryGet<AbilityGrants>(wearer);
-    EXPECT_EQ(std::count_if(grants.Entries, grants.Entries + grants.Count,
-                            [&](const AbilityGrant& grant) { return grant.Kind == AbilityGrantKind::Effect; }),
+    EXPECT_EQ(std::ranges::count_if(AbilityGrantsOf(restored, wearer),
+                                    [&](const AbilityGrant& grant) { return grant.Kind == AbilityGrantKind::Effect; }),
               1)
         << "the sun's ward, once";
     ExpectContributionsAttributable(restored, wearer);
@@ -2214,6 +2220,121 @@ TEST_F(EquipmentGateTest, WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttribu
     EXPECT_EQ(stacks(again.Warded), 1u);
     EXPECT_FLOAT_EQ(power(), 3.0f);
     ExpectContributionsAttributable(restored, wearer);
+}
+
+namespace
+{
+    struct Charms
+    {
+        EquipmentLayoutId Layout;
+        ItemId Charm;
+    };
+
+    // A layout with every slot a layout can have, and a charm that takes one.
+    Charms DefineCharms(World& world)
+    {
+        EquipmentLayout many;
+        for (std::size_t i = 0; i < kMaxEquipmentSlots; ++i)
+        {
+            many.Slots.emplace_back();
+            many.Slots.back().Key = "charm.c" + std::to_string(i);
+        }
+        return { world.GetResource<EquipmentLayoutRegistry>().Define("asset://equipment/charms.sdata", std::move(many)),
+                 world.GetResource<ItemRegistry>().Define("asset://items/charm.sdata",
+                                                          ItemDefinition{ .Name = "Charm", .Occupies = { "charm" } }) };
+    }
+}
+
+TEST_F(EquipmentGateTest, AWearerOfThirtyRecordsSurvivesASaveIntoAFreshWorld)
+{
+    constexpr std::size_t kWorn = 30;
+    World& world = Entities();
+    const Charms charms = DefineCharms(world);
+    world.TryGet<EquipmentState>(Hero)->Layout = charms.Layout;
+    Declare();
+    for (std::size_t i = 0; i < kWorn; ++i)
+        ASSERT_EQ(Gear().Equip(Hero, Give(charms.Charm)).Refusal, EquipmentRefusal::None) << i;
+    Step();
+    const EquipmentRecordList saved = Worn();
+    ASSERT_EQ(saved.Records.size(), kWorn);
+
+    ComponentSerializerRegistry serializers;
+    ComponentRegistrar registrar(nullptr, &serializers, nullptr);
+    RegisterEngineComponents(registrar);
+    LoggingProvider logging;
+    SceneSerializationContext context{ logging };
+    const SceneSpawnOverlay body = CaptureSpawnOverlay(world, Hero, BodyPrefab(Body), serializers, context);
+    const JsonValue held = CaptureHeldRecords(world, std::span(&Hero, 1), serializers, context);
+    const PersistentEntityId bodyId = world.TryGet<PersistentIdComponent>(Hero)->Id;
+
+    FreshGateWorld fresh;
+    World& restored = fresh.Entities();
+    const Charms again = DefineCharms(restored);
+    fresh.Declare();
+    EntityBuildPackage package = BodyPrefab(fresh.Body);
+    std::string error;
+    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error)) << error;
+    RestoreHeldRecords(restored, held, serializers, context);
+    ZoneImportError refused;
+    ASSERT_TRUE(ImportZonePackage(fresh.Runtime, fresh.Schema, ZoneId{ 7 }, package, serializers, context,
+                                  ZoneParticipation{ .Visible = false, .Physics = false, .Logic = true, .Audio = false },
+                                  &refused))
+        << refused.Message;
+    EntityId wearer;
+    restored.ForEachComponent<EquipmentState>([&](EntityId entity, const EquipmentState& state) {
+        if (state.Count == kWorn)
+            wearer = entity;
+    });
+    ASSERT_TRUE(wearer.IsValid()) << "the records came back";
+    restored.AddComponent<PersistentIdComponent>(wearer, PersistentIdComponent{ bodyId });
+    fresh.Runtime.FlushLifecycleRequests();
+    (void)fresh.Runtime.BeginResidencyProcessing();
+    fresh.Runtime.FinalizeResidencyProcessing();
+    fresh.Tick();
+    fresh.Tick();
+
+    const EquipmentRecordList back = CopyEquipment(restored, wearer);
+    EXPECT_EQ(back.Layout, again.Layout);
+    EXPECT_EQ(back.NextKey, saved.NextKey);
+    ASSERT_EQ(back.Records.size(), kWorn);
+    std::vector<EntityId> sources;
+    for (const EquipmentRecord& was : saved.Records)
+    {
+        const auto found = std::ranges::find(back.Records, was.Key, &EquipmentRecord::Key);
+        ASSERT_NE(found, back.Records.end()) << "record " << was.Key;
+        EXPECT_EQ(found->Slots, was.Slots);
+        EXPECT_EQ(found->Primary, was.Primary);
+        EXPECT_EQ(found->Definition, again.Charm);
+        EXPECT_EQ(found->Derivation, EquipmentDerivation::Maintained);
+        const EntityId source = ResolvePersistableRef(restored, found->Source);
+        ASSERT_TRUE(restored.IsAlive(source)) << "record " << was.Key << " found its entry again";
+        EXPECT_TRUE(MayUseItem(restored, wearer, source));
+        EXPECT_EQ(std::ranges::find(sources, source), sources.end()) << "one entry, one record";
+        sources.push_back(source);
+    }
+}
+
+// A row names its records in the World's EquipmentRecordLists; the list goes with the row.
+TEST_F(EquipmentTest, AWearersRecordListIsFreedWithItsEquipmentState)
+{
+    const EquipmentRecordLists& lists = Entities().GetResource<EquipmentRecordLists>();
+    const std::size_t before = lists.Stats().Live;
+    ASSERT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.left").Refusal, EquipmentRefusal::None);
+    ASSERT_EQ(Gear().Equip(Hero, Give(RingItem), "ring.right").Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(lists.Stats().Live, before + 1);
+
+    const EntityId twin = Entities().CreateEntity();
+    SetEquipment(Entities(), twin, Worn());
+    EXPECT_EQ(lists.Stats().Live, before + 2) << "a copy is its own list";
+    RemoveEquipmentRecord(Entities(), twin, 0);
+    EXPECT_EQ(State().Count, 2u);
+    EXPECT_EQ(EquipmentRecordsOf(Entities(), twin).size(), 1u);
+
+    Entities().DestroyEntity(twin);
+    for (const EquipmentRecord& record : std::vector(Records().begin(), Records().end()))
+        EndMaintained(Entities(), record);
+    Entities().RemoveComponent<EquipmentState>(Hero);
+    EXPECT_EQ(lists.Stats().Live, before);
 }
 
 // S5.1's audit rows: an ability's owned tags are contributions, so a save holds none.

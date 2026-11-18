@@ -43,9 +43,10 @@ struct GrantsScene
     }
 
     [[nodiscard]] const AbilityGrants& Grants() { return *Scene.Components.TryGet<AbilityGrants>(Actor); }
+    [[nodiscard]] std::span<const AbilityGrant> Held() { return AbilityGrantsOf(Scene.Components, Actor); }
     [[nodiscard]] const AbilityGrantEntry& Entry(std::size_t i)
     {
-        return *Scene.Components.GetResource<AbilityGrantEntries>().Find(Grants().Entries[i].Entry);
+        return *Scene.Components.GetResource<AbilityGrantEntries>().Find(Held()[i].Entry);
     }
 };
 
@@ -70,7 +71,7 @@ TEST(AbilityGrantsSerializer, AGrantKeepsItsKeyAbilityAndOverrideThroughASaveAnd
     EXPECT_FALSE(first.Entry(1).Override.Action.has_value()) << "a grant without an override inherits everything";
 
     const AbilityRegistry& abilities = first.Scene.Components.GetResource<AbilityRegistry>();
-    EXPECT_EQ(abilities.GetName(first.Grants().Entries[0].Ability), "asset://abilities/charge.sdata")
+    EXPECT_EQ(abilities.GetName(first.Held()[0].Ability), "asset://abilities/charge.sdata")
         << "named before anything declared it";
 
     GrantsScene second;
@@ -100,19 +101,42 @@ TEST(AbilityGrantsSerializer, AuthoredAndRequestedGrantsAreSavedAndAnEffectsAreN
 {
     GrantsScene scene;
     ASSERT_TRUE(scene.Load(*JsonParse(kGrants)));
-    AbilityGrants& grants = *scene.Scene.Components.TryGet<AbilityGrants>(scene.Actor);
-    AbilityGrantEntries& entries = scene.Scene.Components.GetResource<AbilityGrantEntries>();
-    const AbilityId ability = grants.Entries[1].Ability;
+    World& world = scene.Scene.Components;
+    AbilityGrantEntries& entries = world.GetResource<AbilityGrantEntries>();
+    const AbilityId ability = AbilityGrantsOf(world, scene.Actor)[1].Ability;
     const std::uint16_t requested = entries.Intern({ "requested", ability, {} });
     const std::uint16_t held = entries.Intern({ "held", ability, {} });
-    ASSERT_TRUE(GrantAbility(grants, ability, AbilityGrantKind::Request, requested).IsValid());
-    ASSERT_TRUE(GrantAbility(grants, ability, AbilityGrantKind::Effect, held).IsValid());
+    ASSERT_TRUE(GrantAbility(world, scene.Actor, ability, AbilityGrantKind::Request, requested).IsValid());
+    ASSERT_TRUE(GrantAbility(world, scene.Actor, ability, AbilityGrantKind::Effect, held).IsValid());
 
     const JsonValue saved = scene.Save();
     ASSERT_NE(saved.Find("grants"), nullptr);
     const JsonValue::Array& list = saved.Find("grants")->AsArray();
     ASSERT_EQ(list.size(), 3u);
     EXPECT_EQ(list[2].Find("key")->AsString(), "requested");
+}
+
+TEST(AbilityGrantsSerializer, FortyGrantsRoundTripInOrder)
+{
+    std::string json = R"({ "grants": [)";
+    for (int i = 0; i < 40; ++i)
+        json += std::string(i == 0 ? "" : ",") + R"({ "key": "g_)" + std::to_string(i)
+            + R"(", "ability": "asset://abilities/a_)" + std::to_string(i % 7) + R"(.sdata" })";
+    json += "] }";
+    GrantsScene first;
+    ASSERT_TRUE(first.Load(*JsonParse(json)));
+    ASSERT_EQ(first.Grants().Count, 40u);
+
+    GrantsScene second;
+    ASSERT_TRUE(second.Load(first.Save()));
+    ASSERT_EQ(second.Held().size(), 40u);
+    const AbilityRegistry& abilities = second.Scene.Components.GetResource<AbilityRegistry>();
+    for (std::size_t i = 0; i < 40; ++i)
+    {
+        EXPECT_EQ(second.Entry(i).Key, "g_" + std::to_string(i));
+        EXPECT_EQ(abilities.GetName(second.Held()[i].Ability), "asset://abilities/a_" + std::to_string(i % 7) + ".sdata");
+        EXPECT_EQ(second.Held()[i].Id.Value, i + 1);
+    }
 }
 
 TEST(AbilityGrantsSerializer, AnUnknownBindingChoiceRefusesTheScene)

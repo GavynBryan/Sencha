@@ -250,7 +250,7 @@ struct UseHarness
         const AbilityId ability =
             world.GetResource<AbilityRegistry>().Define("asset://abilities/use.sdata", std::move(definition));
         const std::uint16_t entry = world.GetResource<AbilityGrantEntries>().Intern({ "use", ability, {} });
-        (void)GrantAbility(*world.TryGet<AbilityGrants>(pawn), ability, AbilityGrantKind::Authored, entry);
+        (void)GrantAbility(world, pawn, ability, AbilityGrantKind::Authored, entry);
         return pawn;
     }
 

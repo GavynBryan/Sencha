@@ -37,14 +37,17 @@ struct AbilityActor
     InputActionView Input;
     InputActionSourceId Source = kLocalInputActionSource;
     AbilityActivations* Activations = nullptr;
+    const AbilityGrantLists* GrantLists = nullptr;
 
     [[nodiscard]] ActiveAbilities& Active() const { return *Entities->TryGet<ActiveAbilities>(Entity); }
     [[nodiscard]] AbilityRecord& Record(std::size_t slot) const { return Activations->Record(Active(), slot); }
     [[nodiscard]] AbilityRecordLocals& Locals(std::size_t slot) const { return Activations->Locals(Active(), slot); }
-    [[nodiscard]] const AbilityGrants* Grants() const
+    [[nodiscard]] std::span<const AbilityGrant> Grants() const
     {
-        return static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);
+        const AbilityGrants* grants = static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);
+        return grants != nullptr ? GrantLists->Read(grants->Entries) : std::span<const AbilityGrant>{};
     }
+    [[nodiscard]] const AbilityGrant* Grant(AbilityGrantId id) const { return FindAbilityGrant(Grants(), id); }
     [[nodiscard]] GameplayTagContainer* Tags() const { return Entities->TryGet<GameplayTagContainer>(Entity); }
     [[nodiscard]] bool Alive() const { return Entities->IsAlive(Entity); }
 };

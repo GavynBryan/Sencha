@@ -29,6 +29,21 @@
 
 namespace
 {
+    struct AbilityPressCandidate
+    {
+        AbilityGrant Grant;
+        std::int32_t Priority = 0;
+        AbilityConsume Consume = AbilityConsume::Exclusive;
+        AbilityWhenBlocked WhenBlocked = AbilityWhenBlocked::Consume;
+    };
+
+    // A press's bound grants and their priority order, kept between presses.
+    struct AbilityPressScratch
+    {
+        std::vector<AbilityPressCandidate> Candidates;
+        std::vector<std::size_t> Order;
+    };
+
     // Buffers a pass reuses, so a warm pass allocates nothing for them.
     struct AbilityPassScratch
     {
@@ -52,6 +67,7 @@ namespace
         std::vector<EffectGrant> StillRefused;
         std::vector<EntityId> Actors;
         std::vector<AbilityRequest> Requests;
+        AbilityPressScratch Press;
         std::unordered_map<EntityId, std::uint8_t, EntityIdHash> RequestsByActor;
         std::vector<std::string> Problems;
         AbilityPassBuffers Buffers;
@@ -60,16 +76,17 @@ namespace
     const AbilityEffectiveBinding* RecordBinding(const AbilityGrantEntries& entries, const AbilityActor& actor,
                                                  const AbilityRecord& record)
     {
-        const AbilityGrants* grants = actor.Grants();
-        const AbilityGrant* grant = grants != nullptr ? grants->Find(record.Grant) : nullptr;
+        const AbilityGrant* grant = actor.Grant(record.Grant);
         return grant != nullptr ? entries.Binding(grant->Entry) : nullptr;
     }
 
     // A press: a toggle it ends, else the bindings it starts (docs/gameplay/abilitykit.md,
     // "Grants and input").
     void Press(AbilityPass& pass, const AbilityActor& actor, const AbilityGrantEntries& entries,
-               const GameplayTagRegistry* tags, std::uint8_t action, std::uint8_t edge)
+               const GameplayTagRegistry* tags, AbilityPressScratch& scratch, std::uint8_t action, std::uint8_t edge)
     {
+        std::vector<AbilityPressCandidate>& candidates = scratch.Candidates;
+        std::vector<std::size_t>& order = scratch.Order;
         bool toggled = false;
         for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         {
@@ -85,39 +102,30 @@ namespace
         if (toggled)
             return;
 
-        const AbilityGrants* grants = actor.Grants();
-        if (grants == nullptr)
-            return;
+        const std::span<const AbilityGrant> grants = actor.Grants();
         static const GameplayTagContainer kNoTags{};
         const GameplayTagContainer* held = actor.Tags();
 
         // Copies: a start may revoke or add grants, or intern a grant entry, moving the
         // grants and the bindings they came from.
-        struct Candidate
+        candidates.clear();
+        for (const AbilityGrant& grant : grants)
         {
-            AbilityGrant Grant;
-            std::int32_t Priority = 0;
-            AbilityConsume Consume = AbilityConsume::Exclusive;
-            AbilityWhenBlocked WhenBlocked = AbilityWhenBlocked::Consume;
-        };
-        std::array<Candidate, kAbilityGrantCapacity> candidates{};
-        std::size_t count = 0;
-        for (std::uint8_t i = 0; i < grants->Count; ++i)
-        {
-            const AbilityEffectiveBinding* bound = entries.Binding(grants->Entries[i].Entry);
+            const AbilityEffectiveBinding* bound = entries.Binding(grant.Entry);
             if (bound == nullptr || bound->Action != action)
                 continue;
             if (bound->HasContext
                 && (tags == nullptr || !bound->Context.Matches(held != nullptr ? *held : kNoTags, *tags)))
                 continue;
-            candidates[count++] = { .Grant = grants->Entries[i], .Priority = bound->Priority,
-                                    .Consume = bound->Consume, .WhenBlocked = bound->WhenBlocked };
+            candidates.push_back({ .Grant = grant, .Priority = bound->Priority, .Consume = bound->Consume,
+                                   .WhenBlocked = bound->WhenBlocked });
         }
+        const std::size_t count = candidates.size();
         // Priority alone orders them; equal priorities keep grant order.
-        std::array<std::size_t, kAbilityGrantCapacity> order{};
+        order.resize(count);
         for (std::size_t i = 0; i < count; ++i)
             order[i] = i;
-        std::stable_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(count),
+        std::stable_sort(order.begin(), order.end(),
                          [&](std::size_t a, std::size_t b) { return candidates[a].Priority > candidates[b].Priority; });
 
         const auto keyOf = [&](std::size_t i) {
@@ -185,15 +193,13 @@ namespace
 
     const AbilityGrant* RequestedGrant(const World& world, const AbilityActor& actor, const AbilityRequest& request)
     {
-        const AbilityGrants* grants = actor.Grants();
         const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
-        if (grants == nullptr || entries == nullptr)
+        if (entries == nullptr)
             return nullptr;
         const AbilityGrant* found = nullptr;
         std::int32_t foundPriority = 0;
-        for (std::uint8_t g = 0; g < grants->Count; ++g)
+        for (const AbilityGrant& grant : actor.Grants())
         {
-            const AbilityGrant& grant = grants->Entries[g];
             if (grant.Ability != request.Ability || (request.Source.IsValid() && grant.Source != request.Source))
                 continue;
             const AbilityEffectiveBinding* binding = entries->Binding(grant.Entry);
@@ -213,11 +219,11 @@ namespace
     {
         const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
         const AbilityGrantEntry* entry = entries != nullptr ? entries->Find(request.Entry) : nullptr;
-        AbilityGrants* grants = world.TryGet<AbilityGrants>(request.Actor);
         const bool sourceGone = request.Source.IsValid() && !world.IsAlive(request.Source);
         const bool room = AbilityGrantRoom(world, request.Actor) > 0;
-        const AbilityGrantId id = entry != nullptr && grants != nullptr && !sourceGone && room
-            ? GrantAbility(*grants, entry->Ability, AbilityGrantKind::Transient, request.Entry, {}, request.Source)
+        const AbilityGrantId id = entry != nullptr && !sourceGone && room
+            ? GrantAbility(world, request.Actor, entry->Ability, AbilityGrantKind::Transient, request.Entry, {},
+                           request.Source)
             : AbilityGrantId{};
         if (!id.IsValid())
         {
@@ -225,12 +231,11 @@ namespace
                          .Refusal = entry == nullptr || sourceGone ? AbilityRefusal::NotGranted : AbilityRefusal::Capacity });
             return;
         }
-        const AbilityGrant grant = *grants->Find(id);
+        const AbilityGrant grant = *actor.Grant(id);
         AbilityActivationKey started = key;
         started.Ability = entry->Ability;
         if (pass.TryStart(actor, grant, started, kAbilityNoTrigger, request.Instigator) < 0)
-            if (AbilityGrants* held = world.TryGet<AbilityGrants>(request.Actor))
-                (void)RevokeAbilityGrant(*held, id);
+            (void)RevokeAbilityGrant(world, request.Actor, id);
     }
 
     void Requests(AbilityPass& pass, World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch)
@@ -262,7 +267,7 @@ namespace
                 continue;
             }
             const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource,
-                                      &world.GetResource<AbilityActivations>() };
+                                      &world.GetResource<AbilityActivations>(), &world.GetResource<AbilityGrantLists>() };
             if (request.Kind == AbilityRequestKind::Cancel)
             {
                 for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
@@ -288,19 +293,28 @@ namespace
         scratch.Requests.clear();
     }
 
-    void RevokeEndedEffectGrants(World& world, const AbilityEffectGrants* table, EntityId actor)
+    std::span<const AbilityGrant> GrantsHeld(const World& world, const AbilityGrantLists& lists, EntityId actor)
     {
-        AbilityGrants& grants = *world.TryGet<AbilityGrants>(actor);
-        for (std::uint8_t i = grants.Count; i-- > 0;)
+        const AbilityGrants* grants = world.TryGet<AbilityGrants>(actor);
+        return grants != nullptr ? lists.Read(grants->Entries) : std::span<const AbilityGrant>{};
+    }
+
+    void RevokeEndedEffectGrants(World& world, const AbilityGrantLists& lists, const AbilityEffectGrants* table,
+                                 EntityId actor)
+    {
+        std::span<const AbilityGrant> grants = GrantsHeld(world, lists, actor);
+        for (std::size_t i = grants.size(); i-- > 0;)
         {
-            const AbilityGrant& grant = grants.Entries[i];
+            const AbilityGrant grant = grants[i];
             if (grant.Kind != AbilityGrantKind::Effect)
                 continue;
             const ActiveEffect* effect = world.IsAlive(grant.Holder) ? world.TryGet<ActiveEffect>(grant.Holder) : nullptr;
             const std::span<const std::uint16_t> granting =
                 effect != nullptr && table != nullptr ? table->Of(grant.Holder, effect->Def) : std::span<const std::uint16_t>{};
-            if (std::ranges::find(granting, grant.Entry) == granting.end())
-                (void)RevokeAbilityGrant(grants, grant.Id);
+            if (std::ranges::find(granting, grant.Entry) != granting.end())
+                continue;
+            (void)RevokeAbilityGrant(world, actor, grant.Id);
+            grants = GrantsHeld(world, lists, actor);
         }
     }
 
@@ -317,8 +331,8 @@ namespace
 
     // An actor holds an effect's grants while the effect lasts: granted the pass after
     // it applies, revoked the pass after it ends, so both machines agree on the tick.
-    void SyncEffectGrants(World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch,
-                          const FixedSimTime& now)
+    void SyncEffectGrants(World& world, const AbilityGrantLists& lists, const StoragePartitionSet* partitions,
+                          AbilityPassScratch& scratch, const FixedSimTime& now)
     {
         scratch.Actors.clear();
         scratch.Granted.ForEachChunk([&](auto& view) {
@@ -330,7 +344,7 @@ namespace
         });
         AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
         for (const EntityId actor : scratch.Actors)
-            RevokeEndedEffectGrants(world, table, actor);
+            RevokeEndedEffectGrants(world, lists, table, actor);
         if (table != nullptr)
             table->ForgetEnded(world);
 
@@ -358,15 +372,16 @@ namespace
                 continue;
             if (!world.HasComponent<AbilityGrants>(pending.Target))
                 world.AddComponent<AbilityGrants>(pending.Target, AbilityGrants{});
-            AbilityGrants& grants = *world.TryGet<AbilityGrants>(pending.Target);
-            const bool held = std::any_of(grants.Entries, grants.Entries + grants.Count, [&](const AbilityGrant& grant) {
+            const bool held = std::ranges::any_of(GrantsHeld(world, lists, pending.Target), [&](const AbilityGrant& grant) {
                 return grant.Kind == AbilityGrantKind::Effect && grant.Holder == pending.Effect
                     && grant.Entry == pending.Entry;
             });
             if (held)
                 continue;
             const AbilityId ability = entries->Find(pending.Entry)->Ability;
-            if (GrantAbility(grants, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect, pending.Source).IsValid())
+            if (GrantAbility(world, pending.Target, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect,
+                             pending.Source)
+                    .IsValid())
                 continue;
             scratch.StillRefused.push_back(pending);
             const bool known = std::ranges::any_of(scratch.Refused, [&](const AbilityPassScratch::EffectGrant& refused) {
@@ -400,6 +415,9 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         return;
     if (AbilityActivations* activations = world.TryGetResource<AbilityActivations>())
         activations->CollectOrphans(world);
+    AbilityGrantLists& grantLists = world.HasResource<AbilityGrantLists>() ? world.GetResource<AbilityGrantLists>()
+                                                                           : world.AddResource<AbilityGrantLists>();
+    grantLists.DropUnreferenced();
     // A client runs only its guesses at its own pawn, on that pawn's command timeline.
     const bool authority = IsSimulationAuthority(world);
     const PredictedSimulation* predicted = authority ? nullptr : world.TryGetResource<PredictedSimulation>();
@@ -415,7 +433,7 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         for (const std::string& problem : scratch.Problems)
             host.Logging->GetLogger<AbilitySystem>().Warn("{}", problem);
     if (authority)
-        SyncEffectGrants(world, partitions, scratch, now);
+        SyncEffectGrants(world, grantLists, partitions, scratch, now);
 
     // Operations create and destroy entities, so the actors are gathered first and
     // nothing runs inside the query.
@@ -446,7 +464,8 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         const InputActionSourceRef* ref =
             world.IsRegistered<InputActionSourceRef>() ? world.TryGet<InputActionSourceRef>(entity) : nullptr;
         return AbilityActor{ &world, entity, sources.TickFor(entity),
-                             ref != nullptr ? ref->Source : kLocalInputActionSource, &world.GetResource<AbilityActivations>() };
+                             ref != nullptr ? ref->Source : kLocalInputActionSource, &world.GetResource<AbilityActivations>(),
+                             &grantLists };
     };
     const auto ready = [&](EntityId entity) {
         return world.IsAlive(entity) && world.HasComponent<ActiveAbilities>(entity);
@@ -469,7 +488,7 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         {
             const InputActionEdge edge = edges[e];
             if (edge.Kind == InputEdgeKind::Press)
-                Press(pass, actor, *entries, tags, edge.Action, static_cast<std::uint8_t>(e));
+                Press(pass, actor, *entries, tags, scratch.Press, edge.Action, static_cast<std::uint8_t>(e));
             else
                 Release(pass, actor, *entries, edge.Action, edge.Kind == InputEdgeKind::InterruptedRelease);
         }

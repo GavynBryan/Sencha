@@ -58,7 +58,7 @@ namespace
     // rings whose effect grants one ability, and bombs that hold their slot.
     struct EquipmentWorld
     {
-        EquipmentWorld()
+        explicit EquipmentWorld(std::size_t ringSlots = 2, std::size_t grantsPerRing = 1)
         {
             WorldComponentSchema schema;
             RegisterEngineRuntimeComponents(schema);
@@ -73,7 +73,11 @@ namespace
             Ring = *tags.RegisterTag("Item.Ring");
             Usable = *tags.RegisterTag("Item.Usable");
             EquipmentLayout layout;
-            for (const char* key : { "ring.left", "ring.right", "use.x" })
+            std::vector<std::string> keys;
+            for (std::size_t ring = 0; ring < ringSlots; ++ring)
+                keys.push_back(std::format("ring.{}", ring));
+            keys.push_back("use.x");
+            for (const std::string& key : keys)
             {
                 EquipmentSlot slot;
                 slot.Key = key;
@@ -93,8 +97,10 @@ namespace
             EffectDefinition lasting{};
             lasting.Duration = EffectDuration::Infinite;
             Glow = Entities().GetResource<EffectRegistry>().Define("asset://effects/glow.sdata", lasting);
-            (void)DeclareEffectGrants(Entities(), Glow,
-                                      { { .Key = "g_bolt", .Ability = "asset://abilities/bolt.sdata", .Override = {} } });
+            std::vector<AbilityGrantDeclaration> granted;
+            for (std::size_t g = 0; g < grantsPerRing; ++g)
+                granted.push_back({ .Key = std::format("g_bolt{}", g), .Ability = "asset://abilities/bolt.sdata", .Override = {} });
+            (void)DeclareEffectGrants(Entities(), Glow, granted);
             ItemRegistry& items = Entities().GetResource<ItemRegistry>();
             RingItem = items.Define("asset://items/ring.sdata",
                                     ItemDefinition{ .Name = "Ring", .Tags = { Ring }, .Occupies = { "ring" },
@@ -170,6 +176,34 @@ namespace
         Recorder.Record(std::format("overlay.{}.{}.ability_pass", mode, wearers), "us",
                         bench.Average(ticks, [&] { RunAbilityPass(world, AbilityHost{}, bench.Time()); }));
         Recorder.Record(std::format("overlay.{}.{}.equipment_pass", mode, wearers), "us",
+                        bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
+    }
+
+    // `wearers` each wearing `records` rings, every ring granting `grantsPerRing`
+    // abilities: the two passes once everything is derived.
+    void RecordWorn(std::size_t wearers, std::size_t records, std::size_t grantsPerRing)
+    {
+        EquipmentWorld bench(records, grantsPerRing);
+        World& world = bench.Entities();
+        for (std::size_t i = 0; i < wearers; ++i)
+        {
+            const EntityId wearer = bench.Wearer();
+            for (std::size_t r = 0; r < records; ++r)
+            {
+                const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
+                EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, ring).Refusal, EquipmentRefusal::None);
+            }
+        }
+        const auto tick = [&] {
+            RunAbilityPass(world, AbilityHost{}, bench.Time());
+            RunEquipmentPass(world, bench.Time());
+        };
+        (void)bench.Average(5, tick);
+        const int ticks = Reps(100);
+        const std::string scenario = std::format("worn.wearers_{}.records_{}.grants_{}", wearers, records, records * grantsPerRing);
+        Recorder.Record(scenario + ".ability_pass", "us",
+                        bench.Average(ticks, [&] { RunAbilityPass(world, AbilityHost{}, bench.Time()); }));
+        Recorder.Record(scenario + ".equipment_pass", "us",
                         bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
     }
 
@@ -254,16 +288,15 @@ namespace
         {
             const EntityId wearer = bench.Wearer();
             // Giving moves the wearer's row, so its records are written once, after.
-            EquipmentState state = *std::as_const(world).TryGet<EquipmentState>(wearer);
+            EquipmentRecordList worn = CopyEquipment(world, wearer);
             for (std::uint8_t slot = 0; slot < 2; ++slot)
             {
                 const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
-                state.Records[state.Count++] = EquipmentRecord{ .Key = state.NextKey++, .Definition = bench.RingItem,
-                                                                .Slots = 1u << slot, .Primary = slot,
-                                                                .Source = MakePersistableRef(world, ring),
-                                                                .Derivation = EquipmentDerivation::Pending };
+                worn.Records.push_back({ .Key = worn.NextKey++, .Definition = bench.RingItem, .Slots = 1u << slot,
+                                         .Primary = slot, .Source = MakePersistableRef(world, ring),
+                                         .Derivation = EquipmentDerivation::Pending });
             }
-            *world.TryGet<EquipmentState>(wearer) = state;
+            SetEquipment(world, wearer, worn);
         }
         const auto start = std::chrono::steady_clock::now();
         RunEquipmentPass(world, bench.Time());
@@ -290,6 +323,8 @@ TEST(EquipmentBench, Generate)
     for (const std::size_t holders : { 100u, 1000u })
         RecordUnrelatedHolders(holders);
     RecordAdoptionBurst(200);
+    RecordWorn(1000, 4, 1);
+    RecordWorn(100, 16, 1);
     const std::filesystem::path json(out);
     EXPECT_TRUE(Recorder.WriteJson(json));
     EXPECT_TRUE(Recorder.WriteCsv(std::filesystem::path(json).replace_extension(".csv")));

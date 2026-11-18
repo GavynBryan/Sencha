@@ -46,9 +46,9 @@ namespace
         const std::uint8_t index = layout != nullptr ? FindEquipmentSlot(*layout, slot) : kNoEquipmentSlot;
         if (index == kNoEquipmentSlot)
             return EntityId{};
-        for (std::uint8_t i = 0; i < state->Count; ++i)
-            if ((state->Records[i].Slots >> index) & 1u)
-                return ResolvePersistableRef(world, state->Records[i].Source);
+        for (const EquipmentRecord& record : EquipmentRecordsOf(world, *state))
+            if ((record.Slots >> index) & 1u)
+                return ResolvePersistableRef(world, record.Source);
         return EntityId{};
     }
 
@@ -76,10 +76,10 @@ namespace
         if (state == nullptr)
             return AuthoredQueryStatus::Unavailable;
         std::vector<AuthoredValue> worn;
-        for (std::uint8_t i = 0; i < state->Count; ++i)
+        for (const EquipmentRecord& record : EquipmentRecordsOf(world, *state))
         {
-            const ItemDefinition* item = FindItemDefinition(world, state->Records[i].Definition);
-            const EntityId source = ResolvePersistableRef(world, state->Records[i].Source);
+            const ItemDefinition* item = FindItemDefinition(world, record.Definition);
+            const EntityId source = ResolvePersistableRef(world, record.Source);
             if (item != nullptr && source.IsValid() && ItemCarries(world, *item, tag))
                 worn.push_back(AuthoredValue::Entity(source));
         }

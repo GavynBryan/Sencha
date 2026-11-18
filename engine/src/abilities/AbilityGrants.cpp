@@ -1,31 +1,126 @@
 #include <abilities/AbilityGrants.h>
 
+#include <ecs/World.h>
+
 #include <algorithm>
 
-const AbilityGrant* AbilityGrants::Find(AbilityGrantId id) const
+namespace
 {
-    const auto found = std::find_if(Entries, Entries + Count, [id](const AbilityGrant& grant) { return grant.Id == id; });
-    return found != Entries + Count ? found : nullptr;
+    AbilityGrantLists& ListsOf(World& world)
+    {
+        return world.HasResource<AbilityGrantLists>() ? world.GetResource<AbilityGrantLists>()
+                                                      : world.AddResource<AbilityGrantLists>();
+    }
+
+    AbilityGrantId Grant(std::vector<AbilityGrant>& entries, std::uint32_t& nextId, AbilityId ability,
+                         AbilityGrantKind kind, std::uint16_t entry, EntityId holder, EntityId source)
+    {
+        if (!ability.IsValid() || entries.size() >= kAbilityGrantCapacity)
+            return AbilityGrantId{};
+        const AbilityGrantId id{ nextId++ };
+        entries.push_back(AbilityGrant{ id, ability, kind, holder, source, entry });
+        return id;
+    }
+
+    bool Revoke(std::vector<AbilityGrant>& entries, AbilityGrantId id)
+    {
+        return std::erase_if(entries, [id](const AbilityGrant& grant) { return grant.Id == id; }) > 0;
+    }
 }
 
-AbilityGrantId GrantAbility(AbilityGrants& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
+void ComponentTraits<AbilityGrants>::OnAdd(AbilityGrants& grants, World& world, EntityId)
+{
+    if (AbilityGrantLists* lists = world.TryGetResource<AbilityGrantLists>())
+        lists->Retain(grants.Entries);
+}
+
+void ComponentTraits<AbilityGrants>::OnRemove(const AbilityGrants& grants, World& world, EntityId)
+{
+    if (AbilityGrantLists* lists = world.TryGetResource<AbilityGrantLists>())
+        lists->Release(grants.Entries);
+}
+
+std::span<const AbilityGrant> AbilityGrantsOf(const World& world, const AbilityGrants& grants)
+{
+    const AbilityGrantLists* lists = world.TryGetResource<AbilityGrantLists>();
+    return lists != nullptr ? lists->Read(grants.Entries) : std::span<const AbilityGrant>{};
+}
+
+std::span<const AbilityGrant> AbilityGrantsOf(const World& world, EntityId actor)
+{
+    const AbilityGrants* grants =
+        world.IsAlive(actor) && world.IsRegistered<AbilityGrants>() ? world.TryGet<AbilityGrants>(actor) : nullptr;
+    return grants != nullptr ? AbilityGrantsOf(world, *grants) : std::span<const AbilityGrant>{};
+}
+
+const AbilityGrant* FindAbilityGrant(std::span<const AbilityGrant> grants, AbilityGrantId id)
+{
+    const auto found = std::ranges::find(grants, id, &AbilityGrant::Id);
+    return found != grants.end() ? &*found : nullptr;
+}
+
+AbilityGrantId GrantAbility(AbilityGrantList& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
                             EntityId holder, EntityId source)
 {
-    if (!ability.IsValid() || grants.Count == kAbilityGrantCapacity)
+    return Grant(grants.Entries, grants.NextId, ability, kind, entry, holder, source);
+}
+
+AbilityGrantId GrantAbility(World& world, EntityId actor, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
+                            EntityId holder, EntityId source)
+{
+    const AbilityGrants* held = world.IsAlive(actor) ? std::as_const(world).TryGet<AbilityGrants>(actor) : nullptr;
+    if (held == nullptr || !ability.IsValid() || held->Count >= kAbilityGrantCapacity)
         return AbilityGrantId{};
-    const AbilityGrantId id{ grants.NextId++ };
-    grants.Entries[grants.Count++] = AbilityGrant{ id, ability, kind, holder, source, entry };
+    AbilityGrants& row = *world.TryGet<AbilityGrants>(actor);
+    std::vector<AbilityGrant>& entries = ListsOf(world).Edit(row.Entries);
+    const AbilityGrantId id = Grant(entries, row.NextId, ability, kind, entry, holder, source);
+    row.Count = static_cast<std::uint16_t>(entries.size());
     return id;
 }
 
-bool RevokeAbilityGrant(AbilityGrants& grants, AbilityGrantId id)
+bool RevokeAbilityGrant(AbilityGrantList& grants, AbilityGrantId id)
 {
-    AbilityGrant* const end = grants.Entries + grants.Count;
-    AbilityGrant* const found = std::find_if(grants.Entries, end, [id](const AbilityGrant& grant) { return grant.Id == id; });
-    if (found == end)
+    return Revoke(grants.Entries, id);
+}
+
+bool RevokeAbilityGrant(World& world, EntityId actor, AbilityGrantId id)
+{
+    if (FindAbilityGrant(AbilityGrantsOf(world, actor), id) == nullptr)
         return false;
-    std::copy(found + 1, end, found);
-    --grants.Count;
-    grants.Entries[grants.Count] = AbilityGrant{};
+    AbilityGrants& row = *world.TryGet<AbilityGrants>(actor);
+    std::vector<AbilityGrant>& entries = ListsOf(world).Edit(row.Entries);
+    (void)Revoke(entries, id);
+    row.Count = static_cast<std::uint16_t>(entries.size());
     return true;
+}
+
+AbilityGrantList CopyAbilityGrants(const World& world, EntityId actor)
+{
+    AbilityGrantList copy;
+    if (const AbilityGrants* grants = world.IsRegistered<AbilityGrants>() ? world.TryGet<AbilityGrants>(actor) : nullptr)
+    {
+        const std::span<const AbilityGrant> entries = AbilityGrantsOf(world, *grants);
+        copy.Entries.assign(entries.begin(), entries.end());
+        copy.NextId = grants->NextId;
+    }
+    return copy;
+}
+
+AbilityGrants MakeAbilityGrants(World& world, const AbilityGrantList& grants)
+{
+    AbilityGrants row;
+    if (!grants.Entries.empty())
+        row.Entries = ListsOf(world).Make(grants.Entries);
+    row.Count = static_cast<std::uint16_t>(grants.Entries.size());
+    row.NextId = grants.NextId;
+    return row;
+}
+
+void SetAbilityGrants(World& world, EntityId actor, const AbilityGrantList& grants)
+{
+    const AbilityGrants row = MakeAbilityGrants(world, grants);
+    if (world.HasComponent<AbilityGrants>(actor))
+        (void)world.ReplaceComponent<AbilityGrants>(actor, row);
+    else
+        world.AddComponent<AbilityGrants>(actor, row);
 }

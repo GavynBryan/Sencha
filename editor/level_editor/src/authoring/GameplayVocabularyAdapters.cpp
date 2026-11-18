@@ -313,9 +313,8 @@ namespace
             });
             if (!offered.empty())
                 abilities.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Ability", .Choices = std::move(offered) });
-            for (std::uint8_t i = 0; i < held->Count; ++i)
+            for (const AbilityGrant& grant : AbilityGrantsOf(world, *held))
             {
-                const AbilityGrant& grant = held->Entries[i];
                 const AbilityDefinition* definition = registry->Get(grant.Ability);
                 const std::string name = definition != nullptr ? definition->DisplayName
                                                                : std::string(registry->GetName(grant.Ability));
@@ -338,7 +337,8 @@ namespace
             auto* entries = world.TryGetResource<AbilityGrantEntries>();
             if (held == nullptr || registry == nullptr || entries == nullptr)
                 return PropertyEditResult::Gone;
-            AbilityGrants working = *held;
+            const AbilityGrantList before = CopyAbilityGrants(world, context.Entity);
+            AbilityGrantList working = before;
             VocabularyEdit edit;
             if (key == "abilities" && verb == "grant")
             {
@@ -352,7 +352,15 @@ namespace
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
+            if (result != PropertyEditResult::Applied)
+                return result;
+            context.Commands.Execute(std::make_unique<ValueCommand<AbilityGrantList>>(
+                before, working,
+                [&scene = context.Scene, entity = context.Entity](const AbilityGrantList& grants) {
+                    SetAbilityGrants(scene.GetRegistry().Components, entity, grants);
+                },
+                context.Document));
+            return PropertyEditResult::Applied;
         }
 
     private:

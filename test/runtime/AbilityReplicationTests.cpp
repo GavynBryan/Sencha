@@ -267,10 +267,12 @@ protected:
         // The client's own copy of the grant entry, as its prefab interns one.
         (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ key, Client.Define(json, path), {} });
         const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ key, ability, {} });
-        (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, entry);
+        (void)GrantAbility(Authority.Entities, Actor, ability, AbilityGrantKind::Authored, entry);
     }
 
     // A moving character with nine grants, four attributes and two tags, as its owner is first sent it.
+    void MeasureFullPawnsOwnerSeed(std::size_t grants);
+
     void ShippingPawn()
     {
         Budget = kNetDefaultSnapshotBytes;
@@ -333,18 +335,18 @@ protected:
         }
         World& world = Authority.Entities;
         world.AddComponent<ItemContainer>(Actor, ItemContainer{});
-        EquipmentState state{ .Layout = body, .Count = 0, .NextKey = 1, .Records = {} };
+        EquipmentRecordList wearing{ .Layout = body, .NextKey = 1, .Records = {} };
         for (std::size_t i = 0; i < records; ++i)
         {
             const EntityId entry = Inventory(world).Give(Actor, item, 1).Entry;
             entries.push_back(entry);
-            state.Records[state.Count++] = EquipmentRecord{ .Key = state.NextKey++, .Definition = item,
-                                                            .Slots = 1u << i, .Primary = static_cast<std::uint8_t>(i),
-                                                            .Source = MakePersistableRef(world, entry),
-                                                            .Derivation = EquipmentDerivation::Pending };
+            wearing.Records.push_back({ .Key = wearing.NextKey++, .Definition = item, .Slots = 1u << i,
+                                        .Primary = static_cast<std::uint8_t>(i),
+                                        .Source = MakePersistableRef(world, entry),
+                                        .Derivation = EquipmentDerivation::Pending });
         }
         if (worn)
-            world.AddComponent<EquipmentState>(Actor, state);
+            SetEquipment(world, Actor, wearing);
         return entries;
     }
 
@@ -353,11 +355,9 @@ protected:
     // The client's record of the authority's record `key`, or null.
     [[nodiscard]] const EquipmentRecord* ClientRecord(std::uint32_t key) const
     {
-        const EquipmentState* state = static_cast<const World&>(Client.Entities).TryGet<EquipmentState>(Remote());
-        for (std::size_t i = 0; state != nullptr && i < state->Count; ++i)
-            if (state->Records[i].Key == key)
-                return &state->Records[i];
-        return nullptr;
+        const std::span<const EquipmentRecord> records = EquipmentRecordsOf(Client.Entities, Remote());
+        const auto found = std::ranges::find(records, key, &EquipmentRecord::Key);
+        return found != records.end() ? &*found : nullptr;
     }
 
     // One authority tick.
@@ -754,10 +754,10 @@ TEST_F(AbilityReplication, TheOwnerIsSentItsActorsGrantsAttributesAndTags)
     (void)Publish();
 
     const World& client = Client.Entities;
-    const AbilityGrants& grants = *client.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 1u);
-    EXPECT_EQ(grants.Entries[0].Ability, (*client.TryGetResource<AbilityRegistry>()).Find("asset://abilities/charging.sdata"));
-    EXPECT_NE(grants.Entries[0].Entry, kAbilityNoGrantEntry) << "bound to the client's own entry for the same grant";
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(client, Remote());
+    ASSERT_EQ(grants.size(), 1u);
+    EXPECT_EQ(grants[0].Ability, (*client.TryGetResource<AbilityRegistry>()).Find("asset://abilities/charging.sdata"));
+    EXPECT_NE(grants[0].Entry, kAbilityNoGrantEntry) << "bound to the client's own entry for the same grant";
     const AttributeId clientEnergy = (*client.TryGetResource<AttributeRegistry>()).FindAttribute("Energy");
     ASSERT_NE(clientEnergy, energy) << "the machines must number attributes differently for this to prove anything";
     EXPECT_FLOAT_EQ(client.TryGet<AttributeSet>(Remote())->GetCurrent(clientEnergy), 70.0f);
@@ -951,7 +951,7 @@ TEST_F(AbilityReplication, AClientsReleaseLeavesTheAuthoritysRecordAlone)
     word.State = AbilityRecordState::Live;
     word.Key = { .CommandTick = ClientNow, .Ability = Client.Entities.GetResource<AbilityRegistry>().Find(
                                                "asset://abilities/glowing.sdata") };
-    word.Grant = Client.Entities.TryGet<AbilityGrants>(Remote())->Entries[0].Id;
+    word.Grant = AbilityGrantsOf(Client.Entities, Remote())[0].Id;
     word.TriggerAction = kGlowAction;
     word.Identity = 99;
     ClientHeld[kGlowAction] = true;
@@ -1129,13 +1129,13 @@ TEST_F(AbilityReplication, GrantsSharingAKeyAreToldApartOnTheClient)
     AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
     (void)entries.Intern({ "g", ability, low });
     const std::uint16_t granted = entries.Intern({ "g", ability, high });
-    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    (void)GrantAbility(Authority.Entities, Actor, ability, AbilityGrantKind::Authored, granted);
     Step();
     (void)Publish();
 
-    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 1u);
-    const AbilityGrantEntry* entry = clientEntries.Find(grants.Entries[0].Entry);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
+    ASSERT_EQ(grants.size(), 1u);
+    const AbilityGrantEntry* entry = clientEntries.Find(grants[0].Entry);
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->Override.Priority, std::optional<std::int32_t>(9))
         << "the client bound the grant to the other source's entry";
@@ -1147,16 +1147,18 @@ TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
     Grant(kShot, "asset://abilities/shot.sdata");
     const EntityId ring = Authority.Entities.CreateEntity();
     Authority.Entities.AddComponent<NetReplicated>(ring);
-    Authority.Entities.TryGet<AbilityGrants>(Actor)->Entries[0].Source = ring;
+    AbilityGrantList sourced = CopyAbilityGrants(Authority.Entities, Actor);
+    sourced.Entries[0].Source = ring;
+    SetAbilityGrants(Authority.Entities, Actor, sourced);
     Step();
     (void)Publish();
 
     const EntityId remoteRing = ClientIds.TryResolve(Identity.TryFind(ring));
     ASSERT_TRUE(remoteRing.IsValid());
-    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 1u);
-    EXPECT_EQ(grants.Entries[0].Source, remoteRing);
-    EXPECT_FALSE(grants.Entries[0].Holder.IsValid()) << "what holds a grant stays on the authority";
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
+    ASSERT_EQ(grants.size(), 1u);
+    EXPECT_EQ(grants[0].Source, remoteRing);
+    EXPECT_FALSE(grants[0].Holder.IsValid()) << "what holds a grant stays on the authority";
 }
 
 TEST_F(AbilityReplication, GrantsThatDifferInAParameterAreToldApartOnTheClient)
@@ -1173,13 +1175,13 @@ TEST_F(AbilityReplication, GrantsThatDifferInAParameterAreToldApartOnTheClient)
     AbilityGrantEntries& entries = Authority.Entities.GetResource<AbilityGrantEntries>();
     (void)entries.Intern(entry(ability, 10.0));
     const std::uint16_t granted = entries.Intern(entry(ability, 14.0));
-    (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, granted);
+    (void)GrantAbility(Authority.Entities, Actor, ability, AbilityGrantKind::Authored, granted);
     Step();
     (void)Publish();
 
-    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 1u);
-    const AbilityGrantEntry* arrived = clientEntries.Find(grants.Entries[0].Entry);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
+    ASSERT_EQ(grants.size(), 1u);
+    const AbilityGrantEntry* arrived = clientEntries.Find(grants[0].Entry);
     ASSERT_NE(arrived, nullptr);
     EXPECT_EQ(arrived->Parameters, (std::vector<AbilityGrantParameter>{ { "power", 14.0 } }));
 }
@@ -1200,7 +1202,7 @@ TEST_F(AbilityReplication, ATransientGrantReachesItsOwnerAndLeavesWithItsActivat
     const AbilityGrants* grants = Client.Entities.TryGet<AbilityGrants>(Remote());
     ASSERT_NE(grants, nullptr);
     ASSERT_EQ(grants->Count, 1u);
-    EXPECT_EQ(grants->Entries[0].Kind, AbilityGrantKind::Transient);
+    EXPECT_EQ(AbilityGrantsOf(Client.Entities, Remote())[0].Kind, AbilityGrantKind::Transient);
 
     Run(10);
     EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->Count, 0u);
@@ -1245,16 +1247,16 @@ TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
     Step();
     (void)Publish();
 
-    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 2u);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
+    ASSERT_EQ(grants.size(), 2u);
     const AbilityGrantEntries& entries = Client.Entities.GetResource<AbilityGrantEntries>();
     for (std::size_t i = 0; i < worn.size(); ++i)
     {
         const EntityId mirror = ClientIds.TryResolve(Identity.TryFind(worn[i]));
         ASSERT_TRUE(mirror.IsValid());
-        const auto grant = std::find_if(grants.Entries, grants.Entries + grants.Count,
+        const auto grant = std::find_if(grants.begin(), grants.end(),
                                         [&](const AbilityGrant& held) { return held.Source == mirror; });
-        ASSERT_NE(grant, grants.Entries + grants.Count) << "each ring is its own grant's source";
+        ASSERT_NE(grant, grants.end()) << "each ring is its own grant's source";
         const AbilityGrantEntry* entry = entries.Find(grant->Entry);
         ASSERT_NE(entry, nullptr) << "bound, not held unbound";
         EXPECT_EQ(entry->Parameters, (std::vector<AbilityGrantParameter>{ { "power", i == 0 ? 10.0 : 14.0 } }));
@@ -1350,9 +1352,9 @@ TEST_F(AbilityReplication, AnEquippedGrantIsBoundByItsSlotOnTheOwnerWhoPredictsI
     Step();
     (void)Publish();
 
-    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
-    ASSERT_EQ(grants.Count, 1u);
-    const AbilityGrantEntry* entry = Client.Entities.GetResource<AbilityGrantEntries>().Find(grants.Entries[0].Entry);
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
+    ASSERT_EQ(grants.size(), 1u);
+    const AbilityGrantEntry* entry = Client.Entities.GetResource<AbilityGrantEntries>().Find(grants[0].Entry);
     ASSERT_NE(entry, nullptr) << "the worn entry was declared on the owner too";
     EXPECT_EQ(entry->Override.Priority, 20) << "bound by its slot";
 
@@ -1402,6 +1404,81 @@ SENCHA_WORN_RECORDS_TEST(Owner, kOwner)
 SENCHA_WORN_RECORDS_TEST(Observer, 2u)
 #undef SENCHA_WORN_RECORDS_TEST
 
+// Thirty records, each a run of its own, in one snapshot.
+#define SENCHA_MANY_WORN_RECORDS_TEST(Peer, PeerId)                                                       \
+    TEST_F(AbilityReplication, ThirtyWornRecordsReachThe##Peer)                                           \
+    {                                                                                                     \
+        ClientPeer = PeerId;                                                                              \
+        Budget = kNetDefaultSnapshotBytes;                                                                \
+        const bool owner = PeerId == kOwner;                                                              \
+        const std::vector<EntityId> entries = Wear(30, true);                                             \
+        (void)Publish();                                                                                  \
+        EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);                                                      \
+        ASSERT_EQ(EquipmentRecordsOf(Client.Entities, Remote()).size(), 30u);                             \
+        for (std::uint32_t key = 1; key <= 30; ++key)                                                     \
+        {                                                                                                 \
+            const EquipmentRecord* record = ClientRecord(key);                                            \
+            ASSERT_NE(record, nullptr) << "record " << key;                                               \
+            EXPECT_EQ(record->Slots, 1u << (key - 1));                                                    \
+            EXPECT_EQ(record->Primary, key - 1);                                                          \
+            EXPECT_EQ(record->Source.Entity, owner ? Mirror(entries[key - 1]) : EntityId{});              \
+        }                                                                                                 \
+        EndEquipmentRecord(Authority.Entities, Actor, 4);                                                 \
+        (void)Publish();                                                                                  \
+        EXPECT_EQ(EquipmentRecordsOf(Client.Entities, Remote()).size(), 29u);                             \
+        EXPECT_EQ(ClientRecord(5), nullptr);                                                              \
+        ASSERT_NE(ClientRecord(30), nullptr);                                                             \
+        EXPECT_EQ(ClientRecord(30)->Source.Entity, owner ? Mirror(entries[29]) : EntityId{});             \
+    }
+SENCHA_MANY_WORN_RECORDS_TEST(Owner, kOwner)
+SENCHA_MANY_WORN_RECORDS_TEST(Observer, 2u)
+#undef SENCHA_MANY_WORN_RECORDS_TEST
+
+// Every grant an actor can hold reaches its owner with the authority's ids, in
+// grant order; a revoke in the middle keeps the rest as they were.
+TEST_F(AbilityReplication, AFullGrantListReachesItsOwnerInOrder)
+{
+    ClientPeer = kOwner;
+    Budget = kNetDefaultSnapshotBytes;
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    (void)Publish();
+    EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);
+    const auto matches = [&] {
+        const std::span<const AbilityGrant> sent = AbilityGrantsOf(Authority.Entities, Actor);
+        const std::span<const AbilityGrant> held = AbilityGrantsOf(Client.Entities, Remote());
+        ASSERT_EQ(held.size(), sent.size());
+        const AbilityRegistry& authority = Authority.Entities.GetResource<AbilityRegistry>();
+        const AbilityRegistry& client = Client.Entities.GetResource<AbilityRegistry>();
+        for (std::size_t i = 0; i < sent.size(); ++i)
+        {
+            EXPECT_EQ(held[i].Id, sent[i].Id) << i;
+            EXPECT_EQ(client.GetName(held[i].Ability), authority.GetName(sent[i].Ability)) << i;
+            EXPECT_NE(held[i].Entry, kAbilityNoGrantEntry) << i;
+        }
+        EXPECT_EQ(Client.Entities.TryGet<AbilityGrants>(Remote())->NextId,
+                  Authority.Entities.TryGet<AbilityGrants>(Actor)->NextId);
+    };
+    ASSERT_EQ(AbilityGrantsOf(Client.Entities, Remote()).size(), kAbilityGrantCapacity);
+    matches();
+
+    ASSERT_TRUE(RevokeAbilityGrant(Authority.Entities, Actor, AbilityGrantsOf(Authority.Entities, Actor)[21].Id));
+    (void)Publish();
+    ASSERT_EQ(AbilityGrantsOf(Client.Entities, Remote()).size(), kAbilityGrantCapacity - 1);
+    matches();
+}
+
+TEST_F(AbilityReplication, AnotherPeerIsSentNoneOfAFullGrantList)
+{
+    ClientPeer = 2;
+    Budget = kNetDefaultSnapshotBytes;
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    const std::size_t bare = Publish();
+    EXPECT_TRUE(AbilityGrantsOf(Client.Entities, Remote()).empty()) << "grants are the owner's";
+    RecordProperty("observer_seed_bytes", std::to_string(bare));
+}
+
 // A client that heard nothing while records came and went is sent what is worn now.
 TEST_F(AbilityReplication, ALateOwnerIsSentWhatIsWornNow)
 {
@@ -1431,11 +1508,11 @@ TEST_F(AbilityReplication, ARecordsSourceArrivingLaterBindsOnTheOwner)
     world.AddComponent<ItemContainer>(chest, ItemContainer{});
     const ItemId charm = world.GetResource<ItemRegistry>().Find("asset://items/charm.sdata");
     const EntityId entry = Inventory(world).Give(chest, charm, 1).Entry;
-    EquipmentState& state = *world.TryGet<EquipmentState>(Actor);
-    state.Records[0] = EquipmentRecord{ .Key = state.NextKey++, .Definition = charm, .Slots = 1u, .Primary = 0,
-                                        .Source = MakePersistableRef(world, entry),
-                                        .Derivation = EquipmentDerivation::Pending };
-    state.Count = 1;
+    EquipmentRecordList worn = CopyEquipment(world, Actor);
+    worn.Records = { EquipmentRecord{ .Key = worn.NextKey++, .Definition = charm, .Slots = 1u, .Primary = 0,
+                                      .Source = MakePersistableRef(world, entry),
+                                      .Derivation = EquipmentDerivation::Pending } };
+    SetEquipment(world, Actor, worn);
     (void)Publish();
     const EquipmentRecord* waiting = ClientRecord(1);
     ASSERT_NE(waiting, nullptr);
@@ -1470,23 +1547,25 @@ SENCHA_EQUIPMENT_SEED_TEST(4, bare, owner)
 SENCHA_EQUIPMENT_SEED_TEST(4, worn, owner)
 SENCHA_EQUIPMENT_SEED_TEST(16, bare, owner)
 SENCHA_EQUIPMENT_SEED_TEST(16, worn, owner)
+SENCHA_EQUIPMENT_SEED_TEST(32, bare, owner)
+SENCHA_EQUIPMENT_SEED_TEST(32, worn, owner)
 SENCHA_EQUIPMENT_SEED_TEST(0, bare, observer)
 SENCHA_EQUIPMENT_SEED_TEST(0, worn, observer)
 SENCHA_EQUIPMENT_SEED_TEST(4, bare, observer)
 SENCHA_EQUIPMENT_SEED_TEST(4, worn, observer)
 SENCHA_EQUIPMENT_SEED_TEST(16, bare, observer)
 SENCHA_EQUIPMENT_SEED_TEST(16, worn, observer)
+SENCHA_EQUIPMENT_SEED_TEST(32, bare, observer)
+SENCHA_EQUIPMENT_SEED_TEST(32, worn, observer)
 #undef SENCHA_EQUIPMENT_SEED_TEST
 
 // Measured, not asserted; scripts/bench_replication.sh records it.
-TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
+void AbilityReplication::MeasureFullPawnsOwnerSeed(std::size_t grants)
 {
-    if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)
-        GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)";
     ClientPeer = kOwner;
     Budget = kNetDefaultSnapshotBytes;
     Grant(kAutomatic, "asset://abilities/automatic.sdata", "g_fire");
-    for (std::size_t i = 1; i < kAbilityGrantCapacity; ++i)
+    for (std::size_t i = 1; i < grants; ++i)
         Grant(kGlowing, "asset://abilities/glow_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
     AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
     for (std::size_t i = 0; i < AttributeSet::Capacity; ++i)
@@ -1512,6 +1591,18 @@ TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
     }
 
     (void)Publish();
-    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetDefaultSnapshotBytes
-              << ", written " << LastWrite.EntitiesWritten << ", unsendable " << LastWrite.EntitiesUnsendable << "\n";
+    std::cout << "full pawn owner seed, " << grants << " grants: " << LastWrite.BytesWritten << " bytes of "
+              << kNetDefaultSnapshotBytes << ", written " << LastWrite.EntitiesWritten << ", unsendable "
+              << LastWrite.EntitiesUnsendable << "\n";
 }
+
+#define SENCHA_FULL_PAWN_SEED_TEST(Name, Grants)                                                          \
+    TEST_F(AbilityReplication, Name)                                                                      \
+    {                                                                                                     \
+        if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)                                       \
+            GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)"; \
+        MeasureFullPawnsOwnerSeed(Grants);                                                                \
+    }
+SENCHA_FULL_PAWN_SEED_TEST(AFullPawnsOwnerSeedIsMeasured, kAbilityGrantCapacity)
+SENCHA_FULL_PAWN_SEED_TEST(AFullPawnsOwnerSeedIsMeasured_16Grants, 16)
+#undef SENCHA_FULL_PAWN_SEED_TEST

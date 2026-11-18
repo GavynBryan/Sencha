@@ -113,9 +113,10 @@ namespace
         return true;
     }
 
-    bool ReadRecords(IReadArchive& archive, EquipmentState& state, World& world, SceneSerializationContext& context)
+    // A record holds a slot no earlier record holds, so a layout's slots bound them.
+    bool ReadRecords(IReadArchive& archive, EquipmentRecordList& worn, World& world, SceneSerializationContext& context)
     {
-        const EquipmentLayout* layout = FindEquipmentLayout(world, state.Layout);
+        const EquipmentLayout* layout = FindEquipmentLayout(world, worn.Layout);
         std::size_t count = 0;
         std::uint32_t held = 0;
         archive.BeginArray(kRecords, count);
@@ -126,17 +127,16 @@ namespace
         }
         for (std::size_t i = 0; i < count; ++i)
         {
-            EquipmentRecord& record = state.Records[i];
+            EquipmentRecord record;
             if (!ReadRecord(archive, record, held, *layout, world, context))
                 return false;
-            const bool reused = std::ranges::any_of(state.Records, state.Records + i,
-                                                    [&](const EquipmentRecord& earlier) { return earlier.Key == record.Key; });
-            if (record.Key == 0 || record.Key >= state.NextKey || reused)
+            const bool reused = std::ranges::find(worn.Records, record.Key, &EquipmentRecord::Key) != worn.Records.end();
+            if (record.Key == 0 || record.Key >= worn.NextKey || reused)
             {
                 archive.MarkInvalidField(kKey);
                 return false;
             }
-            state.Count = static_cast<std::uint8_t>(i + 1);
+            worn.Records.push_back(record);
         }
         archive.End();
         return true;
@@ -168,9 +168,10 @@ namespace
                 return false;
             archive.Field(kNextKey, state->NextKey);
             const EquipmentLayout* layout = FindEquipmentLayout(world, state->Layout);
-            archive.BeginArray(kRecords, state->Count);
-            for (std::uint8_t i = 0; i < state->Count; ++i)
-                if (!WriteRecord(archive, state->Records[i], layout, world, context))
+            const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+            archive.BeginArray(kRecords, records.size());
+            for (const EquipmentRecord& record : records)
+                if (!WriteRecord(archive, record, layout, world, context))
                     return false;
             archive.End();
             archive.End();
@@ -180,17 +181,17 @@ namespace
         bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                            SceneSerializationContext& context) override
         {
-            EquipmentState state{};
+            EquipmentRecordList worn;
             archive.BeginObject(std::string_view{});
-            if (!ReadSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(), state.Layout,
+            if (!ReadSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(), worn.Layout,
                                         context))
                 return false;
             if (archive.HasField(kNextKey))
-                archive.Field(kNextKey, state.NextKey);
-            if (archive.HasField(kRecords) && !ReadRecords(archive, state, world, context))
+                archive.Field(kNextKey, worn.NextKey);
+            if (archive.HasField(kRecords) && !ReadRecords(archive, worn, world, context))
                 return false;
             archive.End();
-            return archive.Ok() && Place(world, entity, state);
+            return archive.Ok() && Place(world, entity, MakeEquipmentState(world, worn));
         }
     };
 }

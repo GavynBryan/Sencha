@@ -351,10 +351,11 @@ TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
         << "what another holds is not this wearer's to wear";
 
     const auto state = [&]() -> const EquipmentState& { return *std::as_const(components).TryGet<EquipmentState>(guard); };
+    const auto worn = [&] { return EquipmentRecordsOf(components, guard); };
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u);
-    EXPECT_EQ(state().Records[0].Slots, 1u);
-    EXPECT_EQ(state().Records[0].Derivation, EquipmentDerivation::Pending);
+    EXPECT_EQ(worn()[0].Slots, 1u);
+    EXPECT_EQ(worn()[0].Derivation, EquipmentDerivation::Pending);
     EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Unchanged);
     EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "Nobody's"), PropertyEditResult::Refused);
     EXPECT_EQ(equipment->SetInspectorValue(context, "layout", "asset://equipment/other.sdata"), PropertyEditResult::Refused);
@@ -362,12 +363,12 @@ TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
     const std::string greatLabel = EntityLabel(Document, great) + " (0000000000062ea7)";
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", greatLabel), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u) << "it replaces what held its slots";
-    EXPECT_EQ(state().Records[0].Slots, 3u);
-    EXPECT_EQ(state().Records[0].Source.Target, PersistentEntityId{ 0x62EA7 });
-    EXPECT_EQ(state().Records[0].Key, 2u) << "a key is never reused";
+    EXPECT_EQ(worn()[0].Slots, 3u);
+    EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });
+    EXPECT_EQ(worn()[0].Key, 2u) << "a key is never reused";
 
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.off", "Empty"), PropertyEditResult::Applied);
     EXPECT_EQ(state().Count, 0u);
     Commands.Undo();
-    EXPECT_EQ(state().Records[0].Source.Target, PersistentEntityId{ 0x62EA7 });
+    EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });
 }

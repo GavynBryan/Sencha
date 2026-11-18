@@ -7,11 +7,11 @@
 #include <time/FrameClock.h>
 
 #include <cstdint>
+#include <span>
 #include <string_view>
 
 class World;
 struct EquipmentRecord;
-struct EquipmentState;
 
 // docs/gameplay/equipment.md, "Equipping".
 enum class EquipmentRefusal : std::uint8_t
@@ -25,7 +25,6 @@ enum class EquipmentRefusal : std::uint8_t
     NoSlot,
     NotAccepted,
     Locked,
-    Full,
     GrantRoom,
     TagRoom,
     MissingAttribute,
@@ -61,7 +60,7 @@ private:
 // For each name the item occupies: the slot asked for (the first name only),
 // else the first free one, else the first; no two names take one slot.
 [[nodiscard]] EquipmentRefusal ResolveEquipmentSlots(const World& world, const EquipmentLayout& layout,
-                                                     const EquipmentState& state, const ItemDefinition& item,
+                                                     std::span<const EquipmentRecord> worn, const ItemDefinition& item,
                                                      std::string_view asked, std::uint32_t& mask, std::uint8_t& primary);
 
 [[nodiscard]] bool EquipmentWearerLocked(const World& world, EntityId wearer);

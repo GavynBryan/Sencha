@@ -97,11 +97,9 @@ void AbilityGrantReservations::Release(const World& world)
     std::erase_if(Entries, [&](const Reservation& reservation) {
         if (!world.IsAlive(reservation.Effect))
             return true;
-        const AbilityGrants* grants = world.IsAlive(reservation.Target) ? world.TryGet<AbilityGrants>(reservation.Target)
-                                                                         : nullptr;
-        return grants != nullptr && std::any_of(grants->Entries, grants->Entries + grants->Count, [&](const AbilityGrant& grant) {
-                   return grant.Kind == AbilityGrantKind::Effect && grant.Holder == reservation.Effect;
-               });
+        return std::ranges::any_of(AbilityGrantsOf(world, reservation.Target), [&](const AbilityGrant& grant) {
+            return grant.Kind == AbilityGrantKind::Effect && grant.Holder == reservation.Effect;
+        });
     });
 }
 
@@ -117,12 +115,8 @@ std::size_t AbilityGrantRoom(const World& world, EntityId target, std::span<cons
             || std::ranges::find(ending, effect) != ending.end();
     };
     std::size_t taken = 0;
-    if (const AbilityGrants* grants = world.IsRegistered<AbilityGrants>() ? world.TryGet<AbilityGrants>(target) : nullptr)
-        for (std::uint8_t i = 0; i < grants->Count; ++i)
-        {
-            const AbilityGrant& grant = grants->Entries[i];
-            taken += grant.Kind == AbilityGrantKind::Effect && ends(grant.Holder) ? 0 : 1;
-        }
+    for (const AbilityGrant& grant : AbilityGrantsOf(world, target))
+        taken += grant.Kind == AbilityGrantKind::Effect && ends(grant.Holder) ? 0 : 1;
     if (const AbilityGrantReservations* reservations = world.TryGetResource<AbilityGrantReservations>())
         taken += reservations->HeldFor(world, target, ending);
     return taken >= kAbilityGrantCapacity ? 0 : kAbilityGrantCapacity - taken;

@@ -190,13 +190,13 @@ public:
         const auto lasting = [](const AbilityGrant& grant) {
             return grant.Kind == AbilityGrantKind::Authored || grant.Kind == AbilityGrantKind::Request;
         };
-        const auto count = std::count_if(grants->Entries, grants->Entries + grants->Count, lasting);
+        const std::span<const AbilityGrant> held = AbilityGrantsOf(world, *grants);
+        const auto count = std::ranges::count_if(held, lasting);
 
         archive.BeginObject(std::string_view{});
         archive.BeginArray(kGrants, static_cast<std::size_t>(count));
-        for (std::uint8_t i = 0; i < grants->Count; ++i)
+        for (const AbilityGrant& grant : held)
         {
-            const AbilityGrant& grant = grants->Entries[i];
             const AbilityGrantEntry* entry = entries->Find(grant.Entry);
             if (!lasting(grant) || entry == nullptr)
                 continue;
@@ -226,7 +226,7 @@ public:
         if (abilities == nullptr || entries == nullptr)
             return false;
 
-        AbilityGrants grants{};
+        AbilityGrantList grants;
         archive.BeginObject(std::string_view{});
         std::size_t count = 0;
         archive.BeginArray(kGrants, count);
@@ -257,7 +257,7 @@ public:
         if (!archive.Ok())
             return false;
 
-        return Place(world, entity, grants);
+        return Place(world, entity, MakeAbilityGrants(world, grants));
     }
 };
 } // namespace

@@ -80,9 +80,9 @@ namespace
                                                         : world.AddResource<EquipmentPassState>(world);
     }
 
-    bool IsSourceOf(const World& world, const EquipmentState& state, EntityId entry)
+    bool IsSourceOf(const World& world, std::span<const EquipmentRecord> records, EntityId entry)
     {
-        return std::ranges::any_of(state.Records, state.Records + state.Count, [&](const EquipmentRecord& record) {
+        return std::ranges::any_of(records, [&](const EquipmentRecord& record) {
             return ResolvePersistableRef(world, record.Source) == entry;
         });
     }
@@ -101,9 +101,10 @@ namespace
     void SettleSources(World& world, EntityId wearer)
     {
         const EquipmentLayout* layout = FindEquipmentLayout(world, std::as_const(world).TryGet<EquipmentState>(wearer)->Layout);
-        for (std::size_t i = std::as_const(world).TryGet<EquipmentState>(wearer)->Count; i-- > 0;)
+        std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
+        for (std::size_t i = records.size(); i-- > 0;)
         {
-            EquipmentRecord& record = world.TryGet<EquipmentState>(wearer)->Records[i];
+            const EquipmentRecord record = records[i];
             if (Waits(record))
                 continue;
             const EntityId source = ResolvePersistableRef(world, record.Source);
@@ -116,21 +117,22 @@ namespace
                 continue;
             if (held && OnDepleted(layout, record) == SlotDepletion::Hold)
             {
-                EndMaintained(world, EquipmentRecord(record));
-                world.TryGet<EquipmentState>(wearer)->Records[i].Source = PersistableRef{};
+                EndMaintained(world, record);
+                EditEquipmentRecords(world, wearer)[i].Source = PersistableRef{};
+                records = EquipmentRecordsOf(world, wearer);
                 continue;
             }
             EndEquipmentRecord(world, wearer, i);
+            records = EquipmentRecordsOf(world, wearer);
         }
     }
 
     // A waiting record may take an entry another record just let go, with no inventory change.
-    std::uint64_t RecordsFingerprint(const EquipmentState& state)
+    std::uint64_t RecordsFingerprint(std::span<const EquipmentRecord> records)
     {
         std::uint64_t hash = kFnv1aOffsetBasis;
-        for (std::size_t i = 0; i < state.Count; ++i)
+        for (const EquipmentRecord& record : records)
         {
-            const EquipmentRecord& record = state.Records[i];
             HashFnv1aValue(hash, record.Key);
             HashFnv1aValue(hash, record.Source.Entity.Index);
             HashFnv1aValue(hash, record.Source.Entity.Generation);
@@ -141,50 +143,46 @@ namespace
 
     void Rebind(World& world, EntityId wearer, EquipmentPassState& pass)
     {
-        const EquipmentState* state = std::as_const(world).TryGet<EquipmentState>(wearer);
-        if (std::ranges::none_of(state->Records, state->Records + state->Count, Waits))
+        if (std::ranges::none_of(EquipmentRecordsOf(world, wearer), Waits))
             return;
         const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
         const std::uint32_t held = index != nullptr ? index->Revision(wearer) : 0u;
         const auto last = std::ranges::lower_bound(pass.Scans, wearer, {}, &EquipmentPassState::RebindScan::Wearer);
         if (last != pass.Scans.end() && last->Wearer == wearer && last->Held == held
-            && last->Records == RecordsFingerprint(*state))
+            && last->Records == RecordsFingerprint(EquipmentRecordsOf(world, wearer)))
         {
             pass.NextScans.push_back(*last);
             return;
         }
         const std::vector<EntityId> entries = HeldEntries(world, wearer);
         ++pass.Walks;
-        for (std::size_t i = 0; i < state->Count; ++i)
+        for (std::size_t i = 0; i < EquipmentRecordsOf(world, wearer).size(); ++i)
         {
-            if (!Waits(state->Records[i]))
+            const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
+            if (!Waits(records[i]))
                 continue;
-            const ItemId definition = state->Records[i].Definition;
+            const ItemId definition = records[i].Definition;
             for (const EntityId entry : entries)
             {
-                const ItemEntry& candidate = *world.TryGet<ItemEntry>(entry);
-                if (candidate.Definition != definition || candidate.Count == 0 || IsSourceOf(world, *state, entry))
+                const ItemEntry& candidate = *std::as_const(world).TryGet<ItemEntry>(entry);
+                if (candidate.Definition != definition || candidate.Count == 0 || IsSourceOf(world, records, entry))
                     continue;
                 const PersistableRef source{ entry, EnsurePersistentId(world, entry) };
-                EquipmentRecord& rebound = world.TryGet<EquipmentState>(wearer)->Records[i];
+                EquipmentRecord& rebound = EditEquipmentRecords(world, wearer)[i];
                 rebound.Source = source;
                 rebound.Derivation = EquipmentDerivation::Pending;
-                state = std::as_const(world).TryGet<EquipmentState>(wearer);
                 break;
             }
         }
-        pass.NextScans.push_back({ .Wearer = wearer, .Held = held, .Records = RecordsFingerprint(*state) });
+        pass.NextScans.push_back(
+            { .Wearer = wearer, .Held = held, .Records = RecordsFingerprint(EquipmentRecordsOf(world, wearer)) });
     }
 
     // A worn entry, or one holding a worn entry, stays while its record is locked.
     bool AdmitMove(const World& world, EntityId entry)
     {
         const EntityId holder = ItemHolder(world, entry);
-        const EquipmentState* state =
-            world.IsAlive(holder) && world.IsRegistered<EquipmentState>() ? world.TryGet<EquipmentState>(holder) : nullptr;
-        if (state == nullptr)
-            return true;
-        return std::ranges::none_of(state->Records, state->Records + state->Count, [&](const EquipmentRecord& record) {
+        return std::ranges::none_of(EquipmentRecordsOf(world, holder), [&](const EquipmentRecord& record) {
             return ItemIsWithin(world, ResolvePersistableRef(world, record.Source), entry)
                 && EquipmentRecordLocked(world, holder, record);
         });
@@ -208,6 +206,8 @@ void RunEquipmentPass(World& world, const FixedSimTime& now)
     if (!world.IsRegistered<EquipmentState>() || !IsSimulationAuthority(world))
         return;
     EquipmentPassState& state = StateOf(world);
+    if (EquipmentRecordLists* lists = world.TryGetResource<EquipmentRecordLists>())
+        lists->DropUnreferenced();
     state.Scratch.clear();
     state.Wearers.ForEachChunk([&](auto& view) {
         for (std::uint32_t row = 0; row < view.Count(); ++row)
@@ -219,11 +219,8 @@ void RunEquipmentPass(World& world, const FixedSimTime& now)
     for (const EntityId wearer : state.Scratch)
     {
         if (moved)
-        {
-            EquipmentState& wearing = *world.TryGet<EquipmentState>(wearer);
-            for (std::size_t i = 0; i < wearing.Count; ++i)
-                wearing.Records[i].Derivation = EquipmentDerivation::Pending;
-        }
+            for (EquipmentRecord& record : EditEquipmentRecords(world, wearer))
+                record.Derivation = EquipmentDerivation::Pending;
         SettleSources(world, wearer);
         Rebind(world, wearer, state);
         DeriveDueEquipmentRecords(world, wearer, now);

@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-struct AbilityGrants;
+struct AbilityGrantList;
 struct AttributeSet;
 struct CharacterMovement;
 struct GameplayTagContainer;
@@ -78,12 +78,12 @@ struct VocabularyEdit
 [[nodiscard]] VocabularyEdit RemoveAttribute(AttributeSet& set, AttributeId id);
 
 // Grant an ability under a freshly minted key, inheriting its default binding.
-[[nodiscard]] VocabularyEdit AddAbilityGrant(AbilityGrants& grants,
+[[nodiscard]] VocabularyEdit AddAbilityGrant(AbilityGrantList& grants,
                                              AbilityGrantEntries& entries,
                                              const AbilityRegistry& registry,
                                              AbilityId id);
 
-[[nodiscard]] VocabularyEdit RemoveAbilityGrant(AbilityGrants& grants, AbilityGrantId id);
+[[nodiscard]] VocabularyEdit RemoveAbilityGrant(AbilityGrantList& grants, AbilityGrantId id);
 
 // Put the character in the named mode. An empty or unknown name is the free
 // mode, which is what the scene form already means by an absent mode.
