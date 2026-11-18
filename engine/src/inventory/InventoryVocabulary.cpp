@@ -18,13 +18,6 @@ namespace
     constexpr std::string_view kContainer = ComponentDefinition<ItemContainer>::Identity;
     constexpr std::string_view kPickup = ComponentDefinition<ItemPickup>::Identity;
 
-    DataFieldSchema EntityArgument(std::string key, std::string label, std::string_view carrying, std::string summary)
-    {
-        DataFieldSchema field = MakeDataField(DataFieldKind::Entity, std::move(key), std::move(label), std::move(summary));
-        field.Reference.ComponentIdentity = std::string(carrying);
-        return field;
-    }
-
     DataFieldSchema DefinitionReference()
     {
         DataFieldSchema field = MakeDataField(DataFieldKind::DataAssetRef, "definition", "Item");
@@ -47,14 +40,7 @@ namespace
     VerbDefinition Verb(std::string_view name, std::string label, std::string description,
                         std::vector<DataFieldSchema> arguments)
     {
-        VerbDefinition verb;
-        verb.Name = std::string(name);
-        verb.DisplayName = std::move(label);
-        verb.Description = std::move(description);
-        verb.Category = "Inventory";
-        verb.Arguments = EmptyVerbArguments();
-        verb.Arguments.Children = std::move(arguments);
-        return verb;
+        return MakeGameplayVerb(name, std::move(label), std::move(description), "Inventory", std::move(arguments));
     }
 
     VerbAdmission AdmissionOf(InventoryRefusal refusal)
@@ -132,23 +118,23 @@ ItemChangeClass ItemChangeOf(const VerbInvocation& invocation, std::size_t slot)
 
 void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries)
 {
-    const auto into = [] { return EntityArgument("into", "Into", kContainer, "The container it goes into."); };
+    const auto into = [] { return MakeEntityArgument("into", "Into", kContainer, "The container it goes into."); };
     (void)verbs.Declare(Verb(kInventoryTakeVerb, "Take item", "Takes a pickup into a container; the pickup goes.",
-                             { EntityArgument("pickup", "Pickup", kPickup, "What is taken."), into() }));
+                             { MakeEntityArgument("pickup", "Pickup", kPickup, "What is taken."), into() }));
     (void)verbs.Declare(Verb(kInventoryGiveVerb, "Give item",
                              "Puts units of an item into a container, all or none of them.",
                              { into(), DefinitionReference(), CountArgument(1, "How many units.") }));
     (void)verbs.Declare(Verb(kInventoryTransferVerb, "Move item", "Moves an entry, or part of a stack, into a container.",
-                             { EntityArgument("entry", "Entry", kEntry, "What moves."), into(),
+                             { MakeEntityArgument("entry", "Entry", kEntry, "What moves."), into(),
                                CountArgument(0, "How many units; zero moves all of it."), ItemChangeArgument() }));
     DataFieldSchema at = MakeDataField(DataFieldKind::Vector, "at", "At", "Where it lands.");
     at.Required = false;
     (void)verbs.Declare(Verb(kInventoryDropVerb, "Drop item", "Takes an entry out of its container into a pickup.",
-                             { EntityArgument("entry", "Entry", kEntry, "What is dropped."), std::move(at),
+                             { MakeEntityArgument("entry", "Entry", kEntry, "What is dropped."), std::move(at),
                                ItemChangeArgument() }));
     (void)verbs.Declare(Verb(kInventoryUseVerb, "Use item",
                              "Runs the item's use, with the entry as its source, in the next ability pass.",
-                             { EntityArgument("entry", "Entry", kEntry, "What is used."),
+                             { MakeEntityArgument("entry", "Entry", kEntry, "What is used."),
                                AuthoredField<std::optional<EntityId>>("user", "User",
                                                                       "Who uses it; whoever holds it when absent.") }));
 
@@ -161,7 +147,7 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
     count.Description = "How many units a container holds, spent entries not counted.";
     count.Category = "Inventory";
     count.Arguments.Children = {
-        EntityArgument("container", "Container", kContainer, "Whose items are counted."), std::move(definition),
+        MakeEntityArgument("container", "Container", kContainer, "Whose items are counted."), std::move(definition),
         AuthoredField<std::optional<GameplayTagId>>("tag", "Tag", "Counts only items carrying this tag or one beneath it."),
         Defaulted(MakeDataField(DataFieldKind::Bool, "within", "Within", "Counts what its entries hold too, however deep."),
                   false)

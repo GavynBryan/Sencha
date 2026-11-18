@@ -46,6 +46,7 @@ struct InventoryResult
     EntityId Entry;
 };
 
+[[nodiscard]] const ItemDefinition* FindItemDefinition(const World& world, ItemId item);
 // Depleted entries included.
 [[nodiscard]] std::vector<EntityId> ItemsIn(const World& world, EntityId container);
 // Depth-first, so a bag's contents follow the bag.

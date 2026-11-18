@@ -18,12 +18,35 @@ void AbilityEffectGrants::Set(EffectId effect, std::vector<std::uint16_t> entrie
     Granting -= ByEffect[effect.Value].empty() ? 0 : 1;
     Granting += entries.empty() ? 0 : 1;
     ByEffect[effect.Value] = std::move(entries);
+    ++Declared;
 }
 
 std::span<const std::uint16_t> AbilityEffectGrants::Of(EffectId effect) const
 {
     return effect.IsValid() && effect.Value < ByEffect.size() ? std::span<const std::uint16_t>(ByEffect[effect.Value])
                                                               : std::span<const std::uint16_t>{};
+}
+
+void AbilityEffectGrants::SetInstance(EntityId instance, std::vector<std::uint16_t> entries)
+{
+    const auto at = std::ranges::lower_bound(Instances, instance, {}, &Instance::Effect);
+    if (at != Instances.end() && at->Effect == instance)
+        at->Entries = std::move(entries);
+    else
+        Instances.insert(at, { instance, std::move(entries) });
+}
+
+std::span<const std::uint16_t> AbilityEffectGrants::Of(EntityId instance, EffectId effect) const
+{
+    const auto at = std::ranges::lower_bound(Instances, instance, {}, &Instance::Effect);
+    return at != Instances.end() && at->Effect == instance ? std::span<const std::uint16_t>(at->Entries) : Of(effect);
+}
+
+void AbilityEffectGrants::ForgetEnded(const World& world)
+{
+    std::erase_if(Instances, [&](const Instance& instance) {
+        return !world.IsAlive(instance.Effect) || !world.HasComponent<ActiveEffect>(instance.Effect);
+    });
 }
 
 std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
@@ -59,11 +82,12 @@ void AbilityGrantReservations::Reserve(EntityId target, EntityId effect, std::ui
     Entries.push_back({ target, effect, count });
 }
 
-std::size_t AbilityGrantReservations::HeldFor(const World& world, EntityId target) const
+std::size_t AbilityGrantReservations::HeldFor(const World& world, EntityId target, std::span<const EntityId> ending) const
 {
     std::size_t held = 0;
     for (const Reservation& reservation : Entries)
-        if (reservation.Target == target && world.IsAlive(reservation.Effect))
+        if (reservation.Target == target && world.IsAlive(reservation.Effect)
+            && std::ranges::find(ending, reservation.Effect) == ending.end())
             held += reservation.Count;
     return held;
 }
@@ -83,17 +107,24 @@ void AbilityGrantReservations::Release(const World& world)
 
 std::size_t AbilityGrantRoom(const World& world, EntityId target)
 {
+    return AbilityGrantRoom(world, target, {});
+}
+
+std::size_t AbilityGrantRoom(const World& world, EntityId target, std::span<const EntityId> ending)
+{
+    const auto ends = [&](EntityId effect) {
+        return !(world.IsAlive(effect) && world.HasComponent<ActiveEffect>(effect))
+            || std::ranges::find(ending, effect) != ending.end();
+    };
     std::size_t taken = 0;
     if (const AbilityGrants* grants = world.IsRegistered<AbilityGrants>() ? world.TryGet<AbilityGrants>(target) : nullptr)
         for (std::uint8_t i = 0; i < grants->Count; ++i)
         {
             const AbilityGrant& grant = grants->Entries[i];
-            const bool ended = grant.Kind == AbilityGrantKind::Effect
-                && !(world.IsAlive(grant.Holder) && world.HasComponent<ActiveEffect>(grant.Holder));
-            taken += ended ? 0 : 1;
+            taken += grant.Kind == AbilityGrantKind::Effect && ends(grant.Holder) ? 0 : 1;
         }
     if (const AbilityGrantReservations* reservations = world.TryGetResource<AbilityGrantReservations>())
-        taken += reservations->HeldFor(world, target);
+        taken += reservations->HeldFor(world, target, ending);
     return taken >= kAbilityGrantCapacity ? 0 : kAbilityGrantCapacity - taken;
 }
 

@@ -17,6 +17,9 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <equipment/Equipment.h>
+#include <equipment/EquipmentLayoutData.h>
+#include <equipment/WornGrantEntries.h>
 #include <inventory/ItemDefinitionData.h>
 
 #include <algorithm>
@@ -188,6 +191,29 @@ void DeclareItem(RuntimeAssets& assets, World& world, ContentDefinitionLeases::E
         errors.push_back(WireKeyCollision(*items, entry.Path));
 }
 
+void DeclareEquipmentLayout(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
+                            std::vector<std::string>& errors)
+{
+    const EquipmentLayoutDeclaration* declaration =
+        Compiled<EquipmentLayoutDeclaration>(assets, entry.Lease, kEquipmentLayoutType);
+    EquipmentLayoutRegistry* layouts = world.TryGetResource<EquipmentLayoutRegistry>();
+    if (declaration == nullptr || layouts == nullptr)
+    {
+        errors.push_back(NotLoaded(assets, entry.Path, kEquipmentLayoutType));
+        return;
+    }
+    entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
+    std::vector<std::string> unresolved;
+    EquipmentLayout layout;
+    const bool resolved = ResolveEquipmentLayoutDeclaration(*declaration, world, layout, unresolved);
+    for (const std::string& message : unresolved)
+        errors.push_back(std::format("{}: {}", entry.Path, message));
+    if (resolved)
+        (void)RedefineEquipmentLayout(world, entry.Path, std::move(layout));
+    else
+        (void)layouts->Reserve(entry.Path);
+}
+
 using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);
 
 template <typename Registry>
@@ -209,6 +235,7 @@ constexpr DefinitionKind kDefinitionKinds[] = {
     { kAbilityDefinitionType, &DeclareAbility, &Holds<AbilityRegistry> },
     { kCuePresentationType, &DeclareCuePresentation, &Holds<CuePresentationLibrary> },
     { kItemDefinitionType, &DeclareItem, &Holds<ItemRegistry> },
+    { kEquipmentLayoutType, &DeclareEquipmentLayout, &Holds<EquipmentLayoutRegistry> },
 };
 
 void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
@@ -300,6 +327,7 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
         if (kDefinitionKinds[kind].Wanted(world))
             DeclareAll(assets, world, reload, kDefinitionKinds[kind].Subtype,
                        leases != nullptr ? &leases->Held[kind] : nullptr, kDefinitionKinds[kind].Declare, errors);
+    DeclareWornGrantEntries(world, errors);
 }
 
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors)
@@ -311,6 +339,7 @@ void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<s
         for (ContentDefinitionLeases::Entry& entry : leases->Held[kind])
             if (entry.Lease && assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease)) != entry.Version)
                 kDefinitionKinds[kind].Declare(assets, world, entry, errors);
+    DeclareWornGrantEntries(world, errors);
 }
 
 void ReleaseContentVocabulary(World& world)

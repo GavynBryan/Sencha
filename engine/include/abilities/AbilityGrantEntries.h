@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 class AbilityRegistry;
@@ -53,6 +54,8 @@ public:
     // The index of an entry equal to `entry`, adding it if new. kAbilityNoGrantEntry
     // when the table is full or another entry of its ability has the same wire key.
     std::uint16_t Intern(AbilityGrantEntry entry);
+    // Interns nothing; kAbilityNoGrantEntry when this World declared no such entry.
+    [[nodiscard]] std::uint16_t IndexOf(AbilityGrantEntry entry) const;
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
     [[nodiscard]] std::uint32_t WireKey(std::uint16_t index) const;
@@ -77,6 +80,7 @@ private:
     };
 
     std::vector<Slot> Entries;
+    std::unordered_map<std::uint64_t, std::uint16_t> ByWireKey;
     bool Stale = true;
     std::uint64_t AbilitiesGeneration = 0;
     const InputActionRegistry* Actions = nullptr;

@@ -2,6 +2,7 @@
 
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
+#include <equipment/EquipmentComponents.h>
 
 #include <assets/data/DataAssetHandle.h>
 #include <controller/LookOrientation.h>
@@ -3179,4 +3180,69 @@ TEST(ReplicationSnapshot, AnOwnerIsNotSentOwnerOnlyFieldsStillAtTheirDefault)
         bytes[viewer - 5] = pair.Replicate(viewer);
     }
     EXPECT_EQ(bytes[0], bytes[1]);
+}
+
+// What is worn is everyone's to see; which entry it came from is its owner's.
+TEST(ReplicationEquipment, AnOwnerSeesWhereItsEquipmentCameFromAndOthersSeeOnlyWhatIsWorn)
+{
+    for (const std::uint32_t viewer : { 5u, 6u })
+    {
+        Pair pair;
+        for (World* world : { &pair.Authority, &pair.Client })
+        {
+            world->AddResource<ItemRegistry>();
+            world->AddResource<EquipmentLayoutRegistry>();
+        }
+        const ItemId ring = pair.Authority.GetResource<ItemRegistry>().Reserve("asset://items/ring.sdata");
+        const EquipmentLayoutId humanoid =
+            pair.Authority.GetResource<EquipmentLayoutRegistry>().Reserve("asset://equipment/humanoid.sdata");
+        (void)pair.Client.GetResource<ItemRegistry>().Reserve("asset://items/ring.sdata");
+        (void)pair.Client.GetResource<EquipmentLayoutRegistry>().Reserve("asset://equipment/humanoid.sdata");
+
+        const EntityId wearer = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(wearer, NetOwner{ .Peer = 5 });
+        const EntityId band = pair.SpawnReplicated(PoseAt(0.0f, 1.0f, 0.0f));
+        EquipmentState state{ .Layout = humanoid, .Count = 1, .NextKey = 2, .Records = {} };
+        state.Records[0] = EquipmentRecord{ .Key = 1, .Definition = ring, .Slots = 1u << 1, .Primary = 1,
+                                            .Source = { .Entity = band, .Target = {} }, .Derivation = EquipmentDerivation::Pending };
+        pair.Authority.AddComponent<EquipmentState>(wearer, state);
+        pair.Replicate(viewer);
+
+        const EquipmentState* seen = pair.Client.TryGet<EquipmentState>(pair.Mirror(wearer));
+        ASSERT_NE(seen, nullptr);
+        EXPECT_EQ(pair.Client.GetResource<EquipmentLayoutRegistry>().GetName(seen->Layout),
+                  "asset://equipment/humanoid.sdata");
+        ASSERT_EQ(seen->Count, 1u);
+        EXPECT_EQ(seen->Records[0].Key, 1u);
+        EXPECT_EQ(pair.Client.GetResource<ItemRegistry>().GetName(seen->Records[0].Definition), "asset://items/ring.sdata");
+        EXPECT_EQ(seen->Records[0].Slots, 1u << 1);
+        EXPECT_EQ(seen->Records[0].Primary, 1u);
+        if (viewer == 5)
+            EXPECT_EQ(seen->Records[0].Source.Entity, pair.Mirror(band)) << "the owner knows which entry it wears";
+        else
+            EXPECT_FALSE(seen->Records[0].Source.Entity.IsValid()) << "another peer is not told";
+    }
+}
+
+// An owner-only run still at the default it was added with is what any peer
+// holds already, so a first send to the owner says nothing about it: an empty
+// EquipmentState costs its owner what it costs anyone else.
+TEST(ReplicationEquipment, AnOwnerIsNotSentOwnerOnlyFieldsStillAtTheirDefault)
+{
+    std::size_t bytes[2] = {};
+    for (const std::uint32_t viewer : { 5u, 6u })
+    {
+        Pair pair;
+        for (World* world : { &pair.Authority, &pair.Client })
+            world->AddResource<EquipmentLayoutRegistry>();
+        const EquipmentLayoutId humanoid =
+            pair.Authority.GetResource<EquipmentLayoutRegistry>().Reserve("asset://equipment/humanoid.sdata");
+        (void)pair.Client.GetResource<EquipmentLayoutRegistry>().Reserve("asset://equipment/humanoid.sdata");
+        const EntityId wearer = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(wearer, NetOwner{ .Peer = 5 });
+        pair.Authority.AddComponent<EquipmentState>(wearer,
+                                                    EquipmentState{ .Layout = humanoid, .Count = 0, .NextKey = 1, .Records = {} });
+        bytes[viewer - 5] = pair.Replicate(viewer);
+    }
+    EXPECT_EQ(bytes[0], bytes[1]) << "sixteen empty sources would be 128 bytes more";
 }

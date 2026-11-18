@@ -20,6 +20,7 @@ class CameraShakeOperations;
 class ContactLineSystem;
 class CounterOperations;
 class EffectOperations;
+class EquipmentOperations;
 class FixedSimulationLoop;
 class InteractUseOperations;
 class InventoryOperations;
@@ -39,7 +40,7 @@ class World;
 //
 // The engine's own operations bound into one World's dispatchers: animation
 // requests, effects, actor time, abilities, movement, navigation orders, triggers,
-// audio and camera effects, counters, inventory, the perception and navigation queries, and the physics queries once a physics world answers them. The runtime and an editor preview both run a World
+// audio and camera effects, counters, inventory, equipment, the perception and navigation queries, and the physics queries once a physics world answers them. The runtime and an editor preview both run a World
 // this way, so both run the same behaviour behind the same names. The bindings
 // are released before the operations they call.
 //=============================================================================
@@ -77,12 +78,14 @@ public:
                       AuthoredEventDispatcher* events);
 
     void BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
+    void BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
 
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
 
 private:
     World& Entities;
+    const FixedSimulationLoop& Clock;
     std::unique_ptr<AnimRequestOperations> Animation;
     std::unique_ptr<EffectOperations> Effects;
     std::unique_ptr<ActorTimeOperations> Time;
@@ -100,6 +103,7 @@ private:
     std::unique_ptr<InteractUseOperations> Interaction;
     std::unique_ptr<CounterOperations> Counters;
     std::unique_ptr<InventoryOperations> Items;
+    std::unique_ptr<EquipmentOperations> Worn;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;
 };

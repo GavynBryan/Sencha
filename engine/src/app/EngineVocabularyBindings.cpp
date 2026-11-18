@@ -8,6 +8,7 @@
 #include <camera/CameraFovScaleVerbs.h>
 #include <camera/CameraShakeVerbs.h>
 #include <effects/EffectVerbs.h>
+#include <equipment/EquipmentVocabulary.h>
 #include <inventory/InventoryVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
@@ -30,6 +31,7 @@
 EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedSimulationLoop& clock,
                                                    VerbDispatcher& verbs)
     : Entities(entities)
+    , Clock(clock)
     , Animation(std::make_unique<AnimRequestOperations>(entities, clock))
     , Effects(std::make_unique<EffectOperations>(entities, clock))
     , Time(std::make_unique<ActorTimeOperations>(entities, clock))
@@ -114,6 +116,17 @@ void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQuer
     Verbs.push_back(verbs.Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), *Items));
     Verbs.push_back(verbs.Bind<&InvokeInventoryUse>(catalog.Find(kInventoryUseVerb), *Items));
     Queries.push_back(BindInventoryQuery(queries, std::as_const(Entities)));
+}
+
+void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
+{
+    Worn = std::make_unique<EquipmentOperations>(Entities, Clock);
+    const VerbRegistry& catalog = verbs.Registry();
+    Verbs.push_back(verbs.Bind<&InvokeEquipmentEquip>(catalog.Find(kEquipmentEquipVerb), *Worn));
+    Verbs.push_back(verbs.Bind<&InvokeEquipmentUnequip>(catalog.Find(kEquipmentUnequipVerb), *Worn));
+    Verbs.push_back(verbs.Bind<&InvokeEquipmentCycle>(catalog.Find(kEquipmentCycleVerb), *Worn));
+    for (AuthoredQueryBindingToken& token : BindEquipmentQueries(queries, std::as_const(Entities)))
+        Queries.push_back(std::move(token));
 }
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)

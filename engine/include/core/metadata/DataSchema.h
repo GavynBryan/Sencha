@@ -150,6 +150,8 @@ struct DataValidationError
 
 // A field with its identity and kind set. Callers adjust constraints,
 // defaults and children on the returned value.
+[[nodiscard]] DataFieldSchema MakeOptionalDataField(DataFieldKind kind, std::string key, std::string displayName,
+                                                    std::string summary = {});
 [[nodiscard]] DataFieldSchema MakeDataField(DataFieldKind kind, std::string key,
                                             std::string displayName, std::string summary = {});
 

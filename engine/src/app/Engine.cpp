@@ -41,6 +41,8 @@
 #include <app/EngineVocabularyBindings.h>
 #include <core/text/Slug.h>
 #include <save/EngineSaveSections.h>
+#include <equipment/EquipmentKit.h>
+#include <equipment/EquipmentSystem.h>
 #include <inventory/InventoryKit.h>
 #include <inventory/InventorySystem.h>
 #include <logic/CounterVocabulary.h>
@@ -1171,6 +1173,7 @@ int Engine::Run(Game& game)
         // locomotion mode is declared once the game has, as the templates do.
         RegisterAbilityKit(entities);
         InstallInventoryVocabulary(entities);
+        InstallEquipmentVocabulary(entities);
         InstallAnimationVocabulary(entities);
         // The engine's character facts read movement's and the aim's components; a
         // game without them has no entity they answer for.
@@ -1469,6 +1472,7 @@ int Engine::Run(Game& game)
                                            .Presents = PresentsAWindow(Configuration),
                                            .Logging = &LoggingState });
     RegisterInventorySystems(EngineSystems);
+    RegisterEquipmentSystems(EngineSystems);
 
     // Every host answers effects with reactions: an entity whose EffectReactions
     // name a profile is pushed and shaken in a process whose game registered
@@ -1487,6 +1491,7 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,
                                      LoggingState.GetLogger<CounterOperations>(), EventDispatcherState.get());
     VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState);
+    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState);
 
     // Only where a window presents: a server holds no attachments.
     if (PresentsAWindow(Configuration))

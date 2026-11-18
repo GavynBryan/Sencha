@@ -19,8 +19,9 @@ EffectId EffectRegistry::Register(std::string_view name, EffectDefinition defini
         return existing->second;
 
     const EffectId id{ static_cast<std::uint32_t>(Effects.size()) };
-    Effects.push_back(Entry{ std::string(name), std::move(definition) });
+    Effects.push_back(Entry{ std::string(name), std::move(definition), 1 });
     IdsByName.emplace(Effects.back().Name, id);
+    ++Generation_;
     return id;
 }
 
@@ -32,6 +33,8 @@ EffectId EffectRegistry::Define(std::string_view name, EffectDefinition definiti
     if (!existing.IsValid())
         return Register(name, std::move(definition));
     Effects[existing.Value].Def = std::move(definition);
+    ++Effects[existing.Value].Revision;
+    ++Generation_;
     return existing;
 }
 
@@ -59,4 +62,9 @@ bool EffectRegistry::IsKnown(EffectId id) const
 std::size_t EffectRegistry::Size() const
 {
     return Effects.size() - 1;
+}
+
+std::uint32_t EffectRegistry::Revision(EffectId id) const
+{
+    return IsKnown(id) ? Effects[id.Value].Revision : 0u;
 }

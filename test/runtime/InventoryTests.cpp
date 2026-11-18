@@ -4,6 +4,7 @@
 #include <abilities/AbilityCostProviders.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityGrants.h>
 #include <abilities/AbilityKit.h>
@@ -1109,4 +1110,43 @@ TEST_F(InventoryTest, WhatADepositIntoAnAuthoredChestHoldsSurvivesASaveIntoAFres
     ASSERT_EQ(fresh.Held(restored).size(), 1u);
     EXPECT_EQ(fresh.CountOf(fresh.Held(restored)[0]), 9u);
     EXPECT_TRUE(fresh.Entities().HasComponent<ItemContainer>(restored)) << "the bag still holds things";
+}
+
+// Equipment maintains its effects for exactly as long as an item is worn, so an
+// effect that would end on its own is refused, and so is a parameter for a grant
+// no equip effect gives.
+TEST_F(InventoryTest, AnEquipEffectMustBeMaintainedAndItsParametersNameItsGrants)
+{
+    EffectDefinition lasting{};
+    lasting.Duration = EffectDuration::Infinite;
+    EffectDefinition brief{};
+    brief.Duration = EffectDuration::Duration;
+    brief.DurationSeconds = 2.0f;
+    EffectRegistry& effects = Entities().GetResource<EffectRegistry>();
+    const EffectId aura = effects.Define("asset://effects/aura.sdata", lasting);
+    (void)effects.Define("asset://effects/burst.sdata", brief);
+    (void)Entities().GetResource<AbilityRegistry>().Reserve("asset://abilities/bolt.sdata");
+    (void)DeclareEffectGrants(Entities(), aura,
+                              { AbilityGrantDeclaration{ .Key = "g_bolt", .Ability = "asset://abilities/bolt.sdata",
+                                                         .Override = {} } });
+
+    ItemDeclaration ring;
+    ring.Name = "Ring";
+    ring.Occupies = { "ring" };
+    ring.EquipEffects = { { .Effect = "asset://effects/aura.sdata", .Scale = 1.0f } };
+    ring.GrantParameters = { { .Key = "g_bolt", .Parameters = { { .Key = "power", .Value = 25.0 } } } };
+    ItemDefinition definition;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(ResolveItemDeclaration(ring, Entities(), definition, errors)) << errors.front();
+    ASSERT_EQ(definition.EquipEffects.size(), 1u);
+    EXPECT_EQ(definition.EquipEffects[0].Effect, aura);
+    EXPECT_EQ(definition.Occupies, std::vector<std::string>{ "ring" });
+
+    ring.EquipEffects.push_back({ .Effect = "asset://effects/burst.sdata", .Scale = 1.0f });
+    ring.GrantParameters.push_back({ .Key = "g_missing", .Parameters = {} });
+    errors.clear();
+    EXPECT_FALSE(ResolveItemDeclaration(ring, Entities(), definition, errors));
+    ASSERT_EQ(errors.size(), 2u);
+    EXPECT_NE(errors[0].find("equip_effect_not_maintained"), std::string::npos) << errors[0];
+    EXPECT_NE(errors[1].find("g_missing"), std::string::npos) << errors[1];
 }

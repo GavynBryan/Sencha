@@ -66,6 +66,11 @@ namespace
         }
         return NameWireKey(text);
     }
+
+    std::uint64_t WireIndexKey(AbilityId ability, std::uint32_t wireKey)
+    {
+        return (std::uint64_t{ ability.Value } << 32) | wireKey;
+    }
 }
 
 AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
@@ -88,17 +93,26 @@ AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
 std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
 {
     std::ranges::sort(entry.Parameters, {}, &AbilityGrantParameter::Key);
-    const auto found = std::ranges::find(Entries, entry, &Slot::Entry);
-    if (found != Entries.end())
-        return static_cast<std::uint16_t>(found - Entries.begin());
-    if (Entries.size() >= kAbilityNoGrantEntry)
-        return kAbilityNoGrantEntry;
     const std::uint32_t key = EntryWireKey(entry);
-    if (FindByWireKey(key, entry.Ability) != kAbilityNoGrantEntry)
+    const auto [found, added] = ByWireKey.try_emplace(WireIndexKey(entry.Ability, key), kAbilityNoGrantEntry);
+    if (!added)
+        return Entries[found->second].Entry == entry ? found->second : kAbilityNoGrantEntry;
+    if (Entries.size() >= kAbilityNoGrantEntry)
+    {
+        ByWireKey.erase(found);
         return kAbilityNoGrantEntry;
+    }
+    found->second = static_cast<std::uint16_t>(Entries.size());
     Entries.push_back(Slot{ std::move(entry), {}, {}, key });
     Stale = true;
-    return static_cast<std::uint16_t>(Entries.size() - 1);
+    return found->second;
+}
+
+std::uint16_t AbilityGrantEntries::IndexOf(AbilityGrantEntry entry) const
+{
+    std::ranges::sort(entry.Parameters, {}, &AbilityGrantParameter::Key);
+    const std::uint16_t index = FindByWireKey(EntryWireKey(entry), entry.Ability);
+    return index != kAbilityNoGrantEntry && Entries[index].Entry == entry ? index : kAbilityNoGrantEntry;
 }
 
 const AbilityGrantEntry* AbilityGrantEntries::Find(std::uint16_t index) const
@@ -108,10 +122,8 @@ const AbilityGrantEntry* AbilityGrantEntries::Find(std::uint16_t index) const
 
 std::uint16_t AbilityGrantEntries::FindByWireKey(std::uint32_t key, AbilityId ability) const
 {
-    for (std::size_t i = 0; i < Entries.size(); ++i)
-        if (Entries[i].Entry.Ability == ability && Entries[i].WireKey == key)
-            return static_cast<std::uint16_t>(i);
-    return kAbilityNoGrantEntry;
+    const auto found = ByWireKey.find(WireIndexKey(ability, key));
+    return found != ByWireKey.end() ? found->second : kAbilityNoGrantEntry;
 }
 
 std::uint32_t AbilityGrantEntries::WireKey(std::uint16_t index) const

@@ -17,6 +17,8 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
@@ -229,4 +231,16 @@ TEST_F(AbilityPreviewTest, TheStageShowsThePlacedTargetAndWhatTheChargeStruck)
     const Vec3d hit = At(13).Hits.front().Point;
     EXPECT_TRUE(stage.Bounds.Contains(hit));
     EXPECT_TRUE(stage.Bounds.Contains(At(1).Placed.front()));
+}
+
+// S5.1's audit row: the preview's own tag controls contribute, as an effect
+// would, so nothing the preview does could reach a save as authored state.
+TEST_F(AbilityPreviewTest, APreviewsTagControlContributesAndPersistsNothing)
+{
+    Control(AbilityPreviewControl::GrantTag, "Weapon.CTX.Mode.Charge");
+    const World& world = *Preview->SimulationWorld();
+    const GameplayTagId charge = world.TryGetResource<GameplayTagRegistry>()->FindTag("Weapon.CTX.Mode.Charge");
+    const GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(Preview->Fixture());
+    EXPECT_EQ(tags.ContributedCount(charge), 1u);
+    EXPECT_EQ(tags.BaselineCount(charge), 0u);
 }

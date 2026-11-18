@@ -8,6 +8,7 @@
 #include <controller/ControllerComponentRegistration.h>
 #include <ecs/WorldComponentSchema.h>
 #include <input/InputComponentRegistration.h>
+#include <equipment/EquipmentKit.h>
 #include <inventory/InventoryKit.h>
 #include <line/ContactLineRegistration.h>
 #include <logic/LogicRegistration.h>
@@ -51,6 +52,7 @@ namespace
         NetComponents,
         LogicComponents,
         InventoryComponents,
+        EquipmentComponents,
         AnimationComponents,
         SightComponents,
         PerceptionComponents,
@@ -107,6 +109,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterNetComponents(registrar);
     RegisterLogicComponents(registrar);
     RegisterInventoryComponents(registrar);
+    RegisterEquipmentComponents(registrar);
     RegisterAnimationComponents(registrar);
     RegisterSightComponents(registrar);
     RegisterPerceptionComponents(registrar);

@@ -243,13 +243,6 @@ namespace
         return field;
     }
 
-    [[nodiscard]] DataFieldSchema Optional(DataFieldKind kind, std::string key, std::string displayName)
-    {
-        DataFieldSchema field = MakeDataField(kind, std::move(key), std::move(displayName));
-        field.Required = false;
-        return field;
-    }
-
     [[nodiscard]] DataFieldSchema ArrayOf(std::string key, std::string displayName, DataFieldSchema element)
     {
         DataFieldSchema field = MakeDataField(DataFieldKind::Array, std::move(key), std::move(displayName));
@@ -295,7 +288,7 @@ DataSchema MakeCandidateEvaluationSchema()
     DataFieldSchema slot = MakeDataField(DataFieldKind::Record, "slot", "Slot");
     slot.Children.push_back(MakeDataField(DataFieldKind::String, "name", "Name",
                                           "What measures and generators call this input."));
-    DataFieldSchema required = Optional(DataFieldKind::Bool, "required", "Required");
+    DataFieldSchema required = MakeOptionalDataField(DataFieldKind::Bool, "required", "Required");
     required.Default = true;
     slot.Children.push_back(std::move(required));
 
@@ -316,10 +309,10 @@ DataSchema MakeCandidateEvaluationSchema()
         mode.EnumChoices.push_back(DataEnumChoice{ std::string(named.Name), std::string(named.Name), {} });
     DataFieldSchema selection = OpenRecord("selection", "Selection");
     selection.Children.push_back(std::move(mode));
-    DataFieldSchema count = Optional(DataFieldKind::Int, "count", "Count");
+    DataFieldSchema count = MakeOptionalDataField(DataFieldKind::Int, "count", "Count");
     count.Numeric.Minimum = 1.0;
     selection.Children.push_back(std::move(count));
-    DataFieldSchema bandWidth = Optional(DataFieldKind::Float, "band_width", "Band width");
+    DataFieldSchema bandWidth = MakeOptionalDataField(DataFieldKind::Float, "band_width", "Band width");
     bandWidth.Numeric.Minimum = 0.0;
     selection.Children.push_back(std::move(bandWidth));
 
@@ -327,7 +320,7 @@ DataSchema MakeCandidateEvaluationSchema()
     for (const char* key : { "candidates", "exact_nav_searches", "raycasts", "reachable_regions",
                              "generation_attempts" })
     {
-        DataFieldSchema limit = Optional(DataFieldKind::Int, key, key);
+        DataFieldSchema limit = MakeOptionalDataField(DataFieldKind::Int, key, key);
         limit.Numeric.Minimum = 0.0;
         limit.Numeric.Maximum = static_cast<double>(std::numeric_limits<std::uint32_t>::max());
         limits.Children.push_back(std::move(limit));
@@ -335,7 +328,7 @@ DataSchema MakeCandidateEvaluationSchema()
 
     DataFieldSchema root;
     root.Kind = DataFieldKind::Record;
-    root.Children.push_back(Optional(DataFieldKind::String, "name", "Name"));
+    root.Children.push_back(MakeOptionalDataField(DataFieldKind::String, "name", "Name"));
     root.Children.push_back(ArrayOf("slots", "Slots", std::move(slot)));
     DataFieldSchema generators = ArrayOf("generators", "Generators", std::move(generator));
     generators.Required = true;

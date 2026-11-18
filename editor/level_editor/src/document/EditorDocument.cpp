@@ -19,6 +19,7 @@
 #include <core/serialization/JsonArchive.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <equipment/EquipmentKit.h>
 #include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -156,6 +157,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // game module adds its names to the same registries.
     RegisterMovement(world);
     InstallInventoryVocabulary(world);
+    InstallEquipmentVocabulary(world);
     // Declarations only: no dispatcher, so nothing a module declares can run.
     InstallAuthoredVocabulary(world);
     (void)InstallEngineVocabulary(world);

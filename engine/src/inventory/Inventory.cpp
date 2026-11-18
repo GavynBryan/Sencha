@@ -23,12 +23,6 @@ namespace
 
     const HeldRecordIndex* IndexOf(const World& world) { return world.TryGetResource<HeldRecordIndex>(); }
 
-    const ItemDefinition* DefinitionOf(const World& world, ItemId item)
-    {
-        const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
-        return items != nullptr ? items->Get(item) : nullptr;
-    }
-
     const ItemEntry* EntryOf(const World& world, EntityId entry)
     {
         return world.IsAlive(entry) && world.IsRegistered<ItemEntry>() ? world.TryGet<ItemEntry>(entry) : nullptr;
@@ -104,7 +98,9 @@ namespace
                 (void)attributes.Add(seed.Attribute, seed.Base);
             world.AddComponent<AttributeSet>(entry, attributes);
         }
-        if (!definition.InstanceTags.empty() && world.IsRegistered<GameplayTagContainer>())
+        // A curse laid on an entry by an effect needs somewhere to land.
+        if ((!definition.InstanceTags.empty() || !definition.EquipLockTags.empty())
+            && world.IsRegistered<GameplayTagContainer>())
         {
             GameplayTagContainer tags{};
             for (const GameplayTagId tag : definition.InstanceTags)
@@ -190,7 +186,7 @@ InventoryResult Inventory::Give(EntityId container, ItemId definition, std::uint
     World& world = *Entities;
     if (!IsSimulationAuthority(world))
         return Refused(InventoryRefusal::NotAuthority);
-    const ItemDefinition* item = DefinitionOf(world, definition);
+    const ItemDefinition* item = FindItemDefinition(world, definition);
     const ItemContainer* holder = ContainerOf(world, container);
     if (item == nullptr || holder == nullptr || count == 0)
         return Refused(InventoryRefusal::Missing);
@@ -226,7 +222,7 @@ InventoryResult Inventory::Take(EntityId pickup, EntityId into)
     {
         const EntityId entry = entries.front();
         const ItemContainer* holder = ContainerOf(world, into);
-        const ItemDefinition* item = DefinitionOf(world, EntryOf(world, entry)->Definition);
+        const ItemDefinition* item = FindItemDefinition(world, EntryOf(world, entry)->Definition);
         if (holder == nullptr || item == nullptr)
             return Refused(InventoryRefusal::Missing);
         if (const InventoryRefusal refusal = Admission(world, entry, into, *holder, *item);
@@ -244,7 +240,7 @@ InventoryResult Inventory::Take(EntityId pickup, EntityId into)
     }
 
     const ItemId definition = lying->Definition;
-    const ItemDefinition* item = DefinitionOf(world, definition);
+    const ItemDefinition* item = FindItemDefinition(world, definition);
     if (item == nullptr || !world.IsAlive(into))
         return Refused(InventoryRefusal::Missing);
     InventoryResult result;
@@ -267,7 +263,7 @@ InventoryResult Inventory::Transfer(EntityId entry, EntityId into, std::uint32_t
         return Refused(InventoryRefusal::NotAuthority);
     const ItemEntry* held = EntryOf(world, entry);
     const ItemContainer* holder = ContainerOf(world, into);
-    const ItemDefinition* item = held != nullptr ? DefinitionOf(world, held->Definition) : nullptr;
+    const ItemDefinition* item = held != nullptr ? FindItemDefinition(world, held->Definition) : nullptr;
     if (held == nullptr || holder == nullptr || item == nullptr || held->Count == 0 || !Contained(world, entry))
         return Refused(InventoryRefusal::Missing);
     if (const InventoryRefusal refusal = Admission(world, entry, into, *holder, *item); refusal != InventoryRefusal::None)
@@ -309,7 +305,7 @@ InventoryResult Inventory::Use(EntityId user, EntityId entry)
     if (!IsSimulationAuthority(world))
         return Refused(InventoryRefusal::NotAuthority);
     const ItemEntry* held = EntryOf(world, entry);
-    const ItemDefinition* item = held != nullptr ? DefinitionOf(world, held->Definition) : nullptr;
+    const ItemDefinition* item = held != nullptr ? FindItemDefinition(world, held->Definition) : nullptr;
     const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
     const AbilityGrantEntry* use = item != nullptr && entries != nullptr ? entries->Find(item->UseEntry) : nullptr;
     AbilityRequestQueue* queue = world.TryGetResource<AbilityRequestQueue>();
@@ -320,6 +316,12 @@ InventoryResult Inventory::Use(EntityId user, EntityId entry)
     queue->Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = user, .Ability = use->Ability,
                   .Instigator = user, .Cause = {}, .Source = entry, .Entry = item->UseEntry });
     return { .Refusal = InventoryRefusal::None, .Entry = entry };
+}
+
+const ItemDefinition* FindItemDefinition(const World& world, ItemId item)
+{
+    const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+    return items != nullptr ? items->Get(item) : nullptr;
 }
 
 std::vector<EntityId> ItemsIn(const World& world, EntityId container)

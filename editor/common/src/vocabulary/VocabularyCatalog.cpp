@@ -7,6 +7,7 @@
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
+#include <equipment/EquipmentKit.h>
 #include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 
@@ -20,6 +21,7 @@ VocabularyCatalog::VocabularyCatalog()
     RegisterMovement(Metadata);
     InstallAbilityKitVocabulary(Metadata);
     InstallInventoryVocabulary(Metadata);
+    InstallEquipmentVocabulary(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
     (void)InstallEngineVocabulary(Metadata);

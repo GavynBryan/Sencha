@@ -1,6 +1,7 @@
 #include <inventory/ItemDefinitionData.h>
 
 #include <abilities/AbilityDefinitionData.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
@@ -19,16 +20,9 @@
 
 namespace
 {
-    DataFieldSchema Optional(DataFieldKind kind, std::string key, std::string label, std::string summary = {})
-    {
-        DataFieldSchema field = MakeDataField(kind, std::move(key), std::move(label), std::move(summary));
-        field.Required = false;
-        return field;
-    }
-
     DataFieldSchema List(std::string key, std::string label, DataFieldSchema element)
     {
-        DataFieldSchema list = Optional(DataFieldKind::Array, std::move(key), std::move(label));
+        DataFieldSchema list = MakeOptionalDataField(DataFieldKind::Array, std::move(key), std::move(label));
         list.Editor.Widget = "cards";
         list.Children.push_back(std::move(element));
         return list;
@@ -52,45 +46,66 @@ namespace
 
     DataSchema MakeSchema()
     {
-        DataFieldSchema stack = Optional(DataFieldKind::Record, "stack", "Stack");
-        DataFieldSchema max = Optional(DataFieldKind::Int, "max", "Most in one entry",
+        DataFieldSchema stack = MakeOptionalDataField(DataFieldKind::Record, "stack", "Stack");
+        DataFieldSchema max = MakeOptionalDataField(DataFieldKind::Int, "max", "Most in one entry",
                                        "One means every unit is its own entry, with its own state.");
         max.Default = std::int64_t{ 1 };
         max.Numeric.Minimum = 1.0;
         stack.Children.push_back(std::move(max));
 
-        DataFieldSchema keep = Optional(DataFieldKind::Bool, "keep", "Kept",
+        DataFieldSchema keep = MakeOptionalDataField(DataFieldKind::Bool, "keep", "Kept",
                                         "Off: taking it applies its take effects and keeps nothing.");
         keep.Default = true;
 
-        DataFieldSchema effect = Optional(DataFieldKind::Record, "effect", "Effect");
+        DataFieldSchema effect = MakeOptionalDataField(DataFieldKind::Record, "effect", "Effect");
         DataFieldSchema effectRef = MakeDataField(DataFieldKind::DataAssetRef, "data", "Effect");
         effectRef.Reference.DataSubtype = "effect.definition";
         effect.Children.push_back(std::move(effectRef));
-        DataFieldSchema takeEffect = Optional(DataFieldKind::Record, "take_effect", "Effect");
+        DataFieldSchema takeEffect = MakeOptionalDataField(DataFieldKind::Record, "take_effect", "Effect");
         takeEffect.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"), std::move(effect) };
-        DataFieldSchema take = Optional(DataFieldKind::Record, "take", "When taken");
+        DataFieldSchema take = MakeOptionalDataField(DataFieldKind::Record, "take", "When taken");
         take.Children.push_back(List("effects", "Effects", std::move(takeEffect)));
 
-        DataFieldSchema attribute = Optional(DataFieldKind::Record, "attribute", "Attribute");
-        DataFieldSchema base = Optional(DataFieldKind::Float, "base", "Starts at");
+        DataFieldSchema attribute = MakeOptionalDataField(DataFieldKind::Record, "attribute", "Attribute");
+        DataFieldSchema base = MakeOptionalDataField(DataFieldKind::Float, "base", "Starts at");
         base.Default = 0.0;
         attribute.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"),
                                MakeDataField(DataFieldKind::String, "attribute", "Attribute"), std::move(base) };
+
+        DataFieldSchema equipEffect = MakeOptionalDataField(DataFieldKind::Record, "equip_effect", "Effect");
+        DataFieldSchema equipEffectRef = MakeOptionalDataField(DataFieldKind::Record, "effect", "Effect");
+        DataFieldSchema equipEffectData = MakeDataField(DataFieldKind::DataAssetRef, "data", "Effect");
+        equipEffectData.Reference.DataSubtype = "effect.definition";
+        equipEffectRef.Children.push_back(std::move(equipEffectData));
+        DataFieldSchema scale = MakeOptionalDataField(DataFieldKind::Float, "scale", "Scale");
+        scale.Default = 1.0;
+        equipEffect.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"), std::move(equipEffectRef),
+                                 std::move(scale) };
+        DataFieldSchema equip = MakeOptionalDataField(DataFieldKind::Record, "equip", "When equipped",
+                                                      "The slots it takes and what it maintains in them.");
+        equip.Children = { List("occupies", "Occupies", MakeDataField(DataFieldKind::String, "slot", "Slot or group")),
+                           List("effects", "Effects", std::move(equipEffect)),
+                           TagList("lock_tags", "Locked while it holds") };
+
+        DataFieldSchema grant = MakeOptionalDataField(DataFieldKind::Record, "grant", "Grant");
+        grant.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"),
+                           AbilityGrantParametersSchema("parameters", "Parameters") };
 
         DataSchema schema;
         schema.TypeName = std::string(kItemDefinitionType);
         schema.DisplayName = "Item";
         schema.Description = "A kind of thing an actor can hold: how it stacks, what taking and using it do.";
         schema.Root.Kind = DataFieldKind::Record;
-        schema.Root.Children = { Optional(DataFieldKind::String, "name", "Name"),
+        schema.Root.Children = { MakeOptionalDataField(DataFieldKind::String, "name", "Name"),
                                  TagList("tags", "Tags"),
                                  TagList("instance_tags", "Each entry's own tags"),
                                  std::move(stack),
                                  std::move(keep),
                                  std::move(take),
                                  List("attributes", "Its own attributes", std::move(attribute)),
-                                 UseSchema() };
+                                 UseSchema(),
+                                 std::move(equip),
+                                 List("grants", "Its grants' parameters", std::move(grant)) };
         return schema;
     }
 
@@ -172,6 +187,44 @@ namespace
         }
         if (!value->Keep && value->Use)
             return Refused("$.data.use An item that is not kept is never there to use.");
+        if (const JsonValue* equip = data.Find("equip"); equip != nullptr && equip->IsObject())
+        {
+            if (!ReadTags(*equip, "occupies", value->Occupies))
+                return Refused("$.data.equip.occupies A slot or group is named.");
+            if (!ReadTags(*equip, "lock_tags", value->EquipLockTags))
+                return Refused("$.data.equip.lock_tags A tag is a name.");
+            if (const JsonValue* effects = equip->Find("effects"); effects != nullptr && effects->IsArray())
+                for (std::size_t i = 0; i < effects->AsArray().size(); ++i)
+                {
+                    const JsonValue& entry = effects->AsArray()[i];
+                    const std::string path = DataPath(entry.Find("effect"));
+                    if (path.empty())
+                        return Refused(std::format("$.data.equip.effects[{}].effect An effect is {{ \"data\": ... }}.", i));
+                    const JsonValue* scale = entry.Find("scale");
+                    dependencies.push_back(AssetRef{ .Type = AssetType::Data, .Path = path });
+                    value->EquipEffects.push_back(
+                        { path, scale != nullptr && scale->IsNumber() ? static_cast<float>(scale->AsNumber()) : 1.0f });
+                }
+            if (value->Occupies.empty())
+                return Refused("$.data.equip.occupies Equipping takes at least one slot.");
+            if (!value->Keep)
+                return Refused("$.data.equip An item that is not kept is never there to equip.");
+        }
+        if (const JsonValue* grants = data.Find("grants"); grants != nullptr && grants->IsArray())
+            for (std::size_t i = 0; i < grants->AsArray().size(); ++i)
+            {
+                const JsonValue& entry = grants->AsArray()[i];
+                const std::string at = std::format("$.data.grants[{}]", i);
+                const JsonValue* key = entry.Find("key");
+                if (key == nullptr || !key->IsString() || key->AsString().empty())
+                    return Refused(at + ".key A grant is named by its key.");
+                ItemGrantParameters parameters{ .Key = key->AsString(), .Parameters = {} };
+                std::vector<AbilityDiagnostic> problems;
+                if (const JsonValue* list = entry.Find("parameters");
+                    list != nullptr && !ParseAbilityGrantParameters(*list, at + ".parameters", parameters.Parameters, problems))
+                    return Refused(std::format("{} {}", problems.front().Path, problems.front().Message));
+                value->GrantParameters.push_back(std::move(parameters));
+            }
         return { std::move(value), std::move(dependencies), {} };
     }
 
@@ -186,6 +239,19 @@ namespace
             else
                 errors.push_back(std::format("no gameplay tag '{}'", name));
         }
+    }
+
+    bool EquipEffectsGrant(const World& world, const std::vector<ItemEquipEffect>& equipped, std::string_view key)
+    {
+        const AbilityEffectGrants* grants = world.TryGetResource<AbilityEffectGrants>();
+        const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
+        return grants != nullptr && entries != nullptr
+            && std::ranges::any_of(equipped, [&](const ItemEquipEffect& effect) {
+                   return std::ranges::any_of(grants->Of(effect.Effect), [&](std::uint16_t index) {
+                       const AbilityGrantEntry* entry = entries->Find(index);
+                       return entry != nullptr && entry->Key == key;
+                   });
+               });
     }
 }
 
@@ -209,6 +275,7 @@ bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, It
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     ResolveTags(tags, declaration.Tags, out.Tags, errors);
     ResolveTags(tags, declaration.InstanceTags, out.InstanceTags, errors);
+    ResolveTags(tags, declaration.EquipLockTags, out.EquipLockTags, errors);
 
     const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
     for (const std::string& path : declaration.TakeEffects)
@@ -235,6 +302,25 @@ bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, It
     if (declaration.Attributes.size() > AttributeSet::Capacity)
         errors.push_back(std::format("'attributes' names {}, and an entry holds at most {} attributes",
                                      declaration.Attributes.size(), AttributeSet::Capacity));
+    out.Occupies = declaration.Occupies;
+    out.GrantParameters = declaration.GrantParameters;
+    for (const ItemDeclaration::EquipEffect& equipped : declaration.EquipEffects)
+    {
+        const EffectId effect = effects != nullptr ? effects->Find(equipped.Effect) : EffectId{};
+        const EffectDefinition* definition = effects != nullptr ? effects->Get(effect) : nullptr;
+        if (definition == nullptr)
+            errors.push_back(std::format("no effect '{}'", equipped.Effect));
+        else if (definition->Duration != EffectDuration::Infinite)
+            errors.push_back(std::format("equip_effect_not_maintained: '{}' is not Infinite, and equipment maintains "
+                                         "its effects for exactly as long as it is worn",
+                                         equipped.Effect));
+        else
+            out.EquipEffects.push_back({ effect, equipped.Scale });
+    }
+    for (const ItemGrantParameters& granted : declaration.GrantParameters)
+        if (!EquipEffectsGrant(world, out.EquipEffects, granted.Key))
+            errors.push_back(std::format("grants: no equip effect grants '{}'", granted.Key));
+
     const AttributeRegistry* attributes = world.TryGetResource<AttributeRegistry>();
     for (const ItemDeclaration::Attribute& seed : declaration.Attributes)
     {

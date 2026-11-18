@@ -97,8 +97,7 @@ void DeclareEffectVerbs(VerbRegistrationScope& scope)
 
 FixedSimTime EffectOperations::Now(const VerbInvocation& invocation) const
 {
-    return { .DeltaSeconds = Clock->GetFixedDt(),
-             .TickIndex = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex() };
+    return Clock->TimeOfTick(invocation.Tick);
 }
 
 VerbAdmission EffectOperations::Apply(const VerbInvocation& invocation)

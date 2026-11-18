@@ -31,6 +31,16 @@ struct ItemDeclaration
     std::vector<Attribute> Attributes;
     std::vector<std::string> InstanceTags;
     std::optional<AbilityGrantDeclaration> Use;
+
+    struct EquipEffect
+    {
+        std::string Effect;
+        float Scale = 1.0f;
+    };
+    std::vector<std::string> Occupies;
+    std::vector<EquipEffect> EquipEffects;
+    std::vector<std::string> EquipLockTags;
+    std::vector<ItemGrantParameters> GrantParameters;
 };
 
 void RegisterItemDefinitionData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);

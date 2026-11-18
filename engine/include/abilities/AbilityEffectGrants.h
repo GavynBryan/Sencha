@@ -20,11 +20,29 @@ class AbilityEffectGrants
 public:
     void Set(EffectId effect, std::vector<std::uint16_t> entries);
     [[nodiscard]] std::span<const std::uint16_t> Of(EffectId effect) const;
-    [[nodiscard]] bool Empty() const { return Granting == 0; }
+
+    // One applied instance's grants in place of its definition's, entry for entry:
+    // an equipped item's slot binding and parameters. Kept until it ends.
+    void SetInstance(EntityId instance, std::vector<std::uint16_t> entries);
+    [[nodiscard]] std::span<const std::uint16_t> Of(EntityId instance, EffectId effect) const;
+    void ForgetEnded(const World& world);
+
+    [[nodiscard]] bool Empty() const { return Granting == 0 && Instances.empty(); }
+    [[nodiscard]] std::uint64_t Generation() const { return Declared; }
+    [[nodiscard]] std::size_t InstanceCount() const { return Instances.size(); }
 
 private:
+    struct Instance
+    {
+        EntityId Effect;
+        std::vector<std::uint16_t> Entries;
+    };
+
     std::vector<std::vector<std::uint16_t>> ByEffect;
     std::size_t Granting = 0;
+    std::uint64_t Declared = 0;
+    // Sorted by instance.
+    std::vector<Instance> Instances;
 };
 
 class AbilityGrantReservations
@@ -38,7 +56,7 @@ public:
     };
 
     void Reserve(EntityId target, EntityId effect, std::uint8_t count);
-    [[nodiscard]] std::size_t HeldFor(const World& world, EntityId target) const;
+    [[nodiscard]] std::size_t HeldFor(const World& world, EntityId target, std::span<const EntityId> ending = {}) const;
     void Release(const World& world);
 
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
@@ -48,6 +66,8 @@ private:
 };
 
 [[nodiscard]] std::size_t AbilityGrantRoom(const World& world, EntityId target);
+// As though `ending` effects had already ended.
+[[nodiscard]] std::size_t AbilityGrantRoom(const World& world, EntityId target, std::span<const EntityId> ending);
 
 void InstallAbilityGrantAdmission(World& world);
 

@@ -117,7 +117,7 @@ VerbAdmission AnimRequestOperations::Request(const VerbInvocation& invocation)
     desc.FixedTicks = static_cast<std::uint32_t>(std::max<std::int64_t>(ticks, 0));
     desc.Source = SourceOf(invocation, target);
     desc.Cause = invocation.Id;
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     return RequestAnimation(*Entities, target, desc, tick).Accepted() ? VerbAdmission::Accepted
                                                                       : VerbAdmission::Refused;
 }
@@ -134,7 +134,7 @@ VerbAdmission AnimRequestOperations::Cancel(const VerbInvocation& invocation)
     if (set == nullptr)
         return VerbAdmission::InvalidArguments;
     const EntityId source = SourceOf(invocation, target);
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     for (const AnimRequest& request : set->Records)
     {
         if (!request.Occupied || request.IsCancelled() || request.Id.Source != source || request.Intent != intent)
@@ -148,7 +148,7 @@ VerbAdmission AnimRequestOperations::Cancel(const VerbInvocation& invocation)
 
 VerbAdmission AnimRequestOperations::Hold(const VerbInvocation& invocation)
 {
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     if (invocation.Step == LeaseStep::Release)
     {
         if (!Entities->IsRegistered<AnimRequestSet>())
@@ -202,7 +202,7 @@ VerbAdmission AnimRequestOperations::Present(const VerbInvocation& invocation)
     desc.FixedTicks = static_cast<std::uint32_t>(std::max<std::int64_t>(ticks, 0));
     desc.Source = SourceOf(invocation, target);
     desc.Cause = invocation.Id;
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     return IssueAnimRequest(presented->Set, desc, tick, nullptr).Accepted() ? VerbAdmission::Accepted
                                                                             : VerbAdmission::Refused;
 }
