@@ -6,6 +6,7 @@
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
+#include <effects/ActiveEffect.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityRequestQueue.h>
 #include <abilities/AbilityVerbs.h>
@@ -2352,4 +2353,82 @@ TEST(AbilityDeclarationResolve, AProjectedTagIsNotOwned)
                                            MakeAbilityResolveEnvironment(world), definition, diagnostics));
     ASSERT_FALSE(diagnostics.empty());
     EXPECT_EQ(diagnostics.back().Code, "tag_projected");
+}
+
+// Per-instance grant lists are looked up by instance for every active effect
+// each authority tick: found whatever order they were set in, and still found
+// after others end.
+TEST(AbilityEffectGrantsInstances, AreFoundInAnyOrderSetAndAfterOthersEnd)
+{
+    World world;
+    world.RegisterComponent<ActiveEffect>();
+    std::vector<EntityId> instances;
+    for (int i = 0; i < 64; ++i)
+    {
+        instances.push_back(world.CreateEntity());
+        world.AddComponent<ActiveEffect>(instances.back(), ActiveEffect{});
+    }
+    AbilityEffectGrants table;
+    std::vector<EntityId> scrambled = instances;
+    for (std::size_t i = 0; i < scrambled.size(); ++i)
+        std::swap(scrambled[i], scrambled[(i * 37 + 11) % scrambled.size()]);
+    for (const EntityId instance : scrambled)
+        table.SetInstance(instance, { static_cast<std::uint16_t>(instance.Index) });
+    table.SetInstance(instances[5], { 999 });
+    for (std::size_t i = 0; i < instances.size(); i += 2)
+        world.DestroyEntity(instances[i]);
+    table.ForgetEnded(world);
+    EXPECT_EQ(table.InstanceCount(), instances.size() / 2);
+    for (std::size_t i = 1; i < instances.size(); i += 2)
+    {
+        const std::span<const std::uint16_t> found = table.Of(instances[i], EffectId{});
+        ASSERT_EQ(found.size(), 1u) << i;
+        EXPECT_EQ(found[0], i == 5 ? 999 : static_cast<std::uint16_t>(instances[i].Index));
+    }
+    EXPECT_TRUE(table.Of(instances[0], EffectId{}).empty()) << "an ended instance falls back to its definition's";
+}
+
+// One effect applied twice, each instance granting through entries of its own
+// (the rings in two slots): two grants, each with its instance's priority, and
+// an instance's grants end with it.
+TEST_F(AbilityRuntime, AnEffectInstanceGrantsThroughEntriesOfItsOwn)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition ring{};
+    ring.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/ring.sdata", ring);
+    (void)DeclareEffectGrants(Entities, equipped,
+                              { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                         .Override = {} } });
+    const EntityId actor = Actor();
+    const auto applied = [&](std::int32_t priority) {
+        const EntityId instance =
+            ApplyEffect(Entities, actor, equipped, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now });
+        AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+        const std::uint16_t entry = entries.Intern(
+            { "w_charge", charge, AbilityBindingDecl{ .Action = "Input.AltFire", .Priority = priority } });
+        Entities.GetResource<AbilityEffectGrants>().SetInstance(instance, { entry });
+        return std::pair{ instance, entry };
+    };
+    const auto [left, leftEntry] = applied(20);
+    const auto [right, rightEntry] = applied(21);
+    ASSERT_NE(leftEntry, rightEntry);
+
+    Step();
+    const auto holds = [&](EntityId instance, std::uint16_t entry) {
+        const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+        return std::any_of(grants.Entries, grants.Entries + grants.Count, [&](const AbilityGrant& grant) {
+            return grant.Holder == instance && grant.Entry == entry;
+        });
+    };
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 2u);
+    EXPECT_TRUE(holds(left, leftEntry));
+    EXPECT_TRUE(holds(right, rightEntry));
+    EXPECT_EQ(Entities.GetResource<AbilityGrantEntries>().Binding(rightEntry)->Priority, 21);
+
+    ASSERT_TRUE(RemoveEffect(Entities, left));
+    Step();
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
+    EXPECT_TRUE(holds(right, rightEntry));
+    EXPECT_EQ(Entities.GetResource<AbilityEffectGrants>().InstanceCount(), 1u) << "the ended instance is forgotten";
 }

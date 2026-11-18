@@ -1,6 +1,8 @@
 #include <net/NetChannel.h>
 
 #include <algorithm>
+#include <iterator>
+#include <optional>
 #include <utility>
 
 namespace
@@ -41,8 +43,9 @@ std::vector<std::byte> NetChannelSet::BuildPacket(NetChannelKind kind,
         packet.push_back(static_cast<std::byte>(value >> 8));
     };
 
+    const bool fragmentedUnreliable = kind == NetChannelKind::UnreliableSequenced && fragmentCount > 1;
     packet.push_back(static_cast<std::byte>(kind));
-    packet.push_back(std::byte{ 0 });  // flags, reserved
+    packet.push_back(static_cast<std::byte>(fragmentedUnreliable ? kNetPacketFragmented : 0));
     push16(packetSequence);
     // Every packet carries the ack window, whichever channel it belongs to, so
     // a steady stream of unreliable traffic acknowledges reliable messages
@@ -52,8 +55,9 @@ std::vector<std::byte> NetChannelSet::BuildPacket(NetChannelKind kind,
         packet.push_back(static_cast<std::byte>((ReliableHistory >> shift) & 0xFF));
 
     if (kind == NetChannelKind::ReliableOrdered)
-    {
         push16(messageId);
+    if (kind == NetChannelKind::ReliableOrdered || fragmentedUnreliable)
+    {
         packet.push_back(static_cast<std::byte>(fragmentIndex));
         packet.push_back(static_cast<std::byte>(fragmentCount));
     }
@@ -66,14 +70,26 @@ bool NetChannelSet::Send(NetChannelKind kind, std::span<const std::byte> message
 {
     if (kind == NetChannelKind::UnreliableSequenced)
     {
-        // Never fragmented: a message worth dropping when it is stale is not
-        // worth reassembling, and a partial snapshot is not a snapshot.
-        if (message.size() > kNetMaxPayloadBytes)
+        if (message.size() > kNetMaxUnreliableMessageBytes)
             return false;
-
-        const std::uint16_t sequence = NextUnreliableSequence++;
-        PendingUnreliable.push_back(Packet{
-            BuildPacket(kind, sequence, message, 0, 0, 1) });
+        if (message.size() <= kNetMaxPayloadBytes)
+        {
+            PendingUnreliable.push_back(Packet{ BuildPacket(kind, NextUnreliableSequence++, message, 0, 0, 1) });
+            return true;
+        }
+        // Consecutive sequences, so each fragment's sequence less its index
+        // names the message.
+        const std::size_t count =
+            (message.size() + kNetMaxUnreliableFragmentPayloadBytes - 1) / kNetMaxUnreliableFragmentPayloadBytes;
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            const std::size_t offset = index * kNetMaxUnreliableFragmentPayloadBytes;
+            const std::size_t length = std::min(kNetMaxUnreliableFragmentPayloadBytes, message.size() - offset);
+            PendingUnreliable.push_back(Packet{ BuildPacket(kind, NextUnreliableSequence++,
+                                                            message.subspan(offset, length), 0,
+                                                            static_cast<std::uint8_t>(index),
+                                                            static_cast<std::uint8_t>(count)) });
+        }
         return true;
     }
 
@@ -261,18 +277,7 @@ std::vector<std::vector<std::byte>> NetChannelSet::Receive(
     AckOutbound(ack, ackBits);
 
     if (kind == NetChannelKind::UnreliableSequenced)
-    {
-        if (SeenUnreliable && !NetSequenceGreaterThan(sequence, NewestUnreliable))
-        {
-            ++StaleCount;
-            return delivered;
-        }
-        SeenUnreliable = true;
-        NewestUnreliable = sequence;
-        const std::span<const std::byte> payload = packet.subspan(kNetPacketHeaderBytes);
-        delivered.emplace_back(payload.begin(), payload.end());
-        return delivered;
-    }
+        return ReceiveUnreliable(packet, sequence, error);
 
     if (packet.size() < kNetPacketHeaderBytes + kNetReliableHeaderBytes)
     {
@@ -310,54 +315,16 @@ std::vector<std::vector<std::byte>> NetChannelSet::Receive(
     std::vector<std::byte> message;
     if (fragmentCount > 1)
     {
-        Reassembly* found = nullptr;
-        for (Reassembly& candidate : Reassemblies)
+        std::optional<std::vector<std::byte>> whole;
+        if (!Reassemble(Reassemblies, kNetMaxPendingReassemblies, messageId, fragmentIndex, fragmentCount, payload,
+                        whole))
         {
-            if (candidate.MessageId == messageId)
-            {
-                found = &candidate;
-                break;
-            }
-        }
-        if (found != nullptr && found->Count != fragmentCount)
-        {
-            // The same id arriving with a different fragment count is a peer
-            // contradicting itself; the partial state is not safe to extend.
             error = NetDecodeError::Malformed;
             return delivered;
         }
-        if (found == nullptr)
-        {
-            // Oldest out first. What a peer can make the receiver hold while a
-            // reassembly never completes is bounded here, not by the peer.
-            if (Reassemblies.size() >= kNetMaxPendingReassemblies)
-                Reassemblies.pop_front();
-            Reassemblies.push_back(Reassembly{
-                .MessageId = messageId,
-                .Count = fragmentCount,
-                .Received = 0,
-                .Parts = std::vector<std::vector<std::byte>>(fragmentCount),
-                .Seen = std::vector<bool>(fragmentCount, false),
-            });
-            found = &Reassemblies.back();
-        }
-
-        if (!found->Seen[fragmentIndex])
-        {
-            found->Seen[fragmentIndex] = true;
-            ++found->Received;
-            found->Parts[fragmentIndex].assign(payload.begin(), payload.end());
-        }
-
-        if (found->Received < found->Count)
+        if (!whole)
             return delivered;
-
-        for (const std::vector<std::byte>& part : found->Parts)
-            message.insert(message.end(), part.begin(), part.end());
-
-        std::erase_if(Reassemblies, [messageId](const Reassembly& candidate) {
-            return candidate.MessageId == messageId;
-        });
+        message = std::move(*whole);
     }
     else
     {
@@ -388,5 +355,97 @@ std::vector<std::vector<std::byte>> NetChannelSet::Receive(
         ++NextReliableDelivery;
     }
 
+    return delivered;
+}
+
+bool NetChannelSet::Reassemble(std::deque<Reassembly>& open, std::size_t cap, std::uint16_t id, std::uint8_t index,
+                               std::uint8_t count, std::span<const std::byte> payload,
+                               std::optional<std::vector<std::byte>>& whole)
+{
+    whole.reset();
+    auto found = std::ranges::find(open, id, &Reassembly::MessageId);
+    // The same id arriving with a different fragment count is a peer
+    // contradicting itself; the partial state is not safe to extend.
+    if (found != open.end() && found->Count != count)
+        return false;
+    if (found == open.end())
+    {
+        // Oldest out first. What a peer can make the receiver hold while a
+        // reassembly never completes is bounded here, not by the peer.
+        if (open.size() >= cap)
+            open.pop_front();
+        open.push_back(Reassembly{
+            .MessageId = id,
+            .Count = count,
+            .Received = 0,
+            .Parts = std::vector<std::vector<std::byte>>(count),
+            .Seen = std::vector<bool>(count, false),
+        });
+        found = std::prev(open.end());
+    }
+    if (!found->Seen[index])
+    {
+        found->Seen[index] = true;
+        ++found->Received;
+        found->Parts[index].assign(payload.begin(), payload.end());
+    }
+    if (found->Received < found->Count)
+        return true;
+    std::vector<std::byte> message;
+    for (const std::vector<std::byte>& part : found->Parts)
+        message.insert(message.end(), part.begin(), part.end());
+    open.erase(found);
+    whole = std::move(message);
+    return true;
+}
+
+std::vector<std::vector<std::byte>> NetChannelSet::ReceiveUnreliable(std::span<const std::byte> packet,
+                                                                     std::uint16_t sequence, NetDecodeError& error)
+{
+    std::vector<std::vector<std::byte>> delivered;
+    std::size_t at = kNetPacketHeaderBytes;
+    std::uint8_t index = 0;
+    std::uint8_t count = 1;
+    if ((static_cast<std::uint8_t>(packet[1]) & kNetPacketFragmented) != 0)
+    {
+        if (packet.size() < kNetPacketHeaderBytes + kNetUnreliableFragmentHeaderBytes)
+        {
+            error = NetDecodeError::Truncated;
+            return delivered;
+        }
+        index = static_cast<std::uint8_t>(packet[at]);
+        count = static_cast<std::uint8_t>(packet[at + 1]);
+        at += kNetUnreliableFragmentHeaderBytes;
+        // Checked before either value sizes or indexes anything.
+        if (count < 2 || count > kNetMaxFragments || index >= count)
+        {
+            error = NetDecodeError::Malformed;
+            return delivered;
+        }
+    }
+    const auto message = static_cast<std::uint16_t>(sequence - index);
+    if (SeenUnreliable && !NetSequenceGreaterThan(message, NewestUnreliable))
+    {
+        ++StaleCount;
+        return delivered;
+    }
+    const std::span<const std::byte> payload = packet.subspan(at);
+    std::optional<std::vector<std::byte>> whole;
+    if (count == 1)
+        whole.emplace(payload.begin(), payload.end());
+    else if (!Reassemble(UnreliableReassemblies, kNetMaxPendingUnreliableReassemblies, message, index, count, payload,
+                         whole))
+    {
+        error = NetDecodeError::Malformed;
+        return delivered;
+    }
+    if (!whole)
+        return delivered;
+    SeenUnreliable = true;
+    NewestUnreliable = message;
+    // Whatever of an older message is still arriving is superseded now.
+    std::erase_if(UnreliableReassemblies,
+                  [&](const Reassembly& open) { return !NetSequenceGreaterThan(open.MessageId, message); });
+    delivered.push_back(std::move(*whole));
     return delivered;
 }

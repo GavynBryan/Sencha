@@ -123,6 +123,6 @@ VerbAdmission ResponseOperations::Interact(const VerbInvocation& invocation)
     SensorInteractions* requests = Entities->TryGetResource<SensorInteractions>();
     if (requests == nullptr || !Entities->IsAlive(activator))
         return VerbAdmission::Refused;
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     return requests->Admit(activator, tick) ? VerbAdmission::Accepted : VerbAdmission::QueueFull;
 }

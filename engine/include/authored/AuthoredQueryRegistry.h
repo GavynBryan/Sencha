@@ -12,7 +12,7 @@
 
 struct AuthoredQueryDefinition
 {
-    // e.g. "inventory.has_item"
+    // e.g. "inventory.count"
     std::string Name;
 
     std::string DisplayName;

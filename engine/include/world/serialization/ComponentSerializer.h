@@ -3,6 +3,7 @@
 #include <core/handle/Handle.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
+#include <core/metadata/DataSchema.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
 #include <world/serialization/ComponentStorageTraits.h>
@@ -14,7 +15,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <type_traits>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -129,6 +131,21 @@ namespace SceneComponentSerialization
         return ok && archive.Ok();
     }
 
+    template<typename Component>
+    std::optional<DataFieldSchema> CompositionSchemaOf()
+    {
+        DataFieldSchema record = MakeDataField(DataFieldKind::Record, {}, {});
+        std::apply([&](const auto&... field) {
+            (([&] {
+                using FieldType = std::remove_cvref_t<decltype(std::declval<Component>().*field.Ptr)>;
+                if constexpr (requires { SceneFieldCodec<FieldType>::CompositionKind; })
+                    record.Children.push_back(
+                        MakeDataField(SceneFieldCodec<FieldType>::CompositionKind, std::string(field.Name), {}));
+            }()), ...);
+        }, TypeSchema<Component>::Fields());
+        return record.Children.empty() ? std::nullopt : std::optional(std::move(record));
+    }
+
     // Drops whatever LoadFields acquired. Called once the loaded value has
     // been handed to the entity that will own it -- the component's own
     // lifecycle hooks take its reference -- and on every path where the value
@@ -195,6 +212,13 @@ public:
     ComponentPlacementFacts Placement() const override
     {
         return ComponentPlacement<Component>::Value;
+    }
+
+    const DataFieldSchema* CompositionSchema() const override
+    {
+        static const std::optional<DataFieldSchema> schema =
+            SceneComponentSerialization::CompositionSchemaOf<Component>();
+        return schema.has_value() ? &*schema : nullptr;
     }
 
     std::vector<std::byte> DefaultBytes() const override

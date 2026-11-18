@@ -97,25 +97,31 @@ JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
     for (const EntityId root : roots)
         if (world.IsAlive(root))
             holders.push_back(root);
+    for (const EntityId holder : index->Holders())
+        if (HasAuthoredPersistentId(world, holder))
+            holders.push_back(holder);
+    std::vector<EntityId> records = index->AwaitingRecords();
+    for (const EntityId holder : holders)
+        records.insert(records.end(), index->RecordsOf(holder).begin(), index->RecordsOf(holder).end());
     std::unordered_set<EntityId, EntityIdHash> seen;
-    for (int depth = 0; depth < kHeldDeepestNesting && !holders.empty(); ++depth)
+    for (int depth = 0; depth < kHeldDeepestNesting && !records.empty(); ++depth)
     {
         std::vector<EntityId> next;
-        for (const EntityId holder : holders)
+        for (const EntityId record : records)
         {
-            const std::span<const EntityId> listed = index->RecordsOf(holder);
-            const std::vector<EntityId> records(listed.begin(), listed.end());
-            for (const EntityId record : records)
+            if (!seen.insert(record).second)
+                continue;
+            if (!HasAuthoredPersistentId(world, record))
             {
                 const PersistentEntityId id = EnsurePersistentId(world, record);
-                if (!id.IsValid() || !seen.insert(record).second)
+                if (!id.IsValid())
                     continue;
-                NameHolder(world, record, holder);
+                NameHolder(world, record, index->HolderOf(record));
                 saved.push_back(SaveRecord(world, record, id, serializers, context));
-                next.push_back(record);
             }
+            next.insert(next.end(), index->RecordsOf(record).begin(), index->RecordsOf(record).end());
         }
-        holders = std::move(next);
+        records = std::move(next);
     }
     return JsonValue(JsonValue::Object{ { "records", JsonValue(std::move(saved)) } });
 }

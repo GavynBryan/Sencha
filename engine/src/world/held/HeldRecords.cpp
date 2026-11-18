@@ -7,7 +7,11 @@
 #include <world/SimulationAuthority.h>
 #include <world/held/Held.h>
 #include <world/held/HeldRecordIndex.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
+#include <world/scene/SceneInstance.h>
+#include <zone/ZoneStateMemory.h>
+#include <zone/ZoneStateStore.h>
 
 #include <vector>
 
@@ -44,6 +48,36 @@ namespace
             world.AddComponent<NetRelevanceAnchor>(record, NetRelevanceAnchor{ .Anchor = *anchor });
         else
             current->Anchor = *anchor;
+    }
+
+    enum class Leaving : std::uint8_t
+    {
+        Identity,
+        IdentityAndGroup,
+    };
+
+    void LeaveAuthoredSelf(World& world, const HeldRecordIndex& index, EntityId record, Leaving leaving, int depth)
+    {
+        if (depth >= kHeldDeepestNesting)
+            return;
+        if (leaving == Leaving::IdentityAndGroup && world.IsRegistered<SceneInstance>()
+            && world.HasComponent<SceneInstance>(record))
+            world.RemoveComponent<SceneInstance>(record);
+        PersistentEntityId identity;
+        if (HasAuthoredPersistentId(world, record))
+        {
+            identity = MintRuntimePersistentId(world);
+            if (identity.IsValid())
+                (void)world.ReplaceComponent<PersistentIdComponent>(record, PersistentIdComponent{ identity });
+        }
+        const std::span<const EntityId> listed = index.RecordsOf(record);
+        const std::vector<EntityId> held(listed.begin(), listed.end());
+        for (const EntityId inner : held)
+        {
+            if (Held* relation = world.TryGet<Held>(inner); relation != nullptr && identity.IsValid())
+                relation->Holder = PersistableRef{ .Entity = record, .Target = identity };
+            LeaveAuthoredSelf(world, index, inner, leaving, depth + 1);
+        }
     }
 
     void Settle(World& world, const HeldRecordIndex& index, EntityId record)
@@ -98,6 +132,8 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     if (!IsSimulationAuthority(world) || !world.IsAlive(record) || (holder.IsValid() && !world.IsAlive(holder)))
         return;
     HeldRecordIndex& index = InstallHeldRecords(world);
+    if (index.Lists(record) && (index.HolderOf(record) != holder || index.AwaitedHolderOf(record).IsValid()))
+        LeaveAuthoredSelf(world, index, record, Leaving::IdentityAndGroup, 0);
     const Held held{ .Holder = { .Entity = holder, .Target = holder.IsValid() ? EnsurePersistentId(world, holder)
                                                                                : PersistentEntityId{} },
                      .Position = position.value_or(index.NextPosition(holder)) };
@@ -106,6 +142,16 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     else
         world.AddComponent<Held>(record, held);
     Settle(world, index, record);
+}
+
+void NoteHeldRecordChanged(World& world, EntityId record)
+{
+    HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr)
+        return;
+    if (IsSimulationAuthority(world) && world.IsAlive(record))
+        LeaveAuthoredSelf(world, *index, record, Leaving::Identity, 0);
+    index->NoteChanged(record);
 }
 
 void SettleHeldRecords(World& world)
@@ -141,6 +187,41 @@ void SettleHeldRecords(World& world)
     }
 }
 
+void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition)
+{
+    HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr || !IsSimulationAuthority(world))
+        return;
+    const ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    std::vector<EntityId> records;
+    for (const EntityId holder : IdentifiedEntitiesIn(world, partition))
+    {
+        const PersistentEntityId id = world.TryGet<PersistentIdComponent>(holder)->Id;
+        const std::span<const EntityId> held = index->RecordsOf(holder);
+        if (held.empty() || !IsAuthoredPersistentEntityId(id)
+            || (memory != nullptr && memory->ForgettingOf(zone, id) == ZoneStateForgetting::AtDetach))
+            continue;
+        records.assign(held.begin(), held.end());
+        for (const EntityId record : records)
+        {
+            if (HasAuthoredPersistentId(world, record))
+                continue;
+            index->Await(record, id);
+            (void)world.MoveEntityToPartition(record, PersistentStoragePartition);
+        }
+    }
+}
+
+void DestroyAwaitingHeldRecords(World& world)
+{
+    HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr || !IsSimulationAuthority(world))
+        return;
+    for (const EntityId record : index->AwaitingRecords())
+        if (world.IsAlive(record))
+            world.DestroyEntity(record);
+}
+
 void DestroyHeldRecords(World& world)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
@@ -150,7 +231,7 @@ void DestroyHeldRecords(World& world)
     {
         before = index->Count();
         for (const EntityId record : index->AllRecords())
-            if (world.IsAlive(record))
+            if (world.IsAlive(record) && !HasAuthoredPersistentId(world, record))
                 world.DestroyEntity(record);
     }
     (void)index->TakeDeparted();

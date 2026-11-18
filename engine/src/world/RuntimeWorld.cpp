@@ -354,6 +354,9 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
     // Before any departing partition goes, so whatever follows an entity that
     // moved out of one this frame leaves with it.
+    for (const ZoneResidencyChange& change : ProcessingChanges_)
+        if (change.Kind == ZoneResidencyChangeKind::Detaching)
+            ParkHeldRecords(Entities_, change.Zone, change.Partition);
     SettleHeldRecords(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 

@@ -21,6 +21,8 @@
 #include <abilities/CuePresentationData.h>
 #include <camera/CameraShakeProfile.h>
 #include <effects/EffectDefinitionData.h>
+#include <equipment/EquipmentLayoutData.h>
+#include <inventory/ItemDefinitionData.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
@@ -118,6 +120,8 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterEffectDefinitionData(DataTypes, DataSchemas);
     RegisterAbilityDefinitionData(DataTypes, DataSchemas);
     RegisterCuePresentationData(DataTypes, DataSchemas);
+    RegisterItemDefinitionData(DataTypes, DataSchemas);
+    RegisterEquipmentLayoutData(DataTypes, DataSchemas);
     RegisterCameraShakeData(DataTypes, DataSchemas);
     RegisterPresentationSettingsData(DataTypes, DataSchemas);
     RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);

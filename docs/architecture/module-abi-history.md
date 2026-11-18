@@ -1164,3 +1164,83 @@ its hooks; `ReplicationLayout::AddCodec` accepts a hooked component, while
 `Add` (bytes on the wire) still refuses one. The replicated table gains `Held`
 and `Counter`, which changes its hash; no wire layout of an existing component
 changed, so the protocol stays at 9.
+
+## v51
+
+**Inventory.** New components `ItemEntry`, `ItemContainer` and `ItemPickup`
+(`inventory/InventoryComponents.h`) in `InventoryComponents`, registered after
+`LogicComponents`, with their serializers and `ItemEntry`'s codec. An entry's
+container and position are its `Held`. `ItemRegistry` (`inventory/ItemDefinition.h`)
+and the `item.definition` data type; `Inventory` operations and reads
+(`inventory/Inventory.h`); `InventorySystem`; the `inventory.item` cost
+provider; verbs `inventory.take`, `inventory.give`, `inventory.transfer`,
+`inventory.drop`, `inventory.use` and query `inventory.count`, bound by
+`EngineVocabularyBindings::BindInventory`. `InstallInventoryVocabulary` runs in
+the engine host, Kyusu documents and the ability preview.
+
+**Held records.** `NoteHeldRecordChanged`, `ParkHeldRecords` and
+`DestroyAwaitingHeldRecords` join `world/held/HeldRecords.h`;
+`HeldRecordIndex` gains `Await`, `Holders`, `AwaitingRecords`, `Depth` and
+`Height`. `HoldRecord` to another holder, and a noted change, give a record
+carrying an authored id a runtime one. `DestroyHeldRecords` leaves records
+with authored ids. `CaptureHeldRecords` also keeps runtime records of authored
+holders and records waiting for a holder. `HasAuthoredPersistentId`
+(`world/identity/PersistentIdMint.h`).
+
+**Composition.** `ComponentSerializer<T>::CompositionSchema` declares the
+fields whose `SceneFieldCodec` names a `CompositionKind`; `PersistableRef`'s
+names `Entity`, so `Held`'s holder is renamed by a placement.
+`WriteSceneDefinitionRef` and `ReadSceneDefinitionRef`
+(`world/serialization/SceneAssetRef.h`).
+
+**Names.** `NamedDefinitionRegistry::Reserve` refuses a name whose wire key
+another name holds, and `WireKeyHolder` names that other; content declaration
+reports the refusal for abilities and items.
+
+The replicated table gains `ItemEntry`, which changes its hash; no wire layout
+of an existing component changed, so the protocol stays at 9.
+
+## v52
+
+**Equipment.** New component `EquipmentState` (`equipment/EquipmentComponents.h`)
+in `EquipmentComponents`, registered after `InventoryComponents`, with its
+serializer and codec (`equipment/EquipmentStateWire.h`).
+`EquipmentLayoutRegistry` and the `equipment.layout` data type
+(`equipment/EquipmentLayout.h`, `EquipmentLayoutData.h`); `Equipment`
+operations, `ResolveEquipmentSlots`, the locks, `ReconcileEquipment` and
+`RedefineEquipmentLayout` (`equipment/Equipment.h`); `EquipmentSystem` and
+`InstallEquipmentMoveAdmission`; `DeclareWornGrantEntries`
+(`equipment/WornGrantEntries.h`), which content declaration calls; verbs
+`equipment.equip`, `equipment.unequip`, `equipment.cycle`, queries
+`equipment.in_slot` and `equipment.sources`, bound by
+`EngineVocabularyBindings::BindEquipment`, and the `equipment.slot` cost
+provider. `InstallEquipmentVocabulary` runs in the engine host, Kyusu
+documents, the vocabulary catalog and the ability preview.
+
+**Inventory.** `ItemDefinition` gains `Occupies`, `EquipEffects`,
+`EquipLockTags` and `GrantParameters`, and `ItemDeclaration` their authored
+forms. `FindItemDefinition` joins `inventory/Inventory.h`.
+
+**Abilities and effects.** `AbilityEffectGrants` gains per-instance entries
+(`SetInstance`, `Of(instance, effect)`, `ForgetEnded`, `InstanceCount`) and
+`Generation`; `AbilityGrantReservations::HeldFor` and `AbilityGrantRoom` take
+effects counted as already ended. `AbilityGrantEntries` gains `IndexOf` and an
+index by ability and wire key. `EffectRegistry` gains `Revision` and
+`Generation`, `ActiveEffect` gains `Revision`, and `effects/EffectSystem.h`
+gains `FindEffectsOwnedBy` and `IsEffectInstanceCurrent`.
+`ParseAbilityGrantParameters` and `AbilityGrantParametersSchema`
+(`abilities/AbilityDefinitionData.h`).
+
+**Shared helpers.** `MakeOptionalDataField` (`core/metadata/DataSchema.h`),
+`MakeGameplayVerb` and `MakeEntityArgument` (`authored/VerbRegistry.h`), and
+`FixedSimulationLoop::TimeOfTick`, which every clocked verb now uses.
+
+**Snapshots span datagrams.** The unreliable channel fragments a message
+larger than one datagram (`kNetPacketFragmented`,
+`kNetMaxUnreliableMessageBytes`, `NetChannelSet::PendingUnreliableReassemblies`);
+`kNetMaxSnapshotBytes` is the largest such message and
+`kNetDefaultSnapshotBytes` (four datagrams) the default budget. An ownership
+move no longer owes an owner-only run still at the default it was added with.
+The packet framing changed, so `kNetProtocolVersion` is 10. The replicated
+table gains `EquipmentState`, and its frozen hash moves
+(`test/core/ComponentIdentityFreezeTests.cpp`).

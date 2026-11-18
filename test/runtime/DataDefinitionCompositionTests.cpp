@@ -9,6 +9,8 @@
 #include <core/json/JsonEquals.h>
 #include <core/json/JsonParser.h>
 #include <effects/EffectDefinitionData.h>
+#include <equipment/EquipmentLayoutData.h>
+#include <inventory/ItemDefinitionData.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -434,4 +436,58 @@ TEST(DataDefinitionComposition, AChildTheHostHoldsIsLeftToTheHostWhenItsBaseChan
         "data": { "duration": "infinite", "modifiers": [] } })");
     content.Changed("armor_base.sdata", "asset://effects/tunic.sdata");
     EXPECT_EQ(content.ReloadVersion(tunic), loaded) << "an open document's working version must not be replaced by its file";
+}
+
+TEST(DataDefinitionComposition, AnItemsEquipFieldsComposeOverItsBase)
+{
+    Content content;
+    content.Write("fire.sdata", R"({ "type": "effect.definition", "version": 1, "data": { "duration": "infinite" } })");
+    content.Write("ring_base.sdata", R"({ "type": "item.definition", "version": 1, "abstract": true,
+        "data": { "name": "Ring", "tags": [ "Item.Ring" ],
+                  "equip": { "occupies": [ "ring" ],
+                             "effects": [ { "key": "e_cast", "effect": { "data": "asset://effects/fire.sdata" } } ] },
+                  "grants": [ { "key": "g_bolt", "parameters": [ { "key": "power", "value": 10 } ] } ] } })");
+    content.Write("ring_strong.sdata", R"({ "type": "item.definition", "version": 1,
+        "extends": "asset://effects/ring_base.sdata",
+        "data": { "name": "Strong Ring", "equip": { "effects": { "e_cast": { "scale": 2 } } },
+                  "grants": { "g_bolt": { "parameters": { "power": { "value": 25 } } } } } })");
+
+    AssetLease strong = content.Assets.Assets.LoadLease("asset://effects/ring_strong.sdata", AssetType::Data);
+    ASSERT_TRUE(strong) << content.FailureOf("asset://effects/ring_strong.sdata");
+    const ItemDeclaration* item = content.Assets.DataAssets.TryGet<ItemDeclaration>(
+        DataAssetHandle::FromToken(strong.OpaqueToken()), kItemDefinitionType);
+    ASSERT_NE(item, nullptr);
+    EXPECT_EQ(item->Occupies, std::vector<std::string>{ "ring" });
+    ASSERT_EQ(item->EquipEffects.size(), 1u);
+    EXPECT_EQ(item->EquipEffects[0].Effect, "asset://effects/fire.sdata");
+    EXPECT_FLOAT_EQ(item->EquipEffects[0].Scale, 2.0f);
+    ASSERT_EQ(item->GrantParameters.size(), 1u);
+    EXPECT_EQ(item->GrantParameters[0].Parameters,
+              (std::vector<AbilityGrantParameter>{ { .Key = "power", .Value = 25.0 } }));
+}
+
+TEST(DataDefinitionComposition, AnEquipmentLayoutComposesItsSlotsByKey)
+{
+    Content content;
+    content.Write("humanoid.sdata", R"({ "type": "equipment.layout", "version": 1, "abstract": true,
+        "data": { "slots": [ { "key": "hand.main", "accepts": "Item.Weapon", "action": "Input.Fire", "priority": 10 },
+                             { "key": "ring.left", "accepts": "Item.Ring", "priority": 20 } ],
+                  "lock_tags": [ "State.Attacking" ] } })");
+    content.Write("mage.sdata", R"({ "type": "equipment.layout", "version": 1,
+        "extends": "asset://effects/humanoid.sdata",
+        "data": { "slots": { "ring.right": { "key": "ring.right", "accepts": "Item.Ring", "priority": 21 },
+                             "hand.main": { "on_depleted": "hold" } } } })");
+
+    AssetLease mage = content.Assets.Assets.LoadLease("asset://effects/mage.sdata", AssetType::Data);
+    ASSERT_TRUE(mage) << content.FailureOf("asset://effects/mage.sdata");
+    const EquipmentLayoutDeclaration* layout = content.Assets.DataAssets.TryGet<EquipmentLayoutDeclaration>(
+        DataAssetHandle::FromToken(mage.OpaqueToken()), kEquipmentLayoutType);
+    ASSERT_NE(layout, nullptr);
+    ASSERT_EQ(layout->Slots.size(), 3u);
+    EXPECT_EQ(layout->Slots[0].Key, "hand.main");
+    EXPECT_EQ(layout->Slots[0].OnDepleted, SlotDepletion::Hold) << "patched by key";
+    EXPECT_EQ(layout->Slots[0].Action, std::optional<std::string>("Input.Fire")) << "the rest inherited";
+    EXPECT_EQ(layout->Slots[2].Key, "ring.right");
+    EXPECT_EQ(layout->Slots[2].Priority, std::optional<std::int32_t>(21));
+    EXPECT_EQ(layout->LockTags, std::vector<std::string>{ "State.Attacking" });
 }

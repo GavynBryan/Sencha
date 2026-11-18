@@ -31,7 +31,7 @@ void DeclareActorTimeVerbs(VerbRegistrationScope& scope)
 
 VerbAdmission ActorTimeOperations::Scale(const VerbInvocation& invocation)
 {
-    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    const std::uint64_t tick = Clock->TimeOfTick(invocation.Tick).TickIndex;
     if (invocation.Step == LeaseStep::Release)
     {
         if (!Entities->IsRegistered<ActorTimeLeases>())

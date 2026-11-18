@@ -297,7 +297,9 @@ namespace
             if (grant.Kind != AbilityGrantKind::Effect)
                 continue;
             const ActiveEffect* effect = world.IsAlive(grant.Holder) ? world.TryGet<ActiveEffect>(grant.Holder) : nullptr;
-            if (effect == nullptr || table == nullptr || std::ranges::find(table->Of(effect->Def), grant.Entry) == table->Of(effect->Def).end())
+            const std::span<const std::uint16_t> granting =
+                effect != nullptr && table != nullptr ? table->Of(grant.Holder, effect->Def) : std::span<const std::uint16_t>{};
+            if (std::ranges::find(granting, grant.Entry) == granting.end())
                 (void)RevokeAbilityGrant(grants, grant.Id);
         }
     }
@@ -326,9 +328,11 @@ namespace
             for (std::uint32_t i = 0; i < view.Count(); ++i)
                 scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
         });
-        const AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
+        AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
         for (const EntityId actor : scratch.Actors)
             RevokeEndedEffectGrants(world, table, actor);
+        if (table != nullptr)
+            table->ForgetEnded(world);
 
         const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
         if (table == nullptr || table->Empty() || entries == nullptr || !world.IsRegistered<ActiveEffect>())
@@ -340,9 +344,11 @@ namespace
             const auto effects = view.template Read<ActiveEffect>();
             const EntityIndex* indices = view.Entities();
             for (std::uint32_t i = 0; i < view.Count(); ++i)
-                for (const std::uint16_t entry : table->Of(effects[i].Def))
-                    scratch.EffectGrants.push_back(
-                        { effects[i].Target, world.ResolveEntityIndex(indices[i]), entry, effects[i].Owner.Entity });
+            {
+                const EntityId instance = world.ResolveEntityIndex(indices[i]);
+                for (const std::uint16_t entry : table->Of(instance, effects[i].Def))
+                    scratch.EffectGrants.push_back({ effects[i].Target, instance, entry, effects[i].Owner.Entity });
+            }
         });
         scratch.StillRefused.clear();
         for (const AbilityPassScratch::EffectGrant& pending : scratch.EffectGrants)

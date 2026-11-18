@@ -251,7 +251,7 @@ TEST(NetChannel, FragmentsArrivingOutOfOrderStillReassemble)
 TEST(NetChannel, RefusesAMessageLargerThanTheChannelAllows)
 {
     NetChannelSet channel;
-    const std::vector<std::byte> tooBigUnreliable(kNetMaxPayloadBytes + 1, std::byte{ 0 });
+    const std::vector<std::byte> tooBigUnreliable(kNetMaxUnreliableMessageBytes + 1, std::byte{ 0 });
     EXPECT_FALSE(channel.Send(NetChannelKind::UnreliableSequenced, tooBigUnreliable));
 
     const std::vector<std::byte> tooBigReliable(kNetMaxReliableMessageBytes + 1, std::byte{ 0 });
@@ -477,4 +477,78 @@ TEST(NetChannel, AFirstReliableMessageIsNotRetiredByAnEmptyAck)
     link.Now += 1.0;
     const std::vector<std::string> delivered = link.Pump(link.A, link.B);
     EXPECT_EQ(delivered, std::vector<std::string>{ "take the turret" });
+}
+
+// An unreliable message larger than a datagram (a snapshot of a large entity)
+// is fragmented and delivered whole; one that fits a datagram costs exactly
+// what it did before fragmentation existed.
+TEST(NetChannel, UnreliableFragmentsAndReassemblesALargeMessage)
+{
+    Link link;
+    const std::string large(kNetMaxUnreliableFragmentPayloadBytes * 2 + 9, 'u');
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced, Bytes(large)));
+    std::vector<NetChannelSet::Packet> packets = link.A.Drain(0.0);
+    ASSERT_EQ(packets.size(), 3u);
+    for (const NetChannelSet::Packet& packet : packets)
+        EXPECT_LE(packet.Bytes.size(), kNetMaxDatagramBytes);
+    NetDecodeError error = NetDecodeError::None;
+    std::vector<std::string> delivered;
+    for (const std::size_t index : { 1u, 2u, 0u })
+        for (std::string& message : TextOf(link.B.Receive(packets[index].Bytes, error)))
+            delivered.push_back(std::move(message));
+    EXPECT_EQ(error, NetDecodeError::None);
+    ASSERT_EQ(delivered.size(), 1u) << "delivered once, when its last part arrives, in any order";
+    EXPECT_EQ(delivered[0], large);
+}
+
+TEST(NetChannel, AnUnreliableMessageThatFitsADatagramCarriesNoFragmentHeader)
+{
+    NetChannelSet channel;
+    const std::string small(100, 's');
+    ASSERT_TRUE(channel.Send(NetChannelKind::UnreliableSequenced, Bytes(small)));
+    const std::vector<NetChannelSet::Packet> packets = channel.Drain(0.0);
+    ASSERT_EQ(packets.size(), 1u);
+    EXPECT_EQ(packets[0].Bytes.size(), kNetPacketHeaderBytes + small.size());
+}
+
+TEST(NetChannel, AnUnreliableMessageMissingAPartIsNeverDelivered)
+{
+    Link link;
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced,
+                            Bytes(std::string(kNetMaxUnreliableFragmentPayloadBytes * 2, 'a'))));
+    EXPECT_TRUE(link.Pump(link.A, link.B, { 1 }).empty());
+    EXPECT_EQ(link.B.PendingUnreliableReassemblies(), 1u);
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced, Bytes("newer")));
+    EXPECT_EQ(link.Pump(link.A, link.B), (std::vector<std::string>{ "newer" }));
+    EXPECT_EQ(link.B.PendingUnreliableReassemblies(), 0u) << "superseded, so let go";
+}
+
+// Newest wins between messages, not packets: the parts of an older message
+// arriving after a newer one was delivered are stale, however late their own
+// packet sequences are.
+TEST(NetChannel, TheLatePartsOfAnOlderUnreliableMessageAreStale)
+{
+    Link link;
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced,
+                            Bytes(std::string(kNetMaxUnreliableFragmentPayloadBytes * 2, 'o'))));
+    std::vector<NetChannelSet::Packet> older = link.A.Drain(0.0);
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced, Bytes("newer")));
+    std::vector<NetChannelSet::Packet> newer = link.A.Drain(0.0);
+    NetDecodeError error = NetDecodeError::None;
+    EXPECT_EQ(TextOf(link.B.Receive(newer[0].Bytes, error)), (std::vector<std::string>{ "newer" }));
+    for (const NetChannelSet::Packet& packet : older)
+        EXPECT_TRUE(link.B.Receive(packet.Bytes, error).empty());
+    EXPECT_EQ(link.B.StaleDropped(), 2u);
+}
+
+TEST(NetChannel, AnUnreliableFragmentThatContradictsItselfIsMalformed)
+{
+    Link link;
+    ASSERT_TRUE(link.A.Send(NetChannelKind::UnreliableSequenced,
+                            Bytes(std::string(kNetMaxUnreliableFragmentPayloadBytes * 2, 'm'))));
+    std::vector<NetChannelSet::Packet> packets = link.A.Drain(0.0);
+    packets[0].Bytes[kNetPacketHeaderBytes + 1] = std::byte{ 0 };
+    NetDecodeError error = NetDecodeError::None;
+    EXPECT_TRUE(link.B.Receive(packets[0].Bytes, error).empty());
+    EXPECT_EQ(error, NetDecodeError::Malformed) << "a count of zero names no message";
 }

@@ -22,6 +22,8 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
+#include <equipment/EquipmentKit.h>
+#include <inventory/InventoryKit.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementRegistration.h>
 #include <movement/components/CharacterMovement.h>
@@ -128,6 +130,8 @@ bool AbilityPreviewSession::Rebuild()
         RegisterEngineComponents(registrar);
     }
     RegisterMovement(world);
+    InstallInventoryVocabulary(world);
+    InstallEquipmentVocabulary(world);
     InstallAuthoredVocabulary(world);
     (void)InstallEngineVocabulary(world);
     if (Vocabulary)

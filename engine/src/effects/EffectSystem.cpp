@@ -316,6 +316,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     ae.Scale = scale;
     ae.TimeDomain = def->TimeDomain;
     ae.Sequence = PassStateOf(world).NextSequence++;
+    ae.Revision = effReg->Revision(effect);
     if (def->Duration == EffectDuration::Duration)
         ae.RemainingTicks = TicksFor(def->DurationSeconds, now.DeltaSeconds);
     if (def->Period > 0.0f)
@@ -373,7 +374,16 @@ std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner)
     if (!owner.IsSet() || !world.IsRegistered<ActiveEffect>())
         return 0;
     EffectPassState& state = PassStateOf(world);
+    FindEffectsOwnedBy(world, owner, state.Ending);
+    const std::size_t ended = state.Ending.size();
+    EndCollected(world, state.Ending);
+    return ended;
+}
 
+void FindEffectsOwnedBy(const World& world, const LeaseOwner& owner, std::vector<EntityId>& out)
+{
+    if (!owner.IsSet() || !world.IsRegistered<ActiveEffect>())
+        return;
     Query<Read<ActiveEffect>> query(world);
     query.ForEachChunk([&](auto& view)
     {
@@ -381,12 +391,15 @@ std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner)
         const EntityIndex* indices = view.Entities();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
             if (effects[i].Owner == owner)
-                state.Ending.push_back(world.ResolveEntityIndex(indices[i]));
+                out.push_back(world.ResolveEntityIndex(indices[i]));
     });
+}
 
-    const std::size_t ended = state.Ending.size();
-    EndCollected(world, state.Ending);
-    return ended;
+bool IsEffectInstanceCurrent(const World& world, EntityId instance)
+{
+    const ActiveEffect* active = world.IsAlive(instance) ? world.TryGet<ActiveEffect>(instance) : nullptr;
+    const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
+    return active != nullptr && effects != nullptr && active->Revision == effects->Revision(active->Def);
 }
 
 void TickEffects(World& world)

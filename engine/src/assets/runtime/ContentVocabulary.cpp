@@ -17,15 +17,20 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <equipment/Equipment.h>
+#include <equipment/EquipmentLayoutData.h>
+#include <equipment/WornGrantEntries.h>
+#include <inventory/ItemDefinitionData.h>
 
 #include <algorithm>
 #include <format>
+#include <iterator>
 #include <string_view>
 
 namespace
 {
 // The definitions this World declared from content, held so they can be redefined
-// when their assets reload. Effects before abilities, since abilities name effects.
+// when their assets reload; one list per kind in kDefinitionKinds.
 struct ContentDefinitionLeases
 {
     struct Entry
@@ -34,9 +39,7 @@ struct ContentDefinitionLeases
         AssetLease Lease;
         std::uint64_t Version = 0;
     };
-    std::vector<Entry> Effects;
-    std::vector<Entry> Abilities;
-    std::vector<Entry> CuePresentations;
+    std::vector<std::vector<Entry>> Held;
 };
 
 std::vector<std::string> ConcretePathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
@@ -115,6 +118,14 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
             errors.push_back(std::format("{}: grant '{}' {}", entry.Path, key, kAbilityGrantEntryRefusal));
 }
 
+template <typename Registry>
+std::string WireKeyCollision(const Registry& registry, std::string_view path)
+{
+    return std::format("{} travels under the same 32-bit wire key as {}, so a peer could not tell them apart; "
+                       "rename one",
+                       path, registry.WireKeyHolder(path));
+}
+
 // A reload that no longer resolves keeps the definition that last did, and says why.
 void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
                     std::vector<std::string>& errors)
@@ -137,10 +148,10 @@ void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases
         if (diagnostic.Severity == AbilityDiagnosticSeverity::Error)
             errors.push_back(std::format("{}: {} {} {}: {}", entry.Path, diagnostic.Code, diagnostic.ElementKey,
                                          diagnostic.Path, diagnostic.Message));
-    if (resolved)
-        (void)abilities->Define(entry.Path, std::move(definition));
-    else
-        (void)abilities->Reserve(entry.Path);
+    const AbilityId ability = resolved ? abilities->Define(entry.Path, std::move(definition))
+                                       : abilities->Reserve(entry.Path);
+    if (!ability.IsValid())
+        errors.push_back(WireKeyCollision(*abilities, entry.Path));
 }
 
 void DeclareCuePresentation(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
@@ -158,7 +169,74 @@ void DeclareCuePresentation(RuntimeAssets& assets, World& world, ContentDefiniti
     library->Declare(entry.Path, *declaration, BindingEnvironment(assets, world), errors);
 }
 
+// A reload that no longer resolves keeps the definition that last did, and says why.
+void DeclareItem(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
+                 std::vector<std::string>& errors)
+{
+    const ItemDeclaration* declaration = Compiled<ItemDeclaration>(assets, entry.Lease, kItemDefinitionType);
+    ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+    if (declaration == nullptr || items == nullptr)
+    {
+        errors.push_back(NotLoaded(assets, entry.Path, kItemDefinitionType));
+        return;
+    }
+    entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
+    std::vector<std::string> unresolved;
+    ItemDefinition definition;
+    const bool resolved = ResolveItemDeclaration(*declaration, world, definition, unresolved);
+    for (const std::string& message : unresolved)
+        errors.push_back(std::format("{}: {}", entry.Path, message));
+    const ItemId item = resolved ? items->Define(entry.Path, std::move(definition)) : items->Reserve(entry.Path);
+    if (!item.IsValid())
+        errors.push_back(WireKeyCollision(*items, entry.Path));
+}
+
+void DeclareEquipmentLayout(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
+                            std::vector<std::string>& errors)
+{
+    const EquipmentLayoutDeclaration* declaration =
+        Compiled<EquipmentLayoutDeclaration>(assets, entry.Lease, kEquipmentLayoutType);
+    EquipmentLayoutRegistry* layouts = world.TryGetResource<EquipmentLayoutRegistry>();
+    if (declaration == nullptr || layouts == nullptr)
+    {
+        errors.push_back(NotLoaded(assets, entry.Path, kEquipmentLayoutType));
+        return;
+    }
+    entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
+    std::vector<std::string> unresolved;
+    EquipmentLayout layout;
+    const bool resolved = ResolveEquipmentLayoutDeclaration(*declaration, world, layout, unresolved);
+    for (const std::string& message : unresolved)
+        errors.push_back(std::format("{}: {}", entry.Path, message));
+    const EquipmentLayoutId id = resolved ? RedefineEquipmentLayout(world, entry.Path, std::move(layout))
+                                          : layouts->Reserve(entry.Path);
+    if (!id.IsValid())
+        errors.push_back(WireKeyCollision(*layouts, entry.Path));
+}
+
 using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);
+
+template <typename Registry>
+bool Holds(const World& world)
+{
+    return world.HasResource<Registry>();
+}
+
+struct DefinitionKind
+{
+    std::string_view Subtype;
+    DeclareFn Declare;
+    bool (*Wanted)(const World&);
+};
+
+// Declared in this order: abilities name effects, and items name abilities.
+constexpr DefinitionKind kDefinitionKinds[] = {
+    { kEffectDefinitionType, &DeclareEffect, &Holds<EffectRegistry> },
+    { kAbilityDefinitionType, &DeclareAbility, &Holds<AbilityRegistry> },
+    { kCuePresentationType, &DeclareCuePresentation, &Holds<CuePresentationLibrary> },
+    { kItemDefinitionType, &DeclareItem, &Holds<ItemRegistry> },
+    { kEquipmentLayoutType, &DeclareEquipmentLayout, &Holds<EquipmentLayoutRegistry> },
+};
 
 void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
                 std::vector<ContentDefinitionLeases::Entry>* held, DeclareFn declare, std::vector<std::string>& errors)
@@ -240,17 +318,16 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
 
     ContentDefinitionLeases* leases = nullptr;
     if (reload == ContentVocabularyReload::Watch)
+    {
         leases = world.HasResource<ContentDefinitionLeases>() ? &world.GetResource<ContentDefinitionLeases>()
                                                               : &world.AddResource<ContentDefinitionLeases>();
-    if (world.HasResource<EffectRegistry>())
-        DeclareAll(assets, world, reload, kEffectDefinitionType, leases != nullptr ? &leases->Effects : nullptr,
-                   &DeclareEffect, errors);
-    if (world.HasResource<AbilityRegistry>())
-        DeclareAll(assets, world, reload, kAbilityDefinitionType, leases != nullptr ? &leases->Abilities : nullptr,
-                   &DeclareAbility, errors);
-    if (world.HasResource<CuePresentationLibrary>())
-        DeclareAll(assets, world, reload, kCuePresentationType,
-                   leases != nullptr ? &leases->CuePresentations : nullptr, &DeclareCuePresentation, errors);
+        leases->Held.resize(std::size(kDefinitionKinds));
+    }
+    for (std::size_t kind = 0; kind < std::size(kDefinitionKinds); ++kind)
+        if (kDefinitionKinds[kind].Wanted(world))
+            DeclareAll(assets, world, reload, kDefinitionKinds[kind].Subtype,
+                       leases != nullptr ? &leases->Held[kind] : nullptr, kDefinitionKinds[kind].Declare, errors);
+    DeclareWornGrantEntries(world, errors);
 }
 
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors)
@@ -258,22 +335,16 @@ void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<s
     ContentDefinitionLeases* leases = world.TryGetResource<ContentDefinitionLeases>();
     if (leases == nullptr)
         return;
-    const auto refresh = [&](std::vector<ContentDefinitionLeases::Entry>& entries, DeclareFn declare) {
-        for (ContentDefinitionLeases::Entry& entry : entries)
+    for (std::size_t kind = 0; kind < leases->Held.size(); ++kind)
+        for (ContentDefinitionLeases::Entry& entry : leases->Held[kind])
             if (entry.Lease && assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease)) != entry.Version)
-                declare(assets, world, entry, errors);
-    };
-    refresh(leases->Effects, &DeclareEffect);
-    refresh(leases->Abilities, &DeclareAbility);
-    refresh(leases->CuePresentations, &DeclareCuePresentation);
+                kDefinitionKinds[kind].Declare(assets, world, entry, errors);
+    DeclareWornGrantEntries(world, errors);
 }
 
 void ReleaseContentVocabulary(World& world)
 {
     if (ContentDefinitionLeases* leases = world.TryGetResource<ContentDefinitionLeases>())
-    {
-        leases->Effects.clear();
-        leases->Abilities.clear();
-        leases->CuePresentations.clear();
-    }
+        for (std::vector<ContentDefinitionLeases::Entry>& held : leases->Held)
+            held.clear();
 }

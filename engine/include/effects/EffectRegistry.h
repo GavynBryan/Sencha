@@ -4,6 +4,7 @@
 #include <effects/EffectId.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -35,14 +36,19 @@ public:
     [[nodiscard]] std::string_view GetName(EffectId id) const;
     [[nodiscard]] bool IsKnown(EffectId id) const;
     [[nodiscard]] std::size_t Size() const;
+    // Moves each time `id` is defined again; zero for an unknown id.
+    [[nodiscard]] std::uint32_t Revision(EffectId id) const;
+    [[nodiscard]] std::uint64_t Generation() const { return Generation_; }
 
 private:
     struct Entry
     {
         std::string Name;
         EffectDefinition Def;
+        std::uint32_t Revision = 1;
     };
 
     std::vector<Entry> Effects;                          // [0] dummy: id 0 invalid
     std::unordered_map<std::string, EffectId> IdsByName;
+    std::uint64_t Generation_ = 0;
 };

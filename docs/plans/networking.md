@@ -540,15 +540,19 @@ implementation on day one.
 
 Above the seam, `NetSession` implements exactly two channel classes over datagrams:
 
-- **Unreliable-sequenced** (newest wins, stale dropped): snapshots, inputs, cues.
+- **Unreliable-sequenced** (newest wins, stale dropped, nothing resent): snapshots,
+  inputs, cues. A message larger than a datagram is fragmented, up to 32 parts,
+  and delivered only whole; a newer message supersedes whatever of an older one
+  has arrived. A message that fits one datagram carries no fragment header, so
+  ordinary traffic costs what it did before fragmentation existed.
 - **Reliable-ordered** (windowed ack, resend, fragmentation for oversized payloads):
   handshake, tables, zone grants and baselines, cvar sync, disconnects.
 
 Scope honesty: this is a small, well-understood reliability layer for 2..16 peers and
 kilobyte-scale control traffic, not a general congestion-controlled stream; a
 per-peer token-bucket send budget (Section 10.6) stands in for congestion control at
-this scale. MTU is pinned conservatively (1200 bytes) with fragmentation only on the
-reliable channel. If the owner prefers a proven dependency for this layer instead,
+this scale. MTU is pinned conservatively (1200 bytes), and both channels fragment
+what does not fit one: an entity's state is not bounded by a datagram. If the owner prefers a proven dependency for this layer instead,
 the seam is where it swaps in; the recommendation is to own it, matching the
 engine's dependency posture (Jolt-style: one vetted dependency where the domain is
 deep; this domain, at this scale, is not).
@@ -778,7 +782,9 @@ by an acknowledgement.
 are global, so a transfer makes gated runs newly visible to one peer and newly
 hidden from another without any of them changing value. A per-entity
 `OwnerChangedAt` covers it: a gated run travels if ownership moved after the
-peer's floor, whatever the run's own history says.
+peer's floor, whatever the run's own history says. A gated run still at the default
+it was added with is not owed by an ownership move: every peer already holds that
+default, so a first send to an owner costs no more than to anyone else.
 
 **Omission means unchanged.** An entity nothing has to say about does not appear
 in the snapshot at all. It used to cost about ten bytes of envelope to say
@@ -790,7 +796,10 @@ Destroys stay explicit and are owed until confirmed. A destroy said once and los
 leaves a client holding an entity the authority has no further reason to mention.
 
 **Budget and fill.** Each snapshot is written into a byte budget
-(`net.snapshot_bytes`, defaulting to one datagram). The writer measures each
+(`net.snapshot_bytes`, defaulting to four datagrams: about 140 KB/s per peer at
+30 Hz, the ceiling a joining peer is filled to; an up-to-date peer is sent only
+what moved). The channel fragments a snapshot larger than a datagram, so the
+budget, not the datagram, bounds the largest entity a peer can be sent. The writer measures each
 entity before committing any of it — a bit writer cannot be rewound, and half an
 entity is not a smaller snapshot but a corrupt one — and takes what fits, in this
 order:

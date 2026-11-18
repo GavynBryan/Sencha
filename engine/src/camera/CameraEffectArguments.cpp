@@ -34,5 +34,5 @@ bool ReadCameraEffectSeconds(const AuthoredArguments& arguments, std::size_t slo
 
 std::uint64_t CameraEffectTickOf(const VerbInvocation& invocation, const FixedSimulationLoop& clock)
 {
-    return invocation.Tick != 0 ? invocation.Tick : clock.GetTickIndex();
+    return clock.TimeOfTick(invocation.Tick).TickIndex;
 }

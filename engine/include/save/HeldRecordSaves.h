@@ -9,9 +9,8 @@ class ComponentSerializerRegistry;
 class World;
 struct SceneSerializationContext;
 
-// The records held by the world and by `roots`, and what those hold in turn,
-// each in scene form with its persistent id: docs/gameplay/saves.md, "Held
-// records". Gives a record or holder without a persistent id one.
+// docs/gameplay/saves.md, "Held records". Gives a record or holder without a
+// persistent id one.
 [[nodiscard]] JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
                                            const ComponentSerializerRegistry& serializers,
                                            SceneSerializationContext& context);

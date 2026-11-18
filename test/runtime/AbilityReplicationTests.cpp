@@ -46,6 +46,13 @@
 #include <abilities/AbilityRequestQueue.h>
 #include <CounterCostProvider.h>
 
+#include <equipment/Equipment.h>
+#include <equipment/EquipmentComponents.h>
+#include <equipment/EquipmentKit.h>
+#include <equipment/WornGrantEntries.h>
+#include <inventory/Inventory.h>
+#include <inventory/InventoryComponents.h>
+#include <inventory/InventoryKit.h>
 #include <gtest/gtest.h>
 
 #include <tuple>
@@ -263,6 +270,96 @@ protected:
         (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, entry);
     }
 
+    // A moving character with nine grants, four attributes and two tags, as its owner is first sent it.
+    void ShippingPawn()
+    {
+        Budget = kNetDefaultSnapshotBytes;
+        for (int i = 0; i < 9; ++i)
+            Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+        AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
+        for (const char* name : { "Energy", "Health", "Ammo", "MoveSpeed" })
+        {
+            AttributeId id = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute(name);
+            if (!id.IsValid())
+            {
+                id = Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+                (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
+            }
+            (void)attributes.Add(id, 50.0f);
+        }
+        World& world = Authority.Entities;
+        world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
+        world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
+        *world.TryGet<SupportState>(Actor) = SupportState{ .Surface = {},
+                                                           .ContactPoint = Vec3d(4.0f, -1.0f, 0.5f),
+                                                           .Normal = Vec3d(0.0f, 1.0f, 0.0f),
+                                                           .SurfaceVelocity = Vec3d(0.5f, 0.0f, 0.0f),
+                                                           .Kind = SupportKind::Stable };
+        world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
+        world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
+        world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
+        world.TryGet<LookOrientation>(Actor)->Yaw = 1.25f;
+        Step();
+        GameplayTagContainer& tags = *Authority.Entities.TryGet<GameplayTagContainer>(Actor);
+        const GameplayTagRegistry& names = Authority.Entities.GetResource<GameplayTagRegistry>();
+        (void)tags.Grant(names.FindTag("State.Charged"));
+        (void)tags.Grant(names.FindTag("Weapon.Firing"));
+    }
+
+    // Gives the pawn `records` entries of an item that occupies one slot each,
+    // and, when `worn`, an EquipmentState wearing every one of them: its
+    // largest legal size at kEquipmentRecordCapacity.
+    std::vector<EntityId> Wear(std::size_t records, bool worn)
+    {
+        std::vector<EntityId> entries;
+        ItemId item;
+        EquipmentLayoutId body;
+        // The authority last, so the ids kept are its own.
+        for (Machine* machine : { &Client, &Authority })
+        {
+            World& world = machine->Entities;
+            InstallInventoryVocabulary(world);
+            InstallEquipmentVocabulary(world);
+            EquipmentLayout layout;
+            for (std::size_t i = 0; i < kEquipmentRecordCapacity; ++i)
+            {
+                EquipmentSlot slot;
+                slot.Key = "s." + std::to_string(i);
+                layout.Slots.push_back(std::move(slot));
+            }
+            body = world.GetResource<EquipmentLayoutRegistry>().Define("asset://equipment/many.sdata", std::move(layout));
+            item = world.GetResource<ItemRegistry>().Define("asset://items/charm.sdata",
+                                                            ItemDefinition{ .Name = "Charm", .Occupies = { "s" } });
+        }
+        World& world = Authority.Entities;
+        world.AddComponent<ItemContainer>(Actor, ItemContainer{});
+        EquipmentState state{ .Layout = body, .Count = 0, .NextKey = 1, .Records = {} };
+        for (std::size_t i = 0; i < records; ++i)
+        {
+            const EntityId entry = Inventory(world).Give(Actor, item, 1).Entry;
+            entries.push_back(entry);
+            state.Records[state.Count++] = EquipmentRecord{ .Key = state.NextKey++, .Definition = item,
+                                                            .Slots = 1u << i, .Primary = static_cast<std::uint8_t>(i),
+                                                            .Source = MakePersistableRef(world, entry),
+                                                            .Derivation = EquipmentDerivation::Pending };
+        }
+        if (worn)
+            world.AddComponent<EquipmentState>(Actor, state);
+        return entries;
+    }
+
+    [[nodiscard]] EntityId Mirror(EntityId entity) const { return ClientIds.TryResolve(Identity.TryFind(entity)); }
+
+    // The client's record of the authority's record `key`, or null.
+    [[nodiscard]] const EquipmentRecord* ClientRecord(std::uint32_t key) const
+    {
+        const EquipmentState* state = static_cast<const World&>(Client.Entities).TryGet<EquipmentState>(Remote());
+        for (std::size_t i = 0; state != nullptr && i < state->Count; ++i)
+            if (state->Records[i].Key == key)
+                return &state->Records[i];
+        return nullptr;
+    }
+
     // One authority tick.
     void Step(std::vector<InputActionEdge> edges = {})
     {
@@ -464,7 +561,7 @@ protected:
     NetSnapshotAck Ack;
     std::uint64_t Generation = 0;
     std::vector<std::byte> Scratch = std::vector<std::byte>(64 * 1024);
-    // How much of Scratch one snapshot may fill; a shipping session's is kNetMaxSnapshotBytes.
+    // How much of Scratch one snapshot may fill; a shipping session's is kNetDefaultSnapshotBytes.
     std::size_t Budget = Scratch.size();
     SnapshotWriteResult LastWrite;
     EntityId Actor;
@@ -1207,47 +1304,179 @@ TEST_F(AbilityReplication, AGuessedBowShotChecksBothCostsAndPaysNeither)
         << "the authority's payment arrives";
 }
 
+// An equipped item's grant is worn as its slot binds it, on every machine: the
+// owner resolves the worn entry the authority granted, and predicts the press.
+TEST_F(AbilityReplication, AnEquippedGrantIsBoundByItsSlotOnTheOwnerWhoPredictsIt)
+{
+    ClientPeer = kOwner;
+    const auto declare = [&](Machine& machine) {
+        World& world = machine.Entities;
+        InstallInventoryVocabulary(world);
+        InstallEquipmentVocabulary(world);
+        const GameplayTagId ring = *world.GetResource<GameplayTagRegistry>().RegisterTag("Item.Ring");
+        (void)machine.Define(Levelled("simulation"), "asset://abilities/warded.sdata");
+        EffectDefinition worn{};
+        worn.Duration = EffectDuration::Infinite;
+        const EffectId effect = world.GetResource<EffectRegistry>().Define("asset://effects/ward.sdata", worn);
+        (void)DeclareEffectGrants(world, effect,
+                                  { AbilityGrantDeclaration{ .Key = "g_ward", .Ability = "asset://abilities/warded.sdata",
+                                                             .Override = {} } });
+        EquipmentLayout layout;
+        EquipmentSlot left;
+        left.Key = "ring.left";
+        left.Accepts = ring;
+        left.Binding.Action = "Input.PrimaryFire";
+        left.Binding.Priority = 20;
+        layout.Slots.push_back(std::move(left));
+        const EquipmentLayoutId body =
+            world.GetResource<EquipmentLayoutRegistry>().Define("asset://equipment/body.sdata", std::move(layout));
+        const ItemId item = world.GetResource<ItemRegistry>().Define(
+            "asset://items/ward_ring.sdata",
+            ItemDefinition{ .Name = "Ward Ring", .Tags = { ring }, .Occupies = { "ring" },
+                            .EquipEffects = { { effect, 1.0f } } });
+        std::vector<std::string> errors;
+        DeclareWornGrantEntries(world, errors);
+        EXPECT_TRUE(errors.empty()) << errors.front();
+        return std::pair{ body, item };
+    };
+    (void)declare(Client);
+    const auto [body, item] = declare(Authority);
+    World& world = Authority.Entities;
+    world.AddComponent<ItemContainer>(Actor, ItemContainer{});
+    world.AddComponent<EquipmentState>(Actor, EquipmentState{ .Layout = body, .Count = 0, .NextKey = 1, .Records = {} });
+    const EntityId ring = Inventory(world).Give(Actor, item, 1).Entry;
+    ASSERT_EQ(Equipment(world, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }).Equip(Actor, ring).Refusal,
+              EquipmentRefusal::None);
+    Step();
+    (void)Publish();
+
+    const AbilityGrants& grants = *Client.Entities.TryGet<AbilityGrants>(Remote());
+    ASSERT_EQ(grants.Count, 1u);
+    const AbilityGrantEntry* entry = Client.Entities.GetResource<AbilityGrantEntries>().Find(grants.Entries[0].Entry);
+    ASSERT_NE(entry, nullptr) << "the worn entry was declared on the owner too";
+    EXPECT_EQ(entry->Override.Priority, 20) << "bound by its slot";
+
+    Predict();
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Simulated.Held, 1) << "the owner guesses the press ahead of the authority";
+}
+
 // An entity is written whole or not at all, so an owner seed over one datagram never arrives.
 TEST_F(AbilityReplication, AShippingPawnsOwnerSeedFitsOneSnapshot)
 {
     ClientPeer = kOwner;
-    Budget = kNetMaxSnapshotBytes;
-    for (int i = 0; i < 9; ++i)
-        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
-    AttributeSet& attributes = *Authority.Entities.TryGet<AttributeSet>(Actor);
-    for (const char* name : { "Energy", "Health", "Ammo", "MoveSpeed" })
-    {
-        AttributeId id = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute(name);
-        if (!id.IsValid())
-        {
-            id = Authority.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
-            (void)Client.Entities.GetResource<AttributeRegistry>().RegisterAttribute(name);
-        }
-        (void)attributes.Add(id, 50.0f);
-    }
-    World& world = Authority.Entities;
-    world.AddComponent<CharacterMovement>(Actor, CharacterMovement{ .Mode = LocomotionModeId{ 2 } });
-    world.TryGet<KinematicState>(Actor)->Velocity = Vec3d(3.0f, -1.0f, 2.0f);
-    *world.TryGet<SupportState>(Actor) = SupportState{ .Surface = {},
-                                                       .ContactPoint = Vec3d(4.0f, -1.0f, 0.5f),
-                                                       .Normal = Vec3d(0.0f, 1.0f, 0.0f),
-                                                       .SurfaceVelocity = Vec3d(0.5f, 0.0f, 0.0f),
-                                                       .Kind = SupportKind::Stable };
-    world.TryGet<JumpState>(Actor)->CooldownRemaining = 0.25f;
-    world.AddComponent<NetSpawnPrefab>(Actor, NetSpawnPrefab{ .Scene = AssetId{ 0xC3DD45711F65F6EBull } });
-    world.AddComponent<NetDrivenBy>(Actor, NetDrivenBy{ .Peer = kOwner });
-    world.TryGet<LookOrientation>(Actor)->Yaw = 1.25f;
-    Step();
-    GameplayTagContainer& tags = *Authority.Entities.TryGet<GameplayTagContainer>(Actor);
-    const GameplayTagRegistry& names = Authority.Entities.GetResource<GameplayTagRegistry>();
-    (void)tags.Grant(names.FindTag("State.Charged"));
-    (void)tags.Grant(names.FindTag("Weapon.Firing"));
-
+    ShippingPawn();
     (void)Publish();
     EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);
     EXPECT_EQ(LastWrite.EntitiesWritten, 1u);
     RecordProperty("seed_bytes", std::to_string(LastWrite.BytesWritten));
 }
+
+// What is worn crosses as one run per record: a change resends that record, an
+// owner is told each record's source, and another peer is told what is worn.
+#define SENCHA_WORN_RECORDS_TEST(Peer, PeerId)                                                            \
+    TEST_F(AbilityReplication, WornRecordsReachThe##Peer)                                                 \
+    {                                                                                                     \
+        ClientPeer = PeerId;                                                                              \
+        const bool owner = PeerId == kOwner;                                                              \
+        const std::vector<EntityId> entries = Wear(3, true);                                              \
+        (void)Publish();                                                                                  \
+        for (std::uint32_t key = 1; key <= 3; ++key)                                                      \
+        {                                                                                                 \
+            const EquipmentRecord* record = ClientRecord(key);                                            \
+            ASSERT_NE(record, nullptr);                                                                   \
+            EXPECT_EQ(record->Source.Entity, owner ? Mirror(entries[key - 1]) : EntityId{});              \
+        }                                                                                                 \
+        /* The first record ends; the last takes its place. */                                            \
+        EndEquipmentRecord(Authority.Entities, Actor, 0);                                                 \
+        RecordProperty("unequip_snapshot_bytes", std::to_string(Publish()));                              \
+        EXPECT_EQ(ClientRecord(1), nullptr);                                                              \
+        for (std::uint32_t key = 2; key <= 3; ++key)                                                      \
+        {                                                                                                 \
+            const EquipmentRecord* record = ClientRecord(key);                                            \
+            ASSERT_NE(record, nullptr) << "record " << key;                                               \
+            EXPECT_EQ(record->Source.Entity, owner ? Mirror(entries[key - 1]) : EntityId{});              \
+        }                                                                                                 \
+    }
+SENCHA_WORN_RECORDS_TEST(Owner, kOwner)
+SENCHA_WORN_RECORDS_TEST(Observer, 2u)
+#undef SENCHA_WORN_RECORDS_TEST
+
+// A client that heard nothing while records came and went is sent what is worn now.
+TEST_F(AbilityReplication, ALateOwnerIsSentWhatIsWornNow)
+{
+    ClientPeer = kOwner;
+    const std::vector<EntityId> entries = Wear(3, true);
+    (void)Publish(false);
+    EndEquipmentRecord(Authority.Entities, Actor, 1);
+    (void)Publish(false);
+    (void)Publish();
+    EXPECT_EQ(ClientRecord(2), nullptr);
+    for (const std::uint32_t key : { 1u, 3u })
+    {
+        const EquipmentRecord* record = ClientRecord(key);
+        ASSERT_NE(record, nullptr) << "record " << key;
+        EXPECT_EQ(record->Source.Entity, Mirror(entries[key - 1]));
+    }
+}
+
+// A record whose source the owner has not been sent (it lies in a chest no
+// peer is sent) binds the source when it arrives.
+TEST_F(AbilityReplication, ARecordsSourceArrivingLaterBindsOnTheOwner)
+{
+    ClientPeer = kOwner;
+    (void)Wear(0, true);
+    World& world = Authority.Entities;
+    const EntityId chest = world.CreateEntity();
+    world.AddComponent<ItemContainer>(chest, ItemContainer{});
+    const ItemId charm = world.GetResource<ItemRegistry>().Find("asset://items/charm.sdata");
+    const EntityId entry = Inventory(world).Give(chest, charm, 1).Entry;
+    EquipmentState& state = *world.TryGet<EquipmentState>(Actor);
+    state.Records[0] = EquipmentRecord{ .Key = state.NextKey++, .Definition = charm, .Slots = 1u, .Primary = 0,
+                                        .Source = MakePersistableRef(world, entry),
+                                        .Derivation = EquipmentDerivation::Pending };
+    state.Count = 1;
+    (void)Publish();
+    const EquipmentRecord* waiting = ClientRecord(1);
+    ASSERT_NE(waiting, nullptr);
+    EXPECT_FALSE(waiting->Source.Entity.IsValid()) << "not sent the entry yet";
+    ASSERT_EQ(Inventory(world).Transfer(entry, Actor, 0).Refusal, InventoryRefusal::None);
+    (void)Publish();
+    (void)Publish();
+    const EquipmentRecord* bound = ClientRecord(1);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(Mirror(entry).IsValid());
+    EXPECT_EQ(bound->Source.Entity, Mirror(entry));
+}
+
+// D5 (docs/gameplay/equipment.md, "Wire"): the shipping pawn wearing its
+// largest legal EquipmentState is sent to its owner and to everyone else, and
+// the difference with and without the component is what equipment costs.
+#define SENCHA_EQUIPMENT_SEED_TEST(Records, Worn, Peer)                                                   \
+    TEST_F(AbilityReplication, AShippingPawnsSeedWithEquipment_##Records##_##Worn##_##Peer)               \
+    {                                                                                                     \
+        ClientPeer = std::string_view(#Peer) == "owner" ? kOwner : 2u;                                    \
+        ShippingPawn();                                                                                   \
+        (void)Wear(Records, std::string_view(#Worn) == "worn");                                           \
+        (void)Publish();                                                                                  \
+        EXPECT_EQ(LastWrite.EntitiesUnsendable, 0u);                                                      \
+        RecordProperty("snapshot_bytes", std::to_string(LastWrite.BytesWritten));                        \
+        std::cout << "equipment seed: " << Records << " records, " << #Worn << ", " << #Peer << ": "      \
+                  << LastWrite.BytesWritten << " bytes, " << LastWrite.EntitiesWritten << " entities\n"; \
+    }
+SENCHA_EQUIPMENT_SEED_TEST(0, bare, owner)
+SENCHA_EQUIPMENT_SEED_TEST(0, worn, owner)
+SENCHA_EQUIPMENT_SEED_TEST(4, bare, owner)
+SENCHA_EQUIPMENT_SEED_TEST(4, worn, owner)
+SENCHA_EQUIPMENT_SEED_TEST(16, bare, owner)
+SENCHA_EQUIPMENT_SEED_TEST(16, worn, owner)
+SENCHA_EQUIPMENT_SEED_TEST(0, bare, observer)
+SENCHA_EQUIPMENT_SEED_TEST(0, worn, observer)
+SENCHA_EQUIPMENT_SEED_TEST(4, bare, observer)
+SENCHA_EQUIPMENT_SEED_TEST(4, worn, observer)
+SENCHA_EQUIPMENT_SEED_TEST(16, bare, observer)
+SENCHA_EQUIPMENT_SEED_TEST(16, worn, observer)
+#undef SENCHA_EQUIPMENT_SEED_TEST
 
 // Measured, not asserted; scripts/bench_replication.sh records it.
 TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
@@ -1255,7 +1484,7 @@ TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
     if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)
         GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)";
     ClientPeer = kOwner;
-    Budget = kNetMaxSnapshotBytes;
+    Budget = kNetDefaultSnapshotBytes;
     Grant(kAutomatic, "asset://abilities/automatic.sdata", "g_fire");
     for (std::size_t i = 1; i < kAbilityGrantCapacity; ++i)
         Grant(kGlowing, "asset://abilities/glow_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
@@ -1283,6 +1512,6 @@ TEST_F(AbilityReplication, AFullPawnsOwnerSeedIsMeasured)
     }
 
     (void)Publish();
-    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetMaxSnapshotBytes
+    std::cout << "full pawn owner seed: " << LastWrite.BytesWritten << " bytes of " << kNetDefaultSnapshotBytes
               << ", written " << LastWrite.EntitiesWritten << ", unsendable " << LastWrite.EntitiesUnsendable << "\n";
 }

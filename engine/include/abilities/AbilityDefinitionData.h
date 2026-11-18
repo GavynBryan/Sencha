@@ -31,3 +31,10 @@ void RegisterAbilityDefinitionData(DataAssetTypeRegistry& types, DataSchemaRegis
                                             std::vector<AssetRef>& dependencies,
                                             std::vector<AbilityDiagnostic>& diagnostics);
 [[nodiscard]] DataFieldSchema AbilityGrantEntriesSchema(std::string key, std::string label);
+
+// A grant entry's parameters, [ { key, value } ], where content states them apart
+// from the entry. True when none is malformed.
+[[nodiscard]] bool ParseAbilityGrantParameters(const JsonValue& list, const std::string& path,
+                                               std::vector<AbilityGrantParameter>& out,
+                                               std::vector<AbilityDiagnostic>& diagnostics);
+[[nodiscard]] DataFieldSchema AbilityGrantParametersSchema(std::string key, std::string label);

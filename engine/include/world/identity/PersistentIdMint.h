@@ -17,3 +17,5 @@ struct PersistentIdMint
 
 // Mints only on the authority; invalid elsewhere for an entity without an id.
 PersistentEntityId EnsurePersistentId(World& world, EntityId entity);
+
+[[nodiscard]] bool HasAuthoredPersistentId(const World& world, EntityId entity);

@@ -234,3 +234,70 @@ TEST_F(HeldRecordTest, DestroyingEveryRecordLeavesTheIndexEmpty)
     EXPECT_FALSE(Entities.IsAlive(waiting));
     EXPECT_TRUE(Entities.IsAlive(body));
 }
+
+TEST_F(HeldRecordTest, AnAuthoredRecordThatChangesHolderTakesARuntimeIdAndSoDoesWhatItHolds)
+{
+    const EntityId chest = Holder();
+    const EntityId thief = Holder();
+    const EntityId purse = Entities.CreateEntity();
+    Entities.AddComponent<PersistentIdComponent>(purse, PersistentIdComponent{ PersistentEntityId{ 0x9E5E } });
+    HoldRecord(Entities, purse, chest);
+    const EntityId coin = Entities.CreateEntity();
+    Entities.AddComponent<PersistentIdComponent>(coin, PersistentIdComponent{ PersistentEntityId{ 0xC014 } });
+    HoldRecord(Entities, coin, purse);
+
+    HoldRecord(Entities, purse, chest, std::uint16_t{ 4 });
+    EXPECT_EQ(Entities.TryGet<PersistentIdComponent>(purse)->Id, PersistentEntityId{ 0x9E5E })
+        << "a new place under the same holder is not a new holder";
+
+    HoldRecord(Entities, purse, thief);
+
+    const PersistentEntityId purseId = Entities.TryGet<PersistentIdComponent>(purse)->Id;
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(purseId));
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(coin)->Id));
+    EXPECT_EQ(Entities.TryGet<Held>(coin)->Holder.Target, purseId);
+    EXPECT_FALSE(Entities.GetResource<PersistentEntityIndex>().TryResolve(PersistentEntityId{ 0x9E5E }).IsValid());
+    EXPECT_EQ(RecordsOf(purse), std::vector{ coin });
+}
+
+TEST_F(HeldRecordTest, AChangeToAnAuthoredRecordGivesItARuntimeId)
+{
+    const EntityId chest = Holder();
+    const EntityId stack = Entities.CreateEntity();
+    Entities.AddComponent<PersistentIdComponent>(stack, PersistentIdComponent{ PersistentEntityId{ 0xA770 } });
+    HoldRecord(Entities, stack, chest);
+    const std::uint32_t before = Index->Revision(chest);
+
+    NoteHeldRecordChanged(Entities, stack);
+
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(stack)->Id));
+    EXPECT_GT(Index->Revision(chest), before);
+    EXPECT_EQ(RecordsOf(chest), std::vector{ stack });
+}
+
+TEST_F(HeldRecordTest, DestroyingTheRecordsLeavesWhatContentAuthored)
+{
+    const EntityId chest = Holder();
+    const EntityId authored = Entities.CreateEntity();
+    Entities.AddComponent<PersistentIdComponent>(authored, PersistentIdComponent{ PersistentEntityId{ 0x5A0D } });
+    Entities.AddComponent<Held>(authored, Held{ .Holder = { .Entity = chest, .Target = {} } });
+    const EntityId made = HeldBy(chest);
+
+    DestroyHeldRecords(Entities);
+
+    EXPECT_TRUE(Entities.IsAlive(authored));
+    EXPECT_FALSE(Entities.IsAlive(made));
+}
+
+TEST_F(HeldRecordTest, DestroyingWhatWaitsLeavesWhatIsHeld)
+{
+    const EntityId body = Holder();
+    const EntityId held = HeldBy(body);
+    const EntityId waiting = Entities.CreateEntity();
+    Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+
+    DestroyAwaitingHeldRecords(Entities);
+
+    EXPECT_FALSE(Entities.IsAlive(waiting));
+    EXPECT_TRUE(Entities.IsAlive(held));
+}
