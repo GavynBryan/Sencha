@@ -42,6 +42,11 @@ saved. The patch leaves out what a spawn gives: identity, scene instance and
 placement. The body's root transform and persistent id travel beside it, and
 writing a save gives a body without an id one from the runtime mint.
 
+What a body wears is in that patch: its `EquipmentState` names each record's
+source entry by persistent id, and the entries are the body's held records,
+kept by `sencha.held`. Nothing a record maintains is saved; the equipment pass
+derives it again (`docs/gameplay/equipment.md`, "Records").
+
 On restore the section fills `RestoredBodies`; the local participant's next body
 spawn (`ParticipantBodySpawns`) takes it: the spawn stands where the body stood,
 the patch is composed over the prefab's root before import, and the root gets

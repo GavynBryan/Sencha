@@ -1418,10 +1418,11 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Predicting gives and transfers
 
-- **What:** only the authority changes an inventory; a client sees a give,
-  take or transfer when the snapshot carrying it arrives.
-- **Where:** `inventory/Inventory.cpp`; the prediction journal abilities use
-  (`abilities/AbilityPredictionJournal.h`).
+- **What:** only the authority changes an inventory or what is worn; a client
+  sees a give, take, transfer, equip or unequip when the snapshot carrying it
+  arrives. (An owner does predict a press of what its equipment grants.)
+- **Where:** `inventory/Inventory.cpp`, `equipment/Equipment.cpp`; the
+  prediction journal abilities use (`abilities/AbilityPredictionJournal.h`).
 - **Trigger:** a networked game whose inventory screen must answer a move
   before the round trip, such as a co-op shooter's quick swap.
 
@@ -1486,3 +1487,91 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the owner's walkthrough of authoring a stocked chest, or a level
   whose holder list is too long to read. Then add a container verb that makes
   an entry held by it, and picking in the view.
+
+## More than sixteen worn records or grants
+
+- **What:** a wearer holds at most `kEquipmentRecordCapacity` (16) records, in
+  a fixed row of `EquipmentState`, and `kAbilityGrantCapacity` (16) grants, in
+  a fixed row of `AbilityGrants`. Both report at the edge (`Full`,
+  `GrantRoom`), and both are too small for a body that wears about 25 things
+  or a weapon that grants nine abilities beside a second one.
+- **Where:** `equipment/EquipmentComponents.h`, `equipment/EquipmentStateWire.h`
+  (one wire member per record), `abilities/AbilityGrants.h`.
+- **Trigger:** the per-actor cap lift planned next: grants move off the actor's
+  row as running abilities did, and the worn relation moves onto the item
+  entry, leaving per-slot hold memory on the wearer. Measure the equipment
+  bench before and after.
+
+## Tracing equipped grants that tie on an action
+
+- **What:** two equipped grants whose slots tie on an action's top priority
+  are not recorded when they are equipped. A press still reports
+  `BindingAmbiguous`, so the tie is visible only when it is pressed.
+- **Where:** `DeclareWornGrantEntries` in
+  `engine/src/equipment/WornGrantEntries.cpp` knows every slot binding an item
+  can be worn with; `Equipment::Equip` knows the pair at equip time. The
+  ambiguity rule is in the press selection in
+  `engine/src/abilities/AbilitySystem.cpp`.
+- **Trigger:** a Kyusu check of a layout's bindings, which wants the same
+  pairs, or the first content in which two slots share an action and a
+  priority.
+
+## Deriving a zone's equipped records as it loads
+
+- **What:** the first equipment pass after 200 equipped NPCs arrive took about
+  1.2 ms on the composition branch's profile build, because each record's
+  derivation scans every `ActiveEffect` to find what it owns: records times
+  effects. It is a one-tick cost at zone load; the steady pass was 75 µs
+  (`docs/plans/evidence/equipment-overlay/results.md`).
+- **Where:** `Maintained` and `Derive` in `engine/src/equipment/Equipment.cpp`;
+  `FindEffectsOwnedBy` in `engine/src/effects/EffectSystem.cpp`.
+- **Trigger:** a zone whose NPCs' adoption is measured above a frame's budget
+  in the profile preset, or content that equips more than about 200 NPCs in
+  one zone. Then keep an index of lasting effects by owner in the effect pass
+  state, or spread a zone's adoption across ticks.
+
+## One-shot effects when an item is equipped
+
+- **What:** an item's `equip.effects` are maintained for as long as it is
+  worn, so they must be Infinite. Nothing runs once at the moment of equipping
+  or unequipping: a heal on putting a ring on, a sound, a curse that lands
+  when a helm is first worn.
+- **Where:** `inventory/ItemDefinitionData.cpp` (the equip fields),
+  `Equipment::Equip` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first item that should do something once when worn. Then add
+  `equip.on_equip` and `equip.on_unequip` Instant effect lists applied by the
+  apply step, with the entry as their source, and decide whether a restore or
+  a derivation replays them (it should not).
+
+## A second layer that takes part in moving an entry
+
+- **What:** `ItemMoveAdmission` is one World resource with one `Admit` and one
+  `Moved`. Equipment installs it; a second installer would replace equipment's.
+- **Where:** `inventory/Inventory.h`, `InstallEquipmentMoveAdmission` in
+  `engine/src/equipment/EquipmentSystem.cpp`.
+- **Trigger:** a second layer that must refuse or follow a move, such as a
+  quest item that cannot be dropped. Then make the resource a list asked in
+  order.
+
+## Owner-only fields a former owner keeps
+
+- **What:** when ownership of an entity moves, the peer that lost it keeps the
+  owner-only values it was last sent (a wearer's record sources). They are
+  stale handles: entries are anchored to their holder, so the peer is no longer
+  sent them and `ResolvePersistableRef` rejects a dead one.
+- **Where:** `ReplicationOwedFields` in
+  `engine/src/net/ReplicationChangeStore.cpp`.
+- **Trigger:** the first content that moves a wearer's ownership (possession).
+  Then send the gated fields' default image to the peer that lost ownership.
+
+## Authoring a waiting record, and equipment from the entry
+
+- **What:** Kyusu fills a wearer's slot by choosing an entry the wearer holds
+  in the wearer's inspector. It cannot author a `hold` slot waiting with no
+  source, choose which further slots a multi-slot item takes (it takes what an
+  equip would), or equip from the entry's own inspector; and the choice list
+  is every fitting entry in the document that the wearer holds.
+- **Where:** `editor/level_editor/src/authoring/EquipmentStateEditorAdapter.cpp`.
+- **Trigger:** the owner's walkthrough of equipping a guard in Kyusu, or the
+  first content that authors a waiting slot (an empty quiver) or an item whose
+  second slot must be chosen.

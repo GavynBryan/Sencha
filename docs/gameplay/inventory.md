@@ -5,7 +5,7 @@ used and spent. An entry is a held record (`docs/gameplay/held-records.md`):
 its container is its holder, so entries are listed, ordered, saved, replicated,
 moved between partitions and cleaned up by the held-record machinery, and the
 inventory adds only what a possession is. Equipment, what a held entry does
-while worn, builds on this.
+while worn, builds on this (`docs/gameplay/equipment.md`).
 
 ## Item definitions
 
@@ -32,6 +32,9 @@ An `item.definition` asset says what a kind of item is:
   at most 16 attributes and 32 tags; a definition naming more is refused.
 - **`use`** is the ability `inventory.use` runs, with the entry as its source,
   through a transient grant under the key `use`.
+- **`equip`** and **`grants`** say how it is worn
+  (`docs/gameplay/equipment.md`, "Item fields"). An item with
+  `equip.lock_tags` gives each entry a tag container, as `instance_tags` does.
 
 Definitions compose like any data definition (`extends`, `includes`,
 `abstract`). Content declares them into the World's `ItemRegistry` after
@@ -95,7 +98,8 @@ itself), `ContainerFull`, `TooDeep`, `NotPermitted` and `Withheld`.
 unless the World decides it (`Forced`, a verb's `force`). Only a requested one
 is asked of `ItemMoveAdmission`, the World resource through which a layer above
 (equipment's worn lock) refuses what a person asks for and never what the World
-decides.
+decides (`docs/gameplay/equipment.md`, "Moving a worn entry"). After any move
+it is told who held the entry, which is how a moved entry is unequipped.
 
 **Moving an entry** is `HoldRecord`: its holder, position, relevance anchor and
 storage partition change together, and what it holds follows it.
@@ -103,7 +107,8 @@ storage partition change together, and what it holds follows it.
 ## Who may use an entry
 
 `MayUseItem(world, actor, item)` is the one rule a use, an item cost and
-equipment ask. Today an actor may use an entry when the actor is the first
+equipment (equip, cycle, the pass that ends a record, and `equipment.slot`
+through the item cost) ask. Today an actor may use an entry when the actor is the first
 holder above it that is not itself an entry (`ItemHolder`): what a bag holds is
 its holder's. A container several actors share, such as a party's bag, is a
 change to that function alone (`docs/deferred.md`, "Shared containers").

@@ -186,8 +186,11 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   asset path order, into a World's registries: the runtime when content is
   published, every editor document when it receives the asset stack. An effect is
   named by its asset path. A reloaded effect asset is redefined in place under the
-  same id (`EffectRegistry::Define`); instances already applied keep the timing they
-  were applied with. A module may still register effects and attributes in code;
+  same id (`EffectRegistry::Define`); instances already applied keep the timing and
+  tags they were applied with, while their modifiers fold from the definition as
+  it is. Each instance records the definition revision it applied from, so a
+  maintainer (equipment) can tell it is stale (`IsEffectInstanceCurrent`) and
+  replace it. A module may still register effects and attributes in code;
   content adds to the same registries.
 
 - **Time is whole fixed ticks.** `ApplyEffect` takes the tick it is applied on
@@ -315,7 +318,11 @@ A lasting effect may hold grants too: an `effect.definition`'s
 Infinite effect granting its abilities. The pass grants them to the effect's target
 the tick after the effect applies and revokes them the tick after it ends
 (`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
-every machine on the same tick. Ended effects give their grants back before new
+every machine on the same tick. One applied instance may grant through entries
+of its own in place of its definition's, entry for entry
+(`AbilityEffectGrants::SetInstance`): an equipped item's slot binding and
+parameters (`docs/gameplay/equipment.md`, "Worn grant entries"); they are kept,
+sorted by instance, until the instance ends. Ended effects give their grants back before new
 ones are granted, so an actor whose table is full swaps one effect's grants for
 another's on one pass. Applying an effect reserves room for its grants
 (`AbilityGrantReservations`): `ApplyEffect` refuses a lasting effect whose grants

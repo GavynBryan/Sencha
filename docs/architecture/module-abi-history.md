@@ -1199,3 +1199,48 @@ reports the refusal for abilities and items.
 
 The replicated table gains `ItemEntry`, which changes its hash; no wire layout
 of an existing component changed, so the protocol stays at 9.
+
+## v52
+
+**Equipment.** New component `EquipmentState` (`equipment/EquipmentComponents.h`)
+in `EquipmentComponents`, registered after `InventoryComponents`, with its
+serializer and codec (`equipment/EquipmentStateWire.h`).
+`EquipmentLayoutRegistry` and the `equipment.layout` data type
+(`equipment/EquipmentLayout.h`, `EquipmentLayoutData.h`); `Equipment`
+operations, `ResolveEquipmentSlots`, the locks, `ReconcileEquipment` and
+`RedefineEquipmentLayout` (`equipment/Equipment.h`); `EquipmentSystem` and
+`InstallEquipmentMoveAdmission`; `DeclareWornGrantEntries`
+(`equipment/WornGrantEntries.h`), which content declaration calls; verbs
+`equipment.equip`, `equipment.unequip`, `equipment.cycle`, queries
+`equipment.in_slot` and `equipment.sources`, bound by
+`EngineVocabularyBindings::BindEquipment`, and the `equipment.slot` cost
+provider. `InstallEquipmentVocabulary` runs in the engine host, Kyusu
+documents, the vocabulary catalog and the ability preview.
+
+**Inventory.** `ItemDefinition` gains `Occupies`, `EquipEffects`,
+`EquipLockTags` and `GrantParameters`, and `ItemDeclaration` their authored
+forms. `FindItemDefinition` joins `inventory/Inventory.h`.
+
+**Abilities and effects.** `AbilityEffectGrants` gains per-instance entries
+(`SetInstance`, `Of(instance, effect)`, `ForgetEnded`, `InstanceCount`) and
+`Generation`; `AbilityGrantReservations::HeldFor` and `AbilityGrantRoom` take
+effects counted as already ended. `AbilityGrantEntries` gains `IndexOf` and an
+index by ability and wire key. `EffectRegistry` gains `Revision` and
+`Generation`, `ActiveEffect` gains `Revision`, and `effects/EffectSystem.h`
+gains `FindEffectsOwnedBy` and `IsEffectInstanceCurrent`.
+`ParseAbilityGrantParameters` and `AbilityGrantParametersSchema`
+(`abilities/AbilityDefinitionData.h`).
+
+**Shared helpers.** `MakeOptionalDataField` (`core/metadata/DataSchema.h`),
+`MakeGameplayVerb` and `MakeEntityArgument` (`authored/VerbRegistry.h`), and
+`FixedSimulationLoop::TimeOfTick`, which every clocked verb now uses.
+
+**Snapshots span datagrams.** The unreliable channel fragments a message
+larger than one datagram (`kNetPacketFragmented`,
+`kNetMaxUnreliableMessageBytes`, `NetChannelSet::PendingUnreliableReassemblies`);
+`kNetMaxSnapshotBytes` is the largest such message and
+`kNetDefaultSnapshotBytes` (four datagrams) the default budget. An ownership
+move no longer owes an owner-only run still at the default it was added with.
+The packet framing changed, so `kNetProtocolVersion` is 10. The replicated
+table gains `EquipmentState`, and its frozen hash moves
+(`test/core/ComponentIdentityFreezeTests.cpp`).
