@@ -1244,3 +1244,36 @@ move no longer owes an owner-only run still at the default it was added with.
 The packet framing changed, so `kNetProtocolVersion` is 10. The replicated
 table gains `EquipmentState`, and its frozen hash moves
 (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+## v53
+
+**Row lists.** `ListPool` (`core/containers/ListPool.h`, `docs/ecs/row-lists.md`):
+lists a component row names by handle, referenced through the component's
+lifecycle hooks.
+
+**Grants.** `AbilityGrants` no longer holds its grants: it is a handle into the
+World's `AbilityGrantLists`, a count (now 16 bits) and the next id, and declares
+`OnAdd` and `OnRemove`. `AbilityGrants::Find` and the member array are gone;
+read with `AbilityGrantsOf` and `FindAbilityGrant`. `GrantAbility` and
+`RevokeAbilityGrant` take the World and the actor, or an `AbilityGrantList`
+(the by-value form, new, with `CopyAbilityGrants`, `MakeAbilityGrants` and
+`SetAbilityGrants`). `kAbilityGrantCapacity` is 64. `AbilityGrantsWire` is
+sixteen pages of four grants (`kAbilityGrantsPerWirePage`,
+`kAbilityGrantWirePages`).
+
+**Equipment.** `EquipmentState` no longer holds its records: it is the layout,
+a count, the next key and a handle into the World's `EquipmentRecordLists`, and
+declares `OnAdd` and `OnRemove`. Read with `EquipmentRecordsOf`; write with
+`EditEquipmentRecords`, `AddEquipmentRecord`, `RemoveEquipmentRecord`, or by
+value through `EquipmentRecordList`, `CopyEquipment`, `MakeEquipmentState` and
+`SetEquipment`. `kEquipmentRecordCapacity` is `kMaxEquipmentSlots` (32).
+`EquipmentRefusal::Full` is removed, which renumbers the refusals after it.
+`ResolveEquipmentSlots` takes the worn records as a span. `EquipmentStateWire`
+is 32 record runs and 16 runs of two sources; `EquipmentWireRecord` is gone.
+
+**Wire.** Both images changed, so `kNetProtocolVersion` is 11 and the frozen
+replication hash moves (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+A module that assigns over either component's row, or copies the row to keep
+its value, must use the calls above instead (`docs/ecs/row-lists.md`, "What may
+not be done with such a component").

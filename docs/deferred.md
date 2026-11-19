@@ -1488,19 +1488,47 @@ described in `docs/navigation/runtime.md`, "Agents".
   whose holder list is too long to read. Then add a container verb that makes
   an entry held by it, and picking in the view.
 
-## More than sixteen worn records or grants
+## A replicated list's wire image sized by what it holds
 
-- **What:** a wearer holds at most `kEquipmentRecordCapacity` (16) records, in
-  a fixed row of `EquipmentState`, and `kAbilityGrantCapacity` (16) grants, in
-  a fixed row of `AbilityGrants`. Both report at the edge (`Full`,
-  `GrantRoom`), and both are too small for a body that wears about 25 things
-  or a weapon that grants nine abilities beside a second one.
-- **Where:** `equipment/EquipmentComponents.h`, `equipment/EquipmentStateWire.h`
-  (one wire member per record), `abilities/AbilityGrants.h`.
-- **Trigger:** the per-actor cap lift planned next: grants move off the actor's
-  row as running abilities did, and the worn relation moves onto the item
-  entry, leaving per-slot hold memory on the wearer. Measure the equipment
-  bench before and after.
+- **What:** `AbilityGrants` and `EquipmentState` are stored by their length,
+  but each still crosses as a fixed wire image sized for the most it may hold
+  (`AbilityGrantsWire`, 1,540 B for 64 grants; `EquipmentStateWire`, 772 B for
+  32 records). What is sent follows the content, since a run at its default is
+  not sent. What does not: the authority's change store builds, compares and
+  keeps one image per replicated entity per publish, and the grant limit is
+  the image's size rather than a budget someone chose.
+- **Where:** `engine/src/net/ReplicationChangeStore.cpp` (`Update` assigns and
+  compares `Layout->Size` bytes), `net/ReplicationLayout.h` (at most 64 runs a
+  component, 255 scalars a run), `abilities/AbilityGrantsWire.h`,
+  `equipment/EquipmentStateWire.h`.
+- **Trigger:** content that needs more than 64 grants on one actor, or the
+  change store's walk showing in a profile of a World with a thousand or more
+  replicated actors that hold grants. Then let a codec state how many leading
+  runs are in use, so the store keeps and compares only those.
+
+## More than thirty-two slots in a layout
+
+- **What:** a record's slots are a 32-bit mask, so a layout has at most
+  `kMaxEquipmentSlots` (32) slots and a wearer at most 32 records. Record
+  storage no longer bounds it: only the mask and the wire's 32 record runs do.
+- **Where:** `equipment/EquipmentLayout.h`, `EquipmentRecord::Slots`,
+  `equipment/EquipmentStateWire.h`.
+- **Trigger:** a layout that needs a thirty-third slot. Then widen the mask to
+  64 bits and page the record runs as grants are paged; both are wire and ABI
+  changes.
+
+## Effect grants are matched against every grant the target holds
+
+- **What:** each pass, every grant entry of every lasting effect is looked for
+  among its target's grants, and every effect-held grant is checked against its
+  effect's entries: work proportional to effect grants times grants held on
+  that actor, every tick, though nothing changed. Measured at 64 grants an
+  actor (`docs/plans/evidence/actor-caps/results.md`).
+- **Where:** `SyncEffectGrants` and `RevokeEndedEffectGrants` in
+  `engine/src/abilities/AbilitySystem.cpp`.
+- **Trigger:** a World where many actors hold tens of effect-held grants each
+  (the evidence's full-room row is the shape), or the pass nearing the 1 ms
+  mark. Then resynchronise an actor only when an effect on it began or ended.
 
 ## Tracing equipped grants that tie on an action
 

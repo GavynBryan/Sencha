@@ -297,8 +297,14 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 
 ## Grants and input
 
-An actor runs only what it is granted: `AbilityGrants` holds up to sixteen grants,
-each an ability, a kind (authored on the actor, held by an effect, made by a
+An actor runs only what it is granted. Its `AbilityGrants` row names a list in
+the World's `AbilityGrantLists` (`docs/ecs/row-lists.md`), so an actor is stored
+by how many grants it holds; the row keeps the count and the next id. It holds at
+most `kAbilityGrantCapacity` (64), which is what its owner can be sent
+("Replication"); the grant past that is refused and reported as below. Code reads
+grants with `AbilityGrantsOf` and changes them with `GrantAbility`,
+`RevokeAbilityGrant` and `SetAbilityGrants`; scenes, snapshots and Kyusu hold them
+by value as an `AbilityGrantList`. Each grant is an ability, a kind (authored on the actor, held by an effect, made by a
 request, or transient: made for one requested activation) and an entry in the
 World's `AbilityGrantEntries`. An entry is the grant's stable key, its binding
 override and its parameters; its effective binding is the
@@ -538,7 +544,9 @@ records (`ActiveAbilities` derives both), and presents them with the same
 `AbilityPresentationSystem` and the same first-sight rule.
 
 The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
-(each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
+(in grant order, in pages of four, a page no grant reaches left at its default and
+not sent, so the owner is sent about 24 B a grant rounded up to a page and a
+change resends its page; each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
 key and binding together, found in the owner's own interned entries, so two grants
 of one ability under one key and bound apart stay apart; a grant whose entry the
 owner has not interned is held but bound to no input, and a table refuses to
@@ -639,16 +647,27 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 1,712 bytes: `AbilityCueLog` 584, `AbilityPresentationState` 624,
-`AbilityGrants` 392, `ActiveAbilities` 96 (a handle per slot) and `ActorTime` 16. Each
-running or lingering activation adds 688 in `AbilityActivations`. The 584 bytes of
-`AbilityPredictedCues` are only on the actor a client predicts.
+Per actor with grants, 1,340 bytes on its row: `AbilityCueLog` 584,
+`AbilityPresentationState` 624, `ActiveAbilities` 96 (a handle per slot),
+`AbilityGrants` 20 (a handle, counts of all, effect-held and transient grants,
+and the next id) and `ActorTime` 16. Each
+grant adds 32 in `AbilityGrantLists`, and each running or lingering activation 688
+in `AbilityActivations`. The 584 bytes of `AbilityPredictedCues` are only on the
+actor a client predicts.
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |
 |---|---|---|---|
 | 16 | 0.005 ms | 0.009 ms | 0.001 ms |
 | 64 | 0.019 ms | 0.032 ms | 0.005 ms |
 | 256 | 0.073 ms | 0.126 ms | 0.018 ms |
+
+Grants are stored by how many an actor holds. Against the sixteen-entry row they
+replaced, 1,000 actors with four grants each cost the idle pass 2.4% more and the
+firing pass the same, and an actor with 64 grants costs what one with sixteen
+does (0.081 ms idle for 256 such actors). Effect-held grants cost 4–11% more to
+keep in step, and 256 actors each holding 63 of them cost 0.73 ms a tick, a cost
+`docs/deferred.md` records with its trigger. Method and tables:
+`docs/plans/evidence/actor-caps/results.md`.
 
 Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a cue
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
