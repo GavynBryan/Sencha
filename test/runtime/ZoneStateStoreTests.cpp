@@ -204,6 +204,25 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
     EXPECT_FALSE(restored.IsRecordedDestroyed(ZoneId{ 5 }, PersistentEntityId{ 0x60 })) << "install replaces";
 }
 
+TEST(ZoneStateStore, ACaptureDropsComponentStateOfEntitiesTheZoneDidNotAuthor)
+{
+    ZoneStateStore store;
+    store.RecordAuthoredSet(ZoneId{ 4 }, Authored({ 0x10, 0x20 }));
+    const PersistentEntityId runtime{ PersistentEntityIdRuntimeBit | 7 };
+    const std::array bytes{ std::byte{ 1 } };
+    store.RecordComponentState(ZoneId{ 4 }, PersistentEntityId{ 0x10 }, ComponentTypeId{ 7 }, 1, bytes);
+    store.RecordComponentState(ZoneId{ 4 }, PersistentEntityId{ 0x20 }, ComponentTypeId{ 7 }, 1, bytes);
+    store.RecordComponentState(ZoneId{ 4 }, runtime, ComponentTypeId{ 7 }, 1, bytes);
+
+    store.RecordCapture(ZoneId{ 4 }, std::array{ PersistentEntityId{ 0x10 }, runtime }, ZoneCapture::Live);
+
+    const std::vector<DurableZoneState> durable = store.ExportDurable();
+    ASSERT_EQ(durable.size(), 1u);
+    ASSERT_EQ(durable[0].Components.size(), 2u) << "only what the zone authored, living or destroyed, is kept";
+    EXPECT_EQ(durable[0].Components[0].Entity, PersistentEntityId{ 0x10 });
+    EXPECT_EQ(durable[0].Components[1].Entity, PersistentEntityId{ 0x20 });
+}
+
 TEST(ZoneStateMemory, AChildTakesItsParentsLifetimeAndIsForgottenAtRestore)
 {
     WorldComponentSchema schema;

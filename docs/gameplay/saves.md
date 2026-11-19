@@ -22,7 +22,9 @@ what a save keeps is decided per entity by its zone state lifetime
   was written.
 - **Zones:** for each zone, and for a world's world scene, the authored entities
   that are gone and never forgotten, and the component state their owners
-  registered (`ZoneComponentMemory`), in id order.
+  registered (`ZoneComponentMemory`), in id order. A capture drops component
+  state recorded for an entity the zone did not author, living or destroyed,
+  since no authored entity will ever claim it.
 - **Sections:** named data the engine or a game registers
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
   restore function. A section in a save that nothing registered is kept and
