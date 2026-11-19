@@ -34,7 +34,6 @@ void ZoneStateStore::RecordCapture(ZoneId zone, std::span<const PersistentEntity
     for (const auto& [authored, forgotten] : record.Authored)
         if (!liveSet.contains(authored) && !(detaching && forgotten == ZoneStateForgetting::AtDetach))
             record.Destroyed.emplace(authored, forgotten);
-    // No authored entity will ever claim state recorded for anything else.
     std::erase_if(record.Components, [&](const auto& entry) {
         return !record.Authored.contains(entry.first.Entity) && !record.Destroyed.contains(entry.first.Entity);
     });

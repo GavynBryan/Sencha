@@ -25,11 +25,9 @@ namespace
     {
         std::optional<SavedGame> Saved;
         std::string Error;
-        // The slot's file did not read, and this is the backup beside it.
         bool FromBackup = false;
     };
 
-    // A file a newer build wrote is not passed over for an older backup.
     ReadOutcome ReadSlot(const SaveSlotFiles& files, const std::string& slot)
     {
         ReadOutcome outcome;
@@ -55,8 +53,6 @@ namespace
         return outcome;
     }
 
-    // The file being replaced becomes the backup unless it is corrupt, so a
-    // corrupt file never takes the place of a good backup.
     bool WriteToDisk(const SaveSlotFiles& files, const std::string& slot, const SavedGame& saved)
     {
         const std::vector<std::byte> bytes = EncodeSavedGame(saved);

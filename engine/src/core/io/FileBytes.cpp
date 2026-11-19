@@ -66,7 +66,6 @@ namespace
     }
     bool SyncToDisk(int file) { return ::fsync(file) == 0; }
     bool Close(int file) { return ::close(file) == 0; }
-    // A filesystem that cannot sync a directory has made the rename as durable as it can.
     void SyncDirectoryOf(const std::filesystem::path& path)
     {
         const std::filesystem::path directory = path.has_parent_path() ? path.parent_path() : ".";

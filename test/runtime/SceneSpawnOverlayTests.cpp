@@ -60,7 +60,6 @@ struct TypeSchema<OverlayBadge>
 
 namespace
 {
-    // A component whose scene form is a keyed list.
     class KeyedRosterSerializer final : public IComponentSerializer
     {
     public:

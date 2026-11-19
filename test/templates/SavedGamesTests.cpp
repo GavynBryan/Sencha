@@ -25,10 +25,6 @@
 #include <string>
 #include <vector>
 
-//=============================================================================
-// SavedGames' contract, driven through the FPS template's engine and content:
-// each case scripts frames of a headless run and reads the slot files after.
-//=============================================================================
 #if defined(TEST_FPS_MODULE_PATH)
 namespace
 {
@@ -143,7 +139,6 @@ namespace
         return engine.Saves().RestoreStatus() == RestoreProgress::BodiesRestored;
     }
 
-    // Two saves in one run: the backup holds the first, where `second` is still there.
     struct TwoSaves
     {
         PersistentEntityId First;

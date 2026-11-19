@@ -27,7 +27,6 @@ namespace
         return std::ranges::find(kGiven, type) != kGiven.end();
     }
 
-    // What a scene retuned since the save leaves behind: the scene's own value stands.
     [[nodiscard]] bool SetAsideByRetune(std::string_view code)
     {
         return code == "remove_unknown_key" || code == "redeclares_inherited" || code == "removes_inherited"
