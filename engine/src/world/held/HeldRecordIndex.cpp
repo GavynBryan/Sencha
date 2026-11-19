@@ -155,10 +155,17 @@ std::vector<EntityId> HeldRecordIndex::Holders() const
 
 std::vector<EntityId> HeldRecordIndex::AwaitingRecords() const
 {
-    std::vector<EntityId> records;
+    std::vector<PersistentEntityId> holders;
+    holders.reserve(Awaiting.size());
     for (const auto& [id, waiting] : Awaiting)
+        holders.push_back(id);
+    std::ranges::sort(holders, {}, &PersistentEntityId::Value);
+    std::vector<EntityId> records;
+    for (const PersistentEntityId holder : holders)
+    {
+        const std::vector<EntityId>& waiting = Awaiting.at(holder);
         records.insert(records.end(), waiting.begin(), waiting.end());
-    std::ranges::sort(records);
+    }
     return records;
 }
 

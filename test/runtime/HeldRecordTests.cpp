@@ -346,3 +346,15 @@ TEST_F(HeldRecordTest, AHolderWhoseRecordsAreAllGoneKeepsNoRevision)
     SettleHeldRecords(Entities);
     EXPECT_EQ(Index->Revision(peer), 0u);
 }
+
+TEST_F(HeldRecordTest, RecordsWaitingForOneHolderAreGivenInTheOrderTheyWereListed)
+{
+    const EntityId earlier = Entities.CreateEntity();
+    const EntityId later = Entities.CreateEntity();
+    const EntityId other = Entities.CreateEntity();
+    Entities.AddComponent<Held>(later, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+    Entities.AddComponent<Held>(earlier, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+    Entities.AddComponent<Held>(other, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 4 } } });
+
+    EXPECT_EQ(Index->AwaitingRecords(), (std::vector{ other, later, earlier }));
+}
