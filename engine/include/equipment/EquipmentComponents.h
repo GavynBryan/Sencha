@@ -69,9 +69,8 @@ struct EquipmentRecordList
 
 [[nodiscard]] std::span<const EquipmentRecord> EquipmentRecordsOf(const World& world, const EquipmentState& state);
 [[nodiscard]] std::span<const EquipmentRecord> EquipmentRecordsOf(const World& world, EntityId wearer);
-// The wearer's own records to write in place; adding or removing one goes through the calls below.
+// The wearer's own records to write in place; wearing or removing one goes through the calls below.
 [[nodiscard]] std::span<EquipmentRecord> EditEquipmentRecords(World& world, EntityId wearer);
-void AddEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& record);
 // The last record takes the place of the one removed.
 void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index);
 

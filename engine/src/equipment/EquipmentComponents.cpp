@@ -51,15 +51,6 @@ std::span<EquipmentRecord> EditEquipmentRecords(World& world, EntityId wearer)
     return Edit(world, *state);
 }
 
-void AddEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& record)
-{
-    EquipmentState& state = *world.TryGet<EquipmentState>(wearer);
-    std::vector<EquipmentRecord>& records = Edit(world, state);
-    assert(records.size() < kEquipmentRecordCapacity && "a record holds a slot no other record holds");
-    records.push_back(record);
-    state.Count = static_cast<std::uint8_t>(records.size());
-}
-
 void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index)
 {
     EquipmentState& state = *world.TryGet<EquipmentState>(wearer);
