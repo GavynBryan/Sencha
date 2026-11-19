@@ -81,30 +81,21 @@ namespace
         std::vector<GameplayTagId> wanted;
         for (const ItemEquipEffect& equipped : effects)
             if (const EffectDefinition* definition = EffectOf(world, equipped.Effect))
-                for (const GameplayTagId tag : definition->GrantedTags)
-                    if (tag.IsValid() && std::ranges::find(wanted, tag) == wanted.end())
-                        wanted.push_back(tag);
+                wanted.insert(wanted.end(), definition->GrantedTags.begin(), definition->GrantedTags.end());
         if (wanted.empty())
             return true;
         const GameplayTagContainer* tags =
             world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(wearer) : nullptr;
         if (tags == nullptr)
             return false;
-        const auto stays = [&](GameplayTagId tag) {
-            std::uint32_t leaving = 0;
-            for (const EntityId effect : ending)
-            {
-                const ActiveEffect& active = *world.TryGet<ActiveEffect>(effect);
-                leaving += static_cast<std::uint32_t>(
-                    std::count(active.GrantedTags, active.GrantedTags + active.GrantedTagCount, tag));
-            }
-            return tags->StackCount(tag) > leaving;
-        };
-        const std::size_t held = static_cast<std::size_t>(
-            std::count_if(tags->Tags, tags->Tags + tags->Count, [&](GameplayTagId tag) { return stays(tag); }));
-        const std::size_t added = static_cast<std::size_t>(
-            std::ranges::count_if(wanted, [&](GameplayTagId tag) { return !tags->HasExact(tag) || !stays(tag); }));
-        return held + added <= GameplayTagContainer::Capacity;
+        GameplayTagContainer after = *tags;
+        for (const EntityId effect : ending)
+        {
+            const ActiveEffect& active = *world.TryGet<ActiveEffect>(effect);
+            for (std::uint8_t i = 0; i < active.GrantedTagCount; ++i)
+                (void)after.Revoke(active.GrantedTags[i]);
+        }
+        return after.CanHoldAll(wanted);
     }
 
     EntityId Maintain(World& world, EntityId wearer, EntityId source, std::uint32_t record, const EquipmentSlot& slot,

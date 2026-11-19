@@ -260,6 +260,17 @@ TEST(GameplayTagContainer, CanHoldAllCountsEachNewTagOnce)
     EXPECT_FALSE(c.CanHoldAll(three));
 }
 
+TEST(GameplayTagContainer, ATagHoldingEveryStackItCanHasNoRoomForAnother)
+{
+    GameplayTagRegistry reg;
+    GameplayTagContainer c{};
+    const GameplayTagId full = *reg.RegisterTag("Stack.Full");
+    (void)c.GrantBaseline(full, 0xFFFE);
+    EXPECT_TRUE(c.CanHoldAll(std::array{ full })) << "one stack short of the most";
+    (void)c.Grant(full);
+    EXPECT_FALSE(c.CanHoldAll(std::array{ full }));
+}
+
 TEST(GameplayTagOverflow, RefusalsAMomentApartAreOneEpisodeNotOneLinePairEach)
 {
     World world;

@@ -56,7 +56,10 @@ naming the first holder and tag, and once when `kGameplayTagOverflowQuietReports
 moment apart, such as a periodic effect's, stays one episode. Nothing else on the entity is
 affected. Stack counts saturate at 0xFFFF; a baseline stack added at
 saturation never displaces a contributed one, so a revoke of the baseline never
-takes a tag an effect still holds.
+takes a tag an effect still holds. A tag at 0xFFFF has no room for another
+stack: `CanHoldAll`, and so `AdmitGameplayTags`, refuses it as it refuses a new
+tag in a full container, so an effect or a start never holds a tag it gave no
+stack of, and its end never takes a stack someone else gave.
 
 Each tag's count holds a **baseline** within it: the stacks that persist.
 - Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the

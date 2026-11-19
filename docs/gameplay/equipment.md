@@ -167,7 +167,7 @@ state after the replacement. It is refused, with nothing changed, when:
 | `NotMaintained`, `Undeclared` | an equip effect is not Infinite, or content never declared the entries it would be worn with (also asserts in a debug build: see "Worn grant entries") |
 | `MissingAttribute` | an equip effect modifies an attribute the wearer does not have |
 | `GrantRoom` | the grants would not fit the wearer's grant table once what it replaces has gone |
-| `TagRoom` | the tags its effects grant would not fit the wearer's tag container once what it replaces has gone, or the wearer has none |
+| `TagRoom` | the tags its effects grant would not fit the wearer's tag container once what it replaces has gone (a new tag past the capacity, or a tag already at 0xFFFF stacks, by `CanHoldAll`), or the wearer has none |
 
 **One rule for "may use".** Equip, the pass's holder rule, cycle's candidates
 and the slot cost all ask `MayUseItem(world, wearer, entry)`

@@ -596,6 +596,33 @@ TEST_F(EquipmentTest, AnEquipWhoseTagsFindNoRoomInTheWearersContainerIsRefused)
         << "what it replaces leaves the room it takes";
 }
 
+TEST_F(EquipmentTest, AnEquipWhoseTagHoldsEveryStackItCanIsRefusedUntilOneLeaves)
+{
+    World& world = Entities();
+    GameplayTagRegistry& names = world.GetResource<GameplayTagRegistry>();
+    const GameplayTagId mark = *names.RegisterTag("Mark.Full");
+    EffectDefinition marked{};
+    marked.Duration = EffectDuration::Infinite;
+    marked.GrantedTags = { mark };
+    const EffectId marks = world.GetResource<EffectRegistry>().Define("asset://effects/full.sdata", marked);
+    const ItemId band = world.GetResource<ItemRegistry>().Define(
+        "asset://items/fullband.sdata",
+        ItemDefinition{ .Name = "Band", .Tags = { Ring }, .Occupies = { "ring" }, .EquipEffects = { { marks, 1.0f } } });
+    Declare();
+    (void)world.TryGet<GameplayTagContainer>(Hero)->GrantBaseline(mark, 0xFFFF);
+    const EntityId worn = Give(band);
+
+    EXPECT_EQ(Gear().Equip(Hero, worn, "ring.left").Refusal, EquipmentRefusal::TagRoom);
+    EXPECT_EQ(EffectsOn(), 0u);
+
+    (void)world.TryGet<GameplayTagContainer>(Hero)->RevokeBaseline(mark);
+    ASSERT_EQ(Gear().Equip(Hero, worn, "ring.left").Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(std::as_const(world).TryGet<GameplayTagContainer>(Hero)->StackCount(mark), 0xFFFFu);
+    EXPECT_EQ(Gear().Unequip(Hero, "ring.left").Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(std::as_const(world).TryGet<GameplayTagContainer>(Hero)->StackCount(mark), 0xFFFEu)
+        << "taking it off takes only the stack it gave";
+}
+
 TEST_F(EquipmentTest, AnEquipWhoseEffectModifiesAnAttributeTheWearerLacksIsRefused)
 {
     World& world = Entities();

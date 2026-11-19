@@ -26,7 +26,9 @@ bool AdmitGameplayTags(World& world, EntityId holder, const GameplayTagContainer
     if (tags.CanHoldAll(granted))
         return true;
     const auto refused =
-        std::ranges::find_if(granted, [&](GameplayTagId tag) { return tag.IsValid() && !tags.HasExact(tag); });
+        std::ranges::find_if(granted, [&](GameplayTagId tag) {
+            return tag.IsValid() && (!tags.HasExact(tag) || tags.StackCount(tag) == 0xFFFF);
+        });
     NoteGameplayTagOverflow(world, holder, refused != granted.end() ? *refused : GameplayTagId{});
     return false;
 }

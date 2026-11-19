@@ -165,7 +165,11 @@ bool GameplayTagContainer::CanHoldAll(std::span<const GameplayTagId> tags) const
         const GameplayTagId tag = tags[i];
         const bool repeated = std::find(tags.begin(), tags.begin() + static_cast<std::ptrdiff_t>(i), tag)
             != tags.begin() + static_cast<std::ptrdiff_t>(i);
-        absent += tag.IsValid() && !repeated && !HasExact(tag) ? 1 : 0;
+        if (!tag.IsValid() || repeated)
+            continue;
+        if (StackCount(tag) == 0xFFFF)
+            return false;
+        absent += HasExact(tag) ? 0 : 1;
     }
     return Count + absent <= Capacity;
 }
