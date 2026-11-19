@@ -104,6 +104,11 @@ namespace
         return !record.Source.Entity.IsValid() && !record.Source.Target.IsValid();
     }
 
+    bool Awaits(const EquipmentRecord& record)
+    {
+        return !record.Source.Entity.IsValid() && record.Source.Target.IsValid();
+    }
+
     void SettleSources(World& world, const EquipmentRecordLists& lists, EntityId wearer)
     {
         const EquipmentLayout* layout = FindEquipmentLayout(world, std::as_const(world).TryGet<EquipmentState>(wearer)->Layout);
@@ -114,6 +119,15 @@ namespace
             if (Waits(record))
                 continue;
             const EntityId source = ResolvePersistableRef(world, record.Source);
+            if (!world.IsAlive(source) && Awaits(record))
+                continue;
+            if (world.IsAlive(source) && source != record.Source.Entity)
+            {
+                EquipmentRecord& arrived = EditEquipmentRecords(world, wearer)[i];
+                arrived.Source.Entity = source;
+                arrived.Derivation = EquipmentDerivation::Pending;
+                records = Worn(world, lists, wearer);
+            }
             const ItemEntry* entry = world.IsAlive(source) ? std::as_const(world).TryGet<ItemEntry>(source) : nullptr;
             const bool held = entry != nullptr && MayUseItem(world, wearer, source);
             if (held && entry->Count > 0)

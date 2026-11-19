@@ -126,7 +126,12 @@ the code gives:
   (`sencha.bodies`, `docs/gameplay/saves.md`), and the entries its records name
   are held records of the body (`sencha.held`). After a restore the body's
   records are `Pending`, their sources resolve by id once the entries are back,
-  and the next pass derives them: nothing derived is in the file
+  and the next pass derives them: nothing derived is in the file. A record
+  whose source names an id no entity carries yet, and that it has never
+  resolved this session, waits for it with nothing derived, however many
+  passes run first; once its source resolves the pass notes the entity and
+  derives the record again, and only an entry it has seen and that is then
+  destroyed ends it
   (`EquipmentGateTest.WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttributable`).
   A zone NPC's equipment follows its zone's state: its authored record comes
   back with the zone, and a change made at run time is kept only as far as the

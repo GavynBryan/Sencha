@@ -567,6 +567,40 @@ TEST_F(EquipmentTest, EveryRefusalLeavesTheWorldAsItWas)
     EXPECT_EQ(refusal(Give(bracelet)), EquipmentRefusal::NotAccepted) << "it carries no ring tag";
 }
 
+TEST_F(EquipmentTest, ARecordWhoseEntryHasNotArrivedWaitsForItInsteadOfEnding)
+{
+    const EntityId ring = Give(RingItem);
+    ASSERT_EQ(Gear().Equip(Hero, ring, "ring.left").Refusal, EquipmentRefusal::None);
+    const std::size_t worn = EffectsOn();
+    ASSERT_GT(worn, 0u);
+    EquipmentRecordList saved = Worn();
+    const PersistentEntityId away = saved.Records.front().Source.Target;
+    ASSERT_TRUE(away.IsValid());
+    ASSERT_EQ(Gear().Unequip(Hero, "ring.left", ItemChangeClass::Forced).Refusal, EquipmentRefusal::None);
+    Entities().DestroyEntity(ring);
+    SettleHeldRecords(Entities());
+    saved.Records.front().Source.Entity = EntityId{};
+    SetEquipment(Entities(), Hero, saved);
+
+    Pass();
+    ASSERT_EQ(State().Count, 1u) << "an id nothing carries yet is not an entry that went";
+    EXPECT_EQ(EffectsOn(), 0u);
+
+    const EntityId arrived = Give(RingItem);
+    (void)Entities().ReplaceComponent<PersistentIdComponent>(arrived, PersistentIdComponent{ away });
+    Pass();
+    ASSERT_EQ(State().Count, 1u);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records().front().Source), arrived);
+    EXPECT_EQ(Records().front().Derivation, EquipmentDerivation::Maintained);
+    EXPECT_EQ(EffectsOn(), worn);
+
+    Entities().DestroyEntity(arrived);
+    SettleHeldRecords(Entities());
+    Pass();
+    EXPECT_EQ(State().Count, 0u) << "an entry seen and then destroyed is gone";
+    EXPECT_EQ(EffectsOn(), 0u);
+}
+
 TEST_F(EquipmentTest, AnEquipWhoseTagsFindNoRoomInTheWearersContainerIsRefused)
 {
     World& world = Entities();
