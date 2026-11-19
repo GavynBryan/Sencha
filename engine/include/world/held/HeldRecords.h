@@ -11,31 +11,23 @@
 class HeldRecordIndex;
 class World;
 
-// Idempotent. Records follow their holder's storage partition from then on.
 HeldRecordIndex& InstallHeldRecords(World& world);
 
-// Authority only. Lists `record` under `holder` (invalid: the world) at
-// `position`, or after the holder's last record, and settles it at once.
 void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<std::uint16_t> position = {});
 
-// The one in-place write of Held.Holder: names the listed holder by its persistent id.
 void NameHeldHolder(World& world, EntityId record);
 
-// Authority only: a settled record under `holder` in one placement. The columns
-// `values` names are left for the caller to fill with World::InitializeComponent.
+// The columns `values` names are left unwritten for World::InitializeComponent.
 [[nodiscard]] EntityId PlaceHeldRecord(World& world, EntityId holder, ArchetypeSignature values,
                                        std::optional<std::uint16_t> position = {});
 
-// docs/gameplay/held-records.md, "Authored records".
 void NoteHeldRecordChanged(World& world, EntityId record);
 
-// Owner thread, outside any query: docs/gameplay/held-records.md, "Settling".
+// Owner thread, outside any query.
 void SettleHeldRecords(World& world);
 
-// Before the partition goes: docs/gameplay/held-records.md, "Records of authored holders".
 void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition);
 
 void DestroyAwaitingHeldRecords(World& world);
 
-// Leaves records with authored ids.
 void DestroyHeldRecords(World& world);

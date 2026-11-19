@@ -7,9 +7,6 @@
 #include <cstdint>
 #include <type_traits>
 
-// docs/gameplay/held-records.md. A record entity owned by a holder entity; an
-// invalid holder is the world. Records are ordered under their holder by
-// Position, then by when they were listed.
 struct SENCHA_COMPONENT("sencha.held")
        SENCHA_SCHEMA("Held")
        SENCHA_SCENE_CHUNK("HELD")

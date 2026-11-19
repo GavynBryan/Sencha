@@ -14,10 +14,8 @@
 
 class World;
 
-// A record holds at least one slot and no two hold the same one.
 inline constexpr std::size_t kEquipmentRecordCapacity = kMaxEquipmentSlots;
 
-// Never saved or sent: a loaded, authored or replicated record is Pending.
 enum class EquipmentDerivation : std::uint8_t
 {
     Pending,
@@ -28,7 +26,6 @@ enum class EquipmentDerivation : std::uint8_t
 
 struct EquipmentRecord
 {
-    // Unique on its wearer and never reused: what its effects are owned by.
     std::uint32_t Key = 0;
     ItemId Definition;
     std::uint32_t Slots = 0;
@@ -69,16 +66,12 @@ struct EquipmentRecordList
 
 [[nodiscard]] std::span<const EquipmentRecord> EquipmentRecordsOf(const World& world, const EquipmentState& state);
 [[nodiscard]] std::span<const EquipmentRecord> EquipmentRecordsOf(const World& world, EntityId wearer);
-// The wearer's own records to write in place; wearing or removing one goes through the calls below.
 [[nodiscard]] std::span<EquipmentRecord> EditEquipmentRecords(World& world, EntityId wearer);
-// The last record takes the place of the one removed.
 void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index);
 
 inline constexpr std::size_t kNoEquipmentRecord = static_cast<std::size_t>(-1);
 [[nodiscard]] std::size_t FindEquipmentRecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot);
 
-// Ends every record holding one of `record`'s slots, the last taking each one's
-// place, and appends `record` under the next key, which it returns.
 std::uint32_t WearRecord(std::vector<EquipmentRecord>& records, std::uint32_t& nextKey, EquipmentRecord record);
 std::uint32_t WearEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& record);
 

@@ -76,7 +76,7 @@ struct IComponentSerializer
     // empty label when it is not a thing of its own. Pure tooling metadata.
     virtual ComponentPlacementFacts Placement() const { return {}; }
 
-    // Which lists of the scene form merge by which member. Pure tooling metadata.
+    // Which lists of the scene form merge by which member; composition and the save patch read it.
     virtual const DataFieldSchema* CompositionSchema() const { return nullptr; }
 
     // Last, so every virtual added above moves its slots: an ABI break.

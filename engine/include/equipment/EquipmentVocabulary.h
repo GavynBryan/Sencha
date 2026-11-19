@@ -14,7 +14,6 @@ class FixedSimulationLoop;
 class Logger;
 class World;
 
-// docs/gameplay/equipment.md, "Vocabulary".
 inline constexpr std::string_view kEquipmentEquipVerb = "equipment.equip";
 inline constexpr std::string_view kEquipmentUnequipVerb = "equipment.unequip";
 inline constexpr std::string_view kEquipmentCycleVerb = "equipment.cycle";
@@ -64,7 +63,5 @@ inline VerbAdmission InvokeEquipmentCycle(EquipmentOperations& operations, const
 [[nodiscard]] std::vector<AuthoredQueryBindingToken> BindEquipmentQueries(AuthoredQueryDispatcher& dispatcher,
                                                                           const World& world);
 
-// A slot row as an inventory.item row spending the entry the slot holds; false
-// for a slot holding nothing, or one waiting with no source.
 [[nodiscard]] bool TranslateSlotCost(const World& world, const AbilityCostRow& row, std::vector<AuthoredValue>& arguments);
 void DeclareSlotCostProvider(World& world);

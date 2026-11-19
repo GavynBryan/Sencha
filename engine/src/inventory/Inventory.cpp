@@ -56,7 +56,6 @@ namespace
         return (index != nullptr ? index->Depth(into) : 0) + 1 + height <= kHeldDeepestNesting;
     }
 
-    // Not lying in a pickup, held by the world, or waiting for a holder that is away.
     bool Contained(const World& world, EntityId entry)
     {
         const EntityId holder = HolderOf(world, entry);
@@ -109,7 +108,6 @@ namespace
                 (void)seeded.Add(seed.Attribute, seed.Base);
             (void)world.InitializeComponent<AttributeSet>(entry, seeded);
         }
-        // A curse laid on an entry by an effect needs somewhere to land.
         if (tags)
         {
             GameplayTagContainer granted{};
@@ -126,7 +124,6 @@ namespace
         std::uint32_t Remaining = 0;
     };
 
-    // A depleted stack is never refilled.
     StackFill FillOpenStacks(const World& world, EntityId container, ItemId definition, const ItemDefinition& item,
                              std::uint32_t units, EntityId except)
     {

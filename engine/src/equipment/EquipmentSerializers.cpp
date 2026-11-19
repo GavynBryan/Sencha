@@ -22,7 +22,6 @@ namespace
     constexpr std::string_view kSlots = "slots";
     constexpr std::string_view kSource = "source";
 
-    // Records replace whole on a patch; their sources are entities a placement renames.
     DataFieldSchema MakeCompositionSchema()
     {
         DataFieldSchema record = MakeDataField(DataFieldKind::Record, {}, {});
@@ -34,7 +33,6 @@ namespace
         return state;
     }
 
-    // The primary slot first, so a load finds it where it was.
     std::vector<std::uint8_t> SlotsInOrder(const EquipmentRecord& record)
     {
         std::vector<std::uint8_t> slots;

@@ -1,6 +1,3 @@
-// Equipment (docs/gameplay/equipment.md): layouts, and the records a wearer
-// holds against them.
-
 #include <abilities/AbilityActivations.h>
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
@@ -75,7 +72,6 @@
 
 namespace
 {
-    // Compiles `json` as an equipment.layout's data.
     std::shared_ptr<const EquipmentLayoutDeclaration> Compile(std::string_view json)
     {
         DataAssetTypeRegistry types;
@@ -183,8 +179,6 @@ TEST(EquipmentLayout, AGroupNamesItsSlotsInLayoutOrder)
 
 namespace
 {
-    // A World that loads scenes naming layouts and items: registries, and the
-    // humanoid layout defined from kHumanoid.
     struct SceneWorld
     {
         LoggingProvider Logging;
@@ -331,8 +325,6 @@ namespace
         return schema;
     }
 
-    // An authority World with a body layout, rings that grant a bolt, a
-    // two-handed sword, and a hero holding them.
     class EquipmentTest : public ::testing::Test
     {
     protected:
@@ -390,8 +382,6 @@ namespace
 
         World& Entities() { return Runtime.Entities(); }
 
-        // What content declaration does once items and layouts are defined, and
-        // again each frame a definition reloads.
         void Declare()
         {
             std::vector<std::string> errors;
@@ -417,8 +407,6 @@ namespace
             return Inventory(Entities(), FixedSimTime{}).Give(Hero, item, 1).Entry;
         }
 
-        // One fixed tick, in schedule order: actor time, the ability pass, then the
-        // equipment's and the inventory's.
         void Step()
         {
             Declare();
@@ -435,7 +423,6 @@ namespace
         std::span<const EquipmentRecord> Records() { return EquipmentRecordsOf(Entities(), Hero); }
         EquipmentRecordList Worn() { return CopyEquipment(Entities(), Hero); }
 
-        // The equipment pass, then the inventory's, as the schedule orders them.
         void Pass()
         {
             Declare();
@@ -514,7 +501,6 @@ TEST_F(EquipmentTest, ATwoHandedItemIsOneRecordInTwoSlots)
 
 TEST_F(EquipmentTest, ASwapAtAFullGrantTableFitsWhatItReplacesAndNoMore)
 {
-    // Fill the table to two short of full with grants nothing will release.
     World& world = Entities();
     const std::uint16_t filler = world.GetResource<AbilityGrantEntries>().Intern({ "g_fill", Slash, {} });
     while (std::as_const(world).TryGet<AbilityGrants>(Hero)->Count < kAbilityGrantCapacity - 2)
@@ -524,13 +510,11 @@ TEST_F(EquipmentTest, ASwapAtAFullGrantTableFitsWhatItReplacesAndNoMore)
     Step();
     ASSERT_EQ(std::as_const(world).TryGet<AbilityGrants>(Hero)->Count, kAbilityGrantCapacity);
 
-    // Another greatsword gives two for the two it replaces.
     const EntityId other = Give(Greatsword);
     ASSERT_EQ(Gear().Equip(Hero, other).Refusal, EquipmentRefusal::None) << "two for two";
     Step();
     EXPECT_EQ(ResolvePersistableRef(world, Records()[0].Source), other);
 
-    // A ring in a free slot replaces nothing, so its grant finds no room.
     const EntityId ring = Give(RingItem);
     const EquipmentRecordList before = Worn();
     EXPECT_EQ(Gear().Equip(Hero, ring).Refusal, EquipmentRefusal::GrantRoom);
@@ -683,8 +667,6 @@ TEST_F(EquipmentTest, AnEquipWhoseEffectModifiesAnAttributeTheWearerLacksIsRefus
     EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None);
 }
 
-// A record holds a slot of its own, so a layout's slots are the only bound on
-// what a wearer wears: with every one taken, the next equip swaps.
 TEST_F(EquipmentTest, AWearerWearsARecordInEverySlotALayoutCanHaveAndTheNextEquipSwaps)
 {
     World& world = Entities();
@@ -746,7 +728,6 @@ TEST_F(EquipmentTest, ReconcilingTwiceChangesNothingAndRestoresWhatWasLost)
     EXPECT_EQ(ReconcileEquipment(Entities(), Hero, now), 0u);
     EXPECT_EQ(EffectsOn(), 1u) << "applied once, not once a reconcile";
 
-    // A restore brings the record back without what it maintained.
     (void)RemoveEffectsOwnedBy(Entities(), EquipmentRecordOwner(sword, Records()[0].Key));
     EXPECT_EQ(EffectsOn(), 0u);
     EXPECT_EQ(ReconcileEquipment(Entities(), Hero, now), 0u);
@@ -819,9 +800,6 @@ TEST_F(EquipmentTest, ASpentSourceReleasesOrHoldsAsItsSlotSays)
     EXPECT_EQ(EffectsOn(), 1u) << "and maintains from it";
 }
 
-// A held slot's source came back under its id as another entity (a zone's
-// round trip) and was spent: what the old handle maintained ends in the same
-// pass, not a tick later when the effect pass sees its owner gone.
 TEST_F(EquipmentTest, AHoldingSlotEndsWhatItsSourcesOldHandleMaintained)
 {
     World& world = Entities();
@@ -852,8 +830,6 @@ TEST_F(EquipmentTest, ADestroyedSourceEndsItsRecord)
     EXPECT_EQ(EffectsOn(), 0u);
 }
 
-// A record content authored (or a save restored) maintains nothing until a pass
-// derives it, and is derived once.
 TEST_F(EquipmentTest, AnAuthoredRecordIsReconciledOnce)
 {
     const EntityId sword = Give(Greatsword);
@@ -906,7 +882,6 @@ namespace
             QueryTokens = BindEquipmentQueries(*Queries, std::as_const(Entities()));
         }
 
-        // `verb` with its entity arguments as inputs, in order, and the rest as literal text.
         VerbAdmission Invoke(std::string_view verb, std::vector<std::pair<std::string, EntityId>> entities,
                              std::vector<std::pair<std::string, std::string>> literals = {})
         {
@@ -939,7 +914,6 @@ namespace
             return Verbs->Invoke(binding, inputs).Status;
         }
 
-        // `verb` on `wearer`'s `slot`, with `force` set: what the World decides.
         VerbAdmission InvokeForced(std::string_view verb, EntityId wearer, std::string_view slot)
         {
             VerbBindingDesc desc;
@@ -1052,29 +1026,24 @@ TEST_F(EquipmentVocabularyTest, AWornSlotTranslatesToTheItemsEntry)
         << "an empty slot cannot pay";
 }
 
-// Composition Stage 5's gate (docs/plans/composition-stage5-equipment.md, S5.9):
-// the HL2, Skyrim and Zelda exercises, unequipping mid-ability, and a restore.
 namespace
 {
     constexpr std::string_view kLasting = R"({
         "owned_tags": [ "State.Attacking" ],
         "phases": [ { "key": "p_hold", "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
 
-    // Spends a unit of its source, then takes three ticks to finish.
     constexpr std::string_view kThrow = R"({
         "costs": [ { "key": "g_unit", "resources": [ { "key": "r_unit", "provider": "inventory.item",
                                                       "arguments": { "entry": { "port": "source" } } } ] } ],
         "phases": [ { "key": "p_throw", "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_unit"] } ],
                       "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
 
-    // Spends a unit of what its source holds as it starts: a bottle's contents.
     constexpr std::string_view kSip = R"({
         "costs": [ { "key": "g_sip", "when": "start",
                      "resources": [ { "key": "r_unit", "provider": "inventory.item",
                                       "arguments": { "container": { "port": "source" } } } ] } ],
         "phases": [ { "key": "p_sip", "then": [ { "key": "t_done", "to": "end" } ] } ] })";
 
-    // A round from its source's own clip and one from the wearer's reserve, as one commit.
     constexpr std::string_view kFire = R"({
         "costs": [ { "key": "g_clip", "target": "source", "effects": [ { "data": "asset://effects/round.sdata" } ] },
                    { "key": "g_reserve", "effects": [ { "data": "asset://effects/round.sdata" } ] } ],
@@ -1133,7 +1102,6 @@ namespace
                 { .Kind = AbilityRequestKind::Activate, .Actor = Hero, .Ability = ability });
         }
 
-        // The grant behind the hero's one live activation of `ability`.
         const AbilityGrant* LiveGrantOf(AbilityId ability)
         {
             for (const AbilityRecord& record : AbilityRecordsOf(Entities(), Hero))
@@ -1161,8 +1129,6 @@ namespace
     };
 }
 
-// Skyrim: two rings grant one ward; the right hand's priority casts, from the
-// right ring, as its source.
 TEST_F(EquipmentGateTest, RingsCastBySlotPriorityFromTheirOwnSource)
 {
     const EntityId left = Give(WardRing);
@@ -1178,8 +1144,6 @@ TEST_F(EquipmentGateTest, RingsCastBySlotPriorityFromTheirOwnSource)
     EXPECT_EQ(Entities().GetResource<AbilityGrantEntries>().Binding(cast->Entry)->Priority, 21);
 }
 
-// Unequipping mid-ability: refused while the swing's own tag locks the
-// wearer, and once allowed, the activation ends with its grant.
 TEST_F(EquipmentGateTest, UnequippingMidAbilityIsLockedThenEndsItsActivation)
 {
     const EntityId ring = Give(WardRing);
@@ -1190,7 +1154,6 @@ TEST_F(EquipmentGateTest, UnequippingMidAbilityIsLockedThenEndsItsActivation)
     ASSERT_NE(LiveGrantOf(Ward), nullptr);
     EXPECT_EQ(Gear().Unequip(Hero, "ring.left").Refusal, EquipmentRefusal::Locked) << "State.Attacking is a lock tag";
 
-    // Content can lift the lock and end it by force: the World decides, no lock applies.
     Entities().TryGet<GameplayTagContainer>(Hero)->Erase(Attacking);
     ASSERT_EQ(Gear().Unequip(Hero, "ring.left").Refusal, EquipmentRefusal::None);
     Step();
@@ -1200,8 +1163,6 @@ TEST_F(EquipmentGateTest, UnequippingMidAbilityIsLockedThenEndsItsActivation)
     EXPECT_EQ(ended.back().EndReason, AbilityEndReason::GrantRevoked);
 }
 
-// Zelda: the last bomb finishes its throw before its slot settles; the slot
-// holds, and a pickup takes it. (A releasing slot is ASpentSourceReleasesOrHoldsAsItsSlotSays.)
 TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
 {
     const EntityId grenade = Inventory(Entities(), FixedSimTime{}).Give(Hero, Grenade, 1).Entry;
@@ -1233,8 +1194,6 @@ TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
     EXPECT_EQ(std::as_const(Entities()).TryGet<ItemEntry>(more)->Count, 1u) << "and throws again";
 }
 
-// Zelda: drinking from the bottle spends what it holds; the bottle stays worn,
-// and the next sip is refused.
 TEST_F(EquipmentGateTest, ABottleStaysWornWhileItsContentsAreDrunk)
 {
     const EntityId bottle = Give(Bottle);
@@ -1257,8 +1216,6 @@ TEST_F(EquipmentGateTest, ABottleStaysWornWhileItsContentsAreDrunk)
     EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::CostFailed);
 }
 
-// HL2: a round from the pistol's own clip and one from the reserve, in one
-// commit; the source is the pistol, so its clip pays.
 TEST_F(EquipmentGateTest, FireSpendsTheWeaponsClipAndTheReserveInOneCommit)
 {
     const EntityId pistol = Give(Pistol);
@@ -1277,8 +1234,6 @@ TEST_F(EquipmentGateTest, FireSpendsTheWeaponsClipAndTheReserveInOneCommit)
     EXPECT_FLOAT_EQ(Units(Hero), 8.0f) << "a clip that cannot pay refuses the reserve its round too";
 }
 
-// A wearer saved and restored, then reconciled by the pass: the same tags,
-// grants and attributes, with nothing contributed twice.
 TEST_F(EquipmentGateTest, ARestoreReconcilesToWhatWasWorn)
 {
     const EntityId sword = Give(Greatsword);
@@ -1302,7 +1257,6 @@ TEST_F(EquipmentGateTest, ARestoreReconcilesToWhatWasWorn)
     const std::size_t grantsBefore = std::as_const(Entities()).TryGet<AbilityGrants>(Hero)->Count;
     const std::size_t effectsBefore = EffectsOn();
 
-    // The restore: what persisted comes back, what was derived does not.
     const EquipmentLayoutId layout = State().Layout;
     for (const EquipmentRecord& record : std::vector(Records().begin(), Records().end()))
         (void)RemoveEffectsOwnedBy(Entities(), EquipmentRecordOwner(record.Source.Entity, record.Key));
@@ -1330,9 +1284,6 @@ TEST_F(EquipmentGateTest, ARestoreReconcilesToWhatWasWorn)
     }
 }
 
-// Skyrim: worn Sprint Boots set the wearer's speed, and a Frozen effect's higher
-// precedence wins over them whichever came first; taking the boots off leaves
-// Frozen alone.
 TEST_F(EquipmentGateTest, FrozenBeatsSprintBootsByPrecedence)
 {
     World& world = Entities();
@@ -1367,16 +1318,11 @@ TEST_F(EquipmentGateTest, FrozenBeatsSprintBootsByPrecedence)
     EXPECT_FLOAT_EQ(current(), 5.0f) << "neither holds it now";
 }
 
-// One check per resource (docs/gameplay/abilitykit.md, "Costs"): every row that
-// reaches an entry in one commit is checked as one spend, whichever provider
-// names it, and a refused commit spends nothing.
 namespace
 {
     class EquipmentCostTest : public EquipmentGateTest
     {
     protected:
-        // An ability paying `costs` (a "costs" list) in one commit as it starts,
-        // granted by an item worn in use.x that stacks to 5.
         void Define(std::string_view costs)
         {
             World& world = Entities();
@@ -1402,7 +1348,6 @@ namespace
             return entry;
         }
 
-        // A spent entry is reaped once nothing runs from it: none left.
         std::uint32_t CountOf(EntityId entry)
         {
             return Entities().IsAlive(entry) ? std::as_const(Entities()).TryGet<ItemEntry>(entry)->Count : 0u;
@@ -1506,7 +1451,6 @@ TEST(EquipmentCostProvider, AProviderOwnsItsResourceOrSpendsThroughAnotherNeverB
     EXPECT_GT(errors(itself), 0u);
 }
 
-// A translation leading to another translation has no batch to join.
 TEST_F(EquipmentCostTest, ASpendThroughATranslatingProviderIsRefused)
 {
     AbilityCostProviderDefinition alias;
@@ -1527,8 +1471,6 @@ TEST_F(EquipmentCostTest, ASpendThroughATranslatingProviderIsRefused)
     EXPECT_EQ(CountOf(charges), 2u);
 }
 
-// Worn grant entries are content: whatever order a machine declares items in,
-// it interns the same entries under the same wire keys.
 namespace
 {
     std::vector<std::uint32_t> DeclaredWornKeys(bool reversed)
@@ -1600,9 +1542,6 @@ TEST_F(EquipmentTest, AWornEntryTheTableRefusesIsReportedWithItsItemAndSlot)
         << errors.front();
 }
 
-// Derivation (docs/gameplay/equipment.md, "Derivation"): a record is current with
-// every definition it reads, changes whole, and a refusal is retried as its kind
-// allows.
 TEST_F(EquipmentTest, AReloadedEffectsGrantListReachesAWornInstance)
 {
     const EntityId ring = Give(RingItem);
@@ -1642,7 +1581,6 @@ TEST_F(EquipmentTest, AReloadedEffectsTagsFollowTheWearerWithNothingLeftOrDouble
     EXPECT_EQ(EffectsOn(), 1u);
 }
 
-// Modifiers fold from the definition as it is, so a reload reaches them as is.
 TEST_F(EquipmentTest, AReloadedEffectsModifierFollowsTheWearer)
 {
     World& world = Entities();
@@ -1700,8 +1638,6 @@ TEST_F(EquipmentTest, AnEquipEffectRedefinedInstantIsRefusedAndMaintainsNothingU
 
 namespace
 {
-    // The body layout with its slots in another order, or without ring.left, or
-    // with ring.left at another priority.
     std::string BodyLayout(std::string_view leftRing, bool reversed)
     {
         const std::string left = std::string(leftRing);
@@ -1800,8 +1736,6 @@ TEST_F(EquipmentTest, ARecordRefusedForRoomIsTracedOnceAndDerivedOnceThereIsRoom
     EXPECT_EQ(EffectsOn(), 1u);
 }
 
-// A reload whose new derivation does not fit keeps the old effects exactly:
-// never some of each.
 TEST_F(EquipmentTest, AReloadThatDoesNotFitLeavesTheOldEffectsAsTheyWere)
 {
     World& world = Entities();
@@ -1819,9 +1753,6 @@ TEST_F(EquipmentTest, AReloadThatDoesNotFitLeavesTheOldEffectsAsTheyWere)
     EXPECT_EQ(GrantsOf(Bolt).size(), 1u) << "the old derivation's grant, as it was";
 }
 
-// Rebinding and cycling walk everything a wearer holds, however deep; a
-// waiting record is rescanned only when what its wearer holds, or its
-// records, changed.
 namespace
 {
     class EquipmentWalkTest : public EquipmentTest
@@ -1846,7 +1777,6 @@ namespace
             Declare();
         }
 
-        // A wearer with a container and the belt layout.
         EntityId Wearer()
         {
             World& world = Entities();
@@ -1858,7 +1788,6 @@ namespace
             return wearer;
         }
 
-        // A bag in `holder`'s container.
         EntityId BagIn(EntityId holder)
         {
             const EntityId bag = Inventory(Entities(), FixedSimTime{}).Give(holder, Pebble, 1).Entry;
@@ -1866,7 +1795,6 @@ namespace
             return bag;
         }
 
-        // `wearer`'s record in `slot` left waiting: its bomb spent.
         void LeaveWaiting(EntityId wearer, std::string_view slot)
         {
             const EntityId bomb = Inventory(Entities(), FixedSimTime{}).Give(wearer, Charge, 1).Entry;
@@ -1919,7 +1847,6 @@ TEST_F(EquipmentWalkTest, AnEntryMovedIntoOneHoldersBagRebindsThatHolder)
     EXPECT_EQ(SourceIn(other, "use.x"), theirs);
 }
 
-// F15: an entry another record lets go is a candidate, with no inventory change.
 TEST_F(EquipmentWalkTest, UnequippingAnotherSlotFreesItsStackForAWaitingRecord)
 {
     const EntityId wearer = Wearer();
@@ -1963,8 +1890,6 @@ TEST_F(EquipmentWalkTest, ACountChangeOnATrackedEntryRescansItsHolder)
     EXPECT_EQ(EquipmentRebindWalks(Entities()), walks + 1);
 }
 
-// F10: an item the slot accepts by tag but whose occupies does not name it is
-// passed over, not chosen and refused on every press.
 TEST_F(EquipmentTest, CyclingPassesOverAnItemWhoseOccupiesDoesNotCoverTheSlot)
 {
     const ItemId wand = Entities().GetResource<ItemRegistry>().Define(
@@ -1991,9 +1916,6 @@ TEST_F(EquipmentTest, CyclingSkipsACandidateTheEquipRefuses)
     EXPECT_EQ(ResolvePersistableRef(world, Records()[0].Source), stick);
 }
 
-// What a person asks for and what the World decides (docs/gameplay/equipment.md,
-// "Locks"): a wearer's lock or a record's own refuses the first; a forced move
-// or unequip skips them and nothing else.
 namespace
 {
     class EquipmentLockTest : public EquipmentTest
@@ -2014,7 +1936,6 @@ namespace
             Declare();
         }
 
-        // A cursed ring whose curse is authored on the entry itself.
         EntityId AuthoredCurse()
         {
             const EntityId ring = Give(CursedRing);
@@ -2077,8 +1998,6 @@ TEST_F(EquipmentLockTest, ARecordIsTakenOffByItsKeyWithTheLocksASlotWouldMeet)
     EXPECT_EQ(State().Count, 0u);
 }
 
-// Two cursed rings, each holding its own curse: one authored on its entry, one
-// from an effect on its entry. Each locks its own record alone.
 TEST_F(EquipmentLockTest, ACurseLocksOnlyTheRecordWhoseEntryHoldsIt)
 {
     World& world = Entities();
@@ -2154,10 +2073,6 @@ TEST_F(EquipmentVocabularyTest, AForcedUnequipTakesOffACursedRing)
     EXPECT_EQ(State().Count, 0u);
 }
 
-// §B.4 against a fresh World: the wearer, its container, its entries and its
-// equipment saved through the scene serializer and loaded as new entities. Two
-// rings grant overlapping tags and add to one attribute; reconciling again
-// changes nothing, and taking one off takes exactly its own contributions.
 namespace
 {
     struct ShineRings
@@ -2197,8 +2112,6 @@ namespace
         return rings;
     }
 
-    // Every contributed stack on `wearer` is accounted for by a live effect's
-    // own record of what it granted.
     void ExpectContributionsAttributable(const World& world, EntityId wearer)
     {
         std::vector<std::pair<GameplayTagId, std::uint16_t>> granted;
@@ -2233,7 +2146,6 @@ namespace
         using EquipmentTest::Schema;
     };
 
-    // The body as its prefab authors it: what a save's patch is taken against.
     EntityBuildPackage BodyPrefab(EquipmentLayoutId layout)
     {
         EntityBuildPackage prefab;
@@ -2248,8 +2160,6 @@ namespace
     }
 }
 
-// The save path of docs/gameplay/saves.md: the body as a patch against its
-// prefab (sencha.bodies), what it holds as held records (sencha.held).
 TEST_F(EquipmentGateTest, WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttributable)
 {
     World& world = Entities();
@@ -2291,7 +2201,6 @@ TEST_F(EquipmentGateTest, WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttribu
             wearer = entity;
     });
     ASSERT_TRUE(wearer.IsValid());
-    // As a spawn gives its root the id its overlay kept.
     restored.AddComponent<PersistentIdComponent>(wearer, PersistentIdComponent{ bodyId });
     fresh.Runtime.FlushLifecycleRequests();
     (void)fresh.Runtime.BeginResidencyProcessing();
@@ -2333,7 +2242,6 @@ namespace
         ItemId Charm;
     };
 
-    // A layout with every slot a layout can have, and a charm that takes one.
     Charms DefineCharms(World& world)
     {
         EquipmentLayout many;
@@ -2471,7 +2379,6 @@ TEST_F(EquipmentGateTest, ARequestedGrantComesBackWithABodyAsRequestedAndFromIts
     EXPECT_EQ(std::as_const(restored).TryGet<ItemEntry>(source)->Definition, again.Sun);
 }
 
-// A row names its records in the World's EquipmentRecordLists; the list goes with the row.
 TEST_F(EquipmentTest, AWearersRecordListIsFreedWithItsEquipmentState)
 {
     const EquipmentRecordLists& lists = Entities().GetResource<EquipmentRecordLists>();
@@ -2494,7 +2401,6 @@ TEST_F(EquipmentTest, AWearersRecordListIsFreedWithItsEquipmentState)
     EXPECT_EQ(lists.Stats().Live, before);
 }
 
-// S5.1's audit rows: an ability's owned tags are contributions, so a save holds none.
 TEST_F(EquipmentGateTest, AnAbilitysOwnedTagIsAContributionASaveLeavesOut)
 {
     ASSERT_EQ(Gear().Equip(Hero, Give(WardRing)).Refusal, EquipmentRefusal::None);

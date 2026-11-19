@@ -12,7 +12,6 @@
 
 class World;
 
-// docs/gameplay/equipment.md, "Layouts".
 using EquipmentLayoutId = StrongId<struct EquipmentLayoutIdTag, std::uint32_t>;
 
 enum class SlotDepletion : std::uint8_t
@@ -37,14 +36,12 @@ struct EquipmentLayout
     std::vector<GameplayTagId> LockTags;
 };
 
-// A record's slots are a 32-bit mask.
 inline constexpr std::size_t kMaxEquipmentSlots = 32;
 inline constexpr std::uint8_t kNoEquipmentSlot = 0xFF;
 
 [[nodiscard]] const EquipmentLayout* FindEquipmentLayout(const World& world, EquipmentLayoutId id);
 [[nodiscard]] std::uint8_t FindEquipmentSlot(const EquipmentLayout& layout, std::string_view key);
 
-// The slot named, else every slot of the group it names, in layout order.
 [[nodiscard]] std::vector<std::uint8_t> EquipmentSlotsNamed(const EquipmentLayout& layout, std::string_view name);
 
 class EquipmentLayoutRegistry final : public NamedDefinitionRegistry<EquipmentLayoutId, EquipmentLayout>

@@ -177,7 +177,6 @@ bool TranslateSlotCost(const World& world, const AbilityCostRow& row, std::vecto
     const EntityId worn = WornIn(world, row.Actor, slot);
     if (!worn.IsValid())
         return false;
-    // inventory.item's arguments: the entry, no container, the count.
     arguments.push_back(AuthoredValue::Entity(worn));
     arguments.emplace_back();
     arguments.push_back(AuthoredValue::Int(count));

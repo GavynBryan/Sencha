@@ -14,7 +14,6 @@
 class World;
 struct EquipmentRecord;
 
-// docs/gameplay/equipment.md, "Equipping".
 enum class EquipmentRefusal : std::uint8_t
 {
     None,
@@ -81,18 +80,14 @@ private:
     FixedSimTime Now;
 };
 
-// For each name the item occupies: the slot asked for (the first name only),
-// else the first free one, else the first; no two names take one slot.
 [[nodiscard]] EquipmentRefusal ResolveEquipmentSlots(const World& world, const EquipmentLayout& layout,
                                                      std::span<const EquipmentRecord> worn, const ItemDefinition& item,
                                                      std::string_view asked, std::uint32_t& mask, std::uint8_t& primary);
 
-// The item's first `occupies` name covers the slot, and the slot accepts the item.
 [[nodiscard]] bool ItemTakesSlotFirst(const World& world, const EquipmentLayout& layout, std::uint8_t slot,
                                       const ItemDefinition& item);
 
 [[nodiscard]] bool EquipmentWearerLocked(const World& world, EntityId wearer);
-// The wearer's lock, or the record's own: its source holds one of its item's `equip.lock_tags`.
 [[nodiscard]] bool EquipmentRecordLocked(const World& world, EntityId wearer, const EquipmentRecord& record);
 
 void EndEquipmentRecord(World& world, EntityId wearer, std::size_t index);
@@ -100,7 +95,6 @@ void EndMaintained(World& world, const EquipmentRecord& record);
 
 [[nodiscard]] LeaseOwner EquipmentRecordOwner(EntityId source, std::uint32_t record);
 
-// Authority only; idempotent. Returns the records refused.
 std::size_t ReconcileEquipment(World& world, EntityId wearer, const FixedSimTime& now);
 void DeriveDueEquipmentRecords(World& world, EntityId wearer, const FixedSimTime& now);
 

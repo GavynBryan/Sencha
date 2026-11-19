@@ -42,7 +42,6 @@ namespace
 
         Query<Read<EquipmentState>> Wearers;
         std::vector<EntityId> Scratch;
-        // Sorted by wearer.
         std::vector<RebindScan> Scans;
         std::vector<RebindScan> NextScans;
         std::uint64_t Walks = 0;
@@ -93,7 +92,6 @@ namespace
                                                                          : SlotDepletion::Release;
     }
 
-    // For a wearer the pass already knows carries an EquipmentState.
     std::span<const EquipmentRecord> Worn(const World& world, const EquipmentRecordLists& lists, EntityId wearer)
     {
         return lists.Read(world.TryGet<EquipmentState>(wearer)->Records);
@@ -132,7 +130,6 @@ namespace
             const bool held = entry != nullptr && MayUseItem(world, wearer, source);
             if (held && entry->Count > 0)
                 continue;
-            // The last bomb finishes its throw first.
             if (held && HasLiveActivationFrom(world, wearer, source))
                 continue;
             if (held && OnDepleted(layout, record) == SlotDepletion::Hold)
@@ -147,7 +144,6 @@ namespace
         }
     }
 
-    // A waiting record may take an entry another record just let go, with no inventory change.
     std::uint64_t RecordsFingerprint(std::span<const EquipmentRecord> records)
     {
         std::uint64_t hash = kFnv1aOffsetBasis;
@@ -199,7 +195,6 @@ namespace
             { .Wearer = wearer, .Held = held, .Records = RecordsFingerprint(records) });
     }
 
-    // A worn entry, or one holding a worn entry, stays while its record is locked.
     bool AdmitMove(const World& world, EntityId entry)
     {
         const EntityId holder = ItemHolder(world, entry);

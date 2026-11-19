@@ -45,6 +45,5 @@ struct ItemDeclaration
 
 void RegisterItemDefinitionData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);
 
-// Interns the use entry in the World's AbilityGrantEntries.
 [[nodiscard]] bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, ItemDefinition& out,
                                           std::vector<std::string>& errors);

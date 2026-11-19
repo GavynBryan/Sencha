@@ -34,7 +34,6 @@ struct ItemGrantParameters
     friend bool operator==(const ItemGrantParameters&, const ItemGrantParameters&) = default;
 };
 
-// docs/gameplay/inventory.md, "Item definitions"; equip fields: docs/gameplay/equipment.md.
 struct ItemDefinition
 {
     std::string Name{};
@@ -44,7 +43,6 @@ struct ItemDefinition
     std::vector<EffectId> TakeEffects{};
     std::vector<ItemAttributeSeed> Attributes{};
     std::vector<GameplayTagId> InstanceTags{};
-    // In the World's AbilityGrantEntries.
     std::uint16_t UseEntry = kAbilityNoGrantEntry;
     std::vector<std::string> Occupies{};
     std::vector<ItemEquipEffect> EquipEffects{};

@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <type_traits>
 
-// docs/gameplay/counters.md. One named integer that is not zero, on a record
-// entity whose Held names the world or a participant's body.
 struct SENCHA_COMPONENT("sencha.counter") SENCHA_AUTHORITY_MATERIALIZED Counter
 {
     GameplayTagId Name;

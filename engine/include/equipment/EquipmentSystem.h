@@ -8,7 +8,6 @@ class EngineSchedule;
 class World;
 struct FixedLogicContext;
 
-// docs/gameplay/equipment.md, "The equipment pass".
 void RunEquipmentPass(World& world, const FixedSimTime& now);
 [[nodiscard]] std::uint64_t EquipmentRebindWalks(const World& world);
 

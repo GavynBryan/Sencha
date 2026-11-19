@@ -66,7 +66,6 @@ namespace
         std::vector<Heard> Occurrences;
     };
 
-    // One World with the counter vocabulary bound, as the engine binds it.
     struct CounterWorld
     {
         CounterWorld()

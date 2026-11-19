@@ -38,7 +38,6 @@ namespace
         return std::format("{} ({})", EntityLabel(document, entity), PersistentEntityIdToString(id));
     }
 
-    // The identified entries the wearer holds whose item goes into `slot` first.
     std::vector<EntryChoice> EntryChoices(const EditorComponentInspectorContext& context, const EquipmentLayout& layout,
                                           std::uint8_t slot)
     {
@@ -76,7 +75,6 @@ namespace
             }
     }
 
-    // The record an equip of `entry` into `slot` would leave, replacing what holds its slots.
     bool Wear(const World& world, const EquipmentLayout& layout, EquipmentRecordList& worn, const EntryChoice& entry,
               std::uint8_t slot)
     {
@@ -172,7 +170,6 @@ namespace
             {
                 const EquipmentLayoutRegistry* layouts = world.TryGetResource<EquipmentLayoutRegistry>();
                 after.Layout = layouts != nullptr ? layouts->Find(value) : EquipmentLayoutId{};
-                // Its records name slots of the layout they were made in.
                 if (!after.Layout.IsValid() || (held->Count > 0 && after.Layout != held->Layout))
                     return PropertyEditResult::Refused;
             }

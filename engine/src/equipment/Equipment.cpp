@@ -35,7 +35,6 @@ namespace
         return effects != nullptr ? effects->Get(effect) : nullptr;
     }
 
-    // Owned by the handle the record last held, alive or not, and by whatever its source resolves to now.
     std::vector<EntityId> Maintained(const World& world, const EquipmentRecord& record)
     {
         std::vector<EntityId> effects;
@@ -56,7 +55,6 @@ namespace
         return grants;
     }
 
-    // An Instant effect would write its modifiers into base at every apply.
     bool IsMaintainable(const World& world, EffectId effect)
     {
         const EffectDefinition* definition = EffectOf(world, effect);
@@ -74,7 +72,6 @@ namespace
         return true;
     }
 
-    // Whether the wearer's tag container holds every tag `effects` grant once `ending` has ended.
     bool TagsFit(const World& world, EntityId wearer, std::span<const ItemEquipEffect> effects,
                  std::span<const EntityId> ending)
     {
@@ -243,7 +240,6 @@ EquipmentResult Equipment::Equip(EntityId wearer, EntityId entry, std::string_vi
         refusal != EquipmentRefusal::None)
         return Refused(refusal);
 
-    // Checked against the state after what it replaces has ended.
     std::vector<std::size_t> replaced;
     std::vector<EntityId> ending;
     for (std::size_t i = 0; i < records.size(); ++i)
@@ -354,7 +350,6 @@ EquipmentResult Equipment::Cycle(EntityId wearer, std::string_view group)
                 && !wornElsewhere))
             fits.push_back(entry);
     }
-    // From the one after the current, wrapping; a refused equip changes nothing.
     const auto at = std::ranges::find(fits, current);
     const std::size_t start = at == fits.end() ? 0 : static_cast<std::size_t>(at - fits.begin()) + 1;
     const std::string key = first.Key;
@@ -422,7 +417,6 @@ namespace
                 return EquipmentDerivation::RefusedByContent;
             }
 
-        // Kept: one instance per wanted effect, of its effect and scale, still current.
         const std::vector<EntityId> have = Maintained(world, record);
         std::vector<EntityId> kept(want.size());
         std::vector<EntityId> extra;
@@ -537,7 +531,6 @@ EquipmentLayoutId RedefineEquipmentLayout(World& world, std::string_view name, E
     EquipmentLayoutRegistry& layouts = world.GetResource<EquipmentLayoutRegistry>();
     const EquipmentLayoutId id = layouts.Find(name);
     const EquipmentLayout* was = id.IsValid() ? layouts.Get(id) : nullptr;
-    // Each old slot's index in the new layout, by key; kNoEquipmentSlot where it went.
     std::vector<std::uint8_t> moved;
     if (was != nullptr)
         for (const EquipmentSlot& slot : was->Slots)

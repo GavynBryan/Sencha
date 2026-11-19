@@ -6,7 +6,6 @@
 
 #include <cstdint>
 
-// The holder as a wire entity: zero is the world, or a holder this peer is not sent.
 struct HeldWire
 {
     std::uint64_t Holder = 0;

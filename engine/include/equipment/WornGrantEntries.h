@@ -11,7 +11,6 @@ class World;
 struct EquipmentSlot;
 struct ItemDefinition;
 
-// docs/gameplay/equipment.md, "Worn grant entries".
 [[nodiscard]] std::vector<AbilityGrantEntry> WornGrantEntries(const World& world, EffectId effect,
                                                               const EquipmentSlot& slot, const ItemDefinition& item);
 

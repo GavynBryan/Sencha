@@ -1,7 +1,5 @@
 #pragma once
 
-// Arguments: `holder` (entity), `count` (int, default 1).
-
 #include <abilities/AbilityCostProviders.h>
 #include <ecs/World.h>
 

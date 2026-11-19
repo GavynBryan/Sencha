@@ -7,22 +7,18 @@
 #include <cstdint>
 #include <type_traits>
 
-// docs/gameplay/inventory.md. On a held record entity: its Held names its
-// container. Zero units is depleted.
 struct SENCHA_COMPONENT("sencha.item_entry") SENCHA_AUTHORITY_MATERIALIZED ItemEntry
 {
     ItemId Definition;
     std::uint32_t Count = 1;
 };
 
-// Zero capacity is kItemContainerMostEntries; an invalid tag accepts anything.
 struct SENCHA_COMPONENT("sencha.item_container") ItemContainer
 {
     std::uint16_t Capacity = 0;
     GameplayTagId Accepts;
 };
 
-// Takes what it holds, or an authored count of a definition.
 struct SENCHA_COMPONENT("sencha.item_pickup") ItemPickup
 {
     ItemId Definition;

@@ -1,10 +1,3 @@
-// Records what equipment costs per tick: the ability pass over equipped
-// instances against the same effects applied directly, the movement tag
-// projections, a waiting record's rebinding with unrelated holders changing,
-// and the first pass after many wearers' records arrive at once. Env-gated:
-// SENCHA_EQUIPMENT_BENCH_OUT names the JSON written (a .csv beside it); run it
-// from the profile preset (docs/plans/evidence/equipment-overlay/results.md).
-
 #include "BenchRecorder.h"
 
 #include <abilities/AbilityDefinitionData.h>
@@ -54,8 +47,6 @@ namespace
     constexpr std::string_view kInstant = R"({
         "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
 
-    // An authority World with a layout of two ring slots and a holding use.x,
-    // rings whose effect grants one ability, and bombs that hold their slot.
     struct EquipmentWorld
     {
         explicit EquipmentWorld(std::size_t ringSlots = 2, std::size_t grantsPerRing = 1)
@@ -127,7 +118,6 @@ namespace
 
         FixedSimTime Time() const { return FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }; }
 
-        // Microseconds `fn` takes, averaged over `ticks` calls.
         template <typename Fn>
         double Average(int ticks, Fn&& fn)
         {
@@ -150,9 +140,6 @@ namespace
         std::uint64_t Now = 0;
     };
 
-    // The ability pass and the equipment pass over `wearers`, each wearing one
-    // ring through Equipment, or holding it with the ring's effect applied
-    // directly: the per-instance grant table's own cost is the difference.
     void RecordOverlay(std::size_t wearers, bool viaEquipment)
     {
         EquipmentWorld bench;
@@ -179,8 +166,6 @@ namespace
                         bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
     }
 
-    // `wearers` each wearing `records` rings, every ring granting `grantsPerRing`
-    // abilities: the two passes once everything is derived.
     void RecordWorn(std::size_t wearers, std::size_t records, std::size_t grantsPerRing)
     {
         EquipmentWorld bench(records, grantsPerRing);
@@ -207,8 +192,6 @@ namespace
                         bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
     }
 
-    // The mode and support projections over `characters` that stand still: the
-    // per-tick read that finds nothing to write.
     void RecordProjection(std::size_t characters)
     {
         World world;
@@ -246,8 +229,6 @@ namespace
         Recorder.Record(std::format("projection.{}.still", characters), "us", total / ticks);
     }
 
-    // `holders` wearers each with a record waiting in use.x, and one of them
-    // given a pebble every tick: the walks the pass takes, and its time.
     void RecordUnrelatedHolders(std::size_t holders)
     {
         EquipmentWorld bench;
@@ -278,8 +259,6 @@ namespace
         Recorder.Record(std::format("rebind.{}.equipment_pass", holders), "us", pass);
     }
 
-    // `wearers` whose two records each arrive together, as a zone's NPCs do when
-    // it loads: the first pass derives every one of them.
     void RecordAdoptionBurst(std::size_t wearers)
     {
         EquipmentWorld bench;
@@ -287,7 +266,6 @@ namespace
         for (std::size_t i = 0; i < wearers; ++i)
         {
             const EntityId wearer = bench.Wearer();
-            // Giving moves the wearer's row, so its records are written once, after.
             EquipmentRecordList worn = CopyEquipment(world, wearer);
             for (std::uint8_t slot = 0; slot < 2; ++slot)
             {

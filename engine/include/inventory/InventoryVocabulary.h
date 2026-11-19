@@ -13,7 +13,6 @@ class FixedSimulationLoop;
 class Logger;
 class World;
 
-// docs/gameplay/inventory.md, "Vocabulary".
 inline constexpr std::string_view kInventoryTakeVerb = "inventory.take";
 inline constexpr std::string_view kInventoryGiveVerb = "inventory.give";
 inline constexpr std::string_view kInventoryTransferVerb = "inventory.transfer";

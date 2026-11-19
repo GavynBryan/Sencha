@@ -6,7 +6,6 @@
 
 #include <cstdint>
 
-// The name by its tag's wire key.
 struct CounterWire
 {
     std::uint32_t Name = 0;

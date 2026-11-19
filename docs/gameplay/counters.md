@@ -87,6 +87,12 @@ in `HeldRecordIndex`.
   `HeldRecordIndex` (`Key`, `FindKeyed`), so finding a counter reads the
   records of that name, one per holder that has it, not everything the holder
   holds.
+- **Cost.** `CounterBench.Generate` (`test/runtime/CounterBench.cpp`, run with
+  `SENCHA_COUNTER_BENCH_OUT` naming the JSON it writes) records a first write,
+  a read of a set and an unset counter, a zero crossing and a capture at 50 and
+  500 world counters. A counter is made in one placement already settled
+  (`PlaceHeldRecord`), and its capture asks only the serializers of components
+  it carries.
 - **Revision.** A counter changing moves its holder's revision like any other
   record beneath it, so a view of a body's entries rebuilds when the body's
   counters change (`docs/deferred.md`, "A held record revision per kind").
