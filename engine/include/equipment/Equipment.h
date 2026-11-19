@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
 #include <ecs/LeaseOwner.h>
 #include <equipment/EquipmentLayout.h>
@@ -30,6 +31,27 @@ enum class EquipmentRefusal : std::uint8_t
     MissingAttribute,
     NotMaintained,
     Undeclared,
+};
+
+template <>
+struct EnumSchema<EquipmentRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ EquipmentRefusal::None, "none" },
+        EnumValue{ EquipmentRefusal::NotAuthority, "not_authority" },
+        EnumValue{ EquipmentRefusal::Missing, "missing" },
+        EnumValue{ EquipmentRefusal::NotPermitted, "not_permitted" },
+        EnumValue{ EquipmentRefusal::NotEquippable, "not_equippable" },
+        EnumValue{ EquipmentRefusal::AlreadyEquipped, "already_equipped" },
+        EnumValue{ EquipmentRefusal::NoSlot, "no_slot" },
+        EnumValue{ EquipmentRefusal::NotAccepted, "not_accepted" },
+        EnumValue{ EquipmentRefusal::Locked, "locked" },
+        EnumValue{ EquipmentRefusal::GrantRoom, "grant_room" },
+        EnumValue{ EquipmentRefusal::TagRoom, "tag_room" },
+        EnumValue{ EquipmentRefusal::MissingAttribute, "missing_attribute" },
+        EnumValue{ EquipmentRefusal::NotMaintained, "not_maintained" },
+        EnumValue{ EquipmentRefusal::Undeclared, "undeclared" },
+    };
 };
 
 struct EquipmentResult

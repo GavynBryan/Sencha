@@ -43,8 +43,10 @@
 #include <save/EngineSaveSections.h>
 #include <equipment/EquipmentKit.h>
 #include <equipment/EquipmentSystem.h>
+#include <equipment/EquipmentVocabulary.h>
 #include <inventory/InventoryKit.h>
 #include <inventory/InventorySystem.h>
+#include <inventory/InventoryVocabulary.h>
 #include <logic/CounterVocabulary.h>
 #include <save/SavedGameVocabulary.h>
 
@@ -1490,8 +1492,10 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
     VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,
                                      LoggingState.GetLogger<CounterOperations>(), EventDispatcherState.get());
-    VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState);
-    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState);
+    VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState,
+                                      LoggingState.GetLogger<InventoryOperations>());
+    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState,
+                                      LoggingState.GetLogger<EquipmentOperations>());
 
     // Only where a window presents: a server holds no attachments.
     if (PresentsAWindow(Configuration))

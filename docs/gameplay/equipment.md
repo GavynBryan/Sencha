@@ -369,7 +369,11 @@ engine's own (`equipment/EquipmentVocabulary.h`):
 | `equipment.in_slot` (query, entity) | `wearer`, `slot` | The entry a slot holds; unavailable when it holds none |
 | `equipment.sources` (query, entities) | `wearer`, `tag` | Every worn entry whose item carries the tag |
 
-A verb refused for any equipment reason answers `Refused`.
+A verb refused for any equipment reason answers `Refused` and logs the reason
+by name at debug level, such as `equipment.equip refused: tag_room`.
+`EquipmentRefusal` has an `EnumSchema`, so native code, a console and a HUD
+read the same name through `EnumToString`; carrying the reason in the verb's
+answer waits on typed verb answers.
 
 **The `equipment.slot` cost provider.** It spends units from the entry a slot
 holds: `{ "slot": "use.x", "count": 1 }`. It owns no resource: it spends

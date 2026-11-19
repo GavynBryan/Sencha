@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -25,6 +26,21 @@ enum class InventoryRefusal : std::uint8_t
     TooDeep,
     NotPermitted,
     Withheld,
+};
+
+template <>
+struct EnumSchema<InventoryRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ InventoryRefusal::None, "none" },
+        EnumValue{ InventoryRefusal::NotAuthority, "not_authority" },
+        EnumValue{ InventoryRefusal::Missing, "missing" },
+        EnumValue{ InventoryRefusal::NotAccepted, "not_accepted" },
+        EnumValue{ InventoryRefusal::ContainerFull, "container_full" },
+        EnumValue{ InventoryRefusal::TooDeep, "too_deep" },
+        EnumValue{ InventoryRefusal::NotPermitted, "not_permitted" },
+        EnumValue{ InventoryRefusal::Withheld, "withheld" },
+    };
 };
 
 enum class ItemChangeClass : std::uint8_t

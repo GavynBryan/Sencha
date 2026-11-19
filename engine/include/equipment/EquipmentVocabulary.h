@@ -5,11 +5,13 @@
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
+#include <equipment/Equipment.h>
 
 #include <string_view>
 #include <vector>
 
 class FixedSimulationLoop;
+class Logger;
 class World;
 
 // docs/gameplay/equipment.md, "Vocabulary".
@@ -25,9 +27,10 @@ void DeclareEquipmentVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class EquipmentOperations
 {
 public:
-    EquipmentOperations(World& world, const FixedSimulationLoop& clock)
+    EquipmentOperations(World& world, const FixedSimulationLoop& clock, const Logger& log)
         : Entities(&world)
         , Clock(&clock)
+        , Log(&log)
     {
     }
 
@@ -36,8 +39,11 @@ public:
     VerbAdmission Cycle(const VerbInvocation& invocation);
 
 private:
+    VerbAdmission Answer(std::string_view verb, EquipmentRefusal refusal) const;
+
     World* Entities;
     const FixedSimulationLoop* Clock;
+    const Logger* Log;
 };
 
 inline VerbAdmission InvokeEquipmentEquip(EquipmentOperations& operations, const VerbInvocation& invocation)

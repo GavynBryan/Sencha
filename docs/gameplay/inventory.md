@@ -141,7 +141,10 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 
 A response's condition gates on `inventory.count` with `require`
 (`{ "min": 3 }` for "holds at least three"). A verb refused for any inventory
-reason answers `Refused`.
+reason answers `Refused` and logs the reason by name at debug level, such as
+`inventory.give refused: container_full`. `InventoryRefusal` has an
+`EnumSchema`, so native code, a console and a HUD read the same name through
+`EnumToString`.
 
 ## Spending, depletion and the inventory pass
 

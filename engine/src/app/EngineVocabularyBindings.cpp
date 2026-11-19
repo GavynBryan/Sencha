@@ -106,9 +106,9 @@ void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQuery
     Queries.push_back(BindCounterQuery(queries, std::as_const(Entities)));
 }
 
-void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
+void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log)
 {
-    Items = std::make_unique<InventoryOperations>(Entities, Clock);
+    Items = std::make_unique<InventoryOperations>(Entities, Clock, log);
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), *Items));
     Verbs.push_back(verbs.Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), *Items));
@@ -118,9 +118,9 @@ void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQuer
     Queries.push_back(BindInventoryQuery(queries, std::as_const(Entities)));
 }
 
-void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
+void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log)
 {
-    Worn = std::make_unique<EquipmentOperations>(Entities, Clock);
+    Worn = std::make_unique<EquipmentOperations>(Entities, Clock, log);
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeEquipmentEquip>(catalog.Find(kEquipmentEquipVerb), *Worn));
     Verbs.push_back(verbs.Bind<&InvokeEquipmentUnequip>(catalog.Find(kEquipmentUnequipVerb), *Worn));

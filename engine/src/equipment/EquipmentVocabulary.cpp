@@ -1,6 +1,8 @@
 #include <equipment/EquipmentVocabulary.h>
 
 #include <authored/AuthoredValue.h>
+#include <core/logging/Logger.h>
+#include <core/serialization/Archive.h>
 #include <ecs/World.h>
 #include <equipment/Equipment.h>
 #include <equipment/EquipmentComponents.h>
@@ -31,11 +33,6 @@ namespace
                         std::vector<DataFieldSchema> arguments)
     {
         return MakeGameplayVerb(name, std::move(label), std::move(description), "Equipment", std::move(arguments));
-    }
-
-    VerbAdmission AdmissionOf(EquipmentRefusal refusal)
-    {
-        return refusal == EquipmentRefusal::None ? VerbAdmission::Accepted : VerbAdmission::Refused;
     }
 
     EntityId WornIn(const World& world, EntityId wearer, std::string_view slot)
@@ -118,6 +115,14 @@ void DeclareEquipmentVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
     (void)queries.Declare(std::move(sources));
 }
 
+VerbAdmission EquipmentOperations::Answer(std::string_view verb, EquipmentRefusal refusal) const
+{
+    if (refusal == EquipmentRefusal::None)
+        return VerbAdmission::Accepted;
+    Log->Debug("{} refused: {}", verb, EnumToString(refusal));
+    return VerbAdmission::Refused;
+}
+
 VerbAdmission EquipmentOperations::Equip(const VerbInvocation& invocation)
 {
     EntityId wearer;
@@ -127,7 +132,7 @@ VerbAdmission EquipmentOperations::Equip(const VerbInvocation& invocation)
         || !invocation.Arguments->TryGetEntity(1, entry))
         return VerbAdmission::InvalidArguments;
     (void)invocation.Arguments->TryGetString(2, slot);
-    return AdmissionOf(Equipment(*Entities, Clock->TimeOfTick(invocation.Tick)).Equip(wearer, entry, slot).Refusal);
+    return Answer(kEquipmentEquipVerb, Equipment(*Entities, Clock->TimeOfTick(invocation.Tick)).Equip(wearer, entry, slot).Refusal);
 }
 
 VerbAdmission EquipmentOperations::Unequip(const VerbInvocation& invocation)
@@ -137,7 +142,8 @@ VerbAdmission EquipmentOperations::Unequip(const VerbInvocation& invocation)
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, wearer)
         || !invocation.Arguments->TryGetString(1, slot))
         return VerbAdmission::InvalidArguments;
-    return AdmissionOf(
+    return Answer(
+        kEquipmentUnequipVerb,
         Equipment(*Entities, Clock->TimeOfTick(invocation.Tick)).Unequip(wearer, slot, ItemChangeOf(invocation, 2)).Refusal);
 }
 
@@ -148,7 +154,7 @@ VerbAdmission EquipmentOperations::Cycle(const VerbInvocation& invocation)
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, wearer)
         || !invocation.Arguments->TryGetString(1, group))
         return VerbAdmission::InvalidArguments;
-    return AdmissionOf(Equipment(*Entities, Clock->TimeOfTick(invocation.Tick)).Cycle(wearer, group).Refusal);
+    return Answer(kEquipmentCycleVerb, Equipment(*Entities, Clock->TimeOfTick(invocation.Tick)).Cycle(wearer, group).Refusal);
 }
 
 std::vector<AuthoredQueryBindingToken> BindEquipmentQueries(AuthoredQueryDispatcher& dispatcher, const World& world)

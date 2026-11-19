@@ -21,6 +21,8 @@
 #include <authored/WorldVocabulary.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/logging/ILogSink.h>
+#include <core/serialization/Archive.h>
 #include <core/serialization/JsonArchive.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -839,8 +841,16 @@ protected:
         return AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = std::move(path) });
     }
 
+    struct Lines final : ILogSink
+    {
+        void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
+        std::vector<std::string> Written;
+    };
+
+    LoggingProvider Logging;
+    Lines& Said = Logging.AddSink<Lines>();
     FixedSimulationLoop Clock;
-    InventoryOperations Operations{ Entities(), Clock };
+    InventoryOperations Operations{ Entities(), Clock, Logging.GetLogger<InventoryOperations>() };
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::vector<VerbBindingToken> Tokens;
@@ -869,6 +879,8 @@ TEST_F(InventoryVocabularyTest, TheVerbsChangeWhatTheCountSays)
     const EntityId wardrobe = Container({ .Capacity = 0, .Accepts = Wearable });
     EXPECT_EQ(Invoke(kInventoryGiveVerb, { { "into", wardrobe } }, { Definition("asset://items/arrow.sdata"), Count(1) }),
               VerbAdmission::Refused);
+    ASSERT_FALSE(Said.Written.empty());
+    EXPECT_EQ(Said.Written.back(), "inventory.give refused: not_accepted") << "the reason by name, not number";
 }
 
 TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWhatIsHeld)

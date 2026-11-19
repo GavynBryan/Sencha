@@ -49,6 +49,8 @@
 #include <world/RuntimeWorld.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/logging/ILogSink.h>
+#include <core/serialization/Archive.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/World.h>
 #include <equipment/EquipmentKit.h>
@@ -970,8 +972,16 @@ namespace
             return Queries->Evaluate(Queries->Registry().Resolve(query), arguments, result);
         }
 
+        struct Lines final : ILogSink
+        {
+            void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
+            std::vector<std::string> Written;
+        };
+
+        LoggingProvider Logging;
+        Lines& Said = Logging.AddSink<Lines>();
         FixedSimulationLoop Clock;
-        EquipmentOperations Operations{ Entities(), Clock };
+        EquipmentOperations Operations{ Entities(), Clock, Logging.GetLogger<EquipmentOperations>() };
         std::unique_ptr<VerbDispatcher> Verbs;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         std::vector<VerbBindingToken> Tokens;
@@ -1009,6 +1019,18 @@ TEST_F(EquipmentVocabularyTest, TheVerbsChangeWhatTheQueriesSee)
     EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Accepted);
     EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Refused)
         << "nothing is there to take off";
+    ASSERT_FALSE(Said.Written.empty());
+    EXPECT_EQ(Said.Written.back(), "equipment.unequip refused: missing");
+}
+
+TEST(EquipmentRefusals, EveryRefusalHasAName)
+{
+    for (std::uint8_t value = 0; value <= static_cast<std::uint8_t>(EquipmentRefusal::Undeclared); ++value)
+        EXPECT_FALSE(EnumToString(static_cast<EquipmentRefusal>(value)).empty()) << int(value);
+    for (std::uint8_t value = 0; value <= static_cast<std::uint8_t>(InventoryRefusal::Withheld); ++value)
+        EXPECT_FALSE(EnumToString(static_cast<InventoryRefusal>(value)).empty()) << int(value);
+    EXPECT_EQ(EnumToString(EquipmentRefusal::TagRoom), "tag_room");
+    EXPECT_EQ(EnumToString(InventoryRefusal::ContainerFull), "container_full");
 }
 
 TEST_F(EquipmentVocabularyTest, AWornSlotTranslatesToTheItemsEntry)
