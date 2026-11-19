@@ -4,9 +4,19 @@
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 class GameplayTagRegistry;
+
+enum class GameplayTagWrite : std::uint8_t
+{
+    Unchanged,
+    Added,
+    Restacked,
+    Removed,
+    Full,
+};
 
 //=============================================================================
 // GameplayTagContainer
@@ -37,21 +47,22 @@ struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
     std::uint16_t Baseline[Capacity];
     std::uint8_t  Count = 0;
 
-    // True iff the tag was absent and is now present; asserts in debug when full.
-    bool Grant(GameplayTagId tag, std::uint16_t stacks = 1);
+    // Counts saturate at 0xFFFF; a baseline stack never displaces a contributed one.
+    GameplayTagWrite Grant(GameplayTagId tag, std::uint16_t stacks = 1);
 
     // Never takes the baseline. True iff the last stack was just removed.
     bool Revoke(GameplayTagId tag, std::uint16_t stacks = 1);
 
-    bool GrantBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
+    GameplayTagWrite GrantBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
     bool RevokeBaseline(GameplayTagId tag, std::uint16_t stacks = 1);
 
     bool Erase(GameplayTagId tag);
 
-    bool SetContribution(GameplayTagId tag, std::uint16_t stacks);
+    GameplayTagWrite SetContribution(GameplayTagId tag, std::uint16_t stacks);
 
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
     [[nodiscard]] bool CanHold(GameplayTagId tag) const { return Count < Capacity || HasExact(tag); }
+    [[nodiscard]] bool CanHoldAll(std::span<const GameplayTagId> tags) const;
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t BaselineCount(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t ContributedCount(GameplayTagId tag) const;

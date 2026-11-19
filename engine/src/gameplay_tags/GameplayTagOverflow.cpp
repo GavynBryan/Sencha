@@ -5,6 +5,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <algorithm>
 #include <utility>
 
 void NoteGameplayTagOverflow(World& world, EntityId holder, GameplayTagId tag)
@@ -17,6 +18,17 @@ void NoteGameplayTagOverflow(World& world, EntityId holder, GameplayTagId tag)
         overflow.FirstTag = tag;
     }
     ++overflow.Refused;
+}
+
+bool AdmitGameplayTags(World& world, EntityId holder, const GameplayTagContainer& tags,
+                       std::span<const GameplayTagId> granted)
+{
+    if (tags.CanHoldAll(granted))
+        return true;
+    const auto refused =
+        std::ranges::find_if(granted, [&](GameplayTagId tag) { return tag.IsValid() && !tags.HasExact(tag); });
+    NoteGameplayTagOverflow(world, holder, refused != granted.end() ? *refused : GameplayTagId{});
+    return false;
 }
 
 void ReportGameplayTagOverflow(World& world, const Logger& log)

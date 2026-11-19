@@ -50,9 +50,10 @@ namespace
     {
         GameplayTagContainer tags;
         for (std::size_t i = 0; i < shared; ++i)
-            EXPECT_TRUE(tags.Grant(machine.Find(std::format("Shared.T{}", i))));
+            EXPECT_EQ(tags.Grant(machine.Find(std::format("Shared.T{}", i))), GameplayTagWrite::Added);
         for (std::size_t i = 0; i < owned; ++i)
-            EXPECT_TRUE(tags.Grant(machine.Find(std::format("Owned.T{}", i)), static_cast<std::uint16_t>(i + 2)));
+            EXPECT_EQ(tags.Grant(machine.Find(std::format("Owned.T{}", i)), static_cast<std::uint16_t>(i + 2)),
+                      GameplayTagWrite::Added);
         return tags;
     }
 

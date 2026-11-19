@@ -151,7 +151,10 @@ Each mode's active tag, and `movement.grounded`, is **projected**
 `ModeTagProjectionSystem` sets the active mode's tag to exactly one
 contributed stack and every other mode's to none (`SetContribution`); it
 reads first and writes only where the tags differ, so a still character's
-container is never written. Setting rather than adding covers every way a mode
+container is never written. It withdraws the old mode's stack before adding
+the new one's, so a full container changes mode in place; a tag a full
+container cannot take is refused and counted without a write
+(`docs/gameplay/abilitykit.md`, D-A). Setting rather than adding covers every way a mode
 is set (a transition, a load, a rollback) and whatever a decode wrote. The
 stack is a contribution, so a save leaves it out and a restored character is
 tagged again with no transition.

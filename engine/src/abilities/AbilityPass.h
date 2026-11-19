@@ -86,6 +86,7 @@ struct AbilityPassBuffers
     std::vector<AbilityCostBatch> CostBatches;
     std::vector<AuthoredValue> CostTranslating;
     std::vector<AbilityCueEmission> Emitted;
+    std::vector<GameplayTagId> StartTags;
 };
 
 struct AbilityCommitResult
@@ -157,6 +158,8 @@ private:
     AbilityCommitResult Commit(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                                std::uint8_t groups);
     void StartCooldown(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition);
+    [[nodiscard]] bool StartTagsFit(const AbilityActor& actor, const AbilityDefinition& definition, bool cooldown,
+                                    bool costed);
 
     // Execution (AbilityPass.cpp).
     void EnterPhase(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
@@ -218,4 +221,5 @@ private:
     std::vector<AbilityCostBatch>& CostBatches;
     std::vector<AuthoredValue>& CostTranslating;
     std::vector<AbilityCueEmission>& Emitted;
+    std::vector<GameplayTagId>& StartTags;
 };

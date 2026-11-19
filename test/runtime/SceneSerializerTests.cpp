@@ -373,7 +373,7 @@ TEST(SceneSerializer, TagsAndAttributesRoundTripByName)
 
     // Authored, so it persists; a contribution would not be saved.
     GameplayTagContainer tags{};
-    ASSERT_TRUE(tags.GrantBaseline(*controlled));
+    ASSERT_EQ(tags.GrantBaseline(*controlled), GameplayTagWrite::Added);
     source.Components.AddComponent(entity, tags);
 
     AttributeSet attributes{};

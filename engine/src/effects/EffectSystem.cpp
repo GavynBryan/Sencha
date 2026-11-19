@@ -305,6 +305,9 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         return {};
     }
 
+    const GameplayTagContainer* held = std::as_const(world).TryGet<GameplayTagContainer>(target);
+    if (held != nullptr && !AdmitGameplayTags(world, target, *held, def->GrantedTags))
+        return {};
     const EffectApplicationAdmission* admission = std::as_const(world).TryGetResource<EffectApplicationAdmission>();
     if (admission != nullptr && admission->Admit != nullptr && !admission->Admit(world, target, effect))
         return {};
@@ -326,20 +329,13 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     }
 
     // Only what was granted is recorded, so ending never revokes a stack it did not add.
-    if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target))
+    if (held != nullptr)
     {
+        GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(target);
         for (GameplayTagId tag : def->GrantedTags)
-        {
-            if (!tag.IsValid() || ae.GrantedTagCount == kEffectGrantedTagCapacity)
-                continue;
-            if (!tags->CanHold(tag))
-            {
-                NoteGameplayTagOverflow(world, target, tag);
-                continue;
-            }
-            tags->Grant(tag);
-            ae.GrantedTags[ae.GrantedTagCount++] = tag;
-        }
+            if (tag.IsValid() && ae.GrantedTagCount < kEffectGrantedTagCapacity
+                && tags.Grant(tag) != GameplayTagWrite::Full)
+                ae.GrantedTags[ae.GrantedTagCount++] = tag;
     }
 
     // Persistent, so zone moves and detaches never strand the tags it granted.

@@ -5,6 +5,7 @@
 
 #include <core/serialization/Archive.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -42,7 +43,7 @@ bool WriteGameplayTags(IWriteArchive& archive,
 bool ReadGameplayTags(IReadArchive& archive,
                       GameplayTagContainer& tags,
                       const GameplayTagRegistry& registry,
-                      std::vector<std::string>* dropped)
+                      std::vector<DroppedGameplayTag>* dropped)
 {
     tags.Clear();
 
@@ -63,14 +64,14 @@ bool ReadGameplayTags(IReadArchive& archive,
         const GameplayTagId id = registry.FindTag(name);
         if (!id.IsValid())
             continue; // tag not in this registry's vocabulary: skip, keep loading
+        const auto held = static_cast<std::uint16_t>(std::clamp<std::uint32_t>(stacks, 1u, 0xFFFFu));
         if (!registry.ProjectedBy(id).empty())
         {
             if (dropped != nullptr)
-                dropped->push_back(std::move(name));
-            continue;
+                dropped->push_back({ std::move(name), GameplayTagDrop::Projected });
         }
-
-        tags.GrantBaseline(id, static_cast<std::uint16_t>(stacks == 0 ? 1u : stacks));
+        else if (tags.GrantBaseline(id, held) == GameplayTagWrite::Full && dropped != nullptr)
+            dropped->push_back({ std::move(name), GameplayTagDrop::Full });
     }
     archive.End(); // tags array
     archive.End(); // root object

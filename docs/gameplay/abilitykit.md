@@ -30,13 +30,31 @@ the minimum vocabulary, not its limit.
 revoke decrements and the last stack removes.
 
 **Capacity.** 32 tags, a POD bound that keeps the container in a chunk row. A
-grant of a tag new to a full container (`CanHold` false) is refused, whatever
-writes it: an effect's granted tag, an ability's owned tag, or `tags.grant`.
-Each refusal is counted in the World's `GameplayTagOverflow` resource
-(`NoteGameplayTagOverflow`), and the ability system logs once when refusals
-begin, naming the first holder and tag, and once when a tick passes without
-one, with the total (`ReportGameplayTagOverflow`). Nothing else on the entity
-is affected; the refused tag is simply not held.
+write of a tag new to a full container is refused, whatever writes it: the
+container's writes return `GameplayTagWrite::Full` and change nothing. One
+policy holds for every writer: what will not fit is refused whole, and the
+refusal is counted.
+- An ability start whose owned tags, with the tags its start cooldown and its
+  lasting start costs give the actor, would not all fit is refused
+  (`AbilityRefusal::TagsFull`). A cooldown started on commit whose tags would
+  not fit fails its cost group, before anything is paid.
+- A lasting effect whose granted tags would not all fit is not applied:
+  `ApplyEffect` returns no entity.
+- `tags.grant` is refused.
+- A projection leaves its tag off and writes nothing, so the container's
+  `Changed<>` does not move; it is refused again, and counted, each tick it
+  would still not fit.
+- A scene drops each tag past the cap and logs it, as it does each attribute
+  past an entity's 16.
+
+`AdmitGameplayTags` is the one check for several tags at once; it counts each
+refusal in the World's `GameplayTagOverflow` resource
+(`NoteGameplayTagOverflow`). The ability system logs once when refusals begin,
+naming the first holder and tag, and once when a tick passes without one, with
+the total (`ReportGameplayTagOverflow`). Nothing else on the entity is
+affected. Stack counts saturate at 0xFFFF; a baseline stack added at
+saturation never displaces a contributed one, so a revoke of the baseline never
+takes a tag an effect still holds.
 
 Each tag's count holds a **baseline** within it: the stacks that persist.
 - Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the

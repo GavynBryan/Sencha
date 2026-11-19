@@ -125,7 +125,7 @@ struct NavAgentHarness
         world.AddComponent<AttributeSet>(agent, attributes);
         GameplayTagContainer held;
         for (const std::string_view tag : tags)
-            EXPECT_TRUE(held.Grant(Tag(tag)));
+            EXPECT_EQ(held.Grant(Tag(tag)), GameplayTagWrite::Added);
         world.AddComponent<GameplayTagContainer>(agent, held);
         NavAgent config;
         config.Profile = "navigation.profile.humanoid";

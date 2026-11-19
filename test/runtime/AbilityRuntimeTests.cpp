@@ -21,6 +21,7 @@
 #include <core/json/JsonParser.h>
 #include <ecs/Query.h>
 #include <effects/EffectVerbs.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <input/InputActionRegistry.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
@@ -770,6 +771,47 @@ TEST_F(AbilityRuntime, ACooldownBlocksTheTickBeforeItsEndAndAdmitsOnIt)
     EXPECT_EQ(Marks.Values.size(), 1u) << "tick N+4 of a five-tick cooldown is still blocked";
     Step({ Press(kFire), Release(kFire) });
     EXPECT_EQ(Marks.Values.size(), 2u) << "tick N+5 admits";
+}
+
+TEST_F(AbilityRuntime, AStartWhoseOwnedTagsWillNotFitIsRefusedAndCounted)
+{
+    const AbilityId busy = Define("asset://abilities/busy.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "owned_tags": [ "State.Busy" ],
+        "phases": [ { "key": "p_fire", "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark" } ],
+            "then": [ { "key": "t_end", "on": "release", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, busy);
+    GameplayTagRegistry& tags = Entities.GetResource<GameplayTagRegistry>();
+    for (std::uint8_t i = 0; i < GameplayTagContainer::Capacity; ++i)
+        (void)Entities.TryGet<GameplayTagContainer>(actor)->GrantBaseline(*tags.RegisterTag("Fill.T" + std::to_string(i)));
+
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "an ability never runs without the tags it owns";
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).front().Refusal, AbilityRefusal::TagsFull);
+    ASSERT_TRUE(Entities.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(Entities.GetResource<GameplayTagOverflow>().FirstTag, tags.FindTag("State.Busy"));
+}
+
+TEST_F(AbilityRuntime, AStartsOwnedTagsAndItsCooldownsTagsMustFitTogether)
+{
+    const AbilityId busy = Define("asset://abilities/busy_shot.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "owned_tags": [ "State.Busy" ],
+        "cooldown": { "effect": { "data": "asset://effects/shot_cooldown.sdata" }, "start": "on_start" },
+        "phases": [ { "key": "p_fire", "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark" } ],
+            "then": [ { "key": "t_end", "on": "release", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, busy);
+    GameplayTagRegistry& tags = Entities.GetResource<GameplayTagRegistry>();
+    for (std::uint8_t i = 0; i + 1 < GameplayTagContainer::Capacity; ++i)
+        (void)Entities.TryGet<GameplayTagContainer>(actor)->GrantBaseline(*tags.RegisterTag("Fill.T" + std::to_string(i)));
+
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "room for one of the two is room for neither";
+    EXPECT_FALSE(HasTag(actor, "Cooldown.Shot"));
+    EXPECT_FALSE(HasTag(actor, "State.Busy"));
 }
 
 TEST_F(AbilityRuntime, AFailedCostIsRefusedAtAdmission)

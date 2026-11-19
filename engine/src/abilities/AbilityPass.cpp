@@ -37,6 +37,7 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , CostBatches(buffers.CostBatches)
     , CostTranslating(buffers.CostTranslating)
     , Emitted(buffers.Emitted)
+    , StartTags(buffers.StartTags)
 {
     Emitted.clear();
 }
@@ -165,10 +166,13 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
         return AbilityRefusal::Capacity;
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
-    if ((definition->StartGroups != 0 || cooldown)
+    const bool costed = definition->StartGroups != 0 || cooldown;
+    if (costed
         && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown,
                         ResolvePersistableRef(Entities, grant.Source)).Paid)
         return AbilityRefusal::CostFailed;
+    if (!StartTagsFit(actor, *definition, cooldown, costed))
+        return AbilityRefusal::TagsFull;
     return AbilityRefusal::None;
 }
 
@@ -233,12 +237,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         AbilityRecord& granted = actor.Record(slot);
         for (GameplayTagId tag : definition.OwnedTags)
         {
-            if (!tags->CanHold(tag))
+            if (tags->Grant(tag) == GameplayTagWrite::Full)
             {
                 NoteGameplayTagOverflow(Entities, actor.Entity, tag);
                 continue;
             }
-            tags->Grant(tag);
             granted.OwnedTags[granted.OwnedTagCount++] = tag;
         }
     }

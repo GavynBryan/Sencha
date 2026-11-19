@@ -367,7 +367,7 @@ TEST(ObservationMemory, AFullMemoryForgetsWhatItPrefersLast)
     harness.Entities.TryGet<ObservationMemory>(eye)->Prefer = "faction.hostile";
     const EntityId foe = harness.Target(Vec3d(0, 0, -10));
     GameplayTagContainer tags{};
-    ASSERT_TRUE(tags.Grant(hostile));
+    ASSERT_EQ(tags.Grant(hostile), GameplayTagWrite::Added);
     harness.Entities.AddComponent<GameplayTagContainer>(foe, tags);
     harness.Tick();
     harness.Place(foe, Vec3d(0, 0, 50));

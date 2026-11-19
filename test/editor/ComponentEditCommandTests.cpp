@@ -80,7 +80,7 @@ TEST_F(ComponentEditCommandTest, ValueCommandRoundTripsAWholeComponent)
 
     const GameplayTagContainer before = *world.TryGet<GameplayTagContainer>(entity);
     GameplayTagContainer after = before;
-    ASSERT_TRUE(after.Grant(stunned, 2));
+    ASSERT_EQ(after.Grant(stunned, 2), GameplayTagWrite::Added);
 
     Commands.Execute(std::make_unique<ValueCommand<GameplayTagContainer>>(
         before, after,

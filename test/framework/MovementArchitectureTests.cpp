@@ -2,6 +2,7 @@
 
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/MotionComposition.h>
@@ -428,4 +429,89 @@ TEST(MovementModeTagTest, GroundedIsAContribution)
     SupportTagProjectionSystem{}.Step(fixture.WorldState);
     EXPECT_FALSE(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->HasExact(movementTags.Grounded))
         << "airborne";
+}
+
+namespace
+{
+    void Fill(GameplayTagRegistry& registry, GameplayTagContainer& tags, std::uint8_t count)
+    {
+        for (std::uint8_t i = 0; i < count; ++i)
+            (void)tags.GrantBaseline(*registry.RegisterTag("Fill.T" + std::to_string(i)));
+    }
+
+    int ChangedTagChunks(World& world)
+    {
+        int changed = 0;
+        Query<Changed<GameplayTagContainer>> query(world);
+        query.ForEachChunk([&](auto&) { ++changed; }, world.CurrentFrame() - 1);
+        return changed;
+    }
+}
+
+TEST(MovementModeTagTest, AFullContainerRefusesTheModesTagCountsItAndLeavesTheContainerAlone)
+{
+    ModeWorld fixture;
+    const EntityId entity = fixture.WorldState.CreateEntity();
+    GameplayTagContainer full{};
+    Fill(*fixture.Tags, full, GameplayTagContainer::Capacity);
+    fixture.WorldState.AddComponent<GameplayTagContainer>(entity, full);
+    fixture.WorldState.AddComponent<CharacterMovement>(entity, CharacterMovement{ .Mode = fixture.Flight });
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_FALSE(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->HasExact(flight));
+    ASSERT_TRUE(fixture.WorldState.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(fixture.WorldState.GetResource<GameplayTagOverflow>().Refused, 1u);
+    EXPECT_EQ(fixture.WorldState.GetResource<GameplayTagOverflow>().FirstTag, flight);
+
+    fixture.WorldState.AdvanceFrame();
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_EQ(ChangedTagChunks(fixture.WorldState), 0) << "a refusal writes nothing";
+    EXPECT_EQ(fixture.WorldState.GetResource<GameplayTagOverflow>().Refused, 2u) << "refused again, and counted";
+
+    (void)fixture.WorldState.TryGet<GameplayTagContainer>(entity)->RevokeBaseline(fixture.Tags->FindTag("Fill.T0"));
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_EQ(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->StackCount(flight), 1u);
+}
+
+TEST(MovementModeTagTest, AModeChangeOnAFullContainerGivesTheOldModesPlaceToTheNew)
+{
+    ModeWorld fixture;
+    const EntityId entity = fixture.Spawn();
+    Fill(*fixture.Tags, *fixture.WorldState.TryGet<GameplayTagContainer>(entity), GameplayTagContainer::Capacity - 1);
+    const GameplayTagId free = fixture.Modes->Find(fixture.Free)->ActiveTag;
+    const GameplayTagId flight = fixture.Modes->Find(fixture.Flight)->ActiveTag;
+    ASSERT_EQ(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->Size(),
+              GameplayTagContainer::Capacity);
+
+    fixture.WorldState.TryGet<CharacterMovement>(entity)->Mode = fixture.Flight;
+    ModeTagProjectionSystem{}.Step(fixture.WorldState);
+    const GameplayTagContainer& tags = *std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity);
+    EXPECT_FALSE(tags.HasExact(free));
+    EXPECT_EQ(tags.StackCount(flight), 1u);
+    EXPECT_FALSE(fixture.WorldState.HasResource<GameplayTagOverflow>());
+}
+
+TEST(MovementModeTagTest, AFullContainerRefusesGroundedCountsItAndLeavesTheContainerAlone)
+{
+    ModeWorld fixture;
+    fixture.WorldState.RegisterComponent<SupportState>();
+    const MovementTags& movementTags =
+        fixture.WorldState.AddResource<MovementTags>(RegisterMovementTags(*fixture.Tags));
+    const EntityId entity = fixture.WorldState.CreateEntity();
+    GameplayTagContainer full{};
+    Fill(*fixture.Tags, full, GameplayTagContainer::Capacity);
+    fixture.WorldState.AddComponent<GameplayTagContainer>(entity, full);
+    fixture.WorldState.AddComponent<SupportState>(entity, SupportState{});
+    fixture.WorldState.TryGet<SupportState>(entity)->Kind = SupportKind::Stable;
+
+    SupportTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_FALSE(std::as_const(fixture.WorldState).TryGet<GameplayTagContainer>(entity)->HasExact(movementTags.Grounded));
+    ASSERT_TRUE(fixture.WorldState.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(fixture.WorldState.GetResource<GameplayTagOverflow>().FirstTag, movementTags.Grounded);
+
+    fixture.WorldState.AdvanceFrame();
+    SupportTagProjectionSystem{}.Step(fixture.WorldState);
+    EXPECT_EQ(ChangedTagChunks(fixture.WorldState), 0) << "a refusal writes nothing";
+    EXPECT_EQ(fixture.WorldState.GetResource<GameplayTagOverflow>().Refused, 2u);
 }

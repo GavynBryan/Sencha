@@ -2,6 +2,7 @@
 
 #include <app/GameContexts.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/LocomotionMode.h>
@@ -12,6 +13,7 @@
 #include <world/SimulationTimeline.h>
 
 #include <algorithm>
+#include <span>
 #include <cassert>
 #include <utility>
 #include <vector>
@@ -212,6 +214,21 @@ void ModeTagProjectionSystem::StepImpl(World& world, const StoragePartitionSet* 
         });
     };
 
+    const auto refused = [&](EntityId entity, const GameplayTagContainer& tags, LocomotionModeId mode) {
+        GameplayTagId adding;
+        for (const LocomotionModeEntry& entry : modes->Entries())
+        {
+            if (!entry.ActiveTag.IsValid())
+                continue;
+            const std::uint16_t held = tags.ContributedCount(entry.ActiveTag);
+            if (held > stacksFor(entry, mode))
+                return false;
+            if (held < stacksFor(entry, mode))
+                adding = entry.ActiveTag;
+        }
+        return adding.IsValid() && !AdmitGameplayTags(world, entity, tags, std::span(&adding, 1));
+    };
+
     std::vector<EntityId> unsettled;
     Query<Read<CharacterMovement>, Read<GameplayTagContainer>> query(world);
     const auto visit = [&](auto& view)
@@ -219,7 +236,8 @@ void ModeTagProjectionSystem::StepImpl(World& world, const StoragePartitionSet* 
         const auto movements = view.template Read<CharacterMovement>();
         const auto containers = view.template Read<GameplayTagContainer>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
-            if (!settled(containers[i], movements[i].Mode) && ProjectsHere(world, view.Entity(i)))
+            if (!settled(containers[i], movements[i].Mode) && ProjectsHere(world, view.Entity(i))
+                && !refused(view.Entity(i), containers[i], movements[i].Mode))
                 unsettled.push_back(view.Entity(i));
     };
     if (partitions != nullptr)
@@ -231,11 +249,15 @@ void ModeTagProjectionSystem::StepImpl(World& world, const StoragePartitionSet* 
     {
         const LocomotionModeId mode = std::as_const(world).TryGet<CharacterMovement>(entity)->Mode;
         GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(entity);
-        for (const LocomotionModeEntry& entry : modes->Entries())
-            if (entry.ActiveTag.IsValid())
+        for (const bool adding : { false, true })
+            for (const LocomotionModeEntry& entry : modes->Entries())
             {
+                const std::uint16_t wanted = stacksFor(entry, mode);
+                if (!entry.ActiveTag.IsValid() || (wanted > tags.ContributedCount(entry.ActiveTag)) != adding)
+                    continue;
                 assert(tags.BaselineCount(entry.ActiveTag) == 0 && "a projected tag is never authored");
-                (void)tags.SetContribution(entry.ActiveTag, stacksFor(entry, mode));
+                if (tags.SetContribution(entry.ActiveTag, wanted) == GameplayTagWrite::Full)
+                    NoteGameplayTagOverflow(world, entity, entry.ActiveTag);
             }
     }
 }
@@ -272,7 +294,9 @@ void SupportTagProjectionSystem::StepImpl(World& world, const StoragePartitionSe
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const std::uint16_t stacks = supports[i].Kind == SupportKind::Stable ? 1 : 0;
-            if (containers[i].ContributedCount(grounded) != stacks && ProjectsHere(world, view.Entity(i)))
+            const std::uint16_t held = containers[i].ContributedCount(grounded);
+            if (held != stacks && ProjectsHere(world, view.Entity(i))
+                && (held > stacks || AdmitGameplayTags(world, view.Entity(i), containers[i], std::span(&grounded, 1))))
                 unsettled.push_back(view.Entity(i));
         }
     };

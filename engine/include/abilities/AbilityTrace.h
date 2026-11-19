@@ -21,6 +21,7 @@ enum class AbilityRefusal : std::uint8_t
     CostFailed,
     // A client's guess the prediction journal has no room to decide.
     PredictionFull,
+    TagsFull,
 };
 
 [[nodiscard]] std::string_view AbilityRefusalName(AbilityRefusal refusal);
