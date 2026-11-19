@@ -1332,3 +1332,31 @@ never-minting form.
 The grants serializer writes `"kind": "request"` and `"source"` on a requested
 grant; both are optional, so older scenes and saves load as before. The wire
 and the save format version are unchanged.
+
+## v56
+
+**Inventory.** `Inventory` takes the tick it runs in (`Inventory(world, now)`),
+as `Equipment` does; a counted pickup's take effects are applied in that tick,
+scaled by its count. `InventoryOperations` and `EquipmentOperations` take the
+simulation clock and a `Logger`, and `EngineVocabularyBindings::BindInventory`
+and `BindEquipment` take the logger. `InventoryRefusal` and `EquipmentRefusal`
+gain an `EnumSchema`. `inventory/Inventory.h` declares `ItemStackHolds` and
+`SetItemCount`.
+
+**Equipment.** `Equipment::UnequipRecord` ends a record by its key.
+`EquipmentComponents.h` replaces `AddEquipmentRecord` with `WearRecord` and
+`WearEquipmentRecord`, and declares `FindEquipmentRecordHolding` and
+`kNoEquipmentRecord`; `Equipment.h` declares `ItemTakesSlotFirst`.
+
+**Held records.** `HeldRecordIndex` keys records (`HeldRecordKey`, `Key`,
+`Unkey`, `FindKeyed`), answers `IsWithin`, `PositionOf` and `Renumber`, and
+loses `ForgetHolder`; a holder holding nothing has revision 0. `Counter` gains
+lifecycle hooks and `CounterKey`. `world/held/HeldRecords.h` declares
+`PlaceHeldRecord` and `NameHeldHolder`.
+
+**Tags.** `GameplayTagContainer::CanHoldAll` answers no for a tag already at
+0xFFFF stacks, so `AdmitGameplayTags` refuses it.
+
+`NamedDefinitionRegistry` gains `ForEachName` and `ForEachDefined`. The wire,
+the replicated layout and the save format version are unchanged; a scene or
+save naming an entry count its stack cannot hold, or none, now fails to load.
