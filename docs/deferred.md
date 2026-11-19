@@ -1204,7 +1204,11 @@ described in `docs/navigation/runtime.md`, "Agents".
     - `hero.facts.sdata` commits in about 180 µs and `examples.facts.sdata` in
       about 85 µs, each with one source;
     - a plain definition commits in about 3 µs.
-  - Every commit reads its sources again; nothing is cached across commits.
+  - Every commit reads its sources' bytes again, but parses a source only
+    when its content hash changed (`DataAssetLoader`; "Data definitions" in
+    `docs/assets/composition.md`). `DataCompositionBench` loads 500 variants
+    of one 40-modifier base: 333 ms before the parsed sources were kept,
+    209 ms after, in a debug build.
 - **Where:**
   - `DataAssetLoader::ComposePending` (`engine/src/assets/data/DataAssetLoader.cpp`).
   - The worker cannot do this today. `IAssetStager::LoadStaged` receives only

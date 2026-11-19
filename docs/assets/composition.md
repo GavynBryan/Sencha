@@ -151,7 +151,13 @@ the open document's working copy in Kyusu.
 
 A runtime definition with sources composes when it commits, on the owner thread:
 a staging worker receives only the id-to-path snapshot and cannot read another
-definition's source. Each cache entry records the definitions it composed from,
+definition's source. The loader keeps the parsed sources it read, keyed by
+path and content hash: a commit still reads each source's bytes, so an edited
+file is never stale, but parses it only when the hash changed, so variants of
+one base parse that base once. It holds at most
+`DataAssetLoader::ParsedSourceCapacity` (64) between commits; past that, the
+source read longest ago is let go and costs one parse when next read. Nothing
+is reported, since nothing is lost. Each cache entry records the definitions it composed from,
 and `DataAssetCache::ComposedFrom` answers which resident definitions a path
 feeds. The hot reloader consults it for every changed file, resident or not, so
 editing an abstract base reloads its concrete children. A child that fails to

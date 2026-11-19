@@ -20,6 +20,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -69,6 +70,11 @@ namespace
         [[nodiscard]] std::uint64_t ReloadVersion(const AssetLease& lease) const
         {
             return Assets.DataAssets.GetReloadVersion(DataAssetHandle::FromToken(lease.OpaqueToken()));
+        }
+
+        [[nodiscard]] std::size_t ParsedSourcesHeld()
+        {
+            return static_cast<const DataAssetLoader*>(Assets.Assets.LoaderFor(AssetType::Data))->ParsedSourcesHeld();
         }
 
         [[nodiscard]] std::string FailureOf(std::string_view path) const
@@ -531,4 +537,40 @@ TEST(DataDefinitionComposition, ABaseThatDoesNotComposeGivesEveryReason)
     ASSERT_NE(error, nullptr);
     EXPECT_NE(error->Message.find("absent.sdata"), std::string::npos) << error->Message;
     EXPECT_NE(error->Message.find("also_absent.sdata"), std::string::npos) << error->Message;
+}
+
+TEST(DataDefinitionComposition, VariantsOfOneBaseHoldOneParsedBase)
+{
+    Content content;
+    content.Write("armor_base.sdata", kArmorBase);
+    for (int i = 0; i < 10; ++i)
+        content.Write(std::format("tunic{}.sdata", i), std::format(R"({{ "type": "effect.definition", "version": 1,
+            "extends": "asset://effects/armor_base.sdata", "data": {{ "modifiers": {{ "m_armor": {{ "magnitude": {} }} }} }} }})", i));
+    std::vector<AssetLease> tunics;
+    for (int i = 0; i < 10; ++i)
+    {
+        tunics.push_back(content.Assets.Assets.LoadLease(std::format("asset://effects/tunic{}.sdata", i), AssetType::Data));
+        ASSERT_TRUE(tunics.back()) << content.FailureOf(std::format("asset://effects/tunic{}.sdata", i));
+    }
+    EXPECT_EQ(content.ParsedSourcesHeld(), 1u);
+}
+
+TEST(DataDefinitionComposition, TheParsedSourcesHeldStopAtTheirCapacityAndStillCompose)
+{
+    Content content;
+    const std::size_t bases = DataAssetLoader::ParsedSourceCapacity + 1;
+    for (std::size_t i = 0; i < bases; ++i)
+    {
+        content.Write(std::format("base{}.sdata", i), kArmorBase);
+        content.Write(std::format("child{}.sdata", i), std::format(R"({{ "type": "effect.definition", "version": 1,
+            "extends": "asset://effects/base{}.sdata", "data": {{}} }})", i));
+    }
+    std::vector<AssetLease> children;
+    for (std::size_t i = 0; i < bases; ++i)
+    {
+        children.push_back(content.Assets.Assets.LoadLease(std::format("asset://effects/child{}.sdata", i), AssetType::Data));
+        ASSERT_TRUE(children.back()) << content.FailureOf(std::format("asset://effects/child{}.sdata", i));
+    }
+    EXPECT_EQ(content.ParsedSourcesHeld(), DataAssetLoader::ParsedSourceCapacity)
+        << "the source read longest ago is let go";
 }

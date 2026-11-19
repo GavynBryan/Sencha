@@ -9,8 +9,11 @@
 #include <core/logging/Logger.h>
 #include <core/metadata/DataSchema.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class AssetSystem;
@@ -44,6 +47,8 @@ public:
     // Loads the value's declared dependencies and has the entry hold them; one
     // that cannot load fails the commit and is named in the result.
     [[nodiscard]] AssetCommitResult<DataAssetHandle> CommitTyped(AssetStaging&& staged, AssetSystem& assets);
+    [[nodiscard]] std::size_t ParsedSourcesHeld() const { return ParsedSources.size(); }
+    static constexpr std::size_t ParsedSourceCapacity = 64;
     [[nodiscard]] AssetReloadOutcome CommitReload(AssetStaging&& staged, AssetSystem& assets);
 
     // Refuses a value that declares dependencies.
@@ -56,9 +61,18 @@ private:
         JsonValue Root;
     };
 
+    struct ParsedSource
+    {
+        std::uint64_t ContentHash = 0;
+        std::uint64_t ReadAtCommit = 0;
+        JsonValue Root;
+    };
+
     [[nodiscard]] AssetStaging StageDefinition(const AssetRecord& record, const JsonValue& root,
                                                const AssetPathsById& current, const DataSourceReader& read);
     [[nodiscard]] std::string ComposePending(AssetStaging& staged, AssetSystem& assets);
+    [[nodiscard]] DataSourceRead ReadSource(std::string_view path, AssetSystem& assets);
+    void TrimParsedSources();
     // The dependency that did not load, or empty when every one did.
     [[nodiscard]] std::string LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
                                                std::vector<AssetLease>& out);
@@ -71,4 +85,6 @@ private:
     DataAssetCache* Cache = nullptr;
     // Paths whose commit is loading its dependencies, outermost first.
     std::vector<std::string> Committing;
+    std::unordered_map<std::string, ParsedSource> ParsedSources;
+    std::uint64_t Compositions = 0;
 };

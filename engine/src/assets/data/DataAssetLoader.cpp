@@ -2,6 +2,7 @@
 
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetSource.h>
+#include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 
@@ -100,29 +101,54 @@ std::string DataAssetLoader::ComposePending(AssetStaging& staged, AssetSystem& a
     const PendingComposition* pending = std::any_cast<PendingComposition>(&staged.Payload);
     if (pending == nullptr)
         return {};
-    std::unordered_map<std::string, JsonValue> sources;
-    const DataSourceReader read = [&](std::string_view path) -> DataSourceRead {
-        if (const auto found = sources.find(std::string(path)); found != sources.end())
-            return { &found->second, {} };
-        const AssetRecord* record = assets.Resolve(path, AssetType::Data);
-        if (record == nullptr)
-            return { nullptr, "does not exist" };
-        std::vector<std::byte> bytes;
-        if (!ReadAssetBytes(assets.DefaultSource(), *record, bytes))
-            return { nullptr, "could not be read" };
-        JsonParseError error;
-        std::optional<JsonValue> root =
-            JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), &error);
-        if (!root.has_value())
-            return { nullptr, std::format("is not valid JSON (at {}: {})", error.Position, error.Message) };
-        return { &sources.emplace(std::string(path), std::move(*root)).first->second, {} };
-    };
+    ++Compositions;
+    const DataSourceReader read = [&](std::string_view path) { return ReadSource(path, assets); };
     const JsonValue root = pending->Root;
     AssetStaging composed = StageDefinition(staged.Record, root, *assets.PathsById(), read);
+    TrimParsedSources();
     if (!composed.IsValid())
         return composed.Error;
     staged = std::move(composed);
     return {};
+}
+
+DataSourceRead DataAssetLoader::ReadSource(std::string_view path, AssetSystem& assets)
+{
+    const auto held = ParsedSources.find(std::string(path));
+    if (held != ParsedSources.end() && held->second.ReadAtCommit == Compositions)
+        return { &held->second.Root, {} };
+    const AssetRecord* record = assets.Resolve(path, AssetType::Data);
+    if (record == nullptr)
+        return { nullptr, "does not exist" };
+    std::vector<std::byte> bytes;
+    if (!ReadAssetBytes(assets.DefaultSource(), *record, bytes))
+        return { nullptr, "could not be read" };
+    const std::uint64_t hash = HashBytes64(bytes);
+    if (held != ParsedSources.end() && held->second.ContentHash == hash)
+    {
+        held->second.ReadAtCommit = Compositions;
+        return { &held->second.Root, {} };
+    }
+    JsonParseError error;
+    std::optional<JsonValue> parsed =
+        JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), &error);
+    if (!parsed.has_value())
+    {
+        if (held != ParsedSources.end())
+            ParsedSources.erase(held);
+        return { nullptr, std::format("is not valid JSON (at {}: {})", error.Position, error.Message) };
+    }
+    ParsedSource& source = ParsedSources[std::string(path)];
+    source = ParsedSource{ hash, Compositions, std::move(*parsed) };
+    return { &source.Root, {} };
+}
+
+void DataAssetLoader::TrimParsedSources()
+{
+    while (ParsedSources.size() > ParsedSourceCapacity)
+        ParsedSources.erase(std::ranges::min_element(ParsedSources, {}, [](const auto& entry) {
+            return entry.second.ReadAtCommit;
+        }));
 }
 
 std::string DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
