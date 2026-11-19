@@ -66,6 +66,7 @@ struct InventoryResult
 [[nodiscard]] EntityId ItemHolder(const World& world, EntityId item);
 [[nodiscard]] bool MayUseItem(const World& world, EntityId actor, EntityId item);
 [[nodiscard]] bool ItemIsWithin(const World& world, EntityId inner, EntityId outer);
+[[nodiscard]] std::uint32_t ItemStackClamp(const ItemDefinition& item, std::uint32_t count);
 [[nodiscard]] bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count);
 void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender = {});
 [[nodiscard]] bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag);

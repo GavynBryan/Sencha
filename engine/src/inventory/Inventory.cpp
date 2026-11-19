@@ -370,9 +370,14 @@ bool ItemIsWithin(const World& world, EntityId inner, EntityId outer)
     return index != nullptr ? index->IsWithin(inner, outer) : inner.IsValid() && inner == outer;
 }
 
+std::uint32_t ItemStackClamp(const ItemDefinition& item, std::uint32_t count)
+{
+    return std::clamp<std::uint32_t>(count, 1, std::max<std::uint32_t>(item.StackMax, 1));
+}
+
 bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count)
 {
-    return count >= 1 && count <= std::max<std::uint32_t>(item.StackMax, 1);
+    return ItemStackClamp(item, count) == count;
 }
 
 void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender)

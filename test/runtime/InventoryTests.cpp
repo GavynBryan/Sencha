@@ -58,6 +58,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cctype>
 #include <limits>
 
 namespace
@@ -108,24 +110,83 @@ TEST(InventoryScene, AnEntryIsSavedByItsDefinitionsPathAndItsCount)
     EXPECT_EQ(entry->Count, 20u);
 }
 
-TEST(InventoryScene, AnEntryLoadsOnlyWithACountItsStackHolds)
+TEST(InventoryScene, AnEntryLoadsWithItsCountClampedIntoWhatItsStackHolds)
 {
+    struct Warnings final : ILogSink
+    {
+        void Write(LogLevel level, std::string_view, std::string_view message) override
+        {
+            if (level == LogLevel::Warning)
+                Lines.emplace_back(message);
+        }
+        std::vector<std::string> Lines;
+    };
+    const auto words = [](const std::string& line) {
+        std::vector<std::string> found;
+        std::string word;
+        for (const char c : line + ' ')
+        {
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == ':' || c == '/' || c == '.' || c == '_')
+                word += c;
+            else if (!word.empty())
+            {
+                while (word.back() == '.' || word.back() == ':')
+                    word.pop_back();
+                found.push_back(word);
+                word.clear();
+            }
+        }
+        return found;
+    };
+    const auto names = [&](const std::string& line, EntityId entry, std::uint32_t had, std::uint32_t got) {
+        const std::vector<std::string> said = words(line);
+        const auto has = [&](const std::string& word) { return std::ranges::find(said, word) != said.end(); };
+        return has(std::to_string(entry.Index) + ":" + std::to_string(entry.Generation))
+            && has("asset://items/arrow.sdata") && has(std::to_string(had)) && has(std::to_string(got));
+    };
+    const std::unique_ptr<IComponentSerializer> serializer = MakeItemEntrySerializer();
+
+    SceneWorld before;
+    World& older = before.Scene.Components;
+    const ItemId quiver = older.GetResource<ItemRegistry>().Define("asset://items/arrow.sdata",
+                                                                   ItemDefinition{ .Name = "Arrow", .StackMax = 40 });
+    const EntityId saved = older.CreateEntity();
+    older.AddComponent<ItemEntry>(saved, ItemEntry{ .Definition = quiver, .Count = 37 });
+    const JsonValue save = before.Save(*serializer, saved);
+
     SceneWorld scene;
+    Warnings& warned = scene.Logging.AddSink<Warnings>();
     World& world = scene.Scene.Components;
     (void)world.GetResource<ItemRegistry>().Define("asset://items/arrow.sdata",
                                                    ItemDefinition{ .Name = "Arrow", .StackMax = 20 });
-    const std::unique_ptr<IComponentSerializer> serializer = MakeItemEntrySerializer();
-    const auto loads = [&](std::uint32_t count) {
-        JsonValue saved(JsonValue::Object{ { "definition", JsonValue(std::string("asset://items/arrow.sdata")) },
-                                           { "count", JsonValue(static_cast<double>(count)) } });
-        JsonReadArchive archive(saved);
-        return serializer->LoadIntoWorld(archive, world.CreateEntity(), world, scene.Context);
+    const auto load = [&](const JsonValue& value) {
+        const EntityId entry = world.CreateEntity();
+        JsonReadArchive archive(value);
+        EXPECT_TRUE(serializer->LoadIntoWorld(archive, entry, world, scene.Context));
+        return entry;
+    };
+    const auto authored = [](std::uint32_t count) {
+        return JsonValue(JsonValue::Object{ { "definition", JsonValue(std::string("asset://items/arrow.sdata")) },
+                                            { "count", JsonValue(static_cast<double>(count)) } });
+    };
+    const auto countOf = [&](EntityId entry) {
+        const ItemEntry* item = std::as_const(world).TryGet<ItemEntry>(entry);
+        return item != nullptr ? item->Count : 0u;
     };
 
-    EXPECT_TRUE(loads(20));
-    EXPECT_TRUE(loads(1));
-    EXPECT_FALSE(loads(21)) << "more than one entry holds";
-    EXPECT_FALSE(loads(0)) << "an entry with nothing in it is spent, never authored";
+    const EntityId full = load(authored(20));
+    EXPECT_EQ(countOf(full), 20u);
+    EXPECT_TRUE(warned.Lines.empty()) << "a count its stack holds loads as it is";
+
+    const EntityId lowered = load(save);
+    EXPECT_EQ(countOf(lowered), 20u) << "a save made before content lowered the stack keeps a full entry";
+    ASSERT_EQ(warned.Lines.size(), 1u);
+    EXPECT_TRUE(names(warned.Lines[0], lowered, 37, 20)) << warned.Lines[0];
+
+    const EntityId empty = load(authored(0));
+    EXPECT_EQ(countOf(empty), 1u) << "an authored entry holds at least one unit";
+    ASSERT_EQ(warned.Lines.size(), 2u);
+    EXPECT_TRUE(names(warned.Lines[1], empty, 0, 1)) << warned.Lines[1];
 }
 
 TEST(InventoryScene, AHeldRecordsHolderIsAReferenceAPlacementRenames)
