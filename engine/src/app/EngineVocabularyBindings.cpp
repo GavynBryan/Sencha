@@ -1,7 +1,6 @@
 #include <app/EngineVocabularyBindings.h>
 
 #include <abilities/AbilityVerbs.h>
-#include <abilities/GameplayTagVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <attach/AttachmentVerbs.h>
 #include <audio/AudioVerbs.h>
@@ -9,6 +8,7 @@
 #include <camera/CameraShakeVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <equipment/EquipmentVocabulary.h>
+#include <gameplay_tags/GameplayTagVerbs.h>
 #include <inventory/InventoryVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>

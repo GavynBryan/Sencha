@@ -61,7 +61,12 @@ Each tag's count holds a **baseline** within it: the stacks that persist.
   baseline; `tags.revoke` takes it back. These verbs are how level data gives
   an entity a permanent, saved tag (an unlock): authority only, at most what
   the target keeps for a revoke, and an entity with no tags gains a container
-  on its first grant (`docs/gameplay/authored-api.md`).
+  on its first grant (`docs/gameplay/authored-api.md`). They live with the tags
+  (`gameplay_tags/GameplayTagVerbs.h`) and write through `GrantBaselineTag` and
+  `RevokeBaselineTag` (`gameplay_tags/BaselineGameplayTags.h`), which a game's
+  own code calls for the same write: give the holder a container if it has
+  none, refuse and count a tag that will not fit, grant; and take at most what
+  is kept.
 - Effects and abilities contribute with `Grant` and withdraw with `Revoke`,
   which never takes the baseline.
 - A save writes the baseline alone, so a restore followed by the effects being

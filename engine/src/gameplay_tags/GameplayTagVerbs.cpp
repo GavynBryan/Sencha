@@ -1,9 +1,9 @@
-#include <abilities/GameplayTagVerbs.h>
+#include <gameplay_tags/GameplayTagVerbs.h>
 
 #include <authored/AuthoredValue.h>
 #include <ecs/World.h>
+#include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagContainer.h>
-#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/SimulationAuthority.h>
 
@@ -69,16 +69,9 @@ VerbAdmission GameplayTagOperations::Grant(const VerbInvocation& invocation)
     Request request;
     if (const VerbAdmission read = Read(*Entities, invocation, request); read != VerbAdmission::Accepted)
         return read;
-    if (!Entities->HasComponent<GameplayTagContainer>(request.Target))
-        Entities->AddComponent<GameplayTagContainer>(request.Target, GameplayTagContainer{});
-    GameplayTagContainer& tags = *Entities->TryGet<GameplayTagContainer>(request.Target);
-    if (!tags.CanHold(request.Tag))
-    {
-        NoteGameplayTagOverflow(*Entities, request.Target, request.Tag);
-        return VerbAdmission::Refused;
-    }
-    (void)tags.GrantBaseline(request.Tag, request.Stacks);
-    return VerbAdmission::Accepted;
+    return GrantBaselineTag(*Entities, request.Target, request.Tag, request.Stacks) == GameplayTagWrite::Full
+        ? VerbAdmission::Refused
+        : VerbAdmission::Accepted;
 }
 
 VerbAdmission GameplayTagOperations::Revoke(const VerbInvocation& invocation)
@@ -86,9 +79,6 @@ VerbAdmission GameplayTagOperations::Revoke(const VerbInvocation& invocation)
     Request request;
     if (const VerbAdmission read = Read(*Entities, invocation, request); read != VerbAdmission::Accepted)
         return read;
-    GameplayTagContainer* tags = Entities->TryGet<GameplayTagContainer>(request.Target);
-    if (tags == nullptr || tags->BaselineCount(request.Tag) == 0)
-        return VerbAdmission::Refused;
-    (void)tags->RevokeBaseline(request.Tag, request.Stacks);
-    return VerbAdmission::Accepted;
+    return RevokeBaselineTag(*Entities, request.Target, request.Tag, request.Stacks) ? VerbAdmission::Accepted
+                                                                                    : VerbAdmission::Refused;
 }
