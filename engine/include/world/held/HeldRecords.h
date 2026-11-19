@@ -17,6 +17,9 @@ HeldRecordIndex& InstallHeldRecords(World& world);
 // `position`, or after the holder's last record, and settles it at once.
 void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<std::uint16_t> position = {});
 
+// The one in-place write of Held.Holder: names the listed holder by its persistent id.
+void NameHeldHolder(World& world, EntityId record);
+
 // docs/gameplay/held-records.md, "Authored records".
 void NoteHeldRecordChanged(World& world, EntityId record);
 

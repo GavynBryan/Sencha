@@ -52,7 +52,15 @@ beneath it, or when `NoteHeldRecordChanged(world, record)` says a record
 beneath it changed (a counter's value, an entry's count); it moves for every
 holder up a nested chain, at most `kHeldDeepestNesting` (64) deep. A view of a
 holder's records keeps the revision it was built from and rebuilds when it
-moves.
+moves. Revisions are stamps from one counter the index keeps, so a value is
+never reused; a holder that holds nothing has revision 0 and the index keeps
+nothing for it, whether it is alive or gone, on the authority or a client.
+
+`Held` is written in place in one place only: `NameHeldHolder(world, record)`
+names the record's listed holder by its persistent id, giving the holder one.
+It never changes which entity holds the record, so the index stays true; every
+other change to a record's holder or position replaces `Held`, which runs the
+hooks.
 
 Records nest at most `kHeldDeepestNesting` levels: `Depth(entity)` counts the
 records from a record up to the first holder that is not one, and

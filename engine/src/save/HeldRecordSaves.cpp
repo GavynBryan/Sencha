@@ -31,13 +31,6 @@ namespace
         return type == ResolveComponentTypeId<PersistentIdComponent>() || type == ResolveComponentTypeId<SceneInstance>();
     }
 
-    void NameHolder(World& world, EntityId record, EntityId holder)
-    {
-        Held* held = world.TryGet<Held>(record);
-        if (held != nullptr && holder.IsValid() && !held->Holder.Target.IsValid())
-            held->Holder = MakePersistableRef(world, holder);
-    }
-
     JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
                          const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
     {
@@ -121,7 +114,7 @@ JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
                 const PersistentEntityId id = EnsurePersistentId(world, record);
                 if (!id.IsValid())
                     continue;
-                NameHolder(world, record, index->HolderOf(record));
+                NameHeldHolder(world, record);
                 saved.push_back(SaveRecord(world, record, id, serializers, context));
             }
             next.insert(next.end(), index->RecordsOf(record).begin(), index->RecordsOf(record).end());

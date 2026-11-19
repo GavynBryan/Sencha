@@ -49,7 +49,6 @@ public:
 
     [[nodiscard]] std::vector<EntityId> TakeUnsettled();
     [[nodiscard]] std::vector<EntityId> TakeDeparted();
-    void ForgetHolder(EntityId holder);
 
     PartitionFollowerId Follower;
 
@@ -73,4 +72,5 @@ private:
     std::vector<EntityId> Unsettled;
     std::vector<EntityId> Departed;
     std::uint64_t Exhausted = 0;
+    std::uint32_t Stamp = 0;
 };

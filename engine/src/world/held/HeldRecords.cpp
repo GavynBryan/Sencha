@@ -74,8 +74,8 @@ namespace
         const std::vector<EntityId> held(listed.begin(), listed.end());
         for (const EntityId inner : held)
         {
-            if (Held* relation = world.TryGet<Held>(inner); relation != nullptr && identity.IsValid())
-                relation->Holder = PersistableRef{ .Entity = record, .Target = identity };
+            if (identity.IsValid())
+                NameHeldHolder(world, inner);
             LeaveAuthoredSelf(world, index, inner, leaving, depth + 1);
         }
     }
@@ -101,9 +101,7 @@ namespace
         StoragePartitionId partition = PersistentStoragePartition;
         if (holder.IsValid())
         {
-            const PersistableRef ref = MakePersistableRef(world, holder);
-            if (Held* held = world.TryGet<Held>(record); held != nullptr && held->Holder != ref)
-                held->Holder = ref;
+            NameHeldHolder(world, record);
             AnchorTo(world, record, holder);
             partition = world.GetEntityPartition(holder);
         }
@@ -143,6 +141,17 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     Settle(world, index, record);
 }
 
+void NameHeldHolder(World& world, EntityId record)
+{
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    const EntityId holder = index != nullptr ? index->HolderOf(record) : EntityId{};
+    if (!holder.IsValid())
+        return;
+    const PersistableRef named = MakePersistableRef(world, holder);
+    if (Held* held = world.TryGet<Held>(record); held != nullptr && held->Holder != named)
+        held->Holder = named;
+}
+
 void NoteHeldRecordChanged(World& world, EntityId record)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
@@ -168,17 +177,13 @@ void SettleHeldRecords(World& world)
             return;
         for (const EntityId holder : departed)
         {
-            if (world.IsAlive(holder))
+            if (world.IsAlive(holder) || !authority)
                 continue;
-            if (authority)
-            {
-                const std::span<const EntityId> held = index->RecordsOf(holder);
-                records.assign(held.begin(), held.end());
-                for (const EntityId record : records)
-                    if (world.IsAlive(record))
-                        world.DestroyEntity(record);
-            }
-            index->ForgetHolder(holder);
+            const std::span<const EntityId> held = index->RecordsOf(holder);
+            records.assign(held.begin(), held.end());
+            for (const EntityId record : records)
+                if (world.IsAlive(record))
+                    world.DestroyEntity(record);
         }
         if (authority)
             for (const EntityId record : unsettled)

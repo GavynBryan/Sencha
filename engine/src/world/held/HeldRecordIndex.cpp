@@ -54,7 +54,7 @@ void HeldRecordIndex::HolderArrived(PersistentEntityId id, EntityId holder)
 
 void HeldRecordIndex::HolderDeparted(EntityId holder)
 {
-    if (ByHolder.contains(holder) || Revisions.contains(holder))
+    if (ByHolder.contains(holder))
         Departed.push_back(holder);
 }
 
@@ -185,12 +185,6 @@ std::vector<EntityId> HeldRecordIndex::TakeDeparted()
     return std::exchange(Departed, {});
 }
 
-void HeldRecordIndex::ForgetHolder(EntityId holder)
-{
-    if (!ByHolder.contains(holder))
-        Revisions.erase(holder);
-}
-
 void HeldRecordIndex::Insert(std::vector<EntityId>& records, EntityId record, std::uint16_t position) const
 {
     const auto at = std::ranges::upper_bound(records, position, {},
@@ -221,10 +215,15 @@ void HeldRecordIndex::Remove(EntityId record, const Listing& listing)
 
 void HeldRecordIndex::BumpFrom(EntityId holder)
 {
+    if (++Stamp == 0)
+        ++Stamp;
     EntityId at = holder;
     for (int depth = 0; depth < kHeldDeepestNesting; ++depth)
     {
-        ++Revisions[at];
+        if (ByHolder.contains(at))
+            Revisions[at] = Stamp;
+        else
+            Revisions.erase(at);
         if (!at.IsValid())
             return;
         const auto above = Listings.find(at);

@@ -4,6 +4,7 @@
 #include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 #include <world/held/Held.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/held/HeldRecords.h>
@@ -115,8 +116,8 @@ TEST_F(HeldRecordTest, ChangingTheHolderMovesTheRecordAndBothRevisions)
 
     EXPECT_TRUE(RecordsOf(first).empty());
     EXPECT_EQ(RecordsOf(second), std::vector{ record });
-    EXPECT_GT(Index->Revision(first), firstBefore);
-    EXPECT_GT(Index->Revision(second), secondBefore);
+    EXPECT_NE(Index->Revision(first), firstBefore);
+    EXPECT_NE(Index->Revision(second), secondBefore);
     EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(record)->Anchor, second);
 
     Entities.DestroyEntity(record);
@@ -134,8 +135,8 @@ TEST_F(HeldRecordTest, AChangeBeneathANestedHolderMovesEveryRevisionAboveIt)
 
     Index->NoteChanged(coin);
 
-    EXPECT_GT(Index->Revision(bag), bagBefore);
-    EXPECT_GT(Index->Revision(body), bodyBefore);
+    EXPECT_NE(Index->Revision(bag), bagBefore);
+    EXPECT_NE(Index->Revision(body), bodyBefore);
 }
 
 TEST_F(HeldRecordTest, AHolderGoingAwayTakesWhatItHeldWhenRecordsSettle)
@@ -271,7 +272,7 @@ TEST_F(HeldRecordTest, AChangeToAnAuthoredRecordGivesItARuntimeId)
     NoteHeldRecordChanged(Entities, stack);
 
     EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(stack)->Id));
-    EXPECT_GT(Index->Revision(chest), before);
+    EXPECT_NE(Index->Revision(chest), before);
     EXPECT_EQ(RecordsOf(chest), std::vector{ stack });
 }
 
@@ -300,4 +301,23 @@ TEST_F(HeldRecordTest, DestroyingWhatWaitsLeavesWhatIsHeld)
 
     EXPECT_FALSE(Entities.IsAlive(waiting));
     EXPECT_TRUE(Entities.IsAlive(held));
+}
+
+TEST_F(HeldRecordTest, AHolderWhoseRecordsAreAllGoneKeepsNoRevision)
+{
+    const EntityId body = Holder();
+    (void)HeldBy(HeldBy(body));
+    Entities.DestroyEntity(body);
+    DestroyHeldRecords(Entities);
+    EXPECT_EQ(Index->Revision(body), 0u);
+
+    Entities.AddResource<SimulationAuthority>().Authoritative = false;
+    const EntityId peer = Holder();
+    const EntityId record = Entities.CreateEntity();
+    Entities.AddComponent<Held>(record, Held{ .Holder = { .Entity = peer, .Target = {} } });
+    ASSERT_NE(Index->Revision(peer), 0u);
+    Entities.DestroyEntity(record);
+    Entities.DestroyEntity(peer);
+    SettleHeldRecords(Entities);
+    EXPECT_EQ(Index->Revision(peer), 0u);
 }
