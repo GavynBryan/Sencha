@@ -1605,3 +1605,22 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the owner's walkthrough of equipping a guard in Kyusu, or the
   first content that authors a waiting slot (an empty quiver) or an item whose
   second slot must be chosen.
+
+## Capturing a save without changing the world
+
+- **What:** a save section's `Capture` takes `World&` because capture still
+  gives ids lazily: `sencha.bodies` gives the local body a runtime persistent
+  id, and `sencha.held` gives one to each runtime record and holder it saves
+  and names the holder in the record's `Held`. The id counter no longer
+  depends on section order (`SavedGames` writes it after every capture), but
+  capture is still a structural change at the zone-residency phase.
+- **Where:** `engine/src/save/EngineSaveSections.cpp` (`CaptureBodies`),
+  `engine/src/save/HeldRecordSaves.cpp` (`CaptureHeldRecords`, `NameHolder`),
+  `SavedGameSectionDefinition::Capture` in `engine/include/save/SavedGames.h`.
+- **Trigger:** the first capture that must run where structural changes are
+  not allowed (a capture on the async lane or from a read-only view), or a
+  game section that needs a stable id for an entity it references. Then give
+  bodies their id at spawn on the authority and records theirs where they are
+  made (counters, inventory), settle held records before the write commits,
+  and make `Capture` take `const World&` (a module ABI change).
+

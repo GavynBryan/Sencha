@@ -1278,3 +1278,26 @@ replication hash moves (`test/core/ComponentIdentityFreezeTests.cpp`).
 A module that assigns over either component's row, or copies the row to keep
 its value, must use the calls above instead (`docs/ecs/row-lists.md`, "What may
 not be done with such a component").
+
+## v54
+
+**Restore progress.** `SavedGames::RestoreStatus()` is a `RestoreProgress`
+(`Pending`, `Reading`, `Loading`, `BodiesRestored`, `Failed`) that follows the
+restore's own level change to the participants' bodies; `Restores()` counts
+accepted restores. `RestoreChange()` and `Failure()` are gone; `WriteFailure()`
+and `RestoreFailure()` replace the shared reason. `RestoredFromBackup()`,
+`Finish()` and `Advance()` are new. `SavedGames` writes the persistent id
+counter itself (`kPersistentIdsSection`), and `RegisterEngineSaveSections` no
+longer registers it; every registered section's `Restore` runs on every
+restore, with null data when the save lacks it.
+
+**Level change.** `LevelChangeRequest::RuntimeState`
+(`LevelChangeRuntimeState::Keep` or `Discard`) and `LevelChange::RuntimeState()`;
+`LevelChangeAdmissionReason`. A first load is admitted on any machine, and the
+`map` and `world` commands are level change requests. `RestoredBodies::Refusal`.
+
+**Files and formats.** `DecodeSavedGame` returns a `DecodedSavedGame` (the
+save, its error, and whether a newer build wrote it); `ReadHashedChunkFile`
+returns a `HashedChunkFileRead`. `SaveSlotFiles::Write` no longer rotates;
+`WriteBackup` is new. `ApplySpawnOverlay` takes the list of what a retuned
+scene set aside. The save file format is unchanged (format 1, chunk versions 1).
