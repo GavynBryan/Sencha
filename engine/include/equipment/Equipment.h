@@ -50,6 +50,8 @@ public:
 
     EquipmentResult Equip(EntityId wearer, EntityId entry, std::string_view slot = {});
     EquipmentResult Unequip(EntityId wearer, std::string_view slot, ItemChangeClass change = ItemChangeClass::Requested);
+    EquipmentResult UnequipRecord(EntityId wearer, std::uint32_t record,
+                                  ItemChangeClass change = ItemChangeClass::Requested);
     EquipmentResult Cycle(EntityId wearer, std::string_view group);
 
 private:

@@ -2003,6 +2003,24 @@ TEST_F(EquipmentLockTest, ForcingSkipsTheLockAndNothingElse)
     EXPECT_EQ(Gear().Unequip(Hero, "ring.left", ItemChangeClass::Forced).Refusal, EquipmentRefusal::NotAuthority);
 }
 
+TEST_F(EquipmentLockTest, ARecordIsTakenOffByItsKeyWithTheLocksASlotWouldMeet)
+{
+    const EntityId cursed = AuthoredCurse();
+    const std::uint32_t locked = Gear().Equip(Hero, cursed, "ring.left").Record;
+    const std::uint32_t free = Gear().Equip(Hero, Give(RingItem), "ring.right").Record;
+    ASSERT_NE(locked, 0u);
+    ASSERT_NE(free, 0u);
+
+    EXPECT_EQ(Gear().UnequipRecord(Hero, locked).Refusal, EquipmentRefusal::Locked);
+    EXPECT_EQ(Gear().UnequipRecord(Hero, free + locked + 1).Refusal, EquipmentRefusal::Missing);
+    const EquipmentResult off = Gear().UnequipRecord(Hero, free);
+    EXPECT_EQ(off.Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(off.Record, free);
+    EXPECT_EQ(State().Count, 1u);
+    EXPECT_EQ(Gear().UnequipRecord(Hero, locked, ItemChangeClass::Forced).Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(State().Count, 0u);
+}
+
 // Two cursed rings, each holding its own curse: one authored on its entry, one
 // from an effect on its entry. Each locks its own record alone.
 TEST_F(EquipmentLockTest, ACurseLocksOnlyTheRecordWhoseEntryHoldsIt)

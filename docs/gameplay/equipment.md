@@ -151,6 +151,7 @@ runs in.
 |---|---|
 | `Equip(wearer, entry, slot?)` | Puts the entry in the slots its item occupies, replacing what holds them. |
 | `Unequip(wearer, slot)` | Ends the record holding the slot. |
+| `UnequipRecord(wearer, record)` | Ends the record of that key, as `Equip` returned it, without naming a slot. |
 | `Cycle(wearer, group)` | Equips into the group's first slot the next entry the wearer holds, however deep, whose first `occupies` name covers the slot and which it accepts. A candidate the equip refuses is passed for the next; it wraps, and unequips when nothing equips. |
 
 **The check.** An equip is checked whole before anything changes, against the
@@ -330,7 +331,7 @@ Two kinds, never confused:
   baseline (`stack.max` must then be 1).
 
 Locks refuse what a person asks for: `Equip` (of the slots a locked record
-holds), `Unequip`, `Cycle`, and a requested move of a worn entry. They never
+holds), `Unequip`, `UnequipRecord`, `Cycle`, and a requested move of a worn entry. They never
 hold back what the World decides: the pass's endings and derivations, and a
 **forced** change (`ItemChangeClass::Forced`, the `force` argument of
 `equipment.unequip`, `inventory.transfer` and `inventory.drop`), such as a

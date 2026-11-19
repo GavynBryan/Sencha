@@ -310,10 +310,21 @@ EquipmentResult Equipment::Unequip(EntityId wearer, std::string_view slot, ItemC
     const std::size_t record = RecordHolding(records, index);
     if (record == kNoRecord)
         return Refused(EquipmentRefusal::Missing);
-    if (change == ItemChangeClass::Requested && EquipmentRecordLocked(world, wearer, records[record]))
+    return UnequipRecord(wearer, records[record].Key, change);
+}
+
+EquipmentResult Equipment::UnequipRecord(EntityId wearer, std::uint32_t key, ItemChangeClass change)
+{
+    World& world = *Entities;
+    if (!IsSimulationAuthority(world))
+        return Refused(EquipmentRefusal::NotAuthority);
+    const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
+    const auto found = std::ranges::find(records, key, &EquipmentRecord::Key);
+    if (found == records.end())
+        return Refused(EquipmentRefusal::Missing);
+    if (change == ItemChangeClass::Requested && EquipmentRecordLocked(world, wearer, *found))
         return Refused(EquipmentRefusal::Locked);
-    const std::uint32_t key = records[record].Key;
-    EndEquipmentRecord(world, wearer, record);
+    EndEquipmentRecord(world, wearer, static_cast<std::size_t>(found - records.begin()));
     return { .Refusal = EquipmentRefusal::None, .Record = key };
 }
 
