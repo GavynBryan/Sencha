@@ -27,7 +27,9 @@ what a save keeps is decided per entity by its zone state lifetime
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
   restore function. A section in a save that nothing registered is kept and
   written back by the next save, so content a newer build wrote survives an
-  older one. The engine registers three (`save/EngineSaveSections.h`), in this
+  older one. A registered section whose saved version is newer than the
+  registered one fails the restore before the level changes, naming the
+  section, since restoring the rest and writing over it later would lose it. The engine registers three (`save/EngineSaveSections.h`), in this
   order: `sencha.bodies`, `sencha.held` and `sencha.persistent_ids`.
 
 ## Bodies
@@ -134,9 +136,12 @@ navigation file):
 | `SECT` | 1 | JSON: `[{name, version, data}]` |
 | `HASH` | 1 | 64-bit hash of everything before it |
 
-A reader skips a chunk it does not know or a chunk version newer than its own,
-refuses a file whose format version is newer, and refuses any file whose hash
-disagrees. `test/fixtures/saves/example.v1.ssav` is format 1, checked in, and
+A reader skips a chunk it does not know and refuses any file whose hash
+disagrees. A file whose format version is newer, or that holds a newer version
+of a chunk this build reads, is refused as written by a newer build
+(`DecodedSavedGame::Newer`): a restore of it fails with that reason rather than
+falling back to an older backup, and the next write keeps it as the backup
+rather than discarding it as corrupt. `test/fixtures/saves/example.v1.ssav` is format 1, checked in, and
 must keep reading.
 
 ## Not yet

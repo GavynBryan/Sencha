@@ -54,10 +54,9 @@ TEST(SavedGame, WhatIsEncodedDecodesTheSame)
 {
     const std::vector<std::byte> bytes = EncodeSavedGame(Example());
     ASSERT_FALSE(bytes.empty());
-    std::string error;
-    const std::optional<SavedGame> decoded = DecodeSavedGame(bytes, &error);
-    ASSERT_TRUE(decoded.has_value()) << error;
-    ExpectSame(*decoded, Example());
+    const DecodedSavedGame decoded = DecodeSavedGame(bytes);
+    ASSERT_TRUE(decoded.Saved.has_value()) << decoded.Error;
+    ExpectSame(*decoded.Saved, Example());
 }
 
 // The first format's bytes, checked in: a later build must still read them.
@@ -71,37 +70,62 @@ TEST(SavedGame, TheFirstFormatsFixtureStillReads)
     }
     std::vector<std::byte> bytes;
     ASSERT_TRUE(ReadFileBytes(kFixture, bytes)) << kFixture;
-    std::string error;
-    const std::optional<SavedGame> decoded = DecodeSavedGame(bytes, &error);
-    ASSERT_TRUE(decoded.has_value()) << error;
-    ExpectSame(*decoded, Example());
+    const DecodedSavedGame decoded = DecodeSavedGame(bytes);
+    ASSERT_TRUE(decoded.Saved.has_value()) << decoded.Error;
+    ExpectSame(*decoded.Saved, Example());
 }
 
 TEST(SavedGame, ACorruptOrCutShortFileIsRefused)
 {
     std::vector<std::byte> bytes = EncodeSavedGame(Example());
     std::vector<std::byte> cut(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(bytes.size() / 2));
-    std::string error;
-    EXPECT_FALSE(DecodeSavedGame(cut, &error).has_value());
+    EXPECT_FALSE(DecodeSavedGame(cut).Saved.has_value());
 
     bytes[bytes.size() / 2] ^= std::byte{ 0x40 };
-    EXPECT_FALSE(DecodeSavedGame(bytes, &error).has_value());
-    EXPECT_FALSE(error.empty());
+    const DecodedSavedGame corrupt = DecodeSavedGame(bytes);
+    EXPECT_FALSE(corrupt.Saved.has_value());
+    EXPECT_FALSE(corrupt.Newer);
+    EXPECT_FALSE(corrupt.Error.empty());
 }
 
 TEST(SavedGame, AChunkThisBuildDoesNotKnowIsSkipped)
 {
     HashedChunkFileWriter file(MakeFourCC('S', 'S', 'A', 'V'), kSavedGameFormatVersion);
-    std::string error;
     file.Chunk(MakeFourCC('S', 'U', 'M', 'M'), 1, [&] {
         return Serialize(file.Writer(),
                          std::string(R"({"level":{"kind":"scene","name":"room"},"saved_at":5})"));
     });
     file.Chunk(MakeFourCC('F', 'U', 'T', 'R'), 1, [&] { return Serialize(file.Writer(), std::uint32_t{ 42 }); });
-    const std::optional<SavedGame> decoded = DecodeSavedGame(file.Finish(MakeFourCC('H', 'A', 'S', 'H')), &error);
-    ASSERT_TRUE(decoded.has_value()) << error;
-    EXPECT_EQ(decoded->Summary.Level.Name, "room");
-    EXPECT_TRUE(decoded->Zones.empty());
+    const DecodedSavedGame decoded = DecodeSavedGame(file.Finish(MakeFourCC('H', 'A', 'S', 'H')));
+    ASSERT_TRUE(decoded.Saved.has_value()) << decoded.Error;
+    EXPECT_EQ(decoded.Saved->Summary.Level.Name, "room");
+    EXPECT_TRUE(decoded.Saved->Zones.empty());
+}
+
+TEST(SavedGame, AKnownChunkFromANewerBuildIsRefusedAsNewer)
+{
+    HashedChunkFileWriter file(MakeFourCC('S', 'S', 'A', 'V'), kSavedGameFormatVersion);
+    file.Chunk(MakeFourCC('S', 'U', 'M', 'M'), 1, [&] {
+        return Serialize(file.Writer(),
+                         std::string(R"({"level":{"kind":"scene","name":"room"},"saved_at":5})"));
+    });
+    file.Chunk(MakeFourCC('Z', 'O', 'N', 'E'), 2, [&] { return Serialize(file.Writer(), std::uint32_t{ 42 }); });
+    const DecodedSavedGame decoded = DecodeSavedGame(file.Finish(MakeFourCC('H', 'A', 'S', 'H')));
+    EXPECT_FALSE(decoded.Saved.has_value());
+    EXPECT_TRUE(decoded.Newer);
+    EXPECT_NE(decoded.Error.find("ZONE"), std::string::npos) << decoded.Error;
+}
+
+TEST(SavedGame, AFormatFromANewerBuildIsRefusedAsNewer)
+{
+    HashedChunkFileWriter file(MakeFourCC('S', 'S', 'A', 'V'), kSavedGameFormatVersion + 1);
+    file.Chunk(MakeFourCC('S', 'U', 'M', 'M'), 1, [&] {
+        return Serialize(file.Writer(),
+                         std::string(R"({"level":{"kind":"scene","name":"room"},"saved_at":5})"));
+    });
+    const DecodedSavedGame decoded = DecodeSavedGame(file.Finish(MakeFourCC('H', 'A', 'S', 'H')));
+    EXPECT_FALSE(decoded.Saved.has_value());
+    EXPECT_TRUE(decoded.Newer);
 }
 
 TEST(SaveSlotFiles, ASlotsFileAndItsBackupAreWrittenApart)

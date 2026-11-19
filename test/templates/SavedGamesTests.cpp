@@ -4,6 +4,9 @@
 #include <core/console/ConsoleService.h>
 #include <core/io/FileBytes.h>
 #include <core/json/JsonStringify.h>
+#include <core/serialization/FourCC.h>
+#include <core/serialization/HashedChunkFile.h>
+#include <core/serialization/Serialize.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/CounterVocabulary.h>
@@ -85,7 +88,12 @@ namespace
         std::vector<std::byte> bytes;
         if (path.empty() || !ReadFileBytes(path, bytes))
             return std::nullopt;
-        return DecodeSavedGame(bytes);
+        return DecodeSavedGame(bytes).Saved;
+    }
+
+    bool WriteSave(const std::filesystem::path& path, const SavedGame& saved)
+    {
+        return WriteFileBytes(path, EncodeSavedGame(saved));
     }
 
     EntityId AuthoredOtherThan(World& world, EntityId body, PersistentEntityId skip = {})
@@ -221,6 +229,80 @@ TEST(SavedGames, HoldsAnswersWhatARestoreWouldFind)
     ASSERT_TRUE(backupOnly.has_value());
     EXPECT_TRUE(*backupOnly) << "only a backup is left, and a restore would read it";
     EXPECT_FALSE(*corruptOnly) << "a restore cannot read a corrupt file with no backup";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ASaveWithANewerVersionOfARegisteredSectionIsRefused)
+{
+    const std::filesystem::path root = RootFor("newer_section");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(current);
+    ASSERT_TRUE(saved.has_value());
+    for (SavedGameSection& section : saved->Sections)
+        if (section.Name == "sencha.held")
+            section.Version = 99;
+    ASSERT_TRUE(WriteSave(current, *saved));
+
+    SaveStatus status = SaveStatus::Idle;
+    std::string reason;
+    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int frame) {
+        if (frame == 30)
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+        }
+        if (frame > 30)
+        {
+            status = engine.Saves().RestoreStatus();
+            reason = engine.Saves().Failure();
+        }
+        (void)world;
+    });
+    EXPECT_EQ(status, SaveStatus::Failed) << "a section this build cannot read was dropped without a word";
+    EXPECT_NE(reason.find("newer"), std::string::npos) << reason;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AFileFromANewerBuildIsNeitherPassedOverForItsBackupNorLost)
+{
+    const std::filesystem::path root = RootFor("newer_file");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    HashedChunkFileWriter newer(MakeFourCC('S', 'S', 'A', 'V'), kSavedGameFormatVersion + 1);
+    newer.Chunk(MakeFourCC('S', 'U', 'M', 'M'), 1, [&] { return Serialize(newer.Writer(), std::string("{}")); });
+    const std::vector<std::byte> newerBytes = newer.Finish(MakeFourCC('H', 'A', 'S', 'H'));
+    ASSERT_TRUE(WriteFileBytes(current, newerBytes));
+
+    std::optional<bool> held;
+    SaveStatus restored = SaveStatus::Idle;
+    std::string reason;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            held = saves.Holds("default");
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.RestoreStatus() == SaveStatus::Failed)
+        {
+            restored = saves.RestoreStatus();
+            reason = saves.Failure();
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the restore of a newer build's file did not fail";
+    EXPECT_FALSE(*held);
+    EXPECT_NE(reason.find("newer"), std::string::npos) << reason;
+    std::vector<std::byte> backup;
+    ASSERT_TRUE(ReadFileBytes(BackupOf(current), backup));
+    EXPECT_EQ(backup, newerBytes) << "the newer build's save was not kept as the backup";
     std::filesystem::remove_all(root);
 }
 

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 #include <utility>
 
 namespace
@@ -25,27 +26,39 @@ namespace
         bool FromBackup = false;
     };
 
+    // A file a newer build wrote is not passed over for an older backup.
     ReadOutcome ReadSlot(const SaveSlotFiles& files, const std::string& slot)
     {
         ReadOutcome outcome;
         outcome.Error = "no save in slot '" + slot + "'";
         if (const std::optional<std::vector<std::byte>> current = files.Read(slot))
-            if ((outcome.Saved = DecodeSavedGame(*current, &outcome.Error)))
+        {
+            DecodedSavedGame decoded = DecodeSavedGame(*current);
+            outcome.Saved = std::move(decoded.Saved);
+            if (outcome.Saved.has_value())
                 return outcome;
-        std::string backupError;
+            outcome.Error = std::move(decoded.Error);
+            if (decoded.Newer)
+                return outcome;
+        }
         if (const std::optional<std::vector<std::byte>> backup = files.ReadBackup(slot))
-            if ((outcome.Saved = DecodeSavedGame(*backup, &backupError)))
-                outcome.FromBackup = true;
+        {
+            DecodedSavedGame decoded = DecodeSavedGame(*backup);
+            outcome.Saved = std::move(decoded.Saved);
+            outcome.FromBackup = outcome.Saved.has_value();
+            if (decoded.Newer)
+                outcome.Error = std::move(decoded.Error);
+        }
         return outcome;
     }
 
-    // The file being replaced becomes the backup only when it reads, so a
+    // The file being replaced becomes the backup unless it is corrupt, so a
     // corrupt file never takes the place of a good backup.
     bool WriteSlot(const SaveSlotFiles& files, const std::string& slot, std::span<const std::byte> bytes)
     {
-        if (const std::optional<std::vector<std::byte>> current = files.Read(slot);
-            current.has_value() && DecodeSavedGame(*current).has_value())
-            (void)files.WriteBackup(slot, *current);
+        if (const std::optional<std::vector<std::byte>> current = files.Read(slot))
+            if (const DecodedSavedGame decoded = DecodeSavedGame(*current); decoded.Saved.has_value() || decoded.Newer)
+                (void)files.WriteBackup(slot, *current);
         return files.Write(slot, bytes);
     }
 
@@ -220,6 +233,12 @@ void SavedGames::Restore(const std::string& slot)
 
 void SavedGames::BeginChange(const SavedGame& saved)
 {
+    for (const SavedGameSection& section : saved.Sections)
+        if (const auto registered = std::ranges::find(Sections, section.Name, &SavedGameSectionDefinition::Name);
+            registered != Sections.end() && section.Version > registered->Version)
+            return FailRestore("section '" + section.Name + "' was written by a newer build (version "
+                               + std::to_string(section.Version) + "; this build reads up to "
+                               + std::to_string(registered->Version) + ")");
     const LevelChangeAdmission admission = Host.LevelChanges().Request(LevelChangeRequest{
         .Level = saved.Summary.Level, .Focus = saved.Summary.Focus, .ZoneState = saved.Zones });
     if (admission != LevelChangeAdmission::Accepted)
@@ -248,7 +267,7 @@ void SavedGames::RestoreSections()
         const auto registered = std::ranges::find(Sections, section.Name, &SavedGameSectionDefinition::Name);
         if (registered == Sections.end())
             Unclaimed.push_back(std::move(section));
-        else if (registered->Restore && section.Version <= registered->Version)
+        else if (registered->Restore)
             registered->Restore(world, section.Version, section.Data);
     }
     Restoring = SaveStatus::Done;
