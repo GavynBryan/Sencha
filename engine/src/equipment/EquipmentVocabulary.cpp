@@ -46,10 +46,9 @@ namespace
         const std::uint8_t index = layout != nullptr ? FindEquipmentSlot(*layout, slot) : kNoEquipmentSlot;
         if (index == kNoEquipmentSlot)
             return EntityId{};
-        for (const EquipmentRecord& record : EquipmentRecordsOf(world, *state))
-            if ((record.Slots >> index) & 1u)
-                return ResolvePersistableRef(world, record.Source);
-        return EntityId{};
+        const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+        const std::size_t holding = FindEquipmentRecordHolding(records, index);
+        return holding != kNoEquipmentRecord ? ResolvePersistableRef(world, records[holding].Source) : EntityId{};
     }
 
     AuthoredQueryStatus InSlot(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)

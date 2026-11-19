@@ -54,11 +54,10 @@ namespace
             {
                 const EntityId entity = view.Entity(row);
                 const ItemDefinition* item = FindItemDefinition(world, items[row].Definition);
-                if (item == nullptr || item->Occupies.empty() || !ids[row].Id.IsValid() || entity == context.Entity
+                if (item == nullptr || !ids[row].Id.IsValid() || entity == context.Entity
                     || !IsHeldWithin(world, entity, context.Entity))
                     continue;
-                const std::vector<std::uint8_t> named = EquipmentSlotsNamed(layout, item->Occupies.front());
-                if (std::ranges::find(named, slot) != named.end() && ItemCarries(world, *item, layout.Slots[slot].Accepts))
+                if (ItemTakesSlotFirst(world, layout, slot, *item))
                     choices.push_back({ EntryLabel(context.Document, entity, ids[row].Id),
                                         PersistableRef{ .Entity = entity, .Target = ids[row].Id }, items[row].Definition });
             }
@@ -89,27 +88,24 @@ namespace
             || ResolveEquipmentSlots(world, layout, worn.Records, *item, layout.Slots[slot].Key, slots, primary)
                 != EquipmentRefusal::None)
             return false;
-        RemoveRecordsWhere(worn, [&](const EquipmentRecord& record) { return (record.Slots & slots) != 0; });
-        worn.Records.push_back(EquipmentRecord{ .Key = worn.NextKey++, .Definition = entry.Definition, .Slots = slots,
-                                                .Primary = primary, .Source = entry.Entry,
-                                                .Derivation = EquipmentDerivation::Pending });
+        (void)WearRecord(worn.Records, worn.NextKey,
+                         EquipmentRecord{ .Key = 0, .Definition = entry.Definition, .Slots = slots, .Primary = primary,
+                                          .Source = entry.Entry, .Derivation = EquipmentDerivation::Pending });
         return true;
     }
 
     const EquipmentRecord* RecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot)
     {
-        const auto found = std::ranges::find_if(records, [&](const EquipmentRecord& record) {
-            return ((record.Slots >> slot) & 1u) != 0;
-        });
-        return found != records.end() ? &*found : nullptr;
+        const std::size_t holding = FindEquipmentRecordHolding(records, slot);
+        return holding != kNoEquipmentRecord ? &records[holding] : nullptr;
     }
 
     PropertyNode LayoutRow(const World& world, EquipmentLayoutId layout)
     {
         const EquipmentLayoutRegistry* layouts = world.TryGetResource<EquipmentLayoutRegistry>();
         std::vector<std::string> names;
-        for (std::uint32_t id = 1; layouts != nullptr && id <= layouts->Size(); ++id)
-            names.emplace_back(layouts->GetName(EquipmentLayoutId{ id }));
+        if (layouts != nullptr)
+            layouts->ForEachName([&](EquipmentLayoutId, std::string_view name) { names.emplace_back(name); });
         const std::string current(layouts != nullptr ? layouts->GetName(layout) : std::string_view{});
         if (std::ranges::find(names, current) == names.end())
             names.push_back(current);

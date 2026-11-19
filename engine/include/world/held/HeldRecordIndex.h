@@ -57,6 +57,8 @@ public:
     // 1 for a record whose holder is no record; the walks stop past kHeldDeepestNesting.
     [[nodiscard]] int Depth(EntityId entity) const;
     [[nodiscard]] int Height(EntityId entity) const;
+    // `inner` is `outer` or listed beneath it, within kHeldDeepestNesting.
+    [[nodiscard]] bool IsWithin(EntityId inner, EntityId outer) const;
     [[nodiscard]] std::vector<EntityId> AllRecords() const;
     [[nodiscard]] std::vector<EntityId> Holders() const;
     [[nodiscard]] std::vector<EntityId> AwaitingRecords() const;

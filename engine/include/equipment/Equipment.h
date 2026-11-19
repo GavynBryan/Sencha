@@ -65,6 +65,10 @@ private:
                                                      std::span<const EquipmentRecord> worn, const ItemDefinition& item,
                                                      std::string_view asked, std::uint32_t& mask, std::uint8_t& primary);
 
+// The item's first `occupies` name covers the slot, and the slot accepts the item.
+[[nodiscard]] bool ItemTakesSlotFirst(const World& world, const EquipmentLayout& layout, std::uint8_t slot,
+                                      const ItemDefinition& item);
+
 [[nodiscard]] bool EquipmentWearerLocked(const World& world, EntityId wearer);
 // The wearer's lock, or the record's own: its source holds one of its item's `equip.lock_tags`.
 [[nodiscard]] bool EquipmentRecordLocked(const World& world, EntityId wearer, const EquipmentRecord& record);

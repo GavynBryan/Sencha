@@ -309,9 +309,8 @@ namespace
 
             PropertyNode abilities = GroupProperty("abilities", "Abilities");
             std::vector<std::string> offered;
-            ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
-                if (registry->Get(id) != nullptr)
-                    offered.emplace_back(registry->GetName(id));
+            registry->ForEachDefined([&](AbilityId id, const AbilityDefinition&) {
+                offered.emplace_back(registry->GetName(id));
             });
             if (!offered.empty())
                 abilities.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Ability", .Choices = std::move(offered) });
@@ -429,7 +428,7 @@ namespace
         const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
         std::vector<std::string> names;
         if (items != nullptr)
-            ForEachRegistered<ItemId>(*items, [&](ItemId id) { names.push_back(DisplayName(items->GetName(id))); });
+            items->ForEachName([&](ItemId, std::string_view name) { names.push_back(DisplayName(name)); });
         const std::string current = DisplayName(items != nullptr ? items->GetName(definition) : std::string_view{});
         if (std::ranges::find(names, current) == names.end())
             names.push_back(current);

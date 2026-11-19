@@ -3,6 +3,7 @@
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityGrants.h>
 #include <ecs/World.h>
+#include <equipment/Equipment.h>
 #include <equipment/EquipmentLayout.h>
 #include <inventory/Inventory.h>
 #include <inventory/ItemDefinition.h>
@@ -35,18 +36,6 @@ namespace
         std::uint64_t Layouts = kNever;
         std::uint64_t Grants = kNever;
     };
-
-    template <typename Registry, typename Fn>
-    void ForEachDefined(const Registry& registry, Fn&& fn)
-    {
-        using Id = decltype(registry.Find(std::string_view{}));
-        for (std::size_t i = 1; i <= registry.Size(); ++i)
-        {
-            const Id id{ static_cast<decltype(Id{}.Value)>(i) };
-            if (const auto* definition = registry.Get(id))
-                fn(id, *definition);
-        }
-    }
 }
 
 std::vector<AbilityGrantEntry> WornGrantEntries(const World& world, EffectId effect, const EquipmentSlot& slot,
@@ -92,15 +81,15 @@ void DeclareWornGrantEntries(World& world, std::vector<std::string>& errors)
         return;
     last = now;
 
-    ForEachDefined(*items, [&](ItemId itemId, const ItemDefinition& item) {
-        if (item.Occupies.empty() || item.EquipEffects.empty())
+    items->ForEachDefined([&](ItemId itemId, const ItemDefinition& item) {
+        if (item.EquipEffects.empty())
             return;
-        ForEachDefined(*layouts, [&](EquipmentLayoutId layoutId, const EquipmentLayout& layout) {
-            for (const std::uint8_t index : EquipmentSlotsNamed(layout, item.Occupies.front()))
+        layouts->ForEachDefined([&](EquipmentLayoutId layoutId, const EquipmentLayout& layout) {
+            for (std::size_t index = 0; index < layout.Slots.size(); ++index)
             {
-                const EquipmentSlot& slot = layout.Slots[index];
-                if (!ItemCarries(world, item, slot.Accepts))
+                if (!ItemTakesSlotFirst(world, layout, static_cast<std::uint8_t>(index), item))
                     continue;
+                const EquipmentSlot& slot = layout.Slots[index];
                 for (const ItemEquipEffect& equipped : item.EquipEffects)
                     for (AbilityGrantEntry& worn : WornGrantEntries(world, equipped.Effect, slot, item))
                     {

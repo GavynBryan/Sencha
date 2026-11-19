@@ -142,6 +142,23 @@ int HeldRecordIndex::Depth(EntityId entity) const
     return depth;
 }
 
+bool HeldRecordIndex::IsWithin(EntityId inner, EntityId outer) const
+{
+    if (!outer.IsValid())
+        return false;
+    EntityId at = inner;
+    for (int depth = 0; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
+    {
+        if (at == outer)
+            return true;
+        const auto found = Listings.find(at);
+        if (found == Listings.end())
+            return false;
+        at = found->second.Holder;
+    }
+    return false;
+}
+
 int HeldRecordIndex::Height(EntityId entity) const
 {
     int height = 0;

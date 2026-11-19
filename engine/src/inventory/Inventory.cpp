@@ -369,16 +369,8 @@ bool MayUseItem(const World& world, EntityId actor, EntityId item)
 
 bool ItemIsWithin(const World& world, EntityId inner, EntityId outer)
 {
-    if (!outer.IsValid())
-        return false;
-    EntityId at = inner;
-    for (int depth = 0; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
-    {
-        if (at == outer)
-            return true;
-        at = HolderOf(world, at);
-    }
-    return false;
+    const HeldRecordIndex* index = IndexOf(world);
+    return index != nullptr ? index->IsWithin(inner, outer) : inner.IsValid() && inner == outer;
 }
 
 bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count)

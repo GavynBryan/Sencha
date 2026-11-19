@@ -75,6 +75,14 @@ void AddEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& re
 // The last record takes the place of the one removed.
 void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index);
 
+inline constexpr std::size_t kNoEquipmentRecord = static_cast<std::size_t>(-1);
+[[nodiscard]] std::size_t FindEquipmentRecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot);
+
+// Ends every record holding one of `record`'s slots, the last taking each one's
+// place, and appends `record` under the next key, which it returns.
+std::uint32_t WearRecord(std::vector<EquipmentRecord>& records, std::uint32_t& nextKey, EquipmentRecord record);
+std::uint32_t WearEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& record);
+
 [[nodiscard]] EquipmentRecordList CopyEquipment(const World& world, EntityId wearer);
 [[nodiscard]] EquipmentState MakeEquipmentState(World& world, const EquipmentRecordList& worn);
 void SetEquipment(World& world, EntityId wearer, const EquipmentRecordList& worn);

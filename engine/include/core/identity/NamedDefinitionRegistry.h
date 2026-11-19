@@ -83,6 +83,21 @@ public:
 
     [[nodiscard]] std::size_t Size() const { return Entries.size() - 1; }
 
+    template<typename Fn>
+    void ForEachName(Fn&& visit) const
+    {
+        for (std::size_t i = 1; i < Entries.size(); ++i)
+            visit(Id{ static_cast<decltype(Id{}.Value)>(i) }, std::string_view(Entries[i].Name));
+    }
+
+    template<typename Fn>
+    void ForEachDefined(Fn&& visit) const
+    {
+        for (std::size_t i = 1; i < Entries.size(); ++i)
+            if (Entries[i].Defined != nullptr)
+                visit(Id{ static_cast<decltype(Id{}.Value)>(i) }, *Entries[i].Defined);
+    }
+
     [[nodiscard]] std::uint64_t Generation() const { return Generation_; }
 
 private:

@@ -69,6 +69,37 @@ void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index)
     state.Count = static_cast<std::uint8_t>(records.size());
 }
 
+std::size_t FindEquipmentRecordHolding(std::span<const EquipmentRecord> records, std::uint8_t slot)
+{
+    for (std::size_t i = 0; i < records.size(); ++i)
+        if ((records[i].Slots >> slot) & 1u)
+            return i;
+    return kNoEquipmentRecord;
+}
+
+std::uint32_t WearRecord(std::vector<EquipmentRecord>& records, std::uint32_t& nextKey, EquipmentRecord record)
+{
+    for (std::size_t i = records.size(); i-- > 0;)
+        if ((records[i].Slots & record.Slots) != 0)
+        {
+            records[i] = records.back();
+            records.pop_back();
+        }
+    record.Key = nextKey++;
+    records.push_back(record);
+    return record.Key;
+}
+
+std::uint32_t WearEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& record)
+{
+    EquipmentState& state = *world.TryGet<EquipmentState>(wearer);
+    std::vector<EquipmentRecord>& records = Edit(world, state);
+    const std::uint32_t key = WearRecord(records, state.NextKey, record);
+    assert(records.size() <= kEquipmentRecordCapacity && "a record holds a slot no other record holds");
+    state.Count = static_cast<std::uint8_t>(records.size());
+    return key;
+}
+
 EquipmentRecordList CopyEquipment(const World& world, EntityId wearer)
 {
     EquipmentRecordList copy;
