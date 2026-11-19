@@ -30,7 +30,6 @@ namespace
 {
     constexpr std::uint32_t kBodiesVersion = 1;
     constexpr std::uint32_t kHeldVersion = 1;
-    constexpr std::uint32_t kPersistentIdsVersion = 1;
 
     EntityId LocalBodyOf(const World& world)
     {
@@ -79,9 +78,14 @@ namespace
 
     void RestoreBodies(World& world, std::uint32_t, const JsonValue& data)
     {
+        RestoredBodies* existing = world.TryGetResource<RestoredBodies>();
         const JsonValue* local = data.Find("local");
         if (local == nullptr || !local->IsObject())
+        {
+            if (existing != nullptr)
+                existing->Local.reset();
             return;
+        }
         RestoredBody restored;
         if (const JsonValue* root = local->Find("root"))
             (void)FromJson(*root, restored.Root);
@@ -89,27 +93,12 @@ namespace
             restored.Overlay.RootPatch = *patch;
         if (const JsonValue* id = local->Find("id"); id != nullptr && id->IsString())
             restored.Overlay.RootId = PersistentEntityIdFromString(id->AsString()).value_or(PersistentEntityId{});
-        if (RestoredBodies* existing = world.TryGetResource<RestoredBodies>())
+        if (existing != nullptr)
             existing->Local = std::move(restored);
         else
             world.AddResource<RestoredBodies>().Local = std::move(restored);
     }
 
-    JsonValue CapturePersistentIds(World& world)
-    {
-        const PersistentIdMint* mint = world.TryGetResource<PersistentIdMint>();
-        return JsonValue(JsonValue::Object{
-            { "next", JsonValue(static_cast<double>(mint != nullptr ? mint->Next : 1)) } });
-    }
-
-    void RestorePersistentIds(World& world, std::uint32_t, const JsonValue& data)
-    {
-        const auto next = static_cast<std::uint64_t>(data.NumberOr("next", 1.0));
-        PersistentIdMint* mint = world.TryGetResource<PersistentIdMint>();
-        if (mint == nullptr)
-            mint = &world.AddResource<PersistentIdMint>();
-        mint->Next = std::max(mint->Next, next);
-    }
 }
 
 void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
@@ -119,7 +108,6 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
         .Version = kBodiesVersion,
         .Capture = [&engine](World& world) { return CaptureBodies(engine, world); },
         .Restore = &RestoreBodies });
-    // Before the id counter: capturing gives records without an id one.
     (void)saves.RegisterSection(SavedGameSectionDefinition{
         .Name = "sencha.held",
         .Version = kHeldVersion,
@@ -133,8 +121,4 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
             [&engine](World& world, std::uint32_t, const JsonValue& data) {
                 RestoreHeldRecords(world, data, engine.SceneSerializers(), engine.Content().SceneContext());
             } });
-    (void)saves.RegisterSection(SavedGameSectionDefinition{ .Name = "sencha.persistent_ids",
-                                                            .Version = kPersistentIdsVersion,
-                                                            .Capture = &CapturePersistentIds,
-                                                            .Restore = &RestorePersistentIds });
 }

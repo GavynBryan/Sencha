@@ -45,6 +45,7 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
         return LevelChangeAdmission::InSession;
     if (!Host.Level().IsCooked(request.Level))
         return LevelChangeAdmission::NotCooked;
+    Kept = request.RuntimeState;
     Waiting = std::move(request);
     Current = LevelChangeStatus::Pending;
     Reasons.clear();
@@ -69,7 +70,10 @@ void LevelChange::Commit()
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
         memory->Install(request.ZoneState);
-    DestroyAwaitingHeldRecords(world);
+    if (request.RuntimeState == LevelChangeRuntimeState::Discard)
+        DestroyHeldRecords(world);
+    else
+        DestroyAwaitingHeldRecords(world);
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {

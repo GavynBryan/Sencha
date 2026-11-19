@@ -104,6 +104,14 @@ namespace
         return nullptr;
     }
 
+    std::size_t SectionsNamed(const SavedGame& saved, std::string_view name)
+    {
+        std::size_t count = 0;
+        for (const SavedGameSection& section : saved.Sections)
+            count += section.Name == name ? 1 : 0;
+        return count;
+    }
+
     EntityId AuthoredOtherThan(World& world, EntityId body, PersistentEntityId skip = {})
     {
         EntityId found;
@@ -132,9 +140,7 @@ namespace
 
     bool RestoreArrived(const Engine& engine)
     {
-        return engine.Saves().RestoreStatus() == SaveStatus::Done
-            && engine.LevelChanges().Serial() == engine.Saves().RestoreChange()
-            && engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored;
+        return engine.Saves().RestoreStatus() == RestoreProgress::BodiesRestored;
     }
 
     // Two saves in one run: the backup holds the first, where `second` is still there.
@@ -252,7 +258,7 @@ TEST(SavedGames, ASaveWithANewerVersionOfARegisteredSectionIsRefused)
             section.Version = 99;
     ASSERT_TRUE(WriteSave(current, *saved));
 
-    SaveStatus status = SaveStatus::Idle;
+    RestoreProgress status = RestoreProgress::Idle;
     std::string reason;
     RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int frame) {
         if (frame == 30)
@@ -262,11 +268,11 @@ TEST(SavedGames, ASaveWithANewerVersionOfARegisteredSectionIsRefused)
         if (frame > 30)
         {
             status = engine.Saves().RestoreStatus();
-            reason = engine.Saves().Failure();
+            reason = engine.Saves().RestoreFailure();
         }
         (void)world;
     });
-    EXPECT_EQ(status, SaveStatus::Failed) << "a section this build cannot read was dropped without a word";
+    EXPECT_EQ(status, RestoreProgress::Failed) << "a section this build cannot read was dropped without a word";
     EXPECT_NE(reason.find("newer"), std::string::npos) << reason;
     std::filesystem::remove_all(root);
 }
@@ -282,7 +288,6 @@ TEST(SavedGames, AFileFromANewerBuildIsNeitherPassedOverForItsBackupNorLost)
     ASSERT_TRUE(WriteFileBytes(current, newerBytes));
 
     std::optional<bool> held;
-    SaveStatus restored = SaveStatus::Idle;
     std::string reason;
     int stage = 0;
     RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
@@ -293,10 +298,9 @@ TEST(SavedGames, AFileFromANewerBuildIsNeitherPassedOverForItsBackupNorLost)
             EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
             stage = 1;
         }
-        else if (stage == 1 && saves.RestoreStatus() == SaveStatus::Failed)
+        else if (stage == 1 && saves.RestoreStatus() == RestoreProgress::Failed)
         {
-            restored = saves.RestoreStatus();
-            reason = saves.Failure();
+            reason = saves.RestoreFailure();
             EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
             stage = 2;
         }
@@ -376,6 +380,296 @@ TEST(SavedGames, AWriteOnTheAsyncLaneAtQuitStillReachesTheDisk)
     });
     ASSERT_NE(requestedOn, 0);
     EXPECT_TRUE(ReadSave(SlotFile(root, "default")).has_value()) << "the quit dropped the save";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ASectionTheSaveCarriedThatRegistersLateIsWrittenOnce)
+{
+    const std::filesystem::path root = RootFor("unclaimed_once");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(current);
+    ASSERT_TRUE(saved.has_value());
+    saved->Sections.push_back(SavedGameSection{
+        .Name = "future.notes", .Version = 1, .Data = JsonValue(JsonValue::Object{ { "from", JsonValue(std::string("file")) } }) });
+    ASSERT_TRUE(WriteSave(current, *saved));
+
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            EXPECT_TRUE(saves.RegisterSection(SavedGameSectionDefinition{
+                .Name = "future.notes",
+                .Capture = [](World&) { return JsonValue(JsonValue::Object{ { "from", JsonValue(std::string("late")) } }); },
+                .Restore = [](World&, std::uint32_t, const JsonValue&) {} }));
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.UnregisterSection("future.notes");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    const std::optional<SavedGame> rewritten = ReadSave(current);
+    ASSERT_TRUE(rewritten.has_value());
+    EXPECT_EQ(SectionsNamed(*rewritten, "future.notes"), 1u);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, SectionsNothingRegisteredTravelOnlyWithTheGameTheyCameFrom)
+{
+    const std::filesystem::path root = RootFor("unclaimed_session");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(current);
+    ASSERT_TRUE(saved.has_value());
+    saved->Sections.push_back(SavedGameSection{ .Name = "future.notes", .Version = 1, .Data = JsonValue(true) });
+    ASSERT_TRUE(WriteSave(current, *saved));
+
+    const auto change = [](Engine& engine, LevelChangeRuntimeState state) {
+        EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest{
+                      .Level = { .Kind = LevelKind::Scene, .Name = "levels/bumper" }, .RuntimeState = state }),
+                  LevelChangeAdmission::Accepted);
+    };
+    int stage = 0;
+    RunFps("levels/bumper", 900, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        const bool arrived = engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored;
+        const bool written = saves.WriteStatus() == SaveStatus::Done;
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            change(engine, LevelChangeRuntimeState::Keep);
+            stage = 2;
+        }
+        else if (stage == 2 && arrived)
+        {
+            EXPECT_EQ(saves.RequestWrite("kept"), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && written)
+        {
+            change(engine, LevelChangeRuntimeState::Discard);
+            stage = 4;
+        }
+        else if (stage == 4 && arrived)
+        {
+            EXPECT_EQ(saves.RequestWrite("fresh"), SaveAdmission::Accepted);
+            stage = 5;
+        }
+        else if (stage == 5 && written)
+        {
+            stage = 6;
+        }
+    });
+    ASSERT_EQ(stage, 6);
+    const std::optional<SavedGame> kept = ReadSave(SlotFile(root, "kept"));
+    const std::optional<SavedGame> fresh = ReadSave(SlotFile(root, "fresh"));
+    ASSERT_TRUE(kept.has_value() && fresh.has_value());
+    EXPECT_EQ(SectionsNamed(*kept, "future.notes"), 1u) << "an ordinary level change is the same game";
+    EXPECT_EQ(SectionsNamed(*fresh, "future.notes"), 0u) << "a new game carried the old save's sections";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ALevelChangeThatDiscardsRuntimeStateStartsWithoutTheWorldsCounters)
+{
+    const std::filesystem::path root = RootFor("discard_counters");
+    GameplayTagId counter;
+    std::optional<std::int32_t> afterKeep;
+    std::optional<std::int32_t> afterDiscard;
+    int stage = 0;
+    RunFps("levels/room_2", 600, root, [&](Engine& engine, World& world, int) {
+        const bool arrived = engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored;
+        const auto change = [&](LevelChangeRuntimeState state) {
+            EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest{
+                          .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" }, .RuntimeState = state }),
+                      LevelChangeAdmission::Accepted);
+        };
+        if (stage == 0 && HasBody(world))
+        {
+            counter = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.boss_defeated");
+            (void)WriteCounter(world, counter, EntityId{}, 1);
+            change(LevelChangeRuntimeState::Keep);
+            stage = 1;
+        }
+        else if (stage == 1 && arrived)
+        {
+            afterKeep = CounterValue(world, counter, EntityId{});
+            change(LevelChangeRuntimeState::Discard);
+            stage = 2;
+        }
+        else if (stage == 2 && arrived)
+        {
+            afterDiscard = CounterValue(world, counter, EntityId{});
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(afterKeep, 1) << "an ordinary level change keeps the game's counters";
+    EXPECT_EQ(afterDiscard, 0) << "a new game kept the previous game's counter";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ARestoreIsFollowedToItsBodiesAndCounted)
+{
+    const std::filesystem::path root = RootFor("restore_progress");
+    (void)WriteTwoSaves(root);
+    std::vector<RestoreProgress> seen;
+    std::uint64_t countBefore = 0;
+    std::uint64_t countAfter = 0;
+    SaveAdmission repeat = SaveAdmission::Accepted;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            countBefore = saves.Restores();
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            countAfter = saves.Restores();
+            stage = 1;
+        }
+        else if (stage == 1 && saves.RestoreStatus() == RestoreProgress::Loading)
+        {
+            repeat = saves.RequestRestore();
+            stage = 2;
+        }
+        if (seen.empty() || seen.back() != saves.RestoreStatus())
+            seen.push_back(saves.RestoreStatus());
+    });
+    EXPECT_EQ(countAfter, countBefore + 1);
+    EXPECT_EQ(repeat, SaveAdmission::Busy) << "a second restore during the first's level change";
+    const std::vector<RestoreProgress> expected{ RestoreProgress::Idle, RestoreProgress::Pending,
+                                                 RestoreProgress::Reading, RestoreProgress::Loading,
+                                                 RestoreProgress::BodiesRestored };
+    EXPECT_EQ(seen, expected);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteThatCannotReachTheDiskFailsAndTheRestoreStillUsesIt)
+{
+    const std::filesystem::path root = RootFor("unwritable");
+    std::filesystem::create_directories(root.parent_path());
+    ASSERT_TRUE(WriteFileText(root, "a file where the saves directory would be"));
+
+    SaveAdmission repeat = SaveAdmission::Accepted;
+    std::string writeFailure;
+    std::string restoreFailure = "unset";
+    PersistentEntityId lostBefore;
+    PersistentEntityId lostAfter;
+    bool lostBeforeStaysLost = false;
+    bool lostAfterIsBack = false;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            lostBefore = DestroyAuthored(world);
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            repeat = saves.RequestWrite();
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Failed)
+        {
+            writeFailure = saves.WriteFailure();
+            lostAfter = DestroyAuthored(world, lostBefore);
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && RestoreArrived(engine))
+        {
+            lostBeforeStaysLost = !Resolves(world, lostBefore);
+            lostAfterIsBack = Resolves(world, lostAfter);
+            restoreFailure = saves.RestoreFailure();
+            stage = 3;
+        }
+    });
+    EXPECT_EQ(repeat, SaveAdmission::Busy);
+    ASSERT_EQ(stage, 3) << "the failed write, or the restore after it, did not finish";
+    EXPECT_FALSE(writeFailure.empty());
+    EXPECT_TRUE(restoreFailure.empty()) << "the restore took the write's failure: " << restoreFailure;
+    EXPECT_TRUE(lostBeforeStaysLost) << "the restore went past this session's save";
+    EXPECT_TRUE(lostAfterIsBack);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AnIdMintedWhileASectionCapturesIsNeverMintedAgain)
+{
+    const std::filesystem::path root = RootFor("mint_after_capture");
+    PersistentEntityId minted;
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_TRUE(saves.RegisterSection(SavedGameSectionDefinition{
+                .Name = "game.minting",
+                .Capture = [&minted](World& captured) {
+                    minted = MintRuntimePersistentId(captured);
+                    return JsonValue(PersistentEntityIdToString(minted));
+                },
+                .Restore = [](World&, std::uint32_t, const JsonValue&) {} }));
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.UnregisterSection("game.minting");
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    ASSERT_TRUE(minted.IsValid());
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const SavedGameSection* ids = SectionOf(*saved, "sencha.persistent_ids");
+    ASSERT_NE(ids, nullptr);
+    const auto next = static_cast<std::uint64_t>(ids->Data.NumberOr("next", 0.0));
+    EXPECT_GT(next, minted.Value & ~PersistentEntityIdRuntimeBit) << "a fresh run would mint " << next << " again";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ARestoreOfASaveWithoutHeldRecordsLeavesNoneOfTheOldSessions)
+{
+    const std::filesystem::path root = RootFor("missing_held");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(current);
+    ASSERT_TRUE(saved.has_value());
+    std::erase_if(saved->Sections, [](const SavedGameSection& section) { return section.Name == "sencha.held"; });
+    ASSERT_TRUE(WriteSave(current, *saved));
+
+    std::optional<std::int32_t> after;
+    GameplayTagId counter;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            counter = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.session_counter");
+            (void)WriteCounter(world, counter, EntityId{}, 3);
+            EXPECT_EQ(CounterValue(world, counter, EntityId{}), 3);
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            after = CounterValue(world, counter, EntityId{});
+            stage = 2;
+        }
+    });
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(*after, 0) << "the previous session's world counter survived a restore";
     std::filesystem::remove_all(root);
 }
 

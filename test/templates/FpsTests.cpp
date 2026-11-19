@@ -319,8 +319,7 @@ namespace
                 world.DestroyEntity(later);
                 Admission = Host->Saves().RequestRestore();
             }
-            if (!Restored && Frames > 120 && Host->LevelChanges().Serial() == Host->Saves().RestoreChange()
-                && Host->LevelChanges().Status() == LevelChangeStatus::BodiesRestored)
+            if (!Restored && Frames > 120 && Host->Saves().RestoreStatus() == RestoreProgress::BodiesRestored)
             {
                 Restored = true;
                 LostStaysLost = !index.TryResolve(LostBeforeTheSave).IsValid();
@@ -411,8 +410,7 @@ namespace
                 (void)world.GetResource<GameplayTagRegistry>().RegisterTag("test.saved");
             if (Frames == 60)
                 (void)Host->Saves().RequestRestore();
-            if (Restored || Frames <= 60 || Host->LevelChanges().Serial() != Host->Saves().RestoreChange()
-                || Host->LevelChanges().Status() != LevelChangeStatus::BodiesRestored)
+            if (Restored || Frames <= 60 || Host->Saves().RestoreStatus() != RestoreProgress::BodiesRestored)
                 return;
             Restored = true;
             const EntityId body = LocalControlSubjectOf(world);

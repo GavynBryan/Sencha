@@ -29,8 +29,21 @@ what a save keeps is decided per entity by its zone state lifetime
   written back by the next save, so content a newer build wrote survives an
   older one. A registered section whose saved version is newer than the
   registered one fails the restore before the level changes, naming the
-  section, since restoring the rest and writing over it later would lose it. The engine registers three (`save/EngineSaveSections.h`), in this
-  order: `sencha.bodies`, `sencha.held` and `sencha.persistent_ids`.
+  section, since restoring the rest and writing over it later would lose it.
+  Every registered section is restored on every restore, given null data when
+  the save has none of it, so nothing of the game before the restore stays:
+  a save written before a section existed clears what that section keeps.
+  A section the restored save carried that nothing registered travels with
+  that game only: it is written back by later saves until a level change that
+  discards runtime state (a new game) drops it, and it is dropped as soon as a
+  section registers under its name, so no save holds a name twice. The engine
+  registers two (`save/EngineSaveSections.h`): `sencha.bodies` and
+  `sencha.held`.
+- **The id counter:** `sencha.persistent_ids`, the runtime mint's next value,
+  which `SavedGames` writes itself after every section has captured, so a
+  section that mints while it captures, in any order, is covered. A restore
+  puts it back before the registered sections, and never lowers it, so a
+  restored game never mints an id it already holds.
 
 ## Bodies
 
@@ -55,8 +68,6 @@ the patch is composed over the prefab's root before import, and the root gets
 its saved id once published. Grants made at run time by `ability.grant` are
 part of the patch and come back as authored grants; tags given with
 `tags.grant` are the container's baseline and come back; lasting effects do not.
-`sencha.persistent_ids` keeps the mint's counter, so a restored game never
-mints an id it already holds.
 
 ## Held records
 
@@ -72,12 +83,12 @@ that stopped being what content authored took a runtime id when it changed.
 Each record is kept whole, not as a patch: its persistent id, and every
 component a serializer saves, in scene form through the same serializers a
 scene uses. Its `Held` names its holder by persistent id. Capturing gives a
-record or a holder without a persistent id one from the runtime mint, which is
-why the section is captured before `sencha.persistent_ids`.
+record or a holder without a persistent id one from the runtime mint.
 
 Restoring destroys every runtime record the index lists, the old session's, at
-once, so none can collide with a saved id, and leaves what the new level's
-content authored; then it creates each saved record in the persistent
+once (a save without this section restores it as empty, which does the same),
+so none can collide with a saved id, and leaves what the new level's content
+authored; then it creates each saved record in the persistent
 partition with its id and its components. A record of the world is listed at
 once. A record of a body or of an authored holder waits for an entity with its
 holder's persistent id: the restored body, or the chest when its zone imports,
@@ -123,8 +134,20 @@ corrupt; `RestoredFromBackup()` then says so and the reason the file did not
 read is logged. `Holds(slot)` answers with the same reader, so it is true when
 only a readable backup is left and false for a corrupt file with none. The save's level is then requested from the level change with the
 save's zone state, and its sections are restored once the change has unloaded
-the old level. `RestoreChange()` names that level change, so a game holds its
-cover up until `LevelChanges().Status()` reaches `BodiesRestored` for it.
+the old level.
+
+`RestoreStatus()` is the one answer to "is the restore done": it moves from
+`Pending` (accepted) through `Reading` (a disk read, skipped for a save this
+session holds) and `Loading` (the level change, during which the sections are
+put back) to `BodiesRestored`, once the level is resident and every
+participant has its body again, or to `Failed`, with `RestoreFailure()` saying
+why: the slot did not read, a section is newer, the level change was refused,
+failed or was replaced by another before it arrived. `Restores()` counts
+accepted requests, so a game holding a cover can tell a restore it has seen
+through from a later one, however quickly the next goes from `Pending` to
+`Loading`. A second restore is `Busy` until the first arrives or fails. A
+write's outcome is `WriteStatus()` and `WriteFailure()`, apart from the
+restore's.
 
 Restore is refused inside a network session, as the level change is.
 

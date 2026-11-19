@@ -765,6 +765,7 @@ void Engine::RegisterSimulationFramePhases()
         engine.Schedule().RunZoneResidency(residency);
         runtimeWorld.FinalizeResidencyProcessing();
         engine.LevelChanges().Advance();
+        engine.Saves().Advance();
     });
 
     driver.Register(FramePhase::ScheduleTicks, [&engine, &config](PhaseContext& ctx) {

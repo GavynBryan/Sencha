@@ -169,9 +169,14 @@ before streaming, where no frame view is live. Carrying it out:
 1. lets every participant's body go (`Engine::ReleaseParticipantBody`, through
    the game's `ReapBody` policy); the participants stay;
 2. unloads, so the game's residency systems see their content leave;
-3. resets zone state memory to authored, so what the level lost comes back;
-4. clears the active camera if it went with the level;
-5. loads the requested level.
+3. resets zone state memory to authored, so what the level lost comes back
+   (or installs the request's `ZoneState`, which is how a restore loads);
+4. destroys the held records that were waiting for a holder in the old level,
+   or, when the request's `RuntimeState` is `Discard`, every runtime held
+   record: the world's counters and inventory and every body's go, as a new
+   game needs (`Keep`, the default, keeps them for the next level);
+5. clears the active camera if it went with the level;
+6. loads the requested level.
 
 The game provides bodies when the level arrives, as for any load. `Status()`
 moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every
