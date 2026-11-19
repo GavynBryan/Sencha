@@ -50,8 +50,10 @@ refusal is counted.
 `AdmitGameplayTags` is the one check for several tags at once; it counts each
 refusal in the World's `GameplayTagOverflow` resource
 (`NoteGameplayTagOverflow`). The ability system logs once when refusals begin,
-naming the first holder and tag, and once when a tick passes without one, with
-the total (`ReportGameplayTagOverflow`). Nothing else on the entity is
+naming the first holder and tag, and once when `kGameplayTagOverflowQuietReports`
+(60) ticks in a row pass without one, with the total
+(`ReportGameplayTagOverflow`); a refusal is an event, so one that recurs a
+moment apart, such as a periodic effect's, stays one episode. Nothing else on the entity is
 affected. Stack counts saturate at 0xFFFF; a baseline stack added at
 saturation never displaces a contributed one, so a revoke of the baseline never
 takes a tag an effect still holds.

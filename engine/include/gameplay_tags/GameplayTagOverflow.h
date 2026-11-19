@@ -10,10 +10,13 @@ class Logger;
 class World;
 struct GameplayTagContainer;
 
+inline constexpr std::uint32_t kGameplayTagOverflowQuietReports = 60;
+
 struct GameplayTagOverflow
 {
     std::uint64_t Refused = 0;
     std::uint64_t Reported = 0;
+    std::uint32_t QuietReports = 0;
     bool Overflowing = false;
     EntityId FirstHolder;
     GameplayTagId FirstTag;

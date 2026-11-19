@@ -46,7 +46,8 @@ void ReportGameplayTagOverflow(World& world, const Logger& log)
                  tags != nullptr ? tags->GetName(overflow->FirstTag) : std::string_view{ "?" });
         overflow->Overflowing = true;
     }
-    else if (fresh == 0 && overflow->Overflowing)
+    overflow->QuietReports = fresh > 0 ? 0 : std::min(overflow->QuietReports + 1, kGameplayTagOverflowQuietReports);
+    if (overflow->Overflowing && overflow->QuietReports >= kGameplayTagOverflowQuietReports)
     {
         log.Warn("gameplay tags: full containers stopped refusing tags; {} refused in all", overflow->Refused);
         overflow->Overflowing = false;

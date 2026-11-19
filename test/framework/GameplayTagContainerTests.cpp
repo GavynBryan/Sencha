@@ -203,6 +203,9 @@ TEST(GameplayTagOverflow, RefusalsAreReportedWhenTheyBeginAndEndAndCountedBetwee
     ASSERT_EQ(sink.Written.size(), 1u) << "once as it began, not once a tick";
     EXPECT_NE(sink.Written[0].find("State.Extra"), std::string::npos) << sink.Written[0];
 
+    for (std::uint32_t quiet = 1; quiet < kGameplayTagOverflowQuietReports; ++quiet)
+        ReportGameplayTagOverflow(world, log);
+    EXPECT_EQ(sink.Written.size(), 1u) << "not over until it has been quiet a while";
     ReportGameplayTagOverflow(world, log);
     ASSERT_EQ(sink.Written.size(), 2u);
     EXPECT_NE(sink.Written[1].find("6 refused"), std::string::npos) << sink.Written[1];
@@ -255,4 +258,22 @@ TEST(GameplayTagContainer, CanHoldAllCountsEachNewTagOnce)
     const std::array three{ a, b, d };
     EXPECT_TRUE(c.CanHoldAll(two)) << "two places for two new tags";
     EXPECT_FALSE(c.CanHoldAll(three));
+}
+
+TEST(GameplayTagOverflow, RefusalsAMomentApartAreOneEpisodeNotOneLinePairEach)
+{
+    World world;
+    GameplayTagRegistry& reg = world.AddResource<GameplayTagRegistry>();
+    const GameplayTagId extra = *reg.RegisterTag("State.Extra");
+    const EntityId holder = world.CreateEntity();
+    Lines sink;
+    const Logger log("tags", { &sink });
+
+    for (int tick = 0; tick < 100; ++tick)
+    {
+        if (tick % 10 == 0)
+            NoteGameplayTagOverflow(world, holder, extra);
+        ReportGameplayTagOverflow(world, log);
+    }
+    EXPECT_EQ(sink.Written.size(), 1u) << "a periodic refusal is reported as it begins, then counted";
 }
