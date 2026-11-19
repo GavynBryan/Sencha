@@ -101,6 +101,8 @@ public:
     // What a restore of the slot would find, in this session's memory or on
     // disk; reads and decodes the slot's files when this session has not.
     [[nodiscard]] bool Holds(std::string_view slot) const;
+    // This session wrote or restored the slot; a file from an earlier run alone is not remembered.
+    [[nodiscard]] bool Remembers(std::string_view slot) const { return Remembered.contains(slot); }
 
     void Commit();
     // After the level change commits: a restore's sections are put back.

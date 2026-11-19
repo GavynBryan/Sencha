@@ -167,9 +167,16 @@ sends the player back to an older save; otherwise the slot is read and decoded
 on the async lane, falling back to the backup when the file is missing or
 corrupt; `RestoredFromBackup()` then says so and the reason the file did not
 read is logged. `Holds(slot)` answers with the same reader, so it is true when
-only a readable backup is left and false for a corrupt file with none. The save's level is then requested from the level change with the
-save's zone state, and its sections are restored once the change has unloaded
-the old level.
+only a readable backup is left and false for a corrupt file with none. The
+save's level is then requested from the level change with the save's zone
+state, and its sections are restored once the change has unloaded the old
+level.
+
+`Remembers(slot)` answers from memory alone: true once this session has
+written the slot or restored it, false for a file an earlier run left on disk.
+A game that starts every launch fresh asks it rather than `Holds` when deciding
+whether there is a save of this session to return to; the file stays on disk
+for an explicit restore, and the session's first write replaces it as usual.
 
 `RestoreStatus()` is the one answer to "is the restore done": it moves from
 `Pending` (accepted) through `Reading` (a disk read, skipped for a save this

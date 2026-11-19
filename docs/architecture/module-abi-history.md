@@ -1360,3 +1360,13 @@ lifecycle hooks and `CounterKey`. `world/held/HeldRecords.h` declares
 `NamedDefinitionRegistry` gains `ForEachName` and `ForEachDefined`. The wire,
 the replicated layout and the save format version are unchanged; a scene or
 save naming an entry count its stack cannot hold, or none, now fails to load.
+
+## v57
+
+`SavedGames::Remembers` answers whether this session wrote or restored a slot,
+where `Holds` also answers yes for a file an earlier run left on disk.
+`inventory/Inventory.h` declares `ItemStackClamp`, which `ItemStackHolds` is
+defined by; a scene or save entry naming a count its stack cannot hold now
+loads with the count clamped into 1 to `stack.max` and a warning, instead of
+failing to load. The wire, the replicated layout and the save format version
+are unchanged.

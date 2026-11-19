@@ -241,6 +241,47 @@ TEST(SavedGames, HoldsAnswersWhatARestoreWouldFind)
     std::filesystem::remove_all(root);
 }
 
+TEST(SavedGames, AFileFromAnEarlierRunIsHeldButRememberedOnlyOnceThisSessionWritesOrRestoresIt)
+{
+    const std::filesystem::path root = RootFor("remembers");
+    (void)WriteTwoSaves(root);
+
+    std::optional<bool> heldAtLaunch;
+    std::optional<bool> rememberedAtLaunch;
+    std::optional<bool> rememberedAfterWrite;
+    std::optional<bool> rememberedAfterRestore;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            heldAtLaunch = saves.Holds("default");
+            rememberedAtLaunch = saves.Remembers("default");
+            EXPECT_FALSE(saves.Remembers("second"));
+            EXPECT_EQ(saves.RequestWrite("second"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            rememberedAfterWrite = saves.Remembers("second");
+            EXPECT_FALSE(saves.Remembers("default")) << "writing one slot remembered another";
+            EXPECT_EQ(saves.RequestRestore("default"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && RestoreArrived(engine))
+        {
+            rememberedAfterRestore = saves.Remembers("default");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the write and the restore did not both finish";
+    EXPECT_TRUE(*heldAtLaunch) << "a restore would find the earlier run's file";
+    EXPECT_FALSE(*rememberedAtLaunch) << "a file on disk alone is not this session's save";
+    EXPECT_TRUE(*rememberedAfterWrite);
+    EXPECT_TRUE(*rememberedAfterRestore);
+    std::filesystem::remove_all(root);
+}
+
 TEST(SavedGames, ASaveWithANewerVersionOfARegisteredSectionIsRefused)
 {
     const std::filesystem::path root = RootFor("newer_section");
