@@ -75,9 +75,13 @@ holding two slots. The row holds the layout, the count and the next key, and
 names its records in the World's `EquipmentRecordLists`
 (`docs/ecs/row-lists.md`), so a wearer is stored by what it wears. Code reads
 them with `EquipmentRecordsOf` and changes them through `Equipment`, or with
-`EditEquipmentRecords`, `AddEquipmentRecord`, `RemoveEquipmentRecord` and
+`EditEquipmentRecords`, `WearEquipmentRecord`, `RemoveEquipmentRecord` and
 `SetEquipment`; scenes, snapshots and Kyusu hold them by value as an
-`EquipmentRecordList`.
+`EquipmentRecordList`. Wearing a record ends every record holding one of its
+slots and appends it under the next key, by one rule (`WearRecord`) that an
+equip and a Kyusu edit both use; `FindEquipmentRecordHolding` answers which
+record holds a slot, and `ItemTakesSlotFirst` whether an item's first slot can
+be that one.
 
 | Field | What it is |
 |---|---|
