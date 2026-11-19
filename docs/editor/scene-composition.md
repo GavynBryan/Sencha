@@ -96,8 +96,9 @@ remain.
 - **Projection.** Inherited entities are live, under their own ids. Their
   baseline is what they inherit, before the document's own patch.
 - **Harvest.** `DiffSceneComponents` writes an inherited entity's edits as the
-  document's `patch`: only what changed, keyed lists by key, removed elements
-  and cleared members `null`. Dropped components become `remove`. Placement
+  document's `patch`: only what changed, keyed lists by key (whole when their
+  order changed), removed elements and cleared members `null` (`PatchFrom`,
+  `docs/assets/composition.md`). Dropped components become `remove`. Placement
   overrides are harvested by the same diff. Patch entries for ids the projection
   did not produce carry over. Brush geometry never crosses documents through a
   diff (`IsDocumentLocalComponent`): it names ids in its own document's sidecar.

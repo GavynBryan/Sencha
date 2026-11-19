@@ -1290,18 +1290,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first prefab whose response binding names another of its
   own members.
 
-## Prefab harvest pins and keyed-list order
+## Prefab harvest pins
 
 - **What:** Kyusu rebuilds a derived prefab's patches from a diff of live state
   against the composed base. A value pinned equal to the base's (so a later
-  base change does not reach it) is dropped, and so is the order of a keyed
-  list. Data definitions keep both, because their patches are edited, not
-  diffed.
+  base change does not reach it) is dropped. Data definitions keep it, because
+  their patches are edited, not diffed. A keyed list's order is kept: a
+  reordered list is harvested whole (`PatchFrom`).
 - **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
   `editor/common/src/scene_source/SceneComponentDiff.cpp`.
-- **Trigger:** the first prefab that must keep a value its base later changes,
-  or a keyed list whose order is meaningful (a priority list) on a derived
-  prefab.
+- **Trigger:** the first prefab that must keep a value its base later changes.
 
 ## Recomposing resident children while their base is edited
 

@@ -52,10 +52,12 @@ what a save keeps is decided per entity by its zone state lifetime
 The local participant's body is kept as a patch against the prefab it spawned
 from (`runtime/spawn/SceneSpawnOverlay.h`): for each component on its root, the
 difference between its scene form now and the prefab's cooked record, composed
-back by the operator prefabs use (`core/composition/CompositionPatch.h` is the
-inverse of `ComposeLayers`). A value the save did not change follows the prefab,
-so a retuned prefab still applies to old saves; a value it did change stays as
-saved. The cooked record states every field, including those the prefab's
+back by the operator prefabs use (`PatchFrom` is the inverse of `ComposeLayers`,
+`docs/assets/composition.md`, "Patches from a difference"). A value the save did
+not change follows the prefab, so a retuned prefab still applies to old saves; a
+value it did change stays as saved. A keyed list whose order the body changed,
+or that gained an element between others, is saved whole, so it restores in the
+body's order and a retune of that list no longer reaches the save. The cooked record states every field, including those the prefab's
 source leaves out (`"CharacterController": {}`): the cook writes each component
 from the loaded document through its serializer (`SaveSceneJson`, from the
 document cook's input snapshot), so an untouched body saves an empty patch and

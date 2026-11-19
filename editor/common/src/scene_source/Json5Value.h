@@ -76,9 +76,8 @@ struct Json5Value
         return nullptr;
     }
 
-    // Value equality, trivia excluded: two documents that mean the same thing
-    // compare equal however they were commented. What the round-trip tests
-    // assert about semantics.
+    // Value equality, as the engine's JsonEquals: trivia excluded, object
+    // members by name in any order, list elements in order.
     [[nodiscard]] bool SameValueAs(const Json5Value& other) const
     {
         if (K != other.K)
@@ -99,10 +98,12 @@ struct Json5Value
         case Kind::Object:
             if (Members.size() != other.Members.size())
                 return false;
-            for (std::size_t i = 0; i < Members.size(); ++i)
-                if (Members[i].first != other.Members[i].first
-                    || !Members[i].second.SameValueAs(other.Members[i].second))
+            for (const Member& member : Members)
+            {
+                const Json5Value* counterpart = other.Find(member.first);
+                if (counterpart == nullptr || !member.second.SameValueAs(*counterpart))
                     return false;
+            }
             return true;
         }
         return false;

@@ -47,6 +47,43 @@ composed = Local( Includes( composed(base) ) )
 
 Without a schema, objects merge and anything else is written whole.
 
+## Patches from a difference
+
+`PatchFrom(baseline, live, schema)` (`core/composition/CompositionPatch.h`) is
+the operator's inverse: composed over `baseline` as a local patch, under
+`CompositionNull::Removes`, its patch gives back `live`, member order aside.
+Nothing when the two are equal. Kyusu's harvest and a saved body use it.
+
+- Members that differ are stated, members `live` lacks are `null`, and a
+  record recurses.
+- A keyed list is written in the map form when that composes back exactly:
+  every element of both lists states a key the list accepts, no key repeats,
+  and the elements `live` kept from `baseline` come first, in `baseline`'s
+  order. Otherwise it is written in the list form, which replaces the list, so
+  a new order, a repeated key or an inserted element survives.
+- An append-only list states only its new elements, in the list form, so a key
+  the map form would refuse is still added.
+
+`ComposeLayers` reaches some values no patch can state. `PatchFrom` still writes
+its best patch for them, and composing it reports what it could not keep:
+
+- an element of a keyed list without its key (`missing_key`);
+- an append-only list whose inherited entries changed, went or moved
+  (`redeclares_inherited`, `removes_inherited`);
+- a required member that is gone (`cannot_clear_required`).
+
+One difference passes unreported: a member that is `null` in `live` and not in
+`baseline`, since a `null` in a patch removes. No serializer writes `null`
+(`JsonWriteArchive` has no null field), so neither a harvest nor a saved body
+meets it.
+
+The property is tested over generated baseline and live pairs, for both value
+traits (`CompositionPatch.EveryTargetComposesBackFromItsPatch`,
+`Json5Composition.EveryTargetComposesBackFromItsPatch`).
+
+Both traits compare values alike: object members by name in any order, list
+elements in order (`JsonEquals`, `Json5Value::SameValueAs`).
+
 ## Paths and provenance
 
 Logical paths name a value the same way in every source: `$`, then `.member`,
