@@ -67,7 +67,6 @@ namespace
         return choices;
     }
 
-    // As an unequip does: the last record takes the place of the one removed.
     void RemoveRecordsWhere(EquipmentRecordList& worn, auto&& matches)
     {
         for (std::size_t i = worn.Records.size(); i-- > 0;)

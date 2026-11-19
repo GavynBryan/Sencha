@@ -46,16 +46,13 @@ struct AbilityGrant
     std::uint16_t Entry = kAbilityNoGrantEntry;
 };
 
-// Every actor's grants, a World resource; an AbilityGrants row names its list.
 using AbilityGrantLists = ListPool<struct AbilityGrantListTag, AbilityGrant>;
 
-// What an actor may run: at most kAbilityGrantCapacity grants, in grant order.
 struct SENCHA_COMPONENT("sencha.ability_grants") AbilityGrants
 {
     AbilityGrantLists::HandleType Entries;
     std::uint16_t Count = 0;
-    // How many of them are Effect and Transient: what a pass asks of every actor
-    // every tick, answered without reading the list.
+    // Asked of every actor every tick, so answered without reading the list.
     std::uint16_t EffectHeld = 0;
     std::uint16_t Transient = 0;
     std::uint32_t NextId = 1;
@@ -77,7 +74,6 @@ struct ComponentTraits<AbilityGrants>
     static void OnRemove(const AbilityGrants& grants, World& world, EntityId actor);
 };
 
-// An actor's grants by value: what a scene, a snapshot and an editor hold.
 struct AbilityGrantList
 {
     std::vector<AbilityGrant> Entries;
@@ -98,9 +94,7 @@ bool RevokeAbilityGrant(AbilityGrantList& grants, AbilityGrantId id);
 bool RevokeAbilityGrant(World& world, EntityId actor, AbilityGrantId id);
 
 [[nodiscard]] AbilityGrantList CopyAbilityGrants(const World& world, EntityId actor);
-// A row value naming a new list, for a caller that adds or replaces the component itself.
 [[nodiscard]] AbilityGrants MakeAbilityGrants(World& world, const AbilityGrantList& grants);
-// Replaces what `actor` is granted, adding the component if it has none.
 void SetAbilityGrants(World& world, EntityId actor, const AbilityGrantList& grants);
 
 #if !defined(SENCHA_CODEGEN)

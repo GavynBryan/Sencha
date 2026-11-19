@@ -14,8 +14,7 @@
 
 class World;
 
-// docs/gameplay/equipment.md, "Records": a record holds at least one slot, and no
-// two hold the same one.
+// A record holds at least one slot and no two hold the same one.
 inline constexpr std::size_t kEquipmentRecordCapacity = kMaxEquipmentSlots;
 
 // Never saved or sent: a loaded, authored or replicated record is Pending.
@@ -40,7 +39,6 @@ struct EquipmentRecord
     friend bool operator==(const EquipmentRecord&, const EquipmentRecord&) = default;
 };
 
-// Every wearer's records, a World resource; an EquipmentState row names its list.
 using EquipmentRecordLists = ListPool<struct EquipmentRecordListTag, EquipmentRecord>;
 
 struct SENCHA_COMPONENT("sencha.equipment_state") EquipmentState
@@ -60,7 +58,6 @@ struct ComponentTraits<EquipmentState>
     static void OnRemove(const EquipmentState& state, World& world, EntityId wearer);
 };
 
-// What a wearer wears by value: what a scene, a snapshot and an editor hold.
 struct EquipmentRecordList
 {
     EquipmentLayoutId Layout;
@@ -79,9 +76,7 @@ void AddEquipmentRecord(World& world, EntityId wearer, const EquipmentRecord& re
 void RemoveEquipmentRecord(World& world, EntityId wearer, std::size_t index);
 
 [[nodiscard]] EquipmentRecordList CopyEquipment(const World& world, EntityId wearer);
-// A row value naming a new list, for a caller that adds or replaces the component itself.
 [[nodiscard]] EquipmentState MakeEquipmentState(World& world, const EquipmentRecordList& worn);
-// Replaces what `wearer` wears, adding the component if it has none.
 void SetEquipment(World& world, EntityId wearer, const EquipmentRecordList& worn);
 
 #if !defined(SENCHA_CODEGEN)

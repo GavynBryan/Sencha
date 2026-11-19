@@ -10,14 +10,12 @@
 inline constexpr std::size_t kEquipmentSourcesPerWireRun = 2;
 static_assert(kEquipmentRecordCapacity == 32, "EquipmentStateWire names one member per record.");
 
-// One record: its key, its definition's wire key, its slots, its primary slot. A
-// run of its own, so a change to one record resends that record alone.
+// A record's key, definition wire key, slots and primary slot, as a run of its own.
 struct EquipmentWireWords
 {
     std::uint32_t Values[4] = {};
 };
 
-// The sources of two neighbouring records, their owner's to see.
 struct EquipmentWireSources
 {
     std::uint64_t Values[kEquipmentSourcesPerWireRun] = {};

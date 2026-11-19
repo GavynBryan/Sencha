@@ -37,7 +37,6 @@ namespace
         AbilityWhenBlocked WhenBlocked = AbilityWhenBlocked::Consume;
     };
 
-    // A press's bound grants and their priority order, kept between presses.
     struct AbilityPressScratch
     {
         std::vector<AbilityPressCandidate> Candidates;

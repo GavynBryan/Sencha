@@ -113,7 +113,6 @@ namespace
         return true;
     }
 
-    // A record holds a slot no earlier record holds, so a layout's slots bound them.
     bool ReadRecords(IReadArchive& archive, EquipmentRecordList& worn, World& world, SceneSerializationContext& context)
     {
         const EquipmentLayout* layout = FindEquipmentLayout(world, worn.Layout);

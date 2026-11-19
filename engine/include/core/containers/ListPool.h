@@ -11,10 +11,8 @@
 #include <utility>
 #include <vector>
 
-// Lists of T that component rows name by handle, so a row costs a handle whatever
-// its list holds. Every live row naming a list holds one reference to it, taken
-// and given back by the component's lifecycle hooks; a list no row references is
-// freed, its storage kept for the next one (docs/ecs/row-lists.md).
+// Lists component rows name by handle, each referenced by the live rows naming
+// it through their lifecycle hooks (docs/ecs/row-lists.md).
 template <typename Tag, typename T>
 class ListPool
 {
