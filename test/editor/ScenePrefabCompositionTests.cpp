@@ -123,7 +123,7 @@ struct Composed
         EXPECT_TRUE(document.has_value()) << Error;
         if (!document)
             return std::nullopt;
-        return ResolveSceneComposition(*document, Sources, &Error, &Rules);
+        return ResolveSceneComposition(*document, Sources, &Error, &Rules, { .Provenance = true });
     }
 };
 
@@ -612,4 +612,30 @@ TEST(ScenePrefabComposition, APlacementsRemovalsAreHeldToTheRemovalRules)
     EXPECT_NE(member->Components.Find("Transform"), nullptr);
     EXPECT_NE(member->Components.Find("GameplayTags"), nullptr);
     EXPECT_EQ(Entity(*result, 0x102)->Components.Find("Body"), nullptr);
+}
+
+TEST(ScenePrefabComposition, ASceneResolvedOnceIsStillHeldToTheDepthWhereverItIsPlacedAgain)
+{
+    const auto resolve = [](std::size_t placers) {
+        Composed composed;
+        for (int i = 0; i < 9; ++i)
+            composed.Sources.Add(std::format("asset://prefabs/shared{}.sscene", i),
+                                 std::format("{{ format_version: 2, extends: 'asset://prefabs/shared{}.sscene', entities: [] }}", i + 1));
+        composed.Sources.Add("asset://prefabs/shared9.sscene", "{ format_version: 2, entities: [] }");
+        for (std::size_t i = 0; i < placers; ++i)
+            composed.Sources.Add(std::format("asset://prefabs/placer{}.sscene", i),
+                                 std::format("{{ format_version: 2, entities: [], instances: [ {{ id: '{:016x}', source: '{}' }} ] }}",
+                                             0x700 + i,
+                                             i + 1 < placers ? std::format("asset://prefabs/placer{}.sscene", i + 1)
+                                                             : std::string("asset://prefabs/shared0.sscene")));
+        const auto result = composed.Resolve(R"({ format_version: 2, entities: [], instances: [
+            { id: '00000000000006f0', source: 'asset://prefabs/shared0.sscene' },
+            { id: '00000000000006f1', source: 'asset://prefabs/placer0.sscene' } ] })");
+        return std::pair{ result.has_value(), composed.Error };
+    };
+    const auto [fits, fitsError] = resolve(5);
+    EXPECT_TRUE(fits) << fitsError;
+    const auto [deep, deepError] = resolve(6);
+    EXPECT_FALSE(deep);
+    EXPECT_NE(deepError.find("deeper than 16"), std::string::npos) << deepError;
 }

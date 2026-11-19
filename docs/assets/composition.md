@@ -9,7 +9,8 @@ The operator is `ComposeLayers` in `core/composition/Composition.h`, a template
 over a small value-access trait (`CompositionValueTraits`). `JsonComposition.h`
 implements the trait for `JsonValue`; the editor's `Json5Composition.h` does it
 for `Json5Value`, comments included. `ApplyCompositionPatch` applies one patch
-as a local layer.
+as a local layer. `ComposeLayers` also hands back, when asked, the value before
+the local layer, which is what a child inherits, so no caller composes twice.
 
 ## Rules
 

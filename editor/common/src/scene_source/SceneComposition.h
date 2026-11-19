@@ -100,8 +100,14 @@ public:
     [[nodiscard]] virtual bool IsRemovable(std::string_view component) const = 0;
 };
 
+struct SceneCompositionOptions
+{
+    bool Provenance = false;
+};
+
 [[nodiscard]] std::optional<SceneCompositionResult> ResolveSceneComposition(
     const SceneSourceDocument& root,
     ISceneSourceLookup& sources,
     std::string* error = nullptr,
-    const ISceneComponentRules* rules = nullptr);
+    const ISceneComponentRules* rules = nullptr,
+    SceneCompositionOptions options = {});

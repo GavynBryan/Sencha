@@ -114,15 +114,9 @@ namespace
             for (std::size_t i = 0; i < composedIncludes.size(); ++i)
                 layers.push_back({ &composedIncludes[i].Data, includes[i].Path, &composedIncludes[i].Composition.Provenance });
             const CompositionLayerInput<JsonValue> local{ &data, asset, nullptr };
-            staging.Data = ComposeLayers<JsonValue>(base ? &*base : nullptr, layers, local, policy, staging.Composition);
-            if (provenance && Chain.Depth() == 1)
-            {
-                const JsonValue nothing{ JsonValue::Object{} };
-                CompositionReport unused;
-                staging.Inherited = ComposeLayers<JsonValue>(base ? &*base : nullptr, layers,
-                                                             { &nothing, asset, nullptr },
-                                                             { .Schema = policy.Schema, .Null = policy.Null }, unused);
-            }
+            const bool outermost = provenance && Chain.Depth() == 1;
+            staging.Data = ComposeLayers<JsonValue>(base ? &*base : nullptr, layers, local, policy, staging.Composition,
+                                                    outermost ? &staging.Inherited : nullptr);
             for (const CompositionDiagnostic& diagnostic : staging.Composition.Diagnostics)
             {
                 std::string message = diagnostic.Message;

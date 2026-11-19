@@ -61,26 +61,6 @@ namespace
                               CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue }, report);
     }
 
-    DataFieldSchema EntitySchema(const ISceneComponentRules* rules, std::initializer_list<const Json5Value*> layers)
-    {
-        DataFieldSchema entity = MakeDataField(DataFieldKind::Record, {}, {});
-        if (rules == nullptr)
-            return entity;
-        for (const Json5Value* layer : layers)
-            for (const Json5Value::Member& member : layer != nullptr && layer->IsObject() ? layer->Members
-                                                                                         : std::vector<Json5Value::Member>{})
-            {
-                const DataFieldSchema* declared = rules->SchemaOf(member.first);
-                if (declared == nullptr || FindChild(entity, member.first) != nullptr)
-                    continue;
-                DataFieldSchema component = *declared;
-                component.Key = member.first;
-                component.Required = false;
-                entity.Children.push_back(std::move(component));
-            }
-        return entity;
-    }
-
     template <typename Visit>
     void VisitEntityReferences(Json5Value& value, const DataFieldSchema& schema, const Visit& visit)
     {
@@ -190,10 +170,12 @@ namespace
     class Resolver
     {
     public:
-        Resolver(ISceneSourceLookup& sources, std::string* error, const ISceneComponentRules* rules)
+        Resolver(ISceneSourceLookup& sources, std::string* error, const ISceneComponentRules* rules,
+                 SceneCompositionOptions options)
             : Sources(sources)
             , Error(error)
             , Rules(rules)
+            , Options(options)
         {
         }
 
@@ -224,7 +206,6 @@ namespace
                     entity.IsInstanceRoot = false;
                     entity.IsAdded = false;
                     entity.Path.Elements = { entity.Id.Value };
-                    entity.SourceComponents = entity.Components;
                     inherited.insert(entity.Id.Value);
                     out.Entities.push_back(std::move(entity));
                 }
@@ -252,22 +233,56 @@ namespace
             return true;
         }
 
+        struct ResolvedSource
+        {
+            SceneCompositionResult Result;
+            std::size_t Height = 0;
+        };
+
         ISceneSourceLookup& Sources;
         std::string* Error = nullptr;
         const ISceneComponentRules* Rules = nullptr;
+        SceneCompositionOptions Options;
         CompositionChain Chain;
+        std::size_t Deepest = 0;
+        std::unordered_map<std::string, ResolvedSource> Resolved;
+        DataFieldSchema Entity = MakeDataField(DataFieldKind::Record, {}, {});
+
+        [[nodiscard]] const DataFieldSchema& EntitySchema(std::initializer_list<const Json5Value*> layers)
+        {
+            if (Rules == nullptr)
+                return Entity;
+            for (const Json5Value* layer : layers)
+            {
+                if (layer == nullptr || !layer->IsObject())
+                    continue;
+                for (const Json5Value::Member& member : layer->Members)
+                {
+                    if (FindChild(Entity, member.first) != nullptr)
+                        continue;
+                    const DataFieldSchema* declared = Rules->SchemaOf(member.first);
+                    if (declared == nullptr)
+                        continue;
+                    DataFieldSchema component = *declared;
+                    component.Key = member.first;
+                    component.Required = false;
+                    Entity.Children.push_back(std::move(component));
+                }
+            }
+            return Entity;
+        }
 
         [[nodiscard]] bool ResolveNested(const std::string& path, const std::string& unresolved,
                                          SceneCompositionResult& nested, SceneCompositionResult& out)
         {
-            const SceneSourceDocument* document = Sources.Find(path);
-            if (document == nullptr)
-                return Fail(Error, unresolved);
-            if (std::optional<std::string> refusal = Chain.Enter(path))
-                return Fail(Error, std::move(*refusal));
-            const bool resolved = Resolve(*document, nested, path);
-            Chain.Leave();
-            if (!resolved)
+            if (const auto hit = Resolved.find(path); hit != Resolved.end())
+            {
+                if (std::optional<std::string> refusal = Chain.RefusesBeneath(path, hit->second.Height))
+                    return Fail(Error, std::move(*refusal));
+                Deepest = std::max(Deepest, Chain.Depth() + hit->second.Height);
+                nested = hit->second.Result;
+            }
+            else if (!ResolveFirst(path, unresolved, nested))
                 return false;
             out.MissingIds.insert(out.MissingIds.end(), nested.MissingIds.begin(), nested.MissingIds.end());
             out.DanglingOverrides.insert(out.DanglingOverrides.end(), nested.DanglingOverrides.begin(),
@@ -275,6 +290,25 @@ namespace
             out.Diagnostics.insert(out.Diagnostics.end(), nested.Diagnostics.begin(), nested.Diagnostics.end());
             NoteSources(path, nested, out);
             return true;
+        }
+
+        [[nodiscard]] bool ResolveFirst(const std::string& path, const std::string& unresolved,
+                                        SceneCompositionResult& nested)
+        {
+            const SceneSourceDocument* document = Sources.Find(path);
+            if (document == nullptr)
+                return Fail(Error, unresolved);
+            if (std::optional<std::string> refusal = Chain.Enter(path))
+                return Fail(Error, std::move(*refusal));
+            const std::size_t above = Chain.Depth() - 1;
+            const std::size_t outer = std::exchange(Deepest, Chain.Depth());
+            const bool resolved = Resolve(*document, nested, path);
+            Chain.Leave();
+            const std::size_t height = Deepest - above;
+            Deepest = std::max(outer, Deepest);
+            if (resolved)
+                Resolved.emplace(path, ResolvedSource{ nested, height });
+            return resolved;
         }
 
         [[nodiscard]] static std::string Unresolved(std::string_view referrer, std::string_view field,
@@ -439,10 +473,10 @@ namespace
         [[nodiscard]] std::vector<std::string> ComposeEntity(ResolvedSceneEntity& entity, const Json5Value* patch,
                                                              const std::vector<FragmentLayer>& fragments,
                                                              const SceneSourceDocument& document,
-                                                             std::string_view asset, SceneCompositionResult& out) const
+                                                             std::string_view asset, SceneCompositionResult& out)
         {
             const Json5Value nothing = Json5Value::MakeObject();
-            const Json5Value own = entity.Components;
+            const Json5Value own = std::move(entity.Components);
             const Json5Value& stated = entity.IsInherited ? (patch != nullptr ? *patch : nothing) : own;
             std::vector<std::string> nulled = ComponentsNulled(stated);
             const Json5Value kept = nulled.empty() ? Json5Value{} : WithoutNulledComponents(stated);
@@ -451,23 +485,17 @@ namespace
             for (const FragmentLayer& layer : fragments)
                 if (layer.Target == entity.Id.Value)
                     includes.push_back({ &layer.Components, layer.Asset, nullptr });
-            std::initializer_list<const Json5Value*> all{ &own, &local };
-            DataFieldSchema schema = EntitySchema(Rules, all);
+            (void)EntitySchema({ &own, &local });
             for (const CompositionLayerInput<Json5Value>& include : includes)
-                for (DataFieldSchema& extra : EntitySchema(Rules, { include.Value }).Children)
-                    if (FindChild(schema, extra.Key) == nullptr)
-                        schema.Children.push_back(std::move(extra));
+                (void)EntitySchema({ include.Value });
 
             const CompositionLayerInput<Json5Value> base{ &own, document.Extends, &entity.Provenance };
             const CompositionLayerInput<Json5Value>* baseLayer = entity.IsInherited ? &base : nullptr;
             CompositionReport report;
-            const CompositionPolicy policy{ .Schema = &schema, .Null = CompositionNull::Removes, .Provenance = true };
-            Json5Value composed = ::ComposeLayers<Json5Value>(baseLayer, includes, { &local, asset, nullptr }, policy, report);
-            CompositionReport unused;
-            entity.SourceComponents = ::ComposeLayers<Json5Value>(baseLayer, includes, { &nothing, asset, nullptr },
-                                                                  { .Schema = &schema, .Null = CompositionNull::Removes },
-                                                                  unused);
-            entity.Components = std::move(composed);
+            const CompositionPolicy policy{ .Schema = &Entity, .Null = CompositionNull::Removes,
+                                            .Provenance = Options.Provenance };
+            entity.Components = ::ComposeLayers<Json5Value>(baseLayer, includes, { &local, asset, nullptr }, policy,
+                                                            report, &entity.SourceComponents);
             entity.Provenance = std::move(report.Provenance);
             for (CompositionDiagnostic& diagnostic : report.Diagnostics)
                 out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
@@ -544,7 +572,7 @@ namespace
         }
 
         void RenameMemberReferences(const SceneInstanceRecord& instance, const SourceIndex& index,
-                                    std::size_t firstSource, SceneCompositionResult& out) const
+                                    std::size_t firstSource, SceneCompositionResult& out)
         {
             if (Rules == nullptr)
                 return;
@@ -554,8 +582,7 @@ namespace
             for (std::size_t i = firstSource; i < out.Entities.size(); ++i)
             {
                 ResolvedSceneEntity& entity = out.Entities[i];
-                const DataFieldSchema schema = EntitySchema(Rules, { &entity.Components });
-                VisitEntityReferences(entity.Components, schema, [&](std::string& text) {
+                VisitEntityReferences(entity.Components, EntitySchema({ &entity.Components }), [&](std::string& text) {
                     const std::optional<PersistentEntityId> named = PersistentEntityIdFromString(text);
                     const auto member = named ? index.ById.find(named->Value) : index.ById.end();
                     if (member == index.ById.end())
@@ -624,7 +651,7 @@ namespace
                     std::vector<std::string> names = ComponentsNulled(patch);
                     const Json5Value kept = names.empty() ? Json5Value{} : WithoutNulledComponents(patch);
                     const Json5Value& stated = names.empty() ? patch : kept;
-                    const DataFieldSchema schema = EntitySchema(Rules, { &entity.Components, &stated });
+                    const DataFieldSchema& schema = EntitySchema({ &entity.Components, &stated });
                     CompositionReport report;
                     ApplyCompositionPatch(entity.Components, stated, instance.Source,
                                           { .Schema = &schema, .Null = CompositionNull::Removes }, report);
@@ -822,10 +849,11 @@ std::optional<SceneCompositionResult> ResolveSceneComposition(
     const SceneSourceDocument& root,
     ISceneSourceLookup& sources,
     std::string* error,
-    const ISceneComponentRules* rules)
+    const ISceneComponentRules* rules,
+    SceneCompositionOptions options)
 {
     SceneCompositionResult result;
-    Resolver resolver(sources, error, rules);
+    Resolver resolver(sources, error, rules, options);
     if (!resolver.ResolveOutermost(root, result))
         return std::nullopt;
     return result;

@@ -88,6 +88,19 @@ make every patch and parent naming it ambiguous. Without component rules
 (`ISceneComponentRules`) every component composes by the version-1 rules and no
 removal is checked.
 
+**Cost.** One call resolves each source once: extends, fragments and
+placements of a source already resolved in that call copy its result rather
+than resolving it again, and the copy is what a placement overrides and emits.
+The cache lives for the call and holds one result per distinct source it read,
+so it grows with the content of that one resolve and needs no limit of its own;
+a reused source is still held to the depth where it is placed again. Component
+schemas are gathered into one entity schema per call rather than copied per
+entity. Provenance, which only tests read, is built when
+`SceneCompositionOptions::Provenance` asks for it. `SceneCompositionBench`
+(env-gated by `SENCHA_SCENE_COMPOSITION_BENCH_OUT`) resolves 200 and 2,000
+placements of a ten-entity prefab three documents deep; in a debug build the
+cache and these changes took it from 404 ms and 3,802 ms to 42 ms and 407 ms.
+
 What the resolver reports:
 - composition diagnostics;
 - override paths that matched nothing;
