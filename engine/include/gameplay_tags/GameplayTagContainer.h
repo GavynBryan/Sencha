@@ -61,7 +61,6 @@ struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
     GameplayTagWrite SetContribution(GameplayTagId tag, std::uint16_t stacks);
 
     [[nodiscard]] bool HasExact(GameplayTagId tag) const;
-    [[nodiscard]] bool CanHold(GameplayTagId tag) const { return Count < Capacity || HasExact(tag); }
     [[nodiscard]] bool CanHoldAll(std::span<const GameplayTagId> tags) const;
     [[nodiscard]] std::uint16_t StackCount(GameplayTagId tag) const;
     [[nodiscard]] std::uint16_t BaselineCount(GameplayTagId tag) const;

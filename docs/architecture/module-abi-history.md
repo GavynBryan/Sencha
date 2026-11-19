@@ -1307,7 +1307,7 @@ scene set aside. The save file format is unchanged (format 1, chunk versions 1).
 **Tag writes.** `GameplayTagContainer::Grant`, `GrantBaseline` and
 `SetContribution` return a `GameplayTagWrite` (`Unchanged`, `Added`,
 `Restacked`, `Removed`, `Full`) in place of a bool, and never assert; a full
-container answers `Full` and changes nothing. `CanHoldAll` is new. A baseline
+container answers `Full` and changes nothing. `CanHoldAll` replaces `CanHold`. A baseline
 stack added at saturation no longer displaces a contributed one.
 `gameplay_tags/GameplayTagOverflow.h` gains `AdmitGameplayTags`,
 `kGameplayTagOverflowQuietReports` and `GameplayTagOverflow::QuietReports`;

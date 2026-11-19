@@ -167,10 +167,10 @@ TEST(GameplayTagContainer, AFullContainerHoldsOnlyWhatItAlreadyHas)
         c.Grant(*reg.RegisterTag("Fill.T" + std::to_string(i)));
     const GameplayTagId last = *reg.RegisterTag("Fill.Last");
     const GameplayTagId extra = *reg.RegisterTag("Fill.Extra");
-    EXPECT_TRUE(c.CanHold(last)) << "one place left";
+    EXPECT_TRUE(c.CanHoldAll(std::array{ last })) << "one place left";
     c.Grant(last);
-    EXPECT_FALSE(c.CanHold(extra));
-    EXPECT_TRUE(c.CanHold(last)) << "another stack of a held tag needs no place";
+    EXPECT_FALSE(c.CanHoldAll(std::array{ extra }));
+    EXPECT_TRUE(c.CanHoldAll(std::array{ last })) << "another stack of a held tag needs no place";
 }
 
 namespace

@@ -13,8 +13,8 @@
 #include <world/SimulationTimeline.h>
 
 #include <algorithm>
-#include <span>
 #include <cassert>
+#include <span>
 #include <utility>
 #include <vector>
 
