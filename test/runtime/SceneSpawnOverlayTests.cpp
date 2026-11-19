@@ -171,6 +171,23 @@ TEST_F(SceneSpawnOverlayTest, WhatChangedAndWhatWasAddedComeBackOverTheSamePrefa
     EXPECT_EQ(RootComponent(restored, ResolveComponentTypeId<OverlayBadge>()), R"({"value":7})");
 }
 
+TEST_F(SceneSpawnOverlayTest, ACapturedPatchOverARetunedPrefabKeepsTheRetuneWhereTheBodyWasUntouched)
+{
+    const EntityId body = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(body, OverlayVitals{ .Current = 50.0f, .Max = 100.0f });
+    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, Prefab(), Serializers, Context);
+
+    EntityBuildPackage retuned;
+    const PackageEntityId root = retuned.CreateEntity();
+    (void)retuned.SetSerializedComponent(
+        root, ResolveComponentTypeId<OverlayVitals>(),
+        JsonValue(JsonValue::Object{ { "current", JsonValue(150.0) }, { "max", JsonValue(150.0) } }));
+    std::string error;
+    ASSERT_TRUE(ApplySpawnOverlay(retuned, overlay, Serializers, error, Retuned)) << error;
+    EXPECT_TRUE(Retuned.empty());
+    EXPECT_EQ(RootComponent(retuned, ResolveComponentTypeId<OverlayVitals>()), R"({"current":50,"max":150})");
+}
+
 TEST_F(SceneSpawnOverlayTest, ARetunedPrefabStillAppliesWhatTheSaveDidNotChange)
 {
     SceneSpawnOverlay overlay;

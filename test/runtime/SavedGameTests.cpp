@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -59,20 +58,17 @@ TEST(SavedGame, WhatIsEncodedDecodesTheSame)
     ExpectSame(*decoded.Saved, Example());
 }
 
-// The first format's bytes, checked in: a later build must still read them.
-// SENCHA_WRITE_SAVE_FIXTURE=1 writes them again, which only a format change
-// that keeps reading this one may do.
-TEST(SavedGame, TheFirstFormatsFixtureStillReads)
+// The first format's bytes, checked in: a later build must still read them,
+// and while format 1 is current the encoder must still write exactly them.
+TEST(SavedGame, TheFirstFormatsFixtureStillReadsAndIsWhatTheEncoderWrites)
 {
-    if (std::getenv("SENCHA_WRITE_SAVE_FIXTURE") != nullptr)
-    {
-        ASSERT_TRUE(WriteFileBytes(kFixture, EncodeSavedGame(Example())));
-    }
     std::vector<std::byte> bytes;
     ASSERT_TRUE(ReadFileBytes(kFixture, bytes)) << kFixture;
     const DecodedSavedGame decoded = DecodeSavedGame(bytes);
     ASSERT_TRUE(decoded.Saved.has_value()) << decoded.Error;
     ExpectSame(*decoded.Saved, Example());
+    ASSERT_EQ(kSavedGameFormatVersion, 1u) << "a new format keeps this fixture and checks in its own";
+    EXPECT_EQ(EncodeSavedGame(Example()), bytes) << "format 1's writer drifted from its checked-in bytes";
 }
 
 TEST(SavedGame, ACorruptOrCutShortFileIsRefused)

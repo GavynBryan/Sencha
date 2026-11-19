@@ -742,6 +742,82 @@ TEST(SavedGames, ASavedBodyThatNoLongerFitsItsPrefabFailsTheRestore)
     std::filesystem::remove_all(root);
 }
 
+TEST(SavedGames, AnUntouchedBodySavesAnEmptyPatch)
+{
+    const std::filesystem::path root = RootFor("untouched_body");
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const SavedGameSection* bodies = SectionOf(*saved, "sencha.bodies");
+    ASSERT_NE(bodies, nullptr);
+    const JsonValue* local = bodies->Data.Find("local");
+    ASSERT_NE(local, nullptr);
+    const JsonValue* patch = local->Find("patch");
+    ASSERT_NE(patch, nullptr);
+    EXPECT_EQ(JsonStringify(*patch), "{}");
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWorldCounterAndABodyCounterComeBackInTheNextRun)
+{
+    const std::filesystem::path root = RootFor("counters_next_run");
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            const GameplayTagId keys = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.keys");
+            (void)WriteCounter(world, keys, EntityId{}, 4);
+            (void)WriteCounter(world, keys, LocalControlSubjectOf(world), 2);
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+
+    std::optional<std::int32_t> worldKeys;
+    std::optional<std::int32_t> bodyKeys;
+    GameplayTagId keys;
+    stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0)
+        {
+            keys = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.keys");
+            stage = 1;
+        }
+        else if (stage == 1 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && RestoreArrived(engine))
+        {
+            worldKeys = CounterValue(world, keys, EntityId{});
+            bodyKeys = CounterValue(world, keys, LocalControlSubjectOf(world));
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(worldKeys, 4);
+    EXPECT_EQ(bodyKeys, 2) << "the body's counter did not follow the restored body";
+    std::filesystem::remove_all(root);
+}
+
 TEST(SavedGames, ARestoredBodyNobodyTookIsNotGivenToTheNextLevelChange)
 {
     const std::filesystem::path root = RootFor("stale_restored_body");

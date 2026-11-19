@@ -55,7 +55,11 @@ difference between its scene form now and the prefab's cooked record, composed
 back by the operator prefabs use (`core/composition/CompositionPatch.h` is the
 inverse of `ComposeLayers`). A value the save did not change follows the prefab,
 so a retuned prefab still applies to old saves; a value it did change stays as
-saved. The patch leaves out what a spawn gives: identity, scene instance and
+saved. The cooked record states every field, including those the prefab's
+source leaves out (`"CharacterController": {}`): the cook writes each component
+from the loaded document through its serializer (`SaveSceneJson`, from the
+document cook's input snapshot), so an untouched body saves an empty patch and
+a retuned default reaches old saves like any other value. The patch leaves out what a spawn gives: identity, scene instance and
 placement. The body's root transform and persistent id travel beside it, and
 writing a save gives a body without an id one from the runtime mint.
 

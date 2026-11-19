@@ -182,8 +182,10 @@ announcement is refreshed every frame. Carrying it out:
    or, when the request's `RuntimeState` is `Discard`, every runtime held
    record: the world's counters and inventory and every body's go, as a new
    game needs (`Keep`, the default, keeps them for the next level);
-5. clears the active camera if it went with the level;
-6. loads the requested level.
+5. drops a restored body no spawn has taken (`RestoredBodies`), so only the
+   restore that is under way can give one out;
+6. clears the active camera if it went with the level;
+7. loads the requested level.
 
 The game provides bodies when the level arrives, as for any load. `Status()`
 moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every
