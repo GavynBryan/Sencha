@@ -45,6 +45,9 @@ public:
     // One past the holder's last record; the last position once that is taken,
     // where records keep the order they were listed in.
     [[nodiscard]] std::uint16_t NextPosition(EntityId holder);
+    [[nodiscard]] std::uint16_t PositionOf(EntityId record) const;
+    // Lists the holder's records at 0..n-1 in their order, once its last takes the last position.
+    [[nodiscard]] bool Renumber(EntityId holder);
     [[nodiscard]] std::uint64_t PositionsExhausted() const { return Exhausted; }
 
     [[nodiscard]] std::vector<EntityId> TakeUnsettled();

@@ -132,6 +132,9 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     HeldRecordIndex& index = InstallHeldRecords(world);
     if (index.Lists(record) && (index.HolderOf(record) != holder || index.AwaitedHolderOf(record).IsValid()))
         LeaveAuthoredSelf(world, index, record, Leaving::IdentityAndGroup, 0);
+    if (!position.has_value() && index.Renumber(holder))
+        for (const EntityId listed : index.RecordsOf(holder))
+            world.TryGet<Held>(listed)->Position = index.PositionOf(listed);
     const Held held{ .Holder = MakePersistableRef(world, holder),
                      .Position = position.value_or(index.NextPosition(holder)) };
     if (world.HasComponent<Held>(record))

@@ -74,16 +74,41 @@ TEST_F(HeldRecordTest, RecordsAreListedByPositionThenByWhenTheyWereHeld)
     EXPECT_FALSE(Index->HolderOf(worlds).IsValid());
 }
 
-TEST_F(HeldRecordTest, PositionsPastTheLastTieInTheOrderTheyWereHeldAndAreCounted)
+TEST_F(HeldRecordTest, AppendingPastTheLastPositionRenumbersTheHolderInItsOrder)
 {
     const EntityId chest = Holder();
+    const EntityId first = HeldBy(chest, 0);
     const EntityId atLast = HeldBy(chest, 0xFFFF);
     const EntityId past = HeldBy(chest);
     const EntityId further = HeldBy(chest);
 
+    EXPECT_EQ(RecordsOf(chest), (std::vector{ first, atLast, past, further }));
+    const std::vector<std::uint16_t> expected{ 0, 1, 2, 3 };
+    for (std::size_t i = 0; i < expected.size(); ++i)
+        EXPECT_EQ(Entities.TryGet<Held>(RecordsOf(chest)[i])->Position, expected[i]);
+    EXPECT_EQ(Index->PositionsExhausted(), 0u);
+
+    HoldRecord(Entities, first, chest);
+    EXPECT_EQ(RecordsOf(chest), (std::vector{ atLast, past, further, first }))
+        << "the renumbered positions are the ones the index orders by";
+}
+
+TEST_F(HeldRecordTest, AHolderWithEveryPositionTakenTiesPastTheLastAndCountsIt)
+{
+    const EntityId chest = Holder();
+    for (std::uint32_t position = 0; position <= 0xFFFF; ++position)
+        Entities.AddComponent<Held>(Entities.CreateEntity(),
+                                    Held{ .Holder = { .Entity = chest, .Target = {} },
+                                          .Position = static_cast<std::uint16_t>(position) });
+    const EntityId atLast = RecordsOf(chest).back();
+
+    const EntityId past = HeldBy(chest);
+
     EXPECT_EQ(Entities.TryGet<Held>(past)->Position, 0xFFFFu);
-    EXPECT_EQ(RecordsOf(chest), (std::vector{ atLast, past, further }));
-    EXPECT_EQ(Index->PositionsExhausted(), 2u);
+    EXPECT_EQ(Entities.TryGet<Held>(atLast)->Position, 0xFFFFu);
+    EXPECT_EQ(RecordsOf(chest).back(), past);
+    EXPECT_EQ(RecordsOf(chest).size(), 0x10001u);
+    EXPECT_EQ(Index->PositionsExhausted(), 1u);
 }
 
 TEST_F(HeldRecordTest, HoldingARecordGivesItIdentityReplicationAndItsHoldersRelevance)

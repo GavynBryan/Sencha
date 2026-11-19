@@ -162,17 +162,39 @@ std::vector<EntityId> HeldRecordIndex::AwaitingRecords() const
     return records;
 }
 
+namespace
+{
+    constexpr std::uint16_t kLastPosition = std::numeric_limits<std::uint16_t>::max();
+}
+
+std::uint16_t HeldRecordIndex::PositionOf(EntityId record) const
+{
+    const auto found = Listings.find(record);
+    return found != Listings.end() ? found->second.Position : std::uint16_t{ 0 };
+}
+
+bool HeldRecordIndex::Renumber(EntityId holder)
+{
+    const auto found = ByHolder.find(holder);
+    if (found == ByHolder.end() || found->second.size() > kLastPosition
+        || Listings.at(found->second.back()).Position < kLastPosition)
+        return false;
+    std::uint16_t position = 0;
+    for (const EntityId record : found->second)
+        Listings.at(record).Position = position++;
+    return true;
+}
+
 std::uint16_t HeldRecordIndex::NextPosition(EntityId holder)
 {
-    constexpr std::uint16_t kLast = std::numeric_limits<std::uint16_t>::max();
     const std::span<const EntityId> records = RecordsOf(holder);
     if (records.empty())
         return 0;
     const std::uint16_t last = Listings.at(records.back()).Position;
-    if (last < kLast)
+    if (last < kLastPosition)
         return static_cast<std::uint16_t>(last + 1);
     ++Exhausted;
-    return kLast;
+    return kLastPosition;
 }
 
 std::vector<EntityId> HeldRecordIndex::TakeUnsettled()

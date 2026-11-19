@@ -26,9 +26,11 @@ the order it was held in.
 
 `HoldRecord(world, record, holder, position?)` is how the authority puts a
 record under a holder: with no position it goes after the holder's last record.
-When the last position (65535) is taken, further records share it and keep the
-order they were held in; `HeldRecordIndex::PositionsExhausted()` counts each
-time that happens. Positions never compact.
+When the holder's last record takes the last position (65535), the next
+append first renumbers the holder's records 0..n-1 in their order, so rolling
+pick-up-and-use never runs out. Only a holder that holds more records than
+there are positions shares the last one: further records keep the order they
+were held in, and `HeldRecordIndex::PositionsExhausted()` counts each time.
 
 ## The index
 
@@ -56,9 +58,11 @@ moves. Revisions are stamps from one counter the index keeps, so a value is
 never reused; a holder that holds nothing has revision 0 and the index keeps
 nothing for it, whether it is alive or gone, on the authority or a client.
 
-`Held` is written in place in one place only: `NameHeldHolder(world, record)`
-names the record's listed holder by its persistent id, giving the holder one.
-It never changes which entity holds the record, so the index stays true; every
+`Held` is written in place in two places only, both in `HeldRecords.cpp`, and
+neither changes which entity holds a record or the order of its holder's
+records, so the index stays true: `NameHeldHolder(world, record)` names the
+record's listed holder by its persistent id, giving the holder one, and the
+renumbering above writes each record the position the index gave it. Every
 other change to a record's holder or position replaces `Held`, which runs the
 hooks.
 
