@@ -358,3 +358,28 @@ TEST_F(HeldRecordTest, RecordsWaitingForOneHolderAreGivenInTheOrderTheyWereListe
 
     EXPECT_EQ(Index->AwaitingRecords(), (std::vector{ other, later, earlier }));
 }
+
+TEST_F(HeldRecordTest, APlacedRecordIsSettledAsAHeldOneIs)
+{
+    const EntityId body = Holder(StoragePartitionId{ 3 });
+    (void)HeldBy(body, 0xFFFF);
+    const EntityId placed = PlaceHeldRecord(Entities, body, ArchetypeSignature{});
+    const EntityId worlds = PlaceHeldRecord(Entities, EntityId{}, ArchetypeSignature{}, std::uint16_t{ 7 });
+
+    ASSERT_TRUE(placed.IsValid());
+    EXPECT_EQ(RecordsOf(body).back(), placed);
+    EXPECT_EQ(Entities.TryGet<Held>(placed)->Position, 1u) << "placing appends as holding does, renumbering first";
+    EXPECT_EQ(Entities.TryGet<Held>(placed)->Holder.Target, Entities.TryGet<PersistentIdComponent>(body)->Id);
+    ASSERT_NE(Entities.TryGet<PersistentIdComponent>(placed), nullptr);
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(placed)->Id));
+    EXPECT_TRUE(Entities.HasComponent<NetReplicated>(placed));
+    EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(placed)->Anchor, body);
+    EXPECT_EQ(Entities.GetEntityPartition(placed), StoragePartitionId{ 3 });
+    EXPECT_EQ(RecordsOf(EntityId{}), std::vector{ worlds });
+    EXPECT_EQ(Entities.TryGet<Held>(worlds)->Position, 7u);
+    EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(worlds), nullptr);
+    EXPECT_EQ(Entities.GetEntityPartition(worlds), PersistentStoragePartition);
+
+    Entities.AddResource<SimulationAuthority>().Authoritative = false;
+    EXPECT_FALSE(PlaceHeldRecord(Entities, body, ArchetypeSignature{}).IsValid());
+}

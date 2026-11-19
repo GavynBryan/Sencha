@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ecs/ArchetypeSignature.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <zone/ZoneId.h>
@@ -19,6 +20,11 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
 
 // The one in-place write of Held.Holder: names the listed holder by its persistent id.
 void NameHeldHolder(World& world, EntityId record);
+
+// Authority only: a settled record under `holder` in one placement. The columns
+// `values` names are left for the caller to fill with World::InitializeComponent.
+[[nodiscard]] EntityId PlaceHeldRecord(World& world, EntityId holder, ArchetypeSignature values,
+                                       std::optional<std::uint16_t> position = {});
 
 // docs/gameplay/held-records.md, "Authored records".
 void NoteHeldRecordChanged(World& world, EntityId record);

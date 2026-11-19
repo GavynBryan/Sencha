@@ -330,7 +330,7 @@ TEST_F(InventoryTest, AContainerWithoutACapacityHoldsAsManyEntriesAsACapacityCan
     EXPECT_EQ(inventory.Give(vault, coin, 1).Refusal, InventoryRefusal::ContainerFull);
 }
 
-TEST_F(InventoryTest, AnEntryPastTheLastPositionSharesItAndIsCounted)
+TEST_F(InventoryTest, AGiftPastTheLastPositionRenumbersTheContainerAndKeepsItsOrder)
 {
     Inventory inventory(Entities());
     const EntityId chest = Container();
@@ -340,9 +340,10 @@ TEST_F(InventoryTest, AnEntryPastTheLastPositionSharesItAndIsCounted)
 
     const EntityId second = inventory.Give(chest, Cloak, 1).Entry;
 
-    EXPECT_EQ(Entities().TryGet<::Held>(second)->Position, 0xFFFFu);
-    EXPECT_EQ(Held(chest), (std::vector{ first, second })) << "they keep the order they were held in";
-    EXPECT_EQ(Index().PositionsExhausted(), before + 1);
+    EXPECT_EQ(Entities().TryGet<::Held>(first)->Position, 0u);
+    EXPECT_EQ(Entities().TryGet<::Held>(second)->Position, 1u);
+    EXPECT_EQ(Held(chest), (std::vector{ first, second }));
+    EXPECT_EQ(Index().PositionsExhausted(), before);
 }
 
 TEST_F(InventoryTest, AnEntryDeeperThanRecordsNestIsRefused)

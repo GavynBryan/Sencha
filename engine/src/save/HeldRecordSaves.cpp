@@ -37,7 +37,9 @@ namespace
         JsonValue::Object components;
         for (const auto& serializer : serializers.Entries())
         {
-            if (SavedBeside(serializer->TypeId()))
+            const ComponentId carried = world.GetComponentIdByType(serializer->TypeId());
+            if (SavedBeside(serializer->TypeId()) || carried == InvalidComponentId
+                || !world.HasComponent(record, carried))
                 continue;
             JsonWriteArchive archive;
             if (!serializer->Save(archive, record, world, context) || !archive.Ok())

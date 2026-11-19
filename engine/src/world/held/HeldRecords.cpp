@@ -80,6 +80,11 @@ namespace
         }
     }
 
+    StoragePartitionId SettledPartition(const World& world, EntityId holder)
+    {
+        return holder.IsValid() ? world.GetEntityPartition(holder) : PersistentStoragePartition;
+    }
+
     void Settle(World& world, const HeldRecordIndex& index, EntityId record)
     {
         if (!world.IsAlive(record) || !index.Lists(record))
@@ -98,17 +103,24 @@ namespace
             AnchorTo(world, record, EntityId{});
             return;
         }
-        StoragePartitionId partition = PersistentStoragePartition;
         if (holder.IsValid())
         {
             NameHeldHolder(world, record);
             AnchorTo(world, record, holder);
-            partition = world.GetEntityPartition(holder);
         }
         else
             AnchorTo(world, record, std::nullopt);
-        if (world.GetEntityPartition(record) != partition)
+        if (const StoragePartitionId partition = SettledPartition(world, holder);
+            world.GetEntityPartition(record) != partition)
             (void)world.MoveEntityToPartition(record, partition);
+    }
+
+    std::uint16_t PositionAfterLast(World& world, HeldRecordIndex& index, EntityId holder)
+    {
+        if (index.Renumber(holder))
+            for (const EntityId listed : index.RecordsOf(holder))
+                world.TryGet<Held>(listed)->Position = index.PositionOf(listed);
+        return index.NextPosition(holder);
     }
 }
 
@@ -132,16 +144,43 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     HeldRecordIndex& index = InstallHeldRecords(world);
     if (index.Lists(record) && (index.HolderOf(record) != holder || index.AwaitedHolderOf(record).IsValid()))
         LeaveAuthoredSelf(world, index, record, Leaving::IdentityAndGroup, 0);
-    if (!position.has_value() && index.Renumber(holder))
-        for (const EntityId listed : index.RecordsOf(holder))
-            world.TryGet<Held>(listed)->Position = index.PositionOf(listed);
     const Held held{ .Holder = MakePersistableRef(world, holder),
-                     .Position = position.value_or(index.NextPosition(holder)) };
+                     .Position = position.has_value() ? *position : PositionAfterLast(world, index, holder) };
     if (world.HasComponent<Held>(record))
         (void)world.ReplaceComponent<Held>(record, held);
     else
         world.AddComponent<Held>(record, held);
     Settle(world, index, record);
+}
+
+EntityId PlaceHeldRecord(World& world, EntityId holder, ArchetypeSignature values, std::optional<std::uint16_t> position)
+{
+    if (!IsSimulationAuthority(world) || !world.IsRegistered<Held>() || (holder.IsValid() && !world.IsAlive(holder)))
+        return {};
+    HeldRecordIndex& index = InstallHeldRecords(world);
+    const Held held{ .Holder = MakePersistableRef(world, holder),
+                     .Position = position.has_value() ? *position : PositionAfterLast(world, index, holder) };
+    const PersistentEntityId identity =
+        world.IsRegistered<PersistentIdComponent>() ? MintRuntimePersistentId(world) : PersistentEntityId{};
+    const bool replicated = world.IsRegistered<NetReplicated>();
+    const bool anchored = holder.IsValid() && world.IsRegistered<NetRelevanceAnchor>();
+    values.set(world.GetComponentId<Held>());
+    if (identity.IsValid())
+        values.set(world.GetComponentId<PersistentIdComponent>());
+    if (replicated)
+        values.set(world.GetComponentId<NetReplicated>());
+    if (anchored)
+        values.set(world.GetComponentId<NetRelevanceAnchor>());
+
+    const EntityId record = world.CreateEntityWithSignature(SettledPartition(world, holder), values);
+    if (identity.IsValid())
+        (void)world.InitializeComponent<PersistentIdComponent>(record, PersistentIdComponent{ identity });
+    if (replicated)
+        (void)world.InitializeComponent<NetReplicated>(record);
+    if (anchored)
+        (void)world.InitializeComponent<NetRelevanceAnchor>(record, NetRelevanceAnchor{ .Anchor = holder });
+    (void)world.InitializeComponent<Held>(record, held);
+    return record;
 }
 
 void NameHeldHolder(World& world, EntityId record)

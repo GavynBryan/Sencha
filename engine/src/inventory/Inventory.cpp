@@ -89,25 +89,34 @@ namespace
     EntityId CreateEntry(World& world, EntityId container, ItemId item, const ItemDefinition& definition,
                          std::uint32_t count)
     {
-        const EntityId entry = world.CreateEntity(world.GetEntityPartition(container));
-        world.AddComponent<ItemEntry>(entry, ItemEntry{ .Definition = item, .Count = count });
-        if (!definition.Attributes.empty())
+        const bool attributes = !definition.Attributes.empty();
+        const bool tags = (!definition.InstanceTags.empty() || !definition.EquipLockTags.empty())
+            && world.IsRegistered<GameplayTagContainer>();
+        ArchetypeSignature values;
+        values.set(world.GetComponentId<ItemEntry>());
+        if (attributes)
+            values.set(world.GetComponentId<AttributeSet>());
+        if (tags)
+            values.set(world.GetComponentId<GameplayTagContainer>());
+        const EntityId entry = PlaceHeldRecord(world, container, values);
+        if (!entry.IsValid())
+            return entry;
+        (void)world.InitializeComponent<ItemEntry>(entry, ItemEntry{ .Definition = item, .Count = count });
+        if (attributes)
         {
-            AttributeSet attributes{};
+            AttributeSet seeded{};
             for (const ItemAttributeSeed& seed : definition.Attributes)
-                (void)attributes.Add(seed.Attribute, seed.Base);
-            world.AddComponent<AttributeSet>(entry, attributes);
+                (void)seeded.Add(seed.Attribute, seed.Base);
+            (void)world.InitializeComponent<AttributeSet>(entry, seeded);
         }
         // A curse laid on an entry by an effect needs somewhere to land.
-        if ((!definition.InstanceTags.empty() || !definition.EquipLockTags.empty())
-            && world.IsRegistered<GameplayTagContainer>())
+        if (tags)
         {
-            GameplayTagContainer tags{};
+            GameplayTagContainer granted{};
             for (const GameplayTagId tag : definition.InstanceTags)
-                (void)tags.GrantBaseline(tag);
-            world.AddComponent<GameplayTagContainer>(entry, tags);
+                (void)granted.GrantBaseline(tag);
+            (void)world.InitializeComponent<GameplayTagContainer>(entry, granted);
         }
-        HoldRecord(world, entry, container);
         return entry;
     }
 

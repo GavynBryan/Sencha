@@ -12,7 +12,7 @@ way.
 |---|---|---|
 | `Held` | `world/held/Held.h` | the relation on the record: its holder and its position |
 | `HeldRecordIndex` | `world/held/HeldRecordIndex.h` | holder to records in order, record to holder, a revision per holder |
-| `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
+| `PlaceHeldRecord`, `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
 | `sencha.held` | `save/HeldRecordSaves.h` | the save section (`docs/gameplay/saves.md`) |
 
 ## The relation
@@ -26,6 +26,11 @@ the order it was held in.
 
 `HoldRecord(world, record, holder, position?)` is how the authority puts a
 record under a holder: with no position it goes after the holder's last record.
+A new record is made with `PlaceHeldRecord(world, holder, values, position?)`,
+which builds it already settled (its `Held`, a runtime persistent id,
+`NetReplicated`, its anchor and its holder's storage partition) in one
+placement, leaving the value columns the caller names to be filled with
+`World::InitializeComponent`; counters and inventory entries are made this way.
 When the holder's last record takes the last position (65535), the next
 append first renumbers the holder's records 0..n-1 in their order, so rolling
 pick-up-and-use never runs out. Only a holder that holds more records than

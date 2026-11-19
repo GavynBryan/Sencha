@@ -115,8 +115,9 @@ record content authored is not saved, since its zone makes it again; a record
 that stopped being what content authored took a runtime id when it changed.
 
 Each record is kept whole, not as a patch: its persistent id, and every
-component a serializer saves, in scene form through the same serializers a
-scene uses. Its `Held` names its holder by persistent id. Capturing gives a
+component it carries that a serializer saves, in scene form through the same
+serializers a scene uses; a serializer of a component the record does not
+carry is not asked. Its `Held` names its holder by persistent id. Capturing gives a
 record or a holder without a persistent id one from the runtime mint.
 
 Restoring destroys every runtime record the index lists, the old session's, at
