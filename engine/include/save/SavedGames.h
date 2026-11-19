@@ -119,7 +119,8 @@ private:
         AsyncTaskHandle Task;
     };
 
-    // Nothing when the level is ready to capture; empty while it is changing.
+    [[nodiscard]] bool LevelSettling() const;
+    // Why a settled level cannot be captured; nothing when it can.
     [[nodiscard]] std::optional<std::string> WriteRefusal() const;
     // Null when there is nothing to write to disk.
     [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot);

@@ -1377,15 +1377,14 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## What a death without a save keeps
 
 - **What:** a death with no save restarts the level from authored content
-  (`LevelChange`). Counters the world holds survive it: they are runtime
-  entities in the persistent partition, which the level change does not own.
-  Counters a body holds go with the released body. A game that restores its
-  last save on death gets both back as saved.
+  (`LevelChange`). Counters the world holds survive it unless the request
+  discards runtime state (`LevelChangeRuntimeState::Discard`, a run that starts
+  over). Counters a body holds always go with the released body. A game that
+  restores its last save on death gets both back as saved.
 - **Where:** `app/LevelChange.cpp`, `world/held/HeldRecords.cpp`.
-- **Trigger:** a game whose death must reset the world's progress without a
-  save (a run that starts over), or keep a body's (a counter of deaths). Then
-  let the level change request say what happens to held records, defaulting to
-  today's behaviour.
+- **Trigger:** a game whose death must keep a body's counters without a save
+  (a counter of deaths). Then let the released body's records move to its
+  participant, or to the next body, through the same request field.
 
 ## Counter changes on a client
 

@@ -174,9 +174,9 @@ void SavedGames::Commit()
 {
     if (WriteWaiting.has_value())
     {
-        const std::optional<std::string> refused = WriteRefusal();
-        if (refused.has_value() && refused->empty())
+        if (LevelSettling())
             return CommitRestore();
+        const std::optional<std::string> refused = WriteRefusal();
         const std::string slot = std::move(*WriteWaiting);
         WriteWaiting.reset();
         if (refused.has_value())
@@ -197,23 +197,24 @@ void SavedGames::CommitRestore()
     }
 }
 
+bool SavedGames::LevelSettling() const
+{
+    return LevelChanging(Host.LevelChanges().Status()) || Host.Level().Residency() == LevelResidency::Loading;
+}
+
 std::optional<std::string> SavedGames::WriteRefusal() const
 {
-    const LevelChangeStatus change = Host.LevelChanges().Status();
-    if (LevelChanging(change))
-        return std::string();
-    if (change == LevelChangeStatus::Failed)
+    if (Host.LevelChanges().Status() == LevelChangeStatus::Failed)
         return std::string("the level change it waited for failed");
     switch (Host.Level().Residency())
     {
     case LevelResidency::Resident:
         return std::nullopt;
-    case LevelResidency::Loading:
-        return std::string();
-    case LevelResidency::Unloaded:
-        return std::string("nothing is loaded");
     case LevelResidency::Failed:
         return std::string("the level failed to load");
+    case LevelResidency::Unloaded:
+    case LevelResidency::Loading:
+        break;
     }
     return std::string("nothing is loaded");
 }
@@ -270,11 +271,12 @@ void SavedGames::Finish()
 {
     if (WriteWaiting.has_value())
     {
-        const std::optional<std::string> refused = WriteRefusal();
+        const std::optional<std::string> refused =
+            LevelSettling() ? std::optional<std::string>("the game quit while the level was changing") : WriteRefusal();
         const std::string slot = std::move(*WriteWaiting);
         WriteWaiting.reset();
         if (refused.has_value())
-            return FailWrite(refused->empty() ? "the game quit while the level was changing" : *refused);
+            return FailWrite(*refused);
         if (const std::shared_ptr<const SavedGame> saved = Capture(slot))
         {
             InFlight = InFlightWrite{ .Slot = slot, .Saved = saved, .Task = {} };
