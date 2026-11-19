@@ -3,6 +3,7 @@
 #include <core/serialization/Archive.h>
 #include <core/serialization/FourCC.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <world/serialization/SceneAssetRef.h>
 #include <world/serialization/TypedComponentSerializer.h>
@@ -10,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -75,6 +77,10 @@ namespace
             const bool named = !archive.HasField(kDefinition)
                 || ReadSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), value.Definition,
                                           context);
+            if constexpr (std::is_same_v<T, ItemEntry>)
+                if (const ItemDefinition* item = FindItemDefinition(world, value.Definition);
+                    item != nullptr && !ItemStackHolds(*item, value.Count))
+                    archive.MarkInvalidField(kCount);
             archive.End();
             return named && archive.Ok() && this->Place(world, entity, value);
         }

@@ -147,20 +147,12 @@ namespace
         return fill;
     }
 
-    void ChangeCount(World& world, EntityId entry, std::uint32_t count)
-    {
-        world.TryGet<ItemEntry>(entry)->Count = count;
-        NoteHeldRecordChanged(world, entry);
-        if (count == 0)
-            NoteDepleted(world, entry, EntityId{});
-    }
-
     EntityId ApplyFills(World& world, const StackFill& fill)
     {
         EntityId last;
         for (const auto& [entry, added] : fill.Fills)
         {
-            ChangeCount(world, entry, std::as_const(world).TryGet<ItemEntry>(entry)->Count + added);
+            SetItemCount(world, entry, std::as_const(world).TryGet<ItemEntry>(entry)->Count + added);
             last = entry;
         }
         return last;
@@ -178,7 +170,7 @@ namespace
         EntityId moved = ApplyFills(world, fill);
         const std::uint32_t left = held.Count - (whole ? units - fill.Remaining : units);
         if (left != held.Count)
-            ChangeCount(world, entry, left);
+            SetItemCount(world, entry, left);
         if (whole && fill.Remaining > 0)
         {
             HoldRecord(world, entry, into);
@@ -387,6 +379,22 @@ bool ItemIsWithin(const World& world, EntityId inner, EntityId outer)
         at = HolderOf(world, at);
     }
     return false;
+}
+
+bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count)
+{
+    return count >= 1 && count <= std::max<std::uint32_t>(item.StackMax, 1);
+}
+
+void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender)
+{
+    ItemEntry* item = world.IsAlive(entry) ? world.TryGet<ItemEntry>(entry) : nullptr;
+    if (item == nullptr || item->Count == count)
+        return;
+    item->Count = count;
+    NoteHeldRecordChanged(world, entry);
+    if (count == 0)
+        NoteDepleted(world, entry, spender);
 }
 
 bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag)

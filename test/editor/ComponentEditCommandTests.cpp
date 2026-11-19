@@ -250,6 +250,30 @@ TEST_F(ComponentEditCommandTest, AnEntrysItemIsChosenByNameAndUndone)
     EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 5u);
 }
 
+TEST_F(ComponentEditCommandTest, AnEntrysCountStaysWithinWhatItsStackHolds)
+{
+    WorldDocument world(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    World& components = Components();
+    ItemRegistry& items = components.GetResource<ItemRegistry>();
+    const ItemId arrow = items.Define("asset://items/arrow.sdata", ItemDefinition{ .Name = "Arrow", .StackMax = 20 });
+    (void)items.Define("asset://items/cloak.sdata", ItemDefinition{ .Name = "Cloak" });
+    const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+    components.AddComponent<ItemEntry>(entity, ItemEntry{ .Definition = arrow, .Count = 5 });
+
+    const std::unique_ptr<IEditorComponentAdapter> entries = MakeItemEntryEditorAdapter();
+    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = entity };
+    EXPECT_EQ(entries->SetInspectorValue(context, "count", "21"), PropertyEditResult::Refused);
+    EXPECT_EQ(entries->SetInspectorValue(context, "count", "0"), PropertyEditResult::Refused);
+    ASSERT_EQ(entries->SetInspectorValue(context, "count", "20"), PropertyEditResult::Applied);
+    EXPECT_EQ(entries->SetInspectorValue(context, "definition", "asset://items/cloak.sdata"), PropertyEditResult::Refused)
+        << "twenty cloaks are twenty entries";
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 20u);
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Definition, arrow);
+}
+
 // "This chest holds 3 arrows" is authored by picking the chest as the entry's
 // holder, among the document's entities, never itself or what it holds.
 TEST_F(ComponentEditCommandTest, AHeldRecordsHolderIsPickedAmongTheDocumentsEntitiesAndUndone)

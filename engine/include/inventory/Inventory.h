@@ -57,6 +57,9 @@ struct InventoryResult
 // docs/gameplay/inventory.md, "Who may use an entry".
 [[nodiscard]] bool MayUseItem(const World& world, EntityId actor, EntityId item);
 [[nodiscard]] bool ItemIsWithin(const World& world, EntityId inner, EntityId outer);
+[[nodiscard]] bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count);
+// Authority only. The one write of an entry's count; reaching zero leaves it for the inventory pass.
+void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender = {});
 // Every item carries the invalid tag.
 [[nodiscard]] bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag);
 

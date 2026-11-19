@@ -12,6 +12,7 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace
@@ -455,8 +457,9 @@ namespace
             const Counted* held = world.TryGet<Counted>(context.Entity);
             if (held == nullptr)
                 return {};
+            const auto [least, most] = CountRange(world, held->Definition);
             return { ItemDefinitionRow(world, held->Definition),
-                     NumberProperty("count", "Count", static_cast<double>(held->Count), 0.0, 4294967295.0, 1.0,
+                     NumberProperty("count", "Count", static_cast<double>(held->Count), least, most, 1.0,
                                     std::string(CountTooltip)) };
         }
 
@@ -486,10 +489,22 @@ namespace
                 return PropertyEditResult::Gone;
             if (after.Definition == held->Definition && after.Count == held->Count)
                 return PropertyEditResult::Unchanged;
+            if constexpr (std::is_same_v<Counted, ItemEntry>)
+                if (const ItemDefinition* item = FindItemDefinition(world, after.Definition);
+                    item != nullptr && !ItemStackHolds(*item, after.Count))
+                    return PropertyEditResult::Refused;
             return CommitComponentValue(context, *held, after);
         }
 
     private:
+        static std::pair<double, double> CountRange(const World& world, ItemId definition)
+        {
+            if constexpr (std::is_same_v<Counted, ItemEntry>)
+                if (const ItemDefinition* item = FindItemDefinition(world, definition))
+                    return { 1.0, static_cast<double>(std::max<std::uint32_t>(item->StackMax, 1)) };
+            return { 0.0, 4294967295.0 };
+        }
+
         std::string_view CountTooltip;
     };
 
@@ -573,7 +588,7 @@ std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter()
 
 std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter()
 {
-    return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds; zero is spent.");
+    return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds, from one to what its stack holds.");
 }
 
 std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter()

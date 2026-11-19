@@ -21,7 +21,11 @@ An `item.definition` asset says what a kind of item is:
 ```
 
 - **`stack.max`** is how many units one entry holds. With 1, every unit is its
-  own entry with state of its own. Two entries merge only when they have the
+  own entry with state of its own. An entry authored, saved or edited in Kyusu
+  holds from one unit to `stack.max` (`ItemStackHolds`); a scene or save naming
+  more, or none, is refused at load, since an empty entry is spent and never
+  authored. Every change to a count goes through `SetItemCount`, which queues
+  an entry that reaches zero for the inventory pass. Two entries merge only when they have the
   same definition, `stack.max` above 1, and both still hold units.
 - **`keep: false`** means taking it applies its `take.effects` (Instant
   effects), scaled by the pickup's count, and keeps nothing: ammunition that

@@ -108,6 +108,26 @@ TEST(InventoryScene, AnEntryIsSavedByItsDefinitionsPathAndItsCount)
     EXPECT_EQ(entry->Count, 20u);
 }
 
+TEST(InventoryScene, AnEntryLoadsOnlyWithACountItsStackHolds)
+{
+    SceneWorld scene;
+    World& world = scene.Scene.Components;
+    (void)world.GetResource<ItemRegistry>().Define("asset://items/arrow.sdata",
+                                                   ItemDefinition{ .Name = "Arrow", .StackMax = 20 });
+    const std::unique_ptr<IComponentSerializer> serializer = MakeItemEntrySerializer();
+    const auto loads = [&](std::uint32_t count) {
+        JsonValue saved(JsonValue::Object{ { "definition", JsonValue(std::string("asset://items/arrow.sdata")) },
+                                           { "count", JsonValue(static_cast<double>(count)) } });
+        JsonReadArchive archive(saved);
+        return serializer->LoadIntoWorld(archive, world.CreateEntity(), world, scene.Context);
+    };
+
+    EXPECT_TRUE(loads(20));
+    EXPECT_TRUE(loads(1));
+    EXPECT_FALSE(loads(21)) << "more than one entry holds";
+    EXPECT_FALSE(loads(0)) << "an entry with nothing in it is spent, never authored";
+}
+
 // An entry names its container through Held, so a placed prefab's chest and the
 // entries in it name each other by that placement's ids.
 TEST(InventoryScene, AHeldRecordsHolderIsAReferenceAPlacementRenames)
