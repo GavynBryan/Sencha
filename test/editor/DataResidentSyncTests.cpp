@@ -30,7 +30,7 @@ namespace
         LoggingProvider Logging;
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
-        DataResidentSync Sync{ Assets, [this](std::string_view path) { return FileRoot(path); } };
+        DataResidentSync Sync{ Assets, [this](std::string_view path) { return DataSourceRoot{ FileRoot(path), {} }; } };
         std::unique_ptr<DataDocument> Game;
         std::unique_ptr<DataDocument> Other;
 

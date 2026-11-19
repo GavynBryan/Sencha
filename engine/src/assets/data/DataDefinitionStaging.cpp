@@ -1,5 +1,6 @@
 #include <assets/data/DataDefinitionStaging.h>
 
+#include <core/composition/CompositionChain.h>
 #include <core/composition/JsonComposition.h>
 
 #include <algorithm>
@@ -10,8 +11,6 @@
 
 namespace
 {
-    constexpr std::size_t kMaxCompositionDepth = 16;
-
     void AddError(std::vector<DataValidationError>& errors, std::string path, std::string message)
     {
         errors.push_back(DataValidationError{ std::move(path), std::move(message) });
@@ -52,6 +51,15 @@ namespace
         {
         }
 
+        DataDefinitionStaging StageOutermost(const JsonValue& root, std::string_view asset, bool provenance)
+        {
+            (void)Chain.Enter(asset);
+            DataDefinitionStaging staging = Stage(root, asset, provenance);
+            Chain.Leave();
+            return staging;
+        }
+
+    private:
         DataDefinitionStaging Stage(const JsonValue& root, std::string_view asset, bool provenance)
         {
             DataDefinitionStaging staging;
@@ -71,7 +79,6 @@ namespace
             }
 
             staging.Composed = true;
-            Stack.emplace_back(asset);
             std::vector<DataDefinitionStaging> composedBase;
             std::vector<DataDefinitionStaging> composedIncludes;
             for (const Source& base : bases)
@@ -80,7 +87,6 @@ namespace
             for (const Source& include : includes)
                 if (std::optional<DataDefinitionStaging> composed = StageSource(include, staging, provenance))
                     composedIncludes.push_back(std::move(*composed));
-            Stack.pop_back();
             if (!staging.Ok())
             {
                 staging.Sources = Attempted;
@@ -109,7 +115,7 @@ namespace
                 layers.push_back({ &composedIncludes[i].Data, includes[i].Path, &composedIncludes[i].Composition.Provenance });
             const CompositionLayerInput<JsonValue> local{ &data, asset, nullptr };
             staging.Data = ComposeLayers<JsonValue>(base ? &*base : nullptr, layers, local, policy, staging.Composition);
-            if (provenance && Stack.empty())
+            if (provenance && Chain.Depth() == 1)
             {
                 const JsonValue nothing{ JsonValue::Object{} };
                 CompositionReport unused;
@@ -127,7 +133,6 @@ namespace
             return staging;
         }
 
-    private:
         bool CheckEnvelope(const JsonValue& root, DataDefinitionStaging& staging)
         {
             if (!root.IsObject())
@@ -203,26 +208,29 @@ namespace
         std::optional<DataDefinitionStaging> StageSource(const Source& source, DataDefinitionStaging& staging,
                                                          bool provenance)
         {
-            if (std::ranges::find(Stack, source.Path) != Stack.end())
+            if (std::optional<std::string> refusal = Chain.Enter(source.Path))
             {
-                AddError(staging.Errors, source.Field,
-                         std::format("'{}' extends or includes itself through this chain", source.Path));
+                AddError(staging.Errors, source.Field, std::move(*refusal));
                 return std::nullopt;
             }
-            if (Stack.size() >= kMaxCompositionDepth)
-            {
-                AddError(staging.Errors, source.Field,
-                         std::format("composition is deeper than {} definitions", kMaxCompositionDepth));
-                return std::nullopt;
-            }
+            std::optional<DataDefinitionStaging> composed = StageEntered(source, staging, provenance);
+            Chain.Leave();
+            return composed;
+        }
+
+        std::optional<DataDefinitionStaging> StageEntered(const Source& source, DataDefinitionStaging& staging,
+                                                          bool provenance)
+        {
             NoteAttempted(source.Path);
-            const JsonValue* root = Context.Read ? Context.Read(source.Path) : nullptr;
-            if (root == nullptr)
+            const DataSourceRead read = Context.Read ? Context.Read(source.Path) : DataSourceRead{};
+            if (read.Root == nullptr)
             {
-                AddError(staging.Errors, source.Field, std::format("'{}' does not exist", source.Path));
+                AddError(staging.Errors, source.Field,
+                         std::format("'{}' {}", source.Path, read.Problem.empty() ? "does not exist" : read.Problem));
                 return std::nullopt;
             }
-            if (source.Fragment && root->IsObject() && root->Find("extends") != nullptr)
+            const JsonValue& root = *read.Root;
+            if (source.Fragment && root.IsObject() && root.Find("extends") != nullptr)
             {
                 AddError(staging.Errors, source.Field,
                          std::format("'{}' extends another definition, so what it inherits would land as what it "
@@ -230,14 +238,15 @@ namespace
                                      source.Path));
                 return std::nullopt;
             }
-            DataDefinitionStaging composed = Stage(*root, source.Path, provenance);
+            DataDefinitionStaging composed = Stage(root, source.Path, provenance);
             for (const std::string& path : composed.Sources)
                 NoteAttempted(path);
             if (!composed.Ok())
             {
-                const DataValidationError& first = composed.Errors.front();
-                AddError(staging.Errors, source.Field,
-                         std::format("'{}' does not compose: {} {}", source.Path, first.Path, first.Message));
+                std::string causes;
+                for (const DataValidationError& error : composed.Errors)
+                    causes += std::format("{}{} {}", causes.empty() ? "" : "; ", error.Path, error.Message);
+                AddError(staging.Errors, source.Field, std::format("'{}' does not compose: {}", source.Path, causes));
                 return std::nullopt;
             }
             if (composed.TypeName != staging.TypeName)
@@ -256,7 +265,7 @@ namespace
         }
 
         const DataDefinitionContext& Context;
-        std::vector<std::string> Stack;
+        CompositionChain Chain;
         std::vector<std::string> Attempted;
     };
 
@@ -280,7 +289,7 @@ namespace
 DataDefinitionStaging StageDataDefinition(const JsonValue& root, const DataDefinitionContext& context)
 {
     Stager stager(context);
-    DataDefinitionStaging staging = stager.Stage(root, context.Asset, context.Provenance);
+    DataDefinitionStaging staging = stager.StageOutermost(root, context.Asset, context.Provenance);
     if (!staging.Ok())
         return staging;
 
@@ -324,7 +333,7 @@ DataDefinitionStaging StageDataDefinition(const JsonValue& root, const DataDefin
         {
             DataDefinitionContext tracing = context;
             tracing.Provenance = true;
-            traced = Stager(tracing).Stage(root, context.Asset, true);
+            traced = Stager(tracing).StageOutermost(root, context.Asset, true);
             provenance = &traced.Composition.Provenance;
         }
     }

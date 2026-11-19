@@ -76,8 +76,10 @@ A local whose inherited parent the base no longer has is `dangling_parent` and
 composes as a root, so the document still opens to be fixed.
 
 The resolver returns nothing on a structural failure: a source reference that
-does not resolve, a cycle through the source graph (a document already being
-resolved is met again), or a local entity reusing an inherited id, which would
+does not resolve (named with the document and field that asked for it), a
+cycle through the source graph or a chain of extends, includes and placements
+deeper than 16 scenes (`CompositionChain`, `docs/assets/composition.md`,
+"Chains of sources"), or a local entity reusing an inherited id, which would
 make every patch and parent naming it ambiguous. Without component rules
 (`ISceneComponentRules`) every component composes by the version-1 rules and no
 removal is checked.

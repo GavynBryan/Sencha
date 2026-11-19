@@ -92,9 +92,9 @@ namespace
             const AssetPathsById current;
             return StageDataDefinition(Sources.find(path)->second, DataDefinitionContext{
                 .Types = Types, .Schemas = &Schemas, .Current = current,
-                .Read = [this](std::string_view source) -> const JsonValue* {
+                .Read = [this](std::string_view source) -> DataSourceRead {
                     const auto found = Sources.find(source);
-                    return found != Sources.end() ? &found->second : nullptr;
+                    return { found != Sources.end() ? &found->second : nullptr, {} };
                 },
                 .Asset = path });
         }

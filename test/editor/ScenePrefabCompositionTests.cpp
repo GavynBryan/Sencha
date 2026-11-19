@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -498,4 +499,70 @@ TEST(ScenePrefabComposition, AVersionTwoFixtureComposesThroughEveryLayer)
         << "the base's tag, the fragment's, and the placement's";
     EXPECT_EQ(Binding(*guard, "used"), nullptr) << "removed by the guard";
     EXPECT_EQ(Binding(*guard, "struck"), nullptr) << "removed by the placement";
+}
+
+namespace
+{
+std::optional<SceneCompositionResult> ExtendsChain(Composed& composed, std::size_t nested)
+{
+    for (std::size_t i = 0; i + 1 < nested; ++i)
+        composed.Sources.Add(std::format("asset://prefabs/link{}.sscene", i),
+                             std::format("{{ format_version: 2, extends: 'asset://prefabs/link{}.sscene', entities: [] }}", i + 1));
+    composed.Sources.Add(std::format("asset://prefabs/link{}.sscene", nested - 1), kHumanoid);
+    return composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/link0.sscene', entities: [] }");
+}
+} // namespace
+
+TEST(ScenePrefabComposition, AChainOfSixteenScenesResolvesAndSeventeenDoesNot)
+{
+    Composed sixteen;
+    EXPECT_TRUE(ExtendsChain(sixteen, 15).has_value()) << sixteen.Error;
+    Composed seventeen;
+    EXPECT_FALSE(ExtendsChain(seventeen, 16).has_value());
+    EXPECT_NE(seventeen.Error.find("deeper than 16"), std::string::npos) << seventeen.Error;
+}
+
+TEST(ScenePrefabComposition, PlacementsNestNoDeeperThanSixteenScenes)
+{
+    Composed composed;
+    for (int i = 0; i < 17; ++i)
+        composed.Sources.Add(std::format("asset://prefabs/nest{}.sscene", i),
+                             std::format("{{ format_version: 2, entities: [], instances: [ {{ id: '{:016x}', "
+                                         "source: 'asset://prefabs/nest{}.sscene' }} ] }}",
+                                         0x500 + i, i + 1));
+    composed.Sources.Add("asset://prefabs/nest17.sscene", "{ format_version: 2, entities: [] }");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, entities: [], instances: [ { id: '00000000000004ff', "
+                                  "source: 'asset://prefabs/nest0.sscene' } ] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("deeper than 16"), std::string::npos) << composed.Error;
+}
+
+TEST(ScenePrefabComposition, ACycleNamesEverySceneOnIt)
+{
+    Composed composed;
+    composed.Sources.Add("asset://prefabs/loop_a.sscene",
+                         "{ format_version: 2, extends: 'asset://prefabs/loop_b.sscene', entities: [] }");
+    composed.Sources.Add("asset://prefabs/loop_b.sscene",
+                         "{ format_version: 2, extends: 'asset://prefabs/loop_a.sscene', entities: [] }");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/loop_a.sscene', entities: [] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("asset://prefabs/loop_a.sscene -> asset://prefabs/loop_b.sscene -> "
+                                  "asset://prefabs/loop_a.sscene"),
+              std::string::npos)
+        << composed.Error;
+}
+
+TEST(ScenePrefabComposition, ASourceThatDoesNotResolveIsNamedWithTheDocumentAndFieldThatAskedForIt)
+{
+    Composed composed;
+    composed.Sources.Add("asset://prefabs/broken.sscene", R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  includes: [ { fragment: 'asset://prefabs/fragments/gone.sscene' } ],
+})");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/broken.sscene', entities: [] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("'asset://prefabs/broken.sscene': $.includes[0] names "
+                                  "'asset://prefabs/fragments/gone.sscene'"),
+              std::string::npos)
+        << composed.Error;
 }

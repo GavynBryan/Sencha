@@ -47,6 +47,20 @@ composed = Local( Includes( composed(base) ) )
 
 Without a schema, objects merge and anything else is written whole.
 
+## Chains of sources
+
+Every walker over sources, data definitions and scenes alike, keeps the
+sources it is resolving in one `CompositionChain`
+(`core/composition/CompositionChain.h`), so the two share one rule:
+
+- A source met again while it is still being resolved is a cycle, refused with
+  every source on it (`source cycle: 'a' composes from itself through a -> b -> a`).
+- A chain is at most `CompositionChain::MaxDepth` (16) sources deep, the
+  outermost included. A deeper one is refused, naming the source that went
+  past it. The limit bounds the walkers' recursion; no authored chain comes
+  near it. A data definition reports the refusal at the field that named the
+  source; a scene fails to resolve with it.
+
 ## Patches from a difference
 
 `PatchFrom(baseline, live, schema)` (`core/composition/CompositionPatch.h`) is
@@ -117,8 +131,10 @@ A data definition's envelope may name a base and fragments beside `data`:
   inherits as though it had written it, ranking that over the base and
   conflicting falsely with other fragments. A fragment may include fragments.
 - Composition is refused, at the envelope field that named the source, for a
-  cycle, a chain deeper than 16 definitions, a source that does not exist or
-  does not compose, and a source of another subtype.
+  cycle, a chain deeper than 16 definitions, a source that does not exist, is
+  not valid JSON or does not compose, and a source of another subtype. A cycle
+  names every definition on it; a source that does not compose gives every one
+  of its errors.
 - An `abstract` definition composes and validates partially (kinds, ranges and
   keys, not required members, `DataValidationMode::Partial`), and is never
   compiled. It does not load as a value, is never declared as vocabulary, and

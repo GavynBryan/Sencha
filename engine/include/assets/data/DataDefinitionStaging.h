@@ -14,7 +14,14 @@
 #include <string_view>
 #include <vector>
 
-using DataSourceReader = std::function<const JsonValue*(std::string_view path)>;
+// A source's parsed root, or, when it has none, why: "does not exist", "is not valid JSON ...".
+struct DataSourceRead
+{
+    const JsonValue* Root = nullptr;
+    std::string Problem;
+};
+
+using DataSourceReader = std::function<DataSourceRead(std::string_view path)>;
 
 struct DataDefinitionContext
 {

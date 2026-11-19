@@ -101,18 +101,21 @@ std::string DataAssetLoader::ComposePending(AssetStaging& staged, AssetSystem& a
     if (pending == nullptr)
         return {};
     std::unordered_map<std::string, JsonValue> sources;
-    const DataSourceReader read = [&](std::string_view path) -> const JsonValue* {
+    const DataSourceReader read = [&](std::string_view path) -> DataSourceRead {
         if (const auto found = sources.find(std::string(path)); found != sources.end())
-            return &found->second;
+            return { &found->second, {} };
         const AssetRecord* record = assets.Resolve(path, AssetType::Data);
+        if (record == nullptr)
+            return { nullptr, "does not exist" };
         std::vector<std::byte> bytes;
-        if (record == nullptr || !ReadAssetBytes(assets.DefaultSource(), *record, bytes))
-            return nullptr;
+        if (!ReadAssetBytes(assets.DefaultSource(), *record, bytes))
+            return { nullptr, "could not be read" };
+        JsonParseError error;
         std::optional<JsonValue> root =
-            JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+            JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), &error);
         if (!root.has_value())
-            return nullptr;
-        return &sources.emplace(std::string(path), std::move(*root)).first->second;
+            return { nullptr, std::format("is not valid JSON (at {}: {})", error.Position, error.Message) };
+        return { &sources.emplace(std::string(path), std::move(*root)).first->second, {} };
     };
     const JsonValue root = pending->Root;
     AssetStaging composed = StageDefinition(staged.Record, root, *assets.PathsById(), read);

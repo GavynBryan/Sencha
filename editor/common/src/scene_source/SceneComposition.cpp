@@ -2,6 +2,8 @@
 
 #include "scene_source/Json5Composition.h"
 
+#include <core/composition/CompositionChain.h>
+
 #include <algorithm>
 #include <cassert>
 #include <unordered_map>
@@ -166,6 +168,15 @@ namespace
         {
         }
 
+        [[nodiscard]] bool ResolveOutermost(const SceneSourceDocument& document, SceneCompositionResult& out)
+        {
+            (void)Chain.Enter({});
+            const bool resolved = Resolve(document, out);
+            Chain.Leave();
+            return resolved;
+        }
+
+    private:
         [[nodiscard]] bool Resolve(const SceneSourceDocument& document,
                                    SceneCompositionResult& out,
                                    std::string_view asset = {})
@@ -175,7 +186,7 @@ namespace
             if (!document.Extends.empty())
             {
                 SceneCompositionResult base;
-                if (!ResolveNested(document.Extends, base, out))
+                if (!ResolveNested(document.Extends, Unresolved(asset, "$.extends", document.Extends), base, out))
                     return false;
                 for (ResolvedSceneEntity& entity : base.Entities)
                 {
@@ -207,28 +218,26 @@ namespace
             if (!ComposeLayers(document, asset, out))
                 return false;
             for (const SceneInstanceRecord& instance : document.Instances)
-                if (!Expand(instance, document.FormatVersion, out))
+                if (!Expand(instance, document.FormatVersion, asset, out))
                     return false;
             return true;
         }
 
-    private:
         ISceneSourceLookup& Sources;
         std::string* Error = nullptr;
         const ISceneComponentRules* Rules = nullptr;
-        std::vector<std::string> Stack; // sources in flight, for cycle detection
+        CompositionChain Chain;
 
-        [[nodiscard]] bool ResolveNested(const std::string& path, SceneCompositionResult& nested,
-                                         SceneCompositionResult& out)
+        [[nodiscard]] bool ResolveNested(const std::string& path, const std::string& unresolved,
+                                         SceneCompositionResult& nested, SceneCompositionResult& out)
         {
-            if (std::ranges::find(Stack, path) != Stack.end())
-                return Fail(Error, "source cycle through '" + path + "'");
             const SceneSourceDocument* document = Sources.Find(path);
             if (document == nullptr)
-                return Fail(Error, "'" + path + "' did not resolve");
-            Stack.push_back(path);
+                return Fail(Error, unresolved);
+            if (std::optional<std::string> refusal = Chain.Enter(path))
+                return Fail(Error, std::move(*refusal));
             const bool resolved = Resolve(*document, nested, path);
-            Stack.pop_back();
+            Chain.Leave();
             if (!resolved)
                 return false;
             out.MissingIds.insert(out.MissingIds.end(), nested.MissingIds.begin(), nested.MissingIds.end());
@@ -237,6 +246,13 @@ namespace
             out.Diagnostics.insert(out.Diagnostics.end(), nested.Diagnostics.begin(), nested.Diagnostics.end());
             NoteSources(path, nested, out);
             return true;
+        }
+
+        [[nodiscard]] static std::string Unresolved(std::string_view referrer, std::string_view field,
+                                                    std::string_view path)
+        {
+            return (referrer.empty() ? std::string("the document") : "'" + std::string(referrer) + "'") + ": "
+                + std::string(field) + " names '" + std::string(path) + "', which did not resolve";
         }
 
         static void NoteSources(const std::string& path, const SceneCompositionResult& nested,
@@ -308,7 +324,7 @@ namespace
                 const SceneFragmentInclude& include = document.Includes[i];
                 const std::string field = "$.includes[" + std::to_string(i) + "]";
                 SceneCompositionResult fragment;
-                if (!ResolveNested(include.Fragment, fragment, out))
+                if (!ResolveNested(include.Fragment, Unresolved(asset, field, include.Fragment), fragment, out))
                     return false;
                 if (fragment.Entities.size() != 1)
                 {
@@ -457,11 +473,13 @@ namespace
 
         // One placement: resolve what it points at, override it, and emit the
         // result into the outer scene under the placement's own identities.
-        [[nodiscard]] bool Expand(const SceneInstanceRecord& instance, std::uint32_t version,
+        [[nodiscard]] bool Expand(const SceneInstanceRecord& instance, std::uint32_t version, std::string_view asset,
                                   SceneCompositionResult& out)
         {
             SceneCompositionResult inner;
-            if (!ResolveSource(instance, inner, out))
+            if (!ResolveNested(instance.Source,
+                               Unresolved(asset, "instance " + SceneIdText(instance.Id.Value) + " source", instance.Source),
+                               inner, out))
                 return false;
 
             const SourceIndex index = SourceIndex::Build(instance, inner);
@@ -504,37 +522,6 @@ namespace
                     text = PersistentEntityIdToString(minted->second);
                 });
             }
-        }
-
-        // The source, resolved through its own expansion, with the diagnostics
-        // it produced folded outward. A source already in flight is a cycle.
-        [[nodiscard]] bool ResolveSource(const SceneInstanceRecord& instance,
-                                         SceneCompositionResult& inner,
-                                         SceneCompositionResult& out)
-        {
-            for (const std::string& inFlight : Stack)
-                if (inFlight == instance.Source)
-                    return Fail(Error, "source cycle through '" + instance.Source + "'");
-
-            const SceneSourceDocument* source = Sources.Find(instance.Source);
-            if (source == nullptr)
-                return Fail(Error, "instance " + SceneIdText(instance.Id.Value)
-                    + ": source '" + instance.Source + "' did not resolve");
-
-            Stack.push_back(instance.Source);
-            const bool resolved = Resolve(*source, inner, instance.Source);
-            Stack.pop_back();
-            if (!resolved)
-                return false;
-
-            out.MissingIds.insert(out.MissingIds.end(),
-                                  inner.MissingIds.begin(), inner.MissingIds.end());
-            out.DanglingOverrides.insert(out.DanglingOverrides.end(),
-                                         inner.DanglingOverrides.begin(),
-                                         inner.DanglingOverrides.end());
-            out.Diagnostics.insert(out.Diagnostics.end(), inner.Diagnostics.begin(), inner.Diagnostics.end());
-            NoteSources(instance.Source, inner, out);
-            return true;
         }
 
         // The placement's edits, applied over the resolved source. Returns the
@@ -784,7 +771,7 @@ std::optional<SceneCompositionResult> ResolveSceneComposition(
 {
     SceneCompositionResult result;
     Resolver resolver(sources, error, rules);
-    if (!resolver.Resolve(root, result))
+    if (!resolver.ResolveOutermost(root, result))
         return std::nullopt;
     return result;
 }
