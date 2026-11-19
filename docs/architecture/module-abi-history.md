@@ -1301,3 +1301,34 @@ save, its error, and whether a newer build wrote it); `ReadHashedChunkFile`
 returns a `HashedChunkFileRead`. `SaveSlotFiles::Write` no longer rotates;
 `WriteBackup` is new. `ApplySpawnOverlay` takes the list of what a retuned
 scene set aside. The save file format is unchanged (format 1, chunk versions 1).
+
+## v55
+
+**Tag writes.** `GameplayTagContainer::Grant`, `GrantBaseline` and
+`SetContribution` return a `GameplayTagWrite` (`Unchanged`, `Added`,
+`Restacked`, `Removed`, `Full`) in place of a bool, and never assert; a full
+container answers `Full` and changes nothing. `CanHoldAll` is new. A baseline
+stack added at saturation no longer displaces a contributed one.
+`gameplay_tags/GameplayTagOverflow.h` gains `AdmitGameplayTags`,
+`kGameplayTagOverflowQuietReports` and `GameplayTagOverflow::QuietReports`;
+`gameplay_tags/BaselineGameplayTags.h` declares `GrantBaselineTag` and
+`RevokeBaselineTag`. The tag verbs moved from `abilities/GameplayTagVerbs.h`
+to `gameplay_tags/GameplayTagVerbs.h`. `ReadGameplayTags` reports dropped tags
+as `DroppedGameplayTag` (name and `GameplayTagDrop`), and `ReadAttributes`
+takes an optional list of dropped attributes. `ApplyEffect` refuses a lasting
+effect whose granted tags would not fit, and `AbilityRefusal::TagsFull` is
+appended.
+
+**Grants.** `AbilityGrant::Source` is a `PersistableRef`, and `GrantAbility`
+takes the source as one. `AbilityGrantEntries::Intern` takes an optional
+`AbilityGrantEntryRefusal*`; `kAbilityGrantEntryRefusal` is replaced by
+`AbilityGrantEntryRefusalText`, and `DeclareEffectGrants` returns a message
+per refused grant instead of its key.
+
+**References.** `MakePersistableRef` takes a mutable World and mints the
+target a persistent id on the authority; `PersistableRefOf` is the const,
+never-minting form.
+
+The grants serializer writes `"kind": "request"` and `"source"` on a requested
+grant; both are optional, so older scenes and saves load as before. The wire
+and the save format version are unchanged.
