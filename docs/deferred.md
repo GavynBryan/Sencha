@@ -1622,4 +1622,3 @@ described in `docs/navigation/runtime.md`, "Agents".
   bodies their id at spawn on the authority and records theirs where they are
   made (counters, inventory), settle held records before the write commits,
   and make `Capture` take `const World&` (a module ABI change).
-
