@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -54,12 +55,21 @@ namespace
 
     // The file being replaced becomes the backup unless it is corrupt, so a
     // corrupt file never takes the place of a good backup.
-    bool WriteSlot(const SaveSlotFiles& files, const std::string& slot, std::span<const std::byte> bytes)
+    bool WriteToDisk(const SaveSlotFiles& files, const std::string& slot, const SavedGame& saved)
     {
+        const std::vector<std::byte> bytes = EncodeSavedGame(saved);
+        if (bytes.empty())
+            return false;
         if (const std::optional<std::vector<std::byte>> current = files.Read(slot))
             if (const DecodedSavedGame decoded = DecodeSavedGame(*current); decoded.Saved.has_value() || decoded.Newer)
                 (void)files.WriteBackup(slot, *current);
         return files.Write(slot, bytes);
+    }
+
+    bool LevelChanging(LevelChangeStatus status)
+    {
+        return status == LevelChangeStatus::Pending || status == LevelChangeStatus::Loading
+            || status == LevelChangeStatus::Resident;
     }
 
     const char* AdmissionReason(LevelChangeAdmission admission)
@@ -90,8 +100,8 @@ SavedGames::SavedGames(Engine& engine, std::filesystem::path root)
 
 SavedGames::~SavedGames()
 {
-    if (WriteTask.IsValid())
-        (void)Host.Tasks().Cancel(WriteTask);
+    if (InFlight.has_value())
+        (void)Host.Tasks().Cancel(InFlight->Task);
     if (ReadTask.IsValid())
         (void)Host.Tasks().Cancel(ReadTask);
 }
@@ -119,7 +129,7 @@ SaveAdmission SavedGames::RequestWrite(std::string slot)
         return SaveAdmission::Busy;
     if (!IsSimulationAuthority(Host.World().Entities()))
         return SaveAdmission::NotAuthority;
-    if (!Host.Level().Loaded().has_value())
+    if (!Host.Level().Loaded().has_value() && !LevelChanging(Host.LevelChanges().Status()))
         return SaveAdmission::NothingLoaded;
     WriteWaiting = std::move(slot);
     Writing = SaveStatus::Pending;
@@ -153,10 +163,21 @@ void SavedGames::Commit()
 {
     if (WriteWaiting.has_value())
     {
+        const std::optional<std::string> refused = WriteRefusal();
+        if (refused.has_value() && refused->empty())
+            return CommitRestore();
         const std::string slot = std::move(*WriteWaiting);
         WriteWaiting.reset();
-        Write(slot);
+        if (refused.has_value())
+            FailWrite(*refused);
+        else if (const std::shared_ptr<const SavedGame> saved = Capture(slot))
+            WriteOnTasks(slot, saved);
     }
+    CommitRestore();
+}
+
+void SavedGames::CommitRestore()
+{
     if (RestoreWaiting.has_value())
     {
         const std::string slot = std::move(*RestoreWaiting);
@@ -165,54 +186,100 @@ void SavedGames::Commit()
     }
 }
 
-void SavedGames::Write(const std::string& slot)
+std::optional<std::string> SavedGames::WriteRefusal() const
+{
+    const LevelChangeStatus change = Host.LevelChanges().Status();
+    if (LevelChanging(change))
+        return std::string();
+    if (change == LevelChangeStatus::Failed)
+        return std::string("the level change it waited for failed");
+    switch (Host.Level().Residency())
+    {
+    case LevelResidency::Resident:
+        return std::nullopt;
+    case LevelResidency::Loading:
+        return std::string();
+    case LevelResidency::Unloaded:
+        return std::string("nothing is loaded");
+    case LevelResidency::Failed:
+        return std::string("the level failed to load");
+    }
+    return std::string("nothing is loaded");
+}
+
+std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot)
 {
     LoadedLevel& level = Host.Level();
-    if (!level.Loaded().has_value())
-        return FailWrite("nothing is loaded");
     level.CaptureState();
 
     World& world = Host.World().Entities();
-    SavedGame saved;
-    saved.Summary.Level = *level.Loaded();
-    if (saved.Summary.Level.Kind == LevelKind::World && level.PlayZone().IsValid())
-        saved.Summary.Focus = level.PlayZone();
-    saved.Summary.SavedAtUnixSeconds = static_cast<std::uint64_t>(
+    auto saved = std::make_shared<SavedGame>();
+    saved->Summary.Level = *level.Loaded();
+    if (saved->Summary.Level.Kind == LevelKind::World && level.PlayZone().IsValid())
+        saved->Summary.Focus = level.PlayZone();
+    saved->Summary.SavedAtUnixSeconds = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());
     if (const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>())
-        saved.Zones = store->ExportDurable();
+        saved->Zones = store->ExportDurable();
     for (const SavedGameSectionDefinition& section : Sections)
         if (section.Capture)
-            saved.Sections.push_back(SavedGameSection{ section.Name, section.Version, section.Capture(world) });
-    saved.Sections.insert(saved.Sections.end(), Unclaimed.begin(), Unclaimed.end());
+            saved->Sections.push_back(SavedGameSection{ section.Name, section.Version, section.Capture(world) });
+    saved->Sections.insert(saved->Sections.end(), Unclaimed.begin(), Unclaimed.end());
     Remembered.insert_or_assign(slot, saved);
-
     if (!Files.has_value())
     {
         Writing = SaveStatus::Done;
+        return nullptr;
+    }
+    return saved;
+}
+
+void SavedGames::WriteOnTasks(const std::string& slot, std::shared_ptr<const SavedGame> saved)
+{
+    Writing = SaveStatus::Working;
+    InFlight = InFlightWrite{ .Slot = slot, .Saved = saved, .Task = {} };
+    InFlight->Task = Host.Tasks().Submit<bool>(
+        [files = *Files, slot, saved] { return WriteToDisk(files, slot, *saved); },
+        [this](bool written) { FinishWrite(written); });
+}
+
+void SavedGames::FinishWrite(bool written)
+{
+    const std::string slot = std::move(InFlight->Slot);
+    InFlight.reset();
+    if (written)
+        Writing = SaveStatus::Done;
+    else
+        FailWrite("could not write '" + Files->PathOf(slot).string() + "'");
+}
+
+void SavedGames::Finish()
+{
+    if (WriteWaiting.has_value())
+    {
+        const std::optional<std::string> refused = WriteRefusal();
+        const std::string slot = std::move(*WriteWaiting);
+        WriteWaiting.reset();
+        if (refused.has_value())
+            return FailWrite(refused->empty() ? "the game quit while the level was changing" : *refused);
+        if (const std::shared_ptr<const SavedGame> saved = Capture(slot))
+        {
+            InFlight = InFlightWrite{ .Slot = slot, .Saved = saved, .Task = {} };
+            FinishWrite(WriteToDisk(*Files, slot, *saved));
+        }
         return;
     }
-    Writing = SaveStatus::Working;
-    WriteTask = Host.Tasks().Submit<bool>(
-        [files = *Files, slot, saved] {
-            const std::vector<std::byte> bytes = EncodeSavedGame(saved);
-            return !bytes.empty() && WriteSlot(files, slot, bytes);
-        },
-        [this, slot](bool written) {
-            WriteTask = {};
-            if (written)
-                Writing = SaveStatus::Done;
-            else
-                FailWrite("could not write '" + Files->PathOf(slot).string() + "'");
-        });
+    if (InFlight.has_value() && Host.Tasks().GetState(InFlight->Task) == AsyncTaskState::Pending
+        && Host.Tasks().Cancel(InFlight->Task))
+        FinishWrite(WriteToDisk(*Files, InFlight->Slot, *InFlight->Saved));
 }
 
 void SavedGames::Restore(const std::string& slot)
 {
     FromBackup = false;
     if (const auto remembered = Remembered.find(slot); remembered != Remembered.end())
-        return BeginChange(remembered->second);
+        return BeginChange(*remembered->second);
     if (!Files.has_value())
         return FailRestore("no save in slot '" + slot + "'");
     Restoring = SaveStatus::Working;
@@ -226,8 +293,10 @@ void SavedGames::Restore(const std::string& slot)
                                                             "restore: slot '{}' did not read ({}); restoring its backup",
                                                             slot, outcome.Error);
                                                     FromBackup = outcome.FromBackup;
-                                                    Remembered.insert_or_assign(slot, *outcome.Saved);
-                                                    BeginChange(*outcome.Saved);
+                                                    const auto saved =
+                                                        std::make_shared<const SavedGame>(std::move(*outcome.Saved));
+                                                    Remembered.insert_or_assign(slot, saved);
+                                                    BeginChange(*saved);
                                                 });
 }
 

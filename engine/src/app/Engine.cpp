@@ -1664,6 +1664,8 @@ int Engine::Run(Game& game)
     // writes nothing.
     if (SettingsStore != nullptr)
         (void)SettingsStore->Save(Console().Registry());
+    // While the game's sections and the level they capture still stand.
+    SavedGameState->Finish();
 
     GameShutdownContext shutdown{
         .Config = Configuration,

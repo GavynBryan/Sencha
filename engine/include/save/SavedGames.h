@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -82,9 +83,25 @@ public:
     void Commit();
     // After the level change commits: a restore's sections are put back.
     void RestoreSections();
+    // At shutdown, before the async lane stops: a write requested and not yet
+    // on disk is written on this thread.
+    void Finish();
 
 private:
-    void Write(const std::string& slot);
+    struct InFlightWrite
+    {
+        std::string Slot;
+        std::shared_ptr<const SavedGame> Saved;
+        AsyncTaskHandle Task;
+    };
+
+    // Nothing when the level is ready to capture; empty while it is changing.
+    [[nodiscard]] std::optional<std::string> WriteRefusal() const;
+    // Null when there is nothing to write to disk.
+    [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot);
+    void WriteOnTasks(const std::string& slot, std::shared_ptr<const SavedGame> saved);
+    void FinishWrite(bool written);
+    void CommitRestore();
     void Restore(const std::string& slot);
     void BeginChange(const SavedGame& saved);
     void FailWrite(std::string reason);
@@ -93,7 +110,7 @@ private:
     Engine& Host;
     std::optional<SaveSlotFiles> Files;
     std::vector<SavedGameSectionDefinition> Sections;
-    std::map<std::string, SavedGame, std::less<>> Remembered;
+    std::map<std::string, std::shared_ptr<const SavedGame>, std::less<>> Remembered;
     std::vector<SavedGameSection> Unclaimed;
     std::optional<std::string> WriteWaiting;
     std::optional<std::string> RestoreWaiting;
@@ -103,6 +120,6 @@ private:
     std::uint64_t RestoreSerial = 0;
     bool FromBackup = false;
     std::string Reason;
-    AsyncTaskHandle WriteTask;
+    std::optional<InFlightWrite> InFlight;
     AsyncTaskHandle ReadTask;
 };

@@ -96,6 +96,23 @@ exported, and the sections are captured. The result is kept in memory for the
 session, then encoded and written on the async lane. `WriteStatus()` moves
 from `Pending` through `Working` to `Done` or `Failed`.
 
+A write captures only a level that stands whole: resident, with no level
+change under way or one that has given every participant its body back. A
+request made while a level change is pending or loading, or before its bodies
+arrive, is accepted and held `Pending` until then, so a save asked for during
+a transition is a save of where the transition arrives; if the change fails
+the write fails with that reason. A request with nothing loaded and no change
+under way is refused (`NothingLoaded`). Holding rather than refusing keeps one
+answer for every caller: an autosave fired by a level's arrival, a console
+`save.write` typed during a load and a station's sequence all get the save
+they asked for without polling and retrying.
+
+At shutdown, before the async lane stops, `Finish()` writes on the owner
+thread a request not yet carried out, or a write task not yet started; a task
+already running is joined by the lane's stop. A quit right after a save
+therefore loses nothing. A write still held for a level change at quit fails
+and is logged.
+
 ## Restoring
 
 `RequestRestore(slot)`, `save.restore`, or the console command. A save this

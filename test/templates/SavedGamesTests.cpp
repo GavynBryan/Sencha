@@ -96,6 +96,14 @@ namespace
         return WriteFileBytes(path, EncodeSavedGame(saved));
     }
 
+    const SavedGameSection* SectionOf(const SavedGame& saved, std::string_view name)
+    {
+        for (const SavedGameSection& section : saved.Sections)
+            if (section.Name == name)
+                return &section;
+        return nullptr;
+    }
+
     EntityId AuthoredOtherThan(World& world, EntityId body, PersistentEntityId skip = {})
     {
         EntityId found;
@@ -303,6 +311,71 @@ TEST(SavedGames, AFileFromANewerBuildIsNeitherPassedOverForItsBackupNorLost)
     std::vector<std::byte> backup;
     ASSERT_TRUE(ReadFileBytes(BackupOf(current), backup));
     EXPECT_EQ(backup, newerBytes) << "the newer build's save was not kept as the backup";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteRequestedDuringALevelChangeKeepsTheBody)
+{
+    const std::filesystem::path root = RootFor("write_during_change");
+    int stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.LevelChanges().Request(
+                          LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } }),
+                      LevelChangeAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const SavedGameSection* bodies = SectionOf(*saved, "sencha.bodies");
+    ASSERT_NE(bodies, nullptr);
+    EXPECT_NE(bodies->Data.Find("local"), nullptr) << "the save was written while the player had no body";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteRequestedOnTheLastFrameReachesTheDisk)
+{
+    const std::filesystem::path root = RootFor("last_frame");
+    constexpr int kFrames = 120;
+    int requestedOn = 0;
+    RunFps("levels/room_2", kFrames, root, [&](Engine& engine, World& world, int frame) {
+        if (frame >= kFrames - 1 && HasBody(world) && requestedOn == 0)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            requestedOn = frame;
+        }
+    });
+    ASSERT_NE(requestedOn, 0);
+    EXPECT_TRUE(ReadSave(SlotFile(root, "default")).has_value()) << "the quit dropped the save";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteOnTheAsyncLaneAtQuitStillReachesTheDisk)
+{
+    const std::filesystem::path root = RootFor("in_flight_at_quit");
+    constexpr int kFrames = 120;
+    int requestedOn = 0;
+    RunFps("levels/room_2", kFrames, root, [&](Engine& engine, World& world, int frame) {
+        if (frame >= kFrames - 2 && HasBody(world) && requestedOn == 0)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            requestedOn = frame;
+        }
+    });
+    ASSERT_NE(requestedOn, 0);
+    EXPECT_TRUE(ReadSave(SlotFile(root, "default")).has_value()) << "the quit dropped the save";
     std::filesystem::remove_all(root);
 }
 
