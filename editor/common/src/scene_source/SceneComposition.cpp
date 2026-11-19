@@ -110,6 +110,35 @@ namespace
         }
     }
 
+    [[nodiscard]] std::vector<std::string> ComponentsNulled(const Json5Value& patch)
+    {
+        std::vector<std::string> names;
+        if (patch.IsObject())
+            for (const Json5Value::Member& member : patch.Members)
+                if (member.second.IsNull())
+                    names.push_back(member.first);
+        return names;
+    }
+
+    [[nodiscard]] Json5Value WithoutNulledComponents(const Json5Value& patch)
+    {
+        Json5Value kept = patch;
+        std::erase_if(kept.Members, [](const Json5Value::Member& member) { return member.second.IsNull(); });
+        return kept;
+    }
+
+    using PendingRemovals = std::vector<std::pair<ResolvedSceneEntity*, std::vector<std::string>>>;
+
+    [[nodiscard]] std::vector<std::string> TakeRemovals(PendingRemovals& pending, const ResolvedSceneEntity* entity)
+    {
+        const auto found = std::ranges::find(pending, entity, &PendingRemovals::value_type::first);
+        if (found == pending.end())
+            return {};
+        std::vector<std::string> names = std::move(found->second);
+        pending.erase(found);
+        return names;
+    }
+
     CompositionDiagnostic AtEntity(CompositionDiagnostic diagnostic, PersistentEntityId entity)
     {
         diagnostic.Path = SceneIdText(entity.Value) + diagnostic.Path.substr(1);
@@ -362,6 +391,7 @@ namespace
                 fragments.push_back({ target, std::move(fragment.Entities.front().Components), include.Fragment });
             }
 
+            PendingRemovals nulled;
             for (ResolvedSceneEntity& entity : out.Entities)
             {
                 const auto patch = std::ranges::find(document.InheritedPatches, entity.Id,
@@ -369,8 +399,12 @@ namespace
                 const bool patched = patch != document.InheritedPatches.end() && entity.IsInherited;
                 const bool included = std::ranges::any_of(
                     fragments, [&](const FragmentLayer& layer) { return layer.Target == entity.Id.Value; });
-                if (entity.IsInherited || included)
+                if (!entity.IsInherited && !included)
+                    continue;
+                std::vector<std::string> names =
                     ComposeEntity(entity, patched ? &patch->second : nullptr, fragments, document, asset, out);
+                if (!names.empty())
+                    nulled.emplace_back(&entity, std::move(names));
             }
             for (const auto& [id, patch] : document.InheritedPatches)
             {
@@ -391,18 +425,28 @@ namespace
                     out.DanglingOverrides.push_back("$.remove: " + SceneIdText(id.Value));
                     continue;
                 }
-                Remove(*target, names, asset, out);
+                std::vector<std::string> going = TakeRemovals(nulled, &*target);
+                going.insert(going.end(), names.begin(), names.end());
+                for (const std::string& absent : Remove(*target, std::move(going), asset, out))
+                    if (std::ranges::find(names, absent) != names.end())
+                        out.DanglingOverrides.push_back("$.remove: " + SceneIdText(id.Value) + "." + absent);
             }
+            for (auto& [entity, names] : nulled)
+                (void)Remove(*entity, std::move(names), asset, out);
             return true;
         }
 
-        void ComposeEntity(ResolvedSceneEntity& entity, const Json5Value* patch,
-                           const std::vector<FragmentLayer>& fragments, const SceneSourceDocument& document,
-                           std::string_view asset, SceneCompositionResult& out) const
+        [[nodiscard]] std::vector<std::string> ComposeEntity(ResolvedSceneEntity& entity, const Json5Value* patch,
+                                                             const std::vector<FragmentLayer>& fragments,
+                                                             const SceneSourceDocument& document,
+                                                             std::string_view asset, SceneCompositionResult& out) const
         {
             const Json5Value nothing = Json5Value::MakeObject();
             const Json5Value own = entity.Components;
-            const Json5Value& local = entity.IsInherited ? (patch != nullptr ? *patch : nothing) : own;
+            const Json5Value& stated = entity.IsInherited ? (patch != nullptr ? *patch : nothing) : own;
+            std::vector<std::string> nulled = ComponentsNulled(stated);
+            const Json5Value kept = nulled.empty() ? Json5Value{} : WithoutNulledComponents(stated);
+            const Json5Value& local = nulled.empty() ? stated : kept;
             std::vector<CompositionLayerInput<Json5Value>> includes;
             for (const FragmentLayer& layer : fragments)
                 if (layer.Target == entity.Id.Value)
@@ -427,10 +471,11 @@ namespace
             entity.Provenance = std::move(report.Provenance);
             for (CompositionDiagnostic& diagnostic : report.Diagnostics)
                 out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
+            return nulled;
         }
 
-        void Remove(ResolvedSceneEntity& entity, const std::vector<std::string>& names, std::string_view asset,
-                    SceneCompositionResult& out) const
+        [[nodiscard]] std::vector<std::string> Remove(ResolvedSceneEntity& entity, const std::vector<std::string>& names,
+                                                      std::string_view asset, SceneCompositionResult& out) const
         {
             const auto at = [&](const std::string& name) { return SceneIdText(entity.Id.Value) + "." + name; };
             std::vector<std::string> going;
@@ -458,17 +503,21 @@ namespace
                         }
                 }
             }
+            std::vector<std::string> absent;
             for (const std::string& name : going)
             {
                 if (std::erase_if(entity.Components.Members,
                                   [&](const Json5Value::Member& member) { return member.first == name; })
                     == 0)
                 {
-                    out.DanglingOverrides.push_back("$.remove: " + at(name));
+                    absent.push_back(name);
                     continue;
                 }
+                std::erase_if(entity.Provenance,
+                              [&](const auto& origin) { return CompositionDetail::IsUnder(origin.first, "$." + name); });
                 entity.RemovedComponents.push_back(name);
             }
+            return absent;
         }
 
         // One placement: resolve what it points at, override it, and emit the
@@ -563,6 +612,7 @@ namespace
             for (ResolvedSceneEntity& entity : inner.Entities)
                 entity.SourceComponents = entity.Components;
 
+            PendingRemovals nulled;
             applyByPath(instance.Patches,
                 [&](ResolvedSceneEntity& entity, const Json5Value& patch)
                 {
@@ -571,12 +621,17 @@ namespace
                         ApplyVersionOnePatch(entity.Components, patch);
                         return;
                     }
-                    const DataFieldSchema schema = EntitySchema(Rules, { &entity.Components, &patch });
+                    std::vector<std::string> names = ComponentsNulled(patch);
+                    const Json5Value kept = names.empty() ? Json5Value{} : WithoutNulledComponents(patch);
+                    const Json5Value& stated = names.empty() ? patch : kept;
+                    const DataFieldSchema schema = EntitySchema(Rules, { &entity.Components, &stated });
                     CompositionReport report;
-                    ApplyCompositionPatch(entity.Components, patch, instance.Source,
+                    ApplyCompositionPatch(entity.Components, stated, instance.Source,
                                           { .Schema = &schema, .Null = CompositionNull::Removes }, report);
                     for (CompositionDiagnostic& diagnostic : report.Diagnostics)
                         out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
+                    if (!names.empty())
+                        nulled.emplace_back(&entity, std::move(names));
                 });
             applyByPath(instance.AddedComponents,
                 [](ResolvedSceneEntity& entity, const Json5Value& added)
@@ -591,18 +646,18 @@ namespace
                 });
             for (const auto& [path, names] : instance.RemovedComponents)
             {
-                if (ResolvedSceneEntity* entity = index.At(inner, path))
-                {
-                    for (const std::string& name : names)
-                        std::erase_if(entity->Components.Members,
-                            [&](const Json5Value::Member& member)
-                            { return member.first == name; });
-                }
-                else
+                ResolvedSceneEntity* entity = index.At(inner, path);
+                if (entity == nullptr)
                 {
                     out.DanglingOverrides.push_back(DanglingText(instance, path));
+                    continue;
                 }
+                std::vector<std::string> going = TakeRemovals(nulled, entity);
+                going.insert(going.end(), names.begin(), names.end());
+                (void)Remove(*entity, going, instance.Source, out);
             }
+            for (auto& [entity, names] : nulled)
+                (void)Remove(*entity, names, instance.Source, out);
             return suppressed;
         }
 

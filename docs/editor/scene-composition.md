@@ -53,14 +53,18 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
    - `null` removes a member or a keyed element.
    - Two fragments that set one value differently are an `include_conflict`,
      until the document's own patch states the value.
-3. **Apply removals.** Removing a component another remaining component owes
-   is `removes_owed`; removing a structural one is `not_removable`. A removal
-   list is checked against what stays once the whole list goes.
+3. **Apply removals.** A component goes by `remove` or by a `null` in place of
+   the component in `patch`; both join one removal list per entity, checked
+   once against what stays once the whole list goes. Removing a component
+   another remaining component owes is `removes_owed`; removing a structural
+   one is `not_removable`; either leaves the component in place.
 4. **Add the document's own entities and placements.** A local may hang
    beneath an inherited entity.
 
 A version-2 instance patch composes the same way, so a placement can drop an
-inherited response binding by writing `bindings.<key>: null`.
+inherited response binding by writing `bindings.<key>: null`. A placement's
+removals, its `remove` and a component `null` in its patch, are held to the
+same check after its patch and `add` apply.
 
 **References between a placement's members.** Each placement mints its own
 ids for the source's entities. A component field that names another entity

@@ -566,3 +566,50 @@ TEST(ScenePrefabComposition, ASourceThatDoesNotResolveIsNamedWithTheDocumentAndF
               std::string::npos)
         << composed.Error;
 }
+
+TEST(ScenePrefabComposition, APatchThatNullsAComponentIsHeldToTheRemovalRules)
+{
+    Composed composed;
+    const auto refused = composed.Resolve(R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  patch: { '00000000000000a1': { Transform: null, GameplayTags: null } },
+})");
+    ASSERT_TRUE(refused.has_value()) << composed.Error;
+    EXPECT_NE(Diagnostic(*refused, "not_removable"), nullptr);
+    EXPECT_NE(Diagnostic(*refused, "removes_owed"), nullptr);
+    const ResolvedSceneEntity* root = Entity(*refused, 0xa1);
+    EXPECT_NE(root->Components.Find("Transform"), nullptr);
+    EXPECT_NE(root->Components.Find("GameplayTags"), nullptr) << "a refused removal removes nothing";
+
+    const auto allowed = composed.Resolve(R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  patch: { '00000000000000a1': { GameplayTags: null } },
+  remove: { '00000000000000a1': [ 'AbilityGrants' ] },
+})");
+    ASSERT_TRUE(allowed.has_value()) << composed.Error;
+    EXPECT_EQ(Diagnostic(*allowed, "removes_owed"), nullptr) << "both spellings are one removal list";
+    const ResolvedSceneEntity* humanoid = Entity(*allowed, 0xa1);
+    EXPECT_EQ(humanoid->Components.Find("GameplayTags"), nullptr);
+    EXPECT_EQ(humanoid->Components.Find("AbilityGrants"), nullptr);
+    EXPECT_EQ(humanoid->RemovedComponents.size(), 2u);
+}
+
+TEST(ScenePrefabComposition, APlacementsRemovalsAreHeldToTheRemovalRules)
+{
+    Composed composed;
+    const auto result = composed.Resolve(R"({
+  format_version: 2, entities: [],
+  instances: [ { id: '0000000000000100', source: 'asset://prefabs/humanoid.sscene',
+    entity_ids: { '00000000000000a1': '0000000000000101', '00000000000000a2': '0000000000000102' },
+    patch: { '00000000000000a1': { GameplayTags: null } },
+    remove: { '00000000000000a1': [ 'Transform' ], '00000000000000a2': [ 'Body' ] } } ],
+})");
+    ASSERT_TRUE(result.has_value()) << composed.Error;
+    EXPECT_NE(Diagnostic(*result, "not_removable"), nullptr);
+    EXPECT_NE(Diagnostic(*result, "removes_owed"), nullptr);
+    const ResolvedSceneEntity* member = Entity(*result, 0x101);
+    ASSERT_NE(member, nullptr);
+    EXPECT_NE(member->Components.Find("Transform"), nullptr);
+    EXPECT_NE(member->Components.Find("GameplayTags"), nullptr);
+    EXPECT_EQ(Entity(*result, 0x102)->Components.Find("Body"), nullptr);
+}
