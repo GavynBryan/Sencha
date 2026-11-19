@@ -2,6 +2,8 @@
 
 #include <core/composition/CompositionPatch.h>
 #include <core/composition/JsonComposition.h>
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
@@ -9,6 +11,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
 
 #include <array>
@@ -22,6 +25,13 @@ namespace
                                         ResolveComponentTypeId<SceneInstance>(),
                                         ResolveComponentTypeId<LocalTransform>() };
         return std::ranges::find(kGiven, type) != kGiven.end();
+    }
+
+    // What a scene retuned since the save leaves behind: the scene's own value stands.
+    [[nodiscard]] bool SetAsideByRetune(std::string_view code)
+    {
+        return code == "remove_unknown_key" || code == "redeclares_inherited" || code == "removes_inherited"
+            || code == "cannot_clear_required";
     }
 
     [[nodiscard]] std::optional<PackageEntityId> OnlyRoot(const EntityBuildPackage& package)
@@ -56,7 +66,11 @@ SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root, const E
             continue;
         JsonWriteArchive archive;
         if (!serializer->Save(archive, root, world, context) || !archive.Ok())
+        {
+            context.Logging->GetLogger<SceneSpawnOverlay>().Error(
+                "save: '{}' could not be written; the body keeps its prefab's", serializer->JsonKey());
             continue;
+        }
         const JsonValue live = archive.TakeValue();
         const PackageComponent* authored =
             prefabRoot.has_value() ? prefab.FindComponent(*prefabRoot, serializer->TypeId()) : nullptr;
@@ -79,7 +93,8 @@ SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root, const E
 }
 
 bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& overlay,
-                       const ComponentSerializerRegistry& serializers, std::string& error)
+                       const ComponentSerializerRegistry& serializers, std::string& error,
+                       std::vector<std::string>& retuned)
 {
     if (!overlay.RootPatch.IsObject() || overlay.RootPatch.Size() == 0)
         return true;
@@ -114,7 +129,15 @@ bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& ove
         policy.Schema = serializer->CompositionSchema();
         CompositionReport report;
         JsonValue composed = ComposeLayers<JsonValue>(&base, {}, local, policy, report);
+        for (const CompositionDiagnostic& diagnostic : report.Diagnostics)
+        {
+            std::string line = key + diagnostic.Path + ": " + diagnostic.Message + " (" + diagnostic.Code + ")";
+            if (SetAsideByRetune(diagnostic.Code))
+                retuned.push_back(std::move(line));
+            else
+                error += (error.empty() ? "the saved state no longer fits its scene: " : "; ") + line;
+        }
         (void)package.SetSerializedComponent(*root, serializer->TypeId(), std::move(composed));
     }
-    return true;
+    return error.empty();
 }

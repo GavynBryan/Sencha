@@ -48,7 +48,12 @@ namespace
                 continue;
             JsonWriteArchive archive;
             if (!serializer->Save(archive, record, world, context) || !archive.Ok())
+            {
+                context.Logging->GetLogger<HeldRecordSaves>().Error(
+                    "save: held record {} left out its '{}', which could not be written",
+                    PersistentEntityIdToString(id), serializer->JsonKey());
                 continue;
+            }
             if (JsonValue value = archive.TakeValue(); !value.IsNull())
                 components.emplace_back(std::string(serializer->JsonKey()), std::move(value));
         }

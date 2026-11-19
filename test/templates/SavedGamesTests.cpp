@@ -700,4 +700,75 @@ TEST(SavedGames, TheMapCommandChangesLevelThroughTheLevelChange)
     std::filesystem::remove_all(root);
 }
 
+TEST(SavedGames, ASavedBodyThatNoLongerFitsItsPrefabFailsTheRestore)
+{
+    const std::filesystem::path root = RootFor("body_misfit");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path current = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(current);
+    ASSERT_TRUE(saved.has_value());
+    bool patched = false;
+    for (SavedGameSection& section : saved->Sections)
+        if (JsonValue* local = section.Name == "sencha.bodies" ? section.Data.Find("local") : nullptr)
+            if (JsonValue* patch = local->Find("patch"); patch != nullptr && patch->IsObject())
+            {
+                patch->AsObject().emplace_back("no_such_component", JsonValue(JsonValue::Object{}));
+                patched = true;
+            }
+    ASSERT_TRUE(patched);
+    ASSERT_TRUE(WriteSave(current, *saved));
+
+    std::string reason;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.RestoreStatus() == RestoreProgress::Failed)
+        {
+            reason = saves.RestoreFailure();
+            stage = 2;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            stage = 3;
+        }
+    });
+    EXPECT_EQ(stage, 2) << "a body the save could not give back was reported as restored";
+    EXPECT_NE(reason.find("saved body"), std::string::npos) << reason;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ARestoredBodyNobodyTookIsNotGivenToTheNextLevelChange)
+{
+    const std::filesystem::path root = RootFor("stale_restored_body");
+    constexpr Vec3d kStale{ 40.0, 1.0, 40.0 };
+    std::optional<Vec3d> at;
+    int stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            RestoredBody stale;
+            stale.Root.Position = kStale;
+            if (!world.HasResource<RestoredBodies>())
+                world.AddResource<RestoredBodies>();
+            world.GetResource<RestoredBodies>().Local = stale;
+            EXPECT_EQ(engine.LevelChanges().Request(
+                          LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } }),
+                      LevelChangeAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored)
+        {
+            at = world.TryGet<LocalTransform>(LocalControlSubjectOf(world))->Value.Position;
+            stage = 2;
+        }
+    });
+    ASSERT_TRUE(at.has_value());
+    EXPECT_GT((*at - kStale).Magnitude(), 5.0) << "an ordinary level change spawned the body a restore left behind";
+    std::filesystem::remove_all(root);
+}
 #endif

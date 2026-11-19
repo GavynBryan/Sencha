@@ -7,6 +7,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <net/NetSession.h>
+#include <participant_spawn/RestoredBodies.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/identity/PersistentIdMint.h>
@@ -380,6 +381,9 @@ void SavedGames::Advance()
         return FailRestore("another level change replaced it before it arrived");
     if (changes.Status() == LevelChangeStatus::Failed)
         return FailRestore(LevelChangeFailure(changes));
+    if (RestoredBodies* restored = Host.World().Entities().TryGetResource<RestoredBodies>();
+        restored != nullptr && !restored->Refusal.empty())
+        return FailRestore(std::exchange(restored->Refusal, std::string()));
     if (changes.Status() == LevelChangeStatus::BodiesRestored && SectionsWaiting == nullptr)
         Restoring = RestoreProgress::BodiesRestored;
 }

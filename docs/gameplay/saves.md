@@ -67,7 +67,32 @@ derives it again (`docs/gameplay/equipment.md`, "Records").
 On restore the section fills `RestoredBodies`; the local participant's next body
 spawn (`ParticipantBodySpawns`) takes it: the spawn stands where the body stood,
 the patch is composed over the prefab's root before import, and the root gets
-its saved id once published. Grants made at run time by `ability.grant` are
+its saved id once published. Every level change clears `RestoredBodies` before
+the restore's sections run, and a failed change clears it again, so a body a
+failed or replaced restore left behind is never given to a later spawn.
+
+Composing the patch over a prefab retuned since the save reports what the
+operator could not apply, and `ApplySpawnOverlay` sorts it in two:
+
+- **The scene decides, and the spawn goes on** (logged as a warning): the save
+  removed a keyed element the prefab no longer has (`remove_unknown_key`); the
+  save added to, or removed from, a list that now only takes new entries and
+  already has that one (`redeclares_inherited`, `removes_inherited`); the save
+  cleared a field the prefab now requires (`cannot_clear_required`). Each is
+  a retune deciding a value the save also named; the prefab's value stands.
+- **The save no longer fits, and the spawn is refused**: every other
+  diagnostic (`missing_key`, `invalid_key`, `key_mismatch`,
+  `element_not_a_record`, `keyed_patch_not_a_list`,
+  `keyed_patch_on_unkeyed_array`, and any code added later). These mean the
+  component's form changed shape under the patch, so composing it would build
+  a body nobody saved. The refused spawn is logged with every diagnostic, and
+  the restore fails with that reason (`RestoreStatus()` is `Failed`), so the
+  game decides what to offer rather than playing on with a different body.
+
+A serializer whose `Save` fails while a body or a held record is captured is
+logged and that component is left out, so it follows the prefab or is missing
+from the record; a body whose prefab cannot be resolved is logged and not
+saved. Grants made at run time by `ability.grant` are
 part of the patch and come back as authored grants; tags given with
 `tags.grant` are the container's baseline and come back; lasting effects do not.
 

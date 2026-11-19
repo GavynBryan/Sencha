@@ -2175,7 +2175,9 @@ TEST_F(EquipmentGateTest, WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttribu
     fresh.Declare();
     EntityBuildPackage package = BodyPrefab(fresh.Body);
     std::string error;
-    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error)) << error;
+    std::vector<std::string> retuned;
+    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error, retuned)) << error;
+    EXPECT_TRUE(retuned.empty());
     RestoreHeldRecords(restored, held, serializers, context);
     ZoneImportError refused;
     ASSERT_TRUE(ImportZonePackage(fresh.Runtime, fresh.Schema, ZoneId{ 7 }, package, serializers, context,
@@ -2273,7 +2275,9 @@ TEST_F(EquipmentGateTest, AWearerOfThirtyRecordsSurvivesASaveIntoAFreshWorld)
     fresh.Declare();
     EntityBuildPackage package = BodyPrefab(fresh.Body);
     std::string error;
-    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error)) << error;
+    std::vector<std::string> retuned;
+    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error, retuned)) << error;
+    EXPECT_TRUE(retuned.empty());
     RestoreHeldRecords(restored, held, serializers, context);
     ZoneImportError refused;
     ASSERT_TRUE(ImportZonePackage(fresh.Runtime, fresh.Schema, ZoneId{ 7 }, package, serializers, context,

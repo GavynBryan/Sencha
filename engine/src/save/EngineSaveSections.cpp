@@ -6,6 +6,8 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <assets/scene/SceneCache.h>
 #include <core/assets/AssetLease.h>
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/Serialize.h>
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
@@ -65,7 +67,11 @@ namespace
         (void)EnsurePersistentId(world, body);
         const std::optional<EntityBuildPackage> prefab = PrefabOf(engine, world, body);
         if (!prefab.has_value())
+        {
+            engine.Logging().GetLogger<SavedGames>().Error(
+                "save: the local body's prefab cannot be resolved, so the body is not saved");
             return JsonValue(JsonValue::Object{});
+        }
         const SceneSpawnOverlay overlay =
             CaptureSpawnOverlay(world, body, *prefab, engine.SceneSerializers(), engine.Content().SceneContext());
         const LocalTransform* placed = world.TryGet<LocalTransform>(body);

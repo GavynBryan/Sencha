@@ -8,6 +8,7 @@
 #include <ecs/World.h>
 #include <net/NetSession.h>
 #include <participant/ParticipantControl.h>
+#include <participant_spawn/RestoredBodies.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/HeldRecords.h>
@@ -91,6 +92,8 @@ void LevelChange::Commit()
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
         memory->Install(request.ZoneState);
+    if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
+        *restored = RestoredBodies{};
     if (request.RuntimeState == LevelChangeRuntimeState::Discard)
         DestroyHeldRecords(world);
     else
@@ -154,6 +157,8 @@ bool LevelChange::ReleasedHaveBodies(const World& world) const
 void LevelChange::Fail(std::vector<std::string> reasons)
 {
     Current = LevelChangeStatus::Failed;
+    if (RestoredBodies* restored = Host.World().Entities().TryGetResource<RestoredBodies>())
+        restored->Local.reset();
     Reasons = std::move(reasons);
     Logger& log = Host.Logging().GetLogger<LevelChange>();
     for (const std::string& reason : Reasons)
