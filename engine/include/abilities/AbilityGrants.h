@@ -12,6 +12,7 @@
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <time/ActorTime.h>
+#include <world/identity/PersistableRef.h>
 
 #include <cstdint>
 #include <span>
@@ -41,7 +42,7 @@ struct AbilityGrant
     AbilityGrantKind Kind = AbilityGrantKind::Authored;
     // Set for Kind == Effect on the authority alone.
     EntityId Holder;
-    EntityId Source;
+    PersistableRef Source;
     // Its entry in the World's AbilityGrantEntries: key, override, effective binding.
     std::uint16_t Entry = kAbilityNoGrantEntry;
 };
@@ -87,9 +88,9 @@ struct AbilityGrantList
 // Invalid when the list is full or `ability` is invalid; on a World, also when
 // `actor` carries no AbilityGrants.
 AbilityGrantId GrantAbility(AbilityGrantList& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId holder = {}, EntityId source = {});
+                            EntityId holder = {}, PersistableRef source = {});
 AbilityGrantId GrantAbility(World& world, EntityId actor, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId holder = {}, EntityId source = {});
+                            EntityId holder = {}, PersistableRef source = {});
 bool RevokeAbilityGrant(AbilityGrantList& grants, AbilityGrantId id);
 bool RevokeAbilityGrant(World& world, EntityId actor, AbilityGrantId id);
 

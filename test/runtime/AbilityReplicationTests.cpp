@@ -1148,7 +1148,7 @@ TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
     const EntityId ring = Authority.Entities.CreateEntity();
     Authority.Entities.AddComponent<NetReplicated>(ring);
     AbilityGrantList sourced = CopyAbilityGrants(Authority.Entities, Actor);
-    sourced.Entries[0].Source = ring;
+    sourced.Entries[0].Source = MakePersistableRef(Authority.Entities, ring);
     SetAbilityGrants(Authority.Entities, Actor, sourced);
     Step();
     (void)Publish();
@@ -1157,7 +1157,7 @@ TEST_F(AbilityReplication, AGrantsSourceArrivesAsTheClientsOwnEntity)
     ASSERT_TRUE(remoteRing.IsValid());
     const std::span<const AbilityGrant> grants = AbilityGrantsOf(Client.Entities, Remote());
     ASSERT_EQ(grants.size(), 1u);
-    EXPECT_EQ(grants[0].Source, remoteRing);
+    EXPECT_EQ(grants[0].Source.Entity, remoteRing);
     EXPECT_FALSE(grants[0].Holder.IsValid()) << "what holds a grant stays on the authority";
 }
 
@@ -1255,7 +1255,7 @@ TEST_F(AbilityReplication, TwoRingsResolveToTheirOwnEntriesAndRingsOnTheOwner)
         const EntityId mirror = ClientIds.TryResolve(Identity.TryFind(worn[i]));
         ASSERT_TRUE(mirror.IsValid());
         const auto grant = std::find_if(grants.begin(), grants.end(),
-                                        [&](const AbilityGrant& held) { return held.Source == mirror; });
+                                        [&](const AbilityGrant& held) { return held.Source.Entity == mirror; });
         ASSERT_NE(grant, grants.end()) << "each ring is its own grant's source";
         const AbilityGrantEntry* entry = entries.Find(grant->Entry);
         ASSERT_NE(entry, nullptr) << "bound, not held unbound";

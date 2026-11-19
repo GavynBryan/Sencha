@@ -1091,7 +1091,7 @@ TEST_F(EquipmentGateTest, RingsCastBySlotPriorityFromTheirOwnSource)
     Step();
     const AbilityGrant* cast = LiveGrantOf(Ward);
     ASSERT_NE(cast, nullptr);
-    EXPECT_EQ(cast->Source, right) << "priority 21 over 20";
+    EXPECT_EQ(cast->Source.Entity, right) << "priority 21 over 20";
     EXPECT_EQ(Entities().GetResource<AbilityGrantEntries>().Binding(cast->Entry)->Priority, 21);
 }
 
@@ -1129,7 +1129,7 @@ TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
     ASSERT_EQ(std::as_const(Entities()).TryGet<ItemEntry>(grenade)->Count, 0u) << "the throw paid its unit";
     const AbilityGrant* throwing = LiveGrantOf(Throw);
     ASSERT_NE(throwing, nullptr);
-    EXPECT_EQ(throwing->Source, grenade);
+    EXPECT_EQ(throwing->Source.Entity, grenade);
     EXPECT_EQ(State().Count, 1u) << "the record waits while the throw it supplied runs";
     for (int i = 0; i < 5; ++i)
         Step();
@@ -2316,6 +2316,58 @@ TEST_F(EquipmentGateTest, AWearerOfThirtyRecordsSurvivesASaveIntoAFreshWorld)
         EXPECT_EQ(std::ranges::find(sources, source), sources.end()) << "one entry, one record";
         sources.push_back(source);
     }
+}
+
+TEST_F(EquipmentGateTest, ARequestedGrantComesBackWithABodyAsRequestedAndFromItsSource)
+{
+    World& world = Entities();
+    const ShineRings rings = DefineShineRings(world);
+    Declare();
+    const EntityId ring = Give(rings.Sun);
+    const AbilityId bolt = world.GetResource<AbilityRegistry>().Reserve("asset://abilities/bolt.sdata");
+    const std::uint16_t entry = world.GetResource<AbilityGrantEntries>().Intern({ "g_picked", bolt, {} });
+    ASSERT_TRUE(GrantAbility(world, Hero, bolt, AbilityGrantKind::Request, entry, {}, MakePersistableRef(world, ring))
+                    .IsValid());
+
+    ComponentSerializerRegistry serializers;
+    ComponentRegistrar registrar(nullptr, &serializers, nullptr);
+    RegisterEngineComponents(registrar);
+    LoggingProvider logging;
+    SceneSerializationContext context{ logging };
+    const SceneSpawnOverlay body = CaptureSpawnOverlay(world, Hero, BodyPrefab(Body), serializers, context);
+    const JsonValue held = CaptureHeldRecords(world, std::span(&Hero, 1), serializers, context);
+    const PersistentEntityId bodyId = world.TryGet<PersistentIdComponent>(Hero)->Id;
+
+    FreshGateWorld fresh;
+    World& restored = fresh.Entities();
+    const ShineRings again = DefineShineRings(restored);
+    fresh.Declare();
+    EntityBuildPackage package = BodyPrefab(fresh.Body);
+    std::string error;
+    std::vector<std::string> retuned;
+    ASSERT_TRUE(ApplySpawnOverlay(package, body, serializers, error, retuned)) << error;
+    RestoreHeldRecords(restored, held, serializers, context);
+    ZoneImportError refused;
+    ASSERT_TRUE(ImportZonePackage(fresh.Runtime, fresh.Schema, ZoneId{ 7 }, package, serializers, context,
+                                  ZoneParticipation{ .Visible = false, .Physics = false, .Logic = true, .Audio = false },
+                                  &refused))
+        << refused.Message;
+    EntityId wearer;
+    restored.ForEachComponent<AbilityGrants>([&](EntityId entity, const AbilityGrants& grants) {
+        if (grants.Count == 1)
+            wearer = entity;
+    });
+    ASSERT_TRUE(wearer.IsValid()) << "the grant came back";
+    restored.AddComponent<PersistentIdComponent>(wearer, PersistentIdComponent{ bodyId });
+    fresh.Runtime.FlushLifecycleRequests();
+    (void)fresh.Runtime.BeginResidencyProcessing();
+    fresh.Runtime.FinalizeResidencyProcessing();
+
+    const AbilityGrant& grant = AbilityGrantsOf(restored, wearer)[0];
+    EXPECT_EQ(grant.Kind, AbilityGrantKind::Request);
+    const EntityId source = ResolvePersistableRef(restored, grant.Source);
+    ASSERT_TRUE(restored.IsAlive(source)) << "the grant found its ring again";
+    EXPECT_EQ(std::as_const(restored).TryGet<ItemEntry>(source)->Definition, again.Sun);
 }
 
 // A row names its records in the World's EquipmentRecordLists; the list goes with the row.

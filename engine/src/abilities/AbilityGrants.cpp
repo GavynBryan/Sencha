@@ -13,7 +13,7 @@ namespace
     }
 
     AbilityGrantId Grant(std::vector<AbilityGrant>& entries, std::uint32_t& nextId, AbilityId ability,
-                         AbilityGrantKind kind, std::uint16_t entry, EntityId holder, EntityId source)
+                         AbilityGrantKind kind, std::uint16_t entry, EntityId holder, PersistableRef source)
     {
         if (!ability.IsValid() || entries.size() >= kAbilityGrantCapacity)
             return AbilityGrantId{};
@@ -70,13 +70,13 @@ const AbilityGrant* FindAbilityGrant(std::span<const AbilityGrant> grants, Abili
 }
 
 AbilityGrantId GrantAbility(AbilityGrantList& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId holder, EntityId source)
+                            EntityId holder, PersistableRef source)
 {
     return Grant(grants.Entries, grants.NextId, ability, kind, entry, holder, source);
 }
 
 AbilityGrantId GrantAbility(World& world, EntityId actor, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId holder, EntityId source)
+                            EntityId holder, PersistableRef source)
 {
     const AbilityGrants* held = world.IsAlive(actor) ? std::as_const(world).TryGet<AbilityGrants>(actor) : nullptr;
     if (held == nullptr || !ability.IsValid() || held->Count >= kAbilityGrantCapacity)

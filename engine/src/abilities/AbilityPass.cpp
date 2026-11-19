@@ -166,7 +166,8 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
     if ((definition->StartGroups != 0 || cooldown)
-        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown, grant.Source).Paid)
+        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown,
+                        ResolvePersistableRef(Entities, grant.Source)).Paid)
         return AbilityRefusal::CostFailed;
     return AbilityRefusal::None;
 }

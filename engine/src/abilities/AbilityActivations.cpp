@@ -133,7 +133,7 @@ bool HasLiveActivationFrom(const World& world, EntityId actor, EntityId source)
     const std::span<const AbilityGrant> grants = AbilityGrantsOf(world, actor);
     return !grants.empty() && AnyLiveRecord(world, actor, [&](const AbilityRecord& record) {
         const AbilityGrant* grant = FindAbilityGrant(grants, record.Grant);
-        return grant != nullptr && grant->Source == source;
+        return grant != nullptr && ResolvePersistableRef(world, grant->Source) == source;
     });
 }
 

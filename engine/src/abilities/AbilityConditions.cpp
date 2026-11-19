@@ -80,7 +80,7 @@ EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, cons
         case AbilityPort::Source:
         {
             const AbilityGrant* grant = GrantOf(actor, slot);
-            return grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
+            return grant != nullptr ? ResolvePersistableRef(Entities, grant->Source) : EntityId{};
         }
         default: return EntityId{};
         }

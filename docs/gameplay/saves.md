@@ -97,7 +97,8 @@ A serializer whose `Save` fails while a body or a held record is captured is
 logged and that component is left out, so it follows the prefab or is missing
 from the record; a body whose prefab cannot be resolved is logged and not
 saved. Grants made at run time by `ability.grant` are
-part of the patch and come back as authored grants; tags given with
+part of the patch and come back as requested grants with their source, so
+`ability.revoke` still takes them; tags given with
 `tags.grant` are the container's baseline and come back; lasting effects do not.
 
 ## Held records

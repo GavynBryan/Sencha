@@ -120,7 +120,8 @@ VerbAdmission AbilityOperations::Grant(const VerbInvocation& invocation)
         return VerbAdmission::Refused;
     if (!Entities->HasComponent<AbilityGrants>(request.Target))
         Entities->AddComponent<AbilityGrants>(request.Target, AbilityGrants{});
-    return GrantAbility(*Entities, request.Target, request.Ability, AbilityGrantKind::Request, entry, {}, request.Source)
+    return GrantAbility(*Entities, request.Target, request.Ability, AbilityGrantKind::Request, entry, {},
+                        MakePersistableRef(*Entities, request.Source))
                .IsValid()
         ? VerbAdmission::Accepted
         : VerbAdmission::Refused;

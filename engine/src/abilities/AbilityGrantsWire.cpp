@@ -34,7 +34,7 @@ void ReplicationCodec<AbilityGrants>::ToWire(const ReplicationWireContext& conte
         words[1] = abilities != nullptr ? abilities->WireKey(grant.Ability) : 0u;
         words[2] = entries != nullptr ? entries->WireKey(grant.Entry) : 0u;
         words[3] = static_cast<std::uint32_t>(grant.Kind);
-        page.Sources.Values[at] = context.WireEntity(grant.Source);
+        page.Sources.Values[at] = context.WireEntity(ResolvePersistableRef(*context.Entities, grant.Source));
     }
 }
 
@@ -60,7 +60,7 @@ void ReplicationCodec<AbilityGrants>::FromWire(const ReplicationWireContext& con
         grant.Entry = entries != nullptr && grant.Ability.IsValid() ? entries->FindByWireKey(words[2], grant.Ability)
                                                                     : kAbilityNoGrantEntry;
         grant.Kind = static_cast<AbilityGrantKind>(static_cast<std::uint8_t>(words[3]));
-        grant.Source = context.LocalEntity(page.Sources.Values[at]);
+        grant.Source = PersistableRef{ .Entity = context.LocalEntity(page.Sources.Values[at]), .Target = {} };
         arrived.Entries.push_back(grant);
     }
     grants = MakeAbilityGrants(*context.Receiving, arrived);

@@ -199,7 +199,7 @@ namespace
         std::int32_t foundPriority = 0;
         for (const AbilityGrant& grant : actor.Grants())
         {
-            if (grant.Ability != request.Ability || (request.Source.IsValid() && grant.Source != request.Source))
+            if (grant.Ability != request.Ability || (request.Source.IsValid() && ResolvePersistableRef(world, grant.Source) != request.Source))
                 continue;
             const AbilityEffectiveBinding* binding = entries->Binding(grant.Entry);
             const std::int32_t priority = binding != nullptr ? binding->Priority : 0;
@@ -222,7 +222,7 @@ namespace
         const bool room = AbilityGrantRoom(world, request.Actor) > 0;
         const AbilityGrantId id = entry != nullptr && !sourceGone && room
             ? GrantAbility(world, request.Actor, entry->Ability, AbilityGrantKind::Transient, request.Entry, {},
-                           request.Source)
+                           PersistableRef{ .Entity = request.Source, .Target = {} })
             : AbilityGrantId{};
         if (!id.IsValid())
         {
@@ -381,7 +381,7 @@ namespace
                 continue;
             const AbilityId ability = entries->Find(pending.Entry)->Ability;
             if (GrantAbility(world, pending.Target, ability, AbilityGrantKind::Effect, pending.Entry, pending.Effect,
-                             pending.Source)
+                             PersistableRef{ .Entity = pending.Source, .Target = {} })
                     .IsValid())
                 continue;
             scratch.StillRefused.push_back(pending);

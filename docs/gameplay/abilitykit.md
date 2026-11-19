@@ -314,9 +314,12 @@ ability's, resolved against the action vocabulary input publishes
 pawns by two grants, never by a copy. Grant ids are minted per actor and never
 reused, so revoking one grant ends exactly the activations it started. Scenes
 and saves keep authored grants and those `ability.grant` made, by key, ability
-asset and override (`abilities/AbilityGrantsSerializer.h`), and load both as
-authored; a grant an effect holds comes back with its effect; an ability a scene names before anything
-declared it keeps its name.
+asset and override (`abilities/AbilityGrantsSerializer.h`), and load each as
+what it was: a requested grant is written with `"kind": "request"` and its
+`source` as a persistent id, so `ability.revoke` takes it after a restore as
+before and its activations find their source again. A grant an effect holds
+comes back with its effect; an ability a scene names before anything declared
+it keeps its name.
 
 A lasting effect may hold grants too: an `effect.definition`'s
 `granted_abilities` lists grant entries in the same form (`key`, `ability` as
@@ -360,7 +363,10 @@ order refuse the same one.
 Each grant names its **source**: the entity its activations read through the
 `source` port. An effect's grant has the effect's `LeaseOwner` entity (an
 equipped item, for instance), a request's grant the `source` it was asked with,
-and an authored grant none. The effect entity holding a grant (`Holder`) is the
+and an authored grant none. The source is a `PersistableRef`, read through
+`ResolvePersistableRef`; `ability.grant` gives its source a persistent id
+(`MakePersistableRef`), so the grant follows the source through a restream and
+a save. The effect entity holding a grant (`Holder`) is the
 authority's alone. `HasLiveActivationFrom(world, actor, source)` says whether
 anything that source supplied is still running; like `IsAbilityLive`, it reads
 the World's `AbilityActivations`.

@@ -5,9 +5,14 @@
 #include <abilities/AbilityGrants.h>
 #include <abilities/AbilityGrantsSerializer.h>
 #include <abilities/AbilityKit.h>
+#include <abilities/AbilityVerbs.h>
+#include <authored/AuthoredValue.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <world/identity/PersistableRef.h>
+#include <world/identity/PersistentEntityIndex.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
@@ -26,6 +31,8 @@ struct GrantsScene
     GrantsScene()
     {
         RegisterAbilityKit(Scene.Components);
+        Scene.Components.RegisterComponent<PersistentIdComponent>();
+        Scene.Components.AddResource<PersistentEntityIndex>();
         Actor = Scene.Components.CreateEntity();
     }
 
@@ -114,6 +121,69 @@ TEST(AbilityGrantsSerializer, AuthoredAndRequestedGrantsAreSavedAndAnEffectsAreN
     const JsonValue::Array& list = saved.Find("grants")->AsArray();
     ASSERT_EQ(list.size(), 3u);
     EXPECT_EQ(list[2].Find("key")->AsString(), "requested");
+}
+
+namespace
+{
+struct IdentifiedGrantsScene : GrantsScene
+{
+    AbilityOperations Verbs{ Scene.Components };
+    AuthoredArguments Arguments;
+
+    VerbInvocation Invocation(std::string_view key, EntityId source = {})
+    {
+        Arguments.Resize(source.IsValid() ? 4 : 3);
+        Arguments.Set(0, AuthoredValue::Entity(Actor));
+        Arguments.Set(1, AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data,
+                                                           .Path = "asset://abilities/primary.sdata" }));
+        Arguments.Set(2, AuthoredValue::String(std::string(key)));
+        if (source.IsValid())
+            Arguments.Set(3, AuthoredValue::Entity(source));
+        VerbInvocation invocation;
+        invocation.Arguments = &Arguments;
+        return invocation;
+    }
+};
+}
+
+TEST(AbilityGrantsSerializer, ARequestedGrantIsStillRevocableAfterASaveAndLoad)
+{
+    IdentifiedGrantsScene first;
+    ASSERT_EQ(first.Verbs.Grant(first.Invocation("unlocked")), VerbAdmission::Accepted);
+
+    IdentifiedGrantsScene second;
+    ASSERT_TRUE(second.Load(first.Save()));
+    ASSERT_EQ(second.Held().size(), 1u);
+    EXPECT_EQ(second.Held()[0].Kind, AbilityGrantKind::Request);
+    EXPECT_EQ(second.Verbs.Revoke(second.Invocation("unlocked")), VerbAdmission::Accepted);
+    EXPECT_EQ(second.Grants().Count, 0u);
+}
+
+TEST(AbilityGrantsSerializer, AnAuthoredGrantIsNotRevocableAfterASaveAndLoad)
+{
+    IdentifiedGrantsScene first;
+    ASSERT_TRUE(first.Load(*JsonParse(R"({ "grants": [ { "key": "authored", "ability": "asset://abilities/primary.sdata" } ] })")));
+
+    IdentifiedGrantsScene second;
+    ASSERT_TRUE(second.Load(first.Save()));
+    EXPECT_EQ(second.Held()[0].Kind, AbilityGrantKind::Authored);
+    EXPECT_EQ(second.Verbs.Revoke(second.Invocation("authored")), VerbAdmission::Refused);
+}
+
+TEST(AbilityGrantsSerializer, ARequestedGrantsSourceIsFoundAgainAfterASaveAndLoad)
+{
+    IdentifiedGrantsScene first;
+    const EntityId pickup = first.Scene.Components.CreateEntity();
+    ASSERT_EQ(first.Verbs.Grant(first.Invocation("from_pickup", pickup)), VerbAdmission::Accepted);
+    const PersistentIdComponent* minted = first.Scene.Components.TryGet<PersistentIdComponent>(pickup);
+    ASSERT_NE(minted, nullptr) << "a source a save must find again is given an identity when it grants";
+
+    IdentifiedGrantsScene second;
+    const EntityId restored = second.Scene.Components.CreateEntity();
+    second.Scene.Components.AddComponent<PersistentIdComponent>(restored, PersistentIdComponent{ minted->Id });
+    ASSERT_TRUE(second.Load(first.Save()));
+    ASSERT_EQ(second.Held().size(), 1u);
+    EXPECT_EQ(ResolvePersistableRef(second.Scene.Components, second.Held()[0].Source), restored);
 }
 
 TEST(AbilityGrantsSerializer, FortyGrantsRoundTripInOrder)

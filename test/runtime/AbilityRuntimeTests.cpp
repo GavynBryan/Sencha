@@ -990,7 +990,8 @@ TEST_F(AbilityRuntime, ASourceTargetedEffectCostChargesTheSource)
     Entities.AddComponent<AttributeSet>(pistol);
     Entities.TryGet<AttributeSet>(pistol)->Add(Ammo, 18.0f);
     (void)GrantAbility(Entities, actor, fire, AbilityGrantKind::Request,
-                       Entities.GetResource<AbilityGrantEntries>().Intern({ "g", fire, {} }), {}, pistol);
+                       Entities.GetResource<AbilityGrantEntries>().Intern({ "g", fire, {} }), {},
+                       MakePersistableRef(Entities, pistol));
     Entities.GetResource<AbilityRequestQueue>().Push(
         { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = fire });
     Step();
@@ -1723,7 +1724,7 @@ TEST_F(AbilityRuntime, ARequestTakesTheHighestPriorityGrantThenTheLowestId)
     AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
     const auto grant = [&](std::int32_t priority, EntityId source) {
         const std::uint16_t entry = entries.Intern({ "g_" + std::to_string(priority), read, { .Priority = priority } });
-        return GrantAbility(Entities, actor, read, AbilityGrantKind::Request, entry, {}, source);
+        return GrantAbility(Entities, actor, read, AbilityGrantKind::Request, entry, {}, MakePersistableRef(Entities, source));
     };
     (void)grant(20, low);
     const AbilityGrantId top = grant(21, high);
@@ -1795,7 +1796,7 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
 
     EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
     ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
-    EXPECT_EQ(AbilityGrantsOf(Entities, actor)[0].Source, ring);
+    EXPECT_EQ(AbilityGrantsOf(Entities, actor)[0].Source.Entity, ring);
     EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
     Step();
     EXPECT_NE(LiveRecord(actor, read), nullptr);
@@ -1877,7 +1878,7 @@ TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
     const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
     ASSERT_EQ(grants.size(), 1u);
     EXPECT_EQ(grants[0].Holder, held);
-    EXPECT_EQ(grants[0].Source, wornRing);
+    EXPECT_EQ(grants[0].Source.Entity, wornRing);
     const AbilityRecordLocals* locals = LiveLocals(actor, read);
     ASSERT_NE(locals, nullptr);
     EXPECT_EQ(locals->Values[0].Entity, wornRing);
@@ -2250,7 +2251,7 @@ TEST_F(AbilityRuntime, ATransientGrantLastsExactlyAsLongAsItsActivation)
     const std::span<const AbilityGrant> grants = AbilityGrantsOf(Entities, actor);
     ASSERT_EQ(grants.size(), 1u);
     EXPECT_EQ(grants[0].Kind, AbilityGrantKind::Transient);
-    EXPECT_EQ(grants[0].Source, potion);
+    EXPECT_EQ(grants[0].Source.Entity, potion);
     ASSERT_NE(LiveRecord(actor, drink), nullptr);
     EXPECT_EQ(LiveLocals(actor, drink)->Values[0].Entity, potion);
     EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, potion));
