@@ -1252,7 +1252,8 @@ lists a component row names by handle, referenced through the component's
 lifecycle hooks.
 
 **Grants.** `AbilityGrants` no longer holds its grants: it is a handle into the
-World's `AbilityGrantLists`, a count (now 16 bits) and the next id, and declares
+World's `AbilityGrantLists`, 16-bit counts of all, effect-held and transient
+grants, and the next id, and declares
 `OnAdd` and `OnRemove`. `AbilityGrants::Find` and the member array are gone;
 read with `AbilityGrantsOf` and `FindAbilityGrant`. `GrantAbility` and
 `RevokeAbilityGrant` take the World and the actor, or an `AbilityGrantList`
