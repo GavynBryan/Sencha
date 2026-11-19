@@ -16,7 +16,7 @@
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <world/SimulationAuthority.h>
-#include <world/identity/PersistentIdMint.h>
+#include <world/identity/PersistableRef.h>
 
 #include <algorithm>
 #include <bit>
@@ -286,7 +286,7 @@ EquipmentResult Equipment::Equip(EntityId wearer, EntityId entry, std::string_vi
 
     // Minting the entry's id moves the entry's row, so its definition is read first.
     const ItemId definition = held->Definition;
-    const PersistableRef source{ entry, EnsurePersistentId(world, entry) };
+    const PersistableRef source = MakePersistableRef(world, entry);
     for (auto it = replaced.rbegin(); it != replaced.rend(); ++it)
         EndEquipmentRecord(world, wearer, *it);
     const EquipmentRecord record{ .Key = world.TryGet<EquipmentState>(wearer)->NextKey++,

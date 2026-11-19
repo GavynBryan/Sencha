@@ -101,7 +101,7 @@ namespace
         StoragePartitionId partition = PersistentStoragePartition;
         if (holder.IsValid())
         {
-            const PersistableRef ref{ .Entity = holder, .Target = EnsurePersistentId(world, holder) };
+            const PersistableRef ref = MakePersistableRef(world, holder);
             if (Held* held = world.TryGet<Held>(record); held != nullptr && held->Holder != ref)
                 held->Holder = ref;
             AnchorTo(world, record, holder);
@@ -134,8 +134,7 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     HeldRecordIndex& index = InstallHeldRecords(world);
     if (index.Lists(record) && (index.HolderOf(record) != holder || index.AwaitedHolderOf(record).IsValid()))
         LeaveAuthoredSelf(world, index, record, Leaving::IdentityAndGroup, 0);
-    const Held held{ .Holder = { .Entity = holder, .Target = holder.IsValid() ? EnsurePersistentId(world, holder)
-                                                                               : PersistentEntityId{} },
+    const Held held{ .Holder = MakePersistableRef(world, holder),
                      .Position = position.value_or(index.NextPosition(holder)) };
     if (world.HasComponent<Held>(record))
         (void)world.ReplaceComponent<Held>(record, held);

@@ -35,7 +35,7 @@ namespace
     {
         Held* held = world.TryGet<Held>(record);
         if (held != nullptr && holder.IsValid() && !held->Holder.Target.IsValid())
-            held->Holder = PersistableRef{ .Entity = holder, .Target = EnsurePersistentId(world, holder) };
+            held->Holder = MakePersistableRef(world, holder);
     }
 
     JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,

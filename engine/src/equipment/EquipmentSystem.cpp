@@ -18,7 +18,7 @@
 #include <inventory/InventorySystem.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/SimulationAuthority.h>
-#include <world/identity/PersistentIdMint.h>
+#include <world/identity/PersistableRef.h>
 
 #include <algorithm>
 #include <optional>
@@ -173,7 +173,7 @@ namespace
                 const ItemEntry& candidate = *std::as_const(world).TryGet<ItemEntry>(entry);
                 if (candidate.Definition != definition || candidate.Count == 0 || IsSourceOf(world, records, entry))
                     continue;
-                const PersistableRef source{ entry, EnsurePersistentId(world, entry) };
+                const PersistableRef source = MakePersistableRef(world, entry);
                 EquipmentRecord& rebound = EditEquipmentRecords(world, wearer)[i];
                 rebound.Source = source;
                 rebound.Derivation = EquipmentDerivation::Pending;

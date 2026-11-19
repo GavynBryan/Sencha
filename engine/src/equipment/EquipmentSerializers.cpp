@@ -67,7 +67,7 @@ namespace
         }
         archive.End();
         // The id the source carries now: a moved or changed entry may have taken a runtime one.
-        PersistableRef source = MakePersistableRef(world, ResolvePersistableRef(world, record.Source));
+        PersistableRef source = PersistableRefOf(world, ResolvePersistableRef(world, record.Source));
         if (!source.Target.IsValid())
             source = record.Source;
         if (!SceneFieldCodec<PersistableRef>::Save(archive, kSource, source, context))
