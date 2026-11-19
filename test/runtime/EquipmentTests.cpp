@@ -412,7 +412,7 @@ namespace
 
         EntityId Give(ItemId item)
         {
-            return Inventory(Entities()).Give(Hero, item, 1).Entry;
+            return Inventory(Entities(), FixedSimTime{}).Give(Hero, item, 1).Entry;
         }
 
         // One fixed tick, in schedule order: actor time, the ability pass, then the
@@ -541,7 +541,7 @@ TEST_F(EquipmentTest, EveryRefusalLeavesTheWorldAsItWas)
     const EntityId pebble = Give(Pebble);
     const EntityId stranger = Entities().CreateEntity();
     Entities().AddComponent<ItemContainer>(stranger, ItemContainer{});
-    const EntityId theirs = Inventory(Entities()).Give(stranger, RingItem, 1).Entry;
+    const EntityId theirs = Inventory(Entities(), FixedSimTime{}).Give(stranger, RingItem, 1).Entry;
     const auto refusal = [&](EntityId entry, std::string_view slot = {}) {
         const EquipmentRecordList before = Worn();
         const std::size_t effects = EffectsOn();
@@ -714,7 +714,7 @@ TEST_F(EquipmentTest, MovingAWornEntryUnequipsItUnlessItsWearerIsLocked)
     ASSERT_EQ(Gear().Equip(Hero, ring).Refusal, EquipmentRefusal::None);
     const EntityId chest = Entities().CreateEntity();
     Entities().AddComponent<ItemContainer>(chest, ItemContainer{});
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
 
     Entities().TryGet<GameplayTagContainer>(Hero)->Grant(Attacking);
     EXPECT_EQ(inventory.Transfer(sword, chest, 0).Refusal, InventoryRefusal::Withheld);
@@ -952,7 +952,7 @@ TEST_F(EquipmentVocabularyTest, TheVerbsChangeWhatTheQueriesSee)
 
 TEST_F(EquipmentVocabularyTest, AWornSlotTranslatesToTheItemsEntry)
 {
-    const EntityId bomb = Inventory(Entities()).Give(Hero, Bomb, 3).Entry;
+    const EntityId bomb = Inventory(Entities(), FixedSimTime{}).Give(Hero, Bomb, 3).Entry;
     ASSERT_EQ(Gear().Equip(Hero, bomb).Refusal, EquipmentRefusal::None);
     const std::vector<AuthoredValue> two{ AuthoredValue::String("use.x"), AuthoredValue::Int(2) };
     const std::vector<AuthoredValue> empty{ AuthoredValue::String("ring.left"), AuthoredValue::Int(1) };
@@ -1121,7 +1121,7 @@ TEST_F(EquipmentGateTest, UnequippingMidAbilityIsLockedThenEndsItsActivation)
 // holds, and a pickup takes it. (A releasing slot is ASpentSourceReleasesOrHoldsAsItsSlotSays.)
 TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
 {
-    const EntityId grenade = Inventory(Entities()).Give(Hero, Grenade, 1).Entry;
+    const EntityId grenade = Inventory(Entities(), FixedSimTime{}).Give(Hero, Grenade, 1).Entry;
     ASSERT_EQ(Gear().Equip(Hero, grenade).Refusal, EquipmentRefusal::None);
     Step();
     Request(Throw);
@@ -1140,7 +1140,7 @@ TEST_F(EquipmentGateTest, TheLastBombFinishesItsThrowBeforeItsSlotHolds)
     EXPECT_FALSE(Entities().IsAlive(grenade));
     EXPECT_EQ(EffectsOn(), 0u);
 
-    const EntityId more = Inventory(Entities()).Give(Hero, Grenade, 2).Entry;
+    const EntityId more = Inventory(Entities(), FixedSimTime{}).Give(Hero, Grenade, 2).Entry;
     Step();
     EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), more);
     EXPECT_EQ(EffectsOn(), 1u);
@@ -1156,7 +1156,7 @@ TEST_F(EquipmentGateTest, ABottleStaysWornWhileItsContentsAreDrunk)
 {
     const EntityId bottle = Give(Bottle);
     Entities().AddComponent<ItemContainer>(bottle, ItemContainer{ .Capacity = 1, .Accepts = {} });
-    const EntityId fairy = Inventory(Entities()).Give(bottle, Fairy, 1).Entry;
+    const EntityId fairy = Inventory(Entities(), FixedSimTime{}).Give(bottle, Fairy, 1).Entry;
     ASSERT_EQ(Gear().Equip(Hero, bottle).Refusal, EquipmentRefusal::None);
     Step();
     Request(Sip);
@@ -1313,7 +1313,7 @@ namespace
 
         EntityId WearCharges(std::uint32_t count)
         {
-            const EntityId entry = Inventory(Entities()).Give(Hero, Charge, count).Entry;
+            const EntityId entry = Inventory(Entities(), FixedSimTime{}).Give(Hero, Charge, count).Entry;
             EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None);
             Step();
             return entry;
@@ -1778,7 +1778,7 @@ namespace
         // A bag in `holder`'s container.
         EntityId BagIn(EntityId holder)
         {
-            const EntityId bag = Inventory(Entities()).Give(holder, Pebble, 1).Entry;
+            const EntityId bag = Inventory(Entities(), FixedSimTime{}).Give(holder, Pebble, 1).Entry;
             Entities().AddComponent<ItemContainer>(bag, ItemContainer{});
             return bag;
         }
@@ -1786,7 +1786,7 @@ namespace
         // `wearer`'s record in `slot` left waiting: its bomb spent.
         void LeaveWaiting(EntityId wearer, std::string_view slot)
         {
-            const EntityId bomb = Inventory(Entities()).Give(wearer, Charge, 1).Entry;
+            const EntityId bomb = Inventory(Entities(), FixedSimTime{}).Give(wearer, Charge, 1).Entry;
             ASSERT_EQ(Gear().Equip(wearer, bomb, slot).Refusal, EquipmentRefusal::None);
             Entities().TryGet<ItemEntry>(bomb)->Count = 0;
             NoteDepleted(Entities(), bomb, EntityId{});
@@ -1814,7 +1814,7 @@ TEST_F(EquipmentWalkTest, AWaitingRecordTakesAnEntryInABag)
     const EntityId wearer = Wearer();
     LeaveWaiting(wearer, "use.x");
     ASSERT_FALSE(SourceIn(wearer, "use.x").IsValid());
-    const EntityId bagged = Inventory(Entities()).Give(BagIn(wearer), Charge, 3).Entry;
+    const EntityId bagged = Inventory(Entities(), FixedSimTime{}).Give(BagIn(wearer), Charge, 3).Entry;
     Pass();
     EXPECT_EQ(SourceIn(wearer, "use.x"), bagged);
 }
@@ -1825,12 +1825,12 @@ TEST_F(EquipmentWalkTest, AnEntryMovedIntoOneHoldersBagRebindsThatHolder)
     const EntityId other = Wearer();
     LeaveWaiting(waiting, "use.x");
     LeaveWaiting(other, "use.x");
-    const EntityId theirs = Inventory(Entities()).Give(BagIn(other), Charge, 2).Entry;
+    const EntityId theirs = Inventory(Entities(), FixedSimTime{}).Give(BagIn(other), Charge, 2).Entry;
     Pass();
     ASSERT_EQ(SourceIn(other, "use.x"), theirs) << "the other's own bag";
-    const EntityId spare = Inventory(Entities()).Give(BagIn(other), Charge, 5).Entry;
+    const EntityId spare = Inventory(Entities(), FixedSimTime{}).Give(BagIn(other), Charge, 5).Entry;
     Pass();
-    ASSERT_EQ(Inventory(Entities()).Transfer(spare, BagIn(waiting), 0).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(spare, BagIn(waiting), 0).Refusal, InventoryRefusal::None);
     Pass();
     EXPECT_EQ(SourceIn(waiting, "use.x"), spare);
     EXPECT_EQ(SourceIn(other, "use.x"), theirs);
@@ -1841,7 +1841,7 @@ TEST_F(EquipmentWalkTest, UnequippingAnotherSlotFreesItsStackForAWaitingRecord)
 {
     const EntityId wearer = Wearer();
     LeaveWaiting(wearer, "use.x");
-    const EntityId stack = Inventory(Entities()).Give(wearer, Charge, 3).Entry;
+    const EntityId stack = Inventory(Entities(), FixedSimTime{}).Give(wearer, Charge, 3).Entry;
     ASSERT_EQ(Gear().Equip(wearer, stack, "use.y").Refusal, EquipmentRefusal::None);
     Pass();
     ASSERT_FALSE(SourceIn(wearer, "use.x").IsValid()) << "use.y wears the only stack";
@@ -1859,11 +1859,11 @@ TEST_F(EquipmentWalkTest, AnotherHoldersChangeDoesNotRescanAWaitingRecord)
     const std::uint64_t walks = EquipmentRebindWalks(Entities());
     for (int i = 0; i < 5; ++i)
     {
-        (void)Inventory(Entities()).Give(busy, Pebble, 1);
+        (void)Inventory(Entities(), FixedSimTime{}).Give(busy, Pebble, 1);
         Pass();
     }
     EXPECT_EQ(EquipmentRebindWalks(Entities()), walks) << "nothing the waiting wearer holds changed";
-    (void)Inventory(Entities()).Give(waiting, Pebble, 1);
+    (void)Inventory(Entities(), FixedSimTime{}).Give(waiting, Pebble, 1);
     Pass();
     EXPECT_EQ(EquipmentRebindWalks(Entities()), walks + 1) << "its own inventory did";
 }
@@ -1872,7 +1872,7 @@ TEST_F(EquipmentWalkTest, ACountChangeOnATrackedEntryRescansItsHolder)
 {
     const EntityId waiting = Wearer();
     LeaveWaiting(waiting, "use.x");
-    const EntityId pebbles = Inventory(Entities()).Give(waiting, Pebble, 1).Entry;
+    const EntityId pebbles = Inventory(Entities(), FixedSimTime{}).Give(waiting, Pebble, 1).Entry;
     Pass();
     const std::uint64_t walks = EquipmentRebindWalks(Entities());
     NoteHeldRecordChanged(Entities(), pebbles);
@@ -1958,8 +1958,8 @@ TEST_F(EquipmentLockTest, AForcedTransferMovesAWornEntryUnderTheWearersLock)
     ASSERT_EQ(Gear().Equip(Hero, sword).Refusal, EquipmentRefusal::None);
     Entities().TryGet<GameplayTagContainer>(Hero)->Grant(Attacking);
     const EntityId chest = Chest();
-    EXPECT_EQ(Inventory(Entities()).Transfer(sword, chest, 0).Refusal, InventoryRefusal::Withheld);
-    ASSERT_EQ(Inventory(Entities()).Transfer(sword, chest, 0, ItemChangeClass::Forced).Refusal, InventoryRefusal::None);
+    EXPECT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(sword, chest, 0).Refusal, InventoryRefusal::Withheld);
+    ASSERT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(sword, chest, 0, ItemChangeClass::Forced).Refusal, InventoryRefusal::None);
     EXPECT_EQ(State().Count, 0u) << "unequipped in the move";
     EXPECT_EQ(EffectsOn(), 0u);
 }
@@ -1968,10 +1968,10 @@ TEST_F(EquipmentLockTest, ForcingSkipsTheLockAndNothingElse)
 {
     const EntityId bag = Give(Pebble);
     Entities().AddComponent<ItemContainer>(bag, ItemContainer{});
-    EXPECT_EQ(Inventory(Entities()).Transfer(bag, bag, 0, ItemChangeClass::Forced).Refusal, InventoryRefusal::NotAccepted)
+    EXPECT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(bag, bag, 0, ItemChangeClass::Forced).Refusal, InventoryRefusal::NotAccepted)
         << "into its own contents";
     Entities().AddResource<SimulationAuthority>(SimulationAuthority{ .Authoritative = false });
-    EXPECT_EQ(Inventory(Entities()).Transfer(bag, Chest(), 0, ItemChangeClass::Forced).Refusal,
+    EXPECT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(bag, Chest(), 0, ItemChangeClass::Forced).Refusal,
               InventoryRefusal::NotAuthority);
     EXPECT_EQ(Gear().Unequip(Hero, "ring.left", ItemChangeClass::Forced).Refusal, EquipmentRefusal::NotAuthority);
 }
@@ -1999,7 +1999,7 @@ TEST_F(EquipmentLockTest, ACurseLocksOnlyTheRecordWhoseEntryHoldsIt)
     EXPECT_EQ(Gear().Unequip(Hero, "ring.right").Refusal, EquipmentRefusal::None) << "its curse lifted";
     EXPECT_EQ(Gear().Unequip(Hero, "ring.left").Refusal, EquipmentRefusal::Locked) << "the other's is not";
     const EntityId chest = Chest();
-    EXPECT_EQ(Inventory(world).Drop(left, Transform3f::Identity(), StoragePartitionId::Default()).Refusal,
+    EXPECT_EQ(Inventory(world, FixedSimTime{}).Drop(left, Transform3f::Identity(), StoragePartitionId::Default()).Refusal,
               InventoryRefusal::Withheld)
         << "a cursed ring is not dropped either";
     EXPECT_EQ(Gear().Unequip(Hero, "ring.left", ItemChangeClass::Forced).Refusal, EquipmentRefusal::None);

@@ -160,7 +160,7 @@ namespace
         for (std::size_t i = 0; i < wearers; ++i)
         {
             const EntityId wearer = bench.Wearer();
-            const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
+            const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
             if (viaEquipment)
                 EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, ring).Refusal, EquipmentRefusal::None);
             else
@@ -190,7 +190,7 @@ namespace
             const EntityId wearer = bench.Wearer();
             for (std::size_t r = 0; r < records; ++r)
             {
-                const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
+                const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
                 EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, ring).Refusal, EquipmentRefusal::None);
             }
         }
@@ -258,8 +258,8 @@ namespace
             const EntityId wearer = bench.Wearer();
             wearers.push_back(wearer);
             for (int pebble = 0; pebble < 20; ++pebble)
-                (void)Inventory(world).Give(wearer, bench.Pebble, 1);
-            const EntityId bomb = Inventory(world).Give(wearer, bench.Bomb, 1).Entry;
+                (void)Inventory(world, FixedSimTime{}).Give(wearer, bench.Pebble, 1);
+            const EntityId bomb = Inventory(world, FixedSimTime{}).Give(wearer, bench.Bomb, 1).Entry;
             EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, bomb).Refusal, EquipmentRefusal::None);
             world.TryGet<ItemEntry>(bomb)->Count = 0;
             NoteDepleted(world, bomb, EntityId{});
@@ -270,7 +270,7 @@ namespace
         const std::uint64_t before = EquipmentRebindWalks(world);
         const int ticks = Reps(100);
         const double pass = bench.Average(ticks, [&] {
-            (void)Inventory(world).Give(wearers.front(), bench.Pebble, 1);
+            (void)Inventory(world, FixedSimTime{}).Give(wearers.front(), bench.Pebble, 1);
             RunEquipmentPass(world, bench.Time());
         });
         Recorder.Record(std::format("rebind.{}.walks_per_tick", holders), "walks",
@@ -291,7 +291,7 @@ namespace
             EquipmentRecordList worn = CopyEquipment(world, wearer);
             for (std::uint8_t slot = 0; slot < 2; ++slot)
             {
-                const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
+                const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
                 worn.Records.push_back({ .Key = worn.NextKey++, .Definition = bench.RingItem, .Slots = 1u << slot,
                                          .Primary = slot, .Source = MakePersistableRef(world, ring),
                                          .Derivation = EquipmentDerivation::Pending });

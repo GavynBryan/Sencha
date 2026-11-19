@@ -14,6 +14,8 @@
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <authored/AuthoredQueryDispatcher.h>
+#include <ecs/Query.h>
+#include <effects/ActiveEffect.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/WorldVocabulary.h>
@@ -51,6 +53,8 @@
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateStore.h>
+
+#include <time/SimClock.h>
 
 #include <gtest/gtest.h>
 
@@ -177,6 +181,7 @@ struct InventoryWorld
         Clip = items.Define("asset://items/clip.sdata",
                             ItemDefinition{ .Name = "Pistol Ammo", .Keep = false, .TakeEffects = { roundsEffect } });
         Bag = items.Define("asset://items/bag.sdata", ItemDefinition{ .Name = "Bag" });
+        Kit = items.Define("asset://items/kit.sdata", ItemDefinition{ .Name = "Kit", .TakeEffects = { roundsEffect } });
 
         Hero = world.CreateEntity();
         world.AddComponent<ItemContainer>(Hero, ItemContainer{});
@@ -210,7 +215,7 @@ struct InventoryWorld
     // A bag in `holder` that holds things itself.
     EntityId BagIn(EntityId holder)
     {
-        const EntityId bag = Inventory(Entities()).Give(holder, Bag, 1).Entry;
+        const EntityId bag = Inventory(Entities(), FixedSimTime{}).Give(holder, Bag, 1).Entry;
         Entities().AddComponent<ItemContainer>(bag, ItemContainer{});
         return bag;
     }
@@ -243,6 +248,7 @@ struct InventoryWorld
     ItemId Cloak;
     ItemId Clip;
     ItemId Bag;
+    ItemId Kit;
     EntityId Hero;
 };
 
@@ -281,7 +287,7 @@ struct Cellar
 
 TEST_F(InventoryTest, AGivenItemFillsItsStacksBeforeMakingEntries)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     ASSERT_EQ(inventory.Give(Hero, Arrows, 30).Refusal, InventoryRefusal::None);
     std::vector<EntityId> held = Held(Hero);
     ASSERT_EQ(held.size(), 2u);
@@ -306,7 +312,7 @@ TEST_F(InventoryTest, AGivenItemFillsItsStacksBeforeMakingEntries)
 
 TEST_F(InventoryTest, AContainerRefusesWhatItDoesNotAcceptAndWhatDoesNotFit)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId wardrobe = Container({ .Capacity = 2, .Accepts = Wearable });
     EXPECT_EQ(inventory.Give(wardrobe, Arrows, 1).Refusal, InventoryRefusal::NotAccepted);
     EXPECT_EQ(inventory.Give(wardrobe, Cloak, 3).Refusal, InventoryRefusal::ContainerFull) << "all or none";
@@ -320,7 +326,7 @@ TEST_F(InventoryTest, AContainerWithoutACapacityHoldsAsManyEntriesAsACapacityCan
 {
     const ItemId coin = Entities().GetResource<ItemRegistry>().Define("asset://items/coin.sdata",
                                                                       ItemDefinition{ .Name = "Coin" });
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId vault = Container();
     EXPECT_EQ(inventory.Give(vault, coin, std::numeric_limits<std::uint32_t>::max()).Refusal,
               InventoryRefusal::ContainerFull);
@@ -332,7 +338,7 @@ TEST_F(InventoryTest, AContainerWithoutACapacityHoldsAsManyEntriesAsACapacityCan
 
 TEST_F(InventoryTest, AGiftPastTheLastPositionRenumbersTheContainerAndKeepsItsOrder)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId chest = Container();
     const EntityId first = inventory.Give(chest, Cloak, 1).Entry;
     HoldRecord(Entities(), first, chest, std::uint16_t{ 0xFFFF });
@@ -348,7 +354,7 @@ TEST_F(InventoryTest, AGiftPastTheLastPositionRenumbersTheContainerAndKeepsItsOr
 
 TEST_F(InventoryTest, AnEntryDeeperThanRecordsNestIsRefused)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     std::vector<EntityId> bags{ BagIn(Hero) };
     while (static_cast<int>(bags.size()) < kHeldDeepestNesting - 1)
         bags.push_back(BagIn(bags.back()));
@@ -367,7 +373,7 @@ TEST_F(InventoryTest, AnEntryDeeperThanRecordsNestIsRefused)
 
 TEST_F(InventoryTest, TakingAPickupMakesItsEntryAndTakingAmmunitionKeepsNothing)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId quiver = Pickup(Arrows, 12);
     ASSERT_EQ(inventory.Take(quiver, Hero).Refusal, InventoryRefusal::None);
     EXPECT_FALSE(Entities().IsAlive(quiver));
@@ -378,12 +384,55 @@ TEST_F(InventoryTest, TakingAPickupMakesItsEntryAndTakingAmmunitionKeepsNothing)
     ASSERT_EQ(inventory.Take(clip, Hero).Refusal, InventoryRefusal::None);
     EXPECT_FALSE(Entities().IsAlive(clip));
     EXPECT_EQ(Held(Hero).size(), 1u) << "kept nothing";
-    EXPECT_FLOAT_EQ(Entities().TryGet<AttributeSet>(Hero)->GetBase(Ammo), 18.0f) << "its take effect applied once";
+    EXPECT_FLOAT_EQ(Entities().TryGet<AttributeSet>(Hero)->GetBase(Ammo), 18.0f);
+}
+
+TEST_F(InventoryTest, APickupsTakeEffectsAreScaledByTheUnitsItCounts)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    ASSERT_EQ(inventory.Take(Pickup(Clip, 3), Hero).Refusal, InventoryRefusal::None);
+    EXPECT_FLOAT_EQ(Entities().TryGet<AttributeSet>(Hero)->GetBase(Ammo), 54.0f);
+}
+
+TEST_F(InventoryTest, ATakeEffectIsAppliedInTheTickTheTakeRunsIn)
+{
+    EffectDefinition lasting{};
+    lasting.Duration = EffectDuration::Duration;
+    lasting.DurationSeconds = 1.0f;
+    lasting.Modifiers = { { Ammo, ModifierOp::Add, 1.0f } };
+    const EffectId timed = Entities().GetResource<EffectRegistry>().Define("asset://effects/timed.sdata", lasting);
+    const ItemId flare = Entities().GetResource<ItemRegistry>().Define(
+        "asset://items/flare.sdata", ItemDefinition{ .Name = "Flare", .Keep = false, .TakeEffects = { timed } });
+
+    Inventory inventory(Entities(), FixedSimTime{ .DeltaSeconds = 1.0 / 30.0, .TickIndex = 7 });
+    ASSERT_EQ(inventory.Take(Pickup(flare, 1), Hero).Refusal, InventoryRefusal::None);
+
+    std::vector<EntityId> effects;
+    Query<Read<ActiveEffect>> active(Entities());
+    active.ForEachChunk([&](auto& view) {
+        for (std::uint32_t row = 0; row < view.Count(); ++row)
+            effects.push_back(view.Entity(row));
+    });
+    ASSERT_EQ(effects.size(), 1u);
+    EXPECT_EQ(Entities().TryGet<ActiveEffect>(effects[0])->RemainingTicks, 30u) << "a second of thirty-hertz ticks";
+}
+
+TEST_F(InventoryTest, TakingBackADroppedEntryAppliesNoTakeEffect)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    ASSERT_EQ(inventory.Take(Pickup(Kit, 2), Hero).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Held(Hero).size(), 2u);
+    EXPECT_FLOAT_EQ(Entities().TryGet<AttributeSet>(Hero)->GetBase(Ammo), 36.0f) << "kept, and scaled by the units";
+
+    const EntityId dropped = inventory.Drop(Held(Hero)[0], Transform3f::Identity(), StoragePartitionId{ 0 }).Entry;
+    ASSERT_EQ(inventory.Take(dropped, Hero).Refusal, InventoryRefusal::None);
+    EXPECT_EQ(Held(Hero).size(), 2u);
+    EXPECT_FLOAT_EQ(Entities().TryGet<AttributeSet>(Hero)->GetBase(Ammo), 36.0f);
 }
 
 TEST_F(InventoryTest, ATransferOfPartOfAStackSplitsIt)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     ASSERT_EQ(inventory.Give(Hero, Arrows, 20).Refusal, InventoryRefusal::None);
     const EntityId stack = Held(Hero)[0];
     const PersistentEntityId identity = IdOf(stack);
@@ -408,7 +457,7 @@ TEST_F(InventoryTest, ATransferOfPartOfAStackSplitsIt)
 
 TEST_F(InventoryTest, ADroppedEntryLiesInItsPickupAndIsTakenBackWhole)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId cloak = inventory.Give(Hero, Cloak, 1).Entry;
     const PersistentEntityId identity = IdOf(cloak);
 
@@ -427,7 +476,7 @@ TEST_F(InventoryTest, ADroppedEntryLiesInItsPickupAndIsTakenBackWhole)
 
 TEST_F(InventoryTest, AnEntryLeavesItsSpawnGroupTheFirstTimeItMoves)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId purse = inventory.Give(Hero, Cloak, 1).Entry;
     Entities().AddComponent<SceneInstance>(purse, SceneInstance{ AssetId{ 0x9 }, SceneInstanceId{ 0x77 } });
     ASSERT_EQ(inventory.Transfer(purse, Container(), 0).Refusal, InventoryRefusal::None);
@@ -438,7 +487,7 @@ TEST_F(InventoryTest, AnEntryLeavesItsSpawnGroupTheFirstTimeItMoves)
 TEST_F(InventoryTest, OnlyTheAuthorityChangesAnInventory)
 {
     Entities().SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     EXPECT_EQ(inventory.Give(Hero, Arrows, 1).Refusal, InventoryRefusal::NotAuthority);
     EXPECT_TRUE(Held(Hero).empty());
 }
@@ -454,7 +503,7 @@ bool Withhold(const World& world, EntityId entry)
 TEST_F(InventoryTest, ALayerAboveMayWithholdARequestedMoveButNotAForcedOne)
 {
     Entities().AddResource<ItemMoveAdmission>(ItemMoveAdmission{ .Admit = &Withhold, .Moved = nullptr });
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId cursed = inventory.Give(Hero, Arrows, 7).Entry;
     const EntityId chest = Container();
     EXPECT_EQ(inventory.Transfer(cursed, chest, 0).Refusal, InventoryRefusal::Withheld);
@@ -577,7 +626,7 @@ TEST_F(InventoryConsumingTest, AUseTheEntryTableRefusesFailsTheDefinition)
 
 TEST_F(InventoryConsumingTest, TheLastUnitIsReapedOnlyOnceTheActivationUsingItEnds)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId potion = inventory.Give(Hero, Potion, 1).Entry;
     ASSERT_EQ(inventory.Use(Hero, potion).Refusal, InventoryRefusal::None);
     Step();
@@ -596,7 +645,7 @@ TEST_F(InventoryConsumingTest, TheLastUnitIsReapedOnlyOnceTheActivationUsingItEn
 // holder's: the item provider pays only from what the actor may use.
 TEST_F(InventoryConsumingTest, AUseSpendsOnlyFromWhatTheActorStillHolds)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId potion = inventory.Give(Hero, Potion, 2).Entry;
     const EntityId friendly = Container();
     ASSERT_EQ(inventory.Use(Hero, potion).Refusal, InventoryRefusal::None);
@@ -608,7 +657,7 @@ TEST_F(InventoryConsumingTest, AUseSpendsOnlyFromWhatTheActorStillHolds)
 
 TEST_F(InventoryConsumingTest, NobodyUsesWhatTheyDoNotHold)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId potion = inventory.Give(Container(), Potion, 1).Entry;
     EXPECT_EQ(inventory.Use(Hero, potion).Refusal, InventoryRefusal::NotPermitted);
     EXPECT_FALSE(MayUseItem(Entities(), Hero, potion));
@@ -620,7 +669,7 @@ TEST_F(InventoryConsumingTest, NobodyUsesWhatTheyDoNotHold)
 
 TEST_F(InventoryConsumingTest, ADepletedEntryIsNeverRefilled)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId potion = inventory.Give(Hero, Potion, 1).Entry;
     ASSERT_EQ(inventory.Use(Hero, potion).Refusal, InventoryRefusal::None);
     Step();
@@ -632,7 +681,7 @@ TEST_F(InventoryConsumingTest, ADepletedEntryIsNeverRefilled)
 
 TEST_F(InventoryTest, TwoRowsTakingOneArrowEachCheckForTwo)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId arrow = inventory.Give(Hero, Arrows, 1).Entry;
     const std::vector<std::vector<AuthoredValue>> one{ { AuthoredValue::Entity(arrow), {}, AuthoredValue::Int(1) } };
     const std::vector<std::vector<AuthoredValue>> two{ { AuthoredValue::Entity(arrow), {}, AuthoredValue::Int(1) },
@@ -645,7 +694,7 @@ TEST_F(InventoryTest, TwoRowsTakingOneArrowEachCheckForTwo)
 
 TEST_F(InventoryTest, ABottlesContentsAreSpentAndTheBottleStays)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const ItemId fairy = Entities().GetResource<ItemRegistry>().Define("asset://items/fairy.sdata",
                                                                        ItemDefinition{ .Name = "Fairy" });
     const EntityId bottle = BagIn(Hero);
@@ -680,7 +729,7 @@ TEST_F(InventoryTest, WhatAnAuthoredChestHoldsIsListedUnderItWhenRecordsSettle)
 
 TEST_F(InventoryTest, WhatADestroyedContainerHeldGoesWithIt)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId chest = Container();
     const EntityId arrows = inventory.Give(chest, Arrows, 3).Entry;
     Entities().DestroyEntity(chest);
@@ -770,7 +819,8 @@ protected:
         return AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = std::move(path) });
     }
 
-    InventoryOperations Operations{ Entities() };
+    FixedSimulationLoop Clock;
+    InventoryOperations Operations{ Entities(), Clock };
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::vector<VerbBindingToken> Tokens;
@@ -803,7 +853,7 @@ TEST_F(InventoryVocabularyTest, TheVerbsChangeWhatTheCountSays)
 
 TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWhatIsHeld)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     (void)inventory.Give(Hero, Arrows, 3);
     (void)inventory.Give(Hero, Cloak, 1);
     const EntityId bag = BagIn(Hero);
@@ -822,7 +872,7 @@ TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWh
 // and depletion, in one run.
 TEST_F(InventoryConsumingTest, TheGatePicksUpStacksSplitsMovesDropsConsumesAndReaps)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     ASSERT_EQ(inventory.Take(Pickup(Arrows, 12), Hero).Refusal, InventoryRefusal::None);
     ASSERT_EQ(inventory.Take(Pickup(Arrows, 15), Hero).Refusal, InventoryRefusal::None);
     std::vector<EntityId> quiver = Held(Hero);
@@ -863,7 +913,7 @@ TEST_F(InventoryTest, WhatAnEntryHoldsGoesWhereTheEntryGoes)
     const EntityId chest = Resolve(Cellar::kChest);
     ASSERT_TRUE(chest.IsValid());
 
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId bottle = BagIn(chest);
     const EntityId contents = inventory.Give(bottle, Cloak, 1).Entry;
     ASSERT_EQ(Entities().GetEntityPartition(contents), Entities().GetEntityPartition(chest));
@@ -878,7 +928,7 @@ TEST_F(InventoryTest, WhatAnEntryHoldsGoesWhereTheEntryGoes)
 
 TEST_F(InventoryTest, AMoveFillsOpenStacksBeforeItTakesRoom)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId chest = Container({ .Capacity = 1, .Accepts = {} });
     ASSERT_EQ(inventory.Give(chest, Arrows, 15).Refusal, InventoryRefusal::None);
     const EntityId bundle = inventory.Give(Hero, Arrows, 5).Entry;
@@ -900,7 +950,7 @@ TEST_F(InventoryTest, AMoveFillsOpenStacksBeforeItTakesRoom)
 
 TEST_F(InventoryTest, AnEntryCannotGoInsideItself)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId bag = BagIn(Hero);
     const EntityId pouch = BagIn(bag);
 
@@ -914,7 +964,7 @@ TEST_F(InventoryTest, AnEntryCannotGoInsideItself)
 
 TEST_F(InventoryTest, ADroppedEntryMovesOnlyByTakingItsPickup)
 {
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId cloak = inventory.Give(Hero, Cloak, 1).Entry;
     const EntityId pickup = inventory.Drop(cloak, Transform3f::Identity(), StoragePartitionId{ 0 }).Entry;
     ASSERT_TRUE(pickup.IsValid());
@@ -991,7 +1041,7 @@ TEST_F(InventoryTest, AnAuthoredEntryTakenFromItsZoneTakesARuntimeIdAndIsNotMade
     ASSERT_TRUE(sword.IsValid());
     ASSERT_EQ(Held(Resolve(Cellar::kChest)), std::vector{ sword });
 
-    ASSERT_EQ(Inventory(Entities()).Transfer(sword, Hero, 0).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(sword, Hero, 0).Refusal, InventoryRefusal::None);
     EXPECT_FALSE(IsAuthoredPersistentEntityId(IdOf(sword)));
     EXPECT_FALSE(Resolve(Cellar::kSword).IsValid());
 
@@ -1012,7 +1062,7 @@ TEST_F(InventoryTest, AZoneThatForgetsMakesItsEntryAgainBesideTheTakenOne)
     cellar.Sword = Cloak;
     Import(cellar.Zone, cellar.Package());
     const EntityId taken = Resolve(Cellar::kSword);
-    ASSERT_EQ(Inventory(Entities()).Transfer(taken, Hero, 0).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(taken, Hero, 0).Refusal, InventoryRefusal::None);
     Detach(cellar.Zone);
     Entities().GetResource<ZoneStateStore>().Clear();
 
@@ -1034,7 +1084,7 @@ TEST_F(InventoryTest, SplittingAnAuthoredStackKeepsTheRemainderAcrossItsZonesRou
     cellar.Count = 12;
     Import(cellar.Zone, cellar.Package());
     const EntityId stack = Resolve(Cellar::kSword);
-    ASSERT_EQ(Inventory(Entities()).Transfer(stack, Hero, 5).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Inventory(Entities(), FixedSimTime{}).Transfer(stack, Hero, 5).Refusal, InventoryRefusal::None);
     EXPECT_FALSE(IsAuthoredPersistentEntityId(IdOf(stack)));
 
     Detach(cellar.Zone);
@@ -1051,7 +1101,7 @@ TEST_F(InventoryTest, WhatADepositIntoAnAuthoredChestHoldsSurvivesItsZonesRoundT
 {
     const Cellar cellar;
     Import(cellar.Zone, cellar.Package());
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId bag = BagIn(Resolve(Cellar::kChest));
     const EntityId arrows = inventory.Give(bag, Arrows, 9).Entry;
     const PersistentEntityId bagId = IdOf(bag);
@@ -1078,7 +1128,7 @@ TEST_F(InventoryTest, AChestForgottenAtDetachKeepsNothingPutInIt)
     ASSERT_TRUE(package.AddComponent<ZoneStateLifetime>(PackageEntityId{ 0 },
                                                         ZoneStateLifetime{ .Forgotten = ZoneStateForgetting::AtDetach }));
     Import(cellar.Zone, package);
-    const EntityId deposit = Inventory(Entities()).Give(Resolve(Cellar::kChest), Arrows, 3).Entry;
+    const EntityId deposit = Inventory(Entities(), FixedSimTime{}).Give(Resolve(Cellar::kChest), Arrows, 3).Entry;
 
     Detach(cellar.Zone);
 
@@ -1095,7 +1145,7 @@ TEST_F(InventoryTest, WhatADepositIntoAnAuthoredChestHoldsSurvivesASaveIntoAFres
 
     const Cellar cellar;
     Import(cellar.Zone, cellar.Package());
-    Inventory inventory(Entities());
+    Inventory inventory(Entities(), FixedSimTime{});
     const EntityId bag = BagIn(Resolve(Cellar::kChest));
     (void)inventory.Give(bag, Arrows, 9);
     const PersistentEntityId bagId = IdOf(bag);

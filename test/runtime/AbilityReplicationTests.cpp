@@ -338,7 +338,7 @@ protected:
         EquipmentRecordList wearing{ .Layout = body, .NextKey = 1, .Records = {} };
         for (std::size_t i = 0; i < records; ++i)
         {
-            const EntityId entry = Inventory(world).Give(Actor, item, 1).Entry;
+            const EntityId entry = Inventory(world, FixedSimTime{}).Give(Actor, item, 1).Entry;
             entries.push_back(entry);
             wearing.Records.push_back({ .Key = wearing.NextKey++, .Definition = item, .Slots = 1u << i,
                                         .Primary = static_cast<std::uint8_t>(i),
@@ -1346,7 +1346,7 @@ TEST_F(AbilityReplication, AnEquippedGrantIsBoundByItsSlotOnTheOwnerWhoPredictsI
     World& world = Authority.Entities;
     world.AddComponent<ItemContainer>(Actor, ItemContainer{});
     world.AddComponent<EquipmentState>(Actor, EquipmentState{ .Layout = body, .Count = 0, .NextKey = 1, .Records = {} });
-    const EntityId ring = Inventory(world).Give(Actor, item, 1).Entry;
+    const EntityId ring = Inventory(world, FixedSimTime{}).Give(Actor, item, 1).Entry;
     ASSERT_EQ(Equipment(world, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }).Equip(Actor, ring).Refusal,
               EquipmentRefusal::None);
     Step();
@@ -1507,7 +1507,7 @@ TEST_F(AbilityReplication, ARecordsSourceArrivingLaterBindsOnTheOwner)
     const EntityId chest = world.CreateEntity();
     world.AddComponent<ItemContainer>(chest, ItemContainer{});
     const ItemId charm = world.GetResource<ItemRegistry>().Find("asset://items/charm.sdata");
-    const EntityId entry = Inventory(world).Give(chest, charm, 1).Entry;
+    const EntityId entry = Inventory(world, FixedSimTime{}).Give(chest, charm, 1).Entry;
     EquipmentRecordList worn = CopyEquipment(world, Actor);
     worn.Records = { EquipmentRecord{ .Key = worn.NextKey++, .Definition = charm, .Slots = 1u, .Primary = 0,
                                       .Source = MakePersistableRef(world, entry),
@@ -1517,7 +1517,7 @@ TEST_F(AbilityReplication, ARecordsSourceArrivingLaterBindsOnTheOwner)
     const EquipmentRecord* waiting = ClientRecord(1);
     ASSERT_NE(waiting, nullptr);
     EXPECT_FALSE(waiting->Source.Entity.IsValid()) << "not sent the entry yet";
-    ASSERT_EQ(Inventory(world).Transfer(entry, Actor, 0).Refusal, InventoryRefusal::None);
+    ASSERT_EQ(Inventory(world, FixedSimTime{}).Transfer(entry, Actor, 0).Refusal, InventoryRefusal::None);
     (void)Publish();
     (void)Publish();
     const EquipmentRecord* bound = ClientRecord(1);

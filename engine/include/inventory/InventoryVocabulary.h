@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+class FixedSimulationLoop;
 class World;
 
 // docs/gameplay/inventory.md, "Vocabulary".
@@ -27,8 +28,9 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class InventoryOperations
 {
 public:
-    explicit InventoryOperations(World& world)
+    InventoryOperations(World& world, const FixedSimulationLoop& clock)
         : Entities(&world)
+        , Clock(&clock)
     {
     }
 
@@ -40,6 +42,7 @@ public:
 
 private:
     World* Entities;
+    const FixedSimulationLoop* Clock;
 };
 
 inline VerbAdmission InvokeInventoryTake(InventoryOperations& operations, const VerbInvocation& invocation)

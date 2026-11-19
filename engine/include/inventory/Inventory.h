@@ -5,6 +5,7 @@
 #include <gameplay_tags/GameplayTagId.h>
 #include <inventory/ItemDefinition.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <time/FrameClock.h>
 
 #include <cstdint>
 #include <vector>
@@ -59,12 +60,13 @@ struct InventoryResult
 // Every item carries the invalid tag.
 [[nodiscard]] bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag);
 
-// docs/gameplay/inventory.md, "Operations". Owner thread, outside any query.
+// docs/gameplay/inventory.md, "Operations". Owner thread, outside any query, in the tick `now`.
 class Inventory
 {
 public:
-    explicit Inventory(World& world)
+    Inventory(World& world, const FixedSimTime& now)
         : Entities(&world)
+        , Now(now)
     {
     }
 
@@ -79,4 +81,5 @@ public:
 
 private:
     World* Entities;
+    FixedSimTime Now;
 };

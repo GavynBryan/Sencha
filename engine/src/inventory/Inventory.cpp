@@ -252,15 +252,16 @@ InventoryResult Inventory::Take(EntityId pickup, EntityId into)
     const ItemDefinition* item = FindItemDefinition(world, definition);
     if (item == nullptr || !world.IsAlive(into))
         return Refused(InventoryRefusal::Missing);
+    const std::uint32_t units = lying->Count;
     InventoryResult result;
     if (item->Keep)
     {
-        result = Give(into, definition, lying->Count);
+        result = Give(into, definition, units);
         if (result.Refusal != InventoryRefusal::None)
             return result;
     }
     for (const EffectId effect : item->TakeEffects)
-        (void)ApplyEffect(world, into, effect, FixedSimTime{});
+        (void)ApplyEffect(world, into, effect, Now, {}, static_cast<float>(units));
     world.DestroyEntity(pickup);
     return result;
 }

@@ -159,7 +159,7 @@ TEST(InventoryReplication, EachPeerHoldsItsOwnAndALateJoinerIsSeededWithItsOwnOn
     const EntityId archer = session.Holder(1);
     const EntityId hunter = session.Holder(2);
     const EntityId chest = session.Holder(kNetAuthorityPeer);
-    Inventory inventory(session.Authority);
+    Inventory inventory(session.Authority, FixedSimTime{});
     ASSERT_EQ(inventory.Give(archer, session.Arrows, 30).Refusal, InventoryRefusal::None);
     ASSERT_EQ(inventory.Give(hunter, session.Arrows, 5).Refusal, InventoryRefusal::None);
     ASSERT_EQ(inventory.Give(chest, session.Arrows, 9).Refusal, InventoryRefusal::None);

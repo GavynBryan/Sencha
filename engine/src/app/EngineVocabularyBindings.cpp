@@ -108,7 +108,7 @@ void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQuery
 
 void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
 {
-    Items = std::make_unique<InventoryOperations>(Entities);
+    Items = std::make_unique<InventoryOperations>(Entities, Clock);
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), *Items));
     Verbs.push_back(verbs.Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), *Items));
