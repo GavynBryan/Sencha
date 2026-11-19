@@ -215,3 +215,21 @@ TEST(AbilityGrantsSerializer, AnUnknownBindingChoiceRefusesTheScene)
     EXPECT_FALSE(scene.Load(*JsonParse(R"({ "grants": [ { "key": "g", "ability": "asset://abilities/a.sdata",
         "binding": { "policy": "sometimes" } } ] })")));
 }
+
+TEST(AbilityGrantEntries, AFullTableAndASharedWireKeyAreRefusedForTheirOwnReasons)
+{
+    AbilityGrantEntries entries;
+    AbilityGrantEntryRefusal refusal = AbilityGrantEntryRefusal::Full;
+    ASSERT_NE(entries.Intern({ "k32728", AbilityId{ 1 }, {} }), kAbilityNoGrantEntry);
+    EXPECT_EQ(entries.Intern({ "k261234", AbilityId{ 1 }, {} }, &refusal), kAbilityNoGrantEntry);
+    EXPECT_EQ(refusal, AbilityGrantEntryRefusal::WireKeyTaken);
+
+    for (std::uint32_t i = 1; i < kAbilityNoGrantEntry; ++i)
+        ASSERT_NE(entries.Intern({ "e" + std::to_string(i), AbilityId{ 1 + i % 512 }, {} }), kAbilityNoGrantEntry) << i;
+    EXPECT_EQ(entries.Size(), std::size_t{ kAbilityNoGrantEntry });
+    EXPECT_EQ(entries.Intern({ "one_more", AbilityId{ 1 }, {} }, &refusal), kAbilityNoGrantEntry);
+    EXPECT_EQ(refusal, AbilityGrantEntryRefusal::Full);
+    EXPECT_NE(AbilityGrantEntryRefusalText(AbilityGrantEntryRefusal::Full),
+              AbilityGrantEntryRefusalText(AbilityGrantEntryRefusal::WireKeyTaken));
+    EXPECT_EQ(entries.Intern({ "k32728", AbilityId{ 1 }, {} }), 0u) << "an entry it holds is still found";
+}

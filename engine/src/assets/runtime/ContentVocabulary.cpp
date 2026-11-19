@@ -114,8 +114,8 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
     if (!effect.IsValid())
         errors.push_back(std::format("{}: the effect registry refused it", entry.Path));
     else
-        for (const std::string& key : DeclareEffectGrants(world, effect, declaration->GrantedAbilities))
-            errors.push_back(std::format("{}: grant '{}' {}", entry.Path, key, kAbilityGrantEntryRefusal));
+        for (const std::string& refused : DeclareEffectGrants(world, effect, declaration->GrantedAbilities))
+            errors.push_back(std::format("{}: {}", entry.Path, refused));
 }
 
 template <typename Registry>

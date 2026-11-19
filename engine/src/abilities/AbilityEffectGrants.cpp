@@ -8,6 +8,7 @@
 #include <effects/EffectSystem.h>
 
 #include <algorithm>
+#include <format>
 
 void AbilityEffectGrants::Set(EffectId effect, std::vector<std::uint16_t> entries)
 {
@@ -58,18 +59,19 @@ std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
     if (abilities == nullptr || entries == nullptr)
     {
         for (const AbilityGrantDeclaration& grant : grants)
-            refused.push_back(grant.Key);
+            refused.push_back(std::format("grant '{}' was refused: this World runs no abilities", grant.Key));
         return refused;
     }
     std::vector<std::uint16_t> granted;
     for (const AbilityGrantDeclaration& grant : grants)
     {
-        const std::uint16_t entry =
-            entries->Intern({ grant.Key, abilities->Reserve(grant.Ability), grant.Override, grant.Parameters });
+        AbilityGrantEntryRefusal refusal = AbilityGrantEntryRefusal::Full;
+        const std::uint16_t entry = entries->Intern(
+            { grant.Key, abilities->Reserve(grant.Ability), grant.Override, grant.Parameters }, &refusal);
         if (entry != kAbilityNoGrantEntry)
             granted.push_back(entry);
         else
-            refused.push_back(grant.Key);
+            refused.push_back(std::format("grant '{}' {}", grant.Key, AbilityGrantEntryRefusalText(refusal)));
     }
     AbilityEffectGrants& table = world.HasResource<AbilityEffectGrants>() ? world.GetResource<AbilityEffectGrants>()
                                                                           : world.AddResource<AbilityEffectGrants>();

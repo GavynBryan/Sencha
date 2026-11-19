@@ -382,8 +382,12 @@ wire as one key: its stable key, binding and parameters written as text in a
 fixed field order, numbers in shortest round-trip form, then hashed, so every
 machine of one protocol computes the same key. Two entries of one ability with
 the same key would be one entry on the wire, so the second is refused
-(`kAbilityGrantEntryRefusal`); machines declaring the same content in the same
-order refuse the same one.
+(`AbilityGrantEntryRefusal::WireKeyTaken`); machines declaring the same content
+in the same order refuse the same one. The World's entry table never shrinks:
+every distinct key, binding and parameter set is kept for the World's life, up
+to 65,535 entries, past which an entry is refused
+(`AbilityGrantEntryRefusal::Full`). `Intern` says which, and each refusal names
+its own reason (`AbilityGrantEntryRefusalText`).
 
 Each grant names its **source**: the entity its activations read through the
 `source` port. An effect's grant has the effect's `LeaseOwner` entity (an

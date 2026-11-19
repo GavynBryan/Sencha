@@ -105,10 +105,11 @@ void DeclareWornGrantEntries(World& world, std::vector<std::string>& errors)
                     for (AbilityGrantEntry& worn : WornGrantEntries(world, equipped.Effect, slot, item))
                     {
                         const std::string key = worn.Key;
-                        if (entries->Intern(std::move(worn)) == kAbilityNoGrantEntry)
+                        AbilityGrantEntryRefusal refusal = AbilityGrantEntryRefusal::Full;
+                        if (entries->Intern(std::move(worn), &refusal) == kAbilityNoGrantEntry)
                             errors.push_back(std::format("{} worn in '{}' of {}: grant '{}' {}", items->GetName(itemId),
                                                          slot.Key, layouts->GetName(layoutId), key,
-                                                         kAbilityGrantEntryRefusal));
+                                                         AbilityGrantEntryRefusalText(refusal)));
                     }
             }
         });

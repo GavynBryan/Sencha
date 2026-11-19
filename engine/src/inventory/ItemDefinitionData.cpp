@@ -343,10 +343,13 @@ bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, It
                                          declaration.Use->Ability));
         else
         {
+            AbilityGrantEntryRefusal refusal = AbilityGrantEntryRefusal::Full;
             out.UseEntry = entries->Intern({ declaration.Use->Key, ability, declaration.Use->Override,
-                                             declaration.Use->Parameters });
+                                             declaration.Use->Parameters },
+                                           &refusal);
             if (out.UseEntry == kAbilityNoGrantEntry)
-                errors.push_back(std::format("use grant '{}' {}", declaration.Use->Key, kAbilityGrantEntryRefusal));
+                errors.push_back(std::format("use grant '{}' {}", declaration.Use->Key,
+                                             AbilityGrantEntryRefusalText(refusal)));
         }
     }
     return errors.size() == before;

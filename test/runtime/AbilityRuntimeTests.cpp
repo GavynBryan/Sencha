@@ -2452,7 +2452,9 @@ TEST_F(AbilityRuntime, AnEffectGrantTheEntryTableRefusesIsReportedNotDropped)
         Entities, equipped,
         { AbilityGrantDeclaration{ .Key = "k32728", .Ability = "asset://abilities/charge.sdata", .Override = {} },
           AbilityGrantDeclaration{ .Key = "k261234", .Ability = "asset://abilities/charge.sdata", .Override = {} } });
-    EXPECT_EQ(refused, (std::vector<std::string>{ "k261234" }));
+    ASSERT_EQ(refused.size(), 1u);
+    EXPECT_NE(refused[0].find("'k261234'"), std::string::npos) << refused[0];
+    EXPECT_NE(refused[0].find("same wire key"), std::string::npos) << refused[0];
     EXPECT_EQ(Entities.GetResource<AbilityEffectGrants>().Of(equipped).size(), 1u);
 }
 
