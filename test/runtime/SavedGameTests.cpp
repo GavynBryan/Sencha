@@ -104,7 +104,7 @@ TEST(SavedGame, AChunkThisBuildDoesNotKnowIsSkipped)
     EXPECT_TRUE(decoded->Zones.empty());
 }
 
-TEST(SaveSlotFiles, AWriteKeepsTheFileItReplacesAsTheBackup)
+TEST(SaveSlotFiles, ASlotsFileAndItsBackupAreWrittenApart)
 {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "sencha_save_slots";
     std::filesystem::remove_all(root);
@@ -112,9 +112,10 @@ TEST(SaveSlotFiles, AWriteKeepsTheFileItReplacesAsTheBackup)
     const std::vector<std::byte> first{ std::byte{ 1 } };
     const std::vector<std::byte> second{ std::byte{ 2 } };
     ASSERT_TRUE(files.Write("slot_1", first));
-    ASSERT_TRUE(files.Write("slot_1", second));
-    EXPECT_EQ(files.Read("slot_1"), second);
-    EXPECT_EQ(files.ReadBackup("slot_1"), first);
+    EXPECT_FALSE(files.ReadBackup("slot_1").has_value());
+    ASSERT_TRUE(files.WriteBackup("slot_1", second));
+    EXPECT_EQ(files.Read("slot_1"), first);
+    EXPECT_EQ(files.ReadBackup("slot_1"), second);
     EXPECT_FALSE(files.Read("other").has_value());
     std::filesystem::remove_all(root);
 }

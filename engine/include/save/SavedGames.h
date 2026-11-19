@@ -73,7 +73,10 @@ public:
     // The LevelChange serial the latest restore asked for, to wait on its bodies.
     [[nodiscard]] std::uint64_t RestoreChange() const { return RestoreSerial; }
     [[nodiscard]] const std::string& Failure() const { return Reason; }
-    // In this session's memory or on disk.
+    // The latest restore read the slot's backup because its file did not read.
+    [[nodiscard]] bool RestoredFromBackup() const { return FromBackup; }
+    // What a restore of the slot would find, in this session's memory or on
+    // disk; reads and decodes the slot's files when this session has not.
     [[nodiscard]] bool Holds(std::string_view slot) const;
 
     void Commit();
@@ -98,6 +101,7 @@ private:
     SaveStatus Writing = SaveStatus::Idle;
     SaveStatus Restoring = SaveStatus::Idle;
     std::uint64_t RestoreSerial = 0;
+    bool FromBackup = false;
     std::string Reason;
     AsyncTaskHandle WriteTask;
     AsyncTaskHandle ReadTask;

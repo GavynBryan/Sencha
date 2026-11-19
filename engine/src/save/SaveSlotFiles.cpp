@@ -46,13 +46,14 @@ bool SaveSlotFiles::Write(std::string_view slot, std::span<const std::byte> byte
 {
     std::error_code ec;
     std::filesystem::create_directories(Root, ec);
-    const std::filesystem::path path = PathOf(slot);
-    if (std::filesystem::exists(path, ec))
-    {
-        std::filesystem::remove(BackupOf(path), ec);
-        std::filesystem::rename(path, BackupOf(path), ec);
-    }
-    return WriteFileBytes(path, bytes);
+    return WriteFileBytes(PathOf(slot), bytes);
+}
+
+bool SaveSlotFiles::WriteBackup(std::string_view slot, std::span<const std::byte> bytes) const
+{
+    std::error_code ec;
+    std::filesystem::create_directories(Root, ec);
+    return WriteFileBytes(BackupOf(PathOf(slot)), bytes);
 }
 
 std::optional<std::vector<std::byte>> SaveSlotFiles::Read(std::string_view slot) const

@@ -21,21 +21,32 @@ namespace
     {
         std::optional<SavedGame> Saved;
         std::string Error;
+        // The slot's file did not read, and this is the backup beside it.
+        bool FromBackup = false;
     };
 
     ReadOutcome ReadSlot(const SaveSlotFiles& files, const std::string& slot)
     {
         ReadOutcome outcome;
-        std::string currentError = "no save in slot '" + slot + "'";
+        outcome.Error = "no save in slot '" + slot + "'";
         if (const std::optional<std::vector<std::byte>> current = files.Read(slot))
-            if ((outcome.Saved = DecodeSavedGame(*current, &currentError)))
+            if ((outcome.Saved = DecodeSavedGame(*current, &outcome.Error)))
                 return outcome;
         std::string backupError;
         if (const std::optional<std::vector<std::byte>> backup = files.ReadBackup(slot))
             if ((outcome.Saved = DecodeSavedGame(*backup, &backupError)))
-                return outcome;
-        outcome.Error = currentError;
+                outcome.FromBackup = true;
         return outcome;
+    }
+
+    // The file being replaced becomes the backup only when it reads, so a
+    // corrupt file never takes the place of a good backup.
+    bool WriteSlot(const SaveSlotFiles& files, const std::string& slot, std::span<const std::byte> bytes)
+    {
+        if (const std::optional<std::vector<std::byte>> current = files.Read(slot);
+            current.has_value() && DecodeSavedGame(*current).has_value())
+            (void)files.WriteBackup(slot, *current);
+        return files.Write(slot, bytes);
     }
 
     const char* AdmissionReason(LevelChangeAdmission admission)
@@ -121,9 +132,8 @@ bool SavedGames::Holds(std::string_view slot) const
 {
     if (Remembered.contains(slot))
         return true;
-    std::error_code ignored;
     return Files.has_value() && SaveSlotFiles::IsSlotName(slot)
-        && std::filesystem::exists(Files->PathOf(slot), ignored);
+        && ReadSlot(*Files, std::string(slot)).Saved.has_value();
 }
 
 void SavedGames::Commit()
@@ -174,7 +184,7 @@ void SavedGames::Write(const std::string& slot)
     WriteTask = Host.Tasks().Submit<bool>(
         [files = *Files, slot, saved] {
             const std::vector<std::byte> bytes = EncodeSavedGame(saved);
-            return !bytes.empty() && files.Write(slot, bytes);
+            return !bytes.empty() && WriteSlot(files, slot, bytes);
         },
         [this, slot](bool written) {
             WriteTask = {};
@@ -187,6 +197,7 @@ void SavedGames::Write(const std::string& slot)
 
 void SavedGames::Restore(const std::string& slot)
 {
+    FromBackup = false;
     if (const auto remembered = Remembered.find(slot); remembered != Remembered.end())
         return BeginChange(remembered->second);
     if (!Files.has_value())
@@ -197,6 +208,11 @@ void SavedGames::Restore(const std::string& slot)
                                                     ReadTask = {};
                                                     if (!outcome.Saved.has_value())
                                                         return FailRestore(std::move(outcome.Error));
+                                                    if (outcome.FromBackup)
+                                                        Host.Logging().GetLogger<SavedGames>().Warn(
+                                                            "restore: slot '{}' did not read ({}); restoring its backup",
+                                                            slot, outcome.Error);
+                                                    FromBackup = outcome.FromBackup;
                                                     Remembered.insert_or_assign(slot, *outcome.Saved);
                                                     BeginChange(*outcome.Saved);
                                                 });

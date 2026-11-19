@@ -7,8 +7,8 @@
 #include <string_view>
 #include <vector>
 
-// Where each save slot's bytes live: <root>/<slot>.ssav, and the file it
-// replaced beside it as <slot>.ssav.bak. Holds no state but the root, so a
+// Where each save slot's bytes live: <root>/<slot>.ssav, and the last readable
+// file it replaced beside it as <slot>.ssav.bak. Holds no state but the root, so a
 // task may use a copy.
 class SaveSlotFiles
 {
@@ -18,8 +18,9 @@ public:
     // Letters, digits, '-' and '_', at most 64 of them.
     [[nodiscard]] static bool IsSlotName(std::string_view slot);
 
-    // Keeps the current file as the backup, then replaces it in one step.
+    // Each replaces its file in one step.
     [[nodiscard]] bool Write(std::string_view slot, std::span<const std::byte> bytes) const;
+    [[nodiscard]] bool WriteBackup(std::string_view slot, std::span<const std::byte> bytes) const;
     [[nodiscard]] std::optional<std::vector<std::byte>> Read(std::string_view slot) const;
     [[nodiscard]] std::optional<std::vector<std::byte>> ReadBackup(std::string_view slot) const;
 

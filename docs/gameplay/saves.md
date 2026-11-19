@@ -100,7 +100,9 @@ from `Pending` through `Working` to `Done` or `Failed`.
 session wrote is restored from memory, so a write that failed on disk never
 sends the player back to an older save; otherwise the slot is read and decoded
 on the async lane, falling back to the backup when the file is missing or
-corrupt. The save's level is then requested from the level change with the
+corrupt; `RestoredFromBackup()` then says so and the reason the file did not
+read is logged. `Holds(slot)` answers with the same reader, so it is true when
+only a readable backup is left and false for a corrupt file with none. The save's level is then requested from the level change with the
 save's zone state, and its sections are restored once the change has unloaded
 the old level. `RestoreChange()` names that level change, so a game holds its
 cover up until `LevelChanges().Status()` reaches `BodiesRestored` for it.
@@ -109,8 +111,14 @@ Restore is refused inside a network session, as the level change is.
 
 ## The file
 
-`<saves root>/<slug of App.Name>/saves/<slot>.ssav`, with the file it replaced
-beside it as `.bak`. The saves root is `Runtime.SavesRoot`: a desktop host
+`<saves root>/<slug of App.Name>/saves/<slot>.ssav`, with the last file it
+replaced that still read beside it as `.bak`: a write copies the current file
+over the backup only when the current file decodes, so a corrupt file never
+replaces a good backup, and the slot always has a current file while the copy
+and the replace happen. Each file is replaced in one step by `WriteFileBytes`
+(`core/io/FileBytes.h`): the bytes go to a staging file unique to the write,
+are synced to disk, and the staging file is renamed over the old one; a rename
+that fails leaves the old file as it was. The saves root is `Runtime.SavesRoot`: a desktop host
 sets it to the platform's data directory (`UserDataDirectory()`, under
 `sencha`), `--saves <dir|none>` overrides it, and a headless host, a tool or a
 test leaves it empty, which keeps saves in memory only.
