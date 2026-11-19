@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/Id.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/PartitionFollowers.h>
 
@@ -16,6 +17,22 @@ inline constexpr int kHeldDeepestNesting = 64;
 // Which records each holder holds, in order, and a revision per holder that
 // moves when anything beneath it changes. A World resource kept by Held's hooks
 // and by its holders' identity hooks; docs/gameplay/held-records.md.
+struct HeldRecordKey
+{
+    ComponentTypeId Kind;
+    std::uint32_t Name = 0;
+
+    friend bool operator==(const HeldRecordKey&, const HeldRecordKey&) = default;
+};
+
+struct HeldRecordKeyHash
+{
+    std::size_t operator()(const HeldRecordKey& key) const noexcept
+    {
+        return std::hash<std::uint64_t>{}(key.Kind.Value ^ (std::uint64_t{ key.Name } * 0x9E3779B97F4A7C15ull));
+    }
+};
+
 class HeldRecordIndex
 {
 public:
@@ -27,9 +44,12 @@ public:
     void HolderDeparted(EntityId holder);
     void Await(EntityId record, PersistentEntityId holder);
     void NoteChanged(EntityId record);
+    void Key(EntityId record, HeldRecordKey key);
+    void Unkey(EntityId record, HeldRecordKey key);
 
     [[nodiscard]] std::span<const EntityId> RecordsOf(EntityId holder) const;
     [[nodiscard]] bool Lists(EntityId record) const { return Listings.contains(record); }
+    [[nodiscard]] EntityId FindKeyed(EntityId holder, HeldRecordKey key) const;
     // Invalid for a record of the world and for one whose holder has not arrived.
     [[nodiscard]] EntityId HolderOf(EntityId record) const;
     [[nodiscard]] PersistentEntityId AwaitedHolderOf(EntityId record) const;
@@ -72,6 +92,7 @@ private:
     std::unordered_map<PersistentEntityId, std::vector<EntityId>> Awaiting;
     std::unordered_map<EntityId, Listing, EntityIdHash> Listings;
     std::unordered_map<EntityId, std::uint32_t, EntityIdHash> Revisions;
+    std::unordered_map<HeldRecordKey, std::vector<EntityId>, HeldRecordKeyHash> ByKey;
     std::vector<EntityId> Unsettled;
     std::vector<EntityId> Departed;
     std::uint64_t Exhausted = 0;

@@ -78,6 +78,33 @@ void HeldRecordIndex::NoteChanged(EntityId record)
         BumpFrom(found->second.Holder);
 }
 
+void HeldRecordIndex::Key(EntityId record, HeldRecordKey key)
+{
+    ByKey[key].push_back(record);
+}
+
+void HeldRecordIndex::Unkey(EntityId record, HeldRecordKey key)
+{
+    const auto found = ByKey.find(key);
+    if (found == ByKey.end())
+        return;
+    std::erase(found->second, record);
+    if (found->second.empty())
+        ByKey.erase(found);
+}
+
+EntityId HeldRecordIndex::FindKeyed(EntityId holder, HeldRecordKey key) const
+{
+    const auto found = ByKey.find(key);
+    if (found == ByKey.end())
+        return {};
+    for (const EntityId record : found->second)
+        if (const auto listing = Listings.find(record);
+            listing != Listings.end() && !listing->second.Awaited.IsValid() && listing->second.Holder == holder)
+            return record;
+    return {};
+}
+
 std::span<const EntityId> HeldRecordIndex::RecordsOf(EntityId holder) const
 {
     const auto found = ByHolder.find(holder);

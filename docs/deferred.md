@@ -1397,6 +1397,20 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a client presentation that must react to a counter changing
   rather than poll it, such as a co-op HUD popup when a star is collected.
 
+## A held record revision per kind
+
+- **What:** `HeldRecordIndex` keeps one revision per holder, moved by any
+  record beneath it. A body's counter changing (a kill count) moves the body's
+  revision, so the equipment pass re-walks a wearer's entries when a record is
+  waiting for one, and a game's view of the body's entries rebuilds.
+- **Where:** `world/held/HeldRecordIndex.cpp` (`BumpFrom`),
+  `equipment/EquipmentSystem.cpp` (`Rebind`).
+- **Trigger:** a profile in which counter writes on a holder show in the
+  equipment pass or an inventory view's rebuilds. Then keep a revision per
+  record kind beside the holder's, using the kind records are keyed by.
+- **Consumer:** the equipment rebind and an inventory screen of a body that
+  also holds per-player counters.
+
 ## Item display data
 
 - **What:** an `item.definition` has a name and tags, and nothing a menu shows:

@@ -66,6 +66,11 @@ renumbering above writes each record the position the index gave it. Every
 other change to a record's holder or position replaces `Held`, which runs the
 hooks.
 
+A record may also be keyed: a kind (its value component's type) and a name.
+The value component's own hooks call `Key` and `Unkey`, independent of `Held`,
+and `FindKeyed(holder, key)` answers the record of that key listed under that
+holder, never one waiting for a holder. Counters key by their name.
+
 Records nest at most `kHeldDeepestNesting` levels: `Depth(entity)` counts the
 records from a record up to the first holder that is not one, and
 `Height(entity)` the levels beneath. A user that nests records (inventory)

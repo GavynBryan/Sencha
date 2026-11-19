@@ -118,7 +118,7 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 | Limit | Value | When it is reached |
 |---|---|---|
 | Entries in a container | its `Capacity`; 0 means `kItemContainerMostEntries` (65535) | `ContainerFull`, and nothing changes. A `Give` that would make more entries than that is refused before it makes any. |
-| Position under a holder | 16 bits | held records': later entries share the last position, in the order they came, and `HeldRecordIndex::PositionsExhausted()` counts it |
+| Position under a holder | 16 bits | held records': the holder's records are renumbered in order when the last position is taken; only past 65535 records do later entries share it, counted by `HeldRecordIndex::PositionsExhausted()` |
 | Nesting | `kHeldDeepestNesting` (64) levels of records | `TooDeep`: an entry and everything it holds must lie within the bound |
 | An entry's own state | 16 attributes, 32 tags | the definition is refused at declaration |
 

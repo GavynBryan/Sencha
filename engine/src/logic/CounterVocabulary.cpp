@@ -143,10 +143,7 @@ EntityId FindCounter(const World& world, GameplayTagId name, EntityId holder)
     const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !world.IsRegistered<Counter>())
         return {};
-    for (const EntityId record : index->RecordsOf(holder))
-        if (const Counter* counter = world.TryGet<Counter>(record); counter != nullptr && counter->Name == name)
-            return record;
-    return {};
+    return index->FindKeyed(holder, CounterKey(name));
 }
 
 std::int32_t CounterValue(const World& world, GameplayTagId name, EntityId holder)
