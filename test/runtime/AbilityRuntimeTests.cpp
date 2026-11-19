@@ -1261,6 +1261,31 @@ TEST_F(AbilityRuntime, AnActorsGrantListIsFreedWithTheActor)
     EXPECT_EQ(lists.Stats().Live, before);
 }
 
+// The row answers what a pass asks of every actor each tick, in step with the list.
+TEST_F(AbilityRuntime, TheRowCountsItsEffectHeldAndTransientGrants)
+{
+    const EntityId actor = Actor();
+    const AbilityId instant = Define("asset://abilities/instant.sdata", kInstant);
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "g_kind", instant, {} });
+    const auto row = [&]() -> const AbilityGrants& { return *std::as_const(Entities).TryGet<AbilityGrants>(actor); };
+    (void)GrantAbility(Entities, actor, instant, AbilityGrantKind::Authored, entry);
+    const AbilityGrantId held = GrantAbility(Entities, actor, instant, AbilityGrantKind::Effect, entry, Entities.CreateEntity());
+    const AbilityGrantId passing = GrantAbility(Entities, actor, instant, AbilityGrantKind::Transient, entry);
+    EXPECT_EQ(row().Count, 3u);
+    EXPECT_EQ(row().EffectHeld, 1u);
+    EXPECT_EQ(row().Transient, 1u);
+
+    SetAbilityGrants(Entities, actor, CopyAbilityGrants(Entities, actor));
+    EXPECT_EQ(row().EffectHeld, 1u) << "a value written back is counted again";
+    EXPECT_EQ(row().Transient, 1u);
+
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, held));
+    ASSERT_TRUE(RevokeAbilityGrant(Entities, actor, passing));
+    EXPECT_EQ(row().Count, 1u);
+    EXPECT_EQ(row().EffectHeld, 0u);
+    EXPECT_EQ(row().Transient, 0u);
+}
+
 TEST_F(AbilityRuntime, EqualPriorityExclusivesStartNothingAndTrace)
 {
     const AbilityId a = Define("asset://abilities/a.sdata", kInstant);

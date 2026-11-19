@@ -525,7 +525,8 @@ void DeriveDueEquipmentRecords(World& world, EntityId wearer, const FixedSimTime
         return record.Derivation == EquipmentDerivation::RefusedForRoom && item != nullptr
             && GrantsWanted(world, item->EquipEffects) <= AbilityGrantRoom(world, wearer);
     };
-    if (std::ranges::none_of(EquipmentRecordsOf(world, wearer), due))
+    const EquipmentState* state = std::as_const(world).TryGet<EquipmentState>(wearer);
+    if (state == nullptr || std::ranges::none_of(EquipmentRecordsOf(world, *state), due))
         return;
     for (const std::uint32_t key : RecordKeys(world, wearer))
     {

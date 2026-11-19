@@ -26,6 +26,16 @@ namespace
     {
         return std::erase_if(entries, [id](const AbilityGrant& grant) { return grant.Id == id; }) > 0;
     }
+
+    void Count(AbilityGrants& row, std::span<const AbilityGrant> entries)
+    {
+        const auto ofKind = [&](AbilityGrantKind kind) {
+            return static_cast<std::uint16_t>(std::ranges::count(entries, kind, &AbilityGrant::Kind));
+        };
+        row.Count = static_cast<std::uint16_t>(entries.size());
+        row.EffectHeld = ofKind(AbilityGrantKind::Effect);
+        row.Transient = ofKind(AbilityGrantKind::Transient);
+    }
 }
 
 void ComponentTraits<AbilityGrants>::OnAdd(AbilityGrants& grants, World& world, EntityId)
@@ -74,7 +84,7 @@ AbilityGrantId GrantAbility(World& world, EntityId actor, AbilityId ability, Abi
     AbilityGrants& row = *world.TryGet<AbilityGrants>(actor);
     std::vector<AbilityGrant>& entries = ListsOf(world).Edit(row.Entries);
     const AbilityGrantId id = Grant(entries, row.NextId, ability, kind, entry, holder, source);
-    row.Count = static_cast<std::uint16_t>(entries.size());
+    Count(row, entries);
     return id;
 }
 
@@ -90,7 +100,7 @@ bool RevokeAbilityGrant(World& world, EntityId actor, AbilityGrantId id)
     AbilityGrants& row = *world.TryGet<AbilityGrants>(actor);
     std::vector<AbilityGrant>& entries = ListsOf(world).Edit(row.Entries);
     (void)Revoke(entries, id);
-    row.Count = static_cast<std::uint16_t>(entries.size());
+    Count(row, entries);
     return true;
 }
 
@@ -111,7 +121,7 @@ AbilityGrants MakeAbilityGrants(World& world, const AbilityGrantList& grants)
     AbilityGrants row;
     if (!grants.Entries.empty())
         row.Entries = ListsOf(world).Make(grants.Entries);
-    row.Count = static_cast<std::uint16_t>(grants.Entries.size());
+    Count(row, grants.Entries);
     row.NextId = grants.NextId;
     return row;
 }

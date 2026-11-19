@@ -338,9 +338,11 @@ namespace
         scratch.Granted.ForEachChunk([&](auto& view) {
             if (partitions != nullptr && !partitions->Contains(view.Partition()))
                 return;
+            const auto rows = view.template Read<AbilityGrants>();
             const EntityIndex* indices = view.Entities();
             for (std::uint32_t i = 0; i < view.Count(); ++i)
-                scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
+                if (rows[i].EffectHeld > 0)
+                    scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
         });
         AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
         for (const EntityId actor : scratch.Actors)

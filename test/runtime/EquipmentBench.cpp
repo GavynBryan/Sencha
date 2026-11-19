@@ -325,6 +325,8 @@ TEST(EquipmentBench, Generate)
     RecordAdoptionBurst(200);
     RecordWorn(1000, 4, 1);
     RecordWorn(100, 16, 1);
+    RecordWorn(100, 32, 2);
+    RecordWorn(1, 32, 2);
     const std::filesystem::path json(out);
     EXPECT_TRUE(Recorder.WriteJson(json));
     EXPECT_TRUE(Recorder.WriteCsv(std::filesystem::path(json).replace_extension(".csv")));

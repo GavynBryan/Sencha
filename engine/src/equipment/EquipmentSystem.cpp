@@ -93,15 +93,21 @@ namespace
                                                                          : SlotDepletion::Release;
     }
 
+    // For a wearer the pass already knows carries an EquipmentState.
+    std::span<const EquipmentRecord> Worn(const World& world, const EquipmentRecordLists& lists, EntityId wearer)
+    {
+        return lists.Read(world.TryGet<EquipmentState>(wearer)->Records);
+    }
+
     bool Waits(const EquipmentRecord& record)
     {
         return !record.Source.Entity.IsValid() && !record.Source.Target.IsValid();
     }
 
-    void SettleSources(World& world, EntityId wearer)
+    void SettleSources(World& world, const EquipmentRecordLists& lists, EntityId wearer)
     {
         const EquipmentLayout* layout = FindEquipmentLayout(world, std::as_const(world).TryGet<EquipmentState>(wearer)->Layout);
-        std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
+        std::span<const EquipmentRecord> records = Worn(world, lists, wearer);
         for (std::size_t i = records.size(); i-- > 0;)
         {
             const EquipmentRecord record = records[i];
@@ -119,11 +125,11 @@ namespace
             {
                 EndMaintained(world, record);
                 EditEquipmentRecords(world, wearer)[i].Source = PersistableRef{};
-                records = EquipmentRecordsOf(world, wearer);
+                records = Worn(world, lists, wearer);
                 continue;
             }
             EndEquipmentRecord(world, wearer, i);
-            records = EquipmentRecordsOf(world, wearer);
+            records = Worn(world, lists, wearer);
         }
     }
 
@@ -141,24 +147,24 @@ namespace
         return hash;
     }
 
-    void Rebind(World& world, EntityId wearer, EquipmentPassState& pass)
+    void Rebind(World& world, const EquipmentRecordLists& lists, EntityId wearer, EquipmentPassState& pass)
     {
-        if (std::ranges::none_of(EquipmentRecordsOf(world, wearer), Waits))
+        std::span<const EquipmentRecord> records = Worn(world, lists, wearer);
+        if (std::ranges::none_of(records, Waits))
             return;
         const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
         const std::uint32_t held = index != nullptr ? index->Revision(wearer) : 0u;
         const auto last = std::ranges::lower_bound(pass.Scans, wearer, {}, &EquipmentPassState::RebindScan::Wearer);
         if (last != pass.Scans.end() && last->Wearer == wearer && last->Held == held
-            && last->Records == RecordsFingerprint(EquipmentRecordsOf(world, wearer)))
+            && last->Records == RecordsFingerprint(records))
         {
             pass.NextScans.push_back(*last);
             return;
         }
         const std::vector<EntityId> entries = HeldEntries(world, wearer);
         ++pass.Walks;
-        for (std::size_t i = 0; i < EquipmentRecordsOf(world, wearer).size(); ++i)
+        for (std::size_t i = 0; i < records.size(); ++i)
         {
-            const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, wearer);
             if (!Waits(records[i]))
                 continue;
             const ItemId definition = records[i].Definition;
@@ -171,11 +177,12 @@ namespace
                 EquipmentRecord& rebound = EditEquipmentRecords(world, wearer)[i];
                 rebound.Source = source;
                 rebound.Derivation = EquipmentDerivation::Pending;
+                records = Worn(world, lists, wearer);
                 break;
             }
         }
         pass.NextScans.push_back(
-            { .Wearer = wearer, .Held = held, .Records = RecordsFingerprint(EquipmentRecordsOf(world, wearer)) });
+            { .Wearer = wearer, .Held = held, .Records = RecordsFingerprint(records) });
     }
 
     // A worn entry, or one holding a worn entry, stays while its record is locked.
@@ -192,7 +199,8 @@ namespace
     {
         if (world.IsAlive(formerHolder) && world.IsRegistered<EquipmentState>()
             && world.HasComponent<EquipmentState>(formerHolder))
-            SettleSources(world, formerHolder);
+            if (const EquipmentRecordLists* lists = world.TryGetResource<EquipmentRecordLists>())
+                SettleSources(world, *lists, formerHolder);
     }
 }
 
@@ -206,8 +214,10 @@ void RunEquipmentPass(World& world, const FixedSimTime& now)
     if (!world.IsRegistered<EquipmentState>() || !IsSimulationAuthority(world))
         return;
     EquipmentPassState& state = StateOf(world);
-    if (EquipmentRecordLists* lists = world.TryGetResource<EquipmentRecordLists>())
-        lists->DropUnreferenced();
+    EquipmentRecordLists* lists = world.TryGetResource<EquipmentRecordLists>();
+    if (lists == nullptr)
+        return;
+    lists->DropUnreferenced();
     state.Scratch.clear();
     state.Wearers.ForEachChunk([&](auto& view) {
         for (std::uint32_t row = 0; row < view.Count(); ++row)
@@ -221,8 +231,8 @@ void RunEquipmentPass(World& world, const FixedSimTime& now)
         if (moved)
             for (EquipmentRecord& record : EditEquipmentRecords(world, wearer))
                 record.Derivation = EquipmentDerivation::Pending;
-        SettleSources(world, wearer);
-        Rebind(world, wearer, state);
+        SettleSources(world, *lists, wearer);
+        Rebind(world, *lists, wearer, state);
         DeriveDueEquipmentRecords(world, wearer, now);
     }
     std::ranges::sort(state.NextScans, {}, &EquipmentPassState::RebindScan::Wearer);

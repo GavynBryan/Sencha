@@ -159,12 +159,14 @@ TickCost MedianTickMs(std::size_t actors, bool firing, int reps, std::size_t gra
     return { Bench::Median(pass), Bench::Median(presentation) };
 }
 
-// Lasting effects at equipment scale, as many granting as a 16-grant table has room for.
+// Lasting effects at equipment scale, as many granting as an actor has room for.
 struct EffectLoad
 {
     std::size_t Actors = 0;
     std::size_t PerActor = 0;
     std::size_t GrantsPerEffect = 0;
+    // Grants the effects may give each actor beside the crowd's own.
+    std::size_t GrantRoom = 15;
 };
 
 struct EffectCost
@@ -189,9 +191,8 @@ EffectCost MedianEffectCostMs(const EffectLoad& load, int reps)
     for (std::size_t g = 0; g < load.GrantsPerEffect; ++g)
         granted.push_back({ .Key = std::format("g{}", g), .Ability = "asset://bench/automatic.sdata", .Override = {} });
     DeclareEffectGrants(world, granting, granted);
-    // The crowd's own grant takes one of the sixteen.
     const std::size_t grantingPerActor =
-        load.GrantsPerEffect == 0 ? 0 : std::min(load.PerActor, (kAbilityGrantCapacity - 1) / load.GrantsPerEffect);
+        load.GrantsPerEffect == 0 ? 0 : std::min(load.PerActor, load.GrantRoom / load.GrantsPerEffect);
     const auto effectFor = [&](std::size_t index) { return index < grantingPerActor ? granting : plain; };
 
     const FixedSimTime applied{ .DeltaSeconds = kTickSeconds, .TickIndex = crowd.Now };
@@ -248,6 +249,9 @@ void MeasureEffectScale()
                 Recorder.Record("effects.resolve." + scenario, "ms", cost.Resolve);
                 Recorder.Record("effects.remove_owned." + scenario, "ms", cost.RemoveOwned);
             }
+    // Every actor holding all it can: twenty-one effects of three grants beside its own.
+    const EffectCost full = MedianEffectCostMs({ 256, 21, 3, kAbilityGrantCapacity - 1 }, Reps(240));
+    Recorder.Record("effects.pass.actors_256.effects_5376.grants_3.full", "ms", full.Pass);
 }
 
 void MeasureFootprint()
@@ -272,7 +276,8 @@ struct GrantLoad
 
 void MeasureGrantScale()
 {
-    for (const GrantLoad load : { GrantLoad{ 1000, 1 }, GrantLoad{ 1000, 4 }, GrantLoad{ 256, 14 }, GrantLoad{ 16, 16 } })
+    for (const GrantLoad load : { GrantLoad{ 1000, 1 }, GrantLoad{ 1000, 4 }, GrantLoad{ 256, 14 }, GrantLoad{ 16, 16 },
+                                 GrantLoad{ 16, 64 }, GrantLoad{ 256, 64 } })
     {
         const TickCost idle = MedianTickMs(load.Actors, false, Reps(240), load.Grants);
         const TickCost firing = MedianTickMs(load.Actors, true, Reps(240), load.Grants);

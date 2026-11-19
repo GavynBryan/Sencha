@@ -54,6 +54,10 @@ struct SENCHA_COMPONENT("sencha.ability_grants") AbilityGrants
 {
     AbilityGrantLists::HandleType Entries;
     std::uint16_t Count = 0;
+    // How many of them are Effect and Transient: what a pass asks of every actor
+    // every tick, answered without reading the list.
+    std::uint16_t EffectHeld = 0;
+    std::uint16_t Transient = 0;
     std::uint32_t NextId = 1;
 };
 

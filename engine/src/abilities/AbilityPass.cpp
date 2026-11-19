@@ -653,7 +653,7 @@ void AbilityPass::Sweep(const AbilityActor& actor)
                 return true;
         return false;
     };
-    if (!Predicting)
+    if (const AbilityGrants* row = Predicting ? nullptr : actor.GrantRow(); row != nullptr && row->Transient > 0)
     {
         std::span<const AbilityGrant> grants = actor.Grants();
         for (std::size_t i = grants.size(); i-- > 0;)

@@ -42,9 +42,13 @@ struct AbilityActor
     [[nodiscard]] ActiveAbilities& Active() const { return *Entities->TryGet<ActiveAbilities>(Entity); }
     [[nodiscard]] AbilityRecord& Record(std::size_t slot) const { return Activations->Record(Active(), slot); }
     [[nodiscard]] AbilityRecordLocals& Locals(std::size_t slot) const { return Activations->Locals(Active(), slot); }
+    [[nodiscard]] const AbilityGrants* GrantRow() const
+    {
+        return static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);
+    }
     [[nodiscard]] std::span<const AbilityGrant> Grants() const
     {
-        const AbilityGrants* grants = static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);
+        const AbilityGrants* grants = GrantRow();
         return grants != nullptr ? GrantLists->Read(grants->Entries) : std::span<const AbilityGrant>{};
     }
     [[nodiscard]] const AbilityGrant* Grant(AbilityGrantId id) const { return FindAbilityGrant(Grants(), id); }
