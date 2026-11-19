@@ -96,24 +96,6 @@ namespace
             mint = &world.AddResource<PersistentIdMint>();
         mint->Next = std::max(mint->Next, next);
     }
-
-    const char* AdmissionReason(LevelChangeAdmission admission)
-    {
-        switch (admission)
-        {
-        case LevelChangeAdmission::Accepted:
-            return "";
-        case LevelChangeAdmission::Busy:
-            return "another level change is under way";
-        case LevelChangeAdmission::NotCooked:
-            return "the saved level is not cooked";
-        case LevelChangeAdmission::NotAuthority:
-            return "this machine is not the authority";
-        case LevelChangeAdmission::InSession:
-            return "a network session is running";
-        }
-        return "";
-    }
 }
 
 SavedGames::SavedGames(Engine& engine, std::filesystem::path root)
@@ -339,7 +321,7 @@ void SavedGames::BeginChange(std::shared_ptr<const SavedGame> saved)
     const LevelChangeAdmission admission = Host.LevelChanges().Request(LevelChangeRequest{
         .Level = saved->Summary.Level, .Focus = saved->Summary.Focus, .ZoneState = saved->Zones });
     if (admission != LevelChangeAdmission::Accepted)
-        return FailRestore(AdmissionReason(admission));
+        return FailRestore(LevelChangeAdmissionReason(admission));
     RestoreSerial = Host.LevelChanges().Serial();
     SectionsWaiting = std::move(saved);
     Restoring = RestoreProgress::Loading;

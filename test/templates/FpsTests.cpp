@@ -202,8 +202,6 @@ namespace
             World& world = ctx.Entities;
             ++Frames;
             const LevelChangeStatus status = Host->LevelChanges().Status();
-            if (Seen.empty() || Seen.back() != status)
-                Seen.push_back(status);
 
             EntityId participant;
             EntityId body;
@@ -228,7 +226,9 @@ namespace
                     LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } });
                 StatusOnRequest = Host->LevelChanges().Status();
             }
-            if (status == LevelChangeStatus::BodiesRestored && !BodyAfter.IsValid())
+            if (Frames > 120 && (Seen.empty() || Seen.back() != status))
+                Seen.push_back(status);
+            if (Frames > 120 && status == LevelChangeStatus::BodiesRestored && !BodyAfter.IsValid())
             {
                 BodyAfter = body;
                 AuthoredAfter = Authored(world);
@@ -249,8 +249,8 @@ TEST(FpsTemplate, AChangeToTheSameLevelGivesThePlayerAFreshBodyAndAuthoredConten
     ASSERT_EQ(seen.Admission, LevelChangeAdmission::Accepted);
     ASSERT_TRUE(seen.BodyBefore.IsValid()) << "no body to let go of by frame 120";
     EXPECT_EQ(seen.StatusOnRequest, LevelChangeStatus::Pending) << "carried out before the phase it waits for";
-    const std::vector<LevelChangeStatus> expected{ LevelChangeStatus::Idle, LevelChangeStatus::Loading,
-                                                   LevelChangeStatus::Resident, LevelChangeStatus::BodiesRestored };
+    const std::vector<LevelChangeStatus> expected{ LevelChangeStatus::Loading, LevelChangeStatus::Resident,
+                                                   LevelChangeStatus::BodiesRestored };
     EXPECT_EQ(seen.Seen, expected);
     EXPECT_TRUE(seen.BodyAfter.IsValid());
     EXPECT_NE(seen.BodyAfter, seen.BodyBefore) << "the old body was kept";

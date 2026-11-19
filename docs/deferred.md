@@ -1141,9 +1141,11 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Changing level inside a network session
 
-- **What:** `LevelChange::Request` refuses while a session runs, because a peer
-  is told which map to load only when it is admitted (`NetSession`'s announced
-  map) and would stay on the old level.
+- **What:** `LevelChange::Request` refuses while a session runs once a level
+  is loaded, because a peer is told which map to load only when it is admitted
+  (`NetSession`'s announced map) and would stay on the old level. The first
+  load is admitted, which is how `map` works for a client and for a host that
+  began hosting first.
 - **Where:** `engine/src/app/LevelChange.cpp`; the announcement in
   `engine/src/app/EngineFramePhases.cpp`.
 - **Trigger:** a co-op game that changes level, rests or restores a save with a

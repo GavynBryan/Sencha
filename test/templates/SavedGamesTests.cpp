@@ -673,4 +673,31 @@ TEST(SavedGames, ARestoreOfASaveWithoutHeldRecordsLeavesNoneOfTheOldSessions)
     std::filesystem::remove_all(root);
 }
 
+TEST(SavedGames, TheMapCommandChangesLevelThroughTheLevelChange)
+{
+    const std::filesystem::path root = RootFor("map_command");
+    std::optional<ConsoleStatus> ran;
+    PersistentEntityId lost;
+    bool lostIsBack = false;
+    int stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            lost = DestroyAuthored(world);
+            ran = engine.Console().ExecuteLine("map levels/room_2").Status;
+            stage = 1;
+        }
+        else if (stage == 1 && engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored)
+        {
+            lostIsBack = Resolves(world, lost);
+            stage = 2;
+        }
+    });
+    ASSERT_TRUE(ran.has_value());
+    EXPECT_EQ(*ran, ConsoleStatus::Ok) << "map with a level loaded did not change level";
+    EXPECT_EQ(stage, 2);
+    EXPECT_TRUE(lostIsBack) << "the zone state of the level before stayed installed";
+    std::filesystem::remove_all(root);
+}
+
 #endif

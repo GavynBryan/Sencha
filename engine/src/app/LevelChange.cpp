@@ -30,6 +30,24 @@ namespace
     }
 }
 
+const char* LevelChangeAdmissionReason(LevelChangeAdmission admission)
+{
+    switch (admission)
+    {
+    case LevelChangeAdmission::Accepted:
+        return "";
+    case LevelChangeAdmission::Busy:
+        return "another level change is under way";
+    case LevelChangeAdmission::NotCooked:
+        return "the level is not cooked";
+    case LevelChangeAdmission::NotAuthority:
+        return "this machine is not the authority";
+    case LevelChangeAdmission::InSession:
+        return "a network session is running";
+    }
+    return "";
+}
+
 LevelChange::LevelChange(Engine& engine)
     : Host(engine)
 {
@@ -39,9 +57,11 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
 {
     if (Waiting.has_value() || Current == LevelChangeStatus::Loading)
         return LevelChangeAdmission::Busy;
-    if (!IsSimulationAuthority(Host.World().Entities()))
+    const bool firstLoad = !Host.Level().Loaded().has_value();
+    if (!firstLoad && !IsSimulationAuthority(Host.World().Entities()))
         return LevelChangeAdmission::NotAuthority;
-    if (const NetSession* session = Host.TryNet(); session != nullptr && session->Role() != NetSessionRole::Standalone)
+    if (const NetSession* session = Host.TryNet();
+        !firstLoad && session != nullptr && session->Role() != NetSessionRole::Standalone)
         return LevelChangeAdmission::InSession;
     if (!Host.Level().IsCooked(request.Level))
         return LevelChangeAdmission::NotCooked;
@@ -62,9 +82,10 @@ void LevelChange::Commit()
 
     World& world = Host.World().Entities();
     Released.clear();
-    for (const EntityId participant : ParticipantsWithBodies(world))
-        if (Host.ReleaseParticipantBody(participant).Released)
-            Released.push_back(participant);
+    if (IsSimulationAuthority(world))
+        for (const EntityId participant : ParticipantsWithBodies(world))
+            if (Host.ReleaseParticipantBody(participant).Released)
+                Released.push_back(participant);
 
     LoadedLevel& level = Host.Level();
     level.Unload();

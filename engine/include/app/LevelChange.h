@@ -34,6 +34,8 @@ enum class LevelChangeAdmission : std::uint8_t
     InSession,
 };
 
+[[nodiscard]] const char* LevelChangeAdmissionReason(LevelChangeAdmission admission);
+
 // What a change keeps of what the game made at run time. Discard starts a new
 // game: every runtime held record goes with the old level, and so do the
 // sections a restored save carried that nothing registered.
@@ -53,7 +55,9 @@ struct LevelChangeRequest
     LevelChangeRuntimeState RuntimeState = LevelChangeRuntimeState::Keep;
 };
 
-// docs/gameplay/game-module.md, "Changing level".
+// docs/gameplay/game-module.md, "Changing level". The first load, with nothing
+// loaded, is admitted on any machine and in a session: it changes nothing a
+// peer was told.
 class LevelChange
 {
 public:
