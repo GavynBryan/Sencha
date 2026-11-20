@@ -160,8 +160,9 @@ namespace
     {
         const ItemEntry held = *std::as_const(world).TryGet<ItemEntry>(entry);
         const bool whole = units >= held.Count;
+        const bool stays = whole && HolderOf(world, entry) == into;
         const StackFill fill = FillOpenStacks(world, into, held.Definition, item, units, entry);
-        if (!HasRoom(world, container, into, fill.Remaining > 0 ? 1 : 0))
+        if (!HasRoom(world, container, into, fill.Remaining > 0 && !stays ? 1 : 0))
             return Refused(InventoryRefusal::ContainerFull);
 
         EntityId moved = ApplyFills(world, fill);
@@ -170,7 +171,8 @@ namespace
             SetItemCount(world, entry, left);
         if (whole && fill.Remaining > 0)
         {
-            HoldRecord(world, entry, into);
+            if (!stays)
+                HoldRecord(world, entry, into);
             moved = entry;
         }
         else if (fill.Remaining > 0)

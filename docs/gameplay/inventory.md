@@ -97,7 +97,7 @@ a refusal leaves the World as it was.
 |---|---|
 | `Give(container, definition, count)` | Fills open stacks in container order, then makes entries of up to `stack.max` units; all or none. |
 | `Take(pickup, into)` | Moves one entry the pickup holds into `into`, or gives what the pickup counts. A counted pickup applies its definition's `take.effects` to `into` scaled by the units it counts (a box of 25 shells is one effect at 25 times its magnitude), and with `keep: false` keeps nothing. An entry lying in a pickup was taken once already, so taking it back applies nothing. The pickup goes once it holds nothing. |
-| `Transfer(entry, into, count, change?)` | Moves `count` units (0 is all), open stacks first. Part of a stack moves as a new entry and the rest keeps its identity; a stack merged away entirely is spent. |
+| `Transfer(entry, into, count, change?)` | Moves `count` units (0 is all), open stacks first. Part of a stack moves as a new entry and the rest keeps its identity; a stack merged away entirely is spent. A whole entry moved into the container already holding it takes no new room and keeps its place, so it succeeds in a full container; part of a stack moved there is a new entry and still needs room. |
 | `Drop(entry, at, partition, change?)` | Takes the entry into a new pickup at `at`. |
 | `Use(user, entry)` | Asks `user` to run the definition's use in the next ability pass. |
 

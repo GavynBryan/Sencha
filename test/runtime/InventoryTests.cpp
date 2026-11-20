@@ -1022,6 +1022,38 @@ TEST_F(InventoryTest, AMoveFillsOpenStacksBeforeItTakesRoom)
     EXPECT_EQ(CountOf(Held(Hero)[0]), 10u);
 }
 
+TEST_F(InventoryTest, AWholeEntryMovedIntoTheFullContainerHoldingItChangesNothing)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    const EntityId wardrobe = Container({ .Capacity = 2, .Accepts = Wearable });
+    ASSERT_EQ(inventory.Give(wardrobe, Cloak, 2).Refusal, InventoryRefusal::None);
+    const std::vector<EntityId> before = Held(wardrobe);
+    ASSERT_EQ(before.size(), 2u);
+    const std::uint16_t position = Entities().TryGet<::Held>(before[0])->Position;
+    const PersistentEntityId identity = IdOf(before[0]);
+
+    const InventoryResult moved = inventory.Transfer(before[0], wardrobe, 0);
+    ASSERT_EQ(moved.Refusal, InventoryRefusal::None) << "it takes no room it does not already take";
+    EXPECT_EQ(moved.Entry, before[0]);
+    EXPECT_EQ(Held(wardrobe), before);
+    EXPECT_EQ(Entities().TryGet<::Held>(before[0])->Position, position) << "its place in the container is kept";
+    EXPECT_EQ(IdOf(before[0]), identity);
+    EXPECT_EQ(CountOf(before[0]), 1u);
+}
+
+TEST_F(InventoryTest, SplittingAStackInsideItsFullContainerIsRefused)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    const EntityId chest = Container({ .Capacity = 1, .Accepts = {} });
+    ASSERT_EQ(inventory.Give(chest, Arrows, 20).Refusal, InventoryRefusal::None);
+    const EntityId stack = Held(chest)[0];
+
+    EXPECT_EQ(inventory.Transfer(stack, chest, 5).Refusal, InventoryRefusal::ContainerFull)
+        << "part of a stack is a new entry, and the container has no room for one";
+    EXPECT_EQ(Held(chest), std::vector{ stack });
+    EXPECT_EQ(CountOf(stack), 20u);
+}
+
 TEST_F(InventoryTest, AnEntryCannotGoInsideItself)
 {
     Inventory inventory(Entities(), FixedSimTime{});
