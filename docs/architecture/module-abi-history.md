@@ -1370,3 +1370,13 @@ defined by; a scene or save entry naming a count its stack cannot hold now
 loads with the count clamped into 1 to `stack.max` and a warning, instead of
 failing to load. The wire, the replicated layout and the save format version
 are unchanged.
+
+## v58
+
+`IWriteArchive` and `IReadArchive` gain `Field(std::string_view, std::int32_t)`,
+so a signed integer member has a scene form: JSON writes and reads the number
+itself (a priority of -1 is written -1, not 4294967295), and the binary archive
+writes the same four bytes it wrote before. `ReadArchiveValue` refuses a number
+that is not whole or does not fit the member's type, where it used to truncate,
+and an integer wider than 32 bits has no archive form. Cooked data, the wire,
+the replicated layout and the save format version are unchanged.

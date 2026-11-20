@@ -24,6 +24,12 @@ IWriteArchive& BinaryWriteArchive::Field(std::string_view, double value)
     return *this;
 }
 
+IWriteArchive& BinaryWriteArchive::Field(std::string_view, std::int32_t value)
+{
+    IsOk = IsOk && Writer.Write(value);
+    return *this;
+}
+
 IWriteArchive& BinaryWriteArchive::Field(std::string_view, std::uint32_t value)
 {
     IsOk = IsOk && Writer.Write(value);
@@ -83,6 +89,12 @@ IReadArchive& BinaryReadArchive::Field(std::string_view, float& value)
 }
 
 IReadArchive& BinaryReadArchive::Field(std::string_view, double& value)
+{
+    IsOk = IsOk && Reader.Read(value);
+    return *this;
+}
+
+IReadArchive& BinaryReadArchive::Field(std::string_view, std::int32_t& value)
 {
     IsOk = IsOk && Reader.Read(value);
     return *this;

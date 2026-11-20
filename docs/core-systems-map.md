@@ -293,6 +293,12 @@ Scene serialization is schema-driven:
 - `ComponentSerializer<T>` saves/loads a component by visiting its schema.
 - `SceneFieldCodec<T>` handles special field types, especially runtime handles
   that serialize as asset paths.
+- Integers up to 32 bits wide go through the archive's signed or unsigned
+  32-bit field, so a member nested in a struct gets the same form as a
+  component's own. JSON holds the number itself; binary holds four bytes. A read
+  refuses a number that is not whole or does not fit the member's type rather
+  than truncating it. An integer wider than 32 bits has no archive form and
+  fails to compile; identities have their own codecs.
 - `ComponentStorageTraits<T>` defines how a serialized component enters
   registry storage. The primary template handles any component whose schema
   names a `SceneChunkId`; only `LocalTransform` is specialized (it co-registers
