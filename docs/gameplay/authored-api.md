@@ -266,56 +266,24 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 ## The engine's vocabulary
 
 `InstallEngineVocabulary` (`app/EngineVocabulary.h`) declares, as provider
-`engine`, into every runtime and editor World:
+`engine`, into every runtime and editor World the verbs, leases, queries and
+events listed in [the vocabulary reference](../reference/vocabulary.md): each
+one's kind, scope and prediction, arguments with their defaults and ranges, and
+description.
 
-| Name | Kind | Scope / prediction | Does |
-|---|---|---|---|
-| `runtime.resume`, `application.quit` | verb | gameplay / authority only | the application shell |
-| `anim.request`, `anim.cancel` | verb | gameplay / simulation | `docs/gameplay/animation.md` |
-| `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
-| `anim.present {target, intent, lifetime = impulse, ticks}` | verb | cosmetic / presentation | the intent played on the target's presentation layers, on this machine alone (`docs/gameplay/animation.md`, "Presentation layers") |
-| `effect.apply {target, effect, scale = 1, instigator?, from?}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale`; `instigator` and `from` are its source, for reactions |
-| `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
-| `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
-| `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
-| `tags.grant`, `tags.revoke {target, tag, stacks = 1}` | verb | gameplay / authority only | stacks of a tag the target keeps (its baseline), which a save keeps: a permanent grant from level data, such as an unlock. A revoke takes at most what the target keeps, never what an effect or ability holds. Both refuse a projected tag, and a grant refuses a tag new to a full container (`docs/gameplay/abilitykit.md`, D-A) |
-| `time.scale {target, scale}` | lease | gameplay / simulation | the actor's time scaled while held (`docs/core-systems-map.md`) |
-| `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time; completes when they run out |
-| `movement.tether {target, anchor?, point?, length = 2, speed = 12, until?}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends, or on reaching `until` |
-| `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
-| `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
-| `movement.impulse {target, direction, speed = 1, rise = 0}` | verb | gameplay / authority only | that velocity added to the character's once (`docs/gameplay/movement.md`, "Impulse") |
-| `claims.hold {group, claim, count = 1, share = 0}` | lease | gameplay / authority only | a place in a group's claim while held (`docs/gameplay/claims.md`) |
-| `claims.count {group, claim}`, `claims.held {holder, group, claim}` | query | | how many places are held; whether an entity holds one |
-| `counter.set {name, value, holder?}`, `counter.add {name, amount = 1, holder?}` | verb | gameplay / authority only | a named number of the world or of the holder, kept by saves; zero unsets it, and a value past a 32-bit integer is held at its bound (`docs/gameplay/counters.md`) |
-| `counter.value {name, holder?}` | query | — | the counter's value, zero when unset; test it with `require` |
-| `counter.changed {name, value, holder}` | event | published to the World's dispatcher, source the holder | a verb changed a counter; zero when it was unset |
-| `inventory.give {into, definition, count = 1}` | verb | gameplay / authority only | units of an item into a container, open stacks first, all or none (`docs/gameplay/inventory.md`) |
-| `inventory.take {pickup, into}` | verb | gameplay / authority only | an entry the pickup holds, or what it counts, into a container; the pickup goes once empty |
-| `inventory.transfer {entry, into, count = 0, force = false}`, `inventory.drop {entry, at?, force = false}` | verb | gameplay / authority only | an entry, or part of a stack, into a container, or out into a pickup in its holder's zone; only a requested move can be withheld by a layer above |
-| `inventory.use {entry, user?}` | verb | gameplay / authority only | the item's use, run by `user` (its holder when absent) in the next ability pass, when that actor may use it |
-| `inventory.count {container, definition?, tag?, within = false}` | query | — | units held, spent entries not counted, of a definition and carrying a tag; `within` counts what entries hold too; test it with `require` |
-| `equipment.equip {wearer, entry, slot?}` | verb | gameplay / authority only | an entry the wearer may use into the slots its item occupies, replacing what holds them; checked whole, refused under a lock (`docs/gameplay/equipment.md`) |
-| `equipment.unequip {wearer, slot, force = false}`, `equipment.cycle {wearer, group}` | verb | gameplay / authority only | ends the record holding a slot (forced, whatever lock holds it); or wears the next entry the group's first slot takes, unequipping when nothing else fits |
-| `equipment.in_slot {wearer, slot}` | query | — | the entry a slot holds; unavailable when it holds none or waits for one |
-| `equipment.sources {wearer, tag}` | query | — | every worn entry whose item carries the tag |
-| `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
-| `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
-| `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |
-| `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
-| `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
-| `presentation.light {target, socket = "", position?, color, intensity, range, peak_scale = 1, pulse_seconds = 0, attack = 0, release = 0, packs_first = false}` | lease | cosmetic / presentation | a point light worn by the target while held, then faded (`docs/gameplay/attachments.md`) |
-| `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
-| `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
-| `physics.clear_path {from, to, radius, height, ignore?}` | query | — | whether a line, or an upright capsule centred on it, meets nothing solid; a line's last quarter metre does not count |
-| `line.extend {instigator, line, projectile, at?}` | lease | gameplay / authority only | a contact line thrown and kept out while held (`docs/gameplay/contact-lines.md`) |
-| `line.cut {instigator}` | verb | gameplay / authority only | every line the instigator has out ended where it is |
-| `line.anchored {instigator}`, `line.anchored_within {instigator, point, distance}` | query | — | whether it has a line anchored, or anchored that close to a point |
+The reference is rendered from the catalog by `RenderVocabularyReference`
+(`authored/VocabularyReference.h`), one table per catalog in name order, so a
+change to any contract shows as a reviewed diff of that one file.
+`VocabularyReference.TheEnginesReferenceIsWhatItsCatalogDeclares` fails with the
+difference when the file and the catalog disagree; run it with
+`SENCHA_WRITE_VOCABULARY_REFERENCE=1` to rewrite the file. An argument reads
+`key: type = default [minimum .. maximum] (units)`, and `key?` is one that may be
+left out and has no default.
 
 Both effect operations refuse a target without an attribute set, or without an
 attribute the effect modifies. The physics queries are answered only in a host
 whose game registered physics. `EngineVocabularyBindings` binds every operation
-above into a World's dispatchers; the runtime and the Ability Workbench's preview
+in the reference into a World's dispatchers; the runtime and the Ability Workbench's preview
 both bind through it. The movement leases are described in
 `docs/gameplay/movement.md`, "Held motion".
 

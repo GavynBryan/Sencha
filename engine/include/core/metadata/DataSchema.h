@@ -47,6 +47,9 @@ enum class DataFieldKind : uint8_t
 // Whether `text` can be a StableKey value.
 [[nodiscard]] bool IsValidStableKey(std::string_view text);
 
+// The kind as an author reads it: "int", "choice", "data asset".
+[[nodiscard]] std::string_view DataFieldKindName(DataFieldKind kind);
+
 using DataDefaultValue = std::variant<std::monostate, bool, int64_t, double, std::string>;
 
 struct DataNumericConstraints
