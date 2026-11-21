@@ -1,3 +1,4 @@
+#include <core/json/JsonStringify.h>
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/metadata/ComponentPersistence.h>
@@ -55,6 +56,19 @@ struct TypeSchema<RecordWeight>
     static auto Fields() { return std::tuple{ MakeField("value", &RecordWeight::Value) }; }
 };
 
+struct RecordTally
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordTally>
+{
+    static constexpr std::string_view Name = "record_tally";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'T', 'L', 'Y');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordTally::Value) }; }
+};
+
 namespace
 {
     struct ErrorSink final : ILogSink
@@ -105,6 +119,7 @@ namespace
         {
             ComponentRegistrar registrar(&Schema, &Serializers, nullptr);
             registrar.Add<PersistentIdComponent>();
+            registrar.Add<RecordTally>();
             registrar.Add<Held>();
             registrar.Add<RecordLabel>();
             Schema.Add<RecordWeight>();
@@ -304,4 +319,16 @@ TEST(HeldRecordSaves, ADescriptionSaysARecordIsKeptWholeWithWhatItIsKnownByBesid
                                                      "a save holds only whether its zone destroyed it and what that "
                                                      "zone's registered memories keep",
                                          "  persistent_id: identity" }));
+}
+
+TEST(HeldRecordSaves, ARecordsSavedFormIsPinned)
+{
+    SavingWorld world;
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordTally>(record, RecordTally{ .Value = 4 });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
+    EXPECT_EQ(JsonStringify(*saved.Find("records")->AsArray().front().Find("components")), R"({"record_tally":{"value":4},"Held":{"holder":"","position":0}})");
 }

@@ -15,6 +15,7 @@
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -98,6 +99,43 @@ struct OverlayStance
 };
 
 SENCHA_DECLARE_COMPONENT_TYPE(OverlayStance, "test.overlay_stance");
+
+struct OverlaySlots
+{
+    std::int32_t A = 0;
+    std::int32_t B = 0;
+};
+
+SENCHA_DECLARE_COMPONENT_TYPE(OverlaySlots, "test.overlay_slots");
+
+struct OverlayMark
+{
+    int Level = 0;
+    int Tint = 0;
+};
+
+template <>
+struct TypeSchema<OverlayMark>
+{
+    static constexpr std::string_view Name = "overlay_mark";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('O', 'V', 'M', 'K');
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("level", &OverlayMark::Level), MakeField("tint", &OverlayMark::Tint) };
+    }
+};
+
+template <>
+struct ComponentPersistenceOf<OverlaySlots>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Saved;
+};
+
+template <>
+struct ComponentPersistenceOf<OverlayMark>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Saved;
+};
 
 template <>
 struct ComponentPersistenceOf<OverlayVitals>
@@ -203,6 +241,66 @@ namespace
         ComponentSerializer<OverlayRoster> Inner;
         DataFieldSchema Schema = MakeKeyedListRecordSchema("entries", "key");
     };
+
+    class SlotsSerializer final : public TypedComponentSerializer<OverlaySlots>
+    {
+    public:
+        std::string_view JsonKey() const override { return "overlay_slots"; }
+        std::uint32_t BinaryChunkId() const override { return MakeFourCC('O', 'V', 'S', 'L'); }
+        std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+        const DataFieldSchema* CompositionSchema() const override { return &Schema; }
+
+        bool Save(IWriteArchive& archive, EntityId entity, const World& world,
+                  SceneSerializationContext&) const override
+        {
+            const OverlaySlots* slots = world.IsRegistered<OverlaySlots>() ? world.TryGet<OverlaySlots>(entity) : nullptr;
+            if (slots == nullptr)
+                return true;
+            archive.BeginObject(std::string_view{});
+            archive.BeginArray(std::string_view{ "entries" }, 2);
+            for (const auto& [key, value] : { std::pair{ "a", slots->A }, std::pair{ "b", slots->B } })
+            {
+                archive.BeginObject(std::string_view{});
+                archive.Field(std::string_view{ "key" }, std::string_view{ key });
+                archive.Field(std::string_view{ "n" }, value);
+                archive.End();
+            }
+            archive.End();
+            archive.End();
+            return archive.Ok();
+        }
+
+        bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world, SceneSerializationContext&) override
+        {
+            OverlaySlots slots;
+            std::size_t count = 0;
+            archive.BeginObject(std::string_view{});
+            archive.BeginArray(std::string_view{ "entries" }, count);
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                std::string key;
+                std::int32_t value = 0;
+                archive.BeginObject(std::string_view{});
+                archive.Field(std::string_view{ "key" }, key);
+                archive.Field(std::string_view{ "n" }, value);
+                archive.End();
+                (key == "a" ? slots.A : slots.B) = value;
+            }
+            archive.End();
+            archive.End();
+            return archive.Ok() && Place(world, entity, slots);
+        }
+
+    private:
+        DataFieldSchema Schema = MakeKeyedListRecordSchema("entries", "key");
+    };
+
+    JsonValue SlotsRecord(std::int32_t a, std::int32_t b)
+    {
+        JsonValue::Array entries{ JsonValue(JsonValue::Object{ { "key", JsonValue("a") }, { "n", JsonValue(a) } }),
+                                  JsonValue(JsonValue::Object{ { "key", JsonValue("b") }, { "n", JsonValue(b) } }) };
+        return JsonValue(JsonValue::Object{ { "entries", JsonValue(std::move(entries)) } });
+    }
 
     class SceneSpawnOverlayTest : public ::testing::Test
     {
@@ -425,4 +523,25 @@ TEST_F(SceneSpawnOverlayTest, ASavedComponentThatCannotBeWrittenIsLoggedAndFollo
     EXPECT_TRUE(overlay.Empty()) << JsonStringify(overlay.RootPatch);
     ASSERT_EQ(errors.Errors.size(), 1u);
     EXPECT_NE(errors.Errors[0].find("overlay_vitals"), std::string::npos) << errors.Errors[0];
+}
+
+TEST_F(SceneSpawnOverlayTest, ABodysPatchOfAChangeAKeyedElementAGainAndARemovalIsPinned)
+{
+    Entities.RegisterComponent<OverlaySlots>();
+    (void)Serializers.Register(std::make_unique<SlotsSerializer>());
+    Entities.RegisterComponent<OverlayMark>();
+    (void)Serializers.Register(std::make_unique<ComponentSerializer<OverlayMark>>());
+    EntityBuildPackage prefab = Prefab();
+    Author(prefab, ResolveComponentTypeId<OverlayBadge>(), JsonValue(JsonValue::Object{ { "value", JsonValue(3) } }));
+    Author(prefab, ResolveComponentTypeId<OverlaySlots>(), SlotsRecord(1, 2));
+
+    const EntityId body = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(body, OverlayVitals{ .Current = 50.0f, .Max = 100.0f });
+    Entities.AddComponent<OverlaySlots>(body, OverlaySlots{ .A = 1, .B = 5 });
+    Entities.AddComponent<OverlayMark>(body, OverlayMark{ .Level = 2, .Tint = 0 });
+    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, prefab, Serializers, Context);
+
+    EXPECT_EQ(JsonStringify(overlay.RootPatch),
+              R"({"overlay_vitals":{"current":50},"overlay_badge":null,"overlay_slots":{"entries":{"b":{"n":5}}},)"
+              R"("overlay_mark":{"level":2,"tint":0}})");
 }
