@@ -19,6 +19,7 @@
 #include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformComponents.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -803,6 +804,33 @@ TEST(SavedGames, AnUntouchedBodySavesAnEmptyPatch)
     const JsonValue* patch = local->Find("patch");
     ASSERT_NE(patch, nullptr);
     EXPECT_EQ(JsonStringify(*patch), "{}");
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, DescribeSaysWhatASaveHoldsOfTheBody)
+{
+    const std::filesystem::path root = RootFor("describe_body");
+    std::optional<ConsoleResult> described;
+    std::optional<ConsoleStatus> refused;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (!described.has_value() && HasBody(world))
+        {
+            described = engine.Console().ExecuteLine("save.describe me");
+            refused = engine.Console().ExecuteLine("save.describe 4000000:7").Status;
+        }
+    });
+    ASSERT_TRUE(described.has_value());
+    ASSERT_TRUE(described->Succeeded());
+    std::vector<std::string> lines;
+    for (const ConsoleOutputEntry& entry : described->Output)
+        lines.push_back(entry.Text);
+    ASSERT_FALSE(lines.empty());
+    EXPECT_NE(lines.front().find("is the local body"), std::string::npos) << lines.front();
+    const auto has = [&lines](std::string_view line) { return std::ranges::find(lines, line) != lines.end(); };
+    EXPECT_TRUE(has("  CharacterMovement: authored, follows its prefab"));
+    EXPECT_TRUE(has("  LookOrientation: saved, in the patch where it differs from its prefab"));
+    EXPECT_TRUE(has("  scene_instance: identity, given by its spawn"));
+    EXPECT_EQ(refused, ConsoleStatus::InvalidArguments);
     std::filesystem::remove_all(root);
 }
 

@@ -9,6 +9,7 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/Serialize.h>
+#include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
 #include <participant/ParticipantControl.h>
@@ -18,14 +19,17 @@
 #include <save/SavedGames.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/Held.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
 #include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace
@@ -82,6 +86,39 @@ namespace
         return JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } });
     }
 
+    std::string_view PersistenceName(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "authored";
+        case ComponentPersistence::Saved:
+            return "saved";
+        case ComponentPersistence::Identity:
+            return "identity";
+        }
+        return "";
+    }
+
+    std::string_view BodyFate(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "follows its prefab";
+        case ComponentPersistence::Saved:
+            return "in the patch where it differs from its prefab";
+        case ComponentPersistence::Identity:
+            return "given by its spawn";
+        }
+        return "";
+    }
+
+    std::string_view RecordFate(ComponentPersistence persistence)
+    {
+        return persistence == ComponentPersistence::Identity ? "beside the record" : "in the record";
+    }
+
     void RestoreBodies(World& world, std::uint32_t, const JsonValue& data)
     {
         RestoredBodies* existing = world.TryGetResource<RestoredBodies>();
@@ -127,4 +164,36 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
             [&engine](World& world, std::uint32_t, const JsonValue& data) {
                 RestoreHeldRecords(world, data, engine.SceneSerializers(), engine.Content().SceneContext());
             } });
+}
+
+std::vector<std::string> DescribeSavedEntity(const World& world, EntityId entity,
+                                             const ComponentSerializerRegistry& serializers)
+{
+    std::string name;
+    AppendEntityText(name, entity);
+    const bool body = entity.IsValid() && entity == LocalBodyOf(world);
+    const bool record = !body && world.IsRegistered<Held>() && world.HasComponent<Held>(entity)
+        && !HasAuthoredPersistentId(world, entity);
+    std::vector<std::string> lines;
+    if (body)
+        lines.push_back(name + " is the local body: a save keeps its saved components as a patch against its prefab");
+    else if (record)
+        lines.push_back(name + " is a held record made at run time: a save keeps it whole, its identity beside it");
+    else
+        lines.push_back(name + " is neither the local body nor a held record made at run time: a save holds only"
+                               " whether its zone destroyed it and what that zone's registered memories keep");
+    for (const auto& serializer : serializers.Entries())
+    {
+        const ComponentId column = world.GetComponentIdByType(serializer->TypeId());
+        if (column == InvalidComponentId || !world.HasComponent(entity, column))
+            continue;
+        const ComponentPersistence persistence = serializer->Persistence();
+        std::string line = "  " + std::string(serializer->JsonKey()) + ": " + std::string(PersistenceName(persistence));
+        if (body)
+            line += ", " + std::string(BodyFate(persistence));
+        else if (record)
+            line += ", " + std::string(RecordFate(persistence));
+        lines.push_back(std::move(line));
+    }
+    return lines;
 }

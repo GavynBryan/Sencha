@@ -3,7 +3,9 @@
 #include <core/metadata/ComponentPersistence.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/World.h>
+#include <ecs/EntityText.h>
 #include <ecs/WorldComponentSchema.h>
+#include <save/EngineSaveSections.h>
 #include <save/HeldRecordSaves.h>
 #include <world/ComponentRegistrar.h>
 #include <world/held/Held.h>
@@ -279,4 +281,27 @@ TEST(HeldRecordSaves, AComponentThatCannotBeWrittenIsLoggedAndLeftOutOfTheRecord
     EXPECT_NE(entry.Find("components")->Find("Held"), nullptr);
     ASSERT_EQ(errors.Errors.size(), 1u);
     EXPECT_NE(errors.Errors[0].find("record_weight"), std::string::npos) << errors.Errors[0];
+}
+
+TEST(HeldRecordSaves, ADescriptionSaysARecordIsKeptWholeWithWhatItIsKnownByBeside)
+{
+    SavingWorld world;
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordLabel>(record, RecordLabel{ .Value = 3 });
+    const EntityId chest = world.Identified(PersistentEntityId{ 0xC4E57 });
+    std::string recordName;
+    AppendEntityText(recordName, record);
+    std::string chestName;
+    AppendEntityText(chestName, chest);
+
+    EXPECT_EQ(DescribeSavedEntity(world.Entities, record, world.Serializers),
+              (std::vector<std::string>{
+                  recordName + " is a held record made at run time: a save keeps it whole, its identity beside it",
+                  "  persistent_id: identity, beside the record", "  Held: saved, in the record",
+                  "  record_label: identity, beside the record" }));
+    EXPECT_EQ(DescribeSavedEntity(world.Entities, chest, world.Serializers),
+              (std::vector<std::string>{ chestName + " is neither the local body nor a held record made at run time: "
+                                                     "a save holds only whether its zone destroyed it and what that "
+                                                     "zone's registered memories keep",
+                                         "  persistent_id: identity" }));
 }

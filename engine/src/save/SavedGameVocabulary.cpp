@@ -5,7 +5,14 @@
 #include <authored/VerbRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/identity/Id.h>
+#include <ecs/EntityText.h>
+#include <ecs/World.h>
+#include <participant/LocalControl.h>
+#include <save/EngineSaveSections.h>
 #include <save/SavedGames.h>
+#include <world/RuntimeWorld.h>
+#include <world/identity/PersistentEntityIndex.h>
 
 #include <span>
 #include <string>
@@ -69,6 +76,17 @@ namespace
         return "";
     }
 
+    EntityId EntityNamed(const World& world, std::string_view text)
+    {
+        if (text == "me")
+            return LocalControlSubjectOf(world);
+        if (const std::optional<EntityId> entity = ParseEntityText(text))
+            return world.IsAlive(*entity) ? *entity : EntityId{};
+        const std::optional<PersistentEntityId> id = PersistentEntityIdFromString(text);
+        const PersistentEntityIndex* index = world.TryGetResource<PersistentEntityIndex>();
+        return id.has_value() && index != nullptr ? index->TryResolve(*id) : EntityId{};
+    }
+
     ConsoleResult Report(std::string_view what, const std::string& slot, SaveAdmission admission)
     {
         ConsoleResult result;
@@ -124,6 +142,27 @@ void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)
         .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
             const std::string slot = slotOf(args);
             return Report("restore", slot, engine.Saves().RequestRestore(slot));
+        },
+    });
+    console.Registry().RegisterCommand({
+        .Name = "save.describe",
+        .Owner = "engine",
+        .Usage = "save.describe <me | index:generation | persistent id>",
+        .Help = "List what a save holds of an entity: each component it carries and its persistence.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            const World& world = engine.World().Entities();
+            const EntityId entity = args.size() == 1 ? EntityNamed(world, args[0]) : EntityId{};
+            if (!world.IsAlive(entity))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("name a living entity: me, index:generation or a persistent id");
+                return result;
+            }
+            for (std::string& line : DescribeSavedEntity(world, entity, engine.SceneSerializers()))
+                result.Info(std::move(line));
+            return result;
         },
     });
 }

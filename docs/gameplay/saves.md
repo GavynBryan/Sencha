@@ -15,6 +15,7 @@ what a save keeps is decided per entity by its zone state lifetime
 | `SaveSlotFiles` | `save/SaveSlotFiles.h` | where a slot's bytes live, and its backup |
 | `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections |
 | `save.write`, `save.restore` | `save/SavedGameVocabulary.h` | the verbs and console commands |
+| `save.describe` | same | a developer command: what a save holds of one entity |
 
 ## What a save holds
 
@@ -83,6 +84,11 @@ The declaration is read in three places:
   travel beside it.
 - **A spawn** strips `Identity` components from a prefab
   (`SmapPackageOptions::StripAuthoredIdentity`).
+
+The console command `save.describe <me | index:generation | persistent id>`
+(`DescribeSavedEntity`, `save/EngineSaveSections.h`) says which of these an
+entity is and lists each component it carries with its persistence and what a
+save does with it. It is a developer command, not a verb.
 
 ## Bodies
 
