@@ -4,7 +4,6 @@
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <inventory/InventorySystem.h>
-#include <world/held/HeldRecords.h>
 
 #include <algorithm>
 #include <cassert>
@@ -62,11 +61,8 @@ void ApplyItemCosts(World& world, std::span<const AbilityCostRow> rows)
     for (const AbilityCostRow& row : rows)
     {
         const EntityId entry = SpentEntry(world, row);
-        ItemEntry& item = *world.TryGet<ItemEntry>(entry);
-        item.Count -= std::min(item.Count, UnitsOf(row));
-        NoteHeldRecordChanged(world, entry);
-        if (item.Count == 0)
-            NoteDepleted(world, entry, row.Actor);
+        const std::uint32_t held = std::as_const(world).TryGet<ItemEntry>(entry)->Count;
+        SetItemCount(world, entry, held - std::min(held, UnitsOf(row)), row.Actor);
     }
 }
 

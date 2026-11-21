@@ -16,8 +16,14 @@ namespace
     constexpr std::uint32_t kZonesChunk = MakeFourCC('Z', 'O', 'N', 'E');
     constexpr std::uint32_t kSectionsChunk = MakeFourCC('S', 'E', 'C', 'T');
     constexpr std::uint32_t kHashChunk = MakeFourCC('H', 'A', 'S', 'H');
+    constexpr std::uint32_t kChunkVersion = 1;
     constexpr std::uint32_t kMaxRecords = 1u << 24;
     constexpr std::uint32_t kMaxTextBytes = 1u << 26;
+
+    const char* ChunkName(std::uint32_t id)
+    {
+        return id == kSummaryChunk ? "SUMM" : id == kZonesChunk ? "ZONE" : "SECT";
+    }
 
     const char* KindName(LevelKind kind) { return kind == LevelKind::World ? "world" : "scene"; }
 
@@ -126,19 +132,28 @@ std::vector<std::byte> EncodeSavedGame(const SavedGame& saved)
 {
     HashedChunkFileWriter file(kSavedGameMagic, kSavedGameFormatVersion);
     BinaryWriter& writer = file.Writer();
-    file.Chunk(kSummaryChunk, 1, [&] { return WriteJson(writer, SummaryJson(saved.Summary)); });
-    file.Chunk(kZonesChunk, 1, [&] { return SerializeArray(writer, saved.Zones, WriteZone); });
-    file.Chunk(kSectionsChunk, 1, [&] { return WriteJson(writer, SectionsJson(saved.Sections)); });
+    file.Chunk(kSummaryChunk, kChunkVersion, [&] { return WriteJson(writer, SummaryJson(saved.Summary)); });
+    file.Chunk(kZonesChunk, kChunkVersion, [&] { return SerializeArray(writer, saved.Zones, WriteZone); });
+    file.Chunk(kSectionsChunk, kChunkVersion, [&] { return WriteJson(writer, SectionsJson(saved.Sections)); });
     return file.Finish(kHashChunk);
 }
 
-std::optional<SavedGame> DecodeSavedGame(std::span<const std::byte> bytes, std::string* error)
+DecodedSavedGame DecodeSavedGame(std::span<const std::byte> bytes)
 {
+    DecodedSavedGame decoded;
     SavedGame saved;
     bool summarized = false;
+    std::optional<std::uint32_t> newerChunk;
     const auto read = [&](const ChunkHeader& chunk, BinaryReader& reader) {
-        if (chunk.Version != 1)
+        const bool known = chunk.Id == kSummaryChunk || chunk.Id == kZonesChunk || chunk.Id == kSectionsChunk;
+        if (!known)
             return true;
+        if (chunk.Version != kChunkVersion)
+        {
+            if (chunk.Version > kChunkVersion && !newerChunk.has_value())
+                newerChunk = chunk.Id;
+            return chunk.Version > kChunkVersion;
+        }
         JsonValue json;
         switch (chunk.Id)
         {
@@ -147,10 +162,8 @@ std::optional<SavedGame> DecodeSavedGame(std::span<const std::byte> bytes, std::
             return summarized;
         case kZonesChunk:
             return DeserializeArray(reader, saved.Zones, ReadZone, kMaxRecords);
-        case kSectionsChunk:
-            return ReadJson(reader, json) && ReadSections(json, saved.Sections);
         default:
-            return true;
+            return ReadJson(reader, json) && ReadSections(json, saved.Sections);
         }
     };
     const HashedChunkFileFormat format{ .Magic = kSavedGameMagic,
@@ -159,13 +172,27 @@ std::optional<SavedGame> DecodeSavedGame(std::span<const std::byte> bytes, std::
                                         .HashChunk = kHashChunk,
                                         .Subject = "saved game",
                                         .VersionAdvice = "was written by a newer build" };
-    if (!ReadHashedChunkFile(bytes, format, read, error))
-        return std::nullopt;
+    switch (ReadHashedChunkFile(bytes, format, read, &decoded.Error))
+    {
+    case HashedChunkFileRead::Read:
+        break;
+    case HashedChunkFileRead::Newer:
+        decoded.Newer = true;
+        return decoded;
+    case HashedChunkFileRead::Refused:
+        return decoded;
+    }
+    if (newerChunk.has_value())
+    {
+        decoded.Newer = true;
+        decoded.Error = std::string("the saved game's '") + ChunkName(*newerChunk) + "' chunk was written by a newer build";
+        return decoded;
+    }
     if (!summarized)
     {
-        if (error != nullptr)
-            *error = "saved game has no summary";
-        return std::nullopt;
+        decoded.Error = "saved game has no summary";
+        return decoded;
     }
-    return saved;
+    decoded.Saved = std::move(saved);
+    return decoded;
 }

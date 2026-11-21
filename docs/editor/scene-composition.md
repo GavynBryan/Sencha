@@ -53,14 +53,18 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
    - `null` removes a member or a keyed element.
    - Two fragments that set one value differently are an `include_conflict`,
      until the document's own patch states the value.
-3. **Apply removals.** Removing a component another remaining component owes
-   is `removes_owed`; removing a structural one is `not_removable`. A removal
-   list is checked against what stays once the whole list goes.
+3. **Apply removals.** A component goes by `remove` or by a `null` in place of
+   the component in `patch`; both join one removal list per entity, checked
+   once against what stays once the whole list goes. Removing a component
+   another remaining component owes is `removes_owed`; removing a structural
+   one is `not_removable`; either leaves the component in place.
 4. **Add the document's own entities and placements.** A local may hang
    beneath an inherited entity.
 
 A version-2 instance patch composes the same way, so a placement can drop an
-inherited response binding by writing `bindings.<key>: null`.
+inherited response binding by writing `bindings.<key>: null`. A placement's
+removals, its `remove` and a component `null` in its patch, are held to the
+same check after its patch and `add` apply.
 
 **References between a placement's members.** Each placement mints its own
 ids for the source's entities. A component field that names another entity
@@ -76,11 +80,26 @@ A local whose inherited parent the base no longer has is `dangling_parent` and
 composes as a root, so the document still opens to be fixed.
 
 The resolver returns nothing on a structural failure: a source reference that
-does not resolve, a cycle through the source graph (a document already being
-resolved is met again), or a local entity reusing an inherited id, which would
+does not resolve (named with the document and field that asked for it), a
+cycle through the source graph or a chain of extends, includes and placements
+deeper than 16 scenes (`CompositionChain`, `docs/assets/composition.md`,
+"Chains of sources"), or a local entity reusing an inherited id, which would
 make every patch and parent naming it ambiguous. Without component rules
 (`ISceneComponentRules`) every component composes by the version-1 rules and no
 removal is checked.
+
+**Cost.** One call resolves each source once: extends, fragments and
+placements of a source already resolved in that call copy its result rather
+than resolving it again, and the copy is what a placement overrides and emits.
+The cache lives for the call and holds one result per distinct source it read,
+so it grows with the content of that one resolve and needs no limit of its own;
+a reused source is still held to the depth where it is placed again. Component
+schemas are gathered into one entity schema per call rather than copied per
+entity. Provenance, which only tests read, is built when
+`SceneCompositionOptions::Provenance` asks for it. `SceneCompositionBench`
+(env-gated by `SENCHA_SCENE_COMPOSITION_BENCH_OUT`) resolves 200 and 2,000
+placements of a ten-entity prefab three documents deep; in a debug build the
+cache and these changes took it from 404 ms and 3,802 ms to 42 ms and 407 ms.
 
 What the resolver reports:
 - composition diagnostics;
@@ -96,8 +115,9 @@ remain.
 - **Projection.** Inherited entities are live, under their own ids. Their
   baseline is what they inherit, before the document's own patch.
 - **Harvest.** `DiffSceneComponents` writes an inherited entity's edits as the
-  document's `patch`: only what changed, keyed lists by key, removed elements
-  and cleared members `null`. Dropped components become `remove`. Placement
+  document's `patch`: only what changed, keyed lists by key (whole when their
+  order changed), removed elements and cleared members `null` (`PatchFrom`,
+  `docs/assets/composition.md`). Dropped components become `remove`. Placement
   overrides are harvested by the same diff. Patch entries for ids the projection
   did not produce carry over. Brush geometry never crosses documents through a
   diff (`IsDocumentLocalComponent`): it names ids in its own document's sidecar.

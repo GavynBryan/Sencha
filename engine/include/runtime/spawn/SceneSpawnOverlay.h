@@ -5,6 +5,7 @@
 #include <ecs/EntityId.h>
 
 #include <string>
+#include <vector>
 
 class ComponentSerializerRegistry;
 class EntityBuildPackage;
@@ -29,6 +30,9 @@ struct SceneSpawnOverlay
                                                     SceneSerializationContext& context);
 
 // Composes `overlay`'s patch over `package`'s one root. False, with `error`,
-// when the package has not exactly one root or names an unknown component.
+// when the package has not exactly one root, names an unknown component, or a
+// patch no longer fits its component's form; `retuned` gets what the scene now
+// decides in the patch's place (docs/gameplay/saves.md, "Bodies").
 [[nodiscard]] bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& overlay,
-                                     const ComponentSerializerRegistry& serializers, std::string& error);
+                                     const ComponentSerializerRegistry& serializers, std::string& error,
+                                     std::vector<std::string>& retuned);

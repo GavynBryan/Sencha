@@ -1,7 +1,3 @@
-// An authority and two clients, one joining late. Each sees its own entries and
-// nobody else's, its held-record index follows what arrives, and a move takes an
-// entry away from the peer that no longer holds it.
-
 #include <ecs/WorldComponentSchema.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryKit.h>
@@ -62,7 +58,6 @@ namespace
             Peers.push_back(std::make_unique<Peer>(id));
             Peer& peer = *Peers.back();
             Schema.Apply(peer.Entities);
-            // As a RuntimeWorld does: frame zero is the never-written version.
             peer.Entities.AdvanceFrame();
             peer.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
             peer.Entities.AddResource<PersistentEntityIndex>();
@@ -84,8 +79,6 @@ namespace
             return holder;
         }
 
-        // The authority's inventory pass, then one publish to every peer, each
-        // applying what it is sent, as their frames do.
         void Publish()
         {
             RunInventoryPass(Authority);
@@ -122,7 +115,6 @@ namespace
             return id.IsValid() ? peer.Identity.TryResolve(id) : EntityId{};
         }
 
-        // What `peer` holds in its copy of `holder`, by count.
         [[nodiscard]] std::vector<std::uint32_t> CountsHeld(Peer& peer, EntityId holder) const
         {
             std::vector<std::uint32_t> counts;
@@ -159,7 +151,7 @@ TEST(InventoryReplication, EachPeerHoldsItsOwnAndALateJoinerIsSeededWithItsOwnOn
     const EntityId archer = session.Holder(1);
     const EntityId hunter = session.Holder(2);
     const EntityId chest = session.Holder(kNetAuthorityPeer);
-    Inventory inventory(session.Authority);
+    Inventory inventory(session.Authority, FixedSimTime{});
     ASSERT_EQ(inventory.Give(archer, session.Arrows, 30).Refusal, InventoryRefusal::None);
     ASSERT_EQ(inventory.Give(hunter, session.Arrows, 5).Refusal, InventoryRefusal::None);
     ASSERT_EQ(inventory.Give(chest, session.Arrows, 9).Refusal, InventoryRefusal::None);
@@ -169,14 +161,12 @@ TEST(InventoryReplication, EachPeerHoldsItsOwnAndALateJoinerIsSeededWithItsOwnOn
     EXPECT_EQ(Session::EntriesOn(first.Entities), 2u) << "the hunter's quiver and the chest reached the archer";
     EXPECT_TRUE(session.MirrorOf(first, hunter).IsValid()) << "the hunter is still there to see";
 
-    // The archer stows ten arrows in the chest: they leave the archer's machine.
     const EntityId stowed = ItemsIn(session.Authority, archer)[1];
     ASSERT_EQ(inventory.Transfer(stowed, chest, 0).Refusal, InventoryRefusal::None);
     session.Publish();
     EXPECT_EQ(session.CountsHeld(first, archer), (std::vector<std::uint32_t>{ 20 }));
     EXPECT_EQ(Session::EntriesOn(first.Entities), 1u);
 
-    // The hunter joins now, and is seeded with the hunter's five and nothing else.
     Peer& late = session.Join(2);
     session.Publish();
     EXPECT_EQ(session.CountsHeld(late, hunter), (std::vector<std::uint32_t>{ 5 }));
@@ -184,7 +174,6 @@ TEST(InventoryReplication, EachPeerHoldsItsOwnAndALateJoinerIsSeededWithItsOwnOn
     EXPECT_TRUE(session.MirrorOf(late, archer).IsValid());
     EXPECT_TRUE(session.CountsHeld(late, archer).empty());
 
-    // A count that changes reaches only its holder.
     session.Authority.TryGet<ItemEntry>(ItemsIn(session.Authority, hunter)[0])->Count = 3;
     session.Publish();
     EXPECT_EQ(session.CountsHeld(late, hunter), (std::vector<std::uint32_t>{ 3 }));

@@ -166,7 +166,7 @@ bool DecodeNavigationFile(std::span<const std::byte> bytes, NavigationFile& file
     const auto read = [&](const ChunkHeader& chunk, BinaryReader& reader) {
         return ReadNavChunkPayload(reader, chunk.Id, file);
     };
-    if (!ReadHashedChunkFile(bytes, format, read, error))
+    if (ReadHashedChunkFile(bytes, format, read, error) != HashedChunkFileRead::Read)
         return false;
     if (file.Profiles.empty())
     {

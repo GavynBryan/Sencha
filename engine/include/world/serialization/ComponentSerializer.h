@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/handle/Handle.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/DataSchema.h>
@@ -212,6 +213,11 @@ public:
     ComponentPlacementFacts Placement() const override
     {
         return ComponentPlacement<Component>::Value;
+    }
+
+    ComponentPersistence Persistence() const override
+    {
+        return ComponentPersistenceOf<Component>::Value;
     }
 
     const DataFieldSchema* CompositionSchema() const override

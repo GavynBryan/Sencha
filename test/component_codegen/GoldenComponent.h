@@ -19,6 +19,7 @@ struct SENCHA_COMPONENT("test.codegen.golden")
        SENCHA_REPLICATED
        SENCHA_PREDICTED
        SENCHA_NON_REMOVABLE
+       SENCHA_SAVED
        SENCHA_VISUAL_MESH("golden.glb")
 CodegenGolden
 {

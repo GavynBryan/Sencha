@@ -10,6 +10,7 @@
 // archive interface (JSON in practice; see the binary note in the .cpp).
 //=============================================================================
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,20 @@ struct IReadArchive;
 struct GameplayTagContainer;
 class GameplayTagRegistry;
 
+enum class GameplayTagDrop : std::uint8_t
+{
+    Projected,
+    Full,
+};
+
+struct DroppedGameplayTag
+{
+    std::string Name;
+    GameplayTagDrop Reason = GameplayTagDrop::Full;
+
+    friend bool operator==(const DroppedGameplayTag&, const DroppedGameplayTag&) = default;
+};
+
 bool WriteGameplayTags(IWriteArchive& archive,
                        const GameplayTagContainer& tags,
                        const GameplayTagRegistry& registry);
@@ -25,4 +40,4 @@ bool WriteGameplayTags(IWriteArchive& archive,
 bool ReadGameplayTags(IReadArchive& archive,
                       GameplayTagContainer& tags,
                       const GameplayTagRegistry& registry,
-                      std::vector<std::string>* dropped = nullptr);
+                      std::vector<DroppedGameplayTag>* dropped = nullptr);

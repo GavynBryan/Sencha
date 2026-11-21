@@ -212,20 +212,31 @@ bool DataDocumentStore::IsAbstract(std::string_view virtualPath) const
 
 std::optional<JsonValue> DataDocumentStore::CurrentRoot(std::string_view virtualPath) const
 {
+    return ReadRoot(virtualPath).Root;
+}
+
+DataSourceRoot DataDocumentStore::ReadRoot(std::string_view virtualPath) const
+{
     if (const DataDocument* open = Find(virtualPath))
-        return open->Root();
+        return { open->Root(), {} };
     const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
     if (record == nullptr)
-        return std::nullopt;
+        return { std::nullopt, "does not exist" };
     std::ifstream in(record->FilePath);
+    if (!in)
+        return { std::nullopt, "could not be read" };
     std::stringstream text;
     text << in.rdbuf();
-    return JsonParse(text.str());
+    JsonParseError error;
+    std::optional<JsonValue> root = JsonParse(text.str(), &error);
+    if (!root.has_value())
+        return { std::nullopt, std::format("is not valid JSON (at {}: {})", error.Position, error.Message) };
+    return { std::move(root), {} };
 }
 
 DataRootProvider DataDocumentStore::RootProvider() const
 {
-    return [this](std::string_view path) { return CurrentRoot(path); };
+    return [this](std::string_view path) { return ReadRoot(path); };
 }
 
 std::optional<DataDefinitionStaging> DataDocumentStore::StageCurrent(std::string_view virtualPath,

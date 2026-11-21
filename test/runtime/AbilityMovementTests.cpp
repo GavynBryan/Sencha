@@ -126,7 +126,7 @@ protected:
         const AbilityId ability =
             Entities.GetResource<AbilityRegistry>().Define("asset://abilities/held.sdata", std::move(definition));
         const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
-        (void)GrantAbility(*Entities.TryGet<AbilityGrants>(Character), ability, AbilityGrantKind::Authored, entry);
+        (void)GrantAbility(Entities, Character, ability, AbilityGrantKind::Authored, entry);
     }
 
     // One fixed tick: input, the actor clock, abilities, attributes and effects, then movement and the motor.

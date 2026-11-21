@@ -37,6 +37,7 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , CostBatches(buffers.CostBatches)
     , CostTranslating(buffers.CostTranslating)
     , Emitted(buffers.Emitted)
+    , StartTags(buffers.StartTags)
 {
     Emitted.clear();
 }
@@ -165,9 +166,13 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
         return AbilityRefusal::Capacity;
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
-    if ((definition->StartGroups != 0 || cooldown)
-        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown, grant.Source).Paid)
+    const bool costed = definition->StartGroups != 0 || cooldown;
+    if (costed
+        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown,
+                        ResolvePersistableRef(Entities, grant.Source)).Paid)
         return AbilityRefusal::CostFailed;
+    if (!StartTagsFit(actor, *definition, cooldown, costed))
+        return AbilityRefusal::TagsFull;
     return AbilityRefusal::None;
 }
 
@@ -232,12 +237,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         AbilityRecord& granted = actor.Record(slot);
         for (GameplayTagId tag : definition.OwnedTags)
         {
-            if (!tags->CanHold(tag))
+            if (tags->Grant(tag) == GameplayTagWrite::Full)
             {
                 NoteGameplayTagOverflow(Entities, actor.Entity, tag);
                 continue;
             }
-            tags->Grant(tag);
             granted.OwnedTags[granted.OwnedTagCount++] = tag;
         }
     }
@@ -653,10 +657,18 @@ void AbilityPass::Sweep(const AbilityActor& actor)
                 return true;
         return false;
     };
-    if (AbilityGrants* grants = Predicting ? nullptr : Entities.TryGet<AbilityGrants>(actor.Entity))
-        for (std::uint8_t i = grants->Count; i-- > 0;)
-            if (grants->Entries[i].Kind == AbilityGrantKind::Transient && !runsThrough(grants->Entries[i].Id))
-                (void)RevokeAbilityGrant(*grants, grants->Entries[i].Id);
+    if (const AbilityGrants* row = Predicting ? nullptr : actor.GrantRow(); row != nullptr && row->Transient > 0)
+    {
+        std::span<const AbilityGrant> grants = actor.Grants();
+        for (std::size_t i = grants.size(); i-- > 0;)
+        {
+            const AbilityGrant grant = grants[i];
+            if (grant.Kind != AbilityGrantKind::Transient || runsThrough(grant.Id))
+                continue;
+            (void)RevokeAbilityGrant(Entities, actor.Entity, grant.Id);
+            grants = actor.Grants();
+        }
+    }
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))
@@ -677,8 +689,7 @@ void AbilityPass::Sweep(const AbilityActor& actor)
             }
             record.Revision = Abilities->Revision(record.Key.Ability);
         }
-        const AbilityGrants* grants = actor.Grants();
-        if (grants == nullptr || grants->Find(record.Grant) == nullptr)
+        if (actor.Grant(record.Grant) == nullptr)
         {
             End(actor, slot, AbilityEndReason::GrantRevoked);
             continue;

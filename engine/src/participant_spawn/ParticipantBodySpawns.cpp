@@ -47,17 +47,19 @@ void ParticipantBodySpawns::StartSpawn(EntityId participant)
         return;
     Transform3f root = selected->Root;
     SceneSpawnOverlay overlay;
+    bool fromRestore = false;
     if (RestoredBodies* restored = Entities.TryGetResource<RestoredBodies>();
         restored != nullptr && restored->Local.has_value() && participant == LocalParticipantOf(Entities))
     {
         root = restored->Local->Root;
         overlay = std::move(restored->Local->Overlay);
         restored->Local.reset();
+        fromRestore = true;
     }
     const SceneSpawnId spawn = Spawns.RequestSpawn(
         selected->ScenePath, root, selected->Partition,
         SceneSpawnLifetime::OwnedByRoot, std::move(overlay));
-    Pending.emplace(participant, PendingSpawn{ spawn, selected->ScenePath });
+    Pending.emplace(participant, PendingSpawn{ spawn, selected->ScenePath, fromRestore });
 }
 
 void ParticipantBodySpawns::Update()
@@ -99,9 +101,12 @@ void ParticipantBodySpawns::Settle(const Attempt& attempt)
     }
     if (status != SceneSpawnStatus::Live)
     {
+        const PendingSpawn& failed = Pending.at(participant);
         Log.Error("Participant prefab '{}' for {}:{} ended as {}",
-                  Pending.at(participant).Path, participant.Index,
+                  failed.Path, participant.Index,
                   participant.Generation, SceneSpawnStatusName(status));
+        if (RestoredBodies* restored = Entities.TryGetResource<RestoredBodies>(); restored != nullptr && failed.Restored)
+            restored->Refusal = "the saved body did not spawn from '" + failed.Path + "'; the spawn service logged why";
         Pending.erase(participant);
         return;
     }

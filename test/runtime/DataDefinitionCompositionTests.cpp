@@ -20,6 +20,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -71,6 +72,11 @@ namespace
             return Assets.DataAssets.GetReloadVersion(DataAssetHandle::FromToken(lease.OpaqueToken()));
         }
 
+        [[nodiscard]] std::size_t ParsedSourcesHeld()
+        {
+            return static_cast<const DataAssetLoader*>(Assets.Assets.LoaderFor(AssetType::Data))->ParsedSourcesHeld();
+        }
+
         [[nodiscard]] std::string FailureOf(std::string_view path) const
         {
             for (const AssetSystem::LoadFailure& failure : Assets.Assets.LoadFailures())
@@ -97,9 +103,9 @@ namespace
                 .Types = Assets.DataTypes,
                 .Schemas = &Assets.DataSchemas,
                 .Current = current,
-                .Read = [this](std::string_view path) -> const JsonValue* {
+                .Read = [this](std::string_view path) -> DataSourceRead {
                     const auto found = Sources.find(path);
-                    return found != Sources.end() ? &found->second : nullptr;
+                    return { found != Sources.end() ? &found->second : nullptr, {} };
                 },
                 .Asset = "asset://effects/child.sdata",
                 .Provenance = provenance });
@@ -490,4 +496,81 @@ TEST(DataDefinitionComposition, AnEquipmentLayoutComposesItsSlotsByKey)
     EXPECT_EQ(layout->Slots[2].Key, "ring.right");
     EXPECT_EQ(layout->Slots[2].Priority, std::optional<std::int32_t>(21));
     EXPECT_EQ(layout->LockTags, std::vector<std::string>{ "State.Attacking" });
+}
+
+TEST(DataDefinitionComposition, ABaseThatIsNotJsonIsSaidToBeSoNotToBeMissing)
+{
+    Content content;
+    content.Write("armor_base.sdata", R"({ "type": "effect.definition", "version": 1, "abstract": true, "data": { )");
+    content.Write("tunic.sdata", R"({ "type": "effect.definition", "version": 1,
+        "extends": "asset://effects/armor_base.sdata", "data": {} })");
+    EXPECT_FALSE(content.Assets.Assets.LoadLease("asset://effects/tunic.sdata", AssetType::Data));
+    const std::string failure = content.FailureOf("asset://effects/tunic.sdata");
+    EXPECT_NE(failure.find("'asset://effects/armor_base.sdata' is not valid JSON"), std::string::npos) << failure;
+    EXPECT_EQ(failure.find("does not exist"), std::string::npos) << failure;
+}
+
+TEST(DataDefinitionComposition, ACycleNamesEveryDefinitionOnIt)
+{
+    Memory memory;
+    memory.Add("asset://effects/left.sdata", R"({ "type": "effect.definition", "version": 1, "abstract": true,
+        "extends": "asset://effects/right.sdata", "data": {} })");
+    memory.Add("asset://effects/right.sdata", R"({ "type": "effect.definition", "version": 1, "abstract": true,
+        "extends": "asset://effects/left.sdata", "data": {} })");
+    const DataDefinitionStaging cycle = memory.Stage(R"({ "type": "effect.definition", "version": 1,
+        "extends": "asset://effects/left.sdata", "data": {} })");
+    const DataValidationError* error = ErrorAt(cycle, "$.extends");
+    ASSERT_NE(error, nullptr);
+    EXPECT_NE(error->Message.find("asset://effects/left.sdata -> asset://effects/right.sdata -> asset://effects/left.sdata"),
+              std::string::npos)
+        << error->Message;
+}
+
+TEST(DataDefinitionComposition, ABaseThatDoesNotComposeGivesEveryReason)
+{
+    Memory memory;
+    memory.Add("asset://effects/broken.sdata", R"({ "type": "effect.definition", "version": 1, "abstract": true,
+        "extends": "asset://effects/absent.sdata", "includes": [ "asset://effects/also_absent.sdata" ], "data": {} })");
+    const DataDefinitionStaging staged = memory.Stage(R"({ "type": "effect.definition", "version": 1,
+        "extends": "asset://effects/broken.sdata", "data": {} })");
+    const DataValidationError* error = ErrorAt(staged, "$.extends");
+    ASSERT_NE(error, nullptr);
+    EXPECT_NE(error->Message.find("absent.sdata"), std::string::npos) << error->Message;
+    EXPECT_NE(error->Message.find("also_absent.sdata"), std::string::npos) << error->Message;
+}
+
+TEST(DataDefinitionComposition, VariantsOfOneBaseHoldOneParsedBase)
+{
+    Content content;
+    content.Write("armor_base.sdata", kArmorBase);
+    for (int i = 0; i < 10; ++i)
+        content.Write(std::format("tunic{}.sdata", i), std::format(R"({{ "type": "effect.definition", "version": 1,
+            "extends": "asset://effects/armor_base.sdata", "data": {{ "modifiers": {{ "m_armor": {{ "magnitude": {} }} }} }} }})", i));
+    std::vector<AssetLease> tunics;
+    for (int i = 0; i < 10; ++i)
+    {
+        tunics.push_back(content.Assets.Assets.LoadLease(std::format("asset://effects/tunic{}.sdata", i), AssetType::Data));
+        ASSERT_TRUE(tunics.back()) << content.FailureOf(std::format("asset://effects/tunic{}.sdata", i));
+    }
+    EXPECT_EQ(content.ParsedSourcesHeld(), 1u);
+}
+
+TEST(DataDefinitionComposition, TheParsedSourcesHeldStopAtTheirCapacityAndStillCompose)
+{
+    Content content;
+    const std::size_t bases = DataAssetLoader::ParsedSourceCapacity + 1;
+    for (std::size_t i = 0; i < bases; ++i)
+    {
+        content.Write(std::format("base{}.sdata", i), kArmorBase);
+        content.Write(std::format("child{}.sdata", i), std::format(R"({{ "type": "effect.definition", "version": 1,
+            "extends": "asset://effects/base{}.sdata", "data": {{}} }})", i));
+    }
+    std::vector<AssetLease> children;
+    for (std::size_t i = 0; i < bases; ++i)
+    {
+        children.push_back(content.Assets.Assets.LoadLease(std::format("asset://effects/child{}.sdata", i), AssetType::Data));
+        ASSERT_TRUE(children.back()) << content.FailureOf(std::format("asset://effects/child{}.sdata", i));
+    }
+    EXPECT_EQ(content.ParsedSourcesHeld(), DataAssetLoader::ParsedSourceCapacity)
+        << "the source read longest ago is let go";
 }

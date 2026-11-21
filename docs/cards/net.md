@@ -35,6 +35,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: network.
 - Owner-only state reaches only its owner: `ReplicationSnapshot.OwnerOnlyStateReachesOnlyItsOwner` (`test/net/ReplicationSnapshotTests.cpp`).
 - A lost snapshot is not promoted by a later one: `ReplicationAcknowledgement.ALostSnapshotIsNotPromotedByALaterOne` (`test/net/ReplicationSnapshotTests.cpp`).
 - A still World costs nothing after the first snapshot: `ReplicationSnapshot.AStillWorldCostsNothingAfterTheFirstSnapshot` (`test/net/ReplicationSnapshotTests.cpp`).
+- A component nothing is owed on is not named, and one added, returned or met again after relevance is: `ReplicationSnapshot.AComponentNothingIsOwedOnIsNotMentioned`, `AComponentAddedLaterIsAnnouncedOnce`, `ARemovedAndReturnedComponentIsAnnounced`, `AnEntityThatLeftRelevanceIsAnnouncedWholeWhenItReturns` (`test/net/ReplicationSnapshotTests.cpp`).
 - The authority refuses a mismatched replicated table: `NetSession.AuthorityRefusesAMismatchedReplicatedTable` (`test/net/NetSessionTests.cpp`).
 - A reliable duplicate is not delivered twice: `NetChannel.ReliableDuplicateIsNotDeliveredTwice` (`test/net/NetChannelTests.cpp`).
 - Padding is not folded into the desync hash: `NetDesyncFold.PaddingIsNotFolded` (`test/net/NetDesyncProbeTests.cpp`).

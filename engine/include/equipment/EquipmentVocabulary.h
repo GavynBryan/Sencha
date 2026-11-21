@@ -5,14 +5,15 @@
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
+#include <equipment/Equipment.h>
 
 #include <string_view>
 #include <vector>
 
 class FixedSimulationLoop;
+class Logger;
 class World;
 
-// docs/gameplay/equipment.md, "Vocabulary".
 inline constexpr std::string_view kEquipmentEquipVerb = "equipment.equip";
 inline constexpr std::string_view kEquipmentUnequipVerb = "equipment.unequip";
 inline constexpr std::string_view kEquipmentCycleVerb = "equipment.cycle";
@@ -25,9 +26,10 @@ void DeclareEquipmentVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class EquipmentOperations
 {
 public:
-    EquipmentOperations(World& world, const FixedSimulationLoop& clock)
+    EquipmentOperations(World& world, const FixedSimulationLoop& clock, const Logger& log)
         : Entities(&world)
         , Clock(&clock)
+        , Log(&log)
     {
     }
 
@@ -36,8 +38,11 @@ public:
     VerbAdmission Cycle(const VerbInvocation& invocation);
 
 private:
+    VerbAdmission Answer(std::string_view verb, EquipmentRefusal refusal) const;
+
     World* Entities;
     const FixedSimulationLoop* Clock;
+    const Logger* Log;
 };
 
 inline VerbAdmission InvokeEquipmentEquip(EquipmentOperations& operations, const VerbInvocation& invocation)
@@ -58,7 +63,5 @@ inline VerbAdmission InvokeEquipmentCycle(EquipmentOperations& operations, const
 [[nodiscard]] std::vector<AuthoredQueryBindingToken> BindEquipmentQueries(AuthoredQueryDispatcher& dispatcher,
                                                                           const World& world);
 
-// A slot row as an inventory.item row spending the entry the slot holds; false
-// for a slot holding nothing, or one waiting with no source.
 [[nodiscard]] bool TranslateSlotCost(const World& world, const AbilityCostRow& row, std::vector<AuthoredValue>& arguments);
 void DeclareSlotCostProvider(World& world);

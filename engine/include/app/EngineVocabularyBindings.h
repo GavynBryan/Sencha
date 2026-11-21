@@ -77,8 +77,8 @@ public:
     void BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,
                       AuthoredEventDispatcher* events);
 
-    void BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
-    void BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
+    void BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log);
+    void BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log);
 
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);

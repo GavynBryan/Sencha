@@ -120,8 +120,8 @@ VerbAdmission AbilityOperations::Grant(const VerbInvocation& invocation)
         return VerbAdmission::Refused;
     if (!Entities->HasComponent<AbilityGrants>(request.Target))
         Entities->AddComponent<AbilityGrants>(request.Target, AbilityGrants{});
-    return GrantAbility(*Entities->TryGet<AbilityGrants>(request.Target), request.Ability, AbilityGrantKind::Request,
-                        entry, {}, request.Source)
+    return GrantAbility(*Entities, request.Target, request.Ability, AbilityGrantKind::Request, entry, {},
+                        MakePersistableRef(*Entities, request.Source))
                .IsValid()
         ? VerbAdmission::Accepted
         : VerbAdmission::Refused;
@@ -133,14 +133,13 @@ VerbAdmission AbilityOperations::Revoke(const VerbInvocation& invocation)
     const AbilityGrantEntries* entries = Entities->TryGetResource<AbilityGrantEntries>();
     if (entries == nullptr || !Entities->IsRegistered<AbilityGrants>() || !Read(*Entities, invocation, true, request))
         return VerbAdmission::InvalidArguments;
-    AbilityGrants* grants = Entities->TryGet<AbilityGrants>(request.Target);
-    for (std::uint8_t i = 0; grants != nullptr && i < grants->Count; ++i)
+    for (const AbilityGrant& grant : AbilityGrantsOf(*Entities, request.Target))
     {
-        const AbilityGrant& grant = grants->Entries[i];
         const AbilityGrantEntry* entry = entries->Find(grant.Entry);
         if (grant.Kind == AbilityGrantKind::Request && grant.Ability == request.Ability && entry != nullptr
             && entry->Key == request.Key)
-            return RevokeAbilityGrant(*grants, grant.Id) ? VerbAdmission::Accepted : VerbAdmission::Refused;
+            return RevokeAbilityGrant(*Entities, request.Target, grant.Id) ? VerbAdmission::Accepted
+                                                                            : VerbAdmission::Refused;
     }
     return VerbAdmission::Refused;
 }

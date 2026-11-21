@@ -34,6 +34,17 @@ enum class LevelChangeAdmission : std::uint8_t
     InSession,
 };
 
+[[nodiscard]] const char* LevelChangeAdmissionReason(LevelChangeAdmission admission);
+
+// What a change keeps of what the game made at run time. Discard starts a new
+// game: every runtime held record goes with the old level, and so do the
+// sections a restored save carried that nothing registered.
+enum class LevelChangeRuntimeState : std::uint8_t
+{
+    Keep,
+    Discard,
+};
+
 struct LevelChangeRequest
 {
     LevelReference Level;
@@ -41,9 +52,12 @@ struct LevelChangeRequest
     std::optional<ZoneId> Focus{};
     // What zones remember as the level loads; none is the level as authored.
     std::vector<DurableZoneState> ZoneState{};
+    LevelChangeRuntimeState RuntimeState = LevelChangeRuntimeState::Keep;
 };
 
-// docs/gameplay/game-module.md, "Changing level".
+// docs/gameplay/game-module.md, "Changing level". The first load, with nothing
+// loaded, is admitted on any machine and in a session: it changes nothing a
+// peer was told.
 class LevelChange
 {
 public:
@@ -54,6 +68,8 @@ public:
     [[nodiscard]] LevelChangeStatus Status() const { return Current; }
     // Counts accepted requests, so a caller can tell its own change from a later one.
     [[nodiscard]] std::uint64_t Serial() const { return Accepted; }
+    // Of the latest accepted request.
+    [[nodiscard]] LevelChangeRuntimeState RuntimeState() const { return Kept; }
     [[nodiscard]] const std::vector<std::string>& Failure() const { return Reasons; }
 
     // At the zone-residency phase, before streaming: no frame view is live.
@@ -68,6 +84,7 @@ private:
     std::optional<LevelChangeRequest> Waiting;
     LevelChangeStatus Current = LevelChangeStatus::Idle;
     std::uint64_t Accepted = 0;
+    LevelChangeRuntimeState Kept = LevelChangeRuntimeState::Keep;
     std::vector<EntityId> Released;
     std::vector<std::string> Reasons;
 };

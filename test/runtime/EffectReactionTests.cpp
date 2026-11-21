@@ -141,7 +141,7 @@ TEST(EffectReactions, OnlyAMatchingKindAndTheRightWayOfChangeAreAnswered)
     EXPECT_FLOAT_EQ(shot->ShakeScale, 0.0f) << "a rule with no shake profile shakes nothing";
 
     GameplayTagContainer dead{};
-    ASSERT_TRUE(dead.Grant(rules.Dead));
+    ASSERT_EQ(dead.Grant(rules.Dead), GameplayTagWrite::Added);
     EXPECT_FALSE(rules.React(rules.Bullet, 60.0f, 50.0f, Along(Vec3d(0, 0, 1)), &dead));
 }
 

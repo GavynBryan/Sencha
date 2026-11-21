@@ -1,0 +1,18 @@
+equipment seed: 0 records, bare, owner: 929 bytes, 1 entities
+equipment seed: 0 records, worn, owner: 941 bytes, 1 entities
+equipment seed: 4 records, bare, owner: 1008 bytes, 5 entities
+equipment seed: 4 records, worn, owner: 1116 bytes, 5 entities
+equipment seed: 16 records, bare, owner: 1257 bytes, 17 entities
+equipment seed: 16 records, worn, owner: 1653 bytes, 17 entities
+equipment seed: 32 records, bare, owner: 1589 bytes, 33 entities
+equipment seed: 32 records, worn, owner: 2369 bytes, 33 entities
+equipment seed: 0 records, bare, observer: 255 bytes, 1 entities
+equipment seed: 0 records, worn, observer: 267 bytes, 1 entities
+equipment seed: 4 records, bare, observer: 255 bytes, 1 entities
+equipment seed: 4 records, worn, observer: 331 bytes, 1 entities
+equipment seed: 16 records, bare, observer: 255 bytes, 1 entities
+equipment seed: 16 records, worn, observer: 523 bytes, 1 entities
+equipment seed: 32 records, bare, observer: 255 bytes, 1 entities
+equipment seed: 32 records, worn, observer: 779 bytes, 1 entities
+full pawn owner seed, 64 grants: 1773 bytes of 4687, written 1, unsendable 0
+full pawn owner seed, 16 grants: 1005 bytes of 4687, written 1, unsendable 0

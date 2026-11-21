@@ -509,6 +509,28 @@ std::span<const DataSchema> DataSchemaRegistry::Entries() const
     return Schemas;
 }
 
+std::string_view DataFieldKindName(DataFieldKind kind)
+{
+    switch (kind)
+    {
+    case DataFieldKind::Bool:         return "bool";
+    case DataFieldKind::Int:          return "int";
+    case DataFieldKind::Float:        return "float";
+    case DataFieldKind::String:       return "string";
+    case DataFieldKind::Enum:         return "choice";
+    case DataFieldKind::Vector:       return "vector";
+    case DataFieldKind::Record:       return "record";
+    case DataFieldKind::Array:        return "array";
+    case DataFieldKind::Optional:     return "optional";
+    case DataFieldKind::AssetRef:     return "asset";
+    case DataFieldKind::DataAssetRef: return "data asset";
+    case DataFieldKind::GameplayTag:  return "tag";
+    case DataFieldKind::Entity:       return "entity";
+    case DataFieldKind::StableKey:    return "key";
+    }
+    return "?";
+}
+
 bool IsValidStableKey(std::string_view text)
 {
     if (text.empty() || text.size() > 64)

@@ -229,6 +229,7 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                         }
                     }
                     added.SeenAt = generation;
+                    added.AddedAt = generation;
                     state.Components.push_back(std::move(added));
                     continue;
                 }

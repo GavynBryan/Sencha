@@ -21,7 +21,7 @@
 
 inline constexpr std::size_t kResponseBindingCapacity = 32;
 
-struct SENCHA_COMPONENT("sencha.responses") Responses
+struct SENCHA_COMPONENT("sencha.responses") SENCHA_SAVED Responses
 {
     // The bindings, shared by every entity authored alike.
     ResponseSetKey Set{};

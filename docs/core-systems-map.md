@@ -293,6 +293,12 @@ Scene serialization is schema-driven:
 - `ComponentSerializer<T>` saves/loads a component by visiting its schema.
 - `SceneFieldCodec<T>` handles special field types, especially runtime handles
   that serialize as asset paths.
+- Integers up to 32 bits wide go through the archive's signed or unsigned
+  32-bit field, so a member nested in a struct gets the same form as a
+  component's own. JSON holds the number itself; binary holds four bytes. A read
+  refuses a number that is not whole or does not fit the member's type rather
+  than truncating it. An integer wider than 32 bits has no archive form and
+  fails to compile; identities have their own codecs.
 - `ComponentStorageTraits<T>` defines how a serialized component enters
   registry storage. The primary template handles any component whose schema
   names a `SceneChunkId`; only `LocalTransform` is specialized (it co-registers
@@ -669,6 +675,13 @@ New component:
    - the writer never sends such an entity's authored id;
    - the component must travel (a static assertion says so), since the wire is
      the only way it arrives.
+
+   `SENCHA_SAVED` says a save holds it: a body keeps it as a patch against its
+   prefab. A component without it follows content and a save never holds it
+   there, so state a player must keep is annotated and session state is not
+   (`docs/gameplay/saves.md`, "What a save holds of an entity"). A hand-written
+   serializer derived from `TypedComponentSerializer` reads the same
+   annotation off its component.
 4. List the header under `sencha_generate_component_metadata(...)` in the
    owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
    `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of

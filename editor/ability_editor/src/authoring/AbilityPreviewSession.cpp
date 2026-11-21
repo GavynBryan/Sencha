@@ -206,7 +206,7 @@ bool AbilityPreviewSession::Rebuild()
         (void)set.Add(AttributeId{ id }, attributes.DefaultBase(AttributeId{ id }));
     world.AddComponent<AbilityGrants>(FixtureEntity, AbilityGrants{});
     const std::uint16_t entry = world.GetResource<AbilityGrantEntries>().Intern({ "preview", Shown, {} });
-    (void)GrantAbility(*world.TryGet<AbilityGrants>(FixtureEntity), Shown, AbilityGrantKind::Authored, entry);
+    (void)GrantAbility(world, FixtureEntity, Shown, AbilityGrantKind::Authored, entry);
     return true;
 }
 

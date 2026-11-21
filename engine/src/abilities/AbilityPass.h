@@ -37,14 +37,21 @@ struct AbilityActor
     InputActionView Input;
     InputActionSourceId Source = kLocalInputActionSource;
     AbilityActivations* Activations = nullptr;
+    const AbilityGrantLists* GrantLists = nullptr;
 
     [[nodiscard]] ActiveAbilities& Active() const { return *Entities->TryGet<ActiveAbilities>(Entity); }
     [[nodiscard]] AbilityRecord& Record(std::size_t slot) const { return Activations->Record(Active(), slot); }
     [[nodiscard]] AbilityRecordLocals& Locals(std::size_t slot) const { return Activations->Locals(Active(), slot); }
-    [[nodiscard]] const AbilityGrants* Grants() const
+    [[nodiscard]] const AbilityGrants* GrantRow() const
     {
         return static_cast<const World&>(*Entities).TryGet<AbilityGrants>(Entity);
     }
+    [[nodiscard]] std::span<const AbilityGrant> Grants() const
+    {
+        const AbilityGrants* grants = GrantRow();
+        return grants != nullptr ? GrantLists->Read(grants->Entries) : std::span<const AbilityGrant>{};
+    }
+    [[nodiscard]] const AbilityGrant* Grant(AbilityGrantId id) const { return FindAbilityGrant(Grants(), id); }
     [[nodiscard]] GameplayTagContainer* Tags() const { return Entities->TryGet<GameplayTagContainer>(Entity); }
     [[nodiscard]] bool Alive() const { return Entities->IsAlive(Entity); }
 };
@@ -79,6 +86,7 @@ struct AbilityPassBuffers
     std::vector<AbilityCostBatch> CostBatches;
     std::vector<AuthoredValue> CostTranslating;
     std::vector<AbilityCueEmission> Emitted;
+    std::vector<GameplayTagId> StartTags;
 };
 
 struct AbilityCommitResult
@@ -150,6 +158,8 @@ private:
     AbilityCommitResult Commit(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                                std::uint8_t groups);
     void StartCooldown(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition);
+    [[nodiscard]] bool StartTagsFit(const AbilityActor& actor, const AbilityDefinition& definition, bool cooldown,
+                                    bool costed);
 
     // Execution (AbilityPass.cpp).
     void EnterPhase(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
@@ -211,4 +221,5 @@ private:
     std::vector<AbilityCostBatch>& CostBatches;
     std::vector<AuthoredValue>& CostTranslating;
     std::vector<AbilityCueEmission>& Emitted;
+    std::vector<GameplayTagId>& StartTags;
 };

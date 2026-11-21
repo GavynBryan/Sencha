@@ -21,10 +21,20 @@ An `item.definition` asset says what a kind of item is:
 ```
 
 - **`stack.max`** is how many units one entry holds. With 1, every unit is its
-  own entry with state of its own. Two entries merge only when they have the
-  same definition, `stack.max` above 1, and both still hold units.
+  own entry with state of its own. An entry authored, saved or edited in Kyusu
+  holds from one unit to `stack.max` (`ItemStackHolds`). Kyusu refuses an edit
+  outside that range. A scene or save naming more, or none, still loads the
+  entry with its count clamped into the range (`ItemStackClamp`) and logs a
+  warning naming the entry, its item, the count it named and the count it got:
+  a save made before content lowered `stack.max` keeps a full entry instead of
+  failing the whole load, and a count of none becomes one, since an empty
+  entry is spent and never authored.
+  Every change to a count goes through `SetItemCount`, which queues an entry
+  that reaches zero for the inventory pass. Two entries merge only when they
+  have the same definition, `stack.max` above 1, and both still hold units.
 - **`keep: false`** means taking it applies its `take.effects` (Instant
-  effects) and keeps nothing: ammunition that becomes an attribute.
+  effects), scaled by the pickup's count, and keeps nothing: ammunition that
+  becomes an attribute.
 - **`attributes`** seed each new entry's own `AttributeSet` (its charges, which
   effect costs targeting the `source` spend), and **`instance_tags`** its own
   baseline tags. Both are an entry's own state, so either needs `stack.max` 1: a
@@ -77,7 +87,8 @@ container is the entry's `Held`:
 
 ## Operations
 
-`Inventory` (`inventory/Inventory.h`) changes inventories. Every operation runs
+`Inventory` (`inventory/Inventory.h`) changes inventories in one tick, which
+an effect it applies is timed in. Every operation runs
 on the simulation authority alone (`NotAuthority` elsewhere), on the owner
 thread outside any query, and checks everything before it changes anything, so
 a refusal leaves the World as it was.
@@ -85,8 +96,8 @@ a refusal leaves the World as it was.
 | Operation | What it does |
 |---|---|
 | `Give(container, definition, count)` | Fills open stacks in container order, then makes entries of up to `stack.max` units; all or none. |
-| `Take(pickup, into)` | Moves one entry the pickup holds into `into`, or gives what the pickup counts. Applies `take.effects`, and with `keep: false` keeps nothing. The pickup goes once it holds nothing. |
-| `Transfer(entry, into, count, change?)` | Moves `count` units (0 is all), open stacks first. Part of a stack moves as a new entry and the rest keeps its identity; a stack merged away entirely is spent. |
+| `Take(pickup, into)` | Moves one entry the pickup holds into `into`, or gives what the pickup counts. A counted pickup applies its definition's `take.effects` to `into` scaled by the units it counts (a box of 25 shells is one effect at 25 times its magnitude), and with `keep: false` keeps nothing. An entry lying in a pickup was taken once already, so taking it back applies nothing. The pickup goes once it holds nothing. |
+| `Transfer(entry, into, count, change?)` | Moves `count` units (0 is all), open stacks first. Part of a stack moves as a new entry and the rest keeps its identity; a stack merged away entirely is spent. A whole entry moved into the container already holding it takes no new room and keeps its place, so it succeeds in a full container; part of a stack moved there is a new entry and still needs room. |
 | `Drop(entry, at, partition, change?)` | Takes the entry into a new pickup at `at`. |
 | `Use(user, entry)` | Asks `user` to run the definition's use in the next ability pass. |
 
@@ -118,7 +129,7 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 | Limit | Value | When it is reached |
 |---|---|---|
 | Entries in a container | its `Capacity`; 0 means `kItemContainerMostEntries` (65535) | `ContainerFull`, and nothing changes. A `Give` that would make more entries than that is refused before it makes any. |
-| Position under a holder | 16 bits | held records': later entries share the last position, in the order they came, and `HeldRecordIndex::PositionsExhausted()` counts it |
+| Position under a holder | 16 bits | held records': the holder's records are renumbered in order when the last position is taken; only past 65535 records do later entries share it, counted by `HeldRecordIndex::PositionsExhausted()` |
 | Nesting | `kHeldDeepestNesting` (64) levels of records | `TooDeep`: an entry and everything it holds must lie within the bound |
 | An entry's own state | 16 attributes, 32 tags | the definition is refused at declaration |
 
@@ -135,7 +146,10 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 
 A response's condition gates on `inventory.count` with `require`
 (`{ "min": 3 }` for "holds at least three"). A verb refused for any inventory
-reason answers `Refused`.
+reason answers `Refused` and logs the reason by name at debug level, such as
+`inventory.give refused: container_full`. `InventoryRefusal` has an
+`EnumSchema`, so native code, a console and a HUD read the same name through
+`EnumToString`.
 
 ## Spending, depletion and the inventory pass
 

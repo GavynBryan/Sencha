@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <line/ContactLineSystem.h>
 #include <abilities/AbilityVerbs.h>
-#include <abilities/GameplayTagVerbs.h>
+#include <gameplay_tags/GameplayTagVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <app/EngineVocabulary.h>
 #include <attach/AttachmentVerbs.h>

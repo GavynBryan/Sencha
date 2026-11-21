@@ -33,7 +33,7 @@ namespace
         {
             const EntityId entity = Entities.CreateEntity();
             GameplayTagContainer tags{};
-            EXPECT_TRUE(tags.Grant(Squad));
+            EXPECT_EQ(tags.Grant(Squad), GameplayTagWrite::Added);
             Entities.AddComponent<GameplayTagContainer>(entity, tags);
             return entity;
         }

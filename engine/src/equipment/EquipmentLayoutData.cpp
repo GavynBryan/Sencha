@@ -95,7 +95,6 @@ namespace
             slot.OnDepleted = depleted == "hold" ? SlotDepletion::Hold : SlotDepletion::Release;
             value->Slots.push_back(std::move(slot));
         }
-        // EquipmentSlotsNamed takes the slot, so the group would be unreachable.
         for (std::size_t i = 0; i < value->Slots.size(); ++i)
         {
             const std::string& key = value->Slots[i].Key;

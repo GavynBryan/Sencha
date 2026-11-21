@@ -71,7 +71,17 @@ An `item.definition` says how it is worn:
 
 `EquipmentState` is what a wearer equips into and what it has equipped: its
 layout, and one record for each logical equip. A two-handed sword is one record
-holding two slots.
+holding two slots. The row holds the layout, the count and the next key, and
+names its records in the World's `EquipmentRecordLists`
+(`docs/ecs/row-lists.md`), so a wearer is stored by what it wears. Code reads
+them with `EquipmentRecordsOf` and changes them through `Equipment`, or with
+`EditEquipmentRecords`, `WearEquipmentRecord`, `RemoveEquipmentRecord` and
+`SetEquipment`; scenes, snapshots and Kyusu hold them by value as an
+`EquipmentRecordList`. Wearing a record ends every record holding one of its
+slots and appends it under the next key, by one rule (`WearRecord`) that an
+equip and a Kyusu edit both use; `FindEquipmentRecordHolding` answers which
+record holds a slot, and `ItemTakesSlotFirst` whether an item's first slot can
+be that one.
 
 | Field | What it is |
 |---|---|
@@ -83,6 +93,21 @@ holding two slots.
 
 The layout and the records are one component because a record's slots are
 indices into that layout: they load, save and replicate together.
+
+**Why the relation stays on the wearer.** The record list is the one place the
+worn relation lives; it was not moved onto the item entry, for three reasons
+the code gives:
+- A `hold` slot's record outlives its entry (the entry is spent and destroyed,
+  the record waits), and an authored, loaded or replicated record exists before
+  its source resolves. Neither has an entry to live on, so the wearer would
+  keep a second form of the same relation for them.
+- Entries are sent to their owner alone, and everyone who sees a wearer is
+  sent what it wears. A wearer-side public summary would have to carry each
+  record's key, definition, slots and primary slot, which is the record
+  without its source.
+- Every reader (slot lookup, slot resolution, the wire, the save, Kyusu, the
+  rebind fingerprint) would then join two or three forms. One list, stored by
+  its length, removes the fixed cost that prompted the move.
 
 - **Relations persist; contributions are derived.** A record is saved and
   replicated. The effects it maintains, and their tags and grants, never are:
@@ -105,19 +130,25 @@ indices into that layout: they load, save and replicate together.
   (`sencha.bodies`, `docs/gameplay/saves.md`), and the entries its records name
   are held records of the body (`sencha.held`). After a restore the body's
   records are `Pending`, their sources resolve by id once the entries are back,
-  and the next pass derives them: nothing derived is in the file
+  and the next pass derives them: nothing derived is in the file. A record
+  whose source names an id no entity carries yet, and that it has never
+  resolved this session, waits for it with nothing derived, however many
+  passes run first; once its source resolves the pass notes the entity and
+  derives the record again, and only an entry it has seen and that is then
+  destroyed ends it
   (`EquipmentGateTest.WhatABodyWearsSurvivesASaveIntoAFreshWorldAndIsAttributable`).
   A zone NPC's equipment follows its zone's state: its authored record comes
   back with the zone, and a change made at run time is kept only as far as the
   zone record keeps the entities involved.
 - **Wire.** Everyone is sent the layout and each record's key, definition,
   slots and primary slot. Only the owner is sent the sources. Each record is a
-  run of its own, so a change to one record resends that record. Removing a
-  record moves the last into its place, which changes at most two runs.
-  Record order means nothing: records are found by slot, source or key.
+  run of its own, so a change to one record resends that record; sources go
+  two to a run. Removing a record moves the last into its place, which changes
+  at most two record runs. A run no record reaches is not sent. Record order
+  means nothing: records are found by slot, source or key.
 - **Seed size.** A snapshot may span datagrams (`docs/plans/networking.md`), so
-  a pawn wearing all 16 records reaches its owner in one snapshot
-  (`docs/plans/evidence/equipment-wire/results.md`).
+  a pawn wearing all 32 records reaches its owner in one snapshot
+  (`docs/plans/evidence/actor-caps/results.md`).
 
 ## Equipping
 
@@ -129,6 +160,7 @@ runs in.
 |---|---|
 | `Equip(wearer, entry, slot?)` | Puts the entry in the slots its item occupies, replacing what holds them. |
 | `Unequip(wearer, slot)` | Ends the record holding the slot. |
+| `UnequipRecord(wearer, record)` | Ends the record of that key, as `Equip` returned it, without naming a slot. |
 | `Cycle(wearer, group)` | Equips into the group's first slot the next entry the wearer holds, however deep, whose first `occupies` name covers the slot and which it accepts. A candidate the equip refuses is passed for the next; it wraps, and unequips when nothing equips. |
 
 **The check.** An equip is checked whole before anything changes, against the
@@ -142,11 +174,10 @@ state after the replacement. It is refused, with nothing changed, when:
 | `AlreadyEquipped` | the entry is already worn |
 | `NoSlot`, `NotAccepted` | a slot is not found, or does not accept the item |
 | `Locked` | the wearer holds a lock tag, or a record it would replace is locked |
-| `Full` | the wearer's records are full |
 | `NotMaintained`, `Undeclared` | an equip effect is not Infinite, or content never declared the entries it would be worn with (also asserts in a debug build: see "Worn grant entries") |
 | `MissingAttribute` | an equip effect modifies an attribute the wearer does not have |
 | `GrantRoom` | the grants would not fit the wearer's grant table once what it replaces has gone |
-| `TagRoom` | the tags its effects grant would not fit the wearer's tag container once what it replaces has gone, or the wearer has none |
+| `TagRoom` | the tags its effects grant would not fit the wearer's tag container once what it replaces has gone (a new tag past the capacity, or a tag already at 0xFFFF stacks, by `CanHoldAll`), or the wearer has none |
 
 **One rule for "may use".** Equip, the pass's holder rule, cycle's candidates
 and the slot cost all ask `MayUseItem(world, wearer, entry)`
@@ -181,14 +212,15 @@ bolt bind one action at two priorities.
 
 | Limit | Value | When it is reached |
 |---|---|---|
-| Records on a wearer | `kEquipmentRecordCapacity` (16) | `Equip` answers `Full` and changes nothing; a swap needs no new record. A scene with more refuses to load. |
 | Slots in a layout | `kMaxEquipmentSlots` (32): a record's slots are a 32-bit mask | the layout is refused when it is compiled |
-| Grants on a wearer | `kAbilityGrantCapacity` (16), counting what is reserved for effects not yet granted | `Equip` answers `GrantRoom`; a record derived at load or reload goes `RefusedForRoom`, traced once, and is derived when there is room |
+| Records on a wearer | `kEquipmentRecordCapacity`, which is `kMaxEquipmentSlots`: a record holds at least one slot and no two hold the same one | with every slot taken, `Equip` swaps (it takes the first slot its item names); there is no refusal for a full list. A scene whose records name no slot, share one, or number more than 32 refuses to load. |
+| Grants on a wearer | `kAbilityGrantCapacity` (64, what an owner can be sent), counting what is reserved for effects not yet granted | `Equip` answers `GrantRoom`; a record derived at load or reload goes `RefusedForRoom`, traced once, and is derived when there is room |
 | Tags on a wearer | `GameplayTagContainer::Capacity` (32) | `Equip` answers `TagRoom`; at a derivation the effect layer counts and reports the tags the container refuses (`docs/gameplay/abilitykit.md`) |
 
-Each has a test at its boundary in `test/runtime/EquipmentTests.cpp`. The
-record and grant limits are fixed rows on the wearer today; lifting them is
-recorded in `docs/deferred.md` ("More than sixteen worn records or grants").
+Each has a test at its boundary in `test/runtime/EquipmentTests.cpp`
+(`AWearerWearsARecordInEverySlotALayoutCanHaveAndTheNextEquipSwaps` for
+records). Neither records nor grants are a fixed row on the wearer: both are
+lists stored by their length.
 
 ## Worn grant entries
 
@@ -285,8 +317,12 @@ For every wearer with records:
   derived (see "Derivation").
 
 Its per-tick work is bounded by records: a still wearer costs a few reads per
-record, and no allocation. Measured on the composition branch
-(`docs/plans/evidence/equipment-overlay/results.md`).
+record, and no allocation. On the profile preset, a wearer of 32 records and
+64 grants costs the equipment pass 1.5 µs a tick and the ability pass 4.0 µs;
+1,000 wearers of four records cost 18% less than on the sixteen-record row, and
+the first pass after 200 wearers' records arrive costs 22% more (once). Method
+and tables: `docs/plans/evidence/actor-caps/results.md`; the composition
+branch's figures are in `docs/plans/evidence/equipment-overlay/results.md`.
 
 ## Locks
 
@@ -304,7 +340,7 @@ Two kinds, never confused:
   baseline (`stack.max` must then be 1).
 
 Locks refuse what a person asks for: `Equip` (of the slots a locked record
-holds), `Unequip`, `Cycle`, and a requested move of a worn entry. They never
+holds), `Unequip`, `UnequipRecord`, `Cycle`, and a requested move of a worn entry. They never
 hold back what the World decides: the pass's endings and derivations, and a
 **forced** change (`ItemChangeClass::Forced`, the `force` argument of
 `equipment.unequip`, `inventory.transfer` and `inventory.drop`), such as a
@@ -333,7 +369,11 @@ engine's own (`equipment/EquipmentVocabulary.h`):
 | `equipment.in_slot` (query, entity) | `wearer`, `slot` | The entry a slot holds; unavailable when it holds none |
 | `equipment.sources` (query, entities) | `wearer`, `tag` | Every worn entry whose item carries the tag |
 
-A verb refused for any equipment reason answers `Refused`.
+A verb refused for any equipment reason answers `Refused` and logs the reason
+by name at debug level, such as `equipment.equip refused: tag_room`.
+`EquipmentRefusal` has an `EnumSchema`, so native code, a console and a HUD
+read the same name through `EnumToString`; carrying the reason in the verb's
+answer waits on typed verb answers.
 
 **The `equipment.slot` cost provider.** It spends units from the entry a slot
 holds: `{ "slot": "use.x", "count": 1 }`. It owns no resource: it spends
@@ -356,8 +396,8 @@ pass derives it.
 
 ## Not yet
 
-Recorded in `docs/deferred.md`: more than sixteen worn records or grants,
-tracing equipped grants that tie on an action, deriving a zone's equipped
+Recorded in `docs/deferred.md`: more than thirty-two slots in a layout, a wire
+image sized by what it holds, tracing equipped grants that tie on an action, deriving a zone's equipped
 records as it loads, one-shot effects when an item is equipped, a second layer
 that takes part in moving an entry, owner-only fields a former owner keeps,
 predicted equips ("Predicting gives and transfers"), and authoring a waiting

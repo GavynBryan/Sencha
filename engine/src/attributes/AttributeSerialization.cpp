@@ -30,7 +30,8 @@ bool WriteAttributes(IWriteArchive& archive,
 
 bool ReadAttributes(IReadArchive& archive,
                     AttributeSet& attributes,
-                    const AttributeRegistry& registry)
+                    const AttributeRegistry& registry,
+                    std::vector<std::string>* dropped)
 {
     attributes.Clear();
 
@@ -52,7 +53,10 @@ bool ReadAttributes(IReadArchive& archive,
         if (!id.IsValid())
             continue; // attribute not in this registry's vocabulary: skip
 
-        attributes.Add(id, base);
+        if (attributes.Has(id) || attributes.Size() < AttributeSet::Capacity)
+            attributes.Add(id, base);
+        else if (dropped != nullptr)
+            dropped->push_back(std::move(name));
     }
     archive.End(); // attributes array
     archive.End(); // root object

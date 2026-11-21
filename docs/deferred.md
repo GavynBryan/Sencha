@@ -1141,9 +1141,11 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Changing level inside a network session
 
-- **What:** `LevelChange::Request` refuses while a session runs, because a peer
-  is told which map to load only when it is admitted (`NetSession`'s announced
-  map) and would stay on the old level.
+- **What:** `LevelChange::Request` refuses while a session runs once a level
+  is loaded, because a peer is told which map to load only when it is admitted
+  (`NetSession`'s announced map) and would stay on the old level. The first
+  load is admitted, which is how `map` works for a client and for a host that
+  began hosting first.
 - **Where:** `engine/src/app/LevelChange.cpp`; the announcement in
   `engine/src/app/EngineFramePhases.cpp`.
 - **Trigger:** a co-op game that changes level, rests or restores a save with a
@@ -1202,7 +1204,11 @@ described in `docs/navigation/runtime.md`, "Agents".
     - `hero.facts.sdata` commits in about 180 µs and `examples.facts.sdata` in
       about 85 µs, each with one source;
     - a plain definition commits in about 3 µs.
-  - Every commit reads its sources again; nothing is cached across commits.
+  - Every commit reads its sources' bytes again, but parses a source only
+    when its content hash changed (`DataAssetLoader`; "Data definitions" in
+    `docs/assets/composition.md`). `DataCompositionBench` loads 500 variants
+    of one 40-modifier base: 333 ms before the parsed sources were kept,
+    209 ms after, in a debug build.
 - **Where:**
   - `DataAssetLoader::ComposePending` (`engine/src/assets/data/DataAssetLoader.cpp`).
   - The worker cannot do this today. `IAssetStager::LoadStaged` receives only
@@ -1288,18 +1294,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first prefab whose response binding names another of its
   own members.
 
-## Prefab harvest pins and keyed-list order
+## Prefab harvest pins
 
 - **What:** Kyusu rebuilds a derived prefab's patches from a diff of live state
   against the composed base. A value pinned equal to the base's (so a later
-  base change does not reach it) is dropped, and so is the order of a keyed
-  list. Data definitions keep both, because their patches are edited, not
-  diffed.
+  base change does not reach it) is dropped. Data definitions keep it, because
+  their patches are edited, not diffed. A keyed list's order is kept: a
+  reordered list is harvested whole (`PatchFrom`).
 - **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
   `editor/common/src/scene_source/SceneComponentDiff.cpp`.
-- **Trigger:** the first prefab that must keep a value its base later changes,
-  or a keyed list whose order is meaningful (a priority list) on a derived
-  prefab.
+- **Trigger:** the first prefab that must keep a value its base later changes.
 
 ## Recomposing resident children while their base is edited
 
@@ -1375,15 +1379,14 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## What a death without a save keeps
 
 - **What:** a death with no save restarts the level from authored content
-  (`LevelChange`). Counters the world holds survive it: they are runtime
-  entities in the persistent partition, which the level change does not own.
-  Counters a body holds go with the released body. A game that restores its
-  last save on death gets both back as saved.
+  (`LevelChange`). Counters the world holds survive it unless the request
+  discards runtime state (`LevelChangeRuntimeState::Discard`, a run that starts
+  over). Counters a body holds always go with the released body. A game that
+  restores its last save on death gets both back as saved.
 - **Where:** `app/LevelChange.cpp`, `world/held/HeldRecords.cpp`.
-- **Trigger:** a game whose death must reset the world's progress without a
-  save (a run that starts over), or keep a body's (a counter of deaths). Then
-  let the level change request say what happens to held records, defaulting to
-  today's behaviour.
+- **Trigger:** a game whose death must keep a body's counters without a save
+  (a counter of deaths). Then let the released body's records move to its
+  participant, or to the next body, through the same request field.
 
 ## Counter changes on a client
 
@@ -1393,6 +1396,20 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `logic/CounterVocabulary.cpp`, `world/held/HeldRecordIndex.h`.
 - **Trigger:** a client presentation that must react to a counter changing
   rather than poll it, such as a co-op HUD popup when a star is collected.
+
+## A held record revision per kind
+
+- **What:** `HeldRecordIndex` keeps one revision per holder, moved by any
+  record beneath it. A body's counter changing (a kill count) moves the body's
+  revision, so the equipment pass re-walks a wearer's entries when a record is
+  waiting for one, and a game's view of the body's entries rebuilds.
+- **Where:** `world/held/HeldRecordIndex.cpp` (`BumpFrom`),
+  `equipment/EquipmentSystem.cpp` (`Rebind`).
+- **Trigger:** a profile in which counter writes on a holder show in the
+  equipment pass or an inventory view's rebuilds. Then keep a revision per
+  record kind beside the holder's, using the kind records are keyed by.
+- **Consumer:** the equipment rebind and an inventory screen of a body that
+  also holds per-player counters.
 
 ## Item display data
 
@@ -1488,19 +1505,120 @@ described in `docs/navigation/runtime.md`, "Agents".
   whose holder list is too long to read. Then add a container verb that makes
   an entry held by it, and picking in the view.
 
-## More than sixteen worn records or grants
+## A replicated list field
 
-- **What:** a wearer holds at most `kEquipmentRecordCapacity` (16) records, in
-  a fixed row of `EquipmentState`, and `kAbilityGrantCapacity` (16) grants, in
-  a fixed row of `AbilityGrants`. Both report at the edge (`Full`,
-  `GrantRoom`), and both are too small for a body that wears about 25 things
-  or a weapon that grants nine abilities beside a second one.
-- **Where:** `equipment/EquipmentComponents.h`, `equipment/EquipmentStateWire.h`
-  (one wire member per record), `abilities/AbilityGrants.h`.
-- **Trigger:** the per-actor cap lift planned next: grants move off the actor's
-  row as running abilities did, and the worn relation moves onto the item
-  entry, leaving per-slot hold memory on the wearer. Measure the equipment
-  bench before and after.
+- **What:** a component holding a list crosses as a fixed wire image whose
+  capacity is a list of members: `AbilityGrants` (64 grants in sixteen
+  pages, 1,540 B), `EquipmentState` (32 records, 772 B), `GameplayTagContainer`
+  (one owner run of 64 words, so at most 127 tags), `AttributeSet` (three runs
+  of 16), and the slot tables `ActorTimeLeases`, `ActiveAbilities`,
+  `AbilityCueLog` and `AnimRequestSet`. Measured costs
+  (`docs/plans/evidence/replicated-lists/results.md`): every publish builds,
+  compares and copies 3,160 B of images per grant-holding actor whatever it
+  holds, 1.0 µs of the 1.5 µs `ReplicationChangeStore::Update` spends on it; a
+  tag gaining a stack resends 257 B of tags to the owner, an attribute change
+  65 B; revoking a grant from the middle resends every later page; and a cap is
+  retyping members rather than a number. The remedy is a list the codec
+  declares beside its fixed head: 0 to a declared most elements of one
+  trivially copyable type with its own runs and audience, a change generation
+  per element run, a count and per-element masks on the wire, positional
+  order. A list never spans snapshots; a collection that cannot fit one is
+  entities. Not "let a codec say how many leading runs are in use": that keeps
+  the member lists, the 64-run ceiling and the page-sized resends. Net
+  protocol and module ABI bumps.
+- **Where:** `net/ReplicationLayout.h`, `engine/src/net/ReplicationCodec.cpp`,
+  `ReplicationChangeStore.cpp`, `ReplicationSnapshot.cpp`; the wire headers
+  `abilities/AbilityGrantsWire.h`, `equipment/EquipmentStateWire.h`,
+  `gameplay_tags/GameplayTagContainerWire.h`, `attributes/AttributeSetWire.h`.
+- **Consumers:** `AbilityGrants` and `EquipmentState` first, then
+  `GameplayTagContainer` and `AttributeSet`.
+- **Trigger:** the first of: a third component's list leaves its row (the tag
+  container when content is refused a 33rd tag, attributes at a 17th);
+  content needing more than 64 grants on one actor or a 33rd slot in a
+  layout; any new wire header needing a "names one member per" assert; the
+  replication bench or a session profile with 1,000 or more replicated
+  grant-holding actors showing image build and compare above 10% of
+  `ReplicationChangeStore::Update`; a networked game entering production.
+  `EntityReplicationBench` already measures 67% at 1,000 actors; no shipping
+  session runs that many, and whether the bench alone fires this is the
+  owner's call.
+
+## Keyed list deltas
+
+- **What:** a replicated list will resend by position, so a removal from the
+  middle resends every element after it. Sending removed keys and changed
+  elements avoids that, at the price of a tombstone per removed key held until
+  every peer confirms it, as removed components are.
+- **Where:** the replicated list field above.
+- **Consumer:** `AbilityGrants`, whose revoke closes the gap.
+- **Trigger:** the list field built, and a measured session where resends
+  after middle removals exceed a tenth of an owner's bytes.
+
+## Slot tables as replicated lists
+
+- **What:** `ActorTimeLeases`, `AbilityCueLog`, `ActiveAbilities` and
+  `AnimRequestSet` stay fixed slot tables on the wire and in the change store
+  (about 2.7 KB of images per actor carrying all four, computed) after the
+  list field ports grants, equipment, tags and attributes.
+- **Where:** `time/ActorTimeLeasesWire.h`, `abilities/AbilityCueLogWire.h`,
+  `abilities/ActiveAbilitiesWire.h`, `anim/AnimRequestWire.h`.
+- **Consumer:** `ActorTimeLeases` first, then the cue log.
+- **Trigger:** the replication bench or a session profile after the port
+  showing these images as the largest remaining share of `Update`.
+
+## A predicted replicated list
+
+- **What:** a codec component is never predicted, so a list is never held in
+  `PawnStateReplay`'s fixed shadow bytes or rolled back; the owner predicts
+  with its grants, tags and attributes and keeps guesses in `ActiveAbilities`.
+- **Where:** `net/ClientPrediction.h`, `prediction/PawnStateReplay.cpp`.
+- **Consumer:** none yet.
+- **Trigger:** a list the owner must simulate between snapshots. It needs
+  variable-size shadow state.
+
+## A list declared once in a component's field description
+
+- **What:** a list's scene form, save form and wire form meet at a by-value
+  type written by hand (`AbilityGrantList`, `EquipmentRecordList`). Declaring
+  the list on the handle member, its element a described struct, needs from
+  the field-description work: a wire form per field kind taking
+  `ReplicationWireContext` (tags, named ids, entities and `PersistableRef`,
+  the last two not named ids), a described struct not tied to an offset in a
+  row, a list kind (element, optional key member, most elements; scene form a
+  JSON array composed by `MakeKeyedListRecordSchema`), and
+  `RuntimeFieldsOf<T, SchemaPurpose::Replication>` stopping at a list as it
+  stops at a `PackedScalarGroup`. This is the one entry for the list kind;
+  the field-description work does not own it.
+- **Where:** `core/metadata/TypeSchema.h`, `net/ReplicationLayout.h`,
+  `abilities/AbilityGrantsSerializer.cpp`, `equipment/EquipmentStateWire.h`.
+- **Consumer:** the first list component whose element is plain described
+  fields.
+- **Trigger:** the replicated list field built and field descriptions able
+  to carry a wire form.
+
+## More than thirty-two slots in a layout
+
+- **What:** a record's slots are a 32-bit mask, so a layout has at most
+  `kMaxEquipmentSlots` (32) slots and a wearer at most 32 records. Record
+  storage no longer bounds it: only the mask and the wire's 32 record runs do.
+- **Where:** `equipment/EquipmentLayout.h`, `EquipmentRecord::Slots`,
+  `equipment/EquipmentStateWire.h`.
+- **Trigger:** a layout that needs a thirty-third slot. Then widen the mask to
+  64 bits and page the record runs as grants are paged; both are wire and ABI
+  changes.
+
+## Effect grants are matched against every grant the target holds
+
+- **What:** each pass, every grant entry of every lasting effect is looked for
+  among its target's grants, and every effect-held grant is checked against its
+  effect's entries: work proportional to effect grants times grants held on
+  that actor, every tick, though nothing changed. Measured at 64 grants an
+  actor (`docs/plans/evidence/actor-caps/results.md`).
+- **Where:** `SyncEffectGrants` and `RevokeEndedEffectGrants` in
+  `engine/src/abilities/AbilitySystem.cpp`.
+- **Trigger:** a World where many actors hold tens of effect-held grants each
+  (the evidence's full-room row is the shape), or the pass nearing the 1 ms
+  mark. Then resynchronise an actor only when an effect on it began or ended.
 
 ## Tracing equipped grants that tie on an action
 
@@ -1575,3 +1693,21 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the owner's walkthrough of equipping a guard in Kyusu, or the
   first content that authors a waiting slot (an empty quiver) or an item whose
   second slot must be chosen.
+
+## Capturing a save without changing the world
+
+- **What:** a save section's `Capture` takes `World&` because capture still
+  gives ids lazily: `sencha.bodies` gives the local body a runtime persistent
+  id, and `sencha.held` gives one to each runtime record and holder it saves
+  and names the holder in the record's `Held`. The id counter no longer
+  depends on section order (`SavedGames` writes it after every capture), but
+  capture is still a structural change at the zone-residency phase.
+- **Where:** `engine/src/save/EngineSaveSections.cpp` (`CaptureBodies`),
+  `engine/src/save/HeldRecordSaves.cpp` (`CaptureHeldRecords`, `NameHolder`),
+  `SavedGameSectionDefinition::Capture` in `engine/include/save/SavedGames.h`.
+- **Trigger:** the first capture that must run where structural changes are
+  not allowed (a capture on the async lane or from a read-only view), or a
+  game section that needs a stable id for an entity it references. Then give
+  bodies their id at spawn on the authority and records theirs where they are
+  made (counters, inventory), settle held records before the write commits,
+  and make `Capture` take `const World&` (a module ABI change).

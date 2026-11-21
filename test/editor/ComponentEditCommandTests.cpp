@@ -80,7 +80,7 @@ TEST_F(ComponentEditCommandTest, ValueCommandRoundTripsAWholeComponent)
 
     const GameplayTagContainer before = *world.TryGet<GameplayTagContainer>(entity);
     GameplayTagContainer after = before;
-    ASSERT_TRUE(after.Grant(stunned, 2));
+    ASSERT_EQ(after.Grant(stunned, 2), GameplayTagWrite::Added);
 
     Commands.Execute(std::make_unique<ValueCommand<GameplayTagContainer>>(
         before, after,
@@ -250,6 +250,30 @@ TEST_F(ComponentEditCommandTest, AnEntrysItemIsChosenByNameAndUndone)
     EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 5u);
 }
 
+TEST_F(ComponentEditCommandTest, AnEntrysCountStaysWithinWhatItsStackHolds)
+{
+    WorldDocument world(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    World& components = Components();
+    ItemRegistry& items = components.GetResource<ItemRegistry>();
+    const ItemId arrow = items.Define("asset://items/arrow.sdata", ItemDefinition{ .Name = "Arrow", .StackMax = 20 });
+    (void)items.Define("asset://items/cloak.sdata", ItemDefinition{ .Name = "Cloak" });
+    const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+    components.AddComponent<ItemEntry>(entity, ItemEntry{ .Definition = arrow, .Count = 5 });
+
+    const std::unique_ptr<IEditorComponentAdapter> entries = MakeItemEntryEditorAdapter();
+    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = entity };
+    EXPECT_EQ(entries->SetInspectorValue(context, "count", "21"), PropertyEditResult::Refused);
+    EXPECT_EQ(entries->SetInspectorValue(context, "count", "0"), PropertyEditResult::Refused);
+    ASSERT_EQ(entries->SetInspectorValue(context, "count", "20"), PropertyEditResult::Applied);
+    EXPECT_EQ(entries->SetInspectorValue(context, "definition", "asset://items/cloak.sdata"), PropertyEditResult::Refused)
+        << "twenty cloaks are twenty entries";
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Count, 20u);
+    EXPECT_EQ(components.TryGet<ItemEntry>(entity)->Definition, arrow);
+}
+
 // "This chest holds 3 arrows" is authored by picking the chest as the entry's
 // holder, among the document's entities, never itself or what it holds.
 TEST_F(ComponentEditCommandTest, AHeldRecordsHolderIsPickedAmongTheDocumentsEntitiesAndUndone)
@@ -351,10 +375,11 @@ TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
         << "what another holds is not this wearer's to wear";
 
     const auto state = [&]() -> const EquipmentState& { return *std::as_const(components).TryGet<EquipmentState>(guard); };
+    const auto worn = [&] { return EquipmentRecordsOf(components, guard); };
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u);
-    EXPECT_EQ(state().Records[0].Slots, 1u);
-    EXPECT_EQ(state().Records[0].Derivation, EquipmentDerivation::Pending);
+    EXPECT_EQ(worn()[0].Slots, 1u);
+    EXPECT_EQ(worn()[0].Derivation, EquipmentDerivation::Pending);
     EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Unchanged);
     EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "Nobody's"), PropertyEditResult::Refused);
     EXPECT_EQ(equipment->SetInspectorValue(context, "layout", "asset://equipment/other.sdata"), PropertyEditResult::Refused);
@@ -362,12 +387,12 @@ TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
     const std::string greatLabel = EntityLabel(Document, great) + " (0000000000062ea7)";
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", greatLabel), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u) << "it replaces what held its slots";
-    EXPECT_EQ(state().Records[0].Slots, 3u);
-    EXPECT_EQ(state().Records[0].Source.Target, PersistentEntityId{ 0x62EA7 });
-    EXPECT_EQ(state().Records[0].Key, 2u) << "a key is never reused";
+    EXPECT_EQ(worn()[0].Slots, 3u);
+    EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });
+    EXPECT_EQ(worn()[0].Key, 2u) << "a key is never reused";
 
     ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.off", "Empty"), PropertyEditResult::Applied);
     EXPECT_EQ(state().Count, 0u);
     Commands.Undo();
-    EXPECT_EQ(state().Records[0].Source.Target, PersistentEntityId{ 0x62EA7 });
+    EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });
 }

@@ -51,6 +51,8 @@ public:
         // The last pass that found this component on the entity, for the same
         // reason EntityState carries one: what a pass did not see is gone.
         std::uint64_t SeenAt = 0;
+        // The pass that first found it, or found it again after a removal.
+        std::uint64_t AddedAt = 0;
     };
 
     // A component an entity used to carry. Held until every peer has been told,

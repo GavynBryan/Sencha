@@ -52,10 +52,11 @@ constexpr std::string_view kAutomatic = R"({
                     "ops": [ { "key": "o_muzzle", "op": "cue", "cue": "cue.muzzle", "at": { "port": "aim.origin" } } ] },
                   "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
 
-// Every actor granted the automatic, all reading the one local input source.
+// Every actor granted the automatic, all reading the one local input source;
+// each further grant is the same ability under its own key, at a lower priority.
 struct Crowd
 {
-    explicit Crowd(std::size_t actors)
+    explicit Crowd(std::size_t actors, std::size_t grantsPerActor = 1)
     {
         RegisterAbilityKit(Entities);
         Entities.RegisterComponent<LocalTransform>();
@@ -82,7 +83,13 @@ struct Crowd
                                               MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
         const AbilityId ability =
             Entities.GetResource<AbilityRegistry>().Define("asset://bench/automatic.sdata", std::move(definition));
-        const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
+        std::vector<std::uint16_t> entries{ Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} }) };
+        for (std::size_t g = 1; g < grantsPerActor; ++g)
+        {
+            AbilityBindingDecl lower;
+            lower.Priority = -static_cast<std::int32_t>(g);
+            entries.push_back(Entities.GetResource<AbilityGrantEntries>().Intern({ std::format("g{}", g), ability, lower }));
+        }
         for (std::size_t i = 0; i < actors; ++i)
         {
             const EntityId actor = Entities.CreateEntity();
@@ -90,7 +97,9 @@ struct Crowd
             Entities.AddComponent<LookOrientation>(actor, LookOrientation{});
             Entities.AddComponent<InputActionSourceRef>(actor, InputActionSourceRef{});
             Entities.AddComponent<AbilityGrants>(actor, AbilityGrants{});
-            (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
+            for (const std::uint16_t entry : entries)
+                EXPECT_TRUE(
+                    GrantAbility(Entities, actor, ability, AbilityGrantKind::Authored, entry).IsValid());
             Actors.push_back(actor);
         }
     }
@@ -123,9 +132,9 @@ struct TickCost
     double Presentation = 0.0;
 };
 
-TickCost MedianTickMs(std::size_t actors, bool firing, int reps)
+TickCost MedianTickMs(std::size_t actors, bool firing, int reps, std::size_t grantsPerActor = 1)
 {
-    Crowd crowd(actors);
+    Crowd crowd(actors, grantsPerActor);
     std::vector<double> pass;
     std::vector<double> presentation;
     for (int tick = 0; tick < 60 + reps; ++tick, ++crowd.Now)
@@ -150,12 +159,14 @@ TickCost MedianTickMs(std::size_t actors, bool firing, int reps)
     return { Bench::Median(pass), Bench::Median(presentation) };
 }
 
-// Lasting effects at equipment scale, as many granting as a 16-grant table has room for.
+// Lasting effects at equipment scale, as many granting as an actor has room for.
 struct EffectLoad
 {
     std::size_t Actors = 0;
     std::size_t PerActor = 0;
     std::size_t GrantsPerEffect = 0;
+    // Grants the effects may give each actor beside the crowd's own.
+    std::size_t GrantRoom = 15;
 };
 
 struct EffectCost
@@ -180,9 +191,8 @@ EffectCost MedianEffectCostMs(const EffectLoad& load, int reps)
     for (std::size_t g = 0; g < load.GrantsPerEffect; ++g)
         granted.push_back({ .Key = std::format("g{}", g), .Ability = "asset://bench/automatic.sdata", .Override = {} });
     DeclareEffectGrants(world, granting, granted);
-    // The crowd's own grant takes one of the sixteen.
     const std::size_t grantingPerActor =
-        load.GrantsPerEffect == 0 ? 0 : std::min(load.PerActor, (kAbilityGrantCapacity - 1) / load.GrantsPerEffect);
+        load.GrantsPerEffect == 0 ? 0 : std::min(load.PerActor, load.GrantRoom / load.GrantsPerEffect);
     const auto effectFor = [&](std::size_t index) { return index < grantingPerActor ? granting : plain; };
 
     const FixedSimTime applied{ .DeltaSeconds = kTickSeconds, .TickIndex = crowd.Now };
@@ -239,6 +249,9 @@ void MeasureEffectScale()
                 Recorder.Record("effects.resolve." + scenario, "ms", cost.Resolve);
                 Recorder.Record("effects.remove_owned." + scenario, "ms", cost.RemoveOwned);
             }
+    // Every actor holding all it can: twenty-one effects of three grants beside its own.
+    const EffectCost full = MedianEffectCostMs({ 256, 21, 3, kAbilityGrantCapacity - 1 }, Reps(240));
+    Recorder.Record("effects.pass.actors_256.effects_5376.grants_3.full", "ms", full.Pass);
 }
 
 void MeasureFootprint()
@@ -253,6 +266,25 @@ void MeasureFootprint()
     Recorder.Record("ability.bytes.actor", "bytes",
                     sizeof(AbilityGrants) + sizeof(ActiveAbilities) + sizeof(AbilityCueLog)
                         + sizeof(AbilityPredictedCues) + sizeof(AbilityPresentationState) + sizeof(ActorTime));
+}
+
+struct GrantLoad
+{
+    std::size_t Actors = 0;
+    std::size_t Grants = 0;
+};
+
+void MeasureGrantScale()
+{
+    for (const GrantLoad load : { GrantLoad{ 1000, 1 }, GrantLoad{ 1000, 4 }, GrantLoad{ 256, 14 }, GrantLoad{ 16, 16 },
+                                 GrantLoad{ 16, 64 }, GrantLoad{ 256, 64 } })
+    {
+        const TickCost idle = MedianTickMs(load.Actors, false, Reps(240), load.Grants);
+        const TickCost firing = MedianTickMs(load.Actors, true, Reps(240), load.Grants);
+        const std::string scenario = std::format("actors_{}.grants_{}", load.Actors, load.Grants);
+        Recorder.Record("ability.pass." + scenario + ".idle", "ms", idle.Pass);
+        Recorder.Record("ability.pass." + scenario + ".firing", "ms", firing.Pass);
+    }
 }
 
 void MeasureTicks()
@@ -280,6 +312,7 @@ TEST(AbilityBench, Generate)
     Recorder.Clear();
     MeasureFootprint();
     MeasureTicks();
+    MeasureGrantScale();
     MeasureEffectScale();
 
     ASSERT_TRUE(Recorder.WriteJson(json)) << "cannot write " << json.generic_string();

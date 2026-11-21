@@ -4,6 +4,7 @@
 #include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 #include <world/held/Held.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/held/HeldRecords.h>
@@ -73,16 +74,41 @@ TEST_F(HeldRecordTest, RecordsAreListedByPositionThenByWhenTheyWereHeld)
     EXPECT_FALSE(Index->HolderOf(worlds).IsValid());
 }
 
-TEST_F(HeldRecordTest, PositionsPastTheLastTieInTheOrderTheyWereHeldAndAreCounted)
+TEST_F(HeldRecordTest, AppendingPastTheLastPositionRenumbersTheHolderInItsOrder)
 {
     const EntityId chest = Holder();
+    const EntityId first = HeldBy(chest, 0);
     const EntityId atLast = HeldBy(chest, 0xFFFF);
     const EntityId past = HeldBy(chest);
     const EntityId further = HeldBy(chest);
 
+    EXPECT_EQ(RecordsOf(chest), (std::vector{ first, atLast, past, further }));
+    const std::vector<std::uint16_t> expected{ 0, 1, 2, 3 };
+    for (std::size_t i = 0; i < expected.size(); ++i)
+        EXPECT_EQ(Entities.TryGet<Held>(RecordsOf(chest)[i])->Position, expected[i]);
+    EXPECT_EQ(Index->PositionsExhausted(), 0u);
+
+    HoldRecord(Entities, first, chest);
+    EXPECT_EQ(RecordsOf(chest), (std::vector{ atLast, past, further, first }))
+        << "the renumbered positions are the ones the index orders by";
+}
+
+TEST_F(HeldRecordTest, AHolderWithEveryPositionTakenTiesPastTheLastAndCountsIt)
+{
+    const EntityId chest = Holder();
+    for (std::uint32_t position = 0; position <= 0xFFFF; ++position)
+        Entities.AddComponent<Held>(Entities.CreateEntity(),
+                                    Held{ .Holder = { .Entity = chest, .Target = {} },
+                                          .Position = static_cast<std::uint16_t>(position) });
+    const EntityId atLast = RecordsOf(chest).back();
+
+    const EntityId past = HeldBy(chest);
+
     EXPECT_EQ(Entities.TryGet<Held>(past)->Position, 0xFFFFu);
-    EXPECT_EQ(RecordsOf(chest), (std::vector{ atLast, past, further }));
-    EXPECT_EQ(Index->PositionsExhausted(), 2u);
+    EXPECT_EQ(Entities.TryGet<Held>(atLast)->Position, 0xFFFFu);
+    EXPECT_EQ(RecordsOf(chest).back(), past);
+    EXPECT_EQ(RecordsOf(chest).size(), 0x10001u);
+    EXPECT_EQ(Index->PositionsExhausted(), 1u);
 }
 
 TEST_F(HeldRecordTest, HoldingARecordGivesItIdentityReplicationAndItsHoldersRelevance)
@@ -115,8 +141,8 @@ TEST_F(HeldRecordTest, ChangingTheHolderMovesTheRecordAndBothRevisions)
 
     EXPECT_TRUE(RecordsOf(first).empty());
     EXPECT_EQ(RecordsOf(second), std::vector{ record });
-    EXPECT_GT(Index->Revision(first), firstBefore);
-    EXPECT_GT(Index->Revision(second), secondBefore);
+    EXPECT_NE(Index->Revision(first), firstBefore);
+    EXPECT_NE(Index->Revision(second), secondBefore);
     EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(record)->Anchor, second);
 
     Entities.DestroyEntity(record);
@@ -134,8 +160,8 @@ TEST_F(HeldRecordTest, AChangeBeneathANestedHolderMovesEveryRevisionAboveIt)
 
     Index->NoteChanged(coin);
 
-    EXPECT_GT(Index->Revision(bag), bagBefore);
-    EXPECT_GT(Index->Revision(body), bodyBefore);
+    EXPECT_NE(Index->Revision(bag), bagBefore);
+    EXPECT_NE(Index->Revision(body), bodyBefore);
 }
 
 TEST_F(HeldRecordTest, AHolderGoingAwayTakesWhatItHeldWhenRecordsSettle)
@@ -271,7 +297,7 @@ TEST_F(HeldRecordTest, AChangeToAnAuthoredRecordGivesItARuntimeId)
     NoteHeldRecordChanged(Entities, stack);
 
     EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(stack)->Id));
-    EXPECT_GT(Index->Revision(chest), before);
+    EXPECT_NE(Index->Revision(chest), before);
     EXPECT_EQ(RecordsOf(chest), std::vector{ stack });
 }
 
@@ -300,4 +326,60 @@ TEST_F(HeldRecordTest, DestroyingWhatWaitsLeavesWhatIsHeld)
 
     EXPECT_FALSE(Entities.IsAlive(waiting));
     EXPECT_TRUE(Entities.IsAlive(held));
+}
+
+TEST_F(HeldRecordTest, AHolderWhoseRecordsAreAllGoneKeepsNoRevision)
+{
+    const EntityId body = Holder();
+    (void)HeldBy(HeldBy(body));
+    Entities.DestroyEntity(body);
+    DestroyHeldRecords(Entities);
+    EXPECT_EQ(Index->Revision(body), 0u);
+
+    Entities.AddResource<SimulationAuthority>().Authoritative = false;
+    const EntityId peer = Holder();
+    const EntityId record = Entities.CreateEntity();
+    Entities.AddComponent<Held>(record, Held{ .Holder = { .Entity = peer, .Target = {} } });
+    ASSERT_NE(Index->Revision(peer), 0u);
+    Entities.DestroyEntity(record);
+    Entities.DestroyEntity(peer);
+    SettleHeldRecords(Entities);
+    EXPECT_EQ(Index->Revision(peer), 0u);
+}
+
+TEST_F(HeldRecordTest, RecordsWaitingForOneHolderAreGivenInTheOrderTheyWereListed)
+{
+    const EntityId earlier = Entities.CreateEntity();
+    const EntityId later = Entities.CreateEntity();
+    const EntityId other = Entities.CreateEntity();
+    Entities.AddComponent<Held>(later, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+    Entities.AddComponent<Held>(earlier, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+    Entities.AddComponent<Held>(other, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 4 } } });
+
+    EXPECT_EQ(Index->AwaitingRecords(), (std::vector{ other, later, earlier }));
+}
+
+TEST_F(HeldRecordTest, APlacedRecordIsSettledAsAHeldOneIs)
+{
+    const EntityId body = Holder(StoragePartitionId{ 3 });
+    (void)HeldBy(body, 0xFFFF);
+    const EntityId placed = PlaceHeldRecord(Entities, body, ArchetypeSignature{});
+    const EntityId worlds = PlaceHeldRecord(Entities, EntityId{}, ArchetypeSignature{}, std::uint16_t{ 7 });
+
+    ASSERT_TRUE(placed.IsValid());
+    EXPECT_EQ(RecordsOf(body).back(), placed);
+    EXPECT_EQ(Entities.TryGet<Held>(placed)->Position, 1u) << "placing appends as holding does, renumbering first";
+    EXPECT_EQ(Entities.TryGet<Held>(placed)->Holder.Target, Entities.TryGet<PersistentIdComponent>(body)->Id);
+    ASSERT_NE(Entities.TryGet<PersistentIdComponent>(placed), nullptr);
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(Entities.TryGet<PersistentIdComponent>(placed)->Id));
+    EXPECT_TRUE(Entities.HasComponent<NetReplicated>(placed));
+    EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(placed)->Anchor, body);
+    EXPECT_EQ(Entities.GetEntityPartition(placed), StoragePartitionId{ 3 });
+    EXPECT_EQ(RecordsOf(EntityId{}), std::vector{ worlds });
+    EXPECT_EQ(Entities.TryGet<Held>(worlds)->Position, 7u);
+    EXPECT_EQ(Entities.TryGet<NetRelevanceAnchor>(worlds), nullptr);
+    EXPECT_EQ(Entities.GetEntityPartition(worlds), PersistentStoragePartition);
+
+    Entities.AddResource<SimulationAuthority>().Authoritative = false;
+    EXPECT_FALSE(PlaceHeldRecord(Entities, body, ArchetypeSignature{}).IsValid());
 }

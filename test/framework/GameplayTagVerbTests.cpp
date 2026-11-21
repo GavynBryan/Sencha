@@ -1,10 +1,11 @@
-#include <abilities/GameplayTagVerbs.h>
+#include <gameplay_tags/GameplayTagVerbs.h>
 #include <authored/AuthoredValue.h>
 #include <core/serialization/JsonArchive.h>
 #include <effects/ActiveEffect.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <ecs/World.h>
+#include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -140,4 +141,44 @@ TEST_F(GameplayTagVerbTest, StacksOutsideTheirRangeAreInvalid)
     EXPECT_EQ(Operations.Grant(Invocation(Target, Unlocked, 0)), VerbAdmission::InvalidArguments);
     EXPECT_EQ(Operations.Grant(Invocation(Target, Unlocked, 0x10000)), VerbAdmission::InvalidArguments);
     EXPECT_EQ(Operations.Grant(Invocation(Target, GameplayTagId{})), VerbAdmission::InvalidArguments);
+}
+
+TEST_F(GameplayTagVerbTest, ABaselineGrantAtSaturationLeavesTheEffectsStacksAndTheirTag)
+{
+    Entities.AddComponent<GameplayTagContainer>(Target);
+    for (int i = 0; i < 10; ++i)
+        ASSERT_TRUE(ApplyEffect(Entities, Target, Burn, FixedSimTime{}).IsValid());
+    EXPECT_EQ(Operations.Grant(Invocation(Target, Burning, 0xFFFF)), VerbAdmission::Accepted);
+    EXPECT_EQ(TagsOf(Target)->ContributedCount(Burning), 10u);
+
+    EXPECT_EQ(Operations.Revoke(Invocation(Target, Burning, 0xFFFF)), VerbAdmission::Accepted);
+    EXPECT_EQ(TagsOf(Target)->StackCount(Burning), 10u) << "ten effects still hold it";
+}
+
+TEST_F(GameplayTagVerbTest, GrantBaselineTagGivesAContainerAndRefusesAndCountsWhatWillNotFit)
+{
+    EXPECT_EQ(GrantBaselineTag(Entities, Target, Unlocked), GameplayTagWrite::Added);
+    EXPECT_EQ(TagsOf(Target)->BaselineCount(Unlocked), 1u);
+    EXPECT_EQ(GrantBaselineTag(Entities, Target, Unlocked, 2), GameplayTagWrite::Restacked);
+    for (std::uint8_t i = 1; i < GameplayTagContainer::Capacity; ++i)
+        ASSERT_EQ(GrantBaselineTag(Entities, Target, *Tags->RegisterTag("Fill.T" + std::to_string(i))),
+                  GameplayTagWrite::Added);
+
+    EXPECT_EQ(GrantBaselineTag(Entities, Target, Burning), GameplayTagWrite::Full);
+    EXPECT_FALSE(TagsOf(Target)->HasExact(Burning));
+    ASSERT_TRUE(Entities.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(Entities.GetResource<GameplayTagOverflow>().FirstTag, Burning);
+}
+
+TEST_F(GameplayTagVerbTest, RevokeBaselineTagTakesAtMostWhatIsKeptAndNothingAnEffectHolds)
+{
+    EXPECT_FALSE(RevokeBaselineTag(Entities, Target, Unlocked, 1)) << "no container, nothing kept";
+    Entities.AddComponent<GameplayTagContainer>(Target);
+    (void)ApplyEffect(Entities, Target, Burn, FixedSimTime{});
+    EXPECT_FALSE(RevokeBaselineTag(Entities, Target, Burning, 1));
+    EXPECT_TRUE(TagsOf(Target)->HasExact(Burning));
+
+    (void)GrantBaselineTag(Entities, Target, Unlocked, 3);
+    EXPECT_TRUE(RevokeBaselineTag(Entities, Target, Unlocked, 0xFFFF));
+    EXPECT_FALSE(TagsOf(Target)->HasExact(Unlocked));
 }

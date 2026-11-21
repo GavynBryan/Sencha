@@ -1244,3 +1244,155 @@ move no longer owes an owner-only run still at the default it was added with.
 The packet framing changed, so `kNetProtocolVersion` is 10. The replicated
 table gains `EquipmentState`, and its frozen hash moves
 (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+## v53
+
+**Row lists.** `ListPool` (`core/containers/ListPool.h`, `docs/ecs/row-lists.md`):
+lists a component row names by handle, referenced through the component's
+lifecycle hooks.
+
+**Grants.** `AbilityGrants` no longer holds its grants: it is a handle into the
+World's `AbilityGrantLists`, 16-bit counts of all, effect-held and transient
+grants, and the next id, and declares
+`OnAdd` and `OnRemove`. `AbilityGrants::Find` and the member array are gone;
+read with `AbilityGrantsOf` and `FindAbilityGrant`. `GrantAbility` and
+`RevokeAbilityGrant` take the World and the actor, or an `AbilityGrantList`
+(the by-value form, new, with `CopyAbilityGrants`, `MakeAbilityGrants` and
+`SetAbilityGrants`). `kAbilityGrantCapacity` is 64. `AbilityGrantsWire` is
+sixteen pages of four grants (`kAbilityGrantsPerWirePage`,
+`kAbilityGrantWirePages`).
+
+**Equipment.** `EquipmentState` no longer holds its records: it is the layout,
+a count, the next key and a handle into the World's `EquipmentRecordLists`, and
+declares `OnAdd` and `OnRemove`. Read with `EquipmentRecordsOf`; write with
+`EditEquipmentRecords`, `AddEquipmentRecord`, `RemoveEquipmentRecord`, or by
+value through `EquipmentRecordList`, `CopyEquipment`, `MakeEquipmentState` and
+`SetEquipment`. `kEquipmentRecordCapacity` is `kMaxEquipmentSlots` (32).
+`EquipmentRefusal::Full` is removed, which renumbers the refusals after it.
+`ResolveEquipmentSlots` takes the worn records as a span. `EquipmentStateWire`
+is 32 record runs and 16 runs of two sources; `EquipmentWireRecord` is gone.
+
+**Wire.** Both images changed, so `kNetProtocolVersion` is 11 and the frozen
+replication hash moves (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+A module that assigns over either component's row, or copies the row to keep
+its value, must use the calls above instead (`docs/ecs/row-lists.md`, "What may
+not be done with such a component").
+
+## v54
+
+**Restore progress.** `SavedGames::RestoreStatus()` is a `RestoreProgress`
+(`Pending`, `Reading`, `Loading`, `BodiesRestored`, `Failed`) that follows the
+restore's own level change to the participants' bodies; `Restores()` counts
+accepted restores. `RestoreChange()` and `Failure()` are gone; `WriteFailure()`
+and `RestoreFailure()` replace the shared reason. `RestoredFromBackup()`,
+`Finish()` and `Advance()` are new. `SavedGames` writes the persistent id
+counter itself (`kPersistentIdsSection`), and `RegisterEngineSaveSections` no
+longer registers it; every registered section's `Restore` runs on every
+restore, with null data when the save lacks it.
+
+**Level change.** `LevelChangeRequest::RuntimeState`
+(`LevelChangeRuntimeState::Keep` or `Discard`) and `LevelChange::RuntimeState()`;
+`LevelChangeAdmissionReason`. A first load is admitted on any machine, and the
+`map` and `world` commands are level change requests. `RestoredBodies::Refusal`.
+
+**Files and formats.** `DecodeSavedGame` returns a `DecodedSavedGame` (the
+save, its error, and whether a newer build wrote it); `ReadHashedChunkFile`
+returns a `HashedChunkFileRead`. `SaveSlotFiles::Write` no longer rotates;
+`WriteBackup` is new. `ApplySpawnOverlay` takes the list of what a retuned
+scene set aside. The save file format is unchanged (format 1, chunk versions 1).
+
+## v55
+
+**Tag writes.** `GameplayTagContainer::Grant`, `GrantBaseline` and
+`SetContribution` return a `GameplayTagWrite` (`Unchanged`, `Added`,
+`Restacked`, `Removed`, `Full`) in place of a bool, and never assert; a full
+container answers `Full` and changes nothing. `CanHoldAll` replaces `CanHold`. A baseline
+stack added at saturation no longer displaces a contributed one.
+`gameplay_tags/GameplayTagOverflow.h` gains `AdmitGameplayTags`,
+`kGameplayTagOverflowQuietReports` and `GameplayTagOverflow::QuietReports`;
+`gameplay_tags/BaselineGameplayTags.h` declares `GrantBaselineTag` and
+`RevokeBaselineTag`. The tag verbs moved from `abilities/GameplayTagVerbs.h`
+to `gameplay_tags/GameplayTagVerbs.h`. `ReadGameplayTags` reports dropped tags
+as `DroppedGameplayTag` (name and `GameplayTagDrop`), and `ReadAttributes`
+takes an optional list of dropped attributes. `ApplyEffect` refuses a lasting
+effect whose granted tags would not fit, and `AbilityRefusal::TagsFull` is
+appended.
+
+**Grants.** `AbilityGrant::Source` is a `PersistableRef`, and `GrantAbility`
+takes the source as one. `AbilityGrantEntries::Intern` takes an optional
+`AbilityGrantEntryRefusal*`; `kAbilityGrantEntryRefusal` is replaced by
+`AbilityGrantEntryRefusalText`, and `DeclareEffectGrants` returns a message
+per refused grant instead of its key.
+
+**References.** `MakePersistableRef` takes a mutable World and mints the
+target a persistent id on the authority; `PersistableRefOf` is the const,
+never-minting form.
+
+The grants serializer writes `"kind": "request"` and `"source"` on a requested
+grant; both are optional, so older scenes and saves load as before. The wire
+and the save format version are unchanged.
+
+## v56
+
+**Inventory.** `Inventory` takes the tick it runs in (`Inventory(world, now)`),
+as `Equipment` does; a counted pickup's take effects are applied in that tick,
+scaled by its count. `InventoryOperations` and `EquipmentOperations` take the
+simulation clock and a `Logger`, and `EngineVocabularyBindings::BindInventory`
+and `BindEquipment` take the logger. `InventoryRefusal` and `EquipmentRefusal`
+gain an `EnumSchema`. `inventory/Inventory.h` declares `ItemStackHolds` and
+`SetItemCount`.
+
+**Equipment.** `Equipment::UnequipRecord` ends a record by its key.
+`EquipmentComponents.h` replaces `AddEquipmentRecord` with `WearRecord` and
+`WearEquipmentRecord`, and declares `FindEquipmentRecordHolding` and
+`kNoEquipmentRecord`; `Equipment.h` declares `ItemTakesSlotFirst`.
+
+**Held records.** `HeldRecordIndex` keys records (`HeldRecordKey`, `Key`,
+`Unkey`, `FindKeyed`), answers `IsWithin`, `PositionOf` and `Renumber`, and
+loses `ForgetHolder`; a holder holding nothing has revision 0. `Counter` gains
+lifecycle hooks and `CounterKey`. `world/held/HeldRecords.h` declares
+`PlaceHeldRecord` and `NameHeldHolder`.
+
+**Tags.** `GameplayTagContainer::CanHoldAll` answers no for a tag already at
+0xFFFF stacks, so `AdmitGameplayTags` refuses it.
+
+`NamedDefinitionRegistry` gains `ForEachName` and `ForEachDefined`. The wire,
+the replicated layout and the save format version are unchanged; a scene or
+save naming an entry count its stack cannot hold, or none, now fails to load.
+
+## v57
+
+`SavedGames::Remembers` answers whether this session wrote or restored a slot,
+where `Holds` also answers yes for a file an earlier run left on disk.
+`inventory/Inventory.h` declares `ItemStackClamp`, which `ItemStackHolds` is
+defined by; a scene or save entry naming a count its stack cannot hold now
+loads with the count clamped into 1 to `stack.max` and a warning, instead of
+failing to load. The wire, the replicated layout and the save format version
+are unchanged.
+
+## v58
+
+`IWriteArchive` and `IReadArchive` gain `Field(std::string_view, std::int32_t)`,
+so a signed integer member has a scene form: JSON writes and reads the number
+itself (a priority of -1 is written -1, not 4294967295), and the binary archive
+writes the same four bytes it wrote before. `ReadArchiveValue` refuses a number
+that is not whole or does not fit the member's type, where it used to truncate,
+and an integer wider than 32 bits has no archive form. Cooked data, the wire,
+the replicated layout and the save format version are unchanged.
+
+## v59
+
+`IComponentSerializer` gains the virtual `Persistence()`, returning the new
+`ComponentPersistence` (`core/metadata/ComponentPersistence.h`: `Authored`,
+`Saved`, `Identity`), declared before the destructor so every later slot
+moves. `SENCHA_SAVED` is a new component annotation: `ComponentDefinition` may
+state `Saved`, which `ComponentPersistenceOf<T>` projects and both
+`ComponentSerializer<T>` and `TypedComponentSerializer<T>` return; a component
+may instead specialize `ComponentPersistenceOf` by hand, as
+`PersistentIdComponent` and `SceneInstance` do for `Identity`. The generator's
+format version is unchanged, since the member is optional. A save's body patch
+now holds only `Saved` components, a held record leaves out `Identity` ones,
+and a spawn strips `Identity` ones from a prefab, each read from the
+declaration. Cooked data, the wire, the replicated layout and the save format
+version are unchanged.

@@ -9,9 +9,10 @@
 #include <string_view>
 #include <vector>
 
+class FixedSimulationLoop;
+class Logger;
 class World;
 
-// docs/gameplay/inventory.md, "Vocabulary".
 inline constexpr std::string_view kInventoryTakeVerb = "inventory.take";
 inline constexpr std::string_view kInventoryGiveVerb = "inventory.give";
 inline constexpr std::string_view kInventoryTransferVerb = "inventory.transfer";
@@ -27,8 +28,10 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class InventoryOperations
 {
 public:
-    explicit InventoryOperations(World& world)
+    InventoryOperations(World& world, const FixedSimulationLoop& clock, const Logger& log)
         : Entities(&world)
+        , Clock(&clock)
+        , Log(&log)
     {
     }
 
@@ -39,7 +42,11 @@ public:
     VerbAdmission Use(const VerbInvocation& invocation);
 
 private:
+    VerbAdmission Answer(std::string_view verb, InventoryRefusal refusal) const;
+
     World* Entities;
+    const FixedSimulationLoop* Clock;
+    const Logger* Log;
 };
 
 inline VerbAdmission InvokeInventoryTake(InventoryOperations& operations, const VerbInvocation& invocation)

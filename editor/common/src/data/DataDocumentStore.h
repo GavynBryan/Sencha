@@ -69,6 +69,7 @@ public:
     // An open document's working subtype or root wins over the file's.
     [[nodiscard]] std::string SubtypeOf(std::string_view virtualPath) const;
     [[nodiscard]] std::optional<JsonValue> CurrentRoot(std::string_view virtualPath) const;
+    [[nodiscard]] DataSourceRoot ReadRoot(std::string_view virtualPath) const;
     [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype,
                                                           DataAbstractPaths abstract = DataAbstractPaths::Exclude) const;
     [[nodiscard]] bool IsAbstract(std::string_view virtualPath) const;

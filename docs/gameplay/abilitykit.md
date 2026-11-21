@@ -30,20 +30,48 @@ the minimum vocabulary, not its limit.
 revoke decrements and the last stack removes.
 
 **Capacity.** 32 tags, a POD bound that keeps the container in a chunk row. A
-grant of a tag new to a full container (`CanHold` false) is refused, whatever
-writes it: an effect's granted tag, an ability's owned tag, or `tags.grant`.
-Each refusal is counted in the World's `GameplayTagOverflow` resource
-(`NoteGameplayTagOverflow`), and the ability system logs once when refusals
-begin, naming the first holder and tag, and once when a tick passes without
-one, with the total (`ReportGameplayTagOverflow`). Nothing else on the entity
-is affected; the refused tag is simply not held.
+write of a tag new to a full container is refused, whatever writes it: the
+container's writes return `GameplayTagWrite::Full` and change nothing. One
+policy holds for every writer: what will not fit is refused whole, and the
+refusal is counted.
+- An ability start whose owned tags, with the tags its start cooldown and its
+  lasting start costs give the actor, would not all fit is refused
+  (`AbilityRefusal::TagsFull`). A cooldown started on commit whose tags would
+  not fit fails its cost group, before anything is paid.
+- A lasting effect whose granted tags would not all fit is not applied:
+  `ApplyEffect` returns no entity.
+- `tags.grant` is refused.
+- A projection leaves its tag off and writes nothing, so the container's
+  `Changed<>` does not move; it is refused again, and counted, each tick it
+  would still not fit.
+- A scene drops each tag past the cap and logs it, as it does each attribute
+  past an entity's 16.
+
+`AdmitGameplayTags` is the one check for several tags at once; it counts each
+refusal in the World's `GameplayTagOverflow` resource
+(`NoteGameplayTagOverflow`). The ability system logs once when refusals begin,
+naming the first holder and tag, and once when `kGameplayTagOverflowQuietReports`
+(60) ticks in a row pass without one, with the total
+(`ReportGameplayTagOverflow`); a refusal is an event, so one that recurs a
+moment apart, such as a periodic effect's, stays one episode. Nothing else on the entity is
+affected. Stack counts saturate at 0xFFFF; a baseline stack added at
+saturation never displaces a contributed one, so a revoke of the baseline never
+takes a tag an effect still holds. A tag at 0xFFFF has no room for another
+stack: `CanHoldAll`, and so `AdmitGameplayTags`, refuses it as it refuses a new
+tag in a full container, so an effect or a start never holds a tag it gave no
+stack of, and its end never takes a stack someone else gave.
 
 Each tag's count holds a **baseline** within it: the stacks that persist.
 - Scene load, editor edits, `GrantBaseline` and the `tags.grant` verb write the
   baseline; `tags.revoke` takes it back. These verbs are how level data gives
   an entity a permanent, saved tag (an unlock): authority only, at most what
   the target keeps for a revoke, and an entity with no tags gains a container
-  on its first grant (`docs/gameplay/authored-api.md`).
+  on its first grant (`docs/gameplay/authored-api.md`). They live with the tags
+  (`gameplay_tags/GameplayTagVerbs.h`) and write through `GrantBaselineTag` and
+  `RevokeBaselineTag` (`gameplay_tags/BaselineGameplayTags.h`), which a game's
+  own code calls for the same write: give the holder a container if it has
+  none, refuse and count a tag that will not fit, grant; and take at most what
+  is kept.
 - Effects and abilities contribute with `Grant` and withdraw with `Revoke`,
   which never takes the baseline.
 - A save writes the baseline alone, so a restore followed by the effects being
@@ -297,8 +325,14 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 
 ## Grants and input
 
-An actor runs only what it is granted: `AbilityGrants` holds up to sixteen grants,
-each an ability, a kind (authored on the actor, held by an effect, made by a
+An actor runs only what it is granted. Its `AbilityGrants` row names a list in
+the World's `AbilityGrantLists` (`docs/ecs/row-lists.md`), so an actor is stored
+by how many grants it holds; the row keeps the count and the next id. It holds at
+most `kAbilityGrantCapacity` (64), which is what its owner can be sent
+("Replication"); the grant past that is refused and reported as below. Code reads
+grants with `AbilityGrantsOf` and changes them with `GrantAbility`,
+`RevokeAbilityGrant` and `SetAbilityGrants`; scenes, snapshots and Kyusu hold them
+by value as an `AbilityGrantList`. Each grant is an ability, a kind (authored on the actor, held by an effect, made by a
 request, or transient: made for one requested activation) and an entry in the
 World's `AbilityGrantEntries`. An entry is the grant's stable key, its binding
 override and its parameters; its effective binding is the
@@ -308,9 +342,12 @@ ability's, resolved against the action vocabulary input publishes
 pawns by two grants, never by a copy. Grant ids are minted per actor and never
 reused, so revoking one grant ends exactly the activations it started. Scenes
 and saves keep authored grants and those `ability.grant` made, by key, ability
-asset and override (`abilities/AbilityGrantsSerializer.h`), and load both as
-authored; a grant an effect holds comes back with its effect; an ability a scene names before anything
-declared it keeps its name.
+asset and override (`abilities/AbilityGrantsSerializer.h`), and load each as
+what it was: a requested grant is written with `"kind": "request"` and its
+`source` as a persistent id, so `ability.revoke` takes it after a restore as
+before and its activations find their source again. A grant an effect holds
+comes back with its effect; an ability a scene names before anything declared
+it keeps its name.
 
 A lasting effect may hold grants too: an `effect.definition`'s
 `granted_abilities` lists grant entries in the same form (`key`, `ability` as
@@ -348,13 +385,20 @@ wire as one key: its stable key, binding and parameters written as text in a
 fixed field order, numbers in shortest round-trip form, then hashed, so every
 machine of one protocol computes the same key. Two entries of one ability with
 the same key would be one entry on the wire, so the second is refused
-(`kAbilityGrantEntryRefusal`); machines declaring the same content in the same
-order refuse the same one.
+(`AbilityGrantEntryRefusal::WireKeyTaken`); machines declaring the same content
+in the same order refuse the same one. The World's entry table never shrinks:
+every distinct key, binding and parameter set is kept for the World's life, up
+to 65,535 entries, past which an entry is refused
+(`AbilityGrantEntryRefusal::Full`). `Intern` says which, and each refusal names
+its own reason (`AbilityGrantEntryRefusalText`).
 
 Each grant names its **source**: the entity its activations read through the
 `source` port. An effect's grant has the effect's `LeaseOwner` entity (an
 equipped item, for instance), a request's grant the `source` it was asked with,
-and an authored grant none. The effect entity holding a grant (`Holder`) is the
+and an authored grant none. The source is a `PersistableRef`, read through
+`ResolvePersistableRef`; `ability.grant` gives its source a persistent id
+(`MakePersistableRef`), so the grant follows the source through a restream and
+a save. The effect entity holding a grant (`Holder`) is the
 authority's alone. `HasLiveActivationFrom(world, actor, source)` says whether
 anything that source supplied is still running; like `IsAbilityLive`, it reads
 the World's `AbilityActivations`.
@@ -538,7 +582,9 @@ records (`ActiveAbilities` derives both), and presents them with the same
 `AbilityPresentationSystem` and the same first-sight rule.
 
 The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
-(each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
+(in grant order, in pages of four, a page no grant reaches left at its default and
+not sent, so the owner is sent about 24 B a grant rounded up to a page and a
+change resends its page; each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
 key and binding together, found in the owner's own interned entries, so two grants
 of one ability under one key and bound apart stay apart; a grant whose entry the
 owner has not interned is held but bound to no input, and a table refuses to
@@ -564,9 +610,14 @@ The loss bounds, each pinned by `test/runtime/AbilityReplicationTests.cpp`:
 - an older state applied after a newer one presents nothing again, and a log's
   serial wraps without losing order.
 
-One firing actor costs a peer 340 B/s at the default cadence with its aim
-sweeping, every pulse landing somewhere new (`CueBandwidthPerFiringActorIsMeasured`
-fails above 360).
+At the default cadence, with its aim sweeping so every pulse lands somewhere new,
+a firing actor costs a peer 1,570 B/s in all and a moving one 1,050 B/s
+(`CueBandwidthPerFiringActorIsMeasured` fails above 1,730 and 1,150). Firing adds
+520 B/s, which the test reports without bounding. That difference was 340 B/s
+when a snapshot named every component an entity carries; it rose only because the
+components firing changes (chiefly `ActiveAbilities`) are no longer named by the
+moving actor as well, while both totals fell
+(`docs/plans/evidence/replicated-lists/results.md`).
 
 ## Prediction
 
@@ -639,10 +690,13 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 1,712 bytes: `AbilityCueLog` 584, `AbilityPresentationState` 624,
-`AbilityGrants` 392, `ActiveAbilities` 96 (a handle per slot) and `ActorTime` 16. Each
-running or lingering activation adds 688 in `AbilityActivations`. The 584 bytes of
-`AbilityPredictedCues` are only on the actor a client predicts.
+Per actor with grants, 1,340 bytes on its row: `AbilityCueLog` 584,
+`AbilityPresentationState` 624, `ActiveAbilities` 96 (a handle per slot),
+`AbilityGrants` 20 (a handle, counts of all, effect-held and transient grants,
+and the next id) and `ActorTime` 16. Each
+grant adds 32 in `AbilityGrantLists`, and each running or lingering activation 688
+in `AbilityActivations`. The 584 bytes of `AbilityPredictedCues` are only on the
+actor a client predicts.
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |
 |---|---|---|---|
@@ -650,10 +704,18 @@ running or lingering activation adds 688 in `AbilityActivations`. The 584 bytes 
 | 64 | 0.019 ms | 0.032 ms | 0.005 ms |
 | 256 | 0.073 ms | 0.126 ms | 0.018 ms |
 
+Grants are stored by how many an actor holds. Against the sixteen-entry row they
+replaced, 1,000 actors with four grants each cost the idle pass 2.4% more and the
+firing pass the same, and an actor with 64 grants costs what one with sixteen
+does (0.081 ms idle for 256 such actors). Effect-held grants cost 4–11% more to
+keep in step, and 256 actors each holding 63 of them cost 0.73 ms a tick, a cost
+`docs/deferred.md` records with its trigger. Method and tables:
+`docs/plans/evidence/actor-caps/results.md`.
+
 Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a cue
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
 mark at which a query is worth parallelising, so it stays serial. A firing actor
-costs a peer 340 B/s ("Replication").
+costs a peer 1,570 B/s, 520 more than a moving one ("Replication").
 
 Under many lasting effects, each folding one modifier and some granting abilities
 (the shape equipment gives content), measured before the composition work was

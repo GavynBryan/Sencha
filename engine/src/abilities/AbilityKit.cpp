@@ -45,6 +45,8 @@ void InstallAbilityKitVocabulary(World& world)
         world.AddResource<AbilityRegistry>();
     if (!world.HasResource<AbilityGrantEntries>())
         world.AddResource<AbilityGrantEntries>();
+    if (!world.HasResource<AbilityGrantLists>())
+        world.AddResource<AbilityGrantLists>();
     if (!world.HasResource<AbilityCostProviderCatalog>())
         world.AddResource<AbilityCostProviderCatalog>();
     if (!world.HasResource<CuePresentationLibrary>())

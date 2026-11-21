@@ -131,12 +131,57 @@ TEST(GameplayTagSerialization, AProjectedTagLoadsAsNothingAndIsReported)
 
     reg.SetProjected(grounded, "movement.support");
     GameplayTagContainer loaded{};
-    std::vector<std::string> dropped;
+    std::vector<DroppedGameplayTag> dropped;
     JsonReadArchive ra(jv);
     ASSERT_TRUE(ReadGameplayTags(ra, loaded, reg, &dropped));
     EXPECT_FALSE(loaded.HasExact(grounded));
     EXPECT_TRUE(loaded.HasExact(humanoid));
-    EXPECT_EQ(dropped, (std::vector<std::string>{ "movement.grounded" }));
+    EXPECT_EQ(dropped, (std::vector<DroppedGameplayTag>{ { "movement.grounded", GameplayTagDrop::Projected } }));
+}
+
+namespace
+{
+    JsonValue TagsJson(std::size_t count, std::uint32_t stacks = 1)
+    {
+        JsonWriteArchive wa;
+        wa.BeginObject(std::string_view{});
+        wa.BeginArray(std::string_view{ "tags" }, count);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            wa.BeginObject(std::string_view{});
+            wa.Field(std::string_view{ "name" }, std::string_view("Fill.T" + std::to_string(i)));
+            wa.Field(std::string_view{ "stacks" }, stacks);
+            wa.End();
+        }
+        wa.End();
+        wa.End();
+        return wa.TakeValue();
+    }
+}
+
+TEST(GameplayTagSerialization, TagsPastTheContainersCapacityAreDroppedAndReported)
+{
+    GameplayTagRegistry reg;
+    for (std::size_t i = 0; i <= GameplayTagContainer::Capacity; ++i)
+        (void)Register(reg, ("Fill.T" + std::to_string(i)).c_str());
+    GameplayTagContainer loaded{};
+    std::vector<DroppedGameplayTag> dropped;
+    const JsonValue saved = TagsJson(GameplayTagContainer::Capacity + 1u);
+    JsonReadArchive ra(saved);
+    ASSERT_TRUE(ReadGameplayTags(ra, loaded, reg, &dropped));
+    EXPECT_EQ(loaded.Size(), GameplayTagContainer::Capacity);
+    EXPECT_EQ(dropped, (std::vector<DroppedGameplayTag>{ { "Fill.T32", GameplayTagDrop::Full } }));
+}
+
+TEST(GameplayTagSerialization, StacksPastTheirRangeSaturateRatherThanVanish)
+{
+    GameplayTagRegistry reg;
+    const GameplayTagId only = Register(reg, "Fill.T0");
+    GameplayTagContainer loaded{};
+    const JsonValue saved = TagsJson(1, 0x10000u);
+    JsonReadArchive ra(saved);
+    ASSERT_TRUE(ReadGameplayTags(ra, loaded, reg));
+    EXPECT_EQ(loaded.BaselineCount(only), 0xFFFFu);
 }
 
 // A replica holds the authority's totals as contributions.

@@ -352,7 +352,7 @@ TEST_F(EffectFixture, AnEffectWhoseDefinitionIsGoneStillRevokesItsTags)
     EXPECT_FALSE(Tags(hero).HasExact(marked));
 }
 
-TEST_F(EffectFixture, ATagTheContainerCannotHoldIsNeitherGrantedNorRevoked)
+TEST_F(EffectFixture, AnEffectWhoseTagsTheContainerCannotHoldIsRefused)
 {
     EntityId hero = MakeActor(100.0f, 5.0f);
     for (std::uint8_t i = 0; i < GameplayTagContainer::Capacity; ++i)
@@ -360,11 +360,8 @@ TEST_F(EffectFixture, ATagTheContainerCannotHoldIsNeitherGrantedNorRevoked)
 
     const GameplayTagId extra = *tags->RegisterTag("State.Extra");
     const EffectId mark = Marker("Mark", extra, 0.0f);
-    const EntityId applied = ApplyEffect(world, hero, mark, At(0));
+    EXPECT_FALSE(ApplyEffect(world, hero, mark, At(0)).IsValid());
     EXPECT_FALSE(Tags(hero).HasExact(extra));
-    EXPECT_EQ(world.TryGet<ActiveEffect>(applied)->GrantedTagCount, 0u);
-
-    RemoveEffect(world, applied);
     EXPECT_EQ(Tags(hero).Size(), GameplayTagContainer::Capacity);
 }
 
@@ -381,9 +378,8 @@ TEST_F(EffectFixture, AFullContainerRefusingAnEffectsTagCountsIt)
     EXPECT_EQ(world.TryGet<ActiveEffect>(fits)->GrantedTagCount, 1u);
     EXPECT_FALSE(world.HasResource<GameplayTagOverflow>()) << "nothing was refused yet";
 
-    const EntityId refused = ApplyEffect(world, hero, Marker("Extra", extra, 0.0f), At(0));
+    EXPECT_FALSE(ApplyEffect(world, hero, Marker("Extra", extra, 0.0f), At(0)).IsValid());
     EXPECT_FALSE(Tags(hero).HasExact(extra));
-    EXPECT_EQ(world.TryGet<ActiveEffect>(refused)->GrantedTagCount, 0u);
     ASSERT_TRUE(world.HasResource<GameplayTagOverflow>());
     EXPECT_EQ(world.GetResource<GameplayTagOverflow>().Refused, 1u);
     EXPECT_EQ(world.GetResource<GameplayTagOverflow>().FirstHolder, hero);

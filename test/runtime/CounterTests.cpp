@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -65,7 +66,6 @@ namespace
         std::vector<Heard> Occurrences;
     };
 
-    // One World with the counter vocabulary bound, as the engine binds it.
     struct CounterWorld
     {
         CounterWorld()
@@ -356,4 +356,66 @@ TEST(Counters, ACounterNamingAnUndeclaredTagIsNotRestored)
     EXPECT_EQ(after.Index->Count(), 1u);
     EXPECT_EQ(after.Value(after.Quest), 2);
     EXPECT_FALSE(after.Sink.Warnings.empty());
+}
+
+TEST(Counters, ACounterIsFoundUnderTheHolderItIsListedUnderAndNeverUnderTheWorldWhileItWaits)
+{
+    CounterWorld world;
+    const EntityId body = world.Body(PersistentEntityId{ 0x33 });
+    (void)world.Set(world.Boss, 2, body);
+    const EntityId record = FindCounter(world.Entities, world.Boss, body);
+    ASSERT_TRUE(record.IsValid());
+
+    world.Index->Await(record, PersistentEntityId{ 0x99 });
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, body).IsValid());
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid()) << "waiting is not the world";
+
+    const EntityId other = world.Body(PersistentEntityId{ 0x99 });
+    EXPECT_EQ(FindCounter(world.Entities, world.Boss, other), record);
+    EXPECT_EQ(world.Value(world.Boss, other), 2);
+}
+
+TEST(Counters, ANameArrivingFromTheWireIsTheNameTheCounterIsFoundBy)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    Counter renamed{ .Name = world.Quest, .Value = 5 };
+    std::byte bytes[sizeof(Counter)];
+    std::memcpy(bytes, &renamed, sizeof(Counter));
+
+    ASSERT_TRUE(world.Schema.SetComponentBytes(world.Entities, record, ResolveComponentTypeId<Counter>(), bytes));
+
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
+    EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
+}
+
+TEST(Counters, ACounterReplacedInPlaceUnderItsOwnNameIsStillFoundByIt)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Boss, .Value = 6 }));
+
+    EXPECT_EQ(FindCounter(world.Entities, world.Boss, EntityId{}), record);
+    EXPECT_EQ(world.Value(world.Boss), 6);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid()) << "and its one key goes with it";
+}
+
+TEST(Counters, ACounterReplacedInPlaceUnderAnotherNameIsFoundOnlyByTheNewOne)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Quest, .Value = 5 }));
+
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
+    EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Quest, EntityId{}).IsValid());
 }

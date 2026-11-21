@@ -1,17 +1,18 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <inventory/ItemDefinition.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <time/FrameClock.h>
 
 #include <cstdint>
 #include <vector>
 
 class World;
 
-// What a capacity of zero means.
 inline constexpr std::uint32_t kItemContainerMostEntries = 0xFFFF;
 
 enum class InventoryRefusal : std::uint8_t
@@ -26,13 +27,27 @@ enum class InventoryRefusal : std::uint8_t
     Withheld,
 };
 
+template <>
+struct EnumSchema<InventoryRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ InventoryRefusal::None, "none" },
+        EnumValue{ InventoryRefusal::NotAuthority, "not_authority" },
+        EnumValue{ InventoryRefusal::Missing, "missing" },
+        EnumValue{ InventoryRefusal::NotAccepted, "not_accepted" },
+        EnumValue{ InventoryRefusal::ContainerFull, "container_full" },
+        EnumValue{ InventoryRefusal::TooDeep, "too_deep" },
+        EnumValue{ InventoryRefusal::NotPermitted, "not_permitted" },
+        EnumValue{ InventoryRefusal::Withheld, "withheld" },
+    };
+};
+
 enum class ItemChangeClass : std::uint8_t
 {
     Requested,
     Forced,
 };
 
-// A World resource: docs/gameplay/inventory.md, "Operations".
 struct ItemMoveAdmission
 {
     bool (*Admit)(const World& world, EntityId entry) = nullptr;
@@ -42,35 +57,32 @@ struct ItemMoveAdmission
 struct InventoryResult
 {
     InventoryRefusal Refusal = InventoryRefusal::None;
-    // For a drop, the pickup.
     EntityId Entry;
 };
 
 [[nodiscard]] const ItemDefinition* FindItemDefinition(const World& world, ItemId item);
-// Depleted entries included.
 [[nodiscard]] std::vector<EntityId> ItemsIn(const World& world, EntityId container);
-// Depth-first, so a bag's contents follow the bag.
 [[nodiscard]] std::vector<EntityId> HeldEntries(const World& world, EntityId holder);
-// An entity that is not an entry is its own holder.
 [[nodiscard]] EntityId ItemHolder(const World& world, EntityId item);
-// docs/gameplay/inventory.md, "Who may use an entry".
 [[nodiscard]] bool MayUseItem(const World& world, EntityId actor, EntityId item);
 [[nodiscard]] bool ItemIsWithin(const World& world, EntityId inner, EntityId outer);
-// Every item carries the invalid tag.
+[[nodiscard]] std::uint32_t ItemStackClamp(const ItemDefinition& item, std::uint32_t count);
+[[nodiscard]] bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count);
+void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender = {});
 [[nodiscard]] bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag);
 
-// docs/gameplay/inventory.md, "Operations". Owner thread, outside any query.
+// Owner thread, outside any query, in the tick `now`.
 class Inventory
 {
 public:
-    explicit Inventory(World& world)
+    Inventory(World& world, const FixedSimTime& now)
         : Entities(&world)
+        , Now(now)
     {
     }
 
     InventoryResult Give(EntityId container, ItemId definition, std::uint32_t count);
     InventoryResult Take(EntityId pickup, EntityId into);
-    // A count of 0 moves all of it.
     InventoryResult Transfer(EntityId entry, EntityId into, std::uint32_t count,
                              ItemChangeClass change = ItemChangeClass::Requested);
     InventoryResult Drop(EntityId entry, const Transform3f& at, StoragePartitionId partition,
@@ -79,4 +91,5 @@ public:
 
 private:
     World* Entities;
+    FixedSimTime Now;
 };

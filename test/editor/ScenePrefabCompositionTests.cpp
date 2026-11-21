@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -122,7 +123,7 @@ struct Composed
         EXPECT_TRUE(document.has_value()) << Error;
         if (!document)
             return std::nullopt;
-        return ResolveSceneComposition(*document, Sources, &Error, &Rules);
+        return ResolveSceneComposition(*document, Sources, &Error, &Rules, { .Provenance = true });
     }
 };
 
@@ -498,4 +499,143 @@ TEST(ScenePrefabComposition, AVersionTwoFixtureComposesThroughEveryLayer)
         << "the base's tag, the fragment's, and the placement's";
     EXPECT_EQ(Binding(*guard, "used"), nullptr) << "removed by the guard";
     EXPECT_EQ(Binding(*guard, "struck"), nullptr) << "removed by the placement";
+}
+
+namespace
+{
+std::optional<SceneCompositionResult> ExtendsChain(Composed& composed, std::size_t nested)
+{
+    for (std::size_t i = 0; i + 1 < nested; ++i)
+        composed.Sources.Add(std::format("asset://prefabs/link{}.sscene", i),
+                             std::format("{{ format_version: 2, extends: 'asset://prefabs/link{}.sscene', entities: [] }}", i + 1));
+    composed.Sources.Add(std::format("asset://prefabs/link{}.sscene", nested - 1), kHumanoid);
+    return composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/link0.sscene', entities: [] }");
+}
+} // namespace
+
+TEST(ScenePrefabComposition, AChainOfSixteenScenesResolvesAndSeventeenDoesNot)
+{
+    Composed sixteen;
+    EXPECT_TRUE(ExtendsChain(sixteen, 15).has_value()) << sixteen.Error;
+    Composed seventeen;
+    EXPECT_FALSE(ExtendsChain(seventeen, 16).has_value());
+    EXPECT_NE(seventeen.Error.find("deeper than 16"), std::string::npos) << seventeen.Error;
+}
+
+TEST(ScenePrefabComposition, PlacementsNestNoDeeperThanSixteenScenes)
+{
+    Composed composed;
+    for (int i = 0; i < 17; ++i)
+        composed.Sources.Add(std::format("asset://prefabs/nest{}.sscene", i),
+                             std::format("{{ format_version: 2, entities: [], instances: [ {{ id: '{:016x}', "
+                                         "source: 'asset://prefabs/nest{}.sscene' }} ] }}",
+                                         0x500 + i, i + 1));
+    composed.Sources.Add("asset://prefabs/nest17.sscene", "{ format_version: 2, entities: [] }");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, entities: [], instances: [ { id: '00000000000004ff', "
+                                  "source: 'asset://prefabs/nest0.sscene' } ] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("deeper than 16"), std::string::npos) << composed.Error;
+}
+
+TEST(ScenePrefabComposition, ACycleNamesEverySceneOnIt)
+{
+    Composed composed;
+    composed.Sources.Add("asset://prefabs/loop_a.sscene",
+                         "{ format_version: 2, extends: 'asset://prefabs/loop_b.sscene', entities: [] }");
+    composed.Sources.Add("asset://prefabs/loop_b.sscene",
+                         "{ format_version: 2, extends: 'asset://prefabs/loop_a.sscene', entities: [] }");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/loop_a.sscene', entities: [] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("asset://prefabs/loop_a.sscene -> asset://prefabs/loop_b.sscene -> "
+                                  "asset://prefabs/loop_a.sscene"),
+              std::string::npos)
+        << composed.Error;
+}
+
+TEST(ScenePrefabComposition, ASourceThatDoesNotResolveIsNamedWithTheDocumentAndFieldThatAskedForIt)
+{
+    Composed composed;
+    composed.Sources.Add("asset://prefabs/broken.sscene", R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  includes: [ { fragment: 'asset://prefabs/fragments/gone.sscene' } ],
+})");
+    EXPECT_FALSE(composed.Resolve("{ format_version: 2, extends: 'asset://prefabs/broken.sscene', entities: [] }")
+                     .has_value());
+    EXPECT_NE(composed.Error.find("'asset://prefabs/broken.sscene': $.includes[0] names "
+                                  "'asset://prefabs/fragments/gone.sscene'"),
+              std::string::npos)
+        << composed.Error;
+}
+
+TEST(ScenePrefabComposition, APatchThatNullsAComponentIsHeldToTheRemovalRules)
+{
+    Composed composed;
+    const auto refused = composed.Resolve(R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  patch: { '00000000000000a1': { Transform: null, GameplayTags: null } },
+})");
+    ASSERT_TRUE(refused.has_value()) << composed.Error;
+    EXPECT_NE(Diagnostic(*refused, "not_removable"), nullptr);
+    EXPECT_NE(Diagnostic(*refused, "removes_owed"), nullptr);
+    const ResolvedSceneEntity* root = Entity(*refused, 0xa1);
+    EXPECT_NE(root->Components.Find("Transform"), nullptr);
+    EXPECT_NE(root->Components.Find("GameplayTags"), nullptr) << "a refused removal removes nothing";
+
+    const auto allowed = composed.Resolve(R"({
+  format_version: 2, extends: 'asset://prefabs/humanoid.sscene',
+  patch: { '00000000000000a1': { GameplayTags: null } },
+  remove: { '00000000000000a1': [ 'AbilityGrants' ] },
+})");
+    ASSERT_TRUE(allowed.has_value()) << composed.Error;
+    EXPECT_EQ(Diagnostic(*allowed, "removes_owed"), nullptr) << "both spellings are one removal list";
+    const ResolvedSceneEntity* humanoid = Entity(*allowed, 0xa1);
+    EXPECT_EQ(humanoid->Components.Find("GameplayTags"), nullptr);
+    EXPECT_EQ(humanoid->Components.Find("AbilityGrants"), nullptr);
+    EXPECT_EQ(humanoid->RemovedComponents.size(), 2u);
+}
+
+TEST(ScenePrefabComposition, APlacementsRemovalsAreHeldToTheRemovalRules)
+{
+    Composed composed;
+    const auto result = composed.Resolve(R"({
+  format_version: 2, entities: [],
+  instances: [ { id: '0000000000000100', source: 'asset://prefabs/humanoid.sscene',
+    entity_ids: { '00000000000000a1': '0000000000000101', '00000000000000a2': '0000000000000102' },
+    patch: { '00000000000000a1': { GameplayTags: null } },
+    remove: { '00000000000000a1': [ 'Transform' ], '00000000000000a2': [ 'Body' ] } } ],
+})");
+    ASSERT_TRUE(result.has_value()) << composed.Error;
+    EXPECT_NE(Diagnostic(*result, "not_removable"), nullptr);
+    EXPECT_NE(Diagnostic(*result, "removes_owed"), nullptr);
+    const ResolvedSceneEntity* member = Entity(*result, 0x101);
+    ASSERT_NE(member, nullptr);
+    EXPECT_NE(member->Components.Find("Transform"), nullptr);
+    EXPECT_NE(member->Components.Find("GameplayTags"), nullptr);
+    EXPECT_EQ(Entity(*result, 0x102)->Components.Find("Body"), nullptr);
+}
+
+TEST(ScenePrefabComposition, ASceneResolvedOnceIsStillHeldToTheDepthWhereverItIsPlacedAgain)
+{
+    const auto resolve = [](std::size_t placers) {
+        Composed composed;
+        for (int i = 0; i < 9; ++i)
+            composed.Sources.Add(std::format("asset://prefabs/shared{}.sscene", i),
+                                 std::format("{{ format_version: 2, extends: 'asset://prefabs/shared{}.sscene', entities: [] }}", i + 1));
+        composed.Sources.Add("asset://prefabs/shared9.sscene", "{ format_version: 2, entities: [] }");
+        for (std::size_t i = 0; i < placers; ++i)
+            composed.Sources.Add(std::format("asset://prefabs/placer{}.sscene", i),
+                                 std::format("{{ format_version: 2, entities: [], instances: [ {{ id: '{:016x}', source: '{}' }} ] }}",
+                                             0x700 + i,
+                                             i + 1 < placers ? std::format("asset://prefabs/placer{}.sscene", i + 1)
+                                                             : std::string("asset://prefabs/shared0.sscene")));
+        const auto result = composed.Resolve(R"({ format_version: 2, entities: [], instances: [
+            { id: '00000000000006f0', source: 'asset://prefabs/shared0.sscene' },
+            { id: '00000000000006f1', source: 'asset://prefabs/placer0.sscene' } ] })");
+        return std::pair{ result.has_value(), composed.Error };
+    };
+    const auto [fits, fitsError] = resolve(5);
+    EXPECT_TRUE(fits) << fitsError;
+    const auto [deep, deepError] = resolve(6);
+    EXPECT_FALSE(deep);
+    EXPECT_NE(deepError.find("deeper than 16"), std::string::npos) << deepError;
 }

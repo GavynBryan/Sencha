@@ -123,14 +123,14 @@ VocabularyEdit RemoveAttribute(AttributeSet& set, AttributeId id)
     return set.Remove(id) ? Applied() : Unchanged();
 }
 
-VocabularyEdit AddAbilityGrant(AbilityGrants& grants,
+VocabularyEdit AddAbilityGrant(AbilityGrantList& grants,
                                AbilityGrantEntries& entries,
                                const AbilityRegistry& registry,
                                AbilityId id)
 {
     if (registry.Get(id) == nullptr)
         return Refused("No ability with that id is declared here.");
-    if (grants.Count >= kAbilityGrantCapacity)
+    if (grants.Entries.size() >= kAbilityGrantCapacity)
         return Refused("An entity holds at most " + std::to_string(kAbilityGrantCapacity) + " grants.");
     const std::uint16_t entry = entries.Intern({ MintStableKey(), id, {} });
     if (entry == kAbilityNoGrantEntry)
@@ -139,7 +139,7 @@ VocabularyEdit AddAbilityGrant(AbilityGrants& grants,
     return Applied();
 }
 
-VocabularyEdit RemoveAbilityGrant(AbilityGrants& grants, AbilityGrantId id)
+VocabularyEdit RemoveAbilityGrant(AbilityGrantList& grants, AbilityGrantId id)
 {
     return RevokeAbilityGrant(grants, id) ? Applied() : Unchanged();
 }

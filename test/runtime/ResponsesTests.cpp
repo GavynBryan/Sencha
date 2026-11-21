@@ -798,11 +798,38 @@ TEST_F(ResponsesFixture, ACounterGatesAResponseThroughItsBounds)
     const EntityId late = WorldState.CreateEntity();
 
     Step({ { door, early } });
-    (void)WriteCounter(WorldState, defeated, EntityId{}, 1);
+    (void)WriteCounter(WorldState, defeated, EntityId{}, 2);
     Step({ { door, late } });
 
     ASSERT_EQ(Calls.size(), 1u);
-    EXPECT_EQ(Calls[0].Target, late) << "the door opens only once the warden's counter is set";
+    EXPECT_EQ(Calls[0].Target, late) << "a bound left out is open: two meets at least one";
+    counter.Reset();
+}
+
+TEST_F(ResponsesFixture, ABoundsBlockWithOnlyAMaximumAdmitsZero)
+{
+    const GameplayTagId alarms = *Tags->RegisterTag("Alarm.Raised");
+    {
+        VerbRegistrationScope verbs(*Verbs, "counters");
+        AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(WorldState), "counters");
+        AuthoredEventRegistrationScope events(*FindAuthoredEventRegistry(WorldState), "counters");
+        DeclareCounterVocabulary(verbs, queries, events);
+        ASSERT_TRUE(CommitTogether(verbs, queries, events));
+    }
+    AuthoredQueryBindingToken counter = BindCounterQuery(*Queries, WorldState);
+    const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
+        "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Alarm.Raised"}},
+                        "require": {"max": 5}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "activator"}}}]})");
+    const EntityId quiet = WorldState.CreateEntity();
+    const EntityId loud = WorldState.CreateEntity();
+
+    Step({ { door, quiet } });
+    (void)WriteCounter(WorldState, alarms, EntityId{}, 6);
+    Step({ { door, loud } });
+
+    ASSERT_EQ(Calls.size(), 1u);
+    EXPECT_EQ(Calls[0].Target, quiet) << "a bound left out is open: zero meets at most five";
     counter.Reset();
 }
 

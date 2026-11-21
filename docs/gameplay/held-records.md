@@ -12,7 +12,7 @@ way.
 |---|---|---|
 | `Held` | `world/held/Held.h` | the relation on the record: its holder and its position |
 | `HeldRecordIndex` | `world/held/HeldRecordIndex.h` | holder to records in order, record to holder, a revision per holder |
-| `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
+| `PlaceHeldRecord`, `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
 | `sencha.held` | `save/HeldRecordSaves.h` | the save section (`docs/gameplay/saves.md`) |
 
 ## The relation
@@ -26,9 +26,16 @@ the order it was held in.
 
 `HoldRecord(world, record, holder, position?)` is how the authority puts a
 record under a holder: with no position it goes after the holder's last record.
-When the last position (65535) is taken, further records share it and keep the
-order they were held in; `HeldRecordIndex::PositionsExhausted()` counts each
-time that happens. Positions never compact.
+A new record is made with `PlaceHeldRecord(world, holder, values, position?)`,
+which builds it already settled (its `Held`, a runtime persistent id,
+`NetReplicated`, its anchor and its holder's storage partition) in one
+placement, leaving the value columns the caller names to be filled with
+`World::InitializeComponent`; counters and inventory entries are made this way.
+When the holder's last record takes the last position (65535), the next
+append first renumbers the holder's records 0..n-1 in their order, so rolling
+pick-up-and-use never runs out. Only a holder that holds more records than
+there are positions shares the last one: further records keep the order they
+were held in, and `HeldRecordIndex::PositionsExhausted()` counts each time.
 
 ## The index
 
@@ -52,7 +59,25 @@ beneath it, or when `NoteHeldRecordChanged(world, record)` says a record
 beneath it changed (a counter's value, an entry's count); it moves for every
 holder up a nested chain, at most `kHeldDeepestNesting` (64) deep. A view of a
 holder's records keeps the revision it was built from and rebuilds when it
-moves.
+moves. Revisions are stamps from one counter the index keeps, so a value is
+never reused; a holder that holds nothing has revision 0 and the index keeps
+nothing for it, whether it is alive or gone, on the authority or a client.
+
+`Held` is written in place in two places only, both in `HeldRecords.cpp`, and
+neither changes which entity holds a record or the order of its holder's
+records, so the index stays true: `NameHeldHolder(world, record)` names the
+record's listed holder by its persistent id, giving the holder one, and the
+renumbering above writes each record the position the index gave it. Every
+other change to a record's holder or position replaces `Held`, which runs the
+hooks.
+
+A record may also be keyed: a kind (its value component's type) and a name.
+The value component's own hooks call `Key` and `Unkey`, independent of `Held`,
+and `FindKeyed(holder, key)` answers the record of that key listed under that
+holder, never one waiting for a holder. Counters key by their name. Keys follow
+`Held`'s rule: a replaced value keys its new name before its old one is unkeyed,
+and each `Key` is matched by one `Unkey`, so a value replaced under the same
+name stays keyed and one renamed is found only by its new name.
 
 Records nest at most `kHeldDeepestNesting` levels: `Depth(entity)` counts the
 records from a record up to the first holder that is not one, and

@@ -11,7 +11,6 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
-#include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
@@ -26,29 +25,24 @@ namespace
     {
     };
 
-    [[nodiscard]] bool SavedBeside(ComponentTypeId type)
-    {
-        return type == ResolveComponentTypeId<PersistentIdComponent>() || type == ResolveComponentTypeId<SceneInstance>();
-    }
-
-    void NameHolder(World& world, EntityId record, EntityId holder)
-    {
-        Held* held = world.TryGet<Held>(record);
-        if (held != nullptr && holder.IsValid() && !held->Holder.Target.IsValid())
-            held->Holder = PersistableRef{ .Entity = holder, .Target = EnsurePersistentId(world, holder) };
-    }
-
     JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
                          const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
     {
         JsonValue::Object components;
         for (const auto& serializer : serializers.Entries())
         {
-            if (SavedBeside(serializer->TypeId()))
+            const ComponentId carried = world.GetComponentIdByType(serializer->TypeId());
+            if (serializer->Persistence() == ComponentPersistence::Identity || carried == InvalidComponentId
+                || !world.HasComponent(record, carried))
                 continue;
             JsonWriteArchive archive;
             if (!serializer->Save(archive, record, world, context) || !archive.Ok())
+            {
+                context.Logging->GetLogger<HeldRecordSaves>().Error(
+                    "save: held record {} left out its '{}', which could not be written",
+                    PersistentEntityIdToString(id), serializer->JsonKey());
                 continue;
+            }
             if (JsonValue value = archive.TakeValue(); !value.IsNull())
                 components.emplace_back(std::string(serializer->JsonKey()), std::move(value));
         }
@@ -116,7 +110,7 @@ JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
                 const PersistentEntityId id = EnsurePersistentId(world, record);
                 if (!id.IsValid())
                     continue;
-                NameHolder(world, record, index->HolderOf(record));
+                NameHeldHolder(world, record);
                 saved.push_back(SaveRecord(world, record, id, serializers, context));
             }
             next.insert(next.end(), index->RecordsOf(record).begin(), index->RecordsOf(record).end());

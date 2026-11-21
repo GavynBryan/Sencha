@@ -40,6 +40,15 @@ struct SavedGame
 
 inline constexpr std::uint32_t kSavedGameFormatVersion = 1;
 
+struct DecodedSavedGame
+{
+    std::optional<SavedGame> Saved;
+    // Why Saved is empty.
+    std::string Error;
+    // The file's format, or a chunk this build reads, is newer than this build's.
+    bool Newer = false;
+};
+
 // Empty when it cannot be written.
 [[nodiscard]] std::vector<std::byte> EncodeSavedGame(const SavedGame& saved);
-[[nodiscard]] std::optional<SavedGame> DecodeSavedGame(std::span<const std::byte> bytes, std::string* error = nullptr);
+[[nodiscard]] DecodedSavedGame DecodeSavedGame(std::span<const std::byte> bytes);

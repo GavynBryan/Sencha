@@ -10,5 +10,4 @@ using InventoryComponents = ComponentSet<ItemEntry, ItemContainer, ItemPickup>;
 
 void RegisterInventoryComponents(ComponentRegistrar& registrar);
 
-// After the ability kit's vocabulary, whose cost provider catalog it declares into. Idempotent.
 void InstallInventoryVocabulary(World& world);

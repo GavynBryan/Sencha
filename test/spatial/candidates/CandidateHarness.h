@@ -92,7 +92,7 @@ struct CandidateHarness
         world.AddComponent(entity, WorldTransform{ transform });
         GameplayTagContainer container;
         for (const std::string_view tag : tags)
-            EXPECT_TRUE(container.Grant(*Tags.RegisterTag(tag)));
+            EXPECT_EQ(container.Grant(*Tags.RegisterTag(tag)), GameplayTagWrite::Added);
         world.AddComponent(entity, container);
         return entity;
     }

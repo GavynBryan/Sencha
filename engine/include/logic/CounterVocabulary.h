@@ -44,7 +44,6 @@ struct AuthoredApiDefinition<CounterChanged>
 void DeclareCounterVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries,
                               AuthoredEventRegistrationScope& events);
 
-// An invalid holder is the world. Zero when unset.
 [[nodiscard]] std::int32_t CounterValue(const World& world, GameplayTagId name, EntityId holder);
 [[nodiscard]] EntityId FindCounter(const World& world, GameplayTagId name, EntityId holder);
 
@@ -59,14 +58,11 @@ struct CounterWrite
 {
     std::int32_t Value = 0;
     bool Changed = false;
-    // The bound the value was clamped to, when it lay beyond one.
     CounterBound Saturated = CounterBound::None;
 };
 
-// Authority only. Zero removes the counter's record.
 CounterWrite WriteCounter(World& world, GameplayTagId name, EntityId holder, std::int64_t value);
 
-// Writes clamped to a bound, by bound. A World resource.
 struct CounterSaturation
 {
     std::uint64_t AtMaximum = 0;
@@ -76,7 +72,6 @@ struct CounterSaturation
 class CounterOperations
 {
 public:
-    // `events` may be null; nothing is then announced.
     CounterOperations(World& world, Logger& log, AuthoredEventDispatcher* events);
 
     VerbAdmission Set(const VerbInvocation& invocation);

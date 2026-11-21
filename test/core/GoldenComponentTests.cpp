@@ -8,6 +8,7 @@
 #include "component_codegen/GoldenComponent.h"
 #include "component_codegen/GoldenComponent.sencha.h.expected"
 
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/RuntimeSchema.h>
@@ -27,6 +28,8 @@ TEST(GeneratedComponentMetadata, ProjectsIntoEveryConsumer)
     EXPECT_TRUE(TypeSchema<CodegenGolden>::Replicated);
     EXPECT_TRUE(TypeSchema<CodegenGolden>::Predicted);
     EXPECT_FALSE(ComponentRemovable<CodegenGolden>::Value);
+    EXPECT_EQ(ComponentPersistenceOf<CodegenGolden>::Value, ComponentPersistence::Saved);
+    EXPECT_EQ(ComponentPersistenceOf<CodegenGoldenTag>::Value, ComponentPersistence::Authored);
 
     ASSERT_TRUE(ComponentEditorVisual<CodegenGolden>::Value.has_value());
     EXPECT_EQ(ComponentEditorVisual<CodegenGolden>::Value->AssetPath, "golden.glb");

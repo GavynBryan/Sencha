@@ -43,17 +43,21 @@ struct AbilityEffectiveBinding
     AbilityInterrupt OnInterrupt = AbilityInterrupt::Cancel;
 };
 
-inline constexpr std::string_view kAbilityGrantEntryRefusal =
-    "was refused: the grant entry table is full, or another entry of its ability has the same wire key";
+enum class AbilityGrantEntryRefusal : std::uint8_t
+{
+    Full,
+    WireKeyTaken,
+};
+
+[[nodiscard]] std::string_view AbilityGrantEntryRefusalText(AbilityGrantEntryRefusal refusal);
 
 // The World's grant entries and their effective bindings. Bindings rebuild when the
 // abilities, the action vocabulary or the gameplay tags they were resolved against change.
 class AbilityGrantEntries
 {
 public:
-    // The index of an entry equal to `entry`, adding it if new. kAbilityNoGrantEntry
-    // when the table is full or another entry of its ability has the same wire key.
-    std::uint16_t Intern(AbilityGrantEntry entry);
+    // The index of an entry equal to `entry`, adding it if new; kAbilityNoGrantEntry and why when it cannot.
+    std::uint16_t Intern(AbilityGrantEntry entry, AbilityGrantEntryRefusal* refusal = nullptr);
     // Interns nothing; kAbilityNoGrantEntry when this World declared no such entry.
     [[nodiscard]] std::uint16_t IndexOf(AbilityGrantEntry entry) const;
 

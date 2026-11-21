@@ -15,7 +15,10 @@ struct PersistableRef
     friend bool operator==(const PersistableRef&, const PersistableRef&) = default;
 };
 
-[[nodiscard]] PersistableRef MakePersistableRef(const World& world, EntityId entity);
+// Mints the entity an identity on the authority when it has none.
+[[nodiscard]] PersistableRef MakePersistableRef(World& world, EntityId entity);
+// Never mints: an entity without an identity gives a reference no save can follow.
+[[nodiscard]] PersistableRef PersistableRefOf(const World& world, EntityId entity);
 [[nodiscard]] EntityId ResolvePersistableRef(const World& world, const PersistableRef& ref);
 void RefreshPersistableRef(const World& world, PersistableRef& ref);
 

@@ -49,9 +49,17 @@ struct HashedChunkFileFormat
     std::string_view VersionAdvice;
 };
 
+enum class HashedChunkFileRead : std::uint8_t
+{
+    Read,
+    Refused,
+    // The file's version is newer than the newest the format reads.
+    Newer,
+};
+
 // Calls `read` for each chunk before the hash; it reads what it knows of the
 // payload, and whatever it leaves is skipped. Fails on a wrong magic or version,
 // truncation, a hash that disagrees, or anything after the hash.
-[[nodiscard]] bool ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFileFormat& format,
+[[nodiscard]] HashedChunkFileRead ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFileFormat& format,
                                        const std::function<bool(const ChunkHeader&, BinaryReader&)>& read,
                                        std::string* error);

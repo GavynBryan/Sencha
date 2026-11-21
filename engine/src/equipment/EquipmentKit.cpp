@@ -16,6 +16,8 @@ void InstallEquipmentVocabulary(World& world)
 {
     if (!world.HasResource<EquipmentLayoutRegistry>())
         world.AddResource<EquipmentLayoutRegistry>();
+    if (!world.HasResource<EquipmentRecordLists>())
+        world.AddResource<EquipmentRecordLists>();
     InstallEquipmentMoveAdmission(world);
     DeclareSlotCostProvider(world);
 }

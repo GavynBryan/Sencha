@@ -8,6 +8,7 @@
 #include <ecs/World.h>
 #include <net/NetSession.h>
 #include <participant/ParticipantControl.h>
+#include <participant_spawn/RestoredBodies.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/HeldRecords.h>
@@ -30,6 +31,24 @@ namespace
     }
 }
 
+const char* LevelChangeAdmissionReason(LevelChangeAdmission admission)
+{
+    switch (admission)
+    {
+    case LevelChangeAdmission::Accepted:
+        return "";
+    case LevelChangeAdmission::Busy:
+        return "another level change is under way";
+    case LevelChangeAdmission::NotCooked:
+        return "the level is not cooked";
+    case LevelChangeAdmission::NotAuthority:
+        return "this machine is not the authority";
+    case LevelChangeAdmission::InSession:
+        return "a network session is running";
+    }
+    return "";
+}
+
 LevelChange::LevelChange(Engine& engine)
     : Host(engine)
 {
@@ -39,12 +58,15 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
 {
     if (Waiting.has_value() || Current == LevelChangeStatus::Loading)
         return LevelChangeAdmission::Busy;
-    if (!IsSimulationAuthority(Host.World().Entities()))
+    const bool firstLoad = !Host.Level().Loaded().has_value();
+    if (!firstLoad && !IsSimulationAuthority(Host.World().Entities()))
         return LevelChangeAdmission::NotAuthority;
-    if (const NetSession* session = Host.TryNet(); session != nullptr && session->Role() != NetSessionRole::Standalone)
+    if (const NetSession* session = Host.TryNet();
+        !firstLoad && session != nullptr && session->Role() != NetSessionRole::Standalone)
         return LevelChangeAdmission::InSession;
     if (!Host.Level().IsCooked(request.Level))
         return LevelChangeAdmission::NotCooked;
+    Kept = request.RuntimeState;
     Waiting = std::move(request);
     Current = LevelChangeStatus::Pending;
     Reasons.clear();
@@ -61,15 +83,21 @@ void LevelChange::Commit()
 
     World& world = Host.World().Entities();
     Released.clear();
-    for (const EntityId participant : ParticipantsWithBodies(world))
-        if (Host.ReleaseParticipantBody(participant).Released)
-            Released.push_back(participant);
+    if (IsSimulationAuthority(world))
+        for (const EntityId participant : ParticipantsWithBodies(world))
+            if (Host.ReleaseParticipantBody(participant).Released)
+                Released.push_back(participant);
 
     LoadedLevel& level = Host.Level();
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
         memory->Install(request.ZoneState);
-    DestroyAwaitingHeldRecords(world);
+    if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
+        *restored = RestoredBodies{};
+    if (request.RuntimeState == LevelChangeRuntimeState::Discard)
+        DestroyHeldRecords(world);
+    else
+        DestroyAwaitingHeldRecords(world);
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {
@@ -129,6 +157,8 @@ bool LevelChange::ReleasedHaveBodies(const World& world) const
 void LevelChange::Fail(std::vector<std::string> reasons)
 {
     Current = LevelChangeStatus::Failed;
+    if (RestoredBodies* restored = Host.World().Entities().TryGetResource<RestoredBodies>())
+        restored->Local.reset();
     Reasons = std::move(reasons);
     Logger& log = Host.Logging().GetLogger<LevelChange>();
     for (const std::string& reason : Reasons)

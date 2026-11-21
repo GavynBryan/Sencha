@@ -780,7 +780,9 @@ namespace
 {
     void CollectMemberNulls(const Json5Value& value, const std::string& path, std::vector<std::string>& out)
     {
-        for (const Json5Value::Member& member : value.IsObject() ? value.Members : std::vector<Json5Value::Member>{})
+        if (!value.IsObject())
+            return;
+        for (const Json5Value::Member& member : value.Members)
         {
             const std::string at = path + "." + member.first;
             if (member.second.IsNull())

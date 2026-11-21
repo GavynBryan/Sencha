@@ -67,9 +67,10 @@ and the arena count as one consumer: the arena is the FPS with a session).
    where a game registers the world-storage features its world carries
    (`RegisterPhysicsComponents`, `RegisterMovement`, ...), binds its input, and
    installs its participant policies.
-6. The startup script runs (`+map`, `+world`, `+host`, ...). `map`, `world`,
-   `zone`, `zones`, `scene.spawn`, and `scene.despawn` are engine commands over
-   `LoadedLevel`.
+6. The startup script runs (`+map`, `+world`, `+host`, ...). `map` and `world`
+   request a level change (see "Changing level"), carried out at the first
+   frame's zone-residency phase; `zone`, `zones`, `scene.spawn`, and
+   `scene.despawn` are engine commands over `LoadedLevel`.
 7. `OnRegisterSystems` -- the composition root. The engine's own systems
    (hot-reload polling) register after the game's, so a game's ordering edges
    already exist.
@@ -123,7 +124,7 @@ neither rule applies. `ConsoleRegistry::CheckSessionRules` applies them before
 the callback runs, with the same wording a refused `Cheat` or `Replicated` cvar
 gets, and a deferred command is judged when it runs rather than when it was
 queued. `map` and `world` carry neither: a client runs `map` itself when it is
-admitted.
+admitted, and the level change admits a first load on any machine.
 
 The console's `ConsoleAuthorityPolicy` and the World's `SimulationAuthority`
 are one answer read twice: `Engine::PublishSimulationAuthority` writes both from
@@ -160,18 +161,31 @@ const LevelChangeAdmission admission = engine.LevelChanges().Request(
     LevelChangeRequest{ .Level = *engine.Level().Loaded() });
 ```
 
-`LoadedLevel::Loaded()` is a `LevelReference`: whether `map` or `world` loaded
-it, and the name it was given. The request is checked when it is made (the
-level is cooked, this machine is the authority, no network session is running,
-no other change is under way) and carried out at the next zone-residency phase,
-before streaming, where no frame view is live. Carrying it out:
+The `map` and `world` console commands are this request, so the first load
+and every later one take the same path. `LoadedLevel::Loaded()` is a
+`LevelReference`: a scene or a world, and the name it was given. The request is
+checked when it is made (the level is cooked, no other change is under way, and,
+unless nothing is loaded yet, this machine is the authority and no network
+session is running) and carried out at the next zone-residency phase, before
+streaming, where no frame view is live. A first load is admitted anywhere
+because it changes nothing a peer was told: a client loads the map its
+authority announced, and a host may load after it began hosting, since the
+announcement is refreshed every frame. Carrying it out:
 
-1. lets every participant's body go (`Engine::ReleaseParticipantBody`, through
-   the game's `ReapBody` policy); the participants stay;
+1. on the authority, lets every participant's body go
+   (`Engine::ReleaseParticipantBody`, through the game's `ReapBody` policy);
+   the participants stay;
 2. unloads, so the game's residency systems see their content leave;
-3. resets zone state memory to authored, so what the level lost comes back;
-4. clears the active camera if it went with the level;
-5. loads the requested level.
+3. resets zone state memory to authored, so what the level lost comes back
+   (or installs the request's `ZoneState`, which is how a restore loads);
+4. destroys the held records that were waiting for a holder in the old level,
+   or, when the request's `RuntimeState` is `Discard`, every runtime held
+   record: the world's counters and inventory and every body's go, as a new
+   game needs (`Keep`, the default, keeps them for the next level);
+5. drops a restored body no spawn has taken (`RestoredBodies`), so only the
+   restore that is under way can give one out;
+6. clears the active camera if it went with the level;
+7. loads the requested level.
 
 The game provides bodies when the level arrives, as for any load. `Status()`
 moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every

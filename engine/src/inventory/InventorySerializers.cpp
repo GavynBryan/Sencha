@@ -1,8 +1,10 @@
 #include <inventory/InventorySerializers.h>
 
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/Archive.h>
 #include <core/serialization/FourCC.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <world/serialization/SceneAssetRef.h>
 #include <world/serialization/TypedComponentSerializer.h>
@@ -10,6 +12,8 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -30,6 +34,18 @@ namespace
     {
         return RuntimeField{ .Name = "count", .Offset = offset, .Size = sizeof(std::uint32_t),
                              .Scalar = FieldScalar::UInt32, .ReadOnly = true };
+    }
+
+    void ClampEntryCount(const World& world, EntityId entity, ItemEntry& entry, SceneSerializationContext& context)
+    {
+        const ItemDefinition* item = FindItemDefinition(world, entry.Definition);
+        if (item == nullptr || ItemStackHolds(*item, entry.Count))
+            return;
+        const std::uint32_t held = std::exchange(entry.Count, ItemStackClamp(*item, entry.Count));
+        context.Logging->GetLogger<ItemEntry>().Warn(
+            "inventory: entry {}:{} of '{}' named a count of {}, which its stack cannot hold; it loads holding {}",
+            entity.Index, entity.Generation, world.TryGetResource<ItemRegistry>()->GetName(entry.Definition), held,
+            entry.Count);
     }
 
     template<typename T>
@@ -75,6 +91,8 @@ namespace
             const bool named = !archive.HasField(kDefinition)
                 || ReadSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), value.Definition,
                                           context);
+            if constexpr (std::is_same_v<T, ItemEntry>)
+                ClampEntryCount(world, entity, value, context);
             archive.End();
             return named && archive.Ok() && this->Place(world, entity, value);
         }

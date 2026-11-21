@@ -58,6 +58,7 @@ private:
     {
         SceneSpawnId Spawn;
         std::string Path;
+        bool Restored = false;
     };
     struct Attempt
     {

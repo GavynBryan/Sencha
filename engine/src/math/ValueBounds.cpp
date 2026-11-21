@@ -23,8 +23,7 @@ bool ReadValueBounds(const JsonValue& require, ValueBounds& out, std::string_vie
         out = ValueBounds::Exactly(expect->AsBool() ? 1.0 : 0.0);
         return true;
     }
-    out.Min = require.NumberOr("min", out.Min);
-    out.Max = require.NumberOr("max", out.Max);
+    out = ValueBounds{ .Min = require.NumberOr("min", ValueBounds{}.Min), .Max = require.NumberOr("max", ValueBounds{}.Max) };
     if (out.Min > out.Max)
     {
         errors.push_back(std::format("{}: require.min exceeds require.max", subject));

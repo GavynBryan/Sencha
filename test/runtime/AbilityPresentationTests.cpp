@@ -171,7 +171,7 @@ protected:
         const AbilityId ability =
             Entities.GetResource<AbilityRegistry>().Define("asset://abilities/a.sdata", std::move(definition));
         const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
-        (void)GrantAbility(*Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, entry);
+        (void)GrantAbility(Entities, Actor, ability, AbilityGrantKind::Authored, entry);
     }
 
     // One tick: input, the clock, the ability pass and, unless asked not to, presentation.
