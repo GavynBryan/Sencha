@@ -11,7 +11,6 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
-#include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 
@@ -26,11 +25,6 @@ namespace
     {
     };
 
-    [[nodiscard]] bool SavedBeside(ComponentTypeId type)
-    {
-        return type == ResolveComponentTypeId<PersistentIdComponent>() || type == ResolveComponentTypeId<SceneInstance>();
-    }
-
     JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
                          const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
     {
@@ -38,7 +32,7 @@ namespace
         for (const auto& serializer : serializers.Entries())
         {
             const ComponentId carried = world.GetComponentIdByType(serializer->TypeId());
-            if (SavedBeside(serializer->TypeId()) || carried == InvalidComponentId
+            if (serializer->Persistence() == ComponentPersistence::Identity || carried == InvalidComponentId
                 || !world.HasComponent(record, carried))
                 continue;
             JsonWriteArchive archive;

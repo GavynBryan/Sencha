@@ -1,4 +1,7 @@
+#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentPersistence.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <save/HeldRecordSaves.h>
@@ -9,6 +12,7 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <gtest/gtest.h>
@@ -17,8 +21,81 @@
 #include <string>
 #include <vector>
 
+struct RecordLabel
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordLabel>
+{
+    static constexpr std::string_view Name = "record_label";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'L', 'B', 'L');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordLabel::Value) }; }
+};
+
+template <>
+struct ComponentPersistenceOf<RecordLabel>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Identity;
+};
+
+struct RecordWeight
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordWeight>
+{
+    static constexpr std::string_view Name = "record_weight";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'W', 'G', 'T');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordWeight::Value) }; }
+};
+
 namespace
 {
+    struct ErrorSink final : ILogSink
+    {
+        void Write(LogLevel level, std::string_view, std::string_view message) override
+        {
+            if (level == LogLevel::Error)
+                Errors.emplace_back(message);
+        }
+
+        std::vector<std::string> Errors;
+    };
+
+    class UnwritableWeightSerializer final : public IComponentSerializer
+    {
+    public:
+        ComponentTypeId TypeId() const override { return Inner.TypeId(); }
+        std::string_view JsonKey() const override { return Inner.JsonKey(); }
+        std::uint32_t BinaryChunkId() const override { return Inner.BinaryChunkId(); }
+        std::span<const RuntimeField> RuntimeFields() const override { return Inner.RuntimeFields(); }
+        std::vector<std::byte> DefaultBytes() const override { return Inner.DefaultBytes(); }
+        void RegisterStorage(Registry& registry) const override { Inner.RegisterStorage(registry); }
+        bool HasComponent(EntityId entity, const Registry& registry) const override
+        {
+            return Inner.HasComponent(entity, registry);
+        }
+        bool Save(IWriteArchive&, EntityId, const World&, SceneSerializationContext&) const override { return false; }
+        bool Load(IReadArchive& archive, EntityId entity, Registry& registry,
+                  SceneSerializationContext& context) override
+        {
+            return Inner.Load(archive, entity, registry, context);
+        }
+        bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
+                           SceneSerializationContext& context) override
+        {
+            return Inner.LoadIntoWorld(archive, entity, world, context);
+        }
+        bool Remove(EntityId entity, Registry& registry) const override { return Inner.Remove(entity, registry); }
+
+    private:
+        ComponentSerializer<RecordWeight> Inner;
+    };
+
     struct SavingWorld
     {
         SavingWorld()
@@ -27,6 +104,9 @@ namespace
             ComponentRegistrar registrar(&Schema, &Serializers, nullptr);
             registrar.Add<PersistentIdComponent>();
             registrar.Add<Held>();
+            registrar.Add<RecordLabel>();
+            Schema.Add<RecordWeight>();
+            (void)Serializers.Register(std::make_unique<UnwritableWeightSerializer>());
             Schema.Seal();
             Schema.Apply(Entities);
             Entities.AddResource<PersistentEntityIndex>();
@@ -164,4 +244,39 @@ TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatCont
                                        PersistentEntityIdToString(world.IdOf(waiting)) };
     std::ranges::sort(expected);
     EXPECT_EQ(ids, expected) << "the authored record comes back with its zone, not from the save";
+}
+
+TEST(HeldRecordSaves, ARecordsSavedFormLeavesOutWhatItIsKnownBy)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordLabel>(record, RecordLabel{ .Value = 3 });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
+    const JsonValue& entry = saved.Find("records")->AsArray().front();
+    std::vector<std::string> keys;
+    for (const auto& [key, value] : entry.Find("components")->AsObject())
+        keys.push_back(key);
+    EXPECT_EQ(keys, std::vector<std::string>{ "Held" }) << "identity travels beside the record, not in it";
+    EXPECT_EQ(entry.Find("id")->AsString(), PersistentEntityIdToString(world.IdOf(record)));
+    EXPECT_TRUE(errors.Errors.empty());
+}
+
+TEST(HeldRecordSaves, AComponentThatCannotBeWrittenIsLoggedAndLeftOutOfTheRecord)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordWeight>(record, RecordWeight{ .Value = 4 });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    const JsonValue& entry = saved.Find("records")->AsArray().front();
+    EXPECT_EQ(entry.Find("components")->Find("record_weight"), nullptr);
+    EXPECT_NE(entry.Find("components")->Find("Held"), nullptr);
+    ASSERT_EQ(errors.Errors.size(), 1u);
+    EXPECT_NE(errors.Errors[0].find("record_weight"), std::string::npos) << errors.Errors[0];
 }

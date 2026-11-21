@@ -9,24 +9,13 @@
 #include <ecs/World.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
-#include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
-#include <world/transform/TransformComponents.h>
 
-#include <array>
 #include <optional>
 
 namespace
 {
-    [[nodiscard]] bool GivenBySpawn(ComponentTypeId type)
-    {
-        static const std::array kGiven{ ResolveComponentTypeId<PersistentIdComponent>(),
-                                        ResolveComponentTypeId<SceneInstance>(),
-                                        ResolveComponentTypeId<LocalTransform>() };
-        return std::ranges::find(kGiven, type) != kGiven.end();
-    }
-
     [[nodiscard]] bool SetAsideByRetune(std::string_view code)
     {
         return code == "remove_unknown_key" || code == "redeclares_inherited" || code == "removes_inherited"
@@ -61,7 +50,7 @@ SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root, const E
     const std::optional<PackageEntityId> prefabRoot = OnlyRoot(prefab);
     for (const auto& serializer : serializers.Entries())
     {
-        if (GivenBySpawn(serializer->TypeId()))
+        if (serializer->Persistence() != ComponentPersistence::Saved)
             continue;
         JsonWriteArchive archive;
         if (!serializer->Save(archive, root, world, context) || !archive.Ok())

@@ -47,6 +47,43 @@ what a save keeps is decided per entity by its zone state lifetime
   puts it back before the registered sections, and never lowers it, so a
   restored game never mints an id it already holds.
 
+## What a save holds of an entity
+
+Each component declares whether a save holds it
+(`IComponentSerializer::Persistence()`, `core/metadata/ComponentPersistence.h`):
+
+| Persistence | Meaning | Declared by |
+|---|---|---|
+| `Authored` | content says it; a save never holds it on an entity content made | the default |
+| `Saved` | a save holds how it differs from content | `SENCHA_SAVED` on the component |
+| `Identity` | what the entity is known by; whoever makes the entity gives it | a `ComponentPersistenceOf` specialization |
+
+The engine's `Identity` components are `PersistentIdComponent` and
+`SceneInstance`. Its `Saved` ones are `GameplayTagContainer` (the baseline),
+`AttributeSet` (the bases), `AbilityGrants` (the lasting kinds),
+`EquipmentState`, `Responses`, `Counter`, `ItemEntry`, `ItemContainer`,
+`ItemPickup`, `Held` and `LookOrientation`. Everything else is `Authored`,
+including `LocalTransform`, `CharacterMovement` (so a body saved on a ladder
+comes back in the default mode), meshes, colliders and lights. Which part of
+a `Saved` component is durable stays inside its serializer: its scene form is
+its saved form.
+
+Saved is opt-in, like `SENCHA_FIELD` and `SENCHA_REPLICATED`, so session state
+stays out of saves without a list; the cost is that a game component nobody
+annotated is silently not saved. A hand-written serializer derived from
+`TypedComponentSerializer` reads the annotation off its component; one that
+is not overrides `Persistence()`.
+
+The declaration is read in three places:
+
+- **A body** (an entity content made) keeps a patch of its `Saved` components
+  only.
+- **A held record** (an entity nothing in content made) keeps every component
+  it carries that has a serializer, except `Identity` ones, whose values
+  travel beside it.
+- **A spawn** strips `Identity` components from a prefab
+  (`SmapPackageOptions::StripAuthoredIdentity`).
+
 ## Bodies
 
 The local participant's body is kept as a patch against the prefab it spawned
@@ -61,9 +98,11 @@ body's order and a retune of that list no longer reaches the save. The cooked re
 source leaves out (`"CharacterController": {}`): the cook writes each component
 from the loaded document through its serializer (`SaveSceneJson`, from the
 document cook's input snapshot), so an untouched body saves an empty patch and
-a retuned default reaches old saves like any other value. The patch leaves out what a spawn gives: identity, scene instance and
-placement. The body's root transform and persistent id travel beside it, and
-writing a save gives a body without an id one from the runtime mint.
+a retuned default reaches old saves like any other value. The patch holds the body's `Saved` components only ("What a save holds of an
+entity"), so it never holds identity, scene instance or placement, and a
+component a body lost is a removal only when it is `Saved`. The body's root
+transform and persistent id travel beside it, and writing a save gives a body
+without an id one from the runtime mint.
 
 What a body wears is in that patch: its `EquipmentState` names each record's
 source entry by persistent id, and the entries are the body's held records,
@@ -115,7 +154,7 @@ record content authored is not saved, since its zone makes it again; a record
 that stopped being what content authored took a runtime id when it changed.
 
 Each record is kept whole, not as a patch: its persistent id, and every
-component it carries that a serializer saves, in scene form through the same
+component it carries that a serializer saves except `Identity` ones, in scene form through the same
 serializers a scene uses; a serializer of a component the record does not
 carry is not asked. Its `Held` names its holder by persistent id. Capturing gives a
 record or a holder without a persistent id one from the runtime mint.

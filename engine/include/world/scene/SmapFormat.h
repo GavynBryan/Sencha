@@ -152,7 +152,7 @@ class EntityBuildPackage;
 
 struct SmapPackageOptions
 {
-    // Drop persistent_id, scene_instance and their import metadata: a spawn is a
+    // Drop every Identity component and the import metadata: a spawn is a
     // transient group of its own (v1).
     bool StripAuthoredIdentity = false;
 };
