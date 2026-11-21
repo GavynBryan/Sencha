@@ -610,9 +610,14 @@ The loss bounds, each pinned by `test/runtime/AbilityReplicationTests.cpp`:
 - an older state applied after a newer one presents nothing again, and a log's
   serial wraps without losing order.
 
-One firing actor costs a peer 340 B/s at the default cadence with its aim
-sweeping, every pulse landing somewhere new (`CueBandwidthPerFiringActorIsMeasured`
-fails above 360).
+At the default cadence, with its aim sweeping so every pulse lands somewhere new,
+a firing actor costs a peer 1,570 B/s in all and a moving one 1,050 B/s
+(`CueBandwidthPerFiringActorIsMeasured` fails above 1,730 and 1,150). Firing adds
+520 B/s, which the test reports without bounding. That difference was 340 B/s
+when a snapshot named every component an entity carries; it rose only because the
+components firing changes (chiefly `ActiveAbilities`) are no longer named by the
+moving actor as well, while both totals fell
+(`docs/plans/evidence/replicated-lists/results.md`).
 
 ## Prediction
 
@@ -710,7 +715,7 @@ keep in step, and 256 actors each holding 63 of them cost 0.73 ms a tick, a cost
 Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a cue
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
 mark at which a query is worth parallelising, so it stays serial. A firing actor
-costs a peer 340 B/s ("Replication").
+costs a peer 1,570 B/s, 520 more than a moving one ("Replication").
 
 Under many lasting effects, each folding one modifier and some granting abilities
 (the shape equipment gives content), measured before the composition work was

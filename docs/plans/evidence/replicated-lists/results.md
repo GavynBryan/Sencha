@@ -122,4 +122,6 @@ would cost if named; they are no longer written.
   moving actor rose from 340 to 520 B/s: the components firing changes
   (chiefly `ActiveAbilities`, a 36-run mask) used to be named by the moving
   actor too, and now are named only while firing. The test's 360 B/s bound
-  is on that difference, so it fails.
+  was on that difference, which is no longer a cost, so the test now bounds
+  the two totals instead (moving 1,150, firing 1,730, about 10% above these
+  figures) and reports the difference without asserting on it.

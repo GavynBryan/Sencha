@@ -748,10 +748,15 @@ TEST_F(AbilityReplication, CueBandwidthPerFiringActorIsMeasured)
     };
     const std::size_t moving = spend(false);
     const std::size_t firing = spend(true);
-    const std::size_t perSecond = firing - moving;
-    RecordProperty("cue_bytes_per_second", static_cast<int>(perSecond));
-    std::cout << "ability bytes per second for one firing actor, to one peer: " << perSecond << "\n";
-    EXPECT_LE(perSecond, 360u) << "the presentation budget per firing actor per peer";
+    const std::size_t firingOverMoving = firing - moving;
+    RecordProperty("moving_bytes_per_second", static_cast<int>(moving));
+    RecordProperty("firing_bytes_per_second", static_cast<int>(firing));
+    RecordProperty("cue_bytes_per_second", static_cast<int>(firingOverMoving));
+    std::cout << "bytes per second for one moving actor, to one peer: " << moving << "\n"
+              << "bytes per second for one firing actor, to one peer: " << firing << "\n"
+              << "of which firing adds over moving: " << firingOverMoving << "\n";
+    EXPECT_LE(moving, 1150u) << "a moving actor's traffic to one peer";
+    EXPECT_LE(firing, 1730u) << "a firing actor's traffic to one peer";
 }
 
 constexpr std::string_view kCharging = R"({
