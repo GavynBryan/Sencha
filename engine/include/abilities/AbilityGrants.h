@@ -49,7 +49,7 @@ struct AbilityGrant
 
 using AbilityGrantLists = ListPool<struct AbilityGrantListTag, AbilityGrant>;
 
-struct SENCHA_COMPONENT("sencha.ability_grants") AbilityGrants
+struct SENCHA_COMPONENT("sencha.ability_grants") SENCHA_SAVED AbilityGrants
 {
     AbilityGrantLists::HandleType Entries;
     std::uint16_t Count = 0;

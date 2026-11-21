@@ -8,6 +8,7 @@
 // lets components migrate one at a time.
 
 #include <core/metadata/ComponentDefinition.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/EditorVisual.h>
@@ -47,6 +48,7 @@ struct ComponentDefinition<DefinedFull>
     static constexpr bool Replicated = true;
     static constexpr bool Predicted  = true;
     static constexpr bool Removable  = false;
+    static constexpr bool Saved      = true;
     static constexpr std::string_view VisualMeshAsset = "camera.glb";
     static constexpr std::string_view PlaceableLabel = "Full Thing";
     static constexpr std::string_view PlaceableIcon = "box";
@@ -176,6 +178,16 @@ TEST(ComponentDefinitionProjection, EditorPolicyProjects)
     ASSERT_TRUE(ComponentEditorVisual<DefinedFull>::Value.has_value());
     EXPECT_EQ(ComponentEditorVisual<DefinedFull>::Value->AssetPath, "camera.glb");
     EXPECT_FALSE(ComponentEditorVisual<DefinedNoChunk>::Value.has_value());
+}
+
+TEST(ComponentDefinitionProjection, ASaveHoldsOnlyWhatIsDeclaredSaved)
+{
+    EXPECT_EQ(ComponentPersistenceOf<DefinedFull>::Value, ComponentPersistence::Saved);
+    EXPECT_EQ(ComponentPersistenceOf<DefinedNoChunk>::Value, ComponentPersistence::Authored);
+    EXPECT_EQ(ComponentPersistenceOf<DefinedIdentityOnly>::Value, ComponentPersistence::Authored);
+
+    const ComponentSerializer<DefinedFull> serializer;
+    EXPECT_EQ(serializer.Persistence(), ComponentPersistence::Saved) << "a save reads the fact without naming the type";
 }
 
 // ─── Precedence: the property the whole migration rests on ───────────────────

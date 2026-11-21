@@ -124,6 +124,7 @@ struct ComponentFacts
     bool Predicted = false;
     bool AuthorityMaterialized = false;
     bool NonRemovable = false;
+    bool Saved = false;
     std::vector<FieldFacts> Fields;
     std::vector<FieldQueryFacts> Queries;
     unsigned Line = 0;
@@ -282,6 +283,7 @@ public:
             else if (text == "sencha.predicted")                  facts.Predicted = true;
             else if (text == "sencha.authority_materialized")     facts.AuthorityMaterialized = true;
             else if (text == "sencha.non_removable")              facts.NonRemovable = true;
+            else if (text == "sencha.saved")                      facts.Saved = true;
             else if (Split(text, "sencha.event=", value))         { event.Identity = value; isEvent = true; }
             else if (Split(text, "sencha.event_source=", value))  { event.Source = value; eventOnly = true; }
             else if (Split(text, "sencha.label=", value))         { event.Label = value; eventOnly = true; }
@@ -1402,6 +1404,7 @@ bool WriteCompanion(const std::string& path,
         if (component.AuthorityMaterialized)
             out << "    static constexpr bool AuthorityMaterialized = true;\n";
         if (component.NonRemovable) out << "    static constexpr bool Removable = false;\n";
+        if (component.Saved)        out << "    static constexpr bool Saved = true;\n";
         if (!component.VisualMesh.empty())
             out << "    static constexpr std::string_view VisualMeshAsset = " << Quoted(component.VisualMesh) << ";\n";
         if (!component.Placeable.empty())

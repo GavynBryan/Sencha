@@ -20,6 +20,7 @@ struct ComponentDefinition<CodegenGolden>
     static constexpr bool Replicated = true;
     static constexpr bool Predicted = true;
     static constexpr bool Removable = false;
+    static constexpr bool Saved = true;
     static constexpr std::string_view VisualMeshAsset = "golden.glb";
 
     static auto Fields()

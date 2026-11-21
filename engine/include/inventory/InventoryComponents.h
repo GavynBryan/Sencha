@@ -7,19 +7,19 @@
 #include <cstdint>
 #include <type_traits>
 
-struct SENCHA_COMPONENT("sencha.item_entry") SENCHA_AUTHORITY_MATERIALIZED ItemEntry
+struct SENCHA_COMPONENT("sencha.item_entry") SENCHA_AUTHORITY_MATERIALIZED SENCHA_SAVED ItemEntry
 {
     ItemId Definition;
     std::uint32_t Count = 1;
 };
 
-struct SENCHA_COMPONENT("sencha.item_container") ItemContainer
+struct SENCHA_COMPONENT("sencha.item_container") SENCHA_SAVED ItemContainer
 {
     std::uint16_t Capacity = 0;
     GameplayTagId Accepts;
 };
 
-struct SENCHA_COMPONENT("sencha.item_pickup") ItemPickup
+struct SENCHA_COMPONENT("sencha.item_pickup") SENCHA_SAVED ItemPickup
 {
     ItemId Definition;
     std::uint32_t Count = 1;

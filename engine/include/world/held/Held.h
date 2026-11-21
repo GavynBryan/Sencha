@@ -11,6 +11,7 @@ struct SENCHA_COMPONENT("sencha.held")
        SENCHA_SCHEMA("Held")
        SENCHA_SCENE_CHUNK("HELD")
        SENCHA_AUTHORITY_MATERIALIZED
+       SENCHA_SAVED
 Held
 {
     SENCHA_FIELD("holder")

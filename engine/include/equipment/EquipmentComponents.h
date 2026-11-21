@@ -38,7 +38,7 @@ struct EquipmentRecord
 
 using EquipmentRecordLists = ListPool<struct EquipmentRecordListTag, EquipmentRecord>;
 
-struct SENCHA_COMPONENT("sencha.equipment_state") EquipmentState
+struct SENCHA_COMPONENT("sencha.equipment_state") SENCHA_SAVED EquipmentState
 {
     EquipmentLayoutId Layout;
     std::uint8_t Count = 0;

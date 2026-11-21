@@ -3,6 +3,7 @@
 #include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
@@ -65,6 +66,12 @@ SceneInstance
 
     SENCHA_FIELD("id")
     SceneInstanceId Id;
+};
+
+template <>
+struct ComponentPersistenceOf<SceneInstance>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Identity;
 };
 
 // Instance membership: the group stays addressable through SceneInstanceIndex

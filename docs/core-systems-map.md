@@ -675,6 +675,13 @@ New component:
    - the writer never sends such an entity's authored id;
    - the component must travel (a static assertion says so), since the wire is
      the only way it arrives.
+
+   `SENCHA_SAVED` says a save holds it: a body keeps it as a patch against its
+   prefab. A component without it follows content and a save never holds it
+   there, so state a player must keep is annotated and session state is not
+   (`docs/gameplay/saves.md`, "What a save holds of an entity"). A hand-written
+   serializer derived from `TypedComponentSerializer` reads the same
+   annotation off its component.
 4. List the header under `sencha_generate_component_metadata(...)` in the
    owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
    `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of

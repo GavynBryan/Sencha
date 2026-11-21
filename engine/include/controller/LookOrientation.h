@@ -33,6 +33,7 @@ struct SENCHA_COMPONENT("sencha.look_orientation")
        SENCHA_SCHEMA("LookOrientation")
        SENCHA_SCENE_CHUNK("LOOK")
        SENCHA_REPLICATED
+       SENCHA_SAVED
 LookOrientation
 {
     // Yaw accumulates without bound -- it is a running total, not an angle

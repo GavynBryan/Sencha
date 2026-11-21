@@ -1380,3 +1380,19 @@ writes the same four bytes it wrote before. `ReadArchiveValue` refuses a number
 that is not whole or does not fit the member's type, where it used to truncate,
 and an integer wider than 32 bits has no archive form. Cooked data, the wire,
 the replicated layout and the save format version are unchanged.
+
+## v59
+
+`IComponentSerializer` gains the virtual `Persistence()`, returning the new
+`ComponentPersistence` (`core/metadata/ComponentPersistence.h`: `Authored`,
+`Saved`, `Identity`), declared before the destructor so every later slot
+moves. `SENCHA_SAVED` is a new component annotation: `ComponentDefinition` may
+state `Saved`, which `ComponentPersistenceOf<T>` projects and both
+`ComponentSerializer<T>` and `TypedComponentSerializer<T>` return; a component
+may instead specialize `ComponentPersistenceOf` by hand, as
+`PersistentIdComponent` and `SceneInstance` do for `Identity`. The generator's
+format version is unchanged, since the member is optional. A save's body patch
+now holds only `Saved` components, a held record leaves out `Identity` ones,
+and a spawn strips `Identity` ones from a prefab, each read from the
+declaration. Cooked data, the wire, the replicated layout and the save format
+version are unchanged.

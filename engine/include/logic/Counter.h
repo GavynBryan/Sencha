@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <type_traits>
 
-struct SENCHA_COMPONENT("sencha.counter") SENCHA_AUTHORITY_MATERIALIZED Counter
+struct SENCHA_COMPONENT("sencha.counter") SENCHA_AUTHORITY_MATERIALIZED SENCHA_SAVED Counter
 {
     GameplayTagId Name;
     std::int32_t Value = 0;

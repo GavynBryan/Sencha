@@ -38,6 +38,8 @@
 // Created only by the simulation authority; a client receives it from the wire.
 #define SENCHA_AUTHORITY_MATERIALIZED SENCHA_ANNOTATE("sencha.authority_materialized")
 #define SENCHA_NON_REMOVABLE         SENCHA_ANNOTATE("sencha.non_removable")
+// A save holds it on every entity content made, as a patch against content.
+#define SENCHA_SAVED                 SENCHA_ANNOTATE("sencha.saved")
 #define SENCHA_VISUAL_MESH(asset)    SENCHA_ANNOTATE("sencha.visual_mesh=" asset)
 // A thing of its own in a world: a tool may put an entity carrying just this
 // component (at its defaults) somewhere, under this name. SENCHA_PLACE_ICON

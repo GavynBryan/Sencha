@@ -37,7 +37,7 @@ enum class GameplayTagWrite : std::uint8_t
 // (GameplayTagContainerSerializer) rather than a schema, because the ids held
 // here are registration-order values.
 //=============================================================================
-struct SENCHA_COMPONENT("sencha.gameplay_tag_container") GameplayTagContainer
+struct SENCHA_COMPONENT("sencha.gameplay_tag_container") SENCHA_SAVED GameplayTagContainer
 {
     static constexpr std::uint8_t Capacity = 32;
 
