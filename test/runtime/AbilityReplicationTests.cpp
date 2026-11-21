@@ -61,10 +61,12 @@
 #include <iostream>
 
 #include <algorithm>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <optional>
 #include <numeric>
+#include <string>
 #include <vector>
 
 namespace
@@ -272,6 +274,19 @@ protected:
 
     // A moving character with nine grants, four attributes and two tags, as its owner is first sent it.
     void MeasureFullPawnsOwnerSeed(std::size_t grants);
+
+    struct Delta
+    {
+        std::size_t Bits = 0;
+        std::size_t Components = 0;
+        std::size_t Empty = 0;
+        std::size_t EmptyBits = 0;
+        std::string EmptyNames;
+    };
+
+    Delta PublishMeasured();
+    void MeasureMovingActorsDelta(bool wearing);
+    void MeasureOwnerChange(std::string_view what, const std::function<void()>& change);
 
     void ShippingPawn()
     {
@@ -1606,3 +1621,113 @@ void AbilityReplication::MeasureFullPawnsOwnerSeed(std::size_t grants)
 SENCHA_FULL_PAWN_SEED_TEST(AFullPawnsOwnerSeedIsMeasured, kAbilityGrantCapacity)
 SENCHA_FULL_PAWN_SEED_TEST(AFullPawnsOwnerSeedIsMeasured_16Grants, 16)
 #undef SENCHA_FULL_PAWN_SEED_TEST
+
+AbilityReplication::Delta AbilityReplication::PublishMeasured()
+{
+    const std::vector<std::byte> bytes = Write();
+    const NetEntityId id = Identity.TryFind(Actor);
+    const ReplicationChangeStore::EntityState* entity = Changes.Find(id);
+    const std::uint64_t floor = Peer.Floor(id);
+    Delta delta;
+    delta.Bits = LastWrite.DeltaBits;
+    for (const ReplicationChangeStore::ComponentState& held : entity->Components)
+    {
+        const ReplicatedComponent& component = *Layout.At(held.WireIndex);
+        ++delta.Components;
+        if (ReplicationOwedFields(component, held, floor, entity->OwnerChangedAt > floor, entity->Owner == ClientPeer)
+            != 0)
+            continue;
+        ++delta.Empty;
+        delta.EmptyBits += ReplicationSnapshotWire::ComponentIndexBits + component.Fields.size();
+        delta.EmptyNames += std::string(delta.EmptyNames.empty() ? "" : " ") + std::string(component.Name) + "("
+                          + std::to_string(component.Fields.size()) + ")";
+    }
+    Apply(bytes);
+    Client.Presenter->Present(Client.Entities, Now);
+    return delta;
+}
+
+void AbilityReplication::MeasureMovingActorsDelta(bool wearing)
+{
+    ClientPeer = 2;
+    ShippingPawn();
+    if (wearing)
+        (void)Wear(4, true);
+    (void)Publish();
+    (void)Publish();
+    Delta total;
+    std::size_t publishes = 0;
+    for (int i = 0; i < 40; ++i)
+    {
+        Authority.Entities.TryGet<LocalTransform>(Actor)->Value.Position.X += 0.25f;
+        Step();
+        if (Now % kNetDefaultSnapshotInterval != 0)
+            continue;
+        const Delta delta = PublishMeasured();
+        total.Bits += delta.Bits;
+        total.Components = delta.Components;
+        total.Empty += delta.Empty;
+        total.EmptyBits += delta.EmptyBits;
+        total.EmptyNames = delta.EmptyNames;
+        ++publishes;
+    }
+    ASSERT_GT(publishes, 0u);
+    const double count = static_cast<double>(publishes);
+    std::cout << "moving actor delta to an observer, " << (wearing ? "wearing 4 records" : "bare") << ": "
+              << static_cast<double>(total.Bits) / 8.0 / count << " bytes a snapshot over " << publishes
+              << " snapshots; " << total.Components << " components carried, "
+              << static_cast<double>(total.Empty) / count << " owed nothing, "
+              << static_cast<double>(total.EmptyBits) / 8.0 / count << " bytes of index and mask for them ["
+              << total.EmptyNames << "]\n";
+}
+
+void AbilityReplication::MeasureOwnerChange(std::string_view what, const std::function<void()>& change)
+{
+    ClientPeer = kOwner;
+    ShippingPawn();
+    (void)Publish();
+    (void)Publish();
+    (void)Publish();
+    ASSERT_EQ(LastWrite.EntitiesWritten, 0u) << "the pawn must be still before the change is measured";
+    change();
+    const Delta delta = PublishMeasured();
+    std::cout << what << " to the owner: " << static_cast<double>(delta.Bits) / 8.0 << " bytes; "
+              << delta.Components << " components carried, " << delta.Empty << " owed nothing, "
+              << static_cast<double>(delta.EmptyBits) / 8.0 << " bytes of index and mask for them ["
+              << delta.EmptyNames << "]\n";
+}
+
+#define SENCHA_SKIP_UNLESS_MEASURING()                                                                       \
+    if (std::getenv("SENCHA_REPLICATION_BENCH_OUT") == nullptr)                                               \
+    GTEST_SKIP() << "set SENCHA_REPLICATION_BENCH_OUT to measure (use scripts/bench_replication.sh)"
+
+TEST_F(AbilityReplication, AMovingActorsDeltaToAnObserverIsMeasured)
+{
+    SENCHA_SKIP_UNLESS_MEASURING();
+    MeasureMovingActorsDelta(false);
+}
+
+TEST_F(AbilityReplication, AMovingWearersDeltaToAnObserverIsMeasured)
+{
+    SENCHA_SKIP_UNLESS_MEASURING();
+    MeasureMovingActorsDelta(true);
+}
+
+TEST_F(AbilityReplication, ATagChangeToTheOwnerIsMeasured)
+{
+    SENCHA_SKIP_UNLESS_MEASURING();
+    MeasureOwnerChange("a tag gaining a stack", [this] {
+        const GameplayTagId charged = Authority.Entities.GetResource<GameplayTagRegistry>().FindTag("State.Charged");
+        (void)Authority.Entities.TryGet<GameplayTagContainer>(Actor)->Grant(charged);
+    });
+}
+
+TEST_F(AbilityReplication, AnAttributeChangeToTheOwnerIsMeasured)
+{
+    SENCHA_SKIP_UNLESS_MEASURING();
+    MeasureOwnerChange("one attribute's current value", [this] {
+        const AttributeId health = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute("Health");
+        *Authority.Entities.TryGet<AttributeSet>(Actor)->CurrentPtr(health) = 42.0f;
+    });
+}
+#undef SENCHA_SKIP_UNLESS_MEASURING

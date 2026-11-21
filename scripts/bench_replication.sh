@@ -2,8 +2,10 @@
 # Records what many small replicated entities cost by running
 # EntityReplicationBench.Generate: bytes per entity through storage, persistent
 # identity and replication; creating, moving and destroying them; an authority
-# publish over them; and seeding a peer. Also prints the largest owner seed an
-# AbilityKit pawn can produce (AbilityReplication.AFullPawnsOwnerSeedIsMeasured).
+# publish over them and over actors holding grants; and seeding a peer. Also
+# prints the largest owner seed an AbilityKit pawn can produce, a moving pawn's
+# delta to an observer, and a tag or attribute change's delta to its owner
+# (AbilityReplication.*IsMeasured*).
 #
 # Built through the profile preset, as bench_animation.sh is and for the same
 # reason: the dev preset keeps asserts and a debug allocator, which describes a
@@ -53,7 +55,7 @@ echo "recording -> $out"
 SENCHA_REPLICATION_BENCH_OUT="$out" \
     "${pin[@]}" "$binary" --gtest_filter='EntityReplicationBench.Generate'
 SENCHA_REPLICATION_BENCH_OUT="$out" \
-    "${pin[@]}" "$binary" --gtest_filter='AbilityReplication.AFullPawnsOwnerSeedIsMeasured' \
-    | grep 'full pawn owner seed' | tee "${out%.json}.pawn.txt"
+    "${pin[@]}" "$binary" --gtest_filter='AbilityReplication.*IsMeasured*' \
+    | grep -E 'full pawn owner seed|moving actor delta|to the owner:' | tee "${out%.json}.pawn.txt"
 echo
 cat "${out%.json}.csv"

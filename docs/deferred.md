@@ -1505,23 +1505,96 @@ described in `docs/navigation/runtime.md`, "Agents".
   whose holder list is too long to read. Then add a container verb that makes
   an entry held by it, and picking in the view.
 
-## A replicated list's wire image sized by what it holds
+## A replicated list field
 
-- **What:** `AbilityGrants` and `EquipmentState` are stored by their length,
-  but each still crosses as a fixed wire image sized for the most it may hold
-  (`AbilityGrantsWire`, 1,540 B for 64 grants; `EquipmentStateWire`, 772 B for
-  32 records). What is sent follows the content, since a run at its default is
-  not sent. What does not: the authority's change store builds, compares and
-  keeps one image per replicated entity per publish, and the grant limit is
-  the image's size rather than a budget someone chose.
-- **Where:** `engine/src/net/ReplicationChangeStore.cpp` (`Update` assigns and
-  compares `Layout->Size` bytes), `net/ReplicationLayout.h` (at most 64 runs a
-  component, 255 scalars a run), `abilities/AbilityGrantsWire.h`,
-  `equipment/EquipmentStateWire.h`.
-- **Trigger:** content that needs more than 64 grants on one actor, or the
-  change store's walk showing in a profile of a World with a thousand or more
-  replicated actors that hold grants. Then let a codec state how many leading
-  runs are in use, so the store keeps and compares only those.
+- **What:** a component holding a list crosses as a fixed wire image whose
+  capacity is a list of members: `AbilityGrants` (64 grants in sixteen
+  pages, 1,540 B), `EquipmentState` (32 records, 772 B), `GameplayTagContainer`
+  (one owner run of 64 words, so at most 127 tags), `AttributeSet` (three runs
+  of 16), and the slot tables `ActorTimeLeases`, `ActiveAbilities`,
+  `AbilityCueLog` and `AnimRequestSet`. Measured costs
+  (`docs/plans/evidence/replicated-lists/results.md`): every publish builds,
+  compares and copies 3,160 B of images per grant-holding actor whatever it
+  holds, 1.0 µs of the 1.5 µs `ReplicationChangeStore::Update` spends on it; a
+  tag gaining a stack resends 257 B of tags to the owner, an attribute change
+  65 B; revoking a grant from the middle resends every later page; and a cap is
+  retyping members rather than a number. The remedy is a list the codec
+  declares beside its fixed head: 0 to a declared most elements of one
+  trivially copyable type with its own runs and audience, a change generation
+  per element run, a count and per-element masks on the wire, positional
+  order. A list never spans snapshots; a collection that cannot fit one is
+  entities. Not "let a codec say how many leading runs are in use": that keeps
+  the member lists, the 64-run ceiling and the page-sized resends. Net
+  protocol and module ABI bumps.
+- **Where:** `net/ReplicationLayout.h`, `engine/src/net/ReplicationCodec.cpp`,
+  `ReplicationChangeStore.cpp`, `ReplicationSnapshot.cpp`; the wire headers
+  `abilities/AbilityGrantsWire.h`, `equipment/EquipmentStateWire.h`,
+  `gameplay_tags/GameplayTagContainerWire.h`, `attributes/AttributeSetWire.h`.
+- **Consumers:** `AbilityGrants` and `EquipmentState` first, then
+  `GameplayTagContainer` and `AttributeSet`.
+- **Trigger:** the first of: a third component's list leaves its row (the tag
+  container when content is refused a 33rd tag, attributes at a 17th);
+  content needing more than 64 grants on one actor or a 33rd slot in a
+  layout; any new wire header needing a "names one member per" assert; the
+  replication bench or a session profile with 1,000 or more replicated
+  grant-holding actors showing image build and compare above 10% of
+  `ReplicationChangeStore::Update`; a networked game entering production.
+  `EntityReplicationBench` already measures 67% at 1,000 actors; no shipping
+  session runs that many, and whether the bench alone fires this is the
+  owner's call.
+
+## Keyed list deltas
+
+- **What:** a replicated list will resend by position, so a removal from the
+  middle resends every element after it. Sending removed keys and changed
+  elements avoids that, at the price of a tombstone per removed key held until
+  every peer confirms it, as removed components are.
+- **Where:** the replicated list field above.
+- **Consumer:** `AbilityGrants`, whose revoke closes the gap.
+- **Trigger:** the list field built, and a measured session where resends
+  after middle removals exceed a tenth of an owner's bytes.
+
+## Slot tables as replicated lists
+
+- **What:** `ActorTimeLeases`, `AbilityCueLog`, `ActiveAbilities` and
+  `AnimRequestSet` stay fixed slot tables on the wire and in the change store
+  (about 2.7 KB of images per actor carrying all four, computed) after the
+  list field ports grants, equipment, tags and attributes.
+- **Where:** `time/ActorTimeLeasesWire.h`, `abilities/AbilityCueLogWire.h`,
+  `abilities/ActiveAbilitiesWire.h`, `anim/AnimRequestWire.h`.
+- **Consumer:** `ActorTimeLeases` first, then the cue log.
+- **Trigger:** the replication bench or a session profile after the port
+  showing these images as the largest remaining share of `Update`.
+
+## A predicted replicated list
+
+- **What:** a codec component is never predicted, so a list is never held in
+  `PawnStateReplay`'s fixed shadow bytes or rolled back; the owner predicts
+  with its grants, tags and attributes and keeps guesses in `ActiveAbilities`.
+- **Where:** `net/ClientPrediction.h`, `prediction/PawnStateReplay.cpp`.
+- **Consumer:** none yet.
+- **Trigger:** a list the owner must simulate between snapshots. It needs
+  variable-size shadow state.
+
+## A list declared once in a component's field description
+
+- **What:** a list's scene form, save form and wire form meet at a by-value
+  type written by hand (`AbilityGrantList`, `EquipmentRecordList`). Declaring
+  the list on the handle member, its element a described struct, needs from
+  the field-description work: a wire form per field kind taking
+  `ReplicationWireContext` (tags, named ids, entities and `PersistableRef`,
+  the last two not named ids), a described struct not tied to an offset in a
+  row, a list kind (element, optional key member, most elements; scene form a
+  JSON array composed by `MakeKeyedListRecordSchema`), and
+  `RuntimeFieldsOf<T, SchemaPurpose::Replication>` stopping at a list as it
+  stops at a `PackedScalarGroup`. This is the one entry for the list kind;
+  the field-description work does not own it.
+- **Where:** `core/metadata/TypeSchema.h`, `net/ReplicationLayout.h`,
+  `abilities/AbilityGrantsSerializer.cpp`, `equipment/EquipmentStateWire.h`.
+- **Consumer:** the first list component whose element is plain described
+  fields.
+- **Trigger:** the replicated list field built and field descriptions able
+  to carry a wire form.
 
 ## More than thirty-two slots in a layout
 
