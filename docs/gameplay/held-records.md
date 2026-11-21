@@ -74,7 +74,10 @@ hooks.
 A record may also be keyed: a kind (its value component's type) and a name.
 The value component's own hooks call `Key` and `Unkey`, independent of `Held`,
 and `FindKeyed(holder, key)` answers the record of that key listed under that
-holder, never one waiting for a holder. Counters key by their name.
+holder, never one waiting for a holder. Counters key by their name. Keys follow
+`Held`'s rule: a replaced value keys its new name before its old one is unkeyed,
+and each `Key` is matched by one `Unkey`, so a value replaced under the same
+name stays keyed and one renamed is found only by its new name.
 
 Records nest at most `kHeldDeepestNesting` levels: `Depth(entity)` counts the
 records from a record up to the first holder that is not one, and

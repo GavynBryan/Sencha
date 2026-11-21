@@ -389,3 +389,33 @@ TEST(Counters, ANameArrivingFromTheWireIsTheNameTheCounterIsFoundBy)
     EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
     EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
 }
+
+TEST(Counters, ACounterReplacedInPlaceUnderItsOwnNameIsStillFoundByIt)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Boss, .Value = 6 }));
+
+    EXPECT_EQ(FindCounter(world.Entities, world.Boss, EntityId{}), record);
+    EXPECT_EQ(world.Value(world.Boss), 6);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid()) << "and its one key goes with it";
+}
+
+TEST(Counters, ACounterReplacedInPlaceUnderAnotherNameIsFoundOnlyByTheNewOne)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Quest, .Value = 5 }));
+
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
+    EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Quest, EntityId{}).IsValid());
+}

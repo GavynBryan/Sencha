@@ -88,7 +88,10 @@ void HeldRecordIndex::Unkey(EntityId record, HeldRecordKey key)
     const auto found = ByKey.find(key);
     if (found == ByKey.end())
         return;
-    std::erase(found->second, record);
+    const auto keying = std::ranges::find(found->second, record);
+    if (keying == found->second.end())
+        return;
+    found->second.erase(keying);
     if (found->second.empty())
         ByKey.erase(found);
 }
