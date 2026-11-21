@@ -93,3 +93,33 @@ nothing is owed on, and whether replicated lists are due
 The condition for leaving out components nothing is owed on holds: empty
 mentions are 70% of a moving pawn's delta to an observer, 10% of a tag change
 to its owner and 29% of an attribute change.
+
+## After: a component nothing is owed on is not named
+
+Rerun on the commit that leaves such components out, by the same commands.
+The `owed nothing` figures in `deltas.after.txt` are what those components
+would cost if named; they are no longer written.
+
+| | Before | After | Change |
+|---|---|---|---|
+| Moving pawn's delta to an observer | 40.3 B | 12.3 B | −70% |
+| The same wearing four records | 47.4 B | 12.3 B | −74% |
+| Moving unowned ability actor, per actor (bench) | 31.9 B | 13.1 B | −59%, a bare transform's cost |
+| A tag gaining a stack, to the owner | 287.6 B | 265.9 B | −8% |
+| An attribute's current value, to the owner | 95.6 B | 73.6 B | −23% |
+| Full pawn owner seed, 64 grants | 1,773 B | 1,773 B | none: a seed names everything |
+
+- **To the owner** a change still names the pawn's four predicted movement
+  components (about 4.6 B), because that mention seeds its prediction shadow.
+- **The authority's publish** is unchanged within noise: `Update` at 1,000
+  grant-holding actors 1.44 ms still and 1.51 ms moving (before 1.54 and
+  1.65), image work 0.98 ms (before 1.03). Writing 16 peers over 10,000 still
+  entries fell from 5.29 to 4.49 ms (one run each; `bench.*.csv` hold only
+  the actor rows).
+- **A firing actor** (`AbilityReplication.CueBandwidthPerFiringActorIsMeasured`,
+  bytes a second to one peer, aim sweeping): moving 1,710 → 1,050, firing
+  2,050 → 1,570. Firing costs every peer 480 B/s less, but its cost over a
+  moving actor rose from 340 to 520 B/s: the components firing changes
+  (chiefly `ActiveAbilities`, a 36-run mask) used to be named by the moving
+  actor too, and now are named only while firing. The test's 360 B/s bound
+  is on that difference, so it fails.

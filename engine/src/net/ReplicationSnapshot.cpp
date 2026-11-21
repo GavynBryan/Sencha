@@ -438,6 +438,12 @@ namespace
                                       + ReplicationSnapshotWire::CommandAckBits
                                       + kCountBits + kCountBits;
 
+    struct MentionedComponent
+    {
+        std::uint32_t Component = 0;
+        std::uint64_t Fields = 0;
+    };
+
     // What a snapshot would say about one entity for one peer, and what saying
     // it would cost. Decided before anything is written, because a bit writer
     // cannot be rewound: an entity discovered not to fit half way through its
@@ -449,10 +455,11 @@ namespace
         // and sorts first for that reason.
         std::uint32_t LastSentAt = 0;
         std::size_t Bits = 0;
-        // The owed field masks, one per component, in the entity's component
-        // order. Held rather than recomputed at write time so the bytes written
-        // are necessarily the bytes measured.
-        std::size_t FirstMask = 0;
+        // The components this record names and their owed field masks. Held
+        // rather than recomputed at write time so the bytes written are
+        // necessarily the bytes measured.
+        std::size_t FirstMention = 0;
+        std::uint32_t MentionCount = 0;
         // Whether this record carries the entity's authored identity.
         bool SendAuthored = false;
         // How many of the entity's recorded removals this peer has not been
@@ -478,7 +485,7 @@ namespace
     bool PlanEntity(const ReplicationChangeStore::EntityState& entity,
                     const ReplicationLayout& layout,
                     const ReplicationPeerState& peer, std::uint32_t ownerPeer,
-                    std::vector<std::uint64_t>& masks, PlannedEntity& out)
+                    std::vector<MentionedComponent>& mentions, PlannedEntity& out)
     {
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
@@ -489,7 +496,7 @@ namespace
         // fields' own history cannot express it.
         const bool ownershipMoved = entity.OwnerChangedAt > floor;
 
-        const std::size_t first = masks.size();
+        const std::size_t first = mentions.size();
         // One bit for whether anything was removed, and the count only when
         // something was. A component leaving is rare and an entity is common,
         // so a byte-wide count on every entity of every snapshot costs more
@@ -526,8 +533,9 @@ namespace
             bits += kComponentCountBits;
         owedAnything = owedAnything || owedRemovals != 0;
 
-        for (const ReplicationChangeStore::ComponentState& held : entity.Components)
+        for (std::size_t i = 0; i < entity.Components.size(); ++i)
         {
+            const ReplicationChangeStore::ComponentState& held = entity.Components[i];
             const ReplicatedComponent* component = layout.At(held.WireIndex);
             // The store only ever records components the layout has, so a
             // missing one means the two disagree about the table they were built
@@ -536,8 +544,12 @@ namespace
 
             const std::uint64_t owed =
                 ReplicationOwedFields(*component, held, floor, ownershipMoved, seesOwnerFields);
-            masks.push_back(owed);
-            owedAnything = owedAnything || owed != 0;
+            const bool announced = held.AddedAt <= floor;
+            const bool seedsOwnersPrediction = isOwner && component->Predicted;
+            if (owed == 0 && announced && !seedsOwnersPrediction)
+                continue;
+            mentions.push_back(MentionedComponent{ .Component = static_cast<std::uint32_t>(i), .Fields = owed });
+            owedAnything = owedAnything || owed != 0 || !announced;
             bits += kComponentIndexBits
                   + ReplicationEncodedComponentBits(*component, owed);
         }
@@ -548,7 +560,7 @@ namespace
         // all defaults is exactly the case where no field has moved.
         if (!owedAnything && peer.Knows(entity.Id))
         {
-            masks.resize(first);
+            mentions.resize(first);
             return false;
         }
 
@@ -556,7 +568,8 @@ namespace
             .Entity = &entity,
             .LastSentAt = peer.LastSentAt(entity.Id),
             .Bits = bits,
-            .FirstMask = first,
+            .FirstMention = first,
+            .MentionCount = static_cast<std::uint32_t>(mentions.size() - first),
             .SendAuthored = sendAuthored,
             .OwedRemovals = owedRemovals,
             .Seeding = !peer.Knows(entity.Id),
@@ -673,8 +686,8 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     const std::span<const NetEntityId> owedDestroys = peer.OwedDestroys();
 
     // What this peer is owed about each entity, and what saying it would cost.
-    std::vector<std::uint64_t> masks;
-    masks.reserve(changes.Size() * 2);
+    std::vector<MentionedComponent> mentions;
+    mentions.reserve(changes.Size() * 2);
     std::vector<PlannedEntity> planned;
     planned.reserve(changes.Size());
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
@@ -687,7 +700,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             continue;
 
         PlannedEntity plan;
-        if (PlanEntity(entity, layout, peer, request.OwnerPeer, masks, plan))
+        if (PlanEntity(entity, layout, peer, request.OwnerPeer, mentions, plan))
             planned.push_back(plan);
     }
 
@@ -818,20 +831,17 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
         writer.WriteBool(plan->SendAuthored);
         if (plan->SendAuthored)
             writer.WriteVarUInt(entity.Persistent.Value);
-        writer.WriteBits(static_cast<std::uint32_t>(entity.Components.size()),
-                         kComponentCountBits);
+        writer.WriteBits(plan->MentionCount, kComponentCountBits);
 
-        for (std::size_t i = 0; i < entity.Components.size(); ++i)
+        for (std::uint32_t m = 0; m < plan->MentionCount; ++m)
         {
-            const ReplicationChangeStore::ComponentState& held = entity.Components[i];
+            const MentionedComponent& mention = mentions[plan->FirstMention + m];
+            const ReplicationChangeStore::ComponentState& held = entity.Components[mention.Component];
             const ReplicatedComponent* component = layout.At(held.WireIndex);
             writer.WriteBits(held.WireIndex, kComponentIndexBits);
 
-            if (!ReplicationEncodeComponent(*component, held.Bytes,
-                                            masks[plan->FirstMask + i], writer))
-            {
+            if (!ReplicationEncodeComponent(*component, held.Bytes, mention.Fields, writer))
                 return result;
-            }
         }
 
         // Then what the entity stopped carrying. After the components rather

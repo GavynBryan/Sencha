@@ -792,6 +792,24 @@ nothing, per entity per peer per snapshot, which is what a still world spent its
 bandwidth on. A still world now costs the 23-byte header and nothing else,
 however many entities stand in it.
 
+The same holds one level down: a component nothing is owed on is left out of
+its entity's record, and the receiver leaves what it holds alone. The store
+stamps each component with the generation it was first seen at, or seen again
+after a removal (`ComponentState::AddedAt`), and a component is named while
+that generation is above the peer's floor even when no run is owed, because
+its first mention is how a client learns the entity carries it. A peer with
+floor zero (a join, or an entity returning to relevance after its destroy)
+is therefore sent every component, as before. One exception: a predicted
+component is named to the entity's owner whenever the entity is, because that
+mention is what seeds the owner's prediction shadow from its own copy
+(`ClientPrediction`); a peer that drives an entity it does not own is not
+sent it. Naming every component cost a moving pawn 28 B of indices and masks
+in each 40 B delta to an observer
+(`docs/plans/evidence/replicated-lists/results.md`). A mirrored pose is not
+committed as a held sample when only another component of the entity moved,
+which is already true of an entity left out altogether. The grammar is
+unchanged, so this needed no protocol version.
+
 Destroys stay explicit and are owed until confirmed. A destroy said once and lost
 leaves a client holding an entity the authority has no further reason to mention.
 
