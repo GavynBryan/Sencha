@@ -1491,6 +1491,7 @@ int Engine::Run(Game& game)
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
     VocabularyBindings->BindSavedGames(*SavedGameState, *VerbDispatcherState);
+    VocabularyBindings->BindLevelChanges(*LevelChangeState, *VerbDispatcherState);
     VocabularyBindings->BindPerception(*QueryDispatcherState);
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
     VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,

@@ -180,6 +180,17 @@ const LevelChangeAdmission admission = engine.LevelChanges().Request(
 `Focused(zone)` a world's starting zone. `LevelChange::Kind()` says which kind
 the latest accepted request was.
 
+Level data asks for a `Travel` with the `level.change` verb:
+`{ level, kind = scene, memory, bodies, arrival = "" }`, where `kind` is
+`scene` or `world`, `memory` is `remembered` or `authored` and `bodies` is
+`kept` or `fresh`, both with no default, as the constructor has none. A refusal
+answers the `LevelChangeAdmission` reason (`busy`, `not_cooked`,
+`not_authority`, `in_session`, `body_in_zone`). An autosave at a transition is
+`level.change` followed by `save.write` in one sequence: a write requested
+while a change is under way waits until the bodies have arrived, so the save is
+of the arrival. A game whose areas are zones of one world never needs the verb:
+moving between zones is streaming, and the body is untouched.
+
 How the request and an entity's `ZoneStateLifetime` meet:
 
 | Event | `never` | `at_restore` | `at_detach` |

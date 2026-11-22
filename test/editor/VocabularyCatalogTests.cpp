@@ -4,6 +4,7 @@
 
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <app/LevelChangeVocabulary.h>
 #include <save/SavedGameVocabulary.h>
 
 #include <algorithm>
@@ -88,7 +89,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 53u);
+    ASSERT_EQ(verbs.size(), 54u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -127,17 +128,18 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[38].Name, kInteractUseVerb);
     EXPECT_EQ(verbs[39].Name, kSaveWriteVerb);
     EXPECT_EQ(verbs[40].Name, kSaveRestoreVerb);
-    EXPECT_EQ(verbs[41].Name, kCounterSetVerb);
-    EXPECT_EQ(verbs[42].Name, kCounterAddVerb);
-    EXPECT_EQ(verbs[43].Name, kInventoryTakeVerb);
-    EXPECT_EQ(verbs[44].Name, kInventoryGiveVerb);
-    EXPECT_EQ(verbs[45].Name, kInventoryTransferVerb);
-    EXPECT_EQ(verbs[46].Name, kInventoryDropVerb);
-    EXPECT_EQ(verbs[47].Name, kInventoryUseVerb);
-    EXPECT_EQ(verbs[48].Name, kEquipmentEquipVerb);
-    EXPECT_EQ(verbs[50].Name, kEquipmentCycleVerb);
-    EXPECT_EQ(verbs[51].Name, kPerceptionStimulusVerb);
-    EXPECT_EQ(verbs[52].Name, kClaimsHoldLease);
+    EXPECT_EQ(verbs[41].Name, kLevelChangeVerb);
+    EXPECT_EQ(verbs[42].Name, kCounterSetVerb);
+    EXPECT_EQ(verbs[43].Name, kCounterAddVerb);
+    EXPECT_EQ(verbs[44].Name, kInventoryTakeVerb);
+    EXPECT_EQ(verbs[45].Name, kInventoryGiveVerb);
+    EXPECT_EQ(verbs[46].Name, kInventoryTransferVerb);
+    EXPECT_EQ(verbs[47].Name, kInventoryDropVerb);
+    EXPECT_EQ(verbs[48].Name, kInventoryUseVerb);
+    EXPECT_EQ(verbs[49].Name, kEquipmentEquipVerb);
+    EXPECT_EQ(verbs[51].Name, kEquipmentCycleVerb);
+    EXPECT_EQ(verbs[52].Name, kPerceptionStimulusVerb);
+    EXPECT_EQ(verbs[53].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 30u);
     EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
@@ -187,10 +189,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 54u);
-    EXPECT_EQ(verbs[53].Name, kModuleVerb);
-    EXPECT_EQ(verbs[53].Provider, "spike");
-    EXPECT_EQ(verbs[53].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 55u);
+    EXPECT_EQ(verbs[54].Name, kModuleVerb);
+    EXPECT_EQ(verbs[54].Provider, "spike");
+    EXPECT_EQ(verbs[54].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -230,7 +232,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 53u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 54u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

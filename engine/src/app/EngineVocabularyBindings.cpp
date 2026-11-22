@@ -1,5 +1,7 @@
 #include <app/EngineVocabularyBindings.h>
 
+#include <app/LevelChangeVocabulary.h>
+
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <attach/AttachmentVerbs.h>
@@ -94,6 +96,11 @@ void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher&
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeSaveWrite>(catalog.Find(kSaveWriteVerb), saves));
     Verbs.push_back(verbs.Bind<&InvokeSaveRestore>(catalog.Find(kSaveRestoreVerb), saves));
+}
+
+void EngineVocabularyBindings::BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs)
+{
+    Verbs.push_back(verbs.Bind<&InvokeLevelChange>(verbs.Registry().Find(kLevelChangeVerb), changes));
 }
 
 void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,

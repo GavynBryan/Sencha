@@ -1534,3 +1534,8 @@ component in `WorldComponents`, with `LevelLandmarkPlace` and
 `FindLevelLandmark`. `LevelArrival` gains `Spawning`. A save written with an
 arrival holds no `root` for its body, and its summary's focus is the zone the
 landmark stands in; the save format does not change.
+
+The `level.change` verb (`app/LevelChangeVocabulary.h`: `kLevelChangeVerb`,
+`DeclareLevelChangeVerbs`, `InvokeLevelChange`) joins the engine's catalog,
+answering `LevelChangeAdmission` as its reason, and
+`EngineVocabularyBindings` gains `BindLevelChanges`.

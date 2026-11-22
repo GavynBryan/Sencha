@@ -32,6 +32,7 @@ class PhysicsWorld;
 class ProjectileSystem;
 class ResponseOperations;
 class ResponsesSystem;
+class LevelChange;
 class SavedGames;
 class World;
 
@@ -71,6 +72,7 @@ public:
 
     // save.write and save.restore, answered by `saves`, which must outlive this.
     void BindSavedGames(SavedGames& saves, VerbDispatcher& verbs);
+    void BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs);
 
     // counter.set, counter.add and counter.value; `events`, which may be null,
     // hears counter.changed and must outlive this.

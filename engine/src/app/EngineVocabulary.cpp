@@ -1,4 +1,5 @@
 #include <app/EngineVocabulary.h>
+#include <app/LevelChangeVocabulary.h>
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
@@ -67,6 +68,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
     DeclareSavedGameVerbs(scope);
+    DeclareLevelChangeVerbs(scope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
     DeclareCounterVocabulary(scope, queryScope, eventScope);

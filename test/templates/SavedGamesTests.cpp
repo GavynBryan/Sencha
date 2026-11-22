@@ -1,6 +1,7 @@
 #include "TemplateModuleRun.h"
 
 #include <app/LevelChange.h>
+#include <app/VocabularyCommands.h>
 #include <core/console/ConsoleService.h>
 #include <core/io/FileBytes.h>
 #include <core/json/JsonStringify.h>
@@ -1993,6 +1994,60 @@ TEST(SavedGames, ARestoreInAWorldBringsInTheZoneOfItsArrivalAndStandsTheBodyTher
     EXPECT_EQ(focusAtRestore, east);
     EXPECT_NEAR(stood.X, 16.0f, 0.05f) << "the restored body does not stand at the landmark in the streamed zone";
     EXPECT_NEAR(stood.Z, 3.0f, 0.05f);
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    ConsoleResult RunVerb(Engine& engine, std::vector<std::string> line)
+    {
+        return RunVerbCommand(VocabularyConsoleTarget{ .Entities = engine.World().Entities(),
+                                                       .Verbs = engine.TryVerbs(),
+                                                       .Queries = engine.TryAuthoredQueries() },
+                              line);
+    }
+
+    std::string TextOf(const ConsoleResult& result)
+    {
+        std::string text;
+        for (const ConsoleOutputEntry& line : result.Output)
+            text += line.Text + "\n";
+        return text;
+    }
+}
+
+TEST(SavedGames, TheLevelChangeVerbTravelsKeepingTheBodyToItsArrivalAndNamesWhyItRefuses)
+{
+    const std::filesystem::path root = RootFor("level_change_verb");
+    std::string refused;
+    std::string accepted;
+    EntityId before;
+    bool sameBody = false;
+    Vec3d arrived;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            refused = TextOf(RunVerb(engine, { "level.change", "level=levels/nowhere", "kind=scene",
+                                               "memory=authored", "bodies=fresh" }));
+            before = LocalControlSubjectOf(world);
+            accepted = TextOf(RunVerb(engine, { "level.change", "level=levels/room_2", "kind=scene",
+                                                "memory=remembered", "bodies=kept", "arrival=room_2_east" }));
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            sameBody = LocalControlSubjectOf(world) == before;
+            arrived = BodyPosition(world);
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2) << accepted;
+    EXPECT_NE(refused.find("not_cooked"), std::string::npos) << refused;
+    EXPECT_NE(accepted.find("accepted"), std::string::npos) << accepted;
+    EXPECT_TRUE(sameBody);
+    EXPECT_NEAR(arrived.X, 16.0f, 0.05f);
+    EXPECT_NEAR(arrived.Z, 3.0f, 0.05f);
     std::filesystem::remove_all(root);
 }
 #endif
