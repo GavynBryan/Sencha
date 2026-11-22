@@ -74,7 +74,7 @@ bool ReadValue(const JsonValue& authored, std::string_view where, SequenceValueD
     if (!authored.IsObject())
     {
         errors.push_back(std::format("{}: a value is a number, a bool, or one of {{const}}, {{tag}}, {{data}}, "
-                                     "{{asset}}, {{entity}}, {{port}}, {{query}}",
+                                     "{{asset}}, {{entity}}, {{port}}, {{query}}, {{result}}",
                                      where));
         return false;
     }
@@ -92,6 +92,20 @@ bool ReadValue(const JsonValue& authored, std::string_view where, SequenceValueD
         }
         out.Source = SequenceValueSource::Port;
         out.Name = port->AsString();
+        return true;
+    }
+    if (const JsonValue* result = authored.Find("result"))
+    {
+        if (!OnlyMembers(authored, { "result", "member", "frame", "scale" }, where, errors))
+            return false;
+        if (!result->IsString() || result->AsString().empty())
+        {
+            errors.push_back(std::format("{}: 'result' names an earlier command's result", where));
+            return false;
+        }
+        out.Source = SequenceValueSource::Result;
+        out.Name = result->AsString();
+        out.Member = TextMember(authored, "member");
         return true;
     }
     if (const JsonValue* query = authored.Find("query"))
@@ -272,13 +286,22 @@ bool ReadCommand(const JsonValue& authored, std::string_view where, SequenceComm
         errors.push_back(std::format("{}: a command is an object", where));
         return false;
     }
-    if (!OnlyMembers(authored, { "verb", "arguments", "on_failure" }, where, errors))
+    if (!OnlyMembers(authored, { "verb", "arguments", "on_failure", "as" }, where, errors))
         return false;
     out.Verb = TextMember(authored, "verb");
     if (out.Verb.empty())
     {
         errors.push_back(std::format("{}: 'verb' names a verb", where));
         return false;
+    }
+    if (const JsonValue* as = authored.Find("as"))
+    {
+        if (!as->IsString() || as->AsString().empty())
+        {
+            errors.push_back(std::format("{}: 'as' names the verb's result", where));
+            return false;
+        }
+        out.As = as->AsString();
     }
     if (const JsonValue* policy = authored.Find("on_failure"))
     {

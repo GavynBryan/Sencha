@@ -33,6 +33,9 @@
 #include <time/ActorTimeSystem.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryKit.h>
+#include <inventory/InventoryVocabulary.h>
+#include <logic/VerbSequenceCompiler.h>
+#include <logic/VerbSequenceRunner.h>
 #include <inventory/InventoryComponents.h>
 #include <inventory/ItemDefinitionData.h>
 #include <world/SimulationAuthority.h>
@@ -994,6 +997,48 @@ TEST_F(EquipmentVocabularyTest, TheVerbsChangeWhatTheQueriesSee)
     EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Refused)
         << "nothing is there to take off";
     EXPECT_EQ(LastAnswer(), "refused: missing");
+}
+
+TEST_F(EquipmentVocabularyTest, ATakenItemIsWornByTheEntryTheTakeAnswered)
+{
+    InventoryOperations items{ Entities(), Clock };
+    const VerbRegistry& catalog = Verbs->Registry();
+    Tokens.push_back(Verbs->Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), items));
+    Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), items));
+    ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryTakeVerb))->Result.has_value());
+    ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryGiveVerb))->Result.has_value());
+
+    const std::optional<JsonValue> authored = JsonParse(R"({"commands": [
+        {"verb": "inventory.take", "as": "taken", "on_failure": "stop",
+         "arguments": {"pickup": {"port": "self"}, "into": {"port": "user"}}},
+        {"verb": "equipment.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "taken"}}}]})");
+    ASSERT_TRUE(authored.has_value());
+    VerbSequenceDesc desc;
+    std::vector<AssetRef> dependencies;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(ReadVerbSequence(*authored, desc, dependencies, errors)) << errors.front();
+    const std::array<SequencePort, 2> ports{ SequencePort{ .Name = "self" }, SequencePort{ .Name = "user" } };
+    CompiledVerbSequence compiled;
+    CompileVerbSequence(desc,
+                        VerbSequenceEnvironment{ .Bindings = MakeVerbBindingEnvironment(Entities()),
+                                                 .Queries = FindAuthoredQueryRegistry(Entities()),
+                                                 .Components = &Entities(),
+                                                 .Ports = ports },
+                        compiled, errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    const EntityId pickup = Entities().CreateEntity();
+    Entities().AddComponent<ItemPickup>(pickup, ItemPickup{ .Definition = RingItem, .Count = 1 });
+    const std::array<AuthoredValue, 2> values{ AuthoredValue::Entity(pickup), AuthoredValue::Entity(Hero) };
+    VerbSequenceRunner runner;
+    const SequenceOutcome outcome =
+        runner.Run(compiled, SequenceRun{ .Entities = Entities(), .Verbs = *Verbs, .Ports = values, .Source = {} });
+    EXPECT_EQ(outcome.Invoked, 2u);
+    EXPECT_EQ(outcome.Failed, 0u);
+    ASSERT_EQ(Records().size(), 1u);
+    const std::vector<EntityId> held = HeldEntries(Entities(), Hero);
+    ASSERT_EQ(held.size(), 1u);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), held[0]);
 }
 
 TEST(EquipmentRefusals, EveryRefusalHasAName)

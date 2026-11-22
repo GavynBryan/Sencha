@@ -59,6 +59,20 @@ namespace
         return static_cast<std::uint32_t>(std::clamp<std::int64_t>(count, 0, std::numeric_limits<std::uint32_t>::max()));
     }
 
+    DataFieldSchema EntryResult(std::string summary)
+    {
+        DataFieldSchema entry = AuthoredField<std::optional<EntityId>>("entry", "Entry", std::move(summary));
+        entry.Children.front().Reference.ComponentIdentity = std::string(kEntry);
+        return entry;
+    }
+
+    VerbAnswer Answered(const VerbInvocation& invocation, const InventoryResult& result)
+    {
+        if (invocation.Result != nullptr && result.Refusal == InventoryRefusal::None && result.Entry.IsValid())
+            *invocation.Result = AuthoredValue::Entity(result.Entry);
+        return VerbAnswerOf(result.Refusal);
+    }
+
     struct CountFilter
     {
         const AssetRef* Definition = nullptr;
@@ -119,11 +133,14 @@ ItemChangeClass ItemChangeOf(const VerbInvocation& invocation, std::size_t slot)
 void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries)
 {
     const auto into = [] { return MakeEntityArgument("into", "Into", kContainer, "The container it goes into."); };
-    (void)verbs.Declare(Verb(kInventoryTakeVerb, "Take item", "Takes a pickup into a container; the pickup goes.",
-                             { MakeEntityArgument("pickup", "Pickup", kPickup, "What is taken."), into() }));
-    (void)verbs.Declare(Verb(kInventoryGiveVerb, "Give item",
-                             "Puts units of an item into a container, all or none of them.",
-                             { into(), DefinitionReference(), CountArgument(1, "How many units.") }));
+    VerbDefinition take = Verb(kInventoryTakeVerb, "Take item", "Takes a pickup into a container; the pickup goes.",
+                               { MakeEntityArgument("pickup", "Pickup", kPickup, "What is taken."), into() });
+    take.Result = EntryResult("The entry it went into; absent for an item that is not kept.");
+    (void)verbs.Declare(std::move(take));
+    VerbDefinition give = Verb(kInventoryGiveVerb, "Give item", "Puts units of an item into a container, all or none of them.",
+                               { into(), DefinitionReference(), CountArgument(1, "How many units.") });
+    give.Result = EntryResult("The entry the units went into: a new one, or the stack they joined.");
+    (void)verbs.Declare(std::move(give));
     (void)verbs.Declare(Verb(kInventoryTransferVerb, "Move item", "Moves an entry, or part of a stack, into a container.",
                              { MakeEntityArgument("entry", "Entry", kEntry, "What moves."), into(),
                                CountArgument(0, "How many units; zero moves all of it."), ItemChangeArgument() }));
@@ -163,7 +180,7 @@ VerbAnswer InventoryOperations::Take(const VerbInvocation& invocation)
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, pickup)
         || !invocation.Arguments->TryGetEntity(1, into))
         return VerbAdmission::InvalidArguments;
-    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Take(pickup, into).Refusal);
+    return Answered(invocation, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Take(pickup, into));
 }
 
 VerbAnswer InventoryOperations::Give(const VerbInvocation& invocation)
@@ -177,7 +194,8 @@ VerbAnswer InventoryOperations::Give(const VerbInvocation& invocation)
     const ItemId definition = DefinitionNamed(*Entities, reference);
     if (!definition.IsValid())
         return VerbAdmission::InvalidArguments;
-    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Give(into, definition, CountOf(count)).Refusal);
+    return Answered(invocation,
+                    Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Give(into, definition, CountOf(count)));
 }
 
 VerbAnswer InventoryOperations::Transfer(const VerbInvocation& invocation)

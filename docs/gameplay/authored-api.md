@@ -299,7 +299,9 @@ without writing its result, or writes one of the wrong kind, is a provider
 defect — the producer receives no value and the dispatcher logs it once per
 verb. A verb that declares a result acts before it returns: one that queues its
 work has nothing to answer yet, and cannot declare one. Nothing checks that
-rule mechanically.
+rule mechanically. A response's sequence names a command's result and reads it
+in a later command (`docs/gameplay/responses.md`, "Results");
+`inventory.give` and `inventory.take` answer the entry the units went into.
 
 The answer for the same situation is the same whichever verb gives it:
 

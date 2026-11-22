@@ -126,6 +126,33 @@ number has to say its bounds. The `require` block is the one selection tables
 use (`math/ValueBounds.h`), and numbers compare as doubles, exactly for any
 integer a query can answer below 2^53.
 
+### Results
+
+A command whose verb declares a result (`docs/gameplay/authored-api.md`, "What
+a verb answers") can name it with `"as"`, and a later command of the same run
+reads it as a value, `{"result": "<name>"}`, beside `const`, `port` and
+`query`; `member`, `frame` and `scale` apply to it as they do to a query's
+answer:
+
+```json
+"commands": [
+  { "verb": "inventory.take", "as": "taken", "on_failure": "stop",
+    "arguments": { "pickup": { "port": "self" }, "into": { "port": "activator" } } },
+  { "verb": "equipment.equip",
+    "arguments": { "wearer": { "port": "activator" }, "entry": { "result": "taken" } } } ]
+```
+
+The compiler refuses `as` on a verb that declares no result, a name used twice,
+a `result` that no earlier command names, and a result of a kind the argument
+does not take. A result lasts for one run of one sequence: it is not a port,
+not saved, not replicated, and no other binding sees it; anything that must
+outlive the run is a counter, a tag or a query. A command whose verb did not
+answer (it failed, or answered nothing) leaves its name absent, and a command
+that reads an absent result fails with `InvalidArguments` naming the argument,
+under its own failure policy. A sequence that names no result keeps no result
+slots and costs nothing more to run. Content that names a result is refused by
+an engine older than this, as `unknown member`.
+
 ## Runtime semantics
 
 ### Delivery and admission
@@ -318,7 +345,11 @@ costs and asserts that warmed paths do not allocate.
 keys. `VerbSequenceRows` (`editor/common/src/vocabulary/VerbSequenceRows.h`)
 keys a sequence's rows so an edit names what it changes: `conditions` and
 `commands` are the lists, `c<i>` and `k<i>` their entries; a command has
-`k<i>.verb`, `k<i>.on_failure` and `k<i>.arg.<name>.source|value|frame`; a
+`k<i>.verb`, `k<i>.on_failure`, `k<i>.as` (only where the verb declares a
+result; empty names nothing) and `k<i>.arg.<name>.source|value|frame`, whose
+source may be "Result of" when an earlier command names a result of a kind the
+argument takes; a command's card lists the reasons its verb may refuse with and
+what it answers; a
 condition has `c<i>.entity`, `c<i>.tag`, `c<i>.has`, `c<i>.tags.all|any|none`,
 `c<i>.query`, `c<i>.expect` (true-or-false queries), `c<i>.require.min|max` (number
 queries; empty clears) and `c<i>.arg.<name>.source|value`. A value typed

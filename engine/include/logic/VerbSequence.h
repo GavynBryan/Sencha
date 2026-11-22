@@ -34,6 +34,7 @@ struct SequencePort
 [[nodiscard]] bool SequencePortFits(const SequencePort& port, const DataFieldSchema& field);
 
 inline constexpr std::uint8_t kNoSequencePort = 0xFF;
+inline constexpr std::uint32_t kNoSequenceResult = 0xFFFFFFFFu;
 
 enum class SequenceValueSource : std::uint8_t
 {
@@ -43,6 +44,8 @@ enum class SequenceValueSource : std::uint8_t
     Port,
     // {query: name, arguments: {...}, member: name}, asked when the command runs.
     Query,
+    // {result: name, member: name}, what an earlier command of this run answered.
+    Result,
 };
 
 struct SequenceArgumentDesc;
@@ -51,10 +54,10 @@ struct SequenceValueDesc
 {
     SequenceValueSource Source = SequenceValueSource::Constant;
     VerbBindingArgument Constant;
-    // The port's or the query's name.
+    // The port's, the query's or the result's name.
     std::string Name;
     std::vector<SequenceArgumentDesc> Arguments;
-    // A record answer's member the value is.
+    // A record answer's or result's member the value is.
     std::string Member;
     // A vector given in this entity port's frame, turned into world space.
     std::string Frame;
@@ -105,6 +108,8 @@ struct SequenceCommandDesc
     std::string Verb;
     std::vector<SequenceArgumentDesc> Arguments;
     SequenceFailurePolicy OnFailure = SequenceFailurePolicy::Continue;
+    // What its verb's result is called for the rest of the run; empty when unnamed.
+    std::string As;
 };
 
 struct VerbSequenceDesc
@@ -129,6 +134,7 @@ struct CompiledSequenceValue
     AuthoredValue Constant;
     std::uint8_t Port = kNoSequencePort;
     AuthoredQueryHandle Query;
+    std::uint32_t Result = kNoSequenceResult;
     std::vector<CompiledSequenceValue> Arguments;
     std::int32_t Member = -1;
     std::uint8_t Frame = kNoSequencePort;
@@ -159,10 +165,14 @@ struct CompiledSequenceCommand
     // One per binding input, in the binding's input order.
     std::vector<CompiledSequenceValue> Inputs;
     SequenceFailurePolicy OnFailure = SequenceFailurePolicy::Continue;
+    // The result slot its verb's answer is written to, or none.
+    std::uint32_t Result = kNoSequenceResult;
 };
 
 struct CompiledVerbSequence
 {
     std::vector<CompiledSequenceCondition> Conditions;
     std::vector<CompiledSequenceCommand> Commands;
+    // How many results its commands name: one slot each, for one run.
+    std::uint32_t Results = 0;
 };

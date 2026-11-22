@@ -137,8 +137,8 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 
 | Name | Arguments | Does |
 |---|---|---|
-| `inventory.take` | `pickup`, `into` | `Take` |
-| `inventory.give` | `into`, `definition`, `count` (1) | `Give` |
+| `inventory.take` | `pickup`, `into` | `Take`; answers the entry it went into, absent for an item that is not kept |
+| `inventory.give` | `into`, `definition`, `count` (1) | `Give`; answers the entry the units went into |
 | `inventory.transfer` | `entry`, `into`, `count` (0: all), `force` | `Transfer` |
 | `inventory.drop` | `entry`, `at`, `force` | `Drop`, into its holder's zone |
 | `inventory.use` | `entry`, `user` (its holder) | `Use` |
@@ -146,10 +146,14 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 
 A response's condition gates on `inventory.count` with `require`
 (`{ "min": 3 }` for "holds at least three"). A verb refused for any inventory
-reason answers `Refused` and logs the reason by name at debug level, such as
-`inventory.give refused: container_full`. `InventoryRefusal` has an
-`EnumSchema`, so native code, a console and a HUD read the same name through
-`EnumToString`.
+reason answers `Refused` with the reason's code, which every `InventoryRefusal`
+value but `None` declares by name, so a response's log line, the console and the
+vocabulary reference read it as `refused: container_full`
+(`docs/gameplay/authored-api.md`, "What a verb answers"). Native code compares
+`VerbInvocationResult::Detail` with the enum, or reads its name through
+`EnumToString`. A sequence that takes or gives an item and then acts on it
+names the verb's result (`docs/gameplay/responses.md`, "Results"): "pick it up
+and raise it" is a take `as` an entry, then an equip of that entry.
 
 ## Spending, depletion and the inventory pass
 

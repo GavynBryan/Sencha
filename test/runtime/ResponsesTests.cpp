@@ -37,6 +37,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
+#include <authored/AuthoredValueTraits.h>
 #include <zone/ZoneStateStore.h>
 
 #include <algorithm>
@@ -1611,4 +1612,151 @@ TEST_F(ResponsesFixture, TheRefusalLogIsForgottenWhenAZoneDetachesAndCanBeTurned
     Tick();
     EXPECT_EQ(lines.Written.size(), 2u);
     EXPECT_EQ(System->Stats().Failed, 3u);
+}
+
+namespace
+{
+struct TakingOperation
+{
+    World* Entities = nullptr;
+    bool Refuse = false;
+    bool Answers = true;
+    std::vector<EntityId> Made;
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        if (Refuse)
+            return VerbAdmission::Refused;
+        Made.push_back(Entities->CreateEntity());
+        if (invocation.Result != nullptr && Answers)
+            *invocation.Result = AuthoredValue::Entity(Made.back());
+        return VerbAdmission::Accepted;
+    }
+};
+
+struct EquippingOperation
+{
+    std::vector<EntityId> Worn;
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        EntityId entry;
+        if (!invocation.Arguments->TryGetEntity(1, entry))
+            return VerbAdmission::InvalidArguments;
+        Worn.push_back(entry);
+        return VerbAdmission::Accepted;
+    }
+};
+
+class ResponsesResultFixture : public ResponsesFixture
+{
+protected:
+    void SetUp() override
+    {
+        ResponsesFixture::SetUp();
+        VerbRegistrationScope scope(*Verbs, "test.results");
+        VerbDefinition take;
+        take.Name = "test.take";
+        take.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "pickup", "Pickup"));
+        take.Result = AuthoredField<std::optional<EntityId>>("entry", "Entry");
+        (void)scope.Declare(std::move(take));
+        VerbDefinition equip;
+        equip.Name = "test.equip";
+        equip.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "wearer", "Wearer"));
+        equip.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "entry", "Entry"));
+        (void)scope.Declare(std::move(equip));
+        ASSERT_TRUE(scope.Commit());
+        Taking.Entities = &WorldState;
+        Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.take"), Taking));
+        Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.equip"), Equipping));
+    }
+
+    std::span<const std::string> DiagnosticsOf(EntityId entity)
+    {
+        const ResponseDefinitions& definitions = ResponseDefinitionsOf(WorldState);
+        return definitions.Sequences.Diagnostics(definitions.Sets.Bindings(StateOf(entity).Set).front().Sequence);
+    }
+
+    TakingOperation Taking;
+    EquippingOperation Equipping;
+};
+
+constexpr std::string_view kTakeThenEquip = R"({"commands": [
+    {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+    {"verb": "test.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "taken"}}}]})";
+} // namespace
+
+TEST_F(ResponsesResultFixture, ATakeThenAnEquipWearsWhatTheTakeAnswered)
+{
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", kTakeThenEquip) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    for (int i = 0; i < 2; ++i)
+    {
+        ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+        Tick();
+    }
+
+    EXPECT_TRUE(DiagnosticsOf(pickup).empty()) << DiagnosticsOf(pickup).front();
+    ASSERT_EQ(Taking.Made.size(), 2u);
+    ASSERT_EQ(Equipping.Worn.size(), 2u);
+    EXPECT_EQ(Equipping.Worn[0], Taking.Made[0]);
+    EXPECT_EQ(Equipping.Worn[1], Taking.Made[1]) << "the second run read the first run's result";
+    EXPECT_EQ(System->Stats().Failed, 0u);
+}
+
+TEST_F(ResponsesResultFixture, AnEquipWithNoResultToReadFailsNamingTheArgument)
+{
+    System->SetLogRefusals(true);
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", kTakeThenEquip) }));
+    const EntityId user = WorldState.CreateEntity();
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+    Taking.Answers = false;
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+    Taking.Refuse = true;
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+
+    EXPECT_EQ(Equipping.Worn.size(), 1u) << "the equip ran without a result to read";
+    EXPECT_EQ(System->Stats().Failed, 3u) << "an equip after a refused take did not fail";
+    EXPECT_NE(std::ranges::find_if(Lines->Written,
+                                   [](const std::string& line) {
+                                       return line.find("command 2 (test.equip) invalid argument 'entry'")
+                                           != std::string::npos;
+                                   }),
+              Lines->Written.end());
+    EXPECT_NE(std::ranges::find_if(Lines->Written,
+                                   [](const std::string& line) {
+                                       return line.find("command 1 (test.take) refused") != std::string::npos;
+                                   }),
+              Lines->Written.end());
+}
+
+TEST_F(ResponsesResultFixture, AResultIsRefusedWhenItCannotBeRead)
+{
+    const EntityId undeclared = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.record", "as": "recorded", "arguments": {"target": {"port": "self"}}}]})") }));
+    const EntityId unknown = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.equip", "arguments": {"wearer": {"port": "self"}, "entry": {"result": "taken"}}},
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}}]})") }));
+    const EntityId mismatched = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+        {"verb": "test.record", "arguments": {"target": {"port": "self"}, "amount": {"result": "taken"}}}]})") }));
+    const EntityId twice = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}}]})") }));
+    const EntityId user = WorldState.CreateEntity();
+    for (const EntityId entity : { undeclared, unknown, mismatched, twice })
+        ASSERT_EQ(System->Deliver(entity, TestUsed{ user }), 1u);
+    Tick();
+
+    const auto says = [&](EntityId entity, std::string_view text) {
+        const std::span<const std::string> diagnostics = DiagnosticsOf(entity);
+        return std::ranges::any_of(diagnostics,
+                                   [&](const std::string& line) { return line.find(text) != std::string::npos; });
+    };
+    EXPECT_TRUE(says(undeclared, "declares no result")) << DiagnosticsOf(undeclared).size();
+    EXPECT_TRUE(says(unknown, "no earlier command names a result 'taken'"));
+    EXPECT_TRUE(says(mismatched, "result 'taken' is a different kind"));
+    EXPECT_TRUE(says(twice, "result 'taken' is already named"));
 }

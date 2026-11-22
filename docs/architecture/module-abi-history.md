@@ -1506,3 +1506,13 @@ and `AnimDecisionRecord::Admission` become `Answer`, a `VerbAnswer`.
 `core/metadata/EnumSchema.h` gains `FindEnumValue`. `ProjectileLaunchAdmission`
 (`projectile/ProjectileVerbs.h`) is new. `ResponsesSystem` gains
 `SetLogRefusals`, `LogsRefusals` and `kLoggedRefusals`.
+
+## v64
+
+A sequence names a verb's result and a later command reads it.
+`SequenceValueSource` gains `Result`; `SequenceCommandDesc` gains `As`;
+`CompiledSequenceValue` and `CompiledSequenceCommand` gain `Result`, a slot
+index, with `kNoSequenceResult` for none; `CompiledVerbSequence` gains
+`Results`, its slot count. `VerbSequenceRunner` keeps a result slot per name
+for the run under way. `inventory.give` and `inventory.take` declare an `entry`
+result, which moves their contract revision.

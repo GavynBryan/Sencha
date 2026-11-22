@@ -1794,3 +1794,21 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first authored response that must react differently to two
   reasons, such as a pickup that posts "inventory full" from authored data, or
   the first HUD message that would otherwise need a C++ special case.
+
+## A verb op's result kept in an ability local
+
+- **What:** a response's sequence names a verb's result and reads it in a later
+  command; an ability's verb op cannot. An ability op already stores a query's
+  answer in an entity local, so this is one more destination kind for a verb op.
+- **Where:** `engine/src/abilities/AbilityPass.cpp` (`Operate`, the `Invoke`
+  case) and the ability op's compiled form.
+- **Trigger:** the first ability that must name what one of its ops made.
+
+## Results for verbs beyond give and take
+
+- **What:** `inventory.give` and `inventory.take` declare their entry as a
+  result; no other verb declares one. Each further result is one declaration
+  and one write through `VerbInvocation::Result`.
+- **Where:** the verb's declaration and implementation; `inventory.transfer`,
+  `projectile.launch` and `effect.apply` are the likely next.
+- **Trigger:** a sequence that needs to name what one of those verbs made.

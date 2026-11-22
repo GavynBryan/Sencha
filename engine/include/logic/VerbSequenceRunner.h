@@ -59,6 +59,8 @@ private:
                            const SequenceRun& run, std::uint32_t depth, AuthoredValue& answer);
 
     std::vector<AuthoredValue> Inputs;
+    // What the commands named, for the run under way: absent until a command answers.
+    std::vector<AuthoredValue> Results;
     // One argument pack per query nesting depth, kept between runs.
     std::vector<std::vector<AuthoredValue>> QueryArguments;
 };
