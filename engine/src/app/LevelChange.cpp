@@ -91,7 +91,7 @@ void LevelChange::Commit()
     LoadedLevel& level = Host.Level();
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
-        memory->Install(request.Level, request.ZoneState);
+        memory->Install(request.ZoneState);
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         *restored = RestoredBodies{};
     if (request.RuntimeState == LevelChangeRuntimeState::Discard)

@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <map>
+#include <set>
 #include <memory>
 #include <optional>
 #include <string>
@@ -91,7 +91,9 @@ public:
     [[nodiscard]] bool RegisterSection(SavedGameSectionDefinition section);
     void UnregisterSection(std::string_view name);
 
-    [[nodiscard]] SaveAdmission RequestWrite(std::string slot = std::string(kDefaultSaveSlot));
+    // `arrival` names where the saved body comes back; the body section writes it.
+    [[nodiscard]] SaveAdmission RequestWrite(std::string slot = std::string(kDefaultSaveSlot),
+                                             std::string arrival = {});
     [[nodiscard]] SaveAdmission RequestRestore(std::string slot = std::string(kDefaultSaveSlot));
 
     [[nodiscard]] SaveStatus WriteStatus() const { return Writing; }
@@ -103,11 +105,13 @@ public:
     [[nodiscard]] std::uint64_t Restores() const { return RestoreCount; }
     // The latest restore read the slot's backup because its file did not read.
     [[nodiscard]] bool RestoredFromBackup() const { return FromBackup; }
-    // What a restore of the slot would find, in this session's memory or on
-    // disk; reads and decodes the slot's files when this session has not.
+    // What a restore of the slot would find: the save whose disk write is in
+    // flight or failed, else the slot's files, read and decoded.
     [[nodiscard]] bool Holds(std::string_view slot) const;
     // This session wrote or restored the slot; a file from an earlier run alone is not remembered.
-    [[nodiscard]] bool Remembers(std::string_view slot) const { return Remembered.contains(slot); }
+    [[nodiscard]] bool Remembers(std::string_view slot) const { return Touched.contains(slot); }
+    // The arrival of the write being captured; empty outside one.
+    [[nodiscard]] const std::string& WritingArrival() const { return CapturingArrival; }
 
     void Commit();
     // After the level change commits: a restore's sections are put back.
@@ -130,21 +134,29 @@ private:
     // Why a settled level cannot be captured; nothing when it can.
     [[nodiscard]] std::optional<std::string> WriteRefusal() const;
     // Null when there is nothing to write to disk.
-    [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot);
+    [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot, const std::string& arrival);
     void WriteOnTasks(const std::string& slot, std::shared_ptr<const SavedGame> saved);
     void FinishWrite(bool written);
     void CommitRestore();
     void Restore(const std::string& slot);
     void BeginChange(std::shared_ptr<const SavedGame> saved);
+    void RestoreHeldLists(World& world, const SavedGame& saved);
     void FailWrite(std::string reason);
     void FailRestore(std::string reason);
 
     Engine& Host;
     std::optional<SaveSlotFiles> Files;
     std::vector<SavedGameSectionDefinition> Sections;
-    std::map<std::string, std::shared_ptr<const SavedGame>, std::less<>> Remembered;
+    std::set<std::string, std::less<>> Touched;
+    // The one save not yet on disk, which a restore of its slot prefers; with no
+    // root, the last one written.
+    std::optional<std::string> UnwrittenSlot;
+    std::shared_ptr<const SavedGame> Unwritten;
     std::vector<SavedGameSection> Unclaimed;
+    std::vector<SavedGameChunk> UnclaimedChunks;
     std::optional<std::string> WriteWaiting;
+    std::string ArrivalWaiting;
+    std::string CapturingArrival;
     std::optional<std::string> RestoreWaiting;
     std::shared_ptr<const SavedGame> SectionsWaiting;
     SaveStatus Writing = SaveStatus::Idle;

@@ -7,6 +7,7 @@
 #include <world/serialization/EntityPatch.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateLists.h>
 #include <zone/ZoneStateScope.h>
 
 #include <cstddef>
@@ -18,24 +19,22 @@
 
 class ComponentSerializerRegistry;
 
-struct DurableComponentState
-{
-    PersistentEntityId Entity;
-    ComponentTypeId Type;
-    std::uint16_t Version = 0;
-    std::vector<std::byte> Bytes;
-
-    friend bool operator==(const DurableComponentState&, const DurableComponentState&) = default;
-};
-
-// What a zone never forgets, in id order: the part a save keeps.
+// One zone's durable state, as a save holds it.
 struct DurableZoneState
 {
     ZoneId Zone;
-    std::vector<PersistentEntityId> Destroyed;
-    std::vector<DurableComponentState> Components;
+    // destroyed, changed, and any list this build does not read, as read.
+    EncodedZoneLists Lists;
+    // Runtime records whose holder is an entity of this zone, as their own encoded
+    // list: filled when a save is captured, read when one is restored; the store
+    // keeps neither.
+    EncodedZoneLists Held;
+};
 
-    friend bool operator==(const DurableZoneState&, const DurableZoneState&) = default;
+struct DurableLevelState
+{
+    LevelReference Level;
+    std::vector<DurableZoneState> Zones;
 };
 
 struct AuthoredEntityState
@@ -88,12 +87,20 @@ public:
     // Null unless the zone's current residency authored the entity.
     [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
 
-    // Reset-to-authored: the next import of every zone replays the cooked scene.
+    // Lists this build does not read, and members it does not make, kept as read.
+    [[nodiscard]] std::span<const ZoneStateList> CarriedLists(ZoneStateScope scope) const;
+    [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
+
+    // The next import of each of the level's zones replays its cooked scene.
+    void ForgetLevel(const LevelReference& level);
+    // The same for every level.
     void Clear() { Zones_.clear(); }
 
-    [[nodiscard]] std::vector<DurableZoneState> ExportDurable(const LevelReference& level) const;
-    // Replaces everything with `durable`, as `level`'s.
-    void Install(const LevelReference& level, std::span<const DurableZoneState> durable);
+    // Every level's never-forgotten state, levels in kind and name order and zones
+    // in id order; a zone nothing changed since the last export is the same blob.
+    [[nodiscard]] std::vector<DurableLevelState> ExportDurable() const;
+    // Replaces everything with `durable`; each zone is read when it next imports.
+    void Install(std::span<const DurableLevelState> durable);
 
 private:
     struct ScopeKey
@@ -123,17 +130,27 @@ private:
         JsonValue Patch;
     };
 
+    // Parsed while its zone is resident or holds what a save does not keep;
+    // otherwise only Encoded.
     struct ZoneRecord
     {
+        bool Parsed = true;
         std::unordered_map<std::uint64_t, AuthoredRecord> Authored;
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
         std::unordered_map<std::uint64_t, PatchRecord> Patches;
+        std::vector<ZoneStateList> Carried;
+        // The never-forgotten part as a save holds it; null when stale or empty.
+        EncodedZoneLists Encoded;
     };
 
     [[nodiscard]] static ScopeKey KeyOf(ZoneStateScope scope) { return { scope.Level.Value, scope.Zone.Value }; }
     [[nodiscard]] ZoneStateLevelId FindLevel(const LevelReference& level) const;
-    [[nodiscard]] const ZoneRecord* Find(ZoneStateScope scope) const;
+    [[nodiscard]] ZoneRecord* Find(ZoneStateScope scope) const;
+    [[nodiscard]] ZoneRecord& Open(ZoneStateScope scope);
+    static void Parse(ZoneRecord& record);
+    [[nodiscard]] static EncodedZoneLists Encode(const ZoneRecord& record);
+    static void Close(ZoneRecord& record);
 
     std::vector<LevelReference> Levels_;
-    std::unordered_map<ScopeKey, ZoneRecord, ScopeKeyHash> Zones_;
+    mutable std::unordered_map<ScopeKey, ZoneRecord, ScopeKeyHash> Zones_;
 };

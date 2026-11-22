@@ -9,10 +9,15 @@ HashedChunkFileWriter::HashedChunkFileWriter(std::uint32_t magic, std::uint32_t 
     Ok = WriteBinaryHeader(Bytes, magic, version);
 }
 
-std::vector<std::byte> HashedChunkFileWriter::Finish(std::uint32_t hashChunkId)
+bool HashedChunkFileWriter::HashChunk(std::uint32_t id)
 {
     const std::uint64_t hash = HashBytes64(std::string_view(Stream.str()));
-    if (!Chunk(hashChunkId, 1, [&] { return Bytes.Write(hash); }))
+    return Chunk(id, 1, [&] { return Bytes.Write(hash); });
+}
+
+std::vector<std::byte> HashedChunkFileWriter::Finish(std::uint32_t hashChunkId)
+{
+    if (!HashChunk(hashChunkId))
         return {};
     const std::string body = Stream.str();
     std::vector<std::byte> bytes(body.size());

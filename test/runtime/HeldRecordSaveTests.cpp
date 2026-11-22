@@ -253,7 +253,7 @@ TEST(HeldRecordSaves, ARecordMadeAtRunTimeIsSavedUnderTheIdSettlingGaveIt)
               PersistentEntityIdToString(world.IdOf(record)));
 }
 
-TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatContentAuthored)
+TEST(HeldRecordSaves, WhatALevelEntityHoldsIsSavedUnderItsZoneAndWhatWaitsForABodyBesideTheBody)
 {
     SavingWorld world;
     const EntityId chest = world.Identified(PersistentEntityId{ 0xC4E57 });
@@ -263,20 +263,37 @@ TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatCont
     const EntityId deposit = world.HeldBy(chest);
     const EntityId inAuthored = world.HeldBy(authored);
     const EntityId waiting = world.Entities.CreateEntity();
-    world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0x99 } } });
+    world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x99 } } });
+    const EntityId parked = world.Entities.CreateEntity();
+    world.Entities.AddComponent<Held>(parked, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0xB0C5 } } });
     SettleHeldRecords(world.Entities);
+    const ZoneStateScope cellar{ .Level = ZoneStateLevelId{ 1 }, .Zone = ZoneId{ 0x51 } };
+    const ZoneStateScope attic{ .Level = ZoneStateLevelId{ 2 }, .Zone = ZoneId{ 0x52 } };
+    world.Entities.GetResource<HeldRecordIndex>().Await(parked, PersistentEntityId{ 0xB0C5 }, attic);
+
+    const auto idsOf = [&](std::span<const ZoneListEntity> records) {
+        std::vector<std::string> ids;
+        for (const ZoneListEntity& record : records)
+            ids.push_back(PersistentEntityIdToString(record.Id));
+        std::ranges::sort(ids);
+        return ids;
+    };
+    const std::vector<ScopedHeldRecords> scoped = CaptureLevelHeldRecords(
+        world.Entities, [&](EntityId) { return cellar; }, world.Serializers, world.Context);
+    ASSERT_EQ(scoped.size(), 2u);
+    EXPECT_EQ(scoped[0].Scope, cellar);
+    std::vector<std::string> expected{ PersistentEntityIdToString(world.IdOf(deposit)),
+                                       PersistentEntityIdToString(world.IdOf(inAuthored)) };
+    std::ranges::sort(expected);
+    EXPECT_EQ(idsOf(scoped[0].Records), expected) << "the authored record comes back with its zone, not from the save";
+    EXPECT_EQ(scoped[1].Scope, attic);
+    EXPECT_EQ(idsOf(scoped[1].Records), std::vector{ PersistentEntityIdToString(world.IdOf(parked)) });
 
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
-
-    std::vector<std::string> ids;
+    std::vector<std::string> beside;
     for (const JsonValue& record : saved.Find("records")->AsArray())
-        ids.push_back(record.Find("id")->AsString());
-    std::ranges::sort(ids);
-    std::vector<std::string> expected{ PersistentEntityIdToString(world.IdOf(deposit)),
-                                       PersistentEntityIdToString(world.IdOf(inAuthored)),
-                                       PersistentEntityIdToString(world.IdOf(waiting)) };
-    std::ranges::sort(expected);
-    EXPECT_EQ(ids, expected) << "the authored record comes back with its zone, not from the save";
+        beside.push_back(record.Find("id")->AsString());
+    EXPECT_EQ(beside, std::vector{ PersistentEntityIdToString(world.IdOf(waiting)) });
 }
 
 TEST(HeldRecordSaves, ARecordsSavedFormLeavesOutWhatItIsKnownBy)

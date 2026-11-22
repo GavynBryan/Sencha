@@ -100,14 +100,23 @@ namespace
 
 void DeclareSavedGameVerbs(VerbRegistrationScope& scope)
 {
-    (void)scope.Declare(SaveVerb(kSaveWriteVerb, "Save", "Writes how the world differs from its authored content."));
+    VerbDefinition write = SaveVerb(kSaveWriteVerb, "Save", "Writes how the world differs from its authored content.");
+    DataFieldSchema arrival = MakeDataField(DataFieldKind::String, "arrival", "Arrival",
+                                            "Where the saved body comes back; written with the save.");
+    arrival.Required = false;
+    arrival.Default = std::string();
+    write.Arguments.Children.push_back(std::move(arrival));
+    (void)scope.Declare(std::move(write));
     (void)scope.Declare(SaveVerb(kSaveRestoreVerb, "Restore",
                                  "Loads the saved level again and puts back what the save kept."));
 }
 
 VerbAdmission InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
 {
-    return AsVerbAdmission(saves.RequestWrite(SlotOf(invocation)));
+    std::string_view arrival;
+    if (invocation.Arguments != nullptr)
+        (void)invocation.Arguments->TryGetString(1, arrival);
+    return AsVerbAdmission(saves.RequestWrite(SlotOf(invocation), std::string(arrival)));
 }
 
 VerbAdmission InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
@@ -123,13 +132,13 @@ void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)
     console.Registry().RegisterCommand({
         .Name = std::string(kSaveWriteVerb),
         .Owner = "engine",
-        .Usage = "save.write [slot]",
-        .Help = "Write a save.",
+        .Usage = "save.write [slot] [arrival]",
+        .Help = "Write a save, naming where its body comes back.",
         .Flags = ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
             const std::string slot = slotOf(args);
-            return Report("save", slot, engine.Saves().RequestWrite(slot));
+            return Report("save", slot, engine.Saves().RequestWrite(slot, args.size() > 1 ? args[1] : std::string()));
         },
     });
     console.Registry().RegisterCommand({

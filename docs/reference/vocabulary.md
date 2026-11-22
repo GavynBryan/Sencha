@@ -55,7 +55,7 @@ An argument reads `key: type = default [minimum .. maximum] (units)`; `key?` may
 | `responses.enable` | instant | gameplay / authority_only | `entity: entity`<br>`binding: string = ""` | Lets a binding respond again. |
 | `runtime.resume` | instant | gameplay / authority_only | — | Closes the application shell and resumes local play. |
 | `save.restore` | instant | gameplay / authority_only | `slot: string = ""` | Loads the saved level again and puts back what the save kept. |
-| `save.write` | instant | gameplay / authority_only | `slot: string = ""` | Writes how the world differs from its authored content. |
+| `save.write` | instant | gameplay / authority_only | `slot: string = ""`<br>`arrival: string = ""` | Writes how the world differs from its authored content. |
 | `tags.grant` | instant | gameplay / authority_only | `target: entity`<br>`tag: tag`<br>`stacks: int = 1 [1 .. 65535]` | Gives the target stacks of a tag it keeps and saves; an entity with no tags gains them. |
 | `tags.revoke` | instant | gameplay / authority_only | `target: entity`<br>`tag: tag`<br>`stacks: int = 1 [1 .. 65535]` | Takes stacks of a tag the target keeps; never what an effect or ability holds. |
 | `time.scale` | lease | gameplay / simulation | `target: entity`<br>`scale: float [0.01 .. 4]` | Runs an actor's time faster or slower while held: its movement, effects, phases and animation. |

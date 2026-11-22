@@ -184,7 +184,12 @@ placement, so marking a prefab's root marks the whole enemy. The importer
 works each entity's lifetime out when it imports the zone and the store keeps
 it beside the authored id, because a destroyed entity is not there to ask.
 Only what is never forgotten is durable: `ZoneStateStore::ExportDurable` is
-what a save keeps, and `Install` replaces the store with it.
+what a save keeps, every level's zones as the encoded lists a save file holds
+(`docs/gameplay/saves.md`, "The file"), and `Install` replaces the store with
+them. A zone that is not loaded is held as that encoded blob, parsed again when
+it imports, unless it holds `at_restore` state, which the blob does not carry;
+a write copies each blob's pointer, so a zone untouched since the last write is
+the same blob in both. `ForgetLevel` forgets one level.
 
 Worlds without the resources (editor documents, minimal fixtures) skip all of
 it; the import and detach paths check for the store and for component

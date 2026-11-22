@@ -10,8 +10,10 @@
 #include <net/NetSession.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <save/HeldRecordSaves.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
+#include <world/held/HeldRecordIndex.h>
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentIdMint.h>
 #include <zone/ZoneStateStore.h>
@@ -24,6 +26,32 @@
 
 namespace
 {
+    void AddHeldLists(const ZoneStateStore& store, std::vector<DurableLevelState>& levels,
+                      std::vector<ScopedHeldRecords> held)
+    {
+        const auto before = [](const LevelReference& a, const LevelReference& b) {
+            return a.Kind != b.Kind ? a.Kind < b.Kind : a.Name < b.Name;
+        };
+        for (ScopedHeldRecords& records : held)
+        {
+            const LevelReference* reference = store.LevelOf(records.Scope.Level);
+            if (reference == nullptr)
+                continue;
+            auto level = std::ranges::find_if(levels, [&](const DurableLevelState& state) {
+                return !before(state.Level, *reference);
+            });
+            if (level == levels.end() || level->Level != *reference)
+                level = levels.insert(level, DurableLevelState{ *reference, {} });
+            auto zone = std::ranges::find_if(level->Zones, [&](const DurableZoneState& state) {
+                return state.Zone.Value >= records.Scope.Zone.Value;
+            });
+            if (zone == level->Zones.end() || zone->Zone != records.Scope.Zone)
+                zone = level->Zones.insert(zone, DurableZoneState{ records.Scope.Zone, nullptr, nullptr });
+            const ZoneStateList list{ std::string(kHeldZoneList), kZoneListVersion, EncodeEntityList(records.Records) };
+            zone->Held = EncodeZoneLists(std::span(&list, 1));
+        }
+    }
+
     struct ReadOutcome
     {
         std::optional<SavedGame> Saved;
@@ -134,7 +162,7 @@ void SavedGames::UnregisterSection(std::string_view name)
     std::erase_if(Sections, [&](const SavedGameSectionDefinition& section) { return section.Name == name; });
 }
 
-SaveAdmission SavedGames::RequestWrite(std::string slot)
+SaveAdmission SavedGames::RequestWrite(std::string slot, std::string arrival)
 {
     if (!SaveSlotFiles::IsSlotName(slot))
         return SaveAdmission::BadSlot;
@@ -145,6 +173,7 @@ SaveAdmission SavedGames::RequestWrite(std::string slot)
     if (!Host.Level().Loaded().has_value() && !LevelChanging(Host.LevelChanges().Status()))
         return SaveAdmission::NothingLoaded;
     WriteWaiting = std::move(slot);
+    ArrivalWaiting = std::move(arrival);
     Writing = SaveStatus::Pending;
     return SaveAdmission::Accepted;
 }
@@ -169,7 +198,7 @@ SaveAdmission SavedGames::RequestRestore(std::string slot)
 
 bool SavedGames::Holds(std::string_view slot) const
 {
-    if (Remembered.contains(slot))
+    if (Unwritten != nullptr && UnwrittenSlot == slot)
         return true;
     return Files.has_value() && SaveSlotFiles::IsSlotName(slot)
         && ReadSlot(*Files, std::string(slot)).Saved.has_value();
@@ -183,10 +212,11 @@ void SavedGames::Commit()
             return CommitRestore();
         const std::optional<std::string> refused = WriteRefusal();
         const std::string slot = std::move(*WriteWaiting);
+        const std::string arrival = std::exchange(ArrivalWaiting, std::string());
         WriteWaiting.reset();
         if (refused.has_value())
             FailWrite(*refused);
-        else if (const std::shared_ptr<const SavedGame> saved = Capture(slot))
+        else if (const std::shared_ptr<const SavedGame> saved = Capture(slot, arrival))
             WriteOnTasks(slot, saved);
     }
     CommitRestore();
@@ -228,12 +258,13 @@ std::optional<std::string> SavedGames::WriteRefusal() const
     return std::nullopt;
 }
 
-std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot)
+std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot, const std::string& arrival)
 {
     World& world = Host.World().Entities();
     SettleHeldRecords(world);
     LoadedLevel& level = Host.Level();
     level.CaptureState();
+    CapturingArrival = arrival;
 
     auto saved = std::make_shared<SavedGame>();
     saved->Summary.Level = *level.Loaded();
@@ -243,13 +274,30 @@ std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot)
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());
     if (const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>())
-        saved->Zones = store->ExportDurable(saved->Summary.Level);
+    {
+        saved->Levels = store->ExportDurable();
+        const RuntimeWorld& runtime = Host.World();
+        const ZoneStateScope worldScene = level.WorldSceneStateScope();
+        const auto scopeOf = [&](EntityId holder) {
+            const StoragePartitionId partition = world.GetEntityPartition(holder);
+            if (partition == PersistentStoragePartition)
+                return worldScene;
+            const RuntimeZoneRecord* record = runtime.FindPartition(partition);
+            return record != nullptr ? record->StateScope : ZoneStateScope{};
+        };
+        AddHeldLists(*store, saved->Levels,
+                     CaptureLevelHeldRecords(world, scopeOf, Host.SceneSerializers(), Host.Content().SceneContext()));
+    }
     for (const SavedGameSectionDefinition& section : Sections)
         if (section.Capture)
             saved->Sections.push_back(SavedGameSection{ section.Name, section.Version, section.Capture(world) });
+    CapturingArrival.clear();
     saved->Sections.insert(saved->Sections.end(), Unclaimed.begin(), Unclaimed.end());
     saved->Sections.push_back(CapturePersistentIds(world));
-    Remembered.insert_or_assign(slot, saved);
+    saved->Carried = UnclaimedChunks;
+    Touched.insert(slot);
+    UnwrittenSlot = slot;
+    Unwritten = saved;
     if (!Files.has_value())
     {
         Writing = SaveStatus::Done;
@@ -270,7 +318,13 @@ void SavedGames::WriteOnTasks(const std::string& slot, std::shared_ptr<const Sav
 void SavedGames::FinishWrite(bool written)
 {
     const std::string slot = std::move(InFlight->Slot);
+    const std::shared_ptr<const SavedGame> saved = std::move(InFlight->Saved);
     InFlight.reset();
+    if (written && Unwritten == saved)
+    {
+        Unwritten.reset();
+        UnwrittenSlot.reset();
+    }
     if (written)
         Writing = SaveStatus::Done;
     else
@@ -284,10 +338,11 @@ void SavedGames::Finish()
         const std::optional<std::string> refused =
             LevelSettling() ? std::optional<std::string>("the game quit while the level was changing") : WriteRefusal();
         const std::string slot = std::move(*WriteWaiting);
+        const std::string arrival = std::exchange(ArrivalWaiting, std::string());
         WriteWaiting.reset();
         if (refused.has_value())
             return FailWrite(*refused);
-        if (const std::shared_ptr<const SavedGame> saved = Capture(slot))
+        if (const std::shared_ptr<const SavedGame> saved = Capture(slot, arrival))
         {
             InFlight = InFlightWrite{ .Slot = slot, .Saved = saved, .Task = {} };
             FinishWrite(WriteToDisk(*Files, slot, *saved));
@@ -301,8 +356,8 @@ void SavedGames::Finish()
 
 void SavedGames::Restore(const std::string& slot)
 {
-    if (const auto remembered = Remembered.find(slot); remembered != Remembered.end())
-        return BeginChange(remembered->second);
+    if (Unwritten != nullptr && UnwrittenSlot == slot)
+        return BeginChange(Unwritten);
     if (!Files.has_value())
         return FailRestore("no save in slot '" + slot + "'");
     Restoring = RestoreProgress::Reading;
@@ -318,7 +373,7 @@ void SavedGames::Restore(const std::string& slot)
                                                     FromBackup = outcome.FromBackup;
                                                     const auto saved =
                                                         std::make_shared<const SavedGame>(std::move(*outcome.Saved));
-                                                    Remembered.insert_or_assign(slot, saved);
+                                                    Touched.insert(slot);
                                                     BeginChange(saved);
                                                 });
 }
@@ -332,7 +387,7 @@ void SavedGames::BeginChange(std::shared_ptr<const SavedGame> saved)
                                + std::to_string(section.Version) + "; this build reads up to "
                                + std::to_string(registered->Version) + ")");
     const LevelChangeAdmission admission = Host.LevelChanges().Request(LevelChangeRequest{
-        .Level = saved->Summary.Level, .Focus = saved->Summary.Focus, .ZoneState = saved->Zones });
+        .Level = saved->Summary.Level, .Focus = saved->Summary.Focus, .ZoneState = saved->Levels });
     if (admission != LevelChangeAdmission::Accepted)
         return FailRestore(LevelChangeAdmissionReason(admission));
     RestoreSerial = Host.LevelChanges().Serial();
@@ -347,7 +402,10 @@ void SavedGames::RestoreSections()
     {
         SeenChange = changes.Serial();
         if (SeenChange != RestoreSerial && changes.RuntimeState() == LevelChangeRuntimeState::Discard)
+        {
             Unclaimed.clear();
+            UnclaimedChunks.clear();
+        }
     }
     if (SectionsWaiting == nullptr || changes.Serial() != RestoreSerial)
         return;
@@ -382,6 +440,34 @@ void SavedGames::RestoreSections()
             log.Error("restore: section '{}' is version {}, newer than this build's {}; it was not restored",
                       registered.Name, found->Version, registered.Version);
     }
+    UnclaimedChunks = saved->Carried;
+    RestoreHeldLists(world, *saved);
+}
+
+void SavedGames::RestoreHeldLists(World& world, const SavedGame& saved)
+{
+    ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
+    if (store == nullptr)
+        return;
+    std::vector<ZoneStateLevelId> away;
+    for (const DurableLevelState& level : saved.Levels)
+        for (const DurableZoneState& zone : level.Zones)
+        {
+            const std::optional<std::vector<ZoneStateList>> lists =
+                zone.Held != nullptr ? DecodeZoneLists(*zone.Held) : std::nullopt;
+            if (!lists.has_value())
+                continue;
+            const ZoneStateScope scope = store->Scope(level.Level, zone.Zone);
+            for (const ZoneStateList& list : *lists)
+                if (const std::optional<std::vector<ZoneListEntity>> records = DecodeEntityList(list.Payload))
+                    RestoreLevelHeldRecords(world, scope, *records, Host.SceneSerializers(),
+                                            Host.Content().SceneContext());
+            if (level.Level != saved.Summary.Level)
+                away.push_back(scope.Level);
+        }
+    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
+        for (const ZoneStateLevelId level : away)
+            index->SetAside(level);
 }
 
 void SavedGames::Advance()

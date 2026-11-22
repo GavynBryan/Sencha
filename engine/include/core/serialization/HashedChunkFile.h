@@ -28,6 +28,9 @@ public:
         return Ok;
     }
 
+    // A chunk holding the content hash of every byte written before it.
+    bool HashChunk(std::uint32_t id);
+
     // Empty when any write failed.
     [[nodiscard]] std::vector<std::byte> Finish(std::uint32_t hashChunkId);
 

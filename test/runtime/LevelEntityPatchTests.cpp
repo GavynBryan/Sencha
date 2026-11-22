@@ -26,6 +26,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateLists.h>
 #include <zone/ZoneStateStore.h>
 
 #include <gtest/gtest.h>
@@ -278,7 +279,7 @@ TEST_F(LevelEntityPatch, AnAtDetachPatchGoesAtDetachAndAnAtRestoreOneAtRestore)
     EXPECT_TRUE(IsUnsealed(kDoor)) << "kept across its zone's unload";
     Detach();
 
-    Store().Install(kLevel, Store().ExportDurable(kLevel));
+    Store().Install(Store().ExportDurable());
     Import(Vault(5, ZoneStateForgetting::AtRestore));
     EXPECT_FALSE(IsUnsealed(kDoor)) << "forgotten when a save is restored";
 }
@@ -359,4 +360,25 @@ TEST_F(LevelEntityPatch, AGameThatKeepsNoLevelStateRemembersOnlyWhatWasDestroyed
     Import(Vault());
     EXPECT_FALSE(IsUnsealed(kDoor));
     EXPECT_FALSE(Resolve(kCrate).IsValid());
+}
+
+TEST_F(LevelEntityPatch, AGainedMemberOfAFormThisBuildDoesNotMakeIsKeptLoggedAndMakesNoEntity)
+{
+    const GainedZoneMember member{ "from_source", { std::byte{ 1 }, std::byte{ 2 } } };
+    const ZoneStateList gained{ std::string(kGainedZoneList), kZoneListVersion,
+                                EncodeGainedList(std::span(&member, 1)) };
+    Store().Install(std::vector{
+        DurableLevelState{ kLevel, { DurableZoneState{ kVault, EncodeZoneLists(std::span(&gained, 1)), nullptr } } } });
+    const std::size_t before = Entities().GetAliveEntities().size();
+    Import(Vault());
+    EXPECT_EQ(Entities().GetAliveEntities().size(), before + 3) << "only what the level authored";
+    EXPECT_EQ(Log.Mentioning(Log.Warnings, "from_source"), 1u);
+    (void)GrantBaselineTag(Entities(), Resolve(kDoor), Unsealed);
+    Detach();
+
+    const std::vector<DurableLevelState> durable = Store().ExportDurable();
+    ASSERT_EQ(durable.size(), 1u);
+    const std::optional<std::vector<ZoneStateList>> lists = DecodeZoneLists(*durable[0].Zones[0].Lists);
+    ASSERT_TRUE(lists.has_value());
+    EXPECT_EQ(std::ranges::count(*lists, gained), 1) << "written back byte for byte";
 }

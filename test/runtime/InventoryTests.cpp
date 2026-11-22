@@ -1249,10 +1249,12 @@ TEST_F(InventoryTest, WhatADepositIntoAnAuthoredChestHoldsSurvivesASaveIntoAFres
     const EntityId bag = BagIn(Resolve(Cellar::kChest));
     (void)inventory.Give(bag, Arrows, 9);
     const PersistentEntityId bagId = IdOf(bag);
-    const JsonValue saved = CaptureHeldRecords(Entities(), {}, serializers, context);
+    const std::vector<ScopedHeldRecords> saved = CaptureLevelHeldRecords(
+        Entities(), [&](EntityId) { return ScopeOf(cellar.Zone); }, serializers, context);
+    ASSERT_EQ(saved.size(), 1u);
 
     InventoryWorld fresh;
-    RestoreHeldRecords(fresh.Entities(), saved, serializers, context);
+    RestoreLevelHeldRecords(fresh.Entities(), fresh.ScopeOf(cellar.Zone), saved[0].Records, serializers, context);
     fresh.Import(cellar.Zone, cellar.Package());
 
     const EntityId restored = fresh.Resolve(bagId);

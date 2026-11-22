@@ -1,0 +1,63 @@
+#pragma once
+
+#include <core/identity/Id.h>
+#include <core/json/JsonValue.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+// One zone's named lists, exactly as a save file holds them: docs/gameplay/saves.md, "Levels".
+
+// Self-contained, immutable, shared between the zone store, a save being written and a save just read.
+using EncodedZoneLists = std::shared_ptr<const std::vector<std::byte>>;
+
+struct ZoneStateList
+{
+    std::string Name;
+    std::uint32_t Version = 1;
+    std::vector<std::byte> Payload;
+
+    friend bool operator==(const ZoneStateList&, const ZoneStateList&) = default;
+};
+
+inline constexpr std::string_view kDestroyedZoneList = "destroyed";
+inline constexpr std::string_view kChangedZoneList = "changed";
+inline constexpr std::string_view kHeldZoneList = "held";
+inline constexpr std::string_view kGainedZoneList = "gained";
+// The newest version of each known list this build reads, and the one it writes.
+inline constexpr std::uint32_t kZoneListVersion = 1;
+
+[[nodiscard]] bool IsKnownZoneList(std::string_view name);
+
+[[nodiscard]] EncodedZoneLists EncodeZoneLists(std::span<const ZoneStateList> lists);
+[[nodiscard]] std::optional<std::vector<ZoneStateList>> DecodeZoneLists(std::span<const std::byte> bytes);
+
+[[nodiscard]] std::vector<std::byte> EncodeDestroyedList(std::span<const PersistentEntityId> destroyed);
+[[nodiscard]] std::optional<std::vector<PersistentEntityId>> DecodeDestroyedList(std::span<const std::byte> payload);
+
+struct ZoneListEntity
+{
+    PersistentEntityId Id;
+    JsonValue Value;
+};
+
+// `changed`: each entity's patch. `held`: each record's components.
+[[nodiscard]] std::vector<std::byte> EncodeEntityList(std::span<const ZoneListEntity> entities);
+[[nodiscard]] std::optional<std::vector<ZoneListEntity>> DecodeEntityList(std::span<const std::byte> payload);
+
+struct GainedZoneMember
+{
+    std::string Form;
+    std::vector<std::byte> Payload;
+
+    friend bool operator==(const GainedZoneMember&, const GainedZoneMember&) = default;
+};
+
+[[nodiscard]] std::vector<std::byte> EncodeGainedList(std::span<const GainedZoneMember> members);
+[[nodiscard]] std::optional<std::vector<GainedZoneMember>> DecodeGainedList(std::span<const std::byte> payload);

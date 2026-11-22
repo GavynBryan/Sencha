@@ -8,6 +8,8 @@
 #include <core/serialization/HashedChunkFile.h>
 #include <core/serialization/Serialize.h>
 #include <ecs/World.h>
+#include <gameplay_tags/BaselineGameplayTags.h>
+#include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/CounterVocabulary.h>
 #include <participant/LocalControl.h>
@@ -17,10 +19,13 @@
 #include <save/SavedGame.h>
 #include <save/SavedGames.h>
 #include <world/held/Held.h>
+#include <world/held/HeldRecordIndex.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/ZoneStateLists.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -1117,6 +1122,253 @@ TEST(SavedGames, AWorldWithNoLocalParticipantStillSaves)
     const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
     ASSERT_TRUE(saved.has_value());
     EXPECT_EQ(LocalBodyIn(*saved), nullptr);
+    std::filesystem::remove_all(root);
+}
+#endif
+
+#if defined(TEST_FPS_MODULE_PATH)
+namespace
+{
+    const SavedGameSection* HeldSectionOf(const SavedGame& saved) { return SectionOf(saved, "sencha.held"); }
+
+    std::vector<ZoneListEntity> ZoneEntities(const EncodedZoneLists& lists, std::string_view name)
+    {
+        if (lists == nullptr)
+            return {};
+        for (const ZoneStateList& list : DecodeZoneLists(*lists).value_or(std::vector<ZoneStateList>{}))
+            if (list.Name == name)
+                return DecodeEntityList(list.Payload).value_or(std::vector<ZoneListEntity>{});
+        return {};
+    }
+
+    const DurableLevelState* LevelIn(const SavedGame& saved, const LevelReference& level)
+    {
+        for (const DurableLevelState& state : saved.Levels)
+            if (state.Level == level)
+                return &state;
+        return nullptr;
+    }
+
+    bool HoldsRecord(const World& world, EntityId holder)
+    {
+        const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+        return index != nullptr && !index->RecordsOf(holder).empty();
+    }
+}
+
+TEST(SavedGames, ALevelEntitysGrantedTagAndWhatItHoldsComeBackInAFreshRun)
+{
+    const std::filesystem::path root = RootFor("level_patch_fresh_run");
+    const LevelReference room{ .Kind = LevelKind::Scene, .Name = "levels/room_2" };
+    PersistentEntityId door;
+    PersistentEntityId record;
+    int stage = 0;
+    RunFps(room.Name, 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            const GameplayTagId unsealed = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.unsealed");
+            const EntityId holder = AuthoredOtherThan(world, LocalControlSubjectOf(world));
+            door = world.TryGet<PersistentIdComponent>(holder)->Id;
+            ASSERT_EQ(GrantBaselineTag(world, holder, unsealed), GameplayTagWrite::Added);
+            const EntityId placed = PlaceHeldRecord(world, holder, ArchetypeSignature{});
+            ASSERT_TRUE(placed.IsValid());
+            record = world.TryGet<PersistentIdComponent>(placed)->Id;
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const DurableLevelState* level = LevelIn(*saved, room);
+    ASSERT_NE(level, nullptr) << "the level the player changed is in the file";
+    ASSERT_EQ(level->Zones.size(), 1u);
+    const std::vector<ZoneListEntity> changed = ZoneEntities(level->Zones[0].Lists, kChangedZoneList);
+    ASSERT_EQ(changed.size(), 1u);
+    EXPECT_EQ(changed[0].Id, door);
+    EXPECT_NE(JsonStringify(changed[0].Value).find("test.unsealed"), std::string::npos);
+    const std::vector<ZoneListEntity> held = ZoneEntities(level->Zones[0].Held, kHeldZoneList);
+    ASSERT_EQ(held.size(), 1u) << "what a level entity holds is written under its level and zone";
+    EXPECT_EQ(held[0].Id, record);
+    for (const JsonValue& entry : HeldSectionOf(*saved)->Data.Find("records")->AsArray())
+        EXPECT_NE(entry.Find("id")->AsString(), PersistentEntityIdToString(record)) << "and not with the body's";
+
+    bool unsealed = false;
+    bool holding = false;
+    stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            (void)world.GetResource<GameplayTagRegistry>().RegisterTag("test.unsealed");
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            const PersistentEntityIndex& index = world.GetResource<PersistentEntityIndex>();
+            const EntityId holder = index.TryResolve(door);
+            const GameplayTagId tag = world.GetResource<GameplayTagRegistry>().FindTag("test.unsealed");
+            const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(holder);
+            unsealed = tags != nullptr && tags->HasExact(tag);
+            holding = HoldsRecord(world, holder);
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_TRUE(unsealed) << "the granted tag came back with the level";
+    EXPECT_TRUE(holding) << "the record waited for its holder and found it";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AfterAWriteOnlyTheSlotsNameIsHeldSoARemovedFileDoesNotRestore)
+{
+    const std::filesystem::path root = RootFor("only_names");
+    bool remembers = false;
+    bool holds = true;
+    std::string failure;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            const std::filesystem::path file = SlotFile(root, "default");
+            std::filesystem::remove(file);
+            std::filesystem::remove(BackupOf(file));
+            remembers = saves.Remembers("default");
+            holds = saves.Holds("default");
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.RestoreStatus() == RestoreProgress::Failed)
+        {
+            failure = saves.RestoreFailure();
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the restore of a removed slot did not fail";
+    EXPECT_TRUE(remembers) << "the session still knows it wrote the slot";
+    EXPECT_FALSE(holds) << "nothing of the save is held in memory once it is on disk";
+    EXPECT_NE(failure.find("default"), std::string::npos) << failure;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AChangedListFromANewerBuildFailsTheRestoreBeforeTheLevelChanges)
+{
+    const std::filesystem::path root = RootFor("newer_list");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path file = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(file);
+    ASSERT_TRUE(saved.has_value());
+    ASSERT_FALSE(saved->Levels.empty());
+    const ZoneStateList newer{ std::string(kChangedZoneList), kZoneListVersion + 1, {} };
+    saved->Levels[0].Zones[0].Lists = EncodeZoneLists(std::span(&newer, 1));
+    ASSERT_TRUE(WriteSave(file, *saved));
+
+    std::uint64_t changesBefore = 0;
+    std::uint64_t changesAfter = 0;
+    std::string failure;
+    int stage = 0;
+    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            changesBefore = engine.LevelChanges().Serial();
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.RestoreStatus() == RestoreProgress::Failed)
+        {
+            changesAfter = engine.LevelChanges().Serial();
+            failure = saves.RestoreFailure();
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_EQ(changesAfter, changesBefore) << "the level changed before the restore was refused";
+    EXPECT_NE(failure.find("newer"), std::string::npos) << failure;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AFileWithAThumbnailRestores)
+{
+    const std::filesystem::path root = RootFor("thumbnail");
+    (void)WriteTwoSaves(root);
+    const std::filesystem::path file = SlotFile(root, "default");
+    std::optional<SavedGame> saved = ReadSave(file);
+    ASSERT_TRUE(saved.has_value());
+    saved->Thumbnail = SavedGameChunk{ .Id = MakeFourCC('T', 'H', 'M', 'B'), .Version = 1,
+                                       .Payload = { std::byte{ 1 }, std::byte{ 2 } }, .InPrefix = true };
+    ASSERT_TRUE(WriteSave(file, *saved));
+
+    std::string failure = "unset";
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            failure = engine.Saves().RestoreFailure();
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_TRUE(failure.empty()) << failure;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ASaveNamesWhereItsBodyComesBackAndTheRestoreCarriesIt)
+{
+    const std::filesystem::path root = RootFor("arrival");
+    int stage = 0;
+    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("default", "station_a"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const JsonValue* local = LocalBodyIn(*saved);
+    ASSERT_NE(local, nullptr);
+    ASSERT_NE(local->Find("arrival"), nullptr);
+    EXPECT_EQ(local->Find("arrival")->AsString(), "station_a");
+    EXPECT_NE(local->Find("root"), nullptr) << "until arrivals resolve, the body comes back where it stood";
+
+    std::string carried;
+    stage = 0;
+    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1)
+            if (const RestoredBodies* restored = world.TryGetResource<RestoredBodies>();
+                restored != nullptr && restored->Local.has_value())
+            {
+                carried = restored->Local->Arrival;
+                stage = 2;
+            }
+    });
+    EXPECT_EQ(carried, "station_a");
     std::filesystem::remove_all(root);
 }
 #endif

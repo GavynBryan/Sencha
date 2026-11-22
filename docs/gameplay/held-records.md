@@ -132,22 +132,25 @@ part of how the zone differs from its content, and is kept with it:
 
 - **Detach.** Before a zone's partition is destroyed, `ParkHeldRecords` lists
   each runtime record held by an authored holder there as awaiting that
-  holder's id and moves it to the persistent partition; what it holds follows
-  it. A record the zone authored is not parked: the zone makes it again. A
+  holder's id under the zone's state scope (its level and zone) and moves it to
+  the persistent partition; what it holds follows it. A record the zone authored is not parked: the zone makes it again. A
   holder its zone forgets at detach (`ZoneStateLifetime` until detach) keeps
   nothing.
 - **While away**, a parked record is anchored to nothing, reaching no peer,
   and does no work.
 - **Import.** The holder's identity arriving lists its parked records under it
   again; they settle into its partition and its relevance.
-- **Saves** keep parked records and runtime records of resident authored
-  holders (`docs/gameplay/saves.md`, "Held records").
-- **Level change.** A parked record belongs to its zone's memory, so a level
-  change, which installs new zone state, destroys every record still waiting
-  (`DestroyAwaitingHeldRecords`); a restore brings back the saved ones.
+- **Saves** write parked records and runtime records of resident authored
+  holders in the `held` list of the holder's level and zone
+  (`docs/gameplay/saves.md`, "Held records").
+- **Another level.** The index can set a level's waiting records aside
+  (`HeldRecordIndex::SetAside`): they are in no lookup while another level is
+  loaded, so an id two levels share (a copied level file) never finds the
+  other level's holder, and `Resume` puts them back. A restore sets aside the
+  records of every level but the one it loads.
 
-The zone state store itself is unchanged: a parked record is a live entity, not
-a byte record, so it needs no codec and the save file format is the same.
+A parked record is a live entity, not a byte record; the save writes it under
+its level and zone, so keeping it serialised instead later changes no file.
 
 ## Authoring
 
@@ -172,8 +175,9 @@ world until its holder's entity reaches it.
 
 ## Saves
 
-What a save keeps is a closure from roots: the world, the local participant's
-body and every authored holder, the runtime records listed under them and those
-waiting for a holder, and what those records hold, to the nesting bound.
+What a save keeps is a closure from roots: the world and the local
+participant's body in `sencha.held`, and each authored holder in its zone's
+`held` list; the runtime records listed under them and those waiting for a
+holder, and what those records hold, to the nesting bound.
 Restoring destroys every runtime record first; what content authored stays.
 `docs/gameplay/saves.md`, "Held records".

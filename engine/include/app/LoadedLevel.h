@@ -94,6 +94,9 @@ public:
     // world scene, as an unload would, without unloading.
     void CaptureState();
 
+    // What a loaded world's world scene is captured under; invalid otherwise.
+    [[nodiscard]] ZoneStateScope WorldSceneStateScope() const { return WorldSceneScope; }
+
     // The zone a loaded scene occupies, or the world's focus zone. Invalid
     // with nothing loaded.
     [[nodiscard]] ZoneId PlayZone() const;

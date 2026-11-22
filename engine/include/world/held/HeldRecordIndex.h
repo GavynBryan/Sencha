@@ -4,6 +4,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 #include <ecs/PartitionFollowers.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -36,7 +37,11 @@ public:
     void Untrack(EntityId record);
     void HolderArrived(PersistentEntityId id, EntityId holder);
     void HolderDeparted(EntityId holder);
-    void Await(EntityId record, PersistentEntityId holder);
+    // `scope` is the zone the holder belongs to; none for a record waiting for a body.
+    void Await(EntityId record, PersistentEntityId holder, ZoneStateScope scope = {});
+    // A level's waiting records leave every lookup while another level is loaded.
+    void SetAside(ZoneStateLevelId level);
+    void Resume(ZoneStateLevelId level);
     void NoteChanged(EntityId record);
     void Key(EntityId record, HeldRecordKey key);
     void Unkey(EntityId record, HeldRecordKey key);
@@ -46,6 +51,7 @@ public:
     [[nodiscard]] EntityId FindKeyed(EntityId holder, HeldRecordKey key) const;
     [[nodiscard]] EntityId HolderOf(EntityId record) const;
     [[nodiscard]] PersistentEntityId AwaitedHolderOf(EntityId record) const;
+    [[nodiscard]] ZoneStateScope AwaitingScopeOf(EntityId record) const;
     [[nodiscard]] std::uint32_t Revision(EntityId holder) const;
     [[nodiscard]] int Depth(EntityId entity) const;
     [[nodiscard]] int Height(EntityId entity) const;
@@ -53,6 +59,9 @@ public:
     [[nodiscard]] std::vector<EntityId> AllRecords() const;
     [[nodiscard]] std::vector<EntityId> Holders() const;
     [[nodiscard]] std::vector<EntityId> AwaitingRecords() const;
+    // Set aside, in record order.
+    [[nodiscard]] std::vector<EntityId> SetAsideRecords(ZoneStateLevelId level) const;
+    [[nodiscard]] std::vector<EntityId> SetAsideRecords() const;
     [[nodiscard]] std::size_t Count() const { return Listings.size(); }
 
     [[nodiscard]] std::uint16_t NextPosition(EntityId holder);
@@ -70,6 +79,8 @@ private:
     {
         EntityId Holder;
         PersistentEntityId Awaited;
+        ZoneStateScope Scope;
+        bool SetAside = false;
         std::uint16_t Position = 0;
         std::uint32_t Tracks = 0;
     };
@@ -80,6 +91,7 @@ private:
 
     std::unordered_map<EntityId, std::vector<EntityId>, EntityIdHash> ByHolder;
     std::unordered_map<PersistentEntityId, std::vector<EntityId>> Awaiting;
+    std::unordered_map<ZoneStateLevelId, std::vector<EntityId>> SetAsideByLevel;
     std::unordered_map<EntityId, Listing, EntityIdHash> Listings;
     std::unordered_map<EntityId, std::uint32_t, EntityIdHash> Revisions;
     std::unordered_map<HeldRecordKey, std::vector<EntityId>, HeldRecordKeyHash> ByKey;

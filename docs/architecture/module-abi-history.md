@@ -1453,3 +1453,19 @@ component cooked as bytes is not diffed. The responses serializer writes
 a binding's `enabled` and `consumed` state in its save form and reads
 `consumed` back.
 
+Save format 2. `zone/ZoneStateLists.h` is new: `EncodedZoneLists`,
+`ZoneStateList`, the known list names, `kZoneListVersion` and their codecs.
+`DurableZoneState` holds a zone's encoded lists and its encoded held records
+(`DurableComponentState` is gone), `DurableLevelState` is new, and the store's
+`ExportDurable` and `Install` take every level; the store gains `ForgetLevel`,
+`CarriedLists` and `LevelOf`. `SavedGame` holds `Levels`, an optional
+`Thumbnail` and `Carried` chunks; `SavedGameSummary` gains `Game`;
+`DecodeSavedGameSummary` reads a file's prefix. `kSavedGameFormatVersion` is 2
+and the oldest version read is 2. `HashedChunkFileWriter` gains `HashChunk`.
+`HeldRecordIndex::Await` takes the holder's zone state scope; the index gains
+`SetAside`, `Resume`, `AwaitingScopeOf` and `SetAsideRecords`.
+`CaptureLevelHeldRecords`, `RestoreLevelHeldRecords` and `ScopedHeldRecords`
+are new. `SavedGames::RequestWrite` takes an optional arrival, which
+`RestoredBody::Arrival` carries back, and `SavedGames` gains `WritingArrival`;
+`LoadedLevel` gains `WorldSceneStateScope`.
+

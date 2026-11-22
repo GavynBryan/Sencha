@@ -51,7 +51,7 @@ struct LevelChangeRequest
     // A world's starting zone; the manifest's start zone when absent or unknown.
     std::optional<ZoneId> Focus{};
     // What zones remember as the level loads; none is the level as authored.
-    std::vector<DurableZoneState> ZoneState{};
+    std::vector<DurableLevelState> ZoneState{};
     LevelChangeRuntimeState RuntimeState = LevelChangeRuntimeState::Keep;
 };
 

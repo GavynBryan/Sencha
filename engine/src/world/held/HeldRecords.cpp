@@ -252,7 +252,7 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId part
         {
             if (HasAuthoredPersistentId(world, record))
                 continue;
-            index->Await(record, id);
+            index->Await(record, id, scope);
             (void)world.MoveEntityToPartition(record, PersistentStoragePartition);
         }
     }
@@ -263,7 +263,10 @@ void DestroyAwaitingHeldRecords(World& world)
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
-    for (const EntityId record : index->AwaitingRecords())
+    std::vector<EntityId> records = index->AwaitingRecords();
+    const std::vector<EntityId> aside = index->SetAsideRecords();
+    records.insert(records.end(), aside.begin(), aside.end());
+    for (const EntityId record : records)
         if (world.IsAlive(record))
             world.DestroyEntity(record);
 }

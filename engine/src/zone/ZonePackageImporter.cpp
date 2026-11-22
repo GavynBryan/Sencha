@@ -324,6 +324,28 @@ std::optional<PackageEntity> Patched(const PackageEntity& content, const LevelEn
     return patched;
 }
 
+void ReportCarriedMembers(const ZoneStateStore& store, ZoneStateScope scope, SceneSerializationContext* context)
+{
+    if (context == nullptr)
+        return;
+    for (const ZoneStateList& list : store.CarriedLists(scope))
+    {
+        if (list.Name != kGainedZoneList)
+            continue;
+        const std::optional<std::vector<GainedZoneMember>> members = DecodeGainedList(list.Payload);
+        if (!members.has_value())
+            continue;
+        std::vector<std::string> forms;
+        for (const GainedZoneMember& member : *members)
+            if (std::ranges::find(forms, member.Form) == forms.end())
+                forms.push_back(member.Form);
+        for (const std::string& form : forms)
+            context->Logging->GetLogger<ZonePackageImport>().Warn(
+                "zone state: what the zone gained in the form '{}' is kept and not made; this build does not make it",
+                form);
+    }
+}
+
 std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, const LevelEntityPatches& patches,
                                           std::vector<ComponentTypeId>& bytesReported)
 {
@@ -410,6 +432,8 @@ bool ImportPackageIntoPartitionImpl(
     ZoneStateStore* zoneState =
         stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr;
     const LevelEntityPatches patches = KeptLevelState(world, zoneState, stateScope, serializers, sceneContext);
+    if (zoneState != nullptr)
+        ReportCarriedMembers(*zoneState, stateScope, sceneContext);
 
     // Which entities are parented has to be known before any row is built, so
     // Parent joins the initial signature instead of costing a later archetype

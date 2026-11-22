@@ -75,6 +75,8 @@ namespace
                                  { "patch", overlay.RootPatch } };
         if (overlay.RootId.IsValid())
             local.emplace_back("id", JsonValue(PersistentEntityIdToString(overlay.RootId)));
+        if (const std::string& arrival = engine.Saves().WritingArrival(); !arrival.empty())
+            local.emplace_back("arrival", JsonValue(arrival));
         return JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } });
     }
 
@@ -142,6 +144,8 @@ namespace
             restored.Overlay.RootPatch = *patch;
         if (const JsonValue* id = local->Find("id"); id != nullptr && id->IsString())
             restored.Overlay.RootId = PersistentEntityIdFromString(id->AsString()).value_or(PersistentEntityId{});
+        if (const JsonValue* arrival = local->Find("arrival"); arrival != nullptr && arrival->IsString())
+            restored.Arrival = arrival->AsString();
         if (existing != nullptr)
             existing->Local = std::move(restored);
         else

@@ -13,6 +13,7 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateLists.h>
 #include <zone/ZoneStateStore.h>
 
 #include "SceneSpawnHarness.h"
@@ -22,7 +23,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <initializer_list>
 #include <span>
 #include <vector>
@@ -77,6 +80,15 @@ ZoneStateScope ScopeOf(ZoneStateStore& store, ZoneId zone)
 ZoneStateScope ScopeOf(RuntimeWorld& runtime, ZoneId zone)
 {
     return ScopeOf(runtime.Entities().GetResource<ZoneStateStore>(), zone);
+}
+
+std::vector<PersistentEntityId> DestroyedIn(const DurableZoneState& zone)
+{
+    const std::optional<std::vector<ZoneStateList>> lists = DecodeZoneLists(*zone.Lists);
+    for (const ZoneStateList& list : lists.value_or(std::vector<ZoneStateList>{}))
+        if (list.Name == kDestroyedZoneList)
+            return DecodeDestroyedList(list.Payload).value_or(std::vector<PersistentEntityId>{});
+    return {};
 }
 
 std::vector<AuthoredEntityState> Authored(std::initializer_list<std::uint64_t> ids,
@@ -211,19 +223,53 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
     store.RecordCapture(ScopeOf(store, ZoneId{ 9 }), std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
     store.RecordCapture(ScopeOf(store, ZoneId{ 3 }), {}, ZoneCapture::Live);
 
-    const std::vector<DurableZoneState> durable = store.ExportDurable(kGarden);
-    ASSERT_EQ(durable.size(), 2u);
-    EXPECT_EQ(durable[0].Zone, ZoneId{ 3 });
-    EXPECT_EQ(durable[1].Zone, ZoneId{ 9 });
-    EXPECT_EQ(durable[1].Destroyed, (std::vector{ PersistentEntityId{ 0x10 }, PersistentEntityId{ 0x30 } }))
+    const std::vector<DurableLevelState> durable = store.ExportDurable();
+    ASSERT_EQ(durable.size(), 1u);
+    ASSERT_EQ(durable[0].Zones.size(), 2u);
+    EXPECT_EQ(durable[0].Level, kGarden);
+    EXPECT_EQ(durable[0].Zones[0].Zone, ZoneId{ 3 });
+    EXPECT_EQ(durable[0].Zones[1].Zone, ZoneId{ 9 });
+    EXPECT_EQ(DestroyedIn(durable[0].Zones[1]), (std::vector{ PersistentEntityId{ 0x10 }, PersistentEntityId{ 0x30 } }))
         << "0x40 is forgotten at restore and 0x20 lives";
 
     ZoneStateStore restored;
     restored.RecordAuthoredSet(ScopeOf(restored, ZoneId{ 5 }), Authored({ 0x60 }));
     restored.RecordCapture(ScopeOf(restored, ZoneId{ 5 }), {}, ZoneCapture::Detach);
-    restored.Install(kGarden, durable);
-    EXPECT_EQ(restored.ExportDurable(kGarden), durable);
+    restored.Install(durable);
+    const std::vector<DurableLevelState> again = restored.ExportDurable();
+    ASSERT_EQ(again.size(), 1u);
+    ASSERT_EQ(again[0].Zones.size(), 2u);
+    EXPECT_EQ(again[0].Zones[1].Lists, durable[0].Zones[1].Lists) << "an untouched zone is the blob it was installed as";
     EXPECT_FALSE(restored.IsRecordedDestroyed(ScopeOf(restored, ZoneId{ 5 }), PersistentEntityId{ 0x60 })) << "install replaces";
+    EXPECT_TRUE(restored.IsRecordedDestroyed(ScopeOf(restored, ZoneId{ 9 }), PersistentEntityId{ 0x10 }));
+}
+
+TEST(ZoneStateStore, AnUnchangedResidentZoneIsTheSameBlobInTwoExports)
+{
+    ZoneStateStore store;
+    const ZoneStateScope scope = ScopeOf(store, ZoneId{ 9 });
+    store.RecordAuthoredSet(scope, Authored({ 0x10, 0x20 }));
+    store.RecordCapture(scope, std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
+    const EncodedZoneLists first = store.ExportDurable()[0].Zones[0].Lists;
+    store.RecordCapture(scope, std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
+    EXPECT_EQ(store.ExportDurable()[0].Zones[0].Lists, first);
+    store.RecordCapture(scope, {}, ZoneCapture::Live);
+    EXPECT_NE(store.ExportDurable()[0].Zones[0].Lists, first) << "a change makes a new blob";
+}
+
+TEST(ZoneStateStore, ForgettingALevelLeavesTheOthers)
+{
+    ZoneStateStore store;
+    const ZoneStateScope garden = ScopeOf(store, ZoneId{ 9 });
+    const ZoneStateScope cellar = store.Scope(LevelReference{ .Kind = LevelKind::Scene, .Name = "levels/cellar" }, kSceneLevelZone);
+    for (const ZoneStateScope scope : { garden, cellar })
+    {
+        store.RecordAuthoredSet(scope, Authored({ 0x10 }));
+        store.RecordCapture(scope, {}, ZoneCapture::Detach);
+    }
+    store.ForgetLevel(kGarden);
+    EXPECT_FALSE(store.IsRecordedDestroyed(garden, PersistentEntityId{ 0x10 }));
+    EXPECT_TRUE(store.IsRecordedDestroyed(cellar, PersistentEntityId{ 0x10 }));
 }
 
 TEST(ZoneStateStore, ACaptureDropsPatchesOfEntitiesTheZoneNoLongerHas)
@@ -299,9 +345,10 @@ TEST(ZoneStateMemory, AChildTakesItsParentsLifetimeAndIsForgottenAtRestore)
 
     ZoneStateStore& store = runtime.Entities().GetResource<ZoneStateStore>();
     EXPECT_TRUE(store.IsRecordedDestroyed(ScopeOf(store, zone), weapon)) << "gone for the session";
-    const std::vector<DurableZoneState> durable = store.ExportDurable(kGarden);
+    const std::vector<DurableLevelState> durable = store.ExportDurable();
     ASSERT_EQ(durable.size(), 1u);
-    EXPECT_EQ(durable[0].Destroyed, std::vector{ gate }) << "only the gate is never forgotten";
+    ASSERT_EQ(durable[0].Zones.size(), 1u);
+    EXPECT_EQ(DestroyedIn(durable[0].Zones[0]), std::vector{ gate }) << "only the gate is never forgotten";
 }
 
 TEST(ZoneStateMemory, DestroyedEntityStaysDestroyedAcrossRestream)
@@ -343,6 +390,34 @@ TEST(ZoneStateMemory, DestroyedEntityStaysDestroyedAcrossRestream)
         << "a consumed entity must not be resurrected by a restream";
     EXPECT_TRUE(index->TryResolve(door).IsValid());
     EXPECT_EQ(AliveCount(runtime.Entities()), 1u);
+}
+
+TEST(ZoneStateMemory, AListThisBuildDoesNotReadSurvivesTheZonesRoundTripByteForByte)
+{
+    const WorldComponentSchema schema = IdentityOnlySchema();
+    RuntimeWorld runtime(schema);
+    const ZoneId zone{ 45 };
+    const ZoneStateList occupied{ "occupied", 3, { std::byte{ 4 }, std::byte{ 2 } } };
+    ZoneStateStore& store = runtime.Entities().GetResource<ZoneStateStore>();
+    store.Install(std::vector{ DurableLevelState{ kGarden, { DurableZoneState{ zone, EncodeZoneLists(std::span(&occupied, 1)), nullptr } } } });
+
+    const std::array ids{ PersistentEntityId{ 0x700 }, PersistentEntityId{ 0x701 } };
+    ZoneImportError error;
+    ASSERT_TRUE(ImportZonePackage(runtime, schema, zone, MakeIdentifiedPackage(ids), LogicOnly(), &error,
+                                  ScopeOf(runtime, zone)))
+        << error.Message;
+    FinishResidency(runtime);
+    runtime.Entities().DestroyEntity(runtime.Entities().GetResource<PersistentEntityIndex>().TryResolve(ids[0]));
+    ASSERT_TRUE(runtime.RequestDetach(zone));
+    runtime.FlushLifecycleRequests();
+    FinishResidency(runtime);
+
+    const std::vector<DurableLevelState> durable = store.ExportDurable();
+    ASSERT_EQ(durable.size(), 1u);
+    const std::optional<std::vector<ZoneStateList>> lists = DecodeZoneLists(*durable[0].Zones[0].Lists);
+    ASSERT_TRUE(lists.has_value());
+    EXPECT_EQ(std::ranges::count(*lists, occupied), 1) << "carried as read";
+    EXPECT_EQ(DestroyedIn(durable[0].Zones[0]), std::vector{ ids[0] });
 }
 
 TEST(ZoneStateMemory, UntouchedZoneRestreamsVerbatim)

@@ -11,6 +11,8 @@ struct RestoredBody
 {
     Transform3f Root = Transform3f::Identity();
     SceneSpawnOverlay Overlay;
+    // The arrival the save named, carried; the body stands at Root until a stage resolves it.
+    std::string Arrival;
 };
 
 // World resource: the local participant's next body, taken by its next spawn.

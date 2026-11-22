@@ -10,7 +10,8 @@ what a save keeps is decided per entity by its zone state lifetime
 
 | Piece | Where | What it does |
 |---|---|---|
-| `SavedGame` | `save/SavedGame.h` | the plain data: summary, zones, sections |
+| `SavedGame` | `save/SavedGame.h` | the plain data: summary, levels, sections |
+| `EncodedZoneLists` | `zone/ZoneStateLists.h` | one zone's named lists exactly as the file holds them |
 | `EncodeSavedGame` / `DecodeSavedGame` | same | bytes and back, no file access |
 | `SaveSlotFiles` | `save/SaveSlotFiles.h` | where a slot's bytes live, and its backup |
 | `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections |
@@ -19,13 +20,18 @@ what a save keeps is decided per entity by its zone state lifetime
 
 ## What a save holds
 
-- **Summary:** the level (`LevelReference`), a world's focus zone, and when it
-  was written.
-- **Zones:** for each zone, and for a world's world scene, the authored entities
-  that are gone and never forgotten, and the component state their owners
-  registered (`ZoneComponentMemory`), in id order. A capture drops component
-  state recorded for an entity the zone did not author, living or destroyed,
-  since no authored entity will ever claim it.
+- **Summary:** the level (`LevelReference`), a world's focus zone, when it was
+  written, and `game`: a JSON object the game supplies and the engine never
+  reads (an area name, a play time, a display name for the slot), absent when
+  the game supplies none.
+- **Levels:** for each level the game has changed this session, per zone (and
+  per world scene, under `kWorldSceneZone`), a set of named lists:
+  `destroyed`, the authored entities gone for good; `changed`, the patches of
+  authored entities changed for good ("Level entities"); `held`, the runtime
+  records whose holder is an entity of that zone, resident or waiting ("Held
+  records"). Only what is never forgotten is written; `at_restore` state stays
+  in the session and `at_detach` state goes when its zone unloads. A list this
+  build does not read is carried and written back.
 - **Sections:** named data the engine or a game registers
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
   restore function. Capture is given a `const World&`: it reads, and gives
@@ -77,8 +83,8 @@ is not overrides `Persistence()`.
 
 The declaration is read in three places:
 
-- **A body** (an entity content made) keeps a patch of its `Saved` components
-  only.
+- **A body** and **a level entity** (entities content made) keep a patch of
+  their `Saved` components only.
 - **A held record** (an entity nothing in content made) keeps every component
   it carries that has a serializer, except `Identity` ones, whose values
   travel beside it.
@@ -226,14 +232,35 @@ part of the patch and come back as requested grants with their source, so
 `ability.revoke` still takes them; tags given with
 `tags.grant` are the container's baseline and come back; lasting effects do not.
 
+## Level entities
+
+A level entity is kept the way a body is, as an entity patch against what the
+level authored, when the game asks (`SavedGames::KeepLevelState()`, which the
+fps template and Loss Function call): its baseline is the cooked records of its
+`Saved` components, recorded at import, and the patch is taken whenever its zone
+is captured, at detach and for a save, on the authority only
+(`docs/plans/runtime-stable-identity.md`, "Zone state memory"). An entity with
+no `ZoneStateLifetime` keeps its patch for good, as it keeps its destruction: a
+door's granted tag, a guard's attribute bases, a run-time ability grant, a spent
+response. A patch that no longer fits a retuned level does not refuse the zone,
+which has to load: what a retune set aside is a warning and the scene decides; a
+member that no longer fits follows content, is logged as an error naming the
+entity and component, and leaves the store. A game that does not keep level
+state keeps destroyed sets only.
+
 ## Held records
 
-`sencha.held` (`save/HeldRecordSaves.h`) keeps what is saved beyond bodies: a
-closure from roots. The roots are the world, the local participant's body and
-every authored holder (a placed chest); the members are the records made at run
-time that the held-record index lists under a root or as waiting for a holder
-whose zone is away, then what those records hold, to the nesting bound
-(`docs/gameplay/held-records.md`). Counters and inventory are kept this way. A
+`sencha.held` (`save/HeldRecordSaves.h`) keeps what is saved beyond bodies and
+levels: a closure from roots. The roots are the world and the local
+participant's body; the members are the records made at run time that the
+held-record index lists under a root or as waiting for a holder that is no
+level entity, then what those records hold, to the nesting bound
+(`docs/gameplay/held-records.md`). What a level entity holds (a placed chest's
+contents), resident or waiting for its zone, is the same closure from that
+holder, written in the `held` list of the holder's level and zone
+(`CaptureLevelHeldRecords`); on restore each record waits for its holder under
+that level and zone, and a record of a level other than the restored one is set
+aside until that level is entered. Counters and inventory are kept this way. A
 record content authored is not saved, since its zone makes it again; a record
 that stopped being what content authored took a runtime id when it changed.
 
@@ -269,10 +296,18 @@ structural change a write makes, which gives a record held since the frame's
 last settle its id and names its holder, and destroys the records of a holder
 that went. Every resident zone and the world scene are captured as an unload
 would capture them (`LoadedLevel::CaptureState`) and the store's durable part
-is exported. Then the sections are captured, reading only: a write changes no
-entity, no archetype and not the id mint beyond what the settle does. The result is kept in memory for the
-session, then encoded and written on the async lane. `WriteStatus()` moves
-from `Pending` through `Working` to `Done` or `Failed`.
+is exported, which copies the encoded blob of every zone it holds rather than
+the zones' contents ("The file"). Then the sections are captured, reading only:
+a write changes no entity, no archetype and not the id mint beyond what the
+settle does. The result is encoded and written on the async lane, and held in
+memory only until it is on disk. `WriteStatus()` moves from `Pending` through
+`Working` to `Done` or `Failed`.
+
+`RequestWrite(slot, arrival)` and `save.write`'s optional `arrival` name where
+the saved body comes back; the body's record holds the name beside its
+transform. Nothing resolves it yet: the body comes back where it stood, and the
+name is read back and carried (`RestoredBody::Arrival`). Resolving it at the
+level's landmark of that name lands with the level-change stage.
 
 A write captures only a level that stands whole: resident, with no level
 change under way or one that has given every participant its body back. A
@@ -301,9 +336,12 @@ and is logged.
 
 ## Restoring
 
-`RequestRestore(slot)`, `save.restore`, or the console command. A save this
-session wrote is restored from memory, so a write that failed on disk never
-sends the player back to an older save; otherwise the slot is read and decoded
+`RequestRestore(slot)`, `save.restore`, or the console command. A save whose
+disk write is in flight or failed is restored from memory, so a failed write
+never sends the player back to an older file; it is the one save `SavedGames`
+holds, and a successful write releases it. With no saves root it is the last
+save written, which is all a session without files keeps. Otherwise the slot is
+read and decoded
 on the async lane, falling back to the backup when the file is missing or
 corrupt; `RestoredFromBackup()` then says so and the reason the file did not
 read is logged. `Holds(slot)` answers with the same reader, so it is true when
@@ -347,29 +385,65 @@ sets it to the platform's data directory (`UserDataDirectory()`, under
 `sencha`), `--saves <dir|none>` overrides it, and a headless host, a tool or a
 test leaves it empty, which keeps saves in memory only.
 
-The bytes are a core `BinaryHeader` (`SSAV`, format 1), versioned chunks and a
-final content hash (`core/serialization/HashedChunkFile.h`, shared with the
-navigation file):
+The bytes are a core `BinaryHeader` (`SSAV`, format 2), versioned chunks in a
+stated order, and a final content hash (`core/serialization/HashedChunkFile.h`,
+shared with the navigation file):
 
 | Chunk | Version | Payload |
 |---|---|---|
-| `SUMM` | 1 | JSON: `level {kind, name}`, `focus`, `saved_at` |
-| `ZONE` | 1 | binary: zones, each with destroyed ids and component records |
+| `SUMM` | 1 | JSON: `level {kind, name}`, `focus`, `saved_at`, `game`; always first |
+| `THMB` | 1 | reserved for a thumbnail (width, height, encoding name, bytes); optional |
+| `HEAD` | 1 | 64-bit hash of every byte before it |
+| `LVLS` | 1 | binary: levels, each a record of zones, each a record of named lists |
 | `SECT` | 1 | JSON: `[{name, version, data}]` |
 | `HASH` | 1 | 64-bit hash of everything before it |
 
-A reader skips a chunk it does not know and refuses any file whose hash
-disagrees. A file whose format version is newer, or that holds a newer version
-of a chunk this build reads, is refused as written by a newer build
+The order is part of the format: a known chunk after one it should precede, a
+first chunk other than `SUMM`, or a missing `HEAD` refuses the file. A reader
+may stop after `HEAD`: `DecodeSavedGameSummary` reads the summary from the
+file's prefix and checks it against `HEAD`, so a listing never reads the
+levels; `HASH` still decides whether a file restores. This build writes no
+`THMB` of its own and writes back one it read. A chunk this build does not know
+is carried as read and written back where it was, before `HEAD` or after
+`SECT`, and a restore carries it into the next save, as an unclaimed section is.
+
+`LVLS` is a count of levels, then each level as a length-prefixed record (its
+kind, its name, a count of zones), each zone a length-prefixed record (its id,
+a count of lists), each list a name, a list version and a length-prefixed
+payload. No record refers to bytes outside itself, so an unchanged zone's
+bytes are copied from one save into the next without decoding: the zone store
+holds a zone that is not loaded as that encoded blob (`EncodedZoneLists`) and
+parses it only when the zone imports, and a write copies the pointer. A zone
+holding `at_restore` state stays parsed while it is away, since that state is
+not in the blob. The known lists, at version 1:
+
+| List | Payload |
+|---|---|
+| `destroyed` | count, then each id |
+| `changed` | count, then each id and its patch as JSON text, members in key order |
+| `held` | count, then each record's id and its components as JSON text |
+| `gained` | count, then each member as a length, a form name and a payload |
+
+A list whose name this build does not know is kept as bytes and written back.
+A known list at a newer version than this build reads makes the file one a
+newer build wrote: the restore is refused with that reason before anything
+changes, as a newer known chunk is. A `gained` member whose form this build
+does not make (none yet) is kept as bytes, made into nothing, and logged when
+its zone imports.
+
+A file whose format version is newer, or that holds a newer version of a chunk
+or a list this build reads, is refused as written by a newer build
 (`DecodedSavedGame::Newer`): a restore of it fails with that reason rather than
 falling back to an older backup, and the next write keeps it as the backup
-rather than discarding it as corrupt. `test/fixtures/saves/example.v1.ssav` is format 1, checked in, and
-must keep reading.
+rather than discarding it as corrupt. A format 1 file is refused by its version.
+`test/fixtures/saves/example.v2.ssav` is format 2, checked in, holds a `game`
+member, an unknown chunk, an unknown list and a `gained` member of an unknown
+form, and must keep reading; the encoder must write exactly it.
 
 ## Not yet
 
 Recorded in `docs/deferred.md`: a body's children and other participants'
 bodies and what they hold, records held by runtime entities other than the
-local body (a dropped item's pickup, a spawned NPC), changed fields of authored
-entities beyond what a component registers, and restoring inside a network
-session.
+local body (a dropped item's pickup, a spawned NPC), a level entity's
+placement, change tracking for capture, waiting records serialised instead of
+kept alive, and restoring inside a network session.

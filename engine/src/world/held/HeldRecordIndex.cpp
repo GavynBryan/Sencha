@@ -1,6 +1,7 @@
 #include <world/held/HeldRecordIndex.h>
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <utility>
 
@@ -12,6 +13,8 @@ void HeldRecordIndex::Track(EntityId record, EntityId holder, PersistentEntityId
         Remove(record, listing);
     listing.Holder = awaited.IsValid() ? EntityId{} : holder;
     listing.Awaited = awaited;
+    listing.Scope = {};
+    listing.SetAside = false;
     listing.Position = position;
     ++listing.Tracks;
     if (awaited.IsValid())
@@ -46,6 +49,7 @@ void HeldRecordIndex::HolderArrived(PersistentEntityId id, EntityId holder)
         Listing& listing = Listings.at(record);
         listing.Holder = holder;
         listing.Awaited = {};
+        listing.Scope = {};
         Insert(records, record, listing.Position);
         Unsettled.push_back(record);
     }
@@ -58,17 +62,57 @@ void HeldRecordIndex::HolderDeparted(EntityId holder)
         Departed.push_back(holder);
 }
 
-void HeldRecordIndex::Await(EntityId record, PersistentEntityId holder)
+void HeldRecordIndex::Await(EntityId record, PersistentEntityId holder, ZoneStateScope scope)
 {
     const auto found = Listings.find(record);
-    if (found == Listings.end() || !holder.IsValid() || found->second.Awaited == holder)
+    if (found == Listings.end() || !holder.IsValid()
+        || (found->second.Awaited == holder && found->second.Scope == scope && !found->second.SetAside))
         return;
     Listing& listing = found->second;
     Remove(record, listing);
     listing.Holder = {};
     listing.Awaited = holder;
+    listing.Scope = scope;
+    listing.SetAside = false;
     Insert(Awaiting[holder], record, listing.Position);
     Unsettled.push_back(record);
+}
+
+void HeldRecordIndex::SetAside(ZoneStateLevelId level)
+{
+    if (!level.IsValid())
+        return;
+    std::vector<EntityId>& aside = SetAsideByLevel[level];
+    for (auto it = Awaiting.begin(); it != Awaiting.end();)
+    {
+        std::erase_if(it->second, [&](EntityId record) {
+            Listing& listing = Listings.at(record);
+            if (listing.Scope.Level != level)
+                return false;
+            listing.SetAside = true;
+            aside.push_back(record);
+            return true;
+        });
+        it = it->second.empty() ? Awaiting.erase(it) : std::next(it);
+    }
+    std::ranges::sort(aside);
+    if (aside.empty())
+        SetAsideByLevel.erase(level);
+}
+
+void HeldRecordIndex::Resume(ZoneStateLevelId level)
+{
+    const auto found = SetAsideByLevel.find(level);
+    if (found == SetAsideByLevel.end())
+        return;
+    const std::vector<EntityId> resumed = std::move(found->second);
+    SetAsideByLevel.erase(found);
+    for (const EntityId record : resumed)
+    {
+        Listing& listing = Listings.at(record);
+        listing.SetAside = false;
+        Insert(Awaiting[listing.Awaited], record, listing.Position);
+    }
 }
 
 void HeldRecordIndex::NoteChanged(EntityId record)
@@ -124,6 +168,27 @@ PersistentEntityId HeldRecordIndex::AwaitedHolderOf(EntityId record) const
 {
     const auto found = Listings.find(record);
     return found != Listings.end() ? found->second.Awaited : PersistentEntityId{};
+}
+
+ZoneStateScope HeldRecordIndex::AwaitingScopeOf(EntityId record) const
+{
+    const auto found = Listings.find(record);
+    return found != Listings.end() && found->second.Awaited.IsValid() ? found->second.Scope : ZoneStateScope{};
+}
+
+std::vector<EntityId> HeldRecordIndex::SetAsideRecords(ZoneStateLevelId level) const
+{
+    const auto found = SetAsideByLevel.find(level);
+    return found != SetAsideByLevel.end() ? found->second : std::vector<EntityId>{};
+}
+
+std::vector<EntityId> HeldRecordIndex::SetAsideRecords() const
+{
+    std::vector<EntityId> records;
+    for (const auto& [level, aside] : SetAsideByLevel)
+        records.insert(records.end(), aside.begin(), aside.end());
+    std::ranges::sort(records);
+    return records;
 }
 
 std::uint32_t HeldRecordIndex::Revision(EntityId holder) const
@@ -270,6 +335,16 @@ void HeldRecordIndex::Insert(std::vector<EntityId>& records, EntityId record, st
 
 void HeldRecordIndex::Remove(EntityId record, const Listing& listing)
 {
+    if (listing.SetAside)
+    {
+        if (const auto found = SetAsideByLevel.find(listing.Scope.Level); found != SetAsideByLevel.end())
+        {
+            std::erase(found->second, record);
+            if (found->second.empty())
+                SetAsideByLevel.erase(found);
+        }
+        return;
+    }
     if (listing.Awaited.IsValid())
     {
         if (const auto found = Awaiting.find(listing.Awaited); found != Awaiting.end())
