@@ -223,6 +223,20 @@ public:
         return archive.Ok();
     }
 
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        if (!archive.IsText())
+        {
+            archive.MarkInvalidField(kGrants);
+            return false;
+        }
+        archive.BeginObject(std::string_view{});
+        archive.BeginArray(kGrants, 0);
+        archive.End();
+        archive.End();
+        return archive.Ok();
+    }
+
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                        SceneSerializationContext& context) override
     {

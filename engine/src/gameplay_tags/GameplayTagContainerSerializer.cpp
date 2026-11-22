@@ -57,6 +57,12 @@ public:
             && WriteGameplayTags(archive, *tags, *tagRegistry);
     }
 
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        static const GameplayTagRegistry kNoTags;
+        return WriteGameplayTags(archive, GameplayTagContainer{}, kNoTags);
+    }
+
     bool LoadIntoWorld(
         IReadArchive& archive,
         EntityId entity,

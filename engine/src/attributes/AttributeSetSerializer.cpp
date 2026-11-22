@@ -57,6 +57,12 @@ public:
             && WriteAttributes(archive, *set, *attributes);
     }
 
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        static const AttributeRegistry kNoAttributes;
+        return WriteAttributes(archive, AttributeSet{}, kNoAttributes);
+    }
+
     bool LoadIntoWorld(
         IReadArchive& archive,
         EntityId entity,

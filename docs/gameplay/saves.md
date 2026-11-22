@@ -133,10 +133,17 @@ The rules every caller gets:
   that differs writes only the difference, which a restore composes over the
   default. A generated serializer has a default record; it is written with no
   World, asset system or package member, so capture and a restore on a worker
-  agree. A tag component has none (its presence is its value), and a
-  hand-written serializer has none until it overrides `SaveDefault`; such a
-  component is written whole, as an `Authored` component content did not
-  author always is.
+  agree. A hand-written serializer writes one by overriding `SaveDefault`,
+  and does so only where a component at its default holds nothing an absent
+  one does not: `GameplayTags` (no tags), `Attributes` (no attributes),
+  `AbilityGrants` (no grants) and `responses` (no bindings). A component
+  whose default is not a value of its own has none: a tag component (its
+  presence is its value), `Counter` (its name is required),
+  `EquipmentState` (its layout is required), `ItemEntry` (its item is
+  required), and `ItemContainer` and `ItemPickup` (a container or a bare
+  pickup at its defaults is still one, and writing nothing would lose it on
+  restore). Such a component is written whole, as an `Authored` component
+  content did not author always is.
 - **A component content holds as runtime bytes** has no record to diff. In
   scope, it is written whole while the entity carries it and `null` once it no
   longer does, so a removal at run time stays removed; a restore sets the

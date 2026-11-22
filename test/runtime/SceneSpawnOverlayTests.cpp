@@ -1,3 +1,11 @@
+#include <abilities/AbilityGrantsSerializer.h>
+#include <abilities/AbilityKit.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
+#include <attributes/AttributeSetSerializer.h>
+#include <controller/LookOrientation.h>
+#include <core/json/JsonEquals.h>
+#include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
@@ -7,9 +15,15 @@
 #include <core/serialization/JsonArchive.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
+#include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagContainerSerializer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryComponents.h>
+#include <inventory/InventorySerializers.h>
 #include <logic/Counter.h>
 #include <logic/CounterSerializer.h>
+#include <logic/Responses.h>
+#include <logic/ResponsesSerializer.h>
 #include <movement/CharacterMovementSerializer.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
@@ -371,6 +385,43 @@ namespace
             return component != nullptr && component->SerializedJson ? JsonStringify(*component->SerializedJson) : "";
         }
 
+        EntityId BodyGaining(IComponentSerializer& serializer, const JsonValue& record)
+        {
+            const EntityId body = Entities.CreateEntity();
+            Entities.AddComponent<OverlayVitals>(body, OverlayVitals{});
+            JsonReadArchive archive(record);
+            EXPECT_TRUE(serializer.LoadIntoWorld(archive, body, Entities, Context)) << JsonStringify(record);
+            return body;
+        }
+
+        void ExpectGainKeptAsItsDifferenceFromItsDefault(std::unique_ptr<IComponentSerializer> made,
+                                                         std::string_view changed, std::string_view patch)
+        {
+            IComponentSerializer& serializer = *made;
+            ASSERT_EQ(Serializers.Register(std::move(made)), ComponentSerializerRegistry::RegisterResult::Added);
+            JsonWriteArchive defaults;
+            ASSERT_TRUE(serializer.SaveDefault(defaults)) << serializer.JsonKey() << " writes no default record";
+
+            const EntityId idle = BodyGaining(serializer, defaults.TakeValue());
+            const SceneSpawnOverlay untouched = CaptureSpawnOverlay(Entities, idle, Prefab(), Serializers, Context);
+            EXPECT_TRUE(untouched.Empty()) << "a gained component at its default writes nothing: "
+                                           << JsonStringify(untouched.RootPatch);
+
+            const EntityId changedBody = BodyGaining(serializer, *JsonParse(changed));
+            const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, changedBody, Prefab(), Serializers, Context);
+            EXPECT_EQ(JsonStringify(overlay.RootPatch), patch);
+
+            EntityBuildPackage restored = Prefab();
+            std::string error;
+            ASSERT_TRUE(ApplySpawnOverlay(restored, overlay, Serializers, error, Retuned)) << error;
+            JsonWriteArchive live;
+            ASSERT_TRUE(serializer.Save(live, changedBody, Entities, Context));
+            const JsonValue held = live.TakeValue();
+            EXPECT_TRUE(JsonEquals(*JsonParse(RootComponent(restored, serializer.TypeId())), held))
+                << "composed over the default, the patch gives back what the body held: "
+                << RootComponent(restored, serializer.TypeId()) << " against " << JsonStringify(held);
+        }
+
         LoggingProvider Logging;
         SceneSerializationContext Context;
         std::vector<std::string> Retuned;
@@ -614,6 +665,61 @@ TEST_F(SceneSpawnOverlayTest, ASavedComponentThePrefabLacksIsKeptAsItsDifference
     ASSERT_TRUE(ApplySpawnOverlay(restored, overlay, Serializers, error, Retuned)) << error;
     EXPECT_EQ(RootComponent(restored, ResolveComponentTypeId<OverlayMark>()), R"({"level":0,"tint":4})")
         << "composed over the default";
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedTagContainerIsKeptAsItsDifferenceFromNoTags)
+{
+    Entities.RegisterComponent<GameplayTagContainer>();
+    (void)Entities.AddResource<GameplayTagRegistry>().RegisterTag("door.unsealed");
+    ExpectGainKeptAsItsDifferenceFromItsDefault(MakeGameplayTagContainerSerializer(),
+                                                R"({"tags":[{"name":"door.unsealed","stacks":1}]})",
+                                                R"({"GameplayTags":{"tags":{"door.unsealed":{"name":"door.unsealed","stacks":1}}}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedAttributeSetIsKeptAsItsDifferenceFromNoAttributes)
+{
+    Entities.RegisterComponent<AttributeSet>();
+    (void)Entities.AddResource<AttributeRegistry>().RegisterAttribute("Health");
+    ExpectGainKeptAsItsDifferenceFromItsDefault(MakeAttributeSetSerializer(),
+                                                R"({"attributes":[{"name":"Health","base":40}]})",
+                                                R"({"Attributes":{"attributes":{"Health":{"name":"Health","base":40}}}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedGrantListIsKeptAsItsDifferenceFromNoGrants)
+{
+    RegisterAbilityKit(Entities);
+    ExpectGainKeptAsItsDifferenceFromItsDefault(
+        MakeAbilityGrantsSerializer(), R"({"grants":[{"key":"g_plain","ability":"asset://abilities/primary.sdata"}]})",
+        R"({"AbilityGrants":{"grants":{"g_plain":{"key":"g_plain","ability":"asset://abilities/primary.sdata"}}}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedResponsesIsKeptAsItsDifferenceFromNoBindings)
+{
+    Entities.RegisterComponent<Responses>();
+    ExpectGainKeptAsItsDifferenceFromItsDefault(MakeResponsesSerializer(),
+                                                R"({"bindings":{"walk":{"on":"sensor.stay","sequence":{"commands":[]}}}})",
+                                                R"({"responses":{"bindings":{"walk":{"on":"sensor.stay","sequence":{"commands":[]}}}}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedLookOrientationIsKeptAsItsDifferenceFromItsDefault)
+{
+    Entities.RegisterComponent<LookOrientation>();
+    ExpectGainKeptAsItsDifferenceFromItsDefault(std::make_unique<ComponentSerializer<LookOrientation>>(),
+                                                R"({"yaw":1.5})", R"({"LookOrientation":{"yaw":1.5}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, AGainedContainerAtItsDefaultIsStillKeptWhole)
+{
+    Entities.RegisterComponent<ItemContainer>();
+    std::unique_ptr<IComponentSerializer> made = MakeItemContainerSerializer();
+    IComponentSerializer& serializer = *made;
+    ASSERT_EQ(Serializers.Register(std::move(made)), ComponentSerializerRegistry::RegisterResult::Added);
+    JsonWriteArchive defaults;
+    EXPECT_FALSE(serializer.SaveDefault(defaults)) << "a container at its defaults is still a container";
+
+    const EntityId body = BodyGaining(serializer, *JsonParse(R"({"capacity":0})"));
+    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, Prefab(), Serializers, Context);
+    EXPECT_EQ(JsonStringify(overlay.RootPatch), R"({"ItemContainer":{"capacity":0}})");
 }
 
 TEST(SceneSpawnOverlayRestore, ABodyPatchNamingATagContentNoLongerDeclaresRestoresContentsValueWithAWarning)

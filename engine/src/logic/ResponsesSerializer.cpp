@@ -15,6 +15,14 @@ namespace
 {
 constexpr std::string_view kBindingsKey = "bindings";
 
+bool WriteBindings(IWriteArchive& archive, const JsonValue& bindings)
+{
+    archive.BeginObject(std::string_view{});
+    archive.Subtree(kBindingsKey, bindings);
+    archive.End();
+    return archive.Ok();
+}
+
 class ResponsesSerializer final : public TypedComponentSerializer<Responses>
 {
 public:
@@ -39,11 +47,10 @@ public:
                 "Responses: entity's bindings are not in this World's store; not saved");
             return false;
         }
-        archive.BeginObject(std::string_view{});
-        archive.Subtree(kBindingsKey, bindings != nullptr ? *bindings : EmptyResponseBindings());
-        archive.End();
-        return archive.Ok();
+        return WriteBindings(archive, bindings != nullptr ? *bindings : EmptyResponseBindings());
     }
+
+    bool SaveDefault(IWriteArchive& archive) const override { return WriteBindings(archive, EmptyResponseBindings()); }
 
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                        SceneSerializationContext& context) override
