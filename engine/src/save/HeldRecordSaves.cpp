@@ -12,6 +12,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <string>
@@ -28,26 +29,16 @@ namespace
     JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
                          const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
     {
-        JsonValue::Object components;
-        for (const auto& serializer : serializers.Entries())
-        {
-            const ComponentId carried = world.GetComponentIdByType(serializer->TypeId());
-            if (serializer->Persistence() == ComponentPersistence::Identity || carried == InvalidComponentId
-                || !world.HasComponent(record, carried))
-                continue;
-            JsonWriteArchive archive;
-            if (!serializer->Save(archive, record, world, context) || !archive.Ok())
-            {
-                context.Logging->GetLogger<HeldRecordSaves>().Error(
-                    "save: held record {} left out its '{}', which could not be written",
-                    PersistentEntityIdToString(id), serializer->JsonKey());
-                continue;
-            }
-            if (JsonValue value = archive.TakeValue(); !value.IsNull())
-                components.emplace_back(std::string(serializer->JsonKey()), std::move(value));
-        }
+        std::vector<std::string> failed;
+        JsonValue components =
+            WriteEntityRecord(world, record, serializers, context, { .Declared = { .Authored = true, .Saved = true } },
+                              SceneRecordPurpose::Save, &failed);
+        for (const std::string& key : failed)
+            context.Logging->GetLogger<HeldRecordSaves>().Error(
+                "save: held record {} left out its '{}', which could not be written", PersistentEntityIdToString(id),
+                key);
         return JsonValue(JsonValue::Object{ { "id", JsonValue(PersistentEntityIdToString(id)) },
-                                            { "components", JsonValue(std::move(components)) } });
+                                            { "components", std::move(components) } });
     }
 
     void LoadRecord(World& world, PersistentEntityId id, const JsonValue& components,

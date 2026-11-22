@@ -90,13 +90,76 @@ The console command `save.describe <me | index:generation | persistent id>`
 entity is and lists each component it carries with its persistence and what a
 save does with it. It is a developer command, not a verb.
 
+## The entity patch
+
+An entity in scene form is one record from component key to component value.
+`world/serialization/EntityPatch.h` writes it and diffs it, and every save path
+uses it; no caller loops over an entity's components itself.
+
+- `WriteEntityRecord` writes the components in an `EntityScope` that the entity
+  carries: those the scope lists by type, and those declaring a persistence
+  the scope names. It is told its purpose, `SceneRecordPurpose::Authoring` or
+  `Save`, and sets it on the `SceneSerializationContext` while it writes, so a
+  serializer can leave out what belongs to the other form.
+- `AuthoredComponentsOf` reads a package entity's baseline: content's record
+  of each component in scope, with a null record for one content holds as
+  runtime bytes, and an entry marked not in content for a listed type content
+  lacks.
+- `CaptureEntityPatch` is `PatchFrom` (`docs/assets/composition.md`, "Patches
+  from a difference") from the baseline to the entity, over the registry's
+  `EntitySchema()`, which joins every serializer's `CompositionSchema` under
+  its key. The baseline list decides what the patch speaks about: a component
+  it lists, and a component the entity carries that it does not list when the
+  component declares a persistence in `alsoCarried`. Nothing else is written,
+  so a baseline of two components costs two `Save` calls.
+- `ApplyEntityPatch` composes a patch over one package entity before it is
+  built, any entity of the package: a member patches a component content has,
+  adds one it lacks, and `null` removes one. It reports what it set aside in
+  three lists: `Retuned` (the scene decides, below), `Misfit` (the patch no
+  longer fits the component's form; content's record is left as it was) and
+  `Unknown` (a member naming a component this build has no serializer for;
+  nothing is done). What each list means for the entity is the caller's rule.
+
+The rules every caller gets:
+
+- **Member order.** A record's and a patch's members are sorted by component
+  key, a removal's `null` among them. The order is one total order that does
+  not depend on which serializer registered first, so two builds write the
+  same bytes. Readers compose by member name, so a patch written in another
+  order reads the same.
+- **A `Saved` component content did not author** is diffed against its
+  default record: what its serializer writes for a default-constructed value
+  (`IComponentSerializer::SaveDefault`). One at its default writes nothing; one
+  that differs writes only the difference, which a restore composes over the
+  default. A generated serializer has a default record; it is written with no
+  World, asset system or package member, so capture and a restore on a worker
+  agree. A tag component has none (its presence is its value), and a
+  hand-written serializer has none until it overrides `SaveDefault`; such a
+  component is written whole, as an `Authored` component content did not
+  author always is.
+- **A component content holds as runtime bytes** has no record to diff. In
+  scope, it is written whole while the entity carries it and `null` once it no
+  longer does, so a removal at run time stays removed; a restore sets the
+  member over it whole. It is therefore saved in full on every save, and a
+  retune of it does not reach an old save. Cooked scenes hold records, so only
+  packages built in code have such components.
+- **The carry.** `CaptureEntityPatch` copies from a `kept` patch every member
+  whose key no serializer claims, so data a newer build wrote survives an
+  older one.
+- **A patched component that does not decode follows content.**
+  `ApplyEntityPatch` keeps content's form of each component it replaces in
+  `PackageEntity::Unpatched`; when the patched record fails to decode at
+  import (a saved name the content no longer declares, such as a deleted
+  tag), the importer decodes content's form instead and logs a warning naming
+  the component. A component the patch added has no content form to fall back
+  to, so it still fails the import.
+
 ## Bodies
 
-The local participant's body is kept as a patch against the prefab it spawned
-from (`runtime/spawn/SceneSpawnOverlay.h`): for each component on its root, the
-difference between its scene form now and the prefab's cooked record, composed
-back by the operator prefabs use (`PatchFrom` is the inverse of `ComposeLayers`,
-`docs/assets/composition.md`, "Patches from a difference"). A value the save did
+The local participant's body is kept as an entity patch against the prefab it
+spawned from (`runtime/spawn/SceneSpawnOverlay.h`; see "The entity patch"): its
+baseline is the prefab root's `Saved` components, and a `Saved` component it
+gained is written as its difference from its default. A value the save did
 not change follows the prefab, so a retuned prefab still applies to old saves; a
 value it did change stays as saved. A keyed list whose order the body changed,
 or that gained an element between others, is saved whole, so it restores in the
@@ -123,7 +186,7 @@ the restore's sections run, and a failed change clears it again, so a body a
 failed or replaced restore left behind is never given to a later spawn.
 
 Composing the patch over a prefab retuned since the save reports what the
-operator could not apply, and `ApplySpawnOverlay` sorts it in two:
+operator could not apply, and `ApplyEntityPatch` sorts it in two:
 
 - **The scene decides, and the spawn goes on** (logged as a warning): the save
   removed a keyed element the prefab no longer has (`remove_unknown_key`); the
@@ -131,6 +194,9 @@ operator could not apply, and `ApplySpawnOverlay` sorts it in two:
   already has that one (`redeclares_inherited`, `removes_inherited`); the save
   cleared a field the prefab now requires (`cannot_clear_required`). Each is
   a retune deciding a value the save also named; the prefab's value stands.
+  Beside these, a patched component that does not decode follows content
+  ("The entity patch"): the save named something the content no longer
+  declares, and the prefab's record of that component stands.
 - **The save no longer fits, and the spawn is refused**: every other
   diagnostic (`missing_key`, `invalid_key`, `key_mismatch`,
   `element_not_a_record`, `keyed_patch_not_a_list`,
@@ -138,7 +204,9 @@ operator could not apply, and `ApplySpawnOverlay` sorts it in two:
   component's form changed shape under the patch, so composing it would build
   a body nobody saved. The refused spawn is logged with every diagnostic, and
   the restore fails with that reason (`RestoreStatus()` is `Failed`), so the
-  game decides what to offer rather than playing on with a different body.
+  game decides what to offer rather than playing on with a different body. A
+  patch member naming a component this build does not have refuses the spawn
+  the same way.
 
 A serializer whose `Save` fails while a body or a held record is captured is
 logged and that component is left out, so it follows the prefab or is missing
@@ -159,10 +227,11 @@ whose zone is away, then what those records hold, to the nesting bound
 record content authored is not saved, since its zone makes it again; a record
 that stopped being what content authored took a runtime id when it changed.
 
-Each record is kept whole, not as a patch: its persistent id, and every
-component it carries that a serializer saves except `Identity` ones, in scene form through the same
-serializers a scene uses; a serializer of a component the record does not
-carry is not asked. Its `Held` names its holder by persistent id. Capturing gives a
+Each record is kept whole, not as a patch: its persistent id, and its entity
+record (`WriteEntityRecord` for `Authored` and `Saved` components, so every
+component it carries that a serializer saves except `Identity` ones, in key
+order), in scene form through the same serializers a scene uses; a serializer
+of a component the record does not carry is not asked. Its `Held` names its holder by persistent id. Capturing gives a
 record or a holder without a persistent id one from the runtime mint.
 
 Restoring destroys every runtime record the index lists, the old session's, at

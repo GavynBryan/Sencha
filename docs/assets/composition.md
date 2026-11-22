@@ -67,7 +67,9 @@ sources it is resolving in one `CompositionChain`
 `PatchFrom(baseline, live, schema)` (`core/composition/CompositionPatch.h`) is
 the operator's inverse: composed over `baseline` as a local patch, under
 `CompositionNull::Removes`, its patch gives back `live`, member order aside.
-Nothing when the two are equal. Kyusu's harvest and a saved body use it.
+Nothing when the two are equal. Kyusu's harvest uses it, and so does the
+entity patch over a whole entity's record (`docs/gameplay/saves.md`, "The
+entity patch").
 
 - Members that differ are stated, members `live` lacks are `null`, and a
   record recurses.

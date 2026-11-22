@@ -321,7 +321,7 @@ TEST(HeldRecordSaves, ADescriptionSaysARecordIsKeptWholeWithWhatItIsKnownByBesid
                                          "  persistent_id: identity" }));
 }
 
-TEST(HeldRecordSaves, ARecordsSavedFormIsPinned)
+TEST(HeldRecordSaves, ARecordsSavedFormIsPinnedWithItsComponentsInKeyOrder)
 {
     SavingWorld world;
     const EntityId record = world.HeldBy(EntityId{});
@@ -330,5 +330,5 @@ TEST(HeldRecordSaves, ARecordsSavedFormIsPinned)
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
 
     ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
-    EXPECT_EQ(JsonStringify(*saved.Find("records")->AsArray().front().Find("components")), R"({"record_tally":{"value":4},"Held":{"holder":"","position":0}})");
+    EXPECT_EQ(JsonStringify(*saved.Find("records")->AsArray().front().Find("components")), R"({"Held":{"holder":"","position":0},"record_tally":{"value":4}})");
 }

@@ -6,19 +6,25 @@
 #include <core/serialization/FourCC.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/World.h>
+#include <ecs/WorldComponentSchema.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <logic/Counter.h>
+#include <logic/CounterSerializer.h>
 #include <movement/CharacterMovementSerializer.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
 #include <runtime/spawn/SceneSpawnOverlay.h>
+#include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/serialization/TypedComponentSerializer.h>
+#include <zone/ZonePackageImporter.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -172,6 +178,17 @@ namespace
         }
 
         std::vector<std::string> Errors;
+    };
+
+    struct WarningSink final : ILogSink
+    {
+        void Write(LogLevel level, std::string_view, std::string_view message) override
+        {
+            if (level == LogLevel::Warning)
+                Warnings.emplace_back(message);
+        }
+
+        std::vector<std::string> Warnings;
     };
 
     class UnwritableVitalsSerializer final : public IComponentSerializer
@@ -376,7 +393,7 @@ TEST_F(SceneSpawnOverlayTest, WhatChangedAndWhatWasAddedComeBackOverTheSamePrefa
     Entities.AddComponent<OverlayVitals>(body, OverlayVitals{ .Current = 50.0f, .Max = 100.0f });
     Entities.AddComponent<OverlayBadge>(body, OverlayBadge{ .Value = 7 });
     const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, Prefab(), Serializers, Context);
-    EXPECT_EQ(JsonStringify(overlay.RootPatch), R"({"overlay_vitals":{"current":50},"overlay_badge":{"value":7}})");
+    EXPECT_EQ(JsonStringify(overlay.RootPatch), R"({"overlay_badge":{"value":7},"overlay_vitals":{"current":50}})");
 
     EntityBuildPackage restored = Prefab();
     std::string error;
@@ -525,7 +542,7 @@ TEST_F(SceneSpawnOverlayTest, ASavedComponentThatCannotBeWrittenIsLoggedAndFollo
     EXPECT_NE(errors.Errors[0].find("overlay_vitals"), std::string::npos) << errors.Errors[0];
 }
 
-TEST_F(SceneSpawnOverlayTest, ABodysPatchOfAChangeAKeyedElementAGainAndARemovalIsPinned)
+TEST_F(SceneSpawnOverlayTest, ABodysPatchIsInKeyOrderWithItsRemovalAndAGainStatesOnlyWhatDiffersFromItsDefault)
 {
     Entities.RegisterComponent<OverlaySlots>();
     (void)Serializers.Register(std::make_unique<SlotsSerializer>());
@@ -542,6 +559,100 @@ TEST_F(SceneSpawnOverlayTest, ABodysPatchOfAChangeAKeyedElementAGainAndARemovalI
     const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, prefab, Serializers, Context);
 
     EXPECT_EQ(JsonStringify(overlay.RootPatch),
-              R"({"overlay_vitals":{"current":50},"overlay_badge":null,"overlay_slots":{"entries":{"b":{"n":5}}},)"
-              R"("overlay_mark":{"level":2,"tint":0}})");
+              R"({"overlay_badge":null,"overlay_mark":{"level":2},"overlay_slots":{"entries":{"b":{"n":5}}},)"
+              R"("overlay_vitals":{"current":50}})");
+}
+
+TEST_F(SceneSpawnOverlayTest, APatchsMembersAreInKeyOrderWhateverOrderTheirSerializersRegistered)
+{
+    ComponentSerializerRegistry reversed;
+    (void)reversed.Register(std::make_unique<ComponentSerializer<OverlayBadge>>());
+    (void)reversed.Register(std::make_unique<ComponentSerializer<OverlayVitals>>());
+    const EntityId body = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(body, OverlayVitals{ .Current = 50.0f, .Max = 100.0f });
+    Entities.AddComponent<OverlayBadge>(body, OverlayBadge{ .Value = 7 });
+
+    const SceneSpawnOverlay forward = CaptureSpawnOverlay(Entities, body, Prefab(), Serializers, Context);
+    const SceneSpawnOverlay backward = CaptureSpawnOverlay(Entities, body, Prefab(), reversed, Context);
+
+    EXPECT_EQ(JsonStringify(forward.RootPatch), JsonStringify(backward.RootPatch));
+}
+
+TEST_F(SceneSpawnOverlayTest, ABytesAuthoredComponentRemovedAtRunTimeStaysRemoved)
+{
+    EntityBuildPackage prefab = Prefab();
+    ASSERT_TRUE(prefab.AddComponent(PackageEntityId{ 0 }, OverlayBadge{ .Value = 3 }));
+    const EntityId body = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(body, OverlayVitals{});
+
+    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, prefab, Serializers, Context);
+    EXPECT_EQ(JsonStringify(overlay.RootPatch), R"({"overlay_badge":null})");
+
+    std::string error;
+    ASSERT_TRUE(ApplySpawnOverlay(prefab, overlay, Serializers, error, Retuned)) << error;
+    EXPECT_EQ(prefab.FindComponent(PackageEntityId{ 0 }, ResolveComponentTypeId<OverlayBadge>()), nullptr);
+}
+
+TEST_F(SceneSpawnOverlayTest, ASavedComponentThePrefabLacksIsKeptAsItsDifferenceFromItsDefault)
+{
+    Entities.RegisterComponent<OverlayMark>();
+    (void)Serializers.Register(std::make_unique<ComponentSerializer<OverlayMark>>());
+    const EntityId idle = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(idle, OverlayVitals{});
+    Entities.AddComponent<OverlayMark>(idle, OverlayMark{});
+    const EntityId tinted = Entities.CreateEntity();
+    Entities.AddComponent<OverlayVitals>(tinted, OverlayVitals{});
+    Entities.AddComponent<OverlayMark>(tinted, OverlayMark{ .Level = 0, .Tint = 4 });
+
+    EXPECT_TRUE(CaptureSpawnOverlay(Entities, idle, Prefab(), Serializers, Context).Empty())
+        << "a gained component at its default writes nothing";
+    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, tinted, Prefab(), Serializers, Context);
+    EXPECT_EQ(JsonStringify(overlay.RootPatch), R"({"overlay_mark":{"tint":4}})");
+
+    EntityBuildPackage restored = Prefab();
+    std::string error;
+    ASSERT_TRUE(ApplySpawnOverlay(restored, overlay, Serializers, error, Retuned)) << error;
+    EXPECT_EQ(RootComponent(restored, ResolveComponentTypeId<OverlayMark>()), R"({"level":0,"tint":4})")
+        << "composed over the default";
+}
+
+TEST(SceneSpawnOverlayRestore, ABodyPatchNamingATagContentNoLongerDeclaresRestoresContentsValueWithAWarning)
+{
+    WorldComponentSchema schema;
+    schema.Add<Counter>();
+    schema.Seal();
+    RuntimeWorld runtime(schema);
+    World& world = runtime.Entities();
+    const GameplayTagId kept = *world.AddResource<GameplayTagRegistry>().RegisterTag("count.kept");
+    ComponentSerializerRegistry serializers;
+    (void)serializers.Register(MakeCounterSerializer());
+    LoggingProvider logging;
+    WarningSink& warnings = logging.AddSink<WarningSink>();
+    SceneSerializationContext context(logging);
+
+    EntityBuildPackage prefab;
+    const PackageEntityId root = prefab.CreateEntity();
+    (void)prefab.SetSerializedComponent(
+        root, ResolveComponentTypeId<Counter>(),
+        JsonValue(JsonValue::Object{ { "name", JsonValue("count.kept") }, { "value", JsonValue(0) } }));
+    SceneSpawnOverlay overlay;
+    overlay.RootPatch = JsonValue(JsonValue::Object{
+        { "Counter", JsonValue(JsonValue::Object{ { "name", JsonValue("count.deleted") }, { "value", JsonValue(3) } }) } });
+    std::string error;
+    std::vector<std::string> retuned;
+    ASSERT_TRUE(ApplySpawnOverlay(prefab, overlay, serializers, error, retuned)) << error;
+
+    ZoneImportError imported;
+    std::vector<EntityId> created;
+    ASSERT_TRUE(ImportPackageIntoPartition(world, schema, prefab, StoragePartitionId::Default(), ZoneId{}, serializers,
+                                           context, &imported, &created))
+        << imported.Message;
+    ASSERT_EQ(created.size(), 1u);
+    const Counter* counter = world.TryGet<Counter>(created.front());
+    ASSERT_NE(counter, nullptr);
+    EXPECT_EQ(counter->Name, kept);
+    EXPECT_EQ(counter->Value, 0);
+    EXPECT_TRUE(std::ranges::any_of(warnings.Warnings, [](const std::string& warning) {
+        return warning.find("does not decode") != std::string::npos;
+    })) << "the fallback is reported";
 }

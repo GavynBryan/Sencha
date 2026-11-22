@@ -82,6 +82,9 @@ struct IComponentSerializer
 
     virtual ComponentPersistence Persistence() const { return ComponentPersistence::Authored; }
 
+    // The saved form of a default-constructed component, written with no World or assets; false when there is none.
+    virtual bool SaveDefault(IWriteArchive&) const { return false; }
+
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;
 };

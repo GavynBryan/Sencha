@@ -22,8 +22,8 @@ struct SceneSpawnOverlay
     [[nodiscard]] bool Empty() const { return RootPatch.Size() == 0 && !RootId.IsValid(); }
 };
 
-// The patch from `prefab`'s root to `root`'s components as they are now. Its
-// identity, placement and scene instance stay out: a spawn gives those.
+// The entity patch from `prefab`'s root to `root`, over the Saved components of
+// either (docs/gameplay/saves.md, "Bodies").
 [[nodiscard]] SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root,
                                                     const EntityBuildPackage& prefab,
                                                     const ComponentSerializerRegistry& serializers,

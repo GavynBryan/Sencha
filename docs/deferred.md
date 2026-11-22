@@ -1170,6 +1170,23 @@ described in `docs/navigation/runtime.md`, "Agents".
   it fell (see "A dropped item's world scene"), or a second player restored in
   co-op.
 
+## Default records for hand-written serializers
+
+- **What:** a `Saved` component content did not author is diffed against its
+  default record (`IComponentSerializer::SaveDefault`), but only generated
+  serializers write one. A hand-written serializer (`TypedComponentSerializer`
+  and the others) returns none, so such a component is written whole, as it
+  was before default records existed.
+- **Where:** `engine/include/world/serialization/IComponentSerializer.h`,
+  `ComponentSerializer.h` (the generated default), the hand-written
+  serializers under `engine/src/*/*Serializer*.cpp`; the rule is in
+  `docs/gameplay/saves.md`, "The entity patch".
+- **Trigger:** a hand-written `Saved` component that entities content made
+  carry without content authoring it (one derived from another component or
+  added by code), at its default on many of them, so each capture would write
+  it whole. Then the serializer overrides `SaveDefault`, writing its saved form
+  of `T{}` without a World.
+
 ## Unknown save chunks are dropped on rewrite
 
 - **What:** `DecodeSavedGame` skips a chunk it does not know, and the next

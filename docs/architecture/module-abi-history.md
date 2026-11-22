@@ -1396,3 +1396,21 @@ now holds only `Saved` components, a held record leaves out `Identity` ones,
 and a spawn strips `Identity` ones from a prefab, each read from the
 declaration. Cooked data, the wire, the replicated layout and the save format
 version are unchanged.
+
+## v60
+
+`world/serialization/EntityPatch.h` is new: `WriteEntityRecord`,
+`AuthoredComponentsOf`, `CaptureEntityPatch` and `ApplyEntityPatch`, with
+`ComponentPersistenceSet`, `AuthoredComponent`, `EntityScope` and
+`EntityPatchOutcome`, write and diff an entity's components as one record.
+`ComponentSerializerRegistry` gains `EntitySchema()` and the member that holds
+it. `IComponentSerializer` gains the virtual `SaveDefault(IWriteArchive&)`,
+declared before the destructor so every later slot moves; `ComponentSerializer<T>`
+writes the default-constructed component through it. `SceneSerializationContext`
+gains `Purpose` (`SceneRecordPurpose`). `PackageEntity` gains `Unpatched` and
+the `Find`, `SetSerialized` and `Remove` members, and `EntityBuildPackage` gains
+`FindEntity`. A body's saved patch and a held record's components are written
+in component key order, a `Saved` component the body gained is written as its
+difference from its default, and a bytes-authored component the body lost is
+written as a removal. The save format version, cooked data, the wire and the
+replicated layout are unchanged.

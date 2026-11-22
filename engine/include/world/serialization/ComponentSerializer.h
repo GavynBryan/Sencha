@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/handle/Handle.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
@@ -225,6 +226,21 @@ public:
         static const std::optional<DataFieldSchema> schema =
             SceneComponentSerialization::CompositionSchemaOf<Component>();
         return schema.has_value() ? &*schema : nullptr;
+    }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        if constexpr (std::is_empty_v<Component>)
+        {
+            return false;
+        }
+        else
+        {
+            LoggingProvider unheard;
+            SceneSerializationContext bare(unheard);
+            bare.Purpose = SceneRecordPurpose::Save;
+            return SceneComponentSerialization::SaveFields(archive, Component{}, bare);
+        }
     }
 
     std::vector<std::byte> DefaultBytes() const override

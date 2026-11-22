@@ -1,5 +1,7 @@
 #include <zone/ZonePackageImporter.h>
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -171,11 +173,16 @@ bool WriteOwedComponents(World& world,
     return true;
 }
 
+struct ZonePackageImport
+{
+};
+
 bool ImportComponent(
     World& world,
     EntityId entity,
     const WorldComponentSchema& schema,
     const PackageComponent& component,
+    std::span<const PackageComponent> unpatched,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     std::string& failure)
@@ -211,17 +218,18 @@ bool ImportComponent(
         }
 
         JsonReadArchive archive(*component.SerializedJson);
-        if (!serializer->LoadIntoWorld(
-                archive,
-                entity,
-                world,
-                *sceneContext)
-            || !archive.Ok())
+        const bool loaded = serializer->LoadIntoWorld(archive, entity, world, *sceneContext);
+        if (loaded && archive.Ok())
+            return true;
+        const auto content = std::ranges::find(unpatched, component.Type, &PackageComponent::Type);
+        if (loaded || content == unpatched.end())
         {
             failure = "Package serialized component decode failed" + named + ".";
             return false;
         }
-        return true;
+        sceneContext->Logging->GetLogger<ZonePackageImport>().Warn(
+            "the saved {} does not decode; the entity keeps content's", entry->Name);
+        return ImportComponent(world, entity, schema, *content, {}, serializers, sceneContext, failure);
     }
 
     if (entry->Size != component.RuntimeBytes.size())
@@ -430,6 +438,7 @@ bool ImportPackageIntoPartitionImpl(
                     entity,
                     schema,
                     component,
+                    packageEntity.Unpatched,
                     serializers,
                     sceneContext,
                     failure))

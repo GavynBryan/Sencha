@@ -1,26 +1,18 @@
 #include <runtime/spawn/SceneSpawnOverlay.h>
 
-#include <core/composition/CompositionPatch.h>
-#include <core/composition/JsonComposition.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/JsonArchive.h>
-#include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <optional>
 
 namespace
 {
-    [[nodiscard]] bool SetAsideByRetune(std::string_view code)
-    {
-        return code == "remove_unknown_key" || code == "redeclares_inherited" || code == "removes_inherited"
-            || code == "cannot_clear_required";
-    }
+    constexpr ComponentPersistenceSet kBodySaves{ .Saved = true };
 
     [[nodiscard]] std::optional<PackageEntityId> OnlyRoot(const EntityBuildPackage& package)
     {
@@ -48,35 +40,14 @@ SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root, const E
             : nullptr)
         overlay.RootId = id->Id;
     const std::optional<PackageEntityId> prefabRoot = OnlyRoot(prefab);
-    for (const auto& serializer : serializers.Entries())
-    {
-        if (serializer->Persistence() != ComponentPersistence::Saved)
-            continue;
-        JsonWriteArchive archive;
-        if (!serializer->Save(archive, root, world, context) || !archive.Ok())
-        {
-            context.Logging->GetLogger<SceneSpawnOverlay>().Error(
-                "save: '{}' could not be written; the body keeps its prefab's", serializer->JsonKey());
-            continue;
-        }
-        const JsonValue live = archive.TakeValue();
-        const PackageComponent* authored =
-            prefabRoot.has_value() ? prefab.FindComponent(*prefabRoot, serializer->TypeId()) : nullptr;
-        const bool authoredHere = authored != nullptr && authored->SerializedJson.has_value();
-        if (live.IsNull())
-        {
-            if (authoredHere)
-                overlay.RootPatch.AsObject().emplace_back(std::string(serializer->JsonKey()), JsonValue());
-            continue;
-        }
-        if (!authoredHere)
-        {
-            overlay.RootPatch.AsObject().emplace_back(std::string(serializer->JsonKey()), live);
-            continue;
-        }
-        if (std::optional<JsonValue> patch = PatchFrom(*authored->SerializedJson, live, serializer->CompositionSchema()))
-            overlay.RootPatch.AsObject().emplace_back(std::string(serializer->JsonKey()), std::move(*patch));
-    }
+    const std::vector<AuthoredComponent> baseline = prefabRoot.has_value()
+        ? AuthoredComponentsOf(prefab.Entities()[prefabRoot->Value], serializers, { .Declared = kBodySaves })
+        : std::vector<AuthoredComponent>{};
+    std::vector<std::string> failed;
+    overlay.RootPatch = CaptureEntityPatch(world, root, baseline, kBodySaves, serializers, context, nullptr, &failed);
+    for (const std::string& key : failed)
+        context.Logging->GetLogger<SceneSpawnOverlay>().Error(
+            "save: '{}' could not be written; the body keeps its prefab's", key);
     return overlay;
 }
 
@@ -92,40 +63,18 @@ bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& ove
         error = "the scene has not exactly one root to give its saved state to";
         return false;
     }
-    for (const auto& [key, patch] : overlay.RootPatch.AsObject())
+    EntityPatchOutcome outcome = ApplyEntityPatch(*package.FindEntity(*root), overlay.RootPatch, serializers);
+    const auto refuse = [&error](const std::string& reason) { error += (error.empty() ? "" : "; ") + reason; };
+    for (const std::string& key : outcome.Unknown)
+        refuse("the saved state names component '" + key + "', which this build does not have");
+    if (!outcome.Misfit.empty())
     {
-        const IComponentSerializer* serializer = serializers.FindByJsonKey(key);
-        if (serializer == nullptr)
-        {
-            error = "the saved state names component '" + key + "', which this build does not have";
-            return false;
-        }
-        if (patch.IsNull())
-        {
-            (void)package.RemoveComponent(*root, serializer->TypeId());
-            continue;
-        }
-        const PackageComponent* authored = package.FindComponent(*root, serializer->TypeId());
-        if (authored == nullptr || !authored->SerializedJson.has_value())
-        {
-            (void)package.SetSerializedComponent(*root, serializer->TypeId(), patch);
-            continue;
-        }
-        const CompositionLayerInput<JsonValue> base{ .Value = &*authored->SerializedJson, .Asset = {}, .Provenance = nullptr };
-        const CompositionLayerInput<JsonValue> local{ .Value = &patch, .Asset = {}, .Provenance = nullptr };
-        CompositionPolicy policy;
-        policy.Schema = serializer->CompositionSchema();
-        CompositionReport report;
-        JsonValue composed = ComposeLayers<JsonValue>(&base, {}, local, policy, report);
-        for (const CompositionDiagnostic& diagnostic : report.Diagnostics)
-        {
-            std::string line = key + diagnostic.Path + ": " + diagnostic.Message + " (" + diagnostic.Code + ")";
-            if (SetAsideByRetune(diagnostic.Code))
-                retuned.push_back(std::move(line));
-            else
-                error += (error.empty() ? "the saved state no longer fits its scene: " : "; ") + line;
-        }
-        (void)package.SetSerializedComponent(*root, serializer->TypeId(), std::move(composed));
+        std::string misfit = "the saved state no longer fits its scene: " + outcome.Misfit.front();
+        for (std::size_t i = 1; i < outcome.Misfit.size(); ++i)
+            misfit += "; " + outcome.Misfit[i];
+        refuse(misfit);
     }
+    retuned.insert(retuned.end(), std::make_move_iterator(outcome.Retuned.begin()),
+                   std::make_move_iterator(outcome.Retuned.end()));
     return error.empty();
 }

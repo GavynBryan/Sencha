@@ -49,6 +49,9 @@ struct PackageEntity
 {
     std::vector<PackageComponent> Components;
 
+    // Content's form of each component a saved patch replaced, decoded when the patched one does not.
+    std::vector<PackageComponent> Unpatched;
+
     // The entity's persistent identity, extracted at package build so the
     // owner-thread import can consult persisted state before creating the row.
     // Invalid for entities without identity (cook-generated content). The
@@ -60,6 +63,33 @@ struct PackageEntity
 
     // Set by SetParent; a package parent is single and final.
     bool HasParent = false;
+
+    [[nodiscard]] const PackageComponent* Find(ComponentTypeId type) const
+    {
+        const auto found = std::find_if(Components.begin(), Components.end(),
+                                        [type](const PackageComponent& component) { return component.Type == type; });
+        return found != Components.end() ? &*found : nullptr;
+    }
+
+    [[nodiscard]] PackageComponent* Find(ComponentTypeId type)
+    {
+        return const_cast<PackageComponent*>(std::as_const(*this).Find(type));
+    }
+
+    // Replaces the component's payload with `value`, or adds it.
+    void SetSerialized(ComponentTypeId type, JsonValue value)
+    {
+        PackageComponent* found = Find(type);
+        PackageComponent& target = found != nullptr ? *found : Components.emplace_back();
+        target.Type = type;
+        target.RuntimeBytes.clear();
+        target.SerializedJson = std::move(value);
+    }
+
+    bool Remove(ComponentTypeId type)
+    {
+        return std::erase_if(Components, [type](const PackageComponent& component) { return component.Type == type; }) > 0;
+    }
 };
 
 struct PackageParent
@@ -173,12 +203,7 @@ public:
 
     [[nodiscard]] const PackageComponent* FindComponent(PackageEntityId entity, ComponentTypeId type) const
     {
-        if (!ContainsEntity(entity))
-            return nullptr;
-        const auto& components = Entities_[entity.Value].Components;
-        const auto found = std::find_if(components.begin(), components.end(),
-                                        [type](const PackageComponent& component) { return component.Type == type; });
-        return found != components.end() ? &*found : nullptr;
+        return ContainsEntity(entity) ? Entities_[entity.Value].Find(type) : nullptr;
     }
 
     // Replaces the component's payload with `value`, or adds it.
@@ -186,21 +211,18 @@ public:
     {
         if (!ContainsEntity(entity) || !type.IsValid())
             return false;
-        auto& components = Entities_[entity.Value].Components;
-        const auto found = std::find_if(components.begin(), components.end(),
-                                        [type](const PackageComponent& component) { return component.Type == type; });
-        PackageComponent& target = found != components.end() ? *found : components.emplace_back();
-        target.Type = type;
-        target.RuntimeBytes.clear();
-        target.SerializedJson = std::move(value);
+        Entities_[entity.Value].SetSerialized(type, std::move(value));
         return true;
     }
 
     bool RemoveComponent(PackageEntityId entity, ComponentTypeId type)
     {
-        return ContainsEntity(entity)
-            && std::erase_if(Entities_[entity.Value].Components,
-                             [type](const PackageComponent& component) { return component.Type == type; }) > 0;
+        return ContainsEntity(entity) && Entities_[entity.Value].Remove(type);
+    }
+
+    [[nodiscard]] PackageEntity* FindEntity(PackageEntityId entity)
+    {
+        return ContainsEntity(entity) ? &Entities_[entity.Value] : nullptr;
     }
 
     [[nodiscard]] bool ContainsEntity(PackageEntityId entity) const
