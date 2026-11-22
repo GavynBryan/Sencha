@@ -11,7 +11,7 @@ struct RestoredBody
 {
     Transform3f Root = Transform3f::Identity();
     SceneSpawnOverlay Overlay;
-    // The arrival the save named, carried; the body stands at Root until a stage resolves it.
+    // Carried, not resolved: the body stands at Root.
     std::string Arrival;
 };
 

@@ -52,8 +52,6 @@ void FpsGame::OnStart(GameStartupContext&)
 
     SessionState.emplace(engine, engine.Logging().GetLogger<FpsGame>());
     SessionState->Open();
-
-    // What the player changed in each level is kept and written to saves.
     engine.Saves().KeepLevelState();
 
     // What a participant is in this game, and where its body comes from. The

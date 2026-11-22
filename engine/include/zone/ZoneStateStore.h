@@ -25,9 +25,7 @@ struct DurableZoneState
     ZoneId Zone;
     // destroyed, changed, and any list this build does not read, as read.
     EncodedZoneLists Lists;
-    // Runtime records whose holder is an entity of this zone, as their own encoded
-    // list: filled when a save is captured, read when one is restored; the store
-    // keeps neither.
+    // Records held by this zone's entities: filled for a save, never kept by the store.
     EncodedZoneLists Held;
 };
 
@@ -92,13 +90,10 @@ public:
     [[nodiscard]] std::span<const ZoneStateList> CarriedLists(ZoneStateScope scope) const;
     [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
 
-    // The next import of each of the level's zones replays its cooked scene.
     void ForgetLevel(const LevelReference& level);
-    // The same for every level.
     void Clear() { Zones_.clear(); }
 
-    // Every level's never-forgotten state, levels in kind and name order and zones
-    // in id order; a zone nothing changed since the last export is the same blob.
+    // Sorted by level, then zone; a zone unchanged since the last export is the same blob.
     [[nodiscard]] std::vector<DurableLevelState> ExportDurable() const;
     // Replaces everything with `durable`; each zone is read when it next imports.
     void Install(std::span<const DurableLevelState> durable);
@@ -131,8 +126,7 @@ private:
         JsonValue Patch;
     };
 
-    // Parsed while its zone is resident or holds what a save does not keep;
-    // otherwise only Encoded.
+    // Parsed while resident or holding what a save does not keep; otherwise only Encoded.
     struct ZoneRecord
     {
         bool Parsed = true;

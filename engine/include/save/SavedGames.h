@@ -82,8 +82,7 @@ public:
     SavedGames(const SavedGames&) = delete;
     SavedGames& operator=(const SavedGames&) = delete;
 
-    // A level entity's saved changes are kept, per zone of each level, and written
-    // to saves; a game that never asks keeps destroyed sets only.
+    // Without it a game keeps destroyed sets only: docs/gameplay/saves.md, "Level entities".
     void KeepLevelState();
 
     // Refused for a name already registered and for kPersistentIdsSection.
@@ -105,8 +104,7 @@ public:
     [[nodiscard]] std::uint64_t Restores() const { return RestoreCount; }
     // The latest restore read the slot's backup because its file did not read.
     [[nodiscard]] bool RestoredFromBackup() const { return FromBackup; }
-    // What a restore of the slot would find: the save whose disk write is in
-    // flight or failed, else the slot's files, read and decoded.
+    // What a restore would find; reads and decodes the slot's files.
     [[nodiscard]] bool Holds(std::string_view slot) const;
     // This session wrote or restored the slot; a file from an earlier run alone is not remembered.
     [[nodiscard]] bool Remembers(std::string_view slot) const { return Touched.contains(slot); }
@@ -148,8 +146,7 @@ private:
     std::optional<SaveSlotFiles> Files;
     std::vector<SavedGameSectionDefinition> Sections;
     std::set<std::string, std::less<>> Touched;
-    // The one save not yet on disk, which a restore of its slot prefers; with no
-    // root, the last one written.
+    // The one save not yet on disk, which a restore of its slot prefers.
     std::optional<std::string> UnwrittenSlot;
     std::shared_ptr<const SavedGame> Unwritten;
     std::vector<SavedGameSection> Unclaimed;

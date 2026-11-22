@@ -1478,3 +1478,8 @@ and `Focused(zone)`; `LevelMemory`, `LevelChangeBodies` (one value, `Fresh`),
 `SetAsideHeldRecords`, `ResumeHeldRecords` and `DestroySetAsideHeldRecords`.
 `ZoneStateStore` gains `Level`.
 
+`IComponentSerializer` gains the virtual `SavedFormEquals(const World&, EntityId,
+const JsonValue&)`, declared before the destructor, so every later slot moves;
+`CaptureEntityPatch` asks it before writing a baseline component, and the
+responses serializer answers it. One bump covers the whole series: ABI 62.
+

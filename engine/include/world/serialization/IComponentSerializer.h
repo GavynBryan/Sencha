@@ -85,6 +85,9 @@ struct IComponentSerializer
     // The saved form of a default-constructed component, written with no World or assets; false when there is none.
     virtual bool SaveDefault(IWriteArchive&) const { return false; }
 
+    // Whether the entity's saved form equals `record`, when the serializer can tell without writing it.
+    virtual std::optional<bool> SavedFormEquals(const World&, EntityId, const JsonValue&) const { return std::nullopt; }
+
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;
 };

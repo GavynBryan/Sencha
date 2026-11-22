@@ -1,5 +1,6 @@
 #include <logic/ResponsesSerializer.h>
 
+#include <core/json/JsonEquals.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/World.h>
@@ -117,12 +118,27 @@ public:
             return false;
         }
         const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-        if (context.Purpose == SceneRecordPurpose::Save && bindings != nullptr && definitions != nullptr)
+        if (context.Purpose == SceneRecordPurpose::Save && bindings != nullptr && definitions != nullptr
+            && (responses->Consumed != 0 || responses->Disabled != definitions->Sets.StartsDisabled(responses->Set)))
             return WriteBindings(archive, WithState(*bindings, definitions->Sets, *responses));
         return WriteBindings(archive, bindings != nullptr ? *bindings : EmptyResponseBindings());
     }
 
     bool SaveDefault(IWriteArchive& archive) const override { return WriteBindings(archive, EmptyResponseBindings()); }
+
+    std::optional<bool> SavedFormEquals(const World& world, EntityId entity, const JsonValue& record) const override
+    {
+        const Responses* responses = world.IsRegistered<Responses>() ? world.TryGet<Responses>(entity) : nullptr;
+        const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
+        const JsonValue* bindings = ResponseBindingsSource(world, entity);
+        const JsonValue* recorded = record.IsObject() ? record.Find(kBindingsKey) : nullptr;
+        if (responses == nullptr || definitions == nullptr || bindings == nullptr || recorded == nullptr
+            || record.Size() != 1)
+            return std::nullopt;
+        if (responses->Consumed != 0 || responses->Disabled != definitions->Sets.StartsDisabled(responses->Set))
+            return false;
+        return JsonEquals(*bindings, *recorded);
+    }
 
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                        SceneSerializationContext& context) override

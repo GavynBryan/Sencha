@@ -1155,8 +1155,9 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Saving what was created at run time
 
 - **What:** a save keeps the local participant's body root as a patch against
-  its prefab (`sencha.bodies`) and the runtime records held by the world, by
-  that body and by authored holders, with what they hold (`sencha.held`). It
+  its prefab (`sencha.bodies`), the runtime records held by the world and by
+  that body (`sencha.held`), and those held by authored holders in their zone's
+  `held` list, each with what it holds. It
   does not keep the body's children, another participant's body or what it
   holds, records held by a runtime entity other than the local body (a dropped
   item's pickup, a spawned NPC), or any other entity created at run time; a
@@ -1169,14 +1170,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   spawned NPC that must outlive its zone, a dropped item that must stay where
   it fell (see "A dropped item's world scene"), or a second player restored in
   co-op.
-
-## Unknown save chunks are dropped on rewrite
-
-- **What:** `DecodeSavedGame` skips a chunk it does not know, and the next
-  write does not carry it. Unknown sections are kept; unknown chunks are not.
-- **Where:** `engine/src/save/SavedGame.cpp`.
-- **Trigger:** a second chunk kind added after format 1. Then either fold new
-  data into sections or keep unknown chunks' bytes in `SavedGame`.
 
 ## Replication change store copies every live entity each publish
 
@@ -1712,3 +1705,79 @@ described in `docs/navigation/runtime.md`, "Agents".
   second player's body; or a game whose participant has no body and saves.
   Its consumer is co-op, and it also covers the other-participant part of
   "Saving what was created at run time".
+
+## Placement of a level entity
+
+- **What:** a level entity's patch holds its `Saved` components; nothing adds
+  `LocalTransform` to its baseline, so a moved crate returns to where the level
+  put it. The baseline is a per-entity list (`AuthoredEntityState::Baseline`),
+  so placement is one more member in it and no format change.
+- **Where:** `engine/src/zone/ZonePackageImporter.cpp` (`BaselineOf`),
+  `engine/src/zone/ZoneStateMemory.cpp`.
+- **Trigger:** `RigidBody` gains a scene form (see "Authoring a rigid body in a
+  scene"), or the first mover whose position must outlast its zone.
+
+## Change tracking for zone capture
+
+- **What:** every capture serialises and diffs each authored entity's baseline
+  components, unchanged or not: a zone of 5,000 entities with three saved
+  components is 15,000 rounds per capture on the owner thread
+  (`docs/plans/evidence/level-state/results.md`). Not built: skipping entities
+  whose saved components did not change, or spreading a capture over frames.
+- **Where:** `engine/src/zone/ZoneStateMemory.cpp` (`RecordPatches`).
+- **Trigger:** the bench's 5,000-entity figure against a real game's frame
+  budget, or a streamed zone whose detach shows in a profile.
+
+## Waiting records kept alive
+
+- **What:** a record parked for an authored holder whose zone or level is away
+  stays a live entity for the session, set aside while its level is away; every
+  item in every chest of every visited level is one. The save already writes
+  them per level and zone (the `held` list), so serialising them into the store
+  instead changes no file.
+- **Where:** `engine/src/world/held/HeldRecords.cpp` (`ParkHeldRecords`),
+  `engine/include/world/held/HeldRecordIndex.h` (`SetAside`).
+- **Trigger:** a game with containers in more than a handful of levels, or
+  session memory attributed to them.
+
+## A cook warning for ids shared between level files
+
+- **What:** two level files copied from one share authored ids. Waiting held
+  records are scoped by level, so they never cross, but a bare `PersistableRef`
+  from an entity that outlives a level (a kept body, a world record) to a level
+  entity resolves by id against whatever is live and could find the twin.
+  Nothing holds such a reference today, and no cook pass sees every level.
+- **Where:** `editor/level_editor/src/document/WorldCook.cpp` (the world cook
+  checks only within a world).
+- **Trigger:** the first component on a body or a world record that references
+  a level entity by `PersistableRef`.
+
+## Exporting only the levels entered since the last write
+
+- **What:** a write copies every level's encoded zones (pointers) and encodes
+  the resident ones that changed. A game of many levels pays the walk over every
+  zone record per write.
+- **Where:** `ZoneStateStore::ExportDurable`, `engine/src/zone/ZoneStateStore.cpp`.
+- **Trigger:** a write measured above a millisecond on the owner thread in a
+  many-level game.
+
+## State kept for content that no longer exists
+
+- **What:** a level renamed or removed between releases leaves its record in
+  every save; it is carried forever, since nothing tells a missing level from
+  one not yet visited.
+- **Where:** `engine/src/zone/ZoneStateStore.cpp`, `engine/src/save/SavedGame.cpp`.
+- **Trigger:** a shipped game that renames levels between releases.
+
+## Resolving a save's arrival name
+
+- **What:** `save.write` may name where its body comes back; the name is written
+  beside the body's transform and read back into `RestoredBody::Arrival`, and
+  nothing resolves it, so the body stands where it was saved. `LevelArrival`
+  carries a level change's arrival name the same way.
+- **Where:** `engine/src/save/EngineSaveSections.cpp`,
+  `engine/include/participant_spawn/RestoredBodies.h`,
+  `engine/include/app/LevelChange.h`.
+- **Trigger:** the level-change stage (a body across a level change and the
+  `level.change` verb), which adds the landmark these names resolve to.
+

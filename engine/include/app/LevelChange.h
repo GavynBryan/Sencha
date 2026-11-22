@@ -41,8 +41,7 @@ enum class LevelMemory : std::uint8_t
 {
     // As the game left it: what its zones remember applies.
     Remembered,
-    // As content made it: what was remembered of this level, and the records
-    // waiting in it, are forgotten first.
+    // As content made it: its memory and the records waiting in it are forgotten first.
     Authored,
 };
 

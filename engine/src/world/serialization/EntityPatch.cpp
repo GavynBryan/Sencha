@@ -2,6 +2,7 @@
 
 #include <core/composition/CompositionPatch.h>
 #include <core/composition/JsonComposition.h>
+#include <core/json/JsonEquals.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/World.h>
 #include <world/build/EntityBuildPackage.h>
@@ -146,32 +147,41 @@ JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<cons
     const PurposeInScope writing(context, SceneRecordPurpose::Save);
     JsonValue authored(JsonValue::Object{});
     JsonValue live(JsonValue::Object{});
-    const auto take = [&](const IComponentSerializer& serializer, const AuthoredComponent* content) {
-        const bool carried = Carries(world, entity, serializer.TypeId());
+    const auto take = [&](const IComponentSerializer& serializer, const AuthoredComponent* content, bool carried) {
+        if (carried && content != nullptr && content->InContent
+            && serializer.SavedFormEquals(world, entity, content->Record).value_or(false))
+            return;
         std::optional<JsonValue> now;
         if (carried && !(now = Written(serializer, world, entity, context, failed)).has_value())
             return;
-        std::optional<JsonValue> was;
+        std::optional<JsonValue> fallback;
+        const JsonValue* was = nullptr;
         if (content != nullptr && content->InContent)
-            was = content->Record;
-        else if (carried)
-            was = DefaultRecordOf(serializer);
+            was = &content->Record;
+        else if (carried && (fallback = DefaultRecordOf(serializer)).has_value())
+            was = &*fallback;
+        if (was == nullptr && !now.has_value())
+            return;
+        if (was != nullptr && now.has_value() && !now->IsNull() && JsonEquals(*was, *now))
+            return;
         const std::string key(serializer.JsonKey());
-        if (was.has_value())
-            authored.AsObject().emplace_back(key, std::move(*was));
+        if (was != nullptr)
+            authored.AsObject().emplace_back(key, *was);
         if (now.has_value() && !now->IsNull())
             live.AsObject().emplace_back(key, std::move(*now));
     };
     for (const AuthoredComponent& component : baseline)
         if (const IComponentSerializer* serializer = serializers.FindByType(component.Type);
             serializer != nullptr && component.Diffed)
-            take(*serializer, &component);
+            take(*serializer, &component, Carries(world, entity, component.Type));
     for (const auto& serializer : serializers.Entries())
     {
+        if (!alsoCarried.Contains(serializer->Persistence()) || !Carries(world, entity, serializer->TypeId()))
+            continue;
         const bool listed = std::ranges::any_of(
             baseline, [&](const AuthoredComponent& component) { return component.Type == serializer->TypeId(); });
-        if (!listed && alsoCarried.Contains(serializer->Persistence()))
-            take(*serializer, nullptr);
+        if (!listed)
+            take(*serializer, nullptr, true);
     }
     JsonValue patch = PatchFrom(authored, live, &serializers.EntitySchema()).value_or(JsonValue(JsonValue::Object{}));
     if (kept != nullptr && kept->IsObject())

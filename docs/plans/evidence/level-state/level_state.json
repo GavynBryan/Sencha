@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "build": "release-codegen",
+  "metrics": [
+    { "name": "zone.500.baseline_text_bytes", "unit": "bytes", "value": 83500 },
+    { "name": "zone.500.capture_untouched", "unit": "ms", "value": 0.445337 },
+    { "name": "zone.500.capture_untouched_per_entity", "unit": "us", "value": 0.890674 },
+    { "name": "zone.500.capture_changed", "unit": "ms", "value": 0.677054 },
+    { "name": "zone.500.capture_changed_per_entity", "unit": "us", "value": 1.35411 },
+    { "name": "zone.5000.baseline_text_bytes", "unit": "bytes", "value": 835000 },
+    { "name": "zone.5000.capture_untouched", "unit": "ms", "value": 4.46436 },
+    { "name": "zone.5000.capture_untouched_per_entity", "unit": "us", "value": 0.892872 },
+    { "name": "zone.5000.capture_changed", "unit": "ms", "value": 6.63022 },
+    { "name": "zone.5000.capture_changed_per_entity", "unit": "us", "value": 1.32604 },
+    { "name": "attach.50_of_500.import_unpatched", "unit": "ms", "value": 0.573896 },
+    { "name": "attach.50_of_500.import_patched", "unit": "ms", "value": 0.669174 },
+    { "name": "attach.50_of_500.per_patched_entity", "unit": "us", "value": 1.90556 },
+    { "name": "attach.500_of_500.import_unpatched", "unit": "ms", "value": 0.574796 },
+    { "name": "attach.500_of_500.import_patched", "unit": "ms", "value": 1.41268 },
+    { "name": "attach.500_of_500.per_patched_entity", "unit": "us", "value": 1.67577 }
+  ]
+}

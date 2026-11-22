@@ -117,7 +117,12 @@ uses it; no caller loops over an entity's components itself.
   its key. The baseline list decides what the patch speaks about: a component
   it lists, and a component the entity carries that it does not list when the
   component declares a persistence in `alsoCarried`. Nothing else is written,
-  so a baseline of two components costs two `Save` calls.
+  so a baseline of two components costs two `Save` calls. A component whose
+  written form equals its baseline is left out before the patch is built, and a
+  serializer that can tell without writing says so through
+  `IComponentSerializer::SavedFormEquals` (the responses serializer answers from
+  its bits), which is what keeps a 500-entity zone's capture under half a
+  millisecond (`docs/plans/evidence/level-state/results.md`).
 - `ApplyEntityPatch` composes a patch over one package entity before it is
   built, any entity of the package: a member patches a component content has,
   adds one it lacks, and `null` removes one. It reports what it set aside in

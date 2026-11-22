@@ -1,0 +1,17 @@
+name,unit,value
+zone.500.baseline_text_bytes,bytes,83500
+zone.500.capture_untouched,ms,0.445337
+zone.500.capture_untouched_per_entity,us,0.890674
+zone.500.capture_changed,ms,0.677054
+zone.500.capture_changed_per_entity,us,1.35411
+zone.5000.baseline_text_bytes,bytes,835000
+zone.5000.capture_untouched,ms,4.46436
+zone.5000.capture_untouched_per_entity,us,0.892872
+zone.5000.capture_changed,ms,6.63022
+zone.5000.capture_changed_per_entity,us,1.32604
+attach.50_of_500.import_unpatched,ms,0.573896
+attach.50_of_500.import_patched,ms,0.669174
+attach.50_of_500.per_patched_entity,us,1.90556
+attach.500_of_500.import_unpatched,ms,0.574796
+attach.500_of_500.import_patched,ms,1.41268
+attach.500_of_500.per_patched_entity,us,1.67577

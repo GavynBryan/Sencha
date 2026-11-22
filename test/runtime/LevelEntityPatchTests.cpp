@@ -29,6 +29,7 @@
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateLists.h>
+#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <gtest/gtest.h>
@@ -454,4 +455,36 @@ TEST_F(LevelEntityPatch, AWorldAndAMapMadeFromOneSceneFileKeepSeparateMemory)
     Detach();
     ImportUnder(map, Vault());
     EXPECT_FALSE(Resolve(kCrate).IsValid());
+}
+
+TEST_F(LevelEntityPatch, ASaveOfAWorldHoldsEveryZonesChangesWhetherOrNotItIsLoaded)
+{
+    const ZoneStateScope hall = Store().Scope(kLevel, ZoneId{ 0x52 });
+    Import(Vault());
+    (void)GrantBaselineTag(Entities(), Resolve(kDoor), Unsealed);
+    Detach();
+    ImportUnder(hall, Vault());
+    ASSERT_TRUE(Entities().TryGet<AttributeSet>(Resolve(kGuard))->SetBase(Health, 40.0f));
+    CaptureZoneState(Entities(), hall, IdentifiedEntitiesIn(Entities(), Runtime.FindZone(hall.Zone)->Partition),
+                     ZoneCapture::Live);
+
+    const std::vector<DurableLevelState> durable = Store().ExportDurable();
+    ASSERT_EQ(durable.size(), 1u) << "a world is one level";
+    ASSERT_EQ(durable[0].Zones.size(), 2u) << "the zone streamed out and the one loaded";
+    const auto changedIn = [](const DurableZoneState& zone) {
+        for (const ZoneStateList& list : DecodeZoneLists(*zone.Lists).value_or(std::vector<ZoneStateList>{}))
+            if (list.Name == kChangedZoneList)
+                return JsonStringify(DecodeEntityList(list.Payload)->front().Value);
+        return std::string();
+    };
+    EXPECT_NE(changedIn(durable[0].Zones[0]).find("door.unsealed"), std::string::npos);
+    EXPECT_NE(changedIn(durable[0].Zones[1]).find("\"base\":40"), std::string::npos);
+    Detach(hall.Zone);
+
+    Store().Install(durable);
+    Import(Vault());
+    EXPECT_TRUE(IsUnsealed(kDoor));
+    Detach();
+    ImportUnder(hall, Vault());
+    EXPECT_FLOAT_EQ(std::as_const(Entities()).TryGet<AttributeSet>(Resolve(kGuard))->GetBase(Health), 40.0f);
 }
