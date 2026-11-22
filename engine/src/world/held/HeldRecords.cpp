@@ -10,7 +10,6 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
-#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <vector>
@@ -233,16 +232,20 @@ void SettleHeldRecords(World& world)
     }
 }
 
-void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId partition)
+void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityId> holders)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
     const ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
     std::vector<EntityId> records;
-    for (const EntityId holder : IdentifiedEntitiesIn(world, partition))
+    for (const EntityId holder : holders)
     {
-        const PersistentEntityId id = world.TryGet<PersistentIdComponent>(holder)->Id;
+        const PersistentIdComponent* identity =
+            world.IsAlive(holder) ? world.TryGet<PersistentIdComponent>(holder) : nullptr;
+        if (identity == nullptr)
+            continue;
+        const PersistentEntityId id = identity->Id;
         const std::span<const EntityId> held = index->RecordsOf(holder);
         if (held.empty() || !IsAuthoredPersistentEntityId(id)
             || (memory != nullptr && memory->ForgettingOf(scope, id) == ZoneStateForgetting::AtDetach))

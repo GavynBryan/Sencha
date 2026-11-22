@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 
 class HeldRecordIndex;
 class World;
@@ -26,7 +27,7 @@ void NoteHeldRecordChanged(World& world, EntityId record);
 // Owner thread, outside any query.
 void SettleHeldRecords(World& world);
 
-void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId partition);
+void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityId> holders);
 
 // A level's waiting records leave every lookup while another level is loaded.
 void SetAsideHeldRecords(World& world, ZoneStateLevelId level);

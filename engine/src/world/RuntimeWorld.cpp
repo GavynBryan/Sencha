@@ -356,7 +356,7 @@ void RuntimeWorld::FinalizeResidencyProcessing()
     for (const ZoneResidencyChange& change : ProcessingChanges_)
         if (change.Kind == ZoneResidencyChangeKind::Detaching)
             if (const RuntimeZoneRecord* record = FindPartition(change.Partition))
-                ParkHeldRecords(Entities_, record->StateScope, change.Partition);
+                ParkHeldRecords(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition));
     SettleHeldRecords(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 

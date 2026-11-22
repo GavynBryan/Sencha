@@ -20,6 +20,7 @@
 #include <render/ZonePresentation.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/HeldRecords.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateMemory.h>
@@ -574,6 +575,7 @@ void LoadedLevel::Unload()
     Host.Schedule().RunZoneResidency(residency);
     runtime.FinalizeResidencyProcessing();
 
+    ParkHeldRecords(runtime.Entities(), WorldSceneScope, WorldSceneEntities);
     CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
     // Only what a world scene imported. The persistent partition also holds
     // whatever the game put there, and this owns none of that.

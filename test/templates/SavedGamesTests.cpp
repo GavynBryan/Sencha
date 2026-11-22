@@ -1668,4 +1668,64 @@ TEST(SavedGames, AChangeCarriesItsArrivalName)
     EXPECT_EQ(arrival, "west_door");
     std::filesystem::remove_all(root);
 }
+
+namespace
+{
+    const LevelReference kWorld{ .Kind = LevelKind::World, .Name = "traversal3" };
+
+    EntityId WorldSceneEntity(const World& world)
+    {
+        EntityId found;
+        world.ForEachComponent<PersistentIdComponent>([&](EntityId entity, const PersistentIdComponent& id) {
+            if (!found.IsValid() && IsAuthoredPersistentEntityId(id.Id)
+                && world.GetEntityPartition(entity) == PersistentStoragePartition && !world.HasComponent<Held>(entity))
+                found = entity;
+        });
+        return found;
+    }
+}
+
+TEST(SavedGames, AWorldScenesChestKeepsWhatItHoldsAcrossAJourneyThereAndBack)
+{
+    const std::filesystem::path root = RootFor("world_scene_chest");
+    PersistentEntityId chest;
+    PersistentEntityId record;
+    bool holding = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 1500, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            Travel(engine, kWorld, LevelMemory::Authored);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            const EntityId holder = WorldSceneEntity(world);
+            ASSERT_TRUE(holder.IsValid()) << "the world scene authors no entity to hold a record";
+            chest = world.TryGet<PersistentIdComponent>(holder)->Id;
+            const EntityId placed = PlaceHeldRecord(world, holder, ArchetypeSignature{});
+            ASSERT_TRUE(placed.IsValid());
+            record = world.TryGet<PersistentIdComponent>(placed)->Id;
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            Travel(engine, kWorld, LevelMemory::Remembered);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine))
+        {
+            const HeldRecordIndex& index = *world.TryGetResource<HeldRecordIndex>();
+            const EntityId holder = Live(world, chest);
+            holding = holder.IsValid() && std::ranges::any_of(index.RecordsOf(holder), [&](EntityId held) {
+                return world.TryGet<PersistentIdComponent>(held)->Id == record;
+            });
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4);
+    EXPECT_TRUE(holding) << "what the world scene's entity held was lost while the player was away";
+    std::filesystem::remove_all(root);
+}
 #endif

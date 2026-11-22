@@ -135,7 +135,12 @@ part of how the zone differs from its content, and is kept with it:
   holder's id under the zone's state scope (its level and zone) and moves it to
   the persistent partition; what it holds follows it. A record the zone authored is not parked: the zone makes it again. A
   holder its zone forgets at detach (`ZoneStateLifetime` until detach) keeps
-  nothing.
+  nothing. A world scene's entities are parked the same way, under the world
+  scene's scope, when `LoadedLevel::Unload` destroys them, so a chest in a
+  world scene keeps its contents across a level change that remembers the
+  level. `ParkHeldRecords` takes the holders to look at, not a partition: a
+  zone passes every identified entity of its partition, the world scene the
+  entities it imported into the persistent partition.
 - **While away**, a parked record is anchored to nothing, reaching no peer,
   and does no work.
 - **Import.** The holder's identity arriving lists its parked records under it

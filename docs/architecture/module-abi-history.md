@@ -1516,3 +1516,9 @@ index, with `kNoSequenceResult` for none; `CompiledVerbSequence` gains
 `Results`, its slot count. `VerbSequenceRunner` keeps a result slot per name
 for the run under way. `inventory.give` and `inventory.take` declare an `entry`
 result, which moves their contract revision.
+
+## v65
+
+`ParkHeldRecords` (`world/held/HeldRecords.h`) takes the holders to look at, a
+span of entities, instead of a storage partition, so `LoadedLevel::Unload`
+parks what a world scene's entities hold before it destroys them.
