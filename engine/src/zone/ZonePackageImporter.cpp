@@ -7,6 +7,8 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/HeldRecordIndex.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -14,6 +16,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateStore.h>
 
@@ -328,21 +331,59 @@ void ReportCarriedMembers(const ZoneStateStore& store, ZoneStateScope scope, Sce
 {
     if (context == nullptr)
         return;
-    for (const ZoneStateList& list : store.CarriedLists(scope))
+    std::vector<std::string_view> forms;
+    for (const GainedEntityState& member : store.GainedOf(scope))
+        if (!member.Id.IsValid() && std::ranges::find(forms, member.Member.Form) == forms.end())
+            forms.push_back(member.Member.Form);
+    for (const std::string_view form : forms)
+        context->Logging->GetLogger<ZonePackageImport>().Warn(
+            "zone state: what the zone gained in the form '{}' is kept and not made; this build does not make it",
+            form);
+}
+
+void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEntityPatches& patches,
+                       bool worldHasTransforms, std::vector<EntityId>& made)
+{
+    const std::span<const GainedEntityState> recorded = patches.Store->GainedOf(patches.Scope);
+    if (recorded.empty() || !world.IsRegistered<KeptWithZone>() || !world.IsRegistered<PersistentIdComponent>())
+        return;
+    const std::vector<GainedEntityState> gained(recorded.begin(), recorded.end());
+    Logger& log = patches.Context->Logging->GetLogger<ZonePackageImport>();
+    const PersistentEntityIndex* identities = world.TryGetResource<PersistentEntityIndex>();
+    for (const GainedEntityState& member : gained)
     {
-        if (list.Name != kGainedZoneList)
+        if (!member.Id.IsValid())
             continue;
-        const std::optional<std::vector<GainedZoneMember>> members = DecodeGainedList(list.Payload);
-        if (!members.has_value())
+        const std::string named = PersistentEntityIdToString(member.Id);
+        const std::optional<ZoneListEntity> saved = DecodeWholeGainedMember(member.Member.Payload);
+        if (!saved.has_value() || IsAuthoredPersistentEntityId(saved->Id))
+        {
+            log.Error("zone state: what the zone gained, {}, is not a run-time entity written whole; it is dropped",
+                      named);
+            patches.Store->ForgetGained(patches.Scope, member.Id);
             continue;
-        std::vector<std::string> forms;
-        for (const GainedZoneMember& member : *members)
-            if (std::ranges::find(forms, member.Form) == forms.end())
-                forms.push_back(member.Form);
-        for (const std::string& form : forms)
-            context->Logging->GetLogger<ZonePackageImport>().Warn(
-                "zone state: what the zone gained in the form '{}' is kept and not made; this build does not make it",
-                form);
+        }
+        if (identities != nullptr && world.IsAlive(identities->TryResolve(saved->Id)))
+        {
+            log.Warn("zone state: what the zone gained, {}, is not made; a live entity already has its id", named);
+            continue;
+        }
+        const EntityId entity = world.CreateEntity(partition);
+        world.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ saved->Id });
+        world.AddComponent<KeptWithZone>(entity);
+        if (std::string failed; !ReadEntityRecord(world, entity, saved->Value, *patches.Serializers,
+                                                  *patches.Context, &failed))
+        {
+            const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+            log.Error("zone state: what the zone gained, {}, does not read its '{}'; it is dropped, and the {} "
+                      "records it held with it",
+                      named, failed, index != nullptr ? index->RecordsOf(entity).size() : std::size_t{ 0 });
+            world.DestroyEntity(entity);
+            patches.Store->ForgetGained(patches.Scope, member.Id);
+            continue;
+        }
+        SeedDerivedTransform(world, entity, worldHasTransforms);
+        made.push_back(entity);
     }
 }
 
@@ -578,6 +619,9 @@ bool ImportPackageIntoPartitionImpl(
         if (!authored.empty())
             zoneState->RecordAuthoredSet(stateScope, std::move(authored));
     }
+    std::vector<EntityId> gained;
+    if (patches.Store != nullptr)
+        MakeGainedMembers(world, partition, patches, worldHasTransforms, gained);
 
     // The caller's own record of what it made -- which entity is the root, and
     // which are the group a later teardown has to take with it. Only on
@@ -588,6 +632,7 @@ bool ImportPackageIntoPartitionImpl(
         for (const EntityId entity : entities)
             if (entity.IsValid())
                 created->push_back(entity);
+        created->insert(created->end(), gained.begin(), gained.end());
     }
 
     if (error != nullptr)

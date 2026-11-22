@@ -139,6 +139,26 @@ JsonValue WriteEntityRecord(const World& world, EntityId entity, const Component
     return record;
 }
 
+bool ReadEntityRecord(World& world, EntityId entity, const JsonValue& record,
+                      const ComponentSerializerRegistry& serializers, SceneSerializationContext& context,
+                      std::string* failed)
+{
+    if (!record.IsObject())
+        return false;
+    for (const auto& [key, value] : record.AsObject())
+    {
+        IComponentSerializer* serializer = serializers.FindByJsonKey(key);
+        JsonReadArchive archive(value);
+        if (serializer == nullptr || !serializer->LoadIntoWorld(archive, entity, world, context) || !archive.Ok())
+        {
+            if (failed != nullptr)
+                *failed = key;
+            return false;
+        }
+    }
+    return true;
+}
+
 JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<const AuthoredComponent> baseline,
                              ComponentPersistenceSet alsoCarried, const ComponentSerializerRegistry& serializers,
                              SceneSerializationContext& context, const JsonValue* kept,

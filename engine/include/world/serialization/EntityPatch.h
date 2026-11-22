@@ -62,6 +62,11 @@ struct EntityScope
                                           SceneSerializationContext& context, const EntityScope& scope,
                                           SceneRecordPurpose purpose, std::vector<std::string>* failed = nullptr);
 
+// False at the first member that does not read whole, named in `failed`; what was read stays on the entity.
+[[nodiscard]] bool ReadEntityRecord(World& world, EntityId entity, const JsonValue& record,
+                                    const ComponentSerializerRegistry& serializers, SceneSerializationContext& context,
+                                    std::string* failed = nullptr);
+
 [[nodiscard]] JsonValue CaptureEntityPatch(const World& world, EntityId entity,
                                            std::span<const AuthoredComponent> baseline,
                                            ComponentPersistenceSet alsoCarried,

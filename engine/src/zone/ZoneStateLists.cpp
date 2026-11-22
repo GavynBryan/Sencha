@@ -182,3 +182,36 @@ std::optional<std::vector<GainedZoneMember>> DecodeGainedList(std::span<const st
         return std::nullopt;
     return members;
 }
+
+std::vector<std::byte> EncodeWholeGainedMember(const ZoneListEntity& entity)
+{
+    std::ostringstream stream(std::ios::binary);
+    BinaryWriter writer(stream);
+    const bool ok = writer.Write(entity.Id.Value) && Serialize(writer, JsonStringify(entity.Value));
+    return ok ? BytesOf(stream) : std::vector<std::byte>{};
+}
+
+std::optional<ZoneListEntity> DecodeWholeGainedMember(std::span<const std::byte> payload)
+{
+    SpanStream stream(payload);
+    ZoneListEntity entity;
+    std::string text;
+    if (!stream.Read().Read(entity.Id.Value) || !Deserialize(stream.Read(), text, kMaxText) || !stream.AtEnd())
+        return std::nullopt;
+    std::optional<JsonValue> value = JsonParse(text);
+    if (!value.has_value() || !value->IsObject())
+        return std::nullopt;
+    entity.Value = std::move(*value);
+    return entity;
+}
+
+std::optional<PersistentEntityId> WholeGainedMemberId(std::span<const std::byte> payload)
+{
+    PersistentEntityId id;
+    if (payload.size() < sizeof(id.Value))
+        return std::nullopt;
+    SpanStream stream(payload.first(sizeof(id.Value)));
+    if (!stream.Read().Read(id.Value))
+        return std::nullopt;
+    return id;
+}

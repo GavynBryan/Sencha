@@ -1539,3 +1539,15 @@ The `level.change` verb (`app/LevelChangeVocabulary.h`: `kLevelChangeVerb`,
 `DeclareLevelChangeVerbs`, `InvokeLevelChange`) joins the engine's catalog,
 answering `LevelChangeAdmission` as its reason, and
 `EngineVocabularyBindings` gains `BindLevelChanges`.
+
+## v66
+
+`KeptWithZone` (`zone/KeptWithZone.h`, `sencha.kept_with_zone`) is a new tag
+component in `WorldComponents`, with `KeepWithZone`, `IsKeptWithZone` and
+`ForgettingOfKept`. `ZoneStateStore` gains `GainedEntityState`,
+`RecordGained`, `ForgetGained` and `GainedOf`, and loses `CarriedLists`; its
+private zone record gains its gained members. `zone/ZoneStateLists.h` gains
+`kWholeGainedForm`, `EncodeWholeGainedMember`, `DecodeWholeGainedMember` and
+`WholeGainedMemberId`. `world/serialization/EntityPatch.h` gains
+`ReadEntityRecord`. The save format does not change: the `gained` list format 2
+reserved now holds `whole` members.

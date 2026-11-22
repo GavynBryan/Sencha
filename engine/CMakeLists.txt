@@ -101,6 +101,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/PresentationOffset.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformHistory.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/zone/KeptWithZone.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/zone/ZoneStateLifetime.h"
 )

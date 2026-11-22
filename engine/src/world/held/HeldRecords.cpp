@@ -10,6 +10,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZoneStateStore.h>
 
 #include <vector>
@@ -238,6 +239,8 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
     const ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    const ZoneStateSerialization* kept = world.TryGetResource<ZoneStateSerialization>();
+    const bool keepsGained = kept != nullptr && kept->Serializers != nullptr;
     std::vector<EntityId> records;
     for (const EntityId holder : holders)
     {
@@ -247,8 +250,13 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
             continue;
         const PersistentEntityId id = identity->Id;
         const std::span<const EntityId> held = index->RecordsOf(holder);
-        if (held.empty() || !IsAuthoredPersistentEntityId(id)
-            || (memory != nullptr && memory->ForgettingOf(scope, id) == ZoneStateForgetting::AtDetach))
+        const bool authored = IsAuthoredPersistentEntityId(id);
+        if (held.empty() || (!authored && !(keepsGained && IsKeptWithZone(world, holder))))
+            continue;
+        const ZoneStateForgetting forgotten = !authored ? ForgettingOfKept(world, holder)
+            : memory != nullptr                         ? memory->ForgettingOf(scope, id)
+                                                        : ZoneStateForgetting::Never;
+        if (forgotten == ZoneStateForgetting::AtDetach)
             continue;
         records.assign(held.begin(), held.end());
         for (const EntityId record : records)

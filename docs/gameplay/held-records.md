@@ -127,15 +127,18 @@ record is a runtime record from then on.
 
 ## Records of authored holders
 
-A runtime record held by an authored entity (a deposit in a placed chest) is
-part of how the zone differs from its content, and is kept with it:
+A runtime record held by an authored entity (a deposit in a placed chest), or
+by a run-time entity its zone keeps (`KeptWithZone`, such as a dropped pickup:
+`docs/gameplay/saves.md`, "What a zone gained"), is part of how the zone
+differs from its content, and is kept with it:
 
 - **Detach.** Before a zone's partition is destroyed, `ParkHeldRecords` lists
-  each runtime record held by an authored holder there as awaiting that
+  each runtime record held by such a holder there as awaiting that
   holder's id under the zone's state scope (its level and zone) and moves it to
   the persistent partition; what it holds follows it. A record the zone authored is not parked: the zone makes it again. A
   holder its zone forgets at detach (`ZoneStateLifetime` until detach) keeps
-  nothing. A world scene's entities are parked the same way, under the world
+  nothing, and neither does a kept holder in a game that keeps no level state,
+  since nothing would bring it back. A world scene's entities are parked the same way, under the world
   scene's scope, when `LoadedLevel::Unload` destroys them, so a chest in a
   world scene keeps its contents across a level change that remembers the
   level. `ParkHeldRecords` takes the holders to look at, not a partition: a
@@ -146,7 +149,7 @@ part of how the zone differs from its content, and is kept with it:
 - **Import.** The holder's identity arriving lists its parked records under it
   again; they settle into its partition and its relevance.
 - **Saves** write parked records and runtime records of resident authored
-  holders in the `held` list of the holder's level and zone
+  and kept holders in the `held` list of the holder's level and zone
   (`docs/gameplay/saves.md`, "Held records").
 - **Another level.** The index can set a level's waiting records aside
   (`HeldRecordIndex::SetAside`): they are in no lookup while another level is

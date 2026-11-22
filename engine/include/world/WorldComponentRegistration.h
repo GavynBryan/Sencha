@@ -8,6 +8,7 @@
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZoneStateLifetime.h>
 
 // Where a thing is, what it hangs off, and what it is called across a save.
@@ -34,7 +35,9 @@ using WorldComponents = ComponentSet<
     SceneInstance,
     ZoneStateLifetime,
     // Where a body arrives when a level change or a save names it.
-    LevelLandmark>;
+    LevelLandmark,
+    // A run-time entity its zone keeps: docs/gameplay/saves.md.
+    KeptWithZone>;
 
 inline void RegisterWorldComponents(ComponentRegistrar& registrar)
 {

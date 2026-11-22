@@ -27,9 +27,10 @@ what a save keeps is decided per entity by its zone state lifetime
 - **Levels:** for each level the game has changed this session, per zone (and
   per world scene, under `kWorldSceneZone`), a set of named lists:
   `destroyed`, the authored entities gone for good; `changed`, the patches of
-  authored entities changed for good ("Level entities"); `held`, the runtime
-  records whose holder is an entity of that zone, resident or waiting ("Held
-  records"). Only what is never forgotten is written; `at_restore` state stays
+  authored entities changed for good ("Level entities"); `gained`, the
+  run-time entities the zone keeps, such as a dropped item ("What a zone
+  gained"); `held`, the runtime records whose holder is an entity of that
+  zone, resident or waiting ("Held records"). Only what is never forgotten is written; `at_restore` state stays
   in the session and `at_detach` state goes when its zone unloads. A list this
   build does not read is carried and written back.
 - **Sections:** named data the engine or a game registers
@@ -254,6 +255,53 @@ member that no longer fits follows content, is logged as an error naming the
 entity and component, and leaves the store. A game that does not keep level
 state keeps destroyed sets only.
 
+## What a zone gained
+
+A run-time entity that belongs in the world, such as a dropped item, is kept
+with the zone it lies in when it carries `KeptWithZone` (`zone/KeptWithZone.h`,
+`sencha.kept_with_zone`), an empty marker on no entity by default. A zone's
+partition holds run-time entities meant to stay and entities meant to pass (a
+projectile, a spawned effect) alike; the marker is what tells them apart.
+`KeepWithZone(world, entity)` adds it on the authority and gives the entity a
+runtime persistent id (bit 63) if it has none; it refuses a level entity, which
+its patch already keeps, and a held record, which its holder keeps.
+
+- **Capture.** With the zone's capture, at detach and for a save, on the
+  authority and only when the game keeps level state, every live marked entity
+  of the zone (its partition, or a world scene's entities) is written whole:
+  its runtime persistent id and its entity record (`WriteEntityRecord` for
+  `Authored` and `Saved` components, `LocalTransform` included, `Identity`
+  ones beside it), the held record's form. The zone's `gained` list is exactly
+  the marked entities alive at that capture, so one taken or destroyed since
+  is simply absent. Only the entity itself is written; one with children
+  loses them (`docs/deferred.md`, "A body's children").
+- **Lifetime.** A marked entity without a `ZoneStateLifetime` is never
+  forgotten. One carrying the component follows it: `at_restore` is kept
+  across its zone's unload and forgotten at a restore and not written to a
+  save; `at_detach` is not captured at all.
+- **Identity.** Its id is a runtime one; the importer refuses runtime ids in a
+  package, so a gained entity cannot take an authored one's place, and the
+  saved id counter keeps later mints clear of restored ones.
+- **What it holds.** Its records (the entry under a dropped pickup) are parked
+  at detach and written in the zone's `held` list exactly as an authored
+  chest's are ("Held records"), except that what an `at_restore` gained
+  entity holds is not written to a save, since the entity is not.
+- **Restore.** When the zone imports, inside its hidden import, after its
+  authored entities exist and its authored set is recorded, each member is
+  made in the zone's partition with its id and the marker, then its record is
+  read (`ReadEntityRecord`). Its id arriving lists the records waiting for it.
+  Being before the zone is published, residency systems see gained entities
+  arrive with their zone. A member that does not read whole is dropped from
+  the store and logged as an error naming it and the component, and the
+  records it held are destroyed with it, counted in the same line. A member
+  naming an authored id is refused the same way; one whose id a live entity
+  already has is left in the store and not made. A client imports its zone
+  as authored and makes none.
+
+A game that marks nothing pays one component test per identified entity of a
+zone at each capture. A marked entity costs one whole-record write per capture
+and one read per attach (`docs/plans/evidence/level-state/results.md`).
+
 ## Held records
 
 `sencha.held` (`save/HeldRecordSaves.h`) keeps what is saved beyond bodies and
@@ -261,10 +309,10 @@ levels: a closure from roots. The roots are the world and the local
 participant's body; the members are the records made at run time that the
 held-record index lists under a root or as waiting for a holder that is no
 level entity, then what those records hold, to the nesting bound
-(`docs/gameplay/held-records.md`). What a level entity holds (a placed chest's
-contents), resident or waiting for its zone, is the same closure from that
-holder, written in the `held` list of the holder's level and zone
-(`CaptureLevelHeldRecords`); on restore each record waits for its holder under
+(`docs/gameplay/held-records.md`). What a level entity or a gained entity holds (a placed
+chest's contents, a dropped item's entry), resident or waiting for its zone, is
+the same closure from that holder, written in the `held` list of the holder's
+level and zone (`CaptureLevelHeldRecords`); on restore each record waits for its holder under
 that level and zone, and a record of a level other than the restored one is set
 aside until that level is entered. Counters and inventory are kept this way. A
 record content authored is not saved, since its zone makes it again; a record
@@ -286,9 +334,9 @@ once (a save without this section restores it as empty, which does the same),
 so none can collide with a saved id, and leaves what the new level's content
 authored; then it creates each saved record in the persistent
 partition with its id and its components. A record of the world is listed at
-once. A record of a body or of an authored holder waits for an entity with its
-holder's persistent id: the restored body, or the chest when its zone imports,
-takes that id, and its records move under it, follow it into its partition and
+once. A record of a body, an authored holder or a gained one waits for an entity
+with its holder's persistent id: the restored body, the chest or the dropped
+pickup when its zone imports, takes that id, and its records move under it, follow it into its partition and
 become relevant to its owner. A saved record that does not load whole, such as
 a counter naming a tag the content no longer declares, is not restored and is
 reported.
@@ -435,14 +483,17 @@ not in the blob. The known lists, at version 1:
 | `destroyed` | count, then each id |
 | `changed` | count, then each id and its patch as JSON text, members in key order |
 | `held` | count, then each record's id and its components as JSON text |
-| `gained` | count, then each member as a length, a form name and a payload |
+| `gained` | count, then each member as a length, a form name and a payload: `whole` members by id, after any member of a form this build does not make |
 
 A list whose name this build does not know is kept as bytes and written back.
 A known list at a newer version than this build reads makes the file one a
 newer build wrote: the restore is refused with that reason before anything
-changes, as a newer known chunk is. A `gained` member whose form this build
-does not make (none yet) is kept as bytes, made into nothing, and logged when
-its zone imports.
+changes, as a newer known chunk is. This build makes one `gained` form,
+`whole`: a 64-bit runtime persistent id, then the entity record as
+length-prefixed JSON text, the form a `held` record's entry takes. A later
+layout is a new form name, not a new version of this one. A member whose form
+this build does not make is kept as bytes, written back unchanged before the
+members it makes, made into nothing, and logged when its zone imports.
 
 A file whose format version is newer, or that holds a newer version of a chunk
 or a list this build reads, is refused as written by a newer build
@@ -456,7 +507,8 @@ form, and must keep reading; the encoder must write exactly it.
 ## Not yet
 
 Recorded in `docs/deferred.md`: a body's children and other participants'
-bodies and what they hold, records held by runtime entities other than the
-local body (a dropped item's pickup, a spawned NPC), a level entity's
-placement, change tracking for capture, waiting records serialised instead of
-kept alive, and restoring inside a network session.
+bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
+a gained entity saved as its prefab and a patch, carrying an entity other than
+the body across a level change, a level entity's placement, change tracking
+for capture, waiting records serialised instead of kept alive, and restoring
+inside a network session.

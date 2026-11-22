@@ -35,6 +35,17 @@ struct DurableLevelState
     std::vector<DurableZoneState> Zones;
 };
 
+// A run-time entity its zone keeps, as its `gained` member.
+struct GainedEntityState
+{
+    // Invalid for a member of a form this build does not make, which is kept as read.
+    PersistentEntityId Id;
+    ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+    GainedZoneMember Member;
+
+    friend bool operator==(const GainedEntityState&, const GainedEntityState&) = default;
+};
+
 struct AuthoredEntityState
 {
     PersistentEntityId Id;
@@ -78,6 +89,12 @@ public:
     void RecordPatch(ZoneStateScope scope, PersistentEntityId id, JsonValue patch);
     void ForgetPatchMember(ZoneStateScope scope, PersistentEntityId id, std::string_view member);
 
+    // The zone's kept entities alive at a capture; members of forms this build does not make stay.
+    void RecordGained(ZoneStateScope scope, std::vector<GainedEntityState> gained);
+    void ForgetGained(ZoneStateScope scope, PersistentEntityId id);
+    // Members of forms this build does not make first, as read, then the rest by id.
+    [[nodiscard]] std::span<const GainedEntityState> GainedOf(ZoneStateScope scope) const;
+
     [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
     [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
@@ -86,8 +103,6 @@ public:
     // Null unless the zone's current residency authored the entity.
     [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
 
-    // Lists this build does not read, and members it does not make, kept as read.
-    [[nodiscard]] std::span<const ZoneStateList> CarriedLists(ZoneStateScope scope) const;
     [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
 
     void ForgetLevel(const LevelReference& level);
@@ -133,6 +148,7 @@ private:
         std::unordered_map<std::uint64_t, AuthoredRecord> Authored;
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
         std::unordered_map<std::uint64_t, PatchRecord> Patches;
+        std::vector<GainedEntityState> Gained;
         std::vector<ZoneStateList> Carried;
         // The never-forgotten part as a save holds it; null when stale or empty.
         EncodedZoneLists Encoded;
@@ -142,6 +158,7 @@ private:
     [[nodiscard]] ZoneStateLevelId FindLevel(const LevelReference& level) const;
     [[nodiscard]] ZoneRecord* Find(ZoneStateScope scope) const;
     [[nodiscard]] ZoneRecord& Open(ZoneStateScope scope);
+    static void RecordDestroyed(ZoneRecord& record, std::span<const PersistentEntityId> live, bool detaching);
     static void Parse(ZoneRecord& record);
     [[nodiscard]] static EncodedZoneLists Encode(const ZoneRecord& record);
     static void Close(ZoneRecord& record);

@@ -165,6 +165,13 @@ this document. `SerializedEntityId` was removed with no consumers.
   naming a component this build lacks is carried untouched. Only the authority
   records or applies patches: a client imports its zone as authored. Without
   `ZoneStateSerialization` a zone keeps destroyed sets only.
+- Gained entities: under the same condition, capture writes every live
+  run-time entity of the zone marked `KeptWithZone` whole into the zone's
+  `gained` members with its lifetime (`ZoneStateStore::RecordGained`, which
+  replaces the members this build makes and keeps those of other forms), and
+  import makes each one in the zone's partition, after the authored set is
+  recorded and before the zone is published (`docs/gameplay/saves.md`, "What
+  a zone gained").
 
 ### Zone state lifetime
 

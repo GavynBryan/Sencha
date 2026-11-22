@@ -61,3 +61,10 @@ struct GainedZoneMember
 
 [[nodiscard]] std::vector<std::byte> EncodeGainedList(std::span<const GainedZoneMember> members);
 [[nodiscard]] std::optional<std::vector<GainedZoneMember>> DecodeGainedList(std::span<const std::byte> payload);
+
+// A gained member written whole: its runtime persistent id, then its entity record as JSON text.
+inline constexpr std::string_view kWholeGainedForm = "whole";
+
+[[nodiscard]] std::vector<std::byte> EncodeWholeGainedMember(const ZoneListEntity& entity);
+[[nodiscard]] std::optional<ZoneListEntity> DecodeWholeGainedMember(std::span<const std::byte> payload);
+[[nodiscard]] std::optional<PersistentEntityId> WholeGainedMemberId(std::span<const std::byte> payload);

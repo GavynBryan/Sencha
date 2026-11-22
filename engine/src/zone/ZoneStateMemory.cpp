@@ -9,6 +9,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <zone/KeptWithZone.h>
 
 #include <string>
 #include <utility>
@@ -43,6 +44,38 @@ namespace
                             patch.AsObject().emplace_back(key, *member);
             store.RecordPatch(scope, id, std::move(patch));
         }
+    }
+
+    void RecordGained(const World& world, ZoneStateStore& store, const ZoneStateSerialization& serialization,
+                      ZoneStateScope scope, std::span<const std::pair<EntityId, PersistentEntityId>> alive)
+    {
+        std::vector<GainedEntityState> gained;
+        if (world.IsRegistered<KeptWithZone>())
+        {
+            Logger& log = serialization.Context->Logging->GetLogger<ZoneStateCapture>();
+            const ComponentId kept = world.GetComponentId<KeptWithZone>();
+            std::vector<std::string> failed;
+            for (const auto& [entity, id] : alive)
+            {
+                if (!world.HasComponent(entity, kept))
+                    continue;
+                const ZoneStateForgetting forgotten = ForgettingOfKept(world, entity);
+                if (forgotten == ZoneStateForgetting::AtDetach)
+                    continue;
+                failed.clear();
+                JsonValue record = WriteEntityRecord(world, entity, *serialization.Serializers, *serialization.Context,
+                                                     { .Declared = { .Authored = true, .Saved = true } },
+                                                     SceneRecordPurpose::Save, &failed);
+                for (const std::string& key : failed)
+                    log.Error("zone state: what the zone gained, {}, left out its '{}', which could not be written",
+                              PersistentEntityIdToString(id), key);
+                gained.push_back(GainedEntityState{
+                    id, forgotten,
+                    GainedZoneMember{ std::string(kWholeGainedForm),
+                                      EncodeWholeGainedMember(ZoneListEntity{ id, std::move(record) }) } });
+            }
+        }
+        store.RecordGained(scope, std::move(gained));
     }
 }
 
@@ -84,6 +117,9 @@ void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const Entity
     if (const ZoneStateSerialization* serialization = world.TryGetResource<ZoneStateSerialization>();
         serialization != nullptr && serialization->Serializers != nullptr && serialization->Context != nullptr
         && IsSimulationAuthority(world))
+    {
         RecordPatches(world, *store, *serialization, scope, alive);
+        RecordGained(world, *store, *serialization, scope, alive);
+    }
     store->RecordCapture(scope, live, capture);
 }

@@ -1,7 +1,6 @@
 #include <save/HeldRecordSaves.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/JsonArchive.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <world/RuntimeWorld.h>
@@ -14,6 +13,8 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZoneStateStore.h>
 
 #include <algorithm>
 #include <map>
@@ -55,17 +56,12 @@ namespace
         }
         const EntityId record = world.CreateEntity(PersistentStoragePartition);
         world.AddComponent<PersistentIdComponent>(record, PersistentIdComponent{ id });
-        for (const auto& [key, value] : components.AsObject())
+        if (std::string failed; !ReadEntityRecord(world, record, components, serializers, context, &failed))
         {
-            IComponentSerializer* serializer = serializers.FindByJsonKey(key);
-            JsonReadArchive archive(value);
-            if (serializer == nullptr || !serializer->LoadIntoWorld(archive, record, world, context) || !archive.Ok())
-            {
-                log.Warn("save: held record {} was not restored; this build cannot read its '{}'",
-                         PersistentEntityIdToString(id), key);
-                world.DestroyEntity(record);
-                return {};
-            }
+            log.Warn("save: held record {} was not restored; this build cannot read its '{}'",
+                     PersistentEntityIdToString(id), failed);
+            world.DestroyEntity(record);
+            return {};
         }
         if (!world.HasComponent<Held>(record))
         {
@@ -183,9 +179,11 @@ std::vector<ScopedHeldRecords> CaptureLevelHeldRecords(const World& world,
     const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !world.IsRegistered<Held>())
         return scoped;
+    const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
     std::map<ZoneStateScope, std::vector<EntityId>, ScopeOrder> roots;
     for (const EntityId holder : index->Holders())
-        if (HasAuthoredPersistentId(world, holder))
+        if (HasAuthoredPersistentId(world, holder)
+            || (IsKeptWithZone(world, holder) && ForgettingOfKept(world, holder) == ZoneStateForgetting::Never))
             if (const ZoneStateScope scope = scopeOf(holder); scope.IsValid())
             {
                 const std::vector<EntityId> held = HeldBy(*index, holder);
@@ -193,7 +191,12 @@ std::vector<ScopedHeldRecords> CaptureLevelHeldRecords(const World& world,
             }
     for (const EntityId record : Waiting(*index))
         if (const ZoneStateScope scope = index->AwaitingScopeOf(record); scope.IsValid())
-            roots[scope].push_back(record);
+        {
+            const PersistentEntityId holder = index->AwaitedHolderOf(record);
+            if (IsAuthoredPersistentEntityId(holder) || store == nullptr
+                || store->ForgettingOf(scope, holder) == ZoneStateForgetting::Never)
+                roots[scope].push_back(record);
+        }
     for (auto& [scope, records] : roots)
     {
         std::vector<ZoneListEntity> saved = SavedRecords(world, *index, std::move(records), serializers, context);
@@ -211,8 +214,7 @@ void RestoreLevelHeldRecords(World& world, ZoneStateScope scope, std::span<const
     {
         const EntityId record = LoadRecord(world, saved.Id, saved.Value, serializers, context);
         const Held* held = record.IsValid() ? world.TryGet<Held>(record) : nullptr;
-        if (index != nullptr && held != nullptr && IsAuthoredPersistentEntityId(held->Holder.Target)
-            && index->AwaitedHolderOf(record).IsValid())
+        if (index != nullptr && held != nullptr && index->AwaitedHolderOf(record).IsValid())
             index->Await(record, held->Holder.Target, scope);
     }
 }

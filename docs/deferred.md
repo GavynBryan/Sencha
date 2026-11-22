@@ -1156,20 +1156,26 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 - **What:** a save keeps the local participant's body root as a patch against
   its prefab (`sencha.bodies`), the runtime records held by the world and by
-  that body (`sencha.held`), and those held by authored holders in their zone's
-  `held` list, each with what it holds. It
-  does not keep the body's children, another participant's body or what it
-  holds, records held by a runtime entity other than the local body (a dropped
-  item's pickup, a spawned NPC), or any other entity created at run time; a
-  runtime entity in a zone that is not a record of an authored holder is
-  destroyed unrecorded when the zone unloads.
+  that body (`sencha.held`), the run-time entities a zone keeps
+  (`KeptWithZone`, each written whole in the zone's `gained` list), and the
+  records held by authored and kept holders in their zone's `held` list, each
+  with what it holds. It does not keep the body's children, another
+  participant's body or what it holds, a kept entity's children, or a run-time
+  entity nothing marked (a spawned NPC); such an entity in a zone is destroyed
+  unrecorded when the zone unloads. A kept entity spawned from a prefab is
+  written whole, so a retuned prefab does not reach it and its children are
+  lost; saving it as its source and a patch is a second `gained` form
+  (`from_source`) under the same list. Nothing but a body crosses a level
+  change; carrying another entity is moving its member from one zone's list to
+  another's with a transform relative to an arrival point.
 - **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
   `world/held/HeldRecords.cpp` (`ParkHeldRecords`),
-  `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateStore.h`.
-- **Trigger:** a body whose children carry state, a counter or item held by a
-  spawned NPC that must outlive its zone, a dropped item that must stay where
-  it fell (see "A dropped item's world scene"), or a second player restored in
-  co-op.
+  `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateMemory.cpp` and
+  `zone/ZonePackageImporter.cpp` (`MakeGainedMembers`), `app/LevelChange.cpp`.
+- **Trigger:** a body whose children carry state, a dropped item with a
+  visible scene (see "A dropped item's world scene"), a marked prefab spawn
+  whose prefab is retuned or has children, anything but a body crossing a
+  level transition, or a second player restored in co-op.
 
 ## Replication change store copies every live entity each publish
 
@@ -1476,9 +1482,9 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Held records parked for an import that is cancelled
 
-- **What:** a record waiting for its authored holder moves into the holder's
-  partition when the holder's identity arrives, even while the zone is still
-  importing hidden. If that import is cancelled, the partition is destroyed
+- **What:** a record waiting for its authored or kept holder moves into the
+  holder's partition when the holder's identity arrives, even while the zone
+  is still importing hidden. If that import is cancelled, the partition is destroyed
   and the record with it.
 - **Where:** `world/held/HeldRecords.cpp`, `zone/AsyncZoneLoader.cpp`.
 - **Trigger:** an import cancelled after its entities were made (a finalize
