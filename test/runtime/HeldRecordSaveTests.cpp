@@ -331,10 +331,10 @@ TEST(HeldRecordSaves, ADescriptionSaysARecordIsKeptWholeWithWhatItIsKnownByBesid
                   "  persistent_id: identity, beside the record", "  Held: saved, in the record",
                   "  record_label: identity, beside the record" }));
     EXPECT_EQ(DescribeSavedEntity(world.Entities, chest, world.Serializers),
-              (std::vector<std::string>{ chestName + " is neither the local body nor a held record made at run time: "
-                                                     "a save holds only whether its zone destroyed it and what that "
-                                                     "zone's registered memories keep",
-                                         "  persistent_id: identity" }));
+              (std::vector<std::string>{ chestName + " is a level entity: its zone keeps whether it was destroyed and, "
+                                                     "when the game keeps level state, its saved components as a patch "
+                                                     "against what the level authored",
+                                         "  persistent_id: identity, given by the level" }));
 }
 
 TEST(HeldRecordSaves, ARecordsSavedFormIsPinnedWithItsComponentsInKeyOrder)

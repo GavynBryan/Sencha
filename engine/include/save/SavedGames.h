@@ -82,6 +82,10 @@ public:
     SavedGames(const SavedGames&) = delete;
     SavedGames& operator=(const SavedGames&) = delete;
 
+    // A level entity's saved changes are kept, per zone of each level, and written
+    // to saves; a game that never asks keeps destroyed sets only.
+    void KeepLevelState();
+
     // Refused for a name already registered and for kPersistentIdsSection.
     // A section the restored save carried under this name is no longer kept.
     [[nodiscard]] bool RegisterSection(SavedGameSectionDefinition section);

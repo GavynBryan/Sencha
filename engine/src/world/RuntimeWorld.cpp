@@ -49,7 +49,6 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // entities and the detach path below captures the deviation, so a zone
     // that streams out and back does not resurrect consumed content.
     Entities_.AddResource<ZoneStateStore>();
-    Entities_.AddResource<ZoneComponentMemories>();
 
     // Partition zero is persistent and never receives a RuntimeZoneRecord.
     ZonesByPartition_.resize(1);

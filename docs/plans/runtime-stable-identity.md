@@ -149,10 +149,22 @@ this document. `SerializedEntityId` was removed with no consumers.
   captured when the world unloads. The same scene file loaded as a map and as
   a zone of a world is two levels with separate records. The world cook and
   the manifest reader refuse a zone with either reserved id.
-- Component state: a component's owner registers a `ZoneComponentMemory`, a
-  versioned byte form with a capture and a restore function. Capture records
-  it for every identified entity that differs from authored; the importer
-  restores it on the entities it creates. Responses are the first user.
+- Changed entities: when the game keeps level state
+  (`SavedGames::KeepLevelState`, which installs `ZoneStateSerialization`), the
+  importer records each authored entity's baseline beside its id: the cooked
+  records of its `Saved` components (a component cooked as bytes has no record,
+  is not diffed, and is reported once per zone and type). Capture diffs each
+  live authored entity against its baseline through the entity patch
+  (`world/serialization/EntityPatch.h`) and records a non-empty patch with the
+  entity's lifetime; an empty one is forgotten. A `Saved` component the entity
+  gained is diffed against its default record. At import the importer copies a
+  patched entity's package record, composes the patch over it and builds the
+  entity once at its final value. What a retune set aside is a warning and the
+  scene decides; a member that no longer fits follows content, is logged as an
+  error naming the entity and the component, and leaves the store; a member
+  naming a component this build lacks is carried untouched. Only the authority
+  records or applies patches: a client imports its zone as authored. Without
+  `ZoneStateSerialization` a zone keeps destroyed sets only.
 
 ### Zone state lifetime
 
@@ -160,7 +172,7 @@ The zone record alone cannot tell a killed enemy from a taken pickup: both are
 authored entities that are gone. `ZoneStateLifetime`, authored on an entity,
 says when the zone forgets it was destroyed or changed:
 
-| `forgotten` | Destroyed, it stays gone | Use |
+| `forgotten` | Destroyed or changed, it stays so | Use |
 |---|---|---|
 | `never` (no component) | for good, and in saves | pickups, doors, switches, bosses |
 | `at_restore` | until a save is restored or the level restarts | enemies that return when the player rests |

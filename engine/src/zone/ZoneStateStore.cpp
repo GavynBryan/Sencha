@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <unordered_set>
+#include <utility>
 
 ZoneStateLevelId ZoneStateStore::FindLevel(const LevelReference& level) const
 {
@@ -21,16 +22,23 @@ ZoneStateScope ZoneStateStore::Scope(const LevelReference& level, ZoneId zone)
     return ZoneStateScope{ id, zone };
 }
 
-void ZoneStateStore::RecordAuthoredSet(ZoneStateScope scope, std::span<const AuthoredEntityState> authored)
+const ZoneStateStore::ZoneRecord* ZoneStateStore::Find(ZoneStateScope scope) const
+{
+    const auto found = Zones_.find(KeyOf(scope));
+    return found != Zones_.end() ? &found->second : nullptr;
+}
+
+void ZoneStateStore::RecordAuthoredSet(ZoneStateScope scope, std::vector<AuthoredEntityState> authored)
 {
     if (!scope.IsValid())
         return;
     ZoneRecord& record = Zones_[KeyOf(scope)];
     record.Authored.clear();
     record.Authored.reserve(authored.size());
-    for (const AuthoredEntityState& entity : authored)
+    for (AuthoredEntityState& entity : authored)
         if (entity.Id.IsValid())
-            record.Authored.insert_or_assign(entity.Id.Value, entity.Forgotten);
+            record.Authored.insert_or_assign(entity.Id.Value,
+                                             AuthoredRecord{ entity.Forgotten, std::move(entity.Baseline) });
 }
 
 void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const PersistentEntityId> live,
@@ -52,72 +60,89 @@ void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const Persist
 
     const bool detaching = capture == ZoneCapture::Detach;
     record.Destroyed.clear();
-    for (const auto& [authored, forgotten] : record.Authored)
-        if (!liveSet.contains(authored) && !(detaching && forgotten == ZoneStateForgetting::AtDetach))
-            record.Destroyed.emplace(authored, forgotten);
-    std::erase_if(record.Components, [&](const auto& entry) {
-        return !record.Authored.contains(entry.first.Entity) && !record.Destroyed.contains(entry.first.Entity);
+    for (const auto& [authored, entity] : record.Authored)
+        if (!liveSet.contains(authored) && !(detaching && entity.Forgotten == ZoneStateForgetting::AtDetach))
+            record.Destroyed.emplace(authored, entity.Forgotten);
+    std::erase_if(record.Patches, [&](const auto& entry) {
+        return !record.Authored.contains(entry.first) || record.Destroyed.contains(entry.first);
     });
     if (detaching)
     {
-        std::erase_if(record.Components,
+        std::erase_if(record.Patches,
                       [](const auto& entry) { return entry.second.Forgotten == ZoneStateForgetting::AtDetach; });
         record.Authored.clear();
     }
 }
 
-bool ZoneStateStore::IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const
+void ZoneStateStore::RecordPatch(ZoneStateScope scope, PersistentEntityId id, JsonValue patch)
+{
+    if (!scope.IsValid() || !id.IsValid())
+        return;
+    if (!patch.IsObject() || patch.Size() == 0)
+    {
+        if (const auto it = Zones_.find(KeyOf(scope)); it != Zones_.end())
+            it->second.Patches.erase(id.Value);
+        return;
+    }
+    const ZoneStateForgetting forgotten = ForgettingOf(scope, id);
+    Zones_[KeyOf(scope)].Patches.insert_or_assign(id.Value, PatchRecord{ forgotten, std::move(patch) });
+}
+
+void ZoneStateStore::ForgetPatchMember(ZoneStateScope scope, PersistentEntityId id, std::string_view member)
 {
     const auto it = Zones_.find(KeyOf(scope));
-    return it != Zones_.end() && it->second.Destroyed.contains(id.Value);
+    if (it == Zones_.end())
+        return;
+    const auto found = it->second.Patches.find(id.Value);
+    if (found == it->second.Patches.end())
+        return;
+    std::erase_if(found->second.Patch.AsObject(), [&](const auto& entry) { return entry.first == member; });
+    if (found->second.Patch.Size() == 0)
+        it->second.Patches.erase(found);
+}
+
+bool ZoneStateStore::IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const
+{
+    const ZoneRecord* record = Find(scope);
+    return record != nullptr && record->Destroyed.contains(id.Value);
 }
 
 std::size_t ZoneStateStore::RecordedDestroyedCount(ZoneStateScope scope) const
 {
-    const auto it = Zones_.find(KeyOf(scope));
-    return it != Zones_.end() ? it->second.Destroyed.size() : 0;
+    const ZoneRecord* record = Find(scope);
+    return record != nullptr ? record->Destroyed.size() : 0;
 }
 
 ZoneStateForgetting ZoneStateStore::ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const
 {
-    const auto it = Zones_.find(KeyOf(scope));
-    if (it == Zones_.end())
+    const ZoneRecord* record = Find(scope);
+    if (record == nullptr)
         return ZoneStateForgetting::Never;
-    if (const auto authored = it->second.Authored.find(id.Value); authored != it->second.Authored.end())
-        return authored->second;
-    if (const auto destroyed = it->second.Destroyed.find(id.Value); destroyed != it->second.Destroyed.end())
+    if (const auto authored = record->Authored.find(id.Value); authored != record->Authored.end())
+        return authored->second.Forgotten;
+    if (const auto destroyed = record->Destroyed.find(id.Value); destroyed != record->Destroyed.end())
         return destroyed->second;
+    if (const auto patched = record->Patches.find(id.Value); patched != record->Patches.end())
+        return patched->second.Forgotten;
     return ZoneStateForgetting::Never;
 }
 
-void ZoneStateStore::RecordComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type,
-                                          std::uint16_t version, std::span<const std::byte> state)
+const JsonValue* ZoneStateStore::PatchOf(ZoneStateScope scope, PersistentEntityId id) const
 {
-    if (!scope.IsValid())
-        return;
-    const ZoneStateForgetting forgotten = ForgettingOf(scope, id);
-    ComponentRecord& record = Zones_[KeyOf(scope)].Components[ComponentStateKey{ id.Value, type.Value }];
-    record.Forgotten = forgotten;
-    record.Version = version;
-    record.Bytes.assign(state.begin(), state.end());
+    const ZoneRecord* record = Find(scope);
+    if (record == nullptr)
+        return nullptr;
+    const auto found = record->Patches.find(id.Value);
+    return found != record->Patches.end() ? &found->second.Patch : nullptr;
 }
 
-void ZoneStateStore::ForgetComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type)
+const std::vector<AuthoredComponent>* ZoneStateStore::BaselineOf(ZoneStateScope scope, PersistentEntityId id) const
 {
-    if (const auto it = Zones_.find(KeyOf(scope)); it != Zones_.end())
-        it->second.Components.erase(ComponentStateKey{ id.Value, type.Value });
-}
-
-RememberedComponentState ZoneStateStore::ComponentState(ZoneStateScope scope, PersistentEntityId id,
-                                                        ComponentTypeId type) const
-{
-    const auto it = Zones_.find(KeyOf(scope));
-    if (it == Zones_.end())
-        return {};
-    const auto found = it->second.Components.find(ComponentStateKey{ id.Value, type.Value });
-    if (found == it->second.Components.end())
-        return {};
-    return RememberedComponentState{ found->second.Version, found->second.Bytes };
+    const ZoneRecord* record = Find(scope);
+    if (record == nullptr)
+        return nullptr;
+    const auto found = record->Authored.find(id.Value);
+    return found != record->Authored.end() ? &found->second.Baseline : nullptr;
 }
 
 std::vector<DurableZoneState> ZoneStateStore::ExportDurable(const LevelReference& level) const
@@ -133,18 +158,9 @@ std::vector<DurableZoneState> ZoneStateStore::ExportDurable(const LevelReference
         for (const auto& [id, forgotten] : record.Destroyed)
             if (forgotten == ZoneStateForgetting::Never)
                 state.Destroyed.push_back(PersistentEntityId{ id });
-        for (const auto& [componentKey, component] : record.Components)
-            if (component.Forgotten == ZoneStateForgetting::Never)
-                state.Components.push_back(DurableComponentState{ .Entity = PersistentEntityId{ componentKey.Entity },
-                                                                  .Type = ComponentTypeId{ componentKey.Type },
-                                                                  .Version = component.Version,
-                                                                  .Bytes = component.Bytes });
-        if (state.Destroyed.empty() && state.Components.empty())
+        if (state.Destroyed.empty())
             continue;
         std::ranges::sort(state.Destroyed, {}, &PersistentEntityId::Value);
-        std::ranges::sort(state.Components, [](const DurableComponentState& a, const DurableComponentState& b) {
-            return a.Entity.Value != b.Entity.Value ? a.Entity.Value < b.Entity.Value : a.Type.Value < b.Type.Value;
-        });
         durable.push_back(std::move(state));
     }
     std::ranges::sort(durable, {}, [](const DurableZoneState& state) { return state.Zone.Value; });
@@ -159,9 +175,5 @@ void ZoneStateStore::Install(const LevelReference& level, std::span<const Durabl
         ZoneRecord& record = Zones_[KeyOf(Scope(level, state.Zone))];
         for (const PersistentEntityId id : state.Destroyed)
             record.Destroyed.emplace(id.Value, ZoneStateForgetting::Never);
-        for (const DurableComponentState& component : state.Components)
-            record.Components.insert_or_assign(
-                ComponentStateKey{ component.Entity.Value, component.Type.Value },
-                ComponentRecord{ ZoneStateForgetting::Never, component.Version, component.Bytes });
     }
 }

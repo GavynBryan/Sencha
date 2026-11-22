@@ -1,8 +1,10 @@
 #pragma once
 
 #include <core/identity/Id.h>
+#include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/LevelReference.h>
+#include <world/serialization/EntityPatch.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateScope.h>
@@ -10,8 +12,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
+
+class ComponentSerializerRegistry;
 
 struct DurableComponentState
 {
@@ -37,12 +42,15 @@ struct AuthoredEntityState
 {
     PersistentEntityId Id;
     ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+    // What a capture diffs this entity against: by default its Saved components.
+    std::vector<AuthoredComponent> Baseline;
 };
 
-struct RememberedComponentState
+// World resource SavedGames::KeepLevelState installs; without it a zone keeps destroyed sets only.
+struct ZoneStateSerialization
 {
-    std::uint16_t Version = 0;
-    std::span<const std::byte> Bytes;
+    const ComponentSerializerRegistry* Serializers = nullptr;
+    SceneSerializationContext* Context = nullptr;
 };
 
 enum class ZoneCapture : std::uint8_t
@@ -63,22 +71,22 @@ public:
 
     // At import, with every entity the cooked scene authored, those this import
     // suppressed included.
-    void RecordAuthoredSet(ZoneStateScope scope, std::span<const AuthoredEntityState> authored);
+    void RecordAuthoredSet(ZoneStateScope scope, std::vector<AuthoredEntityState> authored);
 
     // While the zone's entities are alive: authored minus live is destroyed.
     void RecordCapture(ZoneStateScope scope, std::span<const PersistentEntityId> live, ZoneCapture capture);
+
+    // An empty patch forgets the entity's.
+    void RecordPatch(ZoneStateScope scope, PersistentEntityId id, JsonValue patch);
+    void ForgetPatchMember(ZoneStateScope scope, PersistentEntityId id, std::string_view member);
 
     [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
     [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
     [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const;
-
-    void RecordComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type,
-                              std::uint16_t version, std::span<const std::byte> state);
-    void ForgetComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type);
-    // Empty bytes when nothing was recorded.
-    [[nodiscard]] RememberedComponentState ComponentState(ZoneStateScope scope, PersistentEntityId id,
-                                                          ComponentTypeId type) const;
+    [[nodiscard]] const JsonValue* PatchOf(ZoneStateScope scope, PersistentEntityId id) const;
+    // Null unless the zone's current residency authored the entity.
+    [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
 
     // Reset-to-authored: the next import of every zone replays the cooked scene.
     void Clear() { Zones_.clear(); }
@@ -103,37 +111,28 @@ private:
         }
     };
 
-    struct ComponentStateKey
-    {
-        std::uint64_t Entity = 0;
-        std::uint64_t Type = 0;
-        friend bool operator==(const ComponentStateKey&, const ComponentStateKey&) = default;
-    };
-
-    struct ComponentStateKeyHash
-    {
-        std::size_t operator()(const ComponentStateKey& key) const
-        {
-            return static_cast<std::size_t>(key.Entity * 1099511628211ull ^ key.Type);
-        }
-    };
-
-    struct ComponentRecord
+    struct AuthoredRecord
     {
         ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
-        std::uint16_t Version = 0;
-        std::vector<std::byte> Bytes;
+        std::vector<AuthoredComponent> Baseline;
+    };
+
+    struct PatchRecord
+    {
+        ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+        JsonValue Patch;
     };
 
     struct ZoneRecord
     {
-        std::unordered_map<std::uint64_t, ZoneStateForgetting> Authored;
+        std::unordered_map<std::uint64_t, AuthoredRecord> Authored;
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
-        std::unordered_map<ComponentStateKey, ComponentRecord, ComponentStateKeyHash> Components;
+        std::unordered_map<std::uint64_t, PatchRecord> Patches;
     };
 
     [[nodiscard]] static ScopeKey KeyOf(ZoneStateScope scope) { return { scope.Level.Value, scope.Zone.Value }; }
     [[nodiscard]] ZoneStateLevelId FindLevel(const LevelReference& level) const;
+    [[nodiscard]] const ZoneRecord* Find(ZoneStateScope scope) const;
 
     std::vector<LevelReference> Levels_;
     std::unordered_map<ScopeKey, ZoneRecord, ScopeKeyHash> Zones_;

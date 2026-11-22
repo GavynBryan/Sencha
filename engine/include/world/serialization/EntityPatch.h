@@ -43,6 +43,8 @@ struct AuthoredComponent
     // Null when content holds the component as runtime bytes or, with InContent false, not at all.
     JsonValue Record;
     bool InContent = true;
+    // False: listed, so not taken as gained, and left out of the patch.
+    bool Diffed = true;
 };
 
 struct EntityScope
@@ -71,6 +73,8 @@ struct EntityPatchOutcome
 {
     std::vector<std::string> Retuned;
     std::vector<std::string> Misfit;
+    // The patch's members, by component key, that Misfit's lines left out.
+    std::vector<std::string> MisfitMembers;
     std::vector<std::string> Unknown;
 };
 

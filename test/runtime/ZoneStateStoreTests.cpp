@@ -84,7 +84,7 @@ std::vector<AuthoredEntityState> Authored(std::initializer_list<std::uint64_t> i
 {
     std::vector<AuthoredEntityState> authored;
     for (const std::uint64_t id : ids)
-        authored.push_back(AuthoredEntityState{ PersistentEntityId{ id }, forgotten });
+        authored.push_back(AuthoredEntityState{ PersistentEntityId{ id }, forgotten, {} });
     return authored;
 }
 } // namespace
@@ -205,12 +205,9 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
 {
     ZoneStateStore store;
     std::vector authored = Authored({ 0x30, 0x10, 0x20 });
-    authored.push_back(AuthoredEntityState{ PersistentEntityId{ 0x40 }, ZoneStateForgetting::AtRestore });
+    authored.push_back(AuthoredEntityState{ PersistentEntityId{ 0x40 }, ZoneStateForgetting::AtRestore, {} });
     store.RecordAuthoredSet(ScopeOf(store, ZoneId{ 9 }), authored);
     store.RecordAuthoredSet(ScopeOf(store, ZoneId{ 3 }), Authored({ 0x50 }));
-    const std::array bytes{ std::byte{ 1 }, std::byte{ 2 } };
-    store.RecordComponentState(ScopeOf(store, ZoneId{ 9 }), PersistentEntityId{ 0x20 }, ComponentTypeId{ 7 }, 2, bytes);
-    store.RecordComponentState(ScopeOf(store, ZoneId{ 9 }), PersistentEntityId{ 0x40 }, ComponentTypeId{ 7 }, 2, bytes);
     store.RecordCapture(ScopeOf(store, ZoneId{ 9 }), std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
     store.RecordCapture(ScopeOf(store, ZoneId{ 3 }), {}, ZoneCapture::Live);
 
@@ -220,9 +217,6 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
     EXPECT_EQ(durable[1].Zone, ZoneId{ 9 });
     EXPECT_EQ(durable[1].Destroyed, (std::vector{ PersistentEntityId{ 0x10 }, PersistentEntityId{ 0x30 } }))
         << "0x40 is forgotten at restore and 0x20 lives";
-    ASSERT_EQ(durable[1].Components.size(), 1u);
-    EXPECT_EQ(durable[1].Components[0].Entity, PersistentEntityId{ 0x20 });
-    EXPECT_EQ(durable[1].Components[0].Version, 2);
 
     ZoneStateStore restored;
     restored.RecordAuthoredSet(ScopeOf(restored, ZoneId{ 5 }), Authored({ 0x60 }));
@@ -232,23 +226,33 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
     EXPECT_FALSE(restored.IsRecordedDestroyed(ScopeOf(restored, ZoneId{ 5 }), PersistentEntityId{ 0x60 })) << "install replaces";
 }
 
-TEST(ZoneStateStore, ACaptureDropsComponentStateOfEntitiesTheZoneDidNotAuthor)
+TEST(ZoneStateStore, ACaptureDropsPatchesOfEntitiesTheZoneNoLongerHas)
 {
     ZoneStateStore store;
-    store.RecordAuthoredSet(ScopeOf(store, ZoneId{ 4 }), Authored({ 0x10, 0x20 }));
+    const ZoneStateScope scope = ScopeOf(store, ZoneId{ 4 });
+    store.RecordAuthoredSet(scope, Authored({ 0x10, 0x20 }));
     const PersistentEntityId runtime{ PersistentEntityIdRuntimeBit | 7 };
-    const std::array bytes{ std::byte{ 1 } };
-    store.RecordComponentState(ScopeOf(store, ZoneId{ 4 }), PersistentEntityId{ 0x10 }, ComponentTypeId{ 7 }, 1, bytes);
-    store.RecordComponentState(ScopeOf(store, ZoneId{ 4 }), PersistentEntityId{ 0x20 }, ComponentTypeId{ 7 }, 1, bytes);
-    store.RecordComponentState(ScopeOf(store, ZoneId{ 4 }), runtime, ComponentTypeId{ 7 }, 1, bytes);
+    const JsonValue patch(JsonValue::Object{ { "Attributes", JsonValue(JsonValue::Object{}) } });
+    store.RecordPatch(scope, PersistentEntityId{ 0x10 }, patch);
+    store.RecordPatch(scope, PersistentEntityId{ 0x20 }, patch);
+    store.RecordPatch(scope, runtime, patch);
 
-    store.RecordCapture(ScopeOf(store, ZoneId{ 4 }), std::array{ PersistentEntityId{ 0x10 }, runtime }, ZoneCapture::Live);
+    store.RecordCapture(scope, std::array{ PersistentEntityId{ 0x10 }, runtime }, ZoneCapture::Live);
 
-    const std::vector<DurableZoneState> durable = store.ExportDurable(kGarden);
-    ASSERT_EQ(durable.size(), 1u);
-    ASSERT_EQ(durable[0].Components.size(), 2u) << "only what the zone authored, living or destroyed, is kept";
-    EXPECT_EQ(durable[0].Components[0].Entity, PersistentEntityId{ 0x10 });
-    EXPECT_EQ(durable[0].Components[1].Entity, PersistentEntityId{ 0x20 });
+    EXPECT_NE(store.PatchOf(scope, PersistentEntityId{ 0x10 }), nullptr);
+    EXPECT_EQ(store.PatchOf(scope, PersistentEntityId{ 0x20 }), nullptr) << "destroyed, so nothing to patch";
+    EXPECT_EQ(store.PatchOf(scope, runtime), nullptr) << "not the zone's";
+}
+
+TEST(ZoneStateStore, AnEmptyPatchForgetsTheEntitys)
+{
+    ZoneStateStore store;
+    const ZoneStateScope scope = ScopeOf(store, ZoneId{ 4 });
+    store.RecordAuthoredSet(scope, Authored({ 0x10 }));
+    store.RecordPatch(scope, PersistentEntityId{ 0x10 },
+                      JsonValue(JsonValue::Object{ { "Attributes", JsonValue(JsonValue::Object{}) } }));
+    store.RecordPatch(scope, PersistentEntityId{ 0x10 }, JsonValue(JsonValue::Object{}));
+    EXPECT_EQ(store.PatchOf(scope, PersistentEntityId{ 0x10 }), nullptr);
 }
 
 TEST(ZoneStateMemory, AChildTakesItsParentsLifetimeAndIsForgottenAtRestore)

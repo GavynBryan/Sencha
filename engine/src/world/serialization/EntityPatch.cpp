@@ -109,17 +109,14 @@ std::vector<AuthoredComponent> AuthoredComponentsOf(const PackageEntity& entity,
                                                     const EntityScope& scope)
 {
     std::vector<AuthoredComponent> baseline;
-    for (const auto& serializer : serializers.Entries())
-    {
-        if (!InScope(*serializer, scope))
-            continue;
-        if (const PackageComponent* content = entity.Find(serializer->TypeId()))
-            baseline.push_back({ .Type = serializer->TypeId(),
-                                 .Record = content->SerializedJson.value_or(JsonValue()),
-                                 .InContent = true });
-        else if (std::ranges::find(scope.Listed, serializer->TypeId()) != scope.Listed.end())
-            baseline.push_back({ .Type = serializer->TypeId(), .Record = JsonValue(), .InContent = false });
-    }
+    for (const PackageComponent& content : entity.Components)
+        if (const IComponentSerializer* serializer = serializers.FindByType(content.Type);
+            serializer != nullptr && InScope(*serializer, scope))
+            baseline.push_back(
+                { .Type = content.Type, .Record = content.SerializedJson.value_or(JsonValue()), .InContent = true, .Diffed = true });
+    for (const ComponentTypeId listed : scope.Listed)
+        if (entity.Find(listed) == nullptr && serializers.FindByType(listed) != nullptr)
+            baseline.push_back({ .Type = listed, .Record = JsonValue(), .InContent = false, .Diffed = true });
     return baseline;
 }
 
@@ -166,7 +163,8 @@ JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<cons
             live.AsObject().emplace_back(key, std::move(*now));
     };
     for (const AuthoredComponent& component : baseline)
-        if (const IComponentSerializer* serializer = serializers.FindByType(component.Type))
+        if (const IComponentSerializer* serializer = serializers.FindByType(component.Type);
+            serializer != nullptr && component.Diffed)
             take(*serializer, &component);
     for (const auto& serializer : serializers.Entries())
     {
@@ -212,7 +210,10 @@ EntityPatchOutcome ApplyEntityPatch(PackageEntity& entity, const JsonValue& patc
             base = DefaultRecordOf(*serializer);
         std::optional<JsonValue> value = base.has_value() ? ComposedOver(*base, member, *serializer, outcome) : member;
         if (!value.has_value())
+        {
+            outcome.MisfitMembers.push_back(key);
             continue;
+        }
         const bool unpatchedAlready = std::ranges::any_of(
             entity.Unpatched, [type](const PackageComponent& component) { return component.Type == type; });
         if (content != nullptr && !unpatchedAlready)

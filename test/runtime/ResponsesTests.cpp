@@ -12,6 +12,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -21,6 +22,7 @@
 #include <logic/ResponseSet.h>
 #include <logic/ResponseVerbs.h>
 #include <logic/Responses.h>
+#include <logic/ResponsesSerializer.h>
 #include <logic/ResponsesSystem.h>
 #include <physics/SensorOverlaps.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -32,8 +34,8 @@
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <cmath>
@@ -316,7 +318,6 @@ protected:
         WorldState.AddResource<PersistentEntityIndex>();
         (void)InstallHeldRecords(WorldState);
         ZoneState = &WorldState.AddResource<ZoneStateStore>();
-        WorldState.AddResource<ZoneComponentMemories>();
 
         Tags = &WorldState.AddResource<GameplayTagRegistry>();
         Red = *Tags->RegisterTag("Test.Red");
@@ -1401,39 +1402,55 @@ TEST_F(ResponsesFixture, AnUndeclaredEventIsReportedAndItsBindingNeverMatches)
     EXPECT_EQ(System->Deliver(target, TestStruck{ target, Charge, {} }), 0u);
 }
 
-TEST_F(ResponsesFixture, AZoneRemembersConsumedAndDisabledBindingsAcrossUnloadAndReload)
+TEST_F(ResponsesFixture, ASavedFormWritesConsumedAndDisabledBindingsAndReadsThemBack)
 {
-    const StoragePartitionId zone{ 5 };
-    Logic.Add(zone);
     const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)"),
                                             Binding("use", "test.used", kRecordSelf),
                                             Binding("idle", "test.used", kRecordInstigator) });
-    const PersistentEntityId identity{ 0x1234 };
-    const EntityId placed = Place(bindings, zone);
-    WorldState.AddComponent<PersistentIdComponent>(placed, PersistentIdComponent{ identity });
+    const EntityId placed = Place(bindings);
     ASSERT_EQ(System->Deliver(placed, TestStruck{ placed, Charge, {} }), 1u);
     Tick();
     ASSERT_EQ(SetEnabled(placed, "use", false), VerbAdmission::Accepted);
     const Responses before = StateOf(placed);
-    const ZoneStateScope scope =
-        ZoneState->Scope(LevelReference{ .Kind = LevelKind::Scene, .Name = "responses" }, ZoneId{ 1 });
+    ASSERT_NE(before.Consumed, 0u);
 
-    CaptureZoneState(WorldState, scope, std::array{ placed }, ZoneCapture::Detach);
-    WorldState.DestroyEntity(placed);
-    EXPECT_FALSE(ZoneState->ComponentState(scope, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+    const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
+    SceneSerializationContext context(Logging);
+    context.Purpose = SceneRecordPurpose::Save;
+    JsonWriteArchive written;
+    ASSERT_TRUE(serializer->Save(written, placed, WorldState, context));
+    const JsonValue saved = written.TakeValue();
+    const JsonValue* open = saved.Find("bindings")->Find("open");
+    const JsonValue* use = saved.Find("bindings")->Find("use");
+    ASSERT_NE(open, nullptr);
+    ASSERT_NE(use, nullptr);
+    EXPECT_EQ(JsonStringify(*open->Find("consumed")), "true");
+    EXPECT_EQ(JsonStringify(*use->Find("enabled")), "false");
+    EXPECT_EQ(saved.Find("bindings")->Find("idle")->Find("consumed"), nullptr);
 
-    // The zone comes back: the entity as authored, then its remembered state.
-    const EntityId reloaded = Place(bindings, zone);
-    WorldState.AddComponent<PersistentIdComponent>(reloaded, PersistentIdComponent{ identity });
-    EXPECT_EQ(StateOf(reloaded).Consumed, 0u);
-    RestoreZoneState(WorldState, scope, std::array{ reloaded });
+    const EntityId reloaded = WorldState.CreateEntity();
+    JsonReadArchive read(saved);
+    ASSERT_TRUE(serializer->LoadIntoWorld(read, reloaded, WorldState, context));
     EXPECT_EQ(StateOf(reloaded).Consumed, before.Consumed);
     EXPECT_EQ(StateOf(reloaded).Disabled, before.Disabled);
+    EXPECT_TRUE(ResponseDefinitionsOf(WorldState).Sets.Diagnostics(StateOf(reloaded).Set).empty())
+        << "consumed is state, not an authored member";
+}
 
-    // Back as authored, the zone forgets it.
-    *WorldState.TryGet<Responses>(reloaded) = Responses{ StateOf(reloaded).Set, 0, 0 };
-    CaptureZoneState(WorldState, scope, std::array{ reloaded }, ZoneCapture::Detach);
-    EXPECT_TRUE(ZoneState->ComponentState(scope, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+TEST_F(ResponsesFixture, AnAuthoredFormWritesNoState)
+{
+    const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)") });
+    const EntityId placed = Place(bindings);
+    WorldState.TryGet<Responses>(placed)->Consumed = 1u;
+    WorldState.TryGet<Responses>(placed)->Disabled = 1u;
+
+    const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
+    SceneSerializationContext context(Logging);
+    JsonWriteArchive written;
+    ASSERT_TRUE(serializer->Save(written, placed, WorldState, context));
+    const std::string text = JsonStringify(written.TakeValue());
+    EXPECT_EQ(text.find("consumed"), std::string::npos) << text;
+    EXPECT_EQ(text.find("enabled"), std::string::npos) << text;
 }
 
 // ---------------------------------------------------------------------------

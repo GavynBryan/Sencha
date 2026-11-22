@@ -3,6 +3,7 @@
 #include <app/Engine.h>
 #include <app/LevelChange.h>
 #include <app/LoadedLevel.h>
+#include <app/RuntimeContent.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
@@ -110,6 +111,12 @@ SavedGames::~SavedGames()
         (void)Host.Tasks().Cancel(InFlight->Task);
     if (ReadTask.IsValid())
         (void)Host.Tasks().Cancel(ReadTask);
+}
+
+void SavedGames::KeepLevelState()
+{
+    Host.World().Entities().SetResource(
+        ZoneStateSerialization{ .Serializers = &Host.SceneSerializers(), .Context = &Host.Content().SceneContext() });
 }
 
 bool SavedGames::RegisterSection(SavedGameSectionDefinition section)

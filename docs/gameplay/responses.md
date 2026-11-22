@@ -202,15 +202,18 @@ authority-only and refuse on a client.
 
 ### What persists
 
-Bindings are scene data. Runtime state -- disabled and consumed bits -- is
-remembered by the zone: when a zone detaches or a save is written, each entity
-whose bindings differ from authored is recorded in `ZoneStateStore` by
-persistent identity and binding key, through the `ZoneComponentMemory` responses
-register, and restored when the zone is imported again. A binding is restored
-only if its authored text is unchanged; changing a binding's text starts it as
-authored. Cooldowns and waiting responses are transient. The same rule applies
-when an entity's bindings change at runtime or in Kyusu: state follows the
-key, and only while the binding's text is unchanged.
+Bindings are scene data. Runtime state -- disabled and consumed bits -- rides
+in the save form of the same component: written with the purpose `Save`
+(`SceneRecordPurpose`), a binding whose enabled state differs from its start
+gains `"enabled"` and a spent once-binding gains `"consumed": true`; reading
+takes `consumed` back into its bit before the bindings are interned, so it is
+never an authored member. A level entity's responses are then kept like any
+other `Saved` component, as a patch against what the level authored
+(`docs/gameplay/saves.md`), so state is remembered per binding key; a binding
+whose key is gone takes its state with it. The authored form, which Kyusu
+writes, holds no state. Cooldowns and waiting responses are transient. When an
+entity's bindings change at runtime or in Kyusu, state follows the key, and
+only while the binding's text is unchanged.
 
 ### Hot reload
 

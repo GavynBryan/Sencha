@@ -10,16 +10,17 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneStateLifetime.h>
-#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -287,11 +288,69 @@ std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentS
     return skipped;
 }
 
+struct LevelEntityPatches
+{
+    ZoneStateStore* Store = nullptr;
+    const ComponentSerializerRegistry* Serializers = nullptr;
+    SceneSerializationContext* Context = nullptr;
+    ZoneStateScope Scope;
+};
+
+LevelEntityPatches KeptLevelState(World& world, ZoneStateStore* store, ZoneStateScope scope,
+                                  const ComponentSerializerRegistry* serializers, SceneSerializationContext* context)
+{
+    const ZoneStateSerialization* kept = world.TryGetResource<ZoneStateSerialization>();
+    if (store == nullptr || serializers == nullptr || context == nullptr || kept == nullptr
+        || kept->Serializers == nullptr || !IsSimulationAuthority(world))
+        return {};
+    return LevelEntityPatches{ store, serializers, context, scope };
+}
+
+std::optional<PackageEntity> Patched(const PackageEntity& content, const LevelEntityPatches& patches)
+{
+    const JsonValue* patch = patches.Store->PatchOf(patches.Scope, content.PersistentId);
+    if (patch == nullptr)
+        return std::nullopt;
+    PackageEntity patched = content;
+    const EntityPatchOutcome outcome = ApplyEntityPatch(patched, *patch, *patches.Serializers);
+    Logger& log = patches.Context->Logging->GetLogger<ZonePackageImport>();
+    const std::string id = PersistentEntityIdToString(content.PersistentId);
+    for (const std::string& line : outcome.Retuned)
+        log.Warn("zone state: {}: what was kept of {} is set aside; the scene decides", id, line);
+    for (const std::string& line : outcome.Misfit)
+        log.Error("zone state: {}: what was kept no longer fits its scene and follows content: {}", id, line);
+    for (const std::string& member : outcome.MisfitMembers)
+        patches.Store->ForgetPatchMember(patches.Scope, content.PersistentId, member);
+    return patched;
+}
+
+std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, const LevelEntityPatches& patches,
+                                          std::vector<ComponentTypeId>& bytesReported)
+{
+    std::vector<AuthoredComponent> baseline =
+        AuthoredComponentsOf(content, *patches.Serializers, { .Declared = { .Saved = true } });
+    for (AuthoredComponent& component : baseline)
+    {
+        if (!component.InContent || !component.Record.IsNull())
+            continue;
+        component.Diffed = false;
+        if (std::ranges::find(bytesReported, component.Type) != bytesReported.end())
+            continue;
+        bytesReported.push_back(component.Type);
+        const IComponentSerializer* serializer = patches.Serializers->FindByType(component.Type);
+        patches.Context->Logging->GetLogger<ZonePackageImport>().Warn(
+            "zone state: '{}' is cooked as bytes in this zone, so changes to it are not kept",
+            serializer != nullptr ? serializer->JsonKey() : std::string_view("?"));
+    }
+    return baseline;
+}
+
 std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
                                                 std::span<const EntityId> entities,
                                                 const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
-                                                ZoneStateScope scope)
+                                                ZoneStateScope scope, const LevelEntityPatches& patches)
 {
+    std::vector<ComponentTypeId> bytesReported;
     std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
     const bool lifetimes = world.IsRegistered<ZoneStateLifetime>();
     if (lifetimes && world.IsRegistered<SceneInstance>())
@@ -312,7 +371,10 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const Entity
         const ZoneStateForgetting forgotten = !entity.IsValid() ? store.ForgettingOf(scope, packageEntity.PersistentId)
                                               : lifetimes        ? ForgettingOf(world, entity, byInstance)
                                                                  : ZoneStateForgetting::Never;
-        authored.push_back(AuthoredEntityState{ packageEntity.PersistentId, forgotten });
+        authored.push_back(AuthoredEntityState{
+            packageEntity.PersistentId, forgotten,
+            patches.Store != nullptr && entity.IsValid() ? BaselineOf(packageEntity, patches, bytesReported)
+                                                         : std::vector<AuthoredComponent>{} });
     }
     return authored;
 }
@@ -345,8 +407,9 @@ bool ImportPackageIntoPartitionImpl(
     // test worlds) import the cooked scene verbatim, and so does an import that
     // names no scope -- content built for this import alone has no prior
     // residency to have destroyed anything.
-    const ZoneStateStore* zoneState =
+    ZoneStateStore* zoneState =
         stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr;
+    const LevelEntityPatches patches = KeptLevelState(world, zoneState, stateScope, serializers, sceneContext);
 
     // Which entities are parented has to be known before any row is built, so
     // Parent joins the initial signature instead of costing a later archetype
@@ -403,7 +466,7 @@ bool ImportPackageIntoPartitionImpl(
     std::vector<ComponentTypeId> owed;
     std::vector<std::byte> owedDefaults;
     std::size_t packageIndex = 0;
-    for (const PackageEntity& packageEntity : package.Entities())
+    for (const PackageEntity& content : package.Entities())
     {
         const EntityId entity = entities[packageIndex];
         if (!entity.IsValid())
@@ -411,6 +474,10 @@ bool ImportPackageIntoPartitionImpl(
             ++packageIndex;
             continue;
         }
+        const std::optional<PackageEntity> patched = patches.Store != nullptr && content.PersistentId.IsValid()
+            ? Patched(content, patches)
+            : std::nullopt;
+        const PackageEntity& packageEntity = patched.has_value() ? *patched : content;
 
         std::string failure;
         if (!BuildEntitySignature(
@@ -480,18 +547,12 @@ bool ImportPackageIntoPartitionImpl(
     // Successful import records what the cooked scene authored, so the detach
     // capture can diff live state against it. Scopeless imports record nothing:
     // there is no residency for a later detach to diff.
-    if (auto* mutableState =
-            stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr)
+    if (zoneState != nullptr)
     {
-        const std::vector<AuthoredEntityState> authored =
-            AuthoredStates(world, package, entities, authorityOnly, *mutableState, stateScope);
+        std::vector<AuthoredEntityState> authored =
+            AuthoredStates(world, package, entities, authorityOnly, *zoneState, stateScope, patches);
         if (!authored.empty())
-            mutableState->RecordAuthoredSet(stateScope, authored);
-        std::vector<EntityId> live;
-        for (const EntityId entity : entities)
-            if (entity.IsValid())
-                live.push_back(entity);
-        RestoreZoneState(world, stateScope, live);
+            zoneState->RecordAuthoredSet(stateScope, std::move(authored));
     }
 
     // The caller's own record of what it made -- which entity is the root, and

@@ -1440,3 +1440,16 @@ place of a `ZoneId`. `RuntimeZoneRecord` gains `StateScope`; `ZoneLoadRecipe`
 gains `StateScope`; `AsyncZoneLoader::BeginLoad` and `BeginLoadScene` and the
 `ImportZonePackage` family take a trailing `ZoneStateScope`.
 
+Level entities are saved by the entity patch. `ZoneComponentMemory`,
+`ZoneComponentMemories`, `RestoreZoneState`, `RememberedComponentState` and the
+store's component-state methods are gone. `AuthoredEntityState` gains
+`Baseline`; `ZoneStateStore::RecordAuthoredSet` takes the authored set by value
+and the store gains `RecordPatch`, `ForgetPatchMember`, `PatchOf` and
+`BaselineOf`. `ZoneStateSerialization` is a new World resource, installed by the
+new `SavedGames::KeepLevelState()`. `EntityPatchOutcome` gains
+`MisfitMembers`, and `AuthoredComponent` gains `Diffed`: a capture leaves a
+baseline entry marked false out of the patch, which is how a level entity's
+component cooked as bytes is not diffed. The responses serializer writes
+a binding's `enabled` and `consumed` state in its save form and reads
+`consumed` back.
+

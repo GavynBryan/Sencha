@@ -16,6 +16,7 @@
 #include <movement/MovementRegistration.h>
 #include <navigation/NavAgentRegistration.h>
 #include <participant/ParticipantLifecycle.h>
+#include <save/SavedGames.h>
 #include <perception/PerceptionRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <world/RuntimeWorld.h>
@@ -51,6 +52,9 @@ void FpsGame::OnStart(GameStartupContext&)
 
     SessionState.emplace(engine, engine.Logging().GetLogger<FpsGame>());
     SessionState->Open();
+
+    // What the player changed in each level is kept and written to saves.
+    engine.Saves().KeepLevelState();
 
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,

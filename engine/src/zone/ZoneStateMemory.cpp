@@ -1,20 +1,49 @@
 #include <zone/ZoneStateMemory.h>
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <world/SimulationAuthority.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/serialization/EntityPatch.h>
+#include <world/serialization/SceneSerializationContext.h>
 
-#include <algorithm>
+#include <string>
 #include <utility>
 
-void ZoneComponentMemories::Register(const ZoneComponentMemory& memory)
+namespace
 {
-    const auto existing = std::ranges::find(Memories, memory.Type, &ZoneComponentMemory::Type);
-    if (existing != Memories.end())
-        *existing = memory;
-    else
-        Memories.push_back(memory);
+    struct ZoneStateCapture
+    {
+    };
+
+    void RecordPatches(World& world, ZoneStateStore& store, const ZoneStateSerialization& serialization,
+                       ZoneStateScope scope, std::span<const std::pair<EntityId, PersistentEntityId>> alive)
+    {
+        Logger& log = serialization.Context->Logging->GetLogger<ZoneStateCapture>();
+        std::vector<std::string> failed;
+        for (const auto& [entity, id] : alive)
+        {
+            const std::vector<AuthoredComponent>* baseline = store.BaselineOf(scope, id);
+            if (baseline == nullptr)
+                continue;
+            failed.clear();
+            JsonValue patch = CaptureEntityPatch(world, entity, *baseline, ComponentPersistenceSet{ .Saved = true },
+                                                 *serialization.Serializers, *serialization.Context,
+                                                 store.PatchOf(scope, id), &failed);
+            for (const std::string& key : failed)
+                log.Error("zone state: {}'s '{}' could not be written; what was kept of it stays",
+                          PersistentEntityIdToString(id), key);
+            if (!failed.empty())
+                if (const JsonValue* kept = store.PatchOf(scope, id))
+                    for (const std::string& key : failed)
+                        if (const JsonValue* member = kept->Find(key))
+                            patch.AsObject().emplace_back(key, *member);
+            store.RecordPatch(scope, id, std::move(patch));
+        }
+    }
 }
 
 std::vector<EntityId> IdentifiedEntitiesIn(World& world, StoragePartitionId partition)
@@ -52,52 +81,9 @@ void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const Entity
             live.push_back(id->Id);
         }
 
-    // Before the authored set goes at detach: a record takes its entity's lifetime from it.
-    if (const ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>())
-    {
-        std::vector<std::byte> bytes;
-        for (const ZoneComponentMemory& memory : memories->All())
-        {
-            const ComponentId component = world.GetComponentIdByType(memory.Type);
-            if (component == InvalidComponentId)
-                continue;
-            for (const auto& [entity, id] : alive)
-            {
-                if (!world.HasComponent(entity, component))
-                    continue;
-                bytes.clear();
-                memory.Capture(world, entity, bytes);
-                if (bytes.empty())
-                    store->ForgetComponentState(scope, id, memory.Type);
-                else
-                    store->RecordComponentState(scope, id, memory.Type, memory.Version, bytes);
-            }
-        }
-    }
+    if (const ZoneStateSerialization* serialization = world.TryGetResource<ZoneStateSerialization>();
+        serialization != nullptr && serialization->Serializers != nullptr && serialization->Context != nullptr
+        && IsSimulationAuthority(world))
+        RecordPatches(world, *store, *serialization, scope, alive);
     store->RecordCapture(scope, live, capture);
-}
-
-void RestoreZoneState(World& world, ZoneStateScope scope, std::span<const EntityId> created)
-{
-    const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
-    const ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>();
-    if (store == nullptr || !scope.IsValid() || memories == nullptr || !world.IsRegistered<PersistentIdComponent>())
-        return;
-    for (const ZoneComponentMemory& memory : memories->All())
-    {
-        const ComponentId component = world.GetComponentIdByType(memory.Type);
-        if (component == InvalidComponentId)
-            continue;
-        for (const EntityId entity : created)
-        {
-            if (!world.HasComponent(entity, component))
-                continue;
-            const PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
-            if (id == nullptr || !id->Id.IsValid())
-                continue;
-            const RememberedComponentState remembered = store->ComponentState(scope, id->Id, memory.Type);
-            if (!remembered.Bytes.empty() && remembered.Version <= memory.Version)
-                memory.Restore(world, entity, remembered.Version, remembered.Bytes);
-        }
-    }
 }

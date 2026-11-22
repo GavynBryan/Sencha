@@ -106,6 +106,20 @@ namespace
         return "";
     }
 
+    std::string_view LevelEntityFate(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "follows the level";
+        case ComponentPersistence::Saved:
+            return "in the patch where it differs from the level";
+        case ComponentPersistence::Identity:
+            return "given by the level";
+        }
+        return "";
+    }
+
     std::string_view RecordFate(ComponentPersistence persistence)
     {
         return persistence == ComponentPersistence::Identity ? "beside the record" : "in the record";
@@ -166,14 +180,18 @@ std::vector<std::string> DescribeSavedEntity(const World& world, EntityId entity
     const bool body = entity.IsValid() && entity == LocalBodyOf(world);
     const bool record = !body && world.IsRegistered<Held>() && world.HasComponent<Held>(entity)
         && !HasAuthoredPersistentId(world, entity);
+    const bool level = !body && !record && HasAuthoredPersistentId(world, entity);
     std::vector<std::string> lines;
     if (body)
         lines.push_back(name + " is the local body: a save keeps its saved components as a patch against its prefab");
     else if (record)
         lines.push_back(name + " is a held record made at run time: a save keeps it whole, its identity beside it");
+    else if (level)
+        lines.push_back(name + " is a level entity: its zone keeps whether it was destroyed and, when the game keeps"
+                               " level state, its saved components as a patch against what the level authored");
     else
-        lines.push_back(name + " is neither the local body nor a held record made at run time: a save holds only"
-                               " whether its zone destroyed it and what that zone's registered memories keep");
+        lines.push_back(name + " is neither the local body, a level entity nor a held record made at run time:"
+                               " a save does not hold it");
     for (const auto& serializer : serializers.Entries())
     {
         const ComponentId column = world.GetComponentIdByType(serializer->TypeId());
@@ -183,6 +201,8 @@ std::vector<std::string> DescribeSavedEntity(const World& world, EntityId entity
         std::string line = "  " + std::string(serializer->JsonKey()) + ": " + std::string(PersistenceName(persistence));
         if (body)
             line += ", " + std::string(BodyFate(persistence));
+        else if (level)
+            line += ", " + std::string(LevelEntityFate(persistence));
         else if (record)
             line += ", " + std::string(RecordFate(persistence));
         lines.push_back(std::move(line));

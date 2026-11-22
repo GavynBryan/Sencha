@@ -6,18 +6,14 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/BinaryReader.h>
-#include <core/serialization/BinaryWriter.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Responses.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
-#include <zone/ZoneStateMemory.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <sstream>
 #include <utility>
 
 namespace
@@ -58,65 +54,6 @@ bool SatisfiesDeclaration(const AuthoredEventDefinition& definition, const Autho
     return valid;
 }
 
-// What a zone remembers of a binding that differs from authored: whose state
-// (its key), the text it had, and its two bits. Version 1 writes each as
-// key hash, definition hash and a flags byte.
-constexpr std::uint8_t kRememberedDisabled = 1;
-constexpr std::uint8_t kRememberedConsumed = 2;
-constexpr std::size_t kRememberedBindingBytes = 2 * sizeof(std::uint64_t) + 1;
-
-void CaptureRememberedBindings(const World& world, EntityId entity, std::vector<std::byte>& out)
-{
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    const Responses* state = world.TryGet<Responses>(entity);
-    if (definitions == nullptr || state == nullptr)
-        return;
-    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
-    const std::uint32_t authored = definitions->Sets.StartsDisabled(state->Set);
-    std::ostringstream stream;
-    BinaryWriter writer(stream);
-    for (std::size_t i = 0; i < bindings.size(); ++i)
-    {
-        const std::uint32_t bit = 1u << i;
-        if (((state->Disabled ^ authored) & bit) == 0 && (state->Consumed & bit) == 0)
-            continue;
-        const std::uint8_t flags = ((state->Disabled & bit) != 0 ? kRememberedDisabled : 0)
-            | ((state->Consumed & bit) != 0 ? kRememberedConsumed : 0);
-        (void)writer.Write(bindings[i].KeyHash);
-        (void)writer.Write(bindings[i].DefinitionHash);
-        (void)writer.Write(flags);
-    }
-    const std::string written = std::move(stream).str();
-    const auto* begin = reinterpret_cast<const std::byte*>(written.data());
-    out.assign(begin, begin + written.size());
-}
-
-void RestoreRememberedBindings(World& world, EntityId entity, std::uint16_t, std::span<const std::byte> bytes)
-{
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    Responses* state = world.TryGet<Responses>(entity);
-    if (definitions == nullptr || state == nullptr || bytes.size() % kRememberedBindingBytes != 0)
-        return;
-    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
-    std::istringstream stream(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-    BinaryReader reader(stream);
-    for (std::size_t read = 0; read < bytes.size(); read += kRememberedBindingBytes)
-    {
-        std::uint64_t keyHash = 0;
-        std::uint64_t definitionHash = 0;
-        std::uint8_t flags = 0;
-        if (!reader.Read(keyHash) || !reader.Read(definitionHash) || !reader.Read(flags))
-            return;
-        const int index = FindResponseBinding(bindings, keyHash);
-        // Remembered only for the text it had: a binding authored anew starts anew.
-        if (index < 0 || bindings[static_cast<std::size_t>(index)].DefinitionHash != definitionHash)
-            continue;
-        const std::uint32_t bit = 1u << static_cast<std::uint32_t>(index);
-        state->Disabled = (flags & kRememberedDisabled) != 0 ? (state->Disabled | bit) : (state->Disabled & ~bit);
-        state->Consumed = (flags & kRememberedConsumed) != 0 ? (state->Consumed | bit) : (state->Consumed & ~bit);
-    }
-}
-
 const CompiledVerbSequence kEmptySequence{};
 } // namespace
 
@@ -137,11 +74,6 @@ ResponsesSystem::ResponsesSystem(World& world,
 {
     if (world.IsRegistered<Responses>())
         ResponsesComponent = world.GetComponentId<Responses>();
-    if (ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>())
-        memories->Register(ZoneComponentMemory{ .Type = ResolveComponentTypeId<Responses>(),
-                                                .Version = 1,
-                                                .Capture = &CaptureRememberedBindings,
-                                                .Restore = &RestoreRememberedBindings });
 }
 
 void ResponsesSystem::SetCapacity(std::size_t activations)
