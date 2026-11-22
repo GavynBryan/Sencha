@@ -113,6 +113,14 @@ EntityId ParticipantWithBody(const World& world, EntityId body)
     return found;
 }
 
+EntityId LivingBodyOf(const World& world, EntityId participant)
+{
+    const ParticipantControl* control = world.IsAlive(participant) && world.IsRegistered<ParticipantControl>()
+        ? world.TryGet<ParticipantControl>(participant)
+        : nullptr;
+    return control != nullptr && world.IsAlive(control->Body) ? control->Body : EntityId{};
+}
+
 EntityId LocalParticipantOf(const World& world)
 {
     if (!TracksParticipants(world) || !world.IsRegistered<LocalParticipant>())

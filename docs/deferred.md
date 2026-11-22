@@ -1711,20 +1711,22 @@ described in `docs/navigation/runtime.md`, "Agents".
   first content that authors a waiting slot (an empty quiver) or an item whose
   second slot must be chosen.
 
-## Capturing a save without changing the world
+## A game-extended list of save roots
 
-- **What:** a save section's `Capture` takes `World&` because capture still
-  gives ids lazily: `sencha.bodies` gives the local body a runtime persistent
-  id, and `sencha.held` gives one to each runtime record and holder it saves
-  and names the holder in the record's `Held`. The id counter no longer
-  depends on section order (`SavedGames` writes it after every capture), but
-  capture is still a structural change at the zone-residency phase.
-- **Where:** `engine/src/save/EngineSaveSections.cpp` (`CaptureBodies`),
-  `engine/src/save/HeldRecordSaves.cpp` (`CaptureHeldRecords`, `NameHolder`),
-  `SavedGameSectionDefinition::Capture` in `engine/include/save/SavedGames.h`.
-- **Trigger:** the first capture that must run where structural changes are
-  not allowed (a capture on the async lane or from a read-only view), or a
-  game section that needs a stable id for an entity it references. Then give
-  bodies their id at spawn on the authority and records theirs where they are
-  made (counters, inventory), settle held records before the write commits,
-  and make `Capture` take `const World&` (a module ABI change).
+- **What:** whose body and held records a save keeps is fixed to the local
+  participant: `sencha.bodies` and `sencha.held` capture `LivingBodyOf` the
+  local participant, `RestoredBodies` has one slot and the body spawn takes it
+  for the local participant only, and a write with a bodiless local
+  participant fails. The file is already keyed (`sencha.bodies` is
+  `{"local": {...}}`); only the API is single-slot. Not built: a World
+  resource of keyed roots, a body per participant root, a participant taking
+  its saved id by key, and a per-root answer to "a write with no body".
+- **Where:** `engine/src/save/EngineSaveSections.cpp`,
+  `engine/include/participant_spawn/RestoredBodies.h`,
+  `engine/src/participant_spawn/ParticipantBodySpawns.cpp`,
+  `SavedGames::WriteRefusal` in `engine/src/save/SavedGames.cpp`.
+- **Trigger:** a restore or level change admitted inside a network session
+  (see "Changing level inside a network session"), so a co-op game can save a
+  second player's body; or a game whose participant has no body and saves.
+  Its consumer is co-op, and it also covers the other-participant part of
+  "Saving what was created at run time".

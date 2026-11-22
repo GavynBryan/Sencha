@@ -25,7 +25,8 @@ struct SavedGameSectionDefinition
 {
     std::string Name;
     std::uint32_t Version = 1;
-    std::function<JsonValue(World&)> Capture;
+    // Reads only: a write settles held records and the zone store before any section captures.
+    std::function<JsonValue(const World&)> Capture;
     // On every restore, once the restoring level change has installed zone
     // state and before the level arrives: given a section of Version or older,
     // or null data when the save has none, so nothing of the previous game stays.

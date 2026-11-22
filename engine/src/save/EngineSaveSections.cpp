@@ -12,7 +12,6 @@
 #include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
-#include <participant/ParticipantControl.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <save/HeldRecordSaves.h>
@@ -37,13 +36,7 @@ namespace
     constexpr std::uint32_t kBodiesVersion = 1;
     constexpr std::uint32_t kHeldVersion = 1;
 
-    EntityId LocalBodyOf(const World& world)
-    {
-        const EntityId participant = LocalParticipantOf(world);
-        const ParticipantControl* control =
-            participant.IsValid() ? world.TryGet<ParticipantControl>(participant) : nullptr;
-        return control != nullptr && world.IsAlive(control->Body) ? control->Body : EntityId{};
-    }
+    EntityId LocalBodyOf(const World& world) { return LivingBodyOf(world, LocalParticipantOf(world)); }
 
     std::optional<EntityBuildPackage> PrefabOf(Engine& engine, const World& world, EntityId body)
     {
@@ -63,12 +56,11 @@ namespace
         return prefab;
     }
 
-    JsonValue CaptureBodies(Engine& engine, World& world)
+    JsonValue CaptureBodies(Engine& engine, const World& world)
     {
         const EntityId body = LocalBodyOf(world);
         if (!body.IsValid())
             return JsonValue(JsonValue::Object{});
-        (void)EnsurePersistentId(world, body);
         const std::optional<EntityBuildPackage> prefab = PrefabOf(engine, world, body);
         if (!prefab.has_value())
         {
@@ -149,13 +141,13 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
     (void)saves.RegisterSection(SavedGameSectionDefinition{
         .Name = "sencha.bodies",
         .Version = kBodiesVersion,
-        .Capture = [&engine](World& world) { return CaptureBodies(engine, world); },
+        .Capture = [&engine](const World& world) { return CaptureBodies(engine, world); },
         .Restore = &RestoreBodies });
     (void)saves.RegisterSection(SavedGameSectionDefinition{
         .Name = "sencha.held",
         .Version = kHeldVersion,
         .Capture =
-            [&engine](World& world) {
+            [&engine](const World& world) {
                 const EntityId body = LocalBodyOf(world);
                 return CaptureHeldRecords(world, std::span(&body, body.IsValid() ? 1 : 0), engine.SceneSerializers(),
                                           engine.Content().SceneContext());

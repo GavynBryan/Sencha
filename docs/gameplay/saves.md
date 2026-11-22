@@ -28,7 +28,8 @@ what a save keeps is decided per entity by its zone state lifetime
   since no authored entity will ever claim it.
 - **Sections:** named data the engine or a game registers
   (`SavedGames::RegisterSection`): a name, a version, a capture function and a
-  restore function. A section in a save that nothing registered is kept and
+  restore function. Capture is given a `const World&`: it reads, and gives
+  nothing an id ("Writing"). A section in a save that nothing registered is kept and
   written back by the next save, so content a newer build wrote survives an
   older one. A registered section whose saved version is newer than the
   registered one fails the restore before the level changes, naming the
@@ -43,8 +44,7 @@ what a save keeps is decided per entity by its zone state lifetime
   registers two (`save/EngineSaveSections.h`): `sencha.bodies` and
   `sencha.held`.
 - **The id counter:** `sencha.persistent_ids`, the runtime mint's next value,
-  which `SavedGames` writes itself after every section has captured, so a
-  section that mints while it captures, in any order, is covered. A restore
+  which `SavedGames` writes itself after every section has captured. A restore
   puts it back before the registered sections, and never lowers it, so a
   restored game never mints an id it already holds.
 
@@ -170,8 +170,11 @@ document cook's input snapshot), so an untouched body saves an empty patch and
 a retuned default reaches old saves like any other value. The patch holds the body's `Saved` components only ("What a save holds of an
 entity"), so it never holds identity, scene instance or placement, and a
 component a body lost is a removal only when it is `Saved`. The body's root
-transform and persistent id travel beside it, and writing a save gives a body
-without an id one from the runtime mint.
+transform and persistent id travel beside it. A body has an id only once
+something references it by persistent id: a `PersistableRef` is made through
+`MakePersistableRef`, which gives the body one from the runtime mint, and a
+record the body holds names it that way. A body nothing references is saved
+without an id and restored without one.
 
 What a body wears is in that patch: its `EquipmentState` names each record's
 source entry by persistent id, and the entries are the body's held records,
@@ -231,8 +234,12 @@ Each record is kept whole, not as a patch: its persistent id, and its entity
 record (`WriteEntityRecord` for `Authored` and `Saved` components, so every
 component it carries that a serializer saves except `Identity` ones, in key
 order), in scene form through the same serializers a scene uses; a serializer
-of a component the record does not carry is not asked. Its `Held` names its holder by persistent id. Capturing gives a
-record or a holder without a persistent id one from the runtime mint.
+of a component the record does not carry is not asked. Its `Held` names its holder by persistent id. A record takes its id
+where it is made (`PlaceHeldRecord`, which counters and inventory entries go
+through) or when it settles, and the settle names its holder, giving the
+holder an id if it has none; capture gives neither. A write settles held
+records before it captures ("Writing"), so a record held in the same tick is
+saved; one still without an id after that is logged and left out.
 
 Restoring destroys every runtime record the index lists, the old session's, at
 once (a save without this section restores it as empty, which does the same),
@@ -250,9 +257,13 @@ reported.
 
 `Engine::Saves().RequestWrite(slot)`, the `save.write` verb or the console
 command of the same name. The request is carried out at the zone-residency
-phase: every resident zone and the world scene are captured as an unload would
-capture them (`LoadedLevel::CaptureState`), the store's durable part is
-exported, and the sections are captured. The result is kept in memory for the
+phase, in three steps. Held records are settled (`SettleHeldRecords`): the one
+structural change a write makes, which gives a record held since the frame's
+last settle its id and names its holder, and destroys the records of a holder
+that went. Every resident zone and the world scene are captured as an unload
+would capture them (`LoadedLevel::CaptureState`) and the store's durable part
+is exported. Then the sections are captured, reading only: a write changes no
+entity, no archetype and not the id mint beyond what the settle does. The result is kept in memory for the
 session, then encoded and written on the async lane. `WriteStatus()` moves
 from `Pending` through `Working` to `Done` or `Failed`.
 
@@ -262,7 +273,15 @@ request made while a level change is pending or loading, or before its bodies
 arrive, is accepted and held `Pending` until then, so a save asked for during
 a transition is a save of where the transition arrives; if the change fails
 the write fails with that reason. A request with nothing loaded and no change
-under way is refused (`NothingLoaded`). Holding rather than refusing keeps one
+under way is refused (`NothingLoaded`).
+
+A write needs the local participant's body. When a local participant exists
+and has no body on a settled level (it died, or its body was released and not
+yet given back), the write fails with "the local participant has no body" and
+writes nothing, so the slot keeps its last good save, in memory and on disk.
+During a level change the request waits as above, for the bodies the change
+gives back. A world with no local participant, such as a dedicated host,
+saves without a body. Holding rather than refusing keeps one
 answer for every caller: an autosave fired by a level's arrival, a console
 `save.write` typed during a load and a station's sequence all get the save
 they asked for without polling and retrying.

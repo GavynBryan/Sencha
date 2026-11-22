@@ -224,16 +224,31 @@ TEST(HeldRecordSaves, AFreshWorldTakesTheSavedRecordsAndTheBodysWaitForIt)
     EXPECT_EQ(after.Index->HolderOf(after.Resolve(bagId)), body);
 }
 
-TEST(HeldRecordSaves, CapturingGivesARecordMadeAtRunTimeAnId)
+TEST(HeldRecordSaves, ARecordStillWithoutAnIdIsLoggedAndLeftOutWithoutBeingGivenOne)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.Entities.CreateEntity();
+    world.Entities.AddComponent<Held>(record, Held{});
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    EXPECT_TRUE(saved.Find("records")->AsArray().empty());
+    EXPECT_EQ(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    ASSERT_EQ(errors.Errors.size(), 1u);
+    EXPECT_NE(errors.Errors[0].find("no persistent id"), std::string::npos) << errors.Errors[0];
+}
+
+TEST(HeldRecordSaves, ARecordMadeAtRunTimeIsSavedUnderTheIdSettlingGaveIt)
 {
     SavingWorld world;
     const EntityId record = world.Entities.CreateEntity();
     world.Entities.AddComponent<Held>(record, Held{});
-    ASSERT_EQ(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    SettleHeldRecords(world.Entities);
 
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
 
-    ASSERT_NE(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
     EXPECT_EQ(saved.Find("records")->AsArray().front().Find("id")->AsString(),
               PersistentEntityIdToString(world.IdOf(record)));
 }
@@ -249,6 +264,7 @@ TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatCont
     const EntityId inAuthored = world.HeldBy(authored);
     const EntityId waiting = world.Entities.CreateEntity();
     world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0x99 } } });
+    SettleHeldRecords(world.Entities);
 
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
 

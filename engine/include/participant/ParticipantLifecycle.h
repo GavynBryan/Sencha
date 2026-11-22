@@ -150,3 +150,5 @@ private:
 [[nodiscard]] EntityId LocalParticipantOf(const World& world);
 // The participant holding `body` as its body, if any. Read-only, O(participants).
 [[nodiscard]] EntityId ParticipantWithBody(const World& world, EntityId body);
+// The participant's body while it is alive; invalid otherwise. Read-only.
+[[nodiscard]] EntityId LivingBodyOf(const World& world, EntityId participant);

@@ -7,9 +7,11 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <net/NetSession.h>
+#include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentIdMint.h>
 #include <zone/ZoneStateStore.h>
 
@@ -205,22 +207,27 @@ std::optional<std::string> SavedGames::WriteRefusal() const
     switch (Host.Level().Residency())
     {
     case LevelResidency::Resident:
-        return std::nullopt;
+        break;
     case LevelResidency::Failed:
         return std::string("the level failed to load");
     case LevelResidency::Unloaded:
     case LevelResidency::Loading:
-        break;
+        return std::string("nothing is loaded");
     }
-    return std::string("nothing is loaded");
+    const World& world = Host.World().Entities();
+    if (const EntityId participant = LocalParticipantOf(world);
+        participant.IsValid() && !LivingBodyOf(world, participant).IsValid())
+        return std::string("the local participant has no body");
+    return std::nullopt;
 }
 
 std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot)
 {
+    World& world = Host.World().Entities();
+    SettleHeldRecords(world);
     LoadedLevel& level = Host.Level();
     level.CaptureState();
 
-    World& world = Host.World().Entities();
     auto saved = std::make_shared<SavedGame>();
     saved->Summary.Level = *level.Loaded();
     if (saved->Summary.Level.Kind == LevelKind::World && level.PlayZone().IsValid())

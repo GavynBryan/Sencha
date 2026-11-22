@@ -11,9 +11,12 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/CounterVocabulary.h>
 #include <participant/LocalControl.h>
+#include <participant/ParticipantControl.h>
+#include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <save/SavedGame.h>
 #include <save/SavedGames.h>
+#include <world/held/Held.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
@@ -22,6 +25,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -138,6 +142,40 @@ namespace
     bool RestoreArrived(const Engine& engine)
     {
         return engine.Saves().RestoreStatus() == RestoreProgress::BodiesRestored;
+    }
+
+    struct WorldShape
+    {
+        std::size_t Entities = 0;
+        std::map<std::string, std::size_t> Populations;
+        std::uint64_t NextId = 0;
+    };
+
+    WorldShape ShapeOf(const World& world)
+    {
+        WorldShape shape{ .Entities = world.EntityCount(), .Populations = {}, .NextId = 1 };
+        for (const auto& archetype : world.GetArchetypes())
+        {
+            std::size_t rows = 0;
+            for (const auto& chunk : archetype->Chunks)
+                rows += chunk->RowCount;
+            if (rows > 0)
+                shape.Populations[archetype->Signature.to_string()] += rows;
+        }
+        if (const PersistentIdMint* mint = world.TryGetResource<PersistentIdMint>())
+            shape.NextId = mint->Next;
+        return shape;
+    }
+
+    bool HasPersistentId(const World& world, EntityId entity)
+    {
+        return world.IsAlive(entity) && world.TryGet<PersistentIdComponent>(entity) != nullptr;
+    }
+
+    const JsonValue* LocalBodyIn(const SavedGame& saved)
+    {
+        const SavedGameSection* bodies = SectionOf(saved, "sencha.bodies");
+        return bodies != nullptr ? bodies->Data.Find("local") : nullptr;
     }
 
     struct TwoSaves
@@ -443,7 +481,7 @@ TEST(SavedGames, ASectionTheSaveCarriedThatRegistersLateIsWrittenOnce)
         {
             EXPECT_TRUE(saves.RegisterSection(SavedGameSectionDefinition{
                 .Name = "future.notes",
-                .Capture = [](World&) { return JsonValue(JsonValue::Object{ { "from", JsonValue(std::string("late")) } }); },
+                .Capture = [](const World&) { return JsonValue(JsonValue::Object{ { "from", JsonValue(std::string("late")) } }); },
                 .Restore = [](World&, std::uint32_t, const JsonValue&) {} }));
             EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
             stage = 2;
@@ -638,42 +676,6 @@ TEST(SavedGames, AWriteThatCannotReachTheDiskFailsAndTheRestoreStillUsesIt)
     EXPECT_TRUE(restoreFailure.empty()) << "the restore took the write's failure: " << restoreFailure;
     EXPECT_TRUE(lostBeforeStaysLost) << "the restore went past this session's save";
     EXPECT_TRUE(lostAfterIsBack);
-    std::filesystem::remove_all(root);
-}
-
-TEST(SavedGames, AnIdMintedWhileASectionCapturesIsNeverMintedAgain)
-{
-    const std::filesystem::path root = RootFor("mint_after_capture");
-    PersistentEntityId minted;
-    int stage = 0;
-    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
-        SavedGames& saves = engine.Saves();
-        if (stage == 0 && HasBody(world))
-        {
-            EXPECT_TRUE(saves.RegisterSection(SavedGameSectionDefinition{
-                .Name = "game.minting",
-                .Capture = [&minted](World& captured) {
-                    minted = MintRuntimePersistentId(captured);
-                    return JsonValue(PersistentEntityIdToString(minted));
-                },
-                .Restore = [](World&, std::uint32_t, const JsonValue&) {} }));
-            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
-            stage = 1;
-        }
-        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
-        {
-            saves.UnregisterSection("game.minting");
-            stage = 2;
-        }
-    });
-    ASSERT_EQ(stage, 2);
-    ASSERT_TRUE(minted.IsValid());
-    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
-    ASSERT_TRUE(saved.has_value());
-    const SavedGameSection* ids = SectionOf(*saved, "sencha.persistent_ids");
-    ASSERT_NE(ids, nullptr);
-    const auto next = static_cast<std::uint64_t>(ids->Data.NumberOr("next", 0.0));
-    EXPECT_GT(next, minted.Value & ~PersistentEntityIdRuntimeBit) << "a fresh run would mint " << next << " again";
     std::filesystem::remove_all(root);
 }
 
@@ -909,6 +911,212 @@ TEST(SavedGames, ARestoredBodyNobodyTookIsNotGivenToTheNextLevelChange)
     });
     ASSERT_TRUE(at.has_value());
     EXPECT_GT((*at - kStale).Magnitude(), 5.0) << "an ordinary level change spawned the body a restore left behind";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteLeavesTheEntitiesTheirArchetypesAndTheIdMintAsTheyWere)
+{
+    const std::filesystem::path root = RootFor("write_changes_nothing");
+    std::optional<WorldShape> before;
+    std::optional<WorldShape> captured;
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            stage = 1;
+        }
+        else if (stage == 1)
+        {
+            EXPECT_TRUE(saves.RegisterSection(SavedGameSectionDefinition{
+                .Name = "game.shape",
+                .Capture = [&captured](const World& seen) {
+                    captured = ShapeOf(seen);
+                    return JsonValue(JsonValue::Object{});
+                },
+                .Restore = [](World&, std::uint32_t, const JsonValue&) {} }));
+            before = ShapeOf(world);
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.UnregisterSection("game.shape");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    ASSERT_TRUE(before.has_value() && captured.has_value());
+    EXPECT_EQ(captured->Entities, before->Entities);
+    EXPECT_EQ(captured->Populations, before->Populations) << "capturing moved an entity to another archetype";
+    EXPECT_EQ(captured->NextId, before->NextId) << "capturing minted an id";
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const SavedGameSection* ids = SectionOf(*saved, "sencha.persistent_ids");
+    ASSERT_NE(ids, nullptr);
+    EXPECT_EQ(static_cast<std::uint64_t>(ids->Data.NumberOr("next", 0.0)), before->NextId);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ABodyNothingReferencesIsSavedAndRestoredWithoutAnId)
+{
+    const std::filesystem::path root = RootFor("body_without_id");
+    bool unnamedBefore = false;
+    bool unnamedAfter = false;
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            unnamedBefore = !HasPersistentId(world, LocalControlSubjectOf(world));
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            unnamedAfter = !HasPersistentId(world, LocalControlSubjectOf(world));
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    ASSERT_TRUE(unnamedBefore) << "something referenced the body before the save";
+    EXPECT_TRUE(unnamedAfter) << "writing the save gave the body an id";
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const JsonValue* local = LocalBodyIn(*saved);
+    ASSERT_NE(local, nullptr);
+    EXPECT_EQ(local->Find("id"), nullptr);
+
+    std::optional<bool> restoredUnnamed;
+    stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            restoredUnnamed = !HasPersistentId(world, LocalControlSubjectOf(world));
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_EQ(restoredUnnamed, true);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ARecordHeldTheSameTickAsTheWriteIsInTheSave)
+{
+    const std::filesystem::path root = RootFor("held_same_tick");
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            const EntityId record = world.CreateEntity();
+            world.AddComponent<Held>(record, Held{ .Holder = { .Entity = LocalControlSubjectOf(world), .Target = {} } });
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const JsonValue* local = LocalBodyIn(*saved);
+    ASSERT_NE(local, nullptr);
+    const JsonValue* bodyId = local->Find("id");
+    ASSERT_NE(bodyId, nullptr) << "the record names the body, so the body is saved with the id it was named by";
+    const SavedGameSection* held = SectionOf(*saved, "sencha.held");
+    ASSERT_NE(held, nullptr);
+    std::size_t heldByBody = 0;
+    for (const JsonValue& record : held->Data.Find("records")->AsArray())
+        if (const JsonValue* holder = record.Find("components")->Find("Held")->Find("holder");
+            holder != nullptr && holder->AsString() == bodyId->AsString())
+            ++heldByBody;
+    EXPECT_EQ(heldByBody, 1u);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteWithABodilessLocalParticipantFailsAndTheSlotKeepsItsLastSave)
+{
+    const std::filesystem::path root = RootFor("bodiless_write");
+    PersistentEntityId lostBefore;
+    PersistentEntityId lostAfter;
+    std::string failure;
+    bool lostBeforeStaysLost = false;
+    bool lostAfterIsBack = false;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            lostBefore = DestroyAuthored(world);
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            world.DestroyEntity(LocalControlSubjectOf(world));
+            lostAfter = DestroyAuthored(world, lostBefore);
+            EXPECT_EQ(saves.RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Failed)
+        {
+            failure = saves.WriteFailure();
+            EXPECT_EQ(saves.RequestRestore(), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            stage = 5;
+        }
+        else if (stage == 3 && RestoreArrived(engine))
+        {
+            lostBeforeStaysLost = !Resolves(world, lostBefore);
+            lostAfterIsBack = Resolves(world, lostAfter);
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4) << "the write without a body was not refused, or the restore after it did not arrive";
+    EXPECT_EQ(failure, "the local participant has no body");
+    EXPECT_TRUE(lostBeforeStaysLost) << "the restore went past the slot's last save";
+    EXPECT_TRUE(lostAfterIsBack) << "the refused write replaced the slot's last save";
+    const std::optional<SavedGame> onDisk = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(onDisk.has_value());
+    EXPECT_NE(LocalBodyIn(*onDisk), nullptr) << "the file on disk lost its body";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWorldWithNoLocalParticipantStillSaves)
+{
+    const std::filesystem::path root = RootFor("no_local_participant");
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            world.RemoveComponent<LocalParticipant>(LocalParticipantOf(world));
+            ASSERT_FALSE(LocalParticipantOf(world).IsValid());
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 2;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Failed)
+        {
+            ADD_FAILURE() << engine.Saves().WriteFailure();
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(LocalBodyIn(*saved), nullptr);
     std::filesystem::remove_all(root);
 }
 #endif

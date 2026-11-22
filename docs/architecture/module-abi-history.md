@@ -1414,3 +1414,16 @@ in component key order, a `Saved` component the body gained is written as its
 difference from its default, and a bytes-authored component the body lost is
 written as a removal. The save format version, cooked data, the wire and the
 replicated layout are unchanged.
+
+## v61
+
+`SavedGameSectionDefinition::Capture` takes `const World&` (was `World&`): a
+write settles held records and brings the zone store up to date before any
+section captures, and capture reads only, so a section can no longer mint ids
+or change the world. `CaptureHeldRecords` takes `const World&` too and no longer
+gives a record an id or names its holder; a record without an id after the
+settle is logged and left out. A body nothing references is saved without an
+id. `participant/ParticipantLifecycle.h` gains `LivingBodyOf`. A write on a
+settled level whose local participant has no body fails with "the local
+participant has no body". The save format version, cooked data, the wire and
+the replicated layout are unchanged.

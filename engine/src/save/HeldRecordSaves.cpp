@@ -26,7 +26,7 @@ namespace
     {
     };
 
-    JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
+    JsonValue SaveRecord(const World& world, EntityId record, PersistentEntityId id,
                          const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
     {
         std::vector<std::string> failed;
@@ -71,7 +71,7 @@ namespace
     }
 }
 
-JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
+JsonValue CaptureHeldRecords(const World& world, std::span<const EntityId> roots,
                              const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
 {
     JsonValue::Array saved;
@@ -98,11 +98,14 @@ JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
                 continue;
             if (!HasAuthoredPersistentId(world, record))
             {
-                const PersistentEntityId id = EnsurePersistentId(world, record);
-                if (!id.IsValid())
-                    continue;
-                NameHeldHolder(world, record);
-                saved.push_back(SaveRecord(world, record, id, serializers, context));
+                const PersistentIdComponent* identity =
+                    world.IsRegistered<PersistentIdComponent>() ? world.TryGet<PersistentIdComponent>(record) : nullptr;
+                if (identity != nullptr)
+                    saved.push_back(SaveRecord(world, record, identity->Id, serializers, context));
+                else
+                    context.Logging->GetLogger<HeldRecordSaves>().Error(
+                        "save: held record {}:{} has no persistent id after settling, so it is not saved",
+                        record.Index, record.Generation);
             }
             next.insert(next.end(), index->RecordsOf(record).begin(), index->RecordsOf(record).end());
         }
