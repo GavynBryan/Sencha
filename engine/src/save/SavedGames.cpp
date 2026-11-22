@@ -12,6 +12,7 @@
 #include <participant_spawn/RestoredBodies.h>
 #include <save/HeldRecordSaves.h>
 #include <world/RuntimeWorld.h>
+#include <world/LevelLandmark.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/held/HeldRecords.h>
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -123,6 +125,22 @@ namespace
         if (mint == nullptr)
             mint = &world.AddResource<PersistentIdMint>();
         mint->Next = std::max(mint->Next, next);
+    }
+
+    std::optional<ZoneId> ArrivalZone(Engine& engine, const std::string& arrival)
+    {
+        if (arrival.empty())
+            return std::nullopt;
+        const World& world = engine.World().Entities();
+        const std::optional<LevelLandmarkPlace> landmark = FindLevelLandmark(world, arrival);
+        if (!landmark.has_value())
+        {
+            engine.Logging().GetLogger<SavedGames>().Warn(
+                "save: no loaded landmark is named '{}'; a restore looks for it once its level arrives", arrival);
+            return std::nullopt;
+        }
+        const RuntimeZoneRecord* zone = engine.World().FindPartition(world.GetEntityPartition(landmark->Entity));
+        return zone != nullptr ? std::optional<ZoneId>(zone->Id) : std::nullopt;
     }
 }
 
@@ -268,8 +286,9 @@ std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot, co
 
     auto saved = std::make_shared<SavedGame>();
     saved->Summary.Level = *level.Loaded();
+    const std::optional<ZoneId> arrivalZone = ArrivalZone(Host, arrival);
     if (saved->Summary.Level.Kind == LevelKind::World && level.PlayZone().IsValid())
-        saved->Summary.Focus = level.PlayZone();
+        saved->Summary.Focus = arrivalZone.value_or(level.PlayZone());
     saved->Summary.SavedAtUnixSeconds = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());

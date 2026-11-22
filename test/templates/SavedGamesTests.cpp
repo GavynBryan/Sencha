@@ -15,6 +15,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/CounterVocabulary.h>
+#include <movement/components/CharacterFacts.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <participant/ParticipantLifecycle.h>
@@ -29,6 +30,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/WorldPartitionIds.h>
 #include <zone/ZoneStateLists.h>
 
 #include <algorithm>
@@ -1344,14 +1346,14 @@ TEST(SavedGames, AFileWithAThumbnailRestores)
     std::filesystem::remove_all(root);
 }
 
-TEST(SavedGames, ASaveNamesWhereItsBodyComesBackAndTheRestoreCarriesIt)
+TEST(SavedGames, ASaveNamingAnArrivalHoldsNoTransformAndARestoreStandsTheBodyAtItsLandmark)
 {
     const std::filesystem::path root = RootFor("arrival");
     int stage = 0;
     RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
         if (stage == 0 && HasBody(world))
         {
-            EXPECT_EQ(engine.Saves().RequestWrite("default", "station_a"), SaveAdmission::Accepted);
+            EXPECT_EQ(engine.Saves().RequestWrite("default", "bumper_west"), SaveAdmission::Accepted);
             stage = 1;
         }
         else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
@@ -1365,26 +1367,31 @@ TEST(SavedGames, ASaveNamesWhereItsBodyComesBackAndTheRestoreCarriesIt)
     const JsonValue* local = LocalBodyIn(*saved);
     ASSERT_NE(local, nullptr);
     ASSERT_NE(local->Find("arrival"), nullptr);
-    EXPECT_EQ(local->Find("arrival")->AsString(), "station_a");
-    EXPECT_NE(local->Find("root"), nullptr) << "until arrivals resolve, the body comes back where it stood";
+    EXPECT_EQ(local->Find("arrival")->AsString(), "bumper_west");
+    EXPECT_EQ(local->Find("root"), nullptr) << "a save that names an arrival records no transform for the body";
 
-    std::string carried;
+    Vec3d stood;
+    Vec3d moving;
     stage = 0;
-    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
         if (stage == 0 && HasBody(world))
         {
             EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
             stage = 1;
         }
-        else if (stage == 1)
-            if (const RestoredBodies* restored = world.TryGetResource<RestoredBodies>();
-                restored != nullptr && restored->Local.has_value())
-            {
-                carried = restored->Local->Arrival;
-                stage = 2;
-            }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            stood = world.TryGet<LocalTransform>(body)->Value.Position;
+            moving = world.TryGet<KinematicState>(body)->Velocity;
+            stage = 2;
+        }
     });
-    EXPECT_EQ(carried, "station_a");
+    ASSERT_EQ(stage, 2);
+    EXPECT_NEAR(stood.X, -6.0f, 0.05f) << "the restored body does not stand at the save's landmark";
+    EXPECT_NEAR(stood.Z, 6.0f, 0.05f);
+    EXPECT_NEAR(moving.X, 0.0f, 0.01f);
+    EXPECT_NEAR(moving.Z, 0.0f, 0.01f);
     std::filesystem::remove_all(root);
 }
 #endif
@@ -1869,6 +1876,123 @@ TEST(SavedGames, AFreshTravelGivesThePrefabBodyAndDoesNotCarryTheOldOne)
     EXPECT_TRUE(newBody);
     EXPECT_TRUE(oldGone) << "a fresh travel carried the old body";
     EXPECT_TRUE(effectGone) << "the new body carries the old body's timed effect";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    Vec3d BodyPosition(const World& world)
+    {
+        return world.TryGet<LocalTransform>(LocalControlSubjectOf(world))->Value.Position;
+    }
+
+    void TravelTo(Engine& engine, const LevelReference& level, LevelChangeBodies bodies, std::string arrival)
+    {
+        EXPECT_EQ(engine.LevelChanges().Request(
+                      LevelChangeRequest::Travel(level, LevelMemory::Remembered, bodies).At(std::move(arrival))),
+                  LevelChangeAdmission::Accepted);
+    }
+
+    Vec3d ArrivalOf(const LevelReference& level, LevelChangeBodies bodies, std::string arrival, std::string_view name)
+    {
+        const std::filesystem::path root = RootFor(name);
+        Vec3d arrived{ 100.0f, 100.0f, 100.0f };
+        int stage = 0;
+        RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                TravelTo(engine, level, bodies, arrival);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine))
+            {
+                arrived = BodyPosition(world);
+                stage = 2;
+            }
+        });
+        EXPECT_EQ(stage, 2);
+        std::filesystem::remove_all(root);
+        return arrived;
+    }
+}
+
+TEST(SavedGames, ALevelChangeNamingAnArrivalStandsTheNewBodyAtItsLandmark)
+{
+    const Vec3d arrived = ArrivalOf(kSecond, LevelChangeBodies::Fresh, "room_2_east", "arrival_fresh");
+    EXPECT_NEAR(arrived.X, 16.0f, 0.05f);
+    EXPECT_NEAR(arrived.Z, 3.0f, 0.05f);
+}
+
+TEST(SavedGames, AKeptBodyArrivesAtTheLandmarkItsChangeNames)
+{
+    const Vec3d arrived = ArrivalOf(kSecond, LevelChangeBodies::Kept, "room_2_east", "arrival_kept");
+    EXPECT_NEAR(arrived.X, 16.0f, 0.05f);
+    EXPECT_NEAR(arrived.Z, 3.0f, 0.05f);
+}
+
+TEST(SavedGames, AnArrivalNoLandmarkAnswersFallsBackToTheGamesSpawn)
+{
+    const Vec3d fresh = ArrivalOf(kSecond, LevelChangeBodies::Fresh, "nowhere", "arrival_unknown_fresh");
+    EXPECT_NEAR(fresh.X, 0.0f, 0.05f);
+    EXPECT_NEAR(fresh.Z, 0.0f, 0.05f);
+    const Vec3d kept = ArrivalOf(kSecond, LevelChangeBodies::Kept, "nowhere", "arrival_unknown_kept");
+    EXPECT_NEAR(kept.X, 0.0f, 0.05f);
+    EXPECT_NEAR(kept.Z, 0.0f, 0.05f);
+}
+
+TEST(SavedGames, ARestoreInAWorldBringsInTheZoneOfItsArrivalAndStandsTheBodyThere)
+{
+    const std::filesystem::path root = RootFor("arrival_in_world");
+    const ZoneId start = *ZoneIdFromString("9c76e74ceb9abd59");
+    const ZoneId east = *ZoneIdFromString("429b0e6664e66213");
+    ZoneId focusAtWrite;
+    int stage = 0;
+    RunFps(kFirst.Name, 1500, root, [&](Engine& engine, World& world, int) {
+        const RuntimeZoneRecord* neighbour = engine.World().FindZone(east);
+        if (stage == 0 && HasBody(world))
+        {
+            Travel(engine, kWorld, LevelMemory::Authored);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine) && neighbour != nullptr
+                 && neighbour->State == RuntimeZoneLoadState::Resident)
+        {
+            focusAtWrite = engine.Level().PlayZone();
+            EXPECT_EQ(engine.Saves().RequestWrite("default", "room_2_east"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(focusAtWrite, start) << "the landmark's zone must not be the focus when the save is written";
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    ASSERT_TRUE(saved->Summary.Focus.has_value());
+    EXPECT_EQ(*saved->Summary.Focus, east) << "the save focuses the zone its arrival stands in";
+
+    ZoneId focusAtRestore;
+    Vec3d stood;
+    stage = 0;
+    RunFps(kFirst.Name, 1500, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            focusAtRestore = engine.Level().PlayZone();
+            stood = BodyPosition(world);
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_EQ(focusAtRestore, east);
+    EXPECT_NEAR(stood.X, 16.0f, 0.05f) << "the restored body does not stand at the landmark in the streamed zone";
+    EXPECT_NEAR(stood.Z, 3.0f, 0.05f);
     std::filesystem::remove_all(root);
 }
 #endif

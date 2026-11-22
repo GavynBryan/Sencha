@@ -6,6 +6,37 @@
   },
   "entities": [
     {
+      "id": "2feaeaa63f3279ff",
+      "components": {
+        "name": {
+          "value": "East Landmark"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              16,
+              1,
+              3
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "LevelLandmark": {
+          "name": "room_2_east"
+        }
+      }
+    },
+    {
       "id": "11c04b1a77e0c001",
       "components": {
         "name": {

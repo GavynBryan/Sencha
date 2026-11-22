@@ -4,6 +4,7 @@
 #include <participant_spawn/LevelArrival.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <ecs/World.h>
+#include <world/LevelLandmark.h>
 
 #include <algorithm>
 #include <cassert>
@@ -49,14 +50,19 @@ void ParticipantBodySpawns::StartSpawn(EntityId participant)
     Transform3f root = selected->Root;
     SceneSpawnOverlay overlay;
     bool fromRestore = false;
+    LevelArrival* arrival = Entities.TryGetResource<LevelArrival>();
+    const bool arriving = arrival != nullptr && std::erase(arrival->Spawning, participant) > 0;
     if (RestoredBodies* restored = Entities.TryGetResource<RestoredBodies>();
         restored != nullptr && restored->Local.has_value() && participant == LocalParticipantOf(Entities))
     {
-        root = restored->Local->Root;
+        root = restored->Local->Arrival.empty() ? restored->Local->Root
+                                                : ArrivalRoot(restored->Local->Arrival, selected->Root);
         overlay = std::move(restored->Local->Overlay);
         restored->Local.reset();
         fromRestore = true;
     }
+    else if (arriving)
+        root = ArrivalRoot(arrival->Name, selected->Root);
     const SceneSpawnId spawn = Spawns.RequestSpawn(
         selected->ScenePath, root, selected->Partition,
         SceneSpawnLifetime::OwnedByRoot, std::move(overlay));
@@ -95,7 +101,17 @@ void ParticipantBodySpawns::PlaceKeptBodies()
         if (!kept.Place.has_value() && LivingBodyOf(Entities, kept.Participant).IsValid())
             if (const std::optional<ParticipantBodySpawnRequest> selected =
                     Select(std::as_const(Entities), kept.Participant))
-                kept.Place = selected->Root;
+                kept.Place = ArrivalRoot(arrival->Name, selected->Root);
+}
+
+Transform3f ParticipantBodySpawns::ArrivalRoot(std::string_view arrival, const Transform3f& fallback) const
+{
+    if (arrival.empty())
+        return fallback;
+    if (const std::optional<LevelLandmarkPlace> landmark = FindLevelLandmark(Entities, arrival))
+        return landmark->Place;
+    Log.Warn("Participant arrival '{}' names no loaded landmark; the body arrives at the game's spawn", arrival);
+    return fallback;
 }
 
 void ParticipantBodySpawns::Settle(const Attempt& attempt)

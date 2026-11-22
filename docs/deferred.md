@@ -1781,18 +1781,23 @@ described in `docs/navigation/runtime.md`, "Agents".
   them across a level change. Then move the group with the body at the commit,
   and refuse only a group that cannot be moved.
 
-## Resolving a save's arrival name
+## Finding an arrival in a zone that is not loaded
 
-- **What:** `save.write` may name where its body comes back; the name is written
-  beside the body's transform and read back into `RestoredBody::Arrival`, and
-  nothing resolves it, so the body stands where it was saved. `LevelArrival`
-  carries a level change's arrival name the same way.
-- **Where:** `engine/src/save/EngineSaveSections.cpp`,
-  `engine/include/participant_spawn/RestoredBodies.h`,
-  `engine/include/participant_spawn/LevelArrival.h`.
-- **Trigger:** the level-change stage (a body across a level change and the
-  `level.change` verb), which adds the landmark these names resolve to.
-
+- **What:** an arrival name is resolved against the loaded landmarks when the
+  body is placed, once the play zone is resident. A save in a world records the
+  zone its landmark stands in as its focus, so a restore streams it in; a level
+  change into a world focuses its start zone (or the zone `Focused` names) and
+  finds only a landmark in that zone's neighbourhood or the world scene, and a
+  save whose landmark was not loaded when it was written cannot find its zone.
+  An index of each zone's landmark names in the cooked world manifest, which
+  the world cook would fill as it fills docks and links, would let either
+  focus the right zone first.
+- **Where:** `engine/src/participant_spawn/ParticipantBodySpawns.cpp`
+  (`ArrivalRoot`), `engine/src/save/SavedGames.cpp` (the focus of a save with
+  an arrival), `editor/level_editor/src/document/WorldCook.cpp`.
+- **Trigger:** a game of separate worlds joined by `level.change` whose doors
+  arrive outside the start zone's neighbourhood, or a save naming an arrival
+  far from where it is written.
 
 ## A sequence branching on a command's refusal reason
 

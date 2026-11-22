@@ -18,6 +18,9 @@ struct KeptArrival
 // World resource: where bodies arrive after the level change under way or last carried out.
 struct LevelArrival
 {
+    // The landmark bodies arrive at: docs/gameplay/game-module.md, "Arrivals".
     std::string Name;
+    // Participants the change let go, whose next body arrives at Name.
+    std::vector<EntityId> Spawning;
     std::vector<KeptArrival> Kept;
 };

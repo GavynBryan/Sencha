@@ -2,6 +2,7 @@
 
 #include <world/ComponentRegistrar.h>
 #include <world/held/Held.h>
+#include <world/LevelLandmark.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/PresentationOffset.h>
@@ -31,7 +32,9 @@ using WorldComponents = ComponentSet<
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.
     SceneInstance,
-    ZoneStateLifetime>;
+    ZoneStateLifetime,
+    // Where a body arrives when a level change or a save names it.
+    LevelLandmark>;
 
 inline void RegisterWorldComponents(ComponentRegistrar& registrar)
 {

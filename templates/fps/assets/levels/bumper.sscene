@@ -6,6 +6,37 @@
   },
   "entities": [
     {
+      "id": "6f2b1c0d9e8a7bff",
+      "components": {
+        "name": {
+          "value": "West Landmark"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              -6,
+              1,
+              6
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "LevelLandmark": {
+          "name": "bumper_west"
+        }
+      }
+    },
+    {
       "id": "6f2b1c0d9e8a7b32",
       "components": {
         "name": {

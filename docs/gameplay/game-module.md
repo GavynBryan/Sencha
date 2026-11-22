@@ -176,11 +176,9 @@ const LevelChangeAdmission admission = engine.LevelChanges().Request(
 - `Restore(level, remembered)`: what every level remembers is replaced by a
   save's; bodies come from the save. `SavedGames` makes this one.
 
-`At(arrival)` names where a body arrives and `Focused(zone)` a world's starting
-zone. The engine carries the arrival name in the `LevelArrival` World resource
-and does not read it; the game's body spawn `Select` reads it and matches it
-against whatever it authors as a spawn point. `LevelChange::Kind()` says which
-kind the latest accepted request was.
+`At(arrival)` names the landmark a body arrives at ("Arrivals" below) and
+`Focused(zone)` a world's starting zone. `LevelChange::Kind()` says which kind
+the latest accepted request was.
 
 How the request and an entity's `ZoneStateLifetime` meet:
 
@@ -263,11 +261,40 @@ Two things are owed in return, and the engine pays both:
   mover (a teleport), stops it, and lets go of its hold. A game that provides
   bodies itself fills `KeptArrival::Place` the same way.
 
-A kept body arrives at rest and keeps its movement mode. What it referred to in
+A kept body arrives at rest and keeps its movement mode. When the change names
+an arrival, the root `Update` records is that landmark's ("Arrivals"). What it referred to in
 the old level (a target, a tether to geometry) is gone on arrival, as when a
 zone unloads under a body in a world; generational ids make those references
 fail safe, and ending abilities that depended on them is the game's. A failed
 change lets go of its holds where the bodies stand.
+
+### Arrivals
+
+A level authors a named place with a `LevelLandmark` (`world/LevelLandmark.h`):
+an entity with a transform and a `name`, placed like any other component in a
+scene or in Kyusu (Place, "Level Landmark"). It is opt-in and on no entity by
+default. A level change's `At(name)` and a save's `arrival`
+(`docs/gameplay/saves.md`, "Writing") name one, and a body arriving through
+either stands at it: at the landmark's position and facing in the world, at
+rest, from its prefab's default movement mode when it is a new body.
+
+One resolution serves every arrival, in `ParticipantBodySpawns`: a body the
+change let go is spawned at the landmark (`LevelArrival::Spawning` lists the
+participants whose next body arrives), a body a save restores is spawned at the
+landmark its save names, and a kept body is moved there. The game's `Select`
+still decides which prefab and supplies the fallback: when no loaded landmark
+has the name, the body arrives where `Select` says, and the spawn logs it once.
+A later respawn with no level change between is the game's, as before.
+
+The landmark is looked for when the body is placed, which is once the level's
+play zone is resident: in a scene level anywhere in it; in a world among the
+zones resident then and the world scene. A save names the zone its arrival
+stands in as its focus, so a restore streams that zone in first, whichever zone
+the player stood in when it was written. A level change into a world focuses
+its start zone, or the zone `Focused` names, so an arrival there must be in
+that zone's neighbourhood or the world scene ("Finding an arrival in a zone
+that is not loaded" in `docs/deferred.md`). Two landmarks of one name in a
+level are an authoring mistake; the one with the lowest persistent id wins.
 
 ## Bodies from prefabs
 

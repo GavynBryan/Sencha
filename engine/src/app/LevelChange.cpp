@@ -159,7 +159,7 @@ void LevelChange::Commit()
     const std::optional<LevelReference> leaving = level.Loaded();
     level.Unload();
     ForgetFor(world, request, leaving);
-    world.SetResource(LevelArrival{ .Name = request.Arrival(), .Kept = std::move(kept) });
+    world.SetResource(LevelArrival{ .Name = request.Arrival(), .Spawning = Released, .Kept = std::move(kept) });
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         *restored = RestoredBodies{};
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();

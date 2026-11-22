@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -69,6 +70,7 @@ private:
 
     bool NeedsBody(EntityId participant) const;
     void PlaceKeptBodies();
+    [[nodiscard]] Transform3f ArrivalRoot(std::string_view arrival, const Transform3f& fallback) const;
     bool MatchesPending(EntityId participant, SceneSpawnId spawn) const;
     void Settle(const Attempt& attempt);
 

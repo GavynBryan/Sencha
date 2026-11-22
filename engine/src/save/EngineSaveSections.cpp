@@ -70,12 +70,17 @@ namespace
         }
         const SceneSpawnOverlay overlay =
             CaptureSpawnOverlay(world, body, *prefab, engine.SceneSerializers(), engine.Content().SceneContext());
-        const LocalTransform* placed = world.TryGet<LocalTransform>(body);
-        JsonValue::Object local{ { "root", ToJson(placed != nullptr ? placed->Value : Transform3f::Identity()) },
-                                 { "patch", overlay.RootPatch } };
+        const std::string& arrival = engine.Saves().WritingArrival();
+        JsonValue::Object local;
+        if (arrival.empty())
+        {
+            const LocalTransform* placed = world.TryGet<LocalTransform>(body);
+            local.emplace_back("root", ToJson(placed != nullptr ? placed->Value : Transform3f::Identity()));
+        }
+        local.emplace_back("patch", overlay.RootPatch);
         if (overlay.RootId.IsValid())
             local.emplace_back("id", JsonValue(PersistentEntityIdToString(overlay.RootId)));
-        if (const std::string& arrival = engine.Saves().WritingArrival(); !arrival.empty())
+        if (!arrival.empty())
             local.emplace_back("arrival", JsonValue(arrival));
         return JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } });
     }

@@ -1528,3 +1528,9 @@ parks what a world scene's entities hold before it destroys them.
 `participant_spawn/LevelArrival.h` and gains `Kept`, a list of the new
 `KeptArrival`. `ActorScaleAt` answers zero while a lease of scale zero is in
 force, whatever the limits.
+
+`LevelLandmark` (`world/LevelLandmark.h`, `sencha.level_landmark`) is a new
+component in `WorldComponents`, with `LevelLandmarkPlace` and
+`FindLevelLandmark`. `LevelArrival` gains `Spawning`. A save written with an
+arrival holds no `root` for its body, and its summary's focus is the zone the
+landmark stands in; the save format does not change.

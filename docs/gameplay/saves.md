@@ -200,7 +200,8 @@ kept by `sencha.held`. Nothing a record maintains is saved; the equipment pass
 derives it again (`docs/gameplay/equipment.md`, "Records").
 
 On restore the section fills `RestoredBodies`; the local participant's next body
-spawn (`ParticipantBodySpawns`) takes it: the spawn stands where the body stood,
+spawn (`ParticipantBodySpawns`) takes it: the spawn stands at the save's
+arrival landmark, or where the body stood when the save names none,
 the patch is composed over the prefab's root before import, and the root gets
 its saved id once published. Every level change clears `RestoredBodies` before
 the restore's sections run, and a failed change clears it again, so a body a
@@ -309,10 +310,17 @@ memory only until it is on disk. `WriteStatus()` moves from `Pending` through
 `Working` to `Done` or `Failed`.
 
 `RequestWrite(slot, arrival)` and `save.write`'s optional `arrival` name where
-the saved body comes back; the body's record holds the name beside its
-transform. Nothing resolves it yet: the body comes back where it stood, and the
-name is read back and carried (`RestoredBody::Arrival`). Resolving it at the
-level's landmark of that name lands with the level-change stage.
+the saved body comes back: the level's `LevelLandmark` of that name
+(`docs/gameplay/game-module.md`, "Arrivals"). With one, the body's record holds
+the name and no transform; velocity and movement mode are not saved either, so
+the body comes back at the landmark, standing, at rest. Without one (a
+quicksave), the record holds where the body stood. A write with an arrival in a
+world sets the save's focus to the zone the landmark stands in, so a restore
+streams that zone in first even when the player stood in a neighbouring one; a
+landmark that is not loaded when the save is written is logged, the focus stays
+the player's zone, and the restore falls back to the game's spawn if the
+landmark is not loaded around it either. The name is read back into
+`RestoredBody::Arrival`.
 
 A write captures only a level that stands whole: resident, with no level
 change under way or one that has given every participant its body back. A

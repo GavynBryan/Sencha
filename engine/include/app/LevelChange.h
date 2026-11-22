@@ -93,7 +93,7 @@ public:
     [[nodiscard]] static LevelChangeRequest NewGame(LevelReference level);
     [[nodiscard]] static LevelChangeRequest Restore(LevelReference level, std::vector<DurableLevelState> remembered);
 
-    // Where a body arrives; the engine carries the name and does not read it.
+    // The landmark bodies arrive at: docs/gameplay/game-module.md, "Arrivals".
     LevelChangeRequest& At(std::string arrival);
     // A world's starting zone; the manifest's start zone when absent or unknown.
     LevelChangeRequest& Focused(ZoneId zone);
