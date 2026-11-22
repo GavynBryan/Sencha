@@ -74,8 +74,7 @@ enum class LeaseStep : std::uint8_t
 struct VerbAnswer
 {
     VerbAdmission Status = VerbAdmission::Accepted;
-    // Refused: one of the reason codes the verb declares, 0 when it names none.
-    // InvalidArguments or UnresolvedReference: one past the argument slot at fault, 0 when not one slot.
+    // Refused: a reason code the verb declares; InvalidArguments, UnresolvedReference: one past the slot at fault.
     std::uint16_t Detail = 0;
 
     constexpr VerbAnswer() = default;
@@ -147,8 +146,7 @@ struct VerbInvocation
     // stores this pointer.
     const AuthoredArguments* Arguments = nullptr;
 
-    // Where a verb that declares a result writes it, when the producer wants it.
-    // Borrowed for the call; null otherwise, and then nothing is encoded.
+    // Where a verb that declares a result writes it; borrowed for the call, null when nobody asked.
     AuthoredValue* Result = nullptr;
 };
 

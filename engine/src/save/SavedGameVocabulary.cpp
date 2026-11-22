@@ -1,6 +1,7 @@
 #include <save/SavedGameVocabulary.h>
 
 #include <app/Engine.h>
+#include <app/VocabularyCommands.h>
 #include <authored/AuthoredValue.h>
 #include <authored/VerbRegistry.h>
 #include <core/console/ConsoleRegistry.h>
@@ -14,9 +15,11 @@
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 
+#include <format>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -44,7 +47,7 @@ namespace
         return std::string(slot);
     }
 
-    VerbAnswer AnswerOf(SaveAdmission admission)
+    VerbAnswer SaveAnswer(SaveAdmission admission)
     {
         return admission == SaveAdmission::BadSlot ? VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0)
                                                    : VerbAnswerOf(admission);
@@ -61,14 +64,15 @@ namespace
         return id.has_value() && index != nullptr ? index->TryResolve(*id) : EntityId{};
     }
 
-    ConsoleResult Report(std::string_view what, const std::string& slot, SaveAdmission admission)
+    ConsoleResult RunAlias(Engine& engine, std::string_view verb, std::span<const std::string> args)
     {
-        ConsoleResult result;
-        if (admission == SaveAdmission::Accepted)
-            result.Info(std::string(what) + " slot '" + slot + "'");
-        else
-            result.Error(std::string(what) + " refused: " + std::string(FindEnumValue(admission)->Tooltip));
-        return result;
+        std::vector<std::string> line{ std::string(verb) };
+        for (std::size_t i = 0; i < args.size(); ++i)
+            line.push_back(std::format("{}={}", i == 0 ? "slot" : "arrival", args[i]));
+        return RunVerbCommand(VocabularyConsoleTarget{ .Entities = engine.World().Entities(),
+                                                       .Verbs = engine.TryVerbs(),
+                                                       .Queries = engine.TryAuthoredQueries() },
+                              line);
     }
 }
 
@@ -90,41 +94,36 @@ VerbAnswer InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
     std::string_view arrival;
     if (invocation.Arguments != nullptr)
         (void)invocation.Arguments->TryGetString(1, arrival);
-    return AnswerOf(saves.RequestWrite(SlotOf(invocation), std::string(arrival)));
+    return SaveAnswer(saves.RequestWrite(SlotOf(invocation), std::string(arrival)));
 }
 
 VerbAnswer InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
 {
-    return AnswerOf(saves.RequestRestore(SlotOf(invocation)));
+    return SaveAnswer(saves.RequestRestore(SlotOf(invocation)));
 }
 
 void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)
 {
-    const auto slotOf = [](std::span<const std::string> args) {
-        return args.empty() ? std::string(kDefaultSaveSlot) : args[0];
-    };
     console.Registry().RegisterCommand({
         .Name = std::string(kSaveWriteVerb),
         .Owner = "engine",
         .Usage = "save.write [slot] [arrival]",
-        .Help = "Write a save, naming where its body comes back.",
+        .Help = "verb save.write slot=<slot> arrival=<arrival>: write a save, naming where its body comes back.",
         .Flags = ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
-            const std::string slot = slotOf(args);
-            return Report("save", slot, engine.Saves().RequestWrite(slot, args.size() > 1 ? args[1] : std::string()));
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return RunAlias(engine, kSaveWriteVerb, args);
         },
     });
     console.Registry().RegisterCommand({
         .Name = std::string(kSaveRestoreVerb),
         .Owner = "engine",
         .Usage = "save.restore [slot]",
-        .Help = "Restore a save: its level loads again with what it kept.",
+        .Help = "verb save.restore slot=<slot>: restore a save; its level loads again with what it kept.",
         .Flags = ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
-            const std::string slot = slotOf(args);
-            return Report("restore", slot, engine.Saves().RequestRestore(slot));
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return RunAlias(engine, kSaveRestoreVerb, args);
         },
     });
     console.Registry().RegisterCommand({

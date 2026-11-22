@@ -340,6 +340,33 @@ in the reference into a World's dispatchers; the runtime and the Ability Workben
 both bind through it. The movement leases are described in
 `docs/gameplay/movement.md`, "Held motion".
 
+## From the console
+
+Every declared verb and query can be run from the developer console:
+
+```
+verb  <name> [key=value ...]     verb inventory.give into=@me definition=items/key.sdata count=2
+query <name> [key=value ...]     query counter.value name=quest.keys
+```
+
+`app/VocabularyCommands.h` builds a binding of constants from the line and
+compiles it with `CompileVerbBinding` against the live catalog, so the schema
+checks every value and fills every default, then invokes it through the
+dispatcher with the local participant as instigator and prints the answer
+`DescribeVerbAnswer` gives, and the result when the verb declares one. A value
+is read as its argument's kind (`authored/AuthoredConstantText.h`): an entity is
+`@me` (the entity this machine controls), `index:generation`, or a persistent
+id; an asset or data path may leave out `asset://`. A key the verb does not take
+is refused with the keys it does. A lease is refused, since a console line has
+no owner to hold one. An `AuthorityOnly` verb is refused where this World is not
+the authority: a client connected to a server runs it at the server's console.
+Both commands are `Developer` commands.
+
+`save.write [slot] [arrival]` and `save.restore [slot]` are aliases for `verb
+save.write slot=... arrival=...` and `verb save.restore slot=...`. A developer
+command that is not a verb or a query, such as `save.describe`, stays its own
+command.
+
 ## Handles, not slot numbers
 
 A consumer that stores a reference to a query or an event stores a handle,

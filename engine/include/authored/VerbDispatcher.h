@@ -90,9 +90,7 @@ public:
     // `inputs` are the producer's values, in the order the binding declared its
     // input slots. The constants are already in place; this fills the dynamic
     // slots, checks them against what the binding recorded, and calls.
-    //
-    // `result`, when given and the verb declares one, receives what an accepted
-    // call answered, checked against the declaration; it is left absent otherwise.
+    // `result` receives a declared result an accepted call answered, and is otherwise left absent.
     [[nodiscard]] VerbInvocationResult Invoke(const CompiledVerbBinding& binding,
                                               std::span<const AuthoredValue> inputs,
                                               const VerbInvocationSource& source = {},

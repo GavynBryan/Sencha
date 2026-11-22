@@ -1812,3 +1812,24 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** the verb's declaration and implementation; `inventory.transfer`,
   `projectile.launch` and `effect.apply` are the likely next.
 - **Trigger:** a sequence that needs to name what one of those verbs made.
+
+## Completing a verb or query command's names and keys
+
+- **What:** the console completes a command's name and, for its first
+  argument, a cvar name; it has no per-command completion, so `verb` and
+  `query` do not offer the catalog's names or a verb's argument keys.
+- **Where:** `engine/src/core/console/ConsoleCompletion.cpp` and
+  `ConsoleCommandMetadata` (`core/console/ConsoleTypes.h`), whose layout a game
+  module compiles against; `engine/src/app/VocabularyCommands.cpp` would supply
+  the names.
+- **Trigger:** the next module-ABI change to the console's command metadata, or
+  a developer asking for it; then give a command an argument-completion
+  function and have `verb` and `query` offer the live catalog.
+
+## A client's console forwarding a verb to the server
+
+- **What:** `verb` refuses an `AuthorityOnly` verb on a client, so a developer
+  connected to a dedicated server cannot give an item from the client's console.
+- **Where:** `engine/src/app/VocabularyCommands.cpp` (`RunVerbCommand`).
+- **Trigger:** a developer who must give items while connected to a dedicated
+  server without access to its console.

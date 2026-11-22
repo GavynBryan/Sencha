@@ -2,10 +2,10 @@
 
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
+#include <core/text/ValueText.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <iterator>
 #include <optional>
 #include <utility>
@@ -31,18 +31,6 @@ namespace
         if (row.Step > 0.0)
             value = row.Min + std::round((value - row.Min) / row.Step) * row.Step;
         return std::clamp(value, row.Min, row.Max);
-    }
-
-    std::optional<double> ParseNumber(std::string_view text)
-    {
-        if (text.empty())
-            return std::nullopt;
-        const std::string owned(text);
-        char* end = nullptr;
-        const double value = std::strtod(owned.c_str(), &end);
-        if (end == owned.c_str() || *end != '\0')
-            return std::nullopt;
-        return value;
     }
 
     // Whether this entry is the cvar's current value. A string cvar compares

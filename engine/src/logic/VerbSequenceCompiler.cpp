@@ -1,6 +1,7 @@
 #include <logic/VerbSequenceCompiler.h>
 
 #include <authored/AuthoredArgumentMatch.h>
+#include <authored/AuthoredConstantText.h>
 #include <authored/AuthoredLiteral.h>
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbRegistry.h>
@@ -13,11 +14,6 @@
 
 namespace
 {
-const DataFieldSchema& Unwrapped(const DataFieldSchema& field)
-{
-    return field.Kind == DataFieldKind::Optional && field.Children.size() == 1 ? field.Children.front() : field;
-}
-
 bool IsVector3(const DataFieldSchema& field)
 {
     return field.Kind == DataFieldKind::Vector && field.VectorLength == 3;
@@ -25,8 +21,8 @@ bool IsVector3(const DataFieldSchema& field)
 
 bool SameShape(const DataFieldSchema& produced, const DataFieldSchema& expected)
 {
-    const DataFieldSchema& a = Unwrapped(produced);
-    const DataFieldSchema& b = Unwrapped(expected);
+    const DataFieldSchema& a = UnwrappedField(produced);
+    const DataFieldSchema& b = UnwrappedField(expected);
     return a.Kind == b.Kind && (a.Kind != DataFieldKind::Vector || a.VectorLength == b.VectorLength);
 }
 
@@ -86,7 +82,7 @@ public:
             ok = query != nullptr;
             if (query != nullptr)
             {
-                const DataFieldKind answer = Unwrapped(query->Result).Kind;
+                const DataFieldKind answer = UnwrappedField(query->Result).Kind;
                 if (answer != DataFieldKind::Bool && answer != DataFieldKind::Int && answer != DataFieldKind::Float)
                 {
                     Report(where, std::format("'{}' answers neither true or false nor a number", desc.Query));
@@ -300,7 +296,7 @@ private:
                CompiledSequenceValue& out)
     {
         out.Source = desc.Source;
-        const DataFieldSchema& field = Unwrapped(expected);
+        const DataFieldSchema& field = UnwrappedField(expected);
         if (!desc.Frame.empty())
         {
             if (!IsVector3(field))
@@ -350,7 +346,7 @@ private:
                 return false;
             }
             out.Result = static_cast<std::uint32_t>(named - Results.begin());
-            const DataFieldSchema* produced = &Unwrapped(named->Field);
+            const DataFieldSchema* produced = &UnwrappedField(named->Field);
             if (!desc.Member.empty())
             {
                 const auto member = std::ranges::find(produced->Children, desc.Member, &DataFieldSchema::Key);
@@ -375,7 +371,7 @@ private:
             if (query == nullptr)
                 return false;
             bool ok = QueryArguments(*query, desc.Arguments, where, out.Arguments);
-            const DataFieldSchema* produced = &Unwrapped(query->Result);
+            const DataFieldSchema* produced = &UnwrappedField(query->Result);
             if (!desc.Member.empty())
             {
                 const auto member = std::ranges::find(produced->Children, desc.Member, &DataFieldSchema::Key);

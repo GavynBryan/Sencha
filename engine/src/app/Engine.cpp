@@ -61,6 +61,7 @@
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
 #include <app/LevelCommands.h>
+#include <app/VocabularyCommands.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <navigation/NavAgentSystem.h>
@@ -1372,6 +1373,7 @@ int Engine::Run(Game& game)
     ConsoleService& console = Console();
     RegisterLevelCommands(console, *this);
     RegisterSavedGameCommands(console, *this);
+    RegisterVocabularyCommands(console, *this);
 
     console.AdvancePhase(ConsolePhase::EngineReady);
 
