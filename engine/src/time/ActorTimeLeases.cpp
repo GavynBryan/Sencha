@@ -57,6 +57,8 @@ std::int64_t ActorScaleAt(const ActorTimeLeases& leases, std::uint64_t tick, con
     take(leases.Active, leases.ActiveCount);
     take(leases.History, leases.HistoryCount);
     std::sort(scales.begin(), scales.begin() + static_cast<std::ptrdiff_t>(count));
+    if (count > 0 && scales[0] <= 0)
+        return 0;
 
     // Ascending, so once the product passes the hard maximum every factor left is
     // above one too: stopping there changes nothing the clamp would not, and keeps

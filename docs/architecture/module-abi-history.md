@@ -1522,3 +1522,9 @@ result, which moves their contract revision.
 `ParkHeldRecords` (`world/held/HeldRecords.h`) takes the holders to look at, a
 span of entities, instead of a storage partition, so `LoadedLevel::Unload`
 parks what a world scene's entities hold before it destroys them.
+
+`LevelChangeBodies` gains `Kept` and `LevelChangeAdmission` gains `BodyInZone`.
+`LevelArrival` moves from `app/LevelChange.h` to the new
+`participant_spawn/LevelArrival.h` and gains `Kept`, a list of the new
+`KeptArrival`. `ActorScaleAt` answers zero while a lease of scale zero is in
+force, whatever the limits.

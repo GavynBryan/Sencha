@@ -8,6 +8,9 @@
 #include <core/serialization/HashedChunkFile.h>
 #include <core/serialization/Serialize.h>
 #include <ecs/World.h>
+#include <effects/ActiveEffect.h>
+#include <effects/EffectRegistry.h>
+#include <effects/EffectSystem.h>
 #include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -16,6 +19,7 @@
 #include <participant/ParticipantControl.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <physics/PhysicsStepSystem.h>
 #include <save/SavedGame.h>
 #include <save/SavedGames.h>
 #include <world/held/Held.h>
@@ -61,13 +65,16 @@ namespace
         return root;
     }
 
-    void RunFps(std::string_view level, int frames, const std::filesystem::path& root, FrameScript script)
+    void RunFps(std::string_view level, int frames, const std::filesystem::path& root, FrameScript script,
+                double tickRate = 60.0)
     {
         Script = std::move(script);
         {
             TemplateModuleRun<ScriptProbe> run(TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets", level,
-                                               frames,
-                                               [&root](EngineConfig& config) { config.Runtime.SavesRoot = root.string(); });
+                                               frames, [&root, tickRate](EngineConfig& config) {
+                                                   config.Runtime.SavesRoot = root.string();
+                                                   config.Runtime.FixedTickRate = tickRate;
+                                               });
             EXPECT_TRUE(run.Loaded());
             EXPECT_EQ(run.Exit(), 0);
         }
@@ -1726,6 +1733,142 @@ TEST(SavedGames, AWorldScenesChestKeepsWhatItHoldsAcrossAJourneyThereAndBack)
     });
     ASSERT_EQ(stage, 4);
     EXPECT_TRUE(holding) << "what the world scene's entity held was lost while the player was away";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    struct KeptBody
+    {
+        EntityId Body;
+        EntityId Effect;
+        EntityId Record;
+        GameplayTagId Counter;
+        std::uint32_t Remaining = 0;
+        Vec3d Position;
+
+        [[nodiscard]] bool Make(Engine& engine, World& world)
+        {
+            Body = LocalControlSubjectOf(world);
+            if (!engine.Schedule().Get<PhysicsStepSystem>()->GetCharacterMovers().SetPosition(
+                    world, Body, Vec3d{ 3.0f, 1.0f, 3.0f }))
+                return false;
+            EffectDefinition timed;
+            timed.Duration = EffectDuration::Duration;
+            timed.DurationSeconds = 60.0f;
+            const EffectId id = world.GetResource<EffectRegistry>().Register("test.timed", timed);
+            Effect = ApplyEffect(world, Body, id, engine.Runtime().GetSimulationClock().TimeOfTick(0));
+            Counter = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.kept_counter");
+            (void)WriteCounter(world, Counter, Body, 3);
+            Record = PlaceHeldRecord(world, Body, ArchetypeSignature{});
+            EXPECT_TRUE(Effect.IsValid());
+            EXPECT_TRUE(Record.IsValid());
+            Remaining = Effect.IsValid() ? world.TryGet<ActiveEffect>(Effect)->RemainingTicks : 0;
+            Position = world.TryGet<LocalTransform>(Body)->Value.Position;
+            return true;
+        }
+
+        [[nodiscard]] bool StoodStill(const World& world) const
+        {
+            const ActiveEffect* effect = world.IsAlive(Effect) ? world.TryGet<ActiveEffect>(Effect) : nullptr;
+            const LocalTransform* placed = world.TryGet<LocalTransform>(Body);
+            return effect != nullptr && effect->RemainingTicks == Remaining && placed != nullptr
+                && placed->Value.Position.X == Position.X && placed->Value.Position.Y == Position.Y
+                && placed->Value.Position.Z == Position.Z;
+        }
+    };
+
+    bool Changing(const Engine& engine)
+    {
+        const LevelChangeStatus status = engine.LevelChanges().Status();
+        return status == LevelChangeStatus::Pending || status == LevelChangeStatus::Loading
+            || status == LevelChangeStatus::Resident;
+    }
+}
+
+TEST(SavedGames, ABodyKeptAcrossATravelIsTheSameBodyHeldStillThroughTheGapAndPlacedOnArrival)
+{
+    const std::filesystem::path root = RootFor("kept_body");
+    KeptBody kept;
+    int gapFrames = 0;
+    std::uint64_t departedAt = 0;
+    std::uint64_t gapTicks = 0;
+    bool stoodStill = true;
+    bool sameBody = false;
+    std::uint32_t remaining = 0;
+    std::int32_t counter = 0;
+    bool holding = false;
+    Vec3d arrived;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        const std::uint64_t tick = engine.Runtime().GetSimulationClock().GetTickIndex();
+        if (stage == 0 && HasBody(world) && kept.Make(engine, world))
+        {
+            EXPECT_EQ(engine.LevelChanges().Request(
+                          LevelChangeRequest::Travel(kSecond, LevelMemory::Remembered, LevelChangeBodies::Kept)),
+                      LevelChangeAdmission::Accepted);
+            departedAt = tick;
+            stage = 1;
+        }
+        else if (stage == 1 && Changing(engine))
+        {
+            ++gapFrames;
+            gapTicks = tick - departedAt;
+            stoodStill = stoodStill && kept.StoodStill(world);
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            sameBody = LocalControlSubjectOf(world) == kept.Body;
+            if (const ActiveEffect* effect = world.IsAlive(kept.Effect) ? world.TryGet<ActiveEffect>(kept.Effect) : nullptr)
+                remaining = effect->RemainingTicks;
+            counter = CounterValue(world, kept.Counter, kept.Body);
+            const HeldRecordIndex& index = *world.TryGetResource<HeldRecordIndex>();
+            holding = std::ranges::find(index.RecordsOf(kept.Body), kept.Record) != index.RecordsOf(kept.Body).end();
+            arrived = world.TryGet<LocalTransform>(kept.Body)->Value.Position;
+            stage = 2;
+        }
+    }, 2000.0);
+    ASSERT_EQ(stage, 2);
+    EXPECT_TRUE(sameBody) << "the body that crossed is not the one that left";
+    EXPECT_GT(gapFrames, 0);
+    EXPECT_GT(gapTicks, 0u) << "no tick ran while no level stood, so standing still was not tested";
+    EXPECT_TRUE(stoodStill) << "the kept body moved or aged while no level stood";
+    EXPECT_LE(kept.Remaining - remaining, 8u) << "the timed effect lost " << kept.Remaining - remaining << " ticks";
+    EXPECT_GT(remaining, 0u);
+    EXPECT_EQ(counter, 3);
+    EXPECT_TRUE(holding) << "what the body held did not cross with it";
+    EXPECT_NEAR(arrived.X, 0.0f, 0.05f) << "the kept body was not placed where the game spawns";
+    EXPECT_NEAR(arrived.Z, 0.0f, 0.05f);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AFreshTravelGivesThePrefabBodyAndDoesNotCarryTheOldOne)
+{
+    const std::filesystem::path root = RootFor("fresh_body");
+    KeptBody old;
+    bool newBody = false;
+    bool oldGone = false;
+    bool effectGone = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world) && old.Make(engine, world))
+        {
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            newBody = body.IsValid() && body != old.Body;
+            oldGone = !world.IsAlive(old.Body);
+            effectGone = !world.IsAlive(old.Effect) || world.TryGet<ActiveEffect>(old.Effect)->Target != body;
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_TRUE(newBody);
+    EXPECT_TRUE(oldGone) << "a fresh travel carried the old body";
+    EXPECT_TRUE(effectGone) << "the new body carries the old body's timed effect";
     std::filesystem::remove_all(root);
 }
 #endif

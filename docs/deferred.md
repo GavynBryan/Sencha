@@ -1769,6 +1769,18 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/zone/ZoneStateStore.cpp`, `engine/src/save/SavedGame.cpp`.
 - **Trigger:** a shipped game that renames levels between releases.
 
+## Keeping a body that lives in a zone's partition
+
+- **What:** a `Travel` that keeps its bodies is refused (`BodyInZone`) when a
+  body lives in a zone's partition rather than the persistent one; the change
+  does not move it there with its spawn group, because a partition move carries
+  held records and attachments but not a spawn group's other entities.
+- **Where:** `engine/src/app/LevelChange.cpp` (`Request`, `HoldKeptBodies`);
+  the group is `SceneSpawnService::Entities`.
+- **Trigger:** a game that spawns its bodies in a zone's partition and keeps
+  them across a level change. Then move the group with the body at the commit,
+  and refuse only a group that cannot be moved.
+
 ## Resolving a save's arrival name
 
 - **What:** `save.write` may name where its body comes back; the name is written
@@ -1777,7 +1789,7 @@ described in `docs/navigation/runtime.md`, "Agents".
   carries a level change's arrival name the same way.
 - **Where:** `engine/src/save/EngineSaveSections.cpp`,
   `engine/include/participant_spawn/RestoredBodies.h`,
-  `engine/include/app/LevelChange.h`.
+  `engine/include/participant_spawn/LevelArrival.h`.
 - **Trigger:** the level-change stage (a body across a level change and the
   `level.change` verb), which adds the landmark these names resolve to.
 

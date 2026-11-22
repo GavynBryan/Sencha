@@ -46,6 +46,7 @@ public:
 
     // For a participant with no living body and no attempt in flight.
     void StartSpawn(EntityId participant);
+    // Settles landed spawns, and says where each body a level change kept stands (LevelArrival).
     void Update();
 
     // A published group still awaiting assignment is destroyed at the next pump.
@@ -67,6 +68,7 @@ private:
     };
 
     bool NeedsBody(EntityId participant) const;
+    void PlaceKeptBodies();
     bool MatchesPending(EntityId participant, SceneSpawnId spawn) const;
     void Settle(const Attempt& attempt);
 

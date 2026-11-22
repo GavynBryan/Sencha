@@ -122,6 +122,37 @@ TEST(ActorTime, TheScaleIsClampedToItsLimits)
     EXPECT_EQ(ActorScaleAt(slowed, 1, {}), Q16(0.1));
 }
 
+TEST(ActorTime, AZeroLeaseHoldsTheActorStillWhateverTheLimitsAndOtherLeases)
+{
+    ActorTimeLeases leases;
+    ASSERT_TRUE(AcquireActorTimeLease(leases, Holder(1), Q16(3.0), 0));
+    ASSERT_TRUE(AcquireActorTimeLease(leases, Holder(2), 0, 4));
+    EXPECT_EQ(ActorScaleAt(leases, 4, {}), Q16(2.0));
+    EXPECT_EQ(ActorScaleAt(leases, 5, {}), 0);
+    EXPECT_EQ(ActorScaleAt(leases, 5, { .MinimumQ16 = Q16(0.5), .MaximumQ16 = Q16(4.0) }), 0);
+    ReleaseActorTimeLeases(leases, Holder(2), 8);
+    EXPECT_EQ(ActorScaleAt(leases, 8, {}), 0);
+    EXPECT_EQ(ActorScaleAt(leases, 9, {}), Q16(2.0));
+}
+
+TEST(ActorTime, AnActorHeldStillAgesNoEffect)
+{
+    TimeWorld time;
+    EffectDefinition brief{};
+    brief.Duration = EffectDuration::Duration;
+    brief.DurationSeconds = 10.0f;
+    const EffectId timed = time.Entities.GetResource<EffectRegistry>().Define("held", brief);
+    time.Step();
+    const EntityId effect =
+        ApplyEffect(time.Entities, time.Actor, timed, FixedSimTime{ .DeltaSeconds = 1.0, .TickIndex = time.Now });
+    ASSERT_TRUE(effect.IsValid());
+    ASSERT_TRUE(AcquireActorTimeLease(time.Leases(), LeaseOwner{ .Entity = time.Actor }, 0, time.Now - 1));
+    time.Step(30);
+    ASSERT_TRUE(time.Entities.IsAlive(effect));
+    EXPECT_EQ(time.Entities.TryGet<ActiveEffect>(effect)->RemainingTicks, 10u);
+    EXPECT_EQ(time.Clock().ScaleQ16, 0);
+}
+
 TEST(ActorTime, HistoryNeverUsesTheRoomANewLeaseNeeds)
 {
     ActorTimeLeases leases;

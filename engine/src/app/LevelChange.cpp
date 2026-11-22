@@ -6,12 +6,19 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <movement/components/CharacterFacts.h>
 #include <net/NetSession.h>
 #include <participant/ParticipantControl.h>
+#include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <physics/PhysicsStepSystem.h>
+#include <time/ActorTime.h>
+#include <time/ActorTimeLeases.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/HeldRecords.h>
+#include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <utility>
@@ -28,6 +35,31 @@ namespace
                 participants.push_back(participant);
         });
         return participants;
+    }
+
+    constexpr std::uint64_t kArrivalHoldKey = 1;
+
+    [[nodiscard]] LeaseOwner ArrivalHoldOf(EntityId participant)
+    {
+        return LeaseOwner{ .Entity = participant, .Key = kArrivalHoldKey };
+    }
+
+    [[nodiscard]] bool HoldStill(World& world, EntityId participant, EntityId body, std::uint64_t tick)
+    {
+        if (!world.IsRegistered<ActorTimeLeases>() || !world.IsRegistered<ActorTime>()
+            || !world.HasComponent<ActorTime>(body))
+            return true;
+        if (!world.HasComponent<ActorTimeLeases>(body))
+            world.AddComponent<ActorTimeLeases>(body, ActorTimeLeases{});
+        return AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(body), ArrivalHoldOf(participant), 0, tick);
+    }
+
+    void LetGo(World& world, EntityId participant, EntityId body, std::uint64_t tick)
+    {
+        if (ActorTimeLeases* leases = world.IsRegistered<ActorTimeLeases>() && world.IsAlive(body)
+                ? world.TryGet<ActorTimeLeases>(body)
+                : nullptr)
+            ReleaseActorTimeLeases(*leases, ArrivalHoldOf(participant), tick);
     }
 }
 
@@ -84,8 +116,13 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
 {
     if (Waiting.has_value() || Current == LevelChangeStatus::Loading)
         return LevelChangeAdmission::Busy;
+    const World& world = Host.World().Entities();
+    if (request.Bodies() == LevelChangeBodies::Kept)
+        for (const EntityId participant : ParticipantsWithBodies(world))
+            if (world.GetEntityPartition(LivingBodyOf(world, participant)) != PersistentStoragePartition)
+                return LevelChangeAdmission::BodyInZone;
     const bool firstLoad = !Host.Level().Loaded().has_value();
-    if (!firstLoad && !IsSimulationAuthority(Host.World().Entities()))
+    if (!firstLoad && !IsSimulationAuthority(world))
         return LevelChangeAdmission::NotAuthority;
     if (const NetSession* session = Host.TryNet();
         !firstLoad && session != nullptr && session->Role() != NetSessionRole::Standalone)
@@ -108,8 +145,12 @@ void LevelChange::Commit()
     Waiting.reset();
 
     World& world = Host.World().Entities();
+    LetGoOfKeptBodies(world);
     Released.clear();
-    if (IsSimulationAuthority(world))
+    std::vector<KeptArrival> kept;
+    if (request.Bodies() == LevelChangeBodies::Kept)
+        kept = HoldKeptBodies(world);
+    else if (IsSimulationAuthority(world))
         for (const EntityId participant : ParticipantsWithBodies(world))
             if (Host.ReleaseParticipantBody(participant).Released)
                 Released.push_back(participant);
@@ -118,7 +159,7 @@ void LevelChange::Commit()
     const std::optional<LevelReference> leaving = level.Loaded();
     level.Unload();
     ForgetFor(world, request, leaving);
-    world.SetResource(LevelArrival{ .Name = request.Arrival() });
+    world.SetResource(LevelArrival{ .Name = request.Arrival(), .Kept = std::move(kept) });
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         *restored = RestoredBodies{};
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
@@ -160,8 +201,78 @@ void LevelChange::Advance()
             return;
         }
     }
-    if (Current == LevelChangeStatus::Resident && ReleasedHaveBodies(Host.World().Entities()))
+    if (Current != LevelChangeStatus::Resident)
+        return;
+    World& world = Host.World().Entities();
+    PlaceKeptBodies(world);
+    if (BodiesArrived(world))
         Current = LevelChangeStatus::BodiesRestored;
+}
+
+std::uint64_t LevelChange::LastTick() const
+{
+    const std::uint64_t next = Host.Runtime().GetSimulationClock().GetTickIndex();
+    return next > 0 ? next - 1 : 0;
+}
+
+std::vector<KeptArrival> LevelChange::HoldKeptBodies(World& world)
+{
+    std::vector<KeptArrival> kept;
+    if (!IsSimulationAuthority(world))
+        return kept;
+    const std::uint64_t tick = LastTick();
+    for (const EntityId participant : ParticipantsWithBodies(world))
+    {
+        if (!HoldStill(world, participant, LivingBodyOf(world, participant), tick))
+            Host.Logging().GetLogger<LevelChange>().Warn(
+                "level change: a kept body has every time lease in use, so it is not held still until it arrives");
+        kept.push_back(KeptArrival{ .Participant = participant, .Place = std::nullopt });
+    }
+    return kept;
+}
+
+void LevelChange::PlaceKeptBodies(World& world)
+{
+    LevelArrival* arrival = world.TryGetResource<LevelArrival>();
+    if (arrival == nullptr)
+        return;
+    const std::uint64_t tick = LastTick();
+    std::erase_if(arrival->Kept, [&](const KeptArrival& kept) {
+        const EntityId body = LivingBodyOf(world, kept.Participant);
+        if (!body.IsValid())
+            return true;
+        if (!kept.Place.has_value())
+            return false;
+        MoveBody(world, body, *kept.Place);
+        LetGo(world, kept.Participant, body, tick);
+        return true;
+    });
+}
+
+void LevelChange::LetGoOfKeptBodies(World& world)
+{
+    LevelArrival* arrival = world.TryGetResource<LevelArrival>();
+    if (arrival == nullptr)
+        return;
+    const std::uint64_t tick = LastTick();
+    for (const KeptArrival& kept : arrival->Kept)
+        LetGo(world, kept.Participant, LivingBodyOf(world, kept.Participant), tick);
+    arrival->Kept.clear();
+}
+
+void LevelChange::MoveBody(World& world, EntityId body, const Transform3f& place)
+{
+    PhysicsStepSystem* physics = Host.Schedule().Get<PhysicsStepSystem>();
+    const bool moved = physics != nullptr && physics->GetCharacterMovers().SetPosition(world, body, place.Position);
+    if (LocalTransform* local = world.TryGet<LocalTransform>(body))
+    {
+        local->Value.Position = place.Position;
+        local->Value.Rotation = place.Rotation;
+    }
+    if (!moved)
+        RequestTransformHistorySnap(world, body);
+    if (KinematicState* motion = world.TryGet<KinematicState>(body))
+        motion->Velocity = Vec3d::Zero();
 }
 
 void LevelChange::ForgetFor(World& world, const LevelChangeRequest& request,
@@ -192,8 +303,10 @@ void LevelChange::ForgetFor(World& world, const LevelChangeRequest& request,
     }
 }
 
-bool LevelChange::ReleasedHaveBodies(const World& world) const
+bool LevelChange::BodiesArrived(const World& world) const
 {
+    if (const LevelArrival* arrival = world.TryGetResource<LevelArrival>(); arrival != nullptr && !arrival->Kept.empty())
+        return false;
     for (const EntityId participant : Released)
     {
         if (!world.IsAlive(participant))
@@ -208,7 +321,9 @@ bool LevelChange::ReleasedHaveBodies(const World& world) const
 void LevelChange::Fail(std::vector<std::string> reasons)
 {
     Current = LevelChangeStatus::Failed;
-    if (RestoredBodies* restored = Host.World().Entities().TryGetResource<RestoredBodies>())
+    World& world = Host.World().Entities();
+    LetGoOfKeptBodies(world);
+    if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         restored->Local.reset();
     Reasons = std::move(reasons);
     Logger& log = Host.Logging().GetLogger<LevelChange>();

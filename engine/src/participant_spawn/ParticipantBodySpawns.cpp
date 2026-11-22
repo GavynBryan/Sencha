@@ -1,6 +1,7 @@
 #include <participant_spawn/ParticipantBodySpawns.h>
 
 #include <core/logging/Logger.h>
+#include <participant_spawn/LevelArrival.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <ecs/World.h>
 
@@ -68,6 +69,7 @@ void ParticipantBodySpawns::Update()
         return;
     assert(!Entities.InQueryScope() && !Updating);
     Updating = true;
+    PlaceKeptBodies();
 
     Settling.clear();
     for (const auto& [participant, pending] : Pending)
@@ -82,6 +84,18 @@ void ParticipantBodySpawns::Update()
             Settle(attempt);
 
     Updating = false;
+}
+
+void ParticipantBodySpawns::PlaceKeptBodies()
+{
+    LevelArrival* arrival = Entities.TryGetResource<LevelArrival>();
+    if (arrival == nullptr)
+        return;
+    for (KeptArrival& kept : arrival->Kept)
+        if (!kept.Place.has_value() && LivingBodyOf(Entities, kept.Participant).IsValid())
+            if (const std::optional<ParticipantBodySpawnRequest> selected =
+                    Select(std::as_const(Entities), kept.Participant))
+                kept.Place = selected->Root;
 }
 
 void ParticipantBodySpawns::Settle(const Attempt& attempt)

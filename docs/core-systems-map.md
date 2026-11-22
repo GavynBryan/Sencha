@@ -160,8 +160,12 @@ for `kActorTimeHistoryTicks`, in room of their own so history never refuses a ne
 lease, which lets a replayed tick recompute the scale it had. The factors are
 multiplied in ascending order with Q16 rounding at each step, so machines that hold
 the same leases reach the same scale whoever holds them, and the result is clamped
-to `time.actor_scale_min` and `time.actor_scale_max` (at most 4). A lease whose
-holder's entity is gone ends the tick after. Dilation never changes the tick
+to `time.actor_scale_min` and `time.actor_scale_max` (at most 4). A lease of
+scale zero is a hold, not a slowdown: while one is in force the scale is zero
+whatever the limits, so the actor's movement, effects and phases stand still.
+Only the engine takes one (a level change holds the bodies it keeps,
+`docs/gameplay/game-module.md`, "Changing level"); `time.scale` refuses a scale
+below 0.01. A lease whose holder's entity is gone ends the tick after. Dilation never changes the tick
 cadence: it changes how far an actor's own timers move per tick. Effects count in
 their target's time unless authored `time_domain: simulation`, and ability phases in
 their actor's unless authored `simulation`. Abilities scale time through the

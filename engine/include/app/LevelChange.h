@@ -2,6 +2,7 @@
 
 #include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
+#include <participant_spawn/LevelArrival.h>
 #include <world/LevelReference.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateStore.h>
@@ -34,6 +35,7 @@ enum class LevelChangeAdmission : std::uint8_t
     NotCooked,
     NotAuthority,
     InSession,
+    BodyInZone,
 };
 
 template<>
@@ -46,6 +48,8 @@ struct EnumSchema<LevelChangeAdmission>
         EnumValue{ LevelChangeAdmission::NotAuthority, "not_authority", "Not the authority",
                    "this machine is not the authority" },
         EnumValue{ LevelChangeAdmission::InSession, "in_session", "In a session", "a network session is running" },
+        EnumValue{ LevelChangeAdmission::BodyInZone, "body_in_zone", "Body in a zone",
+                   "a body to keep belongs to a zone of the level being left" },
     };
 };
 
@@ -66,6 +70,8 @@ enum class LevelChangeBodies : std::uint8_t
 {
     // Released, and the game's prefab spawned in the new level.
     Fresh,
+    // The same bodies, held still while no level stands and placed when the new one arrives.
+    Kept,
 };
 
 enum class LevelChangeKind : std::uint8_t
@@ -112,12 +118,6 @@ private:
     std::vector<DurableLevelState> Remembered_;
 };
 
-// World resource: the arrival name of the change under way or last carried out.
-struct LevelArrival
-{
-    std::string Name;
-};
-
 // docs/gameplay/game-module.md, "Changing level". The first load, with nothing
 // loaded, is admitted on any machine and in a session: it changes nothing a
 // peer was told.
@@ -143,7 +143,12 @@ private:
     void Fail(std::vector<std::string> reasons);
     static void ForgetFor(World& world, const LevelChangeRequest& request,
                           const std::optional<LevelReference>& leaving);
-    [[nodiscard]] bool ReleasedHaveBodies(const World& world) const;
+    [[nodiscard]] std::vector<KeptArrival> HoldKeptBodies(World& world);
+    void PlaceKeptBodies(World& world);
+    void LetGoOfKeptBodies(World& world);
+    void MoveBody(World& world, EntityId body, const Transform3f& place);
+    [[nodiscard]] std::uint64_t LastTick() const;
+    [[nodiscard]] bool BodiesArrived(const World& world) const;
 
     Engine& Host;
     std::optional<LevelChangeRequest> Waiting;

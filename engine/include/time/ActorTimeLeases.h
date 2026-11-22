@@ -65,7 +65,8 @@ void PruneActorTimeHistory(ActorTimeLeases& leases, std::uint64_t tick);
 
 // The scale in force on `tick`: the product of every lease effective on it, taken in
 // ascending order of scale so every machine rounds the same way whoever holds what,
-// with Q16 rounding at each step, clamped to `limits`.
+// with Q16 rounding at each step, clamped to `limits`. A lease of scale zero holds the
+// actor still: the scale is zero whatever the limits.
 [[nodiscard]] std::int64_t ActorScaleAt(const ActorTimeLeases& leases, std::uint64_t tick,
                                         const ActorScaleLimits& limits);
 

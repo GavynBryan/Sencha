@@ -169,6 +169,8 @@ const LevelChangeAdmission admission = engine.LevelChanges().Request(
   made it: what was remembered of that level, and the records waiting in it,
   are forgotten first; every other level's memory stays. `LevelChangeBodies::Fresh`
   releases the bodies and the game's prefab spawns in the new level.
+  `LevelChangeBodies::Kept` carries the same bodies across: see "A body across a
+  level change" below.
 - `NewGame(level)`: every level's memory, every runtime held record and every
   section a restored save carried that nothing registered go.
 - `Restore(level, remembered)`: what every level remembers is replaced by a
@@ -208,7 +210,8 @@ hosting, since the announcement is refreshed every frame. Carrying it out:
 
 1. on the authority, lets every participant's body go
    (`Engine::ReleaseParticipantBody`, through the game's `ReapBody` policy);
-   the participants stay;
+   the participants stay. A `Travel` that keeps its bodies holds each one
+   still instead;
 2. unloads, so the game's residency systems see their content leave and each
    zone's state is captured;
 3. sets the left level's waiting held records aside, so they are in no lookup
@@ -219,20 +222,52 @@ hosting, since the announcement is refreshed every frame. Carrying it out:
    destroys every runtime held record; a `Restore` installs the save's level
    state and destroys every runtime held record, which the save's sections and
    level lists bring back;
-5. records the arrival name and drops a restored body no spawn has taken
-   (`RestoredBodies`), so only the restore that is under way can give one out;
+5. records the arrival name and the kept bodies (`LevelArrival`,
+   `participant_spawn/LevelArrival.h`) and drops a restored body no spawn has
+   taken (`RestoredBodies`), so only the restore that is under way can give one
+   out;
 6. clears the active camera if it went with the level;
 7. loads the requested level.
 
 The game provides bodies when the level arrives, as for any load. `Status()`
 moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every
-participant whose body was let go has one again), or ends at `Failed` with
+participant whose body was let go has one again, and every kept body stands in
+the new level), or ends at `Failed` with
 `Failure()` saying why. `Serial()` counts accepted requests, so a caller that
 holds a screen up while it waits can tell its own change from a later one.
 Hiding the change is the game's: a fade, a door, a dialogue box.
 
 Changing level inside a network session is refused: peers are told which map
 to load only when they are admitted.
+
+### A body across a level change
+
+`LevelChangeBodies::Kept` keeps each participant's body alive across the change:
+the same entity, with its lasting effects, cooldowns, abilities in progress,
+leases, counters and held records, because nothing happens to them. Bodies live
+in the persistent partition, which an unload does not touch; a request that
+would keep a body living in a zone's partition is refused (`BodyInZone`).
+
+Two things are owed in return, and the engine pays both:
+
+- **Standing still while no level stands.** At the commit each kept body that
+  has an actor clock takes a time-scale lease of zero, a hold
+  (`docs/core-systems-map.md`, actor time), so its movement, effects, cooldowns
+  and phases do not advance while there is nothing to stand on. A body whose
+  leases are all in use is not held, and that is logged. An effect authored in
+  `simulation` time keeps the simulation's clock and does age.
+- **Arriving.** `LevelArrival::Kept` lists the bodies waiting for a place. The
+  game's `ParticipantBodySpawns::Update` asks its `Select` for each, as it would
+  for a new body, and records the root it answers once there is content to
+  stand in; the level change then moves the body there through its character
+  mover (a teleport), stops it, and lets go of its hold. A game that provides
+  bodies itself fills `KeptArrival::Place` the same way.
+
+A kept body arrives at rest and keeps its movement mode. What it referred to in
+the old level (a target, a tether to geometry) is gone on arrival, as when a
+zone unloads under a body in a world; generational ids make those references
+fail safe, and ending abilities that depended on them is the game's. A failed
+change lets go of its holds where the bodies stand.
 
 ## Bodies from prefabs
 
@@ -248,8 +283,10 @@ world and spawn service and gives it three callbacks -- which prefab and where,
 the engine's `AssignParticipantBody`, and an optional step that runs on the
 landed root before assignment. Its `StartSpawn` is the lifecycle's
 `ProvideBody`, answering no body now. The game's spawn system calls `Update`
-each frame; a landed spawn is prepared and assigned, and a spawn whose
-participant left or found a body some other way is withdrawn. `CancelAllPending`
+each frame; a landed spawn is prepared and assigned, a spawn whose
+participant left or found a body some other way is withdrawn, and a body a
+level change kept is given the root `Select` answers ("A body across a level
+change"). `CancelAllPending`
 is the game's call when the content a request was made for goes away, and
 `Close` runs at the start of `OnShutdown`, before anything the callbacks
 captured.
