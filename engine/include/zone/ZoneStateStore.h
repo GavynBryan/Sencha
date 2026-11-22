@@ -67,6 +67,7 @@ class ZoneStateStore
 {
 public:
     [[nodiscard]] ZoneStateScope Scope(const LevelReference& level, ZoneId zone);
+    [[nodiscard]] ZoneStateLevelId Level(const LevelReference& level);
 
     // At import, with every entity the cooked scene authored, those this import
     // suppressed included.

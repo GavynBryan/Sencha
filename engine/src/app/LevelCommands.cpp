@@ -29,7 +29,8 @@ namespace
     ConsoleResult result;
     const std::string name = level.Name;
     const LevelChangeAdmission admission =
-        engine.LevelChanges().Request(LevelChangeRequest{ .Level = std::move(level) });
+        engine.LevelChanges().Request(
+            LevelChangeRequest::Travel(std::move(level), LevelMemory::Authored, LevelChangeBodies::Fresh));
     if (admission == LevelChangeAdmission::Accepted)
         result.Info("loading '" + name + "'");
     else

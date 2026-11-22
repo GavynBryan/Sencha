@@ -225,7 +225,8 @@ namespace
                 if (lost.IsValid())
                     world.DestroyEntity(lost);
                 Admission = Host->LevelChanges().Request(
-                    LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } });
+                    LevelChangeRequest::Travel({ .Kind = LevelKind::Scene, .Name = "levels/room_2" }, LevelMemory::Authored,
+                                               LevelChangeBodies::Fresh));
                 StatusOnRequest = Host->LevelChanges().Status();
             }
             if (Frames > 120 && (Seen.empty() || Seen.back() != status))

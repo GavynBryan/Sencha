@@ -258,15 +258,24 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId part
     }
 }
 
-void DestroyAwaitingHeldRecords(World& world)
+void SetAsideHeldRecords(World& world, ZoneStateLevelId level)
+{
+    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
+        index->SetAside(level);
+}
+
+void ResumeHeldRecords(World& world, ZoneStateLevelId level)
+{
+    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
+        index->Resume(level);
+}
+
+void DestroySetAsideHeldRecords(World& world, ZoneStateLevelId level)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
-    std::vector<EntityId> records = index->AwaitingRecords();
-    const std::vector<EntityId> aside = index->SetAsideRecords();
-    records.insert(records.end(), aside.begin(), aside.end());
-    for (const EntityId record : records)
+    for (const EntityId record : index->SetAsideRecords(level))
         if (world.IsAlive(record))
             world.DestroyEntity(record);
 }

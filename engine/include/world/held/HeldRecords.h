@@ -28,6 +28,9 @@ void SettleHeldRecords(World& world);
 
 void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId partition);
 
-void DestroyAwaitingHeldRecords(World& world);
+// A level's waiting records leave every lookup while another level is loaded.
+void SetAsideHeldRecords(World& world, ZoneStateLevelId level);
+void ResumeHeldRecords(World& world, ZoneStateLevelId level);
+void DestroySetAsideHeldRecords(World& world, ZoneStateLevelId level);
 
 void DestroyHeldRecords(World& world);

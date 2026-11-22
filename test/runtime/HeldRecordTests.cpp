@@ -315,16 +315,38 @@ TEST_F(HeldRecordTest, DestroyingTheRecordsLeavesWhatContentAuthored)
     EXPECT_FALSE(Entities.IsAlive(made));
 }
 
-TEST_F(HeldRecordTest, DestroyingWhatWaitsLeavesWhatIsHeld)
+TEST_F(HeldRecordTest, ALevelsWaitingRecordsAreSetAsideResumedAndDestroyedAlone)
 {
     const EntityId body = Holder();
     const EntityId held = HeldBy(body);
-    const EntityId waiting = Entities.CreateEntity();
-    Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 9 } } });
+    const PersistentEntityId chest{ 0xC4E57 };
+    const ZoneStateScope cellar{ .Level = ZoneStateLevelId{ 1 }, .Zone = ZoneId{ 0x51 } };
+    const ZoneStateScope copy{ .Level = ZoneStateLevelId{ 2 }, .Zone = ZoneId{ 0x51 } };
+    const auto waitingIn = [&](ZoneStateScope scope) {
+        const EntityId record = Entities.CreateEntity();
+        Entities.AddComponent<Held>(record, Held{ .Holder = { .Entity = {}, .Target = chest } });
+        Index->Await(record, chest, scope);
+        return record;
+    };
+    const EntityId inCellar = waitingIn(cellar);
+    const EntityId inCopy = waitingIn(copy);
 
-    DestroyAwaitingHeldRecords(Entities);
+    SetAsideHeldRecords(Entities, cellar.Level);
+    EXPECT_EQ(Index->AwaitingRecords(), std::vector{ inCopy }) << "set aside, it is in no lookup";
+    EXPECT_EQ(Index->SetAsideRecords(cellar.Level), std::vector{ inCellar });
+    const EntityId arrived = Entities.CreateEntity();
+    Entities.AddComponent<PersistentIdComponent>(arrived, PersistentIdComponent{ chest });
+    EXPECT_EQ(RecordsOf(arrived), std::vector{ inCopy }) << "the other level's record does not find this holder";
+    Entities.DestroyEntity(arrived);
+    SettleHeldRecords(Entities);
 
-    EXPECT_FALSE(Entities.IsAlive(waiting));
+    ResumeHeldRecords(Entities, cellar.Level);
+    EXPECT_EQ(Index->AwaitedHolderOf(inCellar), chest);
+    EXPECT_TRUE(Index->SetAsideRecords(cellar.Level).empty());
+
+    SetAsideHeldRecords(Entities, cellar.Level);
+    DestroySetAsideHeldRecords(Entities, cellar.Level);
+    EXPECT_FALSE(Entities.IsAlive(inCellar));
     EXPECT_TRUE(Entities.IsAlive(held));
 }
 

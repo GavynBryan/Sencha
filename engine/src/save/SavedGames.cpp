@@ -386,8 +386,10 @@ void SavedGames::BeginChange(std::shared_ptr<const SavedGame> saved)
             return FailRestore("section '" + section.Name + "' was written by a newer build (version "
                                + std::to_string(section.Version) + "; this build reads up to "
                                + std::to_string(registered->Version) + ")");
-    const LevelChangeAdmission admission = Host.LevelChanges().Request(LevelChangeRequest{
-        .Level = saved->Summary.Level, .Focus = saved->Summary.Focus, .ZoneState = saved->Levels });
+    LevelChangeRequest request = LevelChangeRequest::Restore(saved->Summary.Level, saved->Levels);
+    if (saved->Summary.Focus.has_value())
+        request.Focused(*saved->Summary.Focus);
+    const LevelChangeAdmission admission = Host.LevelChanges().Request(std::move(request));
     if (admission != LevelChangeAdmission::Accepted)
         return FailRestore(LevelChangeAdmissionReason(admission));
     RestoreSerial = Host.LevelChanges().Serial();
@@ -401,7 +403,7 @@ void SavedGames::RestoreSections()
     if (changes.Serial() != SeenChange)
     {
         SeenChange = changes.Serial();
-        if (SeenChange != RestoreSerial && changes.RuntimeState() == LevelChangeRuntimeState::Discard)
+        if (SeenChange != RestoreSerial && changes.Kind() == LevelChangeKind::NewGame)
         {
             Unclaimed.clear();
             UnclaimedChunks.clear();

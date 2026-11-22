@@ -19,6 +19,8 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/HeldRecordIndex.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializer.h>
@@ -167,10 +169,25 @@ namespace
             FinishResidency();
         }
 
-        void Detach()
+        void Detach(ZoneId zone = kVault)
         {
-            ASSERT_TRUE(Runtime.RequestDetach(kVault));
+            ASSERT_TRUE(Runtime.RequestDetach(zone));
             FinishResidency();
+        }
+
+        void ImportUnder(ZoneStateScope scope, const EntityBuildPackage& package)
+        {
+            ZoneImportError error;
+            ASSERT_TRUE(ImportZonePackage(Runtime, Schema, scope.Zone, package, Serializers, Context, kLogic, &error,
+                                          scope))
+                << error.Message;
+            FinishResidency();
+        }
+
+        std::vector<EntityId> HeldBy(PersistentEntityId holder)
+        {
+            const std::span<const EntityId> held = Entities().GetResource<HeldRecordIndex>().RecordsOf(Resolve(holder));
+            return std::vector<EntityId>(held.begin(), held.end());
         }
 
         EntityId Resolve(PersistentEntityId id)
@@ -381,4 +398,60 @@ TEST_F(LevelEntityPatch, AGainedMemberOfAFormThisBuildDoesNotMakeIsKeptLoggedAnd
     const std::optional<std::vector<ZoneStateList>> lists = DecodeZoneLists(*durable[0].Zones[0].Lists);
     ASSERT_TRUE(lists.has_value());
     EXPECT_EQ(std::ranges::count(*lists, gained), 1) << "written back byte for byte";
+}
+
+TEST_F(LevelEntityPatch, TwoLevelsSharingAuthoredIdsKeepSeparateDoorsAndChestContents)
+{
+    const ZoneStateScope copy = Store().Scope(LevelReference{ .Kind = LevelKind::World, .Name = "keep_copy" }, kVault);
+    Import(Vault());
+    (void)GrantBaselineTag(Entities(), Resolve(kDoor), Unsealed);
+    const EntityId record = PlaceHeldRecord(Entities(), Resolve(kGuard), ArchetypeSignature{});
+    ASSERT_TRUE(record.IsValid());
+    SettleHeldRecords(Entities());
+    Detach();
+    SetAsideHeldRecords(Entities(), Scope().Level);
+
+    ImportUnder(copy, Vault());
+    EXPECT_FALSE(IsUnsealed(kDoor)) << "the copy's door is its own";
+    EXPECT_TRUE(HeldBy(kGuard).empty()) << "the first level's chest contents did not move into the copy";
+    Detach();
+    SetAsideHeldRecords(Entities(), copy.Level);
+    ResumeHeldRecords(Entities(), Scope().Level);
+
+    Import(Vault());
+    EXPECT_TRUE(IsUnsealed(kDoor));
+    EXPECT_EQ(HeldBy(kGuard), std::vector{ record });
+}
+
+TEST_F(LevelEntityPatch, AnEnemyThatReturnsAtRestoreIsBackAfterARestoreMadeInAnotherLevel)
+{
+    const ZoneStateScope elsewhere =
+        Store().Scope(LevelReference{ .Kind = LevelKind::Scene, .Name = "levels/elsewhere" }, kSceneLevelZone);
+    Import(Vault(5, ZoneStateForgetting::AtRestore));
+    Entities().DestroyEntity(Resolve(kDoor));
+    Entities().DestroyEntity(Resolve(kCrate));
+    Detach();
+    ImportUnder(elsewhere, Vault());
+    const std::vector<DurableLevelState> written = Store().ExportDurable();
+    Detach(kSceneLevelZone);
+
+    Store().Install(written);
+    Import(Vault(5, ZoneStateForgetting::AtRestore));
+    EXPECT_TRUE(Resolve(kDoor).IsValid()) << "what returns at restore came back";
+    EXPECT_FALSE(Resolve(kCrate).IsValid()) << "what is never forgotten stayed gone";
+}
+
+TEST_F(LevelEntityPatch, AWorldAndAMapMadeFromOneSceneFileKeepSeparateMemory)
+{
+    const ZoneStateScope map =
+        Store().Scope(LevelReference{ .Kind = LevelKind::Scene, .Name = "levels/keep" }, kSceneLevelZone);
+    ImportUnder(map, Vault());
+    Entities().DestroyEntity(Resolve(kCrate));
+    Detach(kSceneLevelZone);
+
+    Import(Vault());
+    EXPECT_TRUE(Resolve(kCrate).IsValid()) << "the world's zone is another level";
+    Detach();
+    ImportUnder(map, Vault());
+    EXPECT_FALSE(Resolve(kCrate).IsValid());
 }

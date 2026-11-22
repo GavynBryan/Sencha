@@ -49,6 +49,44 @@ const char* LevelChangeAdmissionReason(LevelChangeAdmission admission)
     return "";
 }
 
+LevelChangeRequest::LevelChangeRequest(LevelChangeKind kind, LevelReference level, LevelMemory memory)
+    : Kind_(kind)
+    , Level_(std::move(level))
+    , Memory_(memory)
+{
+}
+
+LevelChangeRequest LevelChangeRequest::Travel(LevelReference level, LevelMemory memory, LevelChangeBodies bodies)
+{
+    LevelChangeRequest request(LevelChangeKind::Travel, std::move(level), memory);
+    request.Bodies_ = bodies;
+    return request;
+}
+
+LevelChangeRequest LevelChangeRequest::NewGame(LevelReference level)
+{
+    return LevelChangeRequest(LevelChangeKind::NewGame, std::move(level), LevelMemory::Authored);
+}
+
+LevelChangeRequest LevelChangeRequest::Restore(LevelReference level, std::vector<DurableLevelState> remembered)
+{
+    LevelChangeRequest request(LevelChangeKind::Restore, std::move(level), LevelMemory::Remembered);
+    request.Remembered_ = std::move(remembered);
+    return request;
+}
+
+LevelChangeRequest& LevelChangeRequest::At(std::string arrival)
+{
+    Arrival_ = std::move(arrival);
+    return *this;
+}
+
+LevelChangeRequest& LevelChangeRequest::Focused(ZoneId zone)
+{
+    Focus_ = zone;
+    return *this;
+}
+
 LevelChange::LevelChange(Engine& engine)
     : Host(engine)
 {
@@ -64,9 +102,9 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
     if (const NetSession* session = Host.TryNet();
         !firstLoad && session != nullptr && session->Role() != NetSessionRole::Standalone)
         return LevelChangeAdmission::InSession;
-    if (!Host.Level().IsCooked(request.Level))
+    if (!Host.Level().IsCooked(request.Level()))
         return LevelChangeAdmission::NotCooked;
-    Kept = request.RuntimeState;
+    LatestKind = request.Kind();
     Waiting = std::move(request);
     Current = LevelChangeStatus::Pending;
     Reasons.clear();
@@ -89,24 +127,21 @@ void LevelChange::Commit()
                 Released.push_back(participant);
 
     LoadedLevel& level = Host.Level();
+    const std::optional<LevelReference> leaving = level.Loaded();
     level.Unload();
-    if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
-        memory->Install(request.ZoneState);
+    ForgetFor(world, request, leaving);
+    world.SetResource(LevelArrival{ .Name = request.Arrival() });
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         *restored = RestoredBodies{};
-    if (request.RuntimeState == LevelChangeRuntimeState::Discard)
-        DestroyHeldRecords(world);
-    else
-        DestroyAwaitingHeldRecords(world);
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {
         cameras->SetActive({});
     }
 
-    const ConsoleResult loaded = request.Level.Kind == LevelKind::Scene
-        ? level.LoadScene(request.Level.Name)
-        : level.LoadWorld(request.Level.Name, request.Focus);
+    const ConsoleResult loaded = request.Level().Kind == LevelKind::Scene
+        ? level.LoadScene(request.Level().Name)
+        : level.LoadWorld(request.Level().Name, request.Focus());
     if (!loaded.Succeeded())
     {
         std::vector<std::string> reasons;
@@ -139,6 +174,34 @@ void LevelChange::Advance()
     }
     if (Current == LevelChangeStatus::Resident && ReleasedHaveBodies(Host.World().Entities()))
         Current = LevelChangeStatus::BodiesRestored;
+}
+
+void LevelChange::ForgetFor(World& world, const LevelChangeRequest& request,
+                            const std::optional<LevelReference>& leaving)
+{
+    ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    const auto levelOf = [memory](const LevelReference& level) {
+        return memory != nullptr ? memory->Level(level) : ZoneStateLevelId{};
+    };
+    if (leaving.has_value())
+        SetAsideHeldRecords(world, levelOf(*leaving));
+    switch (request.Kind())
+    {
+    case LevelChangeKind::Travel:
+        if (request.Memory() == LevelMemory::Remembered)
+            return ResumeHeldRecords(world, levelOf(request.Level()));
+        if (memory != nullptr)
+            memory->ForgetLevel(request.Level());
+        return DestroySetAsideHeldRecords(world, levelOf(request.Level()));
+    case LevelChangeKind::NewGame:
+        if (memory != nullptr)
+            memory->Clear();
+        return DestroyHeldRecords(world);
+    case LevelChangeKind::Restore:
+        if (memory != nullptr)
+            memory->Install(request.Remembered());
+        return DestroyHeldRecords(world);
+    }
 }
 
 bool LevelChange::ReleasedHaveBodies(const World& world) const

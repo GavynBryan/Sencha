@@ -154,36 +154,73 @@ authored camera from the same hook.
 ## Changing level
 
 `Engine::LevelChanges()` replaces what is loaded with another level, or the same
-one again, as one request:
+one again, as one request. A request is built only through a named constructor
+that says what the change keeps, so a caller written against an older request
+fails to compile rather than meaning something else:
 
 ```cpp
 const LevelChangeAdmission admission = engine.LevelChanges().Request(
-    LevelChangeRequest{ .Level = *engine.Level().Loaded() });
+    LevelChangeRequest::Travel(*engine.Level().Loaded(), LevelMemory::Authored, LevelChangeBodies::Fresh));
 ```
 
-The `map` and `world` console commands are this request, so the first load
-and every later one take the same path. `LoadedLevel::Loaded()` is a
-`LevelReference`: a scene or a world, and the name it was given. The request is
-checked when it is made (the level is cooked, no other change is under way, and,
-unless nothing is loaded yet, this machine is the authority and no network
-session is running) and carried out at the next zone-residency phase, before
-streaming, where no frame view is live. A first load is admitted anywhere
-because it changes nothing a peer was told: a client loads the map its
-authority announced, and a host may load after it began hosting, since the
-announcement is refreshed every frame. Carrying it out:
+- `Travel(level, memory, bodies)`: the game goes on, in another level or this
+  one again. `LevelMemory::Remembered` enters the level as the game left it:
+  what its zones remember applies. `LevelMemory::Authored` enters it as content
+  made it: what was remembered of that level, and the records waiting in it,
+  are forgotten first; every other level's memory stays. `LevelChangeBodies::Fresh`
+  releases the bodies and the game's prefab spawns in the new level.
+- `NewGame(level)`: every level's memory, every runtime held record and every
+  section a restored save carried that nothing registered go.
+- `Restore(level, remembered)`: what every level remembers is replaced by a
+  save's; bodies come from the save. `SavedGames` makes this one.
+
+`At(arrival)` names where a body arrives and `Focused(zone)` a world's starting
+zone. The engine carries the arrival name in the `LevelArrival` World resource
+and does not read it; the game's body spawn `Select` reads it and matches it
+against whatever it authors as a spawn point. `LevelChange::Kind()` says which
+kind the latest accepted request was.
+
+How the request and an entity's `ZoneStateLifetime` meet:
+
+| Event | `never` | `at_restore` | `at_detach` |
+|---|---|---|---|
+| its zone unloads (streaming, or its level is left) | kept | kept | forgotten |
+| `Travel`, `Remembered` | applies on arrival | applies | (already gone) |
+| `Travel`, `Authored` | that level's forgotten | that level's forgotten | |
+| a save is written | in the file | not in the file | |
+| `Restore` | replaced by the file's | forgotten in every level | |
+| `NewGame` | forgotten in every level | forgotten in every level | |
+
+Anything permanent inside a level entered `Authored` (a course a player re-enters
+from the start) must be a counter, since entering it that way forgets its
+`never` state too.
+
+The `map` and `world` console commands are `Travel(level, Authored, Fresh)`, so
+the first load and every later one take the same path. `LoadedLevel::Loaded()` is a
+`LevelReference` (`world/LevelReference.h`): a scene or a world, and the name it
+was given. The request is checked when it is made (the level is cooked, no
+other change is under way, and, unless nothing is loaded yet, this machine is
+the authority and no network session is running) and carried out at the next
+zone-residency phase, before streaming, where no frame view is live. A first
+load is admitted anywhere because it changes nothing a peer was told: a client
+loads the map its authority announced, and a host may load after it began
+hosting, since the announcement is refreshed every frame. Carrying it out:
 
 1. on the authority, lets every participant's body go
    (`Engine::ReleaseParticipantBody`, through the game's `ReapBody` policy);
    the participants stay;
-2. unloads, so the game's residency systems see their content leave;
-3. resets zone state memory to authored, so what the level lost comes back
-   (or installs the request's `ZoneState`, which is how a restore loads);
-4. destroys the held records that were waiting for a holder in the old level,
-   or, when the request's `RuntimeState` is `Discard`, every runtime held
-   record: the world's counters and inventory and every body's go, as a new
-   game needs (`Keep`, the default, keeps them for the next level);
-5. drops a restored body no spawn has taken (`RestoredBodies`), so only the
-   restore that is under way can give one out;
+2. unloads, so the game's residency systems see their content leave and each
+   zone's state is captured;
+3. sets the left level's waiting held records aside, so they are in no lookup
+   while another level is loaded (`docs/gameplay/held-records.md`);
+4. applies the request's kind: a `Travel` into a level `Remembered` puts that
+   level's set-aside records back, one into a level `Authored` forgets that
+   level and destroys its set-aside records; a `NewGame` forgets every level and
+   destroys every runtime held record; a `Restore` installs the save's level
+   state and destroys every runtime held record, which the save's sections and
+   level lists bring back;
+5. records the arrival name and drops a restored body no spawn has taken
+   (`RestoredBodies`), so only the restore that is under way can give one out;
 6. clears the active camera if it went with the level;
 7. loads the requested level.
 

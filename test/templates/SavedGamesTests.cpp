@@ -33,6 +33,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #if defined(TEST_FPS_MODULE_PATH)
@@ -406,7 +407,8 @@ TEST(SavedGames, AWriteRequestedDuringALevelChangeKeepsTheBody)
         if (stage == 0 && HasBody(world))
         {
             EXPECT_EQ(engine.LevelChanges().Request(
-                          LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } }),
+                          LevelChangeRequest::Travel({ .Kind = LevelKind::Scene, .Name = "levels/room_2" }, LevelMemory::Authored,
+                                                     LevelChangeBodies::Fresh)),
                       LevelChangeAdmission::Accepted);
             stage = 1;
         }
@@ -514,9 +516,12 @@ TEST(SavedGames, SectionsNothingRegisteredTravelOnlyWithTheGameTheyCameFrom)
     saved->Sections.push_back(SavedGameSection{ .Name = "future.notes", .Version = 1, .Data = JsonValue(true) });
     ASSERT_TRUE(WriteSave(current, *saved));
 
-    const auto change = [](Engine& engine, LevelChangeRuntimeState state) {
-        EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest{
-                      .Level = { .Kind = LevelKind::Scene, .Name = "levels/bumper" }, .RuntimeState = state }),
+    const auto change = [](Engine& engine, LevelChangeKind kind) {
+        const LevelReference bumper{ .Kind = LevelKind::Scene, .Name = "levels/bumper" };
+        EXPECT_EQ(engine.LevelChanges().Request(
+                      kind == LevelChangeKind::NewGame
+                          ? LevelChangeRequest::NewGame(bumper)
+                          : LevelChangeRequest::Travel(bumper, LevelMemory::Authored, LevelChangeBodies::Fresh)),
                   LevelChangeAdmission::Accepted);
     };
     int stage = 0;
@@ -531,7 +536,7 @@ TEST(SavedGames, SectionsNothingRegisteredTravelOnlyWithTheGameTheyCameFrom)
         }
         else if (stage == 1 && RestoreArrived(engine))
         {
-            change(engine, LevelChangeRuntimeState::Keep);
+            change(engine, LevelChangeKind::Travel);
             stage = 2;
         }
         else if (stage == 2 && arrived)
@@ -541,7 +546,7 @@ TEST(SavedGames, SectionsNothingRegisteredTravelOnlyWithTheGameTheyCameFrom)
         }
         else if (stage == 3 && written)
         {
-            change(engine, LevelChangeRuntimeState::Discard);
+            change(engine, LevelChangeKind::NewGame);
             stage = 4;
         }
         else if (stage == 4 && arrived)
@@ -572,22 +577,25 @@ TEST(SavedGames, ALevelChangeThatDiscardsRuntimeStateStartsWithoutTheWorldsCount
     int stage = 0;
     RunFps("levels/room_2", 600, root, [&](Engine& engine, World& world, int) {
         const bool arrived = engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored;
-        const auto change = [&](LevelChangeRuntimeState state) {
-            EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest{
-                          .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" }, .RuntimeState = state }),
+        const auto change = [&](LevelChangeKind kind) {
+            const LevelReference room{ .Kind = LevelKind::Scene, .Name = "levels/room_2" };
+            EXPECT_EQ(engine.LevelChanges().Request(
+                          kind == LevelChangeKind::NewGame
+                              ? LevelChangeRequest::NewGame(room)
+                              : LevelChangeRequest::Travel(room, LevelMemory::Authored, LevelChangeBodies::Fresh)),
                       LevelChangeAdmission::Accepted);
         };
         if (stage == 0 && HasBody(world))
         {
             counter = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.boss_defeated");
             (void)WriteCounter(world, counter, EntityId{}, 1);
-            change(LevelChangeRuntimeState::Keep);
+            change(LevelChangeKind::Travel);
             stage = 1;
         }
         else if (stage == 1 && arrived)
         {
             afterKeep = CounterValue(world, counter, EntityId{});
-            change(LevelChangeRuntimeState::Discard);
+            change(LevelChangeKind::NewGame);
             stage = 2;
         }
         else if (stage == 2 && arrived)
@@ -904,7 +912,8 @@ TEST(SavedGames, ARestoredBodyNobodyTookIsNotGivenToTheNextLevelChange)
                 world.AddResource<RestoredBodies>();
             world.GetResource<RestoredBodies>().Local = stale;
             EXPECT_EQ(engine.LevelChanges().Request(
-                          LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } }),
+                          LevelChangeRequest::Travel({ .Kind = LevelKind::Scene, .Name = "levels/room_2" }, LevelMemory::Authored,
+                                                     LevelChangeBodies::Fresh)),
                       LevelChangeAdmission::Accepted);
             stage = 1;
         }
@@ -1369,6 +1378,294 @@ TEST(SavedGames, ASaveNamesWhereItsBodyComesBackAndTheRestoreCarriesIt)
             }
     });
     EXPECT_EQ(carried, "station_a");
+    std::filesystem::remove_all(root);
+}
+#endif
+
+#if defined(TEST_FPS_MODULE_PATH)
+static_assert(!std::is_aggregate_v<LevelChangeRequest>, "a request is built only through its named constructors");
+static_assert(!std::is_default_constructible_v<LevelChangeRequest>, "a request states what it keeps");
+
+namespace
+{
+    const LevelReference kFirst{ .Kind = LevelKind::Scene, .Name = "levels/bumper" };
+    const LevelReference kSecond{ .Kind = LevelKind::Scene, .Name = "levels/room_2" };
+
+    bool Arrived(const Engine& engine) { return engine.LevelChanges().Status() == LevelChangeStatus::BodiesRestored; }
+
+    void Travel(Engine& engine, const LevelReference& level, LevelMemory memory)
+    {
+        EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest::Travel(level, memory, LevelChangeBodies::Fresh)),
+                  LevelChangeAdmission::Accepted);
+    }
+
+    std::vector<PersistentEntityId> AuthoredIds(const World& world)
+    {
+        std::vector<PersistentEntityId> ids;
+        const EntityId body = LocalControlSubjectOf(world);
+        world.ForEachComponent<PersistentIdComponent>([&](EntityId entity, const PersistentIdComponent& id) {
+            if (entity != body && IsAuthoredPersistentEntityId(id.Id) && !world.HasComponent<Held>(entity))
+                ids.push_back(id.Id);
+        });
+        std::ranges::sort(ids, {}, &PersistentEntityId::Value);
+        return ids;
+    }
+
+    EntityId Live(const World& world, PersistentEntityId id)
+    {
+        return world.TryGetResource<PersistentEntityIndex>()->TryResolve(id);
+    }
+
+    struct Changes
+    {
+        PersistentEntityId Door;
+        PersistentEntityId Chest;
+        PersistentEntityId Pickup;
+        PersistentEntityId Record;
+        EntityId RecordEntity;
+
+        void Make(World& world)
+        {
+            const std::vector<PersistentEntityId> ids = AuthoredIds(world);
+            ASSERT_GE(ids.size(), 2u) << "the level authors too few entities for the test";
+            Door = ids[0];
+            Chest = ids[0];
+            Pickup = ids[1];
+            const GameplayTagId unsealed = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.unsealed");
+            ASSERT_EQ(GrantBaselineTag(world, Live(world, Door), unsealed), GameplayTagWrite::Added);
+            RecordEntity = PlaceHeldRecord(world, Live(world, Chest), ArchetypeSignature{});
+            ASSERT_TRUE(RecordEntity.IsValid());
+            Record = world.TryGet<PersistentIdComponent>(RecordEntity)->Id;
+            world.DestroyEntity(Live(world, Pickup));
+        }
+
+        [[nodiscard]] bool DoorUnsealed(World& world) const
+        {
+            const GameplayTagId unsealed = *world.GetResource<GameplayTagRegistry>().RegisterTag("test.unsealed");
+            const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(Live(world, Door));
+            return tags != nullptr && tags->HasExact(unsealed);
+        }
+
+        [[nodiscard]] bool ChestHoldsTheRecord(const World& world) const
+        {
+            const HeldRecordIndex& index = *world.TryGetResource<HeldRecordIndex>();
+            const EntityId chest = Live(world, Chest);
+            return chest.IsValid() && std::ranges::any_of(index.RecordsOf(chest), [&](EntityId record) {
+                return world.TryGet<PersistentIdComponent>(record)->Id == Record;
+            });
+        }
+
+        [[nodiscard]] bool PickupGone(const World& world) const { return !Live(world, Pickup).IsValid(); }
+    };
+}
+
+TEST(SavedGames, AJourneyThereAndBackKeepsWhatTheGameChangedInTheFirstLevel)
+{
+    const std::filesystem::path root = RootFor("there_and_back");
+    Changes changes;
+    bool unsealed = false;
+    bool holding = false;
+    bool gone = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            changes.Make(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            unsealed = changes.DoorUnsealed(world);
+            holding = changes.ChestHoldsTheRecord(world);
+            gone = changes.PickupGone(world);
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_TRUE(unsealed) << "the opened door shut while the player was away";
+    EXPECT_TRUE(holding) << "the chest's contents were lost while the player was away";
+    EXPECT_TRUE(gone) << "the taken pickup came back";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ASaveWrittenInTheSecondLevelHoldsTheFirstAndAFreshRunGetsItBack)
+{
+    const std::filesystem::path root = RootFor("save_holds_both");
+    Changes changes;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            changes.Make(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(saved->Summary.Level, kSecond);
+    const DurableLevelState* first = LevelIn(*saved, kFirst);
+    ASSERT_NE(first, nullptr) << "the level left behind is in the save";
+    const std::vector<ZoneListEntity> held = ZoneEntities(first->Zones[0].Held, kHeldZoneList);
+    ASSERT_EQ(held.size(), 1u) << "the chest's record is written under the chest's level";
+    EXPECT_EQ(held[0].Id, changes.Record);
+
+    bool unsealed = false;
+    bool holding = false;
+    bool gone = false;
+    stage = 0;
+    RunFps(kSecond.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            (void)world.GetResource<GameplayTagRegistry>().RegisterTag("test.unsealed");
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            unsealed = changes.DoorUnsealed(world);
+            holding = changes.ChestHoldsTheRecord(world);
+            gone = changes.PickupGone(world);
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_TRUE(unsealed);
+    EXPECT_TRUE(holding);
+    EXPECT_TRUE(gone);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, EnteringALevelAsAuthoredResetsItAloneAndDestroysWhatWaitedInIt)
+{
+    const std::filesystem::path root = RootFor("authored_entry");
+    Changes changes;
+    PersistentEntityId elsewhere;
+    bool unsealed = true;
+    bool holding = true;
+    bool recordAlive = true;
+    bool pickupBack = false;
+    bool elsewhereKept = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 1200, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            changes.Make(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            elsewhere = DestroyAuthored(world);
+            Travel(engine, kFirst, LevelMemory::Authored);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            unsealed = changes.DoorUnsealed(world);
+            holding = changes.ChestHoldsTheRecord(world);
+            recordAlive = world.IsAlive(changes.RecordEntity);
+            pickupBack = !changes.PickupGone(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine))
+        {
+            elsewhereKept = !Resolves(world, elsewhere);
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4);
+    EXPECT_FALSE(unsealed);
+    EXPECT_FALSE(holding);
+    EXPECT_FALSE(recordAlive) << "the record waiting in the level entered as authored is destroyed";
+    EXPECT_TRUE(pickupBack);
+    EXPECT_TRUE(elsewhereKept) << "only the level entered as authored was reset";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ANewGameResetsEveryLevel)
+{
+    const std::filesystem::path root = RootFor("new_game_levels");
+    Changes changes;
+    PersistentEntityId elsewhere;
+    bool unsealed = true;
+    bool elsewhereBack = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 1200, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            changes.Make(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            elsewhere = DestroyAuthored(world);
+            EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest::NewGame(kFirst)), LevelChangeAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            unsealed = changes.DoorUnsealed(world);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine))
+        {
+            elsewhereBack = Resolves(world, elsewhere);
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4);
+    EXPECT_FALSE(unsealed);
+    EXPECT_TRUE(elsewhereBack);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AChangeCarriesItsArrivalName)
+{
+    const std::filesystem::path root = RootFor("arrival_name");
+    std::string arrival;
+    int stage = 0;
+    RunFps(kFirst.Name, 600, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.LevelChanges().Request(
+                          LevelChangeRequest::Travel(kSecond, LevelMemory::Remembered, LevelChangeBodies::Fresh)
+                              .At("west_door")),
+                      LevelChangeAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            arrival = world.GetResource<LevelArrival>().Name;
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_EQ(arrival, "west_door");
     std::filesystem::remove_all(root);
 }
 #endif

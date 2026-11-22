@@ -1469,3 +1469,12 @@ are new. `SavedGames::RequestWrite` takes an optional arrival, which
 `RestoredBody::Arrival` carries back, and `SavedGames` gains `WritingArrival`;
 `LoadedLevel` gains `WorldSceneStateScope`.
 
+`LevelChangeRequest` is a class built only through `Travel(level, memory,
+bodies)`, `NewGame(level)` and `Restore(level, remembered)`, with `At(arrival)`
+and `Focused(zone)`; `LevelMemory`, `LevelChangeBodies` (one value, `Fresh`),
+`LevelChangeKind` and the `LevelArrival` World resource are new.
+`LevelChangeRuntimeState` and `LevelChange::RuntimeState()` are gone;
+`LevelChange::Kind()` replaces it. `DestroyAwaitingHeldRecords` is replaced by
+`SetAsideHeldRecords`, `ResumeHeldRecords` and `DestroySetAsideHeldRecords`.
+`ZoneStateStore` gains `Level`.
+

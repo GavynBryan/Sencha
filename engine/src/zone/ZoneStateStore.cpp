@@ -13,7 +13,7 @@ ZoneStateLevelId ZoneStateStore::FindLevel(const LevelReference& level) const
                                   : ZoneStateLevelId{};
 }
 
-ZoneStateScope ZoneStateStore::Scope(const LevelReference& level, ZoneId zone)
+ZoneStateLevelId ZoneStateStore::Level(const LevelReference& level)
 {
     ZoneStateLevelId id = FindLevel(level);
     if (!id.IsValid())
@@ -21,7 +21,12 @@ ZoneStateScope ZoneStateStore::Scope(const LevelReference& level, ZoneId zone)
         Levels_.push_back(level);
         id = ZoneStateLevelId{ static_cast<std::uint32_t>(Levels_.size()) };
     }
-    return ZoneStateScope{ id, zone };
+    return id;
+}
+
+ZoneStateScope ZoneStateStore::Scope(const LevelReference& level, ZoneId zone)
+{
+    return ZoneStateScope{ Level(level), zone };
 }
 
 const LevelReference* ZoneStateStore::LevelOf(ZoneStateLevelId level) const
