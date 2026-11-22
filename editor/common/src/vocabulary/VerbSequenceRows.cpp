@@ -77,7 +77,6 @@ std::vector<std::string_view> PortsFor(const DataFieldSchema& field, std::span<c
     return names;
 }
 
-// The names of earlier results a field of this kind may read.
 std::vector<std::string_view> ResultsFor(const DataFieldSchema& field, std::span<const NamedResult> results)
 {
     const DataFieldSchema& shown = UnwrappedField(field);
@@ -192,7 +191,6 @@ const AuthoredQueryDefinition* QueryNamed(const VerbSequenceVocabulary& vocabula
     return vocabulary.Queries != nullptr ? vocabulary.Queries->Get(vocabulary.Queries->Find(name)) : nullptr;
 }
 
-// What the commands before `index` name, in order.
 std::vector<NamedResult> EarlierResults(const JsonValue* commands, const VerbSequenceVocabulary& vocabulary,
                                         std::size_t index)
 {
@@ -210,7 +208,6 @@ std::vector<NamedResult> EarlierResults(const JsonValue* commands, const VerbSeq
     return results;
 }
 
-// What a command card says of its verb: what it does, the reasons it may refuse with, what it answers.
 std::string VerbSummary(const VerbDefinition& verb)
 {
     std::string summary = verb.Description;

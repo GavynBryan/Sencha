@@ -94,7 +94,6 @@ std::string AssetPath(std::string_view text)
     return text.starts_with(kAssetScheme) ? std::string(text) : std::string(kAssetScheme) + std::string(text);
 }
 
-// An argument's text as a binding argument; a live entity becomes an input with its handle in `entity`.
 bool BindingArgumentOf(const World& world, const DataFieldSchema& field, const Assignment& assignment,
                        VerbBindingArgument& out, std::optional<EntityId>& entity, std::string& error)
 {
