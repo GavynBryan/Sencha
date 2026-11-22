@@ -23,6 +23,7 @@
 #include <physics/components/CharacterMoverLink.h>
 #include <projectile/ProjectileHit.h>
 #include <projectile/ProjectileSystem.h>
+#include <projectile/ProjectileVerbs.h>
 #include <world/SimulationAuthority.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
@@ -320,16 +321,6 @@ bool ReadThrow(const AuthoredArguments* arguments, LineThrow& out)
     return true;
 }
 
-VerbAdmission AdmissionOf(ProjectileLaunchResult result)
-{
-    switch (result)
-    {
-    case ProjectileLaunchResult::Launched: return VerbAdmission::Accepted;
-    case ProjectileLaunchResult::Full: return VerbAdmission::QueueFull;
-    case ProjectileLaunchResult::Unresolved: return VerbAdmission::UnresolvedReference;
-    default: return VerbAdmission::Refused;
-    }
-}
 } // namespace
 
 VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
@@ -418,7 +409,7 @@ VerbAdmission ContactLineSystem::LaunchTip(ContactLineState& state, const Contac
     launch.Seed = Host.Projectiles->NextSeed(state.Instigator, tick);
     ProjectileLaunchResult result = ProjectileLaunchResult::Refused;
     state.Projectile = Host.Projectiles->Launch(launch, &result);
-    return AdmissionOf(result);
+    return ProjectileLaunchAdmission(result);
 }
 
 VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation)

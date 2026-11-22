@@ -43,6 +43,8 @@ struct VerbTraceRecord
 {
     VerbTraceEvent Event = VerbTraceEvent::Admitted;
     VerbAdmission Status = VerbAdmission::Accepted;
+    // VerbAnswer::Detail: resolved against the verb's catalog entry when read.
+    std::uint16_t Detail = 0;
     VerbId Verb;
     InvocationId Id;
     InvocationId Parent;

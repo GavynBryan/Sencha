@@ -1,10 +1,12 @@
 #pragma once
 
 #include <core/json/JsonValue.h>
+#include <core/metadata/EnumSchema.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <save/SaveSlotFiles.h>
 #include <save/SavedGame.h>
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -44,6 +46,20 @@ enum class SaveAdmission : std::uint8_t
     NothingLoaded,
     NotAuthority,
     InSession,
+};
+
+template<>
+struct EnumSchema<SaveAdmission>
+{
+    static constexpr std::array Values = {
+        EnumValue{ SaveAdmission::Accepted, "accepted", "Accepted", "accepted" },
+        EnumValue{ SaveAdmission::Busy, "busy", "Busy", "another is under way" },
+        EnumValue{ SaveAdmission::BadSlot, "bad_slot", "Bad slot", "a slot is letters, digits, '-' and '_'" },
+        EnumValue{ SaveAdmission::NothingLoaded, "nothing_loaded", "Nothing loaded", "nothing is loaded" },
+        EnumValue{ SaveAdmission::NotAuthority, "not_authority", "Not the authority",
+                   "this machine is not the authority" },
+        EnumValue{ SaveAdmission::InSession, "in_session", "In a session", "a network session is running" },
+    };
 };
 
 enum class SaveStatus : std::uint8_t

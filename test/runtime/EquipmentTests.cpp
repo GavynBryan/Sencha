@@ -911,7 +911,14 @@ namespace
             std::vector<std::string> errors;
             EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities()), binding, errors))
                 << (errors.empty() ? "" : errors.front());
-            return Verbs->Invoke(binding, inputs).Status;
+            const VerbInvocationResult result = Verbs->Invoke(binding, inputs);
+            Last = { binding.Verb, VerbAnswer(result.Status, result.Detail) };
+            return result.Status;
+        }
+
+        [[nodiscard]] std::string LastAnswer() const
+        {
+            return DescribeVerbAnswer(Verbs->Registry(), Last.first, Last.second);
         }
 
         VerbAdmission InvokeForced(std::string_view verb, EntityId wearer, std::string_view slot)
@@ -946,16 +953,9 @@ namespace
             return Queries->Evaluate(Queries->Registry().Resolve(query), arguments, result);
         }
 
-        struct Lines final : ILogSink
-        {
-            void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
-            std::vector<std::string> Written;
-        };
-
-        LoggingProvider Logging;
-        Lines& Said = Logging.AddSink<Lines>();
         FixedSimulationLoop Clock;
-        EquipmentOperations Operations{ Entities(), Clock, Logging.GetLogger<EquipmentOperations>() };
+        EquipmentOperations Operations{ Entities(), Clock };
+        std::pair<VerbId, VerbAnswer> Last;
         std::unique_ptr<VerbDispatcher> Verbs;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         std::vector<VerbBindingToken> Tokens;
@@ -993,8 +993,7 @@ TEST_F(EquipmentVocabularyTest, TheVerbsChangeWhatTheQueriesSee)
     EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Accepted);
     EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Refused)
         << "nothing is there to take off";
-    ASSERT_FALSE(Said.Written.empty());
-    EXPECT_EQ(Said.Written.back(), "equipment.unequip refused: missing");
+    EXPECT_EQ(LastAnswer(), "refused: missing");
 }
 
 TEST(EquipmentRefusals, EveryRefusalHasAName)

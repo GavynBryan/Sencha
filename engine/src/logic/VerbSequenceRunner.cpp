@@ -139,6 +139,17 @@ bool VerbSequenceRunner::Holds(const CompiledVerbSequence& sequence, const Seque
     });
 }
 
+VerbAnswer VerbSequenceRunner::Invoke(const CompiledSequenceCommand& command, const SequenceRun& run)
+{
+    Inputs.resize(command.Inputs.size());
+    for (std::size_t i = 0; i < command.Inputs.size(); ++i)
+        if (!Read(command.Inputs[i], run, 0, Inputs[i]))
+            return VerbArgumentAnswer(VerbAdmission::InvalidArguments,
+                                      command.Binding.Inputs[i].Destinations.front().ArgumentSlot);
+    const VerbInvocationResult result = run.Verbs.Invoke(command.Binding, Inputs, run.Source);
+    return VerbAnswer(result.Status, result.Detail);
+}
+
 SequenceOutcome VerbSequenceRunner::Run(const CompiledVerbSequence& sequence, const SequenceRun& run)
 {
     SequenceOutcome outcome;
@@ -146,25 +157,21 @@ SequenceOutcome VerbSequenceRunner::Run(const CompiledVerbSequence& sequence, co
         return outcome;
     outcome.Held = true;
 
-    for (const CompiledSequenceCommand& command : sequence.Commands)
+    for (std::size_t index = 0; index < sequence.Commands.size(); ++index)
     {
-        VerbAdmission status = VerbAdmission::UnresolvedBinding;
-        if (command.Resolved)
-        {
-            Inputs.resize(command.Inputs.size());
-            bool read = true;
-            for (std::size_t i = 0; i < command.Inputs.size() && read; ++i)
-                read = Read(command.Inputs[i], run, 0, Inputs[i]);
-            status = read ? run.Verbs.Invoke(command.Binding, Inputs, run.Source).Status
-                          : VerbAdmission::InvalidArguments;
-        }
-        if (status == VerbAdmission::Accepted)
+        const CompiledSequenceCommand& command = sequence.Commands[index];
+        const VerbAnswer answer = command.Resolved ? Invoke(command, run) : VerbAnswer(VerbAdmission::UnresolvedBinding);
+        if (answer.Accepted())
         {
             ++outcome.Invoked;
             continue;
         }
         if (outcome.Failed++ == 0)
-            outcome.FirstFailure = status;
+        {
+            outcome.FirstFailure = answer.Status;
+            outcome.FirstFailureDetail = answer.Detail;
+            outcome.FirstFailedCommand = static_cast<std::uint32_t>(index);
+        }
         if (command.OnFailure == SequenceFailurePolicy::Stop)
         {
             outcome.Stopped = true;

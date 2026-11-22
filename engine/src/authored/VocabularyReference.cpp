@@ -161,17 +161,30 @@ namespace
         return verb.Completes ? "lease, completes" : "lease";
     }
 
+    std::string RefusalsCell(const VerbDefinition& verb)
+    {
+        std::string cell;
+        for (const VerbRefusalReason& reason : verb.Refusals)
+            cell += std::format("{}`{}`", cell.empty() ? "" : "<br>", Cell(reason.Name));
+        return cell.empty() ? std::string(kNone) : cell;
+    }
+
+    std::string VerbResultCell(const VerbDefinition& verb)
+    {
+        return verb.Result.has_value() ? std::format("`{}`", Cell(TypeText(*verb.Result))) : std::string(kNone);
+    }
+
     void AppendVerbs(std::string& out, const VerbRegistry* verbs, std::string_view provider)
     {
         out += "\n## Verbs\n\n"
-               "| Verb | Kind | Scope / prediction | Arguments | Description |\n"
-               "|---|---|---|---|---|\n";
+               "| Verb | Kind | Scope / prediction | Arguments | Result | Refusals | Description |\n"
+               "|---|---|---|---|---|---|---|\n";
         for (const VerbDefinition* verb : Declared(verbs, provider))
         {
-            std::format_to(std::back_inserter(out), "| `{}` | {} | {} / {} | {} | {} |\n", verb->Name,
+            std::format_to(std::back_inserter(out), "| `{}` | {} | {} / {} | {} | {} | {} | {} |\n", verb->Name,
                            VerbKindText(*verb), AuthoredScopeName(verb->Scope),
                            AuthoredPredictionName(verb->Prediction), ArgumentsCell(verb->Arguments),
-                           Cell(verb->Description));
+                           VerbResultCell(*verb), RefusalsCell(*verb), Cell(verb->Description));
         }
     }
 

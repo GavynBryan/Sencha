@@ -4,9 +4,11 @@
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
 
+#include <cstdint>
 #include <string_view>
 
 class ProjectileSystem;
+enum class ProjectileLaunchResult : std::uint8_t;
 
 inline constexpr std::string_view kProjectileLaunchVerb = "projectile.launch";
 
@@ -18,3 +20,6 @@ void DeclareProjectileVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegi
 // scale, magnitude, splash scale. Accepted when it launched; QueueFull at
 // capacity; UnresolvedReference for a prefab that is not a projectile.
 VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocation& invocation);
+
+// What a verb that launches answers for a launch's result.
+[[nodiscard]] VerbAdmission ProjectileLaunchAdmission(ProjectileLaunchResult result);

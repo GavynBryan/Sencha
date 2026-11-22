@@ -1483,3 +1483,26 @@ const JsonValue&)`, declared before the destructor, so every later slot moves;
 `CaptureEntityPatch` asks it before writing a baseline component, and the
 responses serializer answers it. One bump covers the whole series: ABI 62.
 
+
+## v63
+
+A verb answers a reason. `VerbAnswer` (`authored/VerbInvocation.h`) is a
+`VerbAdmission` and a 16-bit `Detail`, and the dispatcher's erased call returns
+it: `VerbDispatcher::Bind` takes an implementation returning either
+`VerbAdmission` or `VerbAnswer`. `VerbAnswerOf`, `VerbArgumentAnswer` and
+`AnswerOf(VerbInvocationResult)` are new. `VerbInvocation` gains `Result`, an
+`AuthoredValue*`; `VerbInvocationResult` and `VerbTraceRecord` gain `Detail`.
+`VerbDispatcher::Invoke` takes a trailing `AuthoredValue* result`, and the
+dispatcher gains `SetLog`. `VerbDefinition` gains `Refusals` (a vector of the
+new `VerbRefusalReason`) and `Result` (an optional `DataFieldSchema`), both
+compared by `VerbCatalogTraits::ContractsMatch`; `VerbRefusalsOf`,
+`VerbRefusalName` and `DescribeVerbAnswer` are new. `SequenceOutcome` gains
+`FirstFailureDetail` and `FirstFailedCommand`. `AbilityTraceRecord::Admission`
+and `AnimDecisionRecord::Admission` become `Answer`, a `VerbAnswer`.
+`InventoryOperations` and `EquipmentOperations` take no `Logger` and answer
+`VerbAnswer`, as do `InvokeSaveWrite` and `InvokeSaveRestore`;
+`EngineVocabularyBindings::BindInventory` and `BindEquipment` take no logger.
+`SaveAdmission` and `LevelChangeAdmission` gain an `EnumSchema`, and
+`core/metadata/EnumSchema.h` gains `FindEnumValue`. `ProjectileLaunchAdmission`
+(`projectile/ProjectileVerbs.h`) is new. `ResponsesSystem` gains
+`SetLogRefusals`, `LogsRefusals` and `kLoggedRefusals`.

@@ -11,6 +11,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
+#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
@@ -38,6 +39,8 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZoneStateStore.h>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <initializer_list>
@@ -114,6 +117,16 @@ struct AuthoredApiDefinition<TestMisstruck>
 
 namespace
 {
+struct LogLines : ILogSink
+{
+    std::vector<std::string> Written;
+    void Write(LogLevel, std::string_view, std::string_view message) override
+    {
+        if (message.starts_with("responses: "))
+            Written.emplace_back(message);
+    }
+};
+
 struct RecordedCall
 {
     std::string Verb;
@@ -307,6 +320,7 @@ class ResponsesFixture : public ::testing::Test
 protected:
     void SetUp() override
     {
+        Lines = &Logging.AddSink<LogLines>();
         ComponentRegistrar registrar(WorldState);
         registrar.Add<Responses>();
         registrar.Add<GameplayTagContainer>();
@@ -489,6 +503,7 @@ protected:
     }
 
     LoggingProvider Logging;
+    LogLines* Lines = nullptr;
     EngineConfig Config;
     RuntimeFrameLoop Runtime;
     ConsoleRegistry Console;
@@ -1485,4 +1500,115 @@ TEST_F(ResponsesFixture, ASensorResponseAndANativeOccurrenceRunThroughTheSamePas
     EXPECT_EQ(Calls[0].Target, shooter) << "the earlier admission ran first";
     EXPECT_EQ(Calls[1].Target, walker);
     EXPECT_EQ(System->Stats().Activations, 2u);
+}
+
+namespace
+{
+enum class TestFullRefusal : std::uint8_t
+{
+    None,
+    ContainerFull,
+};
+
+struct FullOperation
+{
+    VerbAnswer Invoke(const VerbInvocation&) { return VerbAnswerOf(TestFullRefusal::ContainerFull); }
+};
+
+constexpr std::string_view kRefuseSelf = R"({"commands": [
+    {"verb": "test.refuse", "arguments": {"target": {"port": "self"}}}]})";
+} // namespace
+
+template<>
+struct EnumSchema<TestFullRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ TestFullRefusal::None, "none" },
+        EnumValue{ TestFullRefusal::ContainerFull, "container_full" },
+    };
+};
+
+TEST_F(ResponsesFixture, ARefusedCommandIsLoggedOnceByItsReasonAndAnAcceptedOneNotAtAll)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    {
+        VerbRegistrationScope scope(*Verbs, "test.reasons");
+        VerbDefinition full;
+        full.Name = "test.full";
+        full.Arguments = RecordArguments();
+        full.Refusals = VerbRefusalsOf<TestFullRefusal>();
+        (void)scope.Declare(std::move(full));
+        ASSERT_TRUE(scope.Commit());
+    }
+    FullOperation fullOperation;
+    Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.full"), fullOperation));
+
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", R"({"commands": [
+        {"verb": "test.record", "arguments": {"target": {"port": "self"}}},
+        {"verb": "test.full", "arguments": {"target": {"port": "self"}}}]})") }));
+    const EntityId recorder = Place(Bindings({ Binding("use", "test.used", kRecordSelf) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    for (int i = 0; i < 3; ++i)
+    {
+        ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+        ASSERT_EQ(System->Deliver(recorder, TestUsed{ user }), 1u);
+        Tick();
+    }
+
+    ASSERT_EQ(lines.Written.size(), 1u);
+    EXPECT_NE(lines.Written[0].find(".take command 2 (test.full) refused: container_full"), std::string::npos)
+        << lines.Written[0];
+    EXPECT_EQ(System->Stats().Failed, 3u);
+}
+
+TEST_F(ResponsesFixture, TheRefusalLogHoldsABoundedSetAndSaysOnceThatItStopped)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    const EntityId user = WorldState.CreateEntity();
+    std::vector<EntityId> refusing;
+    for (int i = 0; i < 267; ++i)
+        refusing.push_back(Place(Bindings({ Binding("b", "test.used", kRefuseSelf) })));
+
+    for (std::size_t i = 0; i < refusing.size(); ++i)
+    {
+        ASSERT_EQ(System->Deliver(refusing[i], TestUsed{ user }), 1u);
+        if (i % 100 == 99 || i + 1 == refusing.size())
+            Tick();
+    }
+
+    ASSERT_EQ(lines.Written.size(), 257u);
+    EXPECT_EQ(std::ranges::count_if(lines.Written,
+                                    [](const std::string& line) { return line.find("not logged") != std::string::npos; }),
+              1);
+    EXPECT_NE(lines.Written[256].find("not logged"), std::string::npos) << lines.Written[256];
+    EXPECT_EQ(System->Stats().Failed, 267u);
+}
+
+TEST_F(ResponsesFixture, TheRefusalLogIsForgottenWhenAZoneDetachesAndCanBeTurnedOff)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    const EntityId refusing = Place(Bindings({ Binding("b", "test.used", kRefuseSelf) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    ASSERT_EQ(lines.Written.size(), 1u);
+
+    Residency(ZoneResidencyChangeKind::Detaching, StoragePartitionId{ 7 });
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    EXPECT_EQ(lines.Written.size(), 2u) << "a refusal from before the zone left kept the next one quiet";
+
+    ASSERT_TRUE(
+        Console.SetCVarFromString("logic.responses.log_refusals", "false", { "console" }, ConsolePhase::EngineReady)
+            .Succeeded());
+    Residency(ZoneResidencyChangeKind::Detaching, StoragePartitionId{ 7 });
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    EXPECT_EQ(lines.Written.size(), 2u);
+    EXPECT_EQ(System->Stats().Failed, 3u);
 }

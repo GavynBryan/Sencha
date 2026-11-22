@@ -2,7 +2,6 @@
 
 #include <authored/AuthoredValue.h>
 #include <authored/AuthoredValueTraits.h>
-#include <core/logging/Logger.h>
 #include <core/serialization/Archive.h>
 #include <ecs/World.h>
 #include <inventory/InventoryComponents.h>
@@ -43,7 +42,10 @@ namespace
     VerbDefinition Verb(std::string_view name, std::string label, std::string description,
                         std::vector<DataFieldSchema> arguments)
     {
-        return MakeGameplayVerb(name, std::move(label), std::move(description), "Inventory", std::move(arguments));
+        VerbDefinition verb =
+            MakeGameplayVerb(name, std::move(label), std::move(description), "Inventory", std::move(arguments));
+        verb.Refusals = VerbRefusalsOf<InventoryRefusal>();
+        return verb;
     }
 
     ItemId DefinitionNamed(const World& world, const AssetRef* reference)
@@ -154,25 +156,17 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
     (void)queries.Declare(std::move(count));
 }
 
-VerbAdmission InventoryOperations::Answer(std::string_view verb, InventoryRefusal refusal) const
-{
-    if (refusal == InventoryRefusal::None)
-        return VerbAdmission::Accepted;
-    Log->Debug("{} refused: {}", verb, EnumToString(refusal));
-    return VerbAdmission::Refused;
-}
-
-VerbAdmission InventoryOperations::Take(const VerbInvocation& invocation)
+VerbAnswer InventoryOperations::Take(const VerbInvocation& invocation)
 {
     EntityId pickup;
     EntityId into;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, pickup)
         || !invocation.Arguments->TryGetEntity(1, into))
         return VerbAdmission::InvalidArguments;
-    return Answer(kInventoryTakeVerb, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Take(pickup, into).Refusal);
+    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Take(pickup, into).Refusal);
 }
 
-VerbAdmission InventoryOperations::Give(const VerbInvocation& invocation)
+VerbAnswer InventoryOperations::Give(const VerbInvocation& invocation)
 {
     EntityId into;
     const AssetRef* reference = nullptr;
@@ -183,10 +177,10 @@ VerbAdmission InventoryOperations::Give(const VerbInvocation& invocation)
     const ItemId definition = DefinitionNamed(*Entities, reference);
     if (!definition.IsValid())
         return VerbAdmission::InvalidArguments;
-    return Answer(kInventoryGiveVerb, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Give(into, definition, CountOf(count)).Refusal);
+    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Give(into, definition, CountOf(count)).Refusal);
 }
 
-VerbAdmission InventoryOperations::Transfer(const VerbInvocation& invocation)
+VerbAnswer InventoryOperations::Transfer(const VerbInvocation& invocation)
 {
     EntityId entry;
     EntityId into;
@@ -194,10 +188,10 @@ VerbAdmission InventoryOperations::Transfer(const VerbInvocation& invocation)
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, entry)
         || !invocation.Arguments->TryGetEntity(1, into) || !invocation.Arguments->TryGetInt(2, count))
         return VerbAdmission::InvalidArguments;
-    return Answer(kInventoryTransferVerb, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Transfer(entry, into, CountOf(count), ItemChangeOf(invocation, 3)).Refusal);
+    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Transfer(entry, into, CountOf(count), ItemChangeOf(invocation, 3)).Refusal);
 }
 
-VerbAdmission InventoryOperations::Drop(const VerbInvocation& invocation)
+VerbAnswer InventoryOperations::Drop(const VerbInvocation& invocation)
 {
     EntityId entry;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, entry))
@@ -209,17 +203,17 @@ VerbAdmission InventoryOperations::Drop(const VerbInvocation& invocation)
     const EntityId holder = ItemHolder(*Entities, entry);
     const StoragePartitionId partition =
         Entities->IsAlive(holder) ? Entities->GetEntityPartition(holder) : StoragePartitionId::Default();
-    return Answer(kInventoryDropVerb, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Drop(entry, where, partition, ItemChangeOf(invocation, 2)).Refusal);
+    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Drop(entry, where, partition, ItemChangeOf(invocation, 2)).Refusal);
 }
 
-VerbAdmission InventoryOperations::Use(const VerbInvocation& invocation)
+VerbAnswer InventoryOperations::Use(const VerbInvocation& invocation)
 {
     EntityId entry;
     std::optional<EntityId> user;
     if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, entry)
         || !ReadAuthoredArgument(*invocation.Arguments, 1, user))
         return VerbAdmission::InvalidArguments;
-    return Answer(kInventoryUseVerb, Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Use(user.value_or(ItemHolder(*Entities, entry)), entry).Refusal);
+    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Use(user.value_or(ItemHolder(*Entities, entry)), entry).Refusal);
 }
 
 AuthoredQueryBindingToken BindInventoryQuery(AuthoredQueryDispatcher& dispatcher, const World& world)

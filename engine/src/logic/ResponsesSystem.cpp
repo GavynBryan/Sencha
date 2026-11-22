@@ -6,6 +6,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/EntityText.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Responses.h>
 #include <world/RuntimeWorld.h>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <utility>
 
 namespace
@@ -55,6 +57,17 @@ bool SatisfiesDeclaration(const AuthoredEventDefinition& definition, const Autho
 }
 
 const CompiledVerbSequence kEmptySequence{};
+
+#ifdef NDEBUG
+constexpr bool kLogRefusalsByDefault = false;
+#else
+constexpr bool kLogRefusalsByDefault = true;
+#endif
+
+std::uint64_t Mix(std::uint64_t hash, std::uint64_t value)
+{
+    return (hash ^ value) * 0x100000001b3ull;
+}
 } // namespace
 
 ResponsesSystem::ResponsesSystem(World& world,
@@ -71,6 +84,7 @@ ResponsesSystem::ResponsesSystem(World& world,
     , Assets(assets)
     , DataAssets(dataAssets)
     , Log(log)
+    , LogRefusals(kLogRefusalsByDefault)
 {
     if (world.IsRegistered<Responses>())
         ResponsesComponent = world.GetComponentId<Responses>();
@@ -450,6 +464,8 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
         ++Counts.Activations;
         Counts.Invoked += outcome.Invoked;
         Counts.Failed += outcome.Failed;
+        if (outcome.Failed > 0 && LogRefusals)
+            ReportRefusal(world, *definitions, activation, *sequence, outcome);
         if (const std::uint64_t cooldown = TicksIn(activation.CooldownSeconds, ctx.Time.DeltaSeconds); cooldown > 0)
         {
             const CooldownKey key{ activation.Recipient, activation.KeyHash,
@@ -467,6 +483,40 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
         }
     }
     Compact(waiting);
+}
+
+void ResponsesSystem::ReportRefusal(World& world, ResponseDefinitions& definitions, const Activation& activation,
+                                    const CompiledVerbSequence& sequence, const SequenceOutcome& outcome)
+{
+    if (RefusalLogStopped)
+        return;
+    std::uint64_t hash = 0xcbf29ce484222325ull;
+    hash = Mix(hash, (static_cast<std::uint64_t>(activation.Recipient.Index) << 32) | activation.Recipient.Generation);
+    hash = Mix(hash, activation.KeyHash);
+    hash = Mix(hash, outcome.FirstFailedCommand);
+    hash = Mix(hash, (static_cast<std::uint64_t>(outcome.FirstFailure) << 16) | outcome.FirstFailureDetail);
+    const auto logged = LoggedRefusals.begin() + static_cast<std::ptrdiff_t>(LoggedRefusalCount);
+    if (std::find(LoggedRefusals.begin(), logged, hash) != logged)
+        return;
+    if (LoggedRefusalCount == LoggedRefusals.size())
+    {
+        RefusalLogStopped = true;
+        Log.Warn("responses: {} distinct failed commands were logged; further ones are counted, not logged, until "
+                 "a zone detaches",
+                 LoggedRefusals.size());
+        return;
+    }
+    LoggedRefusals[LoggedRefusalCount++] = hash;
+
+    const ResponseSetView set = definitions.Sets.Resolve(activation.Set, world);
+    const std::string_view key =
+        activation.Binding < set.Bindings.size() ? std::string_view(set.Bindings[activation.Binding].Key) : "?";
+    const CompiledSequenceCommand& command = sequence.Commands[outcome.FirstFailedCommand];
+    std::string entity;
+    AppendEntityText(entity, activation.Recipient);
+    Log.Warn("responses: '{}'.{} command {} ({}) {}", entity, key, outcome.FirstFailedCommand + 1, command.Verb,
+             DescribeVerbAnswer(Verbs.Registry(), command.Binding.Verb,
+                                VerbAnswer(outcome.FirstFailure, outcome.FirstFailureDetail)));
 }
 
 // What waits keeps its order, ahead of what this pass admitted; payloads move
@@ -543,6 +593,13 @@ void ResponsesSystem::FixedLogic(FixedLogicContext& ctx)
 void ResponsesSystem::ZoneResidency(ZoneResidencyContext& ctx)
 {
     World& world = ctx.Entities;
+    if (std::ranges::any_of(ctx.Changes, [](const ZoneResidencyChange& change) {
+            return change.Kind == ZoneResidencyChangeKind::Detaching;
+        }))
+    {
+        LoggedRefusalCount = 0;
+        RefusalLogStopped = false;
+    }
     if (ResponsesComponent == InvalidComponentId)
         return;
     for (const ZoneResidencyChange& change : ctx.Changes)
@@ -616,6 +673,18 @@ ResponsesSystem& RegisterResponsesSystem(EngineSchedule& schedule,
         .OnChange = [&system](const CVarChangeContext& ctx) {
             system.SetCommandBudget(static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
         },
+    });
+    (void)console.RegisterCVar({
+        .Name = "logic.responses.log_refusals",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = kLogRefusalsByDefault,
+        .CurrentValue = kLogRefusalsByDefault,
+        .Flags = CVarFlags::None,
+        .Help = "Log a response command the verb did not accept, with its reason: once per entity, binding, command "
+                "and answer, for the first 256, until a zone detaches. On in development builds.",
+        .Source = { "engine" },
+        .OnChange = [&system](const CVarChangeContext& ctx) { system.SetLogRefusals(std::get<bool>(ctx.NewValue)); },
     });
     return system;
 }

@@ -177,7 +177,7 @@ TEST(AnimationEventPreview, ACrossingIsAdmittedThroughTheNormalPath)
     std::vector<AnimDecisionRecord> records = EventRecords(session);
     ASSERT_EQ(records.size(), 1u);
     EXPECT_EQ(records[0].EventKey, 1u);
-    EXPECT_EQ(records[0].Admission, VerbAdmission::Unavailable);
+    EXPECT_EQ(records[0].Answer.Status, VerbAdmission::Unavailable);
     EXPECT_TRUE(Invocations(session).empty());
 
     session.SetRecorder("test.footstep", true);
@@ -185,9 +185,9 @@ TEST(AnimationEventPreview, ACrossingIsAdmittedThroughTheNormalPath)
     session.RunTo(40);
     records = EventRecords(session);
     ASSERT_EQ(records.size(), 2u);
-    EXPECT_EQ(records[0].Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(records[0].Answer.Status, VerbAdmission::Accepted);
     EXPECT_EQ(records[1].EventKey, 2u);
-    EXPECT_EQ(records[1].Admission, VerbAdmission::Unavailable);
+    EXPECT_EQ(records[1].Answer.Status, VerbAdmission::Unavailable);
 
     const std::vector<AnimationPreviewInvocation> invocations = Invocations(session);
     ASSERT_EQ(invocations.size(), 1u);
@@ -299,7 +299,7 @@ TEST(AnimationEventPreview, ABindingRemovedAndRestoredIsFollowedByKey)
     AnimationPreviewSession session(fx.Data, &fx.Clips, &EventPreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(scenario));
     session.RunTo(20);
-    ASSERT_EQ(EventRecords(session).back().Admission, VerbAdmission::Accepted);
+    ASSERT_EQ(EventRecords(session).back().Answer.Status, VerbAdmission::Accepted);
 
     // Reordered, and without the footstep.
     fx.Reload(kBindingsPath, kVerbBindingsTypeName,
@@ -307,11 +307,11 @@ TEST(AnimationEventPreview, ABindingRemovedAndRestoredIsFollowedByKey)
     session.Rebind();
     session.RunTo(80);
     ASSERT_EQ(EventRecords(session).back().EventKey, 1u);
-    EXPECT_EQ(EventRecords(session).back().Admission, VerbAdmission::UnresolvedBinding);
+    EXPECT_EQ(EventRecords(session).back().Answer.Status, VerbAdmission::UnresolvedBinding);
 
     fx.Reload(kBindingsPath, kVerbBindingsTypeName, kBindings);
     session.Rebind();
     session.RunTo(140);
     EXPECT_EQ(EventRecords(session).back().EventKey, 1u);
-    EXPECT_EQ(EventRecords(session).back().Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(EventRecords(session).back().Answer.Status, VerbAdmission::Accepted);
 }

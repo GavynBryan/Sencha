@@ -91,13 +91,13 @@ WorkspaceTimelineFacet AbilityPreviewTimeline(const AbilityPreviewSession& previ
         for (std::size_t i = 0; i < tick.Trace.size(); ++i)
         {
             const AbilityTraceRecord& traced = tick.Trace[i];
-            if (traced.Event != AbilityTraceEvent::Operated || traced.Admission == VerbAdmission::Accepted)
+            if (traced.Event != AbilityTraceEvent::Operated || traced.Answer.Accepted())
                 continue;
             const std::string op = definition != nullptr && traced.Element < definition->Ops.size()
                                      ? LabelOf(data, definition->Ops[traced.Element].Key)
                                      : std::string("op");
             facet.Marks.push_back({ .Key = std::format("op:{}:{}", tick.Tick, i), .Time = Seconds(tick.Tick),
-                                    .Label = std::format("{}: {}", op, VerbAdmissionName(traced.Admission)),
+                                    .Label = std::format("{}: {}", op, preview.DescribeAnswer(traced)),
                                     .Shape = TimelineMarkShape::Diamond });
         }
     }

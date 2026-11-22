@@ -10,7 +10,6 @@
 #include <vector>
 
 class FixedSimulationLoop;
-class Logger;
 class World;
 
 inline constexpr std::string_view kInventoryTakeVerb = "inventory.take";
@@ -28,48 +27,44 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class InventoryOperations
 {
 public:
-    InventoryOperations(World& world, const FixedSimulationLoop& clock, const Logger& log)
+    InventoryOperations(World& world, const FixedSimulationLoop& clock)
         : Entities(&world)
         , Clock(&clock)
-        , Log(&log)
     {
     }
 
-    VerbAdmission Take(const VerbInvocation& invocation);
-    VerbAdmission Give(const VerbInvocation& invocation);
-    VerbAdmission Transfer(const VerbInvocation& invocation);
-    VerbAdmission Drop(const VerbInvocation& invocation);
-    VerbAdmission Use(const VerbInvocation& invocation);
+    VerbAnswer Take(const VerbInvocation& invocation);
+    VerbAnswer Give(const VerbInvocation& invocation);
+    VerbAnswer Transfer(const VerbInvocation& invocation);
+    VerbAnswer Drop(const VerbInvocation& invocation);
+    VerbAnswer Use(const VerbInvocation& invocation);
 
 private:
-    VerbAdmission Answer(std::string_view verb, InventoryRefusal refusal) const;
-
     World* Entities;
     const FixedSimulationLoop* Clock;
-    const Logger* Log;
 };
 
-inline VerbAdmission InvokeInventoryTake(InventoryOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeInventoryTake(InventoryOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Take(invocation);
 }
 
-inline VerbAdmission InvokeInventoryGive(InventoryOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeInventoryGive(InventoryOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Give(invocation);
 }
 
-inline VerbAdmission InvokeInventoryTransfer(InventoryOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeInventoryTransfer(InventoryOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Transfer(invocation);
 }
 
-inline VerbAdmission InvokeInventoryDrop(InventoryOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeInventoryDrop(InventoryOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Drop(invocation);
 }
 
-inline VerbAdmission InvokeInventoryUse(InventoryOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeInventoryUse(InventoryOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Use(invocation);
 }

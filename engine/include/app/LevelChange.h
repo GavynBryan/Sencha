@@ -1,10 +1,12 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
 #include <world/LevelReference.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateStore.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -34,6 +36,20 @@ enum class LevelChangeAdmission : std::uint8_t
     InSession,
 };
 
+template<>
+struct EnumSchema<LevelChangeAdmission>
+{
+    static constexpr std::array Values = {
+        EnumValue{ LevelChangeAdmission::Accepted, "accepted", "Accepted", "" },
+        EnumValue{ LevelChangeAdmission::Busy, "busy", "Busy", "another level change is under way" },
+        EnumValue{ LevelChangeAdmission::NotCooked, "not_cooked", "Not cooked", "the level is not cooked" },
+        EnumValue{ LevelChangeAdmission::NotAuthority, "not_authority", "Not the authority",
+                   "this machine is not the authority" },
+        EnumValue{ LevelChangeAdmission::InSession, "in_session", "In a session", "a network session is running" },
+    };
+};
+
+// The admission's description from its schema.
 [[nodiscard]] const char* LevelChangeAdmissionReason(LevelChangeAdmission admission);
 
 // What a level change keeps of the level it enters.

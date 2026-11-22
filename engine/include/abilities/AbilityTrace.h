@@ -60,7 +60,7 @@ struct AbilityTraceRecord
     AbilityTraceEvent Event = AbilityTraceEvent::Started;
     AbilityRefusal Refusal = AbilityRefusal::None;
     AbilityEndReason EndReason = AbilityEndReason::None;
-    VerbAdmission Admission = VerbAdmission::Accepted;
+    VerbAnswer Answer{};
     std::uint8_t Phase = 0;
     std::uint16_t Element = 0xFFFF;
     GameplayTagId Cue{};

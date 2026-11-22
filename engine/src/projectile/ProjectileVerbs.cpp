@@ -118,6 +118,11 @@ VerbAdmission InvokeProjectileLaunch(ProjectileSystem& system, const VerbInvocat
 
     ProjectileLaunchResult result = ProjectileLaunchResult::Refused;
     (void)system.Launch(launch, &result);
+    return ProjectileLaunchAdmission(result);
+}
+
+VerbAdmission ProjectileLaunchAdmission(ProjectileLaunchResult result)
+{
     switch (result)
     {
     case ProjectileLaunchResult::Launched: return VerbAdmission::Accepted;

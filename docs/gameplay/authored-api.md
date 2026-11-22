@@ -263,13 +263,64 @@ gameplay verb, or to a lease, is reported when the rig binds
 The generated API declares instant gameplay verbs only; a lease or a cosmetic
 verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 
+## What a verb answers
+
+An implementation answers a `VerbAnswer`: a `VerbAdmission` and a 16-bit
+`Detail`. An implementation that returns a plain `VerbAdmission` answers it with
+no detail, and `Bind` takes either.
+
+- **Refused with a reason.** A verb declares the reasons it may refuse with in
+  `VerbDefinition::Refusals`, each a code and a name; `VerbRefusalsOf<E>()` lists
+  every non-zero value of an enum with an `EnumSchema`, and `VerbAnswerOf(reason)`
+  answers `Accepted` for its zero value and `Refused` with the code otherwise.
+  The codes and names are part of the contract. The detail is only a number: a
+  trace record outlives the module that declared the verb, so a reader resolves
+  the name against the verb's catalog entry when it reads, and prints the number
+  once that entry is retired.
+- **An argument at fault.** `InvalidArguments` and `UnresolvedReference` carry
+  one past the argument's slot (`VerbArgumentAnswer`), or 0 when no one argument
+  is at fault. The dispatcher's own checks name the slot they reject.
+- **Reading it.** `DescribeVerbAnswer(verbs, verb, answer)` reads `refused:
+  container_full`, `invalid argument 'count'`, `unresolved reference 'target'`,
+  or the admission's name. `VerbInvocationResult::Detail` and
+  `VerbTraceRecord::Detail` carry it; a game's C++ compares the detail with its
+  own enum. A response that runs a failed command logs it
+  (`docs/gameplay/responses.md`, "Diagnostics"), and the Ability Workbench's
+  lanes and the animation editor's admissions describe each op's answer.
+
+**A result.** A verb that makes something can say what: `VerbDefinition::Result`
+declares the field it answers with, and is part of the contract. A producer that
+wants it passes `Invoke(binding, inputs, source, &result)`. The implementation
+writes `*invocation.Result` when the pointer is not null and skips encoding when
+it is; the dispatcher hands a verb that declares no result a null pointer
+whatever the producer asked. The result is checked against the declaration
+before it is handed on: a refusal hands on nothing, and a verb that accepts
+without writing its result, or writes one of the wrong kind, is a provider
+defect — the producer receives no value and the dispatcher logs it once per
+verb. A verb that declares a result acts before it returns: one that queues its
+work has nothing to answer yet, and cannot declare one. Nothing checks that
+rule mechanically.
+
+The answer for the same situation is the same whichever verb gives it:
+
+| Situation | Answer |
+|---|---|
+| A value of the wrong kind, out of range, an unknown enum choice or definition | `InvalidArguments`, naming the argument |
+| An entity the request names is not in this World | `UnresolvedReference`, naming the argument |
+| The feature is not installed in this World | `Unavailable`: nothing is bound, so the dispatcher answers |
+| Anything else | `Refused`, with the verb's reason |
+| A query whose arguments are well formed but do not apply | `Unavailable` |
+
+The dispatcher checks kind, range and choice from the schema and resolves
+entities named by persistent identity; everything else is the verb's.
+
 ## The engine's vocabulary
 
 `InstallEngineVocabulary` (`app/EngineVocabulary.h`) declares, as provider
 `engine`, into every runtime and editor World the verbs, leases, queries and
 events listed in [the vocabulary reference](../reference/vocabulary.md): each
-one's kind, scope and prediction, arguments with their defaults and ranges, and
-description.
+one's kind, scope and prediction, arguments with their defaults and ranges, a
+verb's result and the reasons it may refuse with, and description.
 
 The reference is rendered from the catalog by `RenderVocabularyReference`
 (`authored/VocabularyReference.h`), one table per catalog in name order, so a

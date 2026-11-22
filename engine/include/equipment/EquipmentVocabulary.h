@@ -11,7 +11,6 @@
 #include <vector>
 
 class FixedSimulationLoop;
-class Logger;
 class World;
 
 inline constexpr std::string_view kEquipmentEquipVerb = "equipment.equip";
@@ -26,36 +25,32 @@ void DeclareEquipmentVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
 class EquipmentOperations
 {
 public:
-    EquipmentOperations(World& world, const FixedSimulationLoop& clock, const Logger& log)
+    EquipmentOperations(World& world, const FixedSimulationLoop& clock)
         : Entities(&world)
         , Clock(&clock)
-        , Log(&log)
     {
     }
 
-    VerbAdmission Equip(const VerbInvocation& invocation);
-    VerbAdmission Unequip(const VerbInvocation& invocation);
-    VerbAdmission Cycle(const VerbInvocation& invocation);
+    VerbAnswer Equip(const VerbInvocation& invocation);
+    VerbAnswer Unequip(const VerbInvocation& invocation);
+    VerbAnswer Cycle(const VerbInvocation& invocation);
 
 private:
-    VerbAdmission Answer(std::string_view verb, EquipmentRefusal refusal) const;
-
     World* Entities;
     const FixedSimulationLoop* Clock;
-    const Logger* Log;
 };
 
-inline VerbAdmission InvokeEquipmentEquip(EquipmentOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeEquipmentEquip(EquipmentOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Equip(invocation);
 }
 
-inline VerbAdmission InvokeEquipmentUnequip(EquipmentOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeEquipmentUnequip(EquipmentOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Unequip(invocation);
 }
 
-inline VerbAdmission InvokeEquipmentCycle(EquipmentOperations& operations, const VerbInvocation& invocation)
+inline VerbAnswer InvokeEquipmentCycle(EquipmentOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Cycle(invocation);
 }

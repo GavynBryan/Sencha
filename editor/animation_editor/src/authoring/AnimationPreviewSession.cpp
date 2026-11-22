@@ -106,7 +106,7 @@ namespace
             && a.RejectReason == b.RejectReason && a.Reason == b.Reason && a.Rule == b.Rule
             && a.PreviousRule == b.PreviousRule && a.Behavior == b.Behavior && a.Row == b.Row
             && a.Content == b.Content && a.EventKey == b.EventKey && a.EventOutcome == b.EventOutcome
-            && a.Admission == b.Admission && a.Section == b.Section && a.PreviousSection == b.PreviousSection;
+            && a.Answer.Status == b.Answer.Status && a.Answer.Detail == b.Answer.Detail && a.Section == b.Section && a.PreviousSection == b.PreviousSection;
     }
 
     template <typename T, typename F>

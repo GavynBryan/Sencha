@@ -1216,6 +1216,7 @@ int Engine::Run(Game& game)
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
         VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
+        VerbDispatcherState->SetLog(&LoggingState.GetLogger<VerbDispatcher>());
         QueryDispatcherState =
             std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(entities));
         EventDispatcherState = std::make_unique<AuthoredEventDispatcher>(
@@ -1492,10 +1493,8 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
     VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,
                                      LoggingState.GetLogger<CounterOperations>(), EventDispatcherState.get());
-    VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState,
-                                      LoggingState.GetLogger<InventoryOperations>());
-    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState,
-                                      LoggingState.GetLogger<EquipmentOperations>());
+    VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState);
+    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState);
 
     // Only where a window presents: a server holds no attachments.
     if (PresentsAWindow(Configuration))

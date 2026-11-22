@@ -67,7 +67,8 @@ struct Names
     }
 };
 
-std::string Describe(const AbilityTraceRecord& record, const Names& names, const GameplayTagRegistry* tags)
+std::string Describe(const AbilityTraceRecord& record, const Names& names, const AbilityPreviewSession& preview,
+                     const GameplayTagRegistry* tags)
 {
     switch (record.Event)
     {
@@ -85,7 +86,7 @@ std::string Describe(const AbilityTraceRecord& record, const Names& names, const
     }
     case AbilityTraceEvent::Transition: return std::format("\xE2\x86\x92 {}", names.Phase(record.Phase));
     case AbilityTraceEvent::Operated:
-        return std::format("{}: {}", names.Op(record.Element), VerbAdmissionName(record.Admission));
+        return std::format("{}: {}", names.Op(record.Element), preview.DescribeAnswer(record));
     case AbilityTraceEvent::Skipped: return names.Op(record.Element);
     case AbilityTraceEvent::Cue:
         return tags != nullptr && record.Cue.IsValid() ? std::string(tags->GetName(record.Cue)) : std::string("cue");
@@ -132,6 +133,6 @@ std::vector<PropertyNode> AbilityPreviewInspector::Nodes() const
     }
     for (std::size_t i = 0; i < tick.Trace.size(); ++i)
         nodes.push_back(NoteProperty(std::format("event.{}", i), std::string(EventName(tick.Trace[i].Event)),
-                                     Describe(tick.Trace[i], names, tags)));
+                                     Describe(tick.Trace[i], names, Preview, tags)));
     return nodes;
 }

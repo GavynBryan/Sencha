@@ -289,8 +289,23 @@ pass judge the binding again when the occurrence arrives and when it runs.
 ## Diagnostics
 
 Kyusu lists a binding set's problems beside it. At runtime, a sequence's
-diagnostics are logged once each time it compiles, and
-`ResponsesSystem::Stats()` counts deliveries that reached an entity with
+diagnostics are logged once each time it compiles. A response whose command the
+verb did not accept logs its first failed command at warning level, with the
+answer `DescribeVerbAnswer` gives (`docs/gameplay/authored-api.md`, "What a verb
+answers"):
+
+```
+responses: '41:1'.take command 1 (inventory.take) refused: container_full
+```
+
+Each entity, binding key, command and answer is logged once. The system keeps
+one bounded set of 256 hashes of those four (2 KB, nothing per binding or
+entity); when it is full, one line says further failures are counted and not
+logged. The set empties when a zone detaches, which every level change does.
+`logic.responses.log_refusals` turns the lines off; it is on by default in
+development builds and off in release builds, and the counters do not depend on
+it. `SequenceOutcome` carries the first failed command's index, admission and
+detail. `ResponsesSystem::Stats()` counts deliveries that reached an entity with
 responses, admissions, encodes, gated and run responses, invoked and failed
 commands, refused admissions, abandoned responses, refused payloads and sensor
 overflows. `test/runtime/ResponsesDeliveryBench.cpp` measures delivery and pass

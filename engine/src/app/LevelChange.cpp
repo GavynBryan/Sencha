@@ -33,20 +33,8 @@ namespace
 
 const char* LevelChangeAdmissionReason(LevelChangeAdmission admission)
 {
-    switch (admission)
-    {
-    case LevelChangeAdmission::Accepted:
-        return "";
-    case LevelChangeAdmission::Busy:
-        return "another level change is under way";
-    case LevelChangeAdmission::NotCooked:
-        return "the level is not cooked";
-    case LevelChangeAdmission::NotAuthority:
-        return "this machine is not the authority";
-    case LevelChangeAdmission::InSession:
-        return "a network session is running";
-    }
-    return "";
+    const EnumValue<LevelChangeAdmission>* value = FindEnumValue(admission);
+    return value != nullptr ? value->Tooltip.data() : "";
 }
 
 LevelChangeRequest::LevelChangeRequest(LevelChangeKind kind, LevelReference level, LevelMemory memory)

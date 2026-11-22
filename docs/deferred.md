@@ -1781,3 +1781,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the level-change stage (a body across a level change and the
   `level.change` verb), which adds the landmark these names resolve to.
 
+
+## A sequence branching on a command's refusal reason
+
+- **What:** a sequence command's `on_failure` distinguishes only accepted from
+  not accepted. The grammar kept for it is `"on_refused": { "container_full":
+  [commands], "*": [commands] }` beside `on_failure`, compiled to reason codes
+  against the verb's declared `Refusals`.
+- **Where:** `engine/src/logic/VerbSequence.cpp` (`ReadCommand`),
+  `VerbSequenceCompiler.cpp` and `VerbSequenceRunner.cpp`, which already carries
+  the failed command's detail in `SequenceOutcome`.
+- **Trigger:** the first authored response that must react differently to two
+  reasons, such as a pickup that posts "inventory full" from authored data, or
+  the first HUD message that would otherwise need a C++ special case.

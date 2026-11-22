@@ -1,6 +1,7 @@
 #include <authored/VerbDispatcher.h>
 
 #include <assets/data/DataAssetCache.h>
+#include <core/logging/Logger.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <cassert>
@@ -82,6 +83,22 @@ VerbBindingToken VerbDispatcher::BindErased(VerbId verb, void* target, InvokeFn 
     return VerbBindingToken(Link, verb, entry.Generation);
 }
 
+void VerbDispatcher::Deliver(const VerbDefinition& definition, VerbId verb, AuthoredValue& result)
+{
+    if (AuthoredValueSatisfiesField(result, *definition.Result))
+        return;
+    result = AuthoredValue{};
+    const std::size_t slot = VerbRegistry::IndexOf(verb);
+    if (ResultDefectReported.size() <= slot)
+        ResultDefectReported.resize(slot + 1, false);
+    if (ResultDefectReported[slot] || Log == nullptr)
+        return;
+    ResultDefectReported[slot] = true;
+    Log->Error("'{}' accepted without answering the result it declares, or with one of the wrong kind; the "
+               "producer received none",
+               definition.Name);
+}
+
 void VerbDispatcher::Release(VerbId verb, VerbBindingGeneration generation)
 {
     assert(!Dispatching && "an implementation cannot be unbound from inside a dispatch");
@@ -98,14 +115,15 @@ void VerbDispatcher::Release(VerbId verb, VerbBindingGeneration generation)
 }
 
 void VerbDispatcher::RecordTrace(VerbTraceEvent event,
-                                 VerbAdmission status,
+                                 VerbAnswer answer,
                                  const VerbInvocation& invocation)
 {
     if (Trace_ == nullptr)
         return;
     Trace_->Record(VerbTraceRecord{
         .Event = event,
-        .Status = status,
+        .Status = answer.Status,
+        .Detail = answer.Detail,
         .Verb = invocation.Verb,
         .Id = invocation.Id,
         .Parent = invocation.Parent,
@@ -131,7 +149,7 @@ VerbInvocation VerbDispatcher::Begin(VerbId verb, const VerbInvocationSource& so
     return invocation;
 }
 
-VerbAdmission VerbDispatcher::Call(Implementation& entry, const VerbInvocation& invocation)
+VerbAnswer VerbDispatcher::Call(Implementation& entry, const VerbInvocation& invocation)
 {
     // Scoped rather than a pair of assignments: an implementation that throws
     // would otherwise leave the dispatcher permanently refusing every later
@@ -149,9 +167,10 @@ VerbAdmission VerbDispatcher::Call(Implementation& entry, const VerbInvocation& 
 
 VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
                                             std::span<const AuthoredValue> inputs,
-                                            const VerbInvocationSource& source)
+                                            const VerbInvocationSource& source,
+                                            AuthoredValue* result)
 {
-    return Dispatch(binding, inputs, source, {}, LeaseStep::None);
+    return Dispatch(binding, inputs, source, {}, LeaseStep::None, result);
 }
 
 VerbInvocationResult VerbDispatcher::AcquireLease(const CompiledVerbBinding& binding,
@@ -159,7 +178,7 @@ VerbInvocationResult VerbDispatcher::AcquireLease(const CompiledVerbBinding& bin
                                                   const LeaseOwner& owner,
                                                   const VerbInvocationSource& source)
 {
-    return Dispatch(binding, inputs, source, owner, LeaseStep::Acquire);
+    return Dispatch(binding, inputs, source, owner, LeaseStep::Acquire, nullptr);
 }
 
 VerbAdmission VerbDispatcher::ReleaseLease(VerbId lease, const LeaseOwner& owner, const VerbInvocationSource& source)
@@ -180,7 +199,7 @@ VerbAdmission VerbDispatcher::ReleaseLease(VerbId lease, const LeaseOwner& owner
     else if (!owner.IsSet())
         status = VerbAdmission::InvalidArguments;
     else
-        status = Call(*entry, invocation);
+        status = Call(*entry, invocation).Status;
 
     RecordTrace(status == VerbAdmission::Accepted ? VerbTraceEvent::Released : VerbTraceEvent::Rejected, status,
                 invocation);
@@ -201,23 +220,26 @@ bool VerbDispatcher::LeaseHolds(VerbId lease, const LeaseOwner& owner)
     invocation.Verb = lease;
     invocation.Owner = owner;
     invocation.Step = LeaseStep::Probe;
-    return Call(*entry, invocation) == VerbAdmission::Accepted;
+    return Call(*entry, invocation).Accepted();
 }
 
 VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding,
                                               std::span<const AuthoredValue> inputs,
                                               const VerbInvocationSource& source,
                                               const LeaseOwner& owner,
-                                              LeaseStep step)
+                                              LeaseStep step,
+                                              AuthoredValue* result)
 {
     VerbInvocation invocation = Begin(binding.Verb, source);
     invocation.Binding = binding.Key;
     invocation.Owner = owner;
     invocation.Step = step;
+    if (result != nullptr)
+        *result = AuthoredValue{};
 
-    const auto reject = [&](VerbAdmission status) {
-        RecordTrace(VerbTraceEvent::Rejected, status, invocation);
-        return VerbInvocationResult{ .Status = status, .Id = InvocationId{} };
+    const auto reject = [&](VerbAnswer answer) {
+        RecordTrace(VerbTraceEvent::Rejected, answer, invocation);
+        return VerbInvocationResult{ .Status = answer.Status, .Id = InvocationId{}, .Detail = answer.Detail };
     };
 
     if (Dispatching)
@@ -263,7 +285,7 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
         const EntityId entity =
             Entities != nullptr ? Entities->TryResolve(identity) : EntityId{};
         if (!entity.IsValid())
-            return reject(VerbAdmission::UnresolvedReference);
+            return reject(VerbArgumentAnswer(VerbAdmission::UnresolvedReference, slot));
         Scratch.Set(slot, AuthoredValue::Entity(entity));
     }
 
@@ -272,7 +294,7 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
         for (const VerbInputDestination& destination : binding.Inputs[index].Destinations)
         {
             if (!AuthoredValueSatisfiesField(inputs[index], destination.Expected))
-                return reject(VerbAdmission::InvalidArguments);
+                return reject(VerbArgumentAnswer(VerbAdmission::InvalidArguments, destination.ArgumentSlot));
             // A subtype the field declares is checked against the resident
             // value, which is the one thing the kind check above cannot see.
             const DataFieldSchema& expected =
@@ -290,7 +312,7 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
                 if (!resident.IsValid()
                     || DataAssets->GetSubtype(resident) != expected.Reference.DataSubtype)
                 {
-                    return reject(VerbAdmission::InvalidArguments);
+                    return reject(VerbArgumentAnswer(VerbAdmission::InvalidArguments, destination.ArgumentSlot));
                 }
             }
             Scratch.Set(destination.ArgumentSlot, inputs[index]);
@@ -298,11 +320,18 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
     }
 
     invocation.Arguments = &Scratch;
-    const VerbAdmission status = Call(*entry, invocation);
+    invocation.Result = definition.Result.has_value() ? result : nullptr;
+    const VerbAnswer answer = Call(*entry, invocation);
 
-    if (status != VerbAdmission::Accepted)
-        return reject(status);
+    if (!answer.Accepted())
+    {
+        if (invocation.Result != nullptr)
+            *invocation.Result = AuthoredValue{};
+        return reject(answer);
+    }
+    if (invocation.Result != nullptr)
+        Deliver(definition, binding.Verb, *invocation.Result);
 
-    RecordTrace(VerbTraceEvent::Admitted, status, invocation);
-    return VerbInvocationResult{ .Status = status, .Id = invocation.Id };
+    RecordTrace(VerbTraceEvent::Admitted, answer, invocation);
+    return VerbInvocationResult{ .Status = answer.Status, .Id = invocation.Id };
 }

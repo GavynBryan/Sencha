@@ -104,6 +104,15 @@ const AbilityDefinition* AbilityPreviewSession::Definition() const
     return Preview != nullptr && Shown.IsValid() ? Preview->GetResource<AbilityRegistry>().Get(Shown) : nullptr;
 }
 
+std::string AbilityPreviewSession::DescribeAnswer(const AbilityTraceRecord& record) const
+{
+    const AbilityDefinition* definition = Definition();
+    const VerbRegistry* verbs = Preview != nullptr ? FindVerbRegistry(std::as_const(*Preview)) : nullptr;
+    if (verbs == nullptr || definition == nullptr || record.Element >= definition->Ops.size())
+        return VerbAdmissionName(record.Answer.Status);
+    return DescribeVerbAnswer(*verbs, definition->Ops[record.Element].Binding.Verb, record.Answer);
+}
+
 const CharacterController* AbilityPreviewSession::FixtureCapsule() const
 {
     return Preview != nullptr ? static_cast<const World&>(*Preview).TryGet<CharacterController>(FixtureEntity) : nullptr;

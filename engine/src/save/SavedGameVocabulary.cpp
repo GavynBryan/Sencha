@@ -27,6 +27,7 @@ namespace
         verb.DisplayName = std::move(displayName);
         verb.Description = std::move(description);
         verb.Category = "Saves";
+        verb.Refusals = VerbRefusalsOf<SaveAdmission>();
         DataFieldSchema slot = MakeDataField(DataFieldKind::String, "slot", "Slot",
                                              "Letters, digits, '-' and '_'; the default slot when empty.");
         slot.Required = false;
@@ -43,37 +44,10 @@ namespace
         return std::string(slot);
     }
 
-    VerbAdmission AsVerbAdmission(SaveAdmission admission)
+    VerbAnswer AnswerOf(SaveAdmission admission)
     {
-        switch (admission)
-        {
-        case SaveAdmission::Accepted:
-            return VerbAdmission::Accepted;
-        case SaveAdmission::BadSlot:
-            return VerbAdmission::InvalidArguments;
-        default:
-            return VerbAdmission::Refused;
-        }
-    }
-
-    const char* Describe(SaveAdmission admission)
-    {
-        switch (admission)
-        {
-        case SaveAdmission::Accepted:
-            return "accepted";
-        case SaveAdmission::Busy:
-            return "another is under way";
-        case SaveAdmission::BadSlot:
-            return "a slot is letters, digits, '-' and '_'";
-        case SaveAdmission::NothingLoaded:
-            return "nothing is loaded";
-        case SaveAdmission::NotAuthority:
-            return "this machine is not the authority";
-        case SaveAdmission::InSession:
-            return "a network session is running";
-        }
-        return "";
+        return admission == SaveAdmission::BadSlot ? VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0)
+                                                   : VerbAnswerOf(admission);
     }
 
     EntityId EntityNamed(const World& world, std::string_view text)
@@ -93,7 +67,7 @@ namespace
         if (admission == SaveAdmission::Accepted)
             result.Info(std::string(what) + " slot '" + slot + "'");
         else
-            result.Error(std::string(what) + " refused: " + Describe(admission));
+            result.Error(std::string(what) + " refused: " + std::string(FindEnumValue(admission)->Tooltip));
         return result;
     }
 }
@@ -111,17 +85,17 @@ void DeclareSavedGameVerbs(VerbRegistrationScope& scope)
                                  "Loads the saved level again and puts back what the save kept."));
 }
 
-VerbAdmission InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
+VerbAnswer InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
 {
     std::string_view arrival;
     if (invocation.Arguments != nullptr)
         (void)invocation.Arguments->TryGetString(1, arrival);
-    return AsVerbAdmission(saves.RequestWrite(SlotOf(invocation), std::string(arrival)));
+    return AnswerOf(saves.RequestWrite(SlotOf(invocation), std::string(arrival)));
 }
 
-VerbAdmission InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
+VerbAnswer InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
 {
-    return AsVerbAdmission(saves.RequestRestore(SlotOf(invocation)));
+    return AnswerOf(saves.RequestRestore(SlotOf(invocation)));
 }
 
 void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)

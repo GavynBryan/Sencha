@@ -465,7 +465,7 @@ bool AbilityPass::RunOp(const AbilityActor& actor, std::size_t slot, const Abili
         if (stale || (op.When != kAbilityNoCondition && !Holds(actor, slot, definition, op.When)))
         {
             Trace({ .Actor = actor.Entity, .Key = key, .Event = AbilityTraceEvent::Skipped,
-                    .Admission = stale ? VerbAdmission::UnresolvedReference : VerbAdmission::Accepted, .Element = index });
+                    .Answer = stale ? VerbAdmission::UnresolvedReference : VerbAdmission::Accepted, .Element = index });
             continue;
         }
         if (!Operate(actor, slot, definition, index))
@@ -497,7 +497,7 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
     if ((op.Kind == AbilityOpKind::Invoke || op.Kind == AbilityOpKind::Lease) && !Predicts(definition, op))
     {
         traced.Event = AbilityTraceEvent::Skipped;
-        traced.Admission = VerbAdmission::Refused;
+        traced.Answer = VerbAdmission::Refused;
         Trace(traced);
         return true;
     }
@@ -506,22 +506,22 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
     {
     case AbilityOpKind::Invoke:
         fill(op.Inputs);
-        traced.Admission = Host.Verbs != nullptr ? Host.Verbs->Invoke(op.Binding, Inputs, source).Status
-                                                 : VerbAdmission::Unavailable;
+        traced.Answer = Host.Verbs != nullptr ? AnswerOf(Host.Verbs->Invoke(op.Binding, Inputs, source))
+                                              : VerbAdmission::Unavailable;
         Trace(traced);
         return Live(actor, slot);
     case AbilityOpKind::Lease:
     {
         fill(op.Inputs);
         const LeaseOwner owner = OwnerOf(actor, slot, static_cast<std::uint8_t>(index));
-        traced.Admission = Host.Verbs == nullptr ? VerbAdmission::Unavailable
-                         : actor.Record(slot).LeaseCount == kAbilityRecordLeaseCapacity
-                             ? VerbAdmission::QueueFull
-                             : Host.Verbs->AcquireLease(op.Binding, Inputs, owner, source).Status;
+        traced.Answer = Host.Verbs == nullptr ? VerbAdmission::Unavailable
+                      : actor.Record(slot).LeaseCount == kAbilityRecordLeaseCapacity
+                          ? VerbAdmission::QueueFull
+                          : AnswerOf(Host.Verbs->AcquireLease(op.Binding, Inputs, owner, source));
         Trace(traced);
         if (!Live(actor, slot))
             return false;
-        if (traced.Admission != VerbAdmission::Accepted)
+        if (!traced.Answer.Accepted())
         {
             End(actor, slot, AbilityEndReason::LeaseRefused, index);
             return false;
@@ -537,7 +537,7 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
             ? Host.Queries->Evaluate(op.Query, Inputs, Answer)
             : AuthoredQueryStatus::Unbound;
         Write(actor, slot, definition, op.Local, Answer, status == AuthoredQueryStatus::Value);
-        traced.Admission = status == AuthoredQueryStatus::Value ? VerbAdmission::Accepted : VerbAdmission::Unavailable;
+        traced.Answer = status == AuthoredQueryStatus::Value ? VerbAdmission::Accepted : VerbAdmission::Unavailable;
         Trace(traced);
         return Live(actor, slot);
     }

@@ -6,7 +6,9 @@
 #include <ecs/EntityId.h>
 #include <ecs/LeaseOwner.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 //=============================================================================
 // What an operation is handed, and what it answers
@@ -68,6 +70,38 @@ enum class LeaseStep : std::uint8_t
 
 [[nodiscard]] const char* VerbAdmissionName(VerbAdmission admission);
 
+// What an operation answers: an admission, and a detail that names why.
+struct VerbAnswer
+{
+    VerbAdmission Status = VerbAdmission::Accepted;
+    // Refused: one of the reason codes the verb declares, 0 when it names none.
+    // InvalidArguments or UnresolvedReference: one past the argument slot at fault, 0 when not one slot.
+    std::uint16_t Detail = 0;
+
+    constexpr VerbAnswer() = default;
+    constexpr VerbAnswer(VerbAdmission status, std::uint16_t detail = 0)
+        : Status(status)
+        , Detail(detail)
+    {
+    }
+
+    [[nodiscard]] constexpr bool Accepted() const { return Status == VerbAdmission::Accepted; }
+};
+
+// Accepted for a reason enum's zero value, otherwise Refused naming it.
+template<typename E>
+    requires std::is_enum_v<E>
+[[nodiscard]] constexpr VerbAnswer VerbAnswerOf(E reason)
+{
+    return reason == E{} ? VerbAnswer{} : VerbAnswer(VerbAdmission::Refused, static_cast<std::uint16_t>(reason));
+}
+
+// InvalidArguments or UnresolvedReference naming the argument at `slot`.
+[[nodiscard]] constexpr VerbAnswer VerbArgumentAnswer(VerbAdmission status, std::size_t slot)
+{
+    return VerbAnswer(status, static_cast<std::uint16_t>(slot + 1));
+}
+
 // One request, as the implementation sees it.
 struct VerbInvocation
 {
@@ -112,15 +146,25 @@ struct VerbInvocation
     // defers copies what it needs, or keeps its own owning copy; it never
     // stores this pointer.
     const AuthoredArguments* Arguments = nullptr;
+
+    // Where a verb that declares a result writes it, when the producer wants it.
+    // Borrowed for the call; null otherwise, and then nothing is encoded.
+    AuthoredValue* Result = nullptr;
 };
 
 struct VerbInvocationResult
 {
     VerbAdmission Status = VerbAdmission::Unavailable;
     InvocationId Id;
+    std::uint16_t Detail = 0;
 
     [[nodiscard]] bool Accepted() const { return Status == VerbAdmission::Accepted; }
 };
+
+[[nodiscard]] constexpr VerbAnswer AnswerOf(const VerbInvocationResult& result)
+{
+    return VerbAnswer(result.Status, result.Detail);
+}
 
 // Optional attribution a producer supplies. Separate from the invocation so a
 // producer with nothing to say passes nothing.

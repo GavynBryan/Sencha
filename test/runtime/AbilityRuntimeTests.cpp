@@ -1987,7 +1987,7 @@ TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)
     EXPECT_FLOAT_EQ(Base(kept, Health), 60.0f);
     const std::vector<AbilityTraceRecord> skipped = Traced(AbilityTraceEvent::Skipped);
     ASSERT_EQ(skipped.size(), 1u);
-    EXPECT_EQ(skipped[0].Admission, VerbAdmission::UnresolvedReference) << "skipped for being gone, not for its guard";
+    EXPECT_EQ(skipped[0].Answer.Status, VerbAdmission::UnresolvedReference) << "skipped for being gone, not for its guard";
 }
 
 // A hive's members all answer one death in the same tick.

@@ -856,8 +856,12 @@ protected:
         std::vector<std::string> errors;
         EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities()), binding, errors))
             << (errors.empty() ? "" : errors.front());
-        return Verbs->Invoke(binding, inputs).Status;
+        const VerbInvocationResult result = Verbs->Invoke(binding, inputs);
+        Last = { binding.Verb, VerbAnswer(result.Status, result.Detail) };
+        return result.Status;
     }
+
+    [[nodiscard]] std::string LastAnswer() const { return DescribeVerbAnswer(Verbs->Registry(), Last.first, Last.second); }
 
     static VerbBindingArgument Definition(std::string path)
     {
@@ -893,16 +897,9 @@ protected:
         return AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = std::move(path) });
     }
 
-    struct Lines final : ILogSink
-    {
-        void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
-        std::vector<std::string> Written;
-    };
-
-    LoggingProvider Logging;
-    Lines& Said = Logging.AddSink<Lines>();
     FixedSimulationLoop Clock;
-    InventoryOperations Operations{ Entities(), Clock, Logging.GetLogger<InventoryOperations>() };
+    InventoryOperations Operations{ Entities(), Clock };
+    std::pair<VerbId, VerbAnswer> Last;
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::vector<VerbBindingToken> Tokens;
@@ -931,8 +928,7 @@ TEST_F(InventoryVocabularyTest, TheVerbsChangeWhatTheCountSays)
     const EntityId wardrobe = Container({ .Capacity = 0, .Accepts = Wearable });
     EXPECT_EQ(Invoke(kInventoryGiveVerb, { { "into", wardrobe } }, { Definition("asset://items/arrow.sdata"), Count(1) }),
               VerbAdmission::Refused);
-    ASSERT_FALSE(Said.Written.empty());
-    EXPECT_EQ(Said.Written.back(), "inventory.give refused: not_accepted") << "the reason by name, not number";
+    EXPECT_EQ(LastAnswer(), "refused: not_accepted") << "the reason by name, not number";
 }
 
 TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWhatIsHeld)
