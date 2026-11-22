@@ -37,6 +37,7 @@ struct ZoneLoadRecipe
     AsyncZoneLoader::BuildFn      Build;
     AsyncZoneLoader::FinalizeFn   Finalize;
     std::shared_ptr<AssetPreload> Preload;
+    ZoneStateScope                StateScope;
 };
 
 using ZoneLoadRecipeFn = std::function<ZoneLoadRecipe(const ZoneHeader&)>;

@@ -40,8 +40,8 @@ private:
 // Alive entities carrying a persistent id, in `partition`.
 [[nodiscard]] std::vector<EntityId> IdentifiedEntitiesIn(World& world, StoragePartitionId partition);
 
-// Records how `identified`, all of `zone`, deviate from what it authored.
-void CaptureZoneState(World& world, ZoneId zone, std::span<const EntityId> identified, ZoneCapture capture);
+// Records how `identified`, all of `scope`'s zone, deviate from what it authored.
+void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const EntityId> identified, ZoneCapture capture);
 
-// Gives `created`, just imported under `zone`, the component state remembered for them.
-void RestoreZoneState(World& world, ZoneId zone, std::span<const EntityId> created);
+// Gives `created`, just imported under `scope`, the component state remembered for them.
+void RestoreZoneState(World& world, ZoneStateScope scope, std::span<const EntityId> created);

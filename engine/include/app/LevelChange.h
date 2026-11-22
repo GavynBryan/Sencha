@@ -1,7 +1,7 @@
 #pragma once
 
-#include <app/LevelReference.h>
 #include <ecs/EntityId.h>
+#include <world/LevelReference.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateStore.h>
 

@@ -319,7 +319,7 @@ void SceneSpawnService::Instantiate(Request& request)
     ZoneImportError importError;
     const bool imported = SceneContext != nullptr
         && ImportPackageIntoPartition(WorldState.Entities(), Schema, *request.Package,
-                                      request.Partition, ZoneId{}, Serializers,
+                                      request.Partition, ZoneStateScope{}, Serializers,
                                       *SceneContext, &importError);
     request.Package.reset();
 

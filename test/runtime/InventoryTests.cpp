@@ -309,10 +309,16 @@ struct InventoryWorld
         FinishResidency();
     }
 
+    ZoneStateScope ScopeOf(ZoneId zone)
+    {
+        return Entities().GetResource<ZoneStateStore>().Scope(
+            LevelReference{ .Kind = LevelKind::Scene, .Name = "inventory" }, zone);
+    }
+
     void Import(ZoneId zone, const EntityBuildPackage& package)
     {
         ZoneImportError error;
-        ASSERT_TRUE(ImportZonePackage(Runtime, Schema, zone, package, kLogic, &error)) << error.Message;
+        ASSERT_TRUE(ImportZonePackage(Runtime, Schema, zone, package, kLogic, &error, ScopeOf(zone))) << error.Message;
         FinishResidency();
     }
 
@@ -1116,7 +1122,7 @@ TEST_F(InventoryTest, APrefabsEntryHoldsToItsOwnSpawnsContainerWhenTheSpawnStrip
     for (std::vector<EntityId>& spawned : spawns)
     {
         ZoneImportError error;
-        ASSERT_TRUE(ImportPackageIntoPartition(Entities(), Schema, package, StoragePartitionId::Default(), ZoneId{},
+        ASSERT_TRUE(ImportPackageIntoPartition(Entities(), Schema, package, StoragePartitionId::Default(), ZoneStateScope{},
                                                serializers, context, &error, &spawned))
             << error.Message;
         ASSERT_EQ(spawned.size(), 2u);
@@ -1147,7 +1153,7 @@ TEST_F(InventoryTest, AnAuthoredEntryTakenFromItsZoneTakesARuntimeIdAndIsNotMade
 
     Detach(cellar.Zone);
     EXPECT_TRUE(Entities().IsAlive(sword));
-    EXPECT_TRUE(Entities().GetResource<ZoneStateStore>().IsRecordedDestroyed(cellar.Zone, Cellar::kSword));
+    EXPECT_TRUE(Entities().GetResource<ZoneStateStore>().IsRecordedDestroyed(ScopeOf(cellar.Zone), Cellar::kSword));
     Import(cellar.Zone, cellar.Package());
     EXPECT_FALSE(Resolve(Cellar::kSword).IsValid()) << "no second sword";
     EXPECT_TRUE(Held(Resolve(Cellar::kChest)).empty());

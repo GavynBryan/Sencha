@@ -140,8 +140,15 @@ this document. `SerializedEntityId` was removed with no consumers.
   (`SENCHA_AUTHORITY_MATERIALIZED`, `docs/core-systems-map.md`), so its detach
   never records that member destroyed. A
   suppressed parent leaves its child unparented, matching how destruction
-  orphans rather than cascades. The world scene of a partitioned world is
-  remembered under its own scope, and captured when the world unloads.
+  orphans rather than cascades. Every record is keyed by level and zone
+  (`ZoneStateScope`, from `ZoneStateStore::Scope`): `LoadedLevel` makes the
+  scope when it starts an import, `RuntimeZoneRecord::StateScope` keeps it,
+  and the detach capture reads it from the record, so it cannot capture under
+  the wrong level. A scene level's one zone is `kSceneLevelZone`; a world's
+  zones are keyed by manifest id and its world scene by `kWorldSceneZone`,
+  captured when the world unloads. The same scene file loaded as a map and as
+  a zone of a world is two levels with separate records. The world cook and
+  the manifest reader refuse a zone with either reserved id.
 - Component state: a component's owner registers a `ZoneComponentMemory`, a
   versioned byte form with a capture and a restore function. Capture records
   it for every identified entity that differs from authored; the importer

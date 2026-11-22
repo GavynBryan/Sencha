@@ -1,7 +1,7 @@
 #pragma once
 
-#include <app/LevelReference.h>
 #include <core/json/JsonValue.h>
+#include <world/LevelReference.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateStore.h>
 

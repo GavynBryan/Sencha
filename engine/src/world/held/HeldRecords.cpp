@@ -233,7 +233,7 @@ void SettleHeldRecords(World& world)
     }
 }
 
-void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition)
+void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId partition)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
@@ -245,7 +245,7 @@ void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition)
         const PersistentEntityId id = world.TryGet<PersistentIdComponent>(holder)->Id;
         const std::span<const EntityId> held = index->RecordsOf(holder);
         if (held.empty() || !IsAuthoredPersistentEntityId(id)
-            || (memory != nullptr && memory->ForgettingOf(zone, id) == ZoneStateForgetting::AtDetach))
+            || (memory != nullptr && memory->ForgettingOf(scope, id) == ZoneStateForgetting::AtDetach))
             continue;
         records.assign(held.begin(), held.end());
         for (const EntityId record : records)

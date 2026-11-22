@@ -356,7 +356,8 @@ void RuntimeWorld::FinalizeResidencyProcessing()
     // moved out of one this frame leaves with it.
     for (const ZoneResidencyChange& change : ProcessingChanges_)
         if (change.Kind == ZoneResidencyChangeKind::Detaching)
-            ParkHeldRecords(Entities_, change.Zone, change.Partition);
+            if (const RuntimeZoneRecord* record = FindPartition(change.Partition))
+                ParkHeldRecords(Entities_, record->StateScope, change.Partition);
     SettleHeldRecords(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 
@@ -374,7 +375,7 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
         // While the zone's entities are still alive: the moment "unload" stops
         // meaning "forget".
-        CaptureZoneState(Entities_, change.Zone, IdentifiedEntitiesIn(Entities_, change.Partition),
+        CaptureZoneState(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition),
                          ZoneCapture::Detach);
 
         // Backend scenes receive the residency batch before this point. Entity

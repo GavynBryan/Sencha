@@ -634,13 +634,14 @@ void WorldPartitionRuntime::Update(double deltaSeconds, AsyncZoneLoader& loader,
                                   *recipe.Scene->Assets, *recipe.Scene->Scenes,
                                   std::move(recipe.Scene->StageExtra),
                                   std::move(recipe.Scene->Finalize),
-                                  ZoneParticipation{}, std::move(recipe.Preload));
+                                  ZoneParticipation{}, std::move(recipe.Preload),
+                                  recipe.StateScope);
         }
         else
         {
             loader.BeginLoad(record->Zone, std::move(recipe.Build),
                              std::move(recipe.Finalize), ZoneParticipation{},
-                             std::move(recipe.Preload));
+                             std::move(recipe.Preload), recipe.StateScope);
         }
         Issued_.push_back(record->Zone);
     }

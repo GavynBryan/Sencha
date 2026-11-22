@@ -66,7 +66,8 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(
     BuildFn build,
     FinalizeFn finalize,
     ZoneParticipation participation,
-    std::shared_ptr<AssetPreload> assets)
+    std::shared_ptr<AssetPreload> assets,
+    ZoneStateScope stateScope)
 {
     assert(zone.IsValid() && "AsyncZoneLoader::BeginLoad: zone id must be valid");
     assert(build && "AsyncZoneLoader::BeginLoad: build callback must not be empty");
@@ -84,9 +85,9 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoad(
             return package;
         },
         // Commit, on the owner thread at the drain point.
-        [this, zone, participation, finalize = std::move(finalize), assets](
+        [this, stateScope, zone, participation, finalize = std::move(finalize), assets](
             std::unique_ptr<EntityBuildPackage> package) mutable {
-            CommitOrDefer(zone, std::move(package), std::move(finalize),
+            CommitOrDefer(stateScope, zone, std::move(package), std::move(finalize),
                           participation, std::move(assets));
         });
 
@@ -102,7 +103,8 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
     SceneStageFn stageExtra,
     SceneFinalizeFn finalize,
     ZoneParticipation participation,
-    std::shared_ptr<AssetPreload> preload)
+    std::shared_ptr<AssetPreload> preload,
+    ZoneStateScope stateScope)
 {
     assert(zone.IsValid() && "AsyncZoneLoader::BeginLoadScene: zone id must be valid");
     assert(RuntimeWorldState.FindZone(zone) == nullptr
@@ -136,7 +138,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
         },
         // Commit, on the owner thread at the drain point: residency first,
         // then the ordinary import path.
-        [this, zone, participation, build, finalize = std::move(finalize),
+        [this, stateScope, zone, participation, build, finalize = std::move(finalize),
          preload](int) mutable {
             if (!build->Settle())
             {
@@ -163,7 +165,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
                     return finalize(world, zoneRecord, *contents);
                 };
 
-            CommitOrDefer(zone, std::move(package), std::move(wrapped),
+            CommitOrDefer(stateScope, zone, std::move(package), std::move(wrapped),
                           participation, std::move(preload),
                           std::move(sceneLease));
         });
@@ -173,6 +175,7 @@ AsyncTaskHandle AsyncZoneLoader::BeginLoadScene(
 }
 
 void AsyncZoneLoader::CommitOrDefer(
+    ZoneStateScope stateScope,
     ZoneId zone,
     std::unique_ptr<EntityBuildPackage> package,
     FinalizeFn finalize,
@@ -189,18 +192,19 @@ void AsyncZoneLoader::CommitOrDefer(
                 std::move(package));
         auto deferredFinalize = std::make_shared<FinalizeFn>(std::move(finalize));
         assets->SetOnComplete(
-            [this, zone, participation, deferredPackage, deferredFinalize,
+            [this, stateScope, zone, participation, deferredPackage, deferredFinalize,
              assets, keepAlive = std::move(keepAlive)]() mutable {
-                ImportAndFinalize(zone, std::move(*deferredPackage),
+                ImportAndFinalize(stateScope, zone, std::move(*deferredPackage),
                                   *deferredFinalize, participation, assets);
             });
         return;
     }
 
-    ImportAndFinalize(zone, std::move(package), finalize, participation, assets);
+    ImportAndFinalize(stateScope, zone, std::move(package), finalize, participation, assets);
 }
 
 void AsyncZoneLoader::ImportAndFinalize(
+    ZoneStateScope stateScope,
     ZoneId zone,
     std::unique_ptr<EntityBuildPackage> package,
     FinalizeFn& finalize,
@@ -218,7 +222,8 @@ void AsyncZoneLoader::ImportAndFinalize(
             *package,
             Serializers,
             SceneContext,
-            &importError))
+            &importError,
+            stateScope))
     {
         RecordFailure(
             zone,

@@ -3,7 +3,7 @@
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
-#include <zone/ZoneId.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstdint>
 #include <optional>
@@ -26,7 +26,7 @@ void NoteHeldRecordChanged(World& world, EntityId record);
 // Owner thread, outside any query.
 void SettleHeldRecords(World& world);
 
-void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition);
+void ParkHeldRecords(World& world, ZoneStateScope scope, StoragePartitionId partition);
 
 void DestroyAwaitingHeldRecords(World& world);
 

@@ -2,8 +2,10 @@
 
 #include <core/identity/Id.h>
 #include <ecs/ComponentTypeId.h>
+#include <world/LevelReference.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -52,38 +54,55 @@ enum class ZoneCapture : std::uint8_t
     Detach,
 };
 
-// How each zone's live state deviates from its cooked scene, keyed by
+// How each zone of each level deviates from its cooked scene, keyed by
 // persistent identity: docs/plans/runtime-stable-identity.md.
 class ZoneStateStore
 {
 public:
+    [[nodiscard]] ZoneStateScope Scope(const LevelReference& level, ZoneId zone);
+
     // At import, with every entity the cooked scene authored, those this import
     // suppressed included.
-    void RecordAuthoredSet(ZoneId zone, std::span<const AuthoredEntityState> authored);
+    void RecordAuthoredSet(ZoneStateScope scope, std::span<const AuthoredEntityState> authored);
 
     // While the zone's entities are alive: authored minus live is destroyed.
-    void RecordCapture(ZoneId zone, std::span<const PersistentEntityId> live, ZoneCapture capture);
+    void RecordCapture(ZoneStateScope scope, std::span<const PersistentEntityId> live, ZoneCapture capture);
 
-    [[nodiscard]] bool IsRecordedDestroyed(ZoneId zone, PersistentEntityId id) const;
-    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneId zone) const;
+    [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
-    [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneId zone, PersistentEntityId id) const;
+    [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const;
 
-    void RecordComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type, std::uint16_t version,
-                              std::span<const std::byte> state);
-    void ForgetComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type);
+    void RecordComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type,
+                              std::uint16_t version, std::span<const std::byte> state);
+    void ForgetComponentState(ZoneStateScope scope, PersistentEntityId id, ComponentTypeId type);
     // Empty bytes when nothing was recorded.
-    [[nodiscard]] RememberedComponentState ComponentState(ZoneId zone, PersistentEntityId id,
+    [[nodiscard]] RememberedComponentState ComponentState(ZoneStateScope scope, PersistentEntityId id,
                                                           ComponentTypeId type) const;
 
     // Reset-to-authored: the next import of every zone replays the cooked scene.
     void Clear() { Zones_.clear(); }
 
-    [[nodiscard]] std::vector<DurableZoneState> ExportDurable() const;
-    // Replaces everything with `durable`.
-    void Install(std::span<const DurableZoneState> durable);
+    [[nodiscard]] std::vector<DurableZoneState> ExportDurable(const LevelReference& level) const;
+    // Replaces everything with `durable`, as `level`'s.
+    void Install(const LevelReference& level, std::span<const DurableZoneState> durable);
 
 private:
+    struct ScopeKey
+    {
+        std::uint32_t Level = 0;
+        std::uint64_t Zone = 0;
+        friend bool operator==(const ScopeKey&, const ScopeKey&) = default;
+    };
+
+    struct ScopeKeyHash
+    {
+        std::size_t operator()(const ScopeKey& key) const
+        {
+            return static_cast<std::size_t>(key.Zone * 1099511628211ull ^ key.Level);
+        }
+    };
+
     struct ComponentStateKey
     {
         std::uint64_t Entity = 0;
@@ -113,5 +132,9 @@ private:
         std::unordered_map<ComponentStateKey, ComponentRecord, ComponentStateKeyHash> Components;
     };
 
-    std::unordered_map<ZoneId, ZoneRecord> Zones_;
+    [[nodiscard]] static ScopeKey KeyOf(ZoneStateScope scope) { return { scope.Level.Value, scope.Zone.Value }; }
+    [[nodiscard]] ZoneStateLevelId FindLevel(const LevelReference& level) const;
+
+    std::vector<LevelReference> Levels_;
+    std::unordered_map<ScopeKey, ZoneRecord, ScopeKeyHash> Zones_;
 };

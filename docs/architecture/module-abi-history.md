@@ -1427,3 +1427,16 @@ id. `participant/ParticipantLifecycle.h` gains `LivingBodyOf`. A write on a
 settled level whose local participant has no body fails with "the local
 participant has no body". The save format version, cooked data, the wire and
 the replicated layout are unchanged.
+
+## v62
+
+Zone state is keyed by level. `world/LevelReference.h` replaces
+`app/LevelReference.h`. `zone/ZoneId.h` names the two reserved zone ids,
+`kSceneLevelZone` and `kWorldSceneZone`, which the manifest reader and the
+world cook refuse. `zone/ZoneStateScope.h` is new: `ZoneStateLevelId` and
+`ZoneStateScope`, which `ZoneStateStore::Scope` hands out and every store call,
+`CaptureZoneState`, `ParkHeldRecords` and the importer's `stateScope` take in
+place of a `ZoneId`. `RuntimeZoneRecord` gains `StateScope`; `ZoneLoadRecipe`
+gains `StateScope`; `AsyncZoneLoader::BeginLoad` and `BeginLoadScene` and the
+`ImportZonePackage` family take a trailing `ZoneStateScope`.
+

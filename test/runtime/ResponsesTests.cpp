@@ -1415,23 +1415,25 @@ TEST_F(ResponsesFixture, AZoneRemembersConsumedAndDisabledBindingsAcrossUnloadAn
     Tick();
     ASSERT_EQ(SetEnabled(placed, "use", false), VerbAdmission::Accepted);
     const Responses before = StateOf(placed);
+    const ZoneStateScope scope =
+        ZoneState->Scope(LevelReference{ .Kind = LevelKind::Scene, .Name = "responses" }, ZoneId{ 1 });
 
-    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ placed }, ZoneCapture::Detach);
+    CaptureZoneState(WorldState, scope, std::array{ placed }, ZoneCapture::Detach);
     WorldState.DestroyEntity(placed);
-    EXPECT_FALSE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+    EXPECT_FALSE(ZoneState->ComponentState(scope, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
 
     // The zone comes back: the entity as authored, then its remembered state.
     const EntityId reloaded = Place(bindings, zone);
     WorldState.AddComponent<PersistentIdComponent>(reloaded, PersistentIdComponent{ identity });
     EXPECT_EQ(StateOf(reloaded).Consumed, 0u);
-    RestoreZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded });
+    RestoreZoneState(WorldState, scope, std::array{ reloaded });
     EXPECT_EQ(StateOf(reloaded).Consumed, before.Consumed);
     EXPECT_EQ(StateOf(reloaded).Disabled, before.Disabled);
 
     // Back as authored, the zone forgets it.
     *WorldState.TryGet<Responses>(reloaded) = Responses{ StateOf(reloaded).Set, 0, 0 };
-    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded }, ZoneCapture::Detach);
-    EXPECT_TRUE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+    CaptureZoneState(WorldState, scope, std::array{ reloaded }, ZoneCapture::Detach);
+    EXPECT_TRUE(ZoneState->ComponentState(scope, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
 }
 
 // ---------------------------------------------------------------------------

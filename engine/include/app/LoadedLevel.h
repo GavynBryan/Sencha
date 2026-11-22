@@ -1,13 +1,14 @@
 #pragma once
 
-#include <app/LevelReference.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <ecs/EntityId.h>
 #include <core/console/ConsoleTypes.h>
+#include <world/LevelReference.h>
 #include <world/scene/SmapFormat.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneStateScope.h>
 
 #include <optional>
 #include <string>
@@ -131,6 +132,7 @@ private:
     // because the partition also holds whatever the game spawned there, and
     // unload owns only what it loaded.
     std::vector<EntityId> WorldSceneEntities;
+    ZoneStateScope WorldSceneScope;
     // Collision a level carried before physics existed, loaded once there is
     // somewhere to put it.
     std::vector<SmapCollisionCell> PendingCollision;

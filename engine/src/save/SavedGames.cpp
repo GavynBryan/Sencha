@@ -236,7 +236,7 @@ std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot)
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());
     if (const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>())
-        saved->Zones = store->ExportDurable();
+        saved->Zones = store->ExportDurable(saved->Summary.Level);
     for (const SavedGameSectionDefinition& section : Sections)
         if (section.Capture)
             saved->Sections.push_back(SavedGameSection{ section.Name, section.Version, section.Capture(world) });

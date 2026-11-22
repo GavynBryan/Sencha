@@ -290,7 +290,7 @@ std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentS
 std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
                                                 std::span<const EntityId> entities,
                                                 const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
-                                                ZoneId scope)
+                                                ZoneStateScope scope)
 {
     std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
     const bool lifetimes = world.IsRegistered<ZoneStateLifetime>();
@@ -322,7 +322,7 @@ bool ImportPackageIntoPartitionImpl(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     ZoneImportError* error,
@@ -519,7 +519,8 @@ bool ImportZonePackageImpl(
     SceneSerializationContext* sceneContext,
     bool publish,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     if (!zone.IsValid())
     {
@@ -534,13 +535,20 @@ bool ImportZonePackageImpl(
         return false;
     }
 
+    if (stateScope.IsValid() && stateScope.Zone != zone)
+    {
+        SetError(error, "Zone package's state scope names another zone.");
+        return false;
+    }
+
     RuntimeZoneRecord& importing = runtime.BeginZoneImport(zone);
+    importing.StateScope = stateScope;
     if (!ImportPackageIntoPartitionImpl(
             runtime.Entities(),
             schema,
             package,
             importing.Partition,
-            zone,
+            stateScope,
             serializers,
             sceneContext,
             error,
@@ -572,7 +580,7 @@ bool ImportPackageIntoPartition(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     ZoneImportError* error)
 {
     return ImportPackageIntoPartitionImpl(
@@ -592,7 +600,7 @@ bool ImportPackageIntoPartition(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneImportError* error,
@@ -615,7 +623,8 @@ bool ImportZonePackageHidden(
     const WorldComponentSchema& schema,
     ZoneId zone,
     const EntityBuildPackage& package,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -626,7 +635,8 @@ bool ImportZonePackageHidden(
         nullptr,
         false,
         ZoneParticipation{},
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackageHidden(
@@ -636,7 +646,8 @@ bool ImportZonePackageHidden(
     const EntityBuildPackage& package,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -647,7 +658,8 @@ bool ImportZonePackageHidden(
         &sceneContext,
         false,
         ZoneParticipation{},
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackage(
@@ -656,7 +668,8 @@ bool ImportZonePackage(
     ZoneId zone,
     const EntityBuildPackage& package,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -667,7 +680,8 @@ bool ImportZonePackage(
         nullptr,
         true,
         participation,
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackage(
@@ -678,7 +692,8 @@ bool ImportZonePackage(
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -689,7 +704,8 @@ bool ImportZonePackage(
         &sceneContext,
         true,
         participation,
-        error);
+        error,
+        stateScope);
 }
 
 bool IsAuthorityMaterialized(const WorldComponentSchema& schema, const PackageEntity& entity)

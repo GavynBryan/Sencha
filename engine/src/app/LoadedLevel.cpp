@@ -23,6 +23,7 @@
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateMemory.h>
+#include <zone/ZoneStateStore.h>
 
 #include <filesystem>
 #include <memory>
@@ -32,12 +33,11 @@
 
 namespace
 {
-// A single loaded scene occupies zone one; partition zero stays persistent.
-// A convention of the cooked world format, not a choice made here.
-constexpr ZoneId kPlayZone{ 1 };
-// The state scope of a world's world scene, which occupies partition zero
-// rather than a zone of its own.
-constexpr ZoneId kWorldSceneScope{ 2 };
+[[nodiscard]] ZoneStateScope StateScopeOf(RuntimeWorld& runtime, const LevelReference& level, ZoneId zone)
+{
+    ZoneStateStore* store = runtime.Entities().TryGetResource<ZoneStateStore>();
+    return store != nullptr ? store->Scope(level, zone) : ZoneStateScope{};
+}
 
 // A cooked-manifest scene ref ("<.cooked-relative or root-relative path>") as
 // the asset:// path the cooked scan registered it under.
@@ -102,7 +102,7 @@ LevelResidency LoadedLevel::Residency() const
     const RuntimeZoneRecord* record = zone.IsValid() ? Host.World().FindZone(zone) : nullptr;
     if (record != nullptr && record->State == RuntimeZoneLoadState::Resident)
         return LevelResidency::Resident;
-    if (SceneLoaded && record == nullptr && !ZoneLoader->IsLoading(kPlayZone))
+    if (SceneLoaded && record == nullptr && !ZoneLoader->IsLoading(kSceneLevelZone))
         return LevelResidency::Failed;
     return LevelResidency::Loading;
 }
@@ -121,22 +121,22 @@ void LoadedLevel::CaptureState()
     const auto capture = [&](ZoneId zone) {
         if (const RuntimeZoneRecord* record = runtime.FindZone(zone);
             record != nullptr && record->State == RuntimeZoneLoadState::Resident)
-            CaptureZoneState(runtime.Entities(), zone, IdentifiedEntitiesIn(runtime.Entities(), record->Partition),
-                             ZoneCapture::Live);
+            CaptureZoneState(runtime.Entities(), record->StateScope,
+                             IdentifiedEntitiesIn(runtime.Entities(), record->Partition), ZoneCapture::Live);
     };
     if (SceneLoaded)
-        capture(kPlayZone);
+        capture(kSceneLevelZone);
     if (Partition.has_value() && Partition->HasManifest())
         for (const ZoneHeader& header : Partition->Manifest().Zones)
             capture(header.Id);
     if (!WorldSceneEntities.empty())
-        CaptureZoneState(runtime.Entities(), kWorldSceneScope, WorldSceneEntities, ZoneCapture::Live);
+        CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Live);
 }
 
 ZoneId LoadedLevel::PlayZone() const
 {
     if (SceneLoaded)
-        return kPlayZone;
+        return kSceneLevelZone;
     if (Partition.has_value() && Partition->HasManifest())
         return Partition->FocusZone();
     return ZoneId{};
@@ -227,8 +227,8 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
         result.Error("a partitioned world is already loaded");
         return result;
     }
-    if (Host.World().FindZone(kPlayZone) != nullptr
-        || ZoneLoader->IsLoading(kPlayZone))
+    if (Host.World().FindZone(kSceneLevelZone) != nullptr
+        || ZoneLoader->IsLoading(kSceneLevelZone))
     {
         result.Error("a map is already loaded or loading");
         return result;
@@ -258,9 +258,10 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
                  preloadError);
     }
 
+    const LevelReference level{ .Kind = LevelKind::Scene, .Name = std::string(mapName) };
     auto staged = std::make_shared<StagedSceneContent>();
     const AsyncTaskHandle load = ZoneLoader->BeginLoadScene(
-        kPlayZone,
+        kSceneLevelZone,
         sceneAssetPath,
         assets.Assets,
         assets.Scenes,
@@ -279,7 +280,8 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
             .Logic = true,
             .Audio = true,
         },
-        std::move(preload));
+        std::move(preload),
+        StateScopeOf(Host.World(), level, kSceneLevelZone));
     if (!load.IsValid())
     {
         result.Error("map load refused; see zone load failures");
@@ -287,7 +289,7 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
     }
 
     SceneLoaded = true;
-    Current = LevelReference{ .Kind = LevelKind::Scene, .Name = std::string(mapName) };
+    Current = level;
     result.Info("loading map '" + std::string(mapName) + "'");
     return result;
 }
@@ -297,7 +299,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
 {
     ConsoleResult result;
 
-    if (SceneLoaded || ZoneLoader->IsLoading(kPlayZone))
+    if (SceneLoaded || ZoneLoader->IsLoading(kSceneLevelZone))
     {
         result.Error("a map is loaded; restart and use +world");
         return result;
@@ -332,9 +334,10 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
         Content.Roots().empty() ? std::string(".")
                                 : Content.Roots().front().Authored.string();
     const EngineRuntimeConfig& runtimeConfig = Host.Config().Runtime;
+    const LevelReference level{ .Kind = LevelKind::World, .Name = std::string(worldName) };
 
     Partition.emplace(
-        [this, assets = &assets, authoredRoot](const ZoneHeader& header)
+        [this, assets = &assets, authoredRoot, level](const ZoneHeader& header)
         {
             const std::string scenePath = authoredRoot + "/" + header.CookedSceneRef;
             auto staged = std::make_shared<StagedSceneContent>();
@@ -361,6 +364,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
                     return true;
                 };
             recipe.Scene = std::move(scene);
+            recipe.StateScope = StateScopeOf(Host.World(), level, header.Id);
             return recipe;
         },
         WorldPartitionStreamingConfig{
@@ -410,13 +414,14 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
             return result;
         }
 
+        WorldSceneScope = StateScopeOf(Host.World(), level, kWorldSceneZone);
         ZoneImportError importError;
         if (!ImportPackageIntoPartition(
                 Host.World().Entities(),
                 Host.RuntimeComponents(),
                 package,
                 PersistentStoragePartition,
-                kWorldSceneScope,
+                WorldSceneScope,
                 Host.SceneSerializers(),
                 Content.SceneContext(),
                 &importError,
@@ -460,7 +465,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
     // whoever this machine drives and, in a session, around every connected
     // player -- and offers each peer only its own neighbourhood.
     Host.SetWorldStreaming(&*Partition, &*ZoneLoader);
-    Current = LevelReference{ .Kind = LevelKind::World, .Name = std::string(worldName) };
+    Current = level;
 
     result.Info("loading world '" + std::string(worldName) + "'");
     return result;
@@ -536,8 +541,8 @@ void LoadedLevel::Unload()
 
     if (ZoneLoader)
     {
-        if (ZoneLoader->IsLoading(kPlayZone))
-            (void)ZoneLoader->CancelLoad(kPlayZone);
+        if (ZoneLoader->IsLoading(kSceneLevelZone))
+            (void)ZoneLoader->CancelLoad(kSceneLevelZone);
         if (Partition && Partition->HasManifest())
         {
             for (const ZoneHeader& zone : Partition->Manifest().Zones)
@@ -546,8 +551,8 @@ void LoadedLevel::Unload()
         }
     }
 
-    if (runtime.FindZone(kPlayZone) != nullptr)
-        (void)runtime.RequestDetach(kPlayZone);
+    if (runtime.FindZone(kSceneLevelZone) != nullptr)
+        (void)runtime.RequestDetach(kSceneLevelZone);
     if (Partition && Partition->HasManifest())
     {
         for (const ZoneHeader& zone : Partition->Manifest().Zones)
@@ -569,7 +574,7 @@ void LoadedLevel::Unload()
     Host.Schedule().RunZoneResidency(residency);
     runtime.FinalizeResidencyProcessing();
 
-    CaptureZoneState(runtime.Entities(), kWorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
+    CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
     // Only what a world scene imported. The persistent partition also holds
     // whatever the game put there, and this owns none of that.
     for (EntityId entity : WorldSceneEntities)
@@ -578,6 +583,7 @@ void LoadedLevel::Unload()
             runtime.Entities().DestroyEntity(entity);
     }
     WorldSceneEntities.clear();
+    WorldSceneScope = {};
 
     // Before the runtime it points at goes.
     Host.SetWorldStreaming(nullptr, nullptr);

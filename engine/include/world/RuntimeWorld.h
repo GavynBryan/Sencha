@@ -6,6 +6,7 @@
 #include <world/ResourceRegistry.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -66,6 +67,8 @@ struct RuntimeZoneRecord
     StoragePartitionId Partition = PersistentStoragePartition;
     RuntimeZoneLoadState State = RuntimeZoneLoadState::Resident;
     ZoneParticipation Participation;
+    // What the zone was imported under; its detach captures into the same.
+    ZoneStateScope StateScope;
     ResourceRegistry Resources;
 };
 

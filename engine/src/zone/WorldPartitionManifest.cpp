@@ -449,6 +449,11 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
             if (!ReadRequiredId(entry, "id", ZoneIdFromString, header.Id, error,
                                 std::format("zones[{}].id", i)))
                 return std::nullopt;
+            if (header.Id == kSceneLevelZone || header.Id == kWorldSceneZone)
+            {
+                SetError(error, std::format("zones[{}].id is reserved", i));
+                return std::nullopt;
+            }
             if (!ReadOptionalString(entry, "name", header.Name, error,
                                     std::format("zones[{}].name", i)))
                 return std::nullopt;

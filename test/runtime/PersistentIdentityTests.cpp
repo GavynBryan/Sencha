@@ -349,7 +349,7 @@ TEST(PersistableRef, AReferenceBetweenASpawnsMembersFindsThatSpawnsMember)
     {
         ZoneImportError error;
         ASSERT_TRUE(ImportPackageIntoPartition(runtime.Entities(), schema, package, StoragePartitionId::Default(),
-                                               ZoneId{}, serializers, context, &error, &spawned))
+                                               ZoneStateScope{}, serializers, context, &error, &spawned))
             << error.Message;
         ASSERT_EQ(spawned.size(), 2u);
     }

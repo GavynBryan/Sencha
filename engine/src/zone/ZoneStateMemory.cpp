@@ -34,10 +34,10 @@ std::vector<EntityId> IdentifiedEntitiesIn(World& world, StoragePartitionId part
     return identified;
 }
 
-void CaptureZoneState(World& world, ZoneId zone, std::span<const EntityId> identified, ZoneCapture capture)
+void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const EntityId> identified, ZoneCapture capture)
 {
     ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
-    if (store == nullptr || !world.IsRegistered<PersistentIdComponent>())
+    if (store == nullptr || !scope.IsValid() || !world.IsRegistered<PersistentIdComponent>())
         return;
 
     std::vector<std::pair<EntityId, PersistentEntityId>> alive;
@@ -68,20 +68,20 @@ void CaptureZoneState(World& world, ZoneId zone, std::span<const EntityId> ident
                 bytes.clear();
                 memory.Capture(world, entity, bytes);
                 if (bytes.empty())
-                    store->ForgetComponentState(zone, id, memory.Type);
+                    store->ForgetComponentState(scope, id, memory.Type);
                 else
-                    store->RecordComponentState(zone, id, memory.Type, memory.Version, bytes);
+                    store->RecordComponentState(scope, id, memory.Type, memory.Version, bytes);
             }
         }
     }
-    store->RecordCapture(zone, live, capture);
+    store->RecordCapture(scope, live, capture);
 }
 
-void RestoreZoneState(World& world, ZoneId zone, std::span<const EntityId> created)
+void RestoreZoneState(World& world, ZoneStateScope scope, std::span<const EntityId> created)
 {
     const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
     const ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>();
-    if (store == nullptr || memories == nullptr || !world.IsRegistered<PersistentIdComponent>())
+    if (store == nullptr || !scope.IsValid() || memories == nullptr || !world.IsRegistered<PersistentIdComponent>())
         return;
     for (const ZoneComponentMemory& memory : memories->All())
     {
@@ -95,7 +95,7 @@ void RestoreZoneState(World& world, ZoneId zone, std::span<const EntityId> creat
             const PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(entity);
             if (id == nullptr || !id->Id.IsValid())
                 continue;
-            const RememberedComponentState remembered = store->ComponentState(zone, id->Id, memory.Type);
+            const RememberedComponentState remembered = store->ComponentState(scope, id->Id, memory.Type);
             if (!remembered.Bytes.empty() && remembered.Version <= memory.Version)
                 memory.Restore(world, entity, remembered.Version, remembered.Bytes);
         }

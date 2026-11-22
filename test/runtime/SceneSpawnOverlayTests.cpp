@@ -750,7 +750,7 @@ TEST(SceneSpawnOverlayRestore, ABodyPatchNamingATagContentNoLongerDeclaresRestor
 
     ZoneImportError imported;
     std::vector<EntityId> created;
-    ASSERT_TRUE(ImportPackageIntoPartition(world, schema, prefab, StoragePartitionId::Default(), ZoneId{}, serializers,
+    ASSERT_TRUE(ImportPackageIntoPartition(world, schema, prefab, StoragePartitionId::Default(), ZoneStateScope{}, serializers,
                                            context, &imported, &created))
         << imported.Message;
     ASSERT_EQ(created.size(), 1u);
