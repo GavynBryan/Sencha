@@ -4,6 +4,7 @@
 #include <core/metadata/EnumSchema.h>
 #include <jobs/AsyncTaskQueue.h>
 #include <save/SaveSlotFiles.h>
+#include <save/SaveSlotListing.h>
 #include <save/SavedGame.h>
 
 #include <array>
@@ -33,6 +34,14 @@ struct SavedGameSectionDefinition
     // state and before the level arrives: given a section of Version or older,
     // or null data when the save has none, so nothing of the previous game stays.
     std::function<void(World&, std::uint32_t version, const JsonValue& data)> Restore;
+};
+
+// What the game adds to every save's summary, asked for at capture.
+struct SavedGameSummaryDefinition
+{
+    // The summary's `game` member.
+    std::function<JsonValue(const World&)> Describe;
+    std::function<std::optional<SavedGameThumbnail>(const World&)> Thumbnail;
 };
 
 // Written by SavedGames itself after every section has captured.
@@ -101,6 +110,8 @@ public:
     // Without it a game keeps destroyed sets only: docs/gameplay/saves.md, "Level entities".
     void KeepLevelState();
 
+    void SetSummary(SavedGameSummaryDefinition definition);
+
     // Refused for a name already registered and for kPersistentIdsSection.
     // A section the restored save carried under this name is no longer kept.
     [[nodiscard]] bool RegisterSection(SavedGameSectionDefinition section);
@@ -120,7 +131,15 @@ public:
     [[nodiscard]] std::uint64_t Restores() const { return RestoreCount; }
     // The latest restore read the slot's backup because its file did not read.
     [[nodiscard]] bool RestoredFromBackup() const { return FromBackup; }
-    // What a restore would find; reads and decodes the slot's files.
+    // Each reads slot files' prefixes on the async lane and answers on the owner thread.
+    void RequestList(std::function<void(std::vector<SaveSlotSummary>)> done);
+    void RequestThumbnail(std::string slot, std::function<void(std::optional<SavedGameThumbnail>)> done);
+    // The file, its backup, and what this session remembers of the slot.
+    [[nodiscard]] SaveAdmission RequestDelete(std::string slot);
+    // A write of `to` with what a restore of `from` reads, reported by WriteStatus.
+    [[nodiscard]] SaveAdmission RequestCopy(std::string from, std::string to);
+
+    // What a restore would find, from the prefixes of the slot's files.
     [[nodiscard]] bool Holds(std::string_view slot) const;
     // This session wrote or restored the slot; a file from an earlier run alone is not remembered.
     [[nodiscard]] bool Remembers(std::string_view slot) const { return Touched.contains(slot); }
@@ -140,7 +159,13 @@ private:
     struct InFlightWrite
     {
         std::string Slot;
+        // The slot a copy reads; empty for a write.
+        std::string From;
+        // A write's save, released from memory once on disk.
         std::shared_ptr<const SavedGame> Saved;
+        // Answers why it failed, or nothing.
+        std::function<std::string()> Work;
+        bool FromRemembered = false;
         AsyncTaskHandle Task;
     };
 
@@ -149,8 +174,9 @@ private:
     [[nodiscard]] std::optional<std::string> WriteRefusal() const;
     // Null when there is nothing to write to disk.
     [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot, const std::string& arrival);
-    void WriteOnTasks(const std::string& slot, std::shared_ptr<const SavedGame> saved);
-    void FinishWrite(bool written);
+    [[nodiscard]] bool WritesTo(std::string_view slot) const;
+    void StartWrite(InFlightWrite write);
+    void FinishWrite(std::string failure);
     void CommitRestore();
     void Restore(const std::string& slot);
     void BeginChange(std::shared_ptr<const SavedGame> saved);
@@ -161,6 +187,7 @@ private:
     Engine& Host;
     std::optional<SaveSlotFiles> Files;
     std::vector<SavedGameSectionDefinition> Sections;
+    SavedGameSummaryDefinition SummaryDefinition;
     std::set<std::string, std::less<>> Touched;
     // The one save not yet on disk, which a restore of its slot prefers.
     std::optional<std::string> UnwrittenSlot;

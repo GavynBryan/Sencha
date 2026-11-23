@@ -15,7 +15,7 @@ what a save keeps is decided per entity by its zone state lifetime
 | `EncodeSavedGame` / `DecodeSavedGame` | same | bytes and back, no file access |
 | `SaveSlotFiles` | `save/SaveSlotFiles.h` | where a slot's bytes live, and its backup |
 | `ListSaveSlots` | `save/SaveSlotListing.h` | every slot's summary, read from file prefixes |
-| `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections |
+| `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections, slots |
 | `save.write`, `save.restore` | `save/SavedGameVocabulary.h` | the verbs and console commands |
 | `save.describe` | same | a developer command: what a save holds of one entity |
 
@@ -24,7 +24,9 @@ what a save keeps is decided per entity by its zone state lifetime
 - **Summary:** the level (`LevelReference`), a world's focus zone, when it was
   written, and `game`: a JSON object the game supplies and the engine never
   reads (an area name, a play time, a display name for the slot), absent when
-  the game supplies none.
+  the game supplies none ("Slots").
+- **Thumbnail:** a picture the game supplies for a load menu, absent when it
+  supplies none ("Slots").
 - **Levels:** for each level the game has changed this session, per zone (and
   per world scene, under `kWorldSceneZone`), a set of named lists:
   `destroyed`, the authored entities gone for good; `changed`, the patches of
@@ -409,8 +411,11 @@ save written, which is all a session without files keeps. Otherwise the slot is
 read and decoded
 on the async lane, falling back to the backup when the file is missing or
 corrupt; `RestoredFromBackup()` then says so and the reason the file did not
-read is logged. `Holds(slot)` answers with the same reader, so it is true when
-only a readable backup is left and false for a corrupt file with none. The
+read is logged. `Holds(slot)` answers from the prefixes of the slot's files, as
+a listing does ("Slots"): true when the file's or, failing it, the backup's
+prefix verifies, so true when only a readable backup is left and false for a
+file corrupt in its prefix with none; a file corrupt only past its `HEAD` is
+held, and its restore falls back to the backup or fails then. The
 save's level is then requested from the level change with the save's zone
 state, and its sections are restored once the change has unloaded the old
 level.
@@ -468,7 +473,8 @@ first chunk other than `SUMM`, or a missing `HEAD` refuses the file. A reader
 may stop after `HEAD`: `DecodeSavedGameSummary` reads the summary and the
 thumbnail chunk from the file's prefix and checks them against `HEAD`, so a
 listing never reads the levels ("Slots"); `HASH` still decides whether a file
-restores. `THMB` version 1 is the thumbnail's width and height (32 bits
+restores. `THMB` is written when the game gives a thumbnail at capture, and
+version 1 is the thumbnail's width and height (32 bits
 each), its encoding name (a length-prefixed string) and its bytes (a 32-bit
 count, then the bytes): `EncodeSavedGameThumbnail` and
 `DecodeSavedGameThumbnail`. A `THMB` of a version this build does not read is
@@ -536,9 +542,47 @@ comes.
 - `ReadSaveSlotThumbnail` reads the picture the same way: the slot's file, or
   its backup when the file does not read.
 
+`SavedGames` gives a game the same reads off the owner thread, and what a
+slot holds:
+
+- **`SetSummary`** takes a `SavedGameSummaryDefinition`: `Describe` returns
+  the `game` member and `Thumbnail` a `SavedGameThumbnail` (width, height, an
+  encoding the game names, such as `png` or `rgba8`, and the bytes), each
+  asked at every capture with the `const World&`. Either may be empty, and a
+  thumbnail callback may return nothing; a save then has no `game` member or
+  no `THMB` chunk. The engine interprets neither. The pixels are the game's:
+  a capture runs at the zone-residency step, before rendering, and the
+  renderer has no readback of the last presented frame (`docs/deferred.md`,
+  "A thumbnail of the last presented frame"), so until it has, a game gives a
+  picture per area.
+- **`RequestList(done)`** runs `ListSaveSlots` on the async lane and answers
+  `done` on the owner thread at a later drain, never inside the request. The
+  one save not yet on disk ("Restoring") is listed from memory in its slot's
+  place, as a restore would read it. Every thumbnail a listing passes is read
+  with it, so its size is the game's to keep small.
+- **`RequestThumbnail(slot, done)`** reads one slot's picture the same way, or
+  answers nothing.
+- **`RequestDelete(slot)`** removes the slot's file and its backup at once and
+  forgets the slot: `Remembers` is false after it and the unwritten save held
+  for it is dropped, so a deleted slot can come back neither from disk nor from
+  memory. It answers `Busy` while a write of that slot waits or is on its way
+  to disk, or a copy reads or writes it; another slot's write does not hold it
+  up. A file that cannot be removed is logged.
+- **`RequestCopy(from, to)`** is a write of `to` with what a restore of `from`
+  reads: `to`'s file and backup become `from`'s, byte for byte, or, when
+  `from`'s latest save is the one held in memory, that save, with `from`'s
+  file as the backup. It goes on the async lane and is reported by
+  `WriteStatus()` and `WriteFailure()`, so it is `Busy` while any write or copy
+  is under way, and a restore of `to` is `Busy` until it is done. Once it
+  lands, `to` is remembered exactly when `from` is, and an unwritten save held
+  for `to` is dropped. A `from` holding nothing fails the copy and leaves `to`
+  as it was. With no saves root there is no file to copy, and the copy fails.
+
+Autosave rotation, quicksave naming and the menu itself are the game's.
+
 ## Not yet
 
-Recorded in `docs/deferred.md`: a body's children and other participants'
+Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, a body's children and other participants'
 bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
 a gained entity saved as its prefab and a patch, carrying an entity other than
 the body across a level change, a level entity's placement, change tracking

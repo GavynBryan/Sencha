@@ -4,6 +4,7 @@
 #include <app/VocabularyCommands.h>
 #include <core/console/ConsoleService.h>
 #include <core/io/FileBytes.h>
+#include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/serialization/FourCC.h>
 #include <core/serialization/HashedChunkFile.h>
@@ -39,6 +40,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -2453,6 +2455,324 @@ TEST(SavedGames, AnItemDroppedInAStreamedZoneComesBackInAFreshRunWhetherOrNotIts
         EXPECT_EQ(stage, 3) << slot;
         EXPECT_TRUE(back) << "the item dropped in the streamed zone did not come back from the save '" << slot << "'";
     }
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    SavedGameThumbnail Picture()
+    {
+        SavedGameThumbnail thumbnail{ .Width = 4, .Height = 2, .Encoding = "rgba8", .Bytes = {} };
+        for (int i = 0; i < 32; ++i)
+            thumbnail.Bytes.push_back(static_cast<std::byte>(255 - i * 5));
+        return thumbnail;
+    }
+
+    const char* const kGameMember =
+        R"({"area":"Atrium","play_seconds":5400,"difficulty":"hard","marks":[1,"two",true,null,{"deep":-2.5}]})";
+
+    bool HasChunk(const std::filesystem::path& path, std::uint32_t id)
+    {
+        std::vector<std::byte> bytes;
+        if (!ReadFileBytes(path, bytes))
+            return false;
+        for (std::size_t offset = 8; offset + 12 <= bytes.size();)
+        {
+            std::uint32_t chunk = 0;
+            std::uint32_t size = 0;
+            std::memcpy(&chunk, bytes.data() + offset, 4);
+            std::memcpy(&size, bytes.data() + offset + 8, 4);
+            if (chunk == id)
+                return true;
+            offset += 12 + size;
+        }
+        return false;
+    }
+
+    const SaveSlotSummary* Listed(const std::vector<SaveSlotSummary>& slots, std::string_view slot)
+    {
+        for (const SaveSlotSummary& listed : slots)
+            if (listed.Slot == slot)
+                return &listed;
+        return nullptr;
+    }
+
+    std::optional<std::vector<std::byte>> BytesOf(const std::filesystem::path& path)
+    {
+        std::vector<std::byte> bytes;
+        if (path.empty() || !ReadFileBytes(path, bytes))
+            return std::nullopt;
+        return bytes;
+    }
+}
+
+TEST(SavedGames, TheGameMemberAndAThumbnailGivenAtCaptureComeBackUntouchedAndASaveWithoutOneHasNoChunk)
+{
+    const std::filesystem::path root = RootFor("summary_and_thumbnail");
+    const JsonValue game = *JsonParse(kGameMember);
+    std::optional<std::vector<SaveSlotSummary>> listed;
+    std::optional<std::optional<SavedGameThumbnail>> pictured;
+    std::optional<std::optional<SavedGameThumbnail>> plain;
+    bool answeredLater = true;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            saves.SetSummary({ .Describe = [&](const World&) { return game; },
+                               .Thumbnail = [](const World&) { return std::optional<SavedGameThumbnail>(Picture()); } });
+            EXPECT_EQ(saves.RequestWrite("pictured"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.SetSummary({ .Describe = [&](const World&) { return game; },
+                               .Thumbnail = [](const World&) { return std::optional<SavedGameThumbnail>(); } });
+            EXPECT_EQ(saves.RequestWrite("plain"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.RequestList([&](std::vector<SaveSlotSummary> slots) { listed = std::move(slots); });
+            saves.RequestThumbnail("pictured", [&](std::optional<SavedGameThumbnail> picture) { pictured = std::move(picture); });
+            saves.RequestThumbnail("plain", [&](std::optional<SavedGameThumbnail> picture) { plain = std::move(picture); });
+            answeredLater = !listed.has_value() && !pictured.has_value() && !plain.has_value();
+            stage = 3;
+        }
+        else if (stage == 3 && listed.has_value() && pictured.has_value() && plain.has_value())
+        {
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4) << "the two saves, or the listing and the thumbnails, did not all arrive";
+    EXPECT_TRUE(answeredLater) << "a listing answers on the owner thread at a later drain, not inside the request";
+    const SaveSlotSummary* withPicture = Listed(*listed, "pictured");
+    const SaveSlotSummary* without = Listed(*listed, "plain");
+    ASSERT_NE(withPicture, nullptr);
+    ASSERT_NE(without, nullptr);
+    EXPECT_EQ(JsonStringify(withPicture->Summary.Game), JsonStringify(game));
+    EXPECT_EQ(JsonStringify(without->Summary.Game), JsonStringify(game));
+    EXPECT_TRUE(withPicture->HasThumbnail);
+    EXPECT_FALSE(without->HasThumbnail);
+    EXPECT_EQ(*pictured, Picture());
+    EXPECT_FALSE(plain->has_value());
+    EXPECT_TRUE(HasChunk(SlotFile(root, "pictured"), MakeFourCC('T', 'H', 'M', 'B')));
+    EXPECT_FALSE(HasChunk(SlotFile(root, "plain"), MakeFourCC('T', 'H', 'M', 'B')));
+    const std::optional<SavedGame> read = ReadSave(SlotFile(root, "pictured"));
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(JsonStringify(read->Summary.Game), JsonStringify(game));
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ADeletedSlotNeitherListsNorRestoresEvenInTheSessionThatWroteIt)
+{
+    const std::filesystem::path root = RootFor("deleted");
+    std::filesystem::path file;
+    bool hadBackup = false;
+    bool remembered = true;
+    bool held = true;
+    std::optional<std::vector<SaveSlotSummary>> listed;
+    std::string failure;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("doomed"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(saves.RequestWrite("doomed"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            file = SlotFile(root, "doomed");
+            hadBackup = std::filesystem::exists(BackupOf(file));
+            EXPECT_EQ(saves.RequestDelete("doomed"), SaveAdmission::Accepted);
+            remembered = saves.Remembers("doomed");
+            held = saves.Holds("doomed");
+            saves.RequestList([&](std::vector<SaveSlotSummary> slots) { listed = std::move(slots); });
+            EXPECT_EQ(saves.RequestRestore("doomed"), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && saves.RestoreStatus() == RestoreProgress::Failed && listed.has_value())
+        {
+            failure = saves.RestoreFailure();
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4) << "the restore of a deleted slot did not fail";
+    ASSERT_TRUE(hadBackup);
+    EXPECT_FALSE(std::filesystem::exists(file));
+    EXPECT_FALSE(std::filesystem::exists(BackupOf(file))) << "the backup did not go with its slot";
+    EXPECT_FALSE(remembered) << "a deleted slot is not one this session can return to";
+    EXPECT_FALSE(held);
+    EXPECT_EQ(Listed(*listed, "doomed"), nullptr);
+    EXPECT_NE(failure.find("doomed"), std::string::npos) << failure;
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ADeletedSlotDoesNotComeBackFromTheSavesMemory)
+{
+    bool heldBefore = false;
+    bool held = true;
+    bool remembered = true;
+    std::optional<std::vector<SaveSlotSummary>> listed;
+    std::string failure;
+    int stage = 0;
+    RunFps("levels/bumper", 400, {}, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("held"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            heldBefore = saves.Holds("held");
+            EXPECT_EQ(saves.RequestDelete("held"), SaveAdmission::Accepted);
+            held = saves.Holds("held");
+            remembered = saves.Remembers("held");
+            saves.RequestList([&](std::vector<SaveSlotSummary> slots) { listed = std::move(slots); });
+            EXPECT_EQ(saves.RequestRestore("held"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.RestoreStatus() == RestoreProgress::Failed && listed.has_value())
+        {
+            failure = saves.RestoreFailure();
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the restore of a deleted slot held only in memory did not fail";
+    EXPECT_TRUE(heldBefore);
+    EXPECT_FALSE(held);
+    EXPECT_FALSE(remembered);
+    EXPECT_TRUE(listed->empty());
+    EXPECT_NE(failure.find("held"), std::string::npos) << failure;
+}
+
+TEST(SavedGames, ADeleteOrACopyDuringThatSlotsWriteIsBusy)
+{
+    const std::filesystem::path root = RootFor("busy_slot");
+    SaveAdmission waiting = SaveAdmission::Accepted;
+    SaveAdmission elsewhere = SaveAdmission::Busy;
+    SaveAdmission badName = SaveAdmission::Accepted;
+    SaveAdmission working = SaveAdmission::Accepted;
+    SaveAdmission copyOnto = SaveAdmission::Accepted;
+    SaveStatus seen = SaveStatus::Idle;
+    SaveAdmission after = SaveAdmission::Busy;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("busy"), SaveAdmission::Accepted);
+            waiting = saves.RequestDelete("busy");
+            elsewhere = saves.RequestDelete("elsewhere");
+            badName = saves.RequestDelete("../busy");
+            stage = 1;
+        }
+        else if (stage == 1)
+        {
+            seen = saves.WriteStatus();
+            working = saves.RequestDelete("busy");
+            copyOnto = saves.RequestCopy("elsewhere", "busy");
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            after = saves.RequestDelete("busy");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(waiting, SaveAdmission::Busy) << "a delete while the slot's write waits";
+    EXPECT_EQ(elsewhere, SaveAdmission::Accepted) << "another slot's delete is not held up by this slot's write";
+    EXPECT_EQ(badName, SaveAdmission::BadSlot);
+    EXPECT_EQ(seen, SaveStatus::Working);
+    EXPECT_EQ(working, SaveAdmission::Busy) << "a delete while the slot's write is on its way to disk";
+    EXPECT_EQ(copyOnto, SaveAdmission::Busy);
+    EXPECT_EQ(after, SaveAdmission::Accepted);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ACopyRestoresToTheSameWorldAsItsSourceAndTakesItsBackup)
+{
+    const std::filesystem::path root = RootFor("copied");
+    PersistentEntityId lostBefore;
+    PersistentEntityId lostAfter;
+    bool lostBeforeStaysLost = false;
+    bool lostAfterIsBack = false;
+    bool remembered = false;
+    SaveAdmission restoreDuringCopy = SaveAdmission::Accepted;
+    int stage = 0;
+    RunFps("levels/bumper", 600, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("source"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            lostBefore = DestroyAuthored(world);
+            EXPECT_EQ(saves.RequestWrite("source"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(saves.RequestCopy("source", "copy"), SaveAdmission::Accepted);
+            restoreDuringCopy = saves.RequestRestore("copy");
+            stage = 3;
+        }
+        else if (stage == 3 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            remembered = saves.Remembers("copy");
+            lostAfter = DestroyAuthored(world, lostBefore);
+            EXPECT_EQ(saves.RequestRestore("copy"), SaveAdmission::Accepted);
+            stage = 4;
+        }
+        else if (stage == 4 && RestoreArrived(engine))
+        {
+            lostBeforeStaysLost = !Resolves(world, lostBefore);
+            lostAfterIsBack = Resolves(world, lostAfter);
+            stage = 5;
+        }
+    });
+    ASSERT_EQ(stage, 5) << "the copy, or the restore of it, did not finish";
+    EXPECT_EQ(restoreDuringCopy, SaveAdmission::Busy) << "a restore of a slot while a copy writes it";
+    EXPECT_TRUE(lostBeforeStaysLost);
+    EXPECT_TRUE(lostAfterIsBack) << "the copy did not restore the world its source saved";
+    EXPECT_TRUE(remembered) << "a copy of a save this session wrote is one this session wrote";
+    const std::filesystem::path source = SlotFile(root, "source");
+    const std::filesystem::path copy = SlotFile(root, "copy");
+    ASSERT_TRUE(BytesOf(copy).has_value());
+    EXPECT_EQ(BytesOf(copy), BytesOf(source));
+    ASSERT_TRUE(BytesOf(BackupOf(copy)).has_value()) << "the backup did not go with the copy";
+    EXPECT_EQ(BytesOf(BackupOf(copy)), BytesOf(BackupOf(source)));
+
+    bool rememberedInALaterRun = true;
+    bool heldInALaterRun = false;
+    stage = 0;
+    RunFps("levels/bumper", 300, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestCopy("source", "copy"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            rememberedInALaterRun = saves.Remembers("copy");
+            heldInALaterRun = saves.Holds("copy");
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_FALSE(rememberedInALaterRun) << "a copy of an earlier run's file is not this session's save";
+    EXPECT_TRUE(heldInALaterRun);
     std::filesystem::remove_all(root);
 }
 

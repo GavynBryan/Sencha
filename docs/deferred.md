@@ -1367,6 +1367,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   `HeldRecordIndex` revisions or subscribe to `counter.changed`.
 - **Trigger:** a game that shows the player its quests or objectives.
 
+## A thumbnail of the last presented frame
+
+- **What:** a save's thumbnail is what the game's `SavedGameSummaryDefinition::Thumbnail`
+  returns at capture. The engine cannot give it the picture a player expects,
+  the last presented frame: a capture runs at the zone-residency step, before
+  rendering, and the renderer has no readback.
+- **Where:** `save/SavedGames.h` (`SetSummary`), the renderer's frame
+  presentation.
+- **Trigger:** a game whose load menu draws thumbnails. Then add a readback of
+  the last presented frame that a thumbnail callback can encode, as a
+  rendering item; the save side takes the bytes as it does now.
+- **Consumer:** Loss Function's load menu.
+
 ## Counters that outlive a save slot
 
 - **What:** every counter belongs to one save. Nothing holds progress shared by

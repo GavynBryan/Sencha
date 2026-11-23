@@ -1557,3 +1557,18 @@ reserved now holds `whole` members.
 `LoadedLevel`'s destructor is no longer defaulted. `InnermostZoneAt` takes an
 optional filter on the zones it considers. `inventory.drop` gains `keep`,
 which moves its contract revision.
+
+## v67
+
+`SavedGames` gains `SetSummary`, `RequestList`, `RequestThumbnail`,
+`RequestDelete` and `RequestCopy`, and its private in-flight write record
+gains the copy's source and a work function; `Holds` reads file prefixes.
+`SavedGameSummaryDefinition` is new. `save/SaveSlotListing.h` is new:
+`SaveSlotSummary`, `SaveSlotListing`, `ListSaveSlots`, `ReadSaveSlotSummary`
+and `ReadSaveSlotThumbnail`. `save/SavedGame.h` gains `SavedGameThumbnail`,
+`EncodeSavedGameThumbnail`, `DecodeSavedGameThumbnail` and
+`SavedGamePrefixWanted`, and `DecodedSavedGameSummary` carries the thumbnail
+chunk in place of `HasThumbnail`. `SaveSlotFiles` gains `ReadPrefix`,
+`ReadBackupPrefix`, `Remove`, `RemoveBackup` and `Slots`, and
+`core/io/FileBytes.h` gains `ReadFilePrefix`. The save format does not change:
+the `game` member and the `THMB` chunk format 2 reserved are now written.
