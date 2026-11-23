@@ -43,11 +43,23 @@ struct SavedGameChunk
     friend bool operator==(const SavedGameChunk&, const SavedGameChunk&) = default;
 };
 
+// A picture of a save for a menu, as the game gives it; the engine reads none of it.
+struct SavedGameThumbnail
+{
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+    // What the bytes are, as the game names it: "png", "rgba8".
+    std::string Encoding;
+    std::vector<std::byte> Bytes;
+
+    friend bool operator==(const SavedGameThumbnail&, const SavedGameThumbnail&) = default;
+};
+
 // How the world differs from its authored content: docs/gameplay/saves.md.
 struct SavedGame
 {
     SavedGameSummary Summary;
-    // THMB, reserved: this build writes back one it read and writes none of its own.
+    // THMB, as EncodeSavedGameThumbnail makes it; one of a version this build does not read is carried.
     std::optional<SavedGameChunk> Thumbnail;
     std::vector<DurableLevelState> Levels;
     std::vector<SavedGameSection> Sections;
@@ -69,7 +81,7 @@ struct DecodedSavedGame
 struct DecodedSavedGameSummary
 {
     std::optional<SavedGameSummary> Summary;
-    bool HasThumbnail = false;
+    std::optional<SavedGameChunk> Thumbnail;
     std::string Error;
     bool Newer = false;
 };
@@ -79,3 +91,9 @@ struct DecodedSavedGameSummary
 [[nodiscard]] DecodedSavedGame DecodeSavedGame(std::span<const std::byte> bytes);
 // Reads only the file's prefix up to HEAD, and checks it against HEAD.
 [[nodiscard]] DecodedSavedGameSummary DecodeSavedGameSummary(std::span<const std::byte> prefix);
+// Bytes from a file's start through HEAD, given those read so far; no more than were read once none can follow.
+[[nodiscard]] std::size_t SavedGamePrefixWanted(std::span<const std::byte> read);
+
+[[nodiscard]] SavedGameChunk EncodeSavedGameThumbnail(const SavedGameThumbnail& thumbnail);
+// Empty for a chunk of a version this build does not read, or one that does not read.
+[[nodiscard]] std::optional<SavedGameThumbnail> DecodeSavedGameThumbnail(const SavedGameChunk& chunk);

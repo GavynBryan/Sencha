@@ -90,3 +90,21 @@ TEST_F(FileBytes, AnEmptyWriteLeavesAnEmptyFile)
     ASSERT_TRUE(ReadFileBytes(path, read));
     EXPECT_TRUE(read.empty());
 }
+
+TEST_F(FileBytes, APrefixReadStopsWhereItsReaderAsksAndAtTheFilesEnd)
+{
+    const std::filesystem::path path = Root / "chunked.bin";
+    ASSERT_TRUE(WriteFileText(path, "0123456789abcdef"));
+    std::vector<std::size_t> asked;
+    std::vector<std::byte> read;
+    ASSERT_TRUE(ReadFilePrefix(path, [&](std::span<const std::byte> sofar) {
+        asked.push_back(sofar.size());
+        return sofar.size() < 4 ? std::size_t{ 4 } : std::size_t{ 10 };
+    }, read));
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(read.data()), read.size()), "0123456789");
+    EXPECT_EQ(asked, (std::vector<std::size_t>{ 0, 4, 10 }));
+
+    ASSERT_TRUE(ReadFilePrefix(path, [](std::span<const std::byte>) { return std::size_t{ 1000 }; }, read));
+    EXPECT_EQ(read.size(), 16u);
+    EXPECT_FALSE(ReadFilePrefix(Root / "missing.bin", [](std::span<const std::byte>) { return std::size_t{ 1 }; }, read));
+}

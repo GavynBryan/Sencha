@@ -14,6 +14,7 @@ what a save keeps is decided per entity by its zone state lifetime
 | `EncodedZoneLists` | `zone/ZoneStateLists.h` | one zone's named lists exactly as the file holds them |
 | `EncodeSavedGame` / `DecodeSavedGame` | same | bytes and back, no file access |
 | `SaveSlotFiles` | `save/SaveSlotFiles.h` | where a slot's bytes live, and its backup |
+| `ListSaveSlots` | `save/SaveSlotListing.h` | every slot's summary, read from file prefixes |
 | `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections |
 | `save.write`, `save.restore` | `save/SavedGameVocabulary.h` | the verbs and console commands |
 | `save.describe` | same | a developer command: what a save holds of one entity |
@@ -464,10 +465,14 @@ shared with the navigation file):
 
 The order is part of the format: a known chunk after one it should precede, a
 first chunk other than `SUMM`, or a missing `HEAD` refuses the file. A reader
-may stop after `HEAD`: `DecodeSavedGameSummary` reads the summary from the
-file's prefix and checks it against `HEAD`, so a listing never reads the
-levels; `HASH` still decides whether a file restores. This build writes no
-`THMB` of its own and writes back one it read. A chunk this build does not know
+may stop after `HEAD`: `DecodeSavedGameSummary` reads the summary and the
+thumbnail chunk from the file's prefix and checks them against `HEAD`, so a
+listing never reads the levels ("Slots"); `HASH` still decides whether a file
+restores. `THMB` version 1 is the thumbnail's width and height (32 bits
+each), its encoding name (a length-prefixed string) and its bytes (a 32-bit
+count, then the bytes): `EncodeSavedGameThumbnail` and
+`DecodeSavedGameThumbnail`. A `THMB` of a version this build does not read is
+carried, and offers no picture. A chunk this build does not know
 is carried as read and written back where it was, before `HEAD` or after
 `SECT`, and a restore carries it into the next save, as an unclaimed section is.
 
@@ -506,6 +511,30 @@ rather than discarding it as corrupt. A format 1 file is refused by its version.
 `test/fixtures/saves/example.v2.ssav` is format 2, checked in, holds a `game`
 member, an unknown chunk, an unknown list and a `gained` member of an unknown
 form, and must keep reading; the encoder must write exactly it.
+
+## Slots
+
+A slot is a name, `[A-Za-z0-9_-]{1,64}`; what the player sees of it (an area,
+a play time, a display name) is the game's, in the summary's `game` member.
+
+`ListSaveSlots` (`save/SaveSlotListing.h`) answers a load menu: every slot
+with a file or a backup (`SaveSlotFiles::Slots`), in name order, each as a
+`SaveSlotSummary` read from its file's prefix. `SaveSlotFiles::ReadPrefix`
+reads through `ReadFilePrefix` (`core/io/FileBytes.h`), which reads no byte
+past what `SavedGamePrefixWanted` asks for: the header, each chunk header,
+and `SUMM`, `THMB` and `HEAD`, never `LVLS` or what follows it.
+`SaveSlotListing::BytesRead` counts what it read. The prefix is checked
+against `HEAD`; one that verifies does not promise the rest restores, since
+`HASH` decides that at restore, and a menu shows the restore's failure if it
+comes.
+
+- A slot whose file does not read (missing, cut short, or corrupt in its
+  prefix) carries the reason in `Error`, and its backup's summary is offered
+  with `FromBackup`, as a restore would read the backup.
+- A file a newer build wrote (its format, or a newer `SUMM`) lists `Newer`,
+  and its backup is not offered in its place, as a restore does not read it.
+- `ReadSaveSlotThumbnail` reads the picture the same way: the slot's file, or
+  its backup when the file does not read.
 
 ## Not yet
 

@@ -1,5 +1,6 @@
 #include <core/io/FileBytes.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <fstream>
@@ -34,6 +35,33 @@ bool ReadFileBytes(const std::filesystem::path& path, std::vector<std::byte>& ou
         file.read(reinterpret_cast<char*>(out.data()),
                   static_cast<std::streamsize>(size));
     return file.good() || out.empty();
+}
+
+bool ReadFilePrefix(const std::filesystem::path& path,
+                    const std::function<std::size_t(std::span<const std::byte>)>& wanted,
+                    std::vector<std::byte>& out)
+{
+    std::ifstream file;
+    file.rdbuf()->pubsetbuf(nullptr, 0);
+    file.open(path, std::ios::binary);
+    if (!file.is_open())
+        return false;
+    file.seekg(0, std::ios::end);
+    const std::streamoff size = file.tellg();
+    if (size < 0)
+        return false;
+    file.seekg(0, std::ios::beg);
+
+    out.clear();
+    for (std::size_t want = std::min(wanted(out), static_cast<std::size_t>(size)); want > out.size();
+         want = std::min(wanted(out), static_cast<std::size_t>(size)))
+    {
+        const std::size_t have = out.size();
+        out.resize(want);
+        if (!file.read(reinterpret_cast<char*>(out.data() + have), static_cast<std::streamsize>(want - have)))
+            return false;
+    }
+    return true;
 }
 
 namespace

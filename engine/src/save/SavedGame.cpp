@@ -304,13 +304,6 @@ namespace
         return true;
     }
 
-    struct Prefix
-    {
-        std::string Error;
-        bool Newer = false;
-        std::size_t HeadOffset = 0;
-    };
-
     template <typename T>
     bool ReadAt(std::span<const std::byte> bytes, std::size_t offset, T& out)
     {
@@ -320,36 +313,71 @@ namespace
         return true;
     }
 
-    Prefix CheckPrefix(std::span<const std::byte> bytes)
+    struct HeadPlace
+    {
+        std::string Error;
+        bool Newer = false;
+        std::size_t Offset = 0;
+        std::size_t End = 0;
+        std::size_t Wanted = 0;
+    };
+
+    HeadPlace NoHead(std::string error, std::size_t wanted = 0, bool newer = false)
+    {
+        return { .Error = std::move(error), .Newer = newer, .Offset = 0, .End = 0, .Wanted = wanted };
+    }
+
+    HeadPlace FindHead(std::span<const std::byte> bytes)
     {
         std::uint32_t magic = 0;
         std::uint32_t version = 0;
-        if (!ReadAt(bytes, 0, magic) || !ReadAt(bytes, 4, version) || magic != kSavedGameMagic)
-            return { .Error = "not a saved game", .Newer = false, .HeadOffset = 0 };
+        if (!ReadAt(bytes, 0, magic) || !ReadAt(bytes, 4, version))
+            return NoHead("not a saved game", kHeaderBytes);
+        if (magic != kSavedGameMagic)
+            return NoHead("not a saved game");
         if (version < kOldestFormatVersion || version > kSavedGameFormatVersion)
-            return { .Error = "saved game version " + std::to_string(version)
-                         + (version > kSavedGameFormatVersion ? " was written by a newer build"
-                                                              : " is older than this build reads"),
-                     .Newer = version > kSavedGameFormatVersion,
-                     .HeadOffset = 0 };
+            return NoHead("saved game version " + std::to_string(version)
+                              + (version > kSavedGameFormatVersion ? " was written by a newer build"
+                                                                   : " is older than this build reads"),
+                          0, version > kSavedGameFormatVersion);
         for (std::size_t offset = kHeaderBytes;;)
         {
             std::uint32_t id = 0;
             std::uint32_t size = 0;
             if (!ReadAt(bytes, offset, id) || !ReadAt(bytes, offset + 8, size))
-                return { .Error = "the saved game has no head", .Newer = false, .HeadOffset = 0 };
+                return NoHead("the saved game has no head", offset + kChunkHeaderBytes);
             if (id == kHeadChunk)
-            {
-                std::uint64_t stored = 0;
-                if (!ReadAt(bytes, offset + kChunkHeaderBytes, stored) || stored != HashBytes64(bytes.first(offset)))
-                    return { .Error = "saved game head mismatch", .Newer = false, .HeadOffset = 0 };
-                return { .Error = {}, .Newer = false, .HeadOffset = offset };
-            }
+                return { .Error = {}, .Newer = false, .Offset = offset, .End = offset + kChunkHeaderBytes + size,
+                         .Wanted = 0 };
             if (id == kHashChunk || (offset == kHeaderBytes && id != kSummaryChunk))
-                return { .Error = "the saved game's summary is not first or it has no head", .Newer = false,
-                         .HeadOffset = 0 };
+                return NoHead("the saved game's summary is not first or it has no head");
             offset += kChunkHeaderBytes + size;
         }
+    }
+
+    HeadPlace CheckPrefix(std::span<const std::byte> bytes)
+    {
+        HeadPlace head = FindHead(bytes);
+        if (!head.Error.empty())
+            return head;
+        std::uint64_t stored = 0;
+        if (!ReadAt(bytes, head.Offset + kChunkHeaderBytes, stored) || stored != HashBytes64(bytes.first(head.Offset)))
+            return NoHead("saved game head mismatch");
+        return head;
+    }
+
+    std::optional<SavedGameThumbnail> ReadThumbnail(std::span<const std::byte> payload)
+    {
+        const std::string body(reinterpret_cast<const char*>(payload.data()), payload.size());
+        std::istringstream stream(body, std::ios::binary);
+        BinaryReader reader(stream);
+        SavedGameThumbnail thumbnail;
+        if (!reader.Read(thumbnail.Width) || !reader.Read(thumbnail.Height)
+            || !Deserialize(reader, thumbnail.Encoding, kMaxTextBytes)
+            || !DeserializeTrivialArray(reader, thumbnail.Bytes, static_cast<std::uint32_t>(payload.size()))
+            || stream.peek() != std::istream::traits_type::eof())
+            return std::nullopt;
+        return thumbnail;
     }
 
     const HashedChunkFileFormat kFormat{ .Magic = kSavedGameMagic,
@@ -389,14 +417,14 @@ std::vector<std::byte> EncodeSavedGame(const SavedGame& saved)
 DecodedSavedGameSummary DecodeSavedGameSummary(std::span<const std::byte> prefix)
 {
     DecodedSavedGameSummary decoded;
-    const Prefix checked = CheckPrefix(prefix);
+    const HeadPlace checked = CheckPrefix(prefix);
     if (!checked.Error.empty())
     {
         decoded.Error = checked.Error;
         decoded.Newer = checked.Newer;
         return decoded;
     }
-    for (std::size_t offset = kHeaderBytes; offset < checked.HeadOffset;)
+    for (std::size_t offset = kHeaderBytes; offset < checked.Offset;)
     {
         std::uint32_t id = 0;
         std::uint32_t version = 0;
@@ -424,7 +452,12 @@ DecodedSavedGameSummary DecodeSavedGameSummary(std::span<const std::byte> prefix
             }
             decoded.Summary = std::move(summary);
         }
-        decoded.HasThumbnail = decoded.HasThumbnail || id == kThumbnailChunk;
+        if (id == kThumbnailChunk)
+        {
+            const auto* payload = prefix.data() + offset + kChunkHeaderBytes;
+            decoded.Thumbnail = SavedGameChunk{
+                .Id = id, .Version = version, .Payload = std::vector<std::byte>(payload, payload + size), .InPrefix = true };
+        }
         offset += kChunkHeaderBytes + size;
     }
     if (!decoded.Summary.has_value())
@@ -432,10 +465,37 @@ DecodedSavedGameSummary DecodeSavedGameSummary(std::span<const std::byte> prefix
     return decoded;
 }
 
+std::size_t SavedGamePrefixWanted(std::span<const std::byte> read)
+{
+    const HeadPlace head = FindHead(read);
+    if (head.Wanted > 0)
+        return head.Wanted;
+    return head.Error.empty() ? head.End : read.size();
+}
+
+SavedGameChunk EncodeSavedGameThumbnail(const SavedGameThumbnail& thumbnail)
+{
+    std::ostringstream stream(std::ios::binary);
+    BinaryWriter writer(stream);
+    const bool written = writer.Write(thumbnail.Width) && writer.Write(thumbnail.Height)
+        && Serialize(writer, thumbnail.Encoding) && SerializeTrivialArray(writer, thumbnail.Bytes);
+    return SavedGameChunk{ .Id = kThumbnailChunk,
+                           .Version = kChunkVersion,
+                           .Payload = written ? BytesOf(stream) : std::vector<std::byte>{},
+                           .InPrefix = true };
+}
+
+std::optional<SavedGameThumbnail> DecodeSavedGameThumbnail(const SavedGameChunk& chunk)
+{
+    if (chunk.Id != kThumbnailChunk || chunk.Version != kChunkVersion)
+        return std::nullopt;
+    return ReadThumbnail(chunk.Payload);
+}
+
 DecodedSavedGame DecodeSavedGame(std::span<const std::byte> bytes)
 {
     DecodedSavedGame decoded;
-    if (const Prefix checked = CheckPrefix(bytes); !checked.Error.empty())
+    if (const HeadPlace checked = CheckPrefix(bytes); !checked.Error.empty())
     {
         decoded.Error = checked.Error;
         decoded.Newer = checked.Newer;

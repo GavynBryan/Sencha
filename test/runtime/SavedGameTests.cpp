@@ -6,6 +6,7 @@
 #include <core/serialization/HashedChunkFile.h>
 #include <core/serialization/Serialize.h>
 #include <save/SaveSlotFiles.h>
+#include <save/SaveSlotListing.h>
 #include <save/SavedGame.h>
 
 #include <gtest/gtest.h>
@@ -272,7 +273,7 @@ TEST(SavedGame, TheSummaryAndItsGameMemberAreReadAndCheckedFromThePrefixAlone)
     ASSERT_TRUE(summary.Summary.has_value()) << summary.Error;
     EXPECT_EQ(*summary.Summary, Example().Summary);
     EXPECT_EQ(JsonStringify(summary.Summary->Game), R"({"area":"Courtyard","play_seconds":5400})");
-    EXPECT_FALSE(summary.HasThumbnail);
+    EXPECT_FALSE(summary.Thumbnail.has_value());
 }
 
 TEST(SavedGame, APrefixWithOneByteChangedFailsTheHead)
@@ -303,7 +304,7 @@ TEST(SavedGame, AThumbnailIsReadBeforeTheHeadAndWrittenBackIntact)
     EXPECT_EQ(decoded.Saved->Thumbnail, saved.Thumbnail);
     EXPECT_EQ(EncodeSavedGame(*decoded.Saved), bytes);
     const std::vector<std::byte> head(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(PrefixThroughHead(bytes)));
-    EXPECT_TRUE(DecodeSavedGameSummary(head).HasThumbnail);
+    EXPECT_EQ(DecodeSavedGameSummary(head).Thumbnail, saved.Thumbnail);
 }
 
 TEST(SavedGame, ChunksOutOfTheStatedOrderAreRefused)
@@ -422,4 +423,170 @@ TEST(SaveSlotFiles, ASlotIsLettersDigitsDashesAndUnderscores)
     EXPECT_FALSE(SaveSlotFiles::IsSlotName("../escape"));
     EXPECT_FALSE(SaveSlotFiles::IsSlotName("a b"));
     EXPECT_FALSE(SaveSlotFiles::IsSlotName(std::string(65, 'a')));
+}
+
+TEST(SaveSlotFiles, ASlotIsListedByItsFileOrItsBackupAndRemovedWithBoth)
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "sencha_save_slot_names";
+    std::filesystem::remove_all(root);
+    const SaveSlotFiles files(root);
+    const std::vector<std::byte> bytes{ std::byte{ 1 } };
+    ASSERT_TRUE(files.Write("b_both", bytes));
+    ASSERT_TRUE(files.WriteBackup("b_both", bytes));
+    ASSERT_TRUE(files.WriteBackup("a_backup_only", bytes));
+    ASSERT_TRUE(files.Write("c_file_only", bytes));
+    ASSERT_TRUE(WriteFileText(root / "c_file_only.ssav.123-4.tmp", "staging"));
+    ASSERT_TRUE(WriteFileText(root / "not a slot.ssav", "spaces"));
+    ASSERT_TRUE(WriteFileText(root / "notes.txt", "other"));
+    EXPECT_EQ(files.Slots(), (std::vector<std::string>{ "a_backup_only", "b_both", "c_file_only" }));
+
+    EXPECT_TRUE(files.Remove("b_both"));
+    EXPECT_FALSE(files.Read("b_both").has_value());
+    EXPECT_FALSE(files.ReadBackup("b_both").has_value());
+    EXPECT_TRUE(files.Remove("never_written"));
+    EXPECT_EQ(files.Slots(), (std::vector<std::string>{ "a_backup_only", "c_file_only" }));
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    std::filesystem::path FreshRoot(std::string_view name)
+    {
+        const std::filesystem::path root = std::filesystem::temp_directory_path() / "sencha_save_listing" / name;
+        std::filesystem::remove_all(root);
+        return root;
+    }
+
+    SavedGame InArea(std::string_view area)
+    {
+        SavedGame saved = Example();
+        saved.Summary.Game = JsonValue(JsonValue::Object{ { "area", JsonValue(std::string(area)) } });
+        return saved;
+    }
+
+    std::size_t OffsetOf(const std::vector<std::byte>& bytes, std::uint32_t id)
+    {
+        for (const ChunkAt& chunk : ChunksOf(bytes))
+            if (chunk.Id == id)
+                return chunk.Offset;
+        return 0;
+    }
+
+    SavedGameThumbnail Picture()
+    {
+        SavedGameThumbnail thumbnail{ .Width = 4, .Height = 2, .Encoding = "rgba8", .Bytes = {} };
+        for (int i = 0; i < 32; ++i)
+            thumbnail.Bytes.push_back(static_cast<std::byte>(i * 7));
+        return thumbnail;
+    }
+}
+
+TEST(SaveSlotListing, ThirtySlotsAreListedFromTheirPrefixesWithoutAByteOfTheirLevels)
+{
+    const std::filesystem::path root = FreshRoot("thirty");
+    const SaveSlotFiles files(root);
+    std::vector<PersistentEntityId> many;
+    for (std::uint64_t id = 1; id <= 4096; ++id)
+        many.push_back(PersistentEntityId{ id });
+    std::uint64_t prefixBytes = 0;
+    std::uint64_t fileBytes = 0;
+    for (int i = 0; i < 30; ++i)
+    {
+        SavedGame saved = InArea("area " + std::to_string(i));
+        saved.Levels[0].Zones[0].Lists =
+            Lists({ { std::string(kDestroyedZoneList), kZoneListVersion, EncodeDestroyedList(many) } });
+        const std::vector<std::byte> bytes = EncodeSavedGame(saved);
+        ASSERT_LT(PrefixThroughHead(bytes), OffsetOf(bytes, kLvls) + 1);
+        prefixBytes += PrefixThroughHead(bytes);
+        fileBytes += bytes.size();
+        ASSERT_TRUE(files.Write("slot_" + std::to_string(100 + i), bytes));
+    }
+
+    const SaveSlotListing listing = ListSaveSlots(files);
+    ASSERT_EQ(listing.Slots.size(), 30u);
+    for (int i = 0; i < 30; ++i)
+    {
+        const SaveSlotSummary& slot = listing.Slots[static_cast<std::size_t>(i)];
+        EXPECT_EQ(slot.Slot, "slot_" + std::to_string(100 + i));
+        EXPECT_TRUE(slot.Error.empty()) << slot.Error;
+        EXPECT_EQ(slot.Summary, InArea("area " + std::to_string(i)).Summary);
+    }
+    EXPECT_EQ(listing.BytesRead, prefixBytes) << "the listing read past a HEAD; of " << fileBytes << " bytes on disk";
+    EXPECT_LT(listing.BytesRead * 20, fileBytes);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SaveSlotListing, ATruncatedFileListsAsAnErrorAndOffersItsBackupsSummary)
+{
+    const std::filesystem::path root = FreshRoot("truncated");
+    const SaveSlotFiles files(root);
+    const std::vector<std::byte> current = EncodeSavedGame(InArea("Courtyard"));
+    const std::vector<std::byte> cut(current.begin(), current.begin() + 30);
+    ASSERT_TRUE(files.Write("kept", cut));
+    ASSERT_TRUE(files.WriteBackup("kept", EncodeSavedGame(InArea("Gatehouse"))));
+    ASSERT_TRUE(files.Write("lost", cut));
+
+    const SaveSlotListing listing = ListSaveSlots(files);
+    ASSERT_EQ(listing.Slots.size(), 2u);
+    const SaveSlotSummary& kept = listing.Slots[0];
+    EXPECT_EQ(kept.Slot, "kept");
+    EXPECT_FALSE(kept.Error.empty());
+    EXPECT_TRUE(kept.FromBackup);
+    EXPECT_TRUE(kept.Readable());
+    EXPECT_EQ(kept.Summary, InArea("Gatehouse").Summary);
+
+    const SaveSlotSummary& lost = listing.Slots[1];
+    EXPECT_EQ(lost.Slot, "lost");
+    EXPECT_FALSE(lost.Error.empty());
+    EXPECT_FALSE(lost.FromBackup);
+    EXPECT_FALSE(lost.Readable());
+    std::filesystem::remove_all(root);
+}
+
+TEST(SaveSlotListing, ASlotWrittenByANewerBuildListsAsNewer)
+{
+    const std::filesystem::path root = FreshRoot("newer");
+    const SaveSlotFiles files(root);
+    ASSERT_TRUE(files.Write("format", FileOf({ { kSumm, kRoomSummary }, { kHead, {} } }, kSavedGameFormatVersion + 1)));
+    ASSERT_TRUE(files.WriteBackup("format", EncodeSavedGame(InArea("Gatehouse"))));
+    HashedChunkFileWriter newerSummary(kMagic, kSavedGameFormatVersion);
+    newerSummary.Chunk(kSumm, 2, [&] { return Serialize(newerSummary.Writer(), std::string("{}")); });
+    newerSummary.HashChunk(kHead);
+    ASSERT_TRUE(files.Write("summary", newerSummary.Finish(kHash)));
+
+    const SaveSlotListing listing = ListSaveSlots(files);
+    ASSERT_EQ(listing.Slots.size(), 2u);
+    for (const SaveSlotSummary& slot : listing.Slots)
+    {
+        EXPECT_TRUE(slot.Newer) << slot.Slot;
+        EXPECT_FALSE(slot.FromBackup) << slot.Slot << ": a newer build's file is not passed over for its backup";
+        EXPECT_NE(slot.Error.find("newer"), std::string::npos) << slot.Error;
+    }
+    std::filesystem::remove_all(root);
+}
+
+TEST(SaveSlotListing, AThumbnailIsReadBackByteForByteAndASaveWithoutOneHasNoChunk)
+{
+    const std::filesystem::path root = FreshRoot("thumbnail");
+    const SaveSlotFiles files(root);
+    SavedGame pictured = Example();
+    pictured.Thumbnail = EncodeSavedGameThumbnail(Picture());
+    ASSERT_TRUE(files.Write("pictured", EncodeSavedGame(pictured)));
+    const std::vector<std::byte> plainBytes = EncodeSavedGame(Example());
+    ASSERT_TRUE(files.Write("plain", plainBytes));
+
+    EXPECT_EQ(ReadSaveSlotThumbnail(files, "pictured"), Picture());
+    EXPECT_TRUE(ReadSaveSlotSummary(files, "pictured").HasThumbnail);
+    EXPECT_FALSE(ReadSaveSlotThumbnail(files, "plain").has_value());
+    EXPECT_FALSE(ReadSaveSlotSummary(files, "plain").HasThumbnail);
+    EXPECT_EQ(OffsetOf(plainBytes, kThmb), 0u);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGame, AThumbnailChunkOfANewerVersionIsCarriedButNotRead)
+{
+    SavedGameChunk chunk = EncodeSavedGameThumbnail(Picture());
+    EXPECT_EQ(DecodeSavedGameThumbnail(chunk), Picture());
+    chunk.Version = 2;
+    EXPECT_FALSE(DecodeSavedGameThumbnail(chunk).has_value());
 }
