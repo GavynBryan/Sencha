@@ -1728,9 +1728,11 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 - **What:** every capture serialises and diffs each authored entity's baseline
   components, unchanged or not: a zone of 5,000 entities with three saved
-  components is 15,000 rounds per capture on the owner thread
+  components is 15,000 rounds per capture on the owner thread, and every
+  entity the zone gained is written whole at every capture, about 1.5 µs each
   (`docs/plans/evidence/level-state/results.md`). Not built: skipping entities
-  whose saved components did not change, or spreading a capture over frames.
+  and gained members whose saved components did not change, or spreading a
+  capture over frames.
 - **Where:** `engine/src/zone/ZoneStateMemory.cpp` (`RecordPatches`).
 - **Trigger:** the bench's 5,000-entity figure against a real game's frame
   budget, or a streamed zone whose detach shows in a profile.

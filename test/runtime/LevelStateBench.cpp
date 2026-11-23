@@ -10,6 +10,7 @@
 #include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryComponents.h>
 #include <logic/Responses.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
@@ -19,6 +20,8 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <world/transform/TransformComponents.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
@@ -28,6 +31,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <string>
 #include <vector>
 
 namespace
@@ -131,6 +135,24 @@ namespace
                 (void)GrantBaselineTag(world, index.TryResolve(PersistentEntityId{ 0x1000 + i }), Unsealed);
         }
 
+        std::vector<PersistentEntityId> Gain(std::size_t count)
+        {
+            World& world = Runtime.Entities();
+            const StoragePartitionId partition = Runtime.FindZone(kZone)->Partition;
+            std::vector<PersistentEntityId> gained;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const EntityId pickup = world.CreateEntity(partition);
+                LocalTransform placed{};
+                placed.Value.Position = Vec3d{ static_cast<float>(i), 0.0f, 1.0f };
+                world.AddComponent<LocalTransform>(pickup, placed);
+                world.AddComponent<ItemPickup>(pickup, ItemPickup{ .Definition = {}, .Count = 0 });
+                EXPECT_TRUE(KeepWithZone(world, pickup));
+                gained.push_back(world.TryGet<PersistentIdComponent>(pickup)->Id);
+            }
+            return gained;
+        }
+
         std::size_t BaselineBytes(std::size_t count)
         {
             const ZoneStateStore& store = Runtime.Entities().GetResource<ZoneStateStore>();
@@ -177,6 +199,48 @@ namespace
                         1000.0 * changedMs / static_cast<double>(count));
         EXPECT_NE(bench.Runtime.Entities().GetResource<ZoneStateStore>().PatchOf(bench.Scope, PersistentEntityId{ 0x1000 }),
                   nullptr);
+    }
+
+    void RecordGained(std::size_t zoneSize, std::size_t gained)
+    {
+        LevelStateBenchWorld bench;
+        const EntityBuildPackage package = LevelStateBenchWorld::Package(zoneSize);
+        ZoneStateStore& store = bench.Runtime.Entities().GetResource<ZoneStateStore>();
+        (void)bench.Import(package);
+        std::vector<double> plain;
+        for (int rep = 0; rep < Reps(9); ++rep)
+            plain.push_back(bench.Capture());
+        const std::vector<PersistentEntityId> ids = bench.Gain(gained);
+        std::vector<double> withGained;
+        for (int rep = 0; rep < Reps(9); ++rep)
+            withGained.push_back(bench.Capture());
+        EXPECT_EQ(store.GainedOf(bench.Scope).size(), gained);
+        const double plainMs = Bench::Median(plain);
+        const double gainedMs = Bench::Median(withGained);
+        const std::string name = std::format("gained.{}_in_{}", gained, zoneSize);
+        Recorder.Record(name + ".capture_none_gained", "ms", plainMs);
+        Recorder.Record(name + ".capture", "ms", gainedMs);
+        Recorder.Record(name + ".capture_per_gained", "us", 1000.0 * (gainedMs - plainMs) / static_cast<double>(gained));
+
+        bench.Detach();
+        const std::vector<DurableLevelState> remembered = store.ExportDurable();
+        std::vector<double> bare;
+        std::vector<double> made;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            store.Install({});
+            bare.push_back(bench.Import(package));
+            bench.Detach();
+            store.Install(remembered);
+            made.push_back(bench.Import(package));
+            EXPECT_TRUE(bench.Runtime.Entities().GetResource<PersistentEntityIndex>().TryResolve(ids.front()).IsValid());
+            bench.Detach();
+        }
+        const double bareMs = Bench::Median(bare);
+        const double madeMs = Bench::Median(made);
+        Recorder.Record(name + ".import_none_gained", "ms", bareMs);
+        Recorder.Record(name + ".import", "ms", madeMs);
+        Recorder.Record(name + ".import_per_gained", "us", 1000.0 * (madeMs - bareMs) / static_cast<double>(gained));
     }
 
     void RecordAttach(std::size_t zoneSize, std::size_t patched)
@@ -226,6 +290,8 @@ TEST(LevelStateBench, Generate)
         RecordCapture(count);
     for (const std::size_t patched : { 50u, 500u })
         RecordAttach(500, patched);
+    for (const std::size_t gained : { 50u, 500u })
+        RecordGained(500, gained);
     const std::filesystem::path json(out);
     EXPECT_TRUE(Recorder.WriteJson(json));
     EXPECT_TRUE(Recorder.WriteCsv(std::filesystem::path(json).replace_extension(".csv")));
