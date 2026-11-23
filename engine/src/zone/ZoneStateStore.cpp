@@ -203,8 +203,6 @@ void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const Persist
         return;
     ZoneRecord& record = *found;
     const bool detaching = capture == ZoneCapture::Detach;
-    // Without a baseline there is nothing to diff against, and recomputing from
-    // an empty one would erase the deviation already recorded.
     if (!record.Authored.empty())
         RecordDestroyed(record, live, detaching);
     if (detaching)
