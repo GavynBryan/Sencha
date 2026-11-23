@@ -96,6 +96,8 @@ void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher&
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeSaveWrite>(catalog.Find(kSaveWriteVerb), saves));
     Verbs.push_back(verbs.Bind<&InvokeSaveRestore>(catalog.Find(kSaveRestoreVerb), saves));
+    Verbs.push_back(verbs.Bind<&InvokeSaveDelete>(catalog.Find(kSaveDeleteVerb), saves));
+    Verbs.push_back(verbs.Bind<&InvokeSaveCopy>(catalog.Find(kSaveCopyVerb), saves));
 }
 
 void EngineVocabularyBindings::BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs)

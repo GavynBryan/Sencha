@@ -11,9 +11,13 @@ class SavedGames;
 
 inline constexpr std::string_view kSaveWriteVerb = "save.write";
 inline constexpr std::string_view kSaveRestoreVerb = "save.restore";
+inline constexpr std::string_view kSaveDeleteVerb = "save.delete";
+inline constexpr std::string_view kSaveCopyVerb = "save.copy";
 
 void DeclareSavedGameVerbs(VerbRegistrationScope& scope);
 VerbAnswer InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation);
 VerbAnswer InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation);
+VerbAnswer InvokeSaveDelete(SavedGames& saves, const VerbInvocation& invocation);
+VerbAnswer InvokeSaveCopy(SavedGames& saves, const VerbInvocation& invocation);
 
 void RegisterSavedGameCommands(ConsoleService& console, Engine& engine);

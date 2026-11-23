@@ -2776,4 +2776,46 @@ TEST(SavedGames, ACopyRestoresToTheSameWorldAsItsSourceAndTakesItsBackup)
     std::filesystem::remove_all(root);
 }
 
+TEST(SavedGames, TheDeleteAndCopyVerbsAnswerWhyTheyRefuse)
+{
+    const std::filesystem::path root = RootFor("slot_verbs");
+    std::string copied;
+    std::string badTarget;
+    std::string deletedDuringCopy;
+    std::string deleted;
+    bool heldAfterCopy = false;
+    bool heldAfterDelete = true;
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("verb_source"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            badTarget = TextOf(RunVerb(engine, { "save.copy", "from=verb_source", "to=../escape" }));
+            copied = TextOf(RunVerb(engine, { "save.copy", "from=verb_source", "to=verb_copy" }));
+            deletedDuringCopy = TextOf(RunVerb(engine, { "save.delete", "slot=verb_copy" }));
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            heldAfterCopy = saves.Holds("verb_copy");
+            deleted = TextOf(RunVerb(engine, { "save.delete", "slot=verb_copy" }));
+            heldAfterDelete = saves.Holds("verb_copy");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << copied;
+    EXPECT_NE(badTarget.find("invalid argument 'to'"), std::string::npos) << badTarget;
+    EXPECT_NE(copied.find("accepted"), std::string::npos) << copied;
+    EXPECT_NE(deletedDuringCopy.find("refused: busy"), std::string::npos) << deletedDuringCopy;
+    EXPECT_NE(deleted.find("accepted"), std::string::npos) << deleted;
+    EXPECT_TRUE(heldAfterCopy);
+    EXPECT_FALSE(heldAfterDelete);
+    std::filesystem::remove_all(root);
+}
+
 #endif

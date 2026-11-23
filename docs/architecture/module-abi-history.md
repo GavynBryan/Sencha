@@ -1570,5 +1570,8 @@ and `ReadSaveSlotThumbnail`. `save/SavedGame.h` gains `SavedGameThumbnail`,
 `SavedGamePrefixWanted`, and `DecodedSavedGameSummary` carries the thumbnail
 chunk in place of `HasThumbnail`. `SaveSlotFiles` gains `ReadPrefix`,
 `ReadBackupPrefix`, `Remove`, `RemoveBackup` and `Slots`, and
-`core/io/FileBytes.h` gains `ReadFilePrefix`. The save format does not change:
+`core/io/FileBytes.h` gains `ReadFilePrefix`. The `save.delete` and
+`save.copy` verbs (`kSaveDeleteVerb`, `kSaveCopyVerb`, `InvokeSaveDelete`,
+`InvokeSaveCopy`) join the engine's catalog, answering `SaveAdmission` as
+their reason, and `BindSavedGames` binds them. The save format does not change:
 the `game` member and the `THMB` chunk format 2 reserved are now written.

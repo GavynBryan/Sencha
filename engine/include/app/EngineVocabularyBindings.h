@@ -70,7 +70,7 @@ public:
     // line.extend, line.cut and the line.* queries, answered by `lines`, which must outlive this.
     void BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
 
-    // save.write and save.restore, answered by `saves`, which must outlive this.
+    // The save verbs, answered by `saves`, which must outlive this.
     void BindSavedGames(SavedGames& saves, VerbDispatcher& verbs);
     void BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs);
 

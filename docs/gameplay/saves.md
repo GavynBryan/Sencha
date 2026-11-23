@@ -17,6 +17,7 @@ what a save keeps is decided per entity by its zone state lifetime
 | `ListSaveSlots` | `save/SaveSlotListing.h` | every slot's summary, read from file prefixes |
 | `SavedGames` | `save/SavedGames.h` | requests, capture, restore, sections, slots |
 | `save.write`, `save.restore` | `save/SavedGameVocabulary.h` | the verbs and console commands |
+| `save.delete`, `save.copy` | same | the slot verbs |
 | `save.describe` | same | a developer command: what a save holds of one entity |
 
 ## What a save holds
@@ -577,6 +578,11 @@ slot holds:
   lands, `to` is remembered exactly when `from` is, and an unwritten save held
   for `to` is dropped. A `from` holding nothing fails the copy and leaves `to`
   as it was. With no saves root there is no file to copy, and the copy fails.
+
+The verbs `save.delete {slot}` and `save.copy {from, to}` call
+`RequestDelete` and `RequestCopy` and answer `SaveAdmission` as their reason
+(`refused: busy`); a name that is not a slot is an invalid argument naming it.
+Listing and thumbnails are C++ calls for the menu, not verbs.
 
 Autosave rotation, quicksave naming and the menu itself are the game's.
 

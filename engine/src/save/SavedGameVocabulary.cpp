@@ -11,11 +11,13 @@
 #include <ecs/World.h>
 #include <participant/LocalControl.h>
 #include <save/EngineSaveSections.h>
+#include <save/SaveSlotFiles.h>
 #include <save/SavedGames.h>
 #include <world/RuntimeWorld.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -23,20 +25,31 @@
 
 namespace
 {
+    VerbDefinition SlotVerb(std::string_view name, std::string displayName, std::string description,
+                            std::vector<DataFieldSchema> arguments)
+    {
+        VerbDefinition verb =
+            MakeGameplayVerb(name, std::move(displayName), std::move(description), "Saves", std::move(arguments));
+        verb.Refusals = VerbRefusalsOf<SaveAdmission>();
+        return verb;
+    }
+
     VerbDefinition SaveVerb(std::string_view name, std::string displayName, std::string description)
     {
-        VerbDefinition verb;
-        verb.Name = std::string(name);
-        verb.DisplayName = std::move(displayName);
-        verb.Description = std::move(description);
-        verb.Category = "Saves";
-        verb.Refusals = VerbRefusalsOf<SaveAdmission>();
         DataFieldSchema slot = MakeDataField(DataFieldKind::String, "slot", "Slot",
                                              "Letters, digits, '-' and '_'; the default slot when empty.");
         slot.Required = false;
         slot.Default = std::string();
-        verb.Arguments.Children.push_back(std::move(slot));
-        return verb;
+        return SlotVerb(name, std::move(displayName), std::move(description), { std::move(slot) });
+    }
+
+    std::optional<std::string> NamedSlot(const VerbInvocation& invocation, std::size_t index)
+    {
+        std::string_view slot;
+        if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetString(index, slot)
+            || !SaveSlotFiles::IsSlotName(slot))
+            return std::nullopt;
+        return std::string(slot);
     }
 
     std::string SlotOf(const VerbInvocation& invocation)
@@ -87,6 +100,13 @@ void DeclareSavedGameVerbs(VerbRegistrationScope& scope)
     (void)scope.Declare(std::move(write));
     (void)scope.Declare(SaveVerb(kSaveRestoreVerb, "Restore",
                                  "Loads the saved level again and puts back what the save kept."));
+    (void)scope.Declare(SlotVerb(kSaveDeleteVerb, "Delete save", "Deletes a slot's save and its backup.",
+                                 { MakeDataField(DataFieldKind::String, "slot", "Slot",
+                                                 "Letters, digits, '-' and '_'.") }));
+    (void)scope.Declare(SlotVerb(kSaveCopyVerb, "Copy save",
+                                 "Writes one slot with what another holds, its backup included.",
+                                 { MakeDataField(DataFieldKind::String, "from", "From", "The slot copied."),
+                                   MakeDataField(DataFieldKind::String, "to", "To", "The slot written.") }));
 }
 
 VerbAnswer InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
@@ -100,6 +120,25 @@ VerbAnswer InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
 VerbAnswer InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
 {
     return SaveAnswer(saves.RequestRestore(SlotOf(invocation)));
+}
+
+VerbAnswer InvokeSaveDelete(SavedGames& saves, const VerbInvocation& invocation)
+{
+    std::optional<std::string> slot = NamedSlot(invocation, 0);
+    if (!slot.has_value())
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    return VerbAnswerOf(saves.RequestDelete(std::move(*slot)));
+}
+
+VerbAnswer InvokeSaveCopy(SavedGames& saves, const VerbInvocation& invocation)
+{
+    std::optional<std::string> from = NamedSlot(invocation, 0);
+    if (!from.has_value())
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    std::optional<std::string> to = NamedSlot(invocation, 1);
+    if (!to.has_value())
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+    return VerbAnswerOf(saves.RequestCopy(std::move(*from), std::move(*to)));
 }
 
 void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)

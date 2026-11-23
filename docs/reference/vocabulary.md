@@ -55,6 +55,8 @@ An argument reads `key: type = default [minimum .. maximum] (units)`; `key?` may
 | `responses.disable` | instant | gameplay / authority_only | `entity: entity`<br>`binding: string = ""` | — | — | Stops a binding responding until it is enabled. |
 | `responses.enable` | instant | gameplay / authority_only | `entity: entity`<br>`binding: string = ""` | — | — | Lets a binding respond again. |
 | `runtime.resume` | instant | gameplay / authority_only | — | — | — | Closes the application shell and resumes local play. |
+| `save.copy` | instant | gameplay / authority_only | `from: string`<br>`to: string` | — | `busy`<br>`bad_slot`<br>`nothing_loaded`<br>`not_authority`<br>`in_session` | Writes one slot with what another holds, its backup included. |
+| `save.delete` | instant | gameplay / authority_only | `slot: string` | — | `busy`<br>`bad_slot`<br>`nothing_loaded`<br>`not_authority`<br>`in_session` | Deletes a slot's save and its backup. |
 | `save.restore` | instant | gameplay / authority_only | `slot: string = ""` | — | `busy`<br>`bad_slot`<br>`nothing_loaded`<br>`not_authority`<br>`in_session` | Loads the saved level again and puts back what the save kept. |
 | `save.write` | instant | gameplay / authority_only | `slot: string = ""`<br>`arrival: string = ""` | — | `busy`<br>`bad_slot`<br>`nothing_loaded`<br>`not_authority`<br>`in_session` | Writes how the world differs from its authored content. |
 | `tags.grant` | instant | gameplay / authority_only | `target: entity`<br>`tag: tag`<br>`stacks: int = 1 [1 .. 65535]` | — | — | Gives the target stacks of a tag it keeps and saves; an entity with no tags gains them. |
