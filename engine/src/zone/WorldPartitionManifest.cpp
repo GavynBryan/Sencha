@@ -785,7 +785,8 @@ std::optional<GraphId> GraphDisplayedAs(const WorldPartitionManifest& manifest, 
     return DisplayedAs(manifest.Graphs, name, &GraphIdToString);
 }
 
-const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point)
+const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point,
+                                  const std::function<bool(const ZoneHeader&)>& among)
 {
     const auto volume = [](const Aabb3d& bounds) {
         const Vec3d size = bounds.Size();
@@ -793,7 +794,8 @@ const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d 
     };
     const ZoneHeader* innermost = nullptr;
     for (const ZoneHeader& zone : manifest.Zones)
-        if (zone.Bounds.Contains(point) && (innermost == nullptr || volume(zone.Bounds) < volume(innermost->Bounds)))
+        if (zone.Bounds.Contains(point) && (!among || among(zone))
+            && (innermost == nullptr || volume(zone.Bounds) < volume(innermost->Bounds)))
             innermost = &zone;
     return innermost;
 }

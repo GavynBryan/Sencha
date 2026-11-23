@@ -52,6 +52,8 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZonePlacement.h>
 #include <zone/ZoneStateStore.h>
 
 #include <time/SimClock.h>
@@ -929,6 +931,41 @@ TEST_F(InventoryVocabularyTest, TheVerbsChangeWhatTheCountSays)
     EXPECT_EQ(Invoke(kInventoryGiveVerb, { { "into", wardrobe } }, { Definition("asset://items/arrow.sdata"), Count(1) }),
               VerbAdmission::Refused);
     EXPECT_EQ(LastAnswer(), "refused: not_accepted") << "the reason by name, not number";
+}
+
+TEST_F(InventoryVocabularyTest, ADropLandsInTheZoneWhereItFallsAndIsKeptThereUnlessToldNot)
+{
+    const StoragePartitionId room = Runtime.AttachZone(ZoneId{ 41 }).Partition;
+    Entities().SetResource(ZonePlacement{ .PartitionAt = [room](const Vec3d& point) {
+        return point.X > 0.0f ? std::optional<StoragePartitionId>(room) : std::nullopt;
+    } });
+    const auto drop = [&](float x, std::optional<bool> keep) {
+        const EntityId entry = Inventory(Entities(), FixedSimTime{}).Give(Hero, Cloak, 1).Entry;
+        std::vector<VerbBindingArgument> literals(1);
+        literals[0].Key = "at";
+        literals[0].Literal = *JsonParse("[" + std::to_string(x) + ", 0, 0]");
+        if (keep.has_value())
+        {
+            literals.emplace_back();
+            literals.back().Key = "keep";
+            literals.back().Literal = JsonValue(*keep);
+        }
+        EXPECT_EQ(Invoke(kInventoryDropVerb, { { "entry", entry } }, std::move(literals)), VerbAdmission::Accepted);
+        return Index().HolderOf(entry);
+    };
+
+    const EntityId kept = drop(3.0f, std::nullopt);
+    EXPECT_EQ(Entities().GetEntityPartition(kept), room) << "not the holder's partition, the zone where it fell";
+    EXPECT_TRUE(Entities().HasComponent<KeptWithZone>(kept)) << "kept unless told not";
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(IdOf(kept)));
+
+    const EntityId passing = drop(3.0f, false);
+    EXPECT_EQ(Entities().GetEntityPartition(passing), room);
+    EXPECT_FALSE(Entities().HasComponent<KeptWithZone>(passing));
+
+    const EntityId nowhere = drop(-3.0f, std::nullopt);
+    EXPECT_EQ(Entities().GetEntityPartition(nowhere), Entities().GetEntityPartition(Hero))
+        << "with no zone where it falls, it lands beside its holder";
 }
 
 TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWhatIsHeld)

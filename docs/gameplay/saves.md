@@ -265,6 +265,9 @@ projectile, a spawned effect) alike; the marker is what tells them apart.
 `KeepWithZone(world, entity)` adds it on the authority and gives the entity a
 runtime persistent id (bit 63) if it has none; it refuses a level entity, which
 its patch already keeps, and a held record, which its holder keeps.
+`inventory.drop` marks the pickup it makes unless told `keep: false`, and puts
+it in the zone where it lands (`docs/gameplay/inventory.md`, "Where a drop
+lands").
 
 - **Capture.** With the zone's capture, at detach and for a save, on the
   authority and only when the game keeps level state, every live marked entity

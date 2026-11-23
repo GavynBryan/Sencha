@@ -1551,3 +1551,9 @@ private zone record gains its gained members. `zone/ZoneStateLists.h` gains
 `WholeGainedMemberId`. `world/serialization/EntityPatch.h` gains
 `ReadEntityRecord`. The save format does not change: the `gained` list format 2
 reserved now holds `whole` members.
+
+`ZonePlacement` (`zone/ZonePlacement.h`) is a new World resource, which
+`LoadedLevel` installs and answers from the new `LoadedLevel::ZoneAt`;
+`LoadedLevel`'s destructor is no longer defaulted. `InnermostZoneAt` takes an
+optional filter on the zones it considers. `inventory.drop` gains `keep`,
+which moves its contract revision.

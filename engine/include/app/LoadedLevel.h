@@ -101,6 +101,11 @@ public:
     // with nothing loaded.
     [[nodiscard]] ZoneId PlayZone() const;
 
+    // Where something made at run time at `point` belongs: a scene's play zone;
+    // in a world, the innermost resident zone whose bounds hold the point, else
+    // the focus zone. Invalid when that zone is not resident.
+    [[nodiscard]] ZoneId ZoneAt(const Vec3d& point) const;
+
     // The loaded world's manifest; null for a single scene or nothing loaded.
     [[nodiscard]] const WorldPartitionManifest* Manifest() const;
 

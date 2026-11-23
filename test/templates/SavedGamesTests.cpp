@@ -15,6 +15,8 @@
 #include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
+#include <inventory/InventoryComponents.h>
 #include <logic/CounterVocabulary.h>
 #include <movement/components/CharacterFacts.h>
 #include <participant/LocalControl.h>
@@ -31,11 +33,14 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/KeptWithZone.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneStateLists.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <format>
 #include <functional>
 #include <map>
 #include <optional>
@@ -69,14 +74,16 @@ namespace
     }
 
     void RunFps(std::string_view level, int frames, const std::filesystem::path& root, FrameScript script,
-                double tickRate = 60.0)
+                double tickRate = 60.0, std::function<void(EngineConfig&)> adjust = {})
     {
         Script = std::move(script);
         {
             TemplateModuleRun<ScriptProbe> run(TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets", level,
-                                               frames, [&root, tickRate](EngineConfig& config) {
+                                               frames, [&root, tickRate, &adjust](EngineConfig& config) {
                                                    config.Runtime.SavesRoot = root.string();
                                                    config.Runtime.FixedTickRate = tickRate;
+                                                   if (adjust)
+                                                       adjust(config);
                                                });
             EXPECT_TRUE(run.Loaded());
             EXPECT_EQ(run.Exit(), 0);
@@ -2050,4 +2057,403 @@ TEST(SavedGames, TheLevelChangeVerbTravelsKeepingTheBodyToItsArrivalAndNamesWhyI
     EXPECT_NEAR(arrived.Z, 3.0f, 0.05f);
     std::filesystem::remove_all(root);
 }
+namespace
+{
+    constexpr std::string_view kArrows = "asset://items/arrow.sdata";
+
+    ItemId DefineArrows(World& world)
+    {
+        return world.GetResource<ItemRegistry>().Define(std::string(kArrows),
+                                                        ItemDefinition{ .Name = "Arrow", .StackMax = 20 });
+    }
+
+    struct DroppedItem
+    {
+        PersistentEntityId Pickup;
+        PersistentEntityId Entry;
+        Vec3d At;
+
+        void Drop(Engine& engine, World& world, Vec3d at, std::uint32_t count)
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            if (!world.HasComponent<ItemContainer>(body))
+                world.AddComponent<ItemContainer>(body, ItemContainer{});
+            const EntityId entry = Inventory(world, FixedSimTime{}).Give(body, DefineArrows(world), count).Entry;
+            ASSERT_TRUE(entry.IsValid());
+            Entry = world.TryGet<PersistentIdComponent>(entry)->Id;
+            At = at;
+            const std::string answer =
+                TextOf(RunVerb(engine, { "inventory.drop", "entry=" + PersistentEntityIdToString(Entry),
+                                         std::format("at={},{},{}", at.X, at.Y, at.Z) }));
+            const EntityId pickup = ItemHolder(world, entry);
+            ASSERT_TRUE(world.IsAlive(pickup) && world.HasComponent<ItemPickup>(pickup)) << answer;
+            Pickup = world.TryGet<PersistentIdComponent>(pickup)->Id;
+        }
+
+        [[nodiscard]] bool LiesWhereItFell(const World& world, std::uint32_t count) const
+        {
+            const EntityId pickup = Live(world, Pickup);
+            if (!pickup.IsValid())
+                return false;
+            const LocalTransform* placed = world.TryGet<LocalTransform>(pickup);
+            const std::vector<EntityId> held = ItemsIn(world, pickup);
+            return placed != nullptr && std::abs(placed->Value.Position.X - At.X) < 1e-4f
+                && std::abs(placed->Value.Position.Y - At.Y) < 1e-4f
+                && std::abs(placed->Value.Position.Z - At.Z) < 1e-4f && held.size() == 1
+                && world.TryGet<PersistentIdComponent>(held[0])->Id == Entry
+                && world.TryGet<ItemEntry>(held[0])->Count == count && world.HasComponent<KeptWithZone>(pickup);
+        }
+    };
+
+    std::size_t PickupsIn(const World& world)
+    {
+        std::size_t count = 0;
+        world.ForEachComponent<ItemPickup>([&](EntityId, const ItemPickup&) { ++count; });
+        return count;
+    }
+
+    std::vector<GainedZoneMember> GainedIn(const DurableZoneState& zone)
+    {
+        for (const ZoneStateList& list : DecodeZoneLists(*zone.Lists).value_or(std::vector<ZoneStateList>{}))
+            if (list.Name == kGainedZoneList)
+                return DecodeGainedList(list.Payload).value_or(std::vector<GainedZoneMember>{});
+        return {};
+    }
+}
+
+TEST(SavedGames, AnItemTheBodyDropsLiesInTheLevelsZoneAndIsThereOnReturnButNotInTheNextLevel)
+{
+    const std::filesystem::path root = RootFor("drop_there_and_back");
+    DroppedItem dropped;
+    bool inZone = false;
+    bool kept = false;
+    std::size_t pickupsElsewhere = 1;
+    bool back = false;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            ASSERT_EQ(world.GetEntityPartition(LocalControlSubjectOf(world)), PersistentStoragePartition);
+            dropped.Drop(engine, world, Vec3d{ 1.5f, 0.25f, -2.0f }, 7);
+            const EntityId pickup = Live(world, dropped.Pickup);
+            inZone = world.GetEntityPartition(pickup) == engine.World().FindZone(kSceneLevelZone)->Partition;
+            kept = world.HasComponent<KeptWithZone>(pickup);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            pickupsElsewhere = PickupsIn(world);
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            back = dropped.LiesWhereItFell(world, 7);
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_TRUE(inZone) << "a drop by a body in the persistent partition lies in the level's zone";
+    EXPECT_TRUE(kept);
+    EXPECT_EQ(pickupsElsewhere, 0u) << "the dropped item followed the player into the next level";
+    EXPECT_TRUE(back) << "the dropped item was not there on return";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AnItemDroppedInTheFirstLevelIsInASaveWrittenInTheSecondAndAFreshRunGetsItBack)
+{
+    const std::filesystem::path root = RootFor("drop_save_fresh_run");
+    DroppedItem dropped;
+    int stage = 0;
+    RunFps(kFirst.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            dropped.Drop(engine, world, Vec3d{ 1.5f, 0.25f, -2.0f }, 7);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const DurableLevelState* first = LevelIn(*saved, kFirst);
+    ASSERT_NE(first, nullptr);
+    const std::vector<GainedZoneMember> gained = GainedIn(first->Zones[0]);
+    ASSERT_EQ(gained.size(), 1u) << "the first level's zone holds what it gained";
+    EXPECT_EQ(gained[0].Form, kWholeGainedForm);
+    EXPECT_EQ(WholeGainedMemberId(gained[0].Payload), dropped.Pickup);
+    const std::vector<ZoneListEntity> held = ZoneEntities(first->Zones[0].Held, kHeldZoneList);
+    ASSERT_EQ(held.size(), 1u) << "and the dropped entry beside it";
+    EXPECT_EQ(held[0].Id, dropped.Entry);
+
+    bool back = false;
+    stage = 0;
+    RunFps(kSecond.Name, 900, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            (void)DefineArrows(world);
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            EXPECT_FALSE(Resolves(world, dropped.Pickup));
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            back = dropped.LiesWhereItFell(world, 7);
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_TRUE(back) << "the item dropped in the first level did not come back in a fresh run";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ADroppedItemIsGoneAfterItsLevelIsEnteredAsAuthoredAndAfterANewGame)
+{
+    const std::filesystem::path root = RootFor("drop_authored_new_game");
+    DroppedItem first;
+    DroppedItem second;
+    bool afterAuthored = true;
+    bool entryAfterAuthored = true;
+    bool afterNewGame = true;
+    int stage = 0;
+    RunFps(kFirst.Name, 1500, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            first.Drop(engine, world, Vec3d{ 1.5f, 0.25f, -2.0f }, 3);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Authored);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            afterAuthored = Resolves(world, first.Pickup) || PickupsIn(world) > 0;
+            entryAfterAuthored = Resolves(world, first.Entry);
+            second.Drop(engine, world, Vec3d{ -1.0f, 0.25f, 2.0f }, 4);
+            EXPECT_EQ(engine.LevelChanges().Request(LevelChangeRequest::NewGame(kFirst)), LevelChangeAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine))
+        {
+            afterNewGame = Resolves(world, second.Pickup) || PickupsIn(world) > 0;
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4);
+    EXPECT_FALSE(afterAuthored) << "entering the level as authored forgets what it gained";
+    EXPECT_FALSE(entryAfterAuthored) << "and the entry that waited for it";
+    EXPECT_FALSE(afterNewGame) << "a new game forgets what every level gained";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ADroppedItemThatWasTakenIsNotBroughtBackByTheNextReturn)
+{
+    const std::filesystem::path root = RootFor("drop_taken");
+    DroppedItem dropped;
+    bool back = true;
+    int stage = 0;
+    RunFps(kFirst.Name, 1200, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            dropped.Drop(engine, world, Vec3d{ 1.5f, 0.25f, -2.0f }, 3);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            if (!world.HasComponent<ItemContainer>(body))
+                world.AddComponent<ItemContainer>(body, ItemContainer{});
+            ASSERT_EQ(Inventory(world, FixedSimTime{}).Take(Live(world, dropped.Pickup), body).Refusal,
+                      InventoryRefusal::None);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 4;
+        }
+        else if (stage == 4 && Arrived(engine))
+        {
+            back = Resolves(world, dropped.Pickup) || PickupsIn(world) > 0;
+            stage = 5;
+        }
+    });
+    ASSERT_EQ(stage, 5);
+    EXPECT_FALSE(back) << "a taken item came back";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    const ZoneId kStartZone = *ZoneIdFromString("9c76e74ceb9abd59");
+    const ZoneId kFarZone = *ZoneIdFromString("1ba7c9d40fec52ec");
+
+    void StreamBriskly(EngineConfig& config)
+    {
+        config.Runtime.StreamingLingerSeconds = 0.0;
+    }
+
+    bool Resident(const Engine& engine, ZoneId zone)
+    {
+        const RuntimeZoneRecord* record = engine.World().FindZone(zone);
+        return record != nullptr && record->State == RuntimeZoneLoadState::Resident;
+    }
+
+    bool WalkTowards(Engine& engine, World& world, float x)
+    {
+        const EntityId body = LocalControlSubjectOf(world);
+        const Vec3d at = BodyPosition(world);
+        if (std::abs(at.X - x) < 0.3f)
+            return true;
+        const float next = at.X + (x > at.X ? 0.25f : -0.25f);
+        (void)engine.Schedule().Get<PhysicsStepSystem>()->GetCharacterMovers().SetPosition(
+            world, body, Vec3d{ next, 1.0f, 0.0f });
+        return false;
+    }
+}
+
+TEST(SavedGames, AnItemDroppedInAStreamedZoneIsThereAfterTheZoneStreamsOutAndBack)
+{
+    const std::filesystem::path root = RootFor("drop_streamed");
+    DroppedItem dropped;
+    bool zoneLeft = false;
+    bool back = false;
+    int stage = 0;
+    RunFps(
+        kFirst.Name, 4000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone))
+            {
+                dropped.Drop(engine, world, Vec3d{ -2.0f, 0.25f, 3.0f }, 5);
+                EXPECT_EQ(world.GetEntityPartition(Live(world, dropped.Pickup)),
+                          engine.World().FindZone(kStartZone)->Partition);
+                stage = 2;
+            }
+            else if (stage == 2 && WalkTowards(engine, world, 32.0f) && !Resident(engine, kStartZone))
+            {
+                zoneLeft = !Resolves(world, dropped.Pickup) && engine.World().FindZone(kStartZone) == nullptr;
+                stage = 3;
+            }
+            else if (stage == 3 && WalkTowards(engine, world, 0.0f) && Resident(engine, kStartZone)
+                     && Resolves(world, dropped.Pickup))
+            {
+                back = dropped.LiesWhereItFell(world, 5);
+                stage = 4;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 4) << "the walk did not stream the zone out and back";
+    EXPECT_TRUE(zoneLeft);
+    EXPECT_TRUE(back) << "the dropped item did not come back with its zone";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AnItemDroppedInAStreamedZoneComesBackInAFreshRunWhetherOrNotItsZoneWasLoadedAtTheWrite)
+{
+    const std::filesystem::path root = RootFor("drop_streamed_saves");
+    DroppedItem dropped;
+    int stage = 0;
+    RunFps(
+        kFirst.Name, 4000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone))
+            {
+                dropped.Drop(engine, world, Vec3d{ -2.0f, 0.25f, 3.0f }, 5);
+                EXPECT_EQ(engine.Saves().RequestWrite("loaded"), SaveAdmission::Accepted);
+                stage = 2;
+            }
+            else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+            {
+                stage = 3;
+            }
+            else if (stage == 3 && WalkTowards(engine, world, 32.0f) && !Resident(engine, kStartZone))
+            {
+                EXPECT_EQ(engine.Saves().RequestWrite("away"), SaveAdmission::Accepted);
+                stage = 4;
+            }
+            else if (stage == 4 && engine.Saves().WriteStatus() == SaveStatus::Done)
+            {
+                stage = 5;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 5);
+    for (const std::string_view slot : { "loaded", "away" })
+    {
+        const std::optional<SavedGame> saved = ReadSave(SlotFile(root, slot));
+        ASSERT_TRUE(saved.has_value()) << slot;
+        const DurableLevelState* world = LevelIn(*saved, kWorld);
+        ASSERT_NE(world, nullptr) << slot;
+        const auto zone = std::ranges::find(world->Zones, kStartZone, &DurableZoneState::Zone);
+        ASSERT_NE(zone, world->Zones.end()) << slot;
+        ASSERT_EQ(GainedIn(*zone).size(), 1u) << slot;
+        ASSERT_EQ(ZoneEntities(zone->Held, kHeldZoneList).size(), 1u) << slot;
+    }
+
+    for (const std::string_view slot : { "loaded", "away" })
+    {
+        bool back = false;
+        stage = 0;
+        RunFps(
+            kFirst.Name, 4000, root,
+            [&](Engine& engine, World& world, int) {
+                if (stage == 0 && HasBody(world))
+                {
+                    (void)DefineArrows(world);
+                    EXPECT_EQ(engine.Saves().RequestRestore(std::string(slot)), SaveAdmission::Accepted);
+                    stage = 1;
+                }
+                else if (stage == 1 && RestoreArrived(engine))
+                {
+                    stage = 2;
+                }
+                else if (stage == 2 && WalkTowards(engine, world, 0.0f) && Resident(engine, kStartZone)
+                         && Resolves(world, dropped.Pickup))
+                {
+                    back = dropped.LiesWhereItFell(world, 5);
+                    stage = 3;
+                }
+            },
+            60.0, StreamBriskly);
+        EXPECT_EQ(stage, 3) << slot;
+        EXPECT_TRUE(back) << "the item dropped in the streamed zone did not come back from the save '" << slot << "'";
+    }
+    std::filesystem::remove_all(root);
+}
+
 #endif

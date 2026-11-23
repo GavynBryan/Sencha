@@ -98,7 +98,7 @@ a refusal leaves the World as it was.
 | `Give(container, definition, count)` | Fills open stacks in container order, then makes entries of up to `stack.max` units; all or none. |
 | `Take(pickup, into)` | Moves one entry the pickup holds into `into`, or gives what the pickup counts. A counted pickup applies its definition's `take.effects` to `into` scaled by the units it counts (a box of 25 shells is one effect at 25 times its magnitude), and with `keep: false` keeps nothing. An entry lying in a pickup was taken once already, so taking it back applies nothing. The pickup goes once it holds nothing. |
 | `Transfer(entry, into, count, change?)` | Moves `count` units (0 is all), open stacks first. Part of a stack moves as a new entry and the rest keeps its identity; a stack merged away entirely is spent. A whole entry moved into the container already holding it takes no new room and keeps its place, so it succeeds in a full container; part of a stack moved there is a new entry and still needs room. |
-| `Drop(entry, at, partition, change?)` | Takes the entry into a new pickup at `at`. |
+| `Drop(entry, at, partition, change?)` | Takes the entry into a new pickup at `at`, in `partition`. |
 | `Use(user, entry)` | Asks `user` to run the definition's use in the next ability pass. |
 
 **Refusals.** `Missing` (something named is gone or is not what the operation
@@ -140,7 +140,7 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 | `inventory.take` | `pickup`, `into` | `Take`; answers the entry it went into, absent for an item that is not kept |
 | `inventory.give` | `into`, `definition`, `count` (1) | `Give`; answers the entry the units went into |
 | `inventory.transfer` | `entry`, `into`, `count` (0: all), `force` | `Transfer` |
-| `inventory.drop` | `entry`, `at`, `force` | `Drop`, into its holder's zone |
+| `inventory.drop` | `entry`, `at`, `force`, `keep` (true) | `Drop`, into the zone where it lands; a kept pickup stays with that zone |
 | `inventory.use` | `entry`, `user` (its holder) | `Use` |
 | `inventory.count` (query, int) | `container`, `definition?`, `tag?`, `within` (false) | Units held, spent entries not counted, of that definition and carrying that tag; `within` counts what entries hold too |
 
@@ -186,6 +186,19 @@ What is put into an authored chest is a runtime record of an authored holder:
 while the chest's zone is away it waits in the persistent partition, and a save
 keeps it (`docs/gameplay/held-records.md`, "Records of authored holders").
 
+**Where a drop lands.** `inventory.drop` puts its pickup in the zone at `at`,
+not in the partition of whoever held the entry: the play zone of a scene
+level; in a world, the innermost resident zone whose manifest bounds hold the
+point, else the focus zone (`LoadedLevel::ZoneAt`, answered to the verb through
+the `ZonePlacement` World resource). With no level loaded (an editor preview, a
+test world) it lands beside its holder. So a drop by a body in the persistent
+partition goes with its zone when the level is left and never follows the
+player into the next one. With `keep` (the default) the pickup is marked
+`KeptWithZone`: it stays where it fell across its zone's unload and in saves,
+with its entry and count, until it is taken (`docs/gameplay/saves.md`, "What a
+zone gained"). With `keep: false` it is a passing thing, destroyed with its
+zone and its entry with it.
+
 ## Replication
 
 - **Who is sent an entry.** An entry is anchored to its holder, so it reaches
@@ -202,6 +215,6 @@ keeps it (`docs/gameplay/held-records.md`, "Records of authored holders").
 ## Not yet
 
 Recorded in `docs/deferred.md`: item display data, a dropped item's world
-scene and its fate when its zone unloads, predicted gives and transfers,
+scene, predicted gives and transfers,
 weight, volume and grid rules, change events, possessions that outlive a body,
 and shared containers.

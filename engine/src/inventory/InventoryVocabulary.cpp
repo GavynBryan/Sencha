@@ -7,6 +7,8 @@
 #include <inventory/InventoryComponents.h>
 #include <inventory/ItemDefinitionData.h>
 #include <time/SimClock.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZonePlacement.h>
 
 #include <algorithm>
 #include <limits>
@@ -146,9 +148,14 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
                                CountArgument(0, "How many units; zero moves all of it."), ItemChangeArgument() }));
     DataFieldSchema at = MakeDataField(DataFieldKind::Vector, "at", "At", "Where it lands.");
     at.Required = false;
-    (void)verbs.Declare(Verb(kInventoryDropVerb, "Drop item", "Takes an entry out of its container into a pickup.",
+    (void)verbs.Declare(Verb(kInventoryDropVerb, "Drop item",
+                             "Takes an entry out of its container into a pickup, in the zone where it lands.",
                              { MakeEntityArgument("entry", "Entry", kEntry, "What is dropped."), std::move(at),
-                               ItemChangeArgument() }));
+                               ItemChangeArgument(),
+                               Defaulted(MakeDataField(DataFieldKind::Bool, "keep", "Keep",
+                                                       "The pickup stays with its zone, across its unload and in "
+                                                       "saves, until it is taken."),
+                                         true) }));
     (void)verbs.Declare(Verb(kInventoryUseVerb, "Use item",
                              "Runs the item's use, with the entry as its source, in the next ability pass.",
                              { MakeEntityArgument("entry", "Entry", kEntry, "What is used."),
@@ -219,9 +226,18 @@ VerbAnswer InventoryOperations::Drop(const VerbInvocation& invocation)
     if (invocation.Arguments->TryGetVector(1, at))
         where.Position = Vec3d(at.Components[0], at.Components[1], at.Components[2]);
     const EntityId holder = ItemHolder(*Entities, entry);
-    const StoragePartitionId partition =
+    StoragePartitionId partition =
         Entities->IsAlive(holder) ? Entities->GetEntityPartition(holder) : StoragePartitionId::Default();
-    return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Drop(entry, where, partition, ItemChangeOf(invocation, 2)).Refusal);
+    if (const ZonePlacement* zones = Entities->TryGetResource<ZonePlacement>(); zones != nullptr && zones->PartitionAt)
+        if (const std::optional<StoragePartitionId> landed = zones->PartitionAt(where.Position))
+            partition = *landed;
+    const InventoryResult dropped = Inventory(*Entities, Clock->TimeOfTick(invocation.Tick))
+                                        .Drop(entry, where, partition, ItemChangeOf(invocation, 2));
+    bool keep = true;
+    (void)invocation.Arguments->TryGetBool(3, keep);
+    if (dropped.Refusal == InventoryRefusal::None && keep)
+        (void)KeepWithZone(*Entities, dropped.Entry);
+    return VerbAnswerOf(dropped.Refusal);
 }
 
 VerbAnswer InventoryOperations::Use(const VerbInvocation& invocation)

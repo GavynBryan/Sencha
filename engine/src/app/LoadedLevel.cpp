@@ -23,6 +23,7 @@
 #include <world/held/HeldRecords.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZonePackageImporter.h>
+#include <zone/ZonePlacement.h>
 #include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
@@ -68,9 +69,18 @@ LoadedLevel::LoadedLevel(Engine& engine, RuntimeContent& content, Logger& log)
         engine.SceneSerializers(),
         content.SceneContext(),
         engine.Runtime());
+    engine.World().Entities().SetResource(ZonePlacement{
+        .PartitionAt = [this](const Vec3d& point) -> std::optional<StoragePartitionId> {
+            const ZoneId zone = ZoneAt(point);
+            const RuntimeZoneRecord* record = zone.IsValid() ? Host.World().FindZone(zone) : nullptr;
+            return record != nullptr ? std::optional<StoragePartitionId>(record->Partition) : std::nullopt;
+        } });
 }
 
-LoadedLevel::~LoadedLevel() = default;
+LoadedLevel::~LoadedLevel()
+{
+    Host.World().Entities().SetResource(ZonePlacement{});
+}
 
 std::string LoadedLevel::WorldManifestPath(std::string_view worldName) const
 {
@@ -132,6 +142,24 @@ void LoadedLevel::CaptureState()
             capture(header.Id);
     if (!WorldSceneEntities.empty())
         CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Live);
+}
+
+ZoneId LoadedLevel::ZoneAt(const Vec3d& point) const
+{
+    const RuntimeWorld& runtime = Host.World();
+    const auto resident = [&](ZoneId zone) {
+        const RuntimeZoneRecord* record = zone.IsValid() ? runtime.FindZone(zone) : nullptr;
+        return record != nullptr && record->State == RuntimeZoneLoadState::Resident;
+    };
+    if (SceneLoaded)
+        return resident(kSceneLevelZone) ? kSceneLevelZone : ZoneId{};
+    if (!Partition.has_value() || !Partition->HasManifest())
+        return ZoneId{};
+    if (const ZoneHeader* innermost = InnermostZoneAt(Partition->Manifest(), point,
+                                                      [&](const ZoneHeader& header) { return resident(header.Id); }))
+        return innermost->Id;
+    const ZoneId focus = Partition->FocusZone();
+    return resident(focus) ? focus : ZoneId{};
 }
 
 ZoneId LoadedLevel::PlayZone() const

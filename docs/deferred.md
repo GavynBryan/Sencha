@@ -1421,15 +1421,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## A dropped item's world scene
 
 - **What:** `Inventory::Drop` makes a bare pickup with a transform holding the
-  entry. Nothing spawns a visible scene for it, and a pickup dropped into a
-  zone, with its entry, is destroyed unrecorded when the zone unloads.
+  entry. Nothing spawns a visible scene for it. A pickup `inventory.drop`
+  keeps stays with its zone (`KeptWithZone`), written whole; a scene spawned
+  for it would be lost at the first save, since a whole member keeps no
+  children.
 - **Where:** `inventory/Inventory.cpp` (`Drop`); the branch's definition field
-  `world` (a scene by asset path) was left out because nothing spawned it.
+  `world` (a scene by asset path) was left out because nothing spawned it; the
+  `from_source` gained form in "Saving what was created at run time".
 - **Trigger:** a game whose dropped items are seen and picked back up in the
-  world, or must stay where they fell across a zone's round trip. Then give
-  definitions a world scene spawned as the pickup's presentation, and keep a
-  zone's runtime pickups with the zone the way records of authored holders are
-  kept.
+  world. Then give definitions a world scene spawned as the pickup's
+  presentation, saved as its source and a patch.
 
 ## Predicting gives and transfers
 
