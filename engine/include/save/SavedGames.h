@@ -175,6 +175,9 @@ private:
     // Null when there is nothing to write to disk.
     [[nodiscard]] std::shared_ptr<const SavedGame> Capture(const std::string& slot, const std::string& arrival);
     [[nodiscard]] bool WritesTo(std::string_view slot) const;
+    [[nodiscard]] bool RestoresFrom(std::string_view slot) const;
+    [[nodiscard]] bool DeletedSince(std::size_t deletedBefore, std::string_view slot) const;
+    void Answered();
     void StartWrite(InFlightWrite write);
     void FinishWrite(std::string failure);
     void CommitRestore();
@@ -209,4 +212,7 @@ private:
     std::string RestoreReason;
     std::optional<InFlightWrite> InFlight;
     AsyncTaskHandle ReadTask;
+    std::string RestoringSlot;
+    std::vector<std::string> DeletedSinceListing;
+    std::uint32_t ListingsOutstanding = 0;
 };

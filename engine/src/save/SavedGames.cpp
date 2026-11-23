@@ -268,6 +268,7 @@ void SavedGames::SetSummary(SavedGameSummaryDefinition definition)
 
 void SavedGames::RequestList(std::function<void(std::vector<SaveSlotSummary>)> done)
 {
+    ++ListingsOutstanding;
     (void)Host.Tasks().Submit<std::vector<SaveSlotSummary>>(
         [files = Files, slot = UnwrittenSlot, unwritten = Unwritten] {
             std::vector<SaveSlotSummary> slots = files.has_value() ? ListSaveSlots(*files).Slots
@@ -276,29 +277,55 @@ void SavedGames::RequestList(std::function<void(std::vector<SaveSlotSummary>)> d
                 ListUnwritten(slots, *slot, *unwritten);
             return slots;
         },
-        std::move(done));
+        [this, deletedBefore = DeletedSinceListing.size(), done = std::move(done)](std::vector<SaveSlotSummary> slots) {
+            std::erase_if(slots, [&](const SaveSlotSummary& listed) { return DeletedSince(deletedBefore, listed.Slot); });
+            Answered();
+            done(std::move(slots));
+        });
 }
 
 void SavedGames::RequestThumbnail(std::string slot, std::function<void(std::optional<SavedGameThumbnail>)> done)
 {
     const std::shared_ptr<const SavedGame> unwritten = UnwrittenSlot == slot ? Unwritten : nullptr;
+    ++ListingsOutstanding;
     (void)Host.Tasks().Submit<std::optional<SavedGameThumbnail>>(
-        [files = Files, slot = std::move(slot), unwritten]() -> std::optional<SavedGameThumbnail> {
+        [files = Files, slot, unwritten]() -> std::optional<SavedGameThumbnail> {
             if (unwritten != nullptr)
                 return unwritten->Thumbnail.has_value() ? DecodeSavedGameThumbnail(*unwritten->Thumbnail) : std::nullopt;
             if (!files.has_value() || !SaveSlotFiles::IsSlotName(slot))
                 return std::nullopt;
             return ReadSaveSlotThumbnail(*files, slot);
         },
-        std::move(done));
+        [this, slot, deletedBefore = DeletedSinceListing.size(), done = std::move(done)](
+            std::optional<SavedGameThumbnail> thumbnail) {
+            if (DeletedSince(deletedBefore, slot))
+                thumbnail.reset();
+            Answered();
+            done(std::move(thumbnail));
+        });
+}
+
+bool SavedGames::DeletedSince(std::size_t deletedBefore, std::string_view slot) const
+{
+    return std::ranges::find(DeletedSinceListing.begin() + static_cast<std::ptrdiff_t>(deletedBefore),
+                             DeletedSinceListing.end(), slot)
+        != DeletedSinceListing.end();
+}
+
+void SavedGames::Answered()
+{
+    if (--ListingsOutstanding == 0)
+        DeletedSinceListing.clear();
 }
 
 SaveAdmission SavedGames::RequestDelete(std::string slot)
 {
     if (!SaveSlotFiles::IsSlotName(slot))
         return SaveAdmission::BadSlot;
-    if (WritesTo(slot))
+    if (WritesTo(slot) || RestoresFrom(slot))
         return SaveAdmission::Busy;
+    if (ListingsOutstanding > 0)
+        DeletedSinceListing.push_back(slot);
     Touched.erase(slot);
     if (UnwrittenSlot == slot)
     {
@@ -339,6 +366,12 @@ SaveAdmission SavedGames::RequestCopy(std::string from, std::string to)
 bool SavedGames::WritesTo(std::string_view slot) const
 {
     return WriteWaiting == slot || (InFlight.has_value() && (InFlight->Slot == slot || InFlight->From == slot));
+}
+
+bool SavedGames::RestoresFrom(std::string_view slot) const
+{
+    return RestoreWaiting == slot
+        || ((Restoring == RestoreProgress::Reading || Restoring == RestoreProgress::Loading) && RestoringSlot == slot);
 }
 
 bool SavedGames::Holds(std::string_view slot) const
@@ -509,6 +542,7 @@ void SavedGames::Finish()
 
 void SavedGames::Restore(const std::string& slot)
 {
+    RestoringSlot = slot;
     if (Unwritten != nullptr && UnwrittenSlot == slot)
         return BeginChange(Unwritten);
     if (!Files.has_value())

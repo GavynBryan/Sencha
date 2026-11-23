@@ -1562,7 +1562,9 @@ which moves its contract revision.
 
 `SavedGames` gains `SetSummary`, `RequestList`, `RequestThumbnail`,
 `RequestDelete` and `RequestCopy`, and its private in-flight write record
-gains the copy's source and a work function; `Holds` reads file prefixes.
+gains the copy's source and a work function; it keeps the slot of the restore
+under way and the slots deleted while a listing is outstanding; `Holds` reads
+file prefixes.
 `SavedGameSummaryDefinition` is new. `save/SaveSlotListing.h` is new:
 `SaveSlotSummary`, `SaveSlotListing`, `ListSaveSlots`, `ReadSaveSlotSummary`
 and `ReadSaveSlotThumbnail`. `save/SavedGame.h` gains `SavedGameThumbnail`,

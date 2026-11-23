@@ -560,15 +560,20 @@ slot holds:
   `done` on the owner thread at a later drain, never inside the request. The
   one save not yet on disk ("Restoring") is listed from memory in its slot's
   place, as a restore would read it. Every thumbnail a listing passes is read
-  with it, so its size is the game's to keep small.
+  with it, so its size is the game's to keep small. A slot deleted after the
+  request is left out of the answer, though the files were read before the
+  delete.
 - **`RequestThumbnail(slot, done)`** reads one slot's picture the same way, or
-  answers nothing.
+  answers nothing, as it does for a slot deleted after the request.
 - **`RequestDelete(slot)`** removes the slot's file and its backup at once and
   forgets the slot: `Remembers` is false after it and the unwritten save held
   for it is dropped, so a deleted slot can come back neither from disk nor from
   memory. It answers `Busy` while a write of that slot waits or is on its way
-  to disk, or a copy reads or writes it; another slot's write does not hold it
-  up. A file that cannot be removed is logged.
+  to disk, while a copy reads or writes it, and while a restore of it waits,
+  reads or loads, until the restore's bodies are back or it fails, so a
+  restore never finishes from bytes read before the delete; another slot's
+  write or restore does not hold it up. A file that cannot be removed is
+  logged.
 - **`RequestCopy(from, to)`** is a write of `to` with what a restore of `from`
   reads: `to`'s file and backup become `from`'s, byte for byte, or, when
   `from`'s latest save is the one held in memory, that save, with `from`'s

@@ -17,6 +17,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/Inventory.h>
+#include <jobs/AsyncTaskQueue.h>
 #include <inventory/InventoryComponents.h>
 #include <logic/CounterVocabulary.h>
 #include <movement/components/CharacterFacts.h>
@@ -39,14 +40,18 @@
 #include <zone/ZoneStateLists.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <format>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -2815,6 +2820,131 @@ TEST(SavedGames, TheDeleteAndCopyVerbsAnswerWhyTheyRefuse)
     EXPECT_NE(deleted.find("accepted"), std::string::npos) << deleted;
     EXPECT_TRUE(heldAfterCopy);
     EXPECT_FALSE(heldAfterDelete);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ADeleteDuringThatSlotsRestoreIsBusyAndTheSlotIsGoneOnceItIsAccepted)
+{
+    const std::filesystem::path root = RootFor("delete_during_restore");
+    SaveAdmission whilePending = SaveAdmission::Accepted;
+    SaveAdmission elsewhere = SaveAdmission::Busy;
+    std::vector<SaveAdmission> inFlight;
+    SaveAdmission afterArrival = SaveAdmission::Busy;
+    bool remembered = true;
+    bool held = true;
+    std::optional<std::vector<SaveSlotSummary>> listed;
+    std::string failure;
+    int stage = 0;
+    RunFps("levels/bumper", 600, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(saves.RequestWrite("restored"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(saves.RequestWrite("elsewhere"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(saves.RequestRestore("restored"), SaveAdmission::Accepted);
+            whilePending = saves.RequestDelete("restored");
+            elsewhere = saves.RequestDelete("elsewhere");
+            stage = 3;
+        }
+        else if (stage == 3 && !RestoreArrived(engine))
+        {
+            if (saves.RestoreStatus() == RestoreProgress::Reading || saves.RestoreStatus() == RestoreProgress::Loading)
+                inFlight.push_back(saves.RequestDelete("restored"));
+        }
+        else if (stage == 3)
+        {
+            afterArrival = saves.RequestDelete("restored");
+            remembered = saves.Remembers("restored");
+            held = saves.Holds("restored");
+            saves.RequestList([&](std::vector<SaveSlotSummary> slots) { listed = std::move(slots); });
+            EXPECT_EQ(saves.RequestRestore("restored"), SaveAdmission::Accepted);
+            stage = 4;
+        }
+        else if (stage == 4 && saves.RestoreStatus() == RestoreProgress::Failed && listed.has_value())
+        {
+            failure = saves.RestoreFailure();
+            stage = 5;
+        }
+    });
+    EXPECT_EQ(whilePending, SaveAdmission::Busy) << "a delete while that slot's restore waits";
+    EXPECT_EQ(elsewhere, SaveAdmission::Accepted) << "another slot's delete is not held up by the restore";
+    ASSERT_EQ(stage, 5) << "the restore, or the restore after the delete, did not finish";
+    ASSERT_FALSE(inFlight.empty()) << "the restore was never seen reading or loading";
+    for (const SaveAdmission admission : inFlight)
+        EXPECT_EQ(admission, SaveAdmission::Busy) << "a delete while that slot's restore is under way";
+    EXPECT_EQ(afterArrival, SaveAdmission::Accepted);
+    EXPECT_FALSE(remembered);
+    EXPECT_FALSE(held);
+    EXPECT_EQ(Listed(*listed, "restored"), nullptr);
+    EXPECT_NE(failure.find("restored"), std::string::npos) << failure;
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    bool WaitForTheLaneToPass(Engine& engine)
+    {
+        auto passed = std::make_shared<std::atomic<bool>>(false);
+        (void)engine.Tasks().Submit<int>(
+            [passed] {
+                passed->store(true);
+                return 0;
+            },
+            [](int) {});
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!passed->load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        return passed->load();
+    }
+}
+
+TEST(SavedGames, AListingOrAThumbnailAskedForBeforeADeleteDoesNotAnswerWithTheDeletedSlot)
+{
+    const std::filesystem::path root = RootFor("listing_before_delete");
+    std::optional<std::vector<SaveSlotSummary>> listed;
+    std::optional<std::optional<SavedGameThumbnail>> pictured;
+    bool readBeforeTheDelete = false;
+    int stage = 0;
+    RunFps("levels/bumper", 480, root, [&](Engine& engine, World& world, int) {
+        SavedGames& saves = engine.Saves();
+        if (stage == 0 && HasBody(world))
+        {
+            saves.SetSummary({ .Describe = {},
+                               .Thumbnail = [](const World&) { return std::optional<SavedGameThumbnail>(Picture()); } });
+            EXPECT_EQ(saves.RequestWrite("fleeting"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(saves.RequestWrite("staying"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && saves.WriteStatus() == SaveStatus::Done)
+        {
+            saves.RequestList([&](std::vector<SaveSlotSummary> slots) { listed = std::move(slots); });
+            saves.RequestThumbnail("fleeting", [&](std::optional<SavedGameThumbnail> picture) { pictured = std::move(picture); });
+            readBeforeTheDelete = WaitForTheLaneToPass(engine) && !listed.has_value() && !pictured.has_value();
+            EXPECT_EQ(saves.RequestDelete("fleeting"), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && listed.has_value() && pictured.has_value())
+        {
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4) << "the listing and the thumbnail did not both arrive";
+    ASSERT_TRUE(readBeforeTheDelete) << "the slot files were not read before the delete, so this proves nothing";
+    EXPECT_EQ(Listed(*listed, "fleeting"), nullptr) << "a listing answered with a slot deleted since it was asked for";
+    EXPECT_NE(Listed(*listed, "staying"), nullptr);
+    EXPECT_FALSE(pictured->has_value()) << "a thumbnail answered for a slot deleted since it was asked for";
     std::filesystem::remove_all(root);
 }
 
