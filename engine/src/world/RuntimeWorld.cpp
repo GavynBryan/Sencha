@@ -140,6 +140,8 @@ bool RuntimeWorld::CancelZoneImport(ZoneId zone)
         return false;
 
     const StoragePartitionId partition = record->Partition;
+    ParkHeldRecords(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, partition));
+    (void)DispatchPartitionMoves(Entities_);
     (void)Entities_.DestroyPartition(partition);
     [[maybe_unused]] const std::size_t erased = PartitionByZone_.erase(zone);
     assert(erased == 1 && "Cancelled import was missing from ZoneId index");

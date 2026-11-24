@@ -6,6 +6,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/Held.h>
+#include <world/held/HeldRecordForms.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
@@ -238,9 +239,12 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
-    const ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
     const ZoneStateSerialization* kept = world.TryGetResource<ZoneStateSerialization>();
     const bool keepsGained = kept != nullptr && kept->Serializers != nullptr;
+    const bool writes = keepsGained && kept->Context != nullptr && memory != nullptr && scope.IsValid();
+    std::vector<EntityId> durable;
+    std::vector<EntityId> session;
     std::vector<EntityId> records;
     for (const EntityId holder : holders)
     {
@@ -259,14 +263,32 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
         if (forgotten == ZoneStateForgetting::AtDetach)
             continue;
         records.assign(held.begin(), held.end());
+        std::erase_if(records, [&](EntityId record) { return HasAuthoredPersistentId(world, record); });
+        if (writes)
+        {
+            std::vector<EntityId>& into = authored || forgotten == ZoneStateForgetting::Never ? durable : session;
+            into.insert(into.end(), records.begin(), records.end());
+            continue;
+        }
         for (const EntityId record : records)
         {
-            if (HasAuthoredPersistentId(world, record))
-                continue;
             index->Await(record, id, scope);
             (void)world.MoveEntityToPartition(record, PersistentStoragePartition);
         }
     }
+    if (!writes || (durable.empty() && session.empty()))
+        return;
+    const std::vector<EntityId> durableClosure = HeldRecordClosure(world, *index, std::move(durable));
+    const std::vector<EntityId> sessionClosure = HeldRecordClosure(world, *index, std::move(session));
+    for (const std::vector<EntityId>* closure : { &durableClosure, &sessionClosure })
+        for (const EntityId record : *closure)
+            (void)EnsurePersistentId(world, record);
+    memory->RecordHeld(scope, WriteHeldRecords(world, durableClosure, *kept->Serializers, *kept->Context),
+                       WriteHeldRecords(world, sessionClosure, *kept->Serializers, *kept->Context));
+    for (const std::vector<EntityId>* closure : { &durableClosure, &sessionClosure })
+        for (auto record = closure->rbegin(); record != closure->rend(); ++record)
+            if (world.IsAlive(*record))
+                world.DestroyEntity(*record);
 }
 
 void SetAsideHeldRecords(World& world, ZoneStateLevelId level)

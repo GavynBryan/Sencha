@@ -1620,3 +1620,14 @@ slot changes meaning; `SceneFieldCodec` specializations gain
 `GainedMemberOf`, `GainedImageOf` and `RecordGainedImage`, so its layout moves.
 The save format does not change: the filter decides only what a capture
 writes again (`docs/gameplay/saves.md`, "Capture at scale").
+
+## v72
+
+`ZoneStateStore` gains `RecordHeld` and `TakeHeld` and two encoded lists per
+zone record, so its layout moves; `Install` takes each zone's `held` list and
+`ExportDurable` gives it back. `world/held/HeldRecordForms.h` is new
+(`HeldRecordClosure`, `WriteHeldRecords`, `MakeHeldRecord`).
+`RestoreLevelHeldRecords` (`save/HeldRecordSaves.h`) and
+`SavedGames::RestoreHeldLists` are removed: a restore's `held` lists go into
+the zone store and are made when their zones import. The save format does not
+change: the store holds exactly the `held` list a save already wrote.

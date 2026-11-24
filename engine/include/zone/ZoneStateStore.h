@@ -26,7 +26,7 @@ struct DurableZoneState
     ZoneId Zone;
     // destroyed, changed, and any list this build does not read, as read.
     EncodedZoneLists Lists;
-    // Records held by this zone's entities: filled for a save, never kept by the store.
+    // The `held` list: records held by this zone's entities.
     EncodedZoneLists Held;
 };
 
@@ -109,6 +109,10 @@ public:
     [[nodiscard]] ZoneCaptureImage* GainedImageOf(ZoneStateScope scope, PersistentEntityId id);
     void RecordGainedImage(ZoneStateScope scope, PersistentEntityId id, ZoneCaptureImage image);
 
+    // Records the zone's entities held when it left, made again when it imports; `session` ones are never saved.
+    void RecordHeld(ZoneStateScope scope, std::vector<ZoneListEntity> durable, std::vector<ZoneListEntity> session);
+    [[nodiscard]] std::vector<ZoneListEntity> TakeHeld(ZoneStateScope scope);
+
     // The zone's sensors and what was inside each at a capture; each pair is forgotten with its sensor.
     void RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs);
     [[nodiscard]] std::vector<SensorSeed> OccupiedOf(ZoneStateScope scope) const;
@@ -181,6 +185,9 @@ private:
         std::vector<ZoneStateList> Carried;
         // The never-forgotten part as a save holds it; null when stale or empty.
         EncodedZoneLists Encoded;
+        // While the zone is away: the `held` list a save holds, and the records no save holds.
+        EncodedZoneLists Held;
+        EncodedZoneLists SessionHeld;
     };
 
     [[nodiscard]] static ScopeKey KeyOf(ZoneStateScope scope) { return { scope.Level.Value, scope.Zone.Value }; }

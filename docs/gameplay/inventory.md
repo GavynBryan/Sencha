@@ -183,8 +183,10 @@ records the authored one gone and never makes it again beside the one the
 player carries.
 
 What is put into an authored chest is a runtime record of an authored holder:
-while the chest's zone is away it waits in the persistent partition, and a save
-keeps it (`docs/gameplay/held-records.md`, "Records of authored holders").
+while the chest's zone is away it is bytes in the zone's record in a game that
+keeps level state, and a live entity waiting in the persistent partition in one
+that does not; a save keeps it either way (`docs/gameplay/held-records.md`,
+"Records of authored holders").
 
 **Where a drop lands.** `inventory.drop` puts its pickup in the zone at `at`,
 not in the partition of whoever held the entry: the play zone of a scene

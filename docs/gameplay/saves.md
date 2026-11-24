@@ -338,18 +338,20 @@ lands").
 - **Identity.** Its id is a runtime one; the importer refuses runtime ids in a
   package, so a gained entity cannot take an authored one's place, and the
   saved id counter keeps later mints clear of restored ones.
-- **What it holds.** Its records (the entry under a dropped pickup) are parked
-  at detach and written in the zone's `held` list exactly as an authored
-  chest's are ("Held records"), except that what an `at_restore` gained
-  entity holds is not written to a save, since the entity is not.
+- **What it holds.** Its records (the entry under a dropped pickup) are
+  written into the zone's `held` list at detach and made again after it at
+  import, exactly as an authored chest's are ("Held records"), except that what
+  an `at_restore` gained entity holds is not written to a save, since the
+  entity is not.
 - **Restore.** When the zone imports, inside its hidden import, after its
   authored entities exist and its authored set is recorded, each member is
   made in the zone's partition with its id and the marker, then its record is
-  read (`ReadEntityRecord`). Its id arriving lists the records waiting for it.
-  Being before the zone is published, residency systems see gained entities
-  arrive with their zone. A member that does not read whole is dropped from
-  the store and logged as an error naming it and the component, and the
-  records it held are destroyed with it, counted in the same line. A member
+  read (`ReadEntityRecord`); the records the zone holds are made after every
+  member. Being before the zone is published, residency systems see gained
+  entities arrive with their zone. A member that does not read whole is
+  dropped from the store and logged as an error naming it and the component;
+  the records it held are then dropped as records whose holder did not arrive,
+  logged with their count, rather than left waiting for it. A member
   naming an authored id is refused the same way; one whose id a live entity
   already has is left in the store and not made. A client imports its zone
   as authored and makes none.
@@ -430,9 +432,11 @@ level entity, then what those records hold, to the nesting bound
 (`docs/gameplay/held-records.md`). What a level entity or a gained entity holds (a placed
 chest's contents, a dropped item's entry), resident or waiting for its zone, is
 the same closure from that holder, written in the `held` list of the holder's
-level and zone (`CaptureLevelHeldRecords`); on restore each record waits for its holder under
-that level and zone, and a record of a level other than the restored one is set
-aside until that level is entered. Counters and inventory are kept this way. A
+level and zone (`CaptureLevelHeldRecords` for resident holders and live waiting
+records; the zone store's own list for an absent zone, `docs/gameplay/held-records.md`,
+"Records of authored holders"). A restore installs every zone's `held` list
+into the zone store with the rest of the save's levels, and each zone's
+records are made when it imports. Counters and inventory are kept this way. A
 record content authored is not saved, since its zone makes it again; a record
 that stopped being what content authored took a runtime id when it changed.
 
@@ -450,14 +454,15 @@ saved; one still without an id after that is logged and left out.
 Restoring destroys every runtime record the index lists, the old session's, at
 once (a save without this section restores it as empty, which does the same),
 so none can collide with a saved id, and leaves what the new level's content
-authored; then it creates each saved record in the persistent
+authored; then it creates each saved record of the section in the persistent
 partition with its id and its components. A record of the world is listed at
-once. A record of a body, an authored holder or a gained one waits for an entity
-with its holder's persistent id: the restored body, the chest or the dropped
-pickup when its zone imports, takes that id, and its records move under it, follow it into its partition and
-become relevant to its owner. A saved record that does not load whole, such as
-a counter naming a tag the content no longer declares, is not restored and is
-reported.
+once. A record of a body waits for an entity with its holder's persistent id:
+the restored body takes that id, and its records move under it, follow it into
+its partition and become relevant to its owner. A record of an authored or
+gained holder comes from its zone's `held` list instead, made inside the zone's
+import under a holder already there. A saved record that does not load whole,
+such as a counter naming a tag the content no longer declares, is not restored
+and is reported.
 
 ## Writing
 
@@ -600,9 +605,10 @@ a count of lists), each list a name, a list version and a length-prefixed
 payload. No record refers to bytes outside itself, so an unchanged zone's
 bytes are copied from one save into the next without decoding: the zone store
 holds a zone that is not loaded as that encoded blob (`EncodedZoneLists`) and
-parses it only when the zone imports, and a write copies the pointer. A zone
-holding `at_restore` state stays parsed while it is away, since that state is
-not in the blob. The known lists, at version 1:
+parses it only when the zone imports, and a write copies the pointer; the
+records its entities held, in a game that keeps level state, are a second blob,
+the zone's `held` list, copied the same way. A zone holding `at_restore` state
+stays parsed while it is away, since that state is not in the blob. The known lists, at version 1:
 
 | List | Payload |
 |---|---|
@@ -709,5 +715,4 @@ Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, a body'
 bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
 a gained entity saved as its prefab and a patch, carrying an entity other than
 the body across a level change, a capture spread over frames or taken off the
-owner thread, waiting records serialised instead of kept alive, and restoring
-inside a network session.
+owner thread, and restoring inside a network session.

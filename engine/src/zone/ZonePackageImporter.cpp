@@ -8,6 +8,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/HeldRecordForms.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
@@ -377,10 +378,7 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
         if (std::string failed; !ReadEntityRecord(world, entity, saved->Value, *patches.Serializers,
                                                   *patches.Context, &failed))
         {
-            const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
-            log.Error("zone state: what the zone gained, {}, does not read its '{}'; it is dropped, and the {} "
-                      "records it held with it",
-                      named, failed, index != nullptr ? index->RecordsOf(entity).size() : std::size_t{ 0 });
+            log.Error("zone state: what the zone gained, {}, does not read its '{}'; it is dropped", named, failed);
             world.DestroyEntity(entity);
             patches.Store->ForgetGained(patches.Scope, member.Id);
             continue;
@@ -389,6 +387,33 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
         patches.Store->RecordGainedImage(patches.Scope, member.Id, imager.Gained(entity));
         made.push_back(entity);
     }
+}
+
+void MakeHeldRecords(World& world, StoragePartitionId partition, ZoneStateStore& store, ZoneStateScope scope,
+                     const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
+{
+    const std::vector<ZoneListEntity> held = store.TakeHeld(scope);
+    if (held.empty())
+        return;
+    std::vector<EntityId> made;
+    for (const ZoneListEntity& record : held)
+        if (const EntityId entity = MakeHeldRecord(world, partition, record, serializers, context); entity.IsValid())
+            made.push_back(entity);
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr)
+        return;
+    std::vector<std::pair<PersistentEntityId, std::size_t>> dropped;
+    for (const EntityId entity : made)
+        if (const PersistentEntityId holder = index->AwaitedHolderOf(entity); holder.IsValid())
+        {
+            const auto counted = std::ranges::find(dropped, holder, &std::pair<PersistentEntityId, std::size_t>::first);
+            (counted != dropped.end() ? counted->second : dropped.emplace_back(holder, 0).second) += 1;
+            world.DestroyEntity(entity);
+        }
+    for (const auto& [holder, count] : dropped)
+        context.Logging->GetLogger<ZonePackageImport>().Error(
+            "zone state: {} held records waiting for {}, which did not arrive, are dropped", count,
+            PersistentEntityIdToString(holder));
 }
 
 struct BaselineRules
@@ -705,10 +730,11 @@ bool ImportPackageIntoPartitionImpl(
     }
     std::vector<EntityId> gained;
     if (patches.Store != nullptr)
-    {
         MakeGainedMembers(world, partition, patches, worldHasTransforms, gained);
+    if (zoneState != nullptr && serializers != nullptr && sceneContext != nullptr && IsSimulationAuthority(world))
+        MakeHeldRecords(world, partition, *zoneState, stateScope, *serializers, *sceneContext);
+    if (patches.Store != nullptr)
         SeedOccupancy(world, *patches.Store, stateScope);
-    }
 
     // The caller's own record of what it made -- which entity is the root, and
     // which are the group a later teardown has to take with it. Only on

@@ -3,11 +3,35 @@
 #include <core/json/JsonEquals.h>
 
 #include <algorithm>
+#include <iterator>
 #include <unordered_set>
 #include <utility>
 
 namespace
 {
+    std::vector<ZoneListEntity> HeldIn(const EncodedZoneLists& encoded)
+    {
+        std::vector<ZoneListEntity> records;
+        const std::optional<std::vector<ZoneStateList>> lists =
+            encoded != nullptr ? DecodeZoneLists(*encoded) : std::nullopt;
+        if (lists.has_value())
+            for (const ZoneStateList& list : *lists)
+                if (list.Name == kHeldZoneList && list.Version <= kZoneListVersion)
+                    if (std::optional<std::vector<ZoneListEntity>> entities = DecodeEntityList(list.Payload))
+                        std::ranges::move(*entities, std::back_inserter(records));
+        return records;
+    }
+
+    void AppendHeld(EncodedZoneLists& encoded, std::vector<ZoneListEntity> records)
+    {
+        if (records.empty())
+            return;
+        std::vector<ZoneListEntity> held = HeldIn(encoded);
+        std::ranges::move(records, std::back_inserter(held));
+        const ZoneStateList list{ std::string(kHeldZoneList), kZoneListVersion, EncodeEntityList(held) };
+        encoded = EncodeZoneLists(std::span(&list, 1));
+    }
+
     void SortGained(std::vector<GainedEntityState>& gained)
     {
         std::ranges::stable_sort(gained, [](const GainedEntityState& a, const GainedEntityState& b) {
@@ -239,7 +263,7 @@ void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const Persist
         record.Authored.clear();
         record.GainedImages.clear();
         Close(record);
-        if (!record.Parsed && record.Encoded == nullptr)
+        if (!record.Parsed && record.Encoded == nullptr && record.Held == nullptr && record.SessionHeld == nullptr)
             Zones_.erase(KeyOf(scope));
     }
 }
@@ -345,6 +369,28 @@ std::span<const GainedEntityState> ZoneStateStore::GainedOf(ZoneStateScope scope
     return record != nullptr ? std::span<const GainedEntityState>(record->Gained) : std::span<const GainedEntityState>{};
 }
 
+void ZoneStateStore::RecordHeld(ZoneStateScope scope, std::vector<ZoneListEntity> durable,
+                                std::vector<ZoneListEntity> session)
+{
+    if (!scope.IsValid() || (durable.empty() && session.empty()))
+        return;
+    ZoneRecord& record = Open(scope);
+    AppendHeld(record.Held, std::move(durable));
+    AppendHeld(record.SessionHeld, std::move(session));
+}
+
+std::vector<ZoneListEntity> ZoneStateStore::TakeHeld(ZoneStateScope scope)
+{
+    ZoneRecord* record = Find(scope);
+    if (record == nullptr)
+        return {};
+    std::vector<ZoneListEntity> records = HeldIn(record->Held);
+    std::ranges::move(HeldIn(record->SessionHeld), std::back_inserter(records));
+    record->Held = nullptr;
+    record->SessionHeld = nullptr;
+    return records;
+}
+
 void ZoneStateStore::RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs)
 {
     if (!scope.IsValid())
@@ -440,13 +486,13 @@ void ZoneStateStore::ForgetLevel(const LevelReference& level)
 
 std::vector<DurableLevelState> ZoneStateStore::ExportDurable() const
 {
-    std::vector<std::pair<ScopeKey, EncodedZoneLists>> zones;
+    std::vector<std::pair<ScopeKey, const ZoneRecord*>> zones;
     for (auto& [key, record] : Zones_)
     {
         if (record.Parsed && record.Encoded == nullptr)
             record.Encoded = Encode(record);
-        if (record.Encoded != nullptr)
-            zones.emplace_back(key, record.Encoded);
+        if (record.Encoded != nullptr || record.Held != nullptr)
+            zones.emplace_back(key, &record);
     }
     const auto levelOrder = [&](std::uint32_t a, std::uint32_t b) {
         const LevelReference& left = Levels_[a - 1];
@@ -459,11 +505,11 @@ std::vector<DurableLevelState> ZoneStateStore::ExportDurable() const
         return a.first.Zone < b.first.Zone;
     });
     std::vector<DurableLevelState> durable;
-    for (auto& [key, lists] : zones)
+    for (const auto& [key, record] : zones)
     {
         if (durable.empty() || durable.back().Level != Levels_[key.Level - 1])
             durable.push_back(DurableLevelState{ Levels_[key.Level - 1], {} });
-        durable.back().Zones.push_back(DurableZoneState{ ZoneId{ key.Zone }, std::move(lists), nullptr });
+        durable.back().Zones.push_back(DurableZoneState{ ZoneId{ key.Zone }, record->Encoded, record->Held });
     }
     return durable;
 }
@@ -473,11 +519,12 @@ void ZoneStateStore::Install(std::span<const DurableLevelState> durable)
     Zones_.clear();
     for (const DurableLevelState& level : durable)
         for (const DurableZoneState& zone : level.Zones)
-            if (zone.Lists != nullptr)
+            if (zone.Lists != nullptr || zone.Held != nullptr)
             {
                 ZoneRecord& record = Zones_[KeyOf(Scope(level.Level, zone.Zone))];
                 record = ZoneRecord{};
                 record.Parsed = false;
                 record.Encoded = zone.Lists;
+                record.Held = zone.Held;
             }
 }

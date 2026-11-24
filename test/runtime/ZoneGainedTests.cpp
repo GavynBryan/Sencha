@@ -220,14 +220,15 @@ TEST_F(ZoneGained, ADroppedItemIsThereWithItsEntryAfterItsZoneStreamsOutAndBack)
     const PersistentEntityId id = IdOf(pickup);
     EXPECT_FALSE(IsAuthoredPersistentEntityId(id));
     const EntityId entry = Held(pickup).at(0);
+    const PersistentEntityId entryId = IdOf(entry);
 
     Detach();
     EXPECT_FALSE(Resolve(id).IsValid());
-    EXPECT_TRUE(Entities().IsAlive(entry)) << "the entry waits for its pickup";
+    EXPECT_FALSE(Entities().IsAlive(entry)) << "the entry waits in its zone's record, not as an entity";
 
     Import();
     EXPECT_TRUE(LiesAt(id, kRoom, kSpot, 3)) << "the dropped item did not come back with its zone";
-    EXPECT_EQ(Held(Resolve(id)), std::vector{ entry });
+    EXPECT_EQ(Held(Resolve(id)), std::vector{ Resolve(entryId) });
 }
 
 TEST_F(ZoneGained, ATakenItemIsNotBroughtBack)
@@ -336,19 +337,24 @@ TEST_F(ZoneGained, AMemberThatDoesNotReadWholeIsDroppedWithWhatItHeldAndReported
     Import();
     const EntityId pickup = Drop(3, kSpot);
     const PersistentEntityId id = IdOf(pickup);
-    const EntityId entry = Held(pickup).at(0);
+    const PersistentEntityId entry = IdOf(Held(pickup).at(0));
     Detach();
-    ASSERT_TRUE(Entities().IsAlive(entry));
+    const std::vector<DurableLevelState> written = Store().ExportDurable();
+    ASSERT_EQ(written.size(), 1u);
+    const EncodedZoneLists held = written[0].Zones.at(0).Held;
+    ASSERT_NE(held, nullptr) << "the entry waits in the zone's record";
 
     const GainedZoneMember broken{ std::string(kWholeGainedForm),
                                    EncodeWholeGainedMember({ id, *JsonParse(R"({"future_lock":{"pins":3}})") }) };
     const ZoneStateList list{ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(std::span(&broken, 1)) };
     Store().Install(std::vector{ DurableLevelState{
-        kLevel, { DurableZoneState{ kRoom, EncodeZoneLists(std::span(&list, 1)), nullptr } } } });
+        kLevel, { DurableZoneState{ kRoom, EncodeZoneLists(std::span(&list, 1)), held } } } });
     Import();
     EXPECT_FALSE(Resolve(id).IsValid());
-    EXPECT_FALSE(Entities().IsAlive(entry)) << "what it held went with it";
-    EXPECT_EQ(Log.Mentioning(Log.Errors, PersistentEntityIdToString(id)), 1u);
+    EXPECT_FALSE(Resolve(entry).IsValid()) << "what it held went with it";
+    EXPECT_TRUE(Entities().GetResource<HeldRecordIndex>().AwaitingRecords().empty()) << "and does not wait for it";
+    EXPECT_EQ(Log.Mentioning(Log.Errors, PersistentEntityIdToString(id)), 2u);
+    EXPECT_EQ(Log.Mentioning(Log.Errors, "did not arrive"), 1u);
     EXPECT_EQ(Log.Mentioning(Log.Errors, "future_lock"), 1u);
     EXPECT_TRUE(Store().GainedOf(Scope()).empty());
 }
@@ -397,17 +403,18 @@ TEST_F(ZoneGained, ASaveHoldsWhatEveryZoneGainedAndAFreshWorldGetsItBackWhetherO
             return record != nullptr ? record->StateScope : ZoneStateScope{};
         },
         Serializers, Context);
-    ASSERT_EQ(held.size(), 2u) << "each zone's dropped entry is written under that zone";
+    ASSERT_EQ(held.size(), 1u) << "the loaded zone's dropped entry is written under that zone";
+    EXPECT_EQ(held[0].Scope, Scope(kRoom));
+    ASSERT_EQ(durable.size(), 1u);
+    EXPECT_TRUE(std::ranges::any_of(durable[0].Zones, [&](const DurableZoneState& zone) {
+        return zone.Zone == kHall && zone.Held != nullptr;
+    })) << "the absent zone's entry is in its record already";
 
     GainedWorld fresh;
     fresh.Store().Install(durable);
-    for (const ScopedHeldRecords& records : held)
-    {
-        const LevelReference* level = Store().LevelOf(records.Scope.Level);
-        ASSERT_NE(level, nullptr);
-        RestoreLevelHeldRecords(fresh.Entities(), fresh.Store().Scope(*level, records.Scope.Zone), records.Records,
-                                fresh.Serializers, fresh.Context);
-    }
+    const LevelReference* level = Store().LevelOf(held[0].Scope.Level);
+    ASSERT_NE(level, nullptr);
+    fresh.Store().RecordHeld(fresh.Store().Scope(*level, kRoom), held[0].Records, {});
     fresh.Import(kRoom);
     EXPECT_TRUE(fresh.LiesAt(inRoom, kRoom, kSpot, 3)) << "written while its zone was loaded";
     fresh.Import(kHall);

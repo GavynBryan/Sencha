@@ -406,9 +406,10 @@ TEST_F(LevelEntityPatch, TwoLevelsSharingAuthoredIdsKeepSeparateDoorsAndChestCon
     const ZoneStateScope copy = Store().Scope(LevelReference{ .Kind = LevelKind::World, .Name = "keep_copy" }, kVault);
     Import(Vault());
     (void)GrantBaselineTag(Entities(), Resolve(kDoor), Unsealed);
-    const EntityId record = PlaceHeldRecord(Entities(), Resolve(kGuard), ArchetypeSignature{});
-    ASSERT_TRUE(record.IsValid());
+    const EntityId placed = PlaceHeldRecord(Entities(), Resolve(kGuard), ArchetypeSignature{});
+    ASSERT_TRUE(placed.IsValid());
     SettleHeldRecords(Entities());
+    const PersistentEntityId record = Entities().TryGet<PersistentIdComponent>(placed)->Id;
     Detach();
     SetAsideHeldRecords(Entities(), Scope().Level);
 
@@ -421,7 +422,9 @@ TEST_F(LevelEntityPatch, TwoLevelsSharingAuthoredIdsKeepSeparateDoorsAndChestCon
 
     Import(Vault());
     EXPECT_TRUE(IsUnsealed(kDoor));
-    EXPECT_EQ(HeldBy(kGuard), std::vector{ record });
+    const std::vector<EntityId> held = HeldBy(kGuard);
+    ASSERT_EQ(held.size(), 1u);
+    EXPECT_EQ(Entities().TryGet<PersistentIdComponent>(held[0])->Id, record);
 }
 
 TEST_F(LevelEntityPatch, AnEnemyThatReturnsAtRestoreIsBackAfterARestoreMadeInAnotherLevel)

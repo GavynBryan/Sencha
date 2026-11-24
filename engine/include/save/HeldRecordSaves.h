@@ -31,6 +31,3 @@ struct ScopedHeldRecords
 [[nodiscard]] std::vector<ScopedHeldRecords> CaptureLevelHeldRecords(
     const World& world, const std::function<ZoneStateScope(EntityId)>& scopeOf,
     const ComponentSerializerRegistry& serializers, SceneSerializationContext& context);
-
-void RestoreLevelHeldRecords(World& world, ZoneStateScope scope, std::span<const ZoneListEntity> records,
-                             const ComponentSerializerRegistry& serializers, SceneSerializationContext& context);

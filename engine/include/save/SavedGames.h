@@ -183,7 +183,6 @@ private:
     void CommitRestore();
     void Restore(const std::string& slot);
     void BeginChange(std::shared_ptr<const SavedGame> saved);
-    void RestoreHeldLists(World& world, const SavedGame& saved);
     void FailWrite(std::string reason);
     void FailRestore(std::string reason);
 

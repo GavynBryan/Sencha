@@ -1287,8 +1287,12 @@ TEST_F(InventoryTest, WhatADepositIntoAnAuthoredChestHoldsSurvivesASaveIntoAFres
     ASSERT_EQ(saved.size(), 1u);
 
     InventoryWorld fresh;
-    RestoreLevelHeldRecords(fresh.Entities(), fresh.ScopeOf(cellar.Zone), saved[0].Records, serializers, context);
-    fresh.Import(cellar.Zone, cellar.Package());
+    fresh.Entities().GetResource<ZoneStateStore>().RecordHeld(fresh.ScopeOf(cellar.Zone), saved[0].Records, {});
+    ZoneImportError error;
+    ASSERT_TRUE(ImportZonePackage(fresh.Runtime, fresh.Schema, cellar.Zone, cellar.Package(), serializers, context, kLogic,
+                                  &error, fresh.ScopeOf(cellar.Zone)))
+        << error.Message;
+    fresh.FinishResidency();
 
     const EntityId restored = fresh.Resolve(bagId);
     ASSERT_TRUE(restored.IsValid());

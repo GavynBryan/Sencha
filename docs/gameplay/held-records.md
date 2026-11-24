@@ -13,6 +13,7 @@ way.
 | `Held` | `world/held/Held.h` | the relation on the record: its holder and its position |
 | `HeldRecordIndex` | `world/held/HeldRecordIndex.h` | holder to records in order, record to holder, a revision per holder |
 | `PlaceHeldRecord`, `HoldRecord`, `NoteHeldRecordChanged`, `SettleHeldRecords`, `ParkHeldRecords`, `DestroyHeldRecords` | `world/held/HeldRecords.h` | the World operations |
+| `HeldRecordClosure`, `WriteHeldRecords`, `MakeHeldRecord` | `world/held/HeldRecordForms.h` | a record in scene form, written and made again |
 | `sencha.held` | `save/HeldRecordSaves.h` | the save section (`docs/gameplay/saves.md`) |
 
 ## The relation
@@ -132,33 +133,50 @@ by a run-time entity its zone keeps (`KeptWithZone`, such as a dropped pickup:
 `docs/gameplay/saves.md`, "What a zone gained"), is part of how the zone
 differs from its content, and is kept with it:
 
-- **Detach.** Before a zone's partition is destroyed, `ParkHeldRecords` lists
-  each runtime record held by such a holder there as awaiting that
-  holder's id under the zone's state scope (its level and zone) and moves it to
-  the persistent partition; what it holds follows it. A record the zone authored is not parked: the zone makes it again. A
-  holder its zone forgets at detach (`ZoneStateLifetime` until detach) keeps
-  nothing, and neither does a kept holder in a game that keeps no level state,
-  since nothing would bring it back. A world scene's entities are parked the same way, under the world
+- **Detach.** Before a zone's partition is destroyed, `ParkHeldRecords` takes
+  each runtime record held by such a holder there. A record the zone authored
+  is not taken: the zone makes it again. A holder its zone forgets at detach
+  (`ZoneStateLifetime` until detach) keeps nothing, and neither does a kept
+  holder in a game that keeps no level state, since nothing would bring it
+  back. A world scene's entities are parked the same way, under the world
   scene's scope, when `LoadedLevel::Unload` destroys them, so a chest in a
   world scene keeps its contents across a level change that remembers the
   level. `ParkHeldRecords` takes the holders to look at, not a partition: a
   zone passes every identified entity of its partition, the world scene the
   entities it imported into the persistent partition.
-- **While away**, a parked record is anchored to nothing, reaching no peer,
-  and does no work.
-- **Import.** The holder's identity arriving lists its parked records under it
-  again; they settle into its partition and its relevance.
-- **Saves** write parked records and runtime records of resident authored
-  and kept holders in the `held` list of the holder's level and zone
-  (`docs/gameplay/saves.md`, "Held records").
-- **Another level.** The index can set a level's waiting records aside
-  (`HeldRecordIndex::SetAside`): they are in no lookup while another level is
-  loaded, so an id two levels share (a copied level file) never finds the
-  other level's holder, and `Resume` puts them back. A restore sets aside the
-  records of every level but the one it loads.
-
-A parked record is a live entity, not a byte record; the save writes it under
-its level and zone, so keeping it serialised instead later changes no file.
+- **Away, in a game that keeps level state** (`SavedGames::KeepLevelState()`):
+  each record and what it holds, to the nesting bound, is written in scene form
+  (its persistent id and its entity record, `world/held/HeldRecordForms.h`)
+  into the zone store under the holder's level and zone, and destroyed. A chest
+  away costs its bytes in the zone's record, not entities, so a session's live
+  records are those of the zones loaded. The records of a kept holder its zone
+  forgets at a restore are written apart and never into a save.
+- **Away, in a game that does not**, a record is listed as awaiting its
+  holder's id under the zone's state scope and moved to the persistent
+  partition, what it holds following it: a live entity, anchored to nothing,
+  reaching no peer and doing no work. The index can set a level's waiting
+  records aside (`HeldRecordIndex::SetAside`): they are in no lookup while
+  another level is loaded, so an id two levels share (a copied level file)
+  never finds the other level's holder, and `Resume` puts them back.
+- **Import.** Inside the zone's hidden import, once its authored entities and
+  what it gained exist, each record the store holds for the zone is made in the
+  zone's partition with its id and components, and the store forgets it; its
+  holder is alive, so it is listed under it and settles into its partition and
+  relevance. A record whose holder did not arrive (the holder was destroyed, or
+  a gained member did not read) is dropped and logged as an error naming the
+  holder and the count, so nothing waits for a holder that will never come. A
+  live waiting record is listed under its holder when the holder's identity
+  arrives.
+- **A cancelled import** parks what its hidden partition holds before the
+  partition goes (`RuntimeWorld::CancelZoneImport`), as a detach does, so a
+  record the import made, or one that moved under a holder in it, is written
+  back or waits again rather than being destroyed with it.
+- **Saves** write runtime records of resident authored and kept holders, and
+  live waiting ones, in the `held` list of the holder's level and zone
+  (`docs/gameplay/saves.md`, "Held records"); what the store holds for an
+  absent zone is that list already, and a write copies it. A restore installs
+  every zone's `held` list into the store, and each is made when its zone
+  imports.
 
 ## Authoring
 

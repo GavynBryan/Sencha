@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -49,7 +50,14 @@ namespace
             });
             if (zone == level->Zones.end() || zone->Zone != records.Scope.Zone)
                 zone = level->Zones.insert(zone, DurableZoneState{ records.Scope.Zone, nullptr, nullptr });
-            const ZoneStateList list{ std::string(kHeldZoneList), kZoneListVersion, EncodeEntityList(records.Records) };
+            std::vector<ZoneListEntity> written;
+            if (const std::optional<std::vector<ZoneStateList>> away =
+                    zone->Held != nullptr ? DecodeZoneLists(*zone->Held) : std::nullopt)
+                for (const ZoneStateList& list : *away)
+                    if (std::optional<std::vector<ZoneListEntity>> entities = DecodeEntityList(list.Payload))
+                        std::ranges::move(*entities, std::back_inserter(written));
+            std::ranges::move(records.Records, std::back_inserter(written));
+            const ZoneStateList list{ std::string(kHeldZoneList), kZoneListVersion, EncodeEntityList(written) };
             zone->Held = EncodeZoneLists(std::span(&list, 1));
         }
     }
@@ -630,33 +638,6 @@ void SavedGames::RestoreSections()
                       registered.Name, found->Version, registered.Version);
     }
     UnclaimedChunks = saved->Carried;
-    RestoreHeldLists(world, *saved);
-}
-
-void SavedGames::RestoreHeldLists(World& world, const SavedGame& saved)
-{
-    ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
-    if (store == nullptr)
-        return;
-    std::vector<ZoneStateLevelId> away;
-    for (const DurableLevelState& level : saved.Levels)
-        for (const DurableZoneState& zone : level.Zones)
-        {
-            const std::optional<std::vector<ZoneStateList>> lists =
-                zone.Held != nullptr ? DecodeZoneLists(*zone.Held) : std::nullopt;
-            if (!lists.has_value())
-                continue;
-            const ZoneStateScope scope = store->Scope(level.Level, zone.Zone);
-            for (const ZoneStateList& list : *lists)
-                if (const std::optional<std::vector<ZoneListEntity>> records = DecodeEntityList(list.Payload))
-                    RestoreLevelHeldRecords(world, scope, *records, Host.SceneSerializers(),
-                                            Host.Content().SceneContext());
-            if (level.Level != saved.Summary.Level)
-                away.push_back(scope.Level);
-        }
-    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
-        for (const ZoneStateLevelId level : away)
-            index->SetAside(level);
 }
 
 void SavedGames::Advance()

@@ -161,6 +161,16 @@ Every gated row is inside its budget. Beside them:
 `capture_at_scale.json` and `.csv` are the third stage 12 run;
 `capture_at_scale_before.json` and `.csv` the second stage 11 run.
 
+## Waiting records (ABC2 stage 15)
+
+The last row of the plan's budget table is a count, not a time: in a session
+with 2,000 items in containers across 20 levels, the live held-record entities
+are those of the level loaded. `HeldRecordParking.TwoThousandItemsAcrossTwentyLevelsLeaveOnlyTheLoadedLevelsRecordsAlive`
+checks it: a chest of 100 entries in each of 20 levels, each zone detached in
+turn, leaves no live record while none is loaded and 100 while one is, and the
+chest of the level entered again holds its 100 under the same ids. Before this
+stage every one of the 2,000 stayed a live entity for the session.
+
 ## Raw
 
 `level_state.json` and `level_state.csv` beside this file are the stage 10

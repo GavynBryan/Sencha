@@ -1481,17 +1481,6 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a co-op or party game whose players draw from one bag. Then
   extend `MayUseItem` with the sharing rule, and nothing else.
 
-## Held records parked for an import that is cancelled
-
-- **What:** a record waiting for its authored or kept holder moves into the
-  holder's partition when the holder's identity arrives, even while the zone
-  is still importing hidden. If that import is cancelled, the partition is destroyed
-  and the record with it.
-- **Where:** `world/held/HeldRecords.cpp`, `zone/AsyncZoneLoader.cpp`.
-- **Trigger:** an import cancelled after its entities were made (a finalize
-  failure) in a zone where something was deposited. Then settle a record whose
-  holder lies in a hidden partition only once the zone is published.
-
 ## Authoring a container's contents from the container
 
 - **What:** Kyusu authors "this chest holds 3 arrows" as an entity with
@@ -1738,18 +1727,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   `engine/include/world/serialization/IComponentSerializer.h`.
 - **Trigger:** serializers that write from copied bytes, wanted for a capture
   that spreading over frames does not bring under budget.
-
-## Waiting records kept alive
-
-- **What:** a record parked for an authored holder whose zone or level is away
-  stays a live entity for the session, set aside while its level is away; every
-  item in every chest of every visited level is one. The save already writes
-  them per level and zone (the `held` list), so serialising them into the store
-  instead changes no file.
-- **Where:** `engine/src/world/held/HeldRecords.cpp` (`ParkHeldRecords`),
-  `engine/include/world/held/HeldRecordIndex.h` (`SetAside`).
-- **Trigger:** a game with containers in more than a handful of levels, or
-  session memory attributed to them.
 
 ## A cook warning for ids shared between level files
 
