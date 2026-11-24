@@ -1453,18 +1453,23 @@ TEST_F(ResponsesFixture, ASavedFormWritesConsumedAndDisabledBindingsAndReadsThem
         << "consumed is state, not an authored member";
 }
 
-TEST_F(ResponsesFixture, TheSavedFormMatchesItsAuthoredRecordUntilTheStateDiffers)
+TEST_F(ResponsesFixture, EqualRowsWriteTheSameSavedFormWhateverIsInternedSince)
 {
     const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)") });
     const EntityId placed = Place(bindings);
     const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
-    const JsonValue record(JsonValue::Object{ { "bindings", Json(bindings) } });
-    EXPECT_EQ(serializer->SavedFormEquals(WorldState, placed, record), std::optional<bool>(true));
+    EXPECT_TRUE(serializer->SavedFormFromRowAlone());
+    SceneSerializationContext context(Logging);
+    context.Purpose = SceneRecordPurpose::Save;
+    const auto saved = [&] {
+        JsonWriteArchive archive;
+        EXPECT_TRUE(serializer->Save(archive, placed, WorldState, context));
+        return JsonStringify(archive.TakeValue());
+    };
     WorldState.TryGet<Responses>(placed)->Consumed = 1u;
-    EXPECT_EQ(serializer->SavedFormEquals(WorldState, placed, record), std::optional<bool>(false));
-    WorldState.TryGet<Responses>(placed)->Consumed = 0u;
-    const JsonValue other(JsonValue::Object{ { "bindings", JsonValue(JsonValue::Object{}) } });
-    EXPECT_EQ(serializer->SavedFormEquals(WorldState, placed, other), std::optional<bool>(false));
+    const std::string before = saved();
+    (void)Place(Bindings({ Binding("use", "test.struck", kRecordSelf, R"("once": true)") }));
+    EXPECT_EQ(saved(), before);
 }
 
 TEST_F(ResponsesFixture, AnAuthoredFormWritesNoState)

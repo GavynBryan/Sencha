@@ -185,21 +185,27 @@ void ZoneStateStore::RecordAuthoredSet(ZoneStateScope scope, std::vector<Authore
     record.Authored.reserve(authored.size());
     for (AuthoredEntityState& entity : authored)
         if (entity.Id.IsValid())
-            record.Authored.insert_or_assign(entity.Id.Value,
-                                             AuthoredRecord{ entity.Forgotten, std::move(entity.Baseline) });
+            record.Authored.insert_or_assign(
+                entity.Id.Value, AuthoredRecord{ entity.Forgotten, std::move(entity.Baseline), std::move(entity.Image) });
 }
 
 void ZoneStateStore::RecordDestroyed(ZoneRecord& record, std::span<const PersistentEntityId> live, bool detaching)
 {
-    std::unordered_set<std::uint64_t> liveSet;
-    liveSet.reserve(live.size());
-    for (const PersistentEntityId id : live)
-        liveSet.insert(id.Value);
-
+    const bool everyAuthoredLive =
+        static_cast<std::size_t>(std::ranges::count_if(
+            live, [&](PersistentEntityId id) { return record.Authored.contains(id.Value); }))
+        == record.Authored.size();
     std::unordered_map<std::uint64_t, ZoneStateForgetting> destroyed;
-    for (const auto& [authored, entity] : record.Authored)
-        if (!liveSet.contains(authored) && !(detaching && entity.Forgotten == ZoneStateForgetting::AtDetach))
-            destroyed.emplace(authored, entity.Forgotten);
+    if (!everyAuthoredLive)
+    {
+        std::unordered_set<std::uint64_t> liveSet;
+        liveSet.reserve(live.size());
+        for (const PersistentEntityId id : live)
+            liveSet.insert(id.Value);
+        for (const auto& [authored, entity] : record.Authored)
+            if (!liveSet.contains(authored) && !(detaching && entity.Forgotten == ZoneStateForgetting::AtDetach))
+                destroyed.emplace(authored, entity.Forgotten);
+    }
     if (destroyed != record.Destroyed)
     {
         record.Destroyed = std::move(destroyed);
@@ -231,6 +237,7 @@ void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const Persist
     if (detaching)
     {
         record.Authored.clear();
+        record.GainedImages.clear();
         Close(record);
         if (!record.Parsed && record.Encoded == nullptr)
             Zones_.erase(KeyOf(scope));
@@ -287,6 +294,9 @@ void ZoneStateStore::RecordGained(ZoneStateScope scope, std::vector<GainedEntity
         if (member.Id.IsValid())
             members.push_back(std::move(member));
     SortGained(members);
+    std::erase_if(record.GainedImages, [&](const auto& entry) {
+        return std::ranges::none_of(members, [&](const GainedEntityState& member) { return member.Id.Value == entry.first; });
+    });
     if (members == record.Gained)
         return;
     record.Gained = std::move(members);
@@ -295,9 +305,38 @@ void ZoneStateStore::RecordGained(ZoneStateScope scope, std::vector<GainedEntity
 
 void ZoneStateStore::ForgetGained(ZoneStateScope scope, PersistentEntityId id)
 {
-    if (ZoneRecord* record = Find(scope); record != nullptr && id.IsValid()
-        && std::erase_if(record->Gained, [&](const GainedEntityState& member) { return member.Id == id; }) > 0)
+    ZoneRecord* record = Find(scope);
+    if (record == nullptr || !id.IsValid())
+        return;
+    record->GainedImages.erase(id.Value);
+    if (std::erase_if(record->Gained, [&](const GainedEntityState& member) { return member.Id == id; }) > 0)
         record->Encoded = nullptr;
+}
+
+const GainedEntityState* ZoneStateStore::GainedMemberOf(ZoneStateScope scope, PersistentEntityId id) const
+{
+    const ZoneRecord* record = Find(scope);
+    if (record == nullptr || !id.IsValid())
+        return nullptr;
+    const auto found = std::ranges::lower_bound(record->Gained, id, [](PersistentEntityId a, PersistentEntityId b) {
+        return a.IsValid() != b.IsValid() ? !a.IsValid() : a.Value < b.Value;
+    }, &GainedEntityState::Id);
+    return found != record->Gained.end() && found->Id == id ? &*found : nullptr;
+}
+
+ZoneCaptureImage* ZoneStateStore::GainedImageOf(ZoneStateScope scope, PersistentEntityId id)
+{
+    ZoneRecord* record = Find(scope);
+    if (record == nullptr)
+        return nullptr;
+    const auto found = record->GainedImages.find(id.Value);
+    return found != record->GainedImages.end() ? &found->second : nullptr;
+}
+
+void ZoneStateStore::RecordGainedImage(ZoneStateScope scope, PersistentEntityId id, ZoneCaptureImage image)
+{
+    if (ZoneRecord* record = Find(scope); record != nullptr && id.IsValid())
+        record->GainedImages.insert_or_assign(id.Value, std::move(image));
 }
 
 std::span<const GainedEntityState> ZoneStateStore::GainedOf(ZoneStateScope scope) const
@@ -380,6 +419,17 @@ const std::vector<AuthoredComponent>* ZoneStateStore::BaselineOf(ZoneStateScope 
     return found != record->Authored.end() && found->second.Forgotten != ZoneStateForgetting::AtDetach
         ? &found->second.Baseline
         : nullptr;
+}
+
+ResidentEntityState ZoneStateStore::ResidentOf(ZoneStateScope scope, PersistentEntityId id)
+{
+    ZoneRecord* record = Find(scope);
+    if (record == nullptr)
+        return {};
+    const auto found = record->Authored.find(id.Value);
+    if (found == record->Authored.end() || found->second.Forgotten == ZoneStateForgetting::AtDetach)
+        return {};
+    return { &found->second.Baseline, &found->second.Image };
 }
 
 void ZoneStateStore::ForgetLevel(const LevelReference& level)

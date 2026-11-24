@@ -150,6 +150,29 @@ namespace SceneComponentSerialization
         return record.Children.empty() ? std::nullopt : std::optional(std::move(record));
     }
 
+    template<typename FieldType>
+    constexpr bool WrittenFromValue()
+    {
+        if constexpr (IsHandleType<FieldType>)
+            return false;
+        else if constexpr (requires { SceneFieldCodec<FieldType>::WrittenFromValue; })
+            return SceneFieldCodec<FieldType>::WrittenFromValue;
+        else
+            return false;
+    }
+
+    template<typename Component>
+    bool SavedFormFromRowAlone()
+    {
+        if constexpr (!std::is_trivially_copyable_v<Component>)
+            return false;
+        else
+            return std::apply([](const auto&... field) {
+                return (WrittenFromValue<std::remove_cvref_t<decltype(std::declval<const Component&>().*field.Ptr)>>()
+                        && ...);
+            }, TypeSchema<Component>::Fields());
+    }
+
     // Drops whatever LoadFields acquired. Called once the loaded value has
     // been handed to the entity that will own it -- the component's own
     // lifecycle hooks take its reference -- and on every path where the value
@@ -243,6 +266,12 @@ public:
             bare.Purpose = SceneRecordPurpose::Save;
             return SceneComponentSerialization::SaveFields(archive, Component{}, bare);
         }
+    }
+
+    bool SavedFormFromRowAlone() const override
+    {
+        static const bool alone = SceneComponentSerialization::SavedFormFromRowAlone<Component>();
+        return alone;
     }
 
     bool HoldsPlacement(const JsonValue& cooked) const override

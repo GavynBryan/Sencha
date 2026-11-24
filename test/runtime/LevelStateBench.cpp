@@ -32,6 +32,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <span>
 #include <format>
 #include <string>
 #include <vector>
@@ -91,10 +92,9 @@ namespace
             return package;
         }
 
-        static EntityBuildPackage Props(std::size_t count)
+        static EntityBuildPackage Props(std::size_t count, const JsonValue& body)
         {
             const JsonValue collider = *JsonParse(R"({"shape":{"type":"box","half_extents":[0.5,0.5,0.5]}})");
-            const JsonValue body = *JsonParse(R"({"motion":"dynamic"})");
             EntityBuildPackage package;
             for (std::size_t i = 0; i < count; ++i)
             {
@@ -110,6 +110,33 @@ namespace
                 EXPECT_TRUE(package.SetSerializedComponent(entity, ResolveComponentTypeId<RigidBody>(), body));
             }
             return package;
+        }
+
+        JsonValue DynamicBody() const
+        {
+            const IComponentSerializer* serializer = Serializers.FindByType(ResolveComponentTypeId<RigidBody>());
+            EXPECT_NE(serializer, nullptr);
+            return serializer != nullptr ? SavedDefaultRecord(*serializer).value_or(JsonValue()) : JsonValue();
+        }
+
+        void Push(std::size_t first, std::size_t count, int rep)
+        {
+            World& world = Runtime.Entities();
+            const PersistentEntityIndex& index = world.GetResource<PersistentEntityIndex>();
+            for (std::size_t i = first; i < first + count; ++i)
+            {
+                const EntityId prop = index.TryResolve(PersistentEntityId{ 0x1000 + i });
+                world.TryGet<LocalTransform>(prop)->Value.Position.X += 0.25f;
+                world.TryGet<RigidBody>(prop)->LinearVelocity = Vec3d{ 0.0f, static_cast<float>(rep + 1), 0.0f };
+            }
+        }
+
+        void Move(std::span<const PersistentEntityId> gained, std::size_t count)
+        {
+            World& world = Runtime.Entities();
+            const PersistentEntityIndex& index = world.GetResource<PersistentEntityIndex>();
+            for (std::size_t i = 0; i < count && i < gained.size(); ++i)
+                world.TryGet<LocalTransform>(index.TryResolve(gained[i]))->Value.Position.Y += 0.25f;
         }
 
         double Import(const EntityBuildPackage& package)
@@ -197,6 +224,17 @@ namespace
             return bytes;
         }
 
+        std::size_t ImageBytes(std::size_t count)
+        {
+            ZoneStateStore& store = Runtime.Entities().GetResource<ZoneStateStore>();
+            std::size_t bytes = 0;
+            for (std::size_t i = 0; i < count; ++i)
+                if (const ResidentEntityState resident = store.ResidentOf(Scope, PersistentEntityId{ 0x1000 + i });
+                    resident.Image != nullptr)
+                    bytes += sizeof(ZoneCaptureImage) + resident.Image->Data.capacity();
+            return bytes;
+        }
+
         LoggingProvider Logging;
         SceneSerializationContext Context;
         ComponentSerializerRegistry Serializers;
@@ -237,19 +275,122 @@ namespace
     void RecordProps(std::size_t count)
     {
         LevelStateBenchWorld bench;
-        const EntityBuildPackage package = LevelStateBenchWorld::Props(count);
+        const EntityBuildPackage package = LevelStateBenchWorld::Props(count, bench.DynamicBody());
         Recorder.Record(std::format("props.{}.import", count), "ms", bench.Import(package));
         Recorder.Record(std::format("props.{}.baseline_members", count), "count",
                         static_cast<double>(bench.BaselineMembers(count)));
         Recorder.Record(std::format("props.{}.baseline_text_bytes", count), "bytes",
                         static_cast<double>(bench.BaselineBytes(count)));
+        Recorder.Record(std::format("props.{}.image_bytes", count), "bytes", static_cast<double>(bench.ImageBytes(count)));
+        const ZoneStateStore& store = bench.Runtime.Entities().GetResource<ZoneStateStore>();
         std::vector<double> untouched;
         for (int rep = 0; rep < Reps(9); ++rep)
             untouched.push_back(bench.Capture());
+        EXPECT_EQ(store.PatchOf(bench.Scope, PersistentEntityId{ 0x1000 }), nullptr);
         const double untouchedMs = Bench::Median(untouched);
         Recorder.Record(std::format("props.{}.capture_untouched", count), "ms", untouchedMs);
         Recorder.Record(std::format("props.{}.capture_untouched_per_entity", count), "us",
                         1000.0 * untouchedMs / static_cast<double>(count));
+
+        std::vector<double> some;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            bench.Push(0, 100, rep);
+            some.push_back(bench.Capture());
+        }
+        EXPECT_NE(store.PatchOf(bench.Scope, PersistentEntityId{ 0x1000 }), nullptr);
+        Recorder.Record(std::format("props.{}.capture_100_changed", count), "ms", Bench::Median(some));
+
+        std::vector<double> every;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            bench.Push(0, count, rep);
+            every.push_back(bench.Capture());
+        }
+        const double everyMs = Bench::Median(every);
+        Recorder.Record(std::format("props.{}.capture_all_changed", count), "ms", everyMs);
+        Recorder.Record(std::format("props.{}.capture_all_changed_per_entity", count), "us",
+                        1000.0 * everyMs / static_cast<double>(count));
+    }
+
+    void RecordPropsDetach(std::size_t count, std::size_t changed)
+    {
+        std::vector<double> captures;
+        std::vector<double> detaches;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            LevelStateBenchWorld bench;
+            const EntityBuildPackage package = LevelStateBenchWorld::Props(count, bench.DynamicBody());
+            (void)bench.Import(package);
+            bench.Push(0, changed, rep);
+            const std::vector<EntityId> identified = bench.Identified();
+            const auto start = Bench::Clock::now();
+            CaptureZoneState(bench.Runtime.Entities(), bench.Scope, identified, ZoneCapture::Detach);
+            captures.push_back(Bench::MillisecondsSince(start));
+
+            LevelStateBenchWorld again;
+            (void)again.Import(package);
+            again.Push(0, changed, rep);
+            const auto detachStart = Bench::Clock::now();
+            again.Detach();
+            detaches.push_back(Bench::MillisecondsSince(detachStart));
+        }
+        Recorder.Record(std::format("props.{}.detach_capture_{}_changed", count, changed), "ms", Bench::Median(captures));
+        Recorder.Record(std::format("props.{}.detach_whole_{}_changed", count, changed), "ms", Bench::Median(detaches));
+    }
+
+    void RecordPropsAttach(std::size_t count, std::size_t patched)
+    {
+        LevelStateBenchWorld bench;
+        const EntityBuildPackage package = LevelStateBenchWorld::Props(count, bench.DynamicBody());
+        ZoneStateStore& store = bench.Runtime.Entities().GetResource<ZoneStateStore>();
+        (void)bench.Import(package);
+        bench.Push(0, patched, 0);
+        bench.Detach();
+        const std::vector<DurableLevelState> remembered = store.ExportDurable();
+        ASSERT_EQ(remembered.size(), 1u);
+
+        std::vector<double> plain;
+        std::vector<double> withPatches;
+        std::vector<double> unkept;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            store.Install({});
+            plain.push_back(bench.Import(package));
+            bench.Detach();
+            store.Install(remembered);
+            withPatches.push_back(bench.Import(package));
+            bench.Detach();
+            bench.Runtime.Entities().SetResource(ZoneStateSerialization{});
+            store.Install({});
+            unkept.push_back(bench.Import(package));
+            bench.Detach();
+            bench.Runtime.Entities().SetResource(ZoneStateSerialization{ .Serializers = &bench.Serializers, .Context = &bench.Context });
+        }
+        const double plainMs = Bench::Median(plain);
+        const double patchedMs = Bench::Median(withPatches);
+        const std::string name = std::format("props.{}.attach_{}_patched", count, patched);
+        Recorder.Record(name + ".import_not_kept", "ms", Bench::Median(unkept));
+        Recorder.Record(name + ".import_unpatched", "ms", plainMs);
+        Recorder.Record(name + ".import_patched", "ms", patchedMs);
+        Recorder.Record(name + ".per_patched_entity", "us", 1000.0 * (patchedMs - plainMs) / static_cast<double>(patched));
+    }
+
+    void RecordGainedChanged(std::size_t zoneSize, std::size_t gained, std::size_t changed)
+    {
+        LevelStateBenchWorld bench;
+        const EntityBuildPackage package = LevelStateBenchWorld::Package(zoneSize);
+        (void)bench.Import(package);
+        const std::vector<PersistentEntityId> ids = bench.Gain(gained);
+        (void)bench.Capture();
+        std::vector<double> captures;
+        for (int rep = 0; rep < Reps(9); ++rep)
+        {
+            bench.Move(ids, changed);
+            captures.push_back(bench.Capture());
+        }
+        Recorder.Record(std::format("gained.{}_in_{}.capture_{}_changed", gained, zoneSize, changed), "ms",
+                        Bench::Median(captures));
     }
 
     void RecordGained(std::size_t zoneSize, std::size_t gained)
@@ -340,6 +481,9 @@ TEST(LevelStateBench, Generate)
     for (const std::size_t count : { 500u, 5000u })
         RecordCapture(count);
     RecordProps(5000);
+    RecordPropsDetach(5000, 100);
+    RecordPropsAttach(5000, 500);
+    RecordGainedChanged(500, 2000, 20);
     for (const std::size_t patched : { 50u, 500u })
         RecordAttach(500, patched);
     for (const std::size_t gained : { 50u, 500u })

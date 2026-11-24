@@ -24,28 +24,33 @@ namespace
     };
 
     void RecordPatches(World& world, ZoneStateStore& store, const ZoneStateSerialization& serialization,
-                       ZoneStateScope scope, std::span<const std::pair<EntityId, PersistentEntityId>> alive)
+                       ZoneCaptureImager& imager, ZoneStateScope scope,
+                       std::span<const std::pair<EntityId, PersistentEntityId>> alive)
     {
         Logger& log = serialization.Context->Logging->GetLogger<ZoneStateCapture>();
         std::vector<std::string> failed;
+        std::vector<ComponentTypeId> unchanged;
         for (const auto& [entity, id] : alive)
         {
-            const std::vector<AuthoredComponent>* baseline = store.BaselineOf(scope, id);
-            if (baseline == nullptr)
+            const ResidentEntityState resident = store.ResidentOf(scope, id);
+            if (resident.Baseline == nullptr || imager.Unchanged(entity, *resident.Image))
                 continue;
+            unchanged.clear();
+            imager.UnchangedRows(entity, *resident.Image, unchanged);
             failed.clear();
-            JsonValue patch = CaptureEntityPatch(world, entity, *baseline, ComponentPersistenceSet{ .Saved = true },
-                                                 *serialization.Serializers, *serialization.Context,
-                                                 store.PatchOf(scope, id), &failed);
+            const JsonValue* kept = store.PatchOf(scope, id);
+            JsonValue patch = CaptureEntityPatch(world, entity, *resident.Baseline, ComponentPersistenceSet{ .Saved = true },
+                                                 *serialization.Serializers, *serialization.Context, kept, &failed,
+                                                 unchanged);
             for (const std::string& key : failed)
                 log.Error("zone state: {}'s '{}' could not be written; what was kept of it stays",
                           PersistentEntityIdToString(id), key);
-            if (!failed.empty())
-                if (const JsonValue* kept = store.PatchOf(scope, id))
-                    for (const std::string& key : failed)
-                        if (const JsonValue* member = kept->Find(key))
-                            patch.AsObject().emplace_back(key, *member);
+            if (!failed.empty() && kept != nullptr)
+                for (const std::string& key : failed)
+                    if (const JsonValue* member = kept->Find(key))
+                        patch.AsObject().emplace_back(key, *member);
             store.RecordPatch(scope, id, std::move(patch));
+            *resident.Image = failed.empty() ? imager.Authored(entity, *resident.Baseline) : ZoneCaptureImage{};
         }
     }
 
@@ -89,9 +94,11 @@ namespace
     }
 
     void RecordGained(const World& world, ZoneStateStore& store, const ZoneStateSerialization& serialization,
-                      ZoneStateScope scope, std::span<const std::pair<EntityId, PersistentEntityId>> alive)
+                      ZoneCaptureImager& imager, ZoneStateScope scope,
+                      std::span<const std::pair<EntityId, PersistentEntityId>> alive)
     {
         std::vector<GainedEntityState> gained;
+        std::vector<std::pair<PersistentEntityId, ZoneCaptureImage>> images;
         if (world.IsRegistered<KeptWithZone>())
         {
             Logger& log = serialization.Context->Logging->GetLogger<ZoneStateCapture>();
@@ -104,6 +111,14 @@ namespace
                 const ZoneStateForgetting forgotten = ForgettingOfKept(world, entity);
                 if (forgotten == ZoneStateForgetting::AtDetach)
                     continue;
+                if (ZoneCaptureImage* image = store.GainedImageOf(scope, id);
+                    image != nullptr && imager.Unchanged(entity, *image))
+                    if (const GainedEntityState* previous = store.GainedMemberOf(scope, id);
+                        previous != nullptr && previous->Forgotten == forgotten)
+                    {
+                        gained.push_back(*previous);
+                        continue;
+                    }
                 failed.clear();
                 JsonValue record = WriteEntityRecord(world, entity, *serialization.Serializers, *serialization.Context,
                                                      { .Declared = { .Authored = true, .Saved = true } },
@@ -115,9 +130,12 @@ namespace
                     id, forgotten,
                     GainedZoneMember{ std::string(kWholeGainedForm),
                                       EncodeWholeGainedMember(ZoneListEntity{ id, std::move(record) }) } });
+                images.emplace_back(id, failed.empty() ? imager.Gained(entity) : ZoneCaptureImage{});
             }
         }
         store.RecordGained(scope, std::move(gained));
+        for (auto& [id, image] : images)
+            store.RecordGainedImage(scope, id, std::move(image));
     }
 }
 
@@ -160,8 +178,9 @@ void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const Entity
         serialization != nullptr && serialization->Serializers != nullptr && serialization->Context != nullptr
         && IsSimulationAuthority(world))
     {
-        RecordPatches(world, *store, *serialization, scope, alive);
-        RecordGained(world, *store, *serialization, scope, alive);
+        ZoneCaptureImager imager(world, *serialization->Serializers);
+        RecordPatches(world, *store, *serialization, imager, scope, alive);
+        RecordGained(world, *store, *serialization, imager, scope, alive);
         RecordOccupancy(world, *store, scope, alive);
     }
     store->RecordCapture(scope, live, capture);

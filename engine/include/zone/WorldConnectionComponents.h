@@ -87,6 +87,7 @@ DockGateBinding
 template <>
 struct SceneFieldCodec<ZoneId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, ZoneId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, ZoneId&,
@@ -96,6 +97,7 @@ struct SceneFieldCodec<ZoneId>
 template <>
 struct SceneFieldCodec<DockId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, DockId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, DockId&,
@@ -105,6 +107,7 @@ struct SceneFieldCodec<DockId>
 template <>
 struct SceneFieldCodec<LinkId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, LinkId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, LinkId&,

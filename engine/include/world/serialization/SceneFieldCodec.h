@@ -30,10 +30,16 @@
 // inverse: what to let go of when the loaded value is handed on or thrown
 // away. Field types that acquire nothing declare nothing; the serializer asks
 // whether the operation exists.
+//
+// WrittenFromValue says the field's scene form depends on its bytes alone, so
+// a capture may skip an unchanged row (docs/gameplay/saves.md, "Capture at
+// scale"). A specialization that writes through a lookup leaves it out.
 //=============================================================================
 template<typename T>
 struct SceneFieldCodec
 {
+    static constexpr bool WrittenFromValue = true;
+
     static bool Save(IWriteArchive& archive,
                      std::string_view key,
                      const T& value,
@@ -59,6 +65,8 @@ struct SceneFieldCodec
 template<>
 struct SceneFieldCodec<CaptionKind>
 {
+    static constexpr bool WrittenFromValue = true;
+
     static bool Save(IWriteArchive& archive,
                      std::string_view key,
                      CaptionKind value,
@@ -73,6 +81,8 @@ struct SceneFieldCodec<CaptionKind>
 template<>
 struct SceneFieldCodec<CaptionPriority>
 {
+    static constexpr bool WrittenFromValue = true;
+
     static bool Save(IWriteArchive& archive,
                      std::string_view key,
                      CaptionPriority value,
@@ -88,6 +98,8 @@ struct SceneFieldCodec<CaptionPriority>
 template<std::size_t Capacity>
 struct SceneFieldCodec<InlineString<Capacity>>
 {
+    static constexpr bool WrittenFromValue = true;
+
     static bool Save(IWriteArchive& archive,
                      std::string_view key,
                      const InlineString<Capacity>& value,

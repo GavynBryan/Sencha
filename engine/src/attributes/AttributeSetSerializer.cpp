@@ -57,6 +57,8 @@ public:
             && WriteAttributes(archive, *set, *attributes);
     }
 
+    bool SavedFormFromRowAlone() const override { return true; }
+
     bool SaveDefault(IWriteArchive& archive) const override
     {
         static const AttributeRegistry kNoAttributes;

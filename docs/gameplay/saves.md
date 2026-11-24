@@ -127,11 +127,11 @@ uses it; no caller loops over an entity's components itself.
   it lists, and a component the entity carries that it does not list when the
   component declares a persistence in `alsoCarried`. Nothing else is written,
   so a baseline of two components costs two `Save` calls. A component whose
-  written form equals its baseline is left out before the patch is built, and a
-  serializer that can tell without writing says so through
-  `IComponentSerializer::SavedFormEquals` (the responses serializer answers from
-  its bits), which is what keeps a 500-entity zone's capture under half a
-  millisecond (`docs/plans/evidence/level-state/results.md`).
+  written form equals its baseline is left out before the patch is built. A
+  caller that knows a component's saved form is what its `kept` patch was taken
+  from names it in `unchanged`: its member is copied from `kept` and its
+  serializer is not asked, which is how a zone's capture skips what has not
+  changed ("Capture at scale").
 - `ApplyEntityPatch` composes a patch over one package entity before it is
   built, any entity of the package: a member patches a component content has,
   adds one it lacks, and `null` removes one. It reports what it set aside in
@@ -356,7 +356,69 @@ lands").
 
 A game that marks nothing pays one component test per identified entity of a
 zone at each capture. A marked entity costs one whole-record write per capture
-and one read per attach (`docs/plans/evidence/level-state/results.md`).
+in which its rows changed ("Capture at scale") and one read per attach
+(`docs/plans/evidence/level-state/results.md`).
+
+## Capture at scale
+
+A zone's capture skips what has not changed since the last one. Beside each
+resident authored entity's baseline and each gained member's kept record, the
+store keeps an image of its rows (`ZoneCaptureImage`,
+`zone/ZoneCaptureImage.h`): the bytes, as the last capture read them, of every
+component the capture writes for it whose serializer says equal bytes always
+write the same saved form (`IComponentSerializer::SavedFormFromRowAlone`). A
+capture compares the entity with its image first:
+
+- When it carries the same serialized components (its archetype, or one that
+  differs only in components no serializer writes, such as the link a physics
+  body adds) and every component the capture writes has a row in the image
+  equal to its row now, the kept patch or the kept member stands and nothing is
+  written or encoded.
+- Otherwise only the components whose rows differ are written and diffed; an
+  equal row's member is copied from the kept patch (`CaptureEntityPatch`'s
+  `unchanged`), and the entity is imaged again. A gained member that changed is
+  written whole, as before.
+
+The filter only decides what is written, never what a patch says: unequal
+padding, or a field the saved form leaves out (an attribute's current value),
+costs one diff that finds nothing new. A serializer that cannot say so (the
+default) is written at every capture of an entity that carries it, and the
+rest of that entity's components are still filtered.
+
+The import takes the first image. An authored entity the store holds no patch
+for is imaged as it is built, standing for an empty patch, and a gained member
+is imaged as it is read, standing for the record it was read from. Both hold
+because a cooked record is its serializer's own form (the cook writes every
+component through its serializer, "Bodies") and a record a capture wrote reads
+back to the same record. A patched entity is not imaged at import, so its first
+capture writes it in full, which also drops what a retuned scene set aside. A
+zone detached straight after its import therefore writes only what changed in
+between. A record built in code that leaves out fields its serializer writes
+is still read as untouched until it changes; a full write would have stated
+the left-out fields at their defaults, to the same effect.
+
+Which serializers say their saved form follows their row:
+
+- **Generated** (`ComponentSerializer<T>`): when `T` is trivially copyable and
+  no field is an asset reference, an entity reference (`PersistableRef`), or a
+  type whose scene codec writes through a lookup. A codec says it writes from
+  the value alone with `WrittenFromValue` (`world/serialization/SceneFieldCodec.h`):
+  the primary template, the caption enums, inline strings and the stable ids
+  (zone, dock, link, nav link, scene instance, asset id, persistent id) do. A
+  codec that does not say so is taken to look something up, as a named id
+  will.
+- **Hand-written**, per case: `responses` (a binding set is content-addressed
+  and never changes in a World, so its key in the row stands for the same
+  bindings), `GameplayTags` and `Attributes` (names from registries that only
+  grow, so an id in the row always names the same tag or attribute),
+  `ItemEntry`, `ItemPickup` and `ItemContainer` (definition paths and tag
+  names, likewise). `AbilityGrants`, `EquipmentState`, `Counter`,
+  `CharacterMovement` and every other hand-written serializer answer no.
+
+The comparison, the per-entity image and their cost are measured in
+`docs/plans/evidence/level-state/results.md` ("Capture at scale"). What it does
+not do: spread a capture whose every entity changed over frames, or capture off
+the owner thread (`docs/deferred.md`).
 
 ## Held records
 
@@ -646,6 +708,6 @@ Autosave rotation, quicksave naming and the menu itself are the game's.
 Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, a body's children and other participants'
 bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
 a gained entity saved as its prefab and a patch, carrying an entity other than
-the body across a level change, change tracking
-for capture, waiting records serialised instead of kept alive, and restoring
+the body across a level change, a capture spread over frames or taken off the
+owner thread, waiting records serialised instead of kept alive, and restoring
 inside a network session.

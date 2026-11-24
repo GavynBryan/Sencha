@@ -53,6 +53,7 @@ struct ComponentTraits<PersistentIdComponent>
 template <>
 struct SceneFieldCodec<PersistentEntityId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, PersistentEntityId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, PersistentEntityId&,

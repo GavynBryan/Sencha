@@ -57,6 +57,8 @@ public:
             && WriteGameplayTags(archive, *tags, *tagRegistry);
     }
 
+    bool SavedFormFromRowAlone() const override { return true; }
+
     bool SaveDefault(IWriteArchive& archive) const override
     {
         static const GameplayTagRegistry kNoTags;

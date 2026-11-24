@@ -72,12 +72,14 @@ struct EntityScope
                                     const ComponentSerializerRegistry& serializers, SceneSerializationContext& context,
                                     std::string* failed = nullptr);
 
+// `unchanged` names components whose saved form is what `kept` was taken from: their members are kept, unwritten.
 [[nodiscard]] JsonValue CaptureEntityPatch(const World& world, EntityId entity,
                                            std::span<const AuthoredComponent> baseline,
                                            ComponentPersistenceSet alsoCarried,
                                            const ComponentSerializerRegistry& serializers,
                                            SceneSerializationContext& context, const JsonValue* kept = nullptr,
-                                           std::vector<std::string>* failed = nullptr);
+                                           std::vector<std::string>* failed = nullptr,
+                                           std::span<const ComponentTypeId> unchanged = {});
 
 struct EntityPatchOutcome
 {

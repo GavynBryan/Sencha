@@ -86,6 +86,7 @@ struct ComponentTraits<SceneInstance>
 template <>
 struct SceneFieldCodec<SceneInstanceId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, SceneInstanceId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, SceneInstanceId&,
@@ -100,6 +101,7 @@ struct SceneFieldCodec<SceneInstanceId>
 template <>
 struct SceneFieldCodec<AssetId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, AssetId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, AssetId&,

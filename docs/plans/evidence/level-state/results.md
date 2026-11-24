@@ -106,6 +106,61 @@ That capture is the figure the byte filter of stage 12 exists to bring down
 (its budget is 0.5 ms for this case); until then a quicksave among 5,000
 resident props costs about 9 ms on the owner thread.
 
+## Capture at scale (ABC2 stage 12)
+
+A capture now compares each entity's rows with the image the last capture (or
+the import) took and writes only what changed (`docs/gameplay/saves.md`,
+"Capture at scale"). Same method and machine; the stage 11 commit run three
+times, then the filter five times, the same evening.
+
+The prop zone was changed for these runs: each prop's `RigidBody` record is
+its serializer's own default record, as a cooked record is, where the earlier
+runs authored `{"motion": "dynamic"}` and so wrote a patch of every unstated
+field for every untouched prop. That is why stage 11's untouched figure below
+(6.8 ms) is lower than stage 10's (8.9 ms) and its baseline text higher.
+
+| Case (5,000 props unless named) | Budget | Stage 11 (3 runs) | Stage 12 (5 runs) |
+|---|---|---|---|
+| capture, nothing changed (signature walk included) | 0.5 ms | 6.75, 6.86, 6.90 ms | 0.165 to 0.170 ms |
+| capture, 100 changed since the last | 2 ms | 6.64, 6.96, 6.97 ms | 0.397 to 0.408 ms |
+| capture, every prop changed | recorded | 10.65, 10.92, 10.95 ms | 11.80 to 11.93 ms |
+| capture, 2,000 gained members beside 500 authored, 20 changed | 2 ms | 3.43, 3.44, 3.46 ms | 0.880 to 0.895 ms |
+| detach capture straight after import, 100 changed | 2 ms | 8.27, 8.50, 8.84 ms | 1.81 to 1.91 ms |
+| attach, what 500 patched entities add | 3 ms | 1.00, 1.06, 1.02 ms | 0.94 to 1.13 ms |
+| attach, per patched entity | recorded | 1.99, 2.12, 2.05 µs | 1.88 to 2.27 µs |
+| baseline text | recorded | 1,315,600 B | 1,315,600 B |
+| capture images | recorded | none | 800,000 B (160 B a prop) |
+
+Every gated row is inside its budget. Beside them:
+
+- **Every prop changed is slower, and over the 8 ms trigger of "A capture
+  spread over frames"** (`docs/deferred.md`). It was over it before the filter
+  too. Each changed prop is written, diffed and imaged again: 2.37 µs a prop,
+  against 2.15 µs without the image.
+- **The detach itself** (the capture, parking, and destroying 5,000 entities)
+  took 2.10 to 2.18 ms, against 8.46 to 9.14 ms. Most of what is left of the
+  capture is freeing the zone's baselines.
+- **The import** is 11.7 to 12.3 ms with level state kept, 7.6 to 7.9 ms
+  without it (stage 11: 11.2 to 11.9 against 7.5 to 7.6). The image costs about
+  0.4 ms of that on 5,000 props; the rest of what keeping level state adds to an
+  attach, about 3.7 ms, is building the baselines (a copy of each cooked record
+  and a placement read of each body), which stage 10 added and no budget
+  covers. The 3 ms attach budget is read here as what patched entities add to
+  the attach, which is what the plan's review asked to be measured.
+- **The 500-entity zone** (tags, attributes, responses): untouched 0.458 ms
+  before, 0.024 to 0.039 ms after; 5,000 of them, 4.54 ms before, 0.220 to
+  0.240 ms after. The "every entity changed" rows of the first table are now a
+  median over captures of which only the first finds the new tags, so they read
+  as untouched ones; "every prop changed" above changes every prop before each
+  capture.
+  `IComponentSerializer::SavedFormEquals`, the responses serializer's way of
+  saying its form matched content, is gone: the byte comparison covers it.
+- **A gained member** adds 0.21 µs to a capture in which it did not change,
+  against 1.48 µs.
+
+`capture_at_scale.json` and `.csv` are the third stage 12 run;
+`capture_at_scale_before.json` and `.csv` the second stage 11 run.
+
 ## Raw
 
 `level_state.json` and `level_state.csv` beside this file are the stage 10

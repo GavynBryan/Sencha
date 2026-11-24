@@ -1608,3 +1608,15 @@ transform and an owed component's difference are members of its patch.
 `EncodeOccupiedList`, `DecodeOccupiedList`) and `ZoneStateStore` gains
 `RecordOccupied` and `OccupiedOf`. The save format does not change: `occupied`
 is a new named list, which an earlier build carries unread.
+
+## v71
+
+`IComponentSerializer` loses `SavedFormEquals` and gains
+`SavedFormFromRowAlone` in its place, so the vtable keeps its size but the
+slot changes meaning; `SceneFieldCodec` specializations gain
+`WrittenFromValue`. `CaptureEntityPatch` takes an `unchanged` list.
+`World` gains `ArchetypeOf`. `zone/ZoneCaptureImage.h` is new;
+`AuthoredEntityState` gains `Image` and `ZoneStateStore` gains `ResidentOf`,
+`GainedMemberOf`, `GainedImageOf` and `RecordGainedImage`, so its layout moves.
+The save format does not change: the filter decides only what a capture
+writes again (`docs/gameplay/saves.md`, "Capture at scale").

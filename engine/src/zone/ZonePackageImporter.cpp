@@ -18,6 +18,7 @@
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/KeptWithZone.h>
+#include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateStore.h>
 
@@ -350,6 +351,7 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
         return;
     const std::vector<GainedEntityState> gained(recorded.begin(), recorded.end());
     Logger& log = patches.Context->Logging->GetLogger<ZonePackageImport>();
+    ZoneCaptureImager imager(world, *patches.Serializers);
     const PersistentEntityIndex* identities = world.TryGetResource<PersistentEntityIndex>();
     for (const GainedEntityState& member : gained)
     {
@@ -384,6 +386,7 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
             continue;
         }
         SeedDerivedTransform(world, entity, worldHasTransforms);
+        patches.Store->RecordGainedImage(patches.Scope, member.Id, imager.Gained(entity));
         made.push_back(entity);
     }
 }
@@ -480,6 +483,7 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const WorldC
 
     std::vector<AuthoredEntityState> authored;
     authored.reserve(package.EntityCount());
+    std::optional<ZoneCaptureImager> imager;
     std::size_t index = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
@@ -493,11 +497,18 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const WorldC
                                               : lifetime != nullptr ? lifetime->Forgotten
                                                                     : ZoneStateForgetting::Never;
         const bool diffed = patches.Store != nullptr && entity.IsValid() && forgotten != ZoneStateForgetting::AtDetach;
-        authored.push_back(AuthoredEntityState{
+        AuthoredEntityState& state = authored.emplace_back(AuthoredEntityState{
             packageEntity.PersistentId, forgotten,
             diffed ? BaselineOf(packageEntity, lifetime != nullptr ? lifetime->Placement : ZoneStatePlacement::ByComponents,
                                 rules)
-                   : std::vector<AuthoredComponent>{} });
+                   : std::vector<AuthoredComponent>{},
+            {} });
+        if (diffed && patches.Store->PatchOf(scope, packageEntity.PersistentId) == nullptr)
+        {
+            if (!imager.has_value())
+                imager.emplace(world, *patches.Serializers);
+            state.Image = imager->Authored(entity, state.Baseline);
+        }
     }
     return authored;
 }

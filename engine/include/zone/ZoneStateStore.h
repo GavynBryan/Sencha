@@ -5,6 +5,7 @@
 #include <ecs/ComponentTypeId.h>
 #include <world/LevelReference.h>
 #include <world/serialization/EntityPatch.h>
+#include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateLifetime.h>
 #include <zone/ZoneStateLists.h>
@@ -52,6 +53,15 @@ struct AuthoredEntityState
     ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
     // What a capture diffs this entity against: by default its Saved components.
     std::vector<AuthoredComponent> Baseline;
+    // Its rows as they match its kept patch; none when unknown.
+    ZoneCaptureImage Image;
+};
+
+// A resident authored entity as a capture reads it; both null when the store has no baseline for it.
+struct ResidentEntityState
+{
+    const std::vector<AuthoredComponent>* Baseline = nullptr;
+    ZoneCaptureImage* Image = nullptr;
 };
 
 // World resource SavedGames::KeepLevelState installs; without it a zone keeps destroyed sets only.
@@ -94,6 +104,10 @@ public:
     void ForgetGained(ZoneStateScope scope, PersistentEntityId id);
     // Members of forms this build does not make first, as read, then the rest by id.
     [[nodiscard]] std::span<const GainedEntityState> GainedOf(ZoneStateScope scope) const;
+    [[nodiscard]] const GainedEntityState* GainedMemberOf(ZoneStateScope scope, PersistentEntityId id) const;
+    // A resident gained member's rows as they match its kept member; kept until the zone detaches or forgets it.
+    [[nodiscard]] ZoneCaptureImage* GainedImageOf(ZoneStateScope scope, PersistentEntityId id);
+    void RecordGainedImage(ZoneStateScope scope, PersistentEntityId id, ZoneCaptureImage image);
 
     // The zone's sensors and what was inside each at a capture; each pair is forgotten with its sensor.
     void RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs);
@@ -106,6 +120,7 @@ public:
     [[nodiscard]] const JsonValue* PatchOf(ZoneStateScope scope, PersistentEntityId id) const;
     // Null unless the zone's current residency authored the entity, and for one forgotten at detach.
     [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] ResidentEntityState ResidentOf(ZoneStateScope scope, PersistentEntityId id);
 
     [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
 
@@ -137,6 +152,7 @@ private:
     {
         ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
         std::vector<AuthoredComponent> Baseline;
+        ZoneCaptureImage Image;
     };
 
     struct PatchRecord
@@ -160,6 +176,7 @@ private:
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
         std::unordered_map<std::uint64_t, PatchRecord> Patches;
         std::vector<GainedEntityState> Gained;
+        std::unordered_map<std::uint64_t, ZoneCaptureImage> GainedImages;
         std::vector<OccupiedRecord> Occupied;
         std::vector<ZoneStateList> Carried;
         // The never-forgotten part as a save holds it; null when stale or empty.

@@ -67,6 +67,8 @@ namespace
             return kFields;
         }
 
+        bool SavedFormFromRowAlone() const override { return std::is_trivially_copyable_v<T>; }
+
         bool Save(IWriteArchive& archive, EntityId entity, const World& world,
                   SceneSerializationContext& context) const override
         {
@@ -109,6 +111,8 @@ namespace
         std::uint32_t BinaryChunkId() const override { return MakeFourCC('I', 'T', 'C', 'N'); }
 
         std::span<const RuntimeField> RuntimeFields() const override { return {}; }
+
+        bool SavedFormFromRowAlone() const override { return std::is_trivially_copyable_v<ItemContainer>; }
 
         bool Save(IWriteArchive& archive, EntityId entity, const World& world, SceneSerializationContext&) const override
         {

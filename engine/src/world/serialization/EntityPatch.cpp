@@ -162,15 +162,19 @@ bool ReadEntityRecord(World& world, EntityId entity, const JsonValue& record,
 JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<const AuthoredComponent> baseline,
                              ComponentPersistenceSet alsoCarried, const ComponentSerializerRegistry& serializers,
                              SceneSerializationContext& context, const JsonValue* kept,
-                             std::vector<std::string>* failed)
+                             std::vector<std::string>* failed, std::span<const ComponentTypeId> unchanged)
 {
     const PurposeInScope writing(context, SceneRecordPurpose::Save);
     JsonValue authored(JsonValue::Object{});
     JsonValue live(JsonValue::Object{});
+    JsonValue::Object keptMembers;
     const auto take = [&](const IComponentSerializer& serializer, const AuthoredComponent* content, bool carried) {
-        if (carried && content != nullptr && content->InContent
-            && serializer.SavedFormEquals(world, entity, content->Record).value_or(false))
+        if (carried && std::ranges::find(unchanged, serializer.TypeId()) != unchanged.end())
+        {
+            if (const JsonValue* member = kept != nullptr && kept->IsObject() ? kept->Find(serializer.JsonKey()) : nullptr)
+                keptMembers.emplace_back(std::string(serializer.JsonKey()), *member);
             return;
+        }
         std::optional<JsonValue> now;
         if (carried && !(now = Written(serializer, world, entity, context, failed)).has_value())
             return;
@@ -204,6 +208,8 @@ JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<cons
             take(*serializer, nullptr, true);
     }
     JsonValue patch = PatchFrom(authored, live, &serializers.EntitySchema()).value_or(JsonValue(JsonValue::Object{}));
+    for (auto& member : keptMembers)
+        patch.AsObject().push_back(std::move(member));
     if (kept != nullptr && kept->IsObject())
         for (const auto& [key, member] : kept->AsObject())
             if (serializers.FindByJsonKey(key) == nullptr)

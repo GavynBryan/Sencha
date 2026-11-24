@@ -1713,18 +1713,31 @@ described in `docs/navigation/runtime.md`, "Agents".
   Its consumer is co-op, and it also covers the other-participant part of
   "Saving what was created at run time".
 
-## Change tracking for zone capture
+## A capture spread over frames
 
-- **What:** every capture serialises and diffs each authored entity's baseline
-  components, unchanged or not: a zone of 5,000 entities with three saved
-  components is 15,000 rounds per capture on the owner thread, and every
-  entity the zone gained is written whole at every capture, about 1.5 µs each
-  (`docs/plans/evidence/level-state/results.md`). Not built: skipping entities
-  and gained members whose saved components did not change, or spreading a
-  capture over frames.
+- **What:** a zone capture skips entities and gained members whose rows did not
+  change (`docs/gameplay/saves.md`, "Capture at scale"), but when every entity
+  of a zone changed at once (5,000 props all moving) each is written and diffed
+  in the one capture, on the owner thread. Not built: diffing a few changed
+  entities per frame ahead of the capture, so a save or detach has little left.
 - **Where:** `engine/src/zone/ZoneStateMemory.cpp` (`RecordPatches`).
-- **Trigger:** the bench's 5,000-entity figure against a real game's frame
-  budget, or a streamed zone whose detach shows in a profile.
+- **Trigger:** the level-state bench's "every prop changed" capture over 8 ms
+  (`docs/plans/evidence/level-state/results.md`), or a save or detach seen in a
+  profile. Its consumer is a physics-heavy level. The bench measured 11.9 ms
+  when the filter landed (10.7 ms before it), so the figure is past the
+  trigger; building this waits on the owner's call.
+
+## Capture off the owner thread
+
+- **What:** a capture reads the World through every serializer's `Save`, so it
+  runs on the owner thread. A serializer whose saved form follows its row
+  (`IComponentSerializer::SavedFormFromRowAlone`) could write from copied bytes
+  on a worker instead. Not built: copying changed rows out and writing them on
+  the async lane.
+- **Where:** `engine/src/zone/ZoneStateMemory.cpp`,
+  `engine/include/world/serialization/IComponentSerializer.h`.
+- **Trigger:** serializers that write from copied bytes, wanted for a capture
+  that spreading over frames does not bring under budget.
 
 ## Waiting records kept alive
 

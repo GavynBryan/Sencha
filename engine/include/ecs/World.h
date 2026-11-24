@@ -619,6 +619,12 @@ public:
         return ArchetypeList[Entities.GetLocation(entity).ArchetypeId]->Signature.test(id);
     }
 
+    // The archetype `entity` lives in, stable for the World's life; UINT32_MAX for a dead entity.
+    [[nodiscard]] uint32_t ArchetypeOf(EntityId entity) const
+    {
+        return Entities.IsAlive(entity) ? Entities.GetLocation(entity).ArchetypeId : UINT32_MAX;
+    }
+
     bool HasComponent(EntityId entity, ComponentId id) const
     {
         if (!Entities.IsAlive(entity)) return false;

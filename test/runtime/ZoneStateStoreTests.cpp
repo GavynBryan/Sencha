@@ -96,7 +96,7 @@ std::vector<AuthoredEntityState> Authored(std::initializer_list<std::uint64_t> i
 {
     std::vector<AuthoredEntityState> authored;
     for (const std::uint64_t id : ids)
-        authored.push_back(AuthoredEntityState{ PersistentEntityId{ id }, forgotten, {} });
+        authored.push_back(AuthoredEntityState{ PersistentEntityId{ id }, forgotten, {}, {} });
     return authored;
 }
 } // namespace
@@ -217,7 +217,7 @@ TEST(ZoneStateStore, OnlyWhatIsNeverForgottenIsDurableAndItExportsInIdOrder)
 {
     ZoneStateStore store;
     std::vector authored = Authored({ 0x30, 0x10, 0x20 });
-    authored.push_back(AuthoredEntityState{ PersistentEntityId{ 0x40 }, ZoneStateForgetting::AtRestore, {} });
+    authored.push_back(AuthoredEntityState{ PersistentEntityId{ 0x40 }, ZoneStateForgetting::AtRestore, {}, {} });
     store.RecordAuthoredSet(ScopeOf(store, ZoneId{ 9 }), authored);
     store.RecordAuthoredSet(ScopeOf(store, ZoneId{ 3 }), Authored({ 0x50 }));
     store.RecordCapture(ScopeOf(store, ZoneId{ 9 }), std::array{ PersistentEntityId{ 0x20 } }, ZoneCapture::Live);
