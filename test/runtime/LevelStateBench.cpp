@@ -12,6 +12,8 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/InventoryComponents.h>
 #include <logic/Responses.h>
+#include <physics/components/Collider.h>
+#include <physics/components/RigidBody.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -89,6 +91,27 @@ namespace
             return package;
         }
 
+        static EntityBuildPackage Props(std::size_t count)
+        {
+            const JsonValue collider = *JsonParse(R"({"shape":{"type":"box","half_extents":[0.5,0.5,0.5]}})");
+            const JsonValue body = *JsonParse(R"({"motion":"dynamic"})");
+            EntityBuildPackage package;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const PackageEntityId entity = package.CreateEntity();
+                const PersistentEntityId id{ 0x1000 + i };
+                EXPECT_TRUE(package.AddComponent<PersistentIdComponent>(entity, { id }));
+                EXPECT_TRUE(package.SetPersistentId(entity, id));
+                const JsonValue placed = *JsonParse(std::format(
+                    R"({{"local":{{"position":[{},0.5,{}],"rotation":[0,0,0,1],"scale":[1,1,1]}}}})",
+                    static_cast<double>(i % 100) * 1.5, static_cast<double>(i / 100) * 1.5));
+                EXPECT_TRUE(package.SetSerializedComponent(entity, ResolveComponentTypeId<LocalTransform>(), placed));
+                EXPECT_TRUE(package.SetSerializedComponent(entity, ResolveComponentTypeId<Collider>(), collider));
+                EXPECT_TRUE(package.SetSerializedComponent(entity, ResolveComponentTypeId<RigidBody>(), body));
+            }
+            return package;
+        }
+
         double Import(const EntityBuildPackage& package)
         {
             ZoneImportError error;
@@ -153,6 +176,16 @@ namespace
             return gained;
         }
 
+        std::size_t BaselineMembers(std::size_t count)
+        {
+            const ZoneStateStore& store = Runtime.Entities().GetResource<ZoneStateStore>();
+            std::size_t members = 0;
+            for (std::size_t i = 0; i < count; ++i)
+                if (const std::vector<AuthoredComponent>* baseline = store.BaselineOf(Scope, PersistentEntityId{ 0x1000 + i }))
+                    members += baseline->size();
+            return members;
+        }
+
         std::size_t BaselineBytes(std::size_t count)
         {
             const ZoneStateStore& store = Runtime.Entities().GetResource<ZoneStateStore>();
@@ -199,6 +232,24 @@ namespace
                         1000.0 * changedMs / static_cast<double>(count));
         EXPECT_NE(bench.Runtime.Entities().GetResource<ZoneStateStore>().PatchOf(bench.Scope, PersistentEntityId{ 0x1000 }),
                   nullptr);
+    }
+
+    void RecordProps(std::size_t count)
+    {
+        LevelStateBenchWorld bench;
+        const EntityBuildPackage package = LevelStateBenchWorld::Props(count);
+        Recorder.Record(std::format("props.{}.import", count), "ms", bench.Import(package));
+        Recorder.Record(std::format("props.{}.baseline_members", count), "count",
+                        static_cast<double>(bench.BaselineMembers(count)));
+        Recorder.Record(std::format("props.{}.baseline_text_bytes", count), "bytes",
+                        static_cast<double>(bench.BaselineBytes(count)));
+        std::vector<double> untouched;
+        for (int rep = 0; rep < Reps(9); ++rep)
+            untouched.push_back(bench.Capture());
+        const double untouchedMs = Bench::Median(untouched);
+        Recorder.Record(std::format("props.{}.capture_untouched", count), "ms", untouchedMs);
+        Recorder.Record(std::format("props.{}.capture_untouched_per_entity", count), "us",
+                        1000.0 * untouchedMs / static_cast<double>(count));
     }
 
     void RecordGained(std::size_t zoneSize, std::size_t gained)
@@ -288,6 +339,7 @@ TEST(LevelStateBench, Generate)
     Recorder.Clear();
     for (const std::size_t count : { 500u, 5000u })
         RecordCapture(count);
+    RecordProps(5000);
     for (const std::size_t patched : { 50u, 500u })
         RecordAttach(500, patched);
     for (const std::size_t gained : { 50u, 500u })

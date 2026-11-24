@@ -198,3 +198,19 @@ TEST_F(RigidBodyAuthoring, ADynamicBodyUnderARotatedOffsetParentHasALocalTransfo
     EXPECT_NEAR((evicted.Position - pose.Position).Magnitude(), 0.0f, 1e-4f)
         << "the state captured at eviction does not compose to where the body was";
 }
+
+TEST_F(RigidBodyAuthoring, ASleepingBodyRemovedWithTheFloorUnderItIsCapturedAsleep)
+{
+    const EntityId floor = Floor();
+    const EntityId crate = Authored(R"({"Transform": {"local": {"position": [0, 1, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]}},
+                                        "collider": {"shape": {"type": "box", "half_extents": [0.5, 0.5, 0.5]}},
+                                        "RigidBody": {"motion": "dynamic"}})");
+    for (int step = 0; step < 600 && !Body(crate).Asleep; ++step)
+        Tick();
+    ASSERT_TRUE(Body(crate).Asleep);
+    ASSERT_LT(Simulated(floor).Value, Simulated(crate).Value) << "the floor must be removed first for this to test anything";
+
+    Bodies.EvictAll(Entities());
+    EXPECT_TRUE(Body(crate).Asleep) << "removing the floor first woke the crate before it was captured";
+    EXPECT_EQ(Body(crate).LinearVelocity, Vec3d::Zero());
+}

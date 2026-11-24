@@ -1586,3 +1586,15 @@ gains `StartAsleep`. The binding pulls a parented body's pose relative to its
 parent and leaves a sleeping body's row alone (`docs/physics/rigid-bodies.md`).
 The save format does not change: a body's velocities and sleep are members of
 a level entity's patch.
+
+## v69
+
+`IComponentSerializer` gains `HoldsPlacement` (a new vtable slot before the
+destructor), answered for a generated serializer by the new
+`ComponentHoldsPlacement` trait (`core/metadata/ComponentHoldsPlacement.h`),
+which `RigidBody` (dynamic only) and `CharacterController` specialize.
+`ZoneStateLifetime` gains `Placement` (`ZoneStatePlacement`), so its layout
+moves. `RuntimeZoneRecord` gains `CapturedAtDetach`; `LoadedLevel::Unload`
+takes an `UnloadedState`; `world/serialization/EntityPatch.h` gains
+`SavedDefaultRecord`. The save format does not change: a level entity's kept
+transform and an owed component's difference are members of its patch.

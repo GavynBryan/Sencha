@@ -1713,17 +1713,6 @@ described in `docs/navigation/runtime.md`, "Agents".
   Its consumer is co-op, and it also covers the other-participant part of
   "Saving what was created at run time".
 
-## Placement of a level entity
-
-- **What:** a level entity's patch holds its `Saved` components; nothing adds
-  `LocalTransform` to its baseline, so a moved crate returns to where the level
-  put it. The baseline is a per-entity list (`AuthoredEntityState::Baseline`),
-  so placement is one more member in it and no format change.
-- **Where:** `engine/src/zone/ZonePackageImporter.cpp` (`BaselineOf`),
-  `engine/src/zone/ZoneStateMemory.cpp`.
-- **Trigger:** fired: `RigidBody` has a scene form (`docs/physics/rigid-bodies.md`),
-  so a level can author a crate that falls and is pushed.
-
 ## Change tracking for zone capture
 
 - **What:** every capture serialises and diffs each authored entity's baseline

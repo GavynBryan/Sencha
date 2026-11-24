@@ -2,12 +2,14 @@
 
 #include <core/handle/Handle.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentHoldsPlacement.h>
 #include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/JsonArchive.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneAssetFieldIo.h>
@@ -240,6 +242,24 @@ public:
             SceneSerializationContext bare(unheard);
             bare.Purpose = SceneRecordPurpose::Save;
             return SceneComponentSerialization::SaveFields(archive, Component{}, bare);
+        }
+    }
+
+    bool HoldsPlacement(const JsonValue& cooked) const override
+    {
+        if constexpr (DeclaresHoldsPlacement<Component>)
+        {
+            LoggingProvider unheard;
+            SceneSerializationContext bare(unheard);
+            JsonReadArchive archive(cooked);
+            Component value{};
+            const bool read = SceneComponentSerialization::LoadFields(archive, value, bare);
+            SceneComponentSerialization::ReleaseFields(value, bare);
+            return read && ComponentHoldsPlacement<Component>::Holds(value);
+        }
+        else
+        {
+            return false;
         }
     }
 

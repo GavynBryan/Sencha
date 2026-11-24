@@ -157,7 +157,7 @@ void LevelChange::Commit()
 
     LoadedLevel& level = Host.Level();
     const std::optional<LevelReference> leaving = level.Loaded();
-    level.Unload();
+    level.Unload(Forgets(request, leaving) ? UnloadedState::Forgotten : UnloadedState::Captured);
     ForgetFor(world, request, leaving);
     world.SetResource(LevelArrival{ .Name = request.Arrival(), .Spawning = Released, .Kept = std::move(kept) });
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
@@ -273,6 +273,19 @@ void LevelChange::MoveBody(World& world, EntityId body, const Transform3f& place
         RequestTransformHistorySnap(world, body);
     if (KinematicState* motion = world.TryGet<KinematicState>(body))
         motion->Velocity = Vec3d::Zero();
+}
+
+bool LevelChange::Forgets(const LevelChangeRequest& request, const std::optional<LevelReference>& leaving)
+{
+    switch (request.Kind())
+    {
+    case LevelChangeKind::Travel:
+        return request.Memory() == LevelMemory::Authored && leaving.has_value() && *leaving == request.Level();
+    case LevelChangeKind::NewGame:
+    case LevelChangeKind::Restore:
+        return true;
+    }
+    return false;
 }
 
 void LevelChange::ForgetFor(World& world, const LevelChangeRequest& request,

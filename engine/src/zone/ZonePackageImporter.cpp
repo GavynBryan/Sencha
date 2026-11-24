@@ -257,19 +257,19 @@ bool ImportComponent(
 
 // An entity's own lifetime, else the nearest ancestor's, else the one authored
 // elsewhere in the placed scene it belongs to.
-ZoneStateForgetting ForgettingOf(const World& world, EntityId entity,
-                                 const std::unordered_map<std::uint64_t, ZoneStateForgetting>& byInstance)
+const ZoneStateLifetime* LifetimeOf(const World& world, EntityId entity,
+                                    const std::unordered_map<std::uint64_t, ZoneStateLifetime>& byInstance)
 {
     for (EntityId at = entity; at.IsValid() && world.IsAlive(at);)
     {
         if (const ZoneStateLifetime* lifetime = world.TryGet<ZoneStateLifetime>(at))
-            return lifetime->Forgotten;
+            return lifetime;
         const Parent* parent = world.IsRegistered<Parent>() ? world.TryGet<Parent>(at) : nullptr;
         at = parent != nullptr ? parent->Entity : EntityId{};
     }
     const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(entity) : nullptr;
     const auto found = instance != nullptr ? byInstance.find(instance->Id.Value) : byInstance.end();
-    return found != byInstance.end() ? found->second : ZoneStateForgetting::Never;
+    return found != byInstance.end() ? &found->second : nullptr;
 }
 
 std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentSchema& schema,
@@ -387,11 +387,66 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
     }
 }
 
-std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, const LevelEntityPatches& patches,
-                                          std::vector<ComponentTypeId>& bytesReported)
+struct BaselineRules
 {
-    std::vector<AuthoredComponent> baseline =
-        AuthoredComponentsOf(content, *patches.Serializers, { .Declared = { .Saved = true } });
+    const World& Entities;
+    const WorldComponentSchema& Schema;
+    const LevelEntityPatches& Patches;
+    std::vector<ComponentTypeId> BytesReported;
+    std::vector<std::pair<ComponentTypeId, std::optional<JsonValue>>> OwedDefaults;
+};
+
+bool HoldsPlacement(const PackageEntity& content, const ComponentSerializerRegistry& serializers)
+{
+    return std::ranges::any_of(content.Components, [&](const PackageComponent& component) {
+        const IComponentSerializer* serializer = serializers.FindByType(component.Type);
+        return serializer != nullptr && component.SerializedJson.has_value()
+            && serializer->HoldsPlacement(*component.SerializedJson);
+    });
+}
+
+const std::optional<JsonValue>& OwedDefault(BaselineRules& rules, ComponentTypeId type)
+{
+    const auto cached = std::ranges::find(rules.OwedDefaults, type, &std::pair<ComponentTypeId, std::optional<JsonValue>>::first);
+    if (cached != rules.OwedDefaults.end())
+        return cached->second;
+    const IComponentSerializer* serializer = rules.Patches.Serializers->FindByType(type);
+    return rules.OwedDefaults
+        .emplace_back(type, serializer != nullptr ? SavedDefaultRecord(*serializer) : std::nullopt)
+        .second;
+}
+
+void AddOwedDefaults(BaselineRules& rules, const PackageEntity& content, std::vector<AuthoredComponent>& baseline)
+{
+    for (const PackageComponent& component : content.Components)
+    {
+        const WorldComponentSchema::Entry* entry = rules.Schema.Find(component.Type);
+        if (entry == nullptr)
+            continue;
+        for (const ComponentTypeId owed : entry->Owed)
+        {
+            if (content.Find(owed) != nullptr || rules.Entities.GetComponentIdByType(owed) == InvalidComponentId
+                || std::ranges::find(baseline, owed, &AuthoredComponent::Type) != baseline.end())
+                continue;
+            if (const std::optional<JsonValue>& record = OwedDefault(rules, owed); record.has_value())
+                baseline.push_back({ .Type = owed, .Record = *record, .InContent = true, .Diffed = true });
+        }
+    }
+}
+
+std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, ZoneStatePlacement placement,
+                                          BaselineRules& rules)
+{
+    const LevelEntityPatches& patches = rules.Patches;
+    const ComponentTypeId transform = ResolveComponentTypeId<LocalTransform>();
+    const bool placed = placement == ZoneStatePlacement::Kept
+        || (placement == ZoneStatePlacement::ByComponents && HoldsPlacement(content, *patches.Serializers));
+    std::vector<AuthoredComponent> baseline = AuthoredComponentsOf(
+        content, *patches.Serializers,
+        { .Listed = placed ? std::span<const ComponentTypeId>(&transform, 1) : std::span<const ComponentTypeId>(),
+          .Declared = { .Saved = true } });
+    AddOwedDefaults(rules, content, baseline);
+    std::vector<ComponentTypeId>& bytesReported = rules.BytesReported;
     for (AuthoredComponent& component : baseline)
     {
         if (!component.InContent || !component.Record.IsNull())
@@ -408,19 +463,19 @@ std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, const Le
     return baseline;
 }
 
-std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
-                                                std::span<const EntityId> entities,
+std::vector<AuthoredEntityState> AuthoredStates(const World& world, const WorldComponentSchema& schema,
+                                                const EntityBuildPackage& package, std::span<const EntityId> entities,
                                                 const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
                                                 ZoneStateScope scope, const LevelEntityPatches& patches)
 {
-    std::vector<ComponentTypeId> bytesReported;
-    std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
+    BaselineRules rules{ .Entities = world, .Schema = schema, .Patches = patches, .BytesReported = {}, .OwedDefaults = {} };
+    std::unordered_map<std::uint64_t, ZoneStateLifetime> byInstance;
     const bool lifetimes = world.IsRegistered<ZoneStateLifetime>();
     if (lifetimes && world.IsRegistered<SceneInstance>())
         for (const EntityId entity : entities)
             if (const ZoneStateLifetime* lifetime = entity.IsValid() ? world.TryGet<ZoneStateLifetime>(entity) : nullptr)
                 if (const SceneInstance* instance = world.TryGet<SceneInstance>(entity))
-                    byInstance.emplace(instance->Id.Value, lifetime->Forgotten);
+                    byInstance.emplace(instance->Id.Value, *lifetime);
 
     std::vector<AuthoredEntityState> authored;
     authored.reserve(package.EntityCount());
@@ -431,13 +486,17 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const Entity
         const EntityId entity = entities[index++];
         if (materializedElsewhere || !packageEntity.PersistentId.IsValid())
             continue;
+        const ZoneStateLifetime* lifetime =
+            entity.IsValid() && lifetimes ? LifetimeOf(world, entity, byInstance) : nullptr;
         const ZoneStateForgetting forgotten = !entity.IsValid() ? store.ForgettingOf(scope, packageEntity.PersistentId)
-                                              : lifetimes        ? ForgettingOf(world, entity, byInstance)
-                                                                 : ZoneStateForgetting::Never;
+                                              : lifetime != nullptr ? lifetime->Forgotten
+                                                                    : ZoneStateForgetting::Never;
+        const bool diffed = patches.Store != nullptr && entity.IsValid() && forgotten != ZoneStateForgetting::AtDetach;
         authored.push_back(AuthoredEntityState{
             packageEntity.PersistentId, forgotten,
-            patches.Store != nullptr && entity.IsValid() ? BaselineOf(packageEntity, patches, bytesReported)
-                                                         : std::vector<AuthoredComponent>{} });
+            diffed ? BaselineOf(packageEntity, lifetime != nullptr ? lifetime->Placement : ZoneStatePlacement::ByComponents,
+                                rules)
+                   : std::vector<AuthoredComponent>{} });
     }
     return authored;
 }
@@ -615,7 +674,7 @@ bool ImportPackageIntoPartitionImpl(
     if (zoneState != nullptr)
     {
         std::vector<AuthoredEntityState> authored =
-            AuthoredStates(world, package, entities, authorityOnly, *zoneState, stateScope, patches);
+            AuthoredStates(world, schema, package, entities, authorityOnly, *zoneState, stateScope, patches);
         if (!authored.empty())
             zoneState->RecordAuthoredSet(stateScope, std::move(authored));
     }

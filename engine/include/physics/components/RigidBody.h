@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentHoldsPlacement.h>
 #include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
 #include <physics/PhysicsTypes.h>
@@ -44,6 +45,12 @@ RigidBody
     SENCHA_FIELD("asleep")
     SENCHA_TOOLTIP("Starts settled: a dynamic body that does not move until something touches it.")
     bool Asleep = false;
+};
+
+template <>
+struct ComponentHoldsPlacement<RigidBody>
+{
+    static bool Holds(const RigidBody& body) { return body.Motion == BodyMotion::Dynamic; }
 };
 
 #if !defined(SENCHA_CODEGEN)

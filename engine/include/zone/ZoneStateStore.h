@@ -100,7 +100,7 @@ public:
     // Never for an entity this store has no record of.
     [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const;
     [[nodiscard]] const JsonValue* PatchOf(ZoneStateScope scope, PersistentEntityId id) const;
-    // Null unless the zone's current residency authored the entity.
+    // Null unless the zone's current residency authored the entity, and for one forgotten at detach.
     [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
 
     [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;

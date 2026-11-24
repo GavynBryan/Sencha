@@ -26,6 +26,9 @@
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <physics/PhysicsStepSystem.h>
+#include <physics/components/RigidBody.h>
+#include <physics/components/PhysicsBodyLink.h>
+#include <physics/PhysicsWorld.h>
 #include <save/SavedGame.h>
 #include <save/SavedGames.h>
 #include <world/held/Held.h>
@@ -993,53 +996,6 @@ TEST(SavedGames, AWriteLeavesTheEntitiesTheirArchetypesAndTheIdMintAsTheyWere)
     const SavedGameSection* ids = SectionOf(*saved, "sencha.persistent_ids");
     ASSERT_NE(ids, nullptr);
     EXPECT_EQ(static_cast<std::uint64_t>(ids->Data.NumberOr("next", 0.0)), before->NextId);
-    std::filesystem::remove_all(root);
-}
-
-TEST(SavedGames, ABodyNothingReferencesIsSavedAndRestoredWithoutAnId)
-{
-    const std::filesystem::path root = RootFor("body_without_id");
-    bool unnamedBefore = false;
-    bool unnamedAfter = false;
-    int stage = 0;
-    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
-        if (stage == 0 && HasBody(world))
-        {
-            unnamedBefore = !HasPersistentId(world, LocalControlSubjectOf(world));
-            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
-            stage = 1;
-        }
-        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
-        {
-            unnamedAfter = !HasPersistentId(world, LocalControlSubjectOf(world));
-            stage = 2;
-        }
-    });
-    ASSERT_EQ(stage, 2);
-    ASSERT_TRUE(unnamedBefore) << "something referenced the body before the save";
-    EXPECT_TRUE(unnamedAfter) << "writing the save gave the body an id";
-    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
-    ASSERT_TRUE(saved.has_value());
-    const JsonValue* local = LocalBodyIn(*saved);
-    ASSERT_NE(local, nullptr);
-    EXPECT_EQ(local->Find("id"), nullptr);
-
-    std::optional<bool> restoredUnnamed;
-    stage = 0;
-    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
-        if (stage == 0 && HasBody(world))
-        {
-            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
-            stage = 1;
-        }
-        else if (stage == 1 && RestoreArrived(engine))
-        {
-            restoredUnnamed = !HasPersistentId(world, LocalControlSubjectOf(world));
-            stage = 2;
-        }
-    });
-    ASSERT_EQ(stage, 2);
-    EXPECT_EQ(restoredUnnamed, true);
     std::filesystem::remove_all(root);
 }
 
@@ -2945,6 +2901,340 @@ TEST(SavedGames, AListingOrAThumbnailAskedForBeforeADeleteDoesNotAnswerWithTheDe
     EXPECT_EQ(Listed(*listed, "fleeting"), nullptr) << "a listing answered with a slot deleted since it was asked for";
     EXPECT_NE(Listed(*listed, "staying"), nullptr);
     EXPECT_FALSE(pictured->has_value()) << "a thumbnail answered for a slot deleted since it was asked for";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    const PersistentEntityId kCrate = *PersistentEntityIdFromString("6f2b1c0d9e8a7c01");
+    const PersistentEntityId kStackBottom = *PersistentEntityIdFromString("6f2b1c0d9e8a7c02");
+    const PersistentEntityId kStackTop = *PersistentEntityIdFromString("6f2b1c0d9e8a7c03");
+    const PersistentEntityId kZoneCrate = *PersistentEntityIdFromString("5882e5a3d55e9c01");
+
+    struct CrateState
+    {
+        Vec3d At;
+        Vec3d Velocity;
+        bool Asleep = false;
+    };
+
+    std::optional<CrateState> CrateIn(const World& world, PersistentEntityId id)
+    {
+        const EntityId crate = Live(world, id);
+        if (!crate.IsValid())
+            return std::nullopt;
+        const LocalTransform* placed = world.TryGet<LocalTransform>(crate);
+        const RigidBody* body = world.TryGet<RigidBody>(crate);
+        if (placed == nullptr || body == nullptr)
+            return std::nullopt;
+        return CrateState{ .At = placed->Value.Position, .Velocity = body->LinearVelocity, .Asleep = body->Asleep };
+    }
+
+    bool Push(Engine& engine, const World& world, PersistentEntityId id, Vec3d velocity)
+    {
+        const EntityId crate = Live(world, id);
+        const PhysicsBodyLink* link = crate.IsValid() ? world.TryGet<PhysicsBodyLink>(crate) : nullptr;
+        if (link == nullptr)
+            return false;
+        PhysicsWorld& simulation = engine.Schedule().Get<PhysicsStepSystem>()->GetSimulation();
+        simulation.SetLinearVelocity(link->Body, velocity);
+        simulation.WakeBody(link->Body);
+        return true;
+    }
+
+    bool SettledAway(const World& world, PersistentEntityId id, Vec3d authored)
+    {
+        const std::optional<CrateState> crate = CrateIn(world, id);
+        return crate.has_value() && crate->Asleep && (crate->At - authored).Magnitude() > 0.5f;
+    }
+
+    float Apart(Vec3d a, Vec3d b) { return (a - b).Magnitude(); }
+
+    std::optional<JsonValue> ChangedPatchOf(const SavedGame& saved, const LevelReference& level, PersistentEntityId id)
+    {
+        if (const DurableLevelState* state = LevelIn(saved, level))
+            for (const DurableZoneState& zone : state->Zones)
+                for (ZoneListEntity& entity : ZoneEntities(zone.Lists, kChangedZoneList))
+                    if (entity.Id == id)
+                        return std::move(entity.Value);
+        return std::nullopt;
+    }
+}
+
+TEST(SavedGames, APushedCrateIsWhereItWasLeftAfterItsStreamedZoneLeavesAndComesBack)
+{
+    const std::filesystem::path root = RootFor("crate_streamed");
+    std::optional<CrateState> left;
+    std::optional<CrateState> back;
+    std::optional<CrateState> later;
+    int stage = 0;
+    int waited = 0;
+    RunFps(
+        kFirst.Name, 5000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone)
+                     && Push(engine, world, kZoneCrate, Vec3d{ 3.0f, 0.0f, 2.0f }))
+            {
+                stage = 2;
+            }
+            else if (stage == 2 && SettledAway(world, kZoneCrate, Vec3d{ -4.0f, 0.5f, -4.0f }))
+            {
+                left = CrateIn(world, kZoneCrate);
+                stage = 3;
+            }
+            else if (stage == 3 && WalkTowards(engine, world, 32.0f) && !Resident(engine, kStartZone))
+            {
+                stage = 4;
+            }
+            else if (stage == 4 && WalkTowards(engine, world, 0.0f) && Resident(engine, kStartZone)
+                     && Resolves(world, kZoneCrate))
+            {
+                back = CrateIn(world, kZoneCrate);
+                stage = 5;
+            }
+            else if (stage == 5 && ++waited == 120)
+            {
+                later = CrateIn(world, kZoneCrate);
+                stage = 6;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 6) << "the crate was not pushed and the zone not streamed out and back";
+    ASSERT_TRUE(left.has_value() && back.has_value() && later.has_value());
+    EXPECT_LT(Apart(back->At, left->At), 1e-3f) << "the crate went back to where the zone authored it";
+    EXPECT_TRUE(back->Asleep) << "a crate left asleep came back awake";
+    EXPECT_LT(Apart(later->At, left->At), 1e-3f) << "the crate moved after its zone came back";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, APushedCrateIsWhereItWasLeftAfterAJourneyThereAndBack)
+{
+    const std::filesystem::path root = RootFor("crate_journey");
+    std::optional<CrateState> left;
+    std::optional<CrateState> back;
+    int stage = 0;
+    RunFps(kFirst.Name, 3000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world) && Push(engine, world, kCrate, Vec3d{ -3.0f, 0.0f, 2.0f }))
+        {
+            stage = 1;
+        }
+        else if (stage == 1 && SettledAway(world, kCrate, Vec3d{ 6.0f, 0.5f, -6.0f }))
+        {
+            left = CrateIn(world, kCrate);
+            Travel(engine, kSecond, LevelMemory::Remembered);
+            stage = 2;
+        }
+        else if (stage == 2 && Arrived(engine))
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 3;
+        }
+        else if (stage == 3 && Arrived(engine) && Resolves(world, kCrate))
+        {
+            back = CrateIn(world, kCrate);
+            stage = 4;
+        }
+    });
+    ASSERT_EQ(stage, 4);
+    ASSERT_TRUE(left.has_value() && back.has_value());
+    EXPECT_LT(Apart(back->At, left->At), 1e-3f) << "the crate went back to where the level authored it";
+    EXPECT_TRUE(back->Asleep);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ACrateComesBackFromASaveInAFreshRunWhereItWasAsleepIfItWasAndMovingIfItWas)
+{
+    const std::filesystem::path root = RootFor("crate_fresh_run");
+    std::optional<CrateState> asleep;
+    int stage = 0;
+    RunFps(kFirst.Name, 3000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world) && Push(engine, world, kCrate, Vec3d{ -3.0f, 0.0f, 2.0f }))
+        {
+            stage = 1;
+        }
+        else if (stage == 1 && SettledAway(world, kCrate, Vec3d{ 6.0f, 0.5f, -6.0f }))
+        {
+            asleep = CrateIn(world, kCrate);
+            EXPECT_EQ(engine.Saves().RequestWrite("asleep"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done
+                 && Push(engine, world, kCrate, Vec3d{ 0.0f, 9.0f, 0.0f }))
+        {
+            stage = 3;
+        }
+        else if (stage == 3 && CrateIn(world, kCrate).has_value() && CrateIn(world, kCrate)->Velocity.Y > 4.0f)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("moving"), SaveAdmission::Accepted);
+            stage = 4;
+        }
+        else if (stage == 4 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 5;
+        }
+    });
+    ASSERT_EQ(stage, 5);
+    ASSERT_TRUE(asleep.has_value());
+
+    const std::optional<SavedGame> movingSave = ReadSave(SlotFile(root, "moving"));
+    ASSERT_TRUE(movingSave.has_value());
+    const std::optional<JsonValue> patch = ChangedPatchOf(*movingSave, kFirst, kCrate);
+    ASSERT_TRUE(patch.has_value()) << "the save holds nothing of the crate";
+    EXPECT_NE(patch->Find("Transform"), nullptr) << "the save does not hold where the crate was";
+    ASSERT_NE(patch->Find("RigidBody"), nullptr);
+    ASSERT_NE(patch->Find("RigidBody")->Find("linear_velocity"), nullptr) << "the save does not hold how it moved";
+    const JsonValue::Array& savedAt = patch->Find("Transform")->Find("local")->Find("position")->AsArray();
+    const Vec3d saved{ static_cast<float>(savedAt[0].AsNumber()), static_cast<float>(savedAt[1].AsNumber()),
+                       static_cast<float>(savedAt[2].AsNumber()) };
+
+    std::optional<CrateState> restored;
+    std::optional<CrateState> later;
+    int waited = 0;
+    stage = 0;
+    RunFps(kFirst.Name, 3000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore("asleep"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            restored = CrateIn(world, kCrate);
+            stage = 2;
+        }
+        else if (stage == 2 && ++waited == 120)
+        {
+            later = CrateIn(world, kCrate);
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    ASSERT_TRUE(restored.has_value() && later.has_value());
+    EXPECT_LT(Apart(restored->At, asleep->At), 1e-3f) << "the crate did not come back where it was saved";
+    EXPECT_TRUE(restored->Asleep) << "a crate saved asleep came back awake";
+    EXPECT_LT(Apart(later->At, asleep->At), 1e-3f) << "the restored crate did not stay where it was (through the floor?)";
+
+    EntityId authoredCrate;
+    std::optional<Vec3d> first;
+    float highest = -1000.0f;
+    stage = 0;
+    RunFps(kFirst.Name, 3000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            authoredCrate = Live(world, kCrate);
+            EXPECT_EQ(engine.Saves().RequestRestore("moving"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && Live(world, kCrate).IsValid() && Live(world, kCrate) != authoredCrate
+                 && CrateIn(world, kCrate).has_value() && world.HasComponent<PhysicsBodyLink>(Live(world, kCrate)))
+        {
+            const Vec3d at = CrateIn(world, kCrate)->At;
+            if (!first.has_value())
+                first = at;
+            highest = std::max(highest, at.Y);
+            if (highest > first->Y + 0.1f)
+                stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    ASSERT_TRUE(first.has_value());
+    EXPECT_NEAR(first->X, saved.X, 1e-3f) << "the crate saved in the air did not come back where it was";
+    EXPECT_NEAR(first->Z, saved.Z, 1e-3f);
+    EXPECT_GE(first->Y, saved.Y - 1e-3f);
+    EXPECT_GT(highest, first->Y + 0.1f) << "the crate saved rising did not come back rising";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ARestingStackSavedAndLoadedFiveTimesMovesUnderAMillimetre)
+{
+    const std::filesystem::path root = RootFor("stack_five_loads");
+    std::vector<std::pair<Vec3d, Vec3d>> saved;
+    int stage = 0;
+    int loads = 0;
+    RunFps(kFirst.Name, 12000, root, [&](Engine& engine, World& world, int) {
+        const auto settled = [&] {
+            const std::optional<CrateState> bottom = CrateIn(world, kStackBottom);
+            const std::optional<CrateState> top = CrateIn(world, kStackTop);
+            return bottom.has_value() && top.has_value() && bottom->Asleep && top->Asleep;
+        };
+        if (stage == 0 && HasBody(world) && settled())
+        {
+            saved.emplace_back(CrateIn(world, kStackBottom)->At, CrateIn(world, kStackTop)->At);
+            EXPECT_EQ(engine.Saves().RequestWrite("stack"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore("stack"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && RestoreArrived(engine) && settled())
+        {
+            stage = ++loads == 5 ? 3 : 0;
+            if (stage == 3)
+                saved.emplace_back(CrateIn(world, kStackBottom)->At, CrateIn(world, kStackTop)->At);
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the stack was not saved and loaded five times";
+    ASSERT_EQ(saved.size(), 6u);
+    EXPECT_LT(Apart(saved.back().first, saved.front().first), 1e-3f) << "the stack's bottom crate crept";
+    EXPECT_LT(Apart(saved.back().second, saved.front().second), 1e-3f) << "the stack's top crate crept";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ABodyHasAnIdFromItsAssignmentInAGameThatKeepsLevelStateAndARestoreGivesItBack)
+{
+    const std::filesystem::path root = RootFor("body_id_at_assignment");
+    PersistentEntityId named;
+    bool sameAfterWrite = false;
+    int stage = 0;
+    RunFps("levels/room_2", 300, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            if (HasPersistentId(world, LocalControlSubjectOf(world)))
+                named = world.TryGet<PersistentIdComponent>(LocalControlSubjectOf(world))->Id;
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            sameAfterWrite = HasPersistentId(world, LocalControlSubjectOf(world))
+                && world.TryGet<PersistentIdComponent>(LocalControlSubjectOf(world))->Id == named;
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    ASSERT_TRUE(named.IsValid()) << "the body was given no id when it was assigned";
+    EXPECT_FALSE(IsAuthoredPersistentEntityId(named));
+    EXPECT_TRUE(sameAfterWrite) << "writing the save changed the body's id";
+    const std::optional<SavedGame> saved = ReadSave(SlotFile(root, "default"));
+    ASSERT_TRUE(saved.has_value());
+    const JsonValue* local = LocalBodyIn(*saved);
+    ASSERT_NE(local, nullptr);
+    ASSERT_NE(local->Find("id"), nullptr) << "the save does not name the body";
+
+    PersistentEntityId restored;
+    stage = 0;
+    RunFps("levels/room_2", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            if (HasPersistentId(world, LocalControlSubjectOf(world)))
+                restored = world.TryGet<PersistentIdComponent>(LocalControlSubjectOf(world))->Id;
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_EQ(restored, named) << "the restored body did not take its saved id";
     std::filesystem::remove_all(root);
 }
 

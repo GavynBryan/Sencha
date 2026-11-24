@@ -141,6 +141,7 @@ public:
 
 private:
     void Fail(std::vector<std::string> reasons);
+    [[nodiscard]] static bool Forgets(const LevelChangeRequest& request, const std::optional<LevelReference>& leaving);
     static void ForgetFor(World& world, const LevelChangeRequest& request,
                           const std::optional<LevelReference>& leaving);
     [[nodiscard]] std::vector<KeptArrival> HoldKeptBodies(World& world);

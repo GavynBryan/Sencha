@@ -9,6 +9,8 @@
 #include <net/NetReplicationComponents.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
+#include <world/identity/PersistentIdMint.h>
+#include <zone/ZoneStateStore.h>
 
 #include <vector>
 
@@ -163,6 +165,8 @@ void SessionParticipantProjection::ProjectBody(
 {
     if (change.Status != ParticipantBodyStatus::Assigned)
         return;
+    if (world.HasResource<ZoneStateSerialization>())
+        (void)EnsurePersistentId(world, change.Body);
 
     const std::uint32_t peer = PeerOf(world, change.Participant);
     if (sessionActive)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentHoldsPlacement.h>
 #include <ecs/ComponentAnnotations.h>
 
 //=============================================================================
@@ -44,6 +45,12 @@ CharacterController
     SENCHA_FIELD("skin_width")
     SENCHA_TOOLTIP("Gap kept between the capsule and what it touches.")
     float SkinWidth = 0.02f;
+};
+
+template <>
+struct ComponentHoldsPlacement<CharacterController>
+{
+    static bool Holds(const CharacterController&) { return true; }
 };
 
 #if !defined(SENCHA_CODEGEN)

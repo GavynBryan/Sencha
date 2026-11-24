@@ -76,7 +76,8 @@ The engine's `Identity` components are `PersistentIdComponent` and
 `EquipmentState`, `Responses`, `Counter`, `ItemEntry`, `ItemContainer`,
 `ItemPickup`, `Held`, `LookOrientation` and `RigidBody` (velocities and sleep
 included, `docs/physics/rigid-bodies.md`). Everything else is `Authored`,
-including `LocalTransform`, `CharacterMovement` (so a body saved on a ladder
+including `LocalTransform` (a level entity's is kept only by its placement,
+"Placement"), `CharacterMovement` (so a body saved on a ladder
 comes back in the default mode), meshes, colliders and lights. Which part of
 a `Saved` component is durable stays inside its serializer: its scene form is
 its saved form.
@@ -160,7 +161,11 @@ The rules every caller gets:
   required), and `ItemContainer` and `ItemPickup` (a container or a bare
   pickup at its defaults is still one, and writing nothing would lose it on
   restore). Such a component is written whole, as an `Authored` component
-  content did not author always is.
+  content did not author always is. A `Saved` component an entity is owed
+  (one a component it carries derives, such as the tags `AbilityGrants`
+  brings) is in a level entity's baseline at its default record, put there
+  by the importer, so it is compared like any authored member and an owed
+  component at its default writes nothing.
 - **A component content holds as runtime bytes** has no record to diff. In
   scope, it is written whole while the entity carries it and `null` once it no
   longer does, so a removal at run time stays removed; a restore sets the
@@ -194,11 +199,15 @@ document cook's input snapshot), so an untouched body saves an empty patch and
 a retuned default reaches old saves like any other value. The patch holds the body's `Saved` components only ("What a save holds of an
 entity"), so it never holds identity, scene instance or placement, and a
 component a body lost is a removal only when it is `Saved`. The body's root
-transform and persistent id travel beside it. A body has an id only once
-something references it by persistent id: a `PersistableRef` is made through
+transform and persistent id travel beside it. In a game that keeps level
+state, the body is given a runtime persistent id when it is assigned to its
+participant (`SessionParticipantProjection`), so whatever a save writes about
+it by id, such as a sensor it stands in, finds it after a load, and a capture
+never has to give it one. Otherwise it has an id only once something
+references it by persistent id: a `PersistableRef` is made through
 `MakePersistableRef`, which gives the body one from the runtime mint, and a
-record the body holds names it that way. A body nothing references is saved
-without an id and restored without one.
+record the body holds names it that way. A body nothing references is then
+saved without an id and restored without one.
 
 What a body wears is in that patch: its `EquipmentState` names each record's
 source entry by persistent id, and the entries are the body's held records,
@@ -258,7 +267,44 @@ response. A patch that no longer fits a retuned level does not refuse the zone,
 which has to load: what a retune set aside is a warning and the scene decides; a
 member that no longer fits follows content, is logged as an error naming the
 entity and component, and leaves the store. A game that does not keep level
-state keeps destroyed sets only.
+state keeps destroyed sets only, records no baseline and diffs nothing.
+
+An entity forgotten at detach (`at_detach`) records no baseline and is not
+diffed: nothing about it outlives its zone, and a patch is only ever composed
+when the zone imports again. A level change that forgets the level it leaves
+(a new game, a restore, or entering the same level as authored) does not
+capture that level's zones as they unload (`RuntimeZoneRecord::CapturedAtDetach`),
+since the store forgets the result at once.
+
+## Placement
+
+Where a level entity stands is kept only when nothing can recompute it.
+Whether that is so is a question about an instance, so each serializer answers
+it for a cooked record (`IComponentSerializer::HoldsPlacement`): `RigidBody`
+when its motion is dynamic, `CharacterController` always, and nothing else. A
+kinematic body is moved by something else (time, a tag, an attachment), so its
+transform is derived; a static entity does not move. When any cooked component
+of an entity answers true, the importer adds `LocalTransform` to its baseline,
+and its patch keeps where it went. With `RigidBody` saved, a crate comes back
+where it was left, moving as it was and asleep if it was, after its zone's
+round trip and in a save (`docs/physics/rigid-bodies.md`; a parented body's
+pose is pulled as local, so what is kept composes to where it was).
+
+`ZoneStateLifetime`'s `placement` overrides the components, per entity and
+inherited as `forgotten` is: `kept` for something nothing will move again (a
+statue a response teleports once), `authored` for dynamic debris nobody needs
+back, and `by_components`, the default, to ask the components.
+
+A scripted mover saves its driver, not its transform. A door a response opens
+keeps the tag or counter that says it is open, and whatever moves it reads
+that on load. A platform that is a function of time saves its own elapsed
+time; no saved form holds an absolute tick, since the process tick is never
+restored (Loss Function's `Sway` keeps its cycle). A turret aimed by
+`AimFacing` has its facing rebuilt.
+
+A save carries no contact cache, so a simulation resumed from a save diverges
+from the unsaved one after the first contacts, and a settled stack may settle
+again by a hair. In a session only the authority captures.
 
 ## What a zone gained
 
@@ -597,6 +643,6 @@ Autosave rotation, quicksave naming and the menu itself are the game's.
 Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, a body's children and other participants'
 bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
 a gained entity saved as its prefab and a patch, carrying an entity other than
-the body across a level change, a level entity's placement, change tracking
+the body across a level change, change tracking
 for capture, waiting records serialised instead of kept alive, and restoring
 inside a network session.

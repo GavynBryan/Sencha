@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Records what keeping level state costs by running LevelStateBench.Generate:
 # a zone's capture per saved entity, untouched and changed, and its baseline
-# text, for zones of 500 and 5,000 entities with three saved components each;
+# text, for zones of 500 and 5,000 entities with three saved components each,
+# and a zone of 5,000 dynamic props whose transforms placement keeps;
 # what a patched entity adds to a zone's attach, for 50 and 500 of 500; and what
 # an entity the zone gained adds to its capture and its attach, for 50 and 500
 # beside 500 authored.

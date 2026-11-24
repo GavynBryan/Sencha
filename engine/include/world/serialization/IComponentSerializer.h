@@ -88,6 +88,9 @@ struct IComponentSerializer
     // Whether the entity's saved form equals `record`, when the serializer can tell without writing it.
     virtual std::optional<bool> SavedFormEquals(const World&, EntityId, const JsonValue&) const { return std::nullopt; }
 
+    // Whether an entity built from `cooked` has a transform nothing can recompute, so a save keeps it.
+    virtual bool HoldsPlacement(const JsonValue&) const { return false; }
+
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;
 };

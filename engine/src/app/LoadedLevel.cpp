@@ -564,9 +564,10 @@ ConsoleResult LoadedLevel::DescribeZones() const
     return result;
 }
 
-void LoadedLevel::Unload()
+void LoadedLevel::Unload(UnloadedState state)
 {
     RuntimeWorld& runtime = Host.World();
+    const bool captured = state == UnloadedState::Captured;
 
     if (ZoneLoader)
     {
@@ -580,13 +581,18 @@ void LoadedLevel::Unload()
         }
     }
 
-    if (runtime.FindZone(kSceneLevelZone) != nullptr)
-        (void)runtime.RequestDetach(kSceneLevelZone);
+    const auto detach = [&](ZoneId zone) {
+        if (RuntimeZoneRecord* record = runtime.FindZone(zone))
+        {
+            record->CapturedAtDetach = captured;
+            (void)runtime.RequestDetach(zone);
+        }
+    };
+    detach(kSceneLevelZone);
     if (Partition && Partition->HasManifest())
     {
         for (const ZoneHeader& zone : Partition->Manifest().Zones)
-            if (runtime.FindZone(zone.Id) != nullptr)
-                (void)runtime.RequestDetach(zone.Id);
+            detach(zone.Id);
     }
     runtime.FlushLifecycleRequests();
 
@@ -604,7 +610,8 @@ void LoadedLevel::Unload()
     runtime.FinalizeResidencyProcessing();
 
     ParkHeldRecords(runtime.Entities(), WorldSceneScope, WorldSceneEntities);
-    CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
+    if (captured)
+        CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
     // Only what a world scene imported. The persistent partition also holds
     // whatever the game put there, and this owns none of that.
     for (EntityId entity : WorldSceneEntities)

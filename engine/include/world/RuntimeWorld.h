@@ -69,6 +69,8 @@ struct RuntimeZoneRecord
     ZoneParticipation Participation;
     // What the zone was imported under; its detach captures into the same.
     ZoneStateScope StateScope;
+    // False when the level it belongs to is about to be forgotten, so its detach captures nothing.
+    bool CapturedAtDetach = true;
     ResourceRegistry Resources;
 };
 

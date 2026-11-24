@@ -326,7 +326,9 @@ const std::vector<AuthoredComponent>* ZoneStateStore::BaselineOf(ZoneStateScope 
     if (record == nullptr)
         return nullptr;
     const auto found = record->Authored.find(id.Value);
-    return found != record->Authored.end() ? &found->second.Baseline : nullptr;
+    return found != record->Authored.end() && found->second.Forgotten != ZoneStateForgetting::AtDetach
+        ? &found->second.Baseline
+        : nullptr;
 }
 
 void ZoneStateStore::ForgetLevel(const LevelReference& level)

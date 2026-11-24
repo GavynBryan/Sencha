@@ -10,6 +10,7 @@
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateScope.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -51,6 +52,13 @@ enum class LevelResidency : std::uint8_t
     Failed,
 };
 
+// Whether an unload records the level's zone state, or leaves a level that is about to be forgotten uncaptured.
+enum class UnloadedState : std::uint8_t
+{
+    Captured,
+    Forgotten,
+};
+
 class LoadedLevel
 {
 public:
@@ -75,7 +83,7 @@ public:
 
     // Detaches every zone this loaded, destroys the entities a world scene
     // imported, and drops the loaders. Idempotent; safe with nothing loaded.
-    void Unload();
+    void Unload(UnloadedState state = UnloadedState::Captured);
 
     // Where a level's collision goes. Called once the schedule is known,
     // because physics is a game's choice: a game without it never calls this

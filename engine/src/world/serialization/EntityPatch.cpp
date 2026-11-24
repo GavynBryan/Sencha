@@ -58,16 +58,6 @@ namespace
         return archive.TakeValue();
     }
 
-    [[nodiscard]] std::optional<JsonValue> DefaultRecordOf(const IComponentSerializer& serializer)
-    {
-        if (serializer.Persistence() != ComponentPersistence::Saved)
-            return std::nullopt;
-        JsonWriteArchive archive;
-        if (!serializer.SaveDefault(archive) || !archive.Ok())
-            return std::nullopt;
-        return archive.TakeValue();
-    }
-
     void SortByKey(JsonValue& record)
     {
         std::ranges::sort(record.AsObject(), {}, &JsonValue::Object::value_type::first);
@@ -103,6 +93,16 @@ namespace
         }
         return fits ? std::optional<JsonValue>(std::move(composed)) : std::nullopt;
     }
+}
+
+std::optional<JsonValue> SavedDefaultRecord(const IComponentSerializer& serializer)
+{
+    if (serializer.Persistence() != ComponentPersistence::Saved)
+        return std::nullopt;
+    JsonWriteArchive archive;
+    if (!serializer.SaveDefault(archive) || !archive.Ok())
+        return std::nullopt;
+    return archive.TakeValue();
 }
 
 std::vector<AuthoredComponent> AuthoredComponentsOf(const PackageEntity& entity,
@@ -178,7 +178,7 @@ JsonValue CaptureEntityPatch(const World& world, EntityId entity, std::span<cons
         const JsonValue* was = nullptr;
         if (content != nullptr && content->InContent)
             was = &content->Record;
-        else if (carried && (fallback = DefaultRecordOf(serializer)).has_value())
+        else if (carried && (fallback = SavedDefaultRecord(serializer)).has_value())
             was = &*fallback;
         if (was == nullptr && !now.has_value())
             return;
@@ -237,7 +237,7 @@ EntityPatchOutcome ApplyEntityPatch(PackageEntity& entity, const JsonValue& patc
         if (content != nullptr && content->SerializedJson.has_value())
             base = content->SerializedJson;
         else if (content == nullptr)
-            base = DefaultRecordOf(*serializer);
+            base = SavedDefaultRecord(*serializer);
         std::optional<JsonValue> value = base.has_value() ? ComposedOver(*base, member, *serializer, outcome) : member;
         if (!value.has_value())
         {

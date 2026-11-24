@@ -167,6 +167,147 @@
           }
         }
       }
+    },
+    {
+      "id": "6f2b1c0d9e8a7c01",
+      "components": {
+        "name": {
+          "value": "Crate"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              6,
+              0.5,
+              -6
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/red.smat"
+          ]
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ]
+          }
+        },
+        "RigidBody": {
+          "motion": "dynamic"
+        }
+      }
+    },
+    {
+      "id": "6f2b1c0d9e8a7c02",
+      "components": {
+        "name": {
+          "value": "Stack Bottom"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              -6,
+              0.5,
+              -3
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/red.smat"
+          ]
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ]
+          }
+        },
+        "RigidBody": {
+          "motion": "dynamic"
+        }
+      }
+    },
+    {
+      "id": "6f2b1c0d9e8a7c03",
+      "components": {
+        "name": {
+          "value": "Stack Top"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              -6,
+              1.5,
+              -3
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "StaticMesh": {
+          "mesh": "asset://meshes/dev/cube.smesh",
+          "materials": [
+            "asset://materials/dev/red.smat"
+          ]
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ]
+          }
+        },
+        "RigidBody": {
+          "motion": "dynamic"
+        }
+      }
     }
   ],
   "brush_meshes": {

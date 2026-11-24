@@ -374,8 +374,9 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
         // While the zone's entities are still alive: the moment "unload" stops
         // meaning "forget".
-        CaptureZoneState(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition),
-                         ZoneCapture::Detach);
+        if (record->CapturedAtDetach)
+            CaptureZoneState(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition),
+                             ZoneCapture::Detach);
 
         // Backend scenes receive the residency batch before this point. Entity
         // hooks then run through the ordinary World destruction path while

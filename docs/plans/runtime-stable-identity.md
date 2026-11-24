@@ -198,6 +198,11 @@ it imports, unless it holds `at_restore` state, which the blob does not carry;
 a write copies each blob's pointer, so a zone untouched since the last write is
 the same blob in both. `ForgetLevel` forgets one level.
 
+The same component's `placement` says whether a save keeps where the entity
+stands: by its components (the default; a dynamic body's place is kept),
+`kept` or `authored` (`docs/gameplay/saves.md`, "Placement"). It is resolved
+the way `forgotten` is.
+
 Worlds without the resources (editor documents, minimal fixtures) skip all of
 it; the import and detach paths check for the store and for component
 registration before doing any work. Nothing here runs per frame.

@@ -73,7 +73,40 @@ encoding) and made and read at every attach; nothing filters an unchanged
 one yet, so 2,000 dropped items would add about 3 ms to every save of their
 zone (`docs/deferred.md`, "Change tracking for zone capture").
 
+## Placement (ABC2 stage 10)
+
+Placement adds `LocalTransform` to the baseline of each entity a dynamic body
+or a character controller holds, and the importer puts an owed `Saved`
+component's default record there too. Re-run after it landed, with the stage 9
+commit benched the same evening on the same machine for comparison (the
+committed figures above were taken on an earlier day):
+
+| Case | Stage 9 (3 runs) | Stage 10 (4 runs) |
+|---|---|---|
+| 500-entity capture, untouched | 0.453, 0.456, 0.487 ms | 0.452, 0.464, 0.466, 0.470 ms |
+| 500-entity import, nothing patched | 0.612, 0.620, 0.620 ms | 0.669, 0.671, 0.679, 0.700 ms |
+
+The untouched capture is unchanged within the run-to-run spread and stays under
+the 0.5 ms budget: nothing per entity was added to it beyond one comparison in
+`ZoneStateStore::BaselineOf`. The import is about 0.06 ms dearer for 500
+entities: the importer asks each cooked component whether it holds placement
+and looks up the components each entity is owed.
+
+A zone of 5,000 dynamic props (a transform, a box collider and a dynamic
+`RigidBody` each), nothing changed:
+
+| | |
+|---|---|
+| baseline members | 10,000 (a transform and a body each) |
+| baseline text | 465,600 B |
+| import | 8.4 ms |
+| capture, untouched | 8.9 ms (1.78 µs per prop) |
+
+That capture is the figure the byte filter of stage 12 exists to bring down
+(its budget is 0.5 ms for this case); until then a quicksave among 5,000
+resident props costs about 9 ms on the owner thread.
+
 ## Raw
 
-`level_state.json` and `level_state.csv` beside this file are the run the
-tables quote.
+`level_state.json` and `level_state.csv` beside this file are the stage 10
+run; the tables above it quote the earlier run, whose figures they keep.

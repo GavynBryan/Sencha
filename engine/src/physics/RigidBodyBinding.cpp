@@ -86,8 +86,8 @@ void PullDynamicState(const PhysicsWorld& simulation, const World& world, Entity
     const BodyTransform pose = InParentFrame(world, entity, simulation.GetBodyTransform(id));
     transform.Value.Position = pose.Position;
     transform.Value.Rotation = pose.Rotation;
-    body.LinearVelocity = simulation.GetLinearVelocity(id);
-    body.AngularVelocity = simulation.GetAngularVelocity(id);
+    body.LinearVelocity = awake ? simulation.GetLinearVelocity(id) : Vec3d::Zero();
+    body.AngularVelocity = awake ? simulation.GetAngularVelocity(id) : Vec3d::Zero();
     body.Asleep = !awake;
 }
 
@@ -203,7 +203,7 @@ void RigidBodyBinding::Reconcile(
             return;
 
         Owned.push_back(BodyRecord{ entity, id });
-        if (body != nullptr)
+        if (body != nullptr && !body->Asleep)
         {
             Simulation->SetLinearVelocity(
                 id,
@@ -217,18 +217,20 @@ void RigidBodyBinding::Reconcile(
             PhysicsBodyLink{ id });
     });
 
+    const auto leaving = [&](const BodyRecord& record) {
+        const bool alive = world.IsAlive(record.Entity);
+        return !alive || !world.HasComponent<Collider>(record.Entity)
+            || !partitions.Contains(world.GetEntityPartition(record.Entity));
+    };
+    for (const BodyRecord& record : Owned)
+        if (leaving(record))
+            CaptureDynamicState(world, record);
     for (size_t index = 0; index < Owned.size();)
     {
         const BodyRecord record = Owned[index];
         const bool alive = world.IsAlive(record.Entity);
-        const bool hasCollider =
-            alive && world.HasComponent<Collider>(record.Entity);
-        const bool active = alive
-            && partitions.Contains(
-                world.GetEntityPartition(record.Entity));
-        if (!alive || !hasCollider || !active)
+        if (leaving(record))
         {
-            CaptureDynamicState(world, record);
             Simulation->RemoveBody(record.Body);
             if (alive
                 && world.HasComponent<PhysicsBodyLink>(record.Entity))
@@ -349,17 +351,21 @@ void RigidBodyBinding::EvictPartition(
         return;
 
     SceneState& state = EnsureState(world);
+    const auto inPartition = [&](const BodyRecord& record) {
+        return world.IsAlive(record.Entity) && world.GetEntityPartition(record.Entity) == partition;
+    };
+    for (const BodyRecord& record : Owned)
+        if (inPartition(record))
+            CaptureDynamicState(world, record);
     for (size_t index = 0; index < Owned.size();)
     {
         const BodyRecord record = Owned[index];
-        if (!world.IsAlive(record.Entity)
-            || world.GetEntityPartition(record.Entity) != partition)
+        if (!inPartition(record))
         {
             ++index;
             continue;
         }
 
-        CaptureDynamicState(world, record);
         Simulation->RemoveBody(record.Body);
         if (world.HasComponent<PhysicsBodyLink>(record.Entity))
         {
@@ -381,8 +387,9 @@ void RigidBodyBinding::EvictAll(World& world)
 
     SceneState& state = EnsureState(world);
     for (const BodyRecord& record : Owned)
-    {
         CaptureDynamicState(world, record);
+    for (const BodyRecord& record : Owned)
+    {
         Simulation->RemoveBody(record.Body);
         if (world.IsAlive(record.Entity)
             && world.HasComponent<PhysicsBodyLink>(record.Entity))

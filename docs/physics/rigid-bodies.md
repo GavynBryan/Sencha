@@ -33,8 +33,11 @@ pushed every step, so a run-time edit acts on the next tick.
   velocities and `asleep` pulled once; while it sleeps the pull leaves its
   row alone, so a room of settled props writes nothing per step. A body
   created from a component that says `asleep` is created asleep
-  (`BodyDesc::StartAsleep`), so loading a room of sleeping props wakes none.
-  A touch wakes it, and the next pull clears `asleep`.
+  (`BodyDesc::StartAsleep`) and at rest, so loading a room of sleeping props
+  wakes none. A touch wakes it, and the next pull clears `asleep`. When a
+  zone leaves physics, every leaving body's state is captured before any is
+  removed: removing a floor wakes what rests on it, and a crate captured
+  after its floor went would be saved awake.
 - **Under a parent.** The backend holds world poses. The pull writes a
   parented body's pose relative to its parent's `WorldTransform`, so its
   `LocalTransform` composes to where the body is, as every other child's does.
@@ -46,4 +49,6 @@ pushed every step, so a run-time edit acts on the next tick.
 `RigidBody` is `Saved` (`docs/gameplay/saves.md`, "What a save holds of an
 entity"): a level entity's patch keeps how its body differs from what the
 level authored, its velocities and sleep included. A body code adds at its
-defaults writes nothing.
+defaults writes nothing. A dynamic body also holds its entity's placement, so
+the patch keeps where it went (`docs/gameplay/saves.md`, "Placement"); a
+kinematic body's transform is derived from whatever moves it and is not kept.

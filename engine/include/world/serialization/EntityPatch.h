@@ -6,11 +6,13 @@
 #include <ecs/EntityId.h>
 #include <world/serialization/SceneSerializationContext.h>
 
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 class ComponentSerializerRegistry;
+struct IComponentSerializer;
 struct PackageEntity;
 class World;
 
@@ -52,6 +54,9 @@ struct EntityScope
     std::span<const ComponentTypeId> Listed = {};
     ComponentPersistenceSet Declared = {};
 };
+
+// What a Saved component content did not author is diffed against; nullopt when it has none.
+[[nodiscard]] std::optional<JsonValue> SavedDefaultRecord(const IComponentSerializer& serializer);
 
 [[nodiscard]] std::vector<AuthoredComponent> AuthoredComponentsOf(const PackageEntity& entity,
                                                                  const ComponentSerializerRegistry& serializers,
