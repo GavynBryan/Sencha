@@ -34,7 +34,9 @@ what a save keeps is decided per entity by its zone state lifetime
   authored entities changed for good ("Level entities"); `gained`, the
   run-time entities the zone keeps, such as a dropped item ("What a zone
   gained"); `held`, the runtime records whose holder is an entity of that
-  zone, resident or waiting ("Held records"). Only what is never forgotten is written; `at_restore` state stays
+  zone, resident or waiting ("Held records"); `occupied`, what was inside each
+  of the zone's sensors (`docs/physics/sensor-overlaps.md`, "Across a load").
+  Only what is never forgotten is written; `at_restore` state stays
   in the session and `at_detach` state goes when its zone unloads. A list this
   build does not read is carried and written back.
 - **Sections:** named data the engine or a game registers
@@ -546,6 +548,7 @@ not in the blob. The known lists, at version 1:
 | `changed` | count, then each id and its patch as JSON text, members in key order |
 | `held` | count, then each record's id and its components as JSON text |
 | `gained` | count, then each member as a length, a form name and a payload: `whole` members by id, after any member of a form this build does not make |
+| `occupied` | count, then each sensor's id and its occupant's id, sorted; a pair is forgotten with its sensor |
 
 A list whose name this build does not know is kept as bytes and written back.
 A known list at a newer version than this build reads makes the file one a

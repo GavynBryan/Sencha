@@ -3,6 +3,7 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <physics/SensorOverlaps.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
@@ -501,6 +502,19 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const WorldC
     return authored;
 }
 
+void SeedOccupancy(World& world, const ZoneStateStore& store, ZoneStateScope scope)
+{
+    const std::vector<SensorSeed> pairs = store.OccupiedOf(scope);
+    if (pairs.empty())
+        return;
+    SensorOverlaps& overlaps =
+        world.HasResource<SensorOverlaps>() ? world.GetResource<SensorOverlaps>() : world.AddResource<SensorOverlaps>();
+    overlaps.ForgetAwaitedIf([&](const SensorSeed& seed) {
+        return std::ranges::any_of(pairs, [&](const SensorSeed& pair) { return pair.Sensor == seed.Sensor; });
+    });
+    overlaps.Await(pairs);
+}
+
 bool ImportPackageIntoPartitionImpl(
     World& world,
     const WorldComponentSchema& schema,
@@ -680,7 +694,10 @@ bool ImportPackageIntoPartitionImpl(
     }
     std::vector<EntityId> gained;
     if (patches.Store != nullptr)
+    {
         MakeGainedMembers(world, partition, patches, worldHasTransforms, gained);
+        SeedOccupancy(world, *patches.Store, stateScope);
+    }
 
     // The caller's own record of what it made -- which entity is the root, and
     // which are the group a later teardown has to take with it. Only on

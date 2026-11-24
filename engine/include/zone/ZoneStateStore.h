@@ -95,6 +95,10 @@ public:
     // Members of forms this build does not make first, as read, then the rest by id.
     [[nodiscard]] std::span<const GainedEntityState> GainedOf(ZoneStateScope scope) const;
 
+    // The zone's sensors and what was inside each at a capture; each pair is forgotten with its sensor.
+    void RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs);
+    [[nodiscard]] std::vector<SensorSeed> OccupiedOf(ZoneStateScope scope) const;
+
     [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
     [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
@@ -141,6 +145,13 @@ private:
         JsonValue Patch;
     };
 
+    struct OccupiedRecord
+    {
+        ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+        SensorSeed Pair;
+        friend bool operator==(const OccupiedRecord&, const OccupiedRecord&) = default;
+    };
+
     // Parsed while resident or holding what a save does not keep; otherwise only Encoded.
     struct ZoneRecord
     {
@@ -149,6 +160,7 @@ private:
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
         std::unordered_map<std::uint64_t, PatchRecord> Patches;
         std::vector<GainedEntityState> Gained;
+        std::vector<OccupiedRecord> Occupied;
         std::vector<ZoneStateList> Carried;
         // The never-forgotten part as a save holds it; null when stale or empty.
         EncodedZoneLists Encoded;

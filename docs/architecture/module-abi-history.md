@@ -1598,3 +1598,13 @@ moves. `RuntimeZoneRecord` gains `CapturedAtDetach`; `LoadedLevel::Unload`
 takes an `UnloadedState`; `world/serialization/EntityPatch.h` gains
 `SavedDefaultRecord`. The save format does not change: a level entity's kept
 transform and an owed component's difference are members of its patch.
+
+## v70
+
+`SensorOverlaps` gains awaited and entity seeds (`Await`, `Awaited`,
+`ForgetAwaitedIf`, `RefusedSeedCount`, `Seed`, `Seeds`, `ForgetSeedsIf`) and
+`ForgetOccurrencesIf`, so its layout moves; `SensorSeed` is new.
+`zone/ZoneStateLists.h` gains the `occupied` list (`kOccupiedZoneList`,
+`EncodeOccupiedList`, `DecodeOccupiedList`) and `ZoneStateStore` gains
+`RecordOccupied` and `OccupiedOf`. The save format does not change: `occupied`
+is a new named list, which an earlier build carries unread.

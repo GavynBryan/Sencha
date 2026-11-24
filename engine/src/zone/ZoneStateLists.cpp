@@ -60,7 +60,8 @@ namespace
 
 bool IsKnownZoneList(std::string_view name)
 {
-    return name == kDestroyedZoneList || name == kChangedZoneList || name == kHeldZoneList || name == kGainedZoneList;
+    return name == kDestroyedZoneList || name == kChangedZoneList || name == kHeldZoneList || name == kGainedZoneList
+        || name == kOccupiedZoneList;
 }
 
 EncodedZoneLists EncodeZoneLists(std::span<const ZoneStateList> lists)
@@ -87,6 +88,31 @@ std::optional<std::vector<ZoneStateList>> DecodeZoneLists(std::span<const std::b
     if (!stream.AtEnd())
         return std::nullopt;
     return lists;
+}
+
+std::vector<std::byte> EncodeOccupiedList(std::span<const SensorSeed> pairs)
+{
+    std::ostringstream stream(std::ios::binary);
+    BinaryWriter writer(stream);
+    bool ok = writer.Write(static_cast<std::uint32_t>(pairs.size()));
+    for (const SensorSeed& pair : pairs)
+        ok = ok && writer.Write(pair.Sensor.Value) && writer.Write(pair.Occupant.Value);
+    return ok ? BytesOf(stream) : std::vector<std::byte>{};
+}
+
+std::optional<std::vector<SensorSeed>> DecodeOccupiedList(std::span<const std::byte> payload)
+{
+    SpanStream stream(payload);
+    std::uint32_t count = 0;
+    if (!stream.Read().Read(count) || count > kMaxEntries)
+        return std::nullopt;
+    std::vector<SensorSeed> pairs(count);
+    for (SensorSeed& pair : pairs)
+        if (!stream.Read().Read(pair.Sensor.Value) || !stream.Read().Read(pair.Occupant.Value))
+            return std::nullopt;
+    if (!stream.AtEnd())
+        return std::nullopt;
+    return pairs;
 }
 
 std::vector<std::byte> EncodeDestroyedList(std::span<const PersistentEntityId> destroyed)

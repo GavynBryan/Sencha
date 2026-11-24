@@ -75,6 +75,15 @@ void ZoneStateStore::Parse(ZoneRecord& record)
                 continue;
             }
         }
+        else if (list.Name == kOccupiedZoneList && list.Version <= kZoneListVersion)
+        {
+            if (const std::optional<std::vector<SensorSeed>> pairs = DecodeOccupiedList(list.Payload))
+            {
+                for (const SensorSeed& pair : *pairs)
+                    record.Occupied.push_back(OccupiedRecord{ ZoneStateForgetting::Never, pair });
+                continue;
+            }
+        }
         else if (list.Name == kGainedZoneList && list.Version <= kZoneListVersion)
         {
             if (std::optional<std::vector<GainedZoneMember>> members = DecodeGainedList(list.Payload))
@@ -108,7 +117,11 @@ EncodedZoneLists ZoneStateStore::Encode(const ZoneRecord& record)
     for (const GainedEntityState& member : record.Gained)
         if (member.Forgotten == ZoneStateForgetting::Never)
             gained.push_back(member.Member);
-    if (destroyed.empty() && changed.empty() && gained.empty() && record.Carried.empty())
+    std::vector<SensorSeed> occupied;
+    for (const OccupiedRecord& entry : record.Occupied)
+        if (entry.Forgotten == ZoneStateForgetting::Never)
+            occupied.push_back(entry.Pair);
+    if (destroyed.empty() && changed.empty() && gained.empty() && occupied.empty() && record.Carried.empty())
         return nullptr;
     std::ranges::sort(destroyed, {}, &PersistentEntityId::Value);
     std::ranges::sort(changed, {}, [](const ZoneListEntity& entity) { return entity.Id.Value; });
@@ -119,6 +132,8 @@ EncodedZoneLists ZoneStateStore::Encode(const ZoneRecord& record)
         lists.push_back({ std::string(kChangedZoneList), kZoneListVersion, EncodeEntityList(changed) });
     if (!gained.empty())
         lists.push_back({ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(gained) });
+    if (!occupied.empty())
+        lists.push_back({ std::string(kOccupiedZoneList), kZoneListVersion, EncodeOccupiedList(occupied) });
     lists.insert(lists.end(), record.Carried.begin(), record.Carried.end());
     return EncodeZoneLists(lists);
 }
@@ -130,7 +145,9 @@ void ZoneStateStore::Close(ZoneRecord& record)
         || std::ranges::any_of(record.Patches,
                                [](const auto& entry) { return entry.second.Forgotten != ZoneStateForgetting::Never; })
         || std::ranges::any_of(record.Gained,
-                               [](const GainedEntityState& member) { return member.Forgotten != ZoneStateForgetting::Never; });
+                               [](const GainedEntityState& member) { return member.Forgotten != ZoneStateForgetting::Never; })
+        || std::ranges::any_of(record.Occupied,
+                               [](const OccupiedRecord& entry) { return entry.Forgotten != ZoneStateForgetting::Never; });
     if (sessionOnly)
         return;
     if (record.Encoded == nullptr)
@@ -138,6 +155,7 @@ void ZoneStateStore::Close(ZoneRecord& record)
     record.Destroyed.clear();
     record.Patches.clear();
     record.Gained.clear();
+    record.Occupied.clear();
     record.Carried.clear();
     record.Parsed = false;
 }
@@ -205,6 +223,11 @@ void ZoneStateStore::RecordCapture(ZoneStateScope scope, std::span<const Persist
     const bool detaching = capture == ZoneCapture::Detach;
     if (!record.Authored.empty())
         RecordDestroyed(record, live, detaching);
+    if (detaching
+        && std::erase_if(record.Occupied,
+                         [](const OccupiedRecord& entry) { return entry.Forgotten == ZoneStateForgetting::AtDetach; })
+            > 0)
+        record.Encoded = nullptr;
     if (detaching)
     {
         record.Authored.clear();
@@ -281,6 +304,34 @@ std::span<const GainedEntityState> ZoneStateStore::GainedOf(ZoneStateScope scope
 {
     const ZoneRecord* record = Find(scope);
     return record != nullptr ? std::span<const GainedEntityState>(record->Gained) : std::span<const GainedEntityState>{};
+}
+
+void ZoneStateStore::RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs)
+{
+    if (!scope.IsValid())
+        return;
+    ZoneRecord* found = Find(scope);
+    if (found == nullptr && pairs.empty())
+        return;
+    ZoneRecord& record = found != nullptr ? *found : Open(scope);
+    std::ranges::sort(pairs, {}, [](const SensorSeed& pair) { return std::pair(pair.Sensor.Value, pair.Occupant.Value); });
+    std::vector<OccupiedRecord> occupied;
+    occupied.reserve(pairs.size());
+    for (const SensorSeed& pair : pairs)
+        occupied.push_back(OccupiedRecord{ ForgettingOf(scope, pair.Sensor), pair });
+    if (occupied == record.Occupied)
+        return;
+    record.Occupied = std::move(occupied);
+    record.Encoded = nullptr;
+}
+
+std::vector<SensorSeed> ZoneStateStore::OccupiedOf(ZoneStateScope scope) const
+{
+    std::vector<SensorSeed> pairs;
+    if (const ZoneRecord* record = Find(scope))
+        for (const OccupiedRecord& entry : record->Occupied)
+            pairs.push_back(entry.Pair);
+    return pairs;
 }
 
 bool ZoneStateStore::IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const

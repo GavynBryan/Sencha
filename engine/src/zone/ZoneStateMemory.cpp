@@ -5,12 +5,15 @@
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <physics/SensorOverlaps.h>
 #include <world/SimulationAuthority.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <zone/KeptWithZone.h>
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -44,6 +47,45 @@ namespace
                             patch.AsObject().emplace_back(key, *member);
             store.RecordPatch(scope, id, std::move(patch));
         }
+    }
+
+    void RecordOccupancy(World& world, ZoneStateStore& store, ZoneStateScope scope,
+                         std::span<const std::pair<EntityId, PersistentEntityId>> alive)
+    {
+        SensorOverlaps* overlaps = world.TryGetResource<SensorOverlaps>();
+        std::vector<SensorSeed> pairs;
+        if (overlaps != nullptr && (!overlaps->Pairs().empty() || !overlaps->Seeds().empty() || !overlaps->Awaited().empty()))
+        {
+            std::vector<std::pair<EntityId, PersistentEntityId>> sensors(alive.begin(), alive.end());
+            std::ranges::sort(sensors, {}, &std::pair<EntityId, PersistentEntityId>::first);
+            const auto sensorId = [&](EntityId sensor) {
+                const auto found = std::ranges::lower_bound(sensors, sensor, {}, &std::pair<EntityId, PersistentEntityId>::first);
+                return found != sensors.end() && found->first == sensor ? found->second : PersistentEntityId{};
+            };
+            const auto occupantId = [&](EntityId occupant) {
+                const PersistentIdComponent* id = world.IsAlive(occupant) ? world.TryGet<PersistentIdComponent>(occupant) : nullptr;
+                return id != nullptr ? id->Id : PersistentEntityId{};
+            };
+            const auto take = [&](SensorPair pair) {
+                const SensorSeed seed{ sensorId(pair.Sensor), occupantId(pair.Activator) };
+                if (seed.Sensor.IsValid() && seed.Occupant.IsValid())
+                    pairs.push_back(seed);
+            };
+            for (const SensorPair& pair : overlaps->Pairs())
+                take(pair);
+            for (const SensorPair& pair : overlaps->Seeds())
+                take(pair);
+            const PersistentEntityIndex* identities = world.TryGetResource<PersistentEntityIndex>();
+            overlaps->ForgetAwaitedIf([&](const SensorSeed& seed) {
+                if (!std::ranges::any_of(sensors, [&](const auto& sensor) { return sensor.second == seed.Sensor; }))
+                    return false;
+                if (identities == nullptr || !world.IsAlive(identities->TryResolve(seed.Occupant)))
+                    return true;
+                pairs.push_back(seed);
+                return false;
+            });
+        }
+        store.RecordOccupied(scope, std::move(pairs));
     }
 
     void RecordGained(const World& world, ZoneStateStore& store, const ZoneStateSerialization& serialization,
@@ -120,6 +162,7 @@ void CaptureZoneState(World& world, ZoneStateScope scope, std::span<const Entity
     {
         RecordPatches(world, *store, *serialization, scope, alive);
         RecordGained(world, *store, *serialization, scope, alive);
+        RecordOccupancy(world, *store, scope, alive);
     }
     store->RecordCapture(scope, live, capture);
 }

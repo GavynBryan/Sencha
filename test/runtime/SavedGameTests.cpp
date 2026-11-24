@@ -354,7 +354,7 @@ TEST(SavedGame, AKnownListAtANewerVersionMakesTheFileNewer)
 TEST(SavedGame, AListAndAChunkThisBuildDoesNotKnowAreCarriedByteForByte)
 {
     SavedGame saved = Example();
-    saved.Levels[0].Zones[0].Lists = Lists({ { "occupied", 3, Bytes({ 5, 6, 7 }) } });
+    saved.Levels[0].Zones[0].Lists = Lists({ { "unread_by_this_build", 3, Bytes({ 5, 6, 7 }) } });
     saved.Carried.push_back(SavedGameChunk{ .Id = MakeFourCC('P', 'R', 'E', 'F'), .Version = 4,
                                             .Payload = Bytes({ 1 }), .InPrefix = true });
     const std::vector<std::byte> bytes = EncodeSavedGame(saved);

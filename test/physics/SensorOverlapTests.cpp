@@ -690,3 +690,40 @@ TEST(SensorPhysics, SleepingBodyStillObservesRelocatedSensor)
     Sample(world, overlaps, 2);
     ExpectTransitions(overlaps, { SensorTransition::Exit });
 }
+
+TEST(SensorSeeding, ASeededPairFoundOccupiedIsEstablishedWithoutAnEnter)
+{
+    SensorOverlaps overlaps;
+    const SensorPair seeded{ EntityId{ 1, 1 }, EntityId{ 2, 1 } };
+    const SensorPair fresh{ EntityId{ 1, 1 }, EntityId{ 3, 1 } };
+    overlaps.Seed(seeded);
+    overlaps.Begin();
+    ASSERT_TRUE(overlaps.Observe(seeded, true));
+    ASSERT_TRUE(overlaps.Observe(fresh, true));
+    ASSERT_TRUE(overlaps.Commit(1));
+    ASSERT_EQ(overlaps.Occurrences().size(), 2u);
+    EXPECT_EQ(overlaps.Occurrences()[0].Pair, seeded);
+    EXPECT_EQ(overlaps.Occurrences()[0].Transition, SensorTransition::Stay);
+    EXPECT_EQ(overlaps.Occurrences()[1].Transition, SensorTransition::Enter);
+    EXPECT_TRUE(overlaps.Seeds().empty());
+    EXPECT_EQ(overlaps.Pairs().size(), 2u);
+
+    overlaps.Begin();
+    ASSERT_TRUE(overlaps.Commit(2));
+    ASSERT_EQ(overlaps.Occurrences().size(), 2u);
+    EXPECT_EQ(overlaps.Occurrences()[0].Transition, SensorTransition::Exit) << "an established seed did not exit";
+}
+
+TEST(SensorSeeding, SeedsPastTheCapacityAreRefusedAndCounted)
+{
+    SensorOverlaps overlaps(2);
+    const std::vector<SensorSeed> seeds{ { PersistentEntityId{ 1 }, PersistentEntityId{ 2 } },
+                                         { PersistentEntityId{ 1 }, PersistentEntityId{ 3 } },
+                                         { PersistentEntityId{ 1 }, PersistentEntityId{ 4 } } };
+    overlaps.Await(seeds);
+    EXPECT_EQ(overlaps.Awaited().size(), 2u);
+    EXPECT_EQ(overlaps.RefusedSeedCount(), 1u);
+    overlaps.Await(std::span(seeds).first(1));
+    EXPECT_EQ(overlaps.Awaited().size(), 2u) << "a seed already awaited was added twice";
+    EXPECT_EQ(overlaps.RefusedSeedCount(), 1u);
+}

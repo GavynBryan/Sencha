@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/identity/Id.h>
 #include <ecs/EntityId.h>
 
 #include <algorithm>
@@ -19,6 +20,14 @@ struct SensorPair
     EntityId Sensor;
     EntityId Activator;
     auto operator<=>(const SensorPair&) const = default;
+};
+
+// A pair a load says was occupied, by the persistent ids of its two ends.
+struct SensorSeed
+{
+    PersistentEntityId Sensor;
+    PersistentEntityId Occupant;
+    friend bool operator==(const SensorSeed&, const SensorSeed&) = default;
 };
 
 enum class SensorTransition : std::uint8_t { Enter, Stay, Exit };
@@ -46,8 +55,35 @@ public:
     void ForgetIf(Predicate&& predicate)
     {
         std::erase_if(Active, predicate);
+        std::erase_if(Seeded, predicate);
+        ForgetOccurrencesIf(predicate);
+    }
+
+    // Leaves the pairs: what is inside stays known until its entities are gone.
+    template<class Predicate>
+    void ForgetOccurrencesIf(Predicate&& predicate)
+    {
         std::erase_if(Observed, [&](const Observation& observation) { return predicate(observation.Pair); });
         std::erase_if(Published, [&](const SensorOccurrence& occurrence) { return predicate(occurrence.Pair); });
+    }
+
+    // Seeds wait here until both ends are alive; past the capacity they are refused and counted.
+    void Await(std::span<const SensorSeed> seeds);
+    [[nodiscard]] std::span<const SensorSeed> Awaited() const { return AwaitedSeeds; }
+    template<class Predicate>
+    void ForgetAwaitedIf(Predicate&& predicate)
+    {
+        std::erase_if(AwaitedSeeds, predicate);
+    }
+    [[nodiscard]] std::uint64_t RefusedSeedCount() const { return RefusedSeeds; }
+
+    // The first sample that finds a seeded pair occupied establishes it without an Enter.
+    void Seed(SensorPair pair);
+    [[nodiscard]] std::span<const SensorPair> Seeds() const { return Seeded; }
+    template<class Predicate>
+    void ForgetSeedsIf(Predicate&& predicate)
+    {
+        std::erase_if(Seeded, predicate);
     }
 
     [[nodiscard]] std::span<const SensorOccurrence> Occurrences() const { return Published; }
@@ -68,6 +104,9 @@ private:
     std::vector<SensorPair> Next;
     std::vector<Observation> Observed;
     std::vector<SensorOccurrence> Published;
+    std::vector<SensorSeed> AwaitedSeeds;
+    std::vector<SensorPair> Seeded;
     std::uint64_t Overflows = 0;
+    std::uint64_t RefusedSeeds = 0;
     bool Overflow = false;
 };

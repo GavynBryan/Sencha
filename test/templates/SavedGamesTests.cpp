@@ -29,6 +29,7 @@
 #include <physics/components/RigidBody.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/PhysicsWorld.h>
+#include <physics/SensorOverlaps.h>
 #include <save/SavedGame.h>
 #include <save/SavedGames.h>
 #include <world/held/Held.h>
@@ -3235,6 +3236,248 @@ TEST(SavedGames, ABodyHasAnIdFromItsAssignmentInAGameThatKeepsLevelStateAndARest
     });
     ASSERT_EQ(stage, 2);
     EXPECT_EQ(restored, named) << "the restored body did not take its saved id";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    const PersistentEntityId kFirstPlateCrate = *PersistentEntityIdFromString("5882e5a3d55e9d11");
+
+    std::int32_t WorldCount(World& world, std::string_view name)
+    {
+        const std::optional<GameplayTagId> tag = world.GetResource<GameplayTagRegistry>().RegisterTag(name);
+        return tag.has_value() ? CounterValue(world, *tag, EntityId{}) : -1;
+    }
+
+    int PlateEntries(const World& world)
+    {
+        const SensorOverlaps* overlaps = world.TryGetResource<SensorOverlaps>();
+        if (overlaps == nullptr)
+            return 0;
+        int entries = 0;
+        for (const char* plate : { "5882e5a3d55e9d01", "5882e5a3d55e9d02", "5882e5a3d55e9d03" })
+        {
+            const EntityId sensor = Live(world, *PersistentEntityIdFromString(plate));
+            for (const SensorOccurrence& occurrence : overlaps->Occurrences())
+                entries += occurrence.Pair.Sensor == sensor && occurrence.Transition == SensorTransition::Enter ? 1 : 0;
+        }
+        return entries;
+    }
+
+    bool StandOn(Engine& engine, World& world, Vec3d at)
+    {
+        const EntityId body = LocalControlSubjectOf(world);
+        if (!body.IsValid() || !engine.Schedule().Get<PhysicsStepSystem>()->GetCharacterMovers().SetPosition(world, body, at))
+            return false;
+        if (KinematicState* motion = world.TryGet<KinematicState>(body))
+            motion->Velocity = Vec3d::Zero();
+        return true;
+    }
+}
+
+TEST(SavedGames, ThreeCratesOnThreeCountingPlatesReadThreeAfterTheirStreamedZonesRoundTrip)
+{
+    const std::filesystem::path root = RootFor("plates_streamed");
+    std::int32_t first = -1;
+    std::int32_t back = -1;
+    int entered = 0;
+    int stage = 0;
+    int waited = 0;
+    RunFps(
+        kFirst.Name, 5000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage >= 3)
+                entered += PlateEntries(world);
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone) && WorldCount(world, "test.plates") == 3
+                     && ++waited == 60)
+            {
+                first = WorldCount(world, "test.plates");
+                stage = 2;
+            }
+            else if (stage == 2 && WalkTowards(engine, world, 32.0f) && !Resident(engine, kStartZone))
+            {
+                stage = 3;
+            }
+            else if (stage == 3 && WalkTowards(engine, world, 0.0f) && Resident(engine, kStartZone))
+            {
+                waited = 0;
+                stage = 4;
+            }
+            else if (stage == 4 && ++waited == 120)
+            {
+                back = WorldCount(world, "test.plates");
+                stage = 5;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 5) << "the plates did not count their crates, or the zone did not stream out and back";
+    EXPECT_EQ(first, 3);
+    EXPECT_EQ(back, 3) << "the plates counted the crates already on them again when their zone came back";
+    EXPECT_EQ(entered, 0) << "a plate reported a crate already on it as entering when its zone came back";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ThreeCratesOnThreeCountingPlatesReadThreeAfterALoadAndOneThatLeavesExits)
+{
+    const std::filesystem::path root = RootFor("plates_saved");
+    int stage = 0;
+    int waited = 0;
+    RunFps(
+        kFirst.Name, 4000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone) && WorldCount(world, "test.plates") == 3
+                     && ++waited == 60)
+            {
+                EXPECT_EQ(engine.Saves().RequestWrite("plates"), SaveAdmission::Accepted);
+                stage = 2;
+            }
+            else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+            {
+                stage = 3;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 3);
+
+    std::int32_t loaded = -1;
+    std::int32_t left = -1;
+    std::int32_t counted = -1;
+    stage = 0;
+    waited = 0;
+    RunFps(
+        kFirst.Name, 8000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                EXPECT_EQ(engine.Saves().RequestRestore("plates"), SaveAdmission::Accepted);
+                stage = 1;
+            }
+            else if (stage == 1 && RestoreArrived(engine) && Resident(engine, kStartZone) && ++waited == 120)
+            {
+                loaded = WorldCount(world, "test.plates");
+                stage = Push(engine, world, kFirstPlateCrate, Vec3d{ 0.0f, 0.0f, 6.0f }) ? 2 : 1;
+                waited = 0;
+            }
+            else if (stage == 2 && (WorldCount(world, "test.left") > 0 || ++waited == 3000))
+            {
+                left = WorldCount(world, "test.left");
+                counted = WorldCount(world, "test.plates");
+                stage = 3;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(loaded, 3) << "the load counted the crates already on the plates again";
+    EXPECT_EQ(left, 1) << "a crate pushed off its plate after the load did not exit it";
+    EXPECT_EQ(counted, 3);
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, APlayerSavedOnAPlateDoesNotPressItAgainThoughTheBodyLandsLater)
+{
+    const std::filesystem::path root = RootFor("plate_player");
+    int stage = 0;
+    RunFps(kFirst.Name, 4000, root, [&](Engine& engine, World& world, int) {
+        if (stage > 0 && stage < 3)
+            (void)StandOn(engine, world, Vec3d{ 3.0f, 1.0f, 3.0f });
+        if (stage == 0 && HasBody(world))
+        {
+            stage = 1;
+        }
+        else if (stage == 1 && WorldCount(world, "test.pressed") == 1)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("on_plate"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3) << "the player did not press the plate";
+
+    std::int32_t pressed = -1;
+    Vec3d stood;
+    int waited = 0;
+    stage = 0;
+    RunFps(kFirst.Name, 2000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore("on_plate"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine) && ++waited == 120)
+        {
+            pressed = WorldCount(world, "test.pressed");
+            stood = BodyPosition(world);
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2);
+    EXPECT_NEAR(stood.X, 3.0f, 0.2f) << "the body did not come back on the plate, so this tests nothing";
+    EXPECT_NEAR(stood.Z, 3.0f, 0.2f);
+    EXPECT_EQ(pressed, 1) << "the restored body pressed the plate it was saved standing on";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, ABodyRestoredAwayFromThePlateItWasSavedOnPressesItWhenItStepsOnAgain)
+{
+    const std::filesystem::path root = RootFor("plate_arrival");
+    int stage = 0;
+    RunFps(kFirst.Name, 4000, root, [&](Engine& engine, World& world, int) {
+        if (stage > 0 && stage < 3)
+            (void)StandOn(engine, world, Vec3d{ 3.0f, 1.0f, 3.0f });
+        if (stage == 0 && HasBody(world))
+        {
+            stage = 1;
+        }
+        else if (stage == 1 && WorldCount(world, "test.pressed") == 1)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("arrival", "bumper_west"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+
+    std::int32_t arrived = -1;
+    std::int32_t pressedAgain = -1;
+    int waited = 0;
+    stage = 0;
+    RunFps(kFirst.Name, 3000, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore("arrival"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine) && ++waited == 120)
+        {
+            arrived = WorldCount(world, "test.pressed");
+            waited = 0;
+            stage = 2;
+        }
+        else if (stage == 2 && StandOn(engine, world, Vec3d{ 3.0f, 1.0f, 3.0f }) && ++waited == 120)
+        {
+            pressedAgain = WorldCount(world, "test.pressed");
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_EQ(arrived, 1) << "a body that arrived at the landmark pressed the plate";
+    EXPECT_EQ(pressedAgain, 2) << "stepping on the plate after the load did not press it";
     std::filesystem::remove_all(root);
 }
 

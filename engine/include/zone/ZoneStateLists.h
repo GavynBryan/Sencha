@@ -2,6 +2,7 @@
 
 #include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
+#include <physics/SensorOverlaps.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@ inline constexpr std::string_view kDestroyedZoneList = "destroyed";
 inline constexpr std::string_view kChangedZoneList = "changed";
 inline constexpr std::string_view kHeldZoneList = "held";
 inline constexpr std::string_view kGainedZoneList = "gained";
+inline constexpr std::string_view kOccupiedZoneList = "occupied";
 // The newest version of each known list this build reads, and the one it writes.
 inline constexpr std::uint32_t kZoneListVersion = 1;
 
@@ -50,6 +52,10 @@ struct ZoneListEntity
 // `changed`: each entity's patch. `held`: each record's components.
 [[nodiscard]] std::vector<std::byte> EncodeEntityList(std::span<const ZoneListEntity> entities);
 [[nodiscard]] std::optional<std::vector<ZoneListEntity>> DecodeEntityList(std::span<const std::byte> payload);
+
+// `occupied`: each sensor of the zone and what was inside it.
+[[nodiscard]] std::vector<std::byte> EncodeOccupiedList(std::span<const SensorSeed> pairs);
+[[nodiscard]] std::optional<std::vector<SensorSeed>> DecodeOccupiedList(std::span<const std::byte> payload);
 
 struct GainedZoneMember
 {

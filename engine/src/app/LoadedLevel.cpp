@@ -1,5 +1,7 @@
 #include <app/LoadedLevel.h>
 
+#include <physics/SensorOverlaps.h>
+
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
@@ -621,6 +623,8 @@ void LoadedLevel::Unload(UnloadedState state)
     }
     WorldSceneEntities.clear();
     WorldSceneScope = {};
+    if (SensorOverlaps* overlaps = runtime.Entities().TryGetResource<SensorOverlaps>())
+        overlaps->ForgetAwaitedIf([](const SensorSeed&) { return true; });
 
     // Before the runtime it points at goes.
     Host.SetWorldStreaming(nullptr, nullptr);

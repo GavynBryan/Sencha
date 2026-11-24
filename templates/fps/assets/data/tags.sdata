@@ -3,6 +3,11 @@
   "type": "gameplay.tag_declarations",
   "version": 1,
   "data": {
-    "tags": [ "navigation.profile.humanoid" ]
+    "tags": [
+      "navigation.profile.humanoid",
+      "test.plates",
+      "test.left",
+      "test.pressed"
+    ]
   }
 }

@@ -47,6 +47,192 @@
         },
       },
     },
+    {
+      id: "5882e5a3d55e9d01",
+      components: {
+        name: {
+          value: "Counting Plate",
+        },
+        Transform: {
+          local: {
+            position: [2, 0.1, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.7, 0.1, 0.7],
+          },
+          is_trigger: true,
+        },
+        responses: {
+          bindings: {
+            count: {
+              on: "sensor.enter",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.plates" } } }],
+              },
+            },
+            left: {
+              on: "sensor.exit",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.left" } } }],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      id: "5882e5a3d55e9d11",
+      components: {
+        name: {
+          value: "Plate Crate",
+        },
+        Transform: {
+          local: {
+            position: [2, 0.5, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.4, 0.5, 0.4],
+          },
+        },
+        RigidBody: {
+          motion: "dynamic",
+        },
+      },
+    },
+    {
+      id: "5882e5a3d55e9d02",
+      components: {
+        name: {
+          value: "Counting Plate",
+        },
+        Transform: {
+          local: {
+            position: [4, 0.1, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.7, 0.1, 0.7],
+          },
+          is_trigger: true,
+        },
+        responses: {
+          bindings: {
+            count: {
+              on: "sensor.enter",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.plates" } } }],
+              },
+            },
+            left: {
+              on: "sensor.exit",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.left" } } }],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      id: "5882e5a3d55e9d12",
+      components: {
+        name: {
+          value: "Plate Crate",
+        },
+        Transform: {
+          local: {
+            position: [4, 0.5, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.4, 0.5, 0.4],
+          },
+        },
+        RigidBody: {
+          motion: "dynamic",
+        },
+      },
+    },
+    {
+      id: "5882e5a3d55e9d03",
+      components: {
+        name: {
+          value: "Counting Plate",
+        },
+        Transform: {
+          local: {
+            position: [6, 0.1, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.7, 0.1, 0.7],
+          },
+          is_trigger: true,
+        },
+        responses: {
+          bindings: {
+            count: {
+              on: "sensor.enter",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.plates" } } }],
+              },
+            },
+            left: {
+              on: "sensor.exit",
+              sequence: {
+                commands: [{ verb: "counter.add", arguments: { name: { tag: "test.left" } } }],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      id: "5882e5a3d55e9d13",
+      components: {
+        name: {
+          value: "Plate Crate",
+        },
+        Transform: {
+          local: {
+            position: [6, 0.5, -5],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        collider: {
+          shape: {
+            type: "box",
+            half_extents: [0.4, 0.5, 0.4],
+          },
+        },
+        RigidBody: {
+          motion: "dynamic",
+        },
+      },
+    },
   ],
   brush_meshes: {
     "1": {
