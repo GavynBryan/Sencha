@@ -48,6 +48,7 @@ struct BodyDesc
     float GravityScale = 1.0f;
     float LinearDamping = 0.05f;
     float AngularDamping = 0.05f;
+    bool StartAsleep = false;
 };
 
 // Work the backend refused because a configured capacity ran out.

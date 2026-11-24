@@ -225,8 +225,9 @@ PhysicsBodyId PhysicsWorld::AddBody(const BodyDesc& desc)
         settings.mMassPropertiesOverride.mMass = desc.Mass;
     }
 
-    const JPH::EActivation activation =
-        desc.Motion == BodyMotion::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate;
+    const JPH::EActivation activation = desc.Motion == BodyMotion::Static || desc.StartAsleep
+        ? JPH::EActivation::DontActivate
+        : JPH::EActivation::Activate;
 
     JPH::BodyInterface& bodies = Impl->System.GetBodyInterface();
     const JPH::BodyID id = bodies.CreateAndAddBody(settings, activation);

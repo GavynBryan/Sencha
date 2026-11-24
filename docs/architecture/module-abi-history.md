@@ -1577,3 +1577,12 @@ chunk in place of `HasThumbnail`. `SaveSlotFiles` gains `ReadPrefix`,
 `InvokeSaveCopy`) join the engine's catalog, answering `SaveAdmission` as
 their reason, and `BindSavedGames` binds them. The save format does not change:
 the `game` member and the `THMB` chunk format 2 reserved are now written.
+
+## v68
+
+`RigidBody` gains `Asleep` and a scene form (`SENCHA_SCHEMA("RigidBody")`,
+chunk `RGBD`) and is `Saved`; `BodyMotion` gains an `EnumSchema`. `BodyDesc`
+gains `StartAsleep`. The binding pulls a parented body's pose relative to its
+parent and leaves a sleeping body's row alone (`docs/physics/rigid-bodies.md`).
+The save format does not change: a body's velocities and sleep are members of
+a level entity's patch.

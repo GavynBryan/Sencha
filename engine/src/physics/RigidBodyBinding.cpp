@@ -65,6 +65,32 @@ Vec3d ReadScale(const World& world, EntityId entity)
     return Vec3d::One();
 }
 
+BodyTransform InParentFrame(const World& world, EntityId entity, const BodyTransform& pose)
+{
+    if (!world.IsRegistered<Parent>() || !world.IsRegistered<WorldTransform>())
+        return pose;
+    const Parent* parent = world.TryGet<Parent>(entity);
+    const WorldTransform* frame = parent != nullptr ? world.TryGet<WorldTransform>(parent->Entity) : nullptr;
+    if (frame == nullptr)
+        return pose;
+    return BodyTransform{ frame->Value.InverseTransformPoint(pose.Position),
+                          (frame->Value.Rotation.Conjugate() * pose.Rotation).Normalized() };
+}
+
+void PullDynamicState(const PhysicsWorld& simulation, const World& world, EntityId entity, PhysicsBodyId id,
+                      LocalTransform& transform, RigidBody& body)
+{
+    const bool awake = simulation.IsBodyActive(id);
+    if (!awake && body.Asleep)
+        return;
+    const BodyTransform pose = InParentFrame(world, entity, simulation.GetBodyTransform(id));
+    transform.Value.Position = pose.Position;
+    transform.Value.Rotation = pose.Rotation;
+    body.LinearVelocity = simulation.GetLinearVelocity(id);
+    body.AngularVelocity = simulation.GetAngularVelocity(id);
+    body.Asleep = !awake;
+}
+
 } // namespace
 
 struct RigidBodyBinding::SceneState
@@ -128,14 +154,7 @@ void RigidBodyBinding::CaptureDynamicState(
         return;
     }
 
-    const BodyTransform pose =
-        Simulation->GetBodyTransform(record.Body);
-    transform->Value.Position = pose.Position;
-    transform->Value.Rotation = pose.Rotation;
-    body->LinearVelocity =
-        Simulation->GetLinearVelocity(record.Body);
-    body->AngularVelocity =
-        Simulation->GetAngularVelocity(record.Body);
+    PullDynamicState(*Simulation, world, record.Entity, record.Body, *transform, *body);
 }
 
 void RigidBodyBinding::Reconcile(
@@ -176,6 +195,7 @@ void RigidBodyBinding::Reconcile(
             desc.GravityScale = body->GravityScale;
             desc.LinearDamping = body->LinearDamping;
             desc.AngularDamping = body->AngularDamping;
+            desc.StartAsleep = body->Asleep;
         }
 
         const PhysicsBodyId id = Simulation->AddBody(desc);
@@ -314,17 +334,9 @@ void RigidBodyBinding::SyncFromPhysics(
         const auto links = view.template Read<PhysicsBodyLink>();
         for (uint32_t index = 0; index < view.Count(); ++index)
         {
-            if (bodies[index].Motion != BodyMotion::Dynamic)
-                continue;
-
-            const BodyTransform pose =
-                Simulation->GetBodyTransform(links[index].Body);
-            transforms[index].Value.Position = pose.Position;
-            transforms[index].Value.Rotation = pose.Rotation;
-            bodies[index].LinearVelocity =
-                Simulation->GetLinearVelocity(links[index].Body);
-            bodies[index].AngularVelocity =
-                Simulation->GetAngularVelocity(links[index].Body);
+            if (bodies[index].Motion == BodyMotion::Dynamic)
+                PullDynamicState(*Simulation, world, view.Entity(index), links[index].Body, transforms[index],
+                                 bodies[index]);
         }
     });
 }

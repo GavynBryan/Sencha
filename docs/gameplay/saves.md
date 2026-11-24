@@ -74,7 +74,8 @@ The engine's `Identity` components are `PersistentIdComponent` and
 `SceneInstance`. Its `Saved` ones are `GameplayTagContainer` (the baseline),
 `AttributeSet` (the bases), `AbilityGrants` (the lasting kinds),
 `EquipmentState`, `Responses`, `Counter`, `ItemEntry`, `ItemContainer`,
-`ItemPickup`, `Held` and `LookOrientation`. Everything else is `Authored`,
+`ItemPickup`, `Held`, `LookOrientation` and `RigidBody` (velocities and sleep
+included, `docs/physics/rigid-bodies.md`). Everything else is `Authored`,
 including `LocalTransform`, `CharacterMovement` (so a body saved on a ladder
 comes back in the default mode), meshes, colliders and lights. Which part of
 a `Saved` component is durable stays inside its serializer: its scene form is

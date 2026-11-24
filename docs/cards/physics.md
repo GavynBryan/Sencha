@@ -10,7 +10,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: motion and space.
 
 ## 2. Inputs
 
-- Bodies, `RigidBody` (`engine/include/physics/components/RigidBody.h:21`), and collision shapes, `CollisionShape` (`engine/include/physics/CollisionShape.h:30`).
+- Bodies, `RigidBody` (`engine/include/physics/components/RigidBody.h:8`, `docs/physics/rigid-bodies.md`), and collision shapes, `CollisionShape` (`engine/include/physics/CollisionShape.h:30`).
 - Character moves, driven through `CharacterMoverPool` (`engine/include/physics/CharacterMoverPool.h:23`) by movement's character step (`engine/src/movement/CharacterTickStep.cpp`).
 - Zone collision geometry, `LoadZoneCollision` (`engine/include/physics/ZoneCollisionLoader.h:16`).
 - Module dependencies: app, authored, core, ecs, math, movement, time, world.
@@ -24,8 +24,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: motion and space.
 
 ## 4. Central decisions
 
-- `RigidBodyBinding::SyncToPhysics` (`engine/src/physics/RigidBodyBinding.cpp:230`): pushes changed authored transforms and shapes into the simulation.
-- `RigidBodyBinding::Reconcile` (`engine/src/physics/RigidBodyBinding.cpp:141`): creates and removes bodies when components or residency change.
+- `RigidBodyBinding::SyncToPhysics` (`engine/src/physics/RigidBodyBinding.cpp:250`): pushes changed authored transforms and shapes into the simulation.
+- `RigidBodyBinding::Reconcile` (`engine/src/physics/RigidBodyBinding.cpp:160`): creates and removes bodies when components or residency change.
 - `SensorOverlaps::Commit` (`engine/src/physics/SensorOverlaps.cpp:40`): turns this tick's overlap sample into enter, stay and exit occurrences.
 
 ## 5. Invariants
@@ -44,7 +44,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: motion and space.
 ## 6. Size
 
 - 3,751 lines in 42 files.
-- CCN 17 `RigidBodyBinding::SyncToPhysics` (`engine/src/physics/RigidBodyBinding.cpp:230`); CCN 16 `RigidBodyBinding::Reconcile` (`engine/src/physics/RigidBodyBinding.cpp:141`); CCN 14 `SensorOverlaps::Commit` (`engine/src/physics/SensorOverlaps.cpp:40`).
+- CCN 17 `RigidBodyBinding::SyncToPhysics` (`engine/src/physics/RigidBodyBinding.cpp:250`); CCN 16 `RigidBodyBinding::Reconcile` (`engine/src/physics/RigidBodyBinding.cpp:160`); CCN 14 `SensorOverlaps::Commit` (`engine/src/physics/SensorOverlaps.cpp:40`).
 
 ## 7. Docs that contradict the code
 

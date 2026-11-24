@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <cstdint>
 
+#include <core/metadata/EnumSchema.h>
 #include <math/Quat.h>
 #include <math/Vec.h>
 
@@ -23,6 +25,16 @@ enum class BodyMotion : uint8_t
     Static = 0,
     Kinematic = 1,
     Dynamic = 2,
+};
+
+template <>
+struct EnumSchema<BodyMotion>
+{
+    static constexpr std::array Values = {
+        EnumValue{ BodyMotion::Static, "static", {}, "Never moves: world geometry." },
+        EnumValue{ BodyMotion::Kinematic, "kinematic", {}, "Moved by setting its transform; pushes what is dynamic." },
+        EnumValue{ BodyMotion::Dynamic, "dynamic", {}, "Falls, collides and is pushed." },
+    };
 };
 
 // Coarse collision category. Drives broadphase pairing: Static never pairs with
