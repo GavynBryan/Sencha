@@ -4,6 +4,7 @@
 #include <world/ComponentSet.h>
 
 class ComponentRegistrar;
+class EngineSchedule;
 class World;
 
 using InventoryComponents = ComponentSet<ItemEntry, ItemContainer, ItemPickup>;
@@ -11,3 +12,5 @@ using InventoryComponents = ComponentSet<ItemEntry, ItemContainer, ItemPickup>;
 void RegisterInventoryComponents(ComponentRegistrar& registrar);
 
 void InstallInventoryVocabulary(World& world);
+
+void RegisterInventorySystems(EngineSchedule& schedule);

@@ -6,6 +6,28 @@ maintains. Built on inventory (`docs/gameplay/inventory.md`), whose entries are
 held records (`docs/gameplay/held-records.md`), and on AbilityKit
 (`docs/gameplay/abilitykit.md`).
 
+## Installing the kit
+
+Equipment is a kit a game installs; the engine installs it for no game. Two
+calls (`equipment/EquipmentKit.h`), which install inventory's too, since a
+caller cannot have one without the other:
+
+- `InstallEquipmentVocabulary(world)` in `OnRegisterVocabulary`: inventory's
+  vocabulary, the `EquipmentLayoutRegistry`, the record lists, the move
+  admission (see "Moving a worn entry") and the `equipment.slot` cost provider.
+  Idempotent.
+- `RegisterEquipmentSystems(schedule)` in `OnRegisterSystems`:
+  `InventorySystem` when the game has not registered it, and `EquipmentSystem`,
+  after the ability pass and before the inventory's. Idempotent.
+
+After the systems hook the engine binds the `equipment.*` verbs and queries only
+when `EquipmentSystem` is registered, and refuses to start when the layout
+registry and the system are not both present or both absent, when equipment's
+systems run without inventory's, or when another layer's move admission holds
+equipment's place. A game without the kit answers `Unavailable` for its verbs,
+and the content stack logs one warning for the layouts it holds
+(`docs/gameplay/inventory.md`, "Installing the kit").
+
 ## Layouts
 
 An `equipment.layout` asset says which slots something has:
@@ -349,7 +371,10 @@ what a container accepts and its room are checked all the same.
 
 ## Moving a worn entry
 
-Equipment installs inventory's `ItemMoveAdmission`:
+Equipment installs inventory's `ItemMoveAdmission` (`InstallItemMoveAdmission`).
+The World holds one: an installer finds another layer's admission there and
+leaves it, answering false, and the engine refuses to start a game whose
+equipment does not hold it (`HoldsEquipmentMoveAdmission`). The admission:
 - **Asked before** a requested transfer, take or drop: it refuses (`Withheld`)
   a move of a worn entry, or of one holding a worn entry, whose record is
   locked.

@@ -7,8 +7,6 @@
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
-#include <equipment/EquipmentKit.h>
-#include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 
 #include <utility>
@@ -20,8 +18,7 @@ VocabularyCatalog::VocabularyCatalog()
     // declaring a tag into a World with no tag registry would be told nothing.
     RegisterMovement(Metadata);
     InstallAbilityKitVocabulary(Metadata);
-    InstallInventoryVocabulary(Metadata);
-    InstallEquipmentVocabulary(Metadata);
+    InstallEveryKitVocabulary(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
     (void)InstallEngineVocabulary(Metadata);

@@ -13,6 +13,7 @@
 #include <controller/LookIntegrationSystem.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputRegistration.h>
+#include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 #include <navigation/NavAgentRegistration.h>
 #include <participant/ParticipantLifecycle.h>
@@ -38,6 +39,11 @@ void FpsGame::OnConfigure(GameConfigureContext& ctx)
     // settings' namespace -- so it is the game's to state, not the host's to
     // guess.
     ctx.Config.App.Name = "Sencha FPS Template";
+}
+
+void FpsGame::OnRegisterVocabulary(World& world)
+{
+    InstallInventoryVocabulary(world);
 }
 
 void FpsGame::OnStart(GameStartupContext&)
@@ -100,6 +106,7 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterMovementSystems(ctx.Schedule, Session().Assets().DataAssets,
                             &GetEngine().Logging());
     RegisterControllerSystems(ctx.Schedule);
+    RegisterInventorySystems(ctx.Schedule);
     ctx.Schedule.Register<FpsSteeringSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim

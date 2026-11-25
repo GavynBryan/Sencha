@@ -4,7 +4,6 @@
 
 #include <cstdint>
 
-class EngineSchedule;
 class World;
 struct FixedLogicContext;
 
@@ -17,6 +16,6 @@ public:
     void FixedLogic(FixedLogicContext& ctx);
 };
 
-void RegisterEquipmentSystems(EngineSchedule& schedule);
-
-void InstallEquipmentMoveAdmission(World& world);
+// False, leaving the World's admission as it is, when another layer installed one.
+[[nodiscard]] bool InstallEquipmentMoveAdmission(World& world);
+[[nodiscard]] bool HoldsEquipmentMoveAdmission(const World& world);

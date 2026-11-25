@@ -195,7 +195,6 @@ namespace
             Scene.Components.RegisterComponent<PersistentIdComponent>();
             Scene.Components.AddResource<PersistentEntityIndex>();
             InstallEquipmentVocabulary(Scene.Components);
-            Scene.Components.AddResource<ItemRegistry>();
             if (!firstItem.empty())
                 (void)Scene.Components.GetResource<ItemRegistry>().Reserve(firstItem);
             GameplayTagRegistry& tags = Scene.Components.AddResource<GameplayTagRegistry>();

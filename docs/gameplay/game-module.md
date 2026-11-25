@@ -42,10 +42,12 @@ and the arena count as one consumer: the arena is the FPS with a session).
    `RegisterGameDataAssets`.
    Before the content stack exists, the engine installs the vocabulary
    registries a game declares into (`InstallAbilityKitVocabulary`: tags,
-   attributes, effects, abilities -- registries only; movement stays a
-   feature the game opts into, so a game declaring a locomotion mode calls
-   `InstallMovementVocabulary` in this same hook first, and the declaration
-   then lands identically in the runtime World and in every editor's) and the
+   attributes, effects, abilities -- registries only; movement, inventory and
+   equipment stay kits the game opts into, so a game declaring a locomotion
+   mode calls `InstallMovementVocabulary` in this same hook first, a game with
+   items calls `InstallInventoryVocabulary` or `InstallEquipmentVocabulary`
+   (which installs inventory's too), and the declaration then lands identically
+   in the runtime World and in every editor's) and the
    runtime World's authored vocabulary (`InstallAuthoredVocabulary`: the verb
    catalog, with its own `runtime.resume` and `application.quit`, and the query
    and event catalogs), then calls `OnRegisterVocabulary` once. A game declares
@@ -71,9 +73,14 @@ and the arena count as one consumer: the arena is the FPS with a session).
    request a level change (see "Changing level"), carried out at the first
    frame's zone-residency phase; `zone`, `zones`, `scene.spawn`, and
    `scene.despawn` are engine commands over `LoadedLevel`.
-7. `OnRegisterSystems` -- the composition root. The engine's own systems
-   (hot-reload polling) register after the game's, so a game's ordering edges
-   already exist.
+7. `OnRegisterSystems` -- the composition root. A game that installed a kit's
+   vocabulary registers its systems here (`RegisterInventorySystems`,
+   `RegisterEquipmentSystems`). After the hook the engine binds each kit's verbs
+   and queries only when the kit's system is registered, as it binds physics',
+   and refuses to start a kit installed by halves -- a registry without its
+   system, or a system without its registry -- printing the missing call. The
+   engine's own systems (hot-reload polling) register after the game's, so a
+   game's ordering edges already exist.
 8. Frames.
 9. `OnShutdown` -- every lease a game took into `Content().Assets()` is
    released here, every binding and subscription token it holds

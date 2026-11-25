@@ -24,6 +24,7 @@ public:
                                   DataSchemaRegistry& schemas) override;
     void OnUnregisterDataAssetTypes(DataAssetTypeRegistry& types,
                                     DataSchemaRegistry& schemas) override;
+    void OnRegisterVocabulary(World& world) override;
     void OnStart(GameStartupContext& ctx) override;
     void OnRegisterSystems(SystemRegisterContext& ctx) override;
     void OnShutdown(GameShutdownContext& ctx) override;

@@ -30,3 +30,7 @@ inline constexpr std::string_view kApplicationQuitVerb = "application.quit";
 // as the provider "engine". False means a catalog is missing or a declaration
 // was refused; the reasons are on the registries' installation errors.
 [[nodiscard]] bool InstallEngineVocabulary(World& world);
+
+// Every kit's registries -- movement, inventory, equipment -- whichever a game installs, for a
+// tool World that must read any project's content.
+void InstallEveryKitVocabulary(World& world);

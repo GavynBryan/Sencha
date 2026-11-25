@@ -33,6 +33,9 @@ enum class ContentVocabularyReload : std::uint8_t
 void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabularyReload reload,
                               std::vector<std::string>& errors);
 
+// One line per kind of definition content holds and `world` installs no kit to declare.
+[[nodiscard]] std::vector<std::string> UninstalledKitContent(RuntimeAssets& assets, const World& world);
+
 // Redefines every declared effect whose asset has reloaded since. Existing
 // instances keep the timing they were applied with.
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors);

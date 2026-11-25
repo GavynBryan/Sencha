@@ -162,6 +162,8 @@ void RuntimeContent::Publish(World& world)
         DeclareContentVocabulary(assets, world, ContentVocabularyReload::Watch, errors);
         for (const std::string& error : errors)
             Log.Error("content vocabulary: {}", error);
+        for (const std::string& report : UninstalledKitContent(assets, world))
+            Log.Warn("content vocabulary: {}", report);
     }
 
     // The spawn services are engine-owned; the asset stack they resolve scenes

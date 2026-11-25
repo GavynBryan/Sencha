@@ -54,6 +54,9 @@ struct ItemMoveAdmission
     void (*Moved)(World& world, EntityId entry, EntityId formerHolder) = nullptr;
 };
 
+// False, leaving the World's admission as it is, when another layer installed a different one.
+[[nodiscard]] bool InstallItemMoveAdmission(World& world, const ItemMoveAdmission& admission);
+
 struct InventoryResult
 {
     InventoryRefusal Refusal = InventoryRefusal::None;

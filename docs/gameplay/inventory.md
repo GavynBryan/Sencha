@@ -7,6 +7,33 @@ moved between partitions and cleaned up by the held-record machinery, and the
 inventory adds only what a possession is. Equipment, what a held entry does
 while worn, builds on this (`docs/gameplay/equipment.md`).
 
+## Installing the kit
+
+Inventory is a kit a game installs, as it does movement; the engine installs it
+for no game. Two calls (`inventory/InventoryKit.h`):
+
+- `InstallInventoryVocabulary(world)` in `OnRegisterVocabulary`: the
+  `ItemRegistry` content declares items into, and the `inventory.item` cost
+  provider. Idempotent.
+- `RegisterInventorySystems(schedule)` in `OnRegisterSystems`: `InventorySystem`,
+  after the ability pass. Idempotent.
+
+A game that installs equipment calls equipment's two instead, which install
+these (`docs/gameplay/equipment.md`, "Installing the kit"). After the systems
+hook the engine binds the `inventory.*` verbs and query only when
+`InventorySystem` is registered, and refuses to start when the registry and the
+system are not both present or both absent, naming the missing call. A game
+without the kit pays nothing in its World or its tick: the names stay declared
+in every build (the component schema, the verb and query catalogs and the data
+type registry are build-wide, so a scene or a save naming `ItemEntry` stays
+readable), and a verb answers `Unavailable` ("no implementation"), as physics
+verbs do in a game without physics. Item definitions content holds for a World
+without the kit are not declared; the content stack logs one warning for them
+when it publishes ("12 item.definition assets, and this game installs no
+inventory", `UninstalledKitContent`). Editors install every kit
+(`InstallEveryKitVocabulary`), so Kyusu and the Ability Workbench read any
+project's items.
+
 ## Item definitions
 
 An `item.definition` asset says what a kind of item is:

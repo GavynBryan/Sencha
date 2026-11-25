@@ -10,6 +10,7 @@
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ClaimVocabulary.h>
+#include <equipment/EquipmentKit.h>
 #include <equipment/EquipmentVocabulary.h>
 #include <gameplay_tags/GameplayTagVerbs.h>
 #include <inventory/InventoryVocabulary.h>
@@ -17,6 +18,7 @@
 #include <save/SavedGameVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
+#include <movement/MovementRegistration.h>
 #include <movement/MovementVerbs.h>
 #include <navigation/NavigationVerbs.h>
 #include <line/ContactLineSystem.h>
@@ -79,4 +81,10 @@ bool InstallEngineVocabulary(World& world)
     const bool perceptionDeclared = InstallPerceptionVocabulary(world);
     const bool claimsDeclared = InstallClaimVocabulary(world);
     return engineDeclared && perceptionDeclared && claimsDeclared;
+}
+
+void InstallEveryKitVocabulary(World& world)
+{
+    InstallMovementVocabulary(world);
+    InstallEquipmentVocabulary(world);
 }

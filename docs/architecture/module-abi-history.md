@@ -1697,3 +1697,19 @@ are new. `level.change` takes `landmark` and `carry_within`, and
 (`LevelArrived`) is new. The save format does not change: `departed` is a new
 named list, which a build that does not read it carries
 (`docs/gameplay/saves.md`, "The file"). The net protocol does not change.
+
+## v77
+
+The engine no longer installs inventory and equipment: a game installs each as a
+kit, as it does movement. `RegisterInventorySystems` moves from
+`inventory/InventorySystem.h` to `inventory/InventoryKit.h`, and
+`RegisterEquipmentSystems` from `equipment/EquipmentSystem.h` to
+`equipment/EquipmentKit.h`; `InstallEquipmentVocabulary` installs inventory's
+vocabulary and `RegisterEquipmentSystems` inventory's systems. `Engine::Run`
+binds each kit's verbs and queries after `OnRegisterSystems` only when its
+system is registered, and refuses to start a half-installed kit.
+`InstallItemMoveAdmission` is new; `InstallEquipmentMoveAdmission` returns
+whether it installed, and `HoldsEquipmentMoveAdmission` is new.
+`InstallEveryKitVocabulary` and `UninstalledKitContent` are new. The save
+format, the scene format and the net protocol do not change: the component
+schema, and so the replicated table, is the same in every build.

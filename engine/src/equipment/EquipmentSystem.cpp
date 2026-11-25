@@ -3,8 +3,6 @@
 #include <abilities/AbilityActivations.h>
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityGrants.h>
-#include <abilities/AbilitySystem.h>
-#include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <core/hash/Fnv1a.h>
 #include <ecs/Query.h>
@@ -15,7 +13,6 @@
 #include <equipment/EquipmentComponents.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <inventory/InventorySystem.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/SimulationAuthority.h>
 #include <world/identity/PersistableRef.h>
@@ -213,9 +210,15 @@ namespace
     }
 }
 
-void InstallEquipmentMoveAdmission(World& world)
+bool InstallEquipmentMoveAdmission(World& world)
 {
-    world.SetResource(ItemMoveAdmission{ .Admit = &AdmitMove, .Moved = &Moved });
+    return InstallItemMoveAdmission(world, ItemMoveAdmission{ .Admit = &AdmitMove, .Moved = &Moved });
+}
+
+bool HoldsEquipmentMoveAdmission(const World& world)
+{
+    const ItemMoveAdmission* admission = world.TryGetResource<ItemMoveAdmission>();
+    return admission != nullptr && admission->Admit == &AdmitMove && admission->Moved == &Moved;
 }
 
 void RunEquipmentPass(World& world, const FixedSimTime& now)
@@ -257,13 +260,4 @@ std::uint64_t EquipmentRebindWalks(const World& world)
 void EquipmentSystem::FixedLogic(FixedLogicContext& ctx)
 {
     RunEquipmentPass(ctx.Entities, ctx.Time);
-}
-
-void RegisterEquipmentSystems(EngineSchedule& schedule)
-{
-    schedule.Register<EquipmentSystem>();
-    if (schedule.Has<AbilitySystem>())
-        schedule.After<EquipmentSystem, AbilitySystem>();
-    if (schedule.Has<InventorySystem>())
-        schedule.After<InventorySystem, EquipmentSystem>();
 }

@@ -1,8 +1,6 @@
 #include <inventory/InventorySystem.h>
 
 #include <abilities/AbilityActivations.h>
-#include <abilities/AbilitySystem.h>
-#include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <ecs/World.h>
 #include <inventory/InventoryComponents.h>
@@ -40,11 +38,4 @@ void RunInventoryPass(World& world)
 void InventorySystem::FixedLogic(FixedLogicContext& ctx)
 {
     RunInventoryPass(ctx.Entities);
-}
-
-void RegisterInventorySystems(EngineSchedule& schedule)
-{
-    schedule.Register<InventorySystem>();
-    if (schedule.Has<AbilitySystem>())
-        schedule.After<InventorySystem, AbilitySystem>();
 }

@@ -4,7 +4,6 @@
 
 #include <vector>
 
-class EngineSchedule;
 class World;
 struct FixedLogicContext;
 
@@ -27,5 +26,3 @@ class InventorySystem
 public:
     void FixedLogic(FixedLogicContext& ctx);
 };
-
-void RegisterInventorySystems(EngineSchedule& schedule);

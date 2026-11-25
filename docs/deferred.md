@@ -1652,12 +1652,30 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## A second layer that takes part in moving an entry
 
 - **What:** `ItemMoveAdmission` is one World resource with one `Admit` and one
-  `Moved`. Equipment installs it; a second installer would replace equipment's.
+  `Moved`. Equipment installs it through `InstallItemMoveAdmission`, which
+  leaves another layer's admission in place and answers false, and the engine
+  refuses to start a game whose equipment does not hold it. Two layers cannot
+  both take part.
 - **Where:** `inventory/Inventory.h`, `InstallEquipmentMoveAdmission` in
-  `engine/src/equipment/EquipmentSystem.cpp`.
+  `engine/src/equipment/EquipmentSystem.cpp`, the kit check in
+  `engine/src/app/Engine.cpp`.
 - **Trigger:** a second layer that must refuse or follow a move, such as a
   quest item that cannot be dropped. Then make the resource a list asked in
   order.
+
+## Tool surfaces limited to the kits a game installs
+
+- **What:** Kyusu and the Ability Workbench install every kit
+  (`InstallEveryKitVocabulary`), so they list inventory and equipment
+  components, verbs, queries and cost providers for a game that installs
+  neither, as they already do for movement and physics. A runtime World
+  installs only what its game asks for, and its verbs answer `Unavailable`.
+- **Where:** `engine/src/app/EngineVocabulary.cpp`; the three editor hosts
+  (`EditorDocument.cpp`, `VocabularyCatalog.cpp`, `AbilityPreviewSession.cpp`).
+- **Trigger:** content authored for an uninstalled kit more than once (the
+  content stack's "installs no inventory" warning in a real project), or the
+  owner finding Kyusu's lists noisy for a game without inventory. Then the
+  editor asks the loaded module which kits it installs and offers only those.
 
 ## Owner-only fields a former owner keeps
 

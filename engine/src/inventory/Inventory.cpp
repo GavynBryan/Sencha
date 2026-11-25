@@ -319,6 +319,14 @@ InventoryResult Inventory::Use(EntityId user, EntityId entry)
     return { .Refusal = InventoryRefusal::None, .Entry = entry };
 }
 
+bool InstallItemMoveAdmission(World& world, const ItemMoveAdmission& admission)
+{
+    if (const ItemMoveAdmission* installed = world.TryGetResource<ItemMoveAdmission>())
+        return installed->Admit == admission.Admit && installed->Moved == admission.Moved;
+    world.AddResource<ItemMoveAdmission>(admission);
+    return true;
+}
+
 const ItemDefinition* FindItemDefinition(const World& world, ItemId item)
 {
     const ItemRegistry* items = world.TryGetResource<ItemRegistry>();

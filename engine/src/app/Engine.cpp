@@ -42,9 +42,11 @@
 #include <core/text/Slug.h>
 #include <save/EngineSaveSections.h>
 #include <equipment/EquipmentKit.h>
+#include <equipment/EquipmentLayout.h>
 #include <equipment/EquipmentSystem.h>
 #include <equipment/EquipmentVocabulary.h>
 #include <inventory/InventoryKit.h>
+#include <inventory/ItemDefinition.h>
 #include <inventory/InventorySystem.h>
 #include <inventory/InventoryVocabulary.h>
 #include <logic/CounterVocabulary.h>
@@ -118,8 +120,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -128,6 +133,34 @@ namespace
     bool PresentsAWindow(const EngineConfig& config)
     {
         return config.Window.GraphicsApi != WindowGraphicsApi::None;
+    }
+
+    void RequireWholeKit(bool vocabulary, bool systems, std::string_view kit, std::string_view install,
+                         std::string_view registerSystems, std::vector<std::string>& errors)
+    {
+        if (vocabulary && !systems)
+            errors.push_back(std::format("{} is installed without its systems: call {} from OnRegisterSystems", kit,
+                                         registerSystems));
+        else if (systems && !vocabulary)
+            errors.push_back(std::format("{} systems are registered without its vocabulary: call {} from "
+                                         "OnRegisterVocabulary",
+                                         kit, install));
+    }
+
+    std::vector<std::string> KitInstallationErrors(const World& world, const EngineSchedule& schedule)
+    {
+        std::vector<std::string> errors;
+        RequireWholeKit(world.HasResource<ItemRegistry>(), schedule.Has<InventorySystem>(), "inventory",
+                        "InstallInventoryVocabulary", "RegisterInventorySystems", errors);
+        RequireWholeKit(world.HasResource<EquipmentLayoutRegistry>(), schedule.Has<EquipmentSystem>(), "equipment",
+                        "InstallEquipmentVocabulary", "RegisterEquipmentSystems", errors);
+        if (schedule.Has<EquipmentSystem>() && !schedule.Has<InventorySystem>())
+            errors.push_back("equipment is built on inventory, whose systems are not registered: register both "
+                             "through RegisterEquipmentSystems");
+        if (world.HasResource<EquipmentLayoutRegistry>() && !HoldsEquipmentMoveAdmission(world))
+            errors.push_back("equipment cannot take part in moving an entry: another layer's ItemMoveAdmission "
+                             "holds the one place for it");
+        return errors;
     }
 }
 
@@ -1179,8 +1212,6 @@ int Engine::Run(Game& game)
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
         RegisterAbilityKit(entities);
-        InstallInventoryVocabulary(entities);
-        InstallEquipmentVocabulary(entities);
         InstallAnimationVocabulary(entities);
         // The engine's character facts read movement's and the aim's components; a
         // game without them has no entity they answer for.
@@ -1481,8 +1512,6 @@ int Engine::Run(Game& game)
                                            .Console = &console.Registry(),
                                            .Presents = PresentsAWindow(Configuration),
                                            .Logging = &LoggingState });
-    RegisterInventorySystems(EngineSystems);
-    RegisterEquipmentSystems(EngineSystems);
 
     // Every host answers effects with reactions: an entity whose EffectReactions
     // name a profile is pushed and shaken in a process whose game registered
@@ -1501,8 +1530,6 @@ int Engine::Run(Game& game)
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
     VocabularyBindings->BindCounters(*VerbDispatcherState, *QueryDispatcherState,
                                      LoggingState.GetLogger<CounterOperations>(), EventDispatcherState.get());
-    VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState);
-    VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState);
 
     // Only where a window presents: a server holds no attachments.
     if (PresentsAWindow(Configuration))
@@ -1520,6 +1547,13 @@ int Engine::Run(Game& game)
                              });
 
     game.OnRegisterSystems(registerSystems);
+    const std::vector<std::string> kitErrors = KitInstallationErrors(RuntimeWorldState->Entities(), EngineSystems);
+    for (const std::string& error : kitErrors)
+        std::fprintf(stderr, "Kit installation failed: %s\n", error.c_str());
+    if (EngineSystems.Has<InventorySystem>())
+        VocabularyBindings->BindInventory(*VerbDispatcherState, *QueryDispatcherState);
+    if (EngineSystems.Has<EquipmentSystem>())
+        VocabularyBindings->BindEquipment(*VerbDispatcherState, *QueryDispatcherState);
     // A response's movement operations write the channels the movement producers
     // and composition read, so a launch lands on the step after the sample that
     // saw the activator, and a jump, root motion or held burst that tick acts on
@@ -1618,7 +1652,7 @@ int Engine::Run(Game& game)
 
     CreateDebugOverlay();
 
-    if (FrameDriverInstance != nullptr)
+    if (FrameDriverInstance != nullptr && kitErrors.empty())
     {
         RegisterFramePhases(game);
         if (!FrameTraceOutputPath.empty())
@@ -1766,7 +1800,7 @@ int Engine::Run(Game& game)
     // until Engine::Shutdown, which also occurs inside Application::Run while the
     // module is mapped.
     RuntimeComponentSchemaState = WorldComponentSchema{};
-    return 0;
+    return kitErrors.empty() ? 0 : 1;
 }
 
 void Engine::ApplyPendingRenderProfileMode()

@@ -227,15 +227,16 @@ struct DefinitionKind
     std::string_view Subtype;
     DeclareFn Declare;
     bool (*Wanted)(const World&);
+    std::string_view Kit;
 };
 
 // Declared in this order: abilities name effects, and items name abilities.
 constexpr DefinitionKind kDefinitionKinds[] = {
-    { kEffectDefinitionType, &DeclareEffect, &Holds<EffectRegistry> },
-    { kAbilityDefinitionType, &DeclareAbility, &Holds<AbilityRegistry> },
-    { kCuePresentationType, &DeclareCuePresentation, &Holds<CuePresentationLibrary> },
-    { kItemDefinitionType, &DeclareItem, &Holds<ItemRegistry> },
-    { kEquipmentLayoutType, &DeclareEquipmentLayout, &Holds<EquipmentLayoutRegistry> },
+    { kEffectDefinitionType, &DeclareEffect, &Holds<EffectRegistry>, "ability kit" },
+    { kAbilityDefinitionType, &DeclareAbility, &Holds<AbilityRegistry>, "ability kit" },
+    { kCuePresentationType, &DeclareCuePresentation, &Holds<CuePresentationLibrary>, "ability kit" },
+    { kItemDefinitionType, &DeclareItem, &Holds<ItemRegistry>, "inventory" },
+    { kEquipmentLayoutType, &DeclareEquipmentLayout, &Holds<EquipmentLayoutRegistry>, "equipment" },
 };
 
 void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
@@ -328,6 +329,17 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
             DeclareAll(assets, world, reload, kDefinitionKinds[kind].Subtype,
                        leases != nullptr ? &leases->Held[kind] : nullptr, kDefinitionKinds[kind].Declare, errors);
     DeclareWornGrantEntries(world, errors);
+}
+
+std::vector<std::string> UninstalledKitContent(RuntimeAssets& assets, const World& world)
+{
+    std::vector<std::string> reports;
+    for (const DefinitionKind& kind : kDefinitionKinds)
+        if (!kind.Wanted(world))
+            if (const std::size_t count = ConcretePathsOfSubtype(assets, kind.Subtype).size(); count != 0)
+                reports.push_back(std::format("{} {} asset{}, and this game installs no {}", count, kind.Subtype,
+                                              count == 1 ? "" : "s", kind.Kit));
+    return reports;
 }
 
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors)
