@@ -3,6 +3,7 @@
 #include <app/Engine.h>
 #include <app/LoadedLevel.h>
 #include <components/ActiveCameraService.h>
+#include <logic/ResponsesSystem.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
@@ -109,6 +110,12 @@ LevelChangeRequest& LevelChangeRequest::Focused(ZoneId zone)
     return *this;
 }
 
+LevelChangeRequest& LevelChangeRequest::Carrying(std::vector<EntityId> entities, std::string landmark)
+{
+    Carried_ = std::move(entities);
+    CarryLandmark_ = std::move(landmark);
+    return *this;
+}
 
 LevelChange::LevelChange(Engine& engine)
     : Host(engine)
@@ -132,6 +139,20 @@ LevelChangeAdmission LevelChange::Request(LevelChangeRequest request)
         return LevelChangeAdmission::InSession;
     if (!Host.Level().IsCooked(request.Level()))
         return LevelChangeAdmission::NotCooked;
+    if (!request.Carried().empty() || !request.CarryLandmark().empty())
+    {
+        if (request.Kind() != LevelChangeKind::Travel)
+            return LevelChangeAdmission::NotCarriable;
+        switch (RefuseCarrying(world, request.Carried(), request.CarryLandmark()))
+        {
+        case CarryRefusal::NoLandmark:
+            return LevelChangeAdmission::NoLandmark;
+        case CarryRefusal::NotCarriable:
+            return LevelChangeAdmission::NotCarriable;
+        case CarryRefusal::None:
+            break;
+        }
+    }
     LatestKind = request.Kind();
     Waiting = std::move(request);
     Current = LevelChangeStatus::Pending;
@@ -159,6 +180,15 @@ void LevelChange::Commit()
                 Released.push_back(participant);
 
     LoadedLevel& level = Host.Level();
+    Carry.Drop(Host.World(), Host.Logging().GetLogger<LevelChange>(),
+               "another level change replaced the one carrying them");
+    Carry.TakeOut(Host.World(), request.Carried(), request.CarryLandmark(),
+                  [&level](EntityId entity) { return level.ScopeOfEntity(entity); });
+    if (PhysicsStepSystem* physics = Host.Schedule().Get<PhysicsStepSystem>(); physics != nullptr && Carry.Holds())
+    {
+        physics->GetCharacterMovers().EvictPartition(world, Host.World().HoldingPartition());
+        physics->GetRigidBodies().EvictPartition(world, Host.World().HoldingPartition());
+    }
     const std::optional<LevelReference> leaving = level.Loaded();
     level.Unload(Forgets(request, leaving) ? UnloadedState::Forgotten : UnloadedState::Captured);
     ForgetFor(world, request, leaving);
@@ -211,6 +241,7 @@ void LevelChange::Advance()
     if (Current != LevelChangeStatus::Resident)
         return;
     World& world = Host.World().Entities();
+    Carry.Arrive(Host.World(), Host.Schedule().Get<ResponsesSystem>(), Host.Logging().GetLogger<LevelChange>());
     PlaceKeptBodies(world);
     if (BodiesArrived(world))
         Current = LevelChangeStatus::BodiesRestored;
@@ -342,6 +373,7 @@ void LevelChange::Fail(std::vector<std::string> reasons)
 {
     Current = LevelChangeStatus::Failed;
     World& world = Host.World().Entities();
+    Carry.Drop(Host.World(), Host.Logging().GetLogger<LevelChange>(), "the level change failed");
     LetGoOfKeptBodies(world);
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         restored->Local.reset();

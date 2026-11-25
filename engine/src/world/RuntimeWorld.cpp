@@ -451,6 +451,13 @@ void RuntimeWorld::EndFrameView()
     Entities_.AdvanceFrame();
 }
 
+StoragePartitionId RuntimeWorld::HoldingPartition()
+{
+    if (!Holding_.has_value())
+        Holding_ = AllocatePartition();
+    return *Holding_;
+}
+
 StoragePartitionId RuntimeWorld::AllocatePartition()
 {
     if (!FreePartitions_.empty())

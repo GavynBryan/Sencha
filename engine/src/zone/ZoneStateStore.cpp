@@ -82,7 +82,7 @@ void ZoneStateStore::Parse(ZoneRecord& record)
     {
         if (list.Name == kDestroyedZoneList && list.Version <= kZoneListVersion)
         {
-            if (const std::optional<std::vector<PersistentEntityId>> ids = DecodeDestroyedList(list.Payload))
+            if (const std::optional<std::vector<PersistentEntityId>> ids = DecodeIdList(list.Payload))
             {
                 for (const PersistentEntityId id : *ids)
                     record.Destroyed.emplace(id.Value, ZoneStateForgetting::Never);
@@ -96,6 +96,16 @@ void ZoneStateStore::Parse(ZoneRecord& record)
                 for (ZoneListEntity& entity : *changed)
                     record.Patches.insert_or_assign(entity.Id.Value,
                                                     PatchRecord{ ZoneStateForgetting::Never, std::move(entity.Value) });
+                continue;
+            }
+        }
+        else if (list.Name == kDepartedZoneList && list.Version <= kZoneListVersion)
+        {
+            if (const std::optional<std::vector<PersistentEntityId>> ids = DecodeIdList(list.Payload))
+            {
+                for (const PersistentEntityId id : *ids)
+                    record.Departed.push_back(id.Value);
+                std::ranges::sort(record.Departed);
                 continue;
             }
         }
@@ -145,19 +155,27 @@ EncodedZoneLists ZoneStateStore::Encode(const ZoneRecord& record)
     for (const OccupiedRecord& entry : record.Occupied)
         if (entry.Forgotten == ZoneStateForgetting::Never)
             occupied.push_back(entry.Pair);
-    if (destroyed.empty() && changed.empty() && gained.empty() && occupied.empty() && record.Carried.empty())
+    if (destroyed.empty() && changed.empty() && gained.empty() && occupied.empty() && record.Departed.empty()
+        && record.Carried.empty())
         return nullptr;
     std::ranges::sort(destroyed, {}, &PersistentEntityId::Value);
     std::ranges::sort(changed, {}, [](const ZoneListEntity& entity) { return entity.Id.Value; });
     std::vector<ZoneStateList> lists;
     if (!destroyed.empty())
-        lists.push_back({ std::string(kDestroyedZoneList), kZoneListVersion, EncodeDestroyedList(destroyed) });
+        lists.push_back({ std::string(kDestroyedZoneList), kZoneListVersion, EncodeIdList(destroyed) });
     if (!changed.empty())
         lists.push_back({ std::string(kChangedZoneList), kZoneListVersion, EncodeEntityList(changed) });
     if (!gained.empty())
         lists.push_back({ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(gained) });
     if (!occupied.empty())
         lists.push_back({ std::string(kOccupiedZoneList), kZoneListVersion, EncodeOccupiedList(occupied) });
+    if (!record.Departed.empty())
+    {
+        std::vector<PersistentEntityId> departed;
+        for (const std::uint64_t id : record.Departed)
+            departed.push_back(PersistentEntityId{ id });
+        lists.push_back({ std::string(kDepartedZoneList), kZoneListVersion, EncodeIdList(departed) });
+    }
     lists.insert(lists.end(), record.Carried.begin(), record.Carried.end());
     return EncodeZoneLists(lists);
 }
@@ -180,6 +198,7 @@ void ZoneStateStore::Close(ZoneRecord& record)
     record.Patches.clear();
     record.Gained.clear();
     record.Occupied.clear();
+    record.Departed.clear();
     record.Carried.clear();
     record.Parsed = false;
 }
@@ -419,6 +438,24 @@ std::vector<SensorSeed> ZoneStateStore::OccupiedOf(ZoneStateScope scope) const
     return pairs;
 }
 
+void ZoneStateStore::RecordDeparted(ZoneStateScope scope, PersistentEntityId id)
+{
+    if (!scope.IsValid() || !id.IsValid())
+        return;
+    ZoneRecord& record = Open(scope);
+    const auto at = std::ranges::lower_bound(record.Departed, id.Value);
+    if (at != record.Departed.end() && *at == id.Value)
+        return;
+    record.Departed.insert(at, id.Value);
+    record.Encoded = nullptr;
+}
+
+bool ZoneStateStore::IsRecordedDeparted(ZoneStateScope scope, PersistentEntityId id) const
+{
+    const ZoneRecord* record = Find(scope);
+    return record != nullptr && std::ranges::binary_search(record->Departed, id.Value);
+}
+
 bool ZoneStateStore::IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const
 {
     const ZoneRecord* record = Find(scope);
@@ -481,7 +518,17 @@ ResidentEntityState ZoneStateStore::ResidentOf(ZoneStateScope scope, PersistentE
 void ZoneStateStore::ForgetLevel(const LevelReference& level)
 {
     const ZoneStateLevelId id = FindLevel(level);
-    std::erase_if(Zones_, [&](const auto& entry) { return entry.first.Level == id.Value; });
+    std::erase_if(Zones_, [&](auto& entry) {
+        if (entry.first.Level != id.Value)
+            return false;
+        Parse(entry.second);
+        std::vector<std::uint64_t> departed = std::move(entry.second.Departed);
+        if (departed.empty())
+            return true;
+        entry.second = ZoneRecord{};
+        entry.second.Departed = std::move(departed);
+        return false;
+    });
 }
 
 std::vector<DurableLevelState> ZoneStateStore::ExportDurable() const

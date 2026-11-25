@@ -29,6 +29,7 @@
 #include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -144,6 +145,17 @@ void LoadedLevel::CaptureState()
             capture(header.Id);
     if (!WorldSceneEntities.empty())
         CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Live);
+}
+
+ZoneStateScope LoadedLevel::ScopeOfEntity(EntityId entity) const
+{
+    const RuntimeWorld& runtime = Host.World();
+    if (!runtime.Entities().IsAlive(entity))
+        return {};
+    if (const RuntimeZoneRecord* record = runtime.FindPartition(runtime.Entities().GetEntityPartition(entity)))
+        return record->StateScope;
+    return std::ranges::find(WorldSceneEntities, entity) != WorldSceneEntities.end() ? WorldSceneScope
+                                                                                     : ZoneStateScope{};
 }
 
 ZoneId LoadedLevel::ZoneAt(const Vec3d& point) const
@@ -611,6 +623,10 @@ void LoadedLevel::Unload(UnloadedState state)
     Host.Schedule().RunZoneResidency(residency);
     runtime.FinalizeResidencyProcessing();
 
+    std::erase_if(WorldSceneEntities, [&](EntityId entity) {
+        return runtime.Entities().IsAlive(entity)
+            && runtime.Entities().GetEntityPartition(entity) != PersistentStoragePartition;
+    });
     ParkHeldRecords(runtime.Entities(), WorldSceneScope, WorldSceneEntities);
     if (captured)
         CaptureZoneState(runtime.Entities(), WorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);

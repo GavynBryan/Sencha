@@ -250,6 +250,12 @@ not resident yet (a body lands frames after its zone) is awaited in
 in `Planning` instead of ending it as `TargetLost`. A new order forgets what
 the load left waiting.
 
+An agent a level change carries keeps its order through the load untouched,
+since nothing runs on it while it is held, and on arrival the order is
+requested again with a fresh id, a point moved with the landmark, so the route
+is planned in the level it entered (`docs/gameplay/game-module.md`,
+"Carrying").
+
 ### Who writes `MovementIntent`
 
 An agent's intent producer is chosen by its state. An entity tagged

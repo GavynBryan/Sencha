@@ -51,7 +51,10 @@ the authority's and rebuilt each run but for its engagement: `engaged`,
 `seconds_since_contact` are run-time fields a save keeps
 (`docs/gameplay/saves.md`, "Characters and actors"), so a loaded agent starts
 its clock again and chooses from what it last knew; its target is found again
-by perception. Nothing else of it is saved. A game usually provisions it
+by perception. Nothing else of it is saved. An agent a level change carries
+forgets the level it left on arrival (`ForgetDecisionPlace`): its claim is let
+go and it starts again with no target, destination or contact, its running
+option left to end on its own (`docs/gameplay/game-module.md`, "Carrying"). A game usually provisions it
 from its own component with `DerivedComponents`, so it arrives with the entity
 at spawn.
 

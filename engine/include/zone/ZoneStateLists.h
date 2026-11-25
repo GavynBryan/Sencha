@@ -32,6 +32,8 @@ inline constexpr std::string_view kChangedZoneList = "changed";
 inline constexpr std::string_view kHeldZoneList = "held";
 inline constexpr std::string_view kGainedZoneList = "gained";
 inline constexpr std::string_view kOccupiedZoneList = "occupied";
+// The zone's entities a level change carried away, gone from it for good: kept across ForgetLevel and every lifetime.
+inline constexpr std::string_view kDepartedZoneList = "departed";
 // The newest version of each known list this build reads, and the one it writes.
 inline constexpr std::uint32_t kZoneListVersion = 1;
 
@@ -40,8 +42,9 @@ inline constexpr std::uint32_t kZoneListVersion = 1;
 [[nodiscard]] EncodedZoneLists EncodeZoneLists(std::span<const ZoneStateList> lists);
 [[nodiscard]] std::optional<std::vector<ZoneStateList>> DecodeZoneLists(std::span<const std::byte> bytes);
 
-[[nodiscard]] std::vector<std::byte> EncodeDestroyedList(std::span<const PersistentEntityId> destroyed);
-[[nodiscard]] std::optional<std::vector<PersistentEntityId>> DecodeDestroyedList(std::span<const std::byte> payload);
+// `destroyed` and `departed`: each id.
+[[nodiscard]] std::vector<std::byte> EncodeIdList(std::span<const PersistentEntityId> ids);
+[[nodiscard]] std::optional<std::vector<PersistentEntityId>> DecodeIdList(std::span<const std::byte> payload);
 
 struct ZoneListEntity
 {

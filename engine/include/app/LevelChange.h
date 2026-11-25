@@ -1,5 +1,6 @@
 #pragma once
 
+#include <app/LevelCarry.h>
 #include <core/metadata/EnumSchema.h>
 #include <ecs/EntityId.h>
 #include <participant_spawn/LevelArrival.h>
@@ -36,6 +37,8 @@ enum class LevelChangeAdmission : std::uint8_t
     NotAuthority,
     InSession,
     BodyInZone,
+    NoLandmark,
+    NotCarriable,
 };
 
 template<>
@@ -50,6 +53,11 @@ struct EnumSchema<LevelChangeAdmission>
         EnumValue{ LevelChangeAdmission::InSession, "in_session", "In a session", "a network session is running" },
         EnumValue{ LevelChangeAdmission::BodyInZone, "body_in_zone", "Body in a zone",
                    "a body to keep belongs to a zone of the level being left" },
+        EnumValue{ LevelChangeAdmission::NoLandmark, "no_landmark", "No landmark",
+                   "what is carried names no landmark the level being left has" },
+        EnumValue{ LevelChangeAdmission::NotCarriable, "not_carriable", "Not carriable",
+                   "an entity to carry is gone, a body, a held record, parented, or has children without being the "
+                   "root of a scene instance; or the change is not a travel" },
     };
 };
 
@@ -97,6 +105,9 @@ public:
     LevelChangeRequest& At(std::string arrival);
     // A world's starting zone; the manifest's start zone when absent or unknown.
     LevelChangeRequest& Focused(ZoneId zone);
+    // These cross with the bodies, each keeping its place from the landmark of that name on the other side:
+    // docs/gameplay/game-module.md, "Carrying". A travel only.
+    LevelChangeRequest& Carrying(std::vector<EntityId> entities, std::string landmark);
 
     [[nodiscard]] LevelChangeKind Kind() const { return Kind_; }
     [[nodiscard]] const LevelReference& Level() const { return Level_; }
@@ -105,6 +116,8 @@ public:
     [[nodiscard]] const std::optional<ZoneId>& Focus() const { return Focus_; }
     [[nodiscard]] const std::string& Arrival() const { return Arrival_; }
     [[nodiscard]] const std::vector<DurableLevelState>& Remembered() const { return Remembered_; }
+    [[nodiscard]] const std::vector<EntityId>& Carried() const { return Carried_; }
+    [[nodiscard]] const std::string& CarryLandmark() const { return CarryLandmark_; }
 
 private:
     LevelChangeRequest(LevelChangeKind kind, LevelReference level, LevelMemory memory);
@@ -116,6 +129,8 @@ private:
     std::optional<ZoneId> Focus_;
     std::string Arrival_;
     std::vector<DurableLevelState> Remembered_;
+    std::vector<EntityId> Carried_;
+    std::string CarryLandmark_;
 };
 
 // docs/gameplay/game-module.md, "Changing level". The first load, with nothing
@@ -152,6 +167,7 @@ private:
     [[nodiscard]] bool BodiesArrived(const World& world) const;
 
     Engine& Host;
+    LevelCarry Carry;
     std::optional<LevelChangeRequest> Waiting;
     LevelChangeStatus Current = LevelChangeStatus::Idle;
     std::uint64_t Accepted = 0;

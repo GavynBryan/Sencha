@@ -1679,3 +1679,21 @@ save format does not change: `from_source` is a form tag on `gained` members,
 which a build that does not make it carries (`docs/gameplay/saves.md`, "What a
 zone gained"). The net protocol does not change: `ProjectileMotion` is not on
 the wire and `ProjectileFlight` travels through its codec as before.
+
+## v76
+
+`LevelChangeRequest` gains `Carrying`, `Carried` and `CarryLandmark`, and
+`LevelChange` a `LevelCarry`, so both layouts move; `LevelChangeAdmission`
+gains `NoLandmark` and `NotCarriable`. `app/LevelCarry.h` is new (`LevelCarry`,
+`CarryRefusal`, `RefuseCarrying`). `RuntimeWorld` gains `HoldingPartition`, so
+its layout moves. `ZoneStateStore` gains `RecordDeparted` and
+`IsRecordedDeparted`, and keeps departed ids through `ForgetLevel`;
+`kDepartedZoneList` is new, and the id list codec is renamed `EncodeIdList`
+and `DecodeIdList`, since `destroyed` and `departed` share it.
+`KeepArrivedWithZone`, `ForgetDecisionPlace` and `LoadedLevel::ScopeOfEntity`
+are new. `level.change` takes `landmark` and `carry_within`, and
+`InvokeLevelChange` takes `LevelChangeOperations`;
+`DeclareLevelChangeVerbs` takes an event scope, and `level.arrived`
+(`LevelArrived`) is new. The save format does not change: `departed` is a new
+named list, which a build that does not read it carries
+(`docs/gameplay/saves.md`, "The file"). The net protocol does not change.

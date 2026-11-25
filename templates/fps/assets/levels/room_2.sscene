@@ -92,6 +92,56 @@
           "id": 1
         }
       }
+    },
+    {
+      "id": "2feaeaa63f327a01",
+      "components": {
+        "name": {
+          "value": "Lift Landmark"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              12,
+              0,
+              4
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "LevelLandmark": {
+          "name": "lift"
+        },
+        "responses": {
+          "bindings": {
+            "arrived": {
+              "on": "level.arrived",
+              "sequence": {
+                "commands": [
+                  {
+                    "verb": "counter.add",
+                    "arguments": {
+                      "name": {
+                        "tag": "test.arrived"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "brush_meshes": {

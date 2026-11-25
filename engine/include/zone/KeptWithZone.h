@@ -17,6 +17,8 @@ static_assert(std::is_empty_v<KeptWithZone>, "KeptWithZone is a tag: presence is
 
 // Authority only. Gives the entity a runtime persistent id if it has none; refuses a level entity and a held record.
 bool KeepWithZone(World& world, EntityId entity);
+// The same for an entity its own level let go of (one a level change carried): it keeps an authored id.
+bool KeepArrivedWithZone(World& world, EntityId entity);
 
 [[nodiscard]] bool IsKeptWithZone(const World& world, EntityId entity);
 

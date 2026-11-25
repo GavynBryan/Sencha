@@ -35,7 +35,9 @@ what a save keeps is decided per entity by its zone state lifetime
   run-time entities the zone keeps, such as a dropped item ("What a zone
   gained"); `held`, the runtime records whose holder is an entity of that
   zone, resident or waiting ("Held records"); `occupied`, what was inside each
-  of the zone's sensors (`docs/physics/sensor-overlaps.md`, "Across a load").
+  of the zone's sensors (`docs/physics/sensor-overlaps.md`, "Across a load");
+  `departed`, the zone's entities a level change carried to another level
+  (`docs/gameplay/game-module.md`, "Carrying").
   Only what is never forgotten is written; `at_restore` state stays
   in the session and `at_detach` state goes when its zone unloads. A list this
   build does not read is carried and written back.
@@ -508,9 +510,12 @@ lands").
   forgotten. One carrying the component follows it: `at_restore` is kept
   across its zone's unload and forgotten at a restore and not written to a
   save; `at_detach` is not captured at all.
-- **Identity.** Its id is a runtime one; the importer refuses runtime ids in a
-  package, so a gained entity cannot take an authored one's place, and the
-  saved id counter keeps later mints clear of restored ones.
+- **Identity.** Its id is a runtime one, but for an entity a level change
+  carried from another level, which keeps its authored id
+  (`docs/gameplay/game-module.md`, "Carrying"). The importer refuses runtime
+  ids in a package, and refuses a member naming an id the zone's own package
+  authored, so a gained entity cannot take an authored one's place; the saved
+  id counter keeps later mints clear of restored ones.
 - **What it holds.** Its records (the entry under a dropped pickup) are
   written into the zone's `held` list at detach and made again after it at
   import, exactly as an authored chest's are ("Held records"), except that what
@@ -525,8 +530,9 @@ lands").
   is dropped from the store and logged as an error naming it and the
   component; the records it held are then dropped as records whose holder did
   not arrive, logged with their count, rather than left waiting for it. A
-  member naming an authored id is refused the same way; one whose id a live
-  entity already has is left in the store and not made. A client imports its
+  member naming an id its zone authored is refused the same way, and one the
+  zone's `departed` list names is forgotten; one whose id a live entity already
+  has is left in the store and not made. A client imports its
   zone as authored and makes none.
 - **A member from its source lands later**, as a body does. The import puts it
   in `GainedSpawnRequests` (`zone/GainedSpawnRequests.h`), and the engine's
@@ -813,6 +819,7 @@ stays parsed while it is away, since that state is not in the blob. The known li
 | `held` | count, then each record's id and its components as JSON text |
 | `gained` | count, then each member as a length, a form name and a payload: `whole` and `from_source` members by id, after any member of a form this build does not make |
 | `occupied` | count, then each sensor's id and its occupant's id, sorted; a pair is forgotten with its sensor |
+| `departed` | count, then each id, sorted: an entity of the zone carried away by a level change; its import makes none of them, and neither `ForgetLevel` nor any lifetime forgets one, only `Clear` (a new game) and `Install` (a restore) |
 
 A list whose name this build does not know is kept as bytes and written back.
 A known list at a newer version than this build reads makes the file one a
@@ -912,6 +919,6 @@ Autosave rotation, quicksave naming and the menu itself are the game's.
 
 Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, what
 a body's or a member's children carry, other participants' bodies and what
-they hold, a run-time entity nothing marked (a spawned NPC), carrying an
-entity other than the body across a level change, a capture spread over frames
-or taken off the owner thread, and restoring inside a network session.
+they hold, a run-time entity nothing marked (a spawned NPC), a capture spread
+over frames or taken off the owner thread, and restoring inside a network
+session.

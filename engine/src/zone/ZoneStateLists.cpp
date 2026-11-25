@@ -66,7 +66,7 @@ bool IsMadeGainedForm(std::string_view form)
 bool IsKnownZoneList(std::string_view name)
 {
     return name == kDestroyedZoneList || name == kChangedZoneList || name == kHeldZoneList || name == kGainedZoneList
-        || name == kOccupiedZoneList;
+        || name == kOccupiedZoneList || name == kDepartedZoneList;
 }
 
 EncodedZoneLists EncodeZoneLists(std::span<const ZoneStateList> lists)
@@ -120,17 +120,17 @@ std::optional<std::vector<SensorSeed>> DecodeOccupiedList(std::span<const std::b
     return pairs;
 }
 
-std::vector<std::byte> EncodeDestroyedList(std::span<const PersistentEntityId> destroyed)
+std::vector<std::byte> EncodeIdList(std::span<const PersistentEntityId> ids)
 {
     std::ostringstream stream(std::ios::binary);
     BinaryWriter writer(stream);
-    bool ok = writer.Write(static_cast<std::uint32_t>(destroyed.size()));
-    for (const PersistentEntityId id : destroyed)
+    bool ok = writer.Write(static_cast<std::uint32_t>(ids.size()));
+    for (const PersistentEntityId id : ids)
         ok = ok && writer.Write(id.Value);
     return ok ? BytesOf(stream) : std::vector<std::byte>{};
 }
 
-std::optional<std::vector<PersistentEntityId>> DecodeDestroyedList(std::span<const std::byte> payload)
+std::optional<std::vector<PersistentEntityId>> DecodeIdList(std::span<const std::byte> payload)
 {
     SpanStream stream(payload);
     std::uint32_t count = 0;

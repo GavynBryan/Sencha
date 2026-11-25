@@ -104,6 +104,8 @@ public:
 
     // What a loaded world's world scene is captured under; invalid otherwise.
     [[nodiscard]] ZoneStateScope WorldSceneStateScope() const { return WorldSceneScope; }
+    // What the zone or world scene an entity of the loaded level belongs to is captured under; invalid otherwise.
+    [[nodiscard]] ZoneStateScope ScopeOfEntity(EntityId entity) const;
 
     // The zone a loaded scene occupies, or the world's focus zone. Invalid
     // with nothing loaded.

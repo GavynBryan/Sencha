@@ -89,7 +89,7 @@ void GainedMemberSpawns::Settle()
         if (requests != nullptr)
             requests->Remove(spawning.Scope, spawning.Id);
         const EntityId root = status == SceneSpawnStatus::Live ? Spawns.Root(spawning.Spawn) : EntityId{};
-        if (!root.IsValid() || !KeepWithZone(world, root))
+        if (!root.IsValid() || !KeepArrivedWithZone(world, root))
         {
             if (status == SceneSpawnStatus::Live)
                 (void)Spawns.RequestDespawn(spawning.Spawn);
@@ -98,10 +98,10 @@ void GainedMemberSpawns::Settle()
             continue;
         }
         if (LocalTransform* placed = world.TryGet<LocalTransform>(root))
-        {
             placed->Value = spawning.Root;
-            RequestTransformHistorySnap(world, root);
-        }
+        if (WorldTransform* placed = world.TryGet<WorldTransform>(root))
+            placed->Value = spawning.Root;
+        RequestTransformHistorySnap(world, root);
         const ZoneStateSerialization* serialization = world.TryGetResource<ZoneStateSerialization>();
         if (ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
             store != nullptr && serialization != nullptr && serialization->Serializers != nullptr)

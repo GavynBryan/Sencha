@@ -59,7 +59,7 @@ namespace
                                      *JsonParse(R"({"Held":{"holder":"0000000000000030","position":0}})") };
         DurableZoneState courtyard{
             .Zone = kCourtyard,
-            .Lists = Lists({ { std::string(kDestroyedZoneList), kZoneListVersion, EncodeDestroyedList(destroyed) },
+            .Lists = Lists({ { std::string(kDestroyedZoneList), kZoneListVersion, EncodeIdList(destroyed) },
                              Changed(),
                              { std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(std::span(&gained, 1)) },
                              { "occupied", 1, Bytes({ 9, 9 }) } }),
@@ -72,7 +72,7 @@ namespace
             LevelReference{ .Kind = LevelKind::Scene, .Name = "levels/cellar" },
             { DurableZoneState{ .Zone = kSceneLevelZone,
                                 .Lists = Lists({ { std::string(kDestroyedZoneList), kZoneListVersion,
-                                                   EncodeDestroyedList(cellar) } }),
+                                                   EncodeIdList(cellar) } }),
                                 .Held = nullptr } } });
         saved.Sections.push_back(SavedGameSection{
             .Name = "game.notes", .Version = 2, .Data = JsonValue(JsonValue::Object{ { "seen", JsonValue(true) } }) });
@@ -494,7 +494,7 @@ TEST(SaveSlotListing, ThirtySlotsAreListedFromTheirPrefixesWithoutAByteOfTheirLe
     {
         SavedGame saved = InArea("area " + std::to_string(i));
         saved.Levels[0].Zones[0].Lists =
-            Lists({ { std::string(kDestroyedZoneList), kZoneListVersion, EncodeDestroyedList(many) } });
+            Lists({ { std::string(kDestroyedZoneList), kZoneListVersion, EncodeIdList(many) } });
         const std::vector<std::byte> bytes = EncodeSavedGame(saved);
         ASSERT_LT(PrefixThroughHead(bytes), OffsetOf(bytes, kLvls) + 1);
         prefixBytes += PrefixThroughHead(bytes);

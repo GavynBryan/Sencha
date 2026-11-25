@@ -103,7 +103,8 @@ void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher&
 
 void EngineVocabularyBindings::BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs)
 {
-    Verbs.push_back(verbs.Bind<&InvokeLevelChange>(verbs.Registry().Find(kLevelChangeVerb), changes));
+    LevelChanges = std::make_unique<LevelChangeOperations>(LevelChangeOperations{ .Changes = changes, .Entities = Entities });
+    Verbs.push_back(verbs.Bind<&InvokeLevelChange>(verbs.Registry().Find(kLevelChangeVerb), *LevelChanges));
 }
 
 void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,

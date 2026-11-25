@@ -89,7 +89,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 56u);
+    ASSERT_EQ(verbs.size(), 57u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -98,50 +98,51 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[4].Name, kAnimHoldLease);
     EXPECT_EQ(verbs[5].Name, kAnimPresentVerb);
     EXPECT_EQ(verbs[6].Name, kEffectApplyVerb);
-    EXPECT_EQ(verbs[7].Name, kEffectHoldLease);
-    EXPECT_EQ(verbs[8].Name, kAbilityActivateVerb);
-    EXPECT_EQ(verbs[11].Name, kAbilityRevokeVerb);
-    EXPECT_EQ(verbs[12].Name, kTagsGrantVerb);
-    EXPECT_EQ(verbs[13].Name, kTagsRevokeVerb);
-    EXPECT_EQ(verbs[14].Name, kTimeScaleLease);
-    EXPECT_EQ(verbs[15].Name, kMovementBurstLease);
-    EXPECT_EQ(verbs[17].Name, kMovementModeLease);
-    EXPECT_EQ(verbs[18].Name, kMovementLaunchVerb);
-    EXPECT_EQ(verbs[19].Name, kMovementImpulseVerb);
-    EXPECT_EQ(verbs[20].Name, kAudioPlayVerb);
-    EXPECT_EQ(verbs[21].Name, kAudioLoopLease);
-    EXPECT_EQ(verbs[22].Name, kPresentationAttachLease);
-    EXPECT_EQ(verbs[23].Name, kPresentationLightLease);
-    EXPECT_EQ(verbs[24].Name, kCameraShakeVerb);
-    EXPECT_EQ(verbs[25].Name, kCameraShakeHoldLease);
-    EXPECT_EQ(verbs[26].Name, kCameraFovScaleVerb);
-    EXPECT_EQ(verbs[27].Name, kCameraFovScaleHoldLease);
-    EXPECT_EQ(verbs[28].Name, kNavigationMoveToVerb);
-    EXPECT_EQ(verbs[29].Name, kNavigationApproachVerb);
-    EXPECT_EQ(verbs[30].Name, kNavigationStopVerb);
-    EXPECT_EQ(verbs[31].Name, kResponsesEnableVerb);
-    EXPECT_EQ(verbs[32].Name, kResponsesDisableVerb);
-    EXPECT_EQ(verbs[33].Name, kTriggerInteractVerb);
-    EXPECT_EQ(verbs[35].Name, kLineExtendLease);
-    EXPECT_EQ(verbs[36].Name, kLineCutVerb);
-    EXPECT_EQ(verbs[37].Name, kLineRetractVerb);
-    EXPECT_EQ(verbs[38].Name, kInteractUseVerb);
-    EXPECT_EQ(verbs[39].Name, kSaveWriteVerb);
-    EXPECT_EQ(verbs[40].Name, kSaveRestoreVerb);
-    EXPECT_EQ(verbs[41].Name, kSaveDeleteVerb);
-    EXPECT_EQ(verbs[42].Name, kSaveCopyVerb);
-    EXPECT_EQ(verbs[43].Name, kLevelChangeVerb);
-    EXPECT_EQ(verbs[44].Name, kCounterSetVerb);
-    EXPECT_EQ(verbs[45].Name, kCounterAddVerb);
-    EXPECT_EQ(verbs[46].Name, kInventoryTakeVerb);
-    EXPECT_EQ(verbs[47].Name, kInventoryGiveVerb);
-    EXPECT_EQ(verbs[48].Name, kInventoryTransferVerb);
-    EXPECT_EQ(verbs[49].Name, kInventoryDropVerb);
-    EXPECT_EQ(verbs[50].Name, kInventoryUseVerb);
-    EXPECT_EQ(verbs[51].Name, kEquipmentEquipVerb);
-    EXPECT_EQ(verbs[53].Name, kEquipmentCycleVerb);
-    EXPECT_EQ(verbs[54].Name, kPerceptionStimulusVerb);
-    EXPECT_EQ(verbs[55].Name, kClaimsHoldLease);
+    EXPECT_EQ(verbs[7].Name, kEffectRemoveVerb);
+    EXPECT_EQ(verbs[8].Name, kEffectHoldLease);
+    EXPECT_EQ(verbs[9].Name, kAbilityActivateVerb);
+    EXPECT_EQ(verbs[12].Name, kAbilityRevokeVerb);
+    EXPECT_EQ(verbs[13].Name, kTagsGrantVerb);
+    EXPECT_EQ(verbs[14].Name, kTagsRevokeVerb);
+    EXPECT_EQ(verbs[15].Name, kTimeScaleLease);
+    EXPECT_EQ(verbs[16].Name, kMovementBurstLease);
+    EXPECT_EQ(verbs[18].Name, kMovementModeLease);
+    EXPECT_EQ(verbs[19].Name, kMovementLaunchVerb);
+    EXPECT_EQ(verbs[20].Name, kMovementImpulseVerb);
+    EXPECT_EQ(verbs[21].Name, kAudioPlayVerb);
+    EXPECT_EQ(verbs[22].Name, kAudioLoopLease);
+    EXPECT_EQ(verbs[23].Name, kPresentationAttachLease);
+    EXPECT_EQ(verbs[24].Name, kPresentationLightLease);
+    EXPECT_EQ(verbs[25].Name, kCameraShakeVerb);
+    EXPECT_EQ(verbs[26].Name, kCameraShakeHoldLease);
+    EXPECT_EQ(verbs[27].Name, kCameraFovScaleVerb);
+    EXPECT_EQ(verbs[28].Name, kCameraFovScaleHoldLease);
+    EXPECT_EQ(verbs[29].Name, kNavigationMoveToVerb);
+    EXPECT_EQ(verbs[30].Name, kNavigationApproachVerb);
+    EXPECT_EQ(verbs[31].Name, kNavigationStopVerb);
+    EXPECT_EQ(verbs[32].Name, kResponsesEnableVerb);
+    EXPECT_EQ(verbs[33].Name, kResponsesDisableVerb);
+    EXPECT_EQ(verbs[34].Name, kTriggerInteractVerb);
+    EXPECT_EQ(verbs[36].Name, kLineExtendLease);
+    EXPECT_EQ(verbs[37].Name, kLineCutVerb);
+    EXPECT_EQ(verbs[38].Name, kLineRetractVerb);
+    EXPECT_EQ(verbs[39].Name, kInteractUseVerb);
+    EXPECT_EQ(verbs[40].Name, kSaveWriteVerb);
+    EXPECT_EQ(verbs[41].Name, kSaveRestoreVerb);
+    EXPECT_EQ(verbs[42].Name, kSaveDeleteVerb);
+    EXPECT_EQ(verbs[43].Name, kSaveCopyVerb);
+    EXPECT_EQ(verbs[44].Name, kLevelChangeVerb);
+    EXPECT_EQ(verbs[45].Name, kCounterSetVerb);
+    EXPECT_EQ(verbs[46].Name, kCounterAddVerb);
+    EXPECT_EQ(verbs[47].Name, kInventoryTakeVerb);
+    EXPECT_EQ(verbs[48].Name, kInventoryGiveVerb);
+    EXPECT_EQ(verbs[49].Name, kInventoryTransferVerb);
+    EXPECT_EQ(verbs[50].Name, kInventoryDropVerb);
+    EXPECT_EQ(verbs[51].Name, kInventoryUseVerb);
+    EXPECT_EQ(verbs[52].Name, kEquipmentEquipVerb);
+    EXPECT_EQ(verbs[54].Name, kEquipmentCycleVerb);
+    EXPECT_EQ(verbs[55].Name, kPerceptionStimulusVerb);
+    EXPECT_EQ(verbs[56].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 30u);
     EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
@@ -191,10 +192,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 57u);
-    EXPECT_EQ(verbs[56].Name, kModuleVerb);
-    EXPECT_EQ(verbs[56].Provider, "spike");
-    EXPECT_EQ(verbs[56].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 58u);
+    EXPECT_EQ(verbs[57].Name, kModuleVerb);
+    EXPECT_EQ(verbs[57].Provider, "spike");
+    EXPECT_EQ(verbs[57].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -234,7 +235,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 56u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 57u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)
@@ -292,9 +293,9 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(lit.Provider, "lamp");
     EXPECT_EQ(lit.ArgumentCount, 1u);
 
-    // The engine's sensor, projectile, use and counter events come first; the module's follow them.
+    // The engine's sensor, projectile, use, arrival and counter events come first; the module's follow them.
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
-    ASSERT_EQ(events.size(), 8u);
+    ASSERT_EQ(events.size(), 9u);
     EXPECT_EQ(events[0].Name, kSensorEnterEvent);
     EXPECT_EQ(events[1].Name, kSensorStayEvent);
     EXPECT_EQ(events[2].Name, kSensorExitEvent);
@@ -304,9 +305,11 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(events[4].PayloadCount, 6u);
     EXPECT_EQ(events[5].Name, kInteractUseEvent);
     EXPECT_EQ(events[5].PayloadCount, 1u);
-    EXPECT_EQ(events[6].Name, kCounterChangedEvent);
-    EXPECT_EQ(events[6].PayloadCount, 3u);
-    EXPECT_EQ(events[7].Name, "lamp.switched");
-    EXPECT_EQ(events[7].SourceComponent, "game.lamp");
-    EXPECT_EQ(events[7].PayloadCount, 0u);
+    EXPECT_EQ(events[6].Name, kLevelArrivedEvent);
+    EXPECT_EQ(events[6].PayloadCount, 1u);
+    EXPECT_EQ(events[7].Name, kCounterChangedEvent);
+    EXPECT_EQ(events[7].PayloadCount, 3u);
+    EXPECT_EQ(events[8].Name, "lamp.switched");
+    EXPECT_EQ(events[8].SourceComponent, "game.lamp");
+    EXPECT_EQ(events[8].PayloadCount, 0u);
 }

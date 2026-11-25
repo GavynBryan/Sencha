@@ -368,7 +368,7 @@ std::optional<GainedSpawnRequest> SourceRequest(const ZoneListEntity& saved, Zon
 }
 
 void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEntityPatches& patches,
-                       bool worldHasTransforms, std::vector<EntityId>& made)
+                       const EntityBuildPackage& package, bool worldHasTransforms, std::vector<EntityId>& made)
 {
     const std::span<const GainedEntityState> recorded = patches.Store->GainedOf(patches.Scope);
     if (recorded.empty() || !world.IsRegistered<KeptWithZone>() || !world.IsRegistered<PersistentIdComponent>())
@@ -386,10 +386,19 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
         const bool fromSource = member.Member.Form == kSourceGainedForm;
         const std::optional<GainedSpawnRequest> request =
             saved.has_value() && fromSource ? SourceRequest(*saved, patches.Scope, partition) : std::nullopt;
-        if (!saved.has_value() || IsAuthoredPersistentEntityId(saved->Id) || (fromSource && !request.has_value()))
+        const bool authoredHere = saved.has_value() && IsAuthoredPersistentEntityId(saved->Id)
+            && std::ranges::any_of(package.Entities(),
+                                   [&](const PackageEntity& entity) { return entity.PersistentId == saved->Id; });
+        if (patches.Store->IsRecordedDeparted(patches.Scope, member.Id))
         {
-            log.Error("zone state: what the zone gained, {}, is not a run-time entity written {}; it is dropped", named,
-                      member.Member.Form);
+            patches.Store->ForgetGained(patches.Scope, member.Id);
+            continue;
+        }
+        if (!saved.has_value() || authoredHere || (fromSource && !request.has_value()))
+        {
+            log.Error("zone state: what the zone gained, {}, is not an entity its zone did not author, written {};"
+                      " it is dropped",
+                      named, member.Member.Form);
             patches.Store->ForgetGained(patches.Scope, member.Id);
             continue;
         }
@@ -649,7 +658,8 @@ bool ImportPackageIntoPartitionImpl(
     {
         const bool skipped = authorityOnly[entities.size()]
             || (zoneState != nullptr && packageEntity.PersistentId.IsValid()
-                && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId));
+                && (zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId)
+                    || zoneState->IsRecordedDeparted(stateScope, packageEntity.PersistentId)));
         entities.push_back(skipped ? EntityId{} : world.CreateEntity(partition));
         if (packageEntity.MemberId.IsValid())
             members.push_back({ packageEntity.MemberId, entities.back(), packageEntity.PersistentId });
@@ -763,7 +773,7 @@ bool ImportPackageIntoPartitionImpl(
     }
     std::vector<EntityId> gained;
     if (patches.Store != nullptr)
-        MakeGainedMembers(world, partition, patches, worldHasTransforms, gained);
+        MakeGainedMembers(world, partition, patches, package, worldHasTransforms, gained);
     if (zoneState != nullptr && serializers != nullptr && sceneContext != nullptr && IsSimulationAuthority(world))
         MakeHeldRecords(world, partition, *zoneState, stateScope, *serializers, *sceneContext);
     if (patches.Store != nullptr)

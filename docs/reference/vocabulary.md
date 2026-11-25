@@ -37,7 +37,7 @@ An argument reads `key: type = default [minimum .. maximum] (units)`; `key?` may
 | `inventory.take` | instant | gameplay / authority_only | `pickup: entity`<br>`into: entity` | `entity` | `not_authority`<br>`missing`<br>`not_accepted`<br>`container_full`<br>`too_deep`<br>`not_permitted`<br>`withheld` | Takes a pickup into a container; the pickup goes. |
 | `inventory.transfer` | instant | gameplay / authority_only | `entry: entity`<br>`into: entity`<br>`count: int = 0`<br>`force: bool = false` | — | `not_authority`<br>`missing`<br>`not_accepted`<br>`container_full`<br>`too_deep`<br>`not_permitted`<br>`withheld` | Moves an entry, or part of a stack, into a container. |
 | `inventory.use` | instant | gameplay / authority_only | `entry: entity`<br>`user?: entity` | — | `not_authority`<br>`missing`<br>`not_accepted`<br>`container_full`<br>`too_deep`<br>`not_permitted`<br>`withheld` | Runs the item's use, with the entry as its source, in the next ability pass. |
-| `level.change` | instant | gameplay / authority_only | `level: string`<br>`kind: choice(scene, world) = "scene"`<br>`memory: choice(remembered, authored)`<br>`bodies: choice(kept, fresh)`<br>`arrival: string = ""` | — | `busy`<br>`not_cooked`<br>`not_authority`<br>`in_session`<br>`body_in_zone` | Replaces the loaded level with another, or the same one again, saying what it keeps. |
+| `level.change` | instant | gameplay / authority_only | `level: string`<br>`kind: choice(scene, world) = "scene"`<br>`memory: choice(remembered, authored)`<br>`bodies: choice(kept, fresh)`<br>`arrival: string = ""`<br>`landmark: string = ""`<br>`carry_within?: entity` | — | `busy`<br>`not_cooked`<br>`not_authority`<br>`in_session`<br>`body_in_zone`<br>`no_landmark`<br>`not_carriable` | Replaces the loaded level with another, or the same one again, saying what it keeps. |
 | `line.cut` | instant | gameplay / authority_only | `instigator: entity` | — | — | Ends every line the instigator has out, where it is, striking nothing more. |
 | `line.extend` | lease, completes | gameplay / authority_only | `instigator: entity`<br>`line: asset (Scene)`<br>`projectile: asset (Scene)`<br>`at?: vector3`<br>`keep?: bool` | — | — | Throws a line with a projectile and keeps it out while held. Letting go draws it home. |
 | `line.retract` | instant | gameplay / authority_only | `instigator: entity`<br>`keep_newest?: bool` | — | — | Draws home every line the instigator has left anchored. |
@@ -106,6 +106,7 @@ An argument reads `key: type = default [minimum .. maximum] (units)`; `key?` may
 |---|---|---|---|---|
 | `counter.changed` | — | `name: tag`<br>`value: int`<br>`holder: entity` | — | A named number took a new value, zero when unset. |
 | `interact.use` | — | `activator: entity` | activator | Someone used this: it was the first thing their aim struck, within their reach. |
+| `level.arrived` | — | `instigator: entity` | — | Something a level change carried arrived at this landmark, once for each. |
 | `projectile.hit` | — | `instigator: entity`<br>`projectile: entity`<br>`kind: tag`<br>`point: vector3`<br>`normal: vector3`<br>`region: tag` | instigator | A projectile struck this entity directly. Splash is not a strike. |
 | `sensor.enter` | — | `activator: entity` | activator | Something entered the volume. |
 | `sensor.exit` | — | `activator: entity` | activator | Something left the volume. |

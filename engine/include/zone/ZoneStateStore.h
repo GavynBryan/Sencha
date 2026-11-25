@@ -123,7 +123,11 @@ public:
     void RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs);
     [[nodiscard]] std::vector<SensorSeed> OccupiedOf(ZoneStateScope scope) const;
 
+    // Gone from the zone for good, whatever its lifetime; only Clear and Install forget it.
+    void RecordDeparted(ZoneStateScope scope, PersistentEntityId id);
+
     [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] bool IsRecordedDeparted(ZoneStateScope scope, PersistentEntityId id) const;
     [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
     [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const;
@@ -134,6 +138,7 @@ public:
 
     [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
 
+    // What the level's zones keep; what departed from them stays.
     void ForgetLevel(const LevelReference& level);
     void Clear() { Zones_.clear(); }
 
@@ -188,6 +193,7 @@ private:
         std::vector<GainedEntityState> Gained;
         std::unordered_map<std::uint64_t, ZoneCaptureImage> GainedImages;
         std::vector<OccupiedRecord> Occupied;
+        std::vector<std::uint64_t> Departed;
         std::vector<ZoneStateList> Carried;
         // The never-forgotten part as a save holds it; null when stale or empty.
         EncodedZoneLists Encoded;

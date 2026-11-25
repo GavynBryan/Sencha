@@ -945,3 +945,17 @@ std::string DecisionAgents::DescribeCost() const
     return std::format("decision cost: mean {:.4f} ms, worst {:.4f} ms a tick over {} ticks", mean * 1000.0,
                        state.WorstCostSeconds * 1000.0, state.CostTicks);
 }
+
+void ForgetDecisionPlace(World& world, EntityId agent)
+{
+    DecisionAgent* decisions = world.IsRegistered<DecisionAgent>() ? world.TryGet<DecisionAgent>(agent) : nullptr;
+    if (decisions == nullptr)
+        return;
+    if (ClaimBoard* board = world.TryGetResource<ClaimBoard>())
+        board->ReleaseAll(LeaseOwner{ agent, kClaimKey });
+    const std::uint32_t option = decisions->Option;
+    const AbilityId running = decisions->Running;
+    *decisions = DecisionAgent{};
+    decisions->Option = option;
+    decisions->Running = running;
+}

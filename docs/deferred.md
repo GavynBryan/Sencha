@@ -1151,17 +1151,15 @@ described in `docs/navigation/runtime.md`, "Agents".
   as their prefab authored them), another participant's body or what it
   holds, the children of a kept entity that is not a prefab spawn, or a
   run-time entity nothing marked (a spawned NPC); such an entity in a zone is
-  destroyed unrecorded when the zone unloads. Nothing but a body crosses a
-  level change; carrying another entity is moving its member from one zone's
-  list to another's with a transform relative to an arrival point.
+  destroyed unrecorded when the zone unloads.
 - **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
   `world/held/HeldRecords.cpp` (`ParkHeldRecords`),
   `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateMemory.cpp` and
   `zone/ZonePackageImporter.cpp` (`MakeGainedMembers`), `app/LevelChange.cpp`.
 - **Trigger:** a body or a kept spawn whose children carry state a player
   would miss (a turret's head aimed, a lit fuse on a child), a dropped item
-  with a visible scene (see "A dropped item's world scene"), anything but a
-  body crossing a level transition, or a second player restored in co-op.
+  with a visible scene (see "A dropped item's world scene"), or a second
+  player restored in co-op.
   Then give a kept member's and a body's children patches of their own, keyed
   by their place in the prefab.
 

@@ -223,7 +223,7 @@ namespace
             return { .Malformed = false, .Newer = list.Name };
         bool read = true;
         if (list.Name == kDestroyedZoneList)
-            read = DecodeDestroyedList(list.Payload).has_value();
+            read = DecodeIdList(list.Payload).has_value();
         else if (list.Name == kChangedZoneList || list.Name == kHeldZoneList)
             read = DecodeEntityList(list.Payload).has_value();
         else if (list.Name == kGainedZoneList)

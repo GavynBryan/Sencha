@@ -374,6 +374,76 @@
           }
         }
       }
+    },
+    {
+      "id": "6f2b1c0d9e8a7c05",
+      "components": {
+        "name": {
+          "value": "Lift"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              6,
+              1,
+              -6
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "half_extents": [
+              1.5,
+              1,
+              1.5
+            ]
+          },
+          "is_trigger": true
+        }
+      }
+    },
+    {
+      "id": "6f2b1c0d9e8a7c06",
+      "components": {
+        "name": {
+          "value": "Lift Landmark"
+        },
+        "Transform": {
+          "local": {
+            "position": [
+              6,
+              0,
+              -8
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "LevelLandmark": {
+          "name": "lift"
+        }
+      }
     }
   ],
   "brush_meshes": {

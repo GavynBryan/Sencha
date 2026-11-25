@@ -3825,4 +3825,101 @@ TEST(SavedGames, ABodyRestoredAwayFromThePlateItWasSavedOnPressesItWhenItStepsOn
     std::filesystem::remove_all(root);
 }
 
+namespace
+{
+    const PersistentEntityId kLiftVolume = *PersistentEntityIdFromString("6f2b1c0d9e8a7c05");
+    const Vec3d kCrateOffset{ 0.0, 0.5, 2.0 };
+    const Vec3d kRoomLift{ 12.0, 0.0, 4.0 };
+
+    bool InLift(const World& world)
+    {
+        const SensorOverlaps* overlaps = world.TryGetResource<SensorOverlaps>();
+        const EntityId lift = Live(world, kLiftVolume);
+        const EntityId crate = Live(world, kCrate);
+        return overlaps != nullptr && lift.IsValid() && crate.IsValid()
+            && std::ranges::any_of(overlaps->Pairs(), [&](const SensorPair& pair) {
+                   return pair.Sensor == lift && pair.Activator == crate;
+               });
+    }
+
+    std::optional<Vec3d> CrateAt(const World& world)
+    {
+        const EntityId crate = Live(world, kCrate);
+        const LocalTransform* placed = crate.IsValid() ? world.TryGet<LocalTransform>(crate) : nullptr;
+        return placed != nullptr ? std::optional(placed->Value.Position) : std::nullopt;
+    }
+}
+
+TEST(SavedGames, ACrateInTheLiftCrossesByTheVerbHeldStillAndTheLandmarkHearsItArriveOnce)
+{
+    const std::filesystem::path root = RootFor("carried_crate");
+    std::string unnamed;
+    std::string accepted;
+    std::optional<Vec3d> arrived;
+    std::optional<Vec3d> settled;
+    std::int32_t heard = -1;
+    bool absentOnReturn = false;
+    int stage = 0;
+    int waited = 0;
+    RunFps(kFirst.Name, 2400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world) && InLift(world))
+        {
+            const std::string lift = "carry_within=" + PersistentEntityIdToString(kLiftVolume);
+            unnamed = TextOf(RunVerb(engine, { "level.change", "level=levels/room_2", "kind=scene",
+                                               "memory=remembered", "bodies=kept", lift }));
+            accepted = TextOf(RunVerb(engine, { "level.change", "level=levels/room_2", "kind=scene",
+                                                "memory=remembered", "bodies=kept", "landmark=lift", lift }));
+            stage = 1;
+        }
+        else if (stage == 1 && Arrived(engine))
+        {
+            arrived = CrateAt(world);
+            stage = 2;
+        }
+        else if (stage == 2 && ++waited == 90)
+        {
+            settled = CrateAt(world);
+            heard = WorldCount(world, "test.arrived");
+            EXPECT_EQ(engine.Saves().RequestWrite("carried"), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            Travel(engine, kFirst, LevelMemory::Remembered);
+            stage = 4;
+        }
+        else if (stage == 4 && Arrived(engine))
+        {
+            absentOnReturn = !Live(world, kCrate).IsValid() && Live(world, kLiftVolume).IsValid();
+            stage = 5;
+        }
+    });
+    ASSERT_EQ(stage, 5) << accepted;
+    EXPECT_NE(unnamed.find("no_landmark"), std::string::npos) << unnamed;
+    EXPECT_NE(accepted.find("accepted"), std::string::npos) << accepted;
+    ASSERT_TRUE(arrived.has_value() && settled.has_value()) << "the crate did not arrive";
+    EXPECT_LT((*arrived - (kRoomLift + kCrateOffset)).Magnitude(), 0.05f) << "not at its offset from the landmark";
+    EXPECT_LT((*settled - *arrived).Magnitude(), 0.05f) << "it fell or moved after it arrived";
+    EXPECT_EQ(heard, 1) << "the landmark hears each arrival once";
+    EXPECT_TRUE(absentOnReturn) << "the crate is in both levels";
+
+    std::optional<Vec3d> restored;
+    stage = 0;
+    RunFps(kFirst.Name, 1200, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore("carried"), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine) && CrateAt(world).has_value())
+        {
+            restored = CrateAt(world);
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2) << "a save after arrival did not bring the crate back";
+    EXPECT_LT((*restored - *settled).Magnitude(), 0.05f);
+    std::filesystem::remove_all(root);
+}
+
 #endif

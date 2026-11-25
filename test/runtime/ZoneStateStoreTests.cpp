@@ -87,7 +87,7 @@ std::vector<PersistentEntityId> DestroyedIn(const DurableZoneState& zone)
     const std::optional<std::vector<ZoneStateList>> lists = DecodeZoneLists(*zone.Lists);
     for (const ZoneStateList& list : lists.value_or(std::vector<ZoneStateList>{}))
         if (list.Name == kDestroyedZoneList)
-            return DecodeDestroyedList(list.Payload).value_or(std::vector<PersistentEntityId>{});
+            return DecodeIdList(list.Payload).value_or(std::vector<PersistentEntityId>{});
     return {};
 }
 

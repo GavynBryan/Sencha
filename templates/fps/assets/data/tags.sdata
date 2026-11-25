@@ -7,7 +7,8 @@
       "navigation.profile.humanoid",
       "test.plates",
       "test.left",
-      "test.pressed"
+      "test.pressed",
+      "test.arrived"
     ]
   }
 }

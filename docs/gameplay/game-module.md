@@ -176,16 +176,19 @@ const LevelChangeAdmission admission = engine.LevelChanges().Request(
 - `Restore(level, remembered)`: what every level remembers is replaced by a
   save's; bodies come from the save. `SavedGames` makes this one.
 
-`At(arrival)` names the landmark a body arrives at ("Arrivals" below) and
-`Focused(zone)` a world's starting zone. `LevelChange::Kind()` says which kind
-the latest accepted request was.
+`At(arrival)` names the landmark a body arrives at ("Arrivals" below),
+`Focused(zone)` a world's starting zone, and `Carrying(entities, landmark)` what
+crosses with the bodies ("Carrying" below). `LevelChange::Kind()` says which
+kind the latest accepted request was.
 
 Level data asks for a `Travel` with the `level.change` verb:
-`{ level, kind = scene, memory, bodies, arrival = "" }`, where `kind` is
-`scene` or `world`, `memory` is `remembered` or `authored` and `bodies` is
-`kept` or `fresh`, both with no default, as the constructor has none. A refusal
-answers the `LevelChangeAdmission` reason (`busy`, `not_cooked`,
-`not_authority`, `in_session`, `body_in_zone`). An autosave at a transition is
+`{ level, kind = scene, memory, bodies, arrival = "", landmark = "",
+carry_within }`, where `kind` is `scene` or `world`, `memory` is `remembered`
+or `authored` and `bodies` is `kept` or `fresh`, both with no default, as the
+constructor has none; `carry_within` is an optional volume whose occupants
+cross by `landmark` ("Carrying"). A refusal answers the `LevelChangeAdmission`
+reason (`busy`, `not_cooked`, `not_authority`, `in_session`, `body_in_zone`,
+`no_landmark`, `not_carriable`). An autosave at a transition is
 `level.change` followed by `save.write` in one sequence: a write requested
 while a change is under way waits until the bodies have arrived, so the save is
 of the arrival. A game whose areas are zones of one world never needs the verb:
@@ -220,7 +223,8 @@ hosting, since the announcement is refreshed every frame. Carrying it out:
 1. on the authority, lets every participant's body go
    (`Engine::ReleaseParticipantBody`, through the game's `ReapBody` policy);
    the participants stay. A `Travel` that keeps its bodies holds each one
-   still instead;
+   still instead, and what it carries leaves for the holding partition
+   ("Carrying");
 2. unloads, so the game's residency systems see their content leave and each
    zone's state is captured;
 3. sets the left level's waiting held records aside, so they are in no lookup
@@ -278,6 +282,69 @@ the old level (a target, a tether to geometry) is gone on arrival, as when a
 zone unloads under a body in a world; generational ids make those references
 fail safe, and ending abilities that depended on them is the game's. A failed
 change lets go of its holds where the bodies stand.
+
+### Carrying
+
+`Carrying(entities, landmark)` takes other entities across a `Travel` with the
+bodies: the crate in the lift, the squadmate at the door
+(`app/LevelCarry.h`). The `level.change` verb's `carry_within` names a volume
+whose occupants are carried: each sensor pair of that volume, each occupant
+taken at its topmost ancestor, bodies left out since they cross by `bodies`.
+The landmark is the request's own argument, apart from the arrival name: what
+crosses keeps its offset from the landmark of that name in the level it leaves
+and stands at the same offset from the landmark of that name in the level it
+enters. The request is refused `no_landmark` when it names none, or the loaded
+level has none of that name, and `not_carriable` for an entity that is gone, a
+body, a held record, parented, or has children without being the root of a
+scene instance (its children would be lost at its first save, since such an
+entity is kept whole), and for a change that is not a `Travel`.
+
+1. **Out of the simulation for the gap.** At the commit, before the level
+   unloads, each carried entity and its descendants move into
+   `RuntimeWorld::HoldingPartition`, a partition no frame domain and no
+   residency batch includes, and physics evicts its body and its character
+   mover there and then, capturing its motion into `RigidBody`; no logic,
+   perception, navigation or effect pass touches it; what it holds follows it. So nothing it is falls or
+   decides during the load.
+2. **Identity is kept.** It keeps its persistent id, so what refers to it by id
+   and what it holds stay valid, and its scene instance, so a carried prefab
+   instance is saved from its source. Only when the level it enters already has
+   an entity with that id (a copied level file) does it take a runtime id, and
+   what it holds is renamed to it.
+3. **Gone from its origin for good.** Its id is added to its origin zone's
+   `departed` list (`docs/gameplay/saves.md`), which `ForgetLevel` keeps and no
+   lifetime forgets; only a new game, or a restore of a save written before it
+   left, does. So entering the old level `Authored`, or a rest for an
+   `at_restore` entity, puts no second copy there.
+4. **What it referred to is cleared on arrival:** its navigation order is
+   given again (below), so its route is planned again; its decision agent lets
+   go of its claim, target, destination and contact (`ForgetDecisionPlace`);
+   its observation memory empties; its sensor pairs are forgotten; an effect
+   whose owner stayed behind ended when the owner unloaded.
+5. **Arrival.** Once the level is resident the landmark is looked for as a
+   body's arrival is; it stands at the landmark composed with its offset, in the
+   resident zone whose bounds hold that place (a drop's rule, `ZonePlacement`),
+   its velocities turned with the landmark, and, in a game that keeps level
+   state, marked `KeptWithZone` (`KeepArrivedWithZone`, which lets it keep an
+   authored id). It is then a gained member of the level it entered, saved with
+   that zone, and a save asked for during the change, which waits for the
+   bodies, holds it there.
+6. **Its order is issued again.** A navigation order in place when it left is
+   requested again on arrival with a fresh id, a point order's point moved with
+   the landmark, so a follower of a kept body keeps following.
+7. **The level it enters can find it.** Its landmark receives `level.arrived`,
+   once per carried entity, with the entity as instigator; responses on the
+   landmark filter by the arrival's tags, and later addressing is by the sensors
+   it enters.
+
+What is carried when the level it enters has no loaded landmark of that name, or
+when the change fails or another replaces it before it arrives, is destroyed,
+and logged as an error with its count.
+
+A save that names an arrival keeps no motion for the body only
+(`docs/gameplay/saves.md`, "Writing"); a carried entity's velocity, movement
+mode and order are kept in its member like any other gained member's, and its
+order is the one given again on arrival.
 
 ### Arrivals
 

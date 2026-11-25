@@ -68,7 +68,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
     DeclareSavedGameVerbs(scope);
-    DeclareLevelChangeVerbs(scope);
+    DeclareLevelChangeVerbs(scope, eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
     DeclareCounterVocabulary(scope, queryScope, eventScope);
