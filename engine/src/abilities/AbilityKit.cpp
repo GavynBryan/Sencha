@@ -31,6 +31,7 @@ void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeGameplayTagContainerSerializer());
     registrar.AddSerializer(MakeAttributeSetSerializer());
     registrar.AddSerializer(MakeAbilityGrantsSerializer());
+    registrar.AddSerializer(MakeAppliedEffectsSerializer());
 }
 
 void InstallAbilityKitVocabulary(World& world)

@@ -230,14 +230,20 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
 - **Storage.** Effect entities live in the persistent partition. A target that
   moves between zones keeps its effects, and its old zone detaching does not take
   them; an effect whose target is gone ends on the next lifetime pass, as does one
-  whose owner is gone.
+  whose owner is gone. A definition that scales its target's time holds the
+  target's clock lease from the effect's entity, so the clock lets go the tick
+  after the effect ends. An application and a restore from a save
+  (`RestoreEffect`) make the entity the same way.
 - **Owners, scale and removal.** `ApplyEffect` takes an optional `LeaseOwner`
   (an entity plus an opaque key), a scale that multiplies every modifier's
   magnitude, whatever its op, and an `EffectSource`: who applied it and the
   strike's point and direction. Content applies effects through `effect.apply` and
-  holds them through the `effect.hold` lease (`docs/gameplay/authored-api.md`). `RemoveEffect` ends one effect and
-  `RemoveEffectsOwnedBy` ends everything an owner holds; neither may run inside a
-  query.
+  holds them through the `effect.hold` lease (`docs/gameplay/authored-api.md`). `RemoveEffect` ends one effect,
+  `RemoveEffectsOwnedBy` ends everything an owner holds, and `RemoveEffectsOn`
+  ends a target's effects of one definition or of kinds a tag query matches
+  (content's `effect.remove`); none may run inside a query. Whether a save keeps
+  a lasting effect is the applier's `EffectKeeping` (`docs/gameplay/saves.md`,
+  "Lasting effects").
 - **Tags belong to the instance.** An effect records the tags it actually granted
   (up to `kEffectGrantedTagCapacity`; the registry refuses a definition granting
   more). Ending it revokes exactly those, whatever has become of the definition, and

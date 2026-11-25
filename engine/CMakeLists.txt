@@ -46,6 +46,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/AimOrigin.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/effects/AppliedEffects.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/equipment/EquipmentComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"

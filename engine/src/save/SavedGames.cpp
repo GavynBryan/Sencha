@@ -6,7 +6,9 @@
 #include <app/RuntimeContent.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/EntityText.h>
 #include <ecs/World.h>
+#include <effects/AppliedEffects.h>
 #include <net/NetSession.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
@@ -21,6 +23,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -441,6 +444,14 @@ std::optional<std::string> SavedGames::WriteRefusal() const
     if (const EntityId participant = LocalParticipantOf(world);
         participant.IsValid() && !LivingBodyOf(world, participant).IsValid())
         return std::string("the local participant has no body");
+#ifndef NDEBUG
+    if (const std::vector<EntityId> overfull = OverfullAppliedEffects(world); !overfull.empty())
+    {
+        std::string named;
+        AppendEntityText(named, overfull.front());
+        return std::format("{} is under more kept effects than a save keeps ({})", named, kAppliedEffectCapacity);
+    }
+#endif
     return std::nullopt;
 }
 
@@ -448,6 +459,7 @@ std::shared_ptr<const SavedGame> SavedGames::Capture(const std::string& slot, co
 {
     World& world = Host.World().Entities();
     SettleHeldRecords(world);
+    (void)SettleAppliedEffects(world);
     LoadedLevel& level = Host.Level();
     level.CaptureState();
     CapturingArrival = arrival;

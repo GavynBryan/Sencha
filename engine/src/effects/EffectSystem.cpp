@@ -9,6 +9,9 @@
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagOverflow.h>
+#include <gameplay_tags/GameplayTagQuery.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <time/ActorTime.h>
 #include <time/ActorTimeLeases.h>
 
@@ -283,10 +286,38 @@ void FoldActiveEffectsImpl(
         }
     }
 }
+
+EntityId SpawnLastingEffect(World& world, ActiveEffect ae, const EffectDefinition& definition, const FixedSimTime& now)
+{
+    const EntityId target = ae.Target;
+    const EffectDefinition* def = &definition;
+    if (world.TryGet<GameplayTagContainer>(target) != nullptr)
+    {
+        GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(target);
+        for (GameplayTagId tag : def->GrantedTags)
+            if (tag.IsValid() && ae.GrantedTagCount < kEffectGrantedTagCapacity
+                && tags.Grant(tag) != GameplayTagWrite::Full)
+                ae.GrantedTags[ae.GrantedTagCount++] = tag;
+    }
+
+    const EntityId fx = world.CreateEntity(StoragePartitionId::Default());
+    world.AddComponent<ActiveEffect>(fx, ae);
+
+    if (def->TimeScale != 1.0f && world.IsRegistered<ActorTimeLeases>() && world.IsRegistered<ActorTime>()
+        && world.HasComponent<ActorTime>(target))
+    {
+        if (!world.HasComponent<ActorTimeLeases>(target))
+            world.AddComponent<ActorTimeLeases>(target, ActorTimeLeases{});
+        (void)AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(target), LeaseOwner{ .Entity = fx },
+                                    std::llround(static_cast<double>(def->TimeScale) * static_cast<double>(kActorTimeOne)),
+                                    now.TickIndex);
+    }
+    return fx;
+}
 } // namespace
 
 EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const FixedSimTime& now,
-                     LeaseOwner owner, float scale, const EffectSource& source)
+                     LeaseOwner owner, float scale, const EffectSource& source, EffectKeeping keeping)
 {
     const EffectRegistry* effReg =
         std::as_const(world).TryGetResource<EffectRegistry>();
@@ -320,6 +351,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     ae.TimeDomain = def->TimeDomain;
     ae.Sequence = PassStateOf(world).NextSequence++;
     ae.Revision = effReg->Revision(effect);
+    ae.Kept = keeping == EffectKeeping::Kept || (keeping == EffectKeeping::ByOwner && !owner.IsSet());
     if (def->Duration == EffectDuration::Duration)
         ae.RemainingTicks = TicksFor(def->DurationSeconds, now.DeltaSeconds);
     if (def->Period > 0.0f)
@@ -328,33 +360,39 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         ae.TicksToPeriod = ae.PeriodTicks;
     }
 
-    // Only what was granted is recorded, so ending never revokes a stack it did not add.
-    if (held != nullptr)
-    {
-        GameplayTagContainer& tags = *world.TryGet<GameplayTagContainer>(target);
-        for (GameplayTagId tag : def->GrantedTags)
-            if (tag.IsValid() && ae.GrantedTagCount < kEffectGrantedTagCapacity
-                && tags.Grant(tag) != GameplayTagWrite::Full)
-                ae.GrantedTags[ae.GrantedTagCount++] = tag;
-    }
-
-    // Persistent, so zone moves and detaches never strand the tags it granted.
-    const EntityId fx = world.CreateEntity(StoragePartitionId::Default());
-    world.AddComponent<ActiveEffect>(fx, ae);
-
-    // Held by the effect's entity, so the clock ends it the tick after the effect does.
-    if (def->TimeScale != 1.0f && world.IsRegistered<ActorTimeLeases>() && world.IsRegistered<ActorTime>()
-        && world.HasComponent<ActorTime>(target))
-    {
-        if (!world.HasComponent<ActorTimeLeases>(target))
-            world.AddComponent<ActorTimeLeases>(target, ActorTimeLeases{});
-        (void)AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(target), LeaseOwner{ .Entity = fx },
-                                    std::llround(static_cast<double>(def->TimeScale) * static_cast<double>(kActorTimeOne)),
-                                    now.TickIndex);
-    }
+    const EntityId fx = SpawnLastingEffect(world, ae, *def, now);
     if (admission != nullptr && admission->Applied != nullptr)
         admission->Applied(world, target, effect, fx);
     return fx;
+}
+
+EntityId RestoreEffect(World& world, EntityId target, const KeptEffect& kept, const FixedSimTime& now)
+{
+    const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
+    const EffectDefinition* def = effReg != nullptr ? effReg->Get(kept.Effect) : nullptr;
+    if (def == nullptr || def->Duration == EffectDuration::Instant || !world.IsAlive(target))
+        return {};
+    const PersistentEntityIndex* index = std::as_const(world).TryGetResource<PersistentEntityIndex>();
+    const EntityId owner = kept.Owner.IsValid() && index != nullptr ? index->TryResolve(kept.Owner) : EntityId{};
+
+    ActiveEffect ae{};
+    ae.Target = target;
+    ae.Def = kept.Effect;
+    ae.Owner = world.IsAlive(owner) ? LeaseOwner{ .Entity = owner, .Key = kept.OwnerKey } : LeaseOwner{};
+    ae.Scale = kept.Scale;
+    ae.TimeDomain = def->TimeDomain;
+    ae.Sequence = PassStateOf(world).NextSequence++;
+    ae.Revision = effReg->Revision(kept.Effect);
+    ae.Kept = true;
+    if (def->Duration == EffectDuration::Duration)
+        ae.RemainingTicks = kept.RemainingTicks == kEffectNeverEnds ? TicksFor(def->DurationSeconds, now.DeltaSeconds)
+                                                                    : std::max<std::uint32_t>(kept.RemainingTicks, 1);
+    if (def->Period > 0.0f)
+    {
+        ae.PeriodTicks = TicksFor(def->Period, now.DeltaSeconds);
+        ae.TicksToPeriod = std::clamp<std::uint32_t>(kept.TicksToPeriod, 1, ae.PeriodTicks);
+    }
+    return SpawnLastingEffect(world, ae, *def, now);
 }
 
 bool RemoveEffect(World& world, EntityId effect)
@@ -374,6 +412,46 @@ std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner)
     const std::size_t ended = state.Ending.size();
     EndCollected(world, state.Ending);
     return ended;
+}
+
+namespace
+{
+template <typename Matches>
+std::size_t RemoveEffectsOnWhere(World& world, EntityId target, Matches matches)
+{
+    if (!target.IsValid() || !world.IsRegistered<ActiveEffect>())
+        return 0;
+    EffectPassState& state = PassStateOf(world);
+    Query<Read<ActiveEffect>> query(world);
+    query.ForEachChunk([&](auto& view)
+    {
+        const auto effects = view.template Read<ActiveEffect>();
+        const EntityIndex* indices = view.Entities();
+        for (std::uint32_t i = 0; i < view.Count(); ++i)
+            if (effects[i].Target == target && matches(effects[i]))
+                state.Ending.push_back(world.ResolveEntityIndex(indices[i]));
+    });
+    const std::size_t ended = state.Ending.size();
+    EndCollected(world, state.Ending);
+    return ended;
+}
+}
+
+std::size_t RemoveEffectsOn(World& world, EntityId target, EffectId effect)
+{
+    return RemoveEffectsOnWhere(world, target, [effect](const ActiveEffect& active) { return active.Def == effect; });
+}
+
+std::size_t RemoveEffectsOn(World& world, EntityId target, const GameplayTagQuery& kinds)
+{
+    const EffectRegistry* effects = std::as_const(world).TryGetResource<EffectRegistry>();
+    const GameplayTagRegistry* tags = std::as_const(world).TryGetResource<GameplayTagRegistry>();
+    if (effects == nullptr || tags == nullptr)
+        return 0;
+    return RemoveEffectsOnWhere(world, target, [&](const ActiveEffect& active) {
+        const EffectDefinition* definition = effects->Get(active.Def);
+        return definition != nullptr && kinds.Matches(definition->Kinds, *tags);
+    });
 }
 
 void FindEffectsOwnedBy(const World& world, const LeaseOwner& owner, std::vector<EntityId>& out)

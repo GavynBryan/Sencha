@@ -1689,14 +1689,29 @@ described in `docs/navigation/runtime.md`, "Agents".
   actors"), but not what they were in the middle of. Ability records have no
   saved form, so an attack, a reload, a charge or any long action ends and is
   started again by whoever decides it; an NPC decides again within its
-  decision interval. Animation playback has no saved form either, so
-  everything starts from its idle pose and blends.
+  decision interval. A toggled or held ability (a cloak, a sprint) is off after
+  a load, and the effects it held through its lease end with it, since they are
+  owned and not kept (`docs/gameplay/saves.md`, "Lasting effects"). Animation
+  playback has no saved form either, so everything starts from its idle pose
+  and blends.
 - **Where:** `abilities/ActiveAbilities.h` (the records, which also hold a
   predicting client's guesses), `anim/` playback state.
 - **Trigger:** a game with a toggle a player expects a quickload to keep (a
   cloak, a sprint), or a long action whose restart is visible. Then give
   ability records and animation playback saved forms, with an answer for a
   predicting client's guesses.
+
+## A kept effect's time across a change of tick rate
+
+- **What:** a save keeps a lasting effect's time left as ticks of the rate the
+  game ran at (`AppliedEffects`, `remaining_ticks` and `ticks_to_period`), so a
+  save loaded by a build with another fixed tick rate gives each effect that
+  many of its own ticks: longer or shorter in seconds.
+- **Where:** `engine/src/effects/AppliedEffects.cpp`, `RestoreEffect` in
+  `engine/src/effects/EffectSystem.cpp`.
+- **Trigger:** a game that changes its fixed tick rate between releases while
+  old saves must keep loading. Then write time left in seconds, converted with
+  the capturing tick length, in a new member read beside the old.
 
 ## The frames before a restored body lands
 

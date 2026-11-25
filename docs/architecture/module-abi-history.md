@@ -1647,3 +1647,17 @@ layout of these moves. The save format and the net protocol do not change:
 the new members are patch members against default records, and run-time
 fields travel exactly as they did (`docs/gameplay/saves.md`, "Run-time
 fields").
+
+## v74
+
+`ActiveEffect` gains `Kept`, so its layout moves. `ApplyEffect` takes an
+`EffectKeeping` after its source; `EffectKeeping`, `KeptEffect`,
+`RestoreEffect` and both `RemoveEffectsOn` overloads are new.
+`effects/AppliedEffects.h` is new (`AppliedEffects`, `SettleAppliedEffects`,
+`OverfullAppliedEffects`, `RestoreAppliedEffects`,
+`MakeAppliedEffectsSerializer`), and `AbilityKitComponents` gains
+`AppliedEffects`. `EffectOperations` gains `Remove`, and `effect.remove`,
+`EffectRemoveRefusal` and `InvokeEffectRemove` are new. The save format does
+not change: kept effects are a patch member of their target
+(`docs/gameplay/saves.md`, "Lasting effects"), and `ActiveEffect` is not on
+the wire.

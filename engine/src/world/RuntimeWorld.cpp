@@ -9,6 +9,7 @@
 #include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
+#include <effects/AppliedEffects.h>
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -360,6 +361,7 @@ void RuntimeWorld::FinalizeResidencyProcessing()
             if (const RuntimeZoneRecord* record = FindPartition(change.Partition))
                 ParkHeldRecords(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition));
     SettleHeldRecords(Entities_);
+    (void)SettleAppliedEffects(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 
     for (const ZoneResidencyChange& change : ProcessingChanges_)

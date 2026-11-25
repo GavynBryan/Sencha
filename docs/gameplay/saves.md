@@ -79,7 +79,8 @@ The engine's `Identity` components are `PersistentIdComponent` and
 `ItemPickup`, `Held`, `LookOrientation`, `RigidBody` (velocities and sleep
 included, `docs/physics/rigid-bodies.md`), and the character and actor state
 of "Characters and actors": `KinematicState`, `CharacterMovement`,
-`DecisionAgent` and `NavAgentRequest`. Everything else is `Authored`,
+`DecisionAgent` and `NavAgentRequest`, and `AppliedEffects` ("Lasting
+effects"). Everything else is `Authored`,
 including `LocalTransform` (a level entity's is kept only by its placement,
 "Placement"), meshes, colliders and lights. Which part of a `Saved` component
 is durable is its serializer's: a generated one writes its fields as "Run-time
@@ -270,6 +271,74 @@ is the game's saved state too: an entity that stays after death must save that
 it is dead, or a load stands it up idle with no health, and its on-death
 responses may run again.
 
+## Lasting effects
+
+A lasting effect is its own entity in the persistent partition, aimed at its
+target (`docs/gameplay/abilitykit.md`, "Effects"). A save keeps the ones active
+when it is written, with their time left, on every identified entity, in a game
+that keeps level state: a poison on the player, a buff on an NPC, an ability's
+cooldown (an unowned effect on its actor) and an ability's cost effects. A
+quicksave does not cleanse; a rest point ends what it chooses before it writes
+(`effect.remove`, below).
+
+**Which are kept is the applier's to say**, since only it knows whether it will
+apply the effect again when the world is rebuilt: `ApplyEffect`'s
+`EffectKeeping` is `ByOwner` by default (kept when nothing owns it, not when
+something does), `Kept` or `NotKept`, and `ActiveEffect::Kept` records the
+answer. So a cooldown, a cost and a poison from `effect.apply` are kept; what
+equipment maintains and what a running ability holds are owned and not kept,
+and their holder makes them again. An effect whose owner will not make it again
+(an attacker's lingering hit) is applied `Kept`: its owner is written by
+persistent id and owns it again if resident when it is restored, and otherwise
+it runs out its time unowned. Setup that applies a passive whenever an entity
+spawns applies it `NotKept`, so the spawn and the save do not both apply it.
+`effect.apply` takes `keep` with the same default.
+
+A toggled or held ability (a cloak, a sprint) holds its effects through a
+lease, and ability records are not saved, so after a load the ability is off
+and so are its effects; an ability does not restart, it ends
+(`docs/deferred.md`, "Abilities and animation in progress across a load").
+
+**Where it is saved.** On its target, as a member of the target's patch:
+`AppliedEffects` (`effects/AppliedEffects.h`, scene key `AppliedEffects`), a
+keyed list of entries, each an effect name and an ordinal as its key
+(`"name#0"`), `remaining_ticks` (absent: the definition's whole duration),
+`ticks_to_period`, `scale`, and `owner` with `owner_key` when it has one. Time is counted in the ticks the game runs at,
+never as an absolute tick. An effect therefore inherits its target's level,
+zone, lifetime and parking with no rule of its own, and the body's ride in the
+body's patch; an NPC's survives its zone's round trip.
+
+- **The row is added at the settle step, never at apply.** Before every
+  capture (a save, and a zone's detach), beside `SettleHeldRecords`,
+  `SettleAppliedEffects` gives an identified entity under a kept effect the
+  component if it lacks it, and reads what every such entity is under, once.
+  The serializer writes from that reading, so a game that does not keep level
+  state never carries the component, and one that does carries it only on
+  entities that were under a kept effect at a capture. Its saved form does not
+  follow its row, so its carriers are diffed at every capture.
+- **On load** the entries sit in the row, and on the entity's first active tick
+  the effect pass puts each back (`RestoreEffect`) and empties the row. A
+  restore grants what the effect grants and takes its time-scale lease, with no
+  admission, no application hook and no application log entry: it was admitted
+  when it was applied.
+- **Content** may author entries in a scene file (a barrel that starts
+  burning); no tool offers the component. An authored entry that ran out is
+  absent from the next capture, which the keyed list records as a removal, so a
+  load does not put it back. An entry naming an effect no longer defined is
+  left out, with a warning.
+- **Capacity.** A row holds 16. A save of an entity under more fails in a
+  development build, naming it (`OverfullAppliedEffects`); in a release build,
+  and at any zone's detach, the effects with the least time left are left out,
+  counted and logged as an error.
+
+`effect.remove {target, effect | kinds}` ends every lasting effect on `target`
+of one definition, or whose definition's `Kinds` a tag query matches (`kinds`:
+`all`, `any` and `none` lists of tag names, each matching the tag and those
+beneath it), and answers how many it ended. It takes exactly one of the two,
+and refuses `nothing_named` or `both_named` otherwise. A rest point's sequence
+runs it with a "cured by rest" kind before `save.write`; a story debuff of
+another kind, ended by name by the story's own trigger, survives the rest.
+
 ## Bodies
 
 The local participant's body is kept as an entity patch against the prefab it
@@ -338,7 +407,9 @@ from the record; a body whose prefab cannot be resolved is logged and not
 saved. Grants made at run time by `ability.grant` are
 part of the patch and come back as requested grants with their source, so
 `ability.revoke` still takes them; tags given with
-`tags.grant` are the container's baseline and come back; lasting effects do not.
+`tags.grant` are the container's baseline and come back; lasting effects come
+back with their time left in a game that keeps level state ("Lasting
+effects").
 
 ## Level entities
 
@@ -502,7 +573,8 @@ Which serializers say their saved form follows their row:
   grow, so an id in the row always names the same tag or attribute),
   `ItemEntry`, `ItemPickup` and `ItemContainer` (definition paths and tag
   names, likewise). `AbilityGrants`, `EquipmentState`, `Counter`,
-  `CharacterMovement` and every other hand-written serializer answer no.
+  `CharacterMovement`, `AppliedEffects` (written from what its entity is under,
+  not from its row) and every other hand-written serializer answer no.
 
 The comparison, the per-entity image and their cost are measured in
 `docs/plans/evidence/level-state/results.md` ("Capture at scale"). What it does

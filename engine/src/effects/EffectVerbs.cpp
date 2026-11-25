@@ -7,6 +7,8 @@
 #include <effects/EffectDefinitionData.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
+#include <gameplay_tags/GameplayTagQueryNames.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <time/SimClock.h>
 
 #include <string>
@@ -36,6 +38,50 @@ namespace
         arguments.Children = { std::move(target), std::move(effect), std::move(scale), std::move(instigator),
                                std::move(from) };
         return arguments;
+    }
+
+    DataFieldSchema ApplyArguments()
+    {
+        DataFieldSchema arguments = EffectArguments();
+        DataFieldSchema keep = MakeDataField(DataFieldKind::Bool, "keep", "Keep",
+                                             "Whether a save keeps it while it lasts. When absent, it is kept, as "
+                                             "anything nothing owns is.");
+        keep.Required = false;
+        arguments.Children.push_back(std::move(keep));
+        return arguments;
+    }
+
+    DataFieldSchema RemoveArguments()
+    {
+        DataFieldSchema target = MakeDataField(DataFieldKind::Entity, "target", "Target",
+                                               "The entity whose lasting effects end.");
+        DataFieldSchema effect = MakeDataField(DataFieldKind::DataAssetRef, "effect", "Effect",
+                                               "Ends every instance of this effect. Name it or kinds, not both.");
+        effect.Reference.DataSubtype = std::string(kEffectDefinitionType);
+        effect.Required = false;
+        const auto names = [](std::string key, std::string label) {
+            DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(key), std::move(label));
+            list.Required = false;
+            list.Children.push_back(MakeDataField(DataFieldKind::String, "tag", "Tag"));
+            return list;
+        };
+        DataFieldSchema kinds = MakeDataField(DataFieldKind::Record, "kinds", "Kinds",
+                                              "Ends every effect whose kinds this query matches, each tag by name "
+                                              "and beneath it. Name it or an effect, not both.");
+        kinds.Required = false;
+        kinds.Children = { names("all", "All of"), names("any", "Any of"), names("none", "None of") };
+        DataFieldSchema arguments = EmptyVerbArguments();
+        arguments.Children = { std::move(target), std::move(effect), std::move(kinds) };
+        return arguments;
+    }
+
+    std::vector<std::string> NamesIn(const AuthoredValue& list)
+    {
+        std::vector<std::string> names;
+        for (const AuthoredValue& element : list.Children())
+            if (std::string_view name; element.TryGetString(name))
+                names.emplace_back(name);
+        return names;
     }
 
     struct EffectRequest
@@ -82,8 +128,18 @@ void DeclareEffectVerbs(VerbRegistrationScope& scope)
     apply.DisplayName = "Apply effect";
     apply.Description = "Applies an effect to an entity's attributes.";
     apply.Category = "Effects";
-    apply.Arguments = EffectArguments();
+    apply.Arguments = ApplyArguments();
     (void)scope.Declare(std::move(apply));
+
+    VerbDefinition remove;
+    remove.Name = std::string(kEffectRemoveVerb);
+    remove.DisplayName = "Remove effects";
+    remove.Description = "Ends an entity's lasting effects of one definition, or of the kinds a tag query matches.";
+    remove.Category = "Effects";
+    remove.Arguments = RemoveArguments();
+    remove.Refusals = VerbRefusalsOf<EffectRemoveRefusal>();
+    remove.Result = MakeDataField(DataFieldKind::Int, "count", "Count", "How many lasting effects it ended.");
+    (void)scope.Declare(std::move(remove));
 
     VerbDefinition hold;
     hold.Name = std::string(kEffectHoldLease);
@@ -105,8 +161,55 @@ VerbAdmission EffectOperations::Apply(const VerbInvocation& invocation)
     EffectRequest request;
     if (const VerbAdmission read = ReadRequest(*Entities, invocation, request); read != VerbAdmission::Accepted)
         return read;
-    (void)ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), {}, request.Scale, request.Source);
+    bool keep = true;
+    const EffectKeeping keeping = !invocation.Arguments->TryGetBool(5, keep) ? EffectKeeping::ByOwner
+                                  : keep                                    ? EffectKeeping::Kept
+                                                                            : EffectKeeping::NotKept;
+    (void)ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), {}, request.Scale, request.Source,
+                      keeping);
     return VerbAdmission::Accepted;
+}
+
+VerbAnswer EffectOperations::Remove(const VerbInvocation& invocation)
+{
+    EntityId target;
+    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target))
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    const AssetRef* effect = nullptr;
+    const bool namesEffect = invocation.Arguments->TryGetDataAsset(1, effect);
+    const AuthoredValue& query = invocation.Arguments->At(2);
+    const bool namesKinds = query.Kind() == AuthoredValueKind::Record;
+    if (namesEffect == namesKinds)
+        return VerbAnswerOf(namesEffect ? EffectRemoveRefusal::BothNamed : EffectRemoveRefusal::NothingNamed);
+    if (!Entities->IsAlive(target))
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+
+    std::size_t ended = 0;
+    if (namesEffect)
+    {
+        const EffectRegistry* effects = Entities->TryGetResource<EffectRegistry>();
+        const EffectId definition = effects != nullptr ? effects->Find(effect->Path) : EffectId{};
+        if (!definition.IsValid())
+            return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+        ended = RemoveEffectsOn(*Entities, target, definition);
+    }
+    else
+    {
+        const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
+        const std::span<const AuthoredValue> lists = query.Children();
+        const auto namesAt = [&](std::size_t slot) {
+            return slot < lists.size() ? NamesIn(lists[slot]) : std::vector<std::string>{};
+        };
+        const GameplayTagQueryNames names{ .All = namesAt(0), .Any = namesAt(1), .None = namesAt(2) };
+        std::vector<std::string> missing;
+        const GameplayTagQuery kinds = tags != nullptr ? ResolveTagQuery(names, *tags, missing) : GameplayTagQuery{};
+        if (tags == nullptr || !missing.empty() || names.Empty())
+            return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 2);
+        ended = RemoveEffectsOn(*Entities, target, kinds);
+    }
+    if (invocation.Result != nullptr)
+        *invocation.Result = AuthoredValue::Int(static_cast<std::int64_t>(ended));
+    return VerbAnswer{};
 }
 
 VerbAdmission EffectOperations::Hold(const VerbInvocation& invocation)

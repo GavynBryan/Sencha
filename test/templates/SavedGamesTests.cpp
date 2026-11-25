@@ -11,6 +11,7 @@
 #include <core/serialization/Serialize.h>
 #include <ecs/World.h>
 #include <effects/ActiveEffect.h>
+#include <effects/AppliedEffects.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/BaselineGameplayTags.h>
@@ -3179,6 +3180,180 @@ TEST(SavedGames, APushedCrateIsWhereItWasLeftAfterItsStreamedZoneLeavesAndComesB
     EXPECT_LT(Apart(back->At, left->At), 1e-3f) << "the crate went back to where the zone authored it";
     EXPECT_TRUE(back->Asleep) << "a crate left asleep came back awake";
     EXPECT_LT(Apart(later->At, left->At), 1e-3f) << "the crate moved after its zone came back";
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    constexpr std::string_view kLasting = "test.lasting";
+
+    EffectId Lasting(World& world)
+    {
+        EffectDefinition definition;
+        definition.Duration = EffectDuration::Duration;
+        definition.DurationSeconds = 120.0f;
+        return world.GetResource<EffectRegistry>().Register(kLasting, definition);
+    }
+
+    std::optional<std::uint32_t> LastingLeftOn(const World& world, EntityId target)
+    {
+        std::optional<std::uint32_t> left;
+        int count = 0;
+        for (const EntityId entity : world.GetAliveEntities())
+        {
+            const ActiveEffect* active = world.TryGet<ActiveEffect>(entity);
+            const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
+            if (active != nullptr && active->Target == target && effects != nullptr
+                && effects->GetName(active->Def) == kLasting)
+            {
+                left = active->RemainingTicks;
+                ++count;
+            }
+        }
+        return count == 1 ? left : std::nullopt;
+    }
+
+    std::size_t RowCarriers(const World& world)
+    {
+        std::size_t carriers = 0;
+        for (const EntityId entity : world.GetAliveEntities())
+            carriers += world.HasComponent<AppliedEffects>(entity) ? 1 : 0;
+        return carriers;
+    }
+}
+
+TEST(SavedGames, ALastingEffectOnTheBodyAndOnALevelEntityKeepsItsTimeAcrossAZoneRoundTripAndASaveInAFreshRun)
+{
+    const std::filesystem::path root = RootFor("lasting_effects");
+    std::optional<std::uint32_t> appliedCrate;
+    std::optional<std::uint32_t> crateBack;
+    std::optional<std::uint32_t> savedBody;
+    std::optional<std::uint32_t> savedCrate;
+    std::size_t carriers = 0;
+    int stage = 0;
+    int waited = 0;
+    RunFps(
+        kFirst.Name, 6000, root,
+        [&](Engine& engine, World& world, int) {
+            if (stage == 0 && HasBody(world))
+            {
+                Travel(engine, kWorld, LevelMemory::Authored);
+                stage = 1;
+            }
+            else if (stage == 1 && Arrived(engine) && Resident(engine, kStartZone) && Resolves(world, kZoneCrate))
+            {
+                const FixedSimTime now = engine.Runtime().GetSimulationClock().TimeOfTick(0);
+                const EffectId lasting = Lasting(world);
+                (void)ApplyEffect(world, LocalControlSubjectOf(world), lasting, now);
+                (void)ApplyEffect(world, world.GetResource<PersistentEntityIndex>().TryResolve(kZoneCrate), lasting, now);
+                appliedCrate = LastingLeftOn(world, world.GetResource<PersistentEntityIndex>().TryResolve(kZoneCrate));
+                stage = 2;
+            }
+            else if (stage == 2 && WalkTowards(engine, world, 32.0f) && !Resident(engine, kStartZone))
+            {
+                stage = 3;
+            }
+            else if (stage == 3 && WalkTowards(engine, world, 0.0f) && Resident(engine, kStartZone)
+                     && Resolves(world, kZoneCrate))
+            {
+                stage = 4;
+            }
+            else if (stage == 4 && ++waited == 30)
+            {
+                crateBack = LastingLeftOn(world, world.GetResource<PersistentEntityIndex>().TryResolve(kZoneCrate));
+                stage = 5;
+            }
+            else if (stage == 5)
+            {
+                EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+                savedBody = LastingLeftOn(world, LocalControlSubjectOf(world));
+                savedCrate = LastingLeftOn(world, world.GetResource<PersistentEntityIndex>().TryResolve(kZoneCrate));
+                stage = 6;
+            }
+            else if (stage == 6 && engine.Saves().WriteStatus() == SaveStatus::Done)
+            {
+                carriers = RowCarriers(world);
+                stage = 7;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 7) << "the crate's zone did not stream out and back";
+    ASSERT_TRUE(appliedCrate.has_value());
+    ASSERT_TRUE(crateBack.has_value()) << "the crate's lasting effect did not come back once with its zone";
+    ASSERT_TRUE(savedBody.has_value() && savedCrate.has_value());
+    EXPECT_LE(*crateBack, *appliedCrate);
+    EXPECT_GT(*crateBack, *appliedCrate - 600) << "the crate's effect lost or regained time across its zone's round trip";
+    EXPECT_EQ(carriers, 2u) << "an entity never under a kept effect at a capture carries the row";
+
+    std::optional<std::uint32_t> restoredBody;
+    std::optional<std::uint32_t> restoredCrate;
+    std::uint64_t restoredTick = 0;
+    stage = 0;
+    RunFps(
+        kFirst.Name, 6000, root,
+        [&](Engine& engine, World& world, int frame) {
+            if (stage == 0 && HasBody(world) && frame > 200)
+            {
+                (void)Lasting(world);
+                EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+                stage = 1;
+            }
+            else if (stage == 1 && RestoreArrived(engine) && Resolves(world, kZoneCrate))
+            {
+                restoredTick = engine.Runtime().GetSimulationClock().GetTickIndex();
+                stage = 2;
+            }
+            else if (stage == 2 && engine.Runtime().GetSimulationClock().GetTickIndex() > restoredTick)
+            {
+                restoredBody = LastingLeftOn(world, LocalControlSubjectOf(world));
+                restoredCrate = LastingLeftOn(world, world.GetResource<PersistentEntityIndex>().TryResolve(kZoneCrate));
+                stage = 3;
+            }
+        },
+        60.0, StreamBriskly);
+    ASSERT_EQ(stage, 3);
+    ASSERT_TRUE(restoredBody.has_value()) << "the body's lasting effect did not come back once";
+    ASSERT_TRUE(restoredCrate.has_value()) << "the crate's lasting effect did not come back once";
+    EXPECT_LE(*restoredBody, *savedBody);
+    EXPECT_GT(*restoredBody, *savedBody - 30) << "the body's effect came back with another time left";
+    EXPECT_LE(*restoredCrate, *savedCrate);
+    EXPECT_GT(*restoredCrate, *savedCrate - 30) << "the crate's effect came back with another time left";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AWriteOfAnEntityUnderMoreKeptEffectsThanASaveKeepsFailsNamingItInADevelopmentBuild)
+{
+#ifdef NDEBUG
+    GTEST_SKIP() << "a release build leaves out the shortest and logs it";
+#endif
+    const std::filesystem::path root = RootFor("overfull_effects");
+    std::string failure;
+    int stage = 0;
+    RunFps(kFirst.Name, 600, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 && HasBody(world))
+        {
+            const FixedSimTime now = engine.Runtime().GetSimulationClock().TimeOfTick(0);
+            for (int i = 0; i <= kAppliedEffectCapacity; ++i)
+            {
+                EffectDefinition definition;
+                definition.Duration = EffectDuration::Duration;
+                definition.DurationSeconds = 60.0f;
+                (void)ApplyEffect(world, LocalControlSubjectOf(world),
+                                  world.GetResource<EffectRegistry>().Register("test.many." + std::to_string(i), definition),
+                                  now);
+            }
+            EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && engine.Saves().WriteStatus() == SaveStatus::Failed)
+        {
+            failure = engine.Saves().WriteFailure();
+            stage = 2;
+        }
+    });
+    ASSERT_EQ(stage, 2) << "a write with a row it cannot hold did not fail";
+    EXPECT_NE(failure.find("kept effects"), std::string::npos) << failure;
+    EXPECT_FALSE(std::filesystem::exists(SlotFile(root, "default")));
     std::filesystem::remove_all(root);
 }
 

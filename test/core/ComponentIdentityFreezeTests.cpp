@@ -128,6 +128,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "AbilityGrants",       0xED200FDB07495669ull, MakeFourCC('A','B','G','R'), 0x2BD2B28870E6133Aull },
     { "AimOrigin",           0x15FDEA7DFC8BE3DDull, MakeFourCC('A','I','M','O'), 0xCB6817E050F1E919ull },
     { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F'), 0x141188942D7459D8ull },
+    { "AppliedEffects",      0xE27A50938E1A35B3ull, MakeFourCC('A','E','F','X'), 0x129283A64B3BC0A4ull },
     { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R'), 0x0DB13B4D4DCFF19Cull },
     { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P'), 0xD7974DBF9F9CAD02ull },
     { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C'), 0x7A7F3ECBA5C09B6Cull },

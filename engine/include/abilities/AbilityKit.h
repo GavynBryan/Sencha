@@ -24,6 +24,7 @@
 #include <attributes/AttributeSet.h>
 
 #include <effects/ActiveEffect.h>
+#include <effects/AppliedEffects.h>
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
@@ -52,6 +53,7 @@ using AbilityKitComponents = ComponentSet<
     GameplayTagContainer,
     AttributeSet,
     ActiveEffect,
+    AppliedEffects,
     AbilityGrants,
     ActiveAbilities,
     AbilityCueLog,
