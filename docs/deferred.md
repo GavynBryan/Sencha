@@ -1713,6 +1713,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   old saves must keep loading. Then write time left in seconds, converted with
   the capturing tick length, in a new member read beside the old.
 
+## System memory with no saved form
+
+- **What:** what a system keeps in memory rather than on an entity has no
+  saved form unless it registers a section. The responses system's rate limits
+  (`ResponsesSystem::Cooldowns`, an absolute tick per entity) last within one
+  run, since the process tick is monotonic, and are gone after quitting, so a
+  rate-limited trigger can be fired again by quitting and loading. A game
+  system's own memory is the same.
+- **Where:** `engine/src/logic/ResponsesSystem.cpp`; `SavedGames::RegisterSection`.
+- **Trigger:** the first rate-limited trigger a player can farm by quitting and
+  reloading. Then give that memory a section of its own, writing time left
+  rather than an absolute tick (`docs/gameplay/saves.md`, "Ticks").
+
 ## The frames before a restored body lands
 
 - **What:** a restored level's actors act from the frame their zone is
@@ -1822,10 +1835,14 @@ described in `docs/navigation/runtime.md`, "Agents".
   save whose landmark was not loaded when it was written cannot find its zone.
   An index of each zone's landmark names in the cooked world manifest, which
   the world cook would fill as it fills docks and links, would let either
-  focus the right zone first.
+  focus the right zone first. A carry's landmark is found the same way, and
+  what a level change carries is lost, with an error, when its landmark is not
+  loaded once the level is resident (`docs/gameplay/game-module.md`,
+  "Carrying").
 - **Where:** `engine/src/participant_spawn/ParticipantBodySpawns.cpp`
-  (`ArrivalRoot`), `engine/src/save/SavedGames.cpp` (the focus of a save with
-  an arrival), `editor/level_editor/src/document/WorldCook.cpp`.
+  (`ArrivalRoot`), `engine/src/app/LevelCarry.cpp` (`LevelCarry::Arrive`),
+  `engine/src/save/SavedGames.cpp` (the focus of a save with an arrival),
+  `editor/level_editor/src/document/WorldCook.cpp`.
 - **Trigger:** a game of separate worlds joined by `level.change` whose doors
   arrive outside the start zone's neighbourhood, or a save naming an arrival
   far from where it is written.

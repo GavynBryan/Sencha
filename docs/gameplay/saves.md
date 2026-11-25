@@ -577,7 +577,7 @@ capture compares the entity with its image first:
 - Otherwise only the components whose rows differ are written and diffed; an
   equal row's member is copied from the kept patch (`CaptureEntityPatch`'s
   `unchanged`), and the entity is imaged again. A gained member that changed is
-  written whole, as before.
+  written again in full, in its form ("What a zone gained").
 
 The filter only decides what is written, never what a patch says: unequal
 padding, or a field the saved form leaves out (an attribute's current value),
@@ -915,10 +915,57 @@ Listing and thumbnails are C++ calls for the menu, not verbs.
 
 Autosave rotation, quicksave naming and the menu itself are the game's.
 
+## Ticks
+
+The process tick is monotonic and is never restored, and no saved form holds an
+absolute tick. A restore to an earlier tick inside one process would silence
+every sensor response until the tick passed its old value, leave response
+cooldowns stale and repeat ability activation identities; nothing a save keeps
+needs it. So a duration is saved as the time left (an effect's
+`remaining_ticks`, a projectile's `remaining` seconds), a loaded projectile's
+launch tick is the tick it is loaded on, and game code that is a function of
+time saves its own elapsed time (Loss Function's `Sway` keeps its cycle). The
+animation clock is presentation and restarts. Every saved form is checked by a
+test that restores it in a process whose tick differs.
+
+## What a player notices after a quickload
+
+A save is how the world differs from content, not a snapshot of the simulation.
+What a quicksave anywhere, loaded later, gives back:
+
+| What | After a load |
+|---|---|
+| Things are where they were, moving as they were, asleep if they were | Kept ("Placement") |
+| Characters keep their velocity; a jump continues | Kept ("Characters and actors") |
+| Crouched in a vent restores crouched | Kept: a mode no lease holds, and the game's own capsule state |
+| Standing in a trigger does not fire it again; plates do not double-count | Kept (`occupied`, `docs/physics/sensor-overlaps.md`) |
+| NPCs alerted or idle as they were, heading for what they last knew | Kept ("Characters and actors") |
+| A follow order or a walk order continues | Kept, its route planned again |
+| Poisons, buffs, cooldowns, with their time left, on everyone | Kept ("Lasting effects") |
+| A grenade in the air | Kept when its prefab says `kept` (`docs/gameplay/projectiles.md`) |
+| Dropped items, containers, doors, counters | Kept ("What a zone gained", "Held records", "Level entities") |
+| **A toggled or held ability (cloak, sprint, aim) is off, with its effects** | **Lost.** Ability records have no saved form: toggled abilities end on a quickload |
+| **A reload, a charge, a long action in progress** | **Lost.** It ends; the player starts it again |
+| **An NPC's attack in progress** | **Lost.** It decides again within its decision interval, from what it knew |
+| **Animation poses** | **Lost.** Everything starts from its idle pose and blends |
+| **A rate-limited trigger's cooldown** | Kept within one run of the game, since the tick is monotonic. **Lost after quitting**: system memory with no saved form |
+| **The first few frames** | Actors and props act before the body and members saved from their source land; a game holds its cover until `RestoreStatus()` is `BodiesRestored` |
+| **A corpse, a broken object's debris** | The game's saved state ("Characters and actors"): kept if the game marks it so |
+| **Contact-exact physics** | A stack may settle by a hair; the simulation diverges from the unsaved one |
+
+The rows marked lost share two causes, ability records and animation playback
+with no saved form, and system memory with no section (`docs/deferred.md`,
+"Abilities and animation in progress across a load", "System memory with no
+saved form"). A snapshot of the simulation would close them only by describing
+every component and every system's memory well enough to survive a process,
+tied to the build that wrote it; it is not planned, and neither is bit-exact
+resume.
+
 ## Not yet
 
 Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, what
 a body's or a member's children carry, other participants' bodies and what
-they hold, a run-time entity nothing marked (a spawned NPC), a capture spread
-over frames or taken off the owner thread, and restoring inside a network
-session.
+they hold, a run-time entity nothing marked (a spawned NPC), abilities and
+animation in progress, system memory with no saved form, the frames before a
+restored body lands, a capture spread over frames or taken off the owner
+thread, and restoring inside a network session.

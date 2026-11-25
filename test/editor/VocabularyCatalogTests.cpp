@@ -293,7 +293,6 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_EQ(lit.Provider, "lamp");
     EXPECT_EQ(lit.ArgumentCount, 1u);
 
-    // The engine's sensor, projectile, use, arrival and counter events come first; the module's follow them.
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
     ASSERT_EQ(events.size(), 9u);
     EXPECT_EQ(events[0].Name, kSensorEnterEvent);

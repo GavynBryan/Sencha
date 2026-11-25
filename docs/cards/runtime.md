@@ -20,6 +20,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: world and frame.
 - `RuntimeFrameSnapshot` (`engine/include/runtime/RuntimeFrameLoop.h:68`): tick budget, lifecycle state and frame events, read by every phase through `PhaseContext` (`engine/include/runtime/FrameDriver.h:46`).
 - `FrameDiscontinuityBus` (`engine/include/runtime/FrameDiscontinuityBus.h:36`): tells listeners when time jumped; input subscribes to it.
 - Spawned scene instances from `SceneSpawnService` (`engine/include/runtime/spawn/SceneSpawnService.h:68`) and networked prefabs from `NetPrefabSpawner` (`engine/include/runtime/spawn/NetPrefabSpawner.h:39`).
+- A zone's gained members saved from their source, spawned through the service by `GainedMemberSpawns` (`engine/include/runtime/spawn/GainedMemberSpawns.h`) at the async drain (`docs/gameplay/saves.md`, "What a zone gained").
 
 ## 4. Central decisions
 

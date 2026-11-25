@@ -16,7 +16,7 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 
 ## 3. Outputs
 
-- `ProjectileFlight` (`engine/include/projectile/ProjectileState.h:30`) and `ProjectileMotion` (`engine/include/projectile/ProjectileState.h:50`): in-flight state, replicated as `ProjectileFlightWire` (`engine/include/projectile/ProjectileFlightWire.h:10`) and drawn by the system's own `Present` (`engine/src/projectile/ProjectileSystem.cpp:717`).
+- `ProjectileFlight` (`engine/include/projectile/ProjectileState.h`), replicated as `ProjectileFlightWire` (`engine/include/projectile/ProjectileFlightWire.h:10`) and drawn by the system's own `Present`, and `ProjectileMotion`, the authority's alone: in-flight state. Both are `Saved` with run-time fields, so a projectile whose prefab says `kept` is a gained member of its zone saved from its source (`docs/gameplay/projectiles.md`, "Kept in a save"); a loaded one is adopted by `ProjectileSystem::Adopt`.
 - `ProjectileHit` (`engine/include/projectile/ProjectileHit.h:25`): the occurrence a struck entity hears, handed to responses by `Deliver` (`engine/src/projectile/ProjectileSystem.cpp:598`).
 - Effects on what it strikes, through `ApplyEffect` (`engine/include/effects/EffectSystem.h:17`).
 
@@ -34,6 +34,8 @@ Snapshot `97ed48e4` (2026-10-30). Layer: gameplay simulation.
 - Scatter is chosen by the seed alone and stays inside its cone: `ProjectileFixture.ScatterIsChosenByTheSeedAloneAndStaysInsideItsCone` (`test/runtime/ProjectileTests.cpp`).
 - A machine that is not the authority never launches, flies or strikes: `ProjectileFixture.AMachineThatIsNotTheAuthorityNeverLaunchesFliesOrStrikes` (`test/runtime/ProjectileTests.cpp`).
 - Unnamed fields load at their defaults: `ProjectileAuthoring.AProjectileNamingOnlySomeFieldsLoadsWithTheRestAtTheirDefaults` (`test/editor/ProjectileAuthoringTests.cpp`).
+- A kept projectile flies on after a load and does not strike again what it struck: `KeptProjectile.AKeptProjectileInTheAirAtASaveFliesOnAfterALoadAndDoesNotStrikeAgainWhatItStruck` (`test/runtime/GainedFromSourceTests.cpp`).
+- One whose prefab does not say kept is never marked and gets no id: `KeptProjectile.AProjectileWhosePrefabDoesNotSayKeptIsNeverMarkedAndGetsNoId` (`test/runtime/GainedFromSourceTests.cpp`).
 
 ### Unchecked
 
