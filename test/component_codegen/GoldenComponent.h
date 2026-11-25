@@ -42,6 +42,14 @@ CodegenGolden
     SENCHA_LOCAL_ONLY
     float Derived = 0.0f;
 
+    SENCHA_FIELD("engaged")
+    SENCHA_RUNTIME
+    bool Engaged = false;
+
+    SENCHA_FIELD("tethered")
+    SENCHA_UNSAVED
+    bool Tethered = false;
+
     // Untagged: not part of the schema, and adding one must never change the
     // scene format or the replication layout.
     float Scratch = 0.0f;

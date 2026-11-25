@@ -53,6 +53,10 @@
 // A member initializer is the field's default, which a scene may then omit; a
 // member without one is required.
 #define SENCHA_FIELD(name)           SENCHA_ANNOTATE("sencha.field=" name)
+// In the saved form only: never authored, never offered by tools.
+#define SENCHA_RUNTIME               SENCHA_ANNOTATE("sencha.runtime")
+// In the scene form as declared, never in a save.
+#define SENCHA_UNSAVED               SENCHA_ANNOTATE("sencha.unsaved")
 
 #define SENCHA_OWNER_ONLY            SENCHA_ANNOTATE("sencha.owner_only")
 #define SENCHA_OWNER_LOCAL           SENCHA_ANNOTATE("sencha.owner_local")

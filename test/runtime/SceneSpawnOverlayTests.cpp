@@ -27,6 +27,7 @@
 #include <movement/CharacterMovementSerializer.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
+#include <movement/components/HeldMotion.h>
 #include <runtime/spawn/SceneSpawnOverlay.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
@@ -548,34 +549,73 @@ TEST_F(SceneSpawnOverlayTest, ABodysPatchNamesOnlyItsSavedComponents)
                                  << JsonStringify(removed.RootPatch);
 }
 
-TEST_F(SceneSpawnOverlayTest, ABodySavedInAnotherMovementModeComesBackInTheDefault)
+namespace
 {
-    GameplayTagRegistry& tags = Entities.AddResource<GameplayTagRegistry>();
-    LocomotionModeRegistry& modes = Entities.AddResource<LocomotionModeRegistry>(tags);
-    const LocomotionModeId free = modes.RegisterFree();
-    const LocomotionModeId climbing = modes.Register<OverlayStance>("movement.mode.climbing");
-    Entities.RegisterComponent<OverlayStance>();
-    Entities.RegisterComponent<CharacterMovement>();
-    (void)Serializers.Register(MakeCharacterMovementSerializer());
-    EntityBuildPackage prefab = Prefab();
-    Author(prefab, ResolveComponentTypeId<CharacterMovement>(), JsonValue(JsonValue::Object{}));
+    struct ModeRoundTrip
+    {
+        SceneSpawnOverlay Overlay;
+        LocomotionModeId Restored;
+    };
+}
 
-    const EntityId body = Entities.CreateEntity();
-    Entities.AddComponent<OverlayVitals>(body, OverlayVitals{});
-    Entities.AddComponent<CharacterMovement>(body, CharacterMovement{ .Mode = climbing });
-    const SceneSpawnOverlay overlay = CaptureSpawnOverlay(Entities, body, prefab, Serializers, Context);
-    EXPECT_TRUE(overlay.Empty()) << JsonStringify(overlay.RootPatch);
+class SceneSpawnOverlayModeTest : public SceneSpawnOverlayTest
+{
+protected:
+    SceneSpawnOverlayModeTest()
+        : Modes(Entities.AddResource<LocomotionModeRegistry>(Entities.AddResource<GameplayTagRegistry>()))
+    {
+        Free = Modes.RegisterFree();
+        Climbing = Modes.Register<OverlayStance>("movement.mode.climbing");
+        Entities.RegisterComponent<OverlayStance>();
+        Entities.RegisterComponent<CharacterMovement>();
+        Entities.RegisterComponent<LocomotionModeLease>();
+        (void)Serializers.Register(MakeCharacterMovementSerializer());
+    }
 
-    std::string error;
-    ASSERT_TRUE(ApplySpawnOverlay(prefab, overlay, Serializers, error, Retuned)) << error;
-    const PackageComponent* record =
-        prefab.FindComponent(PackageEntityId{ 0 }, ResolveComponentTypeId<CharacterMovement>());
-    ASSERT_TRUE(record != nullptr && record->SerializedJson.has_value());
-    const EntityId restored = Entities.CreateEntity();
-    JsonReadArchive archive(*record->SerializedJson);
-    ASSERT_TRUE(Serializers.FindByType(ResolveComponentTypeId<CharacterMovement>())
-                    ->LoadIntoWorld(archive, restored, Entities, Context));
-    EXPECT_EQ(Entities.TryGet<CharacterMovement>(restored)->Mode, free);
+    ModeRoundTrip RoundTrip(bool leased)
+    {
+        EntityBuildPackage prefab = Prefab();
+        Author(prefab, ResolveComponentTypeId<CharacterMovement>(), JsonValue(JsonValue::Object{}));
+        const EntityId body = Entities.CreateEntity();
+        Entities.AddComponent<OverlayVitals>(body, OverlayVitals{});
+        Entities.AddComponent<CharacterMovement>(body, CharacterMovement{ .Mode = Climbing });
+        if (leased)
+            *Entities.TryGet<LocomotionModeLease>(body) =
+                LocomotionModeLease{ .Owner = LeaseOwner{ .Entity = body, .Key = 1 }, .Mode = Climbing };
+        ModeRoundTrip trip{ .Overlay = CaptureSpawnOverlay(Entities, body, prefab, Serializers, Context), .Restored = {} };
+
+        std::string error;
+        EXPECT_TRUE(ApplySpawnOverlay(prefab, trip.Overlay, Serializers, error, Retuned)) << error;
+        const PackageComponent* record =
+            prefab.FindComponent(PackageEntityId{ 0 }, ResolveComponentTypeId<CharacterMovement>());
+        EXPECT_TRUE(record != nullptr && record->SerializedJson.has_value());
+        if (record == nullptr || !record->SerializedJson.has_value())
+            return trip;
+        const EntityId restored = Entities.CreateEntity();
+        JsonReadArchive archive(*record->SerializedJson);
+        EXPECT_TRUE(Serializers.FindByType(ResolveComponentTypeId<CharacterMovement>())
+                        ->LoadIntoWorld(archive, restored, Entities, Context));
+        trip.Restored = Entities.TryGet<CharacterMovement>(restored)->Mode;
+        return trip;
+    }
+
+    LocomotionModeRegistry& Modes;
+    LocomotionModeId Free;
+    LocomotionModeId Climbing;
+};
+
+TEST_F(SceneSpawnOverlayModeTest, ABodySavedInAModeItIsSimplyInComesBackInIt)
+{
+    const ModeRoundTrip trip = RoundTrip(false);
+    EXPECT_EQ(JsonStringify(trip.Overlay.RootPatch), R"({"CharacterMovement":{"mode":"movement.mode.climbing"}})");
+    EXPECT_EQ(trip.Restored, Climbing);
+}
+
+TEST_F(SceneSpawnOverlayModeTest, ABodySavedInAModeALeaseHoldsComesBackInTheDefault)
+{
+    const ModeRoundTrip trip = RoundTrip(true);
+    EXPECT_TRUE(trip.Overlay.Empty()) << JsonStringify(trip.Overlay.RootPatch);
+    EXPECT_EQ(trip.Restored, Free);
 }
 
 TEST_F(SceneSpawnOverlayTest, ASavedComponentThatCannotBeWrittenIsLoggedAndFollowsThePrefab)

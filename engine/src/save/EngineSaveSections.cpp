@@ -12,6 +12,8 @@
 #include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
 #include <save/HeldRecordSaves.h>
@@ -56,6 +58,15 @@ namespace
         return prefab;
     }
 
+    void LeaveOutMotion(JsonValue& patch)
+    {
+        if (!patch.IsObject())
+            return;
+        std::erase_if(patch.AsObject(), [](const JsonValue::Object::value_type& member) {
+            return member.first == TypeSchema<KinematicState>::Name || member.first == TypeSchema<CharacterMovement>::Name;
+        });
+    }
+
     JsonValue CaptureBodies(Engine& engine, const World& world)
     {
         const EntityId body = LocalBodyOf(world);
@@ -68,9 +79,11 @@ namespace
                 "save: the local body's prefab cannot be resolved, so the body is not saved");
             return JsonValue(JsonValue::Object{});
         }
-        const SceneSpawnOverlay overlay =
+        SceneSpawnOverlay overlay =
             CaptureSpawnOverlay(world, body, *prefab, engine.SceneSerializers(), engine.Content().SceneContext());
         const std::string& arrival = engine.Saves().WritingArrival();
+        if (!arrival.empty())
+            LeaveOutMotion(overlay.RootPatch);
         JsonValue::Object local;
         if (arrival.empty())
         {

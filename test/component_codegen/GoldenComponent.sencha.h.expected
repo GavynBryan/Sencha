@@ -7,7 +7,7 @@
 #include <core/serialization/FourCC.h>
 #include <math/MathSchemas.h>
 
-static_assert(kComponentCodegenFormatVersion == 2,
+static_assert(kComponentCodegenFormatVersion == 3,
               "generated component metadata predates the headers reading it: "
               "rebuild with a matching sencha-component-codegen");
 
@@ -42,6 +42,12 @@ struct ComponentDefinition<CodegenGolden>
             MakeField("derived", &CodegenGolden::Derived)
                 .Default(defaults.Derived)
                 .LocalOnly(),
+            MakeField("engaged", &CodegenGolden::Engaged)
+                .Default(defaults.Engaged)
+                .Runtime(),
+            MakeField("tethered", &CodegenGolden::Tethered)
+                .Default(defaults.Tethered)
+                .Unsaved(),
         };
     }
 };

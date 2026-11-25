@@ -25,7 +25,7 @@ std::vector<std::string> EditorSceneComponentRules::OwedBy(std::string_view comp
     std::vector<std::string> owed;
     for (const ComponentId closure : DerivedClosureOf(Components, id))
         for (const auto& candidate : serializers.Entries())
-            if (Components.GetComponentIdByType(candidate->TypeId()) == closure)
+            if (candidate->Authorable() && Components.GetComponentIdByType(candidate->TypeId()) == closure)
                 owed.emplace_back(candidate->JsonKey());
     return owed;
 }

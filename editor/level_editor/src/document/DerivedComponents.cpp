@@ -43,7 +43,8 @@ std::vector<DerivedComponentRow> DerivedComponentsOn(
         // The authored surface is exactly what a serializer describes. Anything
         // the registry knows belongs in the rows above this group, whether or
         // not the file happened to mention it.
-        if (serializers.FindByType(meta->TypeId) != nullptr)
+        const IComponentSerializer* serializer = serializers.FindByType(meta->TypeId);
+        if (serializer != nullptr && serializer->Authorable())
             continue;
 
         rows.push_back(DerivedComponentRow{

@@ -1682,6 +1682,34 @@ described in `docs/navigation/runtime.md`, "Agents".
   first content that authors a waiting slot (an empty quiver) or an item whose
   second slot must be chosen.
 
+## Abilities and animation in progress across a load
+
+- **What:** a load restores where characters are, how they move, what they
+  were alerted to and told to do (`docs/gameplay/saves.md`, "Characters and
+  actors"), but not what they were in the middle of. Ability records have no
+  saved form, so an attack, a reload, a charge or any long action ends and is
+  started again by whoever decides it; an NPC decides again within its
+  decision interval. Animation playback has no saved form either, so
+  everything starts from its idle pose and blends.
+- **Where:** `abilities/ActiveAbilities.h` (the records, which also hold a
+  predicting client's guesses), `anim/` playback state.
+- **Trigger:** a game with a toggle a player expects a quickload to keep (a
+  cloak, a sprint), or a long action whose restart is visible. Then give
+  ability records and animation playback saved forms, with an answer for a
+  predicting client's guesses.
+
+## The frames before a restored body lands
+
+- **What:** a restored level's actors act from the frame their zone is
+  published, and the body and source-spawned members land a few frames later.
+  An order or a sensor naming the body waits for it (`PendingReferences`,
+  "occupied" seeds), but an NPC can take a step or a decision in the gap. A
+  game holds its cover until `RestoreStatus()` reports `BodiesRestored`.
+- **Where:** `engine/src/participant_spawn/ParticipantBodySpawns.cpp`, the zone
+  import in `engine/src/zone/ZonePackageImporter.cpp`.
+- **Trigger:** a game that cannot cover the gap. Then hold a restored level's
+  actors still until its bodies are restored.
+
 ## A game-extended list of save roots
 
 - **What:** whose body and held records a save keeps is fixed to the local

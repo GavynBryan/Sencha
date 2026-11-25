@@ -14,8 +14,13 @@ inline constexpr std::uint32_t kNoDecisionOption = std::numeric_limits<std::uint
 // What an entity that chooses its own options is doing and knows: its clock, its
 // target, the option it chose and the ability running it, where that option sent
 // it, and what it last knew of its target once memory let go. The authority's,
-// rebuilt each run and never saved. docs/gameplay/decision-agent.md.
-struct SENCHA_COMPONENT("sencha.decision.agent") DecisionAgent
+// rebuilt each run but for its engagement, which a save keeps.
+// docs/gameplay/decision-agent.md.
+struct SENCHA_COMPONENT("sencha.decision.agent")
+       SENCHA_SCHEMA("DecisionAgent")
+       SENCHA_SCENE_CHUNK("DCAG")
+       SENCHA_SAVED
+DecisionAgent
 {
     bool Started = false;
     float UntilDecision = 0.0f;
@@ -40,10 +45,15 @@ struct SENCHA_COMPONENT("sencha.decision.agent") DecisionAgent
     float UnavailableSeconds = 0.0f;
 
     // Once it has known of a target it pursues it from what it last knew.
+    SENCHA_FIELD("engaged") SENCHA_RUNTIME
     bool Engaged = false;
+    SENCHA_FIELD("contact_position") SENCHA_RUNTIME
     Vec3d ContactPosition = Vec3d::Zero();
+    SENCHA_FIELD("contact_velocity") SENCHA_RUNTIME
     Vec3d ContactVelocity = Vec3d::Zero();
+    SENCHA_FIELD("contact_facing") SENCHA_RUNTIME
     Vec3d ContactFacing = Vec3d::Zero();
+    SENCHA_FIELD("seconds_since_contact") SENCHA_RUNTIME
     float SecondsSinceContact = 0.0f;
     // Since its own eyes last saw its target.
     float SecondsSinceSeen = 1000.0f;

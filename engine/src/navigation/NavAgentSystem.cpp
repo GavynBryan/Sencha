@@ -27,6 +27,7 @@
 #include <time/ActorTime.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
+#include <world/identity/PendingReferences.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -312,6 +313,13 @@ struct NavAgentSystem::State
         return transform != nullptr ? std::optional<Vec3d>(transform->Value.Position) : std::nullopt;
     }
 
+    static bool AwaitsTarget(const World& world, EntityId agent, const NavAgentRequest& order)
+    {
+        const PendingReferences* pending = world.TryGetResource<PendingReferences>();
+        return order.Kind == NavDestinationKind::Entity && pending != nullptr
+            && pending->Awaits(agent, ResolveComponentTypeId<NavAgentRequest>());
+    }
+
     float AgentSeconds(const World& world, EntityId agent) const
     {
         const ActorTime* clock = world.TryGet<ActorTime>(agent);
@@ -464,7 +472,8 @@ struct NavAgentSystem::State
         const std::optional<Vec3d> target = TargetPosition(world, *order);
         if (!target)
         {
-            End(world, agent, *progress, NavAgentPhase::Failed, NavAgentFailure::TargetLost);
+            if (!AwaitsTarget(world, agent, *order))
+                End(world, agent, *progress, NavAgentPhase::Failed, NavAgentFailure::TargetLost);
             return;
         }
         if (order->Kind == NavDestinationKind::Entity)
@@ -557,7 +566,7 @@ struct NavAgentSystem::State
             return fail(NavAgentFailure::ProfileUnavailable);
         const std::optional<Vec3d> target = TargetPosition(world, *order);
         if (!target)
-            return fail(NavAgentFailure::TargetLost);
+            return AwaitsTarget(world, agent, *order) ? false : fail(NavAgentFailure::TargetLost);
 
         const NavBuildProfile& build = navigation->Mesh(*profileIndex).Profile();
         slot->Height = build.Height;

@@ -8,7 +8,7 @@
 #include <math/MathSchemas.h>
 #include <authored/AuthoredApiDefinition.h>
 
-static_assert(kComponentCodegenFormatVersion == 2,
+static_assert(kComponentCodegenFormatVersion == 3,
               "generated component metadata predates the headers reading it: "
               "rebuild with a matching sencha-component-codegen");
 

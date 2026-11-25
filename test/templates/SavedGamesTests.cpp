@@ -20,7 +20,10 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <inventory/InventoryComponents.h>
 #include <logic/CounterVocabulary.h>
+#include <movement/LocomotionMode.h>
 #include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MotionChannels.h>
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <participant/ParticipantLifecycle.h>
@@ -870,7 +873,8 @@ TEST(SavedGames, DescribeSaysWhatASaveHoldsOfTheBody)
     ASSERT_FALSE(lines.empty());
     EXPECT_NE(lines.front().find("is the local body"), std::string::npos) << lines.front();
     const auto has = [&lines](std::string_view line) { return std::ranges::find(lines, line) != lines.end(); };
-    EXPECT_TRUE(has("  CharacterMovement: authored, follows its prefab"));
+    EXPECT_TRUE(has("  CharacterController: authored, follows its prefab"));
+    EXPECT_TRUE(has("  CharacterMovement: saved, in the patch where it differs from its prefab"));
     EXPECT_TRUE(has("  LookOrientation: saved, in the patch where it differs from its prefab"));
     EXPECT_TRUE(has("  scene_instance: identity, given by its spawn"));
     EXPECT_EQ(refused, ConsoleStatus::InvalidArguments);
@@ -1364,6 +1368,171 @@ TEST(SavedGames, ASaveNamingAnArrivalHoldsNoTransformAndARestoreStandsTheBodyAtI
     EXPECT_NEAR(stood.Z, 6.0f, 0.05f);
     EXPECT_NEAR(moving.X, 0.0f, 0.01f);
     EXPECT_NEAR(moving.Z, 0.0f, 0.01f);
+    std::filesystem::remove_all(root);
+}
+
+namespace
+{
+    constexpr std::string_view kStance = "test.mode.stance";
+
+    LocomotionModeId Stance(World& world) { return world.GetResource<LocomotionModeRegistry>().RegisterFree(std::string(kStance)); }
+
+    const JsonValue* PatchMember(const SavedGame& saved, std::string_view component)
+    {
+        const JsonValue* local = LocalBodyIn(saved);
+        const JsonValue* patch = local != nullptr ? local->Find("patch") : nullptr;
+        return patch != nullptr ? patch->Find(component) : nullptr;
+    }
+
+    struct RestoredMotion
+    {
+        Vec3d Velocity;
+        LocomotionModeId Mode;
+        LocomotionModeId Stance;
+        LocomotionModeId Free;
+    };
+
+    RestoredMotion RestoreMotion(const std::filesystem::path& root, std::string_view slot, int wait)
+    {
+        RestoredMotion restored;
+        int stage = 0;
+        RunFps("levels/bumper", 500, root, [&](Engine& engine, World& world, int frame) {
+            if (stage == 0 && HasBody(world) && frame > wait)
+            {
+                restored.Stance = Stance(world);
+                restored.Free = world.GetResource<LocomotionModeRegistry>().FreeMode();
+                EXPECT_EQ(engine.Saves().RequestRestore(std::string(slot)), SaveAdmission::Accepted);
+                stage = 1;
+            }
+            else if (stage == 1 && RestoreArrived(engine))
+            {
+                const EntityId body = LocalControlSubjectOf(world);
+                restored.Velocity = world.TryGet<KinematicState>(body)->Velocity;
+                restored.Mode = world.TryGet<CharacterMovement>(body)->Mode;
+                stage = 2;
+            }
+        });
+        EXPECT_EQ(stage, 2);
+        return restored;
+    }
+}
+
+TEST(SavedGames, ASaveNamingAnArrivalKeepsNoMotionAndAQuicksaveKeepsBoth)
+{
+    const std::filesystem::path root = RootFor("arrival_motion");
+    int stage = 0;
+    RunFps("levels/bumper", 400, root, [&](Engine& engine, World& world, int) {
+        if (stage == 0 || !HasBody(world))
+            stage = HasBody(world) ? std::max(stage, 1) : stage;
+        if (stage >= 1 && stage <= 4)
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            world.TryGet<CharacterMovement>(body)->Mode = Stance(world);
+            world.TryGet<KinematicState>(body)->Velocity = Vec3d(3.0f, 0.0f, 0.0f);
+        }
+        if (stage == 1)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("arrived", "bumper_west"), SaveAdmission::Accepted);
+            stage = 2;
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            EXPECT_EQ(engine.Saves().RequestWrite("quick"), SaveAdmission::Accepted);
+            stage = 3;
+        }
+        else if (stage == 3 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 5;
+        }
+    });
+    ASSERT_EQ(stage, 5);
+
+    const std::optional<SavedGame> arrived = ReadSave(SlotFile(root, "arrived"));
+    const std::optional<SavedGame> quick = ReadSave(SlotFile(root, "quick"));
+    ASSERT_TRUE(arrived.has_value() && quick.has_value());
+    EXPECT_EQ(PatchMember(*arrived, "KinematicState"), nullptr) << "a save naming an arrival kept the body's velocity";
+    EXPECT_EQ(PatchMember(*arrived, "CharacterMovement"), nullptr) << "a save naming an arrival kept the body's mode";
+    const JsonValue* velocity = PatchMember(*quick, "KinematicState");
+    const JsonValue* mode = PatchMember(*quick, "CharacterMovement");
+    ASSERT_NE(velocity, nullptr) << "a quicksave lost the body's velocity";
+    ASSERT_NE(mode, nullptr) << "a quicksave lost the body's mode";
+    EXPECT_EQ(mode->Find("mode")->AsString(), kStance);
+    const double savedX = velocity->Find("velocity")->AsArray()[0].AsNumber();
+    EXPECT_GT(savedX, 0.5);
+
+    const RestoredMotion atRest = RestoreMotion(root, "arrived", 30);
+    EXPECT_EQ(atRest.Mode, atRest.Free) << "the body arrived in the mode it was saved in";
+    EXPECT_NEAR(atRest.Velocity.X, 0.0f, 0.01f) << "the body arrived moving";
+
+    const RestoredMotion moving = RestoreMotion(root, "quick", 45);
+    EXPECT_EQ(moving.Mode, moving.Stance) << "a quicksave did not restore the mode the body was simply in";
+    EXPECT_NEAR(moving.Velocity.X, savedX, 0.05) << "a quicksave did not restore the body's velocity";
+    std::filesystem::remove_all(root);
+}
+
+TEST(SavedGames, AQuicksaveMidJumpContinuesTheArcInAFreshRunWhoseTickDiffers)
+{
+    const std::filesystem::path root = RootFor("mid_jump");
+    int stage = 0;
+    Vec3d savedAt;
+    Vec3d savedVelocity;
+    std::uint64_t savedTick = 0;
+    RunFps("levels/room_2", 1500, root, [&](Engine& engine, World& world, int frame) {
+        if (stage == 0 && HasBody(world) && frame > 20)
+        {
+            world.TryGet<MotionImpulse>(LocalControlSubjectOf(world))->DeltaVelocity = Vec3d(4.0f, 6.0f, 0.0f);
+            stage = 1;
+        }
+        else if (stage == 1)
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            const Vec3d velocity = world.TryGet<KinematicState>(body)->Velocity;
+            if (velocity.Y > 0.0f && velocity.Y < 1.5f)
+            {
+                savedAt = world.TryGet<LocalTransform>(body)->Value.Position;
+                savedVelocity = velocity;
+                savedTick = engine.Runtime().GetSimulationClock().GetTickIndex();
+                EXPECT_EQ(engine.Saves().RequestWrite(), SaveAdmission::Accepted);
+                stage = 2;
+            }
+        }
+        else if (stage == 2 && engine.Saves().WriteStatus() == SaveStatus::Done)
+        {
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    ASSERT_GT(savedVelocity.X, 1.0f) << "the jump was not under way when it was saved";
+
+    stage = 0;
+    Vec3d first;
+    Vec3d landed;
+    std::uint64_t restoredTick = 0;
+    RunFps("levels/room_2", 3000, root, [&](Engine& engine, World& world, int frame) {
+        const std::uint64_t tick = engine.Runtime().GetSimulationClock().GetTickIndex();
+        if (stage == 0 && HasBody(world) && frame > 600)
+        {
+            EXPECT_EQ(engine.Saves().RequestRestore(), SaveAdmission::Accepted);
+            stage = 1;
+        }
+        else if (stage == 1 && RestoreArrived(engine))
+        {
+            const EntityId body = LocalControlSubjectOf(world);
+            first = world.TryGet<KinematicState>(body)->Velocity;
+            restoredTick = tick;
+            stage = 2;
+        }
+        else if (stage == 2 && tick >= restoredTick + 60)
+        {
+            landed = world.TryGet<LocalTransform>(LocalControlSubjectOf(world))->Value.Position;
+            stage = 3;
+        }
+    });
+    ASSERT_EQ(stage, 3);
+    EXPECT_NE(restoredTick, savedTick) << "the restore ran on the tick the save was written on";
+    EXPECT_NEAR(first.X, savedVelocity.X, 0.05f) << "the restored body did not take its saved velocity";
+    EXPECT_NEAR(first.Y, savedVelocity.Y, 0.05f);
+    EXPECT_GT(landed.X - savedAt.X, 1.0f) << "the restored body dropped straight down instead of finishing its arc";
     std::filesystem::remove_all(root);
 }
 #endif

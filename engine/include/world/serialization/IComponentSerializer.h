@@ -91,6 +91,9 @@ struct IComponentSerializer
     // Whether an entity built from `cooked` has a transform nothing can recompute, so a save keeps it.
     virtual bool HoldsPlacement(const JsonValue&) const { return false; }
 
+    // Whether content can author it; false when every field is run-time state, so it has no authoring form.
+    virtual bool Authorable() const { return true; }
+
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;
 };

@@ -20,6 +20,13 @@ namespace
 {
     constexpr std::string_view kModeKey = "mode";
 
+    bool Leased(const World& world, EntityId entity, LocomotionModeId mode)
+    {
+        const LocomotionModeLease* lease =
+            world.IsRegistered<LocomotionModeLease>() ? world.TryGet<LocomotionModeLease>(entity) : nullptr;
+        return lease != nullptr && lease->Owner.IsSet() && lease->Mode == mode;
+    }
+
 class CharacterMovementSerializer final : public TypedComponentSerializer<CharacterMovement>
 {
 public:
@@ -49,13 +56,18 @@ public:
         // A mode this process cannot name writes nothing rather than a number
         // or an empty string: absence reads back as the free mode, which is
         // what an unnamed mode already means.
-        if (const LocomotionModeRegistry* modes =
-                world.TryGetResource<LocomotionModeRegistry>())
-        {
-            if (const LocomotionModeEntry* mode = modes->Find(movement->Mode))
-                archive.Field(kModeKey, std::string_view(mode->Name));
-        }
+        const LocomotionModeRegistry* modes = world.TryGetResource<LocomotionModeRegistry>();
+        const LocomotionModeEntry* mode = modes != nullptr ? modes->Find(movement->Mode) : nullptr;
+        if (mode != nullptr && !Leased(world, entity, movement->Mode))
+            archive.Field(kModeKey, std::string_view(mode->Name));
 
+        archive.End();
+        return archive.Ok();
+    }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        archive.BeginObject(std::string_view{});
         archive.End();
         return archive.Ok();
     }

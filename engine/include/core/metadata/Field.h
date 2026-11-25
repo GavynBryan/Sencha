@@ -25,6 +25,7 @@
 //   MakeField("pos",    &Actor::Pos).Quantize(-4096.0f, 4096.0f, 20)
 //   MakeField("cooldown", &Actor::Cooldown).OwnerOnly()
 //   MakeField("blend",  &Actor::Blend).LocalOnly()
+//   MakeField("engaged", &Actor::Engaged).Runtime()
 //=============================================================================
 
 //=============================================================================
@@ -100,6 +101,10 @@ struct Field
     // and the wire never read either -- the persisted key stays Name.
     std::string_view DisplayLabel{};
     std::string_view DisplayTooltip{};
+    // Which record forms write the member (docs/gameplay/saves.md, "Run-time
+    // fields"): a run-time member only a save's, an unsaved one never a save's.
+    bool IsRuntime = false;
+    bool IsUnsaved = false;
 
     Field& Optional()
     {
@@ -187,6 +192,18 @@ struct Field
     Field& LocalOnly()
     {
         IsLocalOnly = true;
+        return *this;
+    }
+
+    Field& Runtime()
+    {
+        IsRuntime = true;
+        return *this;
+    }
+
+    Field& Unsaved()
+    {
+        IsUnsaved = true;
         return *this;
     }
 

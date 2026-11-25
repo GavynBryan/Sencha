@@ -6,9 +6,11 @@
 #include <cassert>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 class AssetSystem;
 class LoggingProvider;
+class World;
 
 struct PackageMember
 {
@@ -22,6 +24,13 @@ enum class SceneRecordPurpose : std::uint8_t
 {
     Authoring,
     Save,
+};
+
+// An entity field a read named by a persistent id that is not resident yet.
+struct UnresolvedEntityReference
+{
+    EntityId* Field = nullptr;
+    PersistentEntityId Target;
 };
 
 //=============================================================================
@@ -45,4 +54,8 @@ struct SceneSerializationContext
     std::span<const PackageMember> PackageMembers;
     // Set by the entity record writer for the components it writes.
     SceneRecordPurpose Purpose = SceneRecordPurpose::Authoring;
+    // Set by a serializer while it writes or reads a component of this World,
+    // for the entity fields it names by persistent id.
+    const World* Entities = nullptr;
+    std::vector<UnresolvedEntityReference>* Unresolved = nullptr;
 };

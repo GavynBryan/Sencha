@@ -205,7 +205,8 @@ TEST_F(DerivedComponentAddTest, TheGroupNamesWhatTheFileDoesNotDescribe)
     {
         const ComponentMeta* meta = Components().GetMeta(row.Id);
         ASSERT_NE(meta, nullptr);
-        EXPECT_EQ(EditorSceneSerializers().FindByType(meta->TypeId), nullptr)
+        const IComponentSerializer* serializer = EditorSceneSerializers().FindByType(meta->TypeId);
+        EXPECT_TRUE(serializer == nullptr || !serializer->Authorable())
             << row.Name << " is authored and does not belong in this group";
     }
 }

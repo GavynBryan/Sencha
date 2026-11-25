@@ -78,7 +78,7 @@ llvm::cl::opt<std::string> gSource(
 // Stamped into every companion so an SDK whose generator predates its headers
 // fails at compile naming both versions, and reported by --format-version so
 // the build can refuse such a generator at configure time.
-constexpr unsigned kFormatVersion = 2;
+constexpr unsigned kFormatVersion = 3;
 
 // ─── The facts a declaration can state ───────────────────────────────────────
 
@@ -96,6 +96,8 @@ struct FieldFacts
     bool Color = false;
     bool Degrees = false;
     bool Optional = false;
+    bool Runtime = false;
+    bool Unsaved = false;
     bool HasDefault = false; // member initializer present
 };
 
@@ -432,6 +434,8 @@ private:
             else if (text == "sencha.color")                    out.Color = true;
             else if (text == "sencha.degrees")                  out.Degrees = true;
             else if (text == "sencha.optional")                 out.Optional = true;
+            else if (text == "sencha.runtime")                  out.Runtime = true;
+            else if (text == "sencha.unsaved")                  out.Unsaved = true;
             else Error(field->getLocation(), "unknown field annotation '" + text.str() + "'");
         }
 
@@ -466,7 +470,7 @@ private:
             // An annotation on an untagged member is a mistake worth reporting:
             // the member is not in the schema, so the annotation does nothing. A
             // label also serves a query.
-            if (!out.AssetRef.empty() || out.OwnerOnly || out.LocalOnly
+            if (!out.AssetRef.empty() || out.OwnerOnly || out.LocalOnly || out.Runtime || out.Unsaved
                 || (!out.Label.empty() && !queried))
             {
                 Error(field->getLocation(),
@@ -478,7 +482,40 @@ private:
 
         out.Member = field->getNameAsString();
         out.HasDefault = field->hasInClassInitializer();
+        CheckSavedForms(field, facts, out);
         facts.Fields.push_back(std::move(out));
+    }
+
+    void CheckSavedForms(const clang::FieldDecl* field, const ComponentFacts& facts, const FieldFacts& out)
+    {
+        if (!out.Runtime && !out.Unsaved)
+            return;
+        const std::string member = "member '" + field->getNameAsString() + "'";
+        if (out.Runtime && out.Unsaved)
+        {
+            Error(field->getLocation(),
+                  member + " is both SENCHA_RUNTIME and SENCHA_UNSAVED: a field in no record form "
+                  "belongs in no schema");
+            return;
+        }
+        const std::string annotation = out.Runtime ? "SENCHA_RUNTIME" : "SENCHA_UNSAVED";
+        if (!facts.Saved)
+        {
+            Error(field->getLocation(),
+                  member + " is " + annotation + ", but '" + facts.Type + "' is not SENCHA_SAVED, so no "
+                  "save holds it");
+        }
+        if (!out.HasDefault)
+        {
+            Error(field->getLocation(),
+                  member + " is " + annotation + " and has no member initializer: a record that leaves "
+                  "it out reads it as its default");
+        }
+        if (out.Runtime && !out.AssetRef.empty())
+        {
+            Error(field->getLocation(),
+                  member + " is SENCHA_RUNTIME and an asset reference: an asset is content's to name");
+        }
     }
 
     // A member refers to one asset in one way; a second binding is a mistake,
@@ -989,6 +1026,8 @@ void EmitField(std::ostream& out, const ComponentFacts& component, const FieldFa
     if (field.OwnerOnly)  out << "\n                .OwnerOnly()";
     if (field.OwnerLocal) out << "\n                .OwnerLocal()";
     if (field.LocalOnly)  out << "\n                .LocalOnly()";
+    if (field.Runtime)    out << "\n                .Runtime()";
+    if (field.Unsaved)    out << "\n                .Unsaved()";
     if (!field.Label.empty())   out << "\n                .Label(" << Quoted(field.Label) << ")";
     if (!field.Tooltip.empty()) out << "\n                .Tooltip(" << Quoted(field.Tooltip) << ")";
     out << ",\n";

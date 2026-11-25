@@ -56,20 +56,41 @@ enum class NavDestinationKind : std::uint8_t
     Entity,
 };
 
+template <>
+struct EnumSchema<NavDestinationKind>
+{
+    static constexpr std::array Values = {
+        EnumValue{ NavDestinationKind::None, "none" },
+        EnumValue{ NavDestinationKind::Point, "point" },
+        EnumValue{ NavDestinationKind::Entity, "entity" },
+    };
+};
+
 // The agent's current order. Written only through RequestNavigation and
-// CancelNavigation; the follower reads it.
-struct SENCHA_COMPONENT("sencha.navigation.agent_request") NavAgentRequest
+// CancelNavigation; the follower reads it. A save keeps the order, and a loaded
+// order takes an id of its own.
+struct SENCHA_COMPONENT("sencha.navigation.agent_request")
+       SENCHA_SCHEMA("Nav Agent Request")
+       SENCHA_SCENE_CHUNK("NAGR")
+       SENCHA_SAVED
+NavAgentRequest
 {
     NavRequestId Id;
+    SENCHA_FIELD("kind") SENCHA_RUNTIME
     NavDestinationKind Kind = NavDestinationKind::None;
     // Entity only: keep tracking the target after arriving instead of ending.
+    SENCHA_FIELD("follow") SENCHA_RUNTIME
     bool Follow = false;
+    SENCHA_FIELD("point") SENCHA_RUNTIME
     Vec3d Point = Vec3d::Zero();
-    EntityId Target;
+    SENCHA_FIELD("target") SENCHA_RUNTIME
+    EntityId Target{};
     // Metres; zero means the nav.agent.arrive_radius default.
+    SENCHA_FIELD("arrive_radius") SENCHA_RUNTIME
     float ArriveRadius = 0.0f;
     // In (0, 1]: the fraction of the agent's top speed it walks at. Anything
     // else is full speed.
+    SENCHA_FIELD("speed_scale") SENCHA_RUNTIME
     float SpeedScale = 1.0f;
 };
 
@@ -213,4 +234,11 @@ template <>
 struct ComponentTraits<NavAgent> : SchemaAssetOwnership<NavAgent>
 {
     using DerivedComponents = std::tuple<NavAgentRequest, NavAgentProgress>;
+};
+
+// An order added with a destination and no id, as a load adds one, takes one.
+template <>
+struct ComponentTraits<NavAgentRequest>
+{
+    static void OnAdd(NavAgentRequest& order, World& world, EntityId entity);
 };

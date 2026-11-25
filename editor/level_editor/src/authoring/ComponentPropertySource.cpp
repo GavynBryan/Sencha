@@ -236,7 +236,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
     for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
-        if (id == InvalidComponentId)
+        if (id == InvalidComponentId || !serializer->Authorable())
             continue;
         const std::string key(serializer->JsonKey());
         const bool maintained = IsMaintainedComponent(key);
@@ -811,7 +811,8 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     {
         for (const auto& serializer : EditorSceneSerializers().Entries())
         {
-            if (!serializer->IsRemovable() || IsMaintainedComponent(serializer->JsonKey()) || serializer->JsonKey() != choice)
+            if (!serializer->IsRemovable() || !serializer->Authorable() || IsMaintainedComponent(serializer->JsonKey())
+                || serializer->JsonKey() != choice)
                 continue;
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId)

@@ -163,7 +163,7 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     World& world = Components();
     for (const auto& serializer : EditorSceneSerializers().Entries())
     {
-        if (!serializer->RuntimeFields().empty())
+        if (!serializer->RuntimeFields().empty() || !serializer->Authorable())
             continue;
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
         const ComponentMeta* meta = id != InvalidComponentId ? world.GetMeta(id) : nullptr;

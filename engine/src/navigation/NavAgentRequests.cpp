@@ -1,6 +1,8 @@
 #include <navigation/NavAgentRequests.h>
 
+#include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
+#include <world/identity/PendingReferences.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +18,7 @@ namespace
             return {};
         order.Id.Value = current->Id.Value + 1 != 0 ? current->Id.Value + 1 : 1;
         *current = order;
+        ForgetPendingReferences(world, agent, ResolveComponentTypeId<NavAgentRequest>());
         return order.Id;
     }
 
@@ -23,6 +26,12 @@ namespace
     {
         return std::isfinite(value) ? value : fallback;
     }
+}
+
+void ComponentTraits<NavAgentRequest>::OnAdd(NavAgentRequest& order, World&, EntityId)
+{
+    if (order.Kind != NavDestinationKind::None && !order.Id.IsValid())
+        order.Id.Value = 1;
 }
 
 NavRequestId RequestNavigation(World& world, EntityId agent, const NavDestination& destination)

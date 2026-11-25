@@ -9,12 +9,15 @@
 #include <core/config/EngineConfig.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <logic/decision/DecisionAgentSystem.h>
 #include <logic/selection/SelectionTableData.h>
 #include <perception/ObservationMemory.h>
 #include <runtime/RuntimeFrameLoop.h>
+#include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -72,6 +75,7 @@ namespace
             Act = abilities.Define(kAct, AbilityDefinition{});
             Idle = abilities.Define(kIdle, AbilityDefinition{});
             Entities.AddResource<AbilityRequestQueue>();
+            (void)Entities.AddResource<GameplayTagRegistry>().RegisterTag("test.hostile");
 
             Profile.Table = std::string(kTablePath);
             Profile.Options = { DecisionOptionPlan{ .Option = "act", .Ability = std::string(kAct) },
@@ -155,4 +159,74 @@ TEST(DecisionAgents, DecidesOnlyAsOftenAsItsProfileSays)
     const std::uint32_t inASecond = world.Entities.TryGet<DecisionAgent>(agent)->Decisions;
     EXPECT_GE(inASecond, 1u);
     EXPECT_LE(inASecond, 2u);
+}
+
+namespace
+{
+    EntityId Loaded(AgentWorld& world, const DecisionAgent& saved)
+    {
+        const EntityId writer = world.Entities.CreateEntity();
+        world.Entities.AddComponent<DecisionAgent>(writer, saved);
+        ComponentSerializer<DecisionAgent> agents;
+        SceneSerializationContext context(world.Logging);
+        context.Purpose = SceneRecordPurpose::Save;
+        JsonWriteArchive writing;
+        EXPECT_TRUE(agents.Save(writing, writer, world.Entities, context));
+        const JsonValue record = writing.TakeValue();
+        world.Entities.DestroyEntity(writer);
+        world.Step(13);
+
+        const EntityId agent = world.Agent();
+        JsonReadArchive reading(record);
+        EXPECT_TRUE(agents.LoadIntoWorld(reading, agent, world.Entities, context));
+        return agent;
+    }
+
+    void FollowLastSeen(AgentWorld& world)
+    {
+        world.Profile.Hostile = "test.hostile";
+        world.Profile.Options[0].ToLastSeen = true;
+    }
+}
+
+TEST(DecisionAgents, AnAgentEngagedWhenSavedHeadsForItsLastContactAfterALoadAndTakesItsTargetAgain)
+{
+    AgentWorld world;
+    FollowLastSeen(world);
+    DecisionAgent saved;
+    saved.Engaged = true;
+    saved.ContactPosition = Vec3d(6.0f, 0.0f, -3.0f);
+    saved.SecondsSinceContact = 2.0f;
+    const EntityId agent = Loaded(world, saved);
+
+    world.Step(60);
+    const DecisionAgent& state = *world.Entities.TryGet<DecisionAgent>(agent);
+    ASSERT_TRUE(state.HasDestination) << world.Agents->Describe(agent);
+    EXPECT_FLOAT_EQ(state.Destination.X, 6.0f);
+    EXPECT_FLOAT_EQ(state.Destination.Z, -3.0f);
+    EXPECT_FALSE(state.Target.IsValid());
+
+    const EntityId target = world.Entities.CreateEntity();
+    GameplayTagContainer hostile;
+    (void)hostile.Grant(world.Entities.GetResource<GameplayTagRegistry>().FindTag("test.hostile"));
+    world.Entities.AddComponent<GameplayTagContainer>(target, hostile);
+    ObservationMemory& memory = *world.Entities.TryGet<ObservationMemory>(agent);
+    memory.Entries[0] = ObservationMemoryEntry{};
+    memory.Entries[0].Subject = target;
+    memory.Entries[0].Position = Vec3d(8.0f, 0.0f, -3.0f);
+    memory.Entries[0].Confidence = 1.0f;
+    memory.Count = 1;
+    world.Step(60);
+    EXPECT_EQ(world.Entities.TryGet<DecisionAgent>(agent)->Target, target) << world.Agents->Describe(agent);
+}
+
+TEST(DecisionAgents, AnAgentIdleWhenSavedIsIdleAfterALoad)
+{
+    AgentWorld world;
+    FollowLastSeen(world);
+    const EntityId agent = Loaded(world, DecisionAgent{});
+    world.Step(60);
+    const DecisionAgent& state = *world.Entities.TryGet<DecisionAgent>(agent);
+    EXPECT_FALSE(state.Engaged);
+    EXPECT_FALSE(state.HasDestination) << world.Agents->Describe(agent);
 }

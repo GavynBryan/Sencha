@@ -17,6 +17,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/HeldRecords.h>
+#include <world/identity/PendingReferences.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 #include <zone/ZoneStateStore.h>
@@ -162,6 +163,8 @@ void LevelChange::Commit()
     world.SetResource(LevelArrival{ .Name = request.Arrival(), .Spawning = Released, .Kept = std::move(kept) });
     if (RestoredBodies* restored = world.TryGetResource<RestoredBodies>())
         *restored = RestoredBodies{};
+    if (PendingReferences* pending = world.TryGetResource<PendingReferences>())
+        pending->Clear();
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {

@@ -76,13 +76,14 @@ The engine's `Identity` components are `PersistentIdComponent` and
 `SceneInstance`. Its `Saved` ones are `GameplayTagContainer` (the baseline),
 `AttributeSet` (the bases), `AbilityGrants` (the lasting kinds),
 `EquipmentState`, `Responses`, `Counter`, `ItemEntry`, `ItemContainer`,
-`ItemPickup`, `Held`, `LookOrientation` and `RigidBody` (velocities and sleep
-included, `docs/physics/rigid-bodies.md`). Everything else is `Authored`,
+`ItemPickup`, `Held`, `LookOrientation`, `RigidBody` (velocities and sleep
+included, `docs/physics/rigid-bodies.md`), and the character and actor state
+of "Characters and actors": `KinematicState`, `CharacterMovement`,
+`DecisionAgent` and `NavAgentRequest`. Everything else is `Authored`,
 including `LocalTransform` (a level entity's is kept only by its placement,
-"Placement"), `CharacterMovement` (so a body saved on a ladder
-comes back in the default mode), meshes, colliders and lights. Which part of
-a `Saved` component is durable stays inside its serializer: its scene form is
-its saved form.
+"Placement"), meshes, colliders and lights. Which part of a `Saved` component
+is durable is its serializer's: a generated one writes its fields as "Run-time
+fields" says, and a hand-written one decides itself.
 
 Saved is opt-in, like `SENCHA_FIELD` and `SENCHA_REPLICATED`, so session state
 stays out of saves without a list; the cost is that a game component nobody
@@ -99,6 +100,36 @@ The declaration is read in three places:
   travel beside it.
 - **A spawn** strips `Identity` components from a prefab
   (`SmapPackageOptions::StripAuthoredIdentity`).
+
+### Run-time fields
+
+`SENCHA_FIELD` makes a member part of the scene form, a tool's row, the wire
+form when the component travels, and the saved form when it is `Saved`.
+Config and run-time state share one component often enough (a combatant's
+authored profile beside its rallied flag, a character's capsule state beside a
+tether that will not exist after a load) that two cases need saying apart, per
+field, on a `SENCHA_SAVED` component (`ecs/ComponentAnnotations.h`):
+
+- `SENCHA_RUNTIME`: in the saved form only. A scene written for authoring
+  (`SceneRecordPurpose::Authoring`) leaves it out, and a tool does not offer
+  it: the serializer's `RuntimeFields`, which an inspector, the document's
+  carry of unknown fields and the cooked schema fingerprint read, list only the
+  other fields. A component whose every field is run-time state has no
+  authoring form (`IComponentSerializer::Authorable` is false): an authoring
+  write leaves the whole component out, and Kyusu neither offers it nor shows
+  it as authored; it is listed with what its owner brings.
+- `SENCHA_UNSAVED`: in the scene form as declared, never in a save
+  (`SceneRecordPurpose::Save`), and so never in a default record either.
+
+The wire is not one of these forms: a run-time field travels when its
+component does, under the audience its own annotations give it. So a
+character's velocity stays on the wire to its owner while being run-time
+state, and the replication table does not move.
+
+Either annotation needs a member initializer, since a record that leaves the
+field out reads it as its default; the generator refuses one without, one on a
+component that is not `SENCHA_SAVED`, both on one member, and a run-time asset
+reference.
 
 The console command `save.describe <me | index:generation | persistent id>`
 (`DescribeSavedEntity`, `save/EngineSaveSections.h`) says which of these an
@@ -184,6 +215,60 @@ The rules every caller gets:
   tag), the importer decodes content's form instead and logs a warning naming
   the component. A component the patch added has no content form to fall back
   to, so it still fails the import.
+
+## Entity references
+
+Capture reads and mints nothing, so a saved form can name only an entity that
+already has a persistent id: a level entity was authored with one, a kept
+run-time entity takes one when it is marked, and a body takes one when it is
+assigned in a game that keeps level state ("Bodies"). An `EntityId` field in
+a saved form (`SceneFieldCodec<EntityId>`) is written as its target's
+persistent id when the target has one and as nothing otherwise; a reference to
+anything else could not be followed after a load whatever were written.
+
+A read resolves the id against the World read into. When the target is not
+resident yet, as a body is not until frames after its zone, the field is left
+unset and recorded in `PendingReferences` (`world/identity/PendingReferences.h`),
+which fills it the moment an entity with that id arrives (the
+`PersistentIdComponent` hook the held-record index uses). A waiting reference
+is dropped when its owner dies and at every level change, and code that sets
+the component afresh forgets it (`ForgetPendingReferences`). The resource is
+made by the first reference a load leaves waiting, so a game that never loads
+one pays a null check per identified entity made. Where an owner must not give
+up on a reference while it waits, it asks `Awaits` (a navigation order,
+"Characters and actors").
+
+## Characters and actors
+
+What a character and an actor are doing comes back after a load, each as its
+own saved form against its default record (an owed component's default is in
+a level entity's baseline, so one at rest writes nothing):
+
+- **Velocity.** `KinematicState`'s velocity is a run-time field. A quicksave
+  mid-jump continues the arc: a body or character built with a
+  `KinematicState` takes it as its first velocity.
+- **Movement mode.** `CharacterMovement` is `Saved`, and its serializer writes
+  the mode by name only when no `LocomotionModeLease` on the entity names it.
+  A mode a character is simply in (crouched, a stance) comes back; a mode a
+  holder put it in does not, since the holder is not restored (a body saved on
+  a ladder comes back free).
+- **Alertness.** `DecisionAgent` keeps its engagement and last contact
+  (`docs/gameplay/decision-agent.md`); a loaded agent starts its clock and
+  chooses again from what it last knew, and perception finds its target again.
+- **Orders.** `NavAgentRequest` keeps its order and takes a fresh id when it is
+  read; a follow order on a body that lands later is held, not lost
+  (`docs/navigation/runtime.md`, "Orders"). The route is planned again.
+- **Place and facing.** A `CharacterController` holds placement ("Placement");
+  `LookOrientation` is saved.
+
+A save naming an arrival keeps no motion ("Writing"). What a player still
+notices after a quickload (an attack, a reload or an ability in progress,
+animation poses) is listed in `docs/deferred.md`.
+
+A game's own actor state is the game's to tag with these annotations. A corpse
+is the game's saved state too: an entity that stays after death must save that
+it is dead, or a load stands it up idle with no health, and its on-death
+responses may run again.
 
 ## Bodies
 
@@ -402,8 +487,10 @@ the left-out fields at their defaults, to the same effect.
 Which serializers say their saved form follows their row:
 
 - **Generated** (`ComponentSerializer<T>`): when `T` is trivially copyable and
-  no field is an asset reference, an entity reference (`PersistableRef`), or a
-  type whose scene codec writes through a lookup. A codec says it writes from
+  no field is an asset reference, an entity reference (`PersistableRef`, or an
+  `EntityId`, written as its target's id), or a type whose scene codec writes
+  through a lookup. So `KinematicState` and `DecisionAgent` do and
+  `NavAgentRequest` does not. A codec says it writes from
   the value alone with `WrittenFromValue` (`world/serialization/SceneFieldCodec.h`):
   the primary template, the caption enums, inline strings and the stable ids
   (zone, dock, link, nav link, scene instance, asset id, persistent id) do. A
@@ -483,9 +570,10 @@ memory only until it is on disk. `WriteStatus()` moves from `Pending` through
 `RequestWrite(slot, arrival)` and `save.write`'s optional `arrival` name where
 the saved body comes back: the level's `LevelLandmark` of that name
 (`docs/gameplay/game-module.md`, "Arrivals"). With one, the body's record holds
-the name and no transform; velocity and movement mode are not saved either, so
-the body comes back at the landmark, standing, at rest. Without one (a
-quicksave), the record holds where the body stood. A write with an arrival in a
+the name and no transform, and its patch keeps no motion: the `KinematicState`
+and `CharacterMovement` members are left out, so the body comes back at the
+landmark at rest in its prefab's mode, never mid-fall or crouched. Without one
+(a quicksave), the record holds where the body stood and how it was moving. A write with an arrival in a
 world sets the save's focus to the zone the landmark stands in, so a restore
 streams that zone in first even when the player stood in a neighbouring one; a
 landmark that is not loaded when the save is written is logged, the focus stays

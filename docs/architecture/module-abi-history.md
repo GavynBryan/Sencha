@@ -1631,3 +1631,19 @@ zone record, so its layout moves; `Install` takes each zone's `held` list and
 `SavedGames::RestoreHeldLists` are removed: a restore's `held` lists go into
 the zone store and are made when their zones import. The save format does not
 change: the store holds exactly the `held` list a save already wrote.
+
+## v73
+
+`Field` gains `IsRuntime` and `IsUnsaved` (`Runtime()`, `Unsaved()`), and the
+generator emits them for `SENCHA_RUNTIME` and `SENCHA_UNSAVED`
+(`kComponentCodegenFormatVersion` 3). `IComponentSerializer` gains
+`Authorable`, so its vtable grows. `SceneSerializationContext` gains
+`Entities` and `Unresolved`, so its layout moves; `UnresolvedEntityReference`
+and `SceneFieldCodec<EntityId>` are new. `world/identity/PendingReferences.h`
+is new. `KinematicState`, `DecisionAgent` and `NavAgentRequest` gain scene
+chunks and are `Saved`, `CharacterMovement` is `Saved`, `NavAgentRequest::Target`
+gains an initializer and `ComponentTraits<NavAgentRequest>` an `OnAdd`; no
+layout of these moves. The save format and the net protocol do not change:
+the new members are patch members against default records, and run-time
+fields travel exactly as they did (`docs/gameplay/saves.md`, "Run-time
+fields").

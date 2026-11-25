@@ -685,7 +685,11 @@ New component:
    there, so state a player must keep is annotated and session state is not
    (`docs/gameplay/saves.md`, "What a save holds of an entity"). A hand-written
    serializer derived from `TypedComponentSerializer` reads the same
-   annotation off its component.
+   annotation off its component. On a `SENCHA_SAVED` component two field
+   annotations split the forms: `SENCHA_RUNTIME` is in the saved form only,
+   never authored and never offered by tools, and `SENCHA_UNSAVED` is in the
+   scene form only; either needs a member initializer
+   (`docs/gameplay/saves.md`, "Run-time fields").
 4. List the header under `sencha_generate_component_metadata(...)` in the
    owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
    `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of

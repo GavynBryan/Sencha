@@ -332,3 +332,26 @@ TEST(ComponentPropertySource, WhatTheEditorKeepsIsShownButNeverEdited)
     EXPECT_EQ(f.Components().TryGet<GeneratedWall>(f.Entity)->Slot, 7u);
     EXPECT_FALSE(f.Commands.CanUndo());
 }
+
+TEST(ComponentPropertySource, AComponentOfRunTimeFieldsAloneIsNeitherOfferedNorShownAsAuthored)
+{
+    Fixture f;
+    const std::vector<PropertyNode> before = f.Source.Nodes();
+    const PropertyVerb& add = before.front().Descriptor.Verbs.front();
+    EXPECT_EQ(std::ranges::find(add.ChoiceKeys, "KinematicState"), add.ChoiceKeys.end());
+    EXPECT_EQ(std::ranges::find(add.ChoiceKeys, "DecisionAgent"), add.ChoiceKeys.end());
+    EXPECT_EQ(f.Source.Act("components", "add", "KinematicState"), PropertyEditResult::Refused) << "nor added";
+
+    ASSERT_EQ(f.Source.Act("components", "add", "CharacterMovement"), PropertyEditResult::Applied);
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    EXPECT_EQ(std::ranges::find(nodes, std::string("KinematicState"), &PropertyNode::Key), nodes.end())
+        << "a component content cannot author is shown as one it can";
+    const PropertyNode& derived = nodes.back();
+    ASSERT_EQ(derived.Key, "derived");
+    bool listed = false;
+    for (const PropertyNode& from : derived.Children)
+        for (const PropertyNode& row : from.Children)
+            listed = listed || row.Descriptor.Label.find("Kinematic") != std::string::npos
+                  || row.Key.find("kinematic") != std::string::npos;
+    EXPECT_TRUE(listed) << "what character movement owes lists its velocity";
+}

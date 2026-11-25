@@ -59,6 +59,15 @@ struct SceneFieldCodec
     }
 };
 
+// Written as the target's persistent id or as nothing, never minting one; a read
+// leaves a target not resident yet in Unresolved (docs/gameplay/saves.md).
+template<>
+struct SceneFieldCodec<EntityId>
+{
+    static bool Save(IWriteArchive&, std::string_view, const EntityId&, SceneSerializationContext&);
+    static bool Load(IReadArchive&, std::string_view, EntityId&, SceneSerializationContext&);
+};
+
 // Caption enums persist as author-readable strings ("Subtitle", not 1) in
 // both text and binary. Unknown strings fail the load — a typo'd kind in
 // scene content should surface at load, not silently default.

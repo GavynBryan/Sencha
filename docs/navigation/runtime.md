@@ -240,6 +240,16 @@ an order failed, and `LastQuery` keeps the last search's own status apart from
 it: a crossing that fails with no way round is `TraversalFailed` with
 `LastQuery = NoPath`.
 
+A save keeps the order (`docs/gameplay/saves.md`, "Characters and actors"):
+its kind, point, target, whether it follows, its arrive radius and speed
+scale, all run-time fields, and not its id. A loaded order with a destination
+and no id takes one as it is added (`ComponentTraits<NavAgentRequest>::OnAdd`),
+so the follower adopts it; its route is planned again. A loaded entity target
+not resident yet (a body lands frames after its zone) is awaited in
+`PendingReferences`, and while it is, the sweep and the planner hold the order
+in `Planning` instead of ending it as `TargetLost`. A new order forgets what
+the load left waiting.
+
 ### Who writes `MovementIntent`
 
 An agent's intent producer is chosen by its state. An entity tagged
