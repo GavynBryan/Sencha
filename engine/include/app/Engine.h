@@ -78,6 +78,7 @@ struct PlatformServices;
 class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
+class GainedMemberSpawns;
 class EngineVocabularyBindings;
 class RuntimeResumeOperation;
 class ApplicationQuitOperation;
@@ -648,6 +649,7 @@ private:
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     // Constructed with the world; torn down before it (they borrow the world).
     std::unique_ptr<SceneSpawnService> SpawnServiceState;
+    std::unique_ptr<GainedMemberSpawns> GainedSpawnState;
     std::unique_ptr<NetPrefabSpawner> NetPrefabState;
     // The authored half. The catalog is a resource of the world above; this is
     // the executable side of it, composed by the host and given back before the

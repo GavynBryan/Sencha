@@ -79,8 +79,9 @@ The engine's `Identity` components are `PersistentIdComponent` and
 `ItemPickup`, `Held`, `LookOrientation`, `RigidBody` (velocities and sleep
 included, `docs/physics/rigid-bodies.md`), and the character and actor state
 of "Characters and actors": `KinematicState`, `CharacterMovement`,
-`DecisionAgent` and `NavAgentRequest`, and `AppliedEffects` ("Lasting
-effects"). Everything else is `Authored`,
+`DecisionAgent` and `NavAgentRequest`, `AppliedEffects` ("Lasting
+effects"), and a kept projectile's `ProjectileMotion` and `ProjectileFlight`
+(`docs/gameplay/projectiles.md`, "Kept in a save"). Everything else is `Authored`,
 including `LocalTransform` (a level entity's is kept only by its placement,
 "Placement"), meshes, colliders and lights. Which part of a `Saved` component
 is durable is its serializer's: a generated one writes its fields as "Run-time
@@ -480,13 +481,29 @@ lands").
 
 - **Capture.** With the zone's capture, at detach and for a save, on the
   authority and only when the game keeps level state, every live marked entity
-  of the zone (its partition, or a world scene's entities) is written whole:
-  its runtime persistent id and its entity record (`WriteEntityRecord` for
-  `Authored` and `Saved` components, `LocalTransform` included, `Identity`
-  ones beside it), the held record's form. The zone's `gained` list is exactly
-  the marked entities alive at that capture, so one taken or destroyed since
-  is simply absent. Only the entity itself is written; one with children
-  loses them (`docs/deferred.md`, "A body's children").
+  of the zone (its partition, or a world scene's entities) is written in one of
+  two forms, each its runtime persistent id and then JSON text:
+  - `from_source`, for the root of a scene instance whose source resolves (a
+    prefab spawn: a grenade, a bloodstain): the source's asset id, the root's
+    transform, and the entity patch from the source's root to the entity, over
+    `Saved` components, exactly as a body is kept ("Bodies"). The lookup is the
+    body's (`SpawnSourcePackage`, `runtime/spawn/SceneSpawnOverlay.h`), which
+    `ZoneStateSerialization::SourcePackage` gives the zone's capture, built once
+    per source per capture. A value the patch does not name follows the prefab,
+    so a retuned prefab reaches the member, and its children come back with it
+    because the whole prefab is spawned again; what the children carry is not
+    saved (`docs/deferred.md`, "Saving what was created at run time").
+  - `whole`, for anything else (a pickup a drop made in code): its entity
+    record (`WriteEntityRecord` for `Authored` and `Saved` components,
+    `LocalTransform` included, `Identity` ones beside it), the held record's
+    form. Only the entity itself is written; one with children loses them. A
+    scene instance root whose source no longer resolves is written whole from
+    then on, with an error naming it that says a whole record does not hold its
+    children: the one place the two forms differ in what they keep.
+
+  The zone's `gained` list is exactly the marked entities alive at that
+  capture, and the members whose spawn has not landed yet (below), so one taken
+  or destroyed since is simply absent.
 - **Lifetime.** A marked entity without a `ZoneStateLifetime` is never
   forgotten. One carrying the component follows it: `at_restore` is kept
   across its zone's unload and forgotten at a restore and not written to a
@@ -500,21 +517,40 @@ lands").
   an `at_restore` gained entity holds is not written to a save, since the
   entity is not.
 - **Restore.** When the zone imports, inside its hidden import, after its
-  authored entities exist and its authored set is recorded, each member is
-  made in the zone's partition with its id and the marker, then its record is
-  read (`ReadEntityRecord`); the records the zone holds are made after every
-  member. Being before the zone is published, residency systems see gained
-  entities arrive with their zone. A member that does not read whole is
-  dropped from the store and logged as an error naming it and the component;
-  the records it held are then dropped as records whose holder did not arrive,
-  logged with their count, rather than left waiting for it. A member
-  naming an authored id is refused the same way; one whose id a live entity
-  already has is left in the store and not made. A client imports its zone
-  as authored and makes none.
+  authored entities exist and its authored set is recorded, each `whole`
+  member is made in the zone's partition with its id and the marker, then its
+  record is read (`ReadEntityRecord`); the records the zone holds are made
+  after every member. Being before the zone is published, residency systems
+  see whole members arrive with their zone. A member that does not read whole
+  is dropped from the store and logged as an error naming it and the
+  component; the records it held are then dropped as records whose holder did
+  not arrive, logged with their count, rather than left waiting for it. A
+  member naming an authored id is refused the same way; one whose id a live
+  entity already has is left in the store and not made. A client imports its
+  zone as authored and makes none.
+- **A member from its source lands later**, as a body does. The import puts it
+  in `GainedSpawnRequests` (`zone/GainedSpawnRequests.h`), and the engine's
+  `GainedMemberSpawns` (`runtime/spawn/GainedMemberSpawns.h`), at the async
+  drain, asks the spawn service for it once its zone is attached: the source
+  into the zone's partition with the patch composed over its root and the
+  member's id given to the root at publication. The pump that publishes it is
+  followed at once by marking the root kept and standing it at its saved
+  transform, so no capture sees it unmarked. Until then a capture keeps the
+  member as it was read, and a record it holds waits for it in the zone's
+  partition instead of being dropped (`docs/gameplay/held-records.md`,
+  "Import"); a detach before it lands keeps both, and withdraws the spawn. A
+  member whose spawn fails, or that publishes without a root it can keep, is
+  dropped from the store and logged, and so are the records it held. Every
+  level change forgets the requests, as it forgets `PendingReferences`.
+
+A kept projectile is a member saved from its source; only a prefab that says
+`kept` makes one (`docs/gameplay/projectiles.md`, "Kept in a save").
 
 A game that marks nothing pays one component test per identified entity of a
-zone at each capture. A marked entity costs one whole-record write per capture
-in which its rows changed ("Capture at scale") and one read per attach
+zone at each capture. A marked entity costs one write per capture in which its
+rows changed ("Capture at scale"): its whole record, or for a member from its
+source a patch against a prefab package built once per source per capture. A
+whole member costs one read per attach, a member from its source one spawn
 (`docs/plans/evidence/level-state/results.md`).
 
 ## Capture at scale
@@ -560,8 +596,8 @@ Which serializers say their saved form follows their row:
 - **Generated** (`ComponentSerializer<T>`): when `T` is trivially copyable and
   no field is an asset reference, an entity reference (`PersistableRef`, or an
   `EntityId`, written as its target's id), or a type whose scene codec writes
-  through a lookup. So `KinematicState` and `DecisionAgent` do and
-  `NavAgentRequest` does not. A codec says it writes from
+  through a lookup. So `KinematicState` and `DecisionAgent` do, and
+  `NavAgentRequest`, `ProjectileFlight` and `ProjectileMotion` do not. A codec says it writes from
   the value alone with `WrittenFromValue` (`world/serialization/SceneFieldCodec.h`):
   the primary template, the caption enums, inline strings and the stable ids
   (zone, dock, link, nav link, scene instance, asset id, persistent id) do. A
@@ -775,18 +811,21 @@ stays parsed while it is away, since that state is not in the blob. The known li
 | `destroyed` | count, then each id |
 | `changed` | count, then each id and its patch as JSON text, members in key order |
 | `held` | count, then each record's id and its components as JSON text |
-| `gained` | count, then each member as a length, a form name and a payload: `whole` members by id, after any member of a form this build does not make |
+| `gained` | count, then each member as a length, a form name and a payload: `whole` and `from_source` members by id, after any member of a form this build does not make |
 | `occupied` | count, then each sensor's id and its occupant's id, sorted; a pair is forgotten with its sensor |
 
 A list whose name this build does not know is kept as bytes and written back.
 A known list at a newer version than this build reads makes the file one a
 newer build wrote: the restore is refused with that reason before anything
-changes, as a newer known chunk is. This build makes one `gained` form,
-`whole`: a 64-bit runtime persistent id, then the entity record as
-length-prefixed JSON text, the form a `held` record's entry takes. A later
-layout is a new form name, not a new version of this one. A member whose form
-this build does not make is kept as bytes, written back unchanged before the
-members it makes, made into nothing, and logged when its zone imports.
+changes, as a newer known chunk is. This build makes two `gained` forms, each a
+64-bit runtime persistent id, then length-prefixed JSON text
+(`EncodeGainedMember`): `whole`, whose text is the entity record, the form a
+`held` record's entry takes; and `from_source`, whose text is `{source, root,
+patch}`. A later layout is a new form name, not a new version of one. A member
+whose form this build does not make is kept as bytes, written back unchanged
+before the members it makes, made into nothing, and logged when its zone
+imports; so a build that made only `whole` carries a `from_source` member
+untouched.
 
 A file whose format version is newer, or that holds a newer version of a chunk
 or a list this build reads, is refused as written by a newer build
@@ -871,8 +910,8 @@ Autosave rotation, quicksave naming and the menu itself are the game's.
 
 ## Not yet
 
-Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, a body's children and other participants'
-bodies and what they hold, a run-time entity nothing marked (a spawned NPC),
-a gained entity saved as its prefab and a patch, carrying an entity other than
-the body across a level change, a capture spread over frames or taken off the
-owner thread, and restoring inside a network session.
+Recorded in `docs/deferred.md`: a thumbnail of the last presented frame, what
+a body's or a member's children carry, other participants' bodies and what
+they hold, a run-time entity nothing marked (a spawned NPC), carrying an
+entity other than the body across a level change, a capture spread over frames
+or taken off the owner thread, and restoring inside a network session.

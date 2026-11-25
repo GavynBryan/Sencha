@@ -252,6 +252,14 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
             world.IsAlive(holder) ? world.TryGet<PersistentIdComponent>(holder) : nullptr;
         if (identity == nullptr)
             continue;
+        if (const PersistentEntityId awaited = index->AwaitedHolderOf(holder); awaited.IsValid())
+        {
+            const ZoneStateForgetting forgotten =
+                writes ? memory->ForgettingOf(scope, awaited) : ZoneStateForgetting::AtDetach;
+            if (forgotten != ZoneStateForgetting::AtDetach && !HasAuthoredPersistentId(world, holder))
+                (forgotten == ZoneStateForgetting::Never ? durable : session).push_back(holder);
+            continue;
+        }
         const PersistentEntityId id = identity->Id;
         const std::span<const EntityId> held = index->RecordsOf(holder);
         const bool authored = IsAuthoredPersistentEntityId(id);
@@ -289,6 +297,21 @@ void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityI
         for (auto record = closure->rbegin(); record != closure->rend(); ++record)
             if (world.IsAlive(*record))
                 world.DestroyEntity(*record);
+}
+
+std::size_t DropRecordsAwaiting(World& world, PersistentEntityId holder)
+{
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr || !holder.IsValid())
+        return 0;
+    std::size_t dropped = 0;
+    for (const EntityId record : index->AwaitingRecords())
+        if (world.IsAlive(record) && index->AwaitedHolderOf(record) == holder)
+        {
+            world.DestroyEntity(record);
+            ++dropped;
+        }
+    return dropped;
 }
 
 void SetAsideHeldRecords(World& world, ZoneStateLevelId level)

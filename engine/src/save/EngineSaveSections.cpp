@@ -2,10 +2,7 @@
 
 #include <app/Engine.h>
 #include <app/RuntimeContent.h>
-#include <assets/runtime/AssetSystem.h>
 #include <assets/runtime/RuntimeAssets.h>
-#include <assets/scene/SceneCache.h>
-#include <core/assets/AssetLease.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/Serialize.h>
@@ -16,6 +13,7 @@
 #include <movement/components/CharacterMovement.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <runtime/spawn/SceneSpawnOverlay.h>
 #include <save/HeldRecordSaves.h>
 #include <save/SavedGames.h>
 #include <world/RuntimeWorld.h>
@@ -23,7 +21,6 @@
 #include <world/held/Held.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
-#include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -43,19 +40,10 @@ namespace
     std::optional<EntityBuildPackage> PrefabOf(Engine& engine, const World& world, EntityId body)
     {
         const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(body) : nullptr;
+        if (instance == nullptr)
+            return std::nullopt;
         RuntimeAssets& assets = engine.Content().Assets();
-        const AssetRecord* record = instance != nullptr ? assets.Registry.FindById(instance->Source) : nullptr;
-        if (record == nullptr)
-            return std::nullopt;
-        const AssetLease lease = assets.Assets.LoadLease(record->Path, AssetType::Scene);
-        const SmapContents* contents =
-            lease.IsValid() ? assets.Scenes.Get(SceneHandle::FromToken(lease.OpaqueToken())) : nullptr;
-        EntityBuildPackage prefab;
-        if (contents == nullptr
-            || !BuildEntityPackageFromSmap(*contents, engine.SceneSerializers(), prefab,
-                                           SmapPackageOptions{ .StripAuthoredIdentity = true }))
-            return std::nullopt;
-        return prefab;
+        return SpawnSourcePackage(assets.Assets, assets.Scenes, engine.SceneSerializers(), instance->Source);
     }
 
     void LeaveOutMotion(JsonValue& patch)

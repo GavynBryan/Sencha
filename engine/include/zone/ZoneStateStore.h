@@ -1,9 +1,11 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/LevelReference.h>
+#include <world/build/EntityBuildPackage.h>
 #include <world/serialization/EntityPatch.h>
 #include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneId.h>
@@ -13,6 +15,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -69,6 +73,8 @@ struct ZoneStateSerialization
 {
     const ComponentSerializerRegistry* Serializers = nullptr;
     SceneSerializationContext* Context = nullptr;
+    // What a spawn of the scene builds, for a gained member saved from its source; nothing when it does not resolve.
+    std::function<std::optional<EntityBuildPackage>(AssetId)> SourcePackage = {};
 };
 
 enum class ZoneCapture : std::uint8_t

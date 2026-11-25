@@ -10,6 +10,9 @@
 
 class World;
 
+// Whether the game keeps level state (SavedGames::KeepLevelState): docs/gameplay/saves.md, "Level entities".
+[[nodiscard]] bool KeepsLevelState(const World& world);
+
 // Alive entities carrying a persistent id, in `partition`.
 [[nodiscard]] std::vector<EntityId> IdentifiedEntitiesIn(World& world, StoragePartitionId partition);
 

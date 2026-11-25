@@ -2325,7 +2325,7 @@ TEST(SavedGames, AnItemDroppedInTheFirstLevelIsInASaveWrittenInTheSecondAndAFres
     const std::vector<GainedZoneMember> gained = GainedIn(first->Zones[0]);
     ASSERT_EQ(gained.size(), 1u) << "the first level's zone holds what it gained";
     EXPECT_EQ(gained[0].Form, kWholeGainedForm);
-    EXPECT_EQ(WholeGainedMemberId(gained[0].Payload), dropped.Pickup);
+    EXPECT_EQ(GainedMemberId(gained[0].Payload), dropped.Pickup);
     const std::vector<ZoneListEntity> held = ZoneEntities(first->Zones[0].Held, kHeldZoneList);
     ASSERT_EQ(held.size(), 1u) << "and the dropped entry beside it";
     EXPECT_EQ(held[0].Id, dropped.Entry);

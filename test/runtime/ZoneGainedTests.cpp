@@ -193,7 +193,7 @@ TEST(ZoneGainedForm, AWholeMemberIsItsIdThenItsRecordAsText)
 {
     const ZoneListEntity entity{ PersistentEntityId{ PersistentEntityIdRuntimeBit | 7 },
                                  *JsonParse(R"({"ItemPickup":{}})") };
-    const std::vector<std::byte> payload = EncodeWholeGainedMember(entity);
+    const std::vector<std::byte> payload = EncodeGainedMember(entity);
     const std::string text = R"({"ItemPickup":{}})";
     ASSERT_EQ(payload.size(), sizeof(std::uint64_t) + sizeof(std::uint32_t) + text.size());
     std::uint64_t id = 0;
@@ -204,13 +204,13 @@ TEST(ZoneGainedForm, AWholeMemberIsItsIdThenItsRecordAsText)
     EXPECT_EQ(length, text.size());
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(payload.data()) + sizeof(id) + sizeof(length), length), text);
 
-    const std::optional<ZoneListEntity> read = DecodeWholeGainedMember(payload);
+    const std::optional<ZoneListEntity> read = DecodeGainedMember(payload);
     ASSERT_TRUE(read.has_value());
     EXPECT_EQ(read->Id, entity.Id);
-    EXPECT_EQ(WholeGainedMemberId(payload), entity.Id);
+    EXPECT_EQ(GainedMemberId(payload), entity.Id);
     std::vector<std::byte> cut = payload;
     cut.pop_back();
-    EXPECT_FALSE(DecodeWholeGainedMember(cut).has_value());
+    EXPECT_FALSE(DecodeGainedMember(cut).has_value());
 }
 
 TEST_F(ZoneGained, ADroppedItemIsThereWithItsEntryAfterItsZoneStreamsOutAndBack)
@@ -310,12 +310,12 @@ TEST_F(ZoneGained, AGameThatKeepsNoLevelStateKeepsNothingAZoneGained)
 
 TEST_F(ZoneGained, AMemberOfAFormThisBuildDoesNotMakeRoundTripsUntouchedBesideAKeptOne)
 {
-    const GainedZoneMember future{ "from_source", { std::byte{ 9 }, std::byte{ 8 }, std::byte{ 7 } } };
+    const GainedZoneMember future{ "future_form", { std::byte{ 9 }, std::byte{ 8 }, std::byte{ 7 } } };
     const ZoneStateList list{ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(std::span(&future, 1)) };
     Store().Install(std::vector{ DurableLevelState{
         kLevel, { DurableZoneState{ kRoom, EncodeZoneLists(std::span(&list, 1)), nullptr } } } });
     Import();
-    EXPECT_EQ(Log.Mentioning(Log.Warnings, "from_source"), 1u);
+    EXPECT_EQ(Log.Mentioning(Log.Warnings, "future_form"), 1u);
     const PersistentEntityId id = IdOf(Drop(4, kSpot));
     Detach();
 
@@ -323,11 +323,11 @@ TEST_F(ZoneGained, AMemberOfAFormThisBuildDoesNotMakeRoundTripsUntouchedBesideAK
     ASSERT_EQ(members.size(), 2u);
     EXPECT_EQ(members[0], future) << "the member this build does not make is written back byte for byte";
     EXPECT_EQ(members[1].Form, kWholeGainedForm);
-    EXPECT_EQ(WholeGainedMemberId(members[1].Payload), id);
+    EXPECT_EQ(GainedMemberId(members[1].Payload), id);
 
     Import();
     EXPECT_TRUE(LiesAt(id, kRoom, kSpot, 4));
-    EXPECT_EQ(Log.Mentioning(Log.Warnings, "from_source"), 2u);
+    EXPECT_EQ(Log.Mentioning(Log.Warnings, "future_form"), 2u);
     Detach();
     EXPECT_EQ(Members().front(), future);
 }
@@ -345,7 +345,7 @@ TEST_F(ZoneGained, AMemberThatDoesNotReadWholeIsDroppedWithWhatItHeldAndReported
     ASSERT_NE(held, nullptr) << "the entry waits in the zone's record";
 
     const GainedZoneMember broken{ std::string(kWholeGainedForm),
-                                   EncodeWholeGainedMember({ id, *JsonParse(R"({"future_lock":{"pins":3}})") }) };
+                                   EncodeGainedMember({ id, *JsonParse(R"({"future_lock":{"pins":3}})") }) };
     const ZoneStateList list{ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(std::span(&broken, 1)) };
     Store().Install(std::vector{ DurableLevelState{
         kLevel, { DurableZoneState{ kRoom, EncodeZoneLists(std::span(&list, 1)), held } } } });
@@ -362,7 +362,7 @@ TEST_F(ZoneGained, AMemberThatDoesNotReadWholeIsDroppedWithWhatItHeldAndReported
 TEST_F(ZoneGained, AMemberNamingAnAuthoredIdIsRefused)
 {
     const GainedZoneMember authored{ std::string(kWholeGainedForm),
-                                     EncodeWholeGainedMember({ kShelf, *JsonParse(R"({"ItemPickup":{}})") }) };
+                                     EncodeGainedMember({ kShelf, *JsonParse(R"({"ItemPickup":{}})") }) };
     const ZoneStateList list{ std::string(kGainedZoneList), kZoneListVersion, EncodeGainedList(std::span(&authored, 1)) };
     Store().Install(std::vector{ DurableLevelState{
         kLevel, { DurableZoneState{ kRoom, EncodeZoneLists(std::span(&list, 1)), nullptr } } } });

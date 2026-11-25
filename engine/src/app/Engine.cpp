@@ -77,6 +77,7 @@
 #include <jobs/JobSystem.h>
 #include <prediction/PawnStateReplay.h>
 #include <runtime/FrameDriver.h>
+#include <runtime/spawn/GainedMemberSpawns.h>
 #include <runtime/spawn/NetPrefabSpawner.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/ComponentRegistrar.h>
@@ -187,6 +188,7 @@ bool Engine::Initialize()
         FrameDriverInstance.reset();
         TaskQueueInstance.reset();
         FramePoolInstance.reset();
+        GainedSpawnState.reset();
         SpawnServiceState.reset();
         RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_VULKAN
@@ -397,6 +399,7 @@ void Engine::Shutdown()
     // Before the world they borrow, and before the asset system whose scenes
     // the prefab spawner holds resident.
     NetPrefabState.reset();
+    GainedSpawnState.reset();
     SpawnServiceState.reset();
     RuntimeWorldState.reset();
 #ifdef SENCHA_ENABLE_DEBUG_UI
@@ -1154,6 +1157,7 @@ int Engine::Run(Game& game)
     SpawnServiceState = std::make_unique<SceneSpawnService>(
         *RuntimeWorldState, RuntimeComponentSchemaState, SceneSerializerRegistry,
         Tasks(), LoggingState);
+    GainedSpawnState = std::make_unique<GainedMemberSpawns>(*RuntimeWorldState, *SpawnServiceState, LoggingState);
     NetPrefabState = std::make_unique<NetPrefabSpawner>(
         RuntimeComponentSchemaState, SceneSerializerRegistry, LoggingState);
 
@@ -1206,6 +1210,7 @@ int Engine::Run(Game& game)
             for (const std::string& error : errors)
                 std::fprintf(stderr, "Vocabulary installation failed: %s\n", error.c_str());
             NetPrefabState.reset();
+            GainedSpawnState.reset();
             SpawnServiceState.reset();
             RuntimeWorldState.reset();
             RetractGameComponents();

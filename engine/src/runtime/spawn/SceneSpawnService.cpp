@@ -234,6 +234,17 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     return record->Id;
 }
 
+SceneSpawnId SceneSpawnService::RequestSpawn(AssetId scene, const Transform3f& root, StoragePartitionId partition,
+                                             SceneSpawnLifetime lifetime, SceneSpawnOverlay overlay)
+{
+    std::string path = Assets != nullptr && scene.IsValid()
+        ? std::string(Assets->ResolveRefPath(scene, std::string_view{}, AssetType::Scene))
+        : std::string();
+    if (path.empty())
+        path = AssetIdToString(scene);
+    return RequestSpawn(path, root, partition, lifetime, std::move(overlay));
+}
+
 bool SceneSpawnService::RequestDespawn(SceneSpawnId id)
 {
     Request* request = FindRequest(id);

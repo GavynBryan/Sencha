@@ -12,6 +12,7 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/TypedComponentSerializer.h>
+#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <algorithm>
@@ -41,8 +42,6 @@ namespace
     {
         std::unordered_map<EntityId, std::vector<KeptEffectRow>, EntityIdHash> Targets;
     };
-
-    bool KeepsLevelState(const World& world) { return world.TryGetResource<ZoneStateSerialization>() != nullptr; }
 
     bool Identified(const World& world, EntityId entity)
     {

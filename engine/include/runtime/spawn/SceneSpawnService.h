@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
 #include <core/identity/StrongId.h>
 #include <runtime/spawn/SceneSpawnOverlay.h>
 #include <ecs/EntityId.h>
@@ -95,6 +96,13 @@ public:
     // its id given to the root once it is published.
     [[nodiscard]] SceneSpawnId RequestSpawn(
         std::string_view sceneAssetPath,
+        const Transform3f& root,
+        StoragePartitionId partition = StoragePartitionId::Default(),
+        SceneSpawnLifetime lifetime = SceneSpawnLifetime::Independent,
+        SceneSpawnOverlay overlay = {});
+    // The same, naming the scene by its stable id.
+    [[nodiscard]] SceneSpawnId RequestSpawn(
+        AssetId scene,
         const Transform3f& root,
         StoragePartitionId partition = StoragePartitionId::Default(),
         SceneSpawnLifetime lifetime = SceneSpawnLifetime::Independent,

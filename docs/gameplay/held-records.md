@@ -165,8 +165,13 @@ differs from its content, and is kept with it:
   relevance. A record whose holder did not arrive (the holder was destroyed, or
   a gained member did not read) is dropped and logged as an error naming the
   holder and the count, so nothing waits for a holder that will never come. A
-  live waiting record is listed under its holder when the holder's identity
-  arrives.
+  record held by a gained member saved from its source waits instead, in the
+  zone's partition: that holder lands a few frames after the zone, when the
+  spawn service publishes it (`docs/gameplay/saves.md`, "What a zone gained"),
+  and the record is listed under it then. If its spawn fails, the record is
+  dropped and logged the same way; if the zone detaches first, the waiting
+  record is written back into the zone's `held` list with the member. A live
+  waiting record is listed under its holder when the holder's identity arrives.
 - **A cancelled import** parks what its hidden partition holds before the
   partition goes (`RuntimeWorld::CancelZoneImport`), as a detach does, so a
   record the import made, or one that moved under a holder in it, is written

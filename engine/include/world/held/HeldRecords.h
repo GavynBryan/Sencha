@@ -1,10 +1,12 @@
 #pragma once
 
+#include <core/identity/Id.h>
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <zone/ZoneStateScope.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -28,6 +30,8 @@ void NoteHeldRecordChanged(World& world, EntityId record);
 void SettleHeldRecords(World& world);
 
 void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityId> holders);
+// Destroys the records waiting for `holder`, which will not arrive; answers how many.
+std::size_t DropRecordsAwaiting(World& world, PersistentEntityId holder);
 
 // A level's waiting records leave every lookup while another level is loaded.
 void SetAsideHeldRecords(World& world, ZoneStateLevelId level);

@@ -354,9 +354,9 @@ TEST_F(HeldRecordParking, RecordsWhoseHolderDoesNotArriveAreDroppedNotLeftWaitin
     ASSERT_NE(gained, lists.end());
     std::vector<GainedZoneMember> members = *DecodeGainedList(gained->Payload);
     ASSERT_EQ(members.size(), 1u);
-    ZoneListEntity member = *DecodeWholeGainedMember(members[0].Payload);
+    ZoneListEntity member = *DecodeGainedMember(members[0].Payload);
     member.Value.AsObject().emplace_back("no_such_component", JsonValue(JsonValue::Object{}));
-    members[0].Payload = EncodeWholeGainedMember(member);
+    members[0].Payload = EncodeGainedMember(member);
     gained->Payload = EncodeGainedList(members);
     saved[0].Zones[0].Lists = EncodeZoneLists(lists);
 

@@ -58,6 +58,11 @@ namespace
     }
 }
 
+bool IsMadeGainedForm(std::string_view form)
+{
+    return form == kWholeGainedForm || form == kSourceGainedForm;
+}
+
 bool IsKnownZoneList(std::string_view name)
 {
     return name == kDestroyedZoneList || name == kChangedZoneList || name == kHeldZoneList || name == kGainedZoneList
@@ -209,7 +214,7 @@ std::optional<std::vector<GainedZoneMember>> DecodeGainedList(std::span<const st
     return members;
 }
 
-std::vector<std::byte> EncodeWholeGainedMember(const ZoneListEntity& entity)
+std::vector<std::byte> EncodeGainedMember(const ZoneListEntity& entity)
 {
     std::ostringstream stream(std::ios::binary);
     BinaryWriter writer(stream);
@@ -217,7 +222,7 @@ std::vector<std::byte> EncodeWholeGainedMember(const ZoneListEntity& entity)
     return ok ? BytesOf(stream) : std::vector<std::byte>{};
 }
 
-std::optional<ZoneListEntity> DecodeWholeGainedMember(std::span<const std::byte> payload)
+std::optional<ZoneListEntity> DecodeGainedMember(std::span<const std::byte> payload)
 {
     SpanStream stream(payload);
     ZoneListEntity entity;
@@ -231,7 +236,7 @@ std::optional<ZoneListEntity> DecodeWholeGainedMember(std::span<const std::byte>
     return entity;
 }
 
-std::optional<PersistentEntityId> WholeGainedMemberId(std::span<const std::byte> payload)
+std::optional<PersistentEntityId> GainedMemberId(std::span<const std::byte> payload)
 {
     PersistentEntityId id;
     if (payload.size() < sizeof(id.Value))

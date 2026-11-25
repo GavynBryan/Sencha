@@ -115,7 +115,7 @@ void ZoneStateStore::Parse(ZoneRecord& record)
                 for (GainedZoneMember& member : *members)
                 {
                     const std::optional<PersistentEntityId> id =
-                        member.Form == kWholeGainedForm ? WholeGainedMemberId(member.Payload) : std::nullopt;
+                        IsMadeGainedForm(member.Form) ? GainedMemberId(member.Payload) : std::nullopt;
                     record.Gained.push_back(GainedEntityState{ id.value_or(PersistentEntityId{}),
                                                                ZoneStateForgetting::Never, std::move(member) });
                 }

@@ -1,14 +1,18 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <core/json/JsonValue.h>
 #include <ecs/EntityId.h>
+#include <world/build/EntityBuildPackage.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
+class AssetSystem;
 class ComponentSerializerRegistry;
-class EntityBuildPackage;
+class SceneCache;
 class World;
 struct SceneSerializationContext;
 
@@ -36,3 +40,8 @@ struct SceneSpawnOverlay
 [[nodiscard]] bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& overlay,
                                      const ComponentSerializerRegistry& serializers, std::string& error,
                                      std::vector<std::string>& retuned);
+
+// What a spawn of `source` builds, its authored identity stripped; nothing when the scene does not resolve or load.
+[[nodiscard]] std::optional<EntityBuildPackage> SpawnSourcePackage(AssetSystem& assets, SceneCache& scenes,
+                                                                    const ComponentSerializerRegistry& serializers,
+                                                                    AssetId source);

@@ -134,6 +134,11 @@ Projectile
     SENCHA_TOOLTIP("A gameplay tag: an entity carrying it is neither struck nor stops it, as if it were not "
                    "there. Empty ignores nothing.")
     InlineString<64> Ignores;
+
+    SENCHA_FIELD("kept")
+    SENCHA_TOOLTIP("A save keeps it while it flies, with the zone it was launched in, as a grenade or a slow "
+                   "rocket wants. A bullet is not kept, and costs nothing for it.")
+    bool Kept = false;
 };
 
 static_assert(std::is_trivially_copyable_v<Projectile>, "Projectile must be trivially copyable to live in ECS chunks");

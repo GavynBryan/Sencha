@@ -1661,3 +1661,21 @@ fields").
 not change: kept effects are a patch member of their target
 (`docs/gameplay/saves.md`, "Lasting effects"), and `ActiveEffect` is not on
 the wire.
+
+## v75
+
+`ProjectileFlight` and `ProjectileMotion` gain scene chunks and are `Saved`,
+with their run-time state as run-time fields, and `Projectile` gains `Kept`, so
+its layout moves; `ProjectileSystem` gains `KeepInZoneAt` and `Adopt`.
+`SceneFieldCodec<std::array<EntityId, N>>` and `SceneEntityReference` are new.
+`ZoneStateSerialization` gains `SourcePackage`, so its layout moves;
+`zone/GainedSpawnRequests.h`, `runtime/spawn/GainedMemberSpawns.h`,
+`SpawnSourcePackage`, `SceneSpawnService::RequestSpawn` by asset id,
+`DropRecordsAwaiting`, `KeepsLevelState`, `kSourceGainedForm` and
+`IsMadeGainedForm` are new; the gained member codec is renamed
+`EncodeGainedMember`, `DecodeGainedMember` and `GainedMemberId`, since both
+forms share it. `Engine` holds a `GainedMemberSpawns`, so its layout moves. The
+save format does not change: `from_source` is a form tag on `gained` members,
+which a build that does not make it carries (`docs/gameplay/saves.md`, "What a
+zone gained"). The net protocol does not change: `ProjectileMotion` is not on
+the wire and `ProjectileFlight` travels through its codec as before.

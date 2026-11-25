@@ -3,6 +3,8 @@
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <core/serialization/Serialize.h>
+#include <math/MathSchemas.h>
 #include <physics/SensorOverlaps.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
@@ -10,6 +12,7 @@
 #include <world/build/EntityBuildPackage.h>
 #include <world/held/HeldRecordForms.h>
 #include <world/held/HeldRecordIndex.h>
+#include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
@@ -18,6 +21,7 @@
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/GainedSpawnRequests.h>
 #include <zone/KeptWithZone.h>
 #include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneStateLifetime.h>
@@ -344,6 +348,25 @@ void ReportCarriedMembers(const ZoneStateStore& store, ZoneStateScope scope, Sce
             form);
 }
 
+std::optional<GainedSpawnRequest> SourceRequest(const ZoneListEntity& saved, ZoneStateScope scope,
+                                                StoragePartitionId partition)
+{
+    const JsonValue* source = saved.Value.Find("source");
+    const JsonValue* root = saved.Value.Find("root");
+    const JsonValue* patch = saved.Value.Find("patch");
+    GainedSpawnRequest request;
+    request.Scope = scope;
+    request.Partition = partition;
+    request.Id = saved.Id;
+    const std::optional<AssetId> asset =
+        source != nullptr && source->IsString() ? AssetIdFromString(source->AsString()) : std::nullopt;
+    if (!asset.has_value() || root == nullptr || !FromJson(*root, request.Root) || patch == nullptr || !patch->IsObject())
+        return std::nullopt;
+    request.Source = *asset;
+    request.Patch = *patch;
+    return request;
+}
+
 void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEntityPatches& patches,
                        bool worldHasTransforms, std::vector<EntityId>& made)
 {
@@ -359,17 +382,28 @@ void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEn
         if (!member.Id.IsValid())
             continue;
         const std::string named = PersistentEntityIdToString(member.Id);
-        const std::optional<ZoneListEntity> saved = DecodeWholeGainedMember(member.Member.Payload);
-        if (!saved.has_value() || IsAuthoredPersistentEntityId(saved->Id))
+        const std::optional<ZoneListEntity> saved = DecodeGainedMember(member.Member.Payload);
+        const bool fromSource = member.Member.Form == kSourceGainedForm;
+        const std::optional<GainedSpawnRequest> request =
+            saved.has_value() && fromSource ? SourceRequest(*saved, patches.Scope, partition) : std::nullopt;
+        if (!saved.has_value() || IsAuthoredPersistentEntityId(saved->Id) || (fromSource && !request.has_value()))
         {
-            log.Error("zone state: what the zone gained, {}, is not a run-time entity written whole; it is dropped",
-                      named);
+            log.Error("zone state: what the zone gained, {}, is not a run-time entity written {}; it is dropped", named,
+                      member.Member.Form);
             patches.Store->ForgetGained(patches.Scope, member.Id);
             continue;
         }
         if (identities != nullptr && world.IsAlive(identities->TryResolve(saved->Id)))
         {
             log.Warn("zone state: what the zone gained, {}, is not made; a live entity already has its id", named);
+            continue;
+        }
+        if (request.has_value())
+        {
+            GainedSpawnRequests& spawning = world.HasResource<GainedSpawnRequests>()
+                ? world.GetResource<GainedSpawnRequests>()
+                : world.AddResource<GainedSpawnRequests>();
+            spawning.Add(*request);
             continue;
         }
         const EntityId entity = world.CreateEntity(partition);
@@ -402,18 +436,17 @@ void MakeHeldRecords(World& world, StoragePartitionId partition, ZoneStateStore&
     const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr)
         return;
-    std::vector<std::pair<PersistentEntityId, std::size_t>> dropped;
+    const GainedSpawnRequests* spawning = world.TryGetResource<GainedSpawnRequests>();
+    std::vector<PersistentEntityId> absent;
     for (const EntityId entity : made)
-        if (const PersistentEntityId holder = index->AwaitedHolderOf(entity); holder.IsValid())
-        {
-            const auto counted = std::ranges::find(dropped, holder, &std::pair<PersistentEntityId, std::size_t>::first);
-            (counted != dropped.end() ? counted->second : dropped.emplace_back(holder, 0).second) += 1;
-            world.DestroyEntity(entity);
-        }
-    for (const auto& [holder, count] : dropped)
+        if (const PersistentEntityId holder = world.IsAlive(entity) ? index->AwaitedHolderOf(entity) : PersistentEntityId{};
+            holder.IsValid() && std::ranges::find(absent, holder) == absent.end()
+            && (spawning == nullptr || !spawning->AwaitsHolder(holder)))
+            absent.push_back(holder);
+    for (const PersistentEntityId holder : absent)
         context.Logging->GetLogger<ZonePackageImport>().Error(
-            "zone state: {} held records waiting for {}, which did not arrive, are dropped", count,
-            PersistentEntityIdToString(holder));
+            "zone state: {} held records waiting for {}, which did not arrive, are dropped",
+            DropRecordsAwaiting(world, holder), PersistentEntityIdToString(holder));
 }
 
 struct BaselineRules

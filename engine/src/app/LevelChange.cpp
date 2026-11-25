@@ -20,6 +20,7 @@
 #include <world/identity/PendingReferences.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+#include <zone/GainedSpawnRequests.h>
 #include <zone/ZoneStateStore.h>
 
 #include <utility>
@@ -108,6 +109,7 @@ LevelChangeRequest& LevelChangeRequest::Focused(ZoneId zone)
     return *this;
 }
 
+
 LevelChange::LevelChange(Engine& engine)
     : Host(engine)
 {
@@ -165,6 +167,8 @@ void LevelChange::Commit()
         *restored = RestoredBodies{};
     if (PendingReferences* pending = world.TryGetResource<PendingReferences>())
         pending->Clear();
+    if (GainedSpawnRequests* spawning = world.TryGetResource<GainedSpawnRequests>())
+        spawning->Clear();
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {

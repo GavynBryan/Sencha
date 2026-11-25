@@ -1144,25 +1144,26 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** a save keeps the local participant's body root as a patch against
   its prefab (`sencha.bodies`), the runtime records held by the world and by
   that body (`sencha.held`), the run-time entities a zone keeps
-  (`KeptWithZone`, each written whole in the zone's `gained` list), and the
-  records held by authored and kept holders in their zone's `held` list, each
-  with what it holds. It does not keep the body's children, another
-  participant's body or what it holds, a kept entity's children, or a run-time
-  entity nothing marked (a spawned NPC); such an entity in a zone is destroyed
-  unrecorded when the zone unloads. A kept entity spawned from a prefab is
-  written whole, so a retuned prefab does not reach it and its children are
-  lost; saving it as its source and a patch is a second `gained` form
-  (`from_source`) under the same list. Nothing but a body crosses a level
-  change; carrying another entity is moving its member from one zone's list to
-  another's with a transform relative to an arrival point.
+  (`KeptWithZone`, each in the zone's `gained` list, a prefab spawn as its
+  source and a patch, anything else whole), and the records held by authored
+  and kept holders in their zone's `held` list, each with what it holds. It
+  does not keep what a body's or a kept spawn's children carry (they come back
+  as their prefab authored them), another participant's body or what it
+  holds, the children of a kept entity that is not a prefab spawn, or a
+  run-time entity nothing marked (a spawned NPC); such an entity in a zone is
+  destroyed unrecorded when the zone unloads. Nothing but a body crosses a
+  level change; carrying another entity is moving its member from one zone's
+  list to another's with a transform relative to an arrival point.
 - **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
   `world/held/HeldRecords.cpp` (`ParkHeldRecords`),
   `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateMemory.cpp` and
   `zone/ZonePackageImporter.cpp` (`MakeGainedMembers`), `app/LevelChange.cpp`.
-- **Trigger:** a body whose children carry state, a dropped item with a
-  visible scene (see "A dropped item's world scene"), a marked prefab spawn
-  whose prefab is retuned or has children, anything but a body crossing a
-  level transition, or a second player restored in co-op.
+- **Trigger:** a body or a kept spawn whose children carry state a player
+  would miss (a turret's head aimed, a lit fuse on a child), a dropped item
+  with a visible scene (see "A dropped item's world scene"), anything but a
+  body crossing a level transition, or a second player restored in co-op.
+  Then give a kept member's and a body's children patches of their own, keyed
+  by their place in the prefab.
 
 ## Replication change store copies every live entity each publish
 
@@ -1422,12 +1423,13 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 - **What:** `Inventory::Drop` makes a bare pickup with a transform holding the
   entry. Nothing spawns a visible scene for it. A pickup `inventory.drop`
-  keeps stays with its zone (`KeptWithZone`), written whole; a scene spawned
-  for it would be lost at the first save, since a whole member keeps no
-  children.
+  keeps stays with its zone (`KeptWithZone`), written whole, since it is no
+  prefab spawn; a scene spawned for it as a child would be lost at the first
+  save, since a whole member keeps no children.
 - **Where:** `inventory/Inventory.cpp` (`Drop`); the branch's definition field
-  `world` (a scene by asset path) was left out because nothing spawned it; the
-  `from_source` gained form in "Saving what was created at run time".
+  `world` (a scene by asset path) was left out because nothing spawned it; a
+  pickup that is itself a spawn of that scene is kept as its source and a
+  patch (`docs/gameplay/saves.md`, "What a zone gained").
 - **Trigger:** a game whose dropped items are seen and picked back up in the
   world. Then give definitions a world scene spawned as the pickup's
   presentation, saved as its source and a patch.

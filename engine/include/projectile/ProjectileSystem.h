@@ -215,6 +215,10 @@ private:
     };
 
     std::optional<std::uint32_t> Resolve(AssetId prefab, EntityId root);
+    // A kept projectile flies in the zone it was launched in, so that zone's capture keeps it.
+    void KeepInZoneAt(EntityId root, const Vec3d& origin);
+    // A projectile a load made: its definition resolved again and its launch tick the tick it is loaded on.
+    bool Adopt(EntityId projectile, std::uint64_t tick);
     void Fly(EntityId projectile, const FixedSimTime& now);
     // The nearest thing the sphere meets along `direction` within `distance`.
     std::optional<Contact> Sweep(const ProjectileMotion& motion, const ResolvedProjectile& definition,

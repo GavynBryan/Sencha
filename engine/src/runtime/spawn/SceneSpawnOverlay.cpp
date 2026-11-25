@@ -1,11 +1,15 @@
 #include <runtime/spawn/SceneSpawnOverlay.h>
 
+#include <assets/runtime/AssetSystem.h>
+#include <assets/scene/SceneCache.h>
+#include <core/assets/AssetLease.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/EntityPatch.h>
+#include <world/scene/SmapFormat.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <optional>
@@ -47,7 +51,7 @@ SceneSpawnOverlay CaptureSpawnOverlay(const World& world, EntityId root, const E
     overlay.RootPatch = CaptureEntityPatch(world, root, baseline, kBodySaves, serializers, context, nullptr, &failed);
     for (const std::string& key : failed)
         context.Logging->GetLogger<SceneSpawnOverlay>().Error(
-            "save: '{}' could not be written; the body keeps its prefab's", key);
+            "save: '{}' could not be written; the spawned root keeps its prefab's", key);
     return overlay;
 }
 
@@ -77,4 +81,19 @@ bool ApplySpawnOverlay(EntityBuildPackage& package, const SceneSpawnOverlay& ove
     retuned.insert(retuned.end(), std::make_move_iterator(outcome.Retuned.begin()),
                    std::make_move_iterator(outcome.Retuned.end()));
     return error.empty();
+}
+
+std::optional<EntityBuildPackage> SpawnSourcePackage(AssetSystem& assets, SceneCache& scenes,
+                                                     const ComponentSerializerRegistry& serializers, AssetId source)
+{
+    const std::string_view path = assets.ResolveRefPath(source, std::string_view{}, AssetType::Scene);
+    if (!source.IsValid() || path.empty())
+        return std::nullopt;
+    const AssetLease lease = assets.LoadLease(path, AssetType::Scene);
+    const SmapContents* contents = lease.IsValid() ? scenes.Get(SceneHandle::FromToken(lease.OpaqueToken())) : nullptr;
+    EntityBuildPackage package;
+    if (contents == nullptr
+        || !BuildEntityPackageFromSmap(*contents, serializers, package, SmapPackageOptions{ .StripAuthoredIdentity = true }))
+        return std::nullopt;
+    return package;
 }

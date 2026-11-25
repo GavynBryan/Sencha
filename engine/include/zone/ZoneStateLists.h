@@ -68,9 +68,13 @@ struct GainedZoneMember
 [[nodiscard]] std::vector<std::byte> EncodeGainedList(std::span<const GainedZoneMember> members);
 [[nodiscard]] std::optional<std::vector<GainedZoneMember>> DecodeGainedList(std::span<const std::byte> payload);
 
-// A gained member written whole: its runtime persistent id, then its entity record as JSON text.
+// Each form's payload is the member's runtime persistent id, then JSON text: its entity record for `whole`,
+// its source, root transform and patch against the source's root for `from_source`.
 inline constexpr std::string_view kWholeGainedForm = "whole";
+inline constexpr std::string_view kSourceGainedForm = "from_source";
 
-[[nodiscard]] std::vector<std::byte> EncodeWholeGainedMember(const ZoneListEntity& entity);
-[[nodiscard]] std::optional<ZoneListEntity> DecodeWholeGainedMember(std::span<const std::byte> payload);
-[[nodiscard]] std::optional<PersistentEntityId> WholeGainedMemberId(std::span<const std::byte> payload);
+[[nodiscard]] bool IsMadeGainedForm(std::string_view form);
+
+[[nodiscard]] std::vector<std::byte> EncodeGainedMember(const ZoneListEntity& entity);
+[[nodiscard]] std::optional<ZoneListEntity> DecodeGainedMember(std::span<const std::byte> payload);
+[[nodiscard]] std::optional<PersistentEntityId> GainedMemberId(std::span<const std::byte> payload);

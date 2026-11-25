@@ -4,6 +4,7 @@
 #include <app/LevelChange.h>
 #include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/EntityText.h>
@@ -12,6 +13,7 @@
 #include <net/NetSession.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <runtime/spawn/SceneSpawnOverlay.h>
 #include <save/HeldRecordSaves.h>
 #include <world/RuntimeWorld.h>
 #include <world/LevelLandmark.h>
@@ -218,8 +220,13 @@ SavedGames::~SavedGames()
 
 void SavedGames::KeepLevelState()
 {
-    Host.World().Entities().SetResource(
-        ZoneStateSerialization{ .Serializers = &Host.SceneSerializers(), .Context = &Host.Content().SceneContext() });
+    Host.World().Entities().SetResource(ZoneStateSerialization{
+        .Serializers = &Host.SceneSerializers(),
+        .Context = &Host.Content().SceneContext(),
+        .SourcePackage = [this](AssetId source) {
+            RuntimeAssets& assets = Host.Content().Assets();
+            return SpawnSourcePackage(assets.Assets, assets.Scenes, Host.SceneSerializers(), source);
+        } });
 }
 
 bool SavedGames::RegisterSection(SavedGameSectionDefinition section)
