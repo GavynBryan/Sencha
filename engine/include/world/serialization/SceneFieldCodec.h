@@ -1,8 +1,11 @@
 #pragma once
 
 #include <audio/Caption.h>
+#include <core/metadata/DataSchema.h>
+#include <core/metadata/NamedIdField.h>
 #include <core/serialization/Archive.h>
 #include <core/text/InlineString.h>
+#include <world/serialization/NamedIdVocabulary.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <algorithm>
@@ -174,5 +177,33 @@ struct SceneFieldCodec<InlineString<Capacity>>
             return false;
         value.Assign(text);
         return true;
+    }
+};
+
+// A named id writes and reads its name, through the World the serializer was handed.
+// Its scene form follows its value: a vocabulary never renames an id.
+template<IsNamedIdField Id>
+struct SceneFieldCodec<Id>
+{
+    static constexpr bool WrittenFromValue = true;
+    static constexpr DataFieldKind CompositionKind = NamedIdField<Id>::Kind == NamedIdKind::GameplayTag
+                                                         ? DataFieldKind::GameplayTag
+                                                     : NamedIdField<Id>::Kind == NamedIdKind::DataDefinition
+                                                         ? DataFieldKind::DataAssetRef
+                                                         : DataFieldKind::String;
+
+    static bool Save(IWriteArchive& archive, std::string_view key, const Id& value, const World* world,
+                     SceneSerializationContext& context)
+    {
+        return SaveNamedId(archive, key, NamedIdField<Id>::Vocabulary(), value.Value, world, context);
+    }
+
+    static bool Load(IReadArchive& archive, std::string_view key, Id& value, World* world,
+                     SceneSerializationContext& context)
+    {
+        std::uint32_t id = value.Value;
+        const bool read = LoadNamedId(archive, key, NamedIdField<Id>::Vocabulary(), id, world, context);
+        value = Id{ id };
+        return read;
     }
 };

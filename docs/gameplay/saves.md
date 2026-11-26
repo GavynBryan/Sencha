@@ -607,8 +607,9 @@ Which serializers say their saved form follows their row:
   the value alone with `WrittenFromValue` (`world/serialization/SceneFieldCodec.h`):
   the primary template, the caption enums, inline strings and the stable ids
   (zone, dock, link, nav link, scene instance, asset id, persistent id) do. A
-  codec that does not say so is taken to look something up, as a named id
-  will.
+  codec that does not say so is taken to look something up. A named id
+  (`docs/core-systems-map.md`, "Named-id fields") does say so: a vocabulary
+  never renames an id, so the name an id writes is fixed for the process.
 - **Hand-written**, per case: `responses` (a binding set is content-addressed
   and never changes in a World, so its key in the row stands for the same
   bindings), `GameplayTags` and `Attributes` (names from registries that only

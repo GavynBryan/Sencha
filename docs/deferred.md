@@ -1959,3 +1959,28 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Where:** `engine/src/app/VocabularyCommands.cpp` (`RunVerbCommand`).
 - **Trigger:** a developer who must give items while connected to a dedicated
   server without access to its console.
+
+## Named ids inside nested structs and lists
+
+- **What:** a named id (`docs/core-systems-map.md`, "Named-id fields") has a
+  scene form only as a component's own member. One nested inside a described
+  struct member goes through `WriteArchiveValue`, which has no form for it, and
+  a list of named ids is the list field kind ("A list declared once in a
+  component's field description").
+- **Where:** `SceneComponentSerialization::SaveField` and `LoadField`
+  (`world/serialization/ComponentSerializer.h`), and `WriteArchiveValue`
+  (`core/serialization/Archive.h`), which takes no World.
+- **Consumer:** the first component that holds a named id inside a struct.
+- **Trigger:** that component; then route nested members through
+  `SceneFieldCodec` with the World, as a component's own members are.
+
+## Names as text in perception, navigation and traversal components
+
+- **What:** `ObservationSharing`, `ObservationMemory`, the navigation profile
+  and traversal names hold tag or profile names as `InlineString`, resolved at
+  run time, where a named-id field would hold 4 bytes and be checked at load.
+- **Where:** `perception/ObservationSharing.h`, `perception/ObservationMemory.h`,
+  `navigation/NavAgent.h`, `navigation/NavLinkComponent.h`.
+- **Consumer:** none waiting.
+- **Trigger:** the next change to any of those components; convert its names
+  then to named-id fields.

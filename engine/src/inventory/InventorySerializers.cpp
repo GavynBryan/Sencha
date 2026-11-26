@@ -6,7 +6,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <world/serialization/SceneAssetRef.h>
+#include <world/serialization/SceneFieldCodec.h>
 #include <world/serialization/TypedComponentSerializer.h>
 
 #include <array>
@@ -77,8 +77,7 @@ namespace
                 return true;
             archive.BeginObject(std::string_view{});
             const bool named = !value->Definition.IsValid()
-                || (WriteSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(),
-                                            value->Definition, context)
+                || (SceneFieldCodec<ItemId>::Save(archive, kDefinition, value->Definition, &world, context)
                     && (archive.Field(kCount, value->Count), true));
             archive.End();
             return named && archive.Ok();
@@ -91,8 +90,8 @@ namespace
             archive.BeginObject(std::string_view{});
             value.Count = ReadCount(archive, kCount, value.Count);
             const bool named = !archive.HasField(kDefinition)
-                || ReadSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), value.Definition,
-                                          context);
+                || (SceneFieldCodec<ItemId>::Load(archive, kDefinition, value.Definition, &world, context)
+                    && value.Definition.IsValid());
             if constexpr (std::is_same_v<T, ItemEntry>)
                 ClampEntryCount(world, entity, value, context);
             archive.End();

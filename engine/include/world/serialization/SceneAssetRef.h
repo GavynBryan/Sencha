@@ -29,23 +29,3 @@ struct SceneSerializationContext;
                                       AssetType type,
                                       std::string_view path,
                                       SceneSerializationContext& context);
-
-// Read reserves, so a reference read before its definition is declared keeps the name.
-template<typename Registry, typename Id>
-[[nodiscard]] bool WriteSceneDefinitionRef(IWriteArchive& archive, std::string_view key, const Registry* registry,
-                                           Id id, SceneSerializationContext& context)
-{
-    const std::string_view path = registry != nullptr ? registry->GetName(id) : std::string_view{};
-    return path.empty() || WriteSceneAssetRef(archive, key, AssetType::Data, path, context);
-}
-
-template<typename Registry, typename Id>
-[[nodiscard]] bool ReadSceneDefinitionRef(IReadArchive& archive, std::string_view key, Registry* registry, Id& id,
-                                          SceneSerializationContext& context)
-{
-    std::string path;
-    if (!ReadSceneAssetRef(archive, key, AssetType::Data, path, context))
-        return false;
-    id = registry != nullptr ? registry->Reserve(path) : Id{};
-    return id.IsValid();
-}

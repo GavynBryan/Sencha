@@ -3,6 +3,7 @@
 #include <abilities/AbilityDeclaration.h>
 #include <core/identity/NamedDefinitionRegistry.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/NamedIdField.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
@@ -13,6 +14,13 @@
 class World;
 
 using EquipmentLayoutId = StrongId<struct EquipmentLayoutIdTag, std::uint32_t>;
+
+template <>
+struct NamedIdField<EquipmentLayoutId>
+{
+    static constexpr NamedIdKind Kind = NamedIdKind::DataDefinition;
+    static const NamedIdVocabulary& Vocabulary();
+};
 
 enum class SlotDepletion : std::uint8_t
 {

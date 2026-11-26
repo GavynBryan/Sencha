@@ -49,8 +49,7 @@ namespace
     {
         archive.BeginObject(std::string_view{});
         archive.Field(kKey, record.Key);
-        if (!WriteSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), record.Definition,
-                                     context))
+        if (!SceneFieldCodec<ItemId>::Save(archive, kDefinition, record.Definition, &world, context))
             return false;
         const std::vector<std::uint8_t> slots = SlotsInOrder(record);
         archive.BeginArray(kSlots, slots.size());
@@ -79,9 +78,12 @@ namespace
     {
         archive.BeginObject(std::string_view{});
         archive.Field(kKey, record.Key);
-        if (!ReadSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), record.Definition,
-                                    context))
+        if (!SceneFieldCodec<ItemId>::Load(archive, kDefinition, record.Definition, &world, context)
+            || !record.Definition.IsValid())
+        {
+            archive.MarkInvalidField(kDefinition);
             return false;
+        }
         std::size_t slots = 0;
         archive.BeginArray(kSlots, slots);
         for (std::size_t s = 0; s < slots; ++s)
@@ -160,8 +162,7 @@ namespace
             if (state == nullptr)
                 return true;
             archive.BeginObject(std::string_view{});
-            if (!WriteSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(),
-                                         state->Layout, context))
+            if (!SceneFieldCodec<EquipmentLayoutId>::Save(archive, kLayout, state->Layout, &world, context))
                 return false;
             archive.Field(kNextKey, state->NextKey);
             const EquipmentLayout* layout = FindEquipmentLayout(world, state->Layout);
@@ -180,9 +181,12 @@ namespace
         {
             EquipmentRecordList worn;
             archive.BeginObject(std::string_view{});
-            if (!ReadSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(), worn.Layout,
-                                        context))
+            if (!SceneFieldCodec<EquipmentLayoutId>::Load(archive, kLayout, worn.Layout, &world, context)
+                || !worn.Layout.IsValid())
+            {
+                archive.MarkInvalidField(kLayout);
                 return false;
+            }
             if (archive.HasField(kNextKey))
                 archive.Field(kNextKey, worn.NextKey);
             if (archive.HasField(kRecords) && !ReadRecords(archive, worn, world, context))

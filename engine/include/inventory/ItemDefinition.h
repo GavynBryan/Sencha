@@ -6,6 +6,7 @@
 #include <authored/AuthoredValue.h>
 #include <core/identity/NamedDefinitionRegistry.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/NamedIdField.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <gameplay_tags/GameplayTagQuery.h>
@@ -15,6 +16,13 @@
 #include <vector>
 
 using ItemId = StrongId<struct ItemIdTag, std::uint32_t>;
+
+template <>
+struct NamedIdField<ItemId>
+{
+    static constexpr NamedIdKind Kind = NamedIdKind::DataDefinition;
+    static const NamedIdVocabulary& Vocabulary();
+};
 
 struct ItemAttributeSeed
 {

@@ -46,6 +46,7 @@ namespace SceneComponentSerialization
     bool SaveField(IWriteArchive& archive,
                    const Component& component,
                    const FieldT& field,
+                   const World* world,
                    SceneSerializationContext& context)
     {
         using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
@@ -58,6 +59,10 @@ namespace SceneComponentSerialization
             return SaveAssetField(archive, field.Name, (component.*field.Ptr).ToToken(),
                                   field.Asset, field.Arity, context);
         }
+        else if constexpr (requires { SceneFieldCodec<FieldType>::Save(archive, field.Name, component.*field.Ptr, world, context); })
+        {
+            return SceneFieldCodec<FieldType>::Save(archive, field.Name, component.*field.Ptr, world, context);
+        }
         else
         {
             return SceneFieldCodec<FieldType>::Save(
@@ -69,6 +74,7 @@ namespace SceneComponentSerialization
     bool LoadField(IReadArchive& archive,
                    Component& component,
                    const FieldT& field,
+                   World* world,
                    SceneSerializationContext& context)
     {
         using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
@@ -80,6 +86,10 @@ namespace SceneComponentSerialization
                                            field.Asset, field.Arity, context);
             component.*field.Ptr = FieldType::FromToken(token);
             return ok;
+        }
+        else if constexpr (requires { SceneFieldCodec<FieldType>::Load(archive, field.Name, component.*field.Ptr, world, context); })
+        {
+            return SceneFieldCodec<FieldType>::Load(archive, field.Name, component.*field.Ptr, world, context);
         }
         else
         {
@@ -97,7 +107,8 @@ namespace SceneComponentSerialization
     template<typename Component>
     bool SaveFields(IWriteArchive& archive,
                     const Component& component,
-                    SceneSerializationContext& context)
+                    SceneSerializationContext& context,
+                    const World* world = nullptr)
     {
         archive.BeginObject(std::string_view{});
 
@@ -105,7 +116,7 @@ namespace SceneComponentSerialization
         auto fields = TypeSchema<Component>::Fields();
         std::apply([&](auto&... field)
         {
-            ((ok = (!WrittenFor(field, context.Purpose) || SaveField(archive, component, field, context)) && ok), ...);
+            ((ok = (!WrittenFor(field, context.Purpose) || SaveField(archive, component, field, world, context)) && ok), ...);
         }, fields);
 
         archive.End();
@@ -115,7 +126,8 @@ namespace SceneComponentSerialization
     template<typename Component>
     bool LoadFields(IReadArchive& archive,
                     Component& component,
-                    SceneSerializationContext& context)
+                    SceneSerializationContext& context,
+                    World* world = nullptr)
     {
         archive.BeginObject(std::string_view{});
 
@@ -125,8 +137,17 @@ namespace SceneComponentSerialization
         {
             (([&]
             {
+                using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
                 if (!archive.HasField(field.Name))
                 {
+                    if constexpr (IsNamedIdField<FieldType>)
+                    {
+                        if (field.DefaultValue || field.IsOptional)
+                        {
+                            ok = LoadField(archive, component, field, world, context) && ok;
+                            return;
+                        }
+                    }
                     if (field.DefaultValue)
                         component.*field.Ptr = *field.DefaultValue;
                     else if (!field.IsOptional)
@@ -135,7 +156,7 @@ namespace SceneComponentSerialization
                     return;
                 }
 
-                ok = LoadField(archive, component, field, context) && ok;
+                ok = LoadField(archive, component, field, world, context) && ok;
             }()), ...);
         }, fields);
 
@@ -404,7 +425,7 @@ public:
                 || !world.HasComponent<Component>(entity))
                 return true;
             const Component tag{};
-            return SceneComponentSerialization::SaveFields(archive, tag, context);
+            return SceneComponentSerialization::SaveFields(archive, tag, context, &world);
         }
         else
         {
@@ -415,8 +436,7 @@ public:
             if (!component)
                 return true;
 
-            return SceneComponentSerialization::SaveFields(archive, *component,
-                                                           context);
+            return SceneComponentSerialization::SaveFields(archive, *component, context, &world);
         }
     }
 
@@ -442,7 +462,7 @@ public:
         bool read = false;
         {
             const EntitiesInScope reading(context, &world, &unresolved);
-            read = SceneComponentSerialization::LoadFields(archive, component, context);
+            read = SceneComponentSerialization::LoadFields(archive, component, context, &world);
         }
         if (!read)
         {

@@ -6,6 +6,9 @@
 #include <ecs/World.h>
 #include <ecs/EntityText.h>
 #include <ecs/WorldComponentSchema.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryKit.h>
+#include <logic/LogicRegistration.h>
 #include <save/EngineSaveSections.h>
 #include <save/HeldRecordSaves.h>
 #include <world/ComponentRegistrar.h>
@@ -364,4 +367,52 @@ TEST(HeldRecordSaves, ARecordsSavedFormIsPinnedWithItsComponentsInKeyOrder)
 
     ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
     EXPECT_EQ(JsonStringify(*saved.Find("records")->AsArray().front().Find("components")), R"({"Held":{"holder":"","position":0},"record_tally":{"value":4}})");
+}
+
+TEST(HeldRecordSaves, TheNamedRecordsSavedFormsArePinned)
+{
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
+    WorldComponentSchema schema;
+    ComponentSerializerRegistry serializers;
+    {
+        ComponentRegistrar registrar(&schema, &serializers, nullptr);
+        registrar.Add<PersistentIdComponent>();
+        registrar.Add<Held>();
+        RegisterLogicComponents(registrar);
+        RegisterInventoryComponents(registrar);
+    }
+    schema.Seal();
+    World entities;
+    schema.Apply(entities);
+    entities.AddResource<PersistentEntityIndex>();
+    (void)InstallHeldRecords(entities);
+    GameplayTagRegistry& tags = entities.AddResource<GameplayTagRegistry>();
+    const GameplayTagId coins = *tags.RegisterTag("count.coins");
+    const GameplayTagId ammo = *tags.RegisterTag("item.ammo");
+    InstallInventoryVocabulary(entities);
+    const ItemId medkit = entities.GetResource<ItemRegistry>().Reserve("items/medkit.sdata");
+
+    const auto held = [&](auto component) {
+        const EntityId record = entities.CreateEntity();
+        HoldRecord(entities, record, EntityId{});
+        entities.AddComponent(record, component);
+        return record;
+    };
+    (void)held(Counter{ .Name = coins, .Value = -3 });
+    (void)held(ItemEntry{ .Definition = medkit, .Count = 2 });
+    (void)held(ItemPickup{ .Definition = medkit, .Count = 5 });
+    (void)held(ItemContainer{ .Capacity = 4, .Accepts = ammo });
+    (void)held(ItemContainer{ .Capacity = 6, .Accepts = {} });
+
+    const JsonValue saved = CaptureHeldRecords(entities, {}, serializers, context);
+    std::vector<std::string> forms;
+    for (const JsonValue& record : saved.Find("records")->AsArray())
+        forms.push_back(JsonStringify(*record.Find("components")));
+    EXPECT_EQ(forms, (std::vector<std::string>{
+                         R"({"Counter":{"name":"count.coins","value":-3},"Held":{"holder":"","position":0}})",
+                         R"({"Held":{"holder":"","position":1},"ItemEntry":{"definition":"items/medkit.sdata","count":2}})",
+                         R"({"Held":{"holder":"","position":2},"ItemPickup":{"definition":"items/medkit.sdata","count":5}})",
+                         R"({"Held":{"holder":"","position":3},"ItemContainer":{"capacity":4,"accepts":"item.ammo"}})",
+                         R"({"Held":{"holder":"","position":4},"ItemContainer":{"capacity":6}})" }));
 }

@@ -1770,3 +1770,17 @@ value-initialised. `InventoryOperations` declares the queries
 `equip.effects[].scale_by`; its data version stays 1. Content declaration
 refuses an item that equips in a World with no `EquipmentLayoutRegistry`. The
 save format, the scene format and the net protocol do not change.
+
+## v82
+
+A named id is a field kind. `core/metadata/NamedIdField.h` declares
+`NamedIdField<Id>` and `NamedIdKind`, and `GameplayTagId`, `ItemId`,
+`AbilityId` and `EquipmentLayoutId` specialise it beside their declarations.
+`world/serialization/NamedIdVocabulary.h` declares `NamedIdVocabulary`,
+`SaveNamedId` and `LoadNamedId`; `world/serialization/DefinitionVocabulary.h`
+builds a vocabulary over a `NamedDefinitionRegistry`. `SceneFieldCodec` gains a
+specialisation for every named id, and `SceneComponentSerialization`'s
+`SaveField`, `LoadField`, `SaveFields` and `LoadFields` take the World.
+`WriteSceneDefinitionRef` and `ReadSceneDefinitionRef` leave `SceneAssetRef.h`.
+No component's scene, save or wire form changes; the save format, the scene
+format and the net protocol do not change.

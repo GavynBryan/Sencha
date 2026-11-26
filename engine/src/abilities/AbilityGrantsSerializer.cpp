@@ -207,7 +207,7 @@ public:
                 continue;
             archive.BeginObject(std::string_view{});
             archive.Field(kKey, std::string_view(entry->Key));
-            if (!WriteSceneAssetRef(archive, kAbility, AssetType::Data, abilities->GetName(grant.Ability), context))
+            if (!grant.Ability.IsValid() || !SceneFieldCodec<AbilityId>::Save(archive, kAbility, grant.Ability, &world, context))
                 return false;
             WriteBinding(archive, entry->Override);
             WriteParameters(archive, entry->Parameters);
@@ -259,12 +259,12 @@ public:
             archive.BeginObject(std::string_view{});
             AbilityGrantEntry entry;
             archive.Field(kKey, entry.Key);
-            std::string path;
-            if (!ReadSceneAssetRef(archive, kAbility, AssetType::Data, path, context))
+            if (!SceneFieldCodec<AbilityId>::Load(archive, kAbility, entry.Ability, &world, context)
+                || !entry.Ability.IsValid())
+            {
+                archive.MarkInvalidField(kAbility);
                 return false;
-            // Reserved, not looked up: a grant read before its ability is declared,
-            // or of one that failed to compile, keeps its name for the next save.
-            entry.Ability = abilities->Reserve(path);
+            }
             if (archive.HasField(kBinding))
                 ReadBinding(archive, entry.Override);
             if (archive.HasField(kParameters))
