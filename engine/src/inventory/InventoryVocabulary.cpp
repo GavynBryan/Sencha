@@ -1,5 +1,6 @@
 #include <inventory/InventoryVocabulary.h>
 
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredValue.h>
 #include <authored/AuthoredValueTraits.h>
 #include <core/serialization/Archive.h>
@@ -75,44 +76,31 @@ namespace
         return VerbAnswerOf(result.Refusal);
     }
 
-    struct CountFilter
+    std::optional<ItemFilter> FilterOf(const World& world, const AssetRef* definition, std::optional<GameplayTagId> tag,
+                                       bool within)
     {
-        const AssetRef* Definition = nullptr;
-        std::optional<GameplayTagId> Tag;
-        bool Within = false;
-    };
-
-    std::int64_t Units(const World& world, EntityId container, const CountFilter& filter)
-    {
-        const ItemId definition = DefinitionNamed(world, filter.Definition);
-        if (filter.Definition != nullptr && !definition.IsValid())
-            return 0;
-        const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
-        std::int64_t units = 0;
-        for (const EntityId entry : filter.Within ? HeldEntries(world, container) : ItemsIn(world, container))
-        {
-            const ItemEntry& item = *world.TryGet<ItemEntry>(entry);
-            if (filter.Definition != nullptr && item.Definition != definition)
-                continue;
-            const ItemDefinition* described = items != nullptr ? items->Get(item.Definition) : nullptr;
-            if (filter.Tag.has_value() && (described == nullptr || !ItemCarries(world, *described, *filter.Tag)))
-                continue;
-            units += item.Count;
-        }
-        return units;
+        ItemFilter filter{ .Definition = DefinitionNamed(world, definition), .Tag = tag.value_or(GameplayTagId{}),
+                           .Within = within };
+        if (definition != nullptr && !filter.Definition.IsValid())
+            return std::nullopt;
+        return filter;
     }
 
     AuthoredQueryStatus CountUnits(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         EntityId container;
-        CountFilter filter;
+        const AssetRef* definition = nullptr;
+        std::optional<GameplayTagId> tag;
+        bool within = false;
         if (arguments.size() < 4 || !arguments[0].TryGetEntity(container)
-            || (!arguments[1].IsNone() && !arguments[1].TryGetDataAsset(filter.Definition))
-            || !ReadAuthoredArgument(arguments, 2, filter.Tag) || !arguments[3].TryGetBool(filter.Within))
+            || (!arguments[1].IsNone() && !arguments[1].TryGetDataAsset(definition))
+            || !ReadAuthoredArgument(arguments, 2, tag) || !arguments[3].TryGetBool(within))
             return AuthoredQueryStatus::InvalidArguments;
         if (!world.IsAlive(container))
             return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Int(Units(world, container, filter));
+        const std::optional<ItemFilter> filter = FilterOf(world, definition, tag, within);
+        result = AuthoredValue::Int(
+            filter.has_value() ? static_cast<std::int64_t>(CountItemUnits(world, container, *filter)) : 0);
         return AuthoredQueryStatus::Value;
     }
 }
@@ -178,6 +166,7 @@ void DeclareInventoryVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegis
     };
     count.Result = MakeDataField(DataFieldKind::Int, "count", "Count");
     (void)queries.Declare(std::move(count));
+    DeclareAuthoredApi<InventoryOperations>(&verbs, &queries);
 }
 
 VerbAnswer InventoryOperations::Take(const VerbInvocation& invocation)
@@ -248,6 +237,17 @@ VerbAnswer InventoryOperations::Use(const VerbInvocation& invocation)
         || !ReadAuthoredArgument(*invocation.Arguments, 1, user))
         return VerbAdmission::InvalidArguments;
     return VerbAnswerOf(Inventory(*Entities, Clock->TimeOfTick(invocation.Tick)).Use(user.value_or(ItemHolder(*Entities, entry)), entry).Refusal);
+}
+
+std::optional<EntityId> InventoryOperations::Entry(EntityId container, std::optional<AuthoredDataRef> definition,
+                                                   std::optional<GameplayTagId> tag, bool within, bool last) const
+{
+    const std::optional<ItemFilter> filter =
+        FilterOf(*Entities, definition.has_value() ? definition->Reference : nullptr, tag, within);
+    const EntityId entry = filter.has_value()
+        ? FindItemEntry(*Entities, container, *filter, last ? ItemEntryPick::Last : ItemEntryPick::First)
+        : EntityId{};
+    return entry.IsValid() ? std::optional<EntityId>(entry) : std::nullopt;
 }
 
 AuthoredQueryBindingToken BindInventoryQuery(AuthoredQueryDispatcher& dispatcher, const World& world)

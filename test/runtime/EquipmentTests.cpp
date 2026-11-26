@@ -16,6 +16,7 @@
 #include <equipment/WornGrantEntries.h>
 #include <equipment/EquipmentVocabulary.h>
 #include <app/EngineVocabulary.h>
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
@@ -955,6 +956,37 @@ namespace
             return Queries->Evaluate(Queries->Registry().Resolve(query), arguments, result);
         }
 
+        CompiledVerbSequence CompileSequence(std::string_view authored, std::vector<std::string>& errors)
+        {
+            VerbSequenceDesc desc;
+            std::vector<AssetRef> dependencies;
+            CompiledVerbSequence compiled;
+            const std::optional<JsonValue> json = JsonParse(authored);
+            if (!json.has_value())
+                errors.push_back("not JSON");
+            else if (ReadVerbSequence(*json, desc, dependencies, errors))
+                CompileVerbSequence(desc,
+                                    VerbSequenceEnvironment{ .Bindings = MakeVerbBindingEnvironment(Entities()),
+                                                             .Queries = FindAuthoredQueryRegistry(Entities()),
+                                                             .Components = &Entities(),
+                                                             .Ports = kSequencePorts },
+                                    compiled, errors);
+            return compiled;
+        }
+
+        SequenceOutcome RunSequence(const CompiledVerbSequence& compiled, EntityId self, EntityId user)
+        {
+            const std::array<AuthoredValue, 2> values{ AuthoredValue::Entity(self), AuthoredValue::Entity(user) };
+            return Runner.Run(compiled, SequenceRun{ .Entities = Entities(),
+                                                     .Verbs = *Verbs,
+                                                     .Queries = Queries.get(),
+                                                     .Ports = values,
+                                                     .Source = {} });
+        }
+
+        static constexpr std::array<SequencePort, 2> kSequencePorts{ SequencePort{ .Name = "self" },
+                                                                     SequencePort{ .Name = "user" } };
+
         FixedSimulationLoop Clock;
         EquipmentOperations Operations{ Entities(), Clock };
         std::pair<VerbId, VerbAnswer> Last;
@@ -962,6 +994,7 @@ namespace
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         std::vector<VerbBindingToken> Tokens;
         std::vector<AuthoredQueryBindingToken> QueryTokens;
+        VerbSequenceRunner Runner;
     };
 }
 
@@ -1007,37 +1040,43 @@ TEST_F(EquipmentVocabularyTest, ATakenItemIsWornByTheEntryTheTakeAnswered)
     ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryTakeVerb))->Result.has_value());
     ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryGiveVerb))->Result.has_value());
 
-    const std::optional<JsonValue> authored = JsonParse(R"({"commands": [
+    std::vector<std::string> errors;
+    const CompiledVerbSequence compiled = CompileSequence(R"({"commands": [
         {"verb": "inventory.take", "as": "taken", "on_failure": "stop",
          "arguments": {"pickup": {"port": "self"}, "into": {"port": "user"}}},
-        {"verb": "equipment.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "taken"}}}]})");
-    ASSERT_TRUE(authored.has_value());
-    VerbSequenceDesc desc;
-    std::vector<AssetRef> dependencies;
-    std::vector<std::string> errors;
-    ASSERT_TRUE(ReadVerbSequence(*authored, desc, dependencies, errors)) << errors.front();
-    const std::array<SequencePort, 2> ports{ SequencePort{ .Name = "self" }, SequencePort{ .Name = "user" } };
-    CompiledVerbSequence compiled;
-    CompileVerbSequence(desc,
-                        VerbSequenceEnvironment{ .Bindings = MakeVerbBindingEnvironment(Entities()),
-                                                 .Queries = FindAuthoredQueryRegistry(Entities()),
-                                                 .Components = &Entities(),
-                                                 .Ports = ports },
-                        compiled, errors);
+        {"verb": "equipment.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "taken"}}}]})",
+                                                          errors);
     ASSERT_TRUE(errors.empty()) << errors.front();
 
     const EntityId pickup = Entities().CreateEntity();
     Entities().AddComponent<ItemPickup>(pickup, ItemPickup{ .Definition = RingItem, .Count = 1 });
-    const std::array<AuthoredValue, 2> values{ AuthoredValue::Entity(pickup), AuthoredValue::Entity(Hero) };
-    VerbSequenceRunner runner;
-    const SequenceOutcome outcome =
-        runner.Run(compiled, SequenceRun{ .Entities = Entities(), .Verbs = *Verbs, .Ports = values, .Source = {} });
+    const SequenceOutcome outcome = RunSequence(compiled, pickup, Hero);
     EXPECT_EQ(outcome.Invoked, 2u);
     EXPECT_EQ(outcome.Failed, 0u);
     ASSERT_EQ(Records().size(), 1u);
     const std::vector<EntityId> held = HeldEntries(Entities(), Hero);
     ASSERT_EQ(held.size(), 1u);
     EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), held[0]);
+}
+
+TEST_F(EquipmentVocabularyTest, AnEquipWearsTheEntryASearchFindsWhenItsCommandRuns)
+{
+    InventoryOperations items{ Entities(), Clock };
+    const AuthoredApiBindings searches = BindAuthoredApi(nullptr, Queries.get(), items);
+    (void)Give(Pebble);
+    std::vector<std::string> errors;
+    const CompiledVerbSequence compiled = CompileSequence(R"({"commands": [
+        {"verb": "equipment.equip", "arguments": {"wearer": {"port": "user"},
+         "entry": {"query": "inventory.entry",
+                   "arguments": {"container": {"port": "user"}, "tag": {"tag": "Item.Ring"}}}}}]})",
+                                                          errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    EXPECT_EQ(RunSequence(compiled, Hero, Hero).Failed, 1u) << "no ring is held yet, so the search answers nothing";
+    const EntityId ring = Give(RingItem);
+    EXPECT_EQ(RunSequence(compiled, Hero, Hero).Failed, 0u);
+    ASSERT_EQ(Records().size(), 1u);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), ring);
 }
 
 TEST(EquipmentRefusals, EveryRefusalHasAName)

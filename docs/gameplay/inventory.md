@@ -142,6 +142,30 @@ it is told who held the entry, which is how a moved entry is unequipped.
 **Moving an entry** is `HoldRecord`: its holder, position, relevance anchor and
 storage partition change together, and what it holds follows it.
 
+## Searching a container
+
+One filter serves every walk over what a container holds (`inventory/Inventory.h`):
+`ItemFilter { Definition, Tag, Within }` matches an entry of that item (any when
+invalid), whose item carries the tag or one beneath it (any when invalid), and
+with `Within` looks inside what the container's entries hold too, however deep.
+
+- `ForEachItemEntry(world, container, filter, visit)` visits matching unspent
+  entries in container order, a nested entry's contents right after it, until
+  the visitor returns false. A spent entry is passed over; what it holds is
+  still walked.
+- `FindItemEntry(world, container, filter, pick)` answers the first match, or
+  the last with `ItemEntryPick::Last`, or an invalid id.
+- `CountItemUnits(world, container, filter)` sums the matches' counts.
+
+`inventory.count`, `inventory.entry` and the `inventory.item` cost provider's
+container row all read through it. It is a search: "last" means the last in the
+container's order, never the entry most recently given. Today a give appends, so
+the two agree, but placing an entry at a position (`docs/deferred.md`, "Placing
+an entry at a position") would part them. Content that must act on the entry a
+give or take made reads that verb's result instead (`docs/gameplay/responses.md`,
+"Results"), which is exact: given a second sword, the sequence equips the one it
+was given and not the first.
+
 ## Who may use an entry
 
 `MayUseItem(world, actor, item)` is the one rule a use, an item cost and
@@ -170,6 +194,7 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 | `inventory.drop` | `entry`, `at`, `force`, `keep` (true) | `Drop`, into the zone where it lands; a kept pickup stays with that zone |
 | `inventory.use` | `entry`, `user` (its holder) | `Use` |
 | `inventory.count` (query, int) | `container`, `definition?`, `tag?`, `within` (false) | Units held, spent entries not counted, of that definition and carrying that tag; `within` counts what entries hold too |
+| `inventory.entry` (query, entity) | `container`, `definition?`, `tag?`, `within` (false), `last` (false) | The first matching unspent entry in container order, or the last with `last` (`FindItemEntry`); unavailable when none matches, which fails the command reading it |
 
 A response's condition gates on `inventory.count` with `require`
 (`{ "min": 3 }` for "holds at least three"). A verb refused for any inventory
@@ -180,7 +205,10 @@ vocabulary reference read it as `refused: container_full`
 `VerbInvocationResult::Detail` with the enum, or reads its name through
 `EnumToString`. A sequence that takes or gives an item and then acts on it
 names the verb's result (`docs/gameplay/responses.md`, "Results"): "pick it up
-and raise it" is a take `as` an entry, then an equip of that entry.
+and raise it" is a take `as` an entry, then an equip of that entry. A command
+that acts on an entry found by what it is ("select weapon 3", "drink a potion
+from the pack") reads `inventory.entry` as its argument, asked when the command
+runs; an ability's `query` op stores the same answer in a local.
 
 ## Spending, depletion and the inventory pass
 

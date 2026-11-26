@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredBindingToken.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
@@ -110,4 +111,5 @@ private:
     std::unique_ptr<LevelChangeOperations> LevelChanges;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;
+    std::vector<AuthoredApiBindings> Generated;
 };

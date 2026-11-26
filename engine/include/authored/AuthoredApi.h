@@ -85,6 +85,24 @@ namespace AuthoredApiDetail
     }
 } // namespace AuthoredApiDetail
 
+// T's generated verbs and queries, into scopes a provider already holds. A null scope takes nothing.
+template<typename T>
+void DeclareAuthoredApi(VerbRegistrationScope* verbs, AuthoredQueryRegistrationScope* queries)
+{
+    if constexpr (HasAuthoredVerbs<T>)
+    {
+        if (verbs != nullptr)
+            for (const AuthoredVerbEntry<T>& entry : AuthoredApiDefinition<T>::Verbs)
+                (void)verbs->Declare(entry.Describe());
+    }
+    if constexpr (HasAuthoredQueries<T>)
+    {
+        if (queries != nullptr)
+            for (const AuthoredQueryEntry<T>& entry : AuthoredApiDefinition<T>::Queries)
+                (void)queries->Declare(entry.Describe());
+    }
+}
+
 // One provider's declarations into all three catalogs, committed together.
 // A World without catalogs takes nothing, and Commit returns false.
 class AuthoredVocabularyScope
@@ -104,16 +122,7 @@ public:
                           || HasAuthoredEventDefinition<T>,
                       "this type exposes no authored contract: annotate it with SENCHA_VERB, "
                       "SENCHA_QUERY or SENCHA_EVENT, and include its companion");
-        if constexpr (HasAuthoredVerbs<T>)
-        {
-            for (const AuthoredVerbEntry<T>& entry : AuthoredApiDefinition<T>::Verbs)
-                DeclareVerb(entry.Describe());
-        }
-        if constexpr (HasAuthoredQueries<T>)
-        {
-            for (const AuthoredQueryEntry<T>& entry : AuthoredApiDefinition<T>::Queries)
-                DeclareQuery(entry.Describe());
-        }
+        DeclareAuthoredApi<T>(Verbs ? &*Verbs : nullptr, Queries ? &*Queries : nullptr);
         if constexpr (HasAuthoredFieldQueries<T>)
         {
             std::apply([this](const auto&... query) { (DeclareQuery(query.Describe()), ...); },
@@ -126,7 +135,6 @@ public:
     [[nodiscard]] bool Commit();
 
 private:
-    void DeclareVerb(VerbDefinition definition);
     void DeclareQuery(AuthoredQueryDefinition definition);
     void DeclareEvent(AuthoredEventDefinition definition);
 

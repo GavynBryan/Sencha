@@ -218,6 +218,14 @@ void TorchGame::OnShutdown(GameShutdownContext&)
 }
 ```
 
+A provider whose vocabulary already holds registration scopes declares a
+generated type into them with `DeclareAuthoredApi<T>(verbs, queries)`, which is
+what `Declare<T>()` does for verbs and queries. The engine's own vocabulary
+declares this way while its hand-written verbs share a provider with generated
+ones: `InventoryOperations` reads its verbs and `inventory.count` by hand, and
+declares `inventory.entry` with `SENCHA_QUERY`, bound by `BindAuthoredApi` on
+the same object.
+
 `BindAuthoredApi` puts one live object behind every verb and query its type
 declares, looking each name up once, and returns the tokens. Resetting them
 takes the object away. `Unbound()` lists anything declared that could not be

@@ -409,3 +409,52 @@ bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId t
     return tags != nullptr
         && std::ranges::any_of(item.Tags, [&](GameplayTagId held) { return tags->IsDescendantOf(held, tag); });
 }
+
+void VisitItemEntries(const World& world, EntityId container, const ItemFilter& filter, void* visitor,
+                      ItemEntryVisitor visit)
+{
+    const HeldRecordIndex* index = IndexOf(world);
+    if (index == nullptr || !container.IsValid() || !world.IsRegistered<ItemEntry>())
+        return;
+    const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+    const auto walk = [&](const auto& self, EntityId holder, int depth) -> bool {
+        if (depth >= kHeldDeepestNesting)
+            return true;
+        for (const EntityId record : index->RecordsOf(holder))
+        {
+            const ItemEntry* held = world.TryGet<ItemEntry>(record);
+            if (held == nullptr)
+                continue;
+            const ItemDefinition* item = items != nullptr ? items->Get(held->Definition) : nullptr;
+            const bool matches = held->Count > 0
+                && (!filter.Definition.IsValid() || held->Definition == filter.Definition)
+                && (!filter.Tag.IsValid() || (item != nullptr && ItemCarries(world, *item, filter.Tag)));
+            if (matches && !visit(visitor, record, held->Count, item))
+                return false;
+            if (filter.Within && !self(self, record, depth + 1))
+                return false;
+        }
+        return true;
+    };
+    (void)walk(walk, container, 0);
+}
+
+EntityId FindItemEntry(const World& world, EntityId container, const ItemFilter& filter, ItemEntryPick pick)
+{
+    EntityId found;
+    ForEachItemEntry(world, container, filter, [&](EntityId entry, std::uint32_t, const ItemDefinition*) {
+        found = entry;
+        return pick == ItemEntryPick::Last;
+    });
+    return found;
+}
+
+std::uint64_t CountItemUnits(const World& world, EntityId container, const ItemFilter& filter)
+{
+    std::uint64_t units = 0;
+    ForEachItemEntry(world, container, filter, [&](EntityId, std::uint32_t count, const ItemDefinition*) {
+        units += count;
+        return true;
+    });
+    return units;
+}

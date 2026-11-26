@@ -1462,10 +1462,30 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** `MayUseItem` lets an actor use what it holds, however deep. A
   container several actors use, such as a party's bag or a co-op team's stash,
   answers no to all but its holder.
-- **Where:** `inventory/Inventory.cpp` (`MayUseItem`); every use, item cost and
-  equip asks it.
-- **Trigger:** a co-op or party game whose players draw from one bag. Then
-  extend `MayUseItem` with the sharing rule, and nothing else.
+- **Where:** every site that asks who holds an entry, not `MayUseItem` alone:
+  `MayUseItem` (`inventory/Inventory.cpp`), which every use, item cost and equip
+  asks; the walks over what a holder holds, which share `ForEachItemEntry`
+  except `HeldEntries` in `Equipment::Cycle` and the rebind scan in
+  `equipment/EquipmentSystem.cpp`; `ItemHolder` in the move admission, the
+  former-holder lookup and the default `user` of `inventory.use`; and relevance
+  anchoring, which sends an entry to its root holder's owner only.
+- **Trigger:** a co-op or party game whose players draw from one bag. Then put
+  the sharing rule in `MayUseItem` and `ForEachItemEntry`, move the two
+  remaining walks onto it, and anchor a shared container's entries to every
+  sharer.
+
+## Placing an entry at a position, and dropping part of a stack
+
+- **What:** `Inventory::Transfer` takes no position and `Inventory::Drop` no
+  count. A give or a move appends to the container's order; nothing places an
+  entry in a hotbar slot or a grid cell, sorts a container, or drops three
+  arrows of twenty.
+- **Where:** `inventory/Inventory.cpp` (`Transfer`, `Drop`), `HoldRecord` for
+  the position.
+- **Trigger:** a hotbar, a sort or a grid inventory. `inventory.entry` searches
+  in the container's order and promises nothing about when an entry arrived, so
+  it stays true when this lands; content that means "the entry just given"
+  already reads the give's result.
 
 ## Authoring a container's contents from the container
 

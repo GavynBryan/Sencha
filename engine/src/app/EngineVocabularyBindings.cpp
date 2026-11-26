@@ -127,6 +127,7 @@ void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQuer
     Verbs.push_back(verbs.Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), *Items));
     Verbs.push_back(verbs.Bind<&InvokeInventoryUse>(catalog.Find(kInventoryUseVerb), *Items));
     Queries.push_back(BindInventoryQuery(queries, std::as_const(Entities)));
+    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Items));
 }
 
 void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)

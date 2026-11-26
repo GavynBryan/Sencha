@@ -1733,3 +1733,15 @@ alive, through the new `AuthoredTargetAlive`, which needs the provider's
 `SENCHA_MIN`, `SENCHA_MAX`, `SENCHA_UNITS` and `SENCHA_RECORD`;
 `SENCHA_TARGET_PICK` is renamed `SENCHA_ANNOTATION_PICK`. The save format and
 the net protocol do not change.
+
+## v79
+
+`inventory/Inventory.h` gains the one walk over what a container holds:
+`ItemFilter`, `ItemEntryVisitor`, `VisitItemEntries`, `ForEachItemEntry`,
+`ItemEntryPick`, `FindItemEntry` and `CountItemUnits`. `InventoryOperations`
+declares the query `inventory.entry` with `SENCHA_QUERY` and answers
+`AuthoredWorld()`, so `inventory/InventoryVocabulary.h` includes its companion.
+`authored/AuthoredApi.h` gains `DeclareAuthoredApi`, and
+`AuthoredVocabularyScope` loses its private `DeclareVerb`.
+`EngineVocabularyBindings` holds the generated bindings it made. The save
+format, the scene format and the net protocol do not change.

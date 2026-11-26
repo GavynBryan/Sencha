@@ -75,6 +75,7 @@ An argument reads `key: type = default [minimum .. maximum] (units)`; `key?` may
 | `equipment.in_slot` | `wearer: entity`<br>`slot: string` | `entity` | The entry a slot holds. |
 | `equipment.sources` | `wearer: entity`<br>`tag: tag` | `array of entity` | Every entry worn whose item carries a tag. |
 | `inventory.count` | `container: entity`<br>`definition?: data asset (item.definition)`<br>`tag?: tag`<br>`within: bool = false` | `int` | How many units a container holds, spent entries not counted. |
+| `inventory.entry` | `container: entity`<br>`definition?: data asset (item.definition)`<br>`tag?: tag`<br>`within: bool = false`<br>`last: bool = false` | `entity` | Searches a container, in its order, for the first unspent entry of an item or carrying a tag, or the last with 'last'. Not the entry a give made: that is the give's result. |
 | `line.anchor` | `instigator: entity` | `vector3` | Where the line the instigator is holding is anchored; unavailable when none is. |
 | `line.anchored` | `instigator: entity` | `bool` | Whether the instigator is holding a line anchored. |
 | `line.anchored_within` | `instigator: entity`<br>`point: vector3`<br>`distance: float` | `bool` | Whether the instigator is holding a line anchored within a distance of a point. |

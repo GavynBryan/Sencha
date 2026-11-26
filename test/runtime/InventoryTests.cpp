@@ -11,6 +11,7 @@
 #include <app/EngineVocabulary.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <ecs/Query.h>
 #include <effects/ActiveEffect.h>
@@ -832,6 +833,7 @@ protected:
         Tokens.push_back(Verbs->Bind<&InvokeInventoryTransfer>(catalog.Find(kInventoryTransferVerb), Operations));
         Tokens.push_back(Verbs->Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), Operations));
         QueryToken = BindInventoryQuery(*Queries, std::as_const(Runtime).Entities());
+        Searches = BindAuthoredApi(nullptr, Queries.get(), Operations);
     }
 
     VerbAdmission Invoke(std::string_view verb, std::vector<std::pair<std::string, EntityId>> entities,
@@ -894,6 +896,22 @@ protected:
         return count;
     }
 
+    std::optional<EntityId> EntryIn(EntityId container, AuthoredValue definition, AuthoredValue tag = {},
+                                    bool within = false, bool last = false)
+    {
+        AuthoredValue result;
+        const std::vector<AuthoredValue> arguments{ AuthoredValue::Entity(container), definition, tag,
+                                                    AuthoredValue::Bool(within), AuthoredValue::Bool(last) };
+        const AuthoredQueryStatus status =
+            Queries->Evaluate(Queries->Registry().Resolve(AuthoredApiDefinition<InventoryOperations>::Name_Entry), arguments, result);
+        if (status == AuthoredQueryStatus::Unavailable)
+            return std::nullopt;
+        EntityId entry;
+        EXPECT_EQ(status, AuthoredQueryStatus::Value);
+        EXPECT_TRUE(result.TryGetEntity(entry));
+        return entry;
+    }
+
     static AuthoredValue Item(std::string path)
     {
         return AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = std::move(path) });
@@ -906,6 +924,7 @@ protected:
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::vector<VerbBindingToken> Tokens;
     AuthoredQueryBindingToken QueryToken;
+    AuthoredApiBindings Searches;
 };
 }
 
@@ -983,6 +1002,51 @@ TEST_F(InventoryVocabularyTest, TheCountTakesADefinitionOrATagAndCanLookInsideWh
     EXPECT_EQ(CountIn(Hero, {}, AuthoredValue::Tag(Wearable), true), 3);
     EXPECT_EQ(CountIn(Hero, {}), 5) << "no filter counts every unit, the bag's own included";
     EXPECT_EQ(CountIn(Hero, Item("asset://items/none.sdata")), 0);
+}
+
+TEST_F(InventoryVocabularyTest, TheEntrySearchAnswersTheFirstOrLastUnspentEntryInContainerOrder)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    const EntityId first = inventory.Give(Hero, Cloak, 1).Entry;
+    (void)inventory.Give(Hero, Arrows, 3);
+    const EntityId second = inventory.Give(Hero, Cloak, 1).Entry;
+    const AuthoredValue cloak = Item("asset://items/cloak.sdata");
+
+    EXPECT_EQ(EntryIn(Hero, cloak), first);
+    EXPECT_EQ(EntryIn(Hero, cloak, {}, false, true), second) << "the last in the container's order";
+    SetItemCount(Entities(), first, 0);
+    EXPECT_EQ(EntryIn(Hero, cloak), second) << "a spent entry is passed over";
+    SetItemCount(Entities(), second, 0);
+    EXPECT_EQ(EntryIn(Hero, cloak), std::nullopt);
+}
+
+TEST_F(InventoryVocabularyTest, TheEntrySearchLooksInsideWhatIsHeldOnlyWhenAsked)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    const EntityId bag = BagIn(Hero);
+    const EntityId packed = inventory.Give(bag, Cloak, 1).Entry;
+    const AuthoredValue cloak = Item("asset://items/cloak.sdata");
+
+    EXPECT_EQ(EntryIn(Hero, cloak), std::nullopt) << "what the bag holds is not the hero's own";
+    EXPECT_EQ(EntryIn(Hero, cloak, {}, true), packed);
+    const EntityId worn = inventory.Give(Hero, Cloak, 1).Entry;
+    EXPECT_EQ(EntryIn(Hero, cloak, {}, true), packed) << "a nested entry's contents follow it, before what comes after";
+    EXPECT_EQ(EntryIn(Hero, cloak, {}, true, true), worn);
+}
+
+TEST_F(InventoryVocabularyTest, TheEntrySearchMatchesATagOrOneBeneathItAndAnswersNothingWithoutAMatch)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    const EntityId arrows = inventory.Give(Hero, Arrows, 3).Entry;
+    const EntityId cloak = inventory.Give(Hero, Cloak, 1).Entry;
+    const GameplayTagId item = Entities().GetResource<GameplayTagRegistry>().FindTag("Item");
+
+    EXPECT_EQ(EntryIn(Hero, {}, AuthoredValue::Tag(Wearable)), cloak);
+    EXPECT_EQ(EntryIn(Hero, {}, AuthoredValue::Tag(item)), cloak) << "a tag beneath the one asked for matches";
+    EXPECT_EQ(EntryIn(Hero, {}), arrows) << "no filter answers the first entry";
+    EXPECT_EQ(EntryIn(Hero, Item("asset://items/bag.sdata")), std::nullopt);
+    EXPECT_EQ(EntryIn(Hero, Item("asset://items/none.sdata")), std::nullopt) << "an item content never declared";
+    EXPECT_EQ(EntryIn(Container(), {}), std::nullopt) << "an empty container";
 }
 
 TEST_F(InventoryConsumingTest, TheGatePicksUpStacksSplitsMovesDropsConsumesAndReaps)

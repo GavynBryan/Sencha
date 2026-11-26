@@ -9,6 +9,8 @@
 #include <time/FrameClock.h>
 
 #include <cstdint>
+#include <memory>
+#include <type_traits>
 #include <vector>
 
 class World;
@@ -73,6 +75,39 @@ struct InventoryResult
 [[nodiscard]] bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count);
 void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender = {});
 [[nodiscard]] bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag);
+
+struct ItemFilter
+{
+    ItemId Definition;
+    GameplayTagId Tag;
+    bool Within = false;
+};
+
+using ItemEntryVisitor = bool (*)(void* visitor, EntityId entry, std::uint32_t count, const ItemDefinition* item);
+
+// Unspent matching entries in container order, a nested entry's contents after it; `item` is null for an
+// item content never declared. The visitor returns false to stop.
+void VisitItemEntries(const World& world, EntityId container, const ItemFilter& filter, void* visitor,
+                      ItemEntryVisitor visit);
+
+template <typename Visitor>
+void ForEachItemEntry(const World& world, EntityId container, const ItemFilter& filter, Visitor&& visit)
+{
+    VisitItemEntries(world, container, filter, const_cast<void*>(static_cast<const void*>(std::addressof(visit))),
+                     [](void* visitor, EntityId entry, std::uint32_t count, const ItemDefinition* item) {
+                         return (*static_cast<std::remove_reference_t<Visitor>*>(visitor))(entry, count, item);
+                     });
+}
+
+enum class ItemEntryPick : std::uint8_t
+{
+    First,
+    Last,
+};
+
+[[nodiscard]] EntityId FindItemEntry(const World& world, EntityId container, const ItemFilter& filter,
+                                     ItemEntryPick pick = ItemEntryPick::First);
+[[nodiscard]] std::uint64_t CountItemUnits(const World& world, EntityId container, const ItemFilter& filter);
 
 // Owner thread, outside any query, in the tick `now`.
 class Inventory

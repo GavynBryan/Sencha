@@ -12,12 +12,6 @@ AuthoredVocabularyScope::AuthoredVocabularyScope(World& world, std::string provi
         Events.emplace(*events, provider);
 }
 
-void AuthoredVocabularyScope::DeclareVerb(VerbDefinition definition)
-{
-    if (Verbs)
-        (void)Verbs->Declare(std::move(definition));
-}
-
 void AuthoredVocabularyScope::DeclareQuery(AuthoredQueryDefinition definition)
 {
     if (Queries)

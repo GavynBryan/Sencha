@@ -22,10 +22,7 @@ namespace
         if (row.Arguments.size() < 2 || !row.Arguments[1].TryGetEntity(container)
             || !MayUseItem(world, row.Actor, container))
             return EntityId{};
-        for (const EntityId held : ItemsIn(world, container))
-            if (world.TryGet<ItemEntry>(held)->Count > 0)
-                return held;
-        return EntityId{};
+        return FindItemEntry(world, container, ItemFilter{});
     }
 
     std::uint32_t UnitsOf(const AbilityCostRow& row)
