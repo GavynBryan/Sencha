@@ -122,7 +122,9 @@ public:
     // Keeps existing storage, so a reused pack stops allocating once warmed.
     void Resize(std::size_t slots);
 
-    void Set(std::size_t slot, AuthoredValue value);
+    // Assigns over the slot's own storage, so a warmed pack takes a text or an asset path without allocating.
+    void Set(std::size_t slot, const AuthoredValue& value);
+    void Set(std::size_t slot, AuthoredValue&& value);
 
     // None for an out-of-range slot.
     [[nodiscard]] const AuthoredValue& At(std::size_t slot) const;

@@ -31,6 +31,8 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -63,6 +65,10 @@ llvm::cl::opt<std::string> gResourceDir(
     llvm::cl::value_desc("path"), llvm::cl::init(SENCHA_CLANG_RESOURCE_DIR),
     llvm::cl::cat(gCategory));
 
+llvm::cl::opt<std::string> gDepfile(
+    "depfile", llvm::cl::desc("Dependency file naming every header the parse read"),
+    llvm::cl::value_desc("path"), llvm::cl::cat(gCategory));
+
 llvm::cl::opt<std::string> gFlags(
     "flags", llvm::cl::desc("File of compile flags, one per line"),
     llvm::cl::value_desc("path"), llvm::cl::cat(gCategory));
@@ -78,7 +84,7 @@ llvm::cl::opt<std::string> gSource(
 // Stamped into every companion so an SDK whose generator predates its headers
 // fails at compile naming both versions, and reported by --format-version so
 // the build can refuse such a generator at configure time.
-constexpr unsigned kFormatVersion = 3;
+constexpr unsigned kFormatVersion = 4;
 
 // ─── The facts a declaration can state ───────────────────────────────────────
 
@@ -139,31 +145,71 @@ struct ParamFacts
     std::string Key;             // persisted argument key
     std::string Type;            // qualified value type, reference and cv removed
     std::string Label;
+    std::string Description;
+    std::string Units;
     std::string TargetComponent; // as annotated, resolved by the compiler in the companion
     std::string RangeMin;
     std::string RangeMax;
+    std::string Min;
+    std::string Max;
+    std::string AssetKind;
+    std::string DataSubtype;
     std::string Default;         // a typed C++ constant; empty for none
+    bool Target = false;
+    bool Borrowed = false;
     unsigned Line = 0;
+};
+
+enum class MethodRole
+{
+    Verb,
+    Query,
+    Lease,
+    Release,
+    Holds,
+};
+
+enum class VerbReturn
+{
+    Admission,
+    Answer,
+    Refusal,
+    Result,
 };
 
 struct MethodFacts
 {
-    bool IsVerb = true;
+    MethodRole Role = MethodRole::Verb;
     std::string Identity;
     std::string Method;
     std::string Label;
     std::string Description;
     std::string Category;
     std::string ResultType;      // a query's qualified return type
+    std::string ReturnType;
+    VerbReturn Returns = VerbReturn::Admission;
+    std::string ResultKey;
+    std::string ResultComponent;
+    std::string Prediction;
+    bool Cosmetic = false;
+    bool Completes = false;
     bool TakesInvocation = false;
+    std::string Release;
+    std::string Holds;
     std::vector<ParamFacts> Params;
+    clang::SourceLocation Where;
     unsigned Line = 0;
+
+    bool Dispatched() const { return Role == MethodRole::Verb || Role == MethodRole::Lease; }
+    bool Entry() const { return Role != MethodRole::Release && Role != MethodRole::Holds; }
 };
 
 struct ProviderFacts
 {
     std::string Type;            // qualified
     std::vector<MethodFacts> Methods;
+    bool ChecksTargets = false;
+    unsigned TargetLine = 0;
 };
 
 struct EventFieldFacts
@@ -183,6 +229,13 @@ struct EventFacts
     std::string Label;
     std::string Description;
     std::string Category;
+    std::vector<EventFieldFacts> Fields;
+    unsigned Line = 0;
+};
+
+struct RecordFacts
+{
+    std::string Type;
     std::vector<EventFieldFacts> Fields;
     unsigned Line = 0;
 };
@@ -221,8 +274,8 @@ std::string Literal(const std::string& text)
 // Names generated adapters use, which parameter locals must not shadow.
 bool IsReservedLocal(const std::string& name)
 {
-    static const std::set<std::string> reserved{ "self", "invocation", "arguments",
-                                                 "result", "definition", "field" };
+    static const std::set<std::string> reserved{ "self", "invocation", "arguments", "result",
+                                                 "definition", "field", "member", "members" };
     return reserved.count(name) != 0;
 }
 
@@ -267,6 +320,7 @@ public:
 
         bool annotated = false;
         bool isEvent = false;
+        bool isRecord = false;
         bool eventOnly = false;  // an annotation only an event may carry
         for (const auto* attr : record->specific_attrs<clang::AnnotateAttr>())
         {
@@ -286,6 +340,7 @@ public:
             else if (text == "sencha.authority_materialized")     facts.AuthorityMaterialized = true;
             else if (text == "sencha.non_removable")              facts.NonRemovable = true;
             else if (text == "sencha.saved")                      facts.Saved = true;
+            else if (text == "sencha.record")                     isRecord = true;
             else if (Split(text, "sencha.event=", value))         { event.Identity = value; isEvent = true; }
             else if (Split(text, "sencha.event_source=", value))  { event.Source = value; eventOnly = true; }
             else if (Split(text, "sencha.label=", value))         { event.Label = value; eventOnly = true; }
@@ -297,6 +352,25 @@ public:
         const bool templated = record->getDescribedClassTemplate() != nullptr
                                || llvm::isa<clang::ClassTemplateSpecializationDecl>(record)
                                || record->isDependentContext();
+
+        if (isRecord)
+        {
+            if (!facts.Identity.empty() || isEvent || eventOnly)
+            {
+                Error(record->getLocation(),
+                      "'" + facts.Type + "' is a SENCHA_RECORD and carries component or event annotations: "
+                      "a record is a result's shape and nothing else");
+                return true;
+            }
+            if (templated)
+            {
+                Error(record->getLocation(), "record '" + facts.Type + "' is a template");
+                return true;
+            }
+            CollectRecord(record);
+            CollectMethods(record, facts.Type, /*isComponent=*/false, /*isEvent=*/true);
+            return true;
+        }
 
         if (isEvent)
         {
@@ -404,6 +478,7 @@ public:
     std::vector<ComponentFacts> Components;
     std::vector<ProviderFacts> Providers;
     std::vector<EventFacts> Events;
+    std::vector<RecordFacts> Records;
     bool Failed = false;
 
 private:
@@ -535,7 +610,24 @@ private:
     {
         if (event.Identity.empty())
             Error(record->getLocation(), "SENCHA_EVENT on '" + event.Type + "' has no name");
+        event.Fields = CollectMembers(record, "event '" + event.Identity + "'");
+        Events.push_back(std::move(event));
+    }
 
+    void CollectRecord(const clang::CXXRecordDecl* record)
+    {
+        RecordFacts facts;
+        facts.Type = record->getQualifiedNameAsString();
+        facts.Line = Line(record->getLocation());
+        facts.Fields = CollectMembers(record, "record '" + record->getNameAsString() + "'");
+        if (facts.Fields.empty())
+            Error(record->getLocation(), "SENCHA_RECORD '" + record->getNameAsString() + "' has no SENCHA_FIELD");
+        Records.push_back(std::move(facts));
+    }
+
+    std::vector<EventFieldFacts> CollectMembers(const clang::CXXRecordDecl* record, const std::string& owner)
+    {
+        std::vector<EventFieldFacts> members;
         for (const clang::FieldDecl* field : record->fields())
         {
             EventFieldFacts out;
@@ -551,8 +643,8 @@ private:
                 else
                 {
                     Error(field->getLocation(),
-                          "annotation '" + text.str() + "' does not apply to an event's payload; "
-                          "a payload member takes SENCHA_FIELD and SENCHA_LABEL");
+                          "annotation '" + text.str() + "' does not apply to the members of " + owner
+                              + "; a member takes SENCHA_FIELD and SENCHA_LABEL");
                 }
             }
             if (!tagged)
@@ -561,25 +653,24 @@ private:
                 {
                     Error(field->getLocation(),
                           "member '" + field->getNameAsString() + "' has a SENCHA_LABEL but no "
-                          "SENCHA_FIELD, so it is not part of the payload");
+                          "SENCHA_FIELD, so it is not part of " + owner);
                 }
                 continue;
             }
             out.Member = field->getNameAsString();
             out.Type = TypeName(field->getType().getUnqualifiedType());
             out.Line = Line(field->getLocation());
-            for (const EventFieldFacts& existing : event.Fields)
+            for (const EventFieldFacts& existing : members)
             {
                 if (existing.Name == out.Name)
                 {
                     Error(field->getLocation(),
-                          "payload key '" + out.Name + "' is declared twice on event '"
-                              + event.Identity + "'");
+                          "key '" + out.Name + "' is declared twice on " + owner);
                 }
             }
-            event.Fields.push_back(std::move(out));
+            members.push_back(std::move(out));
         }
-        Events.push_back(std::move(event));
+        return members;
     }
 
     void CollectMethods(const clang::CXXRecordDecl* record,
@@ -591,6 +682,7 @@ private:
         provider.Type = record->getQualifiedNameAsString();
         std::set<std::string> methodNames;
         std::set<std::string> identities;
+        std::vector<MethodFacts> halves;
 
         for (const clang::CXXMethodDecl* method : record->methods())
         {
@@ -599,8 +691,8 @@ private:
 
             MethodFacts facts;
             bool annotated = false;
-            bool verb = false;
-            bool query = false;
+            int roles = 0;
+            bool hasPrediction = false;
             for (const auto* attr : method->specific_attrs<clang::AnnotateAttr>())
             {
                 const llvm::StringRef text = attr->getAnnotation();
@@ -608,11 +700,19 @@ private:
                     continue;
                 annotated = true;
                 std::string value;
-                if (Split(text, "sencha.verb=", value))              { facts.Identity = value; verb = true; }
-                else if (Split(text, "sencha.query=", value))        { facts.Identity = value; query = true; }
-                else if (Split(text, "sencha.label=", value))        facts.Label = value;
-                else if (Split(text, "sencha.description=", value))  facts.Description = value;
-                else if (Split(text, "sencha.category=", value))     facts.Category = value;
+                if (Split(text, "sencha.verb=", value))                  { facts.Identity = value; facts.Role = MethodRole::Verb; ++roles; }
+                else if (Split(text, "sencha.query=", value))            { facts.Identity = value; facts.Role = MethodRole::Query; ++roles; }
+                else if (Split(text, "sencha.lease=", value))            { facts.Identity = value; facts.Role = MethodRole::Lease; ++roles; }
+                else if (Split(text, "sencha.lease_release=", value))    { facts.Identity = value; facts.Role = MethodRole::Release; ++roles; }
+                else if (Split(text, "sencha.lease_holds=", value))      { facts.Identity = value; facts.Role = MethodRole::Holds; ++roles; }
+                else if (Split(text, "sencha.label=", value))            facts.Label = value;
+                else if (Split(text, "sencha.description=", value))      facts.Description = value;
+                else if (Split(text, "sencha.category=", value))         facts.Category = value;
+                else if (Split(text, "sencha.prediction=", value))       { facts.Prediction = value; hasPrediction = true; }
+                else if (Split(text, "sencha.result=", value))           facts.ResultKey = value;
+                else if (Split(text, "sencha.result_component=", value)) facts.ResultComponent = value;
+                else if (text == "sencha.cosmetic")                      facts.Cosmetic = true;
+                else if (text == "sencha.completes")                     facts.Completes = true;
                 else Error(method->getLocation(), "unknown method annotation '" + text.str() + "'");
             }
             if (!annotated)
@@ -628,18 +728,17 @@ private:
                         "question from the system that owns the behaviour");
                 continue;
             }
-            if (verb == query)
+            if (roles != 1)
             {
                 Error(method->getLocation(),
-                      "'" + typeName + "::" + name + "' needs exactly one of SENCHA_VERB "
-                      "and SENCHA_QUERY");
+                      "'" + typeName + "::" + name + "' needs exactly one of SENCHA_VERB, SENCHA_QUERY, "
+                      "SENCHA_LEASE, SENCHA_LEASE_RELEASE and SENCHA_LEASE_HOLDS");
                 continue;
             }
-            facts.IsVerb = verb;
             facts.Method = name;
+            facts.Where = method->getLocation();
             facts.Line = Line(method->getLocation());
-            const std::string what = std::string(verb ? "SENCHA_VERB" : "SENCHA_QUERY") + "(\""
-                                   + facts.Identity + "\")";
+            const std::string what = std::string(RoleAnnotation(facts.Role)) + "(\"" + facts.Identity + "\")";
 
             if (method->isStatic() || method->getAccess() != clang::AS_public
                 || method->getDescribedFunctionTemplate() != nullptr
@@ -665,6 +764,16 @@ private:
                 Error(method->getLocation(), what + ": the identity is empty");
                 continue;
             }
+            if (!CheckClassification(method, facts, hasPrediction, what))
+                continue;
+
+            if (facts.Role == MethodRole::Release || facts.Role == MethodRole::Holds)
+            {
+                if (CheckLeaseHalf(method, facts, what))
+                    halves.push_back(std::move(facts));
+                continue;
+            }
+
             if (!identities.insert(facts.Identity).second)
             {
                 Error(method->getLocation(),
@@ -672,14 +781,9 @@ private:
                 continue;
             }
 
-            if (verb && !IsNamed(method->getReturnType(), "VerbAdmission"))
-            {
-                Error(method->getLocation(),
-                      what + ": '" + name + "' returns '" + TypeName(method->getReturnType())
-                          + "'; a verb returns VerbAdmission");
+            if (facts.Dispatched() && !ClassifyVerbReturn(method, facts, what))
                 continue;
-            }
-            if (query)
+            if (facts.Role == MethodRole::Query)
             {
                 if (!method->isConst())
                 {
@@ -703,10 +807,10 @@ private:
                 const clang::ParmVarDecl* param = method->getParamDecl(index);
                 if (IsInvocationParameter(param))
                 {
-                    if (!verb || index != 0)
+                    if (!facts.Dispatched() || index != 0)
                     {
                         Error(param->getLocation(),
-                              what + ": only a verb takes the invocation, and only as its "
+                              what + ": only a verb or a lease takes the invocation, and only as its "
                               "first parameter");
                     }
                     else
@@ -717,12 +821,198 @@ private:
                 }
                 CollectParam(param, index, what, facts);
             }
+            if (facts.Dispatched())
+            {
+                for (const ParamFacts& param : facts.Params)
+                {
+                    if (param.Target && !provider.ChecksTargets)
+                    {
+                        provider.ChecksTargets = true;
+                        provider.TargetLine = param.Line;
+                    }
+                }
+            }
 
             provider.Methods.push_back(std::move(facts));
         }
 
+        PairLeaseHalves(provider, halves);
         if (!provider.Methods.empty())
             Providers.push_back(std::move(provider));
+    }
+
+    static const char* RoleAnnotation(MethodRole role)
+    {
+        switch (role)
+        {
+        case MethodRole::Verb:    return "SENCHA_VERB";
+        case MethodRole::Query:   return "SENCHA_QUERY";
+        case MethodRole::Lease:   return "SENCHA_LEASE";
+        case MethodRole::Release: return "SENCHA_LEASE_RELEASE";
+        case MethodRole::Holds:   return "SENCHA_LEASE_HOLDS";
+        }
+        return "";
+    }
+
+    bool CheckClassification(const clang::CXXMethodDecl* method, const MethodFacts& facts, bool hasPrediction,
+                             const std::string& what)
+    {
+        const bool classified = facts.Cosmetic || hasPrediction || facts.Completes || !facts.ResultKey.empty()
+                                || !facts.ResultComponent.empty();
+        if (classified && !facts.Dispatched())
+        {
+            Error(method->getLocation(),
+                  what + ": SENCHA_COSMETIC, SENCHA_PREDICTION, SENCHA_COMPLETES and SENCHA_RESULT describe "
+                  "a verb or a lease");
+            return false;
+        }
+        if (facts.Completes && facts.Role != MethodRole::Lease)
+        {
+            Error(method->getLocation(),
+                  what + ": SENCHA_COMPLETES on a verb; only a lease is held long enough to complete");
+            return false;
+        }
+        if (facts.Role == MethodRole::Lease && !facts.ResultKey.empty())
+        {
+            Error(method->getLocation(), what + ": a lease answers no result");
+            return false;
+        }
+        if (facts.Cosmetic && hasPrediction)
+        {
+            Error(method->getLocation(),
+                  what + ": a cosmetic verb is predicted as presentation, so it names no SENCHA_PREDICTION");
+            return false;
+        }
+        if (hasPrediction && facts.Prediction != "AuthorityOnly" && facts.Prediction != "Simulation")
+        {
+            Error(method->getLocation(),
+                  what + ": SENCHA_PREDICTION(" + facts.Prediction + ") names AuthorityOnly or Simulation; "
+                  "a presentation-predicted verb is SENCHA_COSMETIC");
+            return false;
+        }
+        return true;
+    }
+
+    bool ClassifyVerbReturn(const clang::CXXMethodDecl* method, MethodFacts& facts, const std::string& what)
+    {
+        const clang::QualType returned = method->getReturnType().getNonReferenceType().getUnqualifiedType();
+        facts.ReturnType = TypeName(returned);
+        if (IsNamed(returned, "VerbAdmission"))
+            facts.Returns = VerbReturn::Admission;
+        else if (IsNamed(returned, "VerbAnswer"))
+            facts.Returns = VerbReturn::Answer;
+        else if (IsSpecializationOf(returned, "VerbRefusal"))
+            facts.Returns = VerbReturn::Refusal;
+        else if (IsSpecializationOf(returned, "VerbResult"))
+            facts.Returns = VerbReturn::Result;
+        else
+        {
+            Error(method->getLocation(),
+                  what + ": '" + facts.Method + "' returns '" + TypeName(method->getReturnType())
+                      + "'; a verb returns VerbAdmission, VerbAnswer, VerbRefusal<E> or VerbResult<T, E>");
+            return false;
+        }
+        if (facts.Returns == VerbReturn::Result && facts.Role == MethodRole::Lease)
+        {
+            Error(method->getLocation(), what + ": a lease answers no result, so it returns no VerbResult");
+            return false;
+        }
+        if (facts.Returns == VerbReturn::Result && facts.ResultKey.empty())
+        {
+            Error(method->getLocation(),
+                  what + ": '" + facts.Method + "' returns VerbResult, so it names its result with SENCHA_RESULT");
+            return false;
+        }
+        if (facts.Returns != VerbReturn::Result && !facts.ResultKey.empty())
+        {
+            Error(method->getLocation(),
+                  what + ": '" + facts.Method + "' names a result with SENCHA_RESULT but returns no VerbResult");
+            return false;
+        }
+        return true;
+    }
+
+    bool CheckLeaseHalf(const clang::CXXMethodDecl* method, const MethodFacts& facts, const std::string& what)
+    {
+        const clang::QualType returned = method->getReturnType();
+        if (facts.Role == MethodRole::Release)
+        {
+            const bool onlyInvocation = method->getNumParams() == 1 && IsInvocationParameter(method->getParamDecl(0));
+            if (!onlyInvocation)
+            {
+                Error(method->getLocation(),
+                      what + ": '" + facts.Method + "' takes only the invocation; a release ends whatever "
+                      "the owner holds, so it has no arguments");
+                return false;
+            }
+            if (!IsNamed(returned, "VerbAdmission") && !IsNamed(returned, "VerbAnswer"))
+            {
+                Error(method->getLocation(),
+                      what + ": '" + facts.Method + "' returns '" + TypeName(returned)
+                          + "'; a release returns VerbAdmission or VerbAnswer");
+                return false;
+            }
+            return true;
+        }
+        const bool takesOwner = method->getNumParams() == 1
+                                && method->getParamDecl(0)->getType()->isLValueReferenceType()
+                                && method->getParamDecl(0)->getType().getNonReferenceType().isConstQualified()
+                                && IsNamed(method->getParamDecl(0)->getType().getNonReferenceType(), "LeaseOwner");
+        if (!method->isConst() || !returned->isBooleanType() || !takesOwner)
+        {
+            Error(method->getLocation(),
+                  what + ": '" + facts.Method + "' is a const method returning bool and taking only "
+                  "const LeaseOwner&: whether the owner's hold goes on");
+            return false;
+        }
+        return true;
+    }
+
+    void PairLeaseHalves(ProviderFacts& provider, const std::vector<MethodFacts>& halves)
+    {
+        for (const MethodFacts& half : halves)
+        {
+            const auto lease = std::find_if(provider.Methods.begin(), provider.Methods.end(), [&](const MethodFacts& m) {
+                return m.Role == MethodRole::Lease && m.Identity == half.Identity;
+            });
+            const std::string what = std::string(RoleAnnotation(half.Role)) + "(\"" + half.Identity + "\")";
+            if (lease == provider.Methods.end())
+            {
+                Error(half.Where, what + ": '" + half.Method + "' names no SENCHA_LEASE on this type");
+                continue;
+            }
+            std::string& slot = half.Role == MethodRole::Release ? lease->Release : lease->Holds;
+            if (!slot.empty())
+            {
+                Error(half.Where, what + ": the lease already has '" + slot + "'");
+                continue;
+            }
+            if (half.Role == MethodRole::Holds && !lease->Completes)
+            {
+                Error(half.Where,
+                      what + ": '" + half.Method + "' names a lease that does not complete; only a "
+                      "SENCHA_COMPLETES lease is asked whether a hold goes on");
+                continue;
+            }
+            slot = half.Method;
+        }
+        for (const MethodFacts& lease : provider.Methods)
+        {
+            if (lease.Role != MethodRole::Lease)
+                continue;
+            if (lease.Release.empty())
+            {
+                Error(lease.Where,
+                      "SENCHA_LEASE(\"" + lease.Identity + "\"): the lease has no SENCHA_LEASE_RELEASE; "
+                      "an owner must be able to let go");
+            }
+            if (lease.Completes && lease.Holds.empty())
+            {
+                Error(lease.Where,
+                      "SENCHA_LEASE(\"" + lease.Identity + "\"): the lease completes but has no "
+                      "SENCHA_LEASE_HOLDS to say whether a hold goes on");
+            }
+        }
     }
 
     void CollectParam(const clang::ParmVarDecl* param,
@@ -736,7 +1026,7 @@ private:
         const std::string shown = out.Name.empty() ? "#" + std::to_string(index + 1) : out.Name;
 
         bool argument = false;
-        bool target = false;
+        bool hasRange = false;
         for (const auto* attr : param->specific_attrs<clang::AnnotateAttr>())
         {
             const llvm::StringRef text = attr->getAnnotation();
@@ -744,11 +1034,18 @@ private:
                 continue;
             std::string value;
             if (Split(text, "sencha.arg=", value))                     { out.Key = value; argument = true; }
-            else if (Split(text, "sencha.target=", value))             { out.Key = value; target = true; }
+            else if (Split(text, "sencha.target=", value))             { out.Key = value; out.Target = true; }
             else if (Split(text, "sencha.target_component=", value))   out.TargetComponent = value;
             else if (Split(text, "sencha.label=", value))              out.Label = value;
+            else if (Split(text, "sencha.description=", value))        out.Description = value;
+            else if (Split(text, "sencha.units=", value))              out.Units = value;
+            else if (Split(text, "sencha.min=", value))                out.Min = value;
+            else if (Split(text, "sencha.max=", value))                out.Max = value;
+            else if (Split(text, "sencha.asset=", value))              out.AssetKind = value;
+            else if (Split(text, "sencha.data_asset=", value))         out.DataSubtype = value;
             else if (Split(text, "sencha.range=", value))
             {
+                hasRange = true;
                 const size_t comma = value.find(',');
                 out.RangeMin = llvm::StringRef(value).substr(0, comma).trim().str();
                 out.RangeMax = comma == std::string::npos
@@ -768,7 +1065,7 @@ private:
             }
         }
 
-        if (argument == target)
+        if (argument == out.Target)
         {
             Error(param->getLocation(),
                   what + ": parameter '" + shown + "' needs exactly one of SENCHA_ARG and "
@@ -801,10 +1098,11 @@ private:
                   "argument is a value the caller supplied, not an output");
             return;
         }
+        out.Borrowed = declared->isLValueReferenceType();
         const clang::QualType value = declared.getNonReferenceType().getUnqualifiedType();
         out.Type = TypeName(value);
 
-        if (target && !IsNamed(value, "EntityId") && !IsOptionalOf(value, "EntityId"))
+        if (out.Target && !IsNamed(value, "EntityId") && !IsOptionalOf(value, "EntityId"))
         {
             Error(param->getLocation(),
                   what + ": parameter '" + shown + "' uses SENCHA_TARGET"
@@ -812,17 +1110,38 @@ private:
                       + " but has type " + TypeName(declared));
             return;
         }
-        if (!target && !out.TargetComponent.empty())
+        if (!out.Target && !out.TargetComponent.empty())
         {
             Error(param->getLocation(),
                   what + ": parameter '" + shown + "' names a target component but is not a "
                   "SENCHA_TARGET");
             return;
         }
-        if (!out.RangeMin.empty() && out.RangeMax.empty())
+        if (hasRange && out.RangeMax.empty())
         {
             Error(param->getLocation(),
                   what + ": parameter '" + shown + "' has a SENCHA_RANGE without a maximum");
+            return;
+        }
+        if (hasRange && (!out.Min.empty() || !out.Max.empty()))
+        {
+            Error(param->getLocation(),
+                  what + ": parameter '" + shown + "' has both SENCHA_RANGE and SENCHA_MIN or SENCHA_MAX; "
+                  "a range states both ends");
+            return;
+        }
+        if (!out.AssetKind.empty() && !IsNamed(value, "AssetRef") && !IsOptionalOf(value, "AssetRef"))
+        {
+            Error(param->getLocation(),
+                  what + ": parameter '" + shown + "' is SENCHA_ASSET(" + out.AssetKind + ") but has type "
+                      + TypeName(declared) + "; SENCHA_ASSET applies to an AssetRef parameter");
+            return;
+        }
+        if (!out.DataSubtype.empty() && !IsNamed(value, "AuthoredDataRef") && !IsOptionalOf(value, "AuthoredDataRef"))
+        {
+            Error(param->getLocation(),
+                  what + ": parameter '" + shown + "' is SENCHA_DATA_ASSET but has type " + TypeName(declared)
+                      + "; SENCHA_DATA_ASSET applies to an AuthoredDataRef parameter");
             return;
         }
 
@@ -866,11 +1185,12 @@ private:
             return;
         }
 
-        if (IsNamed(type, "std::basic_string"))
+        if (IsNamed(type, "std::basic_string") || IsNamed(type, "std::basic_string_view"))
         {
             if (const clang::StringLiteral* literal = FindStringLiteral(expression))
             {
-                out.Default = "std::string{ " + Literal(literal->getString().str()) + " }";
+                const char* spelled = IsNamed(type, "std::basic_string") ? "std::string{ " : "std::string_view{ ";
+                out.Default = spelled + Literal(literal->getString().str()) + " }";
                 return;
             }
             Error(param->getLocation(),
@@ -945,6 +1265,15 @@ private:
         const clang::TemplateArgumentList& arguments = specialization->getTemplateArgs();
         return arguments.size() == 1 && arguments[0].getKind() == clang::TemplateArgument::Type
             && IsNamed(arguments[0].getAsType(), element);
+    }
+
+    static bool IsSpecializationOf(clang::QualType type, llvm::StringRef qualified)
+    {
+        const clang::QualType canonical = type.getCanonicalType().getUnqualifiedType();
+        const auto* specialization =
+            llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(canonical->getAsCXXRecordDecl());
+        return specialization != nullptr
+            && specialization->getSpecializedTemplate()->getQualifiedNameAsString() == qualified;
     }
 
     static const clang::StringLiteral* FindStringLiteral(const clang::Stmt* statement)
@@ -1061,14 +1390,17 @@ std::string Where(const std::string& logical, unsigned line)
 
 // Emitted so an unsupported type fails with the declaration's location
 // before any template error.
-void EmitValueAsserts(std::ostream& out,
-                      const std::string& type,
-                      const std::string& where,
-                      const std::string& subject)
+void EmitTypeAssert(std::ostream& out,
+                    const std::string& requirement,
+                    const std::string& checked,
+                    const std::string& type,
+                    const std::string& where,
+                    const std::string& subject,
+                    const std::string& role)
 {
-    out << "    static_assert(IsAuthoredValueType<" << type << ">,\n"
+    out << "    static_assert(" << requirement << "<" << checked << ">,\n"
         << "                  " << Literal(where + ": " + subject + " has type '" + type
-                                           + "', which is not an authored value type")
+                                           + "', which is not an authored " + role + " type")
         << ");\n";
 }
 
@@ -1077,10 +1409,23 @@ void EmitResultAsserts(std::ostream& out,
                        const std::string& where,
                        const std::string& subject)
 {
-    out << "    static_assert(IsAuthoredValueType<AuthoredQueryValueType<" << type << ">>,\n"
-        << "                  " << Literal(where + ": " + subject + " has type '" + type
-                                           + "', which is not an authored value type")
-        << ");\n";
+    EmitTypeAssert(out, "IsAuthoredResultType", "AuthoredQueryValueType<" + type + ">", type, where, subject,
+                   "result");
+}
+
+std::string MethodLabel(const MethodFacts& method)
+{
+    const char* annotation = method.Role == MethodRole::Query ? "SENCHA_QUERY"
+                           : method.Role == MethodRole::Lease ? "SENCHA_LEASE"
+                           : "SENCHA_VERB";
+    return std::string(annotation) + "(\"" + method.Identity + "\")";
+}
+
+void EmitBoundAssert(std::ostream& out, const std::string& check, const std::string& where,
+                     const std::string& message)
+{
+    out << "    static_assert(" << check << ",\n"
+        << "                  " << Literal(where + ": " + message) << ");\n";
 }
 
 void EmitParamAsserts(std::ostream& out,
@@ -1088,10 +1433,10 @@ void EmitParamAsserts(std::ostream& out,
                       const ParamFacts& param,
                       const std::string& logical)
 {
-    const std::string what = std::string(method.IsVerb ? "SENCHA_VERB" : "SENCHA_QUERY")
-                           + "(\"" + method.Identity + "\")";
+    const std::string what = MethodLabel(method);
     const std::string where = Where(logical, param.Line);
-    EmitValueAsserts(out, param.Type, where, what + ": parameter '" + param.Name + "'");
+    EmitTypeAssert(out, "IsAuthoredArgumentType", param.Type, param.Type, where,
+                   what + ": parameter '" + param.Name + "'", "argument");
     if (!param.TargetComponent.empty())
     {
         out << "    static_assert(AuthoredComponentType<" << param.TargetComponent << ">,\n"
@@ -1111,13 +1456,28 @@ void EmitParamAsserts(std::ostream& out,
     }
     if (!param.RangeMin.empty())
     {
-        out << "    static_assert(AuthoredRangeFits<" << param.Type << ">(" << param.RangeMin
-            << ", " << param.RangeMax << "),\n"
-            << "                  "
-            << Literal(where + ": " + what + ": SENCHA_RANGE(" + param.RangeMin + ", "
-                       + param.RangeMax + ") on parameter '" + param.Name
-                       + "' is not an ordered range inside what '" + param.Type + "' holds")
-            << ");\n";
+        EmitBoundAssert(out, "AuthoredRangeFits<" + param.Type + ">(" + param.RangeMin + ", " + param.RangeMax + ")",
+                        where,
+                        what + ": SENCHA_RANGE(" + param.RangeMin + ", " + param.RangeMax + ") on parameter '"
+                            + param.Name + "' is not an ordered range inside what '" + param.Type + "' holds");
+    }
+    if (!param.Min.empty() && !param.Max.empty())
+    {
+        EmitBoundAssert(out, "AuthoredRangeFits<" + param.Type + ">(" + param.Min + ", " + param.Max + ")", where,
+                        what + ": SENCHA_MIN(" + param.Min + ") and SENCHA_MAX(" + param.Max + ") on parameter '"
+                            + param.Name + "' are not an ordered range inside what '" + param.Type + "' holds");
+    }
+    else
+    {
+        for (const auto& [bound, annotation] : { std::pair{ param.Min, "SENCHA_MIN" }, std::pair{ param.Max, "SENCHA_MAX" } })
+        {
+            if (!bound.empty())
+            {
+                EmitBoundAssert(out, "AuthoredBoundFits<" + param.Type + ">(" + bound + ")", where,
+                                what + ": " + annotation + "(" + bound + ") on parameter '" + param.Name
+                                    + "' is not a number inside what '" + param.Type + "' holds");
+            }
+        }
     }
 }
 
@@ -1128,18 +1488,31 @@ void EmitArgumentSchema(std::ostream& out, const ParamFacts& param, const std::s
         << "            field.Key = " << Literal(param.Key) << ";\n";
     if (!param.Label.empty())
         out << "            field.DisplayName = " << Literal(param.Label) << ";\n";
+    if (!param.Description.empty())
+        out << "            field.Summary = " << Literal(param.Description) << ";\n";
+    if (!param.Units.empty())
+        out << "            field.Units = " << Literal(param.Units) << ";\n";
     out << "            AuthoredValueTraits<" << param.Type << ">::Describe(field);\n";
     if (!param.TargetComponent.empty())
     {
         out << "            AuthoredValueField(field).Reference.ComponentIdentity =\n"
             << "                AuthoredComponentIdentity<" << param.TargetComponent << ">();\n";
     }
-    if (!param.RangeMin.empty())
+    if (!param.AssetKind.empty())
+        out << "            AuthoredValueField(field).Reference.AssetTypeFilter = AssetType::" << param.AssetKind << ";\n";
+    if (!param.DataSubtype.empty())
+        out << "            AuthoredValueField(field).Reference.DataSubtype = std::string(" << param.DataSubtype << ");\n";
+    const std::string& minimum = param.RangeMin.empty() ? param.Min : param.RangeMin;
+    const std::string& maximum = param.RangeMax.empty() ? param.Max : param.RangeMax;
+    if (!minimum.empty())
     {
         out << "            AuthoredValueField(field).Numeric.Minimum = static_cast<double>("
-            << param.RangeMin << ");\n"
-            << "            AuthoredValueField(field).Numeric.Maximum = static_cast<double>("
-            << param.RangeMax << ");\n";
+            << minimum << ");\n";
+    }
+    if (!maximum.empty())
+    {
+        out << "            AuthoredValueField(field).Numeric.Maximum = static_cast<double>("
+            << maximum << ");\n";
     }
     if (!param.Default.empty())
     {
@@ -1161,19 +1534,37 @@ void EmitPresentation(std::ostream& out, const std::string& label,
         out << "        definition.Category = " << Literal(category) << ";\n";
 }
 
-template<typename SlotExpression>
+std::string ArgumentValue(const ParamFacts& param)
+{
+    return param.Borrowed ? param.Local + ".Get()" : param.Local;
+}
+
+template<typename SlotExpression, typename Refusal>
 void EmitDecodes(std::ostream& out,
                  const MethodFacts& method,
                  SlotExpression slot,
-                 const std::string& refusal)
+                 Refusal refusal)
 {
     for (size_t index = 0; index < method.Params.size(); ++index)
     {
         const ParamFacts& param = method.Params[index];
-        out << "        " << param.Type << " " << param.Local << "{};\n"
-            << "        if (!AuthoredValueTraits<" << param.Type << ">::Decode(" << slot(index)
-            << ", " << param.Local << "))\n"
-            << "            return " << refusal << ";\n";
+        if (param.Borrowed)
+        {
+            out << "        AuthoredHeldArgument<" << param.Type << "> " << param.Local << ";\n"
+                << "        if (!" << param.Local << ".Read(" << slot(index) << "))\n";
+        }
+        else
+        {
+            out << "        " << param.Type << " " << param.Local << "{};\n"
+                << "        if (!AuthoredValueTraits<" << param.Type << ">::Decode(" << slot(index)
+                << ", " << param.Local << "))\n";
+        }
+        out << "            return " << refusal("InvalidArguments", index) << ";\n";
+        if (method.Dispatched() && param.Target)
+        {
+            out << "        if (!AuthoredTargetAlive(self.AuthoredWorld(), " << ArgumentValue(param) << "))\n"
+                << "            return " << refusal("UnresolvedReference", index) << ";\n";
+        }
     }
 }
 
@@ -1186,9 +1577,43 @@ std::string CallArguments(const MethodFacts& method)
     {
         if (!out.empty())
             out += ", ";
-        out += "std::move(" + param.Local + ")";
+        out += param.Borrowed ? ArgumentValue(param) : "std::move(" + param.Local + ")";
     }
     return out;
+}
+
+void EmitClassification(std::ostream& out, const MethodFacts& method)
+{
+    if (method.Role == MethodRole::Lease)
+        out << "        definition.Kind = VerbKind::Lease;\n";
+    if (method.Cosmetic)
+    {
+        out << "        definition.Scope = AuthoredScope::Cosmetic;\n"
+            << "        definition.Prediction = AuthoredPrediction::Presentation;\n";
+    }
+    if (!method.Prediction.empty())
+        out << "        definition.Prediction = AuthoredPrediction::" << method.Prediction << ";\n";
+    if (method.Completes)
+        out << "        definition.Completes = true;\n";
+}
+
+void EmitVerbAnswer(std::ostream& out, const MethodFacts& method)
+{
+    if (method.Returns == VerbReturn::Refusal || method.Returns == VerbReturn::Result)
+        out << "        definition.Refusals = AuthoredVerbReturn<" << method.ReturnType << ">::Refusals();\n";
+    if (method.Returns != VerbReturn::Result)
+        return;
+    out << "        {\n"
+        << "            DataFieldSchema field;\n"
+        << "            field.Key = " << Literal(method.ResultKey) << ";\n"
+        << "            AuthoredVerbReturn<" << method.ReturnType << ">::DescribeResult(field);\n";
+    if (!method.ResultComponent.empty())
+    {
+        out << "            AuthoredValueField(field).Reference.ComponentIdentity =\n"
+            << "                AuthoredComponentIdentity<" << method.ResultComponent << ">();\n";
+    }
+    out << "            definition.Result = std::move(field);\n"
+        << "        }\n";
 }
 
 void EmitVerb(std::ostream& out, const ProviderFacts& provider, const MethodFacts& method)
@@ -1197,18 +1622,33 @@ void EmitVerb(std::ostream& out, const ProviderFacts& provider, const MethodFact
         << "        VerbDefinition definition;\n"
         << "        definition.Name = " << Literal(method.Identity) << ";\n";
     EmitPresentation(out, method.Label, method.Description, method.Category);
+    EmitClassification(out, method);
     for (const ParamFacts& param : method.Params)
         EmitArgumentSchema(out, param, "definition.Arguments");
+    EmitVerbAnswer(out, method);
     out << "        return definition;\n    }\n";
 
-    const bool readsInvocation = method.TakesInvocation || !method.Params.empty();
-    out << "\n    static VerbAdmission Invoke_" << method.Method << "(" << provider.Type
-        << "& self, const VerbInvocation&" << (readsInvocation ? " invocation" : "")
-        << ")\n    {\n";
+    out << "\n    static VerbAnswer Invoke_" << method.Method << "(" << provider.Type
+        << "& self, const VerbInvocation& invocation)\n    {\n";
+    if (method.Role == MethodRole::Lease)
+    {
+        out << "        if (invocation.Step == LeaseStep::Release)\n"
+            << "            return AnswerAuthoredVerb(self." << method.Release << "(invocation), invocation.Result);\n"
+            << "        if (invocation.Step == LeaseStep::Probe)\n";
+        if (method.Holds.empty())
+            out << "            return VerbAnswer(VerbAdmission::Refused);\n";
+        else
+            out << "            return self." << method.Holds
+                << "(invocation.Owner) ? VerbAnswer{} : VerbAnswer(VerbAdmission::Refused);\n";
+    }
     EmitDecodes(out, method,
                 [](size_t index) { return "invocation.Arguments->At(" + std::to_string(index) + ")"; },
-                "VerbAdmission::InvalidArguments");
-    out << "        return self." << method.Method << "(" << CallArguments(method) << ");\n"
+                [](const char* status, size_t index) {
+                    return "VerbArgumentAnswer(VerbAdmission::" + std::string(status) + ", " + std::to_string(index)
+                         + ")";
+                });
+    out << "        return AnswerAuthoredVerb(self." << method.Method << "(" << CallArguments(method)
+        << "), invocation.Result);\n"
         << "    }\n";
 }
 
@@ -1233,7 +1673,7 @@ void EmitQuery(std::ostream& out, const ProviderFacts& provider, const MethodFac
         << ", AuthoredValue& result)\n    {\n";
     EmitDecodes(out, method,
                 [](size_t index) { return "AuthoredArgumentAt(arguments, " + std::to_string(index) + ")"; },
-                "AuthoredQueryStatus::InvalidArguments");
+                [](const char*, size_t) { return std::string("AuthoredQueryStatus::InvalidArguments"); });
     out << "        return AnswerAuthoredQuery(self." << method.Method << "("
         << CallArguments(method) << "), result);\n"
         << "    }\n";
@@ -1248,19 +1688,38 @@ void EmitProvider(std::ostream& out, const ProviderFacts& provider, const std::s
     {
         for (const ParamFacts& param : method.Params)
             EmitParamAsserts(out, method, param, logical);
-        if (!method.IsVerb)
+        if (method.Role == MethodRole::Query)
         {
             EmitResultAsserts(out, method.ResultType, Where(logical, method.Line),
                              "SENCHA_QUERY(\"" + method.Identity + "\"): the result of '"
                                  + method.Method + "'");
         }
     }
+    if (provider.ChecksTargets)
+    {
+        out << "    static_assert(requires(const " << provider.Type << "& provider) {\n"
+            << "                      { provider.AuthoredWorld() } -> std::same_as<const World&>;\n"
+            << "                  },\n"
+            << "                  "
+            << Literal(Where(logical, provider.TargetLine) + ": a verb of '" + provider.Type
+                       + "' takes a SENCHA_TARGET, so '" + provider.Type
+                       + "' answers const World& AuthoredWorld() const, which the adapter asks whether the "
+                         "target is alive")
+            << ");\n";
+    }
+
+    out << "\n";
+    for (const MethodFacts& method : provider.Methods)
+    {
+        out << "    static constexpr std::string_view Name_" << method.Method << " = " << Literal(method.Identity)
+            << ";\n";
+    }
 
     size_t verbs = 0;
     size_t queries = 0;
     for (const MethodFacts& method : provider.Methods)
     {
-        if (method.IsVerb)
+        if (method.Dispatched())
         {
             EmitVerb(out, provider, method);
             ++verbs;
@@ -1278,7 +1737,7 @@ void EmitProvider(std::ostream& out, const ProviderFacts& provider, const std::s
             << verbs << "> Verbs{ {\n";
         for (const MethodFacts& method : provider.Methods)
         {
-            if (method.IsVerb)
+            if (method.Dispatched())
             {
                 out << "        { " << Literal(method.Identity) << ", &Describe_" << method.Method
                     << ", &Invoke_" << method.Method << " },\n";
@@ -1292,7 +1751,7 @@ void EmitProvider(std::ostream& out, const ProviderFacts& provider, const std::s
             << queries << "> Queries{ {\n";
         for (const MethodFacts& method : provider.Methods)
         {
-            if (!method.IsVerb)
+            if (method.Role == MethodRole::Query)
             {
                 out << "        { " << Literal(method.Identity) << ", &Describe_" << method.Method
                     << ", &Evaluate_" << method.Method << " },\n";
@@ -1336,15 +1795,58 @@ void EmitComponentQueries(std::ostream& out, const ComponentFacts& component,
     out << "    };\n};\n";
 }
 
+void EmitMemberAsserts(std::ostream& out, const std::vector<EventFieldFacts>& members, const std::string& logical,
+                       const std::string& owner)
+{
+    for (const EventFieldFacts& field : members)
+    {
+        EmitTypeAssert(out, "IsAuthoredResultType", field.Type, field.Type, Where(logical, field.Line),
+                       owner + ": member '" + field.Member + "'", "result");
+    }
+}
+
+void EmitMemberSchemas(std::ostream& out, const std::vector<EventFieldFacts>& members, const std::string& parent)
+{
+    for (const EventFieldFacts& field : members)
+    {
+        out << "        {\n"
+            << "            DataFieldSchema member;\n"
+            << "            member.Key = " << Literal(field.Name) << ";\n";
+        if (!field.Label.empty())
+            out << "            member.DisplayName = " << Literal(field.Label) << ";\n";
+        out << "            AuthoredValueTraits<" << field.Type << ">::Describe(member);\n"
+            << "            " << parent << ".Children.push_back(std::move(member));\n"
+            << "        }\n";
+    }
+}
+
+std::string MemberEncode(const EventFieldFacts& field, const std::string& value)
+{
+    return "AuthoredValueTraits<" + field.Type + ">::Encode(" + value + "." + field.Member + ")";
+}
+
+void EmitRecord(std::ostream& out, const RecordFacts& record, const std::string& logical)
+{
+    out << "\ntemplate <>\nstruct AuthoredValueTraits<" << record.Type << ">\n{\n";
+    EmitMemberAsserts(out, record.Fields, logical, "SENCHA_RECORD '" + record.Type + "'");
+    out << "\n    static void Describe(DataFieldSchema& field)\n    {\n"
+        << "        field.Kind = DataFieldKind::Record;\n"
+        << "        field.Children.clear();\n";
+    EmitMemberSchemas(out, record.Fields, "field");
+    out << "    }\n";
+    out << "\n    static AuthoredValue Encode(const " << record.Type << "& value)\n    {\n"
+        << "        std::vector<AuthoredValue> members;\n"
+        << "        members.reserve(" << record.Fields.size() << ");\n";
+    for (const EventFieldFacts& field : record.Fields)
+        out << "        members.push_back(" << MemberEncode(field, "value") << ");\n";
+    out << "        return AuthoredValue::Record(std::move(members));\n"
+        << "    }\n};\n";
+}
+
 void EmitEvent(std::ostream& out, const EventFacts& event, const std::string& logical)
 {
     out << "\ntemplate <>\nstruct AuthoredApiDefinition<" << event.Type << ">\n{\n";
-    for (const EventFieldFacts& field : event.Fields)
-    {
-        EmitValueAsserts(out, field.Type, Where(logical, field.Line),
-                         "SENCHA_EVENT(\"" + event.Identity + "\"): payload member '"
-                             + field.Member + "'");
-    }
+    EmitMemberAsserts(out, event.Fields, logical, "SENCHA_EVENT(\"" + event.Identity + "\")");
     if (!event.Source.empty())
     {
         out << "    static_assert(AuthoredComponentType<" << event.Source << ">,\n"
@@ -1367,28 +1869,14 @@ void EmitEvent(std::ostream& out, const EventFacts& event, const std::string& lo
         out << "        definition.SourceComponent = AuthoredComponentIdentity<" << event.Source
             << ">();\n";
     }
-    for (const EventFieldFacts& field : event.Fields)
-    {
-        out << "        {\n"
-            << "            DataFieldSchema field;\n"
-            << "            field.Key = " << Literal(field.Name) << ";\n";
-        if (!field.Label.empty())
-            out << "            field.DisplayName = " << Literal(field.Label) << ";\n";
-        out << "            AuthoredValueTraits<" << field.Type << ">::Describe(field);\n"
-            << "            definition.Payload.Children.push_back(std::move(field));\n"
-            << "        }\n";
-    }
+    EmitMemberSchemas(out, event.Fields, "definition.Payload");
     out << "        return definition;\n    }\n";
 
     out << "\n    static void Encode(const " << event.Type << "&"
         << (event.Fields.empty() ? "" : " event") << ", AuthoredArguments& payload)\n    {\n"
         << "        payload.Resize(" << event.Fields.size() << ");\n";
     for (size_t index = 0; index < event.Fields.size(); ++index)
-    {
-        const EventFieldFacts& field = event.Fields[index];
-        out << "        payload.Set(" << index << ", AuthoredValueTraits<" << field.Type
-            << ">::Encode(event." << field.Member << "));\n";
-    }
+        out << "        payload.Set(" << index << ", " << MemberEncode(event.Fields[index], "event") << ");\n";
     out << "    }\n};\n";
 }
 
@@ -1396,7 +1884,8 @@ bool WriteCompanion(const std::string& path,
                     const std::string& logical,
                     const std::vector<ComponentFacts>& components,
                     const std::vector<ProviderFacts>& providers,
-                    const std::vector<EventFacts>& events)
+                    const std::vector<EventFacts>& events,
+                    const std::vector<RecordFacts>& records)
 {
     std::ofstream out(path);
     if (!out)
@@ -1405,7 +1894,7 @@ bool WriteCompanion(const std::string& path,
         return false;
     }
 
-    const bool authored = !providers.empty() || !events.empty()
+    const bool authored = !providers.empty() || !events.empty() || !records.empty()
         || std::any_of(components.begin(), components.end(),
                        [](const ComponentFacts& c) { return !c.Queries.empty(); });
 
@@ -1461,6 +1950,8 @@ bool WriteCompanion(const std::string& path,
         if (!component.Queries.empty())
             EmitComponentQueries(out, component, logical);
     }
+    for (const RecordFacts& record : records)
+        EmitRecord(out, record, logical);
     for (const ProviderFacts& provider : providers)
         EmitProvider(out, provider, logical);
     for (const EventFacts& event : events)
@@ -1490,6 +1981,46 @@ bool WriteIndex(const std::string& path,
     return true;
 }
 
+std::string DepfileEscaped(llvm::StringRef path)
+{
+    std::string out;
+    for (const char c : path)
+    {
+        if (c == ' ' || c == '#')
+            out += '\\';
+        if (c == '$')
+            out += '$';
+        out += c;
+    }
+    return out;
+}
+
+bool WriteDepfile(const std::string& path, const std::string& target, const clang::SourceManager& sources)
+{
+    std::vector<std::string> read;
+    for (auto file = sources.fileinfo_begin(); file != sources.fileinfo_end(); ++file)
+    {
+        llvm::SmallString<256> absolute(file->first.getName());
+        llvm::sys::fs::make_absolute(absolute);
+        llvm::sys::path::remove_dots(absolute, true);
+        read.emplace_back(absolute.str());
+    }
+    std::sort(read.begin(), read.end());
+    read.erase(std::unique(read.begin(), read.end()), read.end());
+
+    std::ofstream out(path);
+    if (!out)
+    {
+        llvm::errs() << "sencha-component-codegen: cannot write " << path << "\n";
+        return false;
+    }
+    out << DepfileEscaped(target) << ":";
+    for (const std::string& file : read)
+        out << " \\\n  " << DepfileEscaped(file);
+    out << "\n";
+    return true;
+}
+
 class Consumer : public clang::ASTConsumer
 {
 public:
@@ -1507,8 +2038,9 @@ public:
         }
         // Declaration order, so output is deterministic.
         Ok = WriteCompanion(gOutput, gLogical, visitor.Components, visitor.Providers,
-                            visitor.Events)
-             && WriteIndex(gIndex, gLogical, visitor.Components);
+                            visitor.Events, visitor.Records)
+             && WriteIndex(gIndex, gLogical, visitor.Components)
+             && (gDepfile.empty() || WriteDepfile(gDepfile, gOutput, context.getSourceManager()));
     }
 
     static bool Ok;

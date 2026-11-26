@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,12 @@ struct GoldenTorchLog
     std::vector<IgniteCall> Ignites;
     int Extinguishes = 0;
     std::vector<std::string> Names;
+    std::vector<float> Holds;
+    std::vector<LeaseOwner> Ended;
+    std::vector<std::string> Glints;
+    int Fuelled = 0;
+    bool HoldGoesOn = true;
+    GoldenRefusal Douses = GoldenRefusal::None;
 };
 
 GoldenTorchLog& Log()
@@ -81,6 +89,69 @@ std::optional<double> GoldenTorchSystem::BurnTime(EntityId torch) const
     if (torch.Index == 7)
         return std::nullopt;
     return 12.5;
+}
+
+VerbResult<EntityId, GoldenRefusal> GoldenTorchSystem::Light(EntityId torch, float fuel)
+{
+    if (fuel == 0.0f)
+        return GoldenRefusal::Spent;
+    return torch;
+}
+
+VerbRefusal<GoldenRefusal> GoldenTorchSystem::Douse(std::optional<EntityId>)
+{
+    return Log().Douses;
+}
+
+VerbAnswer GoldenTorchSystem::Hold(const VerbInvocation&, EntityId, float seconds)
+{
+    Log().Holds.push_back(seconds);
+    return VerbAnswer{};
+}
+
+VerbAnswer GoldenTorchSystem::EndHold(const VerbInvocation& invocation)
+{
+    Log().Ended.push_back(invocation.Owner);
+    return VerbAnswer{};
+}
+
+bool GoldenTorchSystem::HoldGoesOn(const LeaseOwner&) const
+{
+    return Log().HoldGoesOn;
+}
+
+VerbAdmission GoldenTorchSystem::Flicker(std::int32_t)
+{
+    return VerbAdmission::Accepted;
+}
+
+VerbAdmission GoldenTorchSystem::EndFlicker(const VerbInvocation&)
+{
+    return VerbAdmission::Accepted;
+}
+
+VerbAdmission GoldenTorchSystem::Glint(const AssetRef& mesh, std::string_view note)
+{
+    Log().Glints.push_back(mesh.Path + ":" + std::string(note));
+    return VerbAdmission::Accepted;
+}
+
+VerbAdmission GoldenTorchSystem::FuelWith(AuthoredDataRef fuel)
+{
+    Log().Fuelled += fuel.Reference != nullptr ? 1 : 0;
+    return VerbAdmission::Accepted;
+}
+
+std::optional<GoldenFlame> GoldenTorchSystem::Flame(EntityId torch) const
+{
+    if (torch.Index == 7)
+        return std::nullopt;
+    return GoldenFlame{ .Height = 0.5f, .Lamp = GoldenLamp::Dim };
+}
+
+std::vector<EntityId> GoldenTorchSystem::LitTorches() const
+{
+    return { EntityId{ .Index = 2, .Generation = 1 }, EntityId{ .Index = 3, .Generation = 1 } };
 }
 
 void GoldenTorchSystem::Tick() {}
@@ -147,6 +218,7 @@ protected:
 
         Verbs.emplace(*FindVerbRegistry(Entities));
         Queries.emplace(*FindAuthoredQueryRegistry(Entities));
+        Torches.Entities = &Entities;
     }
 
     [[nodiscard]] std::string ErrorsText() const
@@ -159,7 +231,8 @@ protected:
 
     [[nodiscard]] VerbInvocationResult Invoke(const VerbBindingDesc& desc,
                                               std::span<const AuthoredValue> inputs = {},
-                                              EntityId instigator = {})
+                                              EntityId instigator = {},
+                                              AuthoredValue* result = nullptr)
     {
         std::vector<std::string> errors;
         CompiledVerbBinding compiled;
@@ -167,7 +240,22 @@ protected:
             << (errors.empty() ? std::string{} : errors.front());
         VerbInvocationSource source;
         source.Instigator = instigator;
-        return Verbs->Invoke(compiled, inputs, source);
+        return Verbs->Invoke(compiled, inputs, source, result);
+    }
+
+    [[nodiscard]] CompiledVerbBinding Compiled(const VerbBindingDesc& desc)
+    {
+        std::vector<std::string> errors;
+        CompiledVerbBinding compiled;
+        EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), compiled, errors))
+            << (errors.empty() ? std::string{} : errors.front());
+        return compiled;
+    }
+
+    [[nodiscard]] const VerbDefinition& Verb(std::string_view name) const
+    {
+        const VerbRegistry& verbs = *FindVerbRegistry(Entities);
+        return *verbs.Get(verbs.Find(name));
     }
 
     World Entities;
@@ -223,7 +311,7 @@ TEST_F(GoldenAuthoredApiTest, AVerbReachesTheMethodWithEveryArgumentDecoded)
 {
     AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
     EXPECT_TRUE(bindings.Unbound().empty());
-    EXPECT_EQ(bindings.BoundCount(), 5u);
+    EXPECT_EQ(bindings.BoundCount(), 13u);
 
     const EntityId torch = Entities.CreateEntity();
     const EntityId player = Entities.CreateEntity();
@@ -372,4 +460,187 @@ TEST_F(GoldenAuthoredApiTest, AnEventDeclaresItsPayloadAndPublishesItEncoded)
     (void)dispatcher.Drain(1);
     ASSERT_EQ(heard.Brightness.size(), 1u);
     EXPECT_EQ(heard.Brightness.front(), "dim");
+}
+
+TEST_F(GoldenAuthoredApiTest, ADeclarationNamesItselfForCodeThatMustNameIt)
+{
+    static_assert(AuthoredApiDefinition<GoldenTorchSystem>::Name_Light == "test.torch.light");
+    static_assert(AuthoredApiDefinition<GoldenTorchSystem>::Name_LitTorches == "test.torch.lit");
+    EXPECT_EQ(Verb(AuthoredApiDefinition<GoldenTorchSystem>::Name_Hold).Name, "test.torch.hold");
+}
+
+TEST_F(GoldenAuthoredApiTest, ALeaseIsHeldReleasedAndAskedWhetherItsHoldGoesOn)
+{
+    const VerbDefinition& hold = Verb("test.torch.hold");
+    EXPECT_EQ(hold.Kind, VerbKind::Lease);
+    EXPECT_TRUE(hold.Completes);
+    EXPECT_EQ(hold.Prediction, AuthoredPrediction::Simulation);
+    EXPECT_EQ(hold.Scope, AuthoredScope::Gameplay);
+
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    const EntityId torch = Entities.CreateEntity();
+    const LeaseOwner owner{ .Entity = Entities.CreateEntity(), .Key = 4 };
+    const AuthoredValue input = AuthoredValue::Entity(torch);
+    const CompiledVerbBinding binding =
+        Compiled(Binding("test.torch.hold", { FromInput("torch", "which"), Literal("seconds", 2.5) }, { "which" }));
+
+    ASSERT_TRUE(Verbs->AcquireLease(binding, { &input, 1 }, owner).Accepted());
+    ASSERT_EQ(Log().Holds.size(), 1u);
+    EXPECT_FLOAT_EQ(Log().Holds.front(), 2.5f);
+    EXPECT_TRUE(Verbs->LeaseHolds(binding.Verb, owner));
+    Log().HoldGoesOn = false;
+    EXPECT_FALSE(Verbs->LeaseHolds(binding.Verb, owner));
+    EXPECT_EQ(Verbs->ReleaseLease(binding.Verb, owner), VerbAdmission::Accepted);
+    ASSERT_EQ(Log().Ended.size(), 1u);
+    EXPECT_EQ(Log().Ended.front(), owner);
+}
+
+TEST_F(GoldenAuthoredApiTest, ACosmeticVerbAndACosmeticLeaseArePredictedAsPresentation)
+{
+    for (const std::string_view name : { "test.torch.glint", "test.torch.flicker" })
+    {
+        const VerbDefinition& cosmetic = Verb(name);
+        EXPECT_EQ(cosmetic.Scope, AuthoredScope::Cosmetic) << name;
+        EXPECT_EQ(cosmetic.Prediction, AuthoredPrediction::Presentation) << name;
+        EXPECT_FALSE(cosmetic.Completes) << name;
+    }
+    EXPECT_EQ(Verb("test.torch.flicker").Kind, VerbKind::Lease);
+    EXPECT_EQ(Verb("test.torch.glint").Kind, VerbKind::Instant);
+}
+
+TEST_F(GoldenAuthoredApiTest, AResultIsDeclaredAndAnsweredOnlyWhenAccepted)
+{
+    const VerbDefinition& light = Verb("test.torch.light");
+    ASSERT_TRUE(light.Result.has_value());
+    EXPECT_EQ(light.Result->Key, "flame");
+    EXPECT_EQ(light.Result->Kind, DataFieldKind::Entity);
+    EXPECT_EQ(light.Result->Reference.ComponentIdentity, "test.codegen.golden_torch");
+    ASSERT_EQ(light.Refusals.size(), 2u);
+    EXPECT_EQ(light.Refusals[0].Name, "wet");
+    EXPECT_EQ(light.Refusals[1].Name, "spent");
+
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    const EntityId torch = Entities.CreateEntity();
+    const AuthoredValue input = AuthoredValue::Entity(torch);
+    AuthoredValue answered;
+    ASSERT_TRUE(Invoke(Binding("test.torch.light", { FromInput("torch", "which") }, { "which" }), { &input, 1 }, {},
+                       &answered)
+                    .Accepted());
+    EntityId flame;
+    ASSERT_TRUE(answered.TryGetEntity(flame));
+    EXPECT_EQ(flame, torch);
+
+    const VerbInvocationResult spent =
+        Invoke(Binding("test.torch.light", { FromInput("torch", "which"), Literal("fuel", 0.0) }, { "which" }),
+               { &input, 1 }, {}, &answered);
+    EXPECT_EQ(spent.Status, VerbAdmission::Refused);
+    EXPECT_EQ(spent.Detail, static_cast<std::uint16_t>(GoldenRefusal::Spent));
+    EXPECT_TRUE(answered.IsNone());
+}
+
+TEST_F(GoldenAuthoredApiTest, ARefusalNamesItsReason)
+{
+    const VerbDefinition& douse = Verb("test.torch.douse");
+    EXPECT_FALSE(douse.Result.has_value());
+    ASSERT_EQ(douse.Refusals.size(), 2u);
+    EXPECT_EQ(douse.Prediction, AuthoredPrediction::Simulation);
+
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    Log().Douses = GoldenRefusal::Wet;
+    const VerbInvocationResult refused = Invoke(Binding("test.torch.douse", {}));
+    EXPECT_EQ(refused.Status, VerbAdmission::Refused);
+    EXPECT_EQ(DescribeVerbAnswer(*FindVerbRegistry(Entities), FindVerbRegistry(Entities)->Find("test.torch.douse"),
+                                 AnswerOf(refused)),
+              "refused: wet");
+    Log().Douses = GoldenRefusal::None;
+    EXPECT_TRUE(Invoke(Binding("test.torch.douse", {})).Accepted()) << "an absent optional target is not checked";
+}
+
+TEST_F(GoldenAuthoredApiTest, ATargetThatIsNotAliveIsAnUnresolvedReferenceNamingIt)
+{
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    const EntityId torch = Entities.CreateEntity();
+    Entities.DestroyEntity(torch);
+    const AuthoredValue input = AuthoredValue::Entity(torch);
+
+    const VerbInvocationResult result =
+        Invoke(Binding("test.torch.ignite", { FromInput("torch", "which") }, { "which" }), { &input, 1 });
+    EXPECT_EQ(result.Status, VerbAdmission::UnresolvedReference);
+    EXPECT_EQ(DescribeVerbAnswer(*FindVerbRegistry(Entities), FindVerbRegistry(Entities)->Find("test.torch.ignite"),
+                                 AnswerOf(result)),
+              "unresolved reference 'torch'");
+    EXPECT_TRUE(Log().Ignites.empty());
+
+    const VerbInvocationResult present =
+        Invoke(Binding("test.torch.douse", { FromInput("torch", "which") }, { "which" }), { &input, 1 });
+    EXPECT_EQ(present.Status, VerbAdmission::UnresolvedReference) << "a present optional target is checked";
+}
+
+TEST_F(GoldenAuthoredApiTest, BoundsDescriptionsUnitsAndReferencesAreDeclaredOnTheArgument)
+{
+    const DataFieldSchema& fuel = Verb("test.torch.light").Arguments.Children[1];
+    EXPECT_EQ(fuel.Summary, "How long it burns.");
+    EXPECT_EQ(fuel.Units, "seconds");
+    EXPECT_EQ(fuel.Numeric.Minimum, 0.0);
+    EXPECT_FALSE(fuel.Numeric.Maximum.has_value());
+
+    const DataFieldSchema& seconds = Verb("test.torch.hold").Arguments.Children[1];
+    EXPECT_EQ(seconds.Numeric.Minimum, 0.0);
+    EXPECT_EQ(seconds.Numeric.Maximum, 30.0);
+
+    const DataFieldSchema& rate = Verb("test.torch.flicker").Arguments.Children[0];
+    EXPECT_EQ(rate.Numeric.Maximum, 8.0);
+    EXPECT_EQ(rate.Numeric.Minimum, static_cast<double>(std::numeric_limits<std::int32_t>::min()));
+
+    const DataFieldSchema& mesh = Verb("test.torch.glint").Arguments.Children[0];
+    EXPECT_EQ(mesh.Kind, DataFieldKind::AssetRef);
+    EXPECT_EQ(mesh.Reference.AssetTypeFilter, AssetType::StaticMesh);
+    const DataFieldSchema& note = Verb("test.torch.glint").Arguments.Children[1];
+    EXPECT_EQ(note.Kind, DataFieldKind::String);
+    EXPECT_EQ(note.Default, DataDefaultValue(std::string("glint")));
+
+    const DataFieldSchema& data = Verb("test.torch.fuel_with").Arguments.Children[0];
+    EXPECT_EQ(data.Kind, DataFieldKind::DataAssetRef);
+    EXPECT_EQ(data.Reference.DataSubtype, "test.fuel");
+}
+
+TEST_F(GoldenAuthoredApiTest, AStringAndAnAssetAreReadInPlace)
+{
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    VerbBindingArgument mesh;
+    mesh.Key = "mesh";
+    mesh.Source = VerbArgumentSource::Asset;
+    mesh.Text = "asset://meshes/torch.smesh";
+    ASSERT_TRUE(Invoke(Binding("test.torch.glint", { mesh, Literal("note", "bright") })).Accepted());
+    ASSERT_EQ(Log().Glints.size(), 1u);
+    EXPECT_EQ(Log().Glints.front(), "asset://meshes/torch.smesh:bright");
+}
+
+TEST_F(GoldenAuthoredApiTest, ARecordAndAnArrayAnswerWhole)
+{
+    AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
+    const AuthoredQueryHandle flame = Queries->Registry().Resolve("test.torch.flame");
+    const AuthoredQueryDefinition& record = *Queries->Registry().Get(flame.Slot);
+    ASSERT_EQ(record.Result.Kind, DataFieldKind::Record);
+    ASSERT_EQ(record.Result.Children.size(), 2u);
+    EXPECT_EQ(record.Result.Children[0].Key, "height");
+    EXPECT_EQ(record.Result.Children[1].DisplayName, "Lamp");
+
+    AuthoredValue result;
+    const std::vector<AuthoredValue> arguments{ AuthoredValue::Entity(Entities.CreateEntity()) };
+    ASSERT_EQ(Queries->Evaluate(flame, arguments, result), AuthoredQueryStatus::Value);
+    ASSERT_EQ(result.Kind(), AuthoredValueKind::Record);
+    ASSERT_EQ(result.Children().size(), 2u);
+    double height = 0.0;
+    ASSERT_TRUE(result.Children()[0].TryGetFloat(height));
+    EXPECT_DOUBLE_EQ(height, 0.5);
+
+    const AuthoredQueryHandle lit = Queries->Registry().Resolve("test.torch.lit");
+    const AuthoredQueryDefinition& array = *Queries->Registry().Get(lit.Slot);
+    ASSERT_EQ(array.Result.Kind, DataFieldKind::Array);
+    ASSERT_EQ(array.Result.Children.size(), 1u);
+    EXPECT_EQ(array.Result.Children[0].Kind, DataFieldKind::Entity);
+    ASSERT_EQ(Queries->Evaluate(lit, {}, result), AuthoredQueryStatus::Value);
+    ASSERT_EQ(result.Kind(), AuthoredValueKind::Array);
+    EXPECT_EQ(result.Children().size(), 2u);
 }

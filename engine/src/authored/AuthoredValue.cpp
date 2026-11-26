@@ -340,11 +340,16 @@ void AuthoredArguments::Resize(std::size_t slots)
     Slots.resize(slots);
 }
 
-void AuthoredArguments::Set(std::size_t slot, AuthoredValue value)
+void AuthoredArguments::Set(std::size_t slot, const AuthoredValue& value)
 {
-    if (slot >= Slots.size())
-        return;
-    Slots[slot] = std::move(value);
+    if (slot < Slots.size())
+        Slots[slot] = value;
+}
+
+void AuthoredArguments::Set(std::size_t slot, AuthoredValue&& value)
+{
+    if (slot < Slots.size())
+        Slots[slot] = std::move(value);
 }
 
 const AuthoredValue& AuthoredArguments::At(std::size_t slot) const

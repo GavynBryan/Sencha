@@ -661,6 +661,9 @@ if(NOT WIN32)
                 ${CMAKE_SOURCE_DIR}
                 ${CMAKE_BINARY_DIR}/engine/generated-public
                 ${CMAKE_CXX_COMPILER}
+                ${CMAKE_COMMAND}
+                ${CMAKE_GENERATOR}
+                ${CMAKE_MAKE_PROGRAM}
     )
     add_test(
         NAME component_index_validation

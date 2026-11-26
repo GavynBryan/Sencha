@@ -136,7 +136,7 @@ struct AuthoredApiDefinition<CatalogProbeVerbs>
 {
     using Target = CatalogProbeVerbs;
     static VerbDefinition Describe_Go() { return Verb("probe.go"); }
-    static VerbAdmission Invoke_Go(CatalogProbeVerbs&, const VerbInvocation&)
+    static VerbAnswer Invoke_Go(CatalogProbeVerbs&, const VerbInvocation&)
     {
         return VerbAdmission::Accepted;
     }

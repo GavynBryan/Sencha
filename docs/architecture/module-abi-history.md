@@ -1713,3 +1713,23 @@ whether it installed, and `HoldsEquipmentMoveAdmission` is new.
 `InstallEveryKitVocabulary` and `UninstalledKitContent` are new. The save
 format, the scene format and the net protocol do not change: the component
 schema, and so the replicated table, is the same in every build.
+
+## v78
+
+The component generator writes format 4 (`kComponentCodegenFormatVersion`), so
+every companion is regenerated. `AuthoredVerbEntry::Invoke` returns
+`VerbAnswer`; generated adapters answer `InvalidArguments` and
+`UnresolvedReference` naming the slot and refuse a `SENCHA_TARGET` that is not
+alive, through the new `AuthoredTargetAlive`, which needs the provider's
+`AuthoredWorld()`. `authored/VerbResult.h` is new (`VerbRefusal`, `VerbResult`,
+`VerbNoReason`), with `AuthoredVerbReturn`, `AnswerAuthoredVerb` and
+`AuthoredHeldArgument` beside the generated shapes. `AuthoredValueTraits` gains
+`IsAuthoredArgumentType`, `IsAuthoredResultType`, `AuthoredBorrowable`,
+`AuthoredBoundFits`, `AuthoredDataRef` and the `std::string_view`,
+`AuthoredDataRef` and `std::vector<T>` traits; `AssetRef` can be borrowed.
+`AuthoredArguments::Set` takes a const reference or an rvalue. New annotations:
+`SENCHA_LEASE`, `SENCHA_LEASE_RELEASE`, `SENCHA_LEASE_HOLDS`,
+`SENCHA_COSMETIC`, `SENCHA_PREDICTION`, `SENCHA_COMPLETES`, `SENCHA_RESULT`,
+`SENCHA_MIN`, `SENCHA_MAX`, `SENCHA_UNITS` and `SENCHA_RECORD`;
+`SENCHA_TARGET_PICK` is renamed `SENCHA_ANNOTATION_PICK`. The save format and
+the net protocol do not change.

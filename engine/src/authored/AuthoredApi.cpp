@@ -36,3 +36,8 @@ bool AuthoredVocabularyScope::Commit()
         return false;
     return CommitTogether(*Verbs, *Queries, *Events);
 }
+
+bool AuthoredTargetAlive(const World& world, EntityId target)
+{
+    return world.IsAlive(target);
+}

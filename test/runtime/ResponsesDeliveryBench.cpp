@@ -10,9 +10,12 @@
 // admitted work is dropped or left waiting.
 
 #include "AllocationCounter.h"
+#include "../component_codegen/GoldenAuthoredApi.h"
+#include "../component_codegen/GoldenAuthoredApi.sencha.h.expected"
 
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredApiDefinition.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/VerbDispatcher.h>
@@ -79,6 +82,21 @@ public:
     VerbAdmission Answer = VerbAdmission::Accepted;
 };
 
+class HandTouch
+{
+public:
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        EntityId target;
+        if (!invocation.Arguments->TryGetEntity(0, target) || !Entities->IsAlive(target))
+            return VerbAdmission::InvalidArguments;
+        Sum += target.Index;
+        return VerbAdmission::Accepted;
+    }
+    const World* Entities = nullptr;
+    std::uint64_t Sum = 0;
+};
+
 struct Listener
 {
     std::uint64_t Heard = 0;
@@ -117,6 +135,10 @@ public:
         refuse.Name = "bench.refuse";
         refuse.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "target", "Target"));
         (void)verbs.Declare(std::move(refuse));
+        (void)verbs.Declare(AuthoredApiDefinition<GoldenBenchVerbs>::Verbs[0].Describe());
+        VerbDefinition byHand = AuthoredApiDefinition<GoldenBenchVerbs>::Verbs[0].Describe();
+        byHand.Name = "bench.touch_by_hand";
+        (void)verbs.Declare(std::move(byHand));
         DeclareResponseVocabulary(verbs, events);
         AuthoredEventDefinition struck;
         struck.Name = "bench.struck";
@@ -134,6 +156,10 @@ public:
         Token = Verbs->Bind(FindVerbRegistry(Entities)->Find("bench.nothing"), Nothing);
         Refusing.Answer = VerbAdmission::Refused;
         RefuseToken = Verbs->Bind(FindVerbRegistry(Entities)->Find("bench.refuse"), Refusing);
+        Generated.Entities = &Entities;
+        Touching.Entities = &Entities;
+        GeneratedTokens = BindAuthoredApi(Verbs.get(), nullptr, Generated);
+        TouchToken = Verbs->Bind(FindVerbRegistry(Entities)->Find("bench.touch_by_hand"), Touching);
         Events = std::make_unique<AuthoredEventDispatcher>(*FindAuthoredEventRegistry(Entities),
                                                            Logging.GetLogger<DeliveryBench>());
         Logic.Add(StoragePartitionId::Default());
@@ -150,6 +176,8 @@ public:
         Subscriptions.clear();
         Token.Reset();
         RefuseToken.Reset();
+        GeneratedTokens.Reset();
+        TouchToken.Reset();
     }
 
     // kDeliveries entities sharing one set, as prefab instances do; none for an empty text.
@@ -246,6 +274,10 @@ public:
     VerbBindingToken Token;
     NullOperation Refusing;
     VerbBindingToken RefuseToken;
+    GoldenBenchVerbs Generated;
+    AuthoredApiBindings GeneratedTokens;
+    HandTouch Touching;
+    VerbBindingToken TouchToken;
     Listener Heard;
     std::vector<AuthoredEventSubscription> Subscriptions;
     ResponsesSystem* System = nullptr;
@@ -269,6 +301,10 @@ constexpr const char* kConditionFails = R"({"hit": {"on": "bench.struck", "seque
     "commands": [{"verb": "bench.nothing", "arguments": {"target": {"port": "self"}}}]}}})";
 constexpr const char* kCommandsRun = R"({"hit": {"on": "bench.struck", "sequence": {
     "commands": [{"verb": "bench.nothing", "arguments": {"target": {"port": "self"}}}]}}})";
+constexpr const char* kTouchedByHand = R"({"hit": {"on": "bench.struck", "sequence": {
+    "commands": [{"verb": "bench.touch_by_hand", "arguments": {"target": {"port": "self"}}}]}}})";
+constexpr const char* kTouchedGenerated = R"({"hit": {"on": "bench.struck", "sequence": {
+    "commands": [{"verb": "test.bench.touch", "arguments": {"target": {"port": "self"}}}]}}})";
 constexpr const char* kCommandsRefused = R"({"hit": {"on": "bench.struck", "sequence": {
     "commands": [{"verb": "bench.refuse", "arguments": {"target": {"port": "self"}}}]}}})";
 
@@ -308,6 +344,16 @@ void RunAll(bool subscribed)
     EXPECT_EQ(ran.Counts.Refused, 0u);
     EXPECT_EQ(ran.DeliverAllocations, 0u);
     EXPECT_EQ(ran.PassAllocations, 0u) << "a warmed pass that runs commands allocated";
+
+    for (const auto& [name, bindings] : { std::pair{ "match, hand reader runs", kTouchedByHand },
+                                          std::pair{ "match, generated adapter runs", kTouchedGenerated } })
+    {
+        const Measured touched = bench.Run(bench.Place(bindings), bench.Charge);
+        Report((std::string(name) + suffix).c_str(), touched);
+        EXPECT_EQ(touched.Counts.Invoked, static_cast<std::uint64_t>(kDeliveries)) << name;
+        EXPECT_EQ(touched.Counts.Refused, 0u) << name;
+        EXPECT_EQ(touched.PassAllocations, 0u) << name << ": a warmed pass that runs commands allocated";
+    }
 
     bench.System->SetLogRefusals(true);
     const Measured refused = bench.Run(bench.Place(kCommandsRefused), bench.Charge);

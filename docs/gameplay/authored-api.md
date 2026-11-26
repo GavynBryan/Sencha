@@ -59,21 +59,41 @@ public:
 
 A header of components goes in the game's `COMPONENT_HEADERS`. A header that
 declares behaviour — a system's verbs, an event — goes in `API_HEADERS`, which
-is generated the same way but is not held to the components-are-data check.
+is generated the same way but is not held to the components-are-data check. The
+engine passes its own provider headers the same way
+(`SENCHA_ENGINE_API_HEADERS` in `engine/CMakeLists.txt`).
+
+A companion is regenerated when its header changes, or any header the parse of
+it read: the generator writes a dependency file beside the companion
+(`<Header>.sencha.d`) and the build reads it, so a default that names a constant
+or an enumerator from another header follows that header. Under a generator
+without dependency files (Visual Studio) only the header itself is tracked.
 
 ### Annotation reference
 
 | Annotation | On | Meaning |
 |---|---|---|
-| `SENCHA_VERB(id)` | method | An operation content may request. Returns `VerbAdmission`. |
+| `SENCHA_VERB(id)` | method | An operation content may request. Returns `VerbAdmission`, `VerbAnswer`, `VerbRefusal<E>` or `VerbResult<T, E>` (see "What a verb answers"). |
+| `SENCHA_LEASE(id)` | method | The acquire half of a lease: its arguments and its contract. Returns as a verb does, but never a `VerbResult`. |
+| `SENCHA_LEASE_RELEASE(id)` | method | The release half: takes only `const VerbInvocation&` and returns `VerbAdmission` or `VerbAnswer`. Every lease has one. |
+| `SENCHA_LEASE_HOLDS(id)` | const method | Whether an owner's hold goes on: takes `const LeaseOwner&`, returns `bool`. A `SENCHA_COMPLETES` lease has one and no other lease may. |
+| `SENCHA_COSMETIC` | verb, lease | `Scope = Cosmetic`, `Prediction = Presentation`. |
+| `SENCHA_PREDICTION(p)` | verb, lease | `AuthorityOnly` (the default) or `Simulation`. A cosmetic verb names none. |
+| `SENCHA_COMPLETES` | lease | `Completes = true`: the hold can finish while held. |
+| `SENCHA_RESULT(key[, C])` | verb | The result a `VerbResult<T, E>` answers, by its key; `C` is the component an entity result is expected to carry. |
 | `SENCHA_QUERY(id)` | const method | A question content may ask. |
 | `SENCHA_QUERY(name)` | component member | Readable as `<component identity>.<name>`. |
 | `SENCHA_EVENT(id)` | struct | A typed announcement; its `SENCHA_FIELD` members are the payload. |
 | `SENCHA_EVENT_SOURCE(C)` | event | The component a source entity is expected to carry. |
+| `SENCHA_RECORD` | struct | A result answered whole: its `SENCHA_FIELD` members are the record's. |
 | `SENCHA_ARG(key)` | parameter | An argument, by its persisted key. |
-| `SENCHA_TARGET(key[, C])` | parameter | An entity argument, optionally expected to carry `C`. |
+| `SENCHA_TARGET(key[, C])` | parameter | An entity argument, optionally expected to carry `C`. On a verb or lease, a target that is not alive is refused before the method runs. |
 | `SENCHA_RANGE(min, max)` | parameter | The numeric range the argument accepts. |
-| `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. |
+| `SENCHA_MIN(x)`, `SENCHA_MAX(x)` | parameter | One end of that range, or both; not beside `SENCHA_RANGE`. |
+| `SENCHA_UNITS(text)` | parameter | `DataFieldSchema::Units`. |
+| `SENCHA_ASSET(Kind)` | `AssetRef` parameter | The `AssetType` the argument names (`Reference.AssetTypeFilter`). |
+| `SENCHA_DATA_ASSET(subtype)` | `AuthoredDataRef` parameter | A structured-data asset of that subtype, written as the literal or the constant naming it. |
+| `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. On a parameter, the description is its `Summary`. |
 
 Every parameter except a leading `const VerbInvocation&` needs `SENCHA_ARG` or
 `SENCHA_TARGET`. The annotations expand to nothing outside the generator.
@@ -115,7 +135,24 @@ already knows:
 One trait, `AuthoredValueTraits<T>` (`authored/AuthoredValueTraits.h`), decides
 what may cross: `bool`, integers, `float` and `double`, `std::string`, enums
 with an `EnumSchema`, `EntityId`, `GameplayTagId`, `AssetRef`, floating-point
-`Vec<2..4>`, and `std::optional` of any of those.
+`Vec<2..4>`, and `std::optional` of any of those. An argument's type is
+described and decoded (`IsAuthoredArgumentType`); a result's, a payload
+member's or a record member's is described and encoded (`IsAuthoredResultType`).
+Some types go one way only:
+
+- **Read in place, for arguments.** `std::string_view` is the argument's own
+  text, valid for the call, and `AuthoredDataRef` points at the data asset the
+  argument names. A `const T&` parameter is bound to the argument's stored value
+  where the trait can lend it (`Borrow`; `AssetRef` can) and decoded into a
+  local otherwise (`const std::string&`). A verb that keeps any of them past the
+  call copies what it keeps, as it copies anything it queues. With these a
+  warmed invocation allocates nothing for a text or an asset argument; a
+  `std::string` or a by-value `AssetRef` parameter costs a copy.
+- **Answered whole, for results.** `std::vector<T>` answers an array of `T`,
+  and a `SENCHA_RECORD` struct a record of its `SENCHA_FIELD` members, in
+  declaration order (`equipment.sources` and the physics queries are their
+  first consumers). A record's companion specializes `AuthoredValueTraits` for
+  it, so it is used where its header's companion is included.
 
 - An authored integer is a signed 64-bit value. Signed types up to 64 bits and
   unsigned types up to 32 are supported; `std::uint64_t` and `std::size_t` are
@@ -260,8 +297,24 @@ Animation events are producers with a scope: a cosmetic event bound to a
 gameplay verb, or to a lease, is reported when the rig binds
 (`anim.event.scope_mismatch`) and refused if it fires anyway.
 
-The generated API declares instant gameplay verbs only; a lease or a cosmetic
-verb is declared by hand, as the engine's own are (`docs/deferred.md`).
+The generated API declares all three. A lease is three methods on one
+identity, because a release carries no arguments and a probe carries only the
+owner:
+
+```cpp
+SENCHA_LEASE("movement.burst") SENCHA_PREDICTION(Simulation) SENCHA_COMPLETES
+VerbAnswer Burst(const VerbInvocation& invocation, SENCHA_TARGET("target", CharacterMovement) EntityId target,
+                 SENCHA_ARG("speed") SENCHA_MIN(0) float speed = 10.0f);
+SENCHA_LEASE_RELEASE("movement.burst") VerbAnswer EndBurst(const VerbInvocation& invocation);
+SENCHA_LEASE_HOLDS("movement.burst")   bool BurstHolds(const LeaseOwner& owner) const;
+```
+
+The generated adapter switches on `invocation.Step`: `Release` calls the release
+method, `Probe` the holds method (a lease that does not complete is never
+probed, and its adapter answers `Refused` to one), and `Acquire` decodes the
+arguments and calls the annotated method. The generator refuses a lease without
+a release, a completing lease without a holds method, a holds method on a lease
+that does not complete, a release that takes arguments, and a result on a lease.
 
 ## What a verb answers
 
@@ -302,6 +355,26 @@ work has nothing to answer yet, and cannot declare one. Nothing checks that
 rule mechanically. A response's sequence names a command's result and reads it
 in a later command (`docs/gameplay/responses.md`, "Results");
 `inventory.give` and `inventory.take` answer the entry the units went into.
+
+**From a generated method.** The return type says what the verb declares:
+
+```cpp
+VerbAdmission                      // no reasons, no result
+VerbAnswer                         // a status and a detail the method sets itself
+VerbRefusal<E>                     // E's reasons, from its EnumSchema; E's zero value refuses nothing
+VerbResult<T, E = VerbNoReason>    // a value, or E's reason, or a status; needs SENCHA_RESULT
+```
+
+`VerbRefusal` and `VerbResult` (`authored/VerbResult.h`) fill `Refusals` from
+`EnumSchema<E>`, and `VerbResult` fills `Result` from `T` under the key
+`SENCHA_RESULT` names. The adapter encodes the value only when the call was
+accepted and a producer asked for it. The adapter also answers the common cases
+before the method runs: an argument that does not decode is `InvalidArguments`
+naming its slot, and a `SENCHA_TARGET` entity that is not alive is
+`UnresolvedReference` naming it (a present optional target is checked, an absent
+one is not). For that check a provider whose verbs take a target answers
+`const World& AuthoredWorld() const`; the companion refuses to compile one that
+does not. Queries keep answering `Unavailable` for a target that does not apply.
 
 The answer for the same situation is the same whichever verb gives it:
 
@@ -482,7 +555,11 @@ A companion is plain C++ and meant to be read. For each verb it has a
 `Describe_<Method>` that builds the `VerbDefinition` the way a person would and
 an `Invoke_<Method>` that decodes each argument slot and calls the method; for
 each query a `Describe_` and an `Evaluate_`; for each event a `DescribeEvent`
-and an `Encode`; and a table listing them. Registries hold only the
+and an `Encode`; for each record an `AuthoredValueTraits` specialization; and a
+table listing them. Each verb, lease and query also has
+`static constexpr std::string_view Name_<Method>`, so C++ that must name it — a
+test, a menu binding — reads the declaration instead of keeping a second
+constant. Registries hold only the
 definitions; the adapters live behind the dispatchers' tokens, which is why
 every token is reset in `OnShutdown`, before the module unloads.
 
