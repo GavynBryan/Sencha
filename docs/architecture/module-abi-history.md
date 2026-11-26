@@ -1795,3 +1795,19 @@ component with a named leaf a translated wire image of its own layout; the
 lifecycle-hook assertion admits such a component. No component in the engine or
 Loss Function takes the new path yet, so the replication table hash and the net
 protocol do not change; neither does the save or scene format.
+
+## v84
+
+`Counter`, `ItemContainer` and `ItemPickup` declare their fields
+(`SENCHA_SCHEMA`, `SENCHA_FIELD`) and are serialized by the generated path;
+`Counter` and `ItemEntry` are `SENCHA_REPLICATED` and travel as their own
+layouts with their names as wire keys. `CounterSerializer.h`, `CounterWire.h`
+and `ItemEntryWire.h` are deleted; `InventorySerializers.h` keeps
+`MakeItemEntrySerializer` (the count clamp) and makes the container and pickup
+serializers from the new `ComponentSerializerWithoutDefault<T>`, which
+`ComponentSerializer<T>` (no longer `final`) admits. `World` gains
+`ReplaceComponentRaw`, and an inspector edit replaces a component as
+`ReplaceComponent` does, so its hooks run. Scene and save JSON are unchanged
+(pinned); the replication table hash is unchanged, so the net protocol stays
+11. The schema fingerprints of the four components change, so cooked scenes
+holding them are recooked.

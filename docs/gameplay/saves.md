@@ -197,7 +197,8 @@ The rules every caller gets:
   `EquipmentState` (its layout is required), `ItemEntry` (its item is
   required), and `ItemContainer` and `ItemPickup` (a container or a bare
   pickup at its defaults is still one, and writing nothing would lose it on
-  restore). Such a component is written whole, as an `Authored` component
+  restore). `Counter`, `ItemContainer` and `ItemPickup` are generated and
+  registered through `ComponentSerializerWithoutDefault`, which says so. Such a component is written whole, as an `Authored` component
   content did not author always is. A `Saved` component an entity is owed
   (one a component it carries derives, such as the tags `AbilityGrants`
   brings) is in a level entity's baseline at its default record, put there
@@ -614,8 +615,9 @@ Which serializers say their saved form follows their row:
   and never changes in a World, so its key in the row stands for the same
   bindings), `GameplayTags` and `Attributes` (names from registries that only
   grow, so an id in the row always names the same tag or attribute),
-  `ItemEntry`, `ItemPickup` and `ItemContainer` (definition paths and tag
-  names, likewise). `AbilityGrants`, `EquipmentState`, `Counter`,
+  `ItemEntry` (a definition path, likewise). `Counter`, `ItemPickup` and
+  `ItemContainer` are generated and say yes as named ids do.
+  `AbilityGrants`, `EquipmentState`,
   `CharacterMovement`, `AppliedEffects` (written from what its entity is under,
   not from its row) and every other hand-written serializer answer no.
 

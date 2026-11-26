@@ -136,8 +136,6 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     EXPECT_TRUE(adapters.Register(MakeCharacterMovementEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeResponsesEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeItemEntryEditorAdapter()));
-    EXPECT_TRUE(adapters.Register(MakeItemContainerEditorAdapter()));
-    EXPECT_TRUE(adapters.Register(MakeItemPickupEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeHeldEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeEquipmentStateEditorAdapter()));
 
@@ -147,8 +145,6 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
              ResolveComponentTypeId<AbilityGrants>(),
              ResolveComponentTypeId<CharacterMovement>(),
              ResolveComponentTypeId<ItemEntry>(),
-             ResolveComponentTypeId<ItemContainer>(),
-             ResolveComponentTypeId<ItemPickup>(),
              ResolveComponentTypeId<Held>(),
              ResolveComponentTypeId<EquipmentState>(),
          })

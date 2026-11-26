@@ -273,7 +273,7 @@ namespace SceneComponentSerialization
 //=============================================================================
 template <typename Component>
     requires HasTypeSchema<Component>
-class ComponentSerializer final : public IComponentSerializer
+class ComponentSerializer : public IComponentSerializer
 {
     using Traits = ComponentStorageTraits<Component>;
 
@@ -499,4 +499,13 @@ public:
         registry.Components.RemoveComponent<Component>(entity);
         return true;
     }
+};
+
+// The generated serializer of a component that is still state at its defaults: it has no default
+// record, so a capture writes one an entity gained whole (docs/gameplay/saves.md, "The entity patch").
+template <typename Component>
+class ComponentSerializerWithoutDefault final : public ComponentSerializer<Component>
+{
+public:
+    bool SaveDefault(IWriteArchive&) const override { return false; }
 };

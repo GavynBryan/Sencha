@@ -146,7 +146,7 @@ layer registers").
 
 | Component | What it is | Where it lives |
 |---|---|---|
-| `ItemEntry { Definition, Count }` | One possession, on an entity whose `Held` names its container and position. `Count` 0 is depleted. | Authority-materialized; replicated by codec to the peer its holder makes relevant |
+| `ItemEntry { Definition, Count }` | One possession, on an entity whose `Held` names its container and position. `Count` 0 is depleted. | Authority-materialized; replicated, its definition by wire key, to the peer its holder makes relevant |
 | `ItemContainer { Capacity, Accepts }` | What may go in (a tag, hierarchically) and how many entries | Authority only |
 | `ItemPickup { Definition, Count }` | Something in the world to take: the entries it holds, or an authored count of a definition | Authority only |
 
@@ -160,8 +160,14 @@ layer registers").
   imports none, not even a chest's contents, and is sent the entries relevant
   to it.
 
-**Scene form.** Definitions are named by asset path and tags by name; the
-container is the entry's `Held`:
+**Scene form.** The three components declare their fields, so the scene, the
+wire and Kyusu's inspector read one description (`docs/core-systems-map.md`,
+"Named-id fields"): definitions are named by asset path and tags by name, and
+Kyusu offers each as a choice of the names its registry holds. `ItemContainer`
+and `ItemPickup` are generated; `ItemEntry` keeps a short hand-written scene
+form, because a loaded count its stack cannot hold is clamped, and Kyusu edits
+it through its own rows, which bound the count by the stack. The container is
+the entry's `Held`:
 
 ```json
 "ItemEntry":     { "definition": "asset://items/arrow.sdata", "count": 20 }
@@ -324,8 +330,9 @@ zone and its entry with it.
   per-entity relevance): a player's items reach that player alone, a bottle's
   contents reach the bottle's holder, an unopened chest's contents and a
   dropped entry reach nobody.
-- **Codec.** `ItemEntryWire` carries the definition by wire key and the count;
-  `Held` carries the holder and position.
+- **Wire form.** `ItemEntry` travels as its own layout, its definition as the
+  name's wire key, so two machines that reserved items in different orders
+  agree; `Held` carries the holder and position.
 - **Measured** on the composition branch: 10,000 entries over 16 peers write in
   1.05 ms, against 5.5 ms with no filter
   (`docs/plans/evidence/entry-entities/results.md`).

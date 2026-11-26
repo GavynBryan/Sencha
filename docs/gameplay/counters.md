@@ -67,6 +67,12 @@ the player who struck, `counter.value {name: kills.wolves, holder: ...}` reads
 it. Without a holder a counter is the world's, shared by every player. An
 invalid holder is the world's too.
 
+A counter placed in a scene is `"Counter": { "name": "boss.warden.defeated",
+"value": 1 }`; `value` may be left out and reads as 0, and a name the content
+does not declare refuses the scene. Kyusu's inspector shows a placed counter's
+name as a choice of declared tags and its value as a number; renaming one there
+keys it under its new name, and undoing puts it back under the old.
+
 ## Native code
 
 `CounterValue(world, name, holder)` reads one; `FindCounter` gives its entity.
@@ -105,8 +111,8 @@ in `HeldRecordIndex`.
 ## Replication
 
 A world counter reaches every peer; a body's counter reaches the body's owner
-alone. Both follow from the held record's relevance. The name travels by its
-tag's wire key.
+alone. Both follow from the held record's relevance. `Counter` travels as its
+own layout, its name as the tag's wire key; its hooks see the receiver's id.
 
 ## Not yet
 

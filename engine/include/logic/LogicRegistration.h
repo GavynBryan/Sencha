@@ -1,7 +1,6 @@
 #pragma once
 
 #include <logic/Counter.h>
-#include <logic/CounterSerializer.h>
 #include <logic/decision/DecisionAgent.h>
 #include <logic/EffectReactions.h>
 #include <logic/Responses.h>
@@ -9,6 +8,9 @@
 #include <logic/VerbRelay.h>
 #include <logic/VerbRelaySerializer.h>
 #include <world/ComponentRegistrar.h>
+#include <world/serialization/ComponentSerializer.h>
+
+#include <memory>
 
 // Authored logic and the state it keeps: relays, which a native path activates,
 // responses, which answer the occurrences delivered at their entity, effect
@@ -18,11 +20,11 @@ using LogicComponents = ComponentSet<VerbRelay, Responses, EffectReactions, Deci
 
 inline void RegisterLogicComponents(ComponentRegistrar& registrar)
 {
+    // A counter's name is required, so a default counter is not a record of its own.
+    registrar.AddSerializer(std::make_unique<ComponentSerializerWithoutDefault<Counter>>());
     registrar.AddAll<LogicComponents>();
-    // No scene form here is the component's in-memory form -- a relay's key
-    // persists as text and its set as a path, responses as their authored
-    // bindings, a counter's name as its tag's name -- so all are hand-written.
+    // A relay's key persists as text and its set as a path, and responses as
+    // their authored bindings: state kept off the row, so hand-written.
     registrar.AddSerializer(MakeVerbRelaySerializer());
     registrar.AddSerializer(MakeResponsesSerializer());
-    registrar.AddSerializer(MakeCounterSerializer());
 }

@@ -21,5 +21,3 @@
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter();
-[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter();
-[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemPickupEditorAdapter();

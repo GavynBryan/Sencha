@@ -21,7 +21,6 @@
 #include <inventory/InventoryComponents.h>
 #include <inventory/InventorySerializers.h>
 #include <logic/Counter.h>
-#include <logic/CounterSerializer.h>
 #include <logic/Responses.h>
 #include <logic/ResponsesSerializer.h>
 #include <movement/CharacterMovementSerializer.h>
@@ -771,7 +770,7 @@ TEST(SceneSpawnOverlayRestore, ABodyPatchNamingATagContentNoLongerDeclaresRestor
     World& world = runtime.Entities();
     const GameplayTagId kept = *world.AddResource<GameplayTagRegistry>().RegisterTag("count.kept");
     ComponentSerializerRegistry serializers;
-    (void)serializers.Register(MakeCounterSerializer());
+    (void)serializers.Register(std::make_unique<ComponentSerializer<Counter>>());
     LoggingProvider logging;
     WarningSink& warnings = logging.AddSink<WarningSink>();
     SceneSerializationContext context(logging);

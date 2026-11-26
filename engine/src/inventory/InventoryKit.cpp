@@ -10,10 +10,10 @@
 
 void RegisterInventoryComponents(ComponentRegistrar& registrar)
 {
-    registrar.AddAll<InventoryComponents>();
     registrar.AddSerializer(MakeItemEntrySerializer());
     registrar.AddSerializer(MakeItemContainerSerializer());
     registrar.AddSerializer(MakeItemPickupSerializer());
+    registrar.AddAll<InventoryComponents>();
 }
 
 void InstallInventoryVocabulary(World& world)

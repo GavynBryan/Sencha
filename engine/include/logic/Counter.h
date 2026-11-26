@@ -7,9 +7,21 @@
 #include <cstdint>
 #include <type_traits>
 
-struct SENCHA_COMPONENT("sencha.counter") SENCHA_AUTHORITY_MATERIALIZED SENCHA_SAVED Counter
+struct SENCHA_COMPONENT("sencha.counter")
+       SENCHA_SCHEMA("Counter")
+       SENCHA_SCENE_CHUNK("CNTR")
+       SENCHA_REPLICATED
+       SENCHA_AUTHORITY_MATERIALIZED
+       SENCHA_SAVED
+Counter
 {
+    SENCHA_FIELD("name")
+    SENCHA_LABEL("Name")
+    SENCHA_TOOLTIP("The gameplay tag the counter is kept and found under.")
     GameplayTagId Name;
+
+    SENCHA_FIELD("value")
+    SENCHA_LABEL("Value")
     std::int32_t Value = 0;
 };
 
@@ -27,5 +39,4 @@ struct ComponentTraits<Counter>
 
 #if !defined(SENCHA_CODEGEN)
 #  include <logic/Counter.sencha.h>
-#  include <logic/CounterWire.h>
 #endif

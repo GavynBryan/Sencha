@@ -7,7 +7,6 @@
 #include <ecs/WorldComponentSchema.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Counter.h>
-#include <logic/CounterSerializer.h>
 #include <logic/CounterVocabulary.h>
 #include <net/NetReplicationComponents.h>
 #include <save/HeldRecordSaves.h>
@@ -76,7 +75,6 @@ namespace
             registrar.Add<PersistentIdComponent>();
             registrar.Add<Held>();
             registrar.Add<Counter>();
-            registrar.AddSerializer(MakeCounterSerializer());
             registrar.Add<NetReplicated>();
             registrar.Add<NetRelevanceAnchor>();
             Schema.Seal();

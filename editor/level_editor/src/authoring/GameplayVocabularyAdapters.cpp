@@ -421,8 +421,6 @@ namespace
         }
     };
 
-    constexpr std::string_view kAnything = "Anything";
-
     PropertyNode ItemDefinitionRow(const World& world, ItemId definition)
     {
         const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
@@ -506,63 +504,6 @@ namespace
 
         std::string_view CountTooltip;
     };
-
-    class ItemContainerEditorAdapter final : public IEditorComponentAdapter
-    {
-    public:
-        ComponentTypeId Type() const override { return ResolveComponentTypeId<ItemContainer>(); }
-        bool AuthorsInspectorRows() const override { return true; }
-
-        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
-        {
-            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-            const ItemContainer* container = world.TryGet<ItemContainer>(context.Entity);
-            if (container == nullptr)
-                return {};
-            std::vector<std::string> names{ std::string(kAnything) };
-            std::size_t current = 0;
-            if (const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
-                ForEachRegistered<GameplayTagId>(*tags, [&](GameplayTagId tag) {
-                    if (tag == container->Accepts)
-                        current = names.size();
-                    names.emplace_back(tags->GetName(tag));
-                });
-            const std::vector<std::string_view> options(names.begin(), names.end());
-            return { NumberProperty("capacity", "Holds", static_cast<double>(container->Capacity), 0.0, 65535.0, 1.0,
-                                    "Entries it holds at most; zero is as many as a capacity can say."),
-                     ChoiceProperty("accepts", "Accepts", options, current,
-                                    "An item must carry this tag, or one beneath it.") };
-        }
-
-        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
-                                             std::string_view value) const override
-        {
-            World& world = context.Scene.GetRegistry().Components;
-            const ItemContainer* held = std::as_const(world).TryGet<ItemContainer>(context.Entity);
-            if (held == nullptr)
-                return PropertyEditResult::Gone;
-            ItemContainer after = *held;
-            if (key == "capacity")
-            {
-                const std::optional<double> capacity = ParseNumber(value, 0.0, 65535.0);
-                if (!capacity)
-                    return PropertyEditResult::Refused;
-                after.Capacity = static_cast<std::uint16_t>(*capacity);
-            }
-            else if (key == "accepts")
-            {
-                const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
-                after.Accepts = value == kAnything || tags == nullptr ? GameplayTagId{} : tags->FindTag(value);
-                if (value != kAnything && !after.Accepts.IsValid())
-                    return PropertyEditResult::Refused;
-            }
-            else
-                return PropertyEditResult::Gone;
-            if (after.Capacity == held->Capacity && after.Accepts == held->Accepts)
-                return PropertyEditResult::Unchanged;
-            return CommitComponentValue(context, *held, after);
-        }
-    };
 }
 
 std::unique_ptr<IEditorComponentAdapter> MakeGameplayTagEditorAdapter()
@@ -590,13 +531,3 @@ std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter()
     return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds, from one to what its stack holds.");
 }
 
-std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter()
-{
-    return std::make_unique<ItemContainerEditorAdapter>();
-}
-
-std::unique_ptr<IEditorComponentAdapter> MakeItemPickupEditorAdapter()
-{
-    return std::make_unique<CountedItemEditorAdapter<ItemPickup>>(
-        "How many units taking it gives, when it holds no entry of its own.");
-}

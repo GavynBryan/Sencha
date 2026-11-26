@@ -49,11 +49,8 @@ private:
         if (meta == nullptr || meta->Size != bytes.size())
             return;
 
-        if (void* dst = world.GetComponentRaw(Entity, Component))
-        {
-            std::memcpy(dst, bytes.data(), bytes.size());
+        if (world.ReplaceComponentRaw(Entity, Component, bytes.data()))
             Document.MarkDirty();
-        }
     }
 
     EntityId               Entity;

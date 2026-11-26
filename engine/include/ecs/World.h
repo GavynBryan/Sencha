@@ -383,6 +383,31 @@ public:
         return true;
     }
 
+    // ReplaceComponent by id: `value` is a whole component of that type's size.
+    bool ReplaceComponentRaw(EntityId entity, ComponentId id, const void* value)
+    {
+        assert(QueryDepth == 0 && LifecycleHookDepth == 0
+               && "ReplaceComponentRaw called while a query/lifecycle hook is active.");
+        void* slot = GetComponentRaw(entity, id);
+        if (slot == nullptr)
+            return false;
+        const ComponentMeta& meta = ComponentMetas[id];
+        std::vector<std::byte> previous(meta.Size);
+        std::memcpy(previous.data(), slot, meta.Size);
+        std::memcpy(slot, value, meta.Size);
+        if (meta.OnAddHook != nullptr)
+        {
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnAddHook(slot, *this, entity);
+        }
+        if (meta.OnRemoveHook != nullptr)
+        {
+            ScopedLifecycleHook hookScope(*this);
+            meta.OnRemoveHook(previous.data(), *this, entity);
+        }
+        return true;
+    }
+
     void DestroyEntity(EntityId entity)
     {
         assert(QueryDepth == 0 && LifecycleHookDepth == 0

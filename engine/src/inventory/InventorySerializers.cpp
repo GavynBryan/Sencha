@@ -3,15 +3,11 @@
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/Archive.h>
 #include <core/serialization/FourCC.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <world/serialization/SceneFieldCodec.h>
+#include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/TypedComponentSerializer.h>
 
-#include <array>
-#include <cstddef>
-#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -19,22 +15,6 @@ namespace
 {
     constexpr std::string_view kDefinition = "definition";
     constexpr std::string_view kCount = "count";
-    constexpr std::string_view kCapacity = "capacity";
-    constexpr std::string_view kAccepts = "accepts";
-
-    std::uint32_t ReadCount(IReadArchive& archive, std::string_view key, std::uint32_t fallback)
-    {
-        std::uint32_t value = fallback;
-        if (archive.HasField(key))
-            archive.Field(key, value);
-        return value;
-    }
-
-    RuntimeField CountField(std::size_t offset)
-    {
-        return RuntimeField{ .Name = "count", .Offset = offset, .Size = sizeof(std::uint32_t),
-                             .Scalar = FieldScalar::UInt32, .ReadOnly = true };
-    }
 
     void ClampEntryCount(const World& world, EntityId entity, ItemEntry& entry, SceneSerializationContext& context)
     {
@@ -48,37 +28,29 @@ namespace
             entry.Count);
     }
 
-    template<typename T>
-    class CountedSerializer final : public TypedComponentSerializer<T>
+    class ItemEntrySerializer final : public TypedComponentSerializer<ItemEntry>
     {
     public:
-        CountedSerializer(std::string_view key, std::uint32_t chunk)
-            : Key(key)
-            , Chunk(chunk)
-        {
-        }
-
-        std::string_view JsonKey() const override { return Key; }
-        std::uint32_t BinaryChunkId() const override { return Chunk; }
+        std::string_view JsonKey() const override { return "ItemEntry"; }
+        std::uint32_t BinaryChunkId() const override { return MakeFourCC('I', 'T', 'E', 'N'); }
 
         std::span<const RuntimeField> RuntimeFields() const override
         {
-            static const std::array kFields{ CountField(offsetof(T, Count)) };
-            return kFields;
+            return SceneComponentSerialization::AuthoredRuntimeFieldsOf<ItemEntry>();
         }
 
-        bool SavedFormFromRowAlone() const override { return std::is_trivially_copyable_v<T>; }
+        bool SavedFormFromRowAlone() const override { return std::is_trivially_copyable_v<ItemEntry>; }
 
         bool Save(IWriteArchive& archive, EntityId entity, const World& world,
                   SceneSerializationContext& context) const override
         {
-            const T* value = world.IsRegistered<T>() ? world.TryGet<T>(entity) : nullptr;
-            if (value == nullptr)
+            const ItemEntry* entry = world.IsRegistered<ItemEntry>() ? world.TryGet<ItemEntry>(entity) : nullptr;
+            if (entry == nullptr)
                 return true;
             archive.BeginObject(std::string_view{});
-            const bool named = !value->Definition.IsValid()
-                || (SceneFieldCodec<ItemId>::Save(archive, kDefinition, value->Definition, &world, context)
-                    && (archive.Field(kCount, value->Count), true));
+            const bool named = !entry->Definition.IsValid()
+                || (SceneFieldCodec<ItemId>::Save(archive, kDefinition, entry->Definition, &world, context)
+                    && (archive.Field(kCount, entry->Count), true));
             archive.End();
             return named && archive.Ok();
         }
@@ -86,81 +58,31 @@ namespace
         bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                            SceneSerializationContext& context) override
         {
-            T value{};
+            ItemEntry entry{};
             archive.BeginObject(std::string_view{});
-            value.Count = ReadCount(archive, kCount, value.Count);
+            if (archive.HasField(kCount))
+                archive.Field(kCount, entry.Count);
             const bool named = !archive.HasField(kDefinition)
-                || (SceneFieldCodec<ItemId>::Load(archive, kDefinition, value.Definition, &world, context)
-                    && value.Definition.IsValid());
-            if constexpr (std::is_same_v<T, ItemEntry>)
-                ClampEntryCount(world, entity, value, context);
+                || (SceneFieldCodec<ItemId>::Load(archive, kDefinition, entry.Definition, &world, context)
+                    && entry.Definition.IsValid());
+            ClampEntryCount(world, entity, entry, context);
             archive.End();
-            return named && archive.Ok() && this->Place(world, entity, value);
-        }
-
-    private:
-        std::string_view Key;
-        std::uint32_t Chunk;
-    };
-
-    class ItemContainerSerializer final : public TypedComponentSerializer<ItemContainer>
-    {
-    public:
-        std::string_view JsonKey() const override { return "ItemContainer"; }
-        std::uint32_t BinaryChunkId() const override { return MakeFourCC('I', 'T', 'C', 'N'); }
-
-        std::span<const RuntimeField> RuntimeFields() const override { return {}; }
-
-        bool SavedFormFromRowAlone() const override { return std::is_trivially_copyable_v<ItemContainer>; }
-
-        bool Save(IWriteArchive& archive, EntityId entity, const World& world, SceneSerializationContext&) const override
-        {
-            const ItemContainer* container = world.IsRegistered<ItemContainer>() ? world.TryGet<ItemContainer>(entity) : nullptr;
-            if (container == nullptr)
-                return true;
-            archive.BeginObject(std::string_view{});
-            archive.Field(kCapacity, static_cast<std::uint32_t>(container->Capacity));
-            const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
-            if (container->Accepts.IsValid() && tags != nullptr)
-                archive.Field(kAccepts, tags->GetName(container->Accepts));
-            archive.End();
-            return archive.Ok();
-        }
-
-        bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world, SceneSerializationContext&) override
-        {
-            ItemContainer container{};
-            archive.BeginObject(std::string_view{});
-            const std::uint32_t capacity = ReadCount(archive, kCapacity, 0);
-            if (capacity > 0xFFFF)
-                archive.MarkInvalidField(kCapacity);
-            container.Capacity = static_cast<std::uint16_t>(capacity);
-            if (archive.HasField(kAccepts))
-            {
-                std::string name;
-                archive.Field(kAccepts, name);
-                const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
-                container.Accepts = tags != nullptr ? tags->FindTag(name) : GameplayTagId{};
-                if (!container.Accepts.IsValid())
-                    archive.MarkInvalidField(kAccepts);
-            }
-            archive.End();
-            return archive.Ok() && Place(world, entity, container);
+            return named && archive.Ok() && Place(world, entity, entry);
         }
     };
 }
 
 std::unique_ptr<IComponentSerializer> MakeItemEntrySerializer()
 {
-    return std::make_unique<CountedSerializer<ItemEntry>>("ItemEntry", MakeFourCC('I', 'T', 'E', 'N'));
+    return std::make_unique<ItemEntrySerializer>();
 }
 
 std::unique_ptr<IComponentSerializer> MakeItemContainerSerializer()
 {
-    return std::make_unique<ItemContainerSerializer>();
+    return std::make_unique<ComponentSerializerWithoutDefault<ItemContainer>>();
 }
 
 std::unique_ptr<IComponentSerializer> MakeItemPickupSerializer()
 {
-    return std::make_unique<CountedSerializer<ItemPickup>>("ItemPickup", MakeFourCC('I', 'T', 'P', 'K'));
+    return std::make_unique<ComponentSerializerWithoutDefault<ItemPickup>>();
 }
