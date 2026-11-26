@@ -88,6 +88,21 @@ namespace
         return std::static_pointer_cast<const EquipmentLayoutDeclaration>(compiled.Value);
     }
 
+    std::shared_ptr<const ItemDeclaration> CompileItem(std::string_view json)
+    {
+        DataAssetTypeRegistry types;
+        DataSchemaRegistry schemas;
+        RegisterItemDefinitionData(types, schemas);
+        const std::optional<JsonValue> data = JsonParse(json);
+        EXPECT_TRUE(data.has_value());
+        std::vector<DataValidationError> invalid;
+        EXPECT_TRUE(ValidateDataAgainstSchema(*data, *schemas.Find(kItemDefinitionType), invalid))
+            << FormatDataValidationErrors(invalid);
+        const DataAssetCompileResult compiled = types.Find(kItemDefinitionType)->Compile(*data);
+        EXPECT_TRUE(compiled.Error.empty()) << compiled.Error;
+        return std::static_pointer_cast<const ItemDeclaration>(compiled.Value);
+    }
+
     constexpr std::string_view kHumanoid = R"({
         "slots": [ { "key": "hand.main", "accepts": "Item.Weapon", "action": "Input.Fire", "priority": 10 },
                    { "key": "ring.left", "accepts": "Item.Ring", "priority": 20, "order": 2 },
@@ -1111,7 +1126,7 @@ TEST_F(EquipmentVocabularyTest, AnEquipWearsTheEntryASearchFindsWhenItsCommandRu
 
 TEST(EquipmentRefusals, EveryRefusalHasAName)
 {
-    for (std::uint8_t value = 0; value <= static_cast<std::uint8_t>(EquipmentRefusal::Undeclared); ++value)
+    for (std::uint8_t value = 0; value <= static_cast<std::uint8_t>(EquipmentRefusal::Unmet); ++value)
         EXPECT_FALSE(EnumToString(static_cast<EquipmentRefusal>(value)).empty()) << int(value);
     for (std::uint8_t value = 0; value <= static_cast<std::uint8_t>(InventoryRefusal::Withheld); ++value)
         EXPECT_FALSE(EnumToString(static_cast<InventoryRefusal>(value)).empty()) << int(value);
@@ -2026,6 +2041,126 @@ TEST_F(EquipmentTest, CyclingSkipsACandidateTheEquipRefuses)
     const EntityId stick = Give(club);
     ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None) << "the greatsword's grants do not fit";
     EXPECT_EQ(ResolvePersistableRef(world, Records()[0].Source), stick);
+}
+
+namespace
+{
+    class EquipmentRequireTest : public EquipmentTest
+    {
+    protected:
+        EquipmentRequireTest()
+        {
+            GameplayTagRegistry& tags = Entities().GetResource<GameplayTagRegistry>();
+            Knight = *tags.RegisterTag("Class.Knight");
+            Templar = *tags.RegisterTag("Class.Knight.Templar");
+            Sun = *tags.RegisterTag("Faith.Sun");
+            (void)tags.RegisterTag("Faith.Moon");
+            Hollowed = *tags.RegisterTag("State.Hollowed");
+        }
+
+        static std::string Blade(std::string_view require)
+        {
+            return std::string(R"({ "name": "Blade", "tags": [ "Item.Weapon" ],
+                "equip": { "occupies": [ "hand.main" ], "require": { "tags": )")
+                + std::string(require) + " } } }";
+        }
+
+        bool Resolves(std::string_view json, ItemDefinition& definition, std::vector<std::string>& errors)
+        {
+            return ResolveItemDeclaration(*CompileItem(json), Entities(), definition, errors);
+        }
+
+        ItemId DefineItem(std::string_view path, std::string_view json)
+        {
+            ItemDefinition definition;
+            std::vector<std::string> errors;
+            EXPECT_TRUE(Resolves(json, definition, errors)) << (errors.empty() ? "" : errors.front());
+            const ItemId item = Entities().GetResource<ItemRegistry>().Define(path, std::move(definition));
+            Declare();
+            return item;
+        }
+
+        GameplayTagContainer& TagsOf(EntityId wearer) { return *Entities().TryGet<GameplayTagContainer>(wearer); }
+
+        GameplayTagId Knight, Templar, Sun, Hollowed;
+    };
+}
+
+TEST_F(EquipmentRequireTest, AnEquipIsRefusedUnlessTheWearersTagsMeetAllAnyAndNone)
+{
+    const ItemId blade = DefineItem("asset://items/blade.sdata",
+                                    Blade(R"({ "all": [ "Class.Knight" ], "any": [ "Faith.Sun", "Faith.Moon" ],
+                                               "none": [ "State.Hollowed" ] })"));
+    const EntityId entry = Give(blade);
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::Unmet);
+    EXPECT_EQ(EnumToString(EquipmentRefusal::Unmet), "unmet");
+
+    (void)TagsOf(Hero).GrantBaseline(Templar);
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::Unmet) << "no tag of 'any' is held";
+    (void)TagsOf(Hero).GrantBaseline(Sun);
+    (void)TagsOf(Hero).GrantBaseline(Hollowed);
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::Unmet) << "a tag of 'none' is held";
+    (void)TagsOf(Hero).RevokeBaseline(Hollowed);
+    EXPECT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None) << "a templar is a knight";
+    EXPECT_EQ(Records().size(), 1u);
+}
+
+TEST_F(EquipmentRequireTest, AWearerWithoutATagContainerHoldsNoTags)
+{
+    World& world = Entities();
+    const EntityId bare = world.CreateEntity();
+    world.AddComponent<ItemContainer>(bare, ItemContainer{});
+    world.AddComponent<EquipmentState>(bare, EquipmentState{ .Layout = Body, .Count = 0, .NextKey = 1, .Records = {} });
+    const ItemId knights = DefineItem("asset://items/knights.sdata", Blade(R"({ "all": [ "Class.Knight" ] })"));
+    const ItemId plain = DefineItem("asset://items/plain.sdata", Blade(R"({ "none": [ "State.Hollowed" ] })"));
+    Inventory inventory(world, FixedSimTime{});
+
+    EXPECT_EQ(Gear().Equip(bare, inventory.Give(bare, knights, 1).Entry).Refusal, EquipmentRefusal::Unmet);
+    EXPECT_EQ(Gear().Equip(bare, inventory.Give(bare, plain, 1).Entry).Refusal, EquipmentRefusal::None);
+}
+
+TEST_F(EquipmentRequireTest, CyclingPassesOverACandidateWhoseRequirementIsUnmet)
+{
+    const ItemId blade = DefineItem("asset://items/blade.sdata", Blade(R"({ "all": [ "Class.Knight" ] })"));
+    const ItemId club = Entities().GetResource<ItemRegistry>().Define(
+        "asset://items/club.sdata", ItemDefinition{ .Name = "Club", .Tags = { Weapon }, .Occupies = { "hand.main" } });
+    Declare();
+    (void)Give(blade);
+    const EntityId stick = Give(club);
+
+    ASSERT_EQ(Gear().Cycle(Hero, "hand").Refusal, EquipmentRefusal::None);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), stick);
+}
+
+TEST_F(EquipmentRequireTest, AWornRecordOutlastsItsRequirementThroughALossAReloadAndARestore)
+{
+    const ItemId blade = DefineItem("asset://items/blade.sdata", Blade(R"({ "all": [ "Class.Knight" ] })"));
+    const EntityId entry = Give(blade);
+    (void)TagsOf(Hero).GrantBaseline(Knight);
+    ASSERT_EQ(Gear().Equip(Hero, entry).Refusal, EquipmentRefusal::None);
+
+    (void)TagsOf(Hero).RevokeBaseline(Knight);
+    Pass();
+    ASSERT_EQ(Records().size(), 1u) << "admission only: losing the tag takes nothing off";
+    EXPECT_EQ(Records()[0].Derivation, EquipmentDerivation::Maintained);
+
+    (void)DefineItem("asset://items/blade.sdata", Blade(R"({ "all": [ "Class.Knight.Templar" ] })"));
+    Pass();
+    ASSERT_EQ(Records().size(), 1u) << "a retuned requirement takes nothing off";
+
+    const FixedSimTime now{ .DeltaSeconds = 1.0 / 60.0, .TickIndex = Now };
+    EXPECT_EQ(ReconcileEquipment(Entities(), Hero, now), 0u);
+    ASSERT_EQ(Records().size(), 1u) << "a restore puts back what was worn without asking";
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), entry);
+}
+
+TEST_F(EquipmentRequireTest, ARequiredTagTheRegistryLacksRefusesTheItem)
+{
+    ItemDefinition definition;
+    std::vector<std::string> errors;
+    EXPECT_FALSE(Resolves(Blade(R"({ "all": [ "Class.Knight" ], "none": [ "State.Cursed" ] })"), definition, errors));
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("State.Cursed"), std::string::npos) << errors[0];
 }
 
 namespace

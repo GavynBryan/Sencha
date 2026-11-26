@@ -83,9 +83,13 @@ namespace
                                  std::move(scale) };
         DataFieldSchema equip = MakeOptionalDataField(DataFieldKind::Record, "equip", "When equipped",
                                                       "The slots it takes and what it maintains in them.");
+        DataFieldSchema require = MakeOptionalDataField(DataFieldKind::Record, "require", "Requires of its wearer",
+                                                        "Checked when it is equipped, never while it is worn.");
+        require.Children.push_back(MakeTagQueryNamesField("tags", "Wearer's tags"));
         equip.Children = { List("occupies", "Occupies", MakeDataField(DataFieldKind::String, "slot", "Slot or group")),
                            List("effects", "Effects", std::move(equipEffect)),
-                           TagList("lock_tags", "Locked while it holds") };
+                           TagList("lock_tags", "Locked while it holds"),
+                           std::move(require) };
 
         DataFieldSchema grant = MakeOptionalDataField(DataFieldKind::Record, "grant", "Grant");
         grant.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"),
@@ -193,6 +197,9 @@ namespace
                 return Refused("$.data.equip.occupies A slot or group is named.");
             if (!ReadTags(*equip, "lock_tags", value->EquipLockTags))
                 return Refused("$.data.equip.lock_tags A tag is a name.");
+            if (const JsonValue* require = equip->Find("require"); require != nullptr && require->IsObject())
+                if (const JsonValue* tags = require->Find("tags"); tags != nullptr && tags->IsObject())
+                    value->EquipRequire = ReadTagQueryNames(*tags);
             if (const JsonValue* effects = equip->Find("effects"); effects != nullptr && effects->IsArray())
                 for (std::size_t i = 0; i < effects->AsArray().size(); ++i)
                 {
@@ -276,6 +283,17 @@ bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, It
     ResolveTags(tags, declaration.Tags, out.Tags, errors);
     ResolveTags(tags, declaration.InstanceTags, out.InstanceTags, errors);
     ResolveTags(tags, declaration.EquipLockTags, out.EquipLockTags, errors);
+    if (!declaration.EquipRequire.Empty())
+    {
+        std::vector<std::string> missing;
+        if (tags == nullptr)
+            errors.push_back("equip.require: this World has no gameplay tags");
+        else
+            out.EquipRequire = ResolveTagQuery(declaration.EquipRequire, *tags, missing);
+        for (const std::string& name : missing)
+            errors.push_back(std::format("equip.require: no gameplay tag '{}'", name));
+        out.HasEquipRequire = true;
+    }
 
     const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
     for (const std::string& path : declaration.TakeEffects)

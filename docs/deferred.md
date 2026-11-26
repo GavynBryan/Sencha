@@ -1655,6 +1655,35 @@ described in `docs/navigation/runtime.md`, "Agents".
   apply step, with the entry as their source, and decide whether a restore or
   a derivation replays them (it should not).
 
+## Attribute bounds in an equip requirement
+
+- **What:** an item's `equip.require` is a tag query on the wearer. Nothing
+  refuses an equip on a stat ("requires Strength 16").
+- **Where:** `inventory/ItemDefinitionData.cpp` (schema, compile, resolve),
+  `EquipRequirementMet` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first game that refuses an equip on a stat or a level. Then
+  add `require.attributes`, a keyed list of `{ key, attribute, require }` with
+  `ValueBounds` (`math/ValueBounds.h`), and one struct in `attributes/` for the
+  tag query and the bounds together, held by the item and by a slot.
+
+## A requirement on a layout slot
+
+- **What:** a requirement belongs to an item. A slot opened by progress (a
+  third ring slot) cannot require anything of its wearer.
+- **Where:** `EquipmentSlot` in `equipment/EquipmentLayout.h`,
+  `ResolveEquipmentSlots` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first slot unlocked by progress. Then put the same tag query
+  on `EquipmentSlot`, checked by `EquipRequirementMet`'s rule.
+
+## Asking whether an equip would be admitted without doing it
+
+- **What:** `Equipment::Equip` checks everything before it changes anything,
+  but only as part of equipping. Nothing answers "could this be worn" without
+  wearing it.
+- **Where:** `Equipment::Equip` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first inventory screen that greys out what cannot be worn.
+  Then split the check out of `Equip` into a const function both call.
+
 ## A second layer that takes part in moving an entry
 
 - **What:** `ItemMoveAdmission` is one World resource with one `Admit` and one

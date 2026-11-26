@@ -13,6 +13,7 @@
 #include <equipment/EquipmentComponents.h>
 #include <equipment/WornGrantEntries.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <world/SimulationAuthority.h>
@@ -188,6 +189,17 @@ void EndEquipmentRecord(World& world, EntityId wearer, std::size_t index)
     RemoveEquipmentRecord(world, wearer, index);
 }
 
+bool EquipRequirementMet(const World& world, EntityId wearer, const ItemDefinition& item)
+{
+    if (!item.HasEquipRequire)
+        return true;
+    const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+    if (tags == nullptr)
+        return false;
+    const GameplayTagContainer* held = world.IsAlive(wearer) ? world.TryGet<GameplayTagContainer>(wearer) : nullptr;
+    return item.EquipRequire.Matches(held != nullptr ? *held : GameplayTagContainer{}, *tags);
+}
+
 bool EquipmentWearerLocked(const World& world, EntityId wearer)
 {
     const EquipmentState* state = StateOf(world, wearer);
@@ -233,6 +245,8 @@ EquipmentResult Equipment::Equip(EntityId wearer, EntityId entry, std::string_vi
             return Refused(EquipmentRefusal::AlreadyEquipped);
     if (EquipmentWearerLocked(world, wearer))
         return Refused(EquipmentRefusal::Locked);
+    if (!EquipRequirementMet(world, wearer, *item))
+        return Refused(EquipmentRefusal::Unmet);
 
     std::uint32_t slots = 0;
     std::uint8_t primary = kNoEquipmentSlot;

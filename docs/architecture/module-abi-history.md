@@ -1745,3 +1745,14 @@ declares the query `inventory.entry` with `SENCHA_QUERY` and answers
 `AuthoredVocabularyScope` loses its private `DeclareVerb`.
 `EngineVocabularyBindings` holds the generated bindings it made. The save
 format, the scene format and the net protocol do not change.
+
+## v80
+
+`EquipmentRefusal` gains `Unmet`, after `Undeclared`, and
+`EquipRequirementMet` is new. `ItemDefinition` gains `EquipRequire` and
+`HasEquipRequire`, and `ItemDeclaration` gains `EquipRequire`, so
+`inventory/ItemDefinition.h` includes `gameplay_tags/GameplayTagQuery.h` and
+`inventory/ItemDefinitionData.h` includes
+`gameplay_tags/GameplayTagQueryNames.h`. `item.definition` gains the optional
+`equip.require.tags`; its data version stays 1. The save format, the scene
+format and the net protocol do not change.

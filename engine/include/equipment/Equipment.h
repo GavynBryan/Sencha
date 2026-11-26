@@ -30,6 +30,7 @@ enum class EquipmentRefusal : std::uint8_t
     MissingAttribute,
     NotMaintained,
     Undeclared,
+    Unmet,
 };
 
 template <>
@@ -50,6 +51,7 @@ struct EnumSchema<EquipmentRefusal>
         EnumValue{ EquipmentRefusal::MissingAttribute, "missing_attribute" },
         EnumValue{ EquipmentRefusal::NotMaintained, "not_maintained" },
         EnumValue{ EquipmentRefusal::Undeclared, "undeclared" },
+        EnumValue{ EquipmentRefusal::Unmet, "unmet" },
     };
 };
 
@@ -87,6 +89,7 @@ private:
 [[nodiscard]] bool ItemTakesSlotFirst(const World& world, const EquipmentLayout& layout, std::uint8_t slot,
                                       const ItemDefinition& item);
 
+[[nodiscard]] bool EquipRequirementMet(const World& world, EntityId wearer, const ItemDefinition& item);
 [[nodiscard]] bool EquipmentWearerLocked(const World& world, EntityId wearer);
 [[nodiscard]] bool EquipmentRecordLocked(const World& world, EntityId wearer, const EquipmentRecord& record);
 

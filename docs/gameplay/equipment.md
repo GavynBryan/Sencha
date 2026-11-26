@@ -75,7 +75,8 @@ An `item.definition` says how it is worn:
 ```json
 "equip": { "occupies": [ "ring" ],
            "effects": [ { "key": "e_glow", "effect": { "data": "asset://effects/glow.sdata" }, "scale": 1 } ],
-           "lock_tags": [ "Item.Cursed" ] },
+           "lock_tags": [ "Item.Cursed" ],
+           "require": { "tags": { "all": [ "Class.Mage" ], "none": [ "State.Hollowed" ] } } },
 "grants": [ { "key": "g_bolt", "parameters": [ { "key": "power", "value": 25 } ] } ]
 ```
 
@@ -86,6 +87,15 @@ An `item.definition` says how it is worn:
 - **`lock_tags`** lock the one record whose source entry holds one (see
   "Locks"). An item with `equip.lock_tags` or `instance_tags` gives each entry
   a tag container.
+- **`require.tags`** is a tag query on the wearer (`all`, `any`, `none`, each
+  name matching the tag or one beneath it), the same `GameplayTagQueryNames`
+  abilities, sequences and reaction profiles hold. A wearer with no tag
+  container holds no tags. A name the tag registry lacks refuses the
+  definition. It is admission only: `Equip` asks it, so `Cycle` and native
+  callers honour it, while the equipment pass, a derivation, a restore and an
+  authored record never do. A record worn when the wearer later loses the tag,
+  or when content retunes the requirement, stays worn; a game that wants the
+  item to stop working puts the condition on what the item grants.
 - **`grants`** give parameters to the grants its equip effects give, by grant
   key; naming a grant no equip effect gives is refused.
 
@@ -196,6 +206,7 @@ state after the replacement. It is refused, with nothing changed, when:
 | `AlreadyEquipped` | the entry is already worn |
 | `NoSlot`, `NotAccepted` | a slot is not found, or does not accept the item |
 | `Locked` | the wearer holds a lock tag, or a record it would replace is locked |
+| `Unmet` | the wearer's tags do not meet the item's `equip.require` (`EquipRequirementMet`) |
 | `NotMaintained`, `Undeclared` | an equip effect is not Infinite, or content never declared the entries it would be worn with (also asserts in a debug build: see "Worn grant entries") |
 | `MissingAttribute` | an equip effect modifies an attribute the wearer does not have |
 | `GrantRoom` | the grants would not fit the wearer's grant table once what it replaces has gone |
@@ -426,8 +437,9 @@ Recorded in `docs/deferred.md`: more than thirty-two slots in a layout, a wire
 image sized by what it holds, tracing equipped grants that tie on an action, deriving a zone's equipped
 records as it loads, one-shot effects when an item is equipped, a second layer
 that takes part in moving an entry, owner-only fields a former owner keeps,
-predicted equips ("Predicting gives and transfers"), and authoring a waiting
-record in Kyusu.
+predicted equips ("Predicting gives and transfers"), authoring a waiting
+record in Kyusu, attribute bounds in an equip requirement, a requirement on a
+layout slot, and asking whether an equip would be admitted without doing it.
 
 A verb to lift a seeded curse is not among them: `tags.revoke` takes a
 baseline stack from an entry, which is what `instance_tags` seeds.

@@ -7,6 +7,7 @@
 #include <core/identity/StrongId.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
+#include <gameplay_tags/GameplayTagQuery.h>
 
 #include <cstdint>
 #include <string>
@@ -48,6 +49,8 @@ struct ItemDefinition
     std::vector<ItemEquipEffect> EquipEffects{};
     std::vector<GameplayTagId> EquipLockTags{};
     std::vector<ItemGrantParameters> GrantParameters{};
+    GameplayTagQuery EquipRequire{};
+    bool HasEquipRequire = false;
 };
 
 class ItemRegistry final : public NamedDefinitionRegistry<ItemId, ItemDefinition>

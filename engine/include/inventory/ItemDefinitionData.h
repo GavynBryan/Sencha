@@ -3,6 +3,7 @@
 #include <abilities/AbilityDeclaration.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
+#include <gameplay_tags/GameplayTagQueryNames.h>
 #include <inventory/ItemDefinition.h>
 
 #include <cstdint>
@@ -40,6 +41,7 @@ struct ItemDeclaration
     std::vector<std::string> Occupies;
     std::vector<EquipEffect> EquipEffects;
     std::vector<std::string> EquipLockTags;
+    GameplayTagQueryNames EquipRequire;
     std::vector<ItemGrantParameters> GrantParameters;
 };
 
