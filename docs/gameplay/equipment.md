@@ -83,7 +83,13 @@ An `item.definition` says how it is worn:
 - **`occupies`** names the slots or groups it takes, one each. An item that
   occupies nothing is never equipped.
 - **`effects`** are Infinite effects maintained while it is worn; any other
-  duration is refused at declaration (`equip_effect_not_maintained`).
+  duration is refused at declaration (`equip_effect_not_maintained`). An
+  effect's `scale_by` names a number property of the item
+  (`docs/gameplay/inventory.md`, "Properties") its `scale` is multiplied by
+  when the definition resolves, so a piece of armour states its weight once
+  and an effect adding it to an `EquipLoad` attribute while worn follows it,
+  through a reload too. Naming a property the item does not state as a number
+  refuses the definition.
 - **`lock_tags`** lock the one record whose source entry holds one (see
   "Locks"). An item with `equip.lock_tags` or `instance_tags` gives each entry
   a tag container.

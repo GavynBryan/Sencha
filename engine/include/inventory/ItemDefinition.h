@@ -3,6 +3,7 @@
 #include <abilities/AbilityDeclaration.h>
 #include <abilities/AbilityGrants.h>
 #include <attributes/AttributeId.h>
+#include <authored/AuthoredValue.h>
 #include <core/identity/NamedDefinitionRegistry.h>
 #include <core/identity/StrongId.h>
 #include <effects/EffectId.h>
@@ -35,6 +36,12 @@ struct ItemGrantParameters
     friend bool operator==(const ItemGrantParameters&, const ItemGrantParameters&) = default;
 };
 
+struct ItemProperty
+{
+    GameplayTagId Name;
+    AuthoredValue Value;
+};
+
 struct ItemDefinition
 {
     std::string Name{};
@@ -51,6 +58,7 @@ struct ItemDefinition
     std::vector<ItemGrantParameters> GrantParameters{};
     GameplayTagQuery EquipRequire{};
     bool HasEquipRequire = false;
+    std::vector<ItemProperty> Properties{};
 };
 
 class ItemRegistry final : public NamedDefinitionRegistry<ItemId, ItemDefinition>

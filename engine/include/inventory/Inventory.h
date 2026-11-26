@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -78,8 +79,8 @@ void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId sp
 
 struct ItemFilter
 {
-    ItemId Definition;
-    GameplayTagId Tag;
+    ItemId Definition{};
+    GameplayTagId Tag{};
     bool Within = false;
 };
 
@@ -108,6 +109,12 @@ enum class ItemEntryPick : std::uint8_t
 [[nodiscard]] EntityId FindItemEntry(const World& world, EntityId container, const ItemFilter& filter,
                                      ItemEntryPick pick = ItemEntryPick::First);
 [[nodiscard]] std::uint64_t CountItemUnits(const World& world, EntityId container, const ItemFilter& filter);
+
+[[nodiscard]] const AuthoredValue* ItemPropertyOf(const ItemDefinition& item, GameplayTagId name);
+[[nodiscard]] std::optional<double> ItemNumberOf(const ItemDefinition& item, GameplayTagId name);
+// Each matching entry's count times the number its item states; an item stating none, or not a number, adds nothing.
+[[nodiscard]] double ItemPropertyTotal(const World& world, EntityId container, GameplayTagId name,
+                                       const ItemFilter& filter = {});
 
 // Owner thread, outside any query, in the tick `now`.
 class Inventory

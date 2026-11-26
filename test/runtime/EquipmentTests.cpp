@@ -2165,6 +2165,74 @@ TEST_F(EquipmentRequireTest, ARequiredTagTheRegistryLacksRefusesTheItem)
 
 namespace
 {
+    class EquipmentPropertyTest : public EquipmentRequireTest
+    {
+    protected:
+        EquipmentPropertyTest()
+        {
+            World& world = Entities();
+            Weight = *world.GetResource<GameplayTagRegistry>().RegisterTag("Item.Weight");
+            (void)world.GetResource<GameplayTagRegistry>().RegisterTag("Item.Description");
+            Load = world.GetResource<AttributeRegistry>().RegisterAttribute("EquipLoad", 0.0f, 1000.0f, 0.0f);
+            EffectDefinition load{};
+            load.Duration = EffectDuration::Infinite;
+            load.Modifiers = { { Load, ModifierOp::Add, 1.0f } };
+            (void)world.GetResource<EffectRegistry>().Define("asset://effects/load.sdata", load);
+            world.AddComponent<AttributeSet>(Hero);
+            (void)world.TryGet<AttributeSet>(Hero)->Add(Load, 0.0f);
+        }
+
+        static std::string Armor(std::string_view properties, std::string_view scaleBy = "Item.Weight")
+        {
+            return std::string(R"({ "name": "Armor", "tags": [ "Item.Weapon" ], "properties": )") + std::string(properties)
+                 + R"(, "equip": { "occupies": [ "hand.main" ], "effects": [ { "key": "e_load",
+                       "effect": { "data": "asset://effects/load.sdata" }, "scale_by": ")"
+                 + std::string(scaleBy) + R"(" } ] } })";
+        }
+
+        float LoadOf()
+        {
+            ResolveAttributesWithEffects(Entities());
+            return std::as_const(Entities()).TryGet<AttributeSet>(Hero)->GetCurrent(Load);
+        }
+
+        GameplayTagId Weight;
+        AttributeId Load;
+    };
+}
+
+TEST_F(EquipmentPropertyTest, AnEquipEffectScaledByAPropertyFollowsItAndItsReload)
+{
+    const ItemId armor = DefineItem("asset://items/armor.sdata",
+                                    Armor(R"([ { "key": "weight", "property": "Item.Weight", "value": { "number": 7.5 } } ])"));
+    ASSERT_EQ(Entities().GetResource<ItemRegistry>().Get(armor)->EquipEffects.size(), 1u);
+    EXPECT_FLOAT_EQ(Entities().GetResource<ItemRegistry>().Get(armor)->EquipEffects[0].Scale, 7.5f);
+    ASSERT_EQ(Gear().Equip(Hero, Give(armor)).Refusal, EquipmentRefusal::None);
+    Pass();
+    EXPECT_FLOAT_EQ(LoadOf(), 7.5f);
+
+    (void)DefineItem("asset://items/armor.sdata",
+                     Armor(R"([ { "key": "weight", "property": "Item.Weight", "value": { "number": 3 } } ])"));
+    Pass();
+    EXPECT_FLOAT_EQ(LoadOf(), 3.0f) << "the worn record follows its item's reloaded property";
+}
+
+TEST_F(EquipmentPropertyTest, AScaleByNamingNoNumberTheItemStatesIsRefused)
+{
+    ItemDefinition definition;
+    std::vector<std::string> missing;
+    EXPECT_FALSE(Resolves(Armor("[]"), definition, missing));
+    ASSERT_EQ(missing.size(), 1u);
+    EXPECT_NE(missing[0].find("scale_by 'Item.Weight'"), std::string::npos) << missing[0];
+    std::vector<std::string> text;
+    EXPECT_FALSE(Resolves(Armor(R"([ { "key": "w", "property": "Item.Weight", "value": { "text": "heavy" } } ])"),
+                          definition, text));
+    ASSERT_EQ(text.size(), 1u);
+    EXPECT_NE(text[0].find("scale_by 'Item.Weight'"), std::string::npos) << text[0];
+}
+
+namespace
+{
     class EquipmentLockTest : public EquipmentTest
     {
     protected:

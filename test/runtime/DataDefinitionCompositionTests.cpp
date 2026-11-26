@@ -31,7 +31,8 @@ namespace
 
     struct Content
     {
-        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_data_definition_composition";
+        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_data_definition_composition"
+                                   / ::testing::UnitTest::GetInstance()->current_test_info()->name();
         LoggingProvider Logging;
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
@@ -470,6 +471,32 @@ TEST(DataDefinitionComposition, AnItemsEquipFieldsComposeOverItsBase)
     ASSERT_EQ(item->GrantParameters.size(), 1u);
     EXPECT_EQ(item->GrantParameters[0].Parameters,
               (std::vector<AbilityGrantParameter>{ { .Key = "power", .Value = 25.0 } }));
+}
+
+TEST(DataDefinitionComposition, ADerivedItemPatchesOnePropertyByKey)
+{
+    Content content;
+    content.Write("stone_base.sdata", R"({ "type": "item.definition", "version": 1, "abstract": true,
+        "data": { "name": "Stone",
+                  "properties": [ { "key": "weight", "property": "Item.Weight", "value": { "number": 7.5 } },
+                                  { "key": "text", "property": "Item.Description", "value": { "text": "Grey." } } ] } })");
+    content.Write("stone_heavy.sdata", R"({ "type": "item.definition", "version": 1,
+        "extends": "asset://effects/stone_base.sdata",
+        "data": { "properties": { "weight": { "value": { "number": 9 } } } } })");
+
+    AssetLease heavy = content.Assets.Assets.LoadLease("asset://effects/stone_heavy.sdata", AssetType::Data);
+    ASSERT_TRUE(heavy) << content.FailureOf("asset://effects/stone_heavy.sdata");
+    const ItemDeclaration* item = content.Assets.DataAssets.TryGet<ItemDeclaration>(
+        DataAssetHandle::FromToken(heavy.OpaqueToken()), kItemDefinitionType);
+    ASSERT_NE(item, nullptr);
+    ASSERT_EQ(item->Properties.size(), 2u);
+    EXPECT_EQ(item->Properties[0].Name, "Item.Weight");
+    double weight = 0.0;
+    EXPECT_TRUE(item->Properties[0].Value.TryGetNumber(weight));
+    EXPECT_DOUBLE_EQ(weight, 9.0);
+    std::string_view text;
+    EXPECT_TRUE(item->Properties[1].Value.TryGetString(text));
+    EXPECT_EQ(text, "Grey.") << "the property it did not patch is its base's";
 }
 
 TEST(DataDefinitionComposition, AnEquipmentLayoutComposesItsSlotsByKey)

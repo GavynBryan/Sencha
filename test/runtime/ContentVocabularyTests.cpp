@@ -533,3 +533,30 @@ TEST(ContentVocabulary, ItemAssetsAWorldInstallsNoKitForAreReportedOncePerKind)
     InstallEquipmentVocabulary(world.Entities);
     EXPECT_TRUE(UninstalledKitContent(content.Assets, world.Entities).empty());
 }
+
+TEST(ContentVocabulary, AnItemThatEquipsIsRefusedInAWorldThatWearsNothing)
+{
+    Content content;
+    std::filesystem::create_directories(content.Root / "items");
+    content.Write("items/ring.sdata", R"({ "type": "item.definition", "version": 1,
+        "data": { "name": "Ring", "equip": { "occupies": [ "ring" ] } } })");
+    content.Write("items/rope.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Rope" } })");
+    content.Scan();
+    VocabularyWorld inventoryOnly;
+    InstallInventoryVocabulary(inventoryOnly.Entities);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, inventoryOnly.Entities, ContentVocabularyReload::Once, errors);
+
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("asset://items/ring.sdata"), std::string::npos) << errors[0];
+    EXPECT_NE(errors[0].find("wears nothing"), std::string::npos) << errors[0];
+    const ItemRegistry& items = inventoryOnly.Entities.GetResource<ItemRegistry>();
+    EXPECT_EQ(items.Get(items.Find("asset://items/ring.sdata")), nullptr) << "reserved, not defined";
+    EXPECT_NE(items.Get(items.Find("asset://items/rope.sdata")), nullptr);
+
+    VocabularyWorld wearing;
+    InstallEquipmentVocabulary(wearing.Entities);
+    errors.clear();
+    DeclareContentVocabulary(content.Assets, wearing.Entities, ContentVocabularyReload::Once, errors);
+    EXPECT_TRUE(errors.empty()) << errors.front();
+}

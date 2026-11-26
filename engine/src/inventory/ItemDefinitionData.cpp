@@ -6,12 +6,14 @@
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonValue.h>
 #include <ecs/World.h>
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
 
 #include <algorithm>
 #include <format>
@@ -80,7 +82,9 @@ namespace
         DataFieldSchema scale = MakeOptionalDataField(DataFieldKind::Float, "scale", "Scale");
         scale.Default = 1.0;
         equipEffect.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"), std::move(equipEffectRef),
-                                 std::move(scale) };
+                                 std::move(scale),
+                                 MakeOptionalDataField(DataFieldKind::GameplayTag, "scale_by", "Scaled by",
+                                                       "A number property of this item the scale is multiplied by.") };
         DataFieldSchema equip = MakeOptionalDataField(DataFieldKind::Record, "equip", "When equipped",
                                                       "The slots it takes and what it maintains in them.");
         DataFieldSchema require = MakeOptionalDataField(DataFieldKind::Record, "require", "Requires of its wearer",
@@ -94,6 +98,20 @@ namespace
         DataFieldSchema grant = MakeOptionalDataField(DataFieldKind::Record, "grant", "Grant");
         grant.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"),
                            AbilityGrantParametersSchema("parameters", "Parameters") };
+
+        DataFieldSchema value = MakeDataField(DataFieldKind::Record, "value", "Value", "Exactly one of these.");
+        value.Editor.Widget = "compact";
+        DataFieldSchema text = MakeOptionalDataField(DataFieldKind::String, "text", "Text");
+        text.Editor.Multiline = true;
+        value.Children = { MakeOptionalDataField(DataFieldKind::Float, "number", "Number"), std::move(text),
+                           MakeOptionalDataField(DataFieldKind::GameplayTag, "tag", "Tag"),
+                           MakeOptionalDataField(DataFieldKind::AssetRef, "asset", "Asset"),
+                           MakeOptionalDataField(DataFieldKind::DataAssetRef, "data", "Data") };
+        DataFieldSchema property = MakeOptionalDataField(DataFieldKind::Record, "property", "Property");
+        property.Children = { MakeDataField(DataFieldKind::StableKey, "key", "Key"),
+                              MakeDataField(DataFieldKind::GameplayTag, "property", "Property",
+                                            "The game's name for the fact."),
+                              std::move(value) };
 
         DataSchema schema;
         schema.TypeName = std::string(kItemDefinitionType);
@@ -109,7 +127,8 @@ namespace
                                  List("attributes", "Its own attributes", std::move(attribute)),
                                  UseSchema(),
                                  std::move(equip),
-                                 List("grants", "Its grants' parameters", std::move(grant)) };
+                                 List("grants", "Its grants' parameters", std::move(grant)),
+                                 List("properties", "Properties", std::move(property)) };
         return schema;
     }
 
@@ -134,6 +153,54 @@ namespace
     }
 
     DataAssetCompileResult Refused(std::string error) { return { {}, {}, std::move(error) }; }
+
+    bool ReadProperty(const JsonValue& entry, const std::string& at, ItemDeclaration::Property& out,
+                      std::vector<AssetRef>& dependencies, std::string& error)
+    {
+        const JsonValue* name = entry.Find("property");
+        if (name == nullptr || !name->IsString() || name->AsString().empty())
+        {
+            error = at + ".property A property is named by a tag.";
+            return false;
+        }
+        out.Name = name->AsString();
+        const JsonValue* value = entry.Find("value");
+        const auto member = [value](std::string_view key) {
+            return value != nullptr && value->IsObject() ? value->Find(key) : nullptr;
+        };
+        const JsonValue* number = member("number");
+        const JsonValue* text = member("text");
+        const JsonValue* tag = member("tag");
+        const JsonValue* asset = member("asset");
+        const JsonValue* data = member("data");
+        if ((number != nullptr) + (text != nullptr) + (tag != nullptr) + (asset != nullptr) + (data != nullptr) != 1)
+        {
+            error = at + ".value A value holds exactly one of number, text, tag, asset or data.";
+            return false;
+        }
+        std::optional<AssetRef> reference;
+        if (asset != nullptr || data != nullptr)
+            reference = AssetRefFromJson(asset != nullptr ? *asset : *data);
+        if (number != nullptr && number->IsNumber())
+            out.Value = AuthoredValue::Float(number->AsNumber());
+        else if (text != nullptr && text->IsString())
+            out.Value = AuthoredValue::String(text->AsString());
+        else if (tag != nullptr && tag->IsString() && !tag->AsString().empty())
+            out.Tag = tag->AsString();
+        else if (reference.has_value())
+        {
+            if (data != nullptr)
+                reference->Type = AssetType::Data;
+            dependencies.push_back(*reference);
+            out.Value = data != nullptr ? AuthoredValue::DataAsset(*reference) : AuthoredValue::Asset(*reference);
+        }
+        else
+        {
+            error = at + ".value The value is not of the kind its member names.";
+            return false;
+        }
+        return true;
+    }
 
     DataAssetCompileResult Compile(const JsonValue& data)
     {
@@ -208,9 +275,11 @@ namespace
                     if (path.empty())
                         return Refused(std::format("$.data.equip.effects[{}].effect An effect is {{ \"data\": ... }}.", i));
                     const JsonValue* scale = entry.Find("scale");
+                    const JsonValue* scaleBy = entry.Find("scale_by");
                     dependencies.push_back(AssetRef{ .Type = AssetType::Data, .Path = path });
                     value->EquipEffects.push_back(
-                        { path, scale != nullptr && scale->IsNumber() ? static_cast<float>(scale->AsNumber()) : 1.0f });
+                        { path, scale != nullptr && scale->IsNumber() ? static_cast<float>(scale->AsNumber()) : 1.0f,
+                          scaleBy != nullptr && scaleBy->IsString() ? scaleBy->AsString() : std::string{} });
                 }
             if (value->Occupies.empty())
                 return Refused("$.data.equip.occupies Equipping takes at least one slot.");
@@ -231,6 +300,16 @@ namespace
                     list != nullptr && !ParseAbilityGrantParameters(*list, at + ".parameters", parameters.Parameters, problems))
                     return Refused(std::format("{} {}", problems.front().Path, problems.front().Message));
                 value->GrantParameters.push_back(std::move(parameters));
+            }
+        if (const JsonValue* properties = data.Find("properties"); properties != nullptr && properties->IsArray())
+            for (std::size_t i = 0; i < properties->AsArray().size(); ++i)
+            {
+                ItemDeclaration::Property property;
+                std::string error;
+                if (!ReadProperty(properties->AsArray()[i], std::format("$.data.properties[{}]", i), property,
+                                  dependencies, error))
+                    return Refused(std::move(error));
+                value->Properties.push_back(std::move(property));
             }
         return { std::move(value), std::move(dependencies), {} };
     }
@@ -320,20 +399,40 @@ bool ResolveItemDeclaration(const ItemDeclaration& declaration, World& world, It
     if (declaration.Attributes.size() > AttributeSet::Capacity)
         errors.push_back(std::format("'attributes' names {}, and an entry holds at most {} attributes",
                                      declaration.Attributes.size(), AttributeSet::Capacity));
+    for (const ItemDeclaration::Property& property : declaration.Properties)
+    {
+        const GameplayTagId name = tags != nullptr ? tags->FindTag(property.Name) : GameplayTagId{};
+        const GameplayTagId tag = tags != nullptr && !property.Tag.empty() ? tags->FindTag(property.Tag) : GameplayTagId{};
+        if (!name.IsValid())
+            errors.push_back(std::format("properties: no gameplay tag '{}'", property.Name));
+        else if (ItemPropertyOf(out, name) != nullptr)
+            errors.push_back(std::format("properties: '{}' is stated twice", property.Name));
+        else if (!property.Tag.empty() && !tag.IsValid())
+            errors.push_back(std::format("properties: '{}' holds no gameplay tag '{}'", property.Name, property.Tag));
+        else
+            out.Properties.push_back({ name, property.Tag.empty() ? property.Value : AuthoredValue::Tag(tag) });
+    }
+
     out.Occupies = declaration.Occupies;
     out.GrantParameters = declaration.GrantParameters;
     for (const ItemDeclaration::EquipEffect& equipped : declaration.EquipEffects)
     {
         const EffectId effect = effects != nullptr ? effects->Find(equipped.Effect) : EffectId{};
         const EffectDefinition* definition = effects != nullptr ? effects->Get(effect) : nullptr;
+        const GameplayTagId scaleBy =
+            tags != nullptr && !equipped.ScaleBy.empty() ? tags->FindTag(equipped.ScaleBy) : GameplayTagId{};
+        const std::optional<double> by = equipped.ScaleBy.empty() ? std::optional<double>(1.0) : ItemNumberOf(out, scaleBy);
         if (definition == nullptr)
             errors.push_back(std::format("no effect '{}'", equipped.Effect));
         else if (definition->Duration != EffectDuration::Infinite)
             errors.push_back(std::format("equip_effect_not_maintained: '{}' is not Infinite, and equipment maintains "
                                          "its effects for exactly as long as it is worn",
                                          equipped.Effect));
+        else if (!by.has_value())
+            errors.push_back(std::format("equip.effects: scale_by '{}' names no number this item states",
+                                         equipped.ScaleBy));
         else
-            out.EquipEffects.push_back({ effect, equipped.Scale });
+            out.EquipEffects.push_back({ effect, equipped.Scale * static_cast<float>(*by) });
     }
     for (const ItemGrantParameters& granted : declaration.GrantParameters)
         if (!EquipEffectsGrant(world, out.EquipEffects, granted.Key))

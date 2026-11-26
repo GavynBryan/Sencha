@@ -250,6 +250,24 @@ std::optional<EntityId> InventoryOperations::Entry(EntityId container, std::opti
     return entry.IsValid() ? std::optional<EntityId>(entry) : std::nullopt;
 }
 
+std::optional<double> InventoryOperations::Property(EntityId entry, GameplayTagId property) const
+{
+    const ItemEntry* held = Entities->IsAlive(entry) ? Entities->TryGet<ItemEntry>(entry) : nullptr;
+    const ItemDefinition* item = held != nullptr ? FindItemDefinition(*Entities, held->Definition) : nullptr;
+    return item != nullptr ? ItemNumberOf(*item, property) : std::nullopt;
+}
+
+std::optional<double> InventoryOperations::Total(EntityId container, GameplayTagId property,
+                                                 std::optional<AuthoredDataRef> definition,
+                                                 std::optional<GameplayTagId> tag, bool within) const
+{
+    if (!Entities->IsAlive(container))
+        return std::nullopt;
+    const std::optional<ItemFilter> filter =
+        FilterOf(*Entities, definition.has_value() ? definition->Reference : nullptr, tag, within);
+    return filter.has_value() ? ItemPropertyTotal(*Entities, container, property, *filter) : 0.0;
+}
+
 AuthoredQueryBindingToken BindInventoryQuery(AuthoredQueryDispatcher& dispatcher, const World& world)
 {
     return dispatcher.Bind<&CountUnits>(dispatcher.Registry().Find(kInventoryCountQuery), world);

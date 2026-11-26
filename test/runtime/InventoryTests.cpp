@@ -7,6 +7,7 @@
 #include <abilities/AbilityGrants.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityRegistry.h>
+#include <assets/data/DataAssetTypeRegistry.h>
 #include <abilities/AbilitySystem.h>
 #include <app/EngineVocabulary.h>
 #include <attributes/AttributeRegistry.h>
@@ -235,6 +236,20 @@ WorldComponentSchema EngineSchema()
     RegisterEngineRuntimeComponents(schema);
     schema.Seal();
     return schema;
+}
+
+DataAssetCompileResult CompileItemData(std::string_view json)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterItemDefinitionData(types, schemas);
+    const std::optional<JsonValue> data = JsonParse(json);
+    if (!data.has_value())
+        return { {}, {}, "not JSON" };
+    std::vector<DataValidationError> invalid;
+    if (!ValidateDataAgainstSchema(*data, *schemas.Find(kItemDefinitionType), invalid))
+        return { {}, {}, FormatDataValidationErrors(invalid) };
+    return types.Find(kItemDefinitionType)->Compile(*data);
 }
 
 constexpr ZoneParticipation kLogic{ .Visible = false, .Physics = false, .Logic = true, .Audio = false };
@@ -1049,6 +1064,90 @@ TEST_F(InventoryVocabularyTest, TheEntrySearchMatchesATagOrOneBeneathItAndAnswer
     EXPECT_EQ(EntryIn(Container(), {}), std::nullopt) << "an empty container";
 }
 
+namespace
+{
+class InventoryPropertyTest : public InventoryVocabularyTest
+{
+protected:
+    InventoryPropertyTest()
+    {
+        GameplayTagRegistry& tags = Entities().GetResource<GameplayTagRegistry>();
+        Weight = *tags.RegisterTag("Item.Weight");
+        ItemRegistry& items = Entities().GetResource<ItemRegistry>();
+        Stone = items.Define("asset://items/stone.sdata",
+                             ItemDefinition{ .Name = "Stone", .StackMax = 10,
+                                             .Properties = { { Weight, AuthoredValue::Float(2.5) } } });
+        Brick = items.Define("asset://items/brick.sdata",
+                             ItemDefinition{ .Name = "Brick", .Tags = { Wearable },
+                                             .Properties = { { Weight, AuthoredValue::Float(4.0) } } });
+        Letter = items.Define("asset://items/letter.sdata",
+                              ItemDefinition{ .Name = "Letter",
+                                              .Properties = { { Weight, AuthoredValue::String("light") } } });
+    }
+
+    std::optional<double> Ask(std::string_view query, std::vector<AuthoredValue> arguments)
+    {
+        AuthoredValue result;
+        const AuthoredQueryStatus status = Queries->Evaluate(Queries->Registry().Resolve(query), arguments, result);
+        if (status == AuthoredQueryStatus::Unavailable)
+            return std::nullopt;
+        double number = -1.0;
+        EXPECT_EQ(status, AuthoredQueryStatus::Value);
+        EXPECT_TRUE(result.TryGetNumber(number));
+        return number;
+    }
+
+    std::optional<double> PropertyOf(EntityId entry)
+    {
+        return Ask(AuthoredApiDefinition<InventoryOperations>::Name_Property,
+                   { AuthoredValue::Entity(entry), AuthoredValue::Tag(Weight) });
+    }
+
+    std::optional<double> TotalIn(EntityId container, AuthoredValue definition = {}, AuthoredValue tag = {},
+                                  bool within = false)
+    {
+        return Ask(AuthoredApiDefinition<InventoryOperations>::Name_Total,
+                   { AuthoredValue::Entity(container), AuthoredValue::Tag(Weight), definition, tag,
+                     AuthoredValue::Bool(within) });
+    }
+
+    GameplayTagId Weight;
+    ItemId Stone;
+    ItemId Brick;
+    ItemId Letter;
+};
+}
+
+TEST_F(InventoryPropertyTest, AnEntrysPropertyIsTheNumberItsItemStates)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    EXPECT_EQ(PropertyOf(inventory.Give(Hero, Stone, 7).Entry), std::optional<double>(2.5)) << "of a stack, per unit";
+    EXPECT_EQ(PropertyOf(inventory.Give(Hero, Arrows, 3).Entry), std::nullopt) << "an item stating no weight";
+    EXPECT_EQ(PropertyOf(inventory.Give(Hero, Letter, 1).Entry), std::nullopt) << "a weight that is not a number";
+    EXPECT_EQ(PropertyOf(Hero), std::nullopt) << "not an entry";
+}
+
+TEST_F(InventoryPropertyTest, ATotalSumsEachMatchingEntrysCountTimesItsNumber)
+{
+    Inventory inventory(Entities(), FixedSimTime{});
+    (void)inventory.Give(Hero, Stone, 12);
+    (void)inventory.Give(Hero, Brick, 1);
+    const EntityId spent = inventory.Give(Hero, Brick, 1).Entry;
+    (void)inventory.Give(Hero, Letter, 1);
+    (void)inventory.Give(Hero, Arrows, 5);
+    const EntityId bag = BagIn(Hero);
+    (void)inventory.Give(bag, Stone, 4);
+    SetItemCount(Entities(), spent, 0);
+
+    EXPECT_EQ(TotalIn(Hero), std::optional<double>(12 * 2.5 + 4.0)) << "two stacks of stone and one brick";
+    EXPECT_EQ(TotalIn(Hero, {}, {}, true), std::optional<double>(16 * 2.5 + 4.0)) << "with what the bag holds";
+    EXPECT_EQ(TotalIn(Hero, Item("asset://items/stone.sdata"), {}, true), std::optional<double>(16 * 2.5));
+    EXPECT_EQ(TotalIn(Hero, {}, AuthoredValue::Tag(Wearable)), std::optional<double>(4.0));
+    EXPECT_EQ(TotalIn(Hero, Item("asset://items/none.sdata")), std::optional<double>(0.0));
+    EXPECT_EQ(TotalIn(Container()), std::optional<double>(0.0));
+    EXPECT_EQ(ItemPropertyTotal(Entities(), Hero, Weight, ItemFilter{ .Within = true }), 16 * 2.5 + 4.0);
+}
+
 TEST_F(InventoryConsumingTest, TheGatePicksUpStacksSplitsMovesDropsConsumesAndReaps)
 {
     Inventory inventory(Entities(), FixedSimTime{});
@@ -1400,4 +1499,72 @@ TEST_F(InventoryTest, AnEquipEffectMustBeMaintainedAndItsParametersNameItsGrants
     ASSERT_EQ(errors.size(), 2u);
     EXPECT_NE(errors[0].find("equip_effect_not_maintained"), std::string::npos) << errors[0];
     EXPECT_NE(errors[1].find("g_missing"), std::string::npos) << errors[1];
+}
+
+TEST_F(InventoryTest, AnItemStatesPropertiesOfEveryKindAndListsTheAssetsTheyName)
+{
+    GameplayTagRegistry& tags = Entities().GetResource<GameplayTagRegistry>();
+    for (const char* name : { "Item.Weight", "Item.Description", "Item.Icon", "Item.Rarity", "Rarity.Uncommon",
+                              "Item.Recipe" })
+        (void)tags.RegisterTag(name);
+    const DataAssetCompileResult compiled = CompileItemData(R"({ "name": "Arrow", "stack": { "max": 20 },
+        "properties": [ { "key": "weight", "property": "Item.Weight", "value": { "number": 0.25 } },
+                        { "key": "text", "property": "Item.Description", "value": { "text": "Fletched." } },
+                        { "key": "icon", "property": "Item.Icon", "value": { "asset": "asset://ui/icons/arrow.stex" } },
+                        { "key": "rarity", "property": "Item.Rarity", "value": { "tag": "Rarity.Uncommon" } },
+                        { "key": "recipe", "property": "Item.Recipe", "value": { "data": "asset://recipes/arrow.sdata" } } ] })");
+    ASSERT_TRUE(compiled.IsValid()) << compiled.Error;
+    EXPECT_NE(std::ranges::find(compiled.Dependencies, std::string("asset://ui/icons/arrow.stex"), &AssetRef::Path),
+              compiled.Dependencies.end());
+    EXPECT_NE(std::ranges::find(compiled.Dependencies, std::string("asset://recipes/arrow.sdata"), &AssetRef::Path),
+              compiled.Dependencies.end());
+
+    ItemDefinition arrow;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(ResolveItemDeclaration(*std::static_pointer_cast<const ItemDeclaration>(compiled.Value), Entities(),
+                                       arrow, errors))
+        << errors.front();
+    EXPECT_EQ(ItemNumberOf(arrow, tags.FindTag("Item.Weight")), std::optional<double>(0.25));
+    std::string_view text;
+    ASSERT_NE(ItemPropertyOf(arrow, tags.FindTag("Item.Description")), nullptr);
+    EXPECT_TRUE(ItemPropertyOf(arrow, tags.FindTag("Item.Description"))->TryGetString(text));
+    EXPECT_EQ(text, "Fletched.");
+    const AssetRef* icon = nullptr;
+    ASSERT_NE(ItemPropertyOf(arrow, tags.FindTag("Item.Icon")), nullptr);
+    EXPECT_TRUE(ItemPropertyOf(arrow, tags.FindTag("Item.Icon"))->TryGetAsset(icon));
+    EXPECT_EQ(icon->Path, "asset://ui/icons/arrow.stex");
+    GameplayTagId rarity;
+    ASSERT_NE(ItemPropertyOf(arrow, tags.FindTag("Item.Rarity")), nullptr);
+    EXPECT_TRUE(ItemPropertyOf(arrow, tags.FindTag("Item.Rarity"))->TryGetTag(rarity));
+    EXPECT_EQ(rarity, tags.FindTag("Rarity.Uncommon"));
+    EXPECT_EQ(ItemNumberOf(arrow, tags.FindTag("Item.Description")), std::nullopt) << "text is not a number";
+    EXPECT_EQ(ItemPropertyOf(arrow, Wearable), nullptr) << "a property the item does not state";
+}
+
+TEST_F(InventoryTest, AnItemStatingAPropertyTwiceOrNamingAnUnknownTagIsRefused)
+{
+    (void)Entities().GetResource<GameplayTagRegistry>().RegisterTag("Item.Weight");
+    const auto refusals = [&](std::string_view json) {
+        const DataAssetCompileResult compiled = CompileItemData(json);
+        EXPECT_TRUE(compiled.IsValid()) << compiled.Error;
+        ItemDefinition definition;
+        std::vector<std::string> errors;
+        EXPECT_FALSE(ResolveItemDeclaration(*std::static_pointer_cast<const ItemDeclaration>(compiled.Value),
+                                            Entities(), definition, errors));
+        return errors;
+    };
+    const std::vector<std::string> twice = refusals(R"({ "properties": [
+        { "key": "a", "property": "Item.Weight", "value": { "number": 1 } },
+        { "key": "b", "property": "Item.Weight", "value": { "number": 2 } } ] })");
+    ASSERT_EQ(twice.size(), 1u);
+    EXPECT_NE(twice[0].find("'Item.Weight' is stated twice"), std::string::npos) << twice[0];
+    const std::vector<std::string> unknown = refusals(R"({ "properties": [
+        { "key": "a", "property": "Item.Heft", "value": { "number": 1 } },
+        { "key": "b", "property": "Item.Weight", "value": { "tag": "Rarity.Mythic" } } ] })");
+    ASSERT_EQ(unknown.size(), 2u);
+    EXPECT_NE(unknown[0].find("Item.Heft"), std::string::npos) << unknown[0];
+    EXPECT_NE(unknown[1].find("Rarity.Mythic"), std::string::npos) << unknown[1];
+    EXPECT_NE(CompileItemData(R"({ "properties": [ { "key": "a", "property": "Item.Weight",
+                                  "value": { "number": 1, "text": "one" } } ] })").Error.find("exactly one"),
+              std::string::npos);
 }

@@ -1756,3 +1756,17 @@ format, the scene format and the net protocol do not change.
 `gameplay_tags/GameplayTagQueryNames.h`. `item.definition` gains the optional
 `equip.require.tags`; its data version stays 1. The save format, the scene
 format and the net protocol do not change.
+
+## v81
+
+`ItemDefinition` gains `Properties`, a list of the new `ItemProperty { Name,
+Value }`, so `inventory/ItemDefinition.h` includes `authored/AuthoredValue.h`.
+`ItemDeclaration` gains `Properties` (`ItemDeclaration::Property`) and
+`EquipEffect::ScaleBy`. `inventory/Inventory.h` gains `ItemPropertyOf`,
+`ItemNumberOf` and `ItemPropertyTotal`, and `ItemFilter`'s members are
+value-initialised. `InventoryOperations` declares the queries
+`inventory.property` and `inventory.total` with `SENCHA_QUERY`.
+`item.definition` gains the optional `properties` and
+`equip.effects[].scale_by`; its data version stays 1. Content declaration
+refuses an item that equips in a World with no `EquipmentLayoutRegistry`. The
+save format, the scene format and the net protocol do not change.

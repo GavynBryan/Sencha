@@ -449,6 +449,30 @@ EntityId FindItemEntry(const World& world, EntityId container, const ItemFilter&
     return found;
 }
 
+const AuthoredValue* ItemPropertyOf(const ItemDefinition& item, GameplayTagId name)
+{
+    const auto found = std::ranges::find(item.Properties, name, &ItemProperty::Name);
+    return name.IsValid() && found != item.Properties.end() ? &found->Value : nullptr;
+}
+
+std::optional<double> ItemNumberOf(const ItemDefinition& item, GameplayTagId name)
+{
+    const AuthoredValue* value = ItemPropertyOf(item, name);
+    double number = 0.0;
+    return value != nullptr && value->TryGetNumber(number) ? std::optional<double>(number) : std::nullopt;
+}
+
+double ItemPropertyTotal(const World& world, EntityId container, GameplayTagId name, const ItemFilter& filter)
+{
+    double total = 0.0;
+    ForEachItemEntry(world, container, filter, [&](EntityId, std::uint32_t count, const ItemDefinition* item) {
+        const std::optional<double> number = item != nullptr ? ItemNumberOf(*item, name) : std::nullopt;
+        total += number.value_or(0.0) * count;
+        return true;
+    });
+    return total;
+}
+
 std::uint64_t CountItemUnits(const World& world, EntityId container, const ItemFilter& filter)
 {
     std::uint64_t units = 0;

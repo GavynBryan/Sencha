@@ -1394,15 +1394,6 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Consumer:** the equipment rebind and an inventory screen of a body that
   also holds per-player counters.
 
-## Item display data
-
-- **What:** an `item.definition` has a name and tags, and nothing a menu shows:
-  no icon, description or sort category.
-- **Where:** `inventory/ItemDefinitionData.cpp` (schema and compile),
-  `inventory/ItemDefinition.h`.
-- **Trigger:** the first inventory screen or pickup prompt that shows an item.
-  Then add display fields to the definition, read by presentation only.
-
 ## A dropped item's world scene
 
 - **What:** `Inventory::Drop` makes a bare pickup with a transform holding the
@@ -1418,6 +1409,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   world. Then give definitions a world scene spawned as the pickup's
   presentation, saved as its source and a patch.
 
+## A definition section a layer registers
+
+- **What:** `item.definition` is one schema inventory owns. It carries
+  equipment's `equip` and `grants`, and a game's facts only as typed
+  properties of one value each. Structured game data (a list of recipes, a
+  table of upgrade costs) cannot live in the item's own file.
+- **Where:** `inventory/ItemDefinitionData.cpp` (`MakeSchema`, `Compile`),
+  `assets/data/DataAssetTypeRegistry.h`, which seals a registered schema.
+- **Trigger:** the first structured game data that must live in the item's
+  own file, or a second layer besides equipment that needs engine-read fields
+  on an item. Then let the data type registry accept amendments to a
+  registered schema, and move `equip` and `grants` into equipment's section.
+
 ## Predicting gives and transfers
 
 - **What:** only the authority changes an inventory or what is worn; a client
@@ -1431,11 +1435,15 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Weight, volume and grid rules
 
 - **What:** a container admits by tag (`Accepts`) and entry count
-  (`Capacity`). Nothing weighs, measures or places an entry on a grid.
+  (`Capacity`). Item properties and `ItemPropertyTotal` (`inventory.total`)
+  give the measure, so carried weight can be read and gated on, but no
+  container refuses an entry past a weight, and nothing places an entry on a
+  grid.
 - **Where:** `inventory/Inventory.cpp` (`Admission`, `HasRoom`).
-- **Trigger:** a survival game with carry weight, or an RPG with a grid
-  inventory. Then add destination admission beside accepts and capacity, as
-  data a container carries, consulted by the same admission step.
+- **Trigger:** a survival game whose containers refuse past a carry weight,
+  or an RPG with a grid inventory. Then a container carries
+  `limit { property, max }`, consulted by `Admission` through
+  `ItemPropertyTotal`.
 
 ## Inventory change events
 

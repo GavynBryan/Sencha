@@ -183,7 +183,12 @@ void DeclareItem(RuntimeAssets& assets, World& world, ContentDefinitionLeases::E
     entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
     std::vector<std::string> unresolved;
     ItemDefinition definition;
-    const bool resolved = ResolveItemDeclaration(*declaration, world, definition, unresolved);
+    bool resolved = ResolveItemDeclaration(*declaration, world, definition, unresolved);
+    if (resolved && !definition.Occupies.empty() && !world.HasResource<EquipmentLayoutRegistry>())
+    {
+        unresolved.emplace_back("it equips, and this World wears nothing: the game installs no equipment");
+        resolved = false;
+    }
     for (const std::string& message : unresolved)
         errors.push_back(std::format("{}: {}", entry.Path, message));
     const ItemId item = resolved ? items->Define(entry.Path, std::move(definition)) : items->Reserve(entry.Path);

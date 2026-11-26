@@ -144,7 +144,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[55].Name, kPerceptionStimulusVerb);
     EXPECT_EQ(verbs[56].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 31u);
+    ASSERT_EQ(queries.size(), 33u);
     EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
     EXPECT_EQ(queries[6].Name, kPhysicsOverlapQuery);
     EXPECT_EQ(queries[8].Name, kNavigationPhaseQuery);
@@ -154,8 +154,10 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(queries[16].Name, kInventoryCountQuery);
     EXPECT_EQ(queries[16].ArgumentCount, 4u);
     EXPECT_EQ(queries[17].Name, AuthoredApiDefinition<InventoryOperations>::Name_Entry);
-    EXPECT_EQ(queries[18].Name, kEquipmentInSlotQuery);
-    EXPECT_EQ(queries[19].Name, kEquipmentSourcesQuery);
+    EXPECT_EQ(queries[18].Name, AuthoredApiDefinition<InventoryOperations>::Name_Property);
+    EXPECT_EQ(queries[19].Name, AuthoredApiDefinition<InventoryOperations>::Name_Total);
+    EXPECT_EQ(queries[20].Name, kEquipmentInSlotQuery);
+    EXPECT_EQ(queries[21].Name, kEquipmentSourcesQuery);
 }
 
 TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
@@ -164,7 +166,7 @@ TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     // After the physics, navigation, counter, inventory and equipment queries, which the engine's own scope declares first.
-    ASSERT_EQ(queries.size(), 31u);
+    ASSERT_EQ(queries.size(), 33u);
     const std::size_t sees = static_cast<std::size_t>(std::ranges::find(queries, std::string(kSeesQuery), &VocabularyCatalog::QueryRow::Name) - queries.begin());
     ASSERT_LT(sees, queries.size());
     EXPECT_EQ(queries[sees + 0].Name, kSeesQuery);

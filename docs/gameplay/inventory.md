@@ -72,6 +72,11 @@ An `item.definition` asset says what a kind of item is:
 - **`equip`** and **`grants`** say how it is worn
   (`docs/gameplay/equipment.md`, "Item fields"). An item with
   `equip.lock_tags` gives each entry a tag container, as `instance_tags` does.
+  Content declaration refuses an item with `equip` in a World that installs no
+  equipment ("this World wears nothing"), as it refuses `use` in a World that
+  runs no abilities, so an inventory-only game cannot author equip data that
+  silently does nothing.
+- **`properties`** are facts of the kind the game names (see "Properties").
 
 Definitions compose like any data definition (`extends`, `includes`,
 `abstract`). Content declares them into the World's `ItemRegistry` after
@@ -83,6 +88,59 @@ path. `NamedDefinitionRegistry` refuses a second path whose key another path
 already holds, and content declaration reports it, naming both paths
 (`ContentVocabulary.TwoItemsWhoseWireKeysCollideAreReported`). Abilities, which
 share the registry, are reported the same way.
+
+## Properties
+
+A definition states facts of its kind in `properties`, a keyed list. Each is
+named by a gameplay tag the game declares and holds one value:
+
+```json
+"properties": [ { "key": "weight", "property": "Item.Weight",      "value": { "number": 7.5 } },
+                { "key": "text",   "property": "Item.Description", "value": { "text": "A soldier's blade." } },
+                { "key": "icon",   "property": "Item.Icon",        "value": { "asset": "asset://ui/icons/longsword.stex" } },
+                { "key": "rarity", "property": "Item.Rarity",      "value": { "tag": "Rarity.Uncommon" } } ]
+```
+
+- **Values.** `value` holds exactly one of `number`, `text`, `tag`, `asset`
+  (any asset) or `data` (a data asset). An asset or data asset is a
+  dependency of the definition, loaded and held with it. A definition holds
+  each as an `AuthoredValue` (`ItemProperty { Name, Value }`), so a reader
+  uses the value's own accessors: `TryGetNumber`, `TryGetString`,
+  `TryGetTag`, `TryGetAsset`, `TryGetDataAsset`.
+- **Names.** The engine names no property; the game declares `Item.Icon` or
+  `Item.Weight` as content tags. A name the registry lacks, a tag value it
+  lacks, and one property stated twice under two keys each refuse the
+  definition at declaration.
+- **Composition.** The list is keyed, so a derived definition patches one
+  property by key (`"properties": { "weight": { "value": { "number": 9 } } }`).
+- **Reading.** `ItemPropertyOf(item, name)` answers the value or null, and
+  `ItemNumberOf(item, name)` the number or nothing (`inventory/Inventory.h`).
+  A game's inventory screen reads its icon and text this way.
+- **What the engine does with one.** Only numbers, two ways: it totals them
+  (`ItemPropertyTotal`, `inventory.total`) and an equip effect can scale by
+  one (`scale_by`, `docs/gameplay/equipment.md`). Which properties a game
+  requires, and of what kind, is the game's check.
+- **No wire, no save.** A property is part of the definition, which every
+  machine reads from its own content. Nothing is stored per entity.
+
+### Where a fact about an item goes
+
+| The fact | Goes in | Example |
+|---|---|---|
+| Yes or no, and something matches on it (a container's `accepts`, a slot, a filter) | the definition's `tags` | `Item.Weapon`, `Damage.Fire` |
+| The same for every entry of the kind, one value, and the engine does not act on it by name | a property | weight, price, description, icon, rarity |
+| The engine acts on it by name | a field of the definition, owned by the layer that acts | `stack.max`, `take`, `use`, `equip.occupies` |
+| Differs between two entries of the kind, or changes in play | the entry's own `attributes` (a number) or `instance_tags` (yes or no); the item then has `stack.max` 1 | durability left, rounds in the clip, "cursed" |
+| A number an ability the item grants needs | the item's `grants` parameters | bolt power |
+| Structured data of the game's own (a list of recipes, a table of upgrade costs) | a data definition of the game's own type that names the item | a recipe book's entries naming their items |
+
+A property and an attribute are never two homes for one fact: a sword's weight
+is a property, its remaining durability an attribute. Structured game data is
+joined by `ItemId` when content is declared: the game's own type
+(`OnRegisterDataAssetTypes`) names the item, and composes with `extends` and
+`includes` like any data definition. A section of `item.definition` that a
+layer registers is not built (`docs/deferred.md`, "A definition section a
+layer registers").
 
 ## Components
 
@@ -157,11 +215,12 @@ with `Within` looks inside what the container's entries hold too, however deep.
   the last with `ItemEntryPick::Last`, or an invalid id.
 - `CountItemUnits(world, container, filter)` sums the matches' counts.
 
-`inventory.count`, `inventory.entry` and the `inventory.item` cost provider's
-container row all read through it. It is a search: "last" means the last in the
-container's order, never the entry most recently given. Today a give appends, so
-the two agree, but placing an entry at a position (`docs/deferred.md`, "Placing
-an entry at a position") would part them. Content that must act on the entry a
+`inventory.count`, `inventory.entry`, `inventory.total` and the
+`inventory.item` cost provider's container row all read through it. It is a
+search: "last" means the last in the container's order, never the entry most
+recently given. Today a give appends, so the two agree, but placing an entry at
+a position (`docs/deferred.md`, "Placing an entry at a position") would part
+them. Content that must act on the entry a
 give or take made reads that verb's result instead (`docs/gameplay/responses.md`,
 "Results"), which is exact: given a second sword, the sequence equips the one it
 was given and not the first.
@@ -194,6 +253,8 @@ change to that function alone (`docs/deferred.md`, "Shared containers").
 | `inventory.drop` | `entry`, `at`, `force`, `keep` (true) | `Drop`, into the zone where it lands; a kept pickup stays with that zone |
 | `inventory.use` | `entry`, `user` (its holder) | `Use` |
 | `inventory.count` (query, int) | `container`, `definition?`, `tag?`, `within` (false) | Units held, spent entries not counted, of that definition and carrying that tag; `within` counts what entries hold too |
+| `inventory.property` (query, number) | `entry`, `property` | The number the entry's item states for the property (`ItemNumberOf`); unavailable when it states none or a value that is not a number |
+| `inventory.total` (query, number) | `container`, `property`, `definition?`, `tag?`, `within` (false) | `ItemPropertyTotal`: over matching unspent entries, count times the number; carried weight, total value |
 | `inventory.entry` (query, entity) | `container`, `definition?`, `tag?`, `within` (false), `last` (false) | The first matching unspent entry in container order, or the last with `last` (`FindItemEntry`); unavailable when none matches, which fails the command reading it |
 
 A response's condition gates on `inventory.count` with `require`
@@ -271,7 +332,7 @@ zone and its entry with it.
 
 ## Not yet
 
-Recorded in `docs/deferred.md`: item display data, a dropped item's world
-scene, predicted gives and transfers,
-weight, volume and grid rules, change events, possessions that outlive a body,
-and shared containers.
+Recorded in `docs/deferred.md`: a dropped item's world scene, predicted gives
+and transfers, weight, volume and grid rules, change events, possessions that
+outlive a body, shared containers, placing an entry at a position, and a
+definition section a layer registers.

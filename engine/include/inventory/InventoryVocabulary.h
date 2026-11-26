@@ -62,6 +62,34 @@ public:
         SENCHA_ARG("last") SENCHA_LABEL("Last")
             SENCHA_DESCRIPTION("The last match in the container's order instead of the first.") bool last = false) const;
 
+    SENCHA_QUERY("inventory.property")
+    SENCHA_LABEL("Item property")
+    SENCHA_CATEGORY("Inventory")
+    SENCHA_DESCRIPTION("The number an entry's item states for a property; unavailable when it states none, or a "
+                       "value that is not a number.")
+    std::optional<double> Property(
+        SENCHA_TARGET("entry", ItemEntry) SENCHA_LABEL("Entry") SENCHA_DESCRIPTION("Whose item is read.")
+            EntityId entry,
+        SENCHA_ARG("property") SENCHA_LABEL("Property") SENCHA_DESCRIPTION("The game's name for the fact.")
+            GameplayTagId property) const;
+
+    SENCHA_QUERY("inventory.total")
+    SENCHA_LABEL("Item property total")
+    SENCHA_CATEGORY("Inventory")
+    SENCHA_DESCRIPTION("Over a container's matching unspent entries, the sum of each entry's count times the "
+                       "number its item states for a property; an item stating none adds nothing.")
+    std::optional<double> Total(
+        SENCHA_TARGET("container", ItemContainer) SENCHA_LABEL("Container")
+            SENCHA_DESCRIPTION("Whose entries are summed.") EntityId container,
+        SENCHA_ARG("property") SENCHA_LABEL("Property") SENCHA_DESCRIPTION("The game's name for the fact.")
+            GameplayTagId property,
+        SENCHA_ARG("definition") SENCHA_LABEL("Item") SENCHA_DATA_ASSET(kItemDefinitionType)
+            SENCHA_DESCRIPTION("Only entries of this item.") std::optional<AuthoredDataRef> definition = std::nullopt,
+        SENCHA_ARG("tag") SENCHA_LABEL("Tag") SENCHA_DESCRIPTION("Only items carrying this tag or one beneath it.")
+            std::optional<GameplayTagId> tag = std::nullopt,
+        SENCHA_ARG("within") SENCHA_LABEL("Within")
+            SENCHA_DESCRIPTION("Sums what its entries hold too, however deep.") bool within = false) const;
+
     [[nodiscard]] const World& AuthoredWorld() const { return *Entities; }
 
 private:
