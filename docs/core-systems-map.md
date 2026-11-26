@@ -351,6 +351,19 @@ name's wire key. Every reader takes the fact from there:
   composition kind is `GameplayTag` or `DataAssetRef`, and its saved form
   follows its row (`WrittenFromValue`), since a vocabulary never renames an id.
   A hand-written serializer calls the same codec for its named members.
+- **Wire.** The flattened description marks a named leaf with its vocabulary
+  (`RuntimeField::Names`, and `Optional` for a field that may be absent); the
+  leaf stays a `UInt32` and is no longer read-only. `ReplicationLayout::Add<T>`
+  gives a component with such a leaf, whose vocabulary has wire functions, a
+  translated image of its own size and offsets: each named leaf is sent as its
+  name's wire key and read back as the receiver's id, so two machines that
+  registered names in different orders agree. A leaf whose vocabulary has no
+  wire functions travels as its bytes. Lifecycle hooks are allowed on a
+  component that has a named member, since what reaches them is translated.
+- **Inspector.** Kyusu's generic inspector draws a named leaf as a choice among
+  the vocabulary's names, with "None" first for an optional field, and commits
+  the chosen name's id through the ordinary component edit, undoable like any
+  other. A name the vocabulary does not hold is refused.
 - **What a save does with a name content no longer declares** is in
   `docs/gameplay/saves.md` ("The entity patch"): a patched component that does not decode
   follows content.

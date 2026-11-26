@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <tuple>
+#include <utility>
 #include <span>
 #include <string>
 #include <string_view>
@@ -86,6 +88,38 @@ struct ReplicationCodec;
 
 template <typename T>
 concept ComponentHasReplicationCodec = requires { typename ReplicationCodec<T>::Wire; };
+
+// A component member that is a named id: it travels as its name's wire key.
+template <typename T, typename Fields>
+struct ComponentNamedIdMembers : std::false_type
+{
+};
+
+template <typename T, typename... FieldTs>
+struct ComponentNamedIdMembers<T, std::tuple<FieldTs...>>
+    : std::bool_constant<(IsNamedIdField<std::remove_cvref_t<decltype(std::declval<const T&>().*(std::declval<FieldTs>().Ptr))>> || ...)>
+{
+};
+
+template <typename T>
+inline constexpr bool ComponentHasNamedIdField = []
+{
+    if constexpr (HasTypeSchema<T>)
+        return ComponentNamedIdMembers<T, decltype(TypeSchema<T>::Fields())>::value;
+    else
+        return false;
+}();
+
+// The leaves of a component that travel as wire keys, at their offsets in its own image.
+struct ReplicatedNamedLeaf
+{
+    std::size_t Offset = 0;
+    const NamedIdVocabulary* Names = nullptr;
+};
+
+[[nodiscard]] std::vector<ReplicatedNamedLeaf> ReplicatedNamedLeaves(const std::vector<RuntimeField>& fields);
+void TranslateNamedLeaves(std::span<const ReplicatedNamedLeaf> leaves, const ReplicationWireContext& context,
+                          std::span<std::byte> image, bool toWire);
 
 //-----------------------------------------------------------------------------
 // A replicated component type and the fields of it that travel.
@@ -169,7 +203,7 @@ public:
         static_assert(HasTypeSchema<T>,
                       "A replicated component needs a TypeSchema: the schema is "
                       "what says which of its bytes travel.");
-        static_assert(!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>,
+        static_assert((!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>) || ComponentHasNamedIdField<T>,
                       "A component replicated as its bytes must not declare ComponentTraits "
                       "lifecycle hooks: they would be handed another machine's handles and "
                       "entities. Give it a ReplicationCodec, which translates what arrives "
@@ -181,7 +215,24 @@ public:
                        ComponentIsPredicted<T>,
                        RuntimeFieldsOf<T, SchemaPurpose::Replication>()))
             return false;
-        Components_.back().AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
+        ReplicatedComponent& added = Components_.back();
+        added.AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
+        if (!NamedLeavesOf<T>().empty())
+        {
+            added.ToWire = [](const ReplicationWireContext& context, std::span<const std::byte> component,
+                              std::span<std::byte> wire) {
+                std::memcpy(wire.data(), component.data(), sizeof(T));
+                TranslateNamedLeaves(NamedLeavesOf<T>(), context, wire, true);
+            };
+            added.FromWire = [](const ReplicationWireContext& context, std::span<const std::byte> wire,
+                                std::span<std::byte> component) {
+                std::memcpy(component.data(), wire.data(), sizeof(T));
+                TranslateNamedLeaves(NamedLeavesOf<T>(), context, component, false);
+            };
+            const T defaults{};
+            added.WireDefault.resize(sizeof(T));
+            std::memcpy(added.WireDefault.data(), &defaults, sizeof(T));
+        }
         return true;
     }
 
@@ -253,6 +304,14 @@ public:
     [[nodiscard]] const std::string& ErrorDetail() const { return ErrorDetail_; }
 
 private:
+    template <typename T>
+    static const std::vector<ReplicatedNamedLeaf>& NamedLeavesOf()
+    {
+        static const std::vector<ReplicatedNamedLeaf> leaves =
+            ReplicatedNamedLeaves(RuntimeFieldsOf<T, SchemaPurpose::Replication>());
+        return leaves;
+    }
+
     bool AddErased(ComponentTypeId type,
                    std::string_view name,
                    std::size_t size,

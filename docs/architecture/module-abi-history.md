@@ -1784,3 +1784,14 @@ specialisation for every named id, and `SceneComponentSerialization`'s
 `WriteSceneDefinitionRef` and `ReadSceneDefinitionRef` leave `SceneAssetRef.h`.
 No component's scene, save or wire form changes; the save format, the scene
 format and the net protocol do not change.
+
+## v83
+
+`RuntimeField` gains `Names`, the vocabulary of a named-id leaf, and
+`Optional`; a named leaf is no longer read-only. `net/ReplicationLayout.h`
+gains `ComponentHasNamedIdField`, `ReplicatedNamedLeaf`,
+`ReplicatedNamedLeaves` and `TranslateNamedLeaves`, and `Add<T>` gives a
+component with a named leaf a translated wire image of its own layout; the
+lifecycle-hook assertion admits such a component. No component in the engine or
+Loss Function takes the new path yet, so the replication table hash and the net
+protocol do not change; neither does the save or scene format.

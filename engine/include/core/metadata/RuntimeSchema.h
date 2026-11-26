@@ -4,6 +4,7 @@
 #include <core/identity/StrongId.h>
 #include <core/metadata/EnumSchema.h>
 #include <core/metadata/Field.h>
+#include <core/metadata/NamedIdField.h>
 #include <core/metadata/ScalarGroup.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
@@ -92,6 +93,11 @@ struct RuntimeField
     // Scalar stays the underlying integer kind and the bytes at Offset are
     // unchanged, so a consumer without enum awareness still works.
     std::span<const EnumOption> Enum{};
+    // Non-null for a named id: the bytes are its id, and the vocabulary names it.
+    // Display and wire metadata, out of ComponentSchemaFingerprint like Enum.
+    const NamedIdVocabulary* Names = nullptr;
+    // The field may be absent, which an authoring surface offers as no choice.
+    bool Optional = false;
     // Display metadata from the field declaration, editor-only: the row label
     // an inspector shows instead of humanizing Name, and its hover text.
     // string_views into the schema's literals, alive for the program.
@@ -294,7 +300,15 @@ namespace RuntimeSchemaDetail
             {
                 using U = typename IsStrongId<MemberType>::Underlying;
                 RuntimeField f{ std::move(name), offset, sizeof(U), ScalarKindOf<U>() };
-                f.ReadOnly = true;
+                if constexpr (IsNamedIdField<MemberType>)
+                {
+                    f.Names = &NamedIdField<MemberType>::Vocabulary();
+                    f.Optional = field.IsOptional;
+                }
+                else
+                {
+                    f.ReadOnly = true;
+                }
                 annotate(f);
                 Out.push_back(std::move(f));
             }

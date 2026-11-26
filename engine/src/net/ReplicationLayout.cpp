@@ -1,5 +1,7 @@
 #include <net/ReplicationLayout.h>
 
+#include <world/serialization/NamedIdVocabulary.h>
+
 #include <cassert>
 #include <cmath>
 
@@ -264,4 +266,29 @@ std::uint64_t ReplicationLayout::TableHash() const
         }
     }
     return hash;
+}
+
+std::vector<ReplicatedNamedLeaf> ReplicatedNamedLeaves(const std::vector<RuntimeField>& fields)
+{
+    std::vector<ReplicatedNamedLeaf> leaves;
+    for (const RuntimeField& field : fields)
+        if (field.Names != nullptr && field.Names->WireKey != nullptr && !field.LocalOnly
+            && field.Size == sizeof(std::uint32_t))
+            leaves.push_back({ field.Offset, field.Names });
+    return leaves;
+}
+
+void TranslateNamedLeaves(std::span<const ReplicatedNamedLeaf> leaves, const ReplicationWireContext& context,
+                          std::span<std::byte> image, bool toWire)
+{
+    for (const ReplicatedNamedLeaf& leaf : leaves)
+    {
+        std::uint32_t value = 0;
+        std::memcpy(&value, image.data() + leaf.Offset, sizeof(value));
+        if (value != 0)
+            value = context.Entities == nullptr ? 0u
+                    : toWire                    ? leaf.Names->WireKey(*context.Entities, value)
+                                                : leaf.Names->FromWireKey(*context.Entities, value);
+        std::memcpy(image.data() + leaf.Offset, &value, sizeof(value));
+    }
 }

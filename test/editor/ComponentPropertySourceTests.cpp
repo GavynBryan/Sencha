@@ -13,6 +13,10 @@
 #include "selection/SelectionService.h"
 
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <world/serialization/ComponentSerializer.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -354,4 +358,102 @@ TEST(ComponentPropertySource, AComponentOfRunTimeFieldsAloneIsNeitherOfferedNorS
             listed = listed || row.Descriptor.Label.find("Kinematic") != std::string::npos
                   || row.Key.find("kinematic") != std::string::npos;
     EXPECT_TRUE(listed) << "what character movement owes lists its velocity";
+}
+
+struct InspectedNames
+{
+    GameplayTagId Required;
+    GameplayTagId Optional;
+};
+
+template <>
+struct TypeSchema<InspectedNames>
+{
+    static constexpr std::string_view Name = "InspectedNames";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('I', 'N', 'S', 'N');
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("required", &InspectedNames::Required),
+                           MakeField("optional", &InspectedNames::Optional).Optional() };
+    }
+};
+
+namespace
+{
+struct NamesFixture
+{
+    struct ProbeFirst
+    {
+        ProbeFirst()
+        {
+            RegisterDocumentSerializers();
+            if (EditorSceneSerializers().FindByType(ResolveComponentTypeId<InspectedNames>()) == nullptr)
+                (void)EditorSceneSerializers().Register(std::make_unique<ComponentSerializer<InspectedNames>>());
+        }
+    } Registered;
+
+    NamesFixture()
+        : World(Logging)
+        , Selection(SelectionCtx)
+        , Source(World, Selection, Commands, Adapters)
+    {
+        ::World& components = World.FocusDocument().GetScene().GetRegistry().Components;
+        GameplayTagRegistry& tags = components.GetResource<GameplayTagRegistry>();
+        Armed = *tags.RegisterTag("probe.armed");
+        Cold = *tags.RegisterTag("probe.cold");
+        Selection.BindDocument(&components);
+        Entity = World.FocusDocument().GetScene().CreateEntity(Vec3d(0.0f, 0.0f, 0.0f));
+        components.AddComponent<InspectedNames>(Entity, InspectedNames{ .Required = Armed, .Optional = {} });
+        Selection.SetSelection({ SelectableRef::EntitySelection(World.FocusDocument().GetScene().GetRegistry().Id, Entity) });
+    }
+
+    const InspectedNames& Held()
+    {
+        return *World.FocusDocument().GetScene().GetRegistry().Components.TryGet<InspectedNames>(Entity);
+    }
+
+    LoggingProvider Logging;
+    WorldDocument World;
+    SelectionContext SelectionCtx;
+    SelectionService Selection;
+    CommandStack Commands;
+    EditorComponentAdapterRegistry Adapters;
+    ComponentPropertySource Source;
+    EntityId Entity{};
+    GameplayTagId Armed;
+    GameplayTagId Cold;
+};
+} // namespace
+
+TEST(ComponentPropertySource, ANamedFieldIsAChoiceOfDeclaredNamesChosenUndoneAndRedone)
+{
+    NamesFixture f;
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyNode* required = FindNode(nodes, "InspectedNames/required");
+    const PropertyNode* optional = FindNode(nodes, "InspectedNames/optional");
+    ASSERT_NE(required, nullptr);
+    ASSERT_NE(optional, nullptr);
+    EXPECT_EQ(required->Descriptor.Kind, PropertyKind::Choice);
+    EXPECT_FALSE(required->Descriptor.ReadOnly);
+    EXPECT_EQ(required->Value, "probe.armed");
+    EXPECT_NE(std::ranges::find(required->Descriptor.Choices, "probe.cold"), required->Descriptor.Choices.end());
+    EXPECT_EQ(std::ranges::find(required->Descriptor.Choices, "None"), required->Descriptor.Choices.end());
+    EXPECT_EQ(optional->Value, "None");
+    EXPECT_EQ(optional->Descriptor.Choices.front(), "None");
+
+    PropertyEditSession session;
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "probe.cold"), PropertyEditResult::Applied);
+    EXPECT_EQ(f.Held().Required, f.Cold);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "probe.missing"), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "None"), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/optional", "probe.armed"), PropertyEditResult::Applied);
+    EXPECT_EQ(f.Held().Optional, f.Armed);
+
+    f.Commands.Undo();
+    EXPECT_FALSE(f.Held().Optional.IsValid());
+    f.Commands.Undo();
+    EXPECT_EQ(f.Held().Required, f.Armed);
+    f.Commands.Redo();
+    EXPECT_EQ(f.Held().Required, f.Cold);
+    EXPECT_EQ(FindNode(f.Source.Nodes(), "InspectedNames/required")->Value, "probe.cold");
 }

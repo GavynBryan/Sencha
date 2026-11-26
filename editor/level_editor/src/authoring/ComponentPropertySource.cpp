@@ -21,6 +21,7 @@
 #include <core/assets/AssetRegistry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/IComponentSerializer.h>
+#include <world/serialization/NamedIdVocabulary.h>
 
 #include <algorithm>
 #include <array>
@@ -51,6 +52,8 @@ std::string BroughtWith(const World& world, EntityId entity, ComponentId compone
 
 PropertyKind KindOf(const RuntimeField& field)
 {
+    if (field.Names != nullptr)
+        return PropertyKind::Choice;
     if (field.Asset != AssetType::Unknown)
         return PropertyKind::Asset;
     if (field.InlineText)
@@ -143,8 +146,32 @@ std::vector<std::string> ElementLabels(const RuntimeField& field)
     return labels;
 }
 
-bool WriteValue(const RuntimeField& leaf, std::optional<std::size_t> element, std::string_view value, std::byte* bytes)
+constexpr std::string_view kNoName = "None";
+
+std::string NameText(const World& world, const RuntimeField& field, const std::byte* bytes)
 {
+    std::uint32_t id = 0;
+    std::memcpy(&id, bytes + field.Offset, sizeof(id));
+    if (id == 0)
+        return std::string(kNoName);
+    const std::string_view name = field.Names->NameOf(world, id);
+    return name.empty() ? std::string("<unregistered>") : std::string(name);
+}
+
+bool WriteName(const World& world, const RuntimeField& leaf, std::string_view value, std::byte* bytes)
+{
+    const std::uint32_t id = value == kNoName ? 0u : leaf.Names->Find(world, value);
+    if (id == 0 && !(leaf.Optional && value == kNoName))
+        return false;
+    std::memcpy(bytes + leaf.Offset, &id, sizeof(id));
+    return true;
+}
+
+bool WriteValue(const World& world, const RuntimeField& leaf, std::optional<std::size_t> element,
+                std::string_view value, std::byte* bytes)
+{
+    if (leaf.Names != nullptr)
+        return !element.has_value() && WriteName(world, leaf, value, bytes);
     return element.has_value() ? ParseRuntimeFieldElement(leaf, *element, value, bytes)
                                : ParseRuntimeField(leaf, value, bytes);
 }
@@ -331,6 +358,30 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             for (const EnumOption& option : field.Enum)
                 node.Descriptor.Choices.emplace_back(option.Name);
             holdsAssets |= field.Asset != AssetType::Unknown;
+
+            if (field.Names != nullptr)
+            {
+                node.Descriptor.ReadOnly = maintained;
+                if (field.Optional)
+                    node.Descriptor.Choices.emplace_back(kNoName);
+                std::vector<std::string_view> names;
+                field.Names->Names(world, names);
+                node.Descriptor.Choices.insert(node.Descriptor.Choices.end(), names.begin(), names.end());
+                std::vector<std::string> values;
+                for (const std::byte* held : bytes)
+                    values.push_back(NameText(world, field, held));
+                Agree(node, values);
+                bool differs = false;
+                for (std::size_t i = 0; i < holders.size(); ++i)
+                    differs |= baselines[i] != nullptr && Overridden(field, bytes[i], *baselines[i]);
+                if (differs)
+                {
+                    node.Descriptor.Verbs.push_back({ .Id = "reset", .Label = "Reset to Source" });
+                    overridden = true;
+                }
+                group.Children.push_back(std::move(node));
+                continue;
+            }
 
             if (field.Asset == AssetType::Unknown)
             {
@@ -689,8 +740,9 @@ PropertyEditResult ComponentPropertySource::Run(std::vector<std::unique_ptr<ICom
 
 PropertyEditResult ComponentPropertySource::PreviewEdit(std::string_view key, std::string_view value)
 {
-    return Stage(key, [value](const Field& field, std::byte* bytes) {
-        return WriteValue(*field.Leaf, field.Element, value, bytes);
+    const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    return Stage(key, [value, &world](const Field& field, std::byte* bytes) {
+        return WriteValue(world, *field.Leaf, field.Element, value, bytes);
     });
 }
 
@@ -718,8 +770,9 @@ PropertyEditResult ComponentPropertySource::CommitEdit(std::string_view key, std
         CancelEdit(key);
         return CommitAsset(*field, value);
     }
-    return Finish(key, [value](const Field& field, std::byte* bytes) {
-        return WriteValue(*field.Leaf, field.Element, value, bytes);
+    const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    return Finish(key, [value, &world](const Field& field, std::byte* bytes) {
+        return WriteValue(world, *field.Leaf, field.Element, value, bytes);
     });
 }
 

@@ -32,8 +32,9 @@
 
 // Whether an authoring surface can offer an editor for this leaf at all. False
 // for an identity the schema marks read-only, for a leaf the descriptor cannot
-// express, and for an asset handle -- which is refcounted and session-local, so
-// it travels through its own command rather than through bytes.
+// express, for an asset handle -- which is refcounted and session-local, so
+// it travels through its own command rather than through bytes -- and for a
+// named id, which is chosen by its name through the World's vocabulary.
 [[nodiscard]] bool IsRuntimeFieldEditable(const RuntimeField& field);
 
 // What this field currently holds, formatted for display. A multi-scalar leaf
