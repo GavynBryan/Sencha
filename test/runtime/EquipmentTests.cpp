@@ -1059,6 +1059,36 @@ TEST_F(EquipmentVocabularyTest, ATakenItemIsWornByTheEntryTheTakeAnswered)
     EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), held[0]);
 }
 
+TEST_F(EquipmentVocabularyTest, ASecondRingGivenIsTheOneTheSequenceWearsAndARefusedGiveWearsNothing)
+{
+    InventoryOperations items{ Entities(), Clock };
+    Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(Verbs->Registry().Find(kInventoryGiveVerb), items));
+    const EntityId first = Give(RingItem);
+    std::vector<std::string> errors;
+    const CompiledVerbSequence compiled = CompileSequence(R"({"commands": [
+        {"verb": "inventory.give", "as": "given",
+         "arguments": {"into": {"port": "user"}, "definition": {"data": "asset://items/ring.sdata"}}},
+        {"verb": "equipment.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "given"}}}]})",
+                                                          errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    SequenceOutcome outcome = RunSequence(compiled, Hero, Hero);
+    EXPECT_EQ(outcome.Failed, 0u);
+    const std::vector<EntityId> held = HeldEntries(Entities(), Hero);
+    ASSERT_EQ(held.size(), 2u);
+    const EntityId second = held[0] == first ? held[1] : held[0];
+    ASSERT_EQ(Records().size(), 1u);
+    EXPECT_EQ(ResolvePersistableRef(Entities(), Records()[0].Source), second) << "the ring just given, not the one held";
+
+    Entities().TryGet<ItemContainer>(Hero)->Accepts = Weapon;
+    outcome = RunSequence(compiled, Hero, Hero);
+    EXPECT_EQ(outcome.FirstFailure, VerbAdmission::Refused);
+    EXPECT_EQ(outcome.FirstFailedCommand, 0u);
+    EXPECT_EQ(outcome.Failed, 2u) << "the refused give named no entry, so the equip reading it failed";
+    EXPECT_EQ(Records().size(), 1u);
+    EXPECT_EQ(HeldEntries(Entities(), Hero).size(), 2u);
+}
+
 TEST_F(EquipmentVocabularyTest, AnEquipWearsTheEntryASearchFindsWhenItsCommandRuns)
 {
     InventoryOperations items{ Entities(), Clock };
