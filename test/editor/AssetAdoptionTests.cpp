@@ -119,7 +119,7 @@ TEST(AssetAdoption, AProjectEndsWithEveryFileStatingItsOwnIdAndAgainChangesNothi
     project.Write("textures/stone.png", "png");
     project.Write("textures/stone.png.meta", "{\n  \"version\": 1,\n  \"mips\": false\n}\n");
     project.Write("textures/grit.png", "png");
-    project.Write("levels/hub.sscene", "{ format_version: 1, entities: [] }");
+    project.Write("levels/hub.sscene", "{ format_version: 3, entities: [] }");
     project.Write("fonts/LICENSE.txt", "not an asset");
     project.Write("meshes/moved/rock.glb", "glb");
     project.Write("meshes/rock.glb.meta", "{ \"id\": \"00000000000000c7\" }");

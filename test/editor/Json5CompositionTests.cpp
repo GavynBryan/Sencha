@@ -51,7 +51,7 @@ TEST(Json5Composition, FragmentsWhoseListedRecordsOrderTheirMembersDifferentlyAg
     const std::vector<CompositionLayerInput<Json5Value>> includes{ { &fire, "fire", nullptr }, { &frost, "frost", nullptr } };
     CompositionReport report;
     (void)ComposeLayers<Json5Value>(&baseLayer, includes, { &local, "child", nullptr },
-                                    { .Schema = &schema, .Null = CompositionNull::Removes }, report);
+                                    { .Schema = &schema }, report);
     EXPECT_TRUE(report.Diagnostics.empty()) << Codes(report);
 }
 
@@ -69,7 +69,7 @@ TEST(Json5Composition, EveryTargetComposesBackFromItsPatch)
         const CompositionLayerInput<Json5Value> baseLayer{ &base, "base", nullptr };
         CompositionReport report;
         const Json5Value composed = ComposeLayers<Json5Value>(&baseLayer, {}, { patch ? &*patch : &nothing, "save", nullptr },
-                                                              { .Schema = &schema, .Null = CompositionNull::Removes }, report);
+                                                              { .Schema = &schema }, report);
         ASSERT_TRUE(report.Diagnostics.empty()) << Codes(report) << "\nbase   " << pair.Base << "\ntarget " << pair.Target;
         ASSERT_TRUE(composed.SameValueAs(target))
             << "base   " << pair.Base << "\ntarget " << pair.Target << "\ngot    " << Json5Write(composed);

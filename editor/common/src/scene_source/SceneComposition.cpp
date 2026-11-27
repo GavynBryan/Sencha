@@ -54,13 +54,6 @@ namespace
         return components;
     }
 
-    void ApplyVersionOnePatch(Json5Value& target, const Json5Value& patch)
-    {
-        CompositionReport report;
-        ApplyCompositionPatch(target, patch, std::string_view{},
-                              CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue }, report);
-    }
-
     template <typename Visit>
     void VisitEntityReferences(Json5Value& value, const DataFieldSchema& schema, const Visit& visit)
     {
@@ -216,7 +209,7 @@ namespace
             if (!ComposeLayers(document, asset, out))
                 return false;
             for (const SceneInstanceRecord& instance : document.Instances)
-                if (!Expand(instance, document.FormatVersion, asset, out))
+                if (!Expand(instance, asset, out))
                     return false;
             return true;
         }
@@ -443,8 +436,7 @@ namespace
             const CompositionLayerInput<Json5Value> base{ &own, document.Extends, &entity.Provenance };
             const CompositionLayerInput<Json5Value>* baseLayer = entity.IsInherited ? &base : nullptr;
             CompositionReport report;
-            const CompositionPolicy policy{ .Schema = &EntitySchema(), .Null = CompositionNull::Removes,
-                                            .Provenance = Options.Provenance };
+            const CompositionPolicy policy{ .Schema = &EntitySchema(), .Provenance = Options.Provenance };
             entity.Components = ::ComposeLayers<Json5Value>(baseLayer, includes, { &local, asset, nullptr }, policy,
                                                             report, &entity.SourceComponents);
             entity.Provenance = std::move(report.Provenance);
@@ -501,7 +493,7 @@ namespace
 
         // One placement: resolve what it points at, override it, and emit the
         // result into the outer scene under the placement's own identities.
-        [[nodiscard]] bool Expand(const SceneInstanceRecord& instance, std::uint32_t version, std::string_view asset,
+        [[nodiscard]] bool Expand(const SceneInstanceRecord& instance, std::string_view asset,
                                   SceneCompositionResult& out)
         {
             SceneCompositionResult inner;
@@ -512,7 +504,7 @@ namespace
 
             const SourceIndex index = SourceIndex::Build(instance, inner);
             const std::unordered_set<std::uint64_t> suppressed =
-                ApplyOverrides(instance, version, index, inner, out);
+                ApplyOverrides(instance, index, inner, out);
 
             EmitInstanceRoot(instance, out);
             const std::size_t firstSource = out.Entities.size();
@@ -557,7 +549,6 @@ namespace
         // rather than silently doing nothing forever.
         [[nodiscard]] std::unordered_set<std::uint64_t> ApplyOverrides(
             const SceneInstanceRecord& instance,
-            std::uint32_t version,
             const SourceIndex& index,
             SceneCompositionResult& inner,
             SceneCompositionResult& out)
@@ -596,16 +587,11 @@ namespace
                 {
                     Json5Value stated;
                     std::vector<std::string> names = SplitRemovals(patch, stated);
-                    if (version < 2)
-                        ApplyVersionOnePatch(entity.Components, stated);
-                    else
-                    {
-                        CompositionReport report;
-                        ApplyCompositionPatch(entity.Components, stated, instance.Source,
-                                              { .Schema = &EntitySchema(), .Null = CompositionNull::Removes }, report);
-                        for (CompositionDiagnostic& diagnostic : report.Diagnostics)
-                            out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
-                    }
+                    CompositionReport report;
+                    ApplyCompositionPatch(entity.Components, stated, instance.Source, { .Schema = &EntitySchema() },
+                                          report);
+                    for (CompositionDiagnostic& diagnostic : report.Diagnostics)
+                        out.Diagnostics.push_back(AtEntity(std::move(diagnostic), entity.Id));
                     if (!names.empty())
                         nulled.emplace_back(&entity, std::move(names));
                 });

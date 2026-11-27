@@ -9,6 +9,7 @@
 #include "operations/ViewOperations.h"
 #include "operations/WorldZones.h"
 #include "operations/WorldQueries.h"
+#include "ProjectSceneUpgrade.h"
 #include "project/Project.h"
 #include "workspace/EditorWorkspace.h"
 
@@ -34,9 +35,12 @@ namespace
         "usage: kyusu_batch [--project <file.senchaproj>] (--level <file.sscene> | "
         "--world <file.sworld> [--zone <id or name>]) [--script <file>]\n"
         "       kyusu_batch --reference\n"
+        "       kyusu_batch --project <directory> (--upgrade-scenes | --check-scenes)\n"
         "Runs one editor operation per line of the script (stdin without --script) and "
         "writes one line of JSON per answer to stdout. --reference prints every operation "
-        "as markdown instead.\n";
+        "as markdown instead. --upgrade-scenes rewrites every scene source beneath the "
+        "directory at the current format; --check-scenes lists those that are not and "
+        "fails if there is one.\n";
 
     struct Options
     {
@@ -46,6 +50,7 @@ namespace
         std::string Zone;
         std::string Script;
         bool        Reference = false;
+        std::optional<ProjectSceneUpgradeMode> SceneUpgrade;
     };
 
     bool ParseOptions(int argc, char** argv, Options& options)
@@ -56,6 +61,14 @@ namespace
             if (flag == "--reference")
             {
                 options.Reference = true;
+                continue;
+            }
+            if (flag == "--upgrade-scenes" || flag == "--check-scenes")
+            {
+                if (options.SceneUpgrade.has_value())
+                    return false;
+                options.SceneUpgrade =
+                    flag == "--upgrade-scenes" ? ProjectSceneUpgradeMode::Write : ProjectSceneUpgradeMode::Check;
                 continue;
             }
             if (index + 1 >= argc)
@@ -74,6 +87,9 @@ namespace
             else
                 return false;
         }
+        if (options.SceneUpgrade.has_value())
+            return !options.Project.empty() && !options.Reference && options.Level.empty() && options.World.empty()
+                && options.Zone.empty() && options.Script.empty();
         if (options.Reference)
             return options.Level.empty() && options.World.empty() && options.Script.empty();
         return options.Level.empty() != options.World.empty()
@@ -99,6 +115,20 @@ int main(int argc, char** argv)
     {
         std::fputs(kUsage.data(), stderr);
         return kCouldNotStart;
+    }
+
+    if (options.SceneUpgrade.has_value())
+    {
+        std::filesystem::path root(options.Project);
+        if (std::filesystem::is_regular_file(root))
+            root = root.parent_path();
+        if (!std::filesystem::is_directory(root))
+        {
+            std::fprintf(stderr, "kyusu_batch: '%s' is not a project directory\n", options.Project.c_str());
+            return kCouldNotStart;
+        }
+        const ProjectSceneTally tally = UpgradeProjectScenes(root, *options.SceneUpgrade, std::cout);
+        return tally.Refused == 0 && tally.Old == 0 ? 0 : kAnswersHadErrors;
     }
 
     RegisterDocumentSerializers();

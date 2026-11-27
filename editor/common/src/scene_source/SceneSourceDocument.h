@@ -73,10 +73,9 @@ struct SceneInstanceRecord
     std::vector<std::pair<SceneElementPath, PersistentEntityId>> EntityIds;
 
     // Sparse overrides, path-keyed: a member merges into the source's
-    // component, adds one the source lacks whole, or removes it as null. A
-    // read folds the retired add and remove spellings in. AddedEntities and
-    // Suppressed are the structural pair: new children inside the instance,
-    // and source entities this placement omits.
+    // component, adds one the source lacks whole, or removes it as null.
+    // AddedEntities and Suppressed are the structural pair: new children
+    // inside the instance, and source entities this placement omits.
     std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
     std::vector<SceneAddedEntity> AddedEntities;
     std::vector<SceneElementPath> Suppressed;
@@ -97,9 +96,8 @@ struct SceneFragmentInclude
 
 struct SceneSourceDocument
 {
-    static constexpr std::uint32_t Version = 2;
+    static constexpr std::uint32_t Version = 3;
 
-    std::uint32_t FormatVersion = Version;
     std::string Extends;
     AssetId ExtendsId{};
     std::vector<SceneFragmentInclude> Includes;
@@ -119,16 +117,15 @@ struct SceneSourceDocument
 };
 
 // Parses and validates one .sscene document. On failure returns nullopt with a
-// message naming the offending id or path; a file in the retired .level.json
-// shape gets the hard-cutover diagnostic rather than a shape error.
+// message naming the offending id or path. A file at a retired format_version,
+// or in the retired .level.json shape, gets the command or cutover that answers
+// it rather than a shape error.
 [[nodiscard]] std::optional<SceneSourceDocument> ParseSceneSource(
     std::string_view text, std::string* error = nullptr);
 
 // Renders the document in the canonical style. Deterministic: writing an
 // unmodified parse reproduces the same bytes the canonical writer produced.
 [[nodiscard]] std::string WriteSceneSource(const SceneSourceDocument& document);
-
-[[nodiscard]] std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document);
 
 // The transform shape the format speaks ({position, rotation, scale}), shared
 // with composition so the synthetic root's component carries exactly what a

@@ -104,7 +104,6 @@ namespace
                         staging.Sources.push_back(source.Path);
 
             const CompositionPolicy policy{ .Schema = schema != nullptr ? &schema->Root : nullptr,
-                                            .Null = CompositionNull::Removes,
                                             .Provenance = provenance };
             std::optional<CompositionLayerInput<JsonValue>> base;
             if (!composedBase.empty())

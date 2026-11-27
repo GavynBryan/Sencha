@@ -353,7 +353,7 @@ TEST_F(BrushModifierDocumentTest, APrefabMemberProjectsWithItsStack)
     const PersistentEntityId bodyId = IdOf(prop, body);
 
     const std::string host = std::string(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '00000000000000f0',

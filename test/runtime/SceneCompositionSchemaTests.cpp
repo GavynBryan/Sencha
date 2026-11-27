@@ -17,7 +17,7 @@ namespace
         JsonValue target = *JsonParse(base);
         CompositionReport report;
         ApplyCompositionPatch<JsonValue>(target, *JsonParse(patch), "asset://prefabs/derived.sscene",
-                                         { .Schema = serializer.CompositionSchema(), .Null = CompositionNull::Removes },
+                                         { .Schema = serializer.CompositionSchema() },
                                          report);
         EXPECT_TRUE(report.Diagnostics.empty()) << report.Diagnostics.front().Code << " " << report.Diagnostics.front().Path;
         return target;

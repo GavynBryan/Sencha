@@ -327,6 +327,11 @@ if(TARGET kyusu_batch)
         FIXTURES_REQUIRED kyusu_batch_proposal
         PASS_REGULAR_EXPRESSION "\"operation\":\"entity.describe\",\"status\":\"ok\""
         FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
+    add_test(NAME kyusu_batch.UpgradesAndChecksAProjectsScenes
+        COMMAND "${CMAKE_COMMAND}"
+            -DBATCH=$<TARGET_FILE:kyusu_batch>
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/scene_upgrade_project
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckSceneUpgrade.cmake")
 endif()
 
 # The transport, protocol, and channel layers. Their own target because they

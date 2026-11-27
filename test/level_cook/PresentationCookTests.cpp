@@ -114,7 +114,7 @@ TEST_F(PresentationCookTest, AnInvalidLayerRefusesTheLoadNamingIt)
     doc.SetContentRoots({ Root });
     std::string error;
     EXPECT_FALSE(doc.LoadFromSceneText(
-        R"({ "format_version": 1, "settings": { "presentation": { "bloom": { "intensity": -2 } } }, "entities": [] })",
+        R"({ "format_version": 3, "settings": { "presentation": { "bloom": { "intensity": -2 } } }, "entities": [] })",
         &error));
     EXPECT_NE(error.find("settings.presentation"), std::string::npos) << error;
 }

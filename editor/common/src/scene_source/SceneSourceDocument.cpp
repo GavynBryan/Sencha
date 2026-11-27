@@ -7,8 +7,7 @@
 #include <core/assets/AssetPath.h>
 #include <core/assets/AssetRefCodec.h>
 
-#include <algorithm>
-#include <functional>
+#include <cmath>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -136,41 +135,6 @@ namespace
         return true;
     }
 
-    template<typename Key>
-    Json5Value& PatchOf(std::vector<std::pair<Key, Json5Value>>& patches, const Key& key)
-    {
-        const auto found = std::ranges::find_if(patches, [&](const auto& entry) { return entry.first == key; });
-        if (found != patches.end())
-            return found->second;
-        return patches.emplace_back(key, Json5Value::MakeObject()).second;
-    }
-
-    template<typename Key>
-    bool FoldRemovals(std::vector<std::pair<Key, Json5Value>>& patches,
-                      const std::vector<std::pair<Key, std::vector<std::string>>>& removals,
-                      const std::vector<std::pair<Key, Json5Value>>& added, const std::string& what,
-                      const std::function<std::string(const Key&)>& nameOf, std::string* error)
-    {
-        for (const auto& [key, names] : removals)
-        {
-            Json5Value& patch = PatchOf(patches, key);
-            const auto addedHere = std::ranges::find_if(added, [&](const auto& entry) { return entry.first == key; });
-            for (const std::string& name : names)
-            {
-                if (const Json5Value* stated = patch.Find(name); stated != nullptr)
-                {
-                    if (stated->IsNull())
-                        continue;
-                    const bool wasAdded = addedHere != added.end() && addedHere->second.Find(name) != nullptr;
-                    return Fail(error, what + ": component '" + name + "' on '" + nameOf(key) + "' is both "
-                                           + (wasAdded ? "added" : "patched") + " and removed");
-                }
-                patch.Members.emplace_back(name, Json5Value{});
-            }
-        }
-        return true;
-    }
-
     bool ReadInstance(const Json5Value& record, SceneInstanceRecord& out, std::string* error)
     {
         if (!record.IsObject())
@@ -247,46 +211,11 @@ namespace
             }
             return true;
         };
-        std::vector<std::pair<SceneElementPath, Json5Value>> addedComponents;
-        if (!readPathObject("patch", out.Patches) || !readPathObject("add", addedComponents))
-            return false;
-        for (const auto& [path, components] : addedComponents)
-        {
-            Json5Value& patch = PatchOf(out.Patches, path);
-            for (const Json5Value::Member& component : components.Members)
-            {
-                if (patch.Find(component.first) != nullptr)
-                    return Fail(error, what + ": component '" + component.first + "' on '" + path.ToString()
-                                           + "' is both patched and added");
-                patch.Members.push_back(component);
-            }
-        }
-
-        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> removed;
-        if (const Json5Value* removes = record.Find("remove"))
-        {
-            if (!removes->IsObject())
-                return Fail(error, what + ": 'remove' must be an object");
-            for (const Json5Value::Member& member : removes->Members)
-            {
-                SceneElementPath path;
-                if (!ReadPathKey(member.first, path, error, what))
-                    return false;
-                if (!member.second.IsArray())
-                    return Fail(error, what + ": remove for '" + member.first
-                        + "' must be an array of component names");
-                std::vector<std::string> names;
-                for (const Json5Value& name : member.second.Elements)
-                {
-                    if (!name.IsString())
-                        return Fail(error, what + ": remove entries must be strings");
-                    names.push_back(name.Text);
-                }
-                removed.emplace_back(std::move(path), std::move(names));
-            }
-        }
-        if (!FoldRemovals<SceneElementPath>(out.Patches, removed, addedComponents, what,
-                                            [](const SceneElementPath& path) { return path.ToString(); }, error))
+        if (record.Find("add") != nullptr)
+            return Fail(error, what + ": 'add' is retired: write the component in 'patch'");
+        if (record.Find("remove") != nullptr)
+            return Fail(error, what + ": 'remove' is retired: write '<component>: null' in 'patch'");
+        if (!readPathObject("patch", out.Patches))
             return false;
 
         if (const Json5Value* added = record.Find("add_entities"))
@@ -484,20 +413,21 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
         (void)Fail(error, "missing 'format_version'");
         return std::nullopt;
     }
-    if (version->Number != 1.0 && version->Number != static_cast<double>(SceneSourceDocument::Version))
+    if (version->Number != static_cast<double>(SceneSourceDocument::Version))
     {
-        (void)Fail(error, "unsupported format_version "
-            + std::to_string(version->Number));
+        const bool retired = version->Number >= 1.0 && version->Number < SceneSourceDocument::Version
+                          && version->Number == std::floor(version->Number);
+        (void)Fail(error, retired ? "format_version " + std::to_string(static_cast<int>(version->Number))
+                                        + " is retired: run kyusu_batch --upgrade-scenes on the project"
+                                  : "unsupported format_version " + std::to_string(version->Number));
         return std::nullopt;
     }
 
     SceneSourceDocument document;
-    document.FormatVersion = static_cast<std::uint32_t>(version->Number);
     document.LeadingComments = parsed->LeadingComments;
     document.TrailingComments = parsed->TrailingComments;
     document.EndComments = std::move(endComments);
 
-    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> inheritedRemovals;
     for (const Json5Value::Member& member : parsed->Members)
     {
         const std::string& key = member.first;
@@ -565,13 +495,13 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                 document.Entities.push_back(std::move(entity));
             }
         }
-        else if (key == "extends" || key == "includes" || key == "abstract" || key == "patch" || key == "remove")
+        else if (key == "remove")
         {
-            if (document.FormatVersion < 2)
-            {
-                (void)Fail(error, "'" + key + "' needs format_version 2");
-                return std::nullopt;
-            }
+            (void)Fail(error, "'remove' is retired: write '<component>: null' in 'patch'");
+            return std::nullopt;
+        }
+        else if (key == "extends" || key == "includes" || key == "abstract" || key == "patch")
+        {
             if (key == "extends" && !ReadSceneRef(&value, document.Extends, document.ExtendsId, error, "'extends'"))
                 return std::nullopt;
             if (key == "abstract")
@@ -618,21 +548,6 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                                                 return true;
                                             }))
                 return std::nullopt;
-            if (key == "remove"
-                && !ReadIdKeyed<std::vector<std::string>>(
-                    value, key, inheritedRemovals, error,
-                    [&](const Json5Value& entry, std::vector<std::string>& out, const std::string& what) {
-                        if (!entry.IsArray())
-                            return Fail(error, what + ": a list of component names");
-                        for (const Json5Value& name : entry.Elements)
-                        {
-                            if (!name.IsString())
-                                return Fail(error, what + ": a list of component names");
-                            out.push_back(name.Text);
-                        }
-                        return true;
-                    }))
-                return std::nullopt;
         }
         else if (key == "instances")
         {
@@ -655,9 +570,6 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
         }
     }
 
-    if (!FoldRemovals<PersistentEntityId>(document.InheritedPatches, inheritedRemovals, {}, "patch",
-                                          [](const PersistentEntityId& id) { return SceneIdText(id.Value); }, error))
-        return std::nullopt;
     if (!Validate(document, error))
         return std::nullopt;
     return document;
@@ -669,7 +581,7 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
     root.LeadingComments = document.LeadingComments;
     root.TrailingComments = document.TrailingComments;
 
-    root.Members.emplace_back("format_version", Json5Value(static_cast<double>(document.FormatVersion)));
+    root.Members.emplace_back("format_version", Json5Value(static_cast<double>(SceneSourceDocument::Version)));
     if (document.Abstract)
         root.Members.emplace_back("abstract", Json5Value(true));
     if (!document.Extends.empty())
@@ -786,37 +698,4 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
         root.Members.push_back(member);
 
     return Json5Write(root, document.EndComments);
-}
-
-namespace
-{
-    void CollectMemberNulls(const Json5Value& value, const std::string& path, std::vector<std::string>& out)
-    {
-        if (!value.IsObject())
-            return;
-        for (const Json5Value::Member& member : value.Members)
-        {
-            const std::string at = path + "." + member.first;
-            if (member.second.IsNull())
-                out.push_back(at);
-            else
-                CollectMemberNulls(member.second, at, out);
-        }
-    }
-}
-
-std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document)
-{
-    std::vector<std::string> nulls;
-    if (document.FormatVersion >= SceneSourceDocument::Version)
-        return nulls;
-    for (const SceneInstanceRecord& instance : document.Instances)
-        for (const auto& [path, patch] : instance.Patches)
-            for (const Json5Value::Member& component : patch.Members)
-                if (!component.second.IsNull())
-                    CollectMemberNulls(component.second,
-                                       SceneIdText(instance.Id.Value) + ": " + path.ToString() + "." + component.first,
-                                       nulls);
-    document.FormatVersion = SceneSourceDocument::Version;
-    return nulls;
 }

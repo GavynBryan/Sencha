@@ -1,7 +1,8 @@
 # kyusu_batch: the editor's operations without a window. Opens a level, runs a
 # script of operations from a file or stdin, and answers each with one line of
-# JSON (docs/plans/level-spatial-model.md, section 4.7).
-add_executable(kyusu_batch src/main.cpp)
+# JSON (docs/plans/level-spatial-model.md, section 4.7). It also upgrades and
+# checks a project's scene sources (docs/editor/scene-composition.md).
+add_executable(kyusu_batch src/main.cpp src/ProjectSceneUpgrade.cpp)
 target_link_libraries(kyusu_batch PRIVATE level_authoring)
 sencha_warnings(kyusu_batch)
 

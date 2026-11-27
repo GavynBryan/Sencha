@@ -117,7 +117,7 @@ TEST(AssetIdentity, StatingAnIdInsertsItAndChangesNothingElse)
     EXPECT_EQ(StatingAssetId("", kId), "{\n  \"id\": \"00000000c0ffee00\"\n}\n");
     EXPECT_FALSE(StatingAssetId("[1, 2]", kId).has_value());
 
-    EXPECT_EQ(StatingAssetId("{ format_version: 1, entities: [] }", kId),
-              "{ \"id\": \"00000000c0ffee00\", format_version: 1, entities: [] }");
+    EXPECT_EQ(StatingAssetId("{ format_version: 3, entities: [] }", kId),
+              "{ \"id\": \"00000000c0ffee00\", format_version: 3, entities: [] }");
     EXPECT_EQ(StatedAssetIdIn(*StatingAssetId("{\n  \"version\": 2\n}", kId)), kId);
 }

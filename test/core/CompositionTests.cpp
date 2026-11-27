@@ -110,8 +110,7 @@ namespace
     Composed Compose(const Layers& layers)
     {
         static const DataFieldSchema schema = DefinitionSchema();
-        const CompositionPolicy policy{ .Schema = &schema, .Null = CompositionNull::Removes,
-                                        .Provenance = layers.Provenance };
+        const CompositionPolicy policy{ .Schema = &schema, .Provenance = layers.Provenance };
         std::vector<JsonValue> values;
         values.reserve(layers.Includes.size() + 2);
         std::optional<CompositionLayerInput<JsonValue>> base;
@@ -331,7 +330,7 @@ namespace
         const CompositionLayerInput<JsonValue> local{ patch ? &*patch : &nothing, "save", nullptr };
         Composed composed;
         composed.Value = ComposeLayers<JsonValue>(&baseLayer, {}, local,
-                                                  { .Schema = &schema, .Null = CompositionNull::Removes },
+                                                  { .Schema = &schema },
                                                   composed.Report);
         return composed;
     }
@@ -413,16 +412,14 @@ TEST(CompositionPatch, EveryTargetComposesBackFromItsPatch)
 
 TEST(Composition, WithoutASchemaObjectsMergeAndAnythingElseIsWrittenWhole)
 {
-    JsonValue target = Parse(R"({ "a": { "x": 1 }, "list": [ 1, 2 ], "keep": 3 })");
+    JsonValue target = Parse(R"({ "a": { "x": 1 }, "list": [ 1, 2 ], "keep": 3, "gone": 4 })");
     const JsonValue patch = Parse(R"({ "a": { "y": 2 }, "list": [ 9 ], "gone": null })");
     CompositionReport report;
-    ApplyCompositionPatch(target, patch, "scene", CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue },
-                          report);
+    ApplyCompositionPatch(target, patch, "scene", CompositionPolicy{}, report);
     EXPECT_TRUE(report.Diagnostics.empty());
     EXPECT_EQ(target.Find("a")->Find("x")->AsNumber(), 1.0);
     EXPECT_EQ(target.Find("a")->Find("y")->AsNumber(), 2.0);
     ASSERT_EQ(target.Find("list")->Size(), 1u);
-    ASSERT_NE(target.Find("gone"), nullptr) << "with null as a value, null is written";
-    EXPECT_TRUE(target.Find("gone")->IsNull());
+    EXPECT_EQ(target.Find("gone"), nullptr);
     EXPECT_EQ(target.Find("keep")->AsNumber(), 3.0);
 }

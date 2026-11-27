@@ -22,12 +22,6 @@ enum class CompositionLayer : std::uint8_t
     Local,
 };
 
-enum class CompositionNull : std::uint8_t
-{
-    Removes,
-    IsAValue,
-};
-
 struct CompositionOrigin
 {
     CompositionLayer Layer = CompositionLayer::Local;
@@ -54,7 +48,6 @@ struct CompositionReport
 struct CompositionPolicy
 {
     const DataFieldSchema* Schema = nullptr;
-    CompositionNull Null = CompositionNull::Removes;
     bool Provenance = false;
 };
 
@@ -148,7 +141,7 @@ namespace CompositionDetail
                 const DataFieldSchema* child =
                     node != nullptr && node->Kind == DataFieldKind::Record ? FindChild(*node, name) : nullptr;
                 const std::string childPath = path + "." + std::string(name);
-                if (T::IsNull(value) && Policy.Null == CompositionNull::Removes)
+                if (T::IsNull(value))
                 {
                     RemoveMember(target, name, child, childPath);
                     return;

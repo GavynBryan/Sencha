@@ -1,6 +1,6 @@
 {
   "id": "77d0d04445b9acbf",
-  format_version: 1,
+  format_version: 3,
   settings: {
     default_material: "asset://materials/dev/gray.smat",
   },

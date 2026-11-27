@@ -172,7 +172,7 @@ TEST_F(PrefabCookTest, ADerivedPrefabCooksComposedAndRecooksWhenItsBaseIsSaved)
 {
     (void)AuthorPrefab("prefabs/bulb.sscene", Vec3d{ 0, 1, 0 });
     const std::string base = ReadText(Root / "prefabs/bulb.sscene");
-    WriteFile("prefabs/bright_bulb.sscene", "{ format_version: 2, extends: 'asset://prefabs/bulb.sscene', entities: [] }");
+    WriteFile("prefabs/bright_bulb.sscene", "{ format_version: 3, extends: 'asset://prefabs/bulb.sscene', entities: [] }");
 
     const DocumentCookResult cooked = CookDocument(Root / "prefabs/bright_bulb.sscene", Root, 16.0);
     ASSERT_TRUE(cooked.Success) << cooked.Error;
@@ -199,7 +199,7 @@ TEST_F(PrefabCookTest, ADerivedPrefabCooksComposedAndRecooksWhenItsBaseIsSaved)
 TEST_F(PrefabCookTest, AnAbstractPrefabIsNotCooked)
 {
     WriteFile("prefabs/fragments/glow.sscene",
-              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }");
+              "{ format_version: 3, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }");
     const DocumentCookResult refused = CookDocument(Root / "prefabs/fragments/glow.sscene", Root, 16.0);
     EXPECT_FALSE(refused.Success);
     EXPECT_NE(refused.Error.find("abstract"), std::string::npos) << refused.Error;
@@ -208,7 +208,7 @@ TEST_F(PrefabCookTest, AnAbstractPrefabIsNotCooked)
 
 namespace
 {
-    constexpr std::string_view kHumanoid = R"({ format_version: 2, entities: [
+    constexpr std::string_view kHumanoid = R"({ format_version: 3, entities: [
         { id: '00000000000000a1', components: {
             Transform: { local: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
             LookOrientation: { yaw: 0 },
@@ -229,16 +229,16 @@ TEST_F(PrefabCookTest, AGuardChainCooksFlatAndRecordsItsSources)
 {
     WriteFile("prefabs/actors/humanoid.sscene", kHumanoid);
     WriteFile("prefabs/fragments/alertable.sscene",
-              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: { AimFacing: {} } } ] }");
+              "{ format_version: 3, abstract: true, entities: [ { id: '00000000000000f1', components: { AimFacing: {} } } ] }");
     WriteFile("prefabs/fragments/combat_training.sscene",
-              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f2', components: "
+              "{ format_version: 3, abstract: true, entities: [ { id: '00000000000000f2', components: "
               "{ LookOrientation: { yaw: 1.5 } } } ] }");
     WriteFile("prefabs/actors/guard.sscene",
-              "{ format_version: 2, extends: 'asset://prefabs/actors/humanoid.sscene', includes: [ "
+              "{ format_version: 3, extends: 'asset://prefabs/actors/humanoid.sscene', includes: [ "
               "{ fragment: 'asset://prefabs/fragments/alertable.sscene' }, "
               "{ fragment: 'asset://prefabs/fragments/combat_training.sscene' } ], entities: [] }");
     WriteFile("prefabs/actors/elite_guard.sscene",
-              "{ format_version: 2, extends: 'asset://prefabs/actors/guard.sscene', entities: [], "
+              "{ format_version: 3, extends: 'asset://prefabs/actors/guard.sscene', entities: [], "
               "patch: { '00000000000000a1': { PointLight: { intensity: 9 } } } }");
 
     const DocumentCookResult cooked = CookDocument(Root / "prefabs/actors/elite_guard.sscene", Root, 16.0);
@@ -302,7 +302,7 @@ namespace
         "bindings": [ { "key": "fire", "verb": "test.fire",
             "arguments": { "projectile": { "asset": "asset://prefabs/bolt.smap" } } } ] } })";
 
-    constexpr std::string_view kRange = R"({ format_version: 2, entities: [
+    constexpr std::string_view kRange = R"({ format_version: 3, entities: [
         { id: '00000000000000b1', components: {
             Transform: { local: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
             PointLight: { intensity: 5, range: 3 },

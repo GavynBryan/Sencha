@@ -8,46 +8,96 @@ merge through the shared operator (`docs/assets/composition.md`).
 
 ## What a document can say
 
-| Member | Version | Meaning |
-|---|---|---|
-| `entities` | 1, 2 | The document's own entities, by stable id. |
-| `instances` | 1, 2 | Placements of other scenes, each under a synthetic root whose id is the placement's. |
-| `extends` | 2 | A scene whose entities this one adopts, ids and all, with no wrapper. |
-| `includes` | 2 | Fragments: one-entity scenes merged onto the root, or onto the inherited entity `onto` names. |
-| `patch` | 2 | Sparse edits to inherited entities, keyed by id: a component member patches, adds the component whole, or removes it as `null`. |
-| `remove` | 2 | Read only: folded into `patch` as `<component>: null`. |
-| `abstract` | 2 | Only ever extended or included: never cooked, never placed. |
+| Member | Meaning |
+|---|---|
+| `entities` | The document's own entities, by stable id. |
+| `instances` | Placements of other scenes, each under a synthetic root whose id is the placement's. |
+| `extends` | A scene whose entities this one adopts, ids and all, with no wrapper. |
+| `includes` | Fragments: one-entity scenes merged onto the root, or onto the inherited entity `onto` names. |
+| `patch` | Sparse edits to inherited entities, keyed by id: a component member patches, adds the component whole, or removes it as `null`. |
+| `abstract` | Only ever extended or included: never cooked, never placed. |
+
+A placement says what it changes with the same `patch`, keyed by the path of
+the source entity it edits, beside `add_entities` and `suppress`, which edit
+the list of entities rather than an entity.
+
+```json5
+{ format_version: 3, extends: "asset://prefabs/guard.sscene",
+  patch: { "00000000000000a1": {
+      Attributes: { attributes: { Health: { base: 200 } } },   // change
+      Light: { color: [1, 0, 0], intensity: 4 },               // add: the base has no Light
+      AudioSource: null } },                                   // remove
+  instances: [ { id: "0000000000000200", source: "asset://prefabs/door.sscene",
+      entity_ids: { "0000000000000001": "0000000000000201" },
+      patch: { "0000000000000001": { responses: { bindings: { struck: null } }, Shadow: null } } } ] }
+```
 
 ## Format versions
 
 `format_version` is the scene source format (`SceneSourceDocument::Version`,
-2). The cooked `.smap` has its own version (`kSmapVersion`, also 2 since it
-gained the presentation section); the two move independently. Composition
-leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
+3). The cooked `.smap` has its own version (`kSmapVersion`, 2 since it gained
+the presentation section); the two move independently. Composition leaves the
+cooked format alone: a derived prefab cooks to an ordinary flat map.
 
-- Both versions read. The `extends`, `includes`, `abstract`, `patch` and
-  `remove` members in a version-1 file are refused, not kept as unknown.
-- The versions differ in one place: an instance patch. Version 1 replaces lists
-  whole and writes `null` as a value; version 2 merges keyed lists by key and
-  `null` removes.
-- **One model.** A placement's `patch` and a derived prefab's `patch` are the
-  only spellings the model holds (`SceneInstanceRecord::Patches`,
-  `SceneSourceDocument::InheritedPatches`). The parser folds the retired
-  members in as it reads: each placement `add` entry is merged into that
-  path's patch, and each `remove` name, a placement's or a prefab's, becomes
-  `<name>: null` there. A name both patched and added, or patched (or added)
-  and removed, is refused with the component and its path. The writer emits
-  `patch` only, so a file Kyusu saves never holds `add` or `remove`. A
-  component-level `null` removes in either version; within a component a
-  version-1 patch still writes `null` as a value.
-- A parsed document keeps the version it was read at, so a version-1 file
-  round-trips byte for byte, and a version-1 source another document places or
-  extends composes by the version-1 rules.
-- Kyusu harvests version 2, so `EditorDocument` moves the document it opens to
-  version 2 (`UpgradeSceneSourceFormat`) and saves it that way. The cook opens
-  the document it cooks the same way. Each instance-patch `null` in an upgraded
-  document is logged, since its meaning changes from a value to a removal; a
-  harvest never wrote one, so only a hand-written patch can hold it.
+- **Only 3 reads.** `ParseSceneSource` refuses 1 and 2 with
+  `format_version 1 is retired: run kyusu_batch --upgrade-scenes on the
+  project`, the way it refuses the retired `.level.json` shape. There is no
+  upgrade in memory: Kyusu, the cook and `SceneSourceCache` all read through
+  the parser, so a file at an old version does not open, cook or place until
+  the tool has rewritten it.
+- **One spelling.** A component edit is a member of `patch`, at both levels
+  (`SceneInstanceRecord::Patches`, `SceneSourceDocument::InheritedPatches`).
+  The members format 2 also read, a placement's `add` and `remove` and a
+  prefab's `remove`, are refused with what to write instead.
+- **What changed from 2.** Format 2 read `add` and `remove` as other spellings
+  of a patch, and format 1 also composed a placement's patch without component
+  schemas, replacing lists whole and writing a `null` inside a component as a
+  value. A component a placement once wrote under `add` replaced the source's
+  whole; written in `patch` it merges into one its source gains later, the
+  placement's values winning field by field (no checked-in file used `add`).
+
+## Upgrading a project
+
+`UpgradeSceneSourceText` (`editor/common/src/scene_source/SceneSourceUpgrade.h`)
+rewrites one file's text at format 3, and `kyusu_batch` runs it over a
+project:
+
+```sh
+kyusu_batch --project <directory> --upgrade-scenes   # rewrite every old scene, one line per file
+kyusu_batch --project <directory> --check-scenes     # change nothing; list each scene not at 3, fail if there is one
+```
+
+Both walk every `.sscene` beneath the directory, skipping hidden directories
+(`.git`, `.cooked`) and CMake build trees (a directory holding
+`CMakeCache.txt`). Each file is reported `upgraded` (with what was folded),
+`current` or `refused` (with why); a refused file is left as it was and makes
+the command fail. Running either again changes nothing.
+
+- The version becomes 3. A file with nothing to fold changes in that one
+  number and nowhere else, whatever its style: the tool edits the number in
+  place and checks the result reads back as the same document.
+- From 1 or 2, each `add` entry is merged into that path's `patch` and each
+  `remove` name becomes `<name>: null` there. A file that folds is written in
+  the canonical style (`Json5Write`), comments kept.
+- Refused, and named: a name both patched and added, or stated and removed; a
+  `null` inside a component of a format 1 placement patch or of any `add`,
+  whose meaning would change from a value to a removal; a format 1 file using
+  members only format 2 had; anything the result would fail to read.
+
+**Running it on a branch.** The cutover restamps one line near the top of each
+scene, so a branch that edited a scene elsewhere merges cleanly. For each live
+branch, in each repository (engine and game alike):
+
+1. Merge or rebase onto the main that holds the cutover. Where a scene file
+   conflicts, take the branch's side of that file whole.
+2. Build `kyusu_batch` from the engine at the cutover (the one engine build).
+3. `kyusu_batch --project <repo root> --upgrade-scenes`. Read the report:
+   every line should say `upgraded` or `current`; a `refused` line names why.
+4. `kyusu_batch --project <repo root> --check-scenes` exits zero. Commit.
+
+A branch that carries its own scene writer changes the number it writes in the
+same commit: a generator or script that writes `format_version: 1` or `2`
+produces files the parser refuses.
 
 ## Composition order
 
@@ -73,13 +123,12 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
 4. **Add the document's own entities and placements.** A local may hang
    beneath an inherited entity.
 
-A version-2 instance patch composes the same way, so a placement can drop an
-inherited response binding by writing `bindings.<key>: null`. A placement's
-removals, the component `null`s in its patch, are held to the same check after
-the rest of its patch applies. A component a placement adds merges into one its
-source gains later: the placement's values win field by field and fields it
-never stated come from the source (the retired `add` replaced the source's
-component whole; no checked-in file used it).
+An instance patch composes the same way, so a placement can drop an inherited
+response binding by writing `bindings.<key>: null`. A placement's removals, the
+component `null`s in its patch, are held to the same check after the rest of
+its patch applies. A component a placement adds merges into one its source
+gains later: the placement's values win field by field and fields it never
+stated come from the source.
 
 **References between a placement's members.** Each placement mints its own
 ids for the source's entities. A component field that names another entity
@@ -101,8 +150,8 @@ deeper than 16 scenes (`CompositionChain`, `docs/assets/composition.md`,
 "Chains of sources"), or a local entity reusing an inherited id, which would
 make every patch and parent naming it ambiguous. Without component rules
 (`ISceneComponentRules`, whose `EntitySchema` is the serializer registry's entity
-schema) every component composes by the version-1 rules and no removal is
-checked.
+schema) every component composes with no schema: objects merge, anything else
+is written whole, `null` removes, and no removal is checked.
 
 **Cost.** One call resolves each source once: extends, fragments and
 placements of a source already resolved in that call copy its result rather

@@ -76,7 +76,7 @@ std::string BaseScene()
             "GameplayTags: {{ tags: [ {{ name: 'Creature.Humanoid', stacks: 1 }}, {{ name: 'Creature.Alive', stacks: 1 }} ] }}, "
             "Light: {{ intensity: 3, range: 5, falloff: {{ curve: 'smooth', power: 2 }} }} }} }},\n",
             Id(0xa0 + i), i == 0 ? std::string() : std::format("parent: '{}',", Id(0xa0)), i);
-    return "{ format_version: 2, entities: [\n" + entities + "] }";
+    return "{ format_version: 3, entities: [\n" + entities + "] }";
 }
 
 std::string Level(std::size_t placements)
@@ -93,7 +93,7 @@ std::string Level(std::size_t placements)
             "patch: {{ '{}': {{ Attributes: {{ attributes: {{ Health: {{ base: {} }} }} }} }} }} }},\n",
             Id(instance), ids, Id(0xa3), 100 + p % 50);
     }
-    return "{ format_version: 2, entities: [], instances: [\n" + instances + "] }";
+    return "{ format_version: 3, entities: [], instances: [\n" + instances + "] }";
 }
 
 double ResolveMilliseconds(const SceneSourceDocument& level, BenchSources& sources, const BenchRules& rules, int reps)
@@ -119,14 +119,14 @@ TEST(SceneCompositionBench, Generate)
 
     BenchSources sources;
     sources.Add("asset://bench/base.sscene", BaseScene());
-    sources.Add("asset://bench/fragment.sscene", R"({ format_version: 2, abstract: true,
+    sources.Add("asset://bench/fragment.sscene", R"({ format_version: 3, abstract: true,
         entities: [ { id: '00000000000000f1', components: { Alertable: { radius: 5 },
             GameplayTags: { tags: [ { name: 'Creature.Alert', stacks: 1 } ] } } } ] })");
-    sources.Add("asset://bench/mid.sscene", std::format(R"({{ format_version: 2, extends: 'asset://bench/base.sscene',
+    sources.Add("asset://bench/mid.sscene", std::format(R"({{ format_version: 3, extends: 'asset://bench/base.sscene',
         includes: [ {{ fragment: 'asset://bench/fragment.sscene' }} ],
         patch: {{ '{}': {{ Attributes: {{ attributes: {{ Health: {{ base: 150 }} }} }} }},
                   '{}': {{ Light: {{ intensity: 6 }} }} }} }})", Id(0xa0), Id(0xa5)));
-    sources.Add("asset://bench/top.sscene", std::format(R"({{ format_version: 2, extends: 'asset://bench/mid.sscene',
+    sources.Add("asset://bench/top.sscene", std::format(R"({{ format_version: 3, extends: 'asset://bench/mid.sscene',
         patch: {{ '{}': {{ GameplayTags: {{ tags: {{ 'Creature.Alive': null }} }} }} }} }})", Id(0xa1)));
     const BenchRules rules;
 

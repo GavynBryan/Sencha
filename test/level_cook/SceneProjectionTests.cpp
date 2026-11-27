@@ -90,7 +90,7 @@ namespace
         [[nodiscard]] std::string HostText() const
         {
             return std::string(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [ { id: '00000000000000aa',
       components: { Transform: { local: { position: [0, 0, 0],
                                           rotation: [0, 0, 0, 1],

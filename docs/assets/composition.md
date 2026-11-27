@@ -21,9 +21,7 @@ composed = Local( Includes( composed(base) ) )
 - **Absent inherits, present overrides.** A member the patch leaves out keeps
   the inherited value. A member it states overrides, even when equal to the
   inherited value.
-- **`null` removes,** under `CompositionNull::Removes`. Removing a required
-  member is `cannot_clear_required`. Under `CompositionNull::IsAValue`
-  (version-1 scene instance patches) `null` is written as a value.
+- **`null` removes.** Removing a required member is `cannot_clear_required`.
 - **Records merge member by member.** Anything else is written whole.
 - **Keyed arrays** merge by key. An array is keyed when its schema names a
   `MergeKey`, or when its element record has exactly one `StableKey` member.
@@ -65,8 +63,8 @@ sources it is resolving in one `CompositionChain`
 ## Patches from a difference
 
 `PatchFrom(baseline, live, schema)` (`core/composition/CompositionPatch.h`) is
-the operator's inverse: composed over `baseline` as a local patch, under
-`CompositionNull::Removes`, its patch gives back `live`, member order aside.
+the operator's inverse: composed over `baseline` as a local patch, its patch
+gives back `live`, member order aside.
 Nothing when the two are equal. Kyusu's harvest uses it, and so does the
 entity patch over a whole entity's record (`docs/gameplay/saves.md`, "The
 entity patch").
@@ -198,10 +196,7 @@ choosing what it extends and includes and whether it is abstract.
 
 Scene composition (`docs/editor/scene-composition.md`) uses the same operator.
 
-- A version-1 instance patch applies through `ApplyCompositionPatch` with no
-  schema and `CompositionNull::IsAValue`: objects merge, anything else is
-  written whole, and `null` is written.
-- A version-2 instance patch, and a prefab's own `patch` over what it extends
-  and includes, compose with `CompositionNull::Removes` and an entity schema
-  built from each component's `IComponentSerializer::CompositionSchema`, so a
-  component's keyed lists merge by key.
+- An instance patch, and a prefab's own `patch` over what it extends and
+  includes, compose with an entity schema built from each component's
+  `IComponentSerializer::CompositionSchema`, so a component's keyed lists merge
+  by key.

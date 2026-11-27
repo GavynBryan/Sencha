@@ -27,7 +27,7 @@ namespace
     }
 
     constexpr std::string_view kTwoEntityScene = R"({
-  format_version: 1,
+  format_version: 3,
   settings: { default_material: 'asset://materials/dev/gray.smat' },
   entities: [
     // the floor
@@ -69,7 +69,7 @@ namespace
     TEST(SceneSourceDocument, InstanceRecordsRoundTrip)
     {
         const SceneSourceDocument doc = ParseOk(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [ { id: '00000000000000aa', components: {} } ],
   instances: [
     {
@@ -79,9 +79,8 @@ namespace
       transform: { position: [5, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       entity_ids: { '0000000000000001': '0000000000000200',
                     '0000000000000002': '0000000000000201' },
-      patch: { '0000000000000001': { PointLight: { intensity: 40 } } },
-      add: { '0000000000000002': { AudioSource: { clip: 'asset://sfx/creak.sclip' } } },
-      remove: { '0000000000000002': ['Shadow'] },
+      patch: { '0000000000000001': { PointLight: { intensity: 40 } },
+               '0000000000000002': { AudioSource: { clip: 'asset://sfx/creak.sclip' }, Shadow: null } },
       add_entities: [
         { id: '0000000000000202', parent_path: '0000000000000001',
           components: { Transform: {} } },
@@ -100,9 +99,9 @@ namespace
         EXPECT_EQ(instance.EntityIds[0].second.Value, 0x200ull);
         ASSERT_EQ(instance.Patches.size(), 2u);
         EXPECT_NE(instance.Patches[0].second.Find("PointLight"), nullptr);
-        EXPECT_NE(instance.Patches[1].second.Find("AudioSource"), nullptr) << "an add is read into the patch";
+        EXPECT_NE(instance.Patches[1].second.Find("AudioSource"), nullptr);
         ASSERT_NE(instance.Patches[1].second.Find("Shadow"), nullptr);
-        EXPECT_TRUE(instance.Patches[1].second.Find("Shadow")->IsNull()) << "a removal is read as null";
+        EXPECT_TRUE(instance.Patches[1].second.Find("Shadow")->IsNull());
         ASSERT_EQ(instance.AddedEntities.size(), 1u);
         EXPECT_EQ(instance.AddedEntities[0].Id.Value, 0x202ull);
         ASSERT_EQ(instance.Suppressed.size(), 1u);
@@ -116,7 +115,7 @@ namespace
     TEST(SceneSourceDocument, RetainsUnknownRootMembersAndComponents)
     {
         const SceneSourceDocument doc = ParseOk(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [
     { id: '00000000000000aa',
       components: {
@@ -146,67 +145,49 @@ namespace
     TEST(SceneSourceDocument, RejectsIdentityViolations)
     {
         // Duplicate id across records.
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [
             { id: '00000000000000aa', components: {} },
             { id: '00000000000000aa', components: {} } ] })")
                       .find("already used"), std::string::npos);
         // A minted instance id colliding with a local entity.
-        EXPECT_NE(ParseFailure(R"({ format_version: 1,
+        EXPECT_NE(ParseFailure(R"({ format_version: 3,
             entities: [ { id: '00000000000000aa', components: {} } ],
             instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
                            entity_ids: { '0000000000000001': '00000000000000aa' } } ] })")
                       .find("already used"), std::string::npos);
         // Runtime-namespace id.
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [
             { id: '8000000000000001', components: {} } ] })")
                       .find("runtime namespace"), std::string::npos);
     }
 
     TEST(SceneSourceDocument, RejectsParentViolations)
     {
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [
             { id: '00000000000000aa', parent: '00000000000000ff', components: {} } ] })")
                       .find("does not exist"), std::string::npos);
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [
             { id: '00000000000000aa', parent: '00000000000000aa', components: {} } ] })")
                       .find("parents itself"), std::string::npos);
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [
             { id: '00000000000000aa', parent: '00000000000000bb', components: {} },
             { id: '00000000000000bb', parent: '00000000000000aa', components: {} } ] })")
                       .find("cycle"), std::string::npos);
     }
 
-    TEST(SceneSourceDocument, RejectsContradictoryOverrides)
-    {
-        const std::string error = ParseFailure(R"({ format_version: 1, entities: [],
-            instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
-                add:    { '0000000000000001': { Shadow: {} } },
-                remove: { '0000000000000001': ['Shadow'] } } ] })");
-        EXPECT_NE(error.find("both added and removed"), std::string::npos) << error;
-        const std::string patchedAndAdded = ParseFailure(R"({ format_version: 2, entities: [],
-            instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
-                patch: { '0000000000000001': { Shadow: { soft: true } } },
-                add:   { '0000000000000001': { Shadow: {} } } } ] })");
-        EXPECT_NE(patchedAndAdded.find("both patched and added"), std::string::npos) << patchedAndAdded;
-        const std::string patchedAndRemoved = ParseFailure(R"({ format_version: 2, entities: [],
-            patch: { '00000000000000a1': { Shadow: { soft: true } } },
-            remove: { '00000000000000a1': ['Shadow'] } })");
-        EXPECT_NE(patchedAndRemoved.find("both patched and removed"), std::string::npos) << patchedAndRemoved;
-    }
-
     TEST(SceneSourceDocument, RejectsMalformedInstanceRecords)
     {
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [],
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
             instances: [ { id: '0000000000000100', source: 'props/door.sscene' } ] })")
                       .find("asset://"), std::string::npos);
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [],
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
             instances: [ { id: '0000000000000100', source: 'asset://door.smesh' } ] })")
                       .find("asset://"), std::string::npos);
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [],
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
             instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
                            entity_ids: { 'not-a-path': '0000000000000200' } } ] })")
                       .find("path"), std::string::npos);
-        EXPECT_NE(ParseFailure(R"({ format_version: 1, entities: [],
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
             instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
                            transform: { position: [1, 2] } } ] })")
                       .find("3 numbers"), std::string::npos);
@@ -214,7 +195,7 @@ namespace
 
     TEST(SceneSourceDocument, AnInstanceNamesItsSourceByIdAndPath)
     {
-        const std::optional<SceneSourceDocument> parsed = ParseSceneSource(R"({ format_version: 1, entities: [],
+        const std::optional<SceneSourceDocument> parsed = ParseSceneSource(R"({ format_version: 3, entities: [],
             instances: [ { id: '0000000000000100',
                            source: { id: '00000000000000d0', path: 'asset://prefabs/door.sscene' } } ] })");
         ASSERT_TRUE(parsed.has_value());
@@ -242,7 +223,7 @@ namespace
     }
 
     constexpr std::string_view kDerivedPrefab = R"({
-  format_version: 2,
+  format_version: 3,
   abstract: true,
   extends: 'asset://prefabs/humanoid.sscene',
   includes: [
@@ -253,15 +234,13 @@ namespace
     { id: '00000000000000c2', parent: '00000000000000a1', components: {} },
   ],
   patch: {
-    '00000000000000a1': { Attributes: { attributes: { Health: { base: 200 }, Stealth: null } } },
+    '00000000000000a1': { Attributes: { attributes: { Health: { base: 200 }, Stealth: null } }, LookOrientation: null },
   },
-  remove: { '00000000000000a1': ['LookOrientation'] },
 })";
 
-    TEST(SceneSourceDocument, AVersionTwoDocumentStatesWhatItExtendsIncludesPatchesAndRemoves)
+    TEST(SceneSourceDocument, ADerivedPrefabStatesWhatItExtendsIncludesPatchesAndRemoves)
     {
         const SceneSourceDocument doc = ParseOk(kDerivedPrefab);
-        EXPECT_EQ(doc.FormatVersion, 2u);
         EXPECT_TRUE(doc.Abstract);
         EXPECT_EQ(doc.Extends, "asset://prefabs/humanoid.sscene");
         ASSERT_EQ(doc.Includes.size(), 2u);
@@ -271,54 +250,48 @@ namespace
         ASSERT_EQ(doc.InheritedPatches.size(), 1u);
         EXPECT_EQ(doc.InheritedPatches[0].first.Value, 0xa1ull);
         ASSERT_NE(doc.InheritedPatches[0].second.Find("LookOrientation"), nullptr);
-        EXPECT_TRUE(doc.InheritedPatches[0].second.Find("LookOrientation")->IsNull()) << "a removal is read as null";
+        EXPECT_TRUE(doc.InheritedPatches[0].second.Find("LookOrientation")->IsNull());
         EXPECT_EQ(doc.Entities[0].Parent.Value, 0xa1ull) << "a local may hang under an inherited entity";
 
         const std::string once = WriteSceneSource(doc);
         const SceneSourceDocument reparsed = ParseOk(once);
         EXPECT_EQ(WriteSceneSource(reparsed), once);
         EXPECT_EQ(reparsed.Includes[1].Onto.Value, 0xc2ull);
-        EXPECT_NE(once.find("format_version: 2"), std::string::npos) << once;
+        EXPECT_NE(once.find("format_version: 3"), std::string::npos) << once;
     }
 
-    TEST(SceneSourceDocument, AVersionOneDocumentStaysVersionOne)
+    TEST(SceneSourceDocument, WithoutABaseAParentMustBeLocal)
     {
-        const SceneSourceDocument doc = ParseOk(kTwoEntityScene);
-        EXPECT_EQ(doc.FormatVersion, 1u);
-        EXPECT_NE(WriteSceneSource(doc).find("format_version: 1"), std::string::npos);
-    }
-
-    TEST(SceneSourceDocument, CompositionMembersNeedVersionTwo)
-    {
-        for (const char* member : { "extends: 'asset://prefabs/a.sscene'", "abstract: true",
-                                    "includes: []", "patch: {}", "remove: {}" })
-        {
-            const std::string error = ParseFailure(
-                std::string("{ format_version: 1, entities: [], ") + member + " }");
-            EXPECT_NE(error.find("format_version 2"), std::string::npos) << member << ": " << error;
-        }
-        EXPECT_NE(ParseFailure("{ format_version: 3, entities: [] }").find("unsupported"), std::string::npos);
-        EXPECT_NE(ParseFailure("{ format_version: 2, entities: [ { id: '00000000000000c2', "
+        EXPECT_NE(ParseFailure("{ format_version: 3, entities: [ { id: '00000000000000c2', "
                                "parent: '00000000000000a1', components: {} } ] }").find("does not exist"),
-                  std::string::npos)
-            << "without a base, a parent must be local";
+                  std::string::npos);
     }
 
-    TEST(SceneSourceDocument, UpgradingAVersionOneDocumentNamesEachInstanceNullItNowRemoves)
+    TEST(SceneSourceDocument, RetiredFormatsAreRefusedWithTheCommandToRun)
     {
-        SceneSourceDocument doc = ParseOk(R"({
-  format_version: 1,
-  entities: [],
-  instances: [
-    { id: '0000000000000100', source: 'asset://props/door.sscene',
-      entity_ids: { '0000000000000001': '0000000000000200' },
-      patch: { '0000000000000001': { PointLight: { intensity: 40, cookie: null } } } },
-  ],
-})");
-        const std::vector<std::string> nulls = UpgradeSceneSourceFormat(doc);
-        EXPECT_EQ(doc.FormatVersion, 2u);
-        EXPECT_EQ(nulls, std::vector<std::string>{ "0000000000000100: 0000000000000001.PointLight.cookie" });
-        EXPECT_NE(WriteSceneSource(doc).find("format_version: 2"), std::string::npos);
-        EXPECT_TRUE(UpgradeSceneSourceFormat(doc).empty()) << "a version-2 document is left as it is";
+        for (const int version : { 1, 2 })
+        {
+            const std::string error = ParseFailure("{ format_version: " + std::to_string(version) + ", entities: [] }");
+            EXPECT_NE(error.find("format_version " + std::to_string(version)
+                                 + " is retired: run kyusu_batch --upgrade-scenes on the project"),
+                      std::string::npos)
+                << error;
+        }
+        EXPECT_NE(ParseFailure("{ format_version: 4, entities: [] }").find("unsupported"), std::string::npos);
+    }
+
+    TEST(SceneSourceDocument, TheRetiredAddAndRemoveSpellingsAreRefused)
+    {
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
+            instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
+                add: { '0000000000000001': { Shadow: {} } } } ] })").find("'add'"),
+                  std::string::npos);
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, entities: [],
+            instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
+                remove: { '0000000000000001': ['Shadow'] } } ] })").find("'remove'"),
+                  std::string::npos);
+        EXPECT_NE(ParseFailure(R"({ format_version: 3, extends: 'asset://prefabs/a.sscene',
+            remove: { '00000000000000a1': ['Shadow'] } })").find("'remove'"),
+                  std::string::npos);
     }
 } // namespace

@@ -377,10 +377,6 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         return false;
     }
 
-    for (const std::string& path : UpgradeSceneSourceFormat(*parsed))
-        Logging.GetLogger<EditorDocument>().Warn(
-            "scene source: {} was written as null, which this version reads as removing it", path);
-
     const auto fail = [&](std::string message)
     {
         Logging.GetLogger<EditorDocument>().Error("scene source: {}", message);
