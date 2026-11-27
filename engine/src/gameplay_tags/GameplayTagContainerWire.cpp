@@ -4,17 +4,8 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <gameplay_tags/GameplayTagWire.h>
 
-std::uint32_t& GameplayTagWireShared::Key(std::size_t index)
-{
-    GameplayTagWireSharedRun* runs[] = { &R0, &R1, &R2, &R3 };
-    return runs[index / kGameplayTagSharedRunLength]->Keys[index % kGameplayTagSharedRunLength];
-}
-
-std::uint32_t GameplayTagWireShared::Key(std::size_t index) const
-{
-    const GameplayTagWireSharedRun* runs[] = { &R0, &R1, &R2, &R3 };
-    return runs[index / kGameplayTagSharedRunLength]->Keys[index % kGameplayTagSharedRunLength];
-}
+#include <algorithm>
+#include <array>
 
 namespace
 {
@@ -25,35 +16,41 @@ const GameplayTagRegistry* TagsOf(const ReplicationWireContext& context)
 }
 
 void ReplicationCodec<GameplayTagContainer>::ToWire(const ReplicationWireContext& context,
-                                                    const GameplayTagContainer& tags, GameplayTagContainerWire& wire)
+                                                    const GameplayTagContainer& tags, ReplicationImage& wire)
 {
-    wire = GameplayTagContainerWire{};
     const GameplayTagRegistry* registry = TagsOf(context);
-    std::size_t owned = 0;
-    std::size_t shared = 0;
+    std::array<GameplayTagOwnedWire, GameplayTagContainer::Capacity> owned{};
+    std::array<GameplayTagSharedWire, GameplayTagContainer::Capacity> shared{};
+    std::size_t ownedCount = 0;
+    std::size_t sharedCount = 0;
     for (std::uint8_t i = 0; i < tags.Count; ++i)
     {
         const std::uint32_t key = WireTag(context, tags.Tags[i]);
         if (key == 0)
             continue;
         if (registry != nullptr && registry->IsReplicatedToAll(tags.Tags[i]))
-        {
-            wire.Shared.Key(shared++) = key;
-            continue;
-        }
-        wire.Owned.Keys[owned] = key;
-        wire.Owned.Counts[owned++] = tags.Counts[i];
+            shared[sharedCount++].Key = key;
+        else
+            owned[ownedCount++] = GameplayTagOwnedWire{ .Key = key, .Count = tags.Counts[i] };
     }
+    std::sort(owned.begin(), owned.begin() + ownedCount,
+              [](const GameplayTagOwnedWire& a, const GameplayTagOwnedWire& b) { return a.Key < b.Key; });
+    std::sort(shared.begin(), shared.begin() + sharedCount,
+              [](const GameplayTagSharedWire& a, const GameplayTagSharedWire& b) { return a.Key < b.Key; });
+    const std::span<GameplayTagSharedWire> sentShared = wire.Resize<GameplayTagSharedWire>(1, sharedCount);
+    std::copy_n(shared.begin(), sentShared.size(), sentShared.begin());
+    const std::span<GameplayTagOwnedWire> sentOwned = wire.Resize<GameplayTagOwnedWire>(0, ownedCount);
+    std::copy_n(owned.begin(), sentOwned.size(), sentOwned.begin());
 }
 
 void ReplicationCodec<GameplayTagContainer>::FromWire(const ReplicationWireContext& context,
-                                                      const GameplayTagContainerWire& wire, GameplayTagContainer& tags)
+                                                      const ReplicationImage& wire, GameplayTagContainer& tags)
 {
     tags.Clear();
-    for (std::size_t i = 0; i < GameplayTagContainer::Capacity; ++i)
-        if (const GameplayTagId tag = LocalTag(context, wire.Owned.Keys[i]); tag.IsValid() && wire.Owned.Counts[i] > 0)
-            (void)tags.Grant(tag, static_cast<std::uint16_t>(wire.Owned.Counts[i]));
-    for (std::size_t i = 0; i < kGameplayTagSharedCapacity; ++i)
-        if (const GameplayTagId tag = LocalTag(context, wire.Shared.Key(i)); tag.IsValid())
+    for (const GameplayTagOwnedWire& sent : wire.List<GameplayTagOwnedWire>(0))
+        if (const GameplayTagId tag = LocalTag(context, sent.Key); tag.IsValid() && sent.Count > 0)
+            (void)tags.Grant(tag, static_cast<std::uint16_t>(sent.Count));
+    for (const GameplayTagSharedWire& sent : wire.List<GameplayTagSharedWire>(1))
+        if (const GameplayTagId tag = LocalTag(context, sent.Key); tag.IsValid())
             (void)tags.Grant(tag);
 }

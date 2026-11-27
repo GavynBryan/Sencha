@@ -285,6 +285,7 @@ protected:
     };
 
     Delta PublishMeasured();
+    std::vector<std::uint64_t> PublishOwedElements(ComponentTypeId type);
     void MeasureMovingActorsDelta(bool wearing);
     void MeasureOwnerChange(std::string_view what, const std::function<void()>& change);
 
@@ -1612,6 +1613,58 @@ SENCHA_EQUIPMENT_SEED_TEST(32, bare, observer)
 SENCHA_EQUIPMENT_SEED_TEST(32, worn, observer)
 #undef SENCHA_EQUIPMENT_SEED_TEST
 
+std::vector<std::uint64_t> AbilityReplication::PublishOwedElements(ComponentTypeId type)
+{
+    const std::vector<std::byte> bytes = Write();
+    const NetEntityId id = Identity.TryFind(Actor);
+    const ReplicationChangeStore::EntityState* entity = Changes.Find(id);
+    const std::uint64_t floor = Peer.Floor(id);
+    std::vector<std::uint64_t> elements;
+    for (const ReplicationChangeStore::ComponentState& held : entity->Components)
+        if (Layout.At(held.WireIndex)->Type == type)
+            (void)ReplicationOwedFields(*Layout.At(held.WireIndex), held, floor, entity->OwnerChangedAt > floor,
+                                        entity->Owner == ClientPeer, &elements);
+    Apply(bytes);
+    return elements;
+}
+
+TEST_F(AbilityReplication, ATagChangeSendsOneElement)
+{
+    ClientPeer = kOwner;
+    ShippingPawn();
+    Authority.Entities.RemoveComponent<NetSpawnPrefab>(Actor);
+    (void)Publish();
+    (void)Publish();
+    ASSERT_TRUE(Remote().IsValid());
+    const GameplayTagId charged = Authority.Entities.GetResource<GameplayTagRegistry>().FindTag("State.Charged");
+    (void)Authority.Entities.TryGet<GameplayTagContainer>(Actor)->Grant(charged);
+    const std::vector<std::uint64_t> owed = PublishOwedElements(ResolveComponentTypeId<GameplayTagContainer>());
+    EXPECT_EQ(std::ranges::count_if(owed, [](std::uint64_t runs) { return runs != 0; }), 1)
+        << "a tag gaining a stack resends that tag alone";
+    EXPECT_NE(std::ranges::find(owed, std::uint64_t{ 0b10 }), owed.end()) << "and of it, its count alone";
+    EXPECT_EQ(Client.Entities.TryGet<GameplayTagContainer>(Remote())->StackCount(
+                  Client.Entities.GetResource<GameplayTagRegistry>().FindTag("State.Charged")),
+              2u);
+}
+
+TEST_F(AbilityReplication, AnAttributeChangeSendsOneValue)
+{
+    ClientPeer = kOwner;
+    ShippingPawn();
+    Authority.Entities.RemoveComponent<NetSpawnPrefab>(Actor);
+    (void)Publish();
+    (void)Publish();
+    ASSERT_TRUE(Remote().IsValid());
+    const AttributeId health = Authority.Entities.GetResource<AttributeRegistry>().FindAttribute("Health");
+    *Authority.Entities.TryGet<AttributeSet>(Actor)->CurrentPtr(health) = 42.0f;
+    const std::vector<std::uint64_t> owed = PublishOwedElements(ResolveComponentTypeId<AttributeSet>());
+    EXPECT_EQ(std::ranges::count_if(owed, [](std::uint64_t runs) { return runs != 0; }), 1)
+        << "one attribute's value resends that attribute alone";
+    EXPECT_NE(std::ranges::find(owed, std::uint64_t{ 0b100 }), owed.end()) << "and of it, its current value alone";
+    const AttributeSet* held = Client.Entities.TryGet<AttributeSet>(Remote());
+    EXPECT_FLOAT_EQ(held->GetCurrent(Client.Entities.GetResource<AttributeRegistry>().FindAttribute("Health")), 42.0f);
+}
+
 // Measured, not asserted; scripts/bench_replication.sh records it.
 void AbilityReplication::MeasureFullPawnsOwnerSeed(std::size_t grants)
 {
@@ -1676,9 +1729,10 @@ AbilityReplication::Delta AbilityReplication::PublishMeasured()
             != 0)
             continue;
         ++delta.Empty;
-        delta.EmptyBits += ReplicationSnapshotWire::ComponentIndexBits + component.Fields.size();
+        const std::size_t maskBits = component.Fields.size() + component.Lists.size();
+        delta.EmptyBits += ReplicationSnapshotWire::ComponentIndexBits + maskBits;
         delta.EmptyNames += std::string(delta.EmptyNames.empty() ? "" : " ") + std::string(component.Name) + "("
-                          + std::to_string(component.Fields.size()) + ")";
+                          + std::to_string(maskBits) + ")";
     }
     Apply(bytes);
     Client.Presenter->Present(Client.Entities, Now);

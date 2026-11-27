@@ -4,12 +4,12 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagContainerWire.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <net/ReplicationLayout.h>
 #include <net/ReplicationCodec.h>
+#include <net/ReplicationImage.h>
+#include <net/ReplicationLayout.h>
 #include <net/ReplicationWireContext.h>
 
 #include <algorithm>
-#include <bit>
 #include <format>
 #include <string>
 #include <vector>
@@ -57,71 +57,84 @@ namespace
         return tags;
     }
 
-    // What a peer that does not own the actor would be sent on first sight.
-    std::uint64_t RunsSentToEveryone(const ReplicatedComponent& component, const GameplayTagContainerWire& wire)
+    struct TagLayout
     {
-        const std::span<const std::byte> image{ reinterpret_cast<const std::byte*>(&wire), sizeof(wire) };
-        return ReplicationChangedFields(component, image, component.WireDefault)
-             & ReplicationVisibleFields(component, false);
+        ReplicationLayout Layout;
+        const ReplicatedComponent* Component = nullptr;
+
+        TagLayout()
+        {
+            EXPECT_TRUE(Layout.AddCodec<GameplayTagContainer>()) << Layout.ErrorDetail();
+            Component = Layout.Find(ResolveComponentTypeId<GameplayTagContainer>());
+        }
+    };
+
+    GameplayTagContainer RoundTrip(const ReplicatedComponent& component, const TagMachine& from, const TagMachine& to,
+                                   const GameplayTagContainer& sent)
+    {
+        ReplicationImage image(component);
+        ReplicationCodec<GameplayTagContainer>::ToWire(from.Context(), sent, image);
+        GameplayTagContainer received;
+        ReplicationCodec<GameplayTagContainer>::FromWire(to.Context(), image, received);
+        return received;
     }
 }
 
 TEST(GameplayTagContainerWire, EveryTagAContainerCanHoldReachesEveryone)
 {
+    TagLayout tags;
     const std::size_t all = GameplayTagContainer::Capacity;
     const TagMachine authority(all, 0);
     const TagMachine client(all, 0, true);
-
-    GameplayTagContainerWire wire;
-    ReplicationCodec<GameplayTagContainer>::ToWire(authority.Context(), Holding(authority, all, 0), wire);
-    GameplayTagContainer received;
-    ReplicationCodec<GameplayTagContainer>::FromWire(client.Context(), wire, received);
-
-    ASSERT_EQ(received.Size(), all);
+    const GameplayTagContainer received = RoundTrip(*tags.Component, authority, client, Holding(authority, all, 0));
+    ASSERT_EQ(received.Count, all);
     for (std::size_t i = 0; i < all; ++i)
-        EXPECT_TRUE(received.HasExact(client.Find(std::format("Shared.T{}", i)))) << "Shared.T" << i;
+        EXPECT_EQ(received.StackCount(client.Find(std::format("Shared.T{}", i))), 1u) << i;
 }
 
 TEST(GameplayTagContainerWire, OwnedAndSharedHalvesRoundTripTogether)
 {
+    TagLayout tags;
     const TagMachine authority(20, 12);
     const TagMachine client(20, 12, true);
-
-    GameplayTagContainerWire wire;
-    ReplicationCodec<GameplayTagContainer>::ToWire(authority.Context(), Holding(authority, 20, 12), wire);
-    GameplayTagContainer received;
-    ReplicationCodec<GameplayTagContainer>::FromWire(client.Context(), wire, received);
-
-    EXPECT_EQ(received.Size(), 32u);
-    for (std::size_t i = 0; i < 20; ++i)
-        EXPECT_TRUE(received.HasExact(client.Find(std::format("Shared.T{}", i))));
+    const GameplayTagContainer received = RoundTrip(*tags.Component, authority, client, Holding(authority, 20, 12));
+    EXPECT_EQ(received.Count, 32u);
     for (std::size_t i = 0; i < 12; ++i)
-        EXPECT_EQ(received.StackCount(client.Find(std::format("Owned.T{}", i))), i + 2);
+        EXPECT_EQ(received.StackCount(client.Find(std::format("Owned.T{}", i))), i + 2) << i;
+    for (std::size_t i = 0; i < 20; ++i)
+        EXPECT_EQ(received.StackCount(client.Find(std::format("Shared.T{}", i))), 1u) << i;
 }
 
-TEST(GameplayTagContainerWire, AFewSharedTagsSendOnlyTheFirstRun)
+TEST(GameplayTagContainerWire, TwoMachinesWriteOneImageForOneSet)
 {
-    ReplicationLayout layout;
-    ASSERT_TRUE(layout.AddCodec<GameplayTagContainer>());
-    const ReplicatedComponent* component = layout.Find(ResolveComponentTypeId<GameplayTagContainer>());
-    ASSERT_NE(component, nullptr);
+    TagLayout tags;
+    const TagMachine authority(6, 6);
+    const TagMachine client(6, 6, true);
+    ASSERT_NE(authority.Find("Owned.T0"), client.Find("Owned.T0"));
+    ReplicationImage sent(*tags.Component);
+    ReplicationCodec<GameplayTagContainer>::ToWire(authority.Context(), Holding(authority, 6, 6), sent);
+    ReplicationImage mirrored(*tags.Component);
+    ReplicationCodec<GameplayTagContainer>::ToWire(client.Context(), Holding(client, 6, 6), mirrored);
+    EXPECT_TRUE(std::ranges::equal(sent.Bytes(), mirrored.Bytes()))
+        << "a receiver stages its own image under the authority's, position for position";
+}
+
+TEST(GameplayTagContainerWire, AFewSharedTagsCostOnlyThemselves)
+{
+    TagLayout tags;
+    const ReplicatedComponent& component = *tags.Component;
     const TagMachine authority(GameplayTagContainer::Capacity, 0);
+    const std::uint64_t sharedBit = std::uint64_t{ 1 } << (component.Fields.size() + 1);
+    EXPECT_EQ(ReplicationVisibleFields(component, false), sharedBit) << "another peer sees the shared half alone";
 
-    const auto sentFor = [&](std::size_t shared) {
-        GameplayTagContainerWire wire;
-        ReplicationCodec<GameplayTagContainer>::ToWire(authority.Context(), Holding(authority, shared, 0), wire);
-        return RunsSentToEveryone(*component, wire);
-    };
-
-    EXPECT_EQ(sentFor(0), 0u) << "an actor showing nothing sends no run";
-    for (std::size_t shared = 1; shared <= GameplayTagContainer::Capacity; ++shared)
+    for (std::size_t shared = 0; shared <= GameplayTagContainer::Capacity; ++shared)
     {
-        const std::size_t runs = (shared + kGameplayTagSharedRunLength - 1) / kGameplayTagSharedRunLength;
-        const std::uint64_t sent = sentFor(shared);
-        EXPECT_EQ(std::popcount(sent), static_cast<int>(runs)) << shared << " shared tags";
-        const GameplayTagContainerWire none{};
-        EXPECT_EQ(ReplicationEncodedComponentBits(*component, std::as_bytes(std::span(&none, 1)), sent),
-                  component->Fields.size() + runs * kGameplayTagSharedRunLength * 32u)
-            << shared << " shared tags cost the mask and their runs, nothing more";
+        ReplicationImage image(component);
+        ReplicationCodec<GameplayTagContainer>::ToWire(authority.Context(), Holding(authority, shared, 0), image);
+        ASSERT_EQ(image.Count(1), shared);
+        const std::vector<std::uint64_t> elements(shared, 1);
+        EXPECT_EQ(ReplicationEncodedComponentBits(component, image.Bytes(), sharedBit, elements),
+                  2u + NetVarUIntBits(shared) + shared * (1u + 32u))
+            << shared << " shared tags cost the mask, the count and themselves, nothing more";
     }
 }

@@ -186,8 +186,8 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 
 // The wire contract: two builds refuse each other unless these agree. Moving
 // it is a deliberate act with a reason, never a side effect: the last move sent
-// ability grants and equipment records as replicated lists.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0x411986E91975FBE4ULL;
+// gameplay tags and attributes as replicated lists, after grants and equipment.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x418C2B35C04CC7D7ULL;
 
 struct EngineVocabulary
 {

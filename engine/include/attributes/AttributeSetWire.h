@@ -1,61 +1,39 @@
 #pragma once
 
 #include <attributes/AttributeSet.h>
-#include <core/metadata/ScalarGroup.h>
 #include <core/metadata/TypeSchema.h>
 #include <net/ReplicationLayout.h>
 
 #include <cstdint>
 
-// Each attribute by its name's wire key.
-struct AttributeSetWireKeys
+// An attribute by its name's wire key, with its values.
+struct AttributeWire
 {
-    std::uint32_t Values[AttributeSet::Capacity] = {};
-};
-
-struct AttributeSetWireValues
-{
-    float Values[AttributeSet::Capacity] = {};
-};
-
-// An actor's attributes go to its owner alone, who predicts with them.
-struct AttributeSetWire
-{
-    AttributeSetWireKeys Keys;
-    AttributeSetWireValues Base;
-    AttributeSetWireValues Current;
+    std::uint32_t Key = 0;
+    float Base = 0.0f;
+    float Current = 0.0f;
 };
 
 template <>
-struct PackedScalarGroup<AttributeSetWireKeys>
+struct TypeSchema<AttributeWire>
 {
-    static constexpr std::size_t Count = AttributeSet::Capacity;
-    using Component = std::uint32_t;
-};
-
-template <>
-struct PackedScalarGroup<AttributeSetWireValues>
-{
-    static constexpr std::size_t Count = AttributeSet::Capacity;
-    using Component = float;
-};
-
-template <>
-struct TypeSchema<AttributeSetWire>
-{
-    static constexpr std::string_view Name = "attribute_set_wire";
+    static constexpr std::string_view Name = "attribute_wire";
     static auto Fields()
     {
-        return std::tuple{ MakeField("keys", &AttributeSetWire::Keys).OwnerOnly(),
-                           MakeField("base", &AttributeSetWire::Base).OwnerOnly(),
-                           MakeField("current", &AttributeSetWire::Current).OwnerOnly() };
+        return std::tuple{ MakeField("key", &AttributeWire::Key).OwnerOnly(),
+                           MakeField("base", &AttributeWire::Base).OwnerOnly(),
+                           MakeField("current", &AttributeWire::Current).OwnerOnly() };
     }
 };
 
+// An actor's attributes go to its owner alone, who predicts with them, in
+// wire-key order, which every machine computes alike from the same attributes.
 template <>
 struct ReplicationCodec<AttributeSet>
 {
-    using Wire = AttributeSetWire;
-    static void ToWire(const ReplicationWireContext& context, const AttributeSet& set, AttributeSetWire& wire);
-    static void FromWire(const ReplicationWireContext& context, const AttributeSetWire& wire, AttributeSet& set);
+    using Wire = ReplicationNoHead;
+    using Lists = std::tuple<ReplicatedListOf<AttributeWire, AttributeSet::Capacity>>;
+    static constexpr std::string_view ListNames[] = { "attributes" };
+    static void ToWire(const ReplicationWireContext& context, const AttributeSet& set, ReplicationImage& wire);
+    static void FromWire(const ReplicationWireContext& context, const ReplicationImage& wire, AttributeSet& set);
 };

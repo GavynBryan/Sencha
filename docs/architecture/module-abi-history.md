@@ -1936,3 +1936,21 @@ per" asserts, `kAbilityGrantsPerWirePage`, `kAbilityGrantWirePages` and
 `kEquipmentSourcesPerWireRun` go. The replication table hash moves, and the
 list grammar now reaches the wire, so `kNetProtocolVersion` is 12. Save and
 scene formats are unchanged.
+
+## v94
+
+`GameplayTagContainer` and `AttributeSet` cross as replicated lists, and both
+stay fixed rows. The tag image is two lists of up to
+`GameplayTagContainer::Capacity`: `owned` (`GameplayTagOwnedWire`: key and
+count, owner-only) and `shared` (`GameplayTagSharedWire`: key, everyone); the
+attribute image is one list of up to `AttributeSet::Capacity` `AttributeWire`
+(key, base, current, owner-only). Each list is written in wire-key order, which
+every machine computes alike, so a receiver stages its own image position for
+position under the authority's. A component made of lists alone names
+`ReplicationNoHead` as its `Wire`. `GameplayTagContainerWire`,
+`GameplayTagWireOwned`, `GameplayTagWireShared` with its `R0..R3` and `Key()`,
+`GameplayTagWireSharedRun`, `kGameplayTagSharedRunLength`,
+`kGameplayTagSharedCapacity`, `AttributeSetWire`, `AttributeSetWireKeys` and
+`AttributeSetWireValues` go. The replication table hash moves; the net
+protocol stays 12, which this series introduced. Save and scene formats are
+unchanged.

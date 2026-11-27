@@ -771,6 +771,15 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   the layout's most, whatever a peer says. `ReplicationFoldVisible` folds each
   visible list's count and each element's visible runs.
 
+  Positional order means the receiver's own image must list a value's
+  elements in the order the authority does. A codec whose storage order is a
+  per-World id (tags and attributes are id-sorted, and ids are registration
+  order) writes its list in wire-key order instead, which every machine
+  computes alike. The engine's list components: `AbilityGrants` (grants, in
+  grant order), `EquipmentState` (records), `GameplayTagContainer` (owned and
+  shared tags) and `AttributeSet` (attributes). A component of lists alone
+  names `ReplicationNoHead` as its `Wire`.
+
 There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
 puts one component into storage, the scene serializers, and the replicated table at
 once, deciding each from what that component's own `TypeSchema` declares. The engine

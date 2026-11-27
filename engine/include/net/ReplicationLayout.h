@@ -87,6 +87,18 @@ struct ReplicatedList
 
 inline constexpr std::size_t kMaxReplicatedRunsPerListElement = 8;
 
+// The `Wire` of a codec whose component is its lists alone.
+struct ReplicationNoHead
+{
+};
+
+template <>
+struct TypeSchema<ReplicationNoHead>
+{
+    static constexpr std::string_view Name = "replication_no_head";
+    static auto Fields() { return std::tuple{}; }
+};
+
 template <typename Element, std::size_t Most>
 struct ReplicatedListOf
 {

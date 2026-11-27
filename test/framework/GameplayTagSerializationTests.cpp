@@ -194,7 +194,9 @@ TEST(GameplayTagSerialization, AContainerDecodedFromTheWireHoldsNoBaselineAndSav
     GameplayTagContainer held{};
     held.GrantBaseline(humanoid);
     held.Grant(burning, 2);
-    GameplayTagContainerWire wire;
+    ReplicationLayout layout;
+    ASSERT_TRUE(layout.AddCodec<GameplayTagContainer>());
+    ReplicationImage wire(*layout.Find(ResolveComponentTypeId<GameplayTagContainer>()));
     ReplicationCodec<GameplayTagContainer>::ToWire(
         ReplicationWireContext{ .Entities = &authority, .Entity = {}, .Authority = nullptr, .Client = nullptr, .Unresolved = nullptr },
         held, wire);

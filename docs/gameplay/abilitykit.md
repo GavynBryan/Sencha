@@ -596,14 +596,20 @@ key and binding together, found in the owner's own interned entries, so two gran
 of one ability under one key and bound apart stay apart; a grant whose entry the
 owner has not interned is held but bound to no input, and a table refuses to
 intern a second entry of one ability with the same wire key; each grant's source
-as a wire entity), `AttributeSet` (attributes by name)
-and `GameplayTagContainer`. Tags declared `replicate_to_all` in a
+as a wire entity), `AttributeSet` (a replicated list of its attributes by name,
+each a key, base and current value, so a value changing resends that value
+alone) and `GameplayTagContainer` (a replicated list of its tags by wire key
+with their stack counts, so a tag gaining a stack resends its count alone).
+Both lists are written in wire-key order, not in the container's id order:
+ids are each World's registration order, so only the wire key gives two
+machines the same order for the same tags, which a receiver needs to stage its
+own image under the authority's. Tags declared `replicate_to_all` in a
 `gameplay.tag_declarations` asset (or marked by `SetReplicatedToAll`) go to every
-machine instead, without their stack counts: what other players' presentation
-reads, such as `Weapon.Firing`. The shared half holds as many tags as a
-container can (`kGameplayTagSharedCapacity`), so none is ever dropped, in runs
-of `kGameplayTagSharedRunLength`; a run still empty is not sent, so an actor
-showing eight tags or fewer costs what one run does.
+machine instead, in a second list without their stack counts: what other
+players' presentation reads, such as `Weapon.Firing`. It holds as many tags as
+a container can, so none is ever dropped, and an actor showing a few tags
+costs a peer those few. Both stay fixed rows of 32 tags and 16 attributes; the
+wire follows `GameplayTagContainer::Capacity` and `AttributeSet::Capacity`.
 `ActorTimeLeases` go to everyone, so a remote machine animates a dilated actor at
 its scale; each machine runs the actor clock from them.
 

@@ -52,10 +52,6 @@ struct Ledger
     std::uint32_t Amounts[8] = {};
 };
 
-struct LedgerHeadWire
-{
-};
-
 struct HugeElementWire
 {
     std::uint64_t A = 0;
@@ -100,13 +96,6 @@ struct TypeSchema<Ledger>
 {
     static constexpr std::string_view Name = "test.Ledger";
     static auto Fields() { return std::tuple{ MakeField("count", &Ledger::Count) }; }
-};
-
-template <>
-struct TypeSchema<LedgerHeadWire>
-{
-    static constexpr std::string_view Name = "test.LedgerHeadWire";
-    static auto Fields() { return std::tuple{}; }
 };
 
 template <>
@@ -166,7 +155,7 @@ struct ReplicationCodec<Roster>
 template <>
 struct ReplicationCodec<Ledger>
 {
-    using Wire = LedgerHeadWire;
+    using Wire = ReplicationNoHead;
     using Lists = std::tuple<ReplicatedListOf<LedgerLineWire, 8>>;
     static constexpr std::string_view ListNames[] = { "lines" };
 
@@ -189,7 +178,7 @@ struct ReplicationCodec<Ledger>
 template <>
 struct ReplicationCodec<Huge>
 {
-    using Wire = LedgerHeadWire;
+    using Wire = ReplicationNoHead;
     using Lists = std::tuple<ReplicatedListOf<HugeElementWire, 200>>;
     static constexpr std::string_view ListNames[] = { "elements" };
     static void ToWire(const ReplicationWireContext&, const Huge&, ReplicationImage&) {}
