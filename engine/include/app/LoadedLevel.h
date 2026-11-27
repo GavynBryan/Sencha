@@ -1,5 +1,6 @@
 #pragma once
 
+#include <app/LevelReference.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <ecs/EntityId.h>
 #include <core/console/ConsoleTypes.h>
@@ -39,6 +40,16 @@ struct RuntimeZoneRecord;
 // The play zone is a convention of the cooked format rather than a choice:
 // partition zero is persistent, and a single loaded scene occupies zone one.
 //=============================================================================
+enum class LevelResidency : std::uint8_t
+{
+    Unloaded,
+    Loading,
+    // The play zone, or the world's focus zone, is resident.
+    Resident,
+    // A scene load was accepted and then failed; the zone loader logged why.
+    Failed,
+};
+
 class LoadedLevel
 {
 public:
@@ -67,10 +78,16 @@ public:
 
     // Where a level's collision goes. Called once the schedule is known,
     // because physics is a game's choice: a game without it never calls this
-    // and the cells a level carried are dropped at unload.
+    // and the cells a level carried are dropped at unload. The connection
+    // lasts across unloads.
     void ConnectCollision(CollisionShapeCache& shapes);
 
     [[nodiscard]] bool IsLoaded() const;
+
+    // What the last accepted LoadScene or LoadWorld named, until Unload.
+    [[nodiscard]] const std::optional<LevelReference>& Loaded() const { return Current; }
+    [[nodiscard]] LevelResidency Residency() const;
+    [[nodiscard]] bool IsCooked(const LevelReference& level) const;
 
     // The zone a loaded scene occupies, or the world's focus zone. Invalid
     // with nothing loaded.
@@ -90,6 +107,7 @@ private:
     // root's. Levels come from one root today; when they can come from several,
     // the scene has to say which one it was loaded from.
     [[nodiscard]] std::string CookedRoot() const;
+    [[nodiscard]] std::string WorldManifestPath(std::string_view worldName) const;
 
     Engine& Host;
     RuntimeContent& Content;
@@ -104,6 +122,7 @@ private:
     // True once a scene load has been accepted, so a second one is refused
     // rather than layered onto the first.
     bool SceneLoaded = false;
+    std::optional<LevelReference> Current;
     // Entities a world scene imported into the persistent partition. Recorded
     // because the partition also holds whatever the game spawned there, and
     // unload owns only what it loaded.

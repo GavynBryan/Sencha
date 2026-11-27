@@ -77,6 +77,15 @@ struct ParticipantBodyChange
     ParticipantControlChange Control;
 };
 
+struct ParticipantBodyRelease
+{
+    bool Released = false;
+    EntityId Participant;
+    EntityId ReleasedSubject;
+    EntityId Body;
+    bool BodyReaped = false;
+};
+
 enum class ParticipantRetirementStatus : std::uint8_t
 {
     Retired,
@@ -123,9 +132,12 @@ public:
     ParticipantControlChange SetControlSubject(
         World& world, EntityId participant, EntityId subject);
 
-    // Releases control, applies the body-reap policy, and destroys only the
-    // participant and (when approved) its body. The control subject is never
-    // destroyed. Structural.
+    // Releases control, applies the body-reap policy, and leaves the participant
+    // waiting for a body, which RequestBody gives it again. The control subject
+    // is never destroyed. Structural.
+    ParticipantBodyRelease ReleaseBody(World& world, EntityId participant);
+
+    // Structural.
     ParticipantRetirement Retire(World& world, EntityId participant);
 
 private:

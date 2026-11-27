@@ -2,12 +2,10 @@
 
 #include <assets/texture/ImageLoader.h>
 #include <assets/texture/PngEncoding.h>
-#include <core/io/FileBytes.h>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <filesystem>
 #include <vector>
 
 namespace
@@ -44,16 +42,4 @@ TEST(PngEncoding, ASizeThatDisagreesWithThePixelsEncodesNothing)
 {
     EXPECT_TRUE(EncodePngRgba8(4, 4, Checker(5, 3)).empty());
     EXPECT_TRUE(EncodePngRgba8(0, 3, {}).empty());
-}
-
-TEST(FileBytes, WhatIsWrittenReadsBack)
-{
-    const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "sencha_file_bytes_round_trip.bin";
-    const std::vector<std::byte> bytes{ std::byte{ 1 }, std::byte{ 0 }, std::byte{ 255 } };
-    ASSERT_TRUE(WriteFileBytes(path, bytes));
-    std::vector<std::byte> read;
-    ASSERT_TRUE(ReadFileBytes(path, read));
-    EXPECT_EQ(read, bytes);
-    std::filesystem::remove(path);
 }

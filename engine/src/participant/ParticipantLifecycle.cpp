@@ -316,41 +316,47 @@ ParticipantBodyChange ParticipantLifecycle::Bind(
     return result;
 }
 
-ParticipantRetirement ParticipantLifecycle::Retire(
-    World& world, EntityId participant)
+ParticipantBodyRelease ParticipantLifecycle::ReleaseBody(World& world, EntityId participant)
 {
-    ParticipantRetirement result;
+    ParticipantBodyRelease result;
     result.Participant = participant;
-    if (!TracksParticipants(world) || !participant.IsValid()
-        || !world.IsAlive(participant)
-        || world.TryGet<ParticipantControl>(participant) == nullptr)
-    {
+    if (!TracksParticipants(world) || !participant.IsValid() || !world.IsAlive(participant))
         return result;
-    }
+    const ParticipantControl* held = world.TryGet<ParticipantControl>(participant);
+    if (held == nullptr)
+        return result;
 
-    EntityId body;
-    EntityId subject;
-    if (const ParticipantControl* held = world.TryGet<ParticipantControl>(participant))
-    {
-        body = held->Body;
-        subject = held->ControlSubject;
-    }
-
+    const EntityId body = held->Body;
+    result.ReleasedSubject = held->ControlSubject;
     bool reap = body.IsValid() && world.IsAlive(body);
     if (reap && Policy.ReapBody)
         reap = Policy.ReapBody(world, participant, body);
 
     (void)SetControlSubject(world, participant, EntityId{});
-    world.DestroyEntity(participant);
+    if (ParticipantControl* control = world.TryGet<ParticipantControl>(participant))
+        control->Body = EntityId{};
 
     if (reap && world.IsAlive(body))
     {
         world.DestroyEntity(body);
         result.BodyReaped = true;
     }
-
-    result.Status = ParticipantRetirementStatus::Retired;
-    result.ReleasedSubject = subject;
+    result.Released = true;
     result.Body = body;
+    return result;
+}
+
+ParticipantRetirement ParticipantLifecycle::Retire(World& world, EntityId participant)
+{
+    const ParticipantBodyRelease release = ReleaseBody(world, participant);
+    ParticipantRetirement result;
+    result.Participant = participant;
+    if (!release.Released)
+        return result;
+    world.DestroyEntity(participant);
+    result.Status = ParticipantRetirementStatus::Retired;
+    result.ReleasedSubject = release.ReleasedSubject;
+    result.Body = release.Body;
+    result.BodyReaped = release.BodyReaped;
     return result;
 }

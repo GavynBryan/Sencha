@@ -1,6 +1,7 @@
 #include "TemplateModuleRun.h"
 
 #include <anim/AnimContentSystem.h>
+#include <app/LevelChange.h>
 #include <anim/AnimFactProviders.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
@@ -15,7 +16,10 @@
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <world/RuntimeWorld.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
+
+#include <vector>
 
 //=============================================================================
 // The FPS template's composition, observed from inside a headless run: one
@@ -160,5 +164,91 @@ TEST(FpsTemplate, ABumperAuthoredAsATriggerVolumeLaunchesThePawnThatLandsOnIt)
     EXPECT_TRUE(seen.SensorCooked) << "the trigger volume did not cook to a sensor";
     EXPECT_GE(seen.Activations, 1u) << "the pawn landed on the bumper and nothing activated";
     EXPECT_GT(seen.HighestRise, 6.0f) << "the pawn was never launched";
+}
+
+// The same level loaded again through the engine's level change: the player
+// keeps their participant and is given a new body, and what the level lost
+// before the change is authored again after it.
+namespace
+{
+    struct LevelChangeProbe
+    {
+        Engine* Host = nullptr;
+        int Frames = 0;
+        EntityId Participant;
+        EntityId BodyBefore;
+        EntityId BodyAfter;
+        std::size_t AuthoredBefore = 0;
+        std::size_t AuthoredAfter = 0;
+        LevelChangeAdmission Admission = LevelChangeAdmission::Busy;
+        LevelChangeStatus StatusOnRequest = LevelChangeStatus::Idle;
+        std::vector<LevelChangeStatus> Seen;
+
+        static std::size_t Authored(const World& world)
+        {
+            std::size_t count = 0;
+            if (world.IsRegistered<PersistentIdComponent>())
+                world.ForEachComponent<PersistentIdComponent>([&](EntityId, const PersistentIdComponent&) { ++count; });
+            return count;
+        }
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            World& world = ctx.Entities;
+            ++Frames;
+            const LevelChangeStatus status = Host->LevelChanges().Status();
+            if (Seen.empty() || Seen.back() != status)
+                Seen.push_back(status);
+
+            EntityId participant;
+            EntityId body;
+            world.ForEachComponent<ParticipantControl>([&](EntityId entity, const ParticipantControl& control) {
+                participant = entity;
+                body = control.Body;
+            });
+
+            if (Frames == 120)
+            {
+                Participant = participant;
+                BodyBefore = body;
+                AuthoredBefore = Authored(world);
+                EntityId lost;
+                world.ForEachComponent<PersistentIdComponent>([&](EntityId entity, const PersistentIdComponent&) {
+                    if (!lost.IsValid() && entity != body)
+                        lost = entity;
+                });
+                if (lost.IsValid())
+                    world.DestroyEntity(lost);
+                Admission = Host->LevelChanges().Request(
+                    LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } });
+                StatusOnRequest = Host->LevelChanges().Status();
+            }
+            if (status == LevelChangeStatus::BodiesRestored && !BodyAfter.IsValid())
+            {
+                BodyAfter = body;
+                AuthoredAfter = Authored(world);
+            }
+        }
+    };
+}
+
+TEST(FpsTemplate, AChangeToTheSameLevelGivesThePlayerAFreshBodyAndAuthoredContentBack)
+{
+    TemplateModuleRun<LevelChangeProbe> run(
+        TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets",
+        "levels/room_2", 480);
+    ASSERT_TRUE(run.Loaded());
+    ASSERT_EQ(run.Exit(), 0);
+
+    const LevelChangeProbe& seen = run.Seen();
+    ASSERT_EQ(seen.Admission, LevelChangeAdmission::Accepted);
+    ASSERT_TRUE(seen.BodyBefore.IsValid()) << "no body to let go of by frame 120";
+    EXPECT_EQ(seen.StatusOnRequest, LevelChangeStatus::Pending) << "carried out before the phase it waits for";
+    const std::vector<LevelChangeStatus> expected{ LevelChangeStatus::Idle, LevelChangeStatus::Loading,
+                                                   LevelChangeStatus::Resident, LevelChangeStatus::BodiesRestored };
+    EXPECT_EQ(seen.Seen, expected);
+    EXPECT_TRUE(seen.BodyAfter.IsValid());
+    EXPECT_NE(seen.BodyAfter, seen.BodyBefore) << "the old body was kept";
+    EXPECT_EQ(seen.AuthoredAfter, seen.AuthoredBefore) << "what the level lost stayed lost";
 }
 #endif

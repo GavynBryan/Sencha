@@ -225,7 +225,7 @@ bool ReadCondition(const JsonValue& authored, std::string_view where, SequenceCo
     }
     if (const JsonValue* query = authored.Find("query"))
     {
-        if (!OnlyMembers(authored, { "query", "arguments", "expect" }, where, errors))
+        if (!OnlyMembers(authored, { "query", "arguments", "expect", "require" }, where, errors))
             return false;
         out.Kind = SequenceConditionKind::Query;
         out.Query = query->IsString() ? query->AsString() : std::string();
@@ -234,14 +234,28 @@ bool ReadCondition(const JsonValue& authored, std::string_view where, SequenceCo
             errors.push_back(std::format("{}: 'query' names a query", where));
             return false;
         }
-        if (const JsonValue* expect = authored.Find("expect"))
+        const JsonValue* expect = authored.Find("expect");
+        const JsonValue* require = authored.Find("require");
+        if (expect != nullptr && require != nullptr)
+        {
+            errors.push_back(std::format("{}: 'expect' or 'require', not both", where));
+            return false;
+        }
+        if (expect != nullptr)
         {
             if (!expect->IsBool())
             {
                 errors.push_back(std::format("{}: 'expect' is true or false", where));
                 return false;
             }
-            out.Expect = expect->AsBool();
+            out.Require = ValueBounds::Exactly(expect->AsBool() ? 1.0 : 0.0);
+            out.RequireAuthored = true;
+        }
+        if (require != nullptr)
+        {
+            if (!ReadValueBounds(*require, out.Require, where, errors))
+                return false;
+            out.RequireAuthored = true;
         }
         return ReadArguments(authored.Find("arguments"), std::format("{} '{}'", where, out.Query), out.Arguments,
                              dependencies, errors);

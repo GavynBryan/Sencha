@@ -75,6 +75,8 @@ public:
     [[nodiscard]] bool TryGetBool(bool& out) const;
     [[nodiscard]] bool TryGetInt(std::int64_t& out) const;
     [[nodiscard]] bool TryGetFloat(double& out) const;
+    // A Bool, Int or Float as a number; true and false read as 1 and 0.
+    [[nodiscard]] bool TryGetNumber(double& out) const;
     [[nodiscard]] bool TryGetString(std::string_view& out) const;
     [[nodiscard]] bool TryGetEnum(std::string_view& out) const;
     [[nodiscard]] bool TryGetVector(AuthoredVectorValue& out) const;

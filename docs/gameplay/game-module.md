@@ -150,6 +150,39 @@ void MySpawnSystem::ZoneResidency(ZoneResidencyContext& ctx)
 Every pawn template does exactly this; `templates/horror` activates the room's
 authored camera from the same hook.
 
+## Changing level
+
+`Engine::LevelChanges()` replaces what is loaded with another level, or the same
+one again, as one request:
+
+```cpp
+const LevelChangeAdmission admission = engine.LevelChanges().Request(
+    LevelChangeRequest{ .Level = *engine.Level().Loaded() });
+```
+
+`LoadedLevel::Loaded()` is a `LevelReference`: whether `map` or `world` loaded
+it, and the name it was given. The request is checked when it is made (the
+level is cooked, this machine is the authority, no network session is running,
+no other change is under way) and carried out at the next zone-residency phase,
+before streaming, where no frame view is live. Carrying it out:
+
+1. lets every participant's body go (`Engine::ReleaseParticipantBody`, through
+   the game's `ReapBody` policy); the participants stay;
+2. unloads, so the game's residency systems see their content leave;
+3. resets zone state memory to authored, so what the level lost comes back;
+4. clears the active camera if it went with the level;
+5. loads the requested level.
+
+The game provides bodies when the level arrives, as for any load. `Status()`
+moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every
+participant whose body was let go has one again), or ends at `Failed` with
+`Failure()` saying why. `Serial()` counts accepted requests, so a caller that
+holds a screen up while it waits can tell its own change from a later one.
+Hiding the change is the game's: a fade, a door, a dialogue box.
+
+Changing level inside a network session is refused: peers are told which map
+to load only when they are admitted.
+
 ## Bodies from prefabs
 
 A participant's body is asked for synchronously (`ParticipantPolicies::ProvideBody`,

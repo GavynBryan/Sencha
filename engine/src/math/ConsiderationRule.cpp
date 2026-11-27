@@ -9,24 +9,6 @@
 
 namespace
 {
-    bool CompileRequire(const JsonValue& require, ConsiderationRule& rule, std::string_view subject,
-                        std::vector<std::string>& errors)
-    {
-        if (const JsonValue* expect = require.Find("expect"))
-        {
-            rule.Min = rule.Max = expect->AsBool() ? 1.0f : 0.0f;
-            return true;
-        }
-        rule.Min = static_cast<float>(require.NumberOr("min", -INFINITY));
-        rule.Max = static_cast<float>(require.NumberOr("max", INFINITY));
-        if (rule.Min > rule.Max)
-        {
-            errors.push_back(std::format("{}: require.min exceeds require.max", subject));
-            return false;
-        }
-        return true;
-    }
-
     bool CompileScore(const JsonValue& score, std::string_view missingCurve, ConsiderationRule& rule,
                       std::string_view subject, std::vector<std::string>& errors)
     {
@@ -76,7 +58,7 @@ bool CompileConsiderationRule(const JsonValue& step, std::string_view missingCur
         return false;
     }
     out.Mode = require != nullptr ? ConsiderationMode::Require : ConsiderationMode::Score;
-    const bool ok = require != nullptr ? CompileRequire(*require, out, subject, errors)
+    const bool ok = require != nullptr ? ReadValueBounds(*require, out.Bounds, subject, errors)
                                        : CompileScore(*score, missingCurve, out, subject, errors);
     if (const JsonValue* unmeasured = step.Find("unmeasured"))
         out.UnmeasuredScore = static_cast<float>(unmeasured->NumberOr("score", 0.0));
@@ -85,10 +67,7 @@ bool CompileConsiderationRule(const JsonValue& step, std::string_view missingCur
 
 std::vector<DataFieldSchema> MakeConsiderationRuleFields(std::string unmeasuredSummary)
 {
-    DataFieldSchema require = OptionalField(DataFieldKind::Record, "require", "Require");
-    require.Children.push_back(OptionalField(DataFieldKind::Float, "min", "Minimum"));
-    require.Children.push_back(OptionalField(DataFieldKind::Float, "max", "Maximum"));
-    require.Children.push_back(OptionalField(DataFieldKind::Bool, "expect", "Expect"));
+    DataFieldSchema require = MakeValueBoundsField("require", "Require");
 
     DataFieldSchema score = OptionalField(DataFieldKind::Record, "score", "Score");
     DataFieldSchema curve = MakeResponseCurveField("curve", "Curve");

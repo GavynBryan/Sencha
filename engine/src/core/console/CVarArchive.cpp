@@ -1,12 +1,12 @@
 #include <core/console/CVarArchive.h>
 
 #include <core/console/ConsoleRegistry.h>
+#include <core/io/FileBytes.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 
 #include <cstdint>
-#include <fstream>
 #include <optional>
 #include <system_error>
 #include <type_traits>
@@ -241,13 +241,8 @@ bool CVarArchive::Save(const ConsoleRegistry& registry)
             return false;
     }
 
-    std::ofstream out(Path, std::ios::binary | std::ios::trunc);
-    if (!out)
+    if (!WriteFileText(Path, JsonStringify(JsonValue(std::move(root)), /*pretty*/ true) + '\n'))
         return false;
-    out << JsonStringify(JsonValue(std::move(root)), /*pretty*/ true) << '\n';
-    if (!out)
-        return false;
-    out.close();
 
     SyncedRevision = registry.ArchiveRevision();
     return true;

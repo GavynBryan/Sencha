@@ -3,9 +3,9 @@
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
 #include <math/ResponseCurve.h>
+#include <math/ValueBounds.h>
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,14 +25,13 @@ enum class ConsiderationMode : std::uint8_t
 struct ConsiderationRule
 {
     ConsiderationMode Mode = ConsiderationMode::Score;
-    float Min = -std::numeric_limits<float>::infinity();
-    float Max = std::numeric_limits<float>::infinity();
+    ValueBounds Bounds;
     std::optional<ResponseCurve> Curve;
     float Weight = 1.0f;
     // A value that could not be measured disqualifies unless this is set.
     std::optional<float> UnmeasuredScore;
 
-    [[nodiscard]] bool Admits(float value) const { return value >= Min && value <= Max; }
+    [[nodiscard]] bool Admits(double value) const { return Bounds.Admits(value); }
     // With no curve the value is taken as already lying in [0, 1].
     [[nodiscard]] float Output(float value) const;
 };

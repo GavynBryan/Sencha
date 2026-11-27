@@ -114,9 +114,9 @@ bool VerbSequenceRunner::HoldsCondition(const CompiledSequenceCondition& conditi
     if (condition.Kind == SequenceConditionKind::Query)
     {
         AuthoredValue answer;
-        bool truth = false;
-        return Ask(condition.Query, condition.Arguments, run, depth, answer) && answer.TryGetBool(truth)
-            && truth == condition.Expect;
+        double number = 0.0;
+        return Ask(condition.Query, condition.Arguments, run, depth, answer) && answer.TryGetNumber(number)
+            && condition.Require.Admits(number);
     }
 
     if (condition.Kind == SequenceConditionKind::Tag)
