@@ -144,3 +144,34 @@ in the same runs.
   so a warmed pack reuses its strings. With that, neither the generated adapter
   (which reads the text as a `std::string_view` and borrows the `AssetRef`) nor
   the hand reader allocates.
+
+## Re-measured after the migration
+
+Stages 5a to 7 annotated every engine provider, so the 25 engine API headers
+now carry real declarations and every translation unit that includes one also
+compiles its companion's adapters. Measured on 2026-11-27, same machine and
+method as above (the `build-profile` tree rebuilt first, then the `dev` tree's
+`sencha_engine` at `-j15`, nothing else building or testing). The "without API
+headers" baseline cannot be rebuilt any more, since the annotated providers
+need their companions, so the comparison is against the runs above.
+
+| Run | Wall | Generated outputs | Last generator run ends | First engine compile starts |
+|---|---|---|---|---|
+| clean 1 | 164.95 | 230 | 6.12 | 6.13 |
+| clean 2 | 167.52 | 230 | 5.75 | 5.77 |
+| clean 3 | 169.45 | 230 | 5.88 | 5.89 |
+
+| Run | Wall | Generator runs | Engine objects rebuilt |
+|---|---|---|---|
+| incremental 1 | 15.29 | 1 header | 5 |
+| incremental 2 | 15.21 | 1 header | 5 |
+| incremental 3 | 15.23 | 1 header | 5 |
+
+(The incremental build touches `engine/include/inventory/InventoryVocabulary.h`,
+as above.)
+
+- Clean, critical path: 5.92 s mean against 3.26 s without API headers,
+  **+2.7 s** (+0.6 s since stage 2). Total wall: 167.3 s mean against 165.2 s,
+  +2.1 s, inside the run-to-run spread.
+- Incremental: 15.24 s mean against 14.40 s, **+0.84 s** (+0.07 s since stage 2).
+- **Both stay inside the rule** (about 10 s clean, about 2 s incremental).

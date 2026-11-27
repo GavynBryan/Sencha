@@ -59,7 +59,12 @@ and the arena count as one consumer: the arena is the FPS with a session).
    against `Engine::TryVerbs()` and `Engine::TryAuthoredQueries()`, events are
    published through `Engine::TryAuthoredEvents()`, and an editor calling the
    same hook on a document's World gets the names with nothing behind them.
-   See `docs/gameplay/authored-api.md`.
+   A provider's header goes in `API_HEADERS` of `sencha_game_module` so its
+   companion is generated. Its declaration names the provider's generated
+   adapters, so a tool or test that declares the vocabulary outside the module
+   links the provider's sources too. `RenderVocabularyReference` with each of
+   the game's providers renders its vocabulary for a checked-in reference, as
+   Loss Function's `docs/Vocabulary.md` is. See `docs/gameplay/authored-api.md`.
 4. The engine composes `RuntimeContent` (the asset stack), mounts the content
    roots, publishes the world's asset resources, connects the spawn services and
    the render pipeline, and constructs `LoadedLevel`. Under a cook-enabled

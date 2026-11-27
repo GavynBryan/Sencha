@@ -800,6 +800,19 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first event declared through the generated API that a
   response's cooldown or a verb's provenance needs to attribute.
 
+## Naming and bounding a query's answer by annotation
+
+- **What:** a generated query's result has no key and no limits. Loss
+  Function's `lf.ctx.spread` declared its answer `spread`, at least 0, by hand;
+  generated, it answers an unnamed `float`. No consumer reads a query result's
+  key (an ability op names its own local), and nothing checks a result against
+  a bound, so only the reference shows the difference.
+- **Where:** the annotations in `engine/include/authored/AuthoredAnnotations.h`
+  (`SENCHA_RESULT` and `SENCHA_MIN`/`SENCHA_MAX` read on verbs and parameters,
+  not on a query's return) and `sencha-component-codegen`.
+- **Trigger:** an editor that offers a query's answer by name or range, such as
+  a response inspector reading a query source (above).
+
 ## Captured payload size
 
 - **What:** an admitted response captures its ports as `AuthoredValue`s, which
