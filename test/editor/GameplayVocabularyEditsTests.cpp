@@ -12,9 +12,7 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <movement/LocomotionMode.h>
 #include <movement/components/CharacterFacts.h>
-#include <movement/components/CharacterMovement.h>
 
 #include <gtest/gtest.h>
 
@@ -187,25 +185,6 @@ TEST(GameplayVocabularyEdits, AFullGrantListRefusesRatherThanSilentlyDropping)
     EXPECT_FALSE(overflow.Changed);
     EXPECT_FALSE(overflow.Error.empty());
     EXPECT_EQ(grants.Entries.size(), kAbilityGrantCapacity);
-}
-
-TEST(GameplayVocabularyEdits, AnUnknownLocomotionModeNameIsTheFreeMode)
-{
-    GameplayTagRegistry tags;
-    LocomotionModeRegistry modes(tags);
-    const LocomotionModeId free = modes.RegisterFree();
-    const LocomotionModeId climbing = modes.Register<KinematicState>("movement.mode.climb");
-
-    CharacterMovement movement{};
-    ASSERT_TRUE(SetLocomotionMode(movement, modes, "movement.mode.climb").Changed);
-    EXPECT_EQ(movement.Mode, climbing);
-
-    // Not this process's vocabulary, and no mode at all, mean the same thing --
-    // which is what an absent mode already means in a scene.
-    EXPECT_TRUE(SetLocomotionMode(movement, modes, "movement.mode.hoverboard").Changed);
-    EXPECT_EQ(movement.Mode, free);
-    EXPECT_FALSE(SetLocomotionMode(movement, modes, "").Changed);
-    EXPECT_EQ(movement.Mode, free);
 }
 
 TEST(GameplayVocabularyEdits, AProjectedTagIsNotAuthored)

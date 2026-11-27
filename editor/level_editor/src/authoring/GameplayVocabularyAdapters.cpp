@@ -14,8 +14,6 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <movement/LocomotionMode.h>
-#include <movement/components/CharacterMovement.h>
 
 #include <algorithm>
 #include <array>
@@ -368,59 +366,6 @@ namespace
         RefusalNote Refusal;
     };
 
-    //=========================================================================
-    // Locomotion mode
-    //=========================================================================
-    class CharacterMovementEditorAdapter final : public IEditorComponentAdapter
-    {
-    public:
-        ComponentTypeId Type() const override
-        {
-            return ResolveComponentTypeId<CharacterMovement>();
-        }
-
-        bool AuthorsInspectorRows() const override { return true; }
-
-        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
-        {
-            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-            const CharacterMovement* held = world.TryGet<CharacterMovement>(context.Entity);
-            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-            if (held == nullptr)
-                return {};
-            if (modes == nullptr)
-                return { NoteProperty("missing", "Starting mode", "This document has no locomotion mode registry.") };
-
-            PropertyNode mode;
-            mode.Key = "mode";
-            mode.Descriptor.Kind = PropertyKind::Choice;
-            mode.Descriptor.Label = "Starting mode";
-            mode.Descriptor.Tooltip = "Which locomotion rules the character spawns under. Modes change during play; "
-                                      "this is only where it begins.";
-            for (const LocomotionModeEntry& entry : modes->Entries())
-                mode.Descriptor.Choices.push_back(entry.Name);
-            const LocomotionModeEntry* current = modes->Find(held->Mode);
-            mode.Value = current != nullptr ? current->Name : std::string("<unregistered>");
-            if (current == nullptr)
-                mode.Descriptor.Choices.push_back(mode.Value);
-            return { std::move(mode) };
-        }
-
-        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
-                                             std::string_view value) const override
-        {
-            World& world = context.Scene.GetRegistry().Components;
-            const CharacterMovement* held = std::as_const(world).TryGet<CharacterMovement>(context.Entity);
-            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-            if (key != "mode" || held == nullptr || modes == nullptr)
-                return PropertyEditResult::Gone;
-            CharacterMovement after = *held;
-            if (!SetLocomotionMode(after, *modes, value).Changed)
-                return PropertyEditResult::Unchanged;
-            return CommitComponentValue(context, *held, after);
-        }
-    };
-
     PropertyNode ItemDefinitionRow(const World& world, ItemId definition)
     {
         const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
@@ -519,11 +464,6 @@ std::unique_ptr<IEditorComponentAdapter> MakeAttributeSetEditorAdapter()
 std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter()
 {
     return std::make_unique<AbilityGrantsEditorAdapter>();
-}
-
-std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter()
-{
-    return std::make_unique<CharacterMovementEditorAdapter>();
 }
 
 std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter()

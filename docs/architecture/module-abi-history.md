@@ -1811,3 +1811,15 @@ serializers from the new `ComponentSerializerWithoutDefault<T>`, which
 (pinned); the replication table hash is unchanged, so the net protocol stays
 11. The schema fingerprints of the four components change, so cooked scenes
 holding them are recooked.
+
+## v85
+
+`LocomotionModeId` specialises `NamedIdField` (`NamedIdKind::RegisteredName`;
+an unregistered or absent name resolves to the free mode), and the runtime
+schema marks a named id with a schema of its own as the named leaf.
+`CharacterMovement` gains `SENCHA_SCENE_CHUNK("CHMV")` and a label, and
+`MakeCharacterMovementSerializer` now makes a `ComponentSerializer<CharacterMovement>`
+that leaves out a leased mode, registered before the component. The scene key,
+chunk and JSON are unchanged; the replication table hash and the net protocol
+do not change. Its schema fingerprint changes, so cooked scenes holding it are
+recooked.

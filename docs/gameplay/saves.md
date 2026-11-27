@@ -252,8 +252,11 @@ a level entity's baseline, so one at rest writes nothing):
 - **Velocity.** `KinematicState`'s velocity is a run-time field. A quicksave
   mid-jump continues the arc: a body or character built with a
   `KinematicState` takes it as its first velocity.
-- **Movement mode.** `CharacterMovement` is `Saved`, and its serializer writes
-  the mode by name only when no `LocomotionModeLease` on the entity names it.
+- **Movement mode.** `CharacterMovement` is `Saved`, and its mode is a named
+  id written by name (`docs/core-systems-map.md`, "Named-id fields"). Its
+  generated form is registered through `MakeCharacterMovementSerializer`,
+  which writes the mode only when no `LocomotionModeLease` on the entity names
+  it, and so says its saved form does not follow its row alone.
   A mode a character is simply in (crouched, a stance) comes back; a mode a
   holder put it in does not, since the holder is not restored (a body saved on
   a ladder comes back free).

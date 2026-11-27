@@ -133,7 +133,6 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
     EXPECT_TRUE(adapters.Register(MakeGameplayTagEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeAttributeSetEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeAbilityGrantsEditorAdapter()));
-    EXPECT_TRUE(adapters.Register(MakeCharacterMovementEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeResponsesEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeItemEntryEditorAdapter()));
     EXPECT_TRUE(adapters.Register(MakeHeldEditorAdapter()));
@@ -143,7 +142,6 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
              ResolveComponentTypeId<GameplayTagContainer>(),
              ResolveComponentTypeId<AttributeSet>(),
              ResolveComponentTypeId<AbilityGrants>(),
-             ResolveComponentTypeId<CharacterMovement>(),
              ResolveComponentTypeId<ItemEntry>(),
              ResolveComponentTypeId<Held>(),
              ResolveComponentTypeId<EquipmentState>(),

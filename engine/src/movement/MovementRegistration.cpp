@@ -50,11 +50,9 @@ void RegisterMovementComponents(ComponentRegistrar& registrar)
     // A character steps on its own clock.
     RegisterTimeComponents(registrar);
     RegisterAbilityKitComponents(registrar);
+    registrar.AddSerializer(MakeCharacterMovementSerializer());
     registrar.AddAll<MovementComponents>();
 
-    // The mode is a registration and the profile is an asset, so what content
-    // states for both is a name; the wire keeps the id the mode is.
-    registrar.AddSerializer(MakeCharacterMovementSerializer());
     registrar.AddSerializer(MakeMovementTuningSourceSerializer());
 }
 

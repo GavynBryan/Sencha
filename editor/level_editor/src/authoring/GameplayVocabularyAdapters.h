@@ -19,5 +19,4 @@
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeGameplayTagEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeAttributeSetEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter();
-[[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter();
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter();

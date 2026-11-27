@@ -291,10 +291,23 @@ namespace RuntimeSchemaDetail
                 Collector<Root, Purpose> sub{ Out,        Base,       name,
                                               quantization, ownerOnly, ownerLocal,
                                               localOnly, WireDefaults || wire };
+                const std::size_t before = Out.size();
                 if constexpr (wire)
                     VisitSchema<ReplicationSchema<MemberType>>(member, sub);
                 else
                     VisitSchema<TypeSchema<MemberType>>(member, sub);
+                if constexpr (IsNamedIdField<MemberType>)
+                {
+                    if (Out.size() == before + 1)
+                    {
+                        RuntimeField& leaf = Out.back();
+                        leaf.Names = &NamedIdField<MemberType>::Vocabulary();
+                        leaf.Optional = field.IsOptional;
+                        leaf.ReadOnly = false;
+                        leaf.Label = field.DisplayLabel;
+                        leaf.Tooltip = field.DisplayTooltip;
+                    }
+                }
             }
             else if constexpr (IsStrongId<MemberType>::value)
             {

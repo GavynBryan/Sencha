@@ -11,13 +11,11 @@
 
 struct AbilityGrantList;
 struct AttributeSet;
-struct CharacterMovement;
 struct GameplayTagContainer;
 class AbilityGrantEntries;
 class AbilityRegistry;
 class AttributeRegistry;
 class GameplayTagRegistry;
-class LocomotionModeRegistry;
 
 //=============================================================================
 // Gameplay vocabulary edits
@@ -85,8 +83,3 @@ struct VocabularyEdit
 
 [[nodiscard]] VocabularyEdit RemoveAbilityGrant(AbilityGrantList& grants, AbilityGrantId id);
 
-// Put the character in the named mode. An empty or unknown name is the free
-// mode, which is what the scene form already means by an absent mode.
-[[nodiscard]] VocabularyEdit SetLocomotionMode(CharacterMovement& movement,
-                                               const LocomotionModeRegistry& modes,
-                                               std::string_view name);

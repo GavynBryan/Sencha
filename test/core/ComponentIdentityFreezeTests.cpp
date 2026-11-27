@@ -134,7 +134,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C'), 0x7A7F3ECBA5C09B6Cull },
     { "Camera",              0x54D1B2A64667E32Eull, MakeFourCC('C','A','M','R'), 0x42DB5872ADA403FEull },
     { "CharacterController", 0x9F1D2CE24A903B74ull, MakeFourCC('C','H','C','T'), 0x2EF3100BF4535222ull },
-    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V'), 0xC075703BBFDCB7FFull },
+    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V'), 0xEC8B33C79065BB2Cull },
     { "DecisionAgent",       0xCCDF07E040670BB4ull, MakeFourCC('D','C','A','G'), 0x343C2E608FCE2010ull },
     { "Dock Gate Binding",   0x9D8D4FD13397EBFCull, MakeFourCC('D','G','A','T'), 0x1B5191F0EC56CBF3ull },
     { "GameplayTags",        0x8AD70174123D7D06ull, MakeFourCC('G','T','A','G'), 0x8CAB70CB062B6AF0ull },
