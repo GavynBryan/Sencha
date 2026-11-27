@@ -9,6 +9,7 @@
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ClaimVocabulary.h>
+#include <save/SavedGameVocabulary.h>
 #include <logic/InteractUse.h>
 #include <logic/ResponseVerbs.h>
 #include <movement/MovementVerbs.h>
@@ -60,6 +61,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareProjectileVocabulary(scope, eventScope);
     DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
+    DeclareSavedGameVerbs(scope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
 

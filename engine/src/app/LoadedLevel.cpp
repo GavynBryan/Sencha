@@ -22,6 +22,7 @@
 #include <world/build/EntityBuildPackage.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZonePackageImporter.h>
+#include <zone/ZoneStateMemory.h>
 
 #include <filesystem>
 #include <memory>
@@ -34,6 +35,9 @@ namespace
 // A single loaded scene occupies zone one; partition zero stays persistent.
 // A convention of the cooked world format, not a choice made here.
 constexpr ZoneId kPlayZone{ 1 };
+// The state scope of a world's world scene, which occupies partition zero
+// rather than a zone of its own.
+constexpr ZoneId kWorldSceneScope{ 2 };
 
 // A cooked-manifest scene ref ("<.cooked-relative or root-relative path>") as
 // the asset:// path the cooked scan registered it under.
@@ -109,6 +113,24 @@ bool LoadedLevel::IsCooked(const LevelReference& level) const
         return Content.Assets().Assets.Resolve(AssetPathOf(level.Name + ".smap"), AssetType::Scene) != nullptr;
     std::error_code ignored;
     return std::filesystem::is_regular_file(WorldManifestPath(level.Name), ignored);
+}
+
+void LoadedLevel::CaptureState()
+{
+    RuntimeWorld& runtime = Host.World();
+    const auto capture = [&](ZoneId zone) {
+        if (const RuntimeZoneRecord* record = runtime.FindZone(zone);
+            record != nullptr && record->State == RuntimeZoneLoadState::Resident)
+            CaptureZoneState(runtime.Entities(), zone, IdentifiedEntitiesIn(runtime.Entities(), record->Partition),
+                             ZoneCapture::Live);
+    };
+    if (SceneLoaded)
+        capture(kPlayZone);
+    if (Partition.has_value() && Partition->HasManifest())
+        for (const ZoneHeader& header : Partition->Manifest().Zones)
+            capture(header.Id);
+    if (!WorldSceneEntities.empty())
+        CaptureZoneState(runtime.Entities(), kWorldSceneScope, WorldSceneEntities, ZoneCapture::Live);
 }
 
 ZoneId LoadedLevel::PlayZone() const
@@ -394,10 +416,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
                 Host.RuntimeComponents(),
                 package,
                 PersistentStoragePartition,
-                // The world scene lives in the persistent partition but is
-                // saved under the play zone, so its state scope is that zone
-                // rather than the partition it occupies.
-                kPlayZone,
+                kWorldSceneScope,
                 Host.SceneSerializers(),
                 Content.SceneContext(),
                 &importError,
@@ -550,6 +569,7 @@ void LoadedLevel::Unload()
     Host.Schedule().RunZoneResidency(residency);
     runtime.FinalizeResidencyProcessing();
 
+    CaptureZoneState(runtime.Entities(), kWorldSceneScope, WorldSceneEntities, ZoneCapture::Detach);
     // Only what a world scene imported. The persistent partition also holds
     // whatever the game put there, and this owns none of that.
     for (EntityId entity : WorldSceneEntities)

@@ -2,6 +2,7 @@
 
 #include <anim/AnimContentSystem.h>
 #include <app/LevelChange.h>
+#include <save/SavedGames.h>
 #include <anim/AnimFactProviders.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
@@ -16,9 +17,11 @@
 #include <participant/LocalControl.h>
 #include <participant/ParticipantControl.h>
 #include <world/RuntimeWorld.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 
+#include <filesystem>
 #include <vector>
 
 //=============================================================================
@@ -250,5 +253,105 @@ TEST(FpsTemplate, AChangeToTheSameLevelGivesThePlayerAFreshBodyAndAuthoredConten
     EXPECT_TRUE(seen.BodyAfter.IsValid());
     EXPECT_NE(seen.BodyAfter, seen.BodyBefore) << "the old body was kept";
     EXPECT_EQ(seen.AuthoredAfter, seen.AuthoredBefore) << "what the level lost stayed lost";
+}
+
+// A save written in one run is restored in the next, as after the process was
+// killed: what the level lost before the save stays lost, and what it lost
+// after comes back.
+namespace
+{
+    const std::filesystem::path kSavesRoot = std::filesystem::temp_directory_path() / "sencha_fps_saves";
+    // The first run's loss, read by the second run's probe.
+    PersistentEntityId LostBeforeTheSave;
+
+    EntityId AuthoredOtherThan(World& world, EntityId body, PersistentEntityId skip = {})
+    {
+        EntityId found;
+        world.ForEachComponent<PersistentIdComponent>([&](EntityId entity, const PersistentIdComponent& id) {
+            if (!found.IsValid() && entity != body && id.Id != skip)
+                found = entity;
+        });
+        return found;
+    }
+
+    struct SaveProbe
+    {
+        Engine* Host = nullptr;
+        int Frames = 0;
+        PersistentEntityId Lost;
+        SaveAdmission Admission = SaveAdmission::Busy;
+        SaveStatus Status = SaveStatus::Idle;
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            World& world = ctx.Entities;
+            if (++Frames == 120)
+            {
+                const EntityId lost = AuthoredOtherThan(world, LocalControlSubjectOf(world));
+                Lost = world.TryGet<PersistentIdComponent>(lost)->Id;
+                world.DestroyEntity(lost);
+                Admission = Host->Saves().RequestWrite();
+            }
+            Status = Host->Saves().WriteStatus();
+        }
+    };
+
+    struct RestoreProbe
+    {
+        Engine* Host = nullptr;
+        int Frames = 0;
+        PersistentEntityId LostAfterSave;
+        SaveAdmission Admission = SaveAdmission::Busy;
+        bool Restored = false;
+        bool LostStaysLost = false;
+        bool LostAfterSaveIsBack = false;
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            World& world = ctx.Entities;
+            const PersistentEntityIndex& index = world.GetResource<PersistentEntityIndex>();
+            if (++Frames == 120)
+            {
+                const EntityId later = AuthoredOtherThan(world, LocalControlSubjectOf(world), LostBeforeTheSave);
+                LostAfterSave = world.TryGet<PersistentIdComponent>(later)->Id;
+                world.DestroyEntity(later);
+                Admission = Host->Saves().RequestRestore();
+            }
+            if (!Restored && Frames > 120 && Host->LevelChanges().Serial() == Host->Saves().RestoreChange()
+                && Host->LevelChanges().Status() == LevelChangeStatus::BodiesRestored)
+            {
+                Restored = true;
+                LostStaysLost = !index.TryResolve(LostBeforeTheSave).IsValid();
+                LostAfterSaveIsBack = index.TryResolve(LostAfterSave).IsValid();
+            }
+        }
+    };
+}
+
+TEST(FpsTemplate, ASaveWrittenInOneRunIsRestoredInTheNext)
+{
+    std::filesystem::remove_all(kSavesRoot);
+    const auto savesHere = [](EngineConfig& config) { config.Runtime.SavesRoot = kSavesRoot.string(); };
+
+    {
+        TemplateModuleRun<SaveProbe> run(TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets",
+                                         "levels/bumper", 240, savesHere);
+        ASSERT_TRUE(run.Loaded());
+        ASSERT_EQ(run.Exit(), 0);
+        ASSERT_EQ(run.Seen().Admission, SaveAdmission::Accepted);
+        ASSERT_EQ(run.Seen().Status, SaveStatus::Done) << "the save never reached the disk";
+        LostBeforeTheSave = run.Seen().Lost;
+    }
+
+    TemplateModuleRun<RestoreProbe> run(TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets",
+                                        "levels/bumper", 480, savesHere);
+    ASSERT_TRUE(run.Loaded());
+    ASSERT_EQ(run.Exit(), 0);
+    const RestoreProbe& seen = run.Seen();
+    ASSERT_EQ(seen.Admission, SaveAdmission::Accepted);
+    ASSERT_TRUE(seen.Restored) << "the restore's level change never gave the player a body";
+    EXPECT_TRUE(seen.LostStaysLost) << "what was lost before the save came back";
+    EXPECT_TRUE(seen.LostAfterSaveIsBack) << "what was lost after the save stayed lost";
+    std::filesystem::remove_all(kSavesRoot);
 }
 #endif

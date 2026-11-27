@@ -4,6 +4,8 @@
 
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <save/SavedGameVocabulary.h>
+
 #include <algorithm>
 #include <line/ContactLineSystem.h>
 #include <abilities/AbilityVerbs.h>
@@ -82,7 +84,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 39u);
+    ASSERT_EQ(verbs.size(), 41u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -117,8 +119,10 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[34].Name, kLineCutVerb);
     EXPECT_EQ(verbs[35].Name, kLineRetractVerb);
     EXPECT_EQ(verbs[36].Name, kInteractUseVerb);
-    EXPECT_EQ(verbs[37].Name, kPerceptionStimulusVerb);
-    EXPECT_EQ(verbs[38].Name, kClaimsHoldLease);
+    EXPECT_EQ(verbs[37].Name, kSaveWriteVerb);
+    EXPECT_EQ(verbs[38].Name, kSaveRestoreVerb);
+    EXPECT_EQ(verbs[39].Name, kPerceptionStimulusVerb);
+    EXPECT_EQ(verbs[40].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 26u);
     EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
@@ -163,10 +167,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 40u);
-    EXPECT_EQ(verbs[39].Name, kModuleVerb);
-    EXPECT_EQ(verbs[39].Provider, "spike");
-    EXPECT_EQ(verbs[39].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 42u);
+    EXPECT_EQ(verbs[41].Name, kModuleVerb);
+    EXPECT_EQ(verbs[41].Provider, "spike");
+    EXPECT_EQ(verbs[41].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -206,7 +210,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 39u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 41u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

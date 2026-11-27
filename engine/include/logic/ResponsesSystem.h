@@ -240,8 +240,6 @@ private:
     void AnswerInteractions(World& world, const SensorOverlaps* overlaps, std::uint64_t now);
     void RunQueue(FixedLogicContext& ctx);
     void Compact(std::size_t waiting);
-    void CaptureZoneState(World& world, const ZoneResidencyChange& change) const;
-    void RestoreZoneState(World& world, const ZoneResidencyChange& change) const;
 
     World& Entities;
     const FixedSimulationLoop& Clock;

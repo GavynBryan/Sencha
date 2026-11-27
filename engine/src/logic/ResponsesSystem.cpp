@@ -6,17 +6,18 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <ecs/Query.h>
+#include <core/serialization/BinaryReader.h>
+#include <core/serialization/BinaryWriter.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Responses.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
-#include <world/identity/PersistentIdComponent.h>
-#include <zone/ZoneStateStore.h>
+#include <zone/ZoneStateMemory.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 #include <utility>
 
 namespace
@@ -57,17 +58,64 @@ bool SatisfiesDeclaration(const AuthoredEventDefinition& definition, const Autho
     return valid;
 }
 
-// What a zone remembers of one binding: whose state, the text it had, and the
-// two bits that differ from authored.
-struct RememberedBinding
+// What a zone remembers of a binding that differs from authored: whose state
+// (its key), the text it had, and its two bits. Version 1 writes each as
+// key hash, definition hash and a flags byte.
+constexpr std::uint8_t kRememberedDisabled = 1;
+constexpr std::uint8_t kRememberedConsumed = 2;
+constexpr std::size_t kRememberedBindingBytes = 2 * sizeof(std::uint64_t) + 1;
+
+void CaptureRememberedBindings(const World& world, EntityId entity, std::vector<std::byte>& out)
 {
-    std::uint64_t KeyHash = 0;
-    std::uint64_t DefinitionHash = 0;
-    std::uint8_t Disabled = 0;
-    std::uint8_t Consumed = 0;
-    std::uint8_t Padding[6] = {};
-};
-static_assert(std::is_trivially_copyable_v<RememberedBinding>);
+    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
+    const Responses* state = world.TryGet<Responses>(entity);
+    if (definitions == nullptr || state == nullptr)
+        return;
+    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
+    const std::uint32_t authored = definitions->Sets.StartsDisabled(state->Set);
+    std::ostringstream stream;
+    BinaryWriter writer(stream);
+    for (std::size_t i = 0; i < bindings.size(); ++i)
+    {
+        const std::uint32_t bit = 1u << i;
+        if (((state->Disabled ^ authored) & bit) == 0 && (state->Consumed & bit) == 0)
+            continue;
+        const std::uint8_t flags = ((state->Disabled & bit) != 0 ? kRememberedDisabled : 0)
+            | ((state->Consumed & bit) != 0 ? kRememberedConsumed : 0);
+        (void)writer.Write(bindings[i].KeyHash);
+        (void)writer.Write(bindings[i].DefinitionHash);
+        (void)writer.Write(flags);
+    }
+    const std::string written = std::move(stream).str();
+    const auto* begin = reinterpret_cast<const std::byte*>(written.data());
+    out.assign(begin, begin + written.size());
+}
+
+void RestoreRememberedBindings(World& world, EntityId entity, std::uint16_t, std::span<const std::byte> bytes)
+{
+    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
+    Responses* state = world.TryGet<Responses>(entity);
+    if (definitions == nullptr || state == nullptr || bytes.size() % kRememberedBindingBytes != 0)
+        return;
+    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
+    std::istringstream stream(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+    BinaryReader reader(stream);
+    for (std::size_t read = 0; read < bytes.size(); read += kRememberedBindingBytes)
+    {
+        std::uint64_t keyHash = 0;
+        std::uint64_t definitionHash = 0;
+        std::uint8_t flags = 0;
+        if (!reader.Read(keyHash) || !reader.Read(definitionHash) || !reader.Read(flags))
+            return;
+        const int index = FindResponseBinding(bindings, keyHash);
+        // Remembered only for the text it had: a binding authored anew starts anew.
+        if (index < 0 || bindings[static_cast<std::size_t>(index)].DefinitionHash != definitionHash)
+            continue;
+        const std::uint32_t bit = 1u << static_cast<std::uint32_t>(index);
+        state->Disabled = (flags & kRememberedDisabled) != 0 ? (state->Disabled | bit) : (state->Disabled & ~bit);
+        state->Consumed = (flags & kRememberedConsumed) != 0 ? (state->Consumed | bit) : (state->Consumed & ~bit);
+    }
+}
 
 const CompiledVerbSequence kEmptySequence{};
 } // namespace
@@ -89,6 +137,11 @@ ResponsesSystem::ResponsesSystem(World& world,
 {
     if (world.IsRegistered<Responses>())
         ResponsesComponent = world.GetComponentId<Responses>();
+    if (ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>())
+        memories->Register(ZoneComponentMemory{ .Type = ResolveComponentTypeId<Responses>(),
+                                                .Version = 1,
+                                                .Capture = &CaptureRememberedBindings,
+                                                .Restore = &RestoreRememberedBindings });
 }
 
 void ResponsesSystem::SetCapacity(std::size_t activations)
@@ -555,86 +608,6 @@ void ResponsesSystem::FixedLogic(FixedLogicContext& ctx)
         std::erase_if(Cooldowns, [&](const auto& entry) { return entry.second <= ctx.Time.TickIndex; });
 }
 
-void ResponsesSystem::CaptureZoneState(World& world, const ZoneResidencyChange& change) const
-{
-    ZoneStateStore* zoneState = world.TryGetResource<ZoneStateStore>();
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    if (zoneState == nullptr || definitions == nullptr || !world.IsRegistered<PersistentIdComponent>())
-        return;
-    StoragePartitionSet detaching;
-    detaching.Add(change.Partition);
-    std::vector<RememberedBinding> remembered;
-    Query<Read<PersistentIdComponent>, Read<Responses>> holders(world);
-    holders.ForEachChunkIn(detaching, [&](auto& view) {
-        const auto ids = view.template Read<PersistentIdComponent>();
-        const auto responses = view.template Read<Responses>();
-        for (std::size_t row = 0; row < ids.size(); ++row)
-        {
-            if (!ids[row].Id.IsValid())
-                continue;
-            const Responses& state = responses[row];
-            const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state.Set);
-            const std::uint32_t authored = definitions->Sets.StartsDisabled(state.Set);
-            remembered.clear();
-            for (std::size_t i = 0; i < bindings.size(); ++i)
-            {
-                const std::uint32_t bit = 1u << i;
-                if (((state.Disabled ^ authored) & bit) == 0 && (state.Consumed & bit) == 0)
-                    continue;
-                remembered.push_back(RememberedBinding{ .KeyHash = bindings[i].KeyHash,
-                                                        .DefinitionHash = bindings[i].DefinitionHash,
-                                                        .Disabled = (state.Disabled & bit) != 0 ? std::uint8_t{ 1 }
-                                                                                                : std::uint8_t{ 0 },
-                                                        .Consumed = (state.Consumed & bit) != 0 ? std::uint8_t{ 1 }
-                                                                                                : std::uint8_t{ 0 } });
-            }
-            if (remembered.empty())
-                zoneState->ForgetComponentState(change.Zone, ids[row].Id, ResolveComponentTypeId<Responses>());
-            else
-                zoneState->RecordComponentState(change.Zone, ids[row].Id, ResolveComponentTypeId<Responses>(),
-                                                std::as_bytes(std::span(remembered)));
-        }
-    });
-}
-
-void ResponsesSystem::RestoreZoneState(World& world, const ZoneResidencyChange& change) const
-{
-    const ZoneStateStore* zoneState = world.TryGetResource<ZoneStateStore>();
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    if (zoneState == nullptr || definitions == nullptr || !world.IsRegistered<PersistentIdComponent>())
-        return;
-    StoragePartitionSet attached;
-    attached.Add(change.Partition);
-    Query<Read<PersistentIdComponent>, Write<Responses>> holders(world);
-    holders.ForEachChunkIn(attached, [&](auto& view) {
-        const auto ids = view.template Read<PersistentIdComponent>();
-        auto responses = view.template Write<Responses>();
-        for (std::size_t row = 0; row < ids.size(); ++row)
-        {
-            const std::span<const std::byte> bytes =
-                ids[row].Id.IsValid() ? zoneState->ComponentState(change.Zone, ids[row].Id,
-                                                                  ResolveComponentTypeId<Responses>())
-                                      : std::span<const std::byte>();
-            if (bytes.empty() || bytes.size() % sizeof(RememberedBinding) != 0)
-                continue;
-            Responses& state = responses[row];
-            const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state.Set);
-            for (std::size_t offset = 0; offset < bytes.size(); offset += sizeof(RememberedBinding))
-            {
-                RememberedBinding binding;
-                std::memcpy(&binding, bytes.data() + offset, sizeof(binding));
-                const int index = FindResponseBinding(bindings, binding.KeyHash);
-                // Remembered only for the text it had: a binding authored anew starts anew.
-                if (index < 0 || bindings[static_cast<std::size_t>(index)].DefinitionHash != binding.DefinitionHash)
-                    continue;
-                const std::uint32_t bit = 1u << static_cast<std::uint32_t>(index);
-                state.Disabled = binding.Disabled != 0 ? (state.Disabled | bit) : (state.Disabled & ~bit);
-                state.Consumed = binding.Consumed != 0 ? (state.Consumed | bit) : (state.Consumed & ~bit);
-            }
-        }
-    });
-}
-
 void ResponsesSystem::ZoneResidency(ZoneResidencyContext& ctx)
 {
     World& world = ctx.Entities;
@@ -642,16 +615,9 @@ void ResponsesSystem::ZoneResidency(ZoneResidencyContext& ctx)
         return;
     for (const ZoneResidencyChange& change : ctx.Changes)
     {
-        if (change.Kind == ZoneResidencyChangeKind::Attached)
-        {
-            RestoreZoneState(world, change);
-            continue;
-        }
         const bool detaching = change.Kind == ZoneResidencyChangeKind::Detaching;
         if (!detaching && !(change.Previous.Logic && !change.Current.Logic))
             continue;
-        if (detaching)
-            CaptureZoneState(world, change);
         const auto departing = [&](EntityId entity) {
             return entity.IsValid() && world.IsAlive(entity) && world.GetEntityPartition(entity) == change.Partition;
         };

@@ -39,6 +39,8 @@
 #include <render/post/EnginePostEffects.h>
 
 #include <app/EngineVocabularyBindings.h>
+#include <core/text/Slug.h>
+#include <save/SavedGameVocabulary.h>
 
 #include <assets/runtime/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
@@ -348,6 +350,7 @@ bool Engine::Initialize()
 bool Engine::RunScopeReleased() const
 {
     bool released = !ContentState.has_value() && !LevelState.has_value() && !LevelChangeState.has_value()
+        && !SavedGameState.has_value()
         && VocabularyBindings == nullptr && ResumeOperation == nullptr
         && QuitOperation == nullptr;
 #ifdef SENCHA_ENABLE_UI
@@ -509,6 +512,18 @@ const LoadedLevel& Engine::Level() const
     assert(LevelState.has_value()
            && "Engine::Level: valid from just before OnStart to just after OnShutdown");
     return *LevelState;
+}
+
+SavedGames& Engine::Saves()
+{
+    assert(SavedGameState.has_value() && "Engine::Saves: valid from just before OnStart to just after OnShutdown");
+    return *SavedGameState;
+}
+
+const SavedGames& Engine::Saves() const
+{
+    assert(SavedGameState.has_value() && "Engine::Saves: valid from just before OnStart to just after OnShutdown");
+    return *SavedGameState;
 }
 
 LevelChange& Engine::LevelChanges()
@@ -1219,6 +1234,10 @@ int Engine::Run(Game& game)
     VerbDispatcherState->SetDataAssets(&ContentState->Assets().DataAssets);
     LevelState.emplace(*this, *ContentState, LoggingState.GetLogger<Engine>());
     LevelChangeState.emplace(*this);
+    SavedGameState.emplace(*this, Configuration.Runtime.SavesRoot.empty()
+                                      ? std::filesystem::path()
+                                      : std::filesystem::path(Configuration.Runtime.SavesRoot)
+                                            / SlugOf(Configuration.App.Name) / "saves");
 
     // The player's own settings, before the shell that offers them and before
     // the saved values are applied: the shell asks which of them this host
@@ -1340,6 +1359,7 @@ int Engine::Run(Game& game)
 
     ConsoleService& console = Console();
     RegisterLevelCommands(console, *this);
+    RegisterSavedGameCommands(console, *this);
 
     console.AdvancePhase(ConsolePhase::EngineReady);
 
@@ -1454,6 +1474,7 @@ int Engine::Run(Game& game)
 
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
+    VocabularyBindings->BindSavedGames(*SavedGameState, *VerbDispatcherState);
     VocabularyBindings->BindPerception(*QueryDispatcherState);
     VocabularyBindings->BindNavigation(*QueryDispatcherState);
 
@@ -1692,6 +1713,7 @@ int Engine::Run(Game& game)
     // withdrawn while it is still mapped, and only then does the stack go.
     // The level goes before the content it loaded through, and its detaches
     // run while the game's zone-residency systems are still registered.
+    SavedGameState.reset();
     LevelChangeState.reset();
     LevelState->Unload();
     LevelState.reset();

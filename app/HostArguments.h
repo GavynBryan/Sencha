@@ -28,6 +28,8 @@ struct HostArguments
     std::vector<std::string> ContentRoots;
     // --settings <dir|none>. Unset means the default for this posture.
     std::optional<std::string> Settings;
+    // --saves <dir|none>.
+    std::optional<std::string> Saves;
 };
 
 // Strips the host's flags out of argv (compacting it in place, argv[0] kept)
@@ -43,3 +45,4 @@ struct HostArguments
 // last played on the machine has no business overriding them.
 [[nodiscard]] std::string ResolveSettingsRoot(const HostArguments& arguments,
                                               std::string_view platformRoot);
+[[nodiscard]] std::string ResolveSavesRoot(const HostArguments& arguments, std::string_view platformRoot);

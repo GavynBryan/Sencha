@@ -67,7 +67,7 @@ void LevelChange::Commit()
     LoadedLevel& level = Host.Level();
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
-        memory->Clear();
+        memory->Install(request.ZoneState);
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {

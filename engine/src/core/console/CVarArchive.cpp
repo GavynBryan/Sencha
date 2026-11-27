@@ -5,6 +5,7 @@
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
+#include <core/text/Slug.h>
 
 #include <cstdint>
 #include <optional>
@@ -107,20 +108,8 @@ namespace
 
 std::filesystem::path CVarArchive::FileFor(const std::filesystem::path& root, std::string_view appName)
 {
-    std::string slug;
-    slug.reserve(appName.size());
-    for (unsigned char c : appName)
-    {
-        if (std::isalnum(c) != 0)
-            slug.push_back(static_cast<char>(std::tolower(c)));
-        else if (!slug.empty() && slug.back() != '-')
-            slug.push_back('-');
-    }
-    while (!slug.empty() && slug.back() == '-')
-        slug.pop_back();
-    if (slug.empty())
-        slug = "sencha-application";
-    return root / slug / "settings.json";
+    const std::string slug = SlugOf(appName);
+    return root / (slug.empty() ? std::string("sencha-application") : slug) / "settings.json";
 }
 
 CVarArchive::CVarArchive(std::filesystem::path file)

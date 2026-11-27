@@ -6,6 +6,7 @@
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+#include <zone/ZoneStateLifetime.h>
 
 // Where a thing is, what it hangs off, and what it is called across a save.
 //
@@ -26,7 +27,8 @@ using WorldComponents = ComponentSet<
     PersistentIdComponent,
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.
-    SceneInstance>;
+    SceneInstance,
+    ZoneStateLifetime>;
 
 inline void RegisterWorldComponents(ComponentRegistrar& registrar)
 {

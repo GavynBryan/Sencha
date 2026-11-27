@@ -1,13 +1,11 @@
 #include <navigation/NavigationFile.h>
 
-#include <core/hash/ContentHash.h>
 #include <core/serialization/BinaryFormat.h>
+#include <core/serialization/HashedChunkFile.h>
 #include <core/serialization/Serialize.h>
 #include <math/MathSchemas.h>
 
 #include <algorithm>
-#include <cstring>
-#include <sstream>
 
 namespace
 {
@@ -72,41 +70,34 @@ namespace
             && DeserializeTrivialArray(reader, tile.Triangles, kMaxRecords);
     }
 
-    template <typename WritePayload>
-    bool WriteNavChunk(BinaryWriter& writer, std::uint32_t id, WritePayload&& writePayload)
+    bool WriteNavBody(HashedChunkFileWriter& file, const NavigationFile& navigation)
     {
-        ChunkWriter chunk;
-        return chunk.Begin(writer, id, 1) && writePayload() && chunk.End(writer);
-    }
-
-    bool WriteNavBody(BinaryWriter& writer, const NavigationFile& file)
-    {
+        BinaryWriter& writer = file.Writer();
         const bool written =
-            WriteBinaryHeader(writer, kNavigationFileMagic, kNavigationFormatVersion)
-            && WriteNavChunk(writer, kNavChunkProfiles,
-                             [&] { return SerializeArray(writer, file.Profiles, SerializeNavProfile); })
-            && WriteNavChunk(writer, kNavChunkAreas,
-                             [&] { return SerializeArray<std::string>(writer, file.Areas, Serialize); })
-            && WriteNavChunk(writer, kNavChunkGeometry,
+            file.Chunk(kNavChunkProfiles, 1,
+                       [&] { return SerializeArray(writer, navigation.Profiles, SerializeNavProfile); })
+            && file.Chunk(kNavChunkAreas, 1,
+                             [&] { return SerializeArray<std::string>(writer, navigation.Areas, Serialize); })
+            && file.Chunk(kNavChunkGeometry, 1,
                              [&]
                              {
-                                 return Serialize(writer, file.MinY) && Serialize(writer, file.MaxY)
-                                     && SerializeArray<Vec3d>(writer, file.Positions, Serialize)
-                                     && SerializeTrivialArray(writer, file.Indices);
+                                 return Serialize(writer, navigation.MinY) && Serialize(writer, navigation.MaxY)
+                                     && SerializeArray<Vec3d>(writer, navigation.Positions, Serialize)
+                                     && SerializeTrivialArray(writer, navigation.Indices);
                              })
-            && WriteNavChunk(writer, kNavChunkLinks,
-                             [&] { return SerializeArray(writer, file.Links, SerializeNavLink); });
+            && file.Chunk(kNavChunkLinks, 1,
+                             [&] { return SerializeArray(writer, navigation.Links, SerializeNavLink); });
         if (!written)
             return false;
         // One tile chunk per profile, each naming the profile it belongs to.
-        for (std::uint32_t p = 0; p < file.Profiles.size(); ++p)
+        for (std::uint32_t p = 0; p < navigation.Profiles.size(); ++p)
         {
             const auto writeTiles = [&]
             {
                 return Serialize(writer, p)
-                    && SerializeArray(writer, file.Profiles[p].Tiles, SerializeNavTile);
+                    && SerializeArray(writer, navigation.Profiles[p].Tiles, SerializeNavTile);
             };
-            if (!WriteNavChunk(writer, kNavChunkTiles, writeTiles))
+            if (!file.Chunk(kNavChunkTiles, 1, writeTiles))
                 return false;
         }
         return true;
@@ -152,72 +143,36 @@ namespace
         }
     }
 
-    bool Fail(std::string* error, const char* message)
-    {
-        if (error != nullptr)
-            *error = message;
-        return false;
-    }
 }
 
 std::vector<std::byte> EncodeNavigationFile(const NavigationFile& file)
 {
-    std::ostringstream stream(std::ios::binary);
-    BinaryWriter writer(stream);
+    HashedChunkFileWriter writer(kNavigationFileMagic, kNavigationFormatVersion);
     if (!WriteNavBody(writer, file))
         return {};
-    const std::uint64_t hash = HashBytes64(std::string_view(stream.str()));
-    if (!WriteNavChunk(writer, kNavChunkHash, [&] { return Serialize(writer, hash); }))
-        return {};
-    const std::string body = stream.str();
-    std::vector<std::byte> bytes(body.size());
-    std::memcpy(bytes.data(), body.data(), body.size());
-    return bytes;
+    return writer.Finish(kNavChunkHash);
 }
 
 bool DecodeNavigationFile(std::span<const std::byte> bytes, NavigationFile& file,
                           std::string* error)
 {
     file = NavigationFile{};
-    const std::string body(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-    std::istringstream stream(body, std::ios::binary);
-    BinaryReader reader(stream);
-
-    BinaryHeader header;
-    if (!ReadBinaryHeader(reader, header) || header.Magic != kNavigationFileMagic)
-        return Fail(error, "not a navigation file");
-    if (header.Version != kNavigationFormatVersion)
-        return Fail(error, "navigation file version mismatch (recook the zone)");
-
-    bool hashChecked = false;
-    while (!hashChecked && stream.peek() != std::istream::traits_type::eof())
-    {
-        const std::streampos chunkStart = stream.tellg();
-        ChunkReader chunk;
-        if (!chunk.ReadHeader(reader))
-            return Fail(error, "truncated navigation chunk header");
-        const std::uint32_t id = chunk.GetHeader().Id;
-        if (id == kNavChunkHash)
-        {
-            std::uint64_t stored = 0;
-            const std::string_view covered(body.data(), static_cast<std::size_t>(chunkStart));
-            if (!reader.Read(stored) || stored != HashBytes64(covered))
-                return Fail(error, "navigation file hash mismatch");
-            hashChecked = true;
-        }
-        else if (!ReadNavChunkPayload(reader, id, file))
-        {
-            return Fail(error, "malformed navigation chunk");
-        }
-        if (!chunk.Skip(reader))
-            return Fail(error, "truncated navigation chunk");
-    }
-
-    if (!hashChecked)
-        return Fail(error, "navigation file has no hash");
-    if (stream.peek() != std::istream::traits_type::eof())
-        return Fail(error, "data after navigation hash");
+    const HashedChunkFileFormat format{ .Magic = kNavigationFileMagic,
+                                        .OldestVersion = kNavigationFormatVersion,
+                                        .Version = kNavigationFormatVersion,
+                                        .HashChunk = kNavChunkHash,
+                                        .Subject = "navigation file",
+                                        .VersionAdvice = "is not this build's (recook the zone)" };
+    const auto read = [&](const ChunkHeader& chunk, BinaryReader& reader) {
+        return ReadNavChunkPayload(reader, chunk.Id, file);
+    };
+    if (!ReadHashedChunkFile(bytes, format, read, error))
+        return false;
     if (file.Profiles.empty())
-        return Fail(error, "navigation file has no profiles");
+    {
+        if (error != nullptr)
+            *error = "navigation file has no profiles";
+        return false;
+    }
     return true;
 }

@@ -26,6 +26,7 @@ class PhysicsWorld;
 class ProjectileSystem;
 class ResponseOperations;
 class ResponsesSystem;
+class SavedGames;
 class World;
 
 //=============================================================================
@@ -61,6 +62,9 @@ public:
 
     // line.extend, line.cut and the line.* queries, answered by `lines`, which must outlive this.
     void BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
+
+    // save.write and save.restore, answered by `saves`, which must outlive this.
+    void BindSavedGames(SavedGames& saves, VerbDispatcher& verbs);
 
     // `physics` and `responses` must outlive this.
     void BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses, VerbDispatcher& verbs);
