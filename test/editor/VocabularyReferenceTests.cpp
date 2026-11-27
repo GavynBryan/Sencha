@@ -29,13 +29,21 @@ DataFieldSchema EntityArgument(std::string key)
     return MakeDataField(DataFieldKind::Entity, std::move(key), "Target");
 }
 
+VerbDefinition Verb(std::string name, std::string description, std::vector<DataFieldSchema> arguments = {})
+{
+    VerbDefinition verb;
+    verb.Name = std::move(name);
+    verb.Description = std::move(description);
+    verb.Arguments.Children = std::move(arguments);
+    return verb;
+}
+
 std::string RenderScratch(std::vector<DataFieldSchema> arguments)
 {
     World names;
     InstallAuthoredVocabulary(names);
     VerbRegistrationScope scope(*FindVerbRegistry(names), "scratch");
-    EXPECT_TRUE(scope.Declare(MakeGameplayVerb("scratch.poke", "Poke", "Pokes the target.", "Scratch",
-                                               std::move(arguments))));
+    EXPECT_TRUE(scope.Declare(Verb("scratch.poke", "Pokes the target.", std::move(arguments))));
     EXPECT_TRUE(scope.Commit());
     return RenderVocabularyReference(names, "scratch");
 }
@@ -92,10 +100,10 @@ TEST(VocabularyReference, OnlyTheNamedProvidersEntriesAreListedInNameOrder)
     World names;
     InstallAuthoredVocabulary(names);
     VerbRegistrationScope mine(*FindVerbRegistry(names), "mine");
-    EXPECT_TRUE(mine.Declare(MakeGameplayVerb("mine.zeta", "Zeta", "Last.", "Mine", {})));
-    EXPECT_TRUE(mine.Declare(MakeGameplayVerb("mine.alpha", "Alpha", "First.", "Mine", {})));
+    EXPECT_TRUE(mine.Declare(Verb("mine.zeta", "Last.")));
+    EXPECT_TRUE(mine.Declare(Verb("mine.alpha", "First.")));
     VerbRegistrationScope theirs(*FindVerbRegistry(names), "theirs");
-    EXPECT_TRUE(theirs.Declare(MakeGameplayVerb("theirs.beta", "Beta", "Not mine.", "Theirs", {})));
+    EXPECT_TRUE(theirs.Declare(Verb("theirs.beta", "Not mine.")));
     ASSERT_TRUE(mine.Commit());
     ASSERT_TRUE(theirs.Commit());
 

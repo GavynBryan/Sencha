@@ -1881,3 +1881,19 @@ refused when undeclared. `AnimRequestLifetime` gains an `EnumSchema`, and
 argument is not required. `anim.request` and `anim.present` declare their ticks'
 range, `claims.hold` its count's and share's, and `perception.stimulus` its
 radius's. Save format, scene format and net protocol are unchanged.
+
+## v90
+
+The audio, attachment, attached light, camera shake and field-of-view verbs,
+the physics queries, and `runtime.resume` and `application.quit` are declared by
+annotations and read through generated companions. `PhysicsQueryOperations`
+(over `PhysicsQueries`) answers the physics queries, `physics.trace` with a
+`PhysicsTraceAnswer` record; `RuntimeResumeOperation::Resume` and
+`ApplicationQuitOperation::Quit` replace their `Invoke`, and `Engine` holds
+their bindings as `AuthoredApiBindings`. `MakeGameplayVerb`, `MakeCosmeticVerb`
+and `MakeEntityArgument` go from `authored/VerbRegistry.h`, with
+`kRuntimeResumeVerb`, `kApplicationQuitVerb` and the other name constants and
+`Invoke*` trampolines. `presentation.light` declares its intensity and range at
+least 0.001, its socket as optional, and `physics.overlap` its radius at least
+0.001; the trace, overlap and clear-path limits are in their schemas. Save
+format, scene format and net protocol are unchanged.

@@ -682,6 +682,7 @@ set(SENCHA_ENGINE_API_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestVerbs.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/EngineVocabulary.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/LevelChangeVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/app/ShellVerbs.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/attach/AttachmentVerbs.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioVerbs.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraFovScaleVerbs.h"

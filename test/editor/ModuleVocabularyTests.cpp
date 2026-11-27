@@ -7,6 +7,7 @@
 // the inspector's pickers offer only the engine's names, and a scene carrying
 // the game's tags reads back with them missing.
 
+#include <app/ShellVerbs.h>
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 
@@ -122,9 +123,9 @@ TEST_F(ModuleVocabularyTest, EveryDocumentCarriesTheEngineVerbsWithoutADispatche
     const VerbRegistry* verbs =
         FindVerbRegistry(document.GetScene().GetRegistry().Components);
     ASSERT_NE(verbs, nullptr);
-    EXPECT_TRUE(verbs->Find(kRuntimeResumeVerb).IsValid());
-    EXPECT_TRUE(verbs->Find(kApplicationQuitVerb).IsValid());
-    EXPECT_EQ(verbs->Provider(verbs->Find(kRuntimeResumeVerb)), "engine");
+    EXPECT_TRUE(verbs->Find(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume).IsValid());
+    EXPECT_TRUE(verbs->Find(AuthoredApiDefinition<ApplicationQuitOperation>::Name_Quit).IsValid());
+    EXPECT_EQ(verbs->Provider(verbs->Find(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume)), "engine");
     EXPECT_TRUE(verbs->InstallationErrors().empty());
 
     // Two documents are two catalogs.

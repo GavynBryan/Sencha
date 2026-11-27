@@ -1,8 +1,6 @@
 #include <camera/CameraShakeVerbs.h>
 
-#include <authored/AuthoredValueTraits.h>
 #include <assets/data/DataAssetCache.h>
-#include <authored/AuthoredValue.h>
 #include <authored/VerbDispatcher.h>
 #include <camera/CameraEffectArguments.h>
 #include <camera/CameraShake.h>
@@ -10,94 +8,50 @@
 #include <ecs/World.h>
 #include <time/SimClock.h>
 
-#include <cmath>
-#include <string>
+#include <utility>
 
-namespace
+VerbAdmission CameraShakeOperations::Shake(const VerbInvocation& invocation, AuthoredDataRef profile, float scale,
+                                           std::optional<EntityId> subject, std::optional<Vec3d> point,
+                                           std::int64_t seed)
 {
-namespace Slot
-{
-constexpr std::size_t Profile = 0;
-constexpr std::size_t Scale = 1;
-constexpr std::size_t Subject = 2;
-constexpr std::size_t Point = 3;
-constexpr std::size_t Seed = 4;
-} // namespace Slot
-
-VerbDefinition Cosmetic(std::string_view name, std::string displayName, std::string description, VerbKind kind)
-{
-    VerbDefinition verb = MakeCosmeticVerb(name, std::move(displayName), std::move(description), "Camera", kind);
-    DataFieldSchema profile = MakeDataField(DataFieldKind::DataAssetRef, "profile", "Profile", "How the view shakes.");
-    profile.Reference.DataSubtype = std::string(kCameraShakeType);
-    DataFieldSchema scale = MakeDataField(DataFieldKind::Float, "scale", "Scale", "Multiplies the profile.");
-    scale.Required = false;
-    scale.Default = 1.0;
-    scale.Numeric.Minimum = 0.0;
-    DataFieldSchema point = MakeDataField(DataFieldKind::Vector, "point", "Point",
-                                          "Where it comes from, for a profile that falls off with distance.");
-    point.Required = false;
-    DataFieldSchema seed = MakeDataField(DataFieldKind::Int, "seed", "Seed", "Picks the noise.");
-    seed.Required = false;
-    seed.Default = std::int64_t{ 0 };
-    verb.Arguments.Children = { std::move(profile), std::move(scale), CameraEffectSubjectField(), std::move(point),
-                                std::move(seed) };
-    return verb;
-}
-} // namespace
-
-void DeclareCameraShakeVerbs(VerbRegistrationScope& scope)
-{
-    (void)scope.Declare(Cosmetic(kCameraShakeVerb, "Shake camera", "Shakes the view once.", VerbKind::Instant));
-    (void)scope.Declare(Cosmetic(kCameraShakeHoldLease, "Hold camera shake",
-                                 "Shakes the view while held, then lets it settle.", VerbKind::Lease));
+    return Start(invocation, false, profile, scale, subject, point, seed);
 }
 
-VerbAdmission CameraShakeOperations::Shake(const VerbInvocation& invocation)
+VerbAdmission CameraShakeOperations::Hold(const VerbInvocation& invocation, AuthoredDataRef profile, float scale,
+                                          std::optional<EntityId> subject, std::optional<Vec3d> point,
+                                          std::int64_t seed)
 {
-    return Start(invocation, false);
+    return Start(invocation, true, profile, scale, subject, point, seed);
 }
 
-VerbAdmission CameraShakeOperations::Hold(const VerbInvocation& invocation)
+VerbAdmission CameraShakeOperations::EndHold(const VerbInvocation& invocation)
 {
-    if (invocation.Step == LeaseStep::Release)
-    {
-        if (CameraShakeState* state = Entities->TryGetResource<CameraShakeState>())
-            state->Release(invocation.Owner, CameraEffectTickOf(invocation, *Clock), Clock->GetFixedDt());
-        return VerbAdmission::Accepted;
-    }
-    return Start(invocation, true);
+    if (CameraShakeState* state = Entities->TryGetResource<CameraShakeState>())
+        state->Release(invocation.Owner, CameraEffectTickOf(invocation, *Clock), Clock->GetFixedDt());
+    return VerbAdmission::Accepted;
 }
 
-VerbAdmission CameraShakeOperations::Start(const VerbInvocation& invocation, bool held)
+VerbAdmission CameraShakeOperations::Start(const VerbInvocation& invocation, bool held, AuthoredDataRef profile,
+                                           float scale, std::optional<EntityId> subject, std::optional<Vec3d> point,
+                                           std::int64_t seed)
 {
-    const AuthoredArguments* arguments = invocation.Arguments;
-    const AssetRef* reference = nullptr;
-    double scale = 1.0;
-    if (arguments == nullptr || !arguments->TryGetDataAsset(Slot::Profile, reference) || !arguments->TryGetFloat(Slot::Scale, scale)
-        || !std::isfinite(scale) || scale < 0.0 || (held && !invocation.Owner.IsSet()))
-        return VerbAdmission::InvalidArguments;
     CameraShakeState* state = Entities->TryGetResource<CameraShakeState>();
     const DataAssetCache* profiles = Verbs->GetDataAssets();
     if (state == nullptr || profiles == nullptr)
         return VerbAdmission::Unavailable;
-    const CameraShakeProfile* profile =
-        profiles->TryGet<CameraShakeProfile>(profiles->Find(reference->Path), kCameraShakeType);
-    if (profile == nullptr)
+    const CameraShakeProfile* shape =
+        profiles->TryGet<CameraShakeProfile>(profiles->Find(profile.Reference->Path), kCameraShakeType);
+    if (shape == nullptr)
         return VerbAdmission::Refused;
 
-    EntityId subject;
-    (void)arguments->TryGetEntity(Slot::Subject, subject);
-    std::int64_t seed = 0;
-    (void)arguments->TryGetInt(Slot::Seed, seed);
+    const EntityId viewer = subject.value_or(EntityId{});
     const std::uint64_t tick = CameraEffectTickOf(invocation, *Clock);
-    CameraShakeInstance shake{ .Timing = held ? CameraEffectTiming::Held(profile->Envelope, tick, subject, invocation.Owner)
-                                              : CameraEffectTiming::Once(profile->Envelope, tick, subject),
-                               .Profile = *profile,
-                               .Scale = static_cast<float>(scale),
+    CameraShakeInstance shake{ .Timing = held ? CameraEffectTiming::Held(shape->Envelope, tick, viewer, invocation.Owner)
+                                              : CameraEffectTiming::Once(shape->Envelope, tick, viewer),
+                               .Profile = *shape,
+                               .Scale = scale,
                                .Seed = static_cast<std::uint64_t>(seed),
-                               .Point = std::nullopt };
-    if (Vec3d point; ReadAuthoredArgument(*arguments, Slot::Point, point))
-        shake.Point = point;
+                               .Point = point };
     state->Start(std::move(shake), { .Tick = tick + 1, .Alpha = 0.0, .TickSeconds = Clock->GetFixedDt() });
     return VerbAdmission::Accepted;
 }

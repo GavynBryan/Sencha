@@ -15,6 +15,7 @@
 #include <app/LoadedLevel.h>
 #include <save/SavedGames.h>
 #include <app/RuntimeContent.h>
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
@@ -680,8 +681,8 @@ private:
     std::unique_ptr<EngineVocabularyBindings> VocabularyBindings;
     std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
-    VerbBindingToken ResumeBinding;
-    VerbBindingToken QuitBinding;
+    AuthoredApiBindings ResumeBinding;
+    AuthoredApiBindings QuitBinding;
     // Declared after the services it connects and the world it publishes into,
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.

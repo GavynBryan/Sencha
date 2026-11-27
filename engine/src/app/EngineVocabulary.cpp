@@ -1,5 +1,6 @@
 #include <app/EngineVocabulary.h>
 #include <app/LevelChangeVocabulary.h>
+#include <app/ShellVerbs.h>
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
@@ -28,7 +29,6 @@
 #include <projectile/ProjectileVerbs.h>
 #include <time/ActorTimeVerbs.h>
 
-#include <string>
 
 bool InstallEngineVocabulary(World& world)
 {
@@ -41,19 +41,8 @@ bool InstallEngineVocabulary(World& world)
     AuthoredQueryRegistrationScope queryScope(*queries, "engine");
     AuthoredEventRegistrationScope eventScope(*events, "engine");
 
-    VerbDefinition resume;
-    resume.Name = std::string(kRuntimeResumeVerb);
-    resume.DisplayName = "Resume";
-    resume.Description = "Closes the application shell and resumes local play.";
-    resume.Category = "Runtime";
-    (void)scope.Declare(std::move(resume));
-
-    VerbDefinition quit;
-    quit.Name = std::string(kApplicationQuitVerb);
-    quit.DisplayName = "Quit";
-    quit.Description = "Asks the host to exit. The game's exit handler still sees the request.";
-    quit.Category = "Application";
-    (void)scope.Declare(std::move(quit));
+    DeclareAuthoredApi<RuntimeResumeOperation>(&scope, nullptr);
+    DeclareAuthoredApi<ApplicationQuitOperation>(&scope, nullptr);
 
     DeclareAuthoredApi<AnimRequestOperations>(&scope, nullptr);
     DeclareAuthoredApi<EffectOperations>(&scope, nullptr);
@@ -61,10 +50,11 @@ bool InstallEngineVocabulary(World& world)
     DeclareAuthoredApi<GameplayTagOperations>(&scope, nullptr);
     DeclareAuthoredApi<ActorTimeOperations>(&scope, nullptr);
     DeclareAuthoredApi<MovementOperations>(&scope, nullptr);
-    DeclareAudioVerbs(scope);
-    DeclareAttachmentVerbs(scope);
-    DeclareCameraShakeVerbs(scope);
-    DeclareCameraFovScaleVerbs(scope);
+    DeclareAuthoredApi<AudioOperations>(&scope, nullptr);
+    DeclareAuthoredApi<AttachmentOperations>(&scope, nullptr);
+    DeclareAuthoredApi<AttachedLightOperations>(&scope, nullptr);
+    DeclareAuthoredApi<CameraShakeOperations>(&scope, nullptr);
+    DeclareAuthoredApi<CameraFovScaleOperations>(&scope, nullptr);
     DeclareAuthoredApi<NavigationOperations>(&scope, nullptr);
     DeclareResponseVocabulary(scope, eventScope);
     DeclareProjectileVocabulary(scope, eventScope);
@@ -73,7 +63,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareAuthoredApi<SavedGameOperations>(&scope, nullptr);
     DeclareAuthoredApi<LevelChangeOperations>(&scope, nullptr);
     DeclareLevelChangeEvents(eventScope);
-    DeclarePhysicsQueries(queryScope);
+    DeclareAuthoredApi<PhysicsQueryOperations>(nullptr, &queryScope);
     DeclareAuthoredApi<NavigationOperations>(nullptr, &queryScope);
     DeclareCounterVocabulary(scope, queryScope, eventScope);
     DeclareInventoryVocabulary(scope, queryScope);

@@ -1,3 +1,4 @@
+#include <app/ShellVerbs.h>
 #include <gtest/gtest.h>
 
 #include <app/Engine.h>
@@ -122,7 +123,7 @@ public:
         // The engine's names are already there when the game's turn comes, and
         // nothing content-related has been resolved yet.
         VerbRegistry* verbs = FindVerbRegistry(world);
-        SawEngineVerbsFirst = verbs != nullptr && verbs->Find(kRuntimeResumeVerb).IsValid();
+        SawEngineVerbsFirst = verbs != nullptr && verbs->Find(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume).IsValid();
         if (verbs == nullptr)
             return;
 
@@ -184,14 +185,14 @@ public:
         {
             Admission = dispatcher->Invoke(compiled, {}).Status;
         }
-        EngineVerbsDeclared = verbs.Find(kApplicationQuitVerb).IsValid();
+        EngineVerbsDeclared = verbs.Find(AuthoredApiDefinition<ApplicationQuitOperation>::Name_Quit).IsValid();
         // No session: this process decides what happens, the way a standalone
         // game always has.
         AuthoritativeAtStart = IsSimulationAuthority(GetEngine().World().Entities())
             && GetEngine().World().Entities().HasResource<SimulationAuthority>();
         // Declared by the engine, but this headless host composed no shell to
         // bind them: discovery without execution.
-        EngineVerbsUnavailable = !dispatcher->HasImplementation(verbs.Find(kRuntimeResumeVerb));
+        EngineVerbsUnavailable = !dispatcher->HasImplementation(verbs.Find(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume));
     }
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override

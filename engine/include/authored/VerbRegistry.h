@@ -103,43 +103,6 @@ struct VerbDefinition
     std::optional<DataFieldSchema> Result;
 };
 
-// A verb only a presentation runs, on every machine that presents: cosmetic in
-// scope, so a simulation producer cannot bind it.
-[[nodiscard]] inline VerbDefinition MakeCosmeticVerb(std::string_view name, std::string displayName,
-                                                     std::string description, std::string category, VerbKind kind)
-{
-    VerbDefinition verb;
-    verb.Name = std::string(name);
-    verb.DisplayName = std::move(displayName);
-    verb.Description = std::move(description);
-    verb.Category = std::move(category);
-    verb.Kind = kind;
-    verb.Scope = AuthoredScope::Cosmetic;
-    verb.Prediction = AuthoredPrediction::Presentation;
-    return verb;
-}
-
-[[nodiscard]] inline VerbDefinition MakeGameplayVerb(std::string_view name, std::string displayName,
-                                                     std::string description, std::string category,
-                                                     std::vector<DataFieldSchema> arguments)
-{
-    VerbDefinition verb;
-    verb.Name = std::string(name);
-    verb.DisplayName = std::move(displayName);
-    verb.Description = std::move(description);
-    verb.Category = std::move(category);
-    verb.Arguments.Children = std::move(arguments);
-    return verb;
-}
-
-[[nodiscard]] inline DataFieldSchema MakeEntityArgument(std::string key, std::string displayName,
-                                                        std::string_view componentIdentity, std::string summary)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Entity, std::move(key), std::move(displayName), std::move(summary));
-    field.Reference.ComponentIdentity = std::string(componentIdentity);
-    return field;
-}
-
 struct VerbCatalogTraits
 {
     using Definition = VerbDefinition;

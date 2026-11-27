@@ -21,7 +21,6 @@
 #include <logic/CounterVocabulary.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
-#include <physics/PhysicsQueries.h>
 #include <projectile/ProjectileSystem.h>
 #include <projectile/ProjectileVerbs.h>
 #include <save/SavedGameVocabulary.h>
@@ -57,14 +56,11 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Tags));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Movement));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Navigation));
-    Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(verbs.Registry().Find(kAudioPlayVerb), *Audio));
-    Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(verbs.Registry().Find(kAudioLoopLease), *Audio));
-    Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(verbs.Registry().Find(kPresentationAttachLease), *Attachments));
-    Verbs.push_back(verbs.Bind<&InvokePresentationLight>(verbs.Registry().Find(kPresentationLightLease), *AttachedLights));
-    Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(verbs.Registry().Find(kCameraFovScaleVerb), *FovScale));
-    Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(verbs.Registry().Find(kCameraFovScaleHoldLease), *FovScale));
-    Verbs.push_back(verbs.Bind<&InvokeCameraShake>(verbs.Registry().Find(kCameraShakeVerb), *Shake));
-    Verbs.push_back(verbs.Bind<&InvokeCameraShakeHold>(verbs.Registry().Find(kCameraShakeHoldLease), *Shake));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Audio));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Attachments));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *AttachedLights));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *FovScale));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Shake));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Responses));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Perception));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Claims));
@@ -73,8 +69,6 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
 EngineVocabularyBindings::~EngineVocabularyBindings()
 {
     Generated.clear();
-    Queries.clear();
-    Verbs.clear();
 }
 
 void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher& verbs)
@@ -140,11 +134,6 @@ void EngineVocabularyBindings::BindInteraction(const PhysicsWorld& physics, Resp
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)
 {
-    Physics = std::make_unique<PhysicsQueries>(physics);
-    Queries.push_back(queries.Bind<&EvaluatePhysicsTrace>(queries.Registry().Find(kPhysicsTraceQuery),
-                                                          std::as_const(*Physics)));
-    Queries.push_back(queries.Bind<&EvaluatePhysicsOverlap>(queries.Registry().Find(kPhysicsOverlapQuery),
-                                                            std::as_const(*Physics)));
-    Queries.push_back(queries.Bind<&EvaluatePhysicsClearPath>(queries.Registry().Find(kPhysicsClearPathQuery),
-                                                              std::as_const(*Physics)));
+    Physics = std::make_unique<PhysicsQueryOperations>(physics);
+    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Physics));
 }

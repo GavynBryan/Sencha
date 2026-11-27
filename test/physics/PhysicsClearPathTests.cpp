@@ -16,17 +16,7 @@ namespace
 {
     bool Clear(const PhysicsWorld& world, const Vec3d& from, const Vec3d& to, float radius, float height)
     {
-        const PhysicsQueries queries(world);
-        const std::vector<AuthoredValue> arguments{
-            AuthoredValueTraits<Vec3d>::Encode(from), AuthoredValueTraits<Vec3d>::Encode(to),
-            AuthoredValue::Float(radius),             AuthoredValue::Float(height),
-            AuthoredValue{},
-        };
-        AuthoredValue result;
-        EXPECT_EQ(EvaluatePhysicsClearPath(queries, arguments, result), AuthoredQueryStatus::Value);
-        bool clear = false;
-        EXPECT_TRUE(result.TryGetBool(clear));
-        return clear;
+        return PhysicsQueryOperations(world).ClearPath(from, to, radius, height, std::nullopt);
     }
 
     void Wall(PhysicsWorld& world, const Vec3d& centre, const Vec3d& half)

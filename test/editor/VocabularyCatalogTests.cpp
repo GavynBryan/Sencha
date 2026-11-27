@@ -2,6 +2,7 @@
 // beside the engine's, and whether each binding-asset record resolves, all
 // without a dispatcher.
 
+#include <app/ShellVerbs.h>
 #include "vocabulary/VocabularyCatalog.h"
 
 #include <app/LevelChangeVocabulary.h>
@@ -90,9 +91,9 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
     ASSERT_EQ(verbs.size(), 57u);
-    EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
+    EXPECT_EQ(verbs[0].Name, AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume);
     EXPECT_EQ(verbs[0].Provider, "engine");
-    EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
+    EXPECT_EQ(verbs[1].Name, AuthoredApiDefinition<ApplicationQuitOperation>::Name_Quit);
     EXPECT_EQ(verbs[2].Name, AuthoredApiDefinition<AnimRequestOperations>::Name_Request);
     EXPECT_EQ(verbs[3].Name, AuthoredApiDefinition<AnimRequestOperations>::Name_Cancel);
     EXPECT_EQ(verbs[4].Name, AuthoredApiDefinition<AnimRequestOperations>::Name_Hold);
@@ -109,14 +110,14 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[18].Name, AuthoredApiDefinition<MovementOperations>::Name_Mode);
     EXPECT_EQ(verbs[19].Name, AuthoredApiDefinition<MovementOperations>::Name_Launch);
     EXPECT_EQ(verbs[20].Name, AuthoredApiDefinition<MovementOperations>::Name_Impulse);
-    EXPECT_EQ(verbs[21].Name, kAudioPlayVerb);
-    EXPECT_EQ(verbs[22].Name, kAudioLoopLease);
-    EXPECT_EQ(verbs[23].Name, kPresentationAttachLease);
-    EXPECT_EQ(verbs[24].Name, kPresentationLightLease);
-    EXPECT_EQ(verbs[25].Name, kCameraShakeVerb);
-    EXPECT_EQ(verbs[26].Name, kCameraShakeHoldLease);
-    EXPECT_EQ(verbs[27].Name, kCameraFovScaleVerb);
-    EXPECT_EQ(verbs[28].Name, kCameraFovScaleHoldLease);
+    EXPECT_EQ(verbs[21].Name, AuthoredApiDefinition<AudioOperations>::Name_Play);
+    EXPECT_EQ(verbs[22].Name, AuthoredApiDefinition<AudioOperations>::Name_Loop);
+    EXPECT_EQ(verbs[23].Name, AuthoredApiDefinition<AttachmentOperations>::Name_Attach);
+    EXPECT_EQ(verbs[24].Name, AuthoredApiDefinition<AttachedLightOperations>::Name_Light);
+    EXPECT_EQ(verbs[25].Name, AuthoredApiDefinition<CameraShakeOperations>::Name_Shake);
+    EXPECT_EQ(verbs[26].Name, AuthoredApiDefinition<CameraShakeOperations>::Name_Hold);
+    EXPECT_EQ(verbs[27].Name, AuthoredApiDefinition<CameraFovScaleOperations>::Name_Pulse);
+    EXPECT_EQ(verbs[28].Name, AuthoredApiDefinition<CameraFovScaleOperations>::Name_Hold);
     EXPECT_EQ(verbs[29].Name, AuthoredApiDefinition<NavigationOperations>::Name_MoveTo);
     EXPECT_EQ(verbs[30].Name, AuthoredApiDefinition<NavigationOperations>::Name_Approach);
     EXPECT_EQ(verbs[31].Name, AuthoredApiDefinition<NavigationOperations>::Name_Stop);
@@ -145,8 +146,8 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[56].Name, AuthoredApiDefinition<ClaimOperations>::Name_Hold);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 33u);
-    EXPECT_EQ(queries[5].Name, kPhysicsTraceQuery);
-    EXPECT_EQ(queries[6].Name, kPhysicsOverlapQuery);
+    EXPECT_EQ(queries[5].Name, AuthoredApiDefinition<PhysicsQueryOperations>::Name_Trace);
+    EXPECT_EQ(queries[6].Name, AuthoredApiDefinition<PhysicsQueryOperations>::Name_Overlap);
     EXPECT_EQ(queries[8].Name, AuthoredApiDefinition<NavigationOperations>::Name_Phase);
     EXPECT_EQ(queries[9].Name, AuthoredApiDefinition<NavigationOperations>::Name_Failure);
     EXPECT_EQ(queries[10].Name, AuthoredApiDefinition<NavigationOperations>::Name_Remaining);
@@ -208,7 +209,7 @@ TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
     catalog.InstallModuleVocabulary(game);
 
     VerbBindingLibrary library;
-    library.Bindings.push_back(Record("menu.resume", std::string(kRuntimeResumeVerb)));
+    library.Bindings.push_back(Record("menu.resume", std::string(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume)));
     VerbBindingDesc fire = Record("hook.fire", kModuleVerb);
     VerbBindingArgument range;
     range.Key = "Range";

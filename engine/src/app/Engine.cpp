@@ -1381,10 +1381,8 @@ int Engine::Run(Game& game)
         // engine.
         ResumeOperation = std::make_unique<RuntimeResumeOperation>(*PauseMenuState);
         QuitOperation = std::make_unique<ApplicationQuitOperation>(*this);
-        VerbRegistry& verbs = RuntimeWorldState->Entities().GetResource<VerbRegistry>();
-        ResumeBinding =
-            VerbDispatcherState->Bind(verbs.Find(kRuntimeResumeVerb), *ResumeOperation);
-        QuitBinding = VerbDispatcherState->Bind(verbs.Find(kApplicationQuitVerb), *QuitOperation);
+        ResumeBinding = BindAuthoredApi(VerbDispatcherState.get(), nullptr, *ResumeOperation);
+        QuitBinding = BindAuthoredApi(VerbDispatcherState.get(), nullptr, *QuitOperation);
 
         PauseMenuState->SetVerbBindings(VerbDispatcherState.get(), &ShellBindingSet);
         if (InstantiateShellBindings())

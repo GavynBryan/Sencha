@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include <assets/data/DataAssetCache.h>
@@ -487,17 +488,18 @@ TEST(CameraEffectVerbs, ShakeAndFieldOfViewStartFromTheirArgumentsAndHoldsLetGo)
     shakeArguments.Set(0, AuthoredValue::DataAsset(AssetRef{ AssetType::Data, kProfilePath }));
     shakeArguments.Set(1, AuthoredValue::Float(2.0));
     shakeArguments.Set(2, AuthoredValue::Entity(views.Pawn));
+    shakeArguments.Set(4, AuthoredValue::Int(0));
     VerbInvocation call = Call(100, &shakeArguments, { views.Pawn, 1 }, LeaseStep::Acquire);
-    EXPECT_EQ(InvokeCameraShakeHold(shake, call), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(shake, AuthoredApiDefinition<CameraShakeOperations>::Name_Hold, call).Status, VerbAdmission::Accepted);
     EXPECT_FLOAT_EQ(views.ShakeAt(At(200)).Translation.Y, 0.2f);
     call = Call(200, nullptr, { views.Pawn, 1 }, LeaseStep::Release);
-    EXPECT_EQ(InvokeCameraShakeHold(shake, call), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(shake, AuthoredApiDefinition<CameraShakeOperations>::Name_Hold, call).Status, VerbAdmission::Accepted);
     (void)views.ShakeAt(At(210));
     EXPECT_EQ(views.Shake().Count(), 0u);
 
     shakeArguments.Set(0, AuthoredValue::DataAsset(AssetRef{ AssetType::Data, "asset://shakes/missing.sdata" }));
     call = Call(300, &shakeArguments);
-    EXPECT_EQ(InvokeCameraShake(shake, call), VerbAdmission::Refused);
+    EXPECT_EQ(CallGeneratedVerb(shake, AuthoredApiDefinition<CameraShakeOperations>::Name_Shake, call).Status, VerbAdmission::Refused);
 
     AuthoredArguments fovArguments(5);
     fovArguments.Set(0, AuthoredValue::Float(1.25));
@@ -505,11 +507,11 @@ TEST(CameraEffectVerbs, ShakeAndFieldOfViewStartFromTheirArgumentsAndHoldsLetGo)
     fovArguments.Set(2, AuthoredValue::Float(0.1));
     fovArguments.Set(3, AuthoredValue::Float(0.1));
     call = Call(300, &fovArguments);
-    EXPECT_EQ(InvokeCameraFovScale(fov, call), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(fov, AuthoredApiDefinition<CameraFovScaleOperations>::Name_Pulse, call).Status, VerbAdmission::Accepted);
     EXPECT_FLOAT_EQ(views.FovAt(At(302)), 1.25f);
     fovArguments.Set(2, AuthoredValue::Float(-1.0));
-    EXPECT_EQ(InvokeCameraFovScale(fov, call), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(CallGeneratedVerb(fov, AuthoredApiDefinition<CameraFovScaleOperations>::Name_Pulse, call).Status, VerbAdmission::InvalidArguments);
     fovArguments.Set(2, AuthoredValue::Float(0.1));
     fovArguments.Set(0, AuthoredValue::Float(0.0));
-    EXPECT_EQ(InvokeCameraFovScale(fov, call), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(CallGeneratedVerb(fov, AuthoredApiDefinition<CameraFovScaleOperations>::Name_Pulse, call).Status, VerbAdmission::InvalidArguments);
 }

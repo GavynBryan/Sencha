@@ -1,8 +1,9 @@
 #include <app/ShellVerbs.h>
 
+#include <app/Engine.h>
 #include <app/PauseMenu.h>
 
-VerbAdmission RuntimeResumeOperation::Invoke(const VerbInvocation&)
+VerbAdmission RuntimeResumeOperation::Resume()
 {
     // Nothing open is nothing to resume. Refused rather than accepted silently:
     // a producer that fired a resume at a running game should be able to see
@@ -14,7 +15,7 @@ VerbAdmission RuntimeResumeOperation::Invoke(const VerbInvocation&)
     return VerbAdmission::Accepted;
 }
 
-VerbAdmission ApplicationQuitOperation::Invoke(const VerbInvocation&)
+VerbAdmission ApplicationQuitOperation::Quit()
 {
     Host->RequestExit(Engine::ExitSource::Menu);
     return VerbAdmission::Accepted;

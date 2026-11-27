@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include "AttachmentFixture.h"
@@ -36,7 +37,7 @@ namespace
             invocation.Owner = owner;
             invocation.Step = LeaseStep::Acquire;
             invocation.Arguments = &arguments;
-            return Operations.Attach(invocation);
+            return CallGeneratedVerb(Operations, AuthoredApiDefinition<AttachmentOperations>::Name_Attach, invocation).Status;
         }
 
         VerbAdmission Release(const LeaseOwner& owner)
@@ -44,7 +45,7 @@ namespace
             VerbInvocation invocation;
             invocation.Owner = owner;
             invocation.Step = LeaseStep::Release;
-            return Operations.Attach(invocation);
+            return CallGeneratedVerb(Operations, AuthoredApiDefinition<AttachmentOperations>::Name_Attach, invocation).Status;
         }
 
         [[nodiscard]] std::vector<EntityId> Worn() const
@@ -121,11 +122,13 @@ TEST(PresentationAttachLease, AWorldThatPresentsNothingCannotHoldAProp)
     arguments.Set(1, AuthoredValue::String("hand_r"));
     arguments.Set(2, AuthoredValue::Asset({ .Type = AssetType::StaticMesh, .Path = "asset://meshes/prop.smesh", .Id = {} }));
     arguments.Set(3, AuthoredValue::Asset({ .Type = AssetType::Material, .Path = "asset://materials/prop.smat", .Id = {} }));
+    arguments.Set(6, AuthoredValue::Bool(true));
     VerbInvocation invocation;
     invocation.Owner = { .Entity = fx.Body, .Key = 1 };
     invocation.Step = LeaseStep::Acquire;
     invocation.Arguments = &arguments;
-    EXPECT_EQ(fx.Operations.Attach(invocation), VerbAdmission::Unavailable);
+    EXPECT_EQ(CallGeneratedVerb(fx.Operations, AuthoredApiDefinition<AttachmentOperations>::Name_Attach, invocation).Status,
+              VerbAdmission::Unavailable);
 }
 
 TEST(PresentationAttachLease, ARefusedReacquireTakesTheOldPropAway)

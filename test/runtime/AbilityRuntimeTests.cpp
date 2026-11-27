@@ -188,10 +188,7 @@ protected:
         Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, Effects));
         Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, AbilityVerbs));
         QueryTokens.push_back(Queries->Bind<&EvaluateReady>(Queries->Registry().Find("test.ready"), std::as_const(Ready)));
-        QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsTrace>(Queries->Registry().Find(kPhysicsTraceQuery),
-                                                                   std::as_const(Traces)));
-        QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsOverlap>(Queries->Registry().Find(kPhysicsOverlapQuery),
-                                                                     std::as_const(Traces)));
+        Generated.push_back(BindAuthoredApi(nullptr, Queries.get(), Traces));
         Host = AbilityHost{ .Verbs = Verbs.get(), .Queries = Queries.get() };
     }
 
@@ -400,7 +397,7 @@ protected:
     AbilitySettings Settings;
 
     PhysicsWorld Physics;
-    PhysicsQueries Traces{ Physics };
+    PhysicsQueryOperations Traces{ Physics };
     FixedSimulationLoop Clock{ kTickSeconds };
     EffectOperations Effects{ Entities, Clock };
     AbilityOperations AbilityVerbs{ Entities };
