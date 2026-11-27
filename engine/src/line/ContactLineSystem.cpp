@@ -170,7 +170,7 @@ VerbAdmission ContactLineSystem::Throw(const VerbInvocation& invocation, EntityI
                                       const AssetRef& projectile, std::optional<Vec3d> at, bool keep)
 {
     World& world = *Entities;
-    if (!IsSimulationAuthority(world) || Host.Prefabs == nullptr || Host.Projectiles == nullptr)
+    if (Host.Prefabs == nullptr || Host.Projectiles == nullptr)
         return VerbAdmission::Refused;
     const AssetId lineId = Host.Projectiles->PrefabOf(line);
     const AssetId shotId = Host.Projectiles->PrefabOf(projectile);
@@ -222,8 +222,6 @@ VerbAdmission ContactLineSystem::LaunchTip(ContactLineState& state, const Contac
 VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation, EntityId instigator)
 {
     World& world = *Entities;
-    if (!IsSimulationAuthority(world))
-        return VerbAdmission::Refused;
     if (!world.IsRegistered<ContactLineState>())
         return VerbAdmission::Accepted;
     Scratch.clear();
@@ -244,8 +242,6 @@ VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation, EntityId 
 
 VerbAdmission ContactLineSystem::Retract(EntityId instigator, std::optional<bool> keepNewest)
 {
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     RetractKeptContactLines(*Entities, instigator, keepNewest.value_or(false));
     return VerbAdmission::Accepted;
 }

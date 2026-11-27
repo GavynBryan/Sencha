@@ -560,7 +560,10 @@ TEST(InteractUse, OnlyTheAuthorityUses)
     invocation.Verb = harness.Verbs->Registry().Find(AuthoredApiDefinition<InteractUseOperations>::Name_Use);
     invocation.Arguments = &arguments;
     InteractUseOperations operations(harness.Entities(), harness.Physics(), *harness.Pass);
-    EXPECT_EQ(CallGeneratedVerb(operations, AuthoredApiDefinition<InteractUseOperations>::Name_Use, invocation).Status, VerbAdmission::Refused);
+    EXPECT_EQ(CallGeneratedVerb(operations, AuthoredApiDefinition<InteractUseOperations>::Name_Use, invocation,
+                                &harness.Entities())
+                  .Status,
+              VerbAdmission::NotAuthority);
     (void)scene;
 }
 

@@ -6,7 +6,6 @@
 #include <logic/Responses.h>
 #include <logic/ResponsesSystem.h>
 #include <time/SimClock.h>
-#include <world/SimulationAuthority.h>
 
 #include <string>
 #include <utility>
@@ -40,8 +39,6 @@ void DeclareResponseVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegist
 
 VerbAdmission ResponseOperations::SetEnabled(EntityId entity, std::string_view key, bool enabled)
 {
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     Responses* responses = Entities->IsRegistered<Responses>() ? Entities->TryGet<Responses>(entity) : nullptr;
     const ResponseDefinitions* definitions = Entities->TryGetResource<ResponseDefinitions>();
     if (responses == nullptr || definitions == nullptr)
@@ -71,8 +68,6 @@ VerbAdmission ResponseOperations::Disable(EntityId entity, std::string_view bind
 
 VerbAdmission ResponseOperations::Interact(const VerbInvocation& invocation, EntityId activator)
 {
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     SensorInteractions* requests = Entities->TryGetResource<SensorInteractions>();
     if (requests == nullptr)
         return VerbAdmission::Refused;

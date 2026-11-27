@@ -127,7 +127,8 @@ namespace
             const AuthoredArguments arguments = Arguments(name, value, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Set, invocation).Status;
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Set, invocation, &Entities)
+                .Status;
         }
 
         VerbAdmission Add(GameplayTagId name, std::int64_t amount, std::optional<EntityId> holder = {})
@@ -135,7 +136,8 @@ namespace
             const AuthoredArguments arguments = Arguments(name, amount, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Add, invocation).Status;
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Add, invocation, &Entities)
+                .Status;
         }
 
         std::optional<std::int64_t> Value(GameplayTagId name, std::optional<EntityId> holder = {})
@@ -280,7 +282,7 @@ TEST(Counters, OnlyTheAuthorityChangesACounterAndAGoneHolderIsRefused)
     EXPECT_EQ(world.Value(world.Boss, body), std::nullopt);
 
     world.Entities.AddResource<SimulationAuthority>().Authoritative = false;
-    EXPECT_EQ(world.Set(world.Boss, 1), VerbAdmission::Refused);
+    EXPECT_EQ(world.Set(world.Boss, 1), VerbAdmission::NotAuthority);
     EXPECT_EQ(world.Index->Count(), 0u);
 }
 

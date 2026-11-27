@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <core/logging/Logger.h>
+#include <world/SimulationAuthority.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <cassert>
@@ -22,6 +23,7 @@ const char* VerbAdmissionName(VerbAdmission admission)
     case VerbAdmission::UnresolvedReference: return "unresolved reference";
     case VerbAdmission::ScopeMismatch: return "scope mismatch";
     case VerbAdmission::KindMismatch: return "kind mismatch";
+    case VerbAdmission::NotAuthority: return "not the authority";
     }
     return "unknown";
 }
@@ -258,6 +260,9 @@ VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding
         return reject(VerbAdmission::InvalidArguments);
     if (source.Scope == AuthoredScope::Cosmetic && definition.Scope != AuthoredScope::Cosmetic)
         return reject(VerbAdmission::ScopeMismatch);
+    if (definition.Prediction == AuthoredPrediction::AuthorityOnly && Authority != nullptr
+        && !IsSimulationAuthority(*Authority))
+        return reject(VerbAdmission::NotAuthority);
 
     Implementation* entry = Find(binding.Verb);
     // An implementation bound against an older contract is not offered a newer

@@ -22,6 +22,7 @@ concept IsVerbImplementation = requires(T& implementation, const VerbInvocation&
 class DataAssetCache;
 class Logger;
 class PersistentEntityIndex;
+class World;
 class VerbDispatcher;
 
 using VerbBindingToken = AuthoredBindingToken<VerbDispatcher, VerbId, VerbBindingGeneration>;
@@ -117,6 +118,9 @@ public:
     // with UnresolvedReference, never dispatched with an invalid handle.
     void SetEntityIndex(const PersistentEntityIndex* entities) { Entities = entities; }
 
+    // The World whose SimulationAuthority admits an AuthorityOnly verb; none admits every one.
+    void SetAuthority(const World* world) { Authority = world; }
+
     // Where a dynamic data-asset reference's subtype is read, for an input
     // whose field constrains one. Borrowed and outlived by its owner. Null
     // means such an input is refused as InvalidArguments rather than accepted
@@ -195,6 +199,7 @@ private:
     // Indexed like Implementations: whether a verb's defective result was reported.
     std::vector<bool> ResultDefectReported;
     const PersistentEntityIndex* Entities = nullptr;
+    const World* Authority = nullptr;
     const DataAssetCache* DataAssets = nullptr;
     std::uint64_t NextInvocation = 0;
     std::uint32_t NextGeneration = 0;

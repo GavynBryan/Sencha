@@ -1253,6 +1253,7 @@ int Engine::Run(Game& game)
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
         VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
+        VerbDispatcherState->SetAuthority(&entities);
         VerbDispatcherState->SetLog(&LoggingState.GetLogger<VerbDispatcher>());
         QueryDispatcherState =
             std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(entities));

@@ -2,7 +2,6 @@
 
 #include <authored/AuthoredApi.h>
 #include <ecs/World.h>
-#include <world/SimulationAuthority.h>
 
 #include <array>
 #include <string>
@@ -54,8 +53,6 @@ InteractUseOperations::InteractUseOperations(const World& world, const PhysicsWo
 VerbAdmission InteractUseOperations::Use(EntityId activator, float range, std::optional<Vec3d> origin,
                                          std::optional<Vec3d> direction)
 {
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     Aim ray = AimOf(*Entities, activator);
     if (origin.has_value())
         ray.Origin = *origin;

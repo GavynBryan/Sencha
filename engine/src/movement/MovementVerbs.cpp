@@ -7,7 +7,6 @@
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/HeldMotion.h>
 #include <movement/components/MotionChannels.h>
-#include <world/SimulationAuthority.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -165,8 +164,6 @@ VerbAdmission MovementOperations::EndMode(const VerbInvocation& invocation)
 VerbAdmission MovementOperations::Velocity(EntityId target, Vec3d direction, float speed, float rise, Vec3d& velocity,
                                            Vec3d& up) const
 {
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     const float length = direction.Magnitude();
     if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0f))
         return VerbAdmission::InvalidArguments;

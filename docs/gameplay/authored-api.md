@@ -401,12 +401,25 @@ The answer for the same situation is the same whichever verb gives it:
 |---|---|
 | A value of the wrong kind, out of range, an unknown enum choice or definition | `InvalidArguments`, naming the argument |
 | An entity the request names is not in this World | `UnresolvedReference`, naming the argument |
+| An `AuthorityOnly` verb asked where this World is not the authority | `NotAuthority`: the dispatcher answers |
 | The feature is not installed in this World | `Unavailable`: nothing is bound, so the dispatcher answers |
 | Anything else | `Refused`, with the verb's reason |
 | A query whose arguments are well formed but do not apply | `Unavailable` |
 
 The dispatcher checks kind, range and choice from the schema and resolves
 entities named by persistent identity; everything else is the verb's.
+
+The dispatcher also checks authority once, for every verb: a host tells it which
+World it answers for (`VerbDispatcher::SetAuthority`, which the engine sets to
+its runtime World), and an `AuthorityOnly` verb invoked where that World's
+`SimulationAuthority` says it is not the authority answers `NotAuthority` before
+any provider runs, a lease's acquire included. Both producers already withhold
+such verbs on a client (a predicting ability pass skips them, responses run only
+on the authority), so this guards a direct call: a console line or game C++. A
+verb body does not check authority again; a domain function that other code
+calls keeps its own check (`Inventory`, `SavedGames`, `LevelChange`,
+`WriteCounter`). A dispatcher no host told about authority admits every verb, as
+an editor preview's does.
 
 ## The engine's vocabulary
 

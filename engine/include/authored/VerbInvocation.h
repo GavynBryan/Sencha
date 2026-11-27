@@ -56,6 +56,8 @@ enum class VerbAdmission : std::uint8_t
     ScopeMismatch,
     // A lease was invoked as an instant verb, or an instant verb acquired as a lease.
     KindMismatch,
+    // An AuthorityOnly verb was asked of a World that is not the simulation's authority.
+    NotAuthority,
 };
 
 // Which half of a lease a call is; None for an instant verb.

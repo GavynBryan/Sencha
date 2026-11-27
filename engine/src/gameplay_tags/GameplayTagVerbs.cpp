@@ -3,12 +3,11 @@
 #include <ecs/World.h>
 #include <gameplay_tags/BaselineGameplayTags.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <world/SimulationAuthority.h>
 
 bool GameplayTagOperations::Writable(GameplayTagId tag) const
 {
     const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
-    return IsSimulationAuthority(*Entities) && tags != nullptr && tags->ProjectedBy(tag).empty()
+    return tags != nullptr && tags->ProjectedBy(tag).empty()
         && Entities->IsRegistered<GameplayTagContainer>();
 }
 

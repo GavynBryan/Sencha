@@ -5,7 +5,6 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Claims.h>
-#include <world/SimulationAuthority.h>
 
 VerbAdmission ClaimOperations::Hold(const VerbInvocation& invocation, GameplayTagId group, GameplayTagId claim,
                                     std::uint32_t count, float share)
@@ -13,8 +12,6 @@ VerbAdmission ClaimOperations::Hold(const VerbInvocation& invocation, GameplayTa
     ClaimBoard* board = Entities->TryGetResource<ClaimBoard>();
     if (board == nullptr)
         return VerbAdmission::Unavailable;
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
     const std::uint32_t members = tags != nullptr ? CountGroupMembers(*Entities, group, *tags) : 0;
     return board->Take(*Entities, group, claim, invocation.Owner, ClaimCapacity(count, share, members))

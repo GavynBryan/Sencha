@@ -1897,3 +1897,11 @@ and `MakeEntityArgument` go from `authored/VerbRegistry.h`, with
 least 0.001, its socket as optional, and `physics.overlap` its radius at least
 0.001; the trace, overlap and clear-path limits are in their schemas. Save
 format, scene format and net protocol are unchanged.
+
+## v91
+
+`VerbAdmission` gains `NotAuthority`, appended; `VerbDispatcher::SetAuthority`
+names the World whose `SimulationAuthority` admits an `AuthorityOnly` verb, and
+the engine sets it to its runtime World. Verb bodies no longer check authority
+themselves. The replication table hash and the net protocol do not change: no
+admission travels on the wire. Save and scene formats are unchanged.

@@ -53,12 +53,15 @@ protected:
 
     VerbAdmission Grant(const VerbInvocation& invocation)
     {
-        return CallGeneratedVerb(Operations, AuthoredApiDefinition<GameplayTagOperations>::Name_Grant, invocation).Status;
+        return CallGeneratedVerb(Operations, AuthoredApiDefinition<GameplayTagOperations>::Name_Grant, invocation, &Entities)
+            .Status;
     }
 
     VerbAdmission Revoke(const VerbInvocation& invocation)
     {
-        return CallGeneratedVerb(Operations, AuthoredApiDefinition<GameplayTagOperations>::Name_Revoke, invocation).Status;
+        return CallGeneratedVerb(Operations, AuthoredApiDefinition<GameplayTagOperations>::Name_Revoke, invocation,
+                                 &Entities)
+            .Status;
     }
 
     [[nodiscard]] const GameplayTagContainer* TagsOf(EntityId entity) const
@@ -143,7 +146,7 @@ TEST_F(GameplayTagVerbTest, AFullContainerRefusesANewTagAndCountsIt)
 TEST_F(GameplayTagVerbTest, OnlyTheSimulationAuthorityWrites)
 {
     Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
-    EXPECT_EQ(Grant(Invocation(Target, Unlocked)), VerbAdmission::Refused);
+    EXPECT_EQ(Grant(Invocation(Target, Unlocked)), VerbAdmission::NotAuthority);
     EXPECT_EQ(TagsOf(Target), nullptr);
 }
 

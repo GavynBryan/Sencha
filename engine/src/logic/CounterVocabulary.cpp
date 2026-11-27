@@ -128,8 +128,6 @@ VerbAnswer CounterOperations::Admit(GameplayTagId name, std::optional<EntityId> 
         return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
     if (holder.has_value() && holder->IsValid() && !Entities->IsAlive(*holder))
         return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 2);
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
     if (!Entities->IsRegistered<Counter>() || !Entities->IsRegistered<Held>() || !Entities->HasResource<HeldRecordIndex>())
         return VerbAdmission::Unavailable;
     return VerbAnswer{};
