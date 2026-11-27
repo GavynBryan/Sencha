@@ -11,9 +11,9 @@
 // they change together. Their editing rules live in GameplayVocabularyEdits.h,
 // which is where they are tested.
 //
-// The generic inspector cannot draw any of them: their persisted form is a list
-// of names, so their serializers describe no byte-addressable fields and a
-// registration-order id is not something a designer can be shown a number for.
+// The generic inspector cannot draw them: a tag container, an attribute set and
+// a grant list persist as lists of names, and an entry's count is bounded by its
+// item's stack. A single named field it draws itself, as a choice of names.
 //=============================================================================
 
 [[nodiscard]] std::unique_ptr<IEditorComponentAdapter> MakeGameplayTagEditorAdapter();
