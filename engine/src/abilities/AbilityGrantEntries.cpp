@@ -8,6 +8,7 @@
 #include <input/InputActionRegistry.h>
 
 #include <algorithm>
+#include <charconv>
 #include <format>
 #include <limits>
 #include <utility>
@@ -18,6 +19,52 @@ namespace
     T Pick(const std::optional<T>& override, const std::optional<T>& fallback, T otherwise)
     {
         return override ? *override : fallback ? *fallback : otherwise;
+    }
+
+    // Fixed field order and text forms: the key must match on every machine of one protocol.
+    std::uint32_t EntryWireKey(const AbilityGrantEntry& entry)
+    {
+        constexpr char kField = '\x1f';
+        constexpr char kItem = '\x1e';
+        std::string text = entry.Key;
+        const auto field = [&](char tag, const auto& value) {
+            text += kField;
+            text += tag;
+            if (value)
+                text += std::to_string(static_cast<std::int64_t>(*value));
+        };
+        const AbilityBindingDecl& binding = entry.Override;
+        text += kField;
+        text += 'a';
+        if (binding.Action)
+            text += *binding.Action;
+        field('p', binding.Policy);
+        field('r', binding.Priority);
+        field('c', binding.Consume);
+        field('w', binding.WhenBlocked);
+        field('i', binding.OnInterrupt);
+        text += kField;
+        text += 'x';
+        if (binding.Context)
+            for (const std::vector<std::string>* names : { &binding.Context->All, &binding.Context->Any, &binding.Context->None })
+            {
+                text += kItem;
+                for (const std::string& name : *names)
+                    (text += name) += kItem;
+            }
+        if (!entry.Parameters.empty())
+        {
+            text += kField;
+            text += 'v';
+            char number[32];
+            for (const AbilityGrantParameter& parameter : entry.Parameters)
+            {
+                const auto written = std::to_chars(number, number + sizeof(number), parameter.Value);
+                ((text += kItem) += parameter.Key) += kItem;
+                text.append(number, written.ptr);
+            }
+        }
+        return NameWireKey(text);
     }
 }
 
@@ -40,12 +87,16 @@ AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
 
 std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
 {
+    std::ranges::sort(entry.Parameters, {}, &AbilityGrantParameter::Key);
     const auto found = std::ranges::find(Entries, entry, &Slot::Entry);
     if (found != Entries.end())
         return static_cast<std::uint16_t>(found - Entries.begin());
     if (Entries.size() >= kAbilityNoGrantEntry)
         return kAbilityNoGrantEntry;
-    Entries.push_back(Slot{ std::move(entry), {} });
+    const std::uint32_t key = EntryWireKey(entry);
+    if (FindByWireKey(key, entry.Ability) != kAbilityNoGrantEntry)
+        return kAbilityNoGrantEntry;
+    Entries.push_back(Slot{ std::move(entry), {}, {}, key });
     Stale = true;
     return static_cast<std::uint16_t>(Entries.size() - 1);
 }
@@ -58,14 +109,24 @@ const AbilityGrantEntry* AbilityGrantEntries::Find(std::uint16_t index) const
 std::uint16_t AbilityGrantEntries::FindByWireKey(std::uint32_t key, AbilityId ability) const
 {
     for (std::size_t i = 0; i < Entries.size(); ++i)
-        if (Entries[i].Entry.Ability == ability && NameWireKey(Entries[i].Entry.Key) == key)
+        if (Entries[i].Entry.Ability == ability && Entries[i].WireKey == key)
             return static_cast<std::uint16_t>(i);
     return kAbilityNoGrantEntry;
+}
+
+std::uint32_t AbilityGrantEntries::WireKey(std::uint16_t index) const
+{
+    return index < Entries.size() ? Entries[index].WireKey : 0u;
 }
 
 const AbilityEffectiveBinding* AbilityGrantEntries::Binding(std::uint16_t index) const
 {
     return index < Entries.size() ? &Entries[index].Binding : nullptr;
+}
+
+std::span<const double> AbilityGrantEntries::Parameters(std::uint16_t index) const
+{
+    return index < Entries.size() ? std::span<const double>(Entries[index].Parameters) : std::span<const double>{};
 }
 
 void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputActionRegistry* actions,
@@ -87,9 +148,25 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
     {
         slot.Binding = AbilityEffectiveBinding{};
         const AbilityDefinition* definition = abilities.Get(slot.Entry.Ability);
+        slot.Parameters.clear();
+        if (definition != nullptr)
+        {
+            for (const AbilityParameterDecl& declared : definition->Parameters)
+                slot.Parameters.push_back(declared.Default);
+            for (const AbilityGrantParameter& parameter : slot.Entry.Parameters)
+            {
+                const auto found = std::ranges::find(definition->Parameters, parameter.Key, &AbilityParameterDecl::Key);
+                if (found != definition->Parameters.end())
+                    slot.Parameters[static_cast<std::size_t>(found - definition->Parameters.begin())] = parameter.Value;
+                else
+                    problems.push_back(std::format("grant '{}' of '{}': no parameter '{}'", slot.Entry.Key,
+                                                   abilities.GetName(slot.Entry.Ability), parameter.Key));
+            }
+        }
         static const std::optional<AbilityBindingDecl> kNone;
         const AbilityBindingDecl merged = EffectiveAbilityBinding(
             slot.Entry.Override, definition != nullptr ? definition->InputDefault : kNone);
+        slot.Binding.Priority = *merged.Priority;
         if (!merged.Action)
             continue;
         const InputActionId id = actions != nullptr ? actions->Find(*merged.Action) : InputActionId{};
@@ -115,7 +192,6 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
         }
         slot.Binding.Action = static_cast<std::uint8_t>(index);
         slot.Binding.Policy = *merged.Policy;
-        slot.Binding.Priority = *merged.Priority;
         slot.Binding.Consume = *merged.Consume;
         slot.Binding.WhenBlocked = *merged.WhenBlocked;
         slot.Binding.OnInterrupt = *merged.OnInterrupt;

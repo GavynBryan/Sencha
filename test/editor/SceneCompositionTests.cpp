@@ -281,6 +281,41 @@ namespace
         EXPECT_EQ(untouched->Find("cooldown"), nullptr) << "one instance's override reached another";
     }
 
+    TEST(SceneComposition, AVersionTwoInstanceRemovesAnInheritedResponseBinding)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/switch.sscene", R"({
+  format_version: 2,
+  entities: [
+    { id: '0000000000000001',
+      components: { responses: { bindings: {
+        shot: { on: 'game.struck', sequence: { conditions: [], commands: [ { verb: 'game.open' } ] } },
+        use: { on: 'game.used', sequence: { conditions: [], commands: [ { verb: 'game.toggle' } ] } },
+      } } } },
+  ],
+})");
+
+        std::string error;
+        const auto root = ParseSceneSource(R"({
+  format_version: 2,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/switch.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201' },
+      patch: { '0000000000000001': { responses: { bindings: { shot: null } } } } },
+  ],
+})", &error);
+        ASSERT_TRUE(root.has_value()) << error;
+
+        const auto result = ResolveSceneComposition(*root, sources, &error);
+        ASSERT_TRUE(result.has_value()) << error;
+        EXPECT_TRUE(result->Diagnostics.empty());
+        const Json5Value* bindings = FindEntity(*result, 0x201)->Components.Find("responses")->Find("bindings");
+        EXPECT_EQ(bindings->Find("shot"), nullptr) << "the placement's null did not remove the binding";
+        ASSERT_NE(bindings->Find("use"), nullptr);
+        EXPECT_EQ(bindings->Find("use")->Find("on")->Text, "game.used");
+    }
+
     TEST(SceneComposition, StructuralOverridesAddRemoveAndSuppress)
     {
         MemorySources sources;
@@ -423,3 +458,58 @@ namespace
         EXPECT_NE(error.find("cycle"), std::string::npos);
     }
 } // namespace
+
+namespace
+{
+    constexpr std::string_view kEmitterSource = R"({
+  format_version: 1,
+  entities: [
+    { id: '0000000000000001',
+      components: { Emitter: { colors: [1, 2, 3], shape: { r: 1 }, label: 'x' } } },
+  ],
+})";
+}
+
+// Pinned before composition moved to the shared operator.
+TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole)
+{
+    MemorySources sources;
+    sources.Add("asset://props/emitter.sscene", kEmitterSource);
+    std::string error;
+    const auto root = ParseSceneSource(R"({
+  format_version: 1,
+  entities: [],
+  instances: [
+    { id: '0000000000000020', source: 'asset://props/emitter.sscene',
+      entity_ids: { '0000000000000001': '0000000000000021' },
+      patch: { '0000000000000001': { Emitter: {
+        colors: [9],
+        shape: { s: 2 },
+        label: null,
+        // added by the room
+        extra: 7,
+      } } } },
+  ],
+})", &error);
+    ASSERT_TRUE(root.has_value()) << error;
+
+    const auto result = ResolveSceneComposition(*root, sources, &error);
+    ASSERT_TRUE(result.has_value()) << error;
+    const ResolvedSceneEntity* entity = FindEntity(*result, 0x21);
+    ASSERT_NE(entity, nullptr);
+    const Json5Value* emitter = entity->Components.Find("Emitter");
+    ASSERT_NE(emitter, nullptr);
+
+    ASSERT_EQ(emitter->Find("colors")->Elements.size(), 1u);
+    EXPECT_EQ(emitter->Find("colors")->Elements[0].Number, 9.0);
+    EXPECT_EQ(emitter->Find("shape")->Find("r")->Number, 1.0);
+    EXPECT_EQ(emitter->Find("shape")->Find("s")->Number, 2.0);
+    ASSERT_NE(emitter->Find("label"), nullptr);
+    EXPECT_TRUE(emitter->Find("label")->IsNull());
+
+    ASSERT_EQ(emitter->Members.size(), 4u);
+    EXPECT_EQ(emitter->Members.back().first, "extra");
+    EXPECT_EQ(emitter->Members.back().second.Number, 7.0);
+    ASSERT_EQ(emitter->Members.back().second.LeadingComments.size(), 1u);
+    EXPECT_NE(emitter->Members.back().second.LeadingComments[0].find("added by the room"), std::string::npos);
+}

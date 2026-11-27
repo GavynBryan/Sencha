@@ -308,7 +308,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         {
             bytes.push_back(fields.empty() ? nullptr
                                            : static_cast<const std::byte*>(world.GetComponentRaw(holder, id)));
-            baselines.push_back(document.IsSceneInstanceMember(holder) ? &Baseline(holder, *serializer, id) : nullptr);
+            baselines.push_back(document.IsSourced(holder) ? &Baseline(holder, *serializer, id) : nullptr);
         }
         if (!fields.empty() && std::ranges::find(bytes, nullptr) != bytes.end())
             continue;
@@ -855,7 +855,7 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     const ComponentMeta* meta = world.GetMeta(id);
     for (const EntityId holder : holders)
     {
-        if (!document.IsSceneInstanceMember(holder))
+        if (!document.IsSourced(holder))
             continue;
         const std::vector<std::byte>& baseline = Baseline(holder, *serializer, id);
         const void* live = std::as_const(world).GetComponentRaw(holder, id);

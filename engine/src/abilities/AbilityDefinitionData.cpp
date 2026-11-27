@@ -49,6 +49,11 @@ namespace
         { "commit", AbilityCostTiming::Commit },
     } };
 
+    constexpr std::array<Named<AbilityCostTarget>, 2> kCostTargets{ {
+        { "actor", AbilityCostTarget::Actor },
+        { "source", AbilityCostTarget::Source },
+    } };
+
     constexpr std::array<Named<AbilityCostRepeat>, 2> kCostRepeats{ {
         { "once", AbilityCostRepeat::Once },
         { "per_pulse", AbilityCostRepeat::PerPulse },
@@ -254,7 +259,7 @@ namespace
             if (!value.IsObject())
             {
                 Error("schema", key, path, "a value is a number or one of {const}, {tag}, {data}, {asset}, "
-                                           "{entity}, {port}, {local}");
+                                           "{entity}, {port}, {local}, {param}");
                 return false;
             }
             if (const JsonValue* port = value.Find("port"))
@@ -270,6 +275,18 @@ namespace
                     return false;
                 }
                 out.Port = found->Value;
+                return true;
+            }
+            if (const JsonValue* parameter = value.Find("param"))
+            {
+                CheckFields(value, { "param" }, key, path);
+                out.Source = AbilityValueSource::Parameter;
+                if (!parameter->IsString() || parameter->AsString().empty())
+                {
+                    Error("schema", key, path + ".param", "a parameter's key");
+                    return false;
+                }
+                out.Parameter = parameter->AsString();
                 return true;
             }
             if (const JsonValue* local = value.Find("local"))
@@ -709,6 +726,37 @@ namespace
             return data->AsString();
         }
 
+        std::vector<AbilityGrantParameter> GrantParameters(const JsonValue& list, std::string_view key,
+                                                           const std::string& path)
+        {
+            std::vector<AbilityGrantParameter> parameters;
+            if (!list.IsArray())
+            {
+                Error("schema", key, path, "parameters are [ { key, value } ]");
+                return parameters;
+            }
+            std::unordered_set<std::string> keys;
+            for (std::size_t i = 0; i < list.AsArray().size(); ++i)
+            {
+                const JsonValue& entry = list.AsArray()[i];
+                const std::string entryPath = std::format("{}[{}]", path, i);
+                AbilityGrantParameter parameter;
+                parameter.Key = Key(entry, entryPath);
+                CheckFields(entry, { "key", "value" }, key, entryPath);
+                const JsonValue* value = entry.Find("value");
+                if (value == nullptr || !value->IsNumber())
+                    Error("schema", key, entryPath + ".value", "a parameter is a number");
+                else if (!parameter.Key.empty() && !keys.insert(parameter.Key).second)
+                    Error("key_duplicate", key, entryPath, std::format("two parameters share the key '{}'", parameter.Key));
+                else
+                {
+                    parameter.Value = value->AsNumber();
+                    parameters.push_back(std::move(parameter));
+                }
+            }
+            return parameters;
+        }
+
         void GrantEntries(const JsonValue& list, const std::string& path, std::vector<AbilityGrantDeclaration>& out)
         {
             if (!list.IsArray())
@@ -723,7 +771,7 @@ namespace
                 const std::string entryPath = std::format("{}[{}]", path, i);
                 AbilityGrantDeclaration grant;
                 grant.Key = Key(entry, entryPath);
-                CheckFields(entry, { "key", "ability", "binding" }, grant.Key, entryPath);
+                CheckFields(entry, { "key", "ability", "binding", "parameters" }, grant.Key, entryPath);
                 if (!grant.Key.empty() && !keys.insert(grant.Key).second)
                     Error("key_duplicate", grant.Key, entryPath, std::format("two grants share the key '{}'", grant.Key));
                 if (const JsonValue* ability = entry.Find("ability"))
@@ -732,6 +780,8 @@ namespace
                     Error("schema", grant.Key, entryPath, "'ability' is required");
                 if (const JsonValue* binding = entry.Find("binding"))
                     grant.Override = Binding(*binding, entryPath + ".binding");
+                if (const JsonValue* parameters = entry.Find("parameters"))
+                    grant.Parameters = GrantParameters(*parameters, grant.Key, entryPath + ".parameters");
                 out.push_back(std::move(grant));
             }
         }
@@ -741,7 +791,8 @@ namespace
             const std::string root = "$.data";
             CheckFields(data,
                         { "display", "input_default", "activation", "continuation", "cancel_on", "owned_tags",
-                          "cancel_tags", "instances", "locals", "costs", "cooldown", "phases", "prediction", "lifetime" },
+                          "cancel_tags", "instances", "locals", "parameters", "costs", "cooldown", "phases",
+                          "prediction", "lifetime" },
                         {}, root);
             if (const JsonValue* display = data.Find("display"))
             {
@@ -783,6 +834,29 @@ namespace
                 }
             }
 
+            if (const JsonValue* parameters = data.Find("parameters"); parameters != nullptr && parameters->IsArray())
+            {
+                for (std::size_t i = 0; i < parameters->AsArray().size(); ++i)
+                {
+                    const JsonValue& entry = parameters->AsArray()[i];
+                    AbilityParameterDecl parameter;
+                    parameter.Path = std::format("{}.parameters[{}]", root, i);
+                    parameter.Key = Key(entry, parameter.Path);
+                    CheckFields(entry, { "key", "default" }, parameter.Key, parameter.Path);
+                    if (const JsonValue* fallback = entry.Find("default"))
+                    {
+                        if (fallback->IsNumber())
+                            parameter.Default = fallback->AsNumber();
+                        else
+                            Error("schema", parameter.Key, parameter.Path + ".default", "a parameter is a number");
+                    }
+                    out.Parameters.push_back(std::move(parameter));
+                }
+                if (out.Parameters.size() > kAbilityParameterCapacity)
+                    Error("capacity", {}, root + ".parameters",
+                          std::format("an ability declares at most {} parameters", kAbilityParameterCapacity));
+            }
+
             if (const JsonValue* costs = data.Find("costs"); costs != nullptr && costs->IsArray())
             {
                 for (std::size_t i = 0; i < costs->AsArray().size(); ++i)
@@ -792,18 +866,31 @@ namespace
                     AbilityCostGroupDecl group;
                     group.Path = path;
                     group.Key = Key(entry, path);
-                    CheckFields(entry, { "key", "name", "when", "repeat", "effects" }, group.Key, path);
+                    CheckFields(entry, { "key", "name", "when", "repeat", "target", "effects", "resources" }, group.Key, path);
                     group.Name = Text(entry, "name", group.Key, path, false);
                     group.Timing = Choice(entry, "when", kCostTimings, group.Key, path, AbilityCostTiming::Commit);
                     group.Repeat = Choice(entry, "repeat", kCostRepeats, group.Key, path, AbilityCostRepeat::Once);
+                    group.Target = Choice(entry, "target", kCostTargets, group.Key, path, AbilityCostTarget::Actor);
+                    if (const JsonValue* resources = entry.Find("resources"); resources != nullptr && resources->IsArray())
+                        for (std::size_t r = 0; r < resources->AsArray().size(); ++r)
+                        {
+                            const JsonValue& held = resources->AsArray()[r];
+                            AbilityCostResourceDecl resource;
+                            resource.Path = std::format("{}.resources[{}]", path, r);
+                            resource.Key = Key(held, resource.Path);
+                            CheckFields(held, { "key", "provider", "arguments" }, resource.Key, resource.Path);
+                            resource.Provider = Text(held, "provider", resource.Key, resource.Path, true);
+                            resource.Arguments = Arguments(held, resource.Key, resource.Path);
+                            group.Resources.push_back(std::move(resource));
+                        }
                     if (const JsonValue* effects = entry.Find("effects"); effects != nullptr && effects->IsArray())
                         for (std::size_t e = 0; e < effects->AsArray().size(); ++e)
                             if (std::string effect = DataReference(effects->AsArray()[e], group.Key,
                                                                    std::format("{}.effects[{}]", path, e));
                                 !effect.empty())
                                 group.Effects.push_back(std::move(effect));
-                    if (group.Effects.empty())
-                        Error("schema", group.Key, path, "a cost group names the effects it pays");
+                    if (group.Effects.empty() && group.Resources.empty())
+                        Error("schema", group.Key, path, "a cost group names the effects or resources it pays");
                     out.Costs.push_back(std::move(group));
                 }
             }
@@ -903,6 +990,9 @@ namespace
                     ConditionKeys(condition);
             for (const AbilityLocalDecl& local : Declared.Locals)
                 Unique(locals, local.Key, local.Path, "locals");
+            std::unordered_set<std::string> parameters;
+            for (const AbilityParameterDecl& parameter : Declared.Parameters)
+                Unique(parameters, parameter.Key, parameter.Path, "parameters");
             for (const AbilityCostGroupDecl& group : Declared.Costs)
                 Unique(groups, group.Key, group.Path, "cost groups");
             for (const AbilityPhaseDecl& phase : Declared.Phases)
@@ -950,8 +1040,18 @@ namespace
                 Report.Error("capacity", {}, "$.data.costs",
                              std::format("{} cost groups declared; limit {}", Declared.Costs.size(),
                                          kAbilityCostGroupCapacity));
+            std::unordered_set<std::string> resources;
             for (const AbilityCostGroupDecl& group : Declared.Costs)
+            {
                 Groups.emplace(group.Key, &group);
+                for (const AbilityCostResourceDecl& resource : group.Resources)
+                {
+                    Unique(resources, resource.Key, resource.Path, "cost resources");
+                    for (const AbilityArgumentDecl& argument : resource.Arguments)
+                        CheckValue(argument.Value, resource.Key, resource.Path + ".arguments." + argument.Name, nullptr,
+                                   "an argument");
+                }
+            }
             if (Declared.Cooldown && Declared.Cooldown->Start == AbilityCooldownStart::OnCommit)
             {
                 const auto found = Groups.find(Declared.Cooldown->Group);
@@ -974,7 +1074,7 @@ namespace
         static bool IsEntityFromLocal(const AbilityValueDecl& value, const AbilityLocalType* type)
         {
             if (value.Source == AbilityValueSource::Port)
-                return value.Port == AbilityPort::Target;
+                return value.Port == AbilityPort::Target || value.Port == AbilityPort::Source;
             if (value.Source != AbilityValueSource::Local || type == nullptr)
                 return false;
             return *type == AbilityLocalType::Entity
@@ -1005,6 +1105,10 @@ namespace
             if (value.Source == AbilityValueSource::Port && value.Port == AbilityPort::Target
                 && (op == nullptr || op->Targets.empty()))
                 Report.Error("port_unknown", key, path, "'target' is only a port of an op with 'targets'");
+            if (value.Source == AbilityValueSource::Parameter
+                && std::ranges::find(Declared.Parameters, value.Parameter, &AbilityParameterDecl::Key)
+                       == Declared.Parameters.end())
+                Report.Error("param_unknown", key, path, std::format("no parameter '{}'", value.Parameter));
             if (value.Source != AbilityValueSource::Local)
                 return;
             const AbilityLocalType* type = TypeOf(value.Local);
@@ -1423,6 +1527,10 @@ namespace
         local.Children.push_back(Field(DataFieldKind::String, "name", "Name"));
         local.Children.push_back(Choices("type", "Type", kAbilityLocalTypeNames));
 
+        DataFieldSchema parameter = KeyedRecord("parameter", "Parameter");
+        parameter.Children.push_back(
+            Field(DataFieldKind::Float, "default", "Default", "What a grant that does not set it reads."));
+
         DataFieldSchema effect = Field(DataFieldKind::Record, "effect", "Effect");
         DataFieldSchema effectRef = MakeDataField(DataFieldKind::DataAssetRef, "data", "Effect");
         effectRef.Reference.DataSubtype = "effect.definition";
@@ -1432,7 +1540,13 @@ namespace
         cost.Children.push_back(Field(DataFieldKind::String, "name", "Name"));
         cost.Children.push_back(Choices("when", "Paid", kCostTimings));
         cost.Children.push_back(Choices("repeat", "Repeat", kCostRepeats));
+        cost.Children.push_back(Choices("target", "Effects paid by", kCostTargets));
         cost.Children.push_back(List("effects", "Effects", effect, "data"));
+        DataFieldSchema resource = KeyedRecord("resource", "Resource");
+        resource.Children.push_back(
+            Field(DataFieldKind::String, "provider", "Provider", "The registered cost provider that pays it."));
+        resource.Children.push_back(Field(DataFieldKind::Record, "arguments", "Arguments"));
+        cost.Children.push_back(List("resources", "Resources", resource, "provider"));
 
         DataFieldSchema cooldown = Field(DataFieldKind::Record, "cooldown", "Cooldown");
         DataFieldSchema cooldownEffect = effect;
@@ -1474,6 +1588,7 @@ namespace
             std::move(cancelTags),
             std::move(instances),
             List("locals", "Locals", local, "name"),
+            List("parameters", "Parameters", parameter),
             List("costs", "Costs", cost, "name"),
             std::move(cooldown),
             List("phases", "Phases", phase, "name"),
@@ -1518,6 +1633,11 @@ DataFieldSchema AbilityGrantEntriesSchema(std::string key, std::string label)
     ability.Children.push_back(std::move(reference));
     entry.Children.push_back(std::move(ability));
     entry.Children.push_back(BindingSchema("binding", "Binding"));
+    DataFieldSchema parameter = KeyedRecord("parameter", "Parameter");
+    DataFieldSchema value = MakeDataField(DataFieldKind::Float, "value", "Value");
+    value.Default = 0.0;
+    parameter.Children.push_back(std::move(value));
+    entry.Children.push_back(List("parameters", "Parameters", std::move(parameter)));
     return List(std::move(key), std::move(label), std::move(entry));
 }
 

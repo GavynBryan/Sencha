@@ -119,6 +119,7 @@ namespace
             Out.Prediction = Declared.Prediction;
             Out.CancelOnReload = Declared.CancelOnReload;
             Out.Locals = Declared.Locals;
+            Out.Parameters = Declared.Parameters;
             for (std::size_t i = 0; i < Declared.Locals.size(); ++i)
             {
                 LocalIndex.emplace(Declared.Locals[i].Key, static_cast<std::uint8_t>(i));
@@ -126,6 +127,7 @@ namespace
                     Out.EntitiesLocal = static_cast<std::uint8_t>(i);
             }
             Out.OwnedTags = Tags(Declared.OwnedTags, "$.data.owned_tags");
+            RefuseProjected(Out.OwnedTags, "$.data.owned_tags");
             Out.CancelTags = Tags(Declared.CancelTags, "$.data.cancel_tags");
             Costs();
             for (const AbilityConditionDecl& condition : Declared.Activation)
@@ -150,6 +152,20 @@ namespace
             if (!tag.IsValid())
                 Error("tag_unknown", key, path, std::format("no gameplay tag '{}'", name));
             return tag;
+        }
+
+        void RefuseProjected(std::vector<GameplayTagId>& tags, const std::string& path)
+        {
+            if (Env.Tags == nullptr)
+                return;
+            std::erase_if(tags, [&](GameplayTagId tag) {
+                const std::string_view projection = Env.Tags->ProjectedBy(tag);
+                if (!projection.empty())
+                    Error("tag_projected", {}, path,
+                          std::format("gameplay tag '{}' is projected by {}; nothing else grants it",
+                                      Env.Tags->GetName(tag), projection));
+                return !projection.empty();
+            });
         }
 
         std::vector<GameplayTagId> Tags(const std::vector<std::string>& names, const std::string& path)
@@ -209,6 +225,9 @@ namespace
                               std::format("'{}' is not an Instant Add, so it cannot be a cost", path));
                     group.Effects.push_back(effect);
                 }
+                group.Target = declared.Target;
+                for (const AbilityCostResourceDecl& resource : declared.Resources)
+                    group.Resources.push_back(Resource(resource));
                 if (group.Timing == AbilityCostTiming::Start)
                     Out.StartGroups |= static_cast<std::uint8_t>(1u << g);
                 Out.Costs.push_back(std::move(group));
@@ -222,6 +241,24 @@ namespace
                     cooldown.Group = group->second;
                 Out.Cooldown = cooldown;
             }
+        }
+
+        AbilityCostResource Resource(const AbilityCostResourceDecl& declared)
+        {
+            AbilityCostResource resource;
+            resource.Key = declared.Key;
+            resource.Provider = Env.CostProviders != nullptr ? Env.CostProviders->Resolve(declared.Provider)
+                                                             : AbilityCostProviderHandle{};
+            const AbilityCostProviderDefinition* provider =
+                resource.Provider.Slot.IsValid() ? Env.CostProviders->Get(resource.Provider.Slot) : nullptr;
+            if (provider == nullptr)
+            {
+                Error("provider_unknown", declared.Key, declared.Path, std::format("no cost provider '{}'", declared.Provider));
+                return resource;
+            }
+            resource.Arguments =
+                OperationArguments(provider->Name, provider->Arguments, declared.Arguments, declared.Key, declared.Path);
+            return resource;
         }
 
         const AbilityLocalType* LocalType(const std::string& key) const
@@ -238,12 +275,15 @@ namespace
                 {
                 case AbilityPort::Actor:
                 case AbilityPort::Instigator:
-                case AbilityPort::Target: return Shape::Entity;
+                case AbilityPort::Target:
+                case AbilityPort::Source: return Shape::Entity;
                 case AbilityPort::AimOrigin:
                 case AbilityPort::AimDirection: return Shape::Vector;
                 default: return Shape::Number;
                 }
             }
+            if (value.Source == AbilityValueSource::Parameter)
+                return Shape::Number;
             if (value.Source != AbilityValueSource::Local)
                 return std::nullopt;
             const AbilityLocalType* type = LocalType(value.Local);
@@ -276,6 +316,10 @@ namespace
             if (declared.Source == AbilityValueSource::Local)
                 if (const auto found = LocalIndex.find(declared.Local); found != LocalIndex.end())
                     out.Local = found->second;
+            if (declared.Source == AbilityValueSource::Parameter)
+                if (const auto found = std::ranges::find(Declared.Parameters, declared.Parameter, &AbilityParameterDecl::Key);
+                    found != Declared.Parameters.end())
+                    out.Parameter = static_cast<std::uint8_t>(found - Declared.Parameters.begin());
             if (declared.Source == AbilityValueSource::Constant)
             {
                 std::vector<std::string> errors;
@@ -309,19 +353,18 @@ namespace
                 || (op.When->Kind == AbilityConditionKind::All && std::ranges::any_of(op.When->Children, matches));
         }
 
-        // Query arguments in the query's declared order, defaults where omitted.
-        std::vector<AbilityValue> QueryArguments(const AuthoredQueryDefinition& query,
-                                                 const std::vector<AbilityArgumentDecl>& arguments,
-                                                 std::string_view key, const std::string& path)
+        std::vector<AbilityValue> OperationArguments(std::string_view operation, const DataFieldSchema& declaredArguments,
+                                                     const std::vector<AbilityArgumentDecl>& arguments,
+                                                     std::string_view key, const std::string& path)
         {
             std::vector<std::string_view> names;
             for (const AbilityArgumentDecl& argument : arguments)
                 names.push_back(argument.Name);
             std::vector<std::string_view> undeclared;
-            const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(query.Arguments, names, undeclared);
+            const std::vector<AuthoredArgumentSlot> slots = MatchAuthoredArguments(declaredArguments, names, undeclared);
             for (const std::string_view name : undeclared)
                 Error("schema", key, path + ".arguments." + std::string(name),
-                      std::format("'{}' takes no argument '{}'", query.Name, name));
+                      std::format("'{}' takes no argument '{}'", operation, name));
             std::vector<AbilityValue> values;
             for (const AuthoredArgumentSlot& slot : slots)
             {
@@ -332,7 +375,7 @@ namespace
                     (void)Value(arguments[*slot.Given].Value, field, key, path + ".arguments." + field.Key, value);
                 else if (!CompileAuthoredDefault(field, std::format("ability '{}#{}'", Name, key), field.Key,
                                                  value.Constant, errors))
-                    Error("schema", key, path, std::format("'{}' needs an argument '{}'", query.Name, field.Key));
+                    Error("schema", key, path, std::format("'{}' needs an argument '{}'", operation, field.Key));
                 values.push_back(std::move(value));
             }
             return values;
@@ -418,7 +461,8 @@ namespace
                     if (query->Result.Kind != DataFieldKind::Bool)
                         Error("schema", declared.Key, declared.Path,
                               std::format("'{}' answers no yes-or-no, so it is not a condition", declared.Name));
-                    condition.Arguments = QueryArguments(*query, declared.Arguments, declared.Key, declared.Path);
+                    condition.Arguments =
+                        OperationArguments(query->Name, query->Arguments, declared.Arguments, declared.Key, declared.Path);
                 }
                 break;
             case AbilityConditionKind::Input:
@@ -487,7 +531,7 @@ namespace
                     (void)Value(argument->Value, destination.Expected, declared.Key, path, value);
                     const std::string& identity = Unwrapped(destination.Expected).Reference.ComponentIdentity;
                     const bool fromLocal = argument->Value.Source == AbilityValueSource::Local
-                        || argument->Value.Port == AbilityPort::Target;
+                        || argument->Value.Port == AbilityPort::Target || argument->Value.Port == AbilityPort::Source;
                     if (!identity.empty() && fromLocal && Unwrapped(destination.Expected).Kind == DataFieldKind::Entity
                         && !Guarded(declared, argument->Value, identity))
                         Error("unguarded_recipient", declared.Key, path,
@@ -522,7 +566,8 @@ namespace
                 if (const AuthoredQueryDefinition* query = FindQuery(declared.Operation, declared.Key, declared.Path,
                                                                      op.Query))
                 {
-                    op.Arguments = QueryArguments(*query, declared.Arguments, declared.Key, declared.Path);
+                    op.Arguments =
+                        OperationArguments(query->Name, query->Arguments, declared.Arguments, declared.Key, declared.Path);
                     const std::optional<AbilityLocalType> answer = LocalTypeFor(query->Result);
                     const AbilityLocalType* into = LocalType(declared.Local);
                     const auto numeric = [](AbilityLocalType type) {
@@ -649,6 +694,7 @@ AbilityResolveEnvironment MakeAbilityResolveEnvironment(const World& world)
     environment.Attributes = world.TryGetResource<AttributeRegistry>();
     environment.Effects = world.TryGetResource<EffectRegistry>();
     environment.Queries = FindAuthoredQueryRegistry(world);
+    environment.CostProviders = world.TryGetResource<AbilityCostProviderCatalog>();
     environment.Verbs = MakeVerbBindingEnvironment(world);
     environment.Components = &world;
     return environment;

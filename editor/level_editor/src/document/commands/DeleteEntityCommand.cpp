@@ -42,7 +42,7 @@ std::unique_ptr<ICommand> MakeDeleteEntitiesCommand(std::span<const EntityId> en
                                                     EditorDocument& document,
                                                     SelectionService& selection)
 {
-    const std::vector<EntityId> doomed = CollectBranches(scene, entities);
+    const std::vector<EntityId> doomed = CollectDeletableBranches(document, entities);
 
     std::vector<std::unique_ptr<ICommand>> commands;
     commands.reserve(doomed.size() + 1);

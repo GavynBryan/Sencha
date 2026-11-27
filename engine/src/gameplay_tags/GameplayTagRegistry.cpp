@@ -169,6 +169,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
             .Parent = parent,
             .Children = {},
             .ReplicatedToAll = false,
+            .ProjectedBy = {},
         });
         IdsByName.emplace(Tags.back().Name, current);
         const auto [key, inserted] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
@@ -209,4 +210,15 @@ void GameplayTagRegistry::SetReplicatedToAll(GameplayTagId id, bool replicated)
 bool GameplayTagRegistry::IsReplicatedToAll(GameplayTagId id) const
 {
     return IsKnown(id) && Tags[id.Value].ReplicatedToAll;
+}
+
+void GameplayTagRegistry::SetProjected(GameplayTagId id, std::string_view projection)
+{
+    if (IsKnown(id))
+        Tags[id.Value].ProjectedBy = std::string(projection);
+}
+
+std::string_view GameplayTagRegistry::ProjectedBy(GameplayTagId id) const
+{
+    return IsKnown(id) ? std::string_view(Tags[id.Value].ProjectedBy) : std::string_view{};
 }

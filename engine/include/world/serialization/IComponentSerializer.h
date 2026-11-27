@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/metadata/ComponentPlacement.h>
+#include <core/metadata/DataSchema.h>
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/Archive.h>
@@ -74,6 +75,9 @@ struct IComponentSerializer
     // What a tool may place an entity carrying just this component as; an
     // empty label when it is not a thing of its own. Pure tooling metadata.
     virtual ComponentPlacementFacts Placement() const { return {}; }
+
+    // Which lists of the scene form merge by which member. Pure tooling metadata.
+    virtual const DataFieldSchema* CompositionSchema() const { return nullptr; }
 
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;

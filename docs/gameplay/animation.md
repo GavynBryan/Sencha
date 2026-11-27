@@ -131,8 +131,8 @@ what remains is visiting each entity and resolving its rig.
 ## Binding
 
 A rig asset and the assets it lists only name things. `AnimRigBindings`, a
-World resource, binds each rig into one World: the fact schema chain merged
-into one fixed layout, derivations compiled to slot indices, layer and intent
+World resource, binds each rig into one World: the fact schema, as it
+composes, laid out as one fixed layout, derivations compiled to slot indices, layer and intent
 names resolved to the World's tag ids, gathered slots matched to the World's
 providers, each layer's selector flattened and compiled, behaviors resolved to
 their policies, the slot map stack merged into rows over a content table, and
@@ -166,6 +166,11 @@ have a `hand_r` that names different joints.
 ```json
 "sockets": [ { "name": "hand_r", "joint": "mixamorig:RightHand", "position": [0.02, 0, 0.08] } ]
 ```
+
+Sockets compose by name (`docs/assets/composition.md`): a rig that extends
+another patches or adds one socket by naming it, as in
+`"sockets": { "hand_r": { "position": [0.02, 0.01, 0.08] } }`, and keeps the
+rest it inherits.
 
 Binding resolves each socket's joint once, through the same name lookup bone
 masks use, where a name two joints share names neither. The bound rig keeps the
@@ -201,11 +206,17 @@ in the schema, which `ObservedSinceTick` measures.
 A fact schema declares the typed slots rules may read and the facts derived
 from them. Slots are open: a game or mod may declare one by name. Derivation
 ops are closed, so rule evaluation stays a fixed program over fixed slots. A
-schema may extend another; the engine ships a core schema and a game's schema
-extends it. The chain merges when the rig binds, base slots first, into one
-fixed layout, and a name declared twice anywhere in the chain is a conflict,
-not an override. Assets hold names only; slot indices and tag ids belong to
-the binding.
+schema may extend another through its envelope's `extends`, as any data
+definition does; the engine ships a core schema and a game's schema extends
+it.
+- Slots and derived facts are keyed by name and only take new entries, so a
+  schema's base slots come first.
+- A name its base already declares does not compose.
+- The binder reads the composed schema and locates every slot in the schema
+  the rig names, by name (`$.data.slots{Grounded}`), whichever schema declared
+  it. Kyusu shows where an inherited slot came from.
+
+Assets hold names only; slot indices and tag ids belong to the binding.
 
 Gameplay values reach fact slots through `AnimFactProviders`, a World resource
 binding a slot name to a plain function over a const World. The runtime binds

@@ -6,13 +6,37 @@
 #include <effects/EffectSource.h>
 #include <time/FrameClock.h>
 
+#include <attributes/AttributeId.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 class StoragePartitionSet;
 class World;
 
-// The effect entity a lasting effect spawns; none for an instant one. Its authored
+struct EffectOverrideTie
+{
+    AttributeId Attribute;
+    EffectId Kept;
+    EffectId Passed;
+
+    friend bool operator==(const EffectOverrideTie&, const EffectOverrideTie&) = default;
+};
+
+struct EffectOverrideTies
+{
+    std::vector<EffectOverrideTie> Seen;
+};
+
+struct EffectApplicationAdmission
+{
+    bool (*Admit)(World& world, EntityId target, EffectId effect) = nullptr;
+    void (*Applied)(World& world, EntityId target, EffectId effect, EntityId instance) = nullptr;
+};
+
+// The effect entity a lasting effect spawns; none for an instant one, or one
+// EffectApplicationAdmission refuses. Its authored
 // seconds become whole ticks of `now`'s tick length, and `scale` multiplies every
 // modifier's magnitude, whatever its op. `source` is recorded with what an
 // application changes, in the World's EffectApplicationLog when it has one.

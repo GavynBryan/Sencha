@@ -19,6 +19,7 @@ struct AbilityResolveEnvironment
     const AttributeRegistry* Attributes = nullptr;
     const EffectRegistry* Effects = nullptr;
     const AuthoredQueryRegistry* Queries = nullptr;
+    const AbilityCostProviderCatalog* CostProviders = nullptr;
     VerbBindingEnvironment Verbs;
     // Where component identities resolve to this World's component ids.
     const World* Components = nullptr;

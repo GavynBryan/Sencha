@@ -39,7 +39,7 @@ struct DataDocumentMove : testing::Test
     {
         std::filesystem::create_directories(Root);
         std::ofstream(Root / "facts.sdata") << R"({ "id": "00000000000000f1", "type": "animation.fact_schema",
-            "version": 1, "data": { "slots": [ { "name": "Crouched", "kind": "bool" } ] } })";
+            "version": 2, "data": { "slots": [ { "name": "Crouched", "kind": "bool" } ] } })";
         (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
         Files = std::make_unique<ProjectFileSteps>(
             std::vector<std::filesystem::path>{ Root }, Sources, ProjectFileHooks{});

@@ -5,6 +5,7 @@
 #include <authored/AuthoredQueryDispatcher.h>
 #include <controller/Aim.h>
 #include <gameplay_tags/EntityMatch.h>
+#include <abilities/AbilityGrantEntries.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -59,6 +60,14 @@ std::uint64_t AbilityPass::PhaseTicks(const AbilityActor& actor, const AbilityRe
     return now > record.PhaseStart ? now - record.PhaseStart : 0;
 }
 
+const AbilityGrant* AbilityPass::GrantOf(const AbilityActor& actor, std::size_t slot) const
+{
+    if (slot >= kAbilitySlotCapacity)
+        return Admitting.Id.IsValid() ? &Admitting : nullptr;
+    const AbilityGrants* grants = actor.Grants();
+    return grants != nullptr ? grants->Find(actor.Record(slot).Grant) : nullptr;
+}
+
 EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, const AbilityValue& value) const
 {
     if (value.Source == AbilityValueSource::Port)
@@ -69,6 +78,11 @@ EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, cons
         case AbilityPort::Instigator:
             return slot < kAbilitySlotCapacity ? actor.Record(slot).Instigator : actor.Entity;
         case AbilityPort::Target: return Target;
+        case AbilityPort::Source:
+        {
+            const AbilityGrant* grant = GrantOf(actor, slot);
+            return grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
+        }
         default: return EntityId{};
         }
     }
@@ -104,6 +118,17 @@ double AbilityPass::Number(const AbilityActor& actor, std::size_t slot, const Ab
         return slot < kAbilitySlotCapacity && value.Local != kAbilityNoLocal
             ? actor.Locals(slot).Values[value.Local].Number
             : 0.0;
+    case AbilityValueSource::Parameter:
+    {
+        if (value.Parameter >= definition.Parameters.size())
+            return 0.0;
+        const AbilityGrant* grant = GrantOf(actor, slot);
+        const AbilityGrantEntries* entries = std::as_const(Entities).TryGetResource<AbilityGrantEntries>();
+        const std::span<const double> supplied =
+            grant != nullptr && entries != nullptr ? entries->Parameters(grant->Entry) : std::span<const double>{};
+        return value.Parameter < supplied.size() ? supplied[value.Parameter]
+                                                 : definition.Parameters[value.Parameter].Default;
+    }
     case AbilityValueSource::Port:
     {
         if (slot >= kAbilitySlotCapacity)
@@ -140,13 +165,19 @@ void AbilityPass::Evaluate(const AbilityActor& actor, std::size_t slot, const Ab
         out = value.Constant;
         return;
     }
+    if (value.Source == AbilityValueSource::Parameter)
+    {
+        out = NumberAs(Number(actor, slot, definition, value), value.As);
+        return;
+    }
     if (value.Source == AbilityValueSource::Port)
     {
         switch (value.Port)
         {
         case AbilityPort::Actor:
         case AbilityPort::Instigator:
-        case AbilityPort::Target: out = AuthoredValue::Entity(EntityOf(actor, slot, value)); return;
+        case AbilityPort::Target:
+        case AbilityPort::Source: out = AuthoredValue::Entity(EntityOf(actor, slot, value)); return;
         case AbilityPort::AimOrigin: out = VectorOf(AimOf(Entities, actor.Entity).Origin); return;
         case AbilityPort::AimDirection: out = VectorOf(AimOf(Entities, actor.Entity).Direction); return;
         default: out = NumberAs(Number(actor, slot, definition, value), value.As); return;

@@ -45,6 +45,7 @@ struct DocumentCookSnapshot
 {
     JsonValue PassthroughScene;
     PresentationSettingsLayer Presentation;
+    std::vector<std::string> ComposedFrom;
     LightingCookParams Lighting;
     std::vector<CookBrushGeometry> Brushes;
     CookChartSet Charts;

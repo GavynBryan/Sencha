@@ -62,7 +62,7 @@ PredicatePlace PlaceOf(std::string_view key, std::span<const std::string_view> p
     if (!steps || steps->empty())
         return {};
     const auto isPredicate = [&](const DataPathStep& step) {
-        return !step.Index && std::ranges::find(predicates, step.Key) != predicates.end();
+        return step.Kind == DataPathStepKind::Member && std::ranges::find(predicates, step.Key) != predicates.end();
     };
     const std::size_t count = steps->size();
     const DataPathStep& last = steps->back();
@@ -71,9 +71,9 @@ PredicatePlace PlaceOf(std::string_view key, std::span<const std::string_view> p
     const auto within = std::ranges::find_if(*steps, isPredicate);
     if (within == steps->end())
         return {};
-    if (last.Index && count >= 2 && (isPredicate((*steps)[count - 2]) || (*steps)[count - 2].Key == "any"))
+    if (last.Kind == DataPathStepKind::Index && count >= 2 && (isPredicate((*steps)[count - 2]) || (*steps)[count - 2].Key == "any"))
         return { .What = PredicatePlace::Part::Row };
-    if (!last.Index)
+    if (last.Kind == DataPathStepKind::Member)
         return { .What = PredicatePlace::Part::Member, .Member = last.Key };
     return {};
 }

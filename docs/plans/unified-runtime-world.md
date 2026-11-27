@@ -1056,6 +1056,14 @@ A relationship crossing zone participation boundaries must either:
 Cooked and saved references use `StableEntityRef`. Resolution occurs when the target zone is
 resident. Resolved caches include an epoch or validity check and never persist runtime IDs.
 
+*Built as `PersistableRef` (`world/identity/PersistableRef.h`).* It holds the target's
+`PersistentEntityId` and the handle it last resolved to. The generational handle is the
+validity check, so no epoch is kept. A scene stores only the id. `ResolvePersistableRef` reads
+the handle while it is alive, else the `PersistentEntityIndex`, so a target in a zone that has
+not loaded resolves once it is resident, and a restreamed one is found again. A reference
+between members of one imported package resolves to that import's member, even when a spawn
+stripped their ids (`SceneSerializationContext::PackageMembers`).
+
 ### 12.3 Transform hierarchy
 
 Initial rule:

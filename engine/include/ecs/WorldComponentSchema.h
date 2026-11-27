@@ -2,6 +2,7 @@
 
 #include <ecs/ComponentId.h>
 #include <ecs/ComponentTypeId.h>
+#include <core/metadata/TypeSchema.h>
 #include <ecs/World.h>
 
 #include <algorithm>
@@ -33,6 +34,7 @@ public:
         std::size_t Size = 0;
         std::size_t Alignment = 1;
         bool IsTag = false;
+        bool AuthorityMaterialized = false;
 
         // Everything this component owes, transitively, computed at Seal from
         // the ComponentTraits declarations. The typed add walks the same graph
@@ -100,6 +102,7 @@ public:
         entry.Size = size;
         entry.Alignment = alignment;
         entry.IsTag = isTag;
+        entry.AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
         entry.Register = [](World& world) {
             return world.RegisterComponent<T>();
         };

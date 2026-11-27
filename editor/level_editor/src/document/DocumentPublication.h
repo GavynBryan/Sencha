@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string_view>
 
 struct DocumentCookContext;
@@ -30,7 +31,8 @@ struct DocumentCookReuse;
     std::string_view sourceRel,
     std::uint64_t documentHash,
     bool runReferencedAssets,
-    PendingAssetImport pendingImports);
+    PendingAssetImport pendingImports,
+    std::span<const std::string> composedFrom = {});
 
 // Builds and stages the document cook receipt: the published output families
 // (produced or preserved per the plan), the withdrawal of any family the profile

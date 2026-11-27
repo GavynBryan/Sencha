@@ -10,6 +10,9 @@
 // archive interface (JSON in practice; see the binary note in the .cpp).
 //=============================================================================
 
+#include <string>
+#include <vector>
+
 struct IWriteArchive;
 struct IReadArchive;
 struct GameplayTagContainer;
@@ -21,4 +24,5 @@ bool WriteGameplayTags(IWriteArchive& archive,
 
 bool ReadGameplayTags(IReadArchive& archive,
                       GameplayTagContainer& tags,
-                      const GameplayTagRegistry& registry);
+                      const GameplayTagRegistry& registry,
+                      std::vector<std::string>* dropped = nullptr);

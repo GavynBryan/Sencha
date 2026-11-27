@@ -24,3 +24,11 @@ struct AssetRecord;
 // the source. Empty when the bytes cannot be read.
 [[nodiscard]] std::string PeekDataAssetSubtype(IAssetSource& source,
                                                const AssetRecord& record);
+
+struct DataAssetEnvelopePeek
+{
+    std::string Subtype;
+    bool Abstract = false;
+};
+
+[[nodiscard]] DataAssetEnvelopePeek PeekDataAssetEnvelope(IAssetSource& source, const AssetRecord& record);

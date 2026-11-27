@@ -129,7 +129,7 @@ namespace
         {
             std::filesystem::remove_all(Root);
             std::filesystem::create_directories(Root / "anim");
-            Write("hero.facts.sdata", R"({ "type": "animation.fact_schema", "version": 1, "data": {
+            Write("hero.facts.sdata", R"({ "type": "animation.fact_schema", "version": 2, "data": {
                 "slots": [ { "name": "Speed", "kind": "float" } ] } })");
             Write("hero.behaviors.sdata", R"({ "type": "animation.behavior_set", "version": 1, "data": {
                 "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "Anim.Walk", "kind": "cyclic" } ] } })");

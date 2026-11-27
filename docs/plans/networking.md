@@ -704,7 +704,16 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   entity the other machine was never sent travels as zero and arrives as no
   entity; it is not refused. Apply translates back after every entity in the
   snapshot exists, so a reference to an entity spawned later in the same message
-  resolves. The first user is `AnimRequestSet` (`anim/AnimRequestWire.h`).
+  resolves. A reference to an entity a later snapshot brings (one that did not
+  fit, or a grant's source the owner hears of after its grants) arrives as no
+  entity, and the client identity keeps that image
+  (`net/ReplicationDeferredReferences.h`, bounded at 64, oldest forgotten and
+  counted). When the entity binds, the image is translated again, since the
+  authority, which sent it whole, will not send it again; a delta to the
+  component meanwhile decodes onto that image, so it does not erase the
+  reference. A codec treats a reference that resolved late as the same
+  reference: an animation request is not observed twice. The first user is
+  `AnimRequestSet` (`anim/AnimRequestWire.h`).
 
 There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
 puts one component into storage, the scene serializers, and the replicated table at
@@ -2288,6 +2297,28 @@ system's semantics until composition wires them in.
   attach later without protocol change.
 - **Sub-zone interest granularity and per-entity visibility culling.** Zone scope
   is the v1 answer (Section 8.5's trigger records the revisit).
+
+  *One per-entity rule has landed (`NetRelevanceAnchor`):*
+  - **The rule.** An anchored entity is sent only to the peer owning the root
+    of its anchor chain, and to no peer when that root has no owner, is gone,
+    or is more than `kNetRelevanceAnchorDepth` (8) links away. What a holder
+    holds reaches that holder alone, and that peer sees its owner-only fields
+    as an owner does.
+  - **Where it is decided.** The change store resolves each anchored entity's
+    relevant peer once per publish (`EntityState::RelevantPeer`, and
+    `AnchorPastBound` for a chain past the bound, which `net_entity` reports
+    for the entity). The writer withholds the entity, beside the zone check and
+    before planning, from every other peer.
+  - **Losing relevance** owes a destroy, as a revoked zone does, and voids what
+    snapshots still in flight said about the entity, so a late acknowledgement
+    cannot leave the peer believed to hold it. Regaining it seeds the entity
+    whole, and the seed supersedes any destroy of it still owed or in flight.
+  - **Cost.** Each anchored entity walks its chain once per publish: at most
+    eight component lookups, and nothing for an entity without an anchor. The
+    branch this was ported from measured the filter at 1.05 ms against 5.5 ms
+    of writes for 10,000 entities over 16 peers; it has not been measured
+    again on this line.
+  - **Visibility culling** by distance or sight is still not done.
 - **General-purpose stream compression.** Delta plus quantization first; trigger:
   measured bandwidth exceeding the envelope on a real world (then LZ4-class on the
   reliable channel only, still one codec path).

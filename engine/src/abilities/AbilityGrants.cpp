@@ -9,12 +9,12 @@ const AbilityGrant* AbilityGrants::Find(AbilityGrantId id) const
 }
 
 AbilityGrantId GrantAbility(AbilityGrants& grants, AbilityId ability, AbilityGrantKind kind, std::uint16_t entry,
-                            EntityId effect)
+                            EntityId holder, EntityId source)
 {
     if (!ability.IsValid() || grants.Count == kAbilityGrantCapacity)
         return AbilityGrantId{};
     const AbilityGrantId id{ grants.NextId++ };
-    grants.Entries[grants.Count++] = AbilityGrant{ id, ability, kind, effect, entry };
+    grants.Entries[grants.Count++] = AbilityGrant{ id, ability, kind, holder, source, entry };
     return id;
 }
 

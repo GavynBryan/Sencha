@@ -7,6 +7,7 @@
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityKit.h>
+#include <abilities/AbilityRequestQueue.h>
 #include <abilities/AbilityVerbs.h>
 #include <app/EngineVocabulary.h>
 #include <anim/AnimRequestVerbs.h>
@@ -33,6 +34,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <AllocationCounter.h>
+#include <CounterCostProvider.h>
 
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
@@ -104,6 +106,9 @@ InputActionEdge Interrupt(std::uint8_t action) { return { action, InputEdgeKind:
 
 constexpr std::uint8_t kFire = 0;
 constexpr std::uint8_t kAlt = 1;
+
+constexpr std::string_view kGrantedInstant = R"({
+    "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
 
 class AbilityRuntime : public ::testing::Test
 {
@@ -189,6 +194,14 @@ protected:
         Host = AbilityHost{ .Verbs = Verbs.get(), .Queries = Queries.get() };
     }
 
+    void DeclareCounters()
+    {
+        EXPECT_TRUE(DeclareCounterCostProvider(Entities));
+        EffectDefinition stamina{};
+        stamina.Modifiers = { { Energy, ModifierOp::Add, -10.0f } };
+        Entities.GetResource<EffectRegistry>().Define("asset://effects/energy_10.sdata", stamina);
+    }
+
     AbilityId DefineData(std::string_view path, const JsonValue& data)
     {
         AbilityDeclaration declaration;
@@ -239,6 +252,35 @@ protected:
         return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), ability, AbilityGrantKind::Authored, entry);
     }
 
+    std::vector<EffectId> DefineGrantingEffects(std::size_t count)
+    {
+        EffectDefinition lasting{};
+        lasting.Duration = EffectDuration::Infinite;
+        std::vector<EffectId> effects;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::string ability = "asset://abilities/granted_" + std::to_string(i) + ".sdata";
+            (void)Define(ability, kGrantedInstant);
+            const EffectId effect = Entities.GetResource<EffectRegistry>().Define(
+                "asset://effects/granting_" + std::to_string(i) + ".sdata", lasting);
+            DeclareEffectGrants(Entities, effect, { AbilityGrantDeclaration{ .Key = "g", .Ability = ability, .Override = {} } });
+            effects.push_back(effect);
+        }
+        return effects;
+    }
+
+    EntityId ApplyNow(EntityId target, EffectId effect)
+    {
+        return ApplyEffect(Entities, target, effect, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now });
+    }
+
+    [[nodiscard]] bool HoldsGrantOf(EntityId actor, EntityId effect)
+    {
+        const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+        return std::any_of(grants.Entries, grants.Entries + grants.Count,
+                           [&](const AbilityGrant& grant) { return grant.Holder == effect; });
+    }
+
     // One fixed tick in the schedule's order: the actor clock, the ability pass,
     // attribute resolve, effect lifetime.
     void Step(std::vector<InputActionEdge> edges = {})
@@ -283,6 +325,17 @@ protected:
             if (const AbilityRecord& record = activations.Record(active, slot);
                 record.State == AbilityRecordState::Live && record.Key.Ability == ability)
                 return &record;
+        return nullptr;
+    }
+
+    [[nodiscard]] const AbilityRecordLocals* LiveLocals(EntityId actor, AbilityId ability)
+    {
+        const ActiveAbilities& active = *Entities.TryGet<ActiveAbilities>(actor);
+        AbilityActivations& activations = Entities.GetResource<AbilityActivations>();
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+            if (const AbilityRecord& record = activations.Record(active, slot);
+                record.State == AbilityRecordState::Live && record.Key.Ability == ability)
+                return &activations.Locals(active, slot);
         return nullptr;
     }
 
@@ -740,6 +793,233 @@ TEST_F(AbilityRuntime, AFailedCostIsRefusedAtAdmission)
     Step({ Press(kFire) });
     EXPECT_EQ(Traced(AbilityTraceEvent::Refused).size(), 2u);
     EXPECT_FLOAT_EQ(Base(actor, Ammo), 3.0f);
+}
+
+constexpr std::string_view kBowShot = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "costs": [ { "key": "g_shot",
+                 "effects": [ { "data": "asset://effects/energy_10.sdata" } ],
+                 "resources": [ { "key": "r_arrow", "provider": "test.counter",
+                                  "arguments": { "holder": { "port": "actor" } } } ] } ],
+    "phases": [ { "key": "p_draw",
+        "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_shot"] },
+                   { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+        "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, AnArrowAndStaminaArePaidTogetherOrNotAtAll)
+{
+    DeclareCounters();
+    const AbilityId shot = Define("asset://abilities/bow_shot.sdata", kBowShot);
+    const EntityId actor = Actor();
+    Grant(actor, shot);
+    Counters& quiver = Entities.GetResource<Counters>();
+
+    quiver.Held[actor] = 0;
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_TRUE(Marks.Values.empty());
+    EXPECT_FLOAT_EQ(Base(actor, Energy), 10.0f) << "no arrow: the stamina is untouched";
+
+    quiver.Held[actor] = 2;
+    Entities.TryGet<AttributeSet>(actor)->SetBase(Energy, 5.0f);
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_TRUE(Marks.Values.empty());
+    EXPECT_EQ(quiver.Held[actor], 2) << "no stamina: the arrows are untouched";
+
+    Entities.TryGet<AttributeSet>(actor)->SetBase(Energy, 10.0f);
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 1.0 });
+    EXPECT_EQ(quiver.Held[actor], 1);
+    EXPECT_FLOAT_EQ(Base(actor, Energy), 0.0f);
+}
+
+// Admitted on the ability's default, the start would be left unpaid.
+TEST_F(AbilityRuntime, AStartCostReadsTheGrantsParameterAtAdmission)
+{
+    DeclareCounters();
+    const AbilityId sip = Define("asset://abilities/sip.sdata", R"({
+        "parameters": [ { "key": "doses", "default": 1 } ],
+        "costs": [ { "key": "g_start", "when": "start",
+                     "resources": [ { "key": "r_dose", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" }, "count": { "param": "doses" } } } ] } ],
+        "phases": [ { "key": "p_sip",
+            "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), sip, AbilityGrantKind::Authored,
+                       Entities.GetResource<AbilityGrantEntries>().Intern(
+                           { .Key = "g", .Ability = sip, .Override = {}, .Parameters = { { "doses", 3.0 } } }));
+    Entities.GetResource<Counters>().Held[actor] = 2;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = sip });
+    Step();
+    EXPECT_TRUE(Marks.Values.empty()) << "it ran without paying its three doses";
+    EXPECT_EQ(Entities.GetResource<Counters>().Held[actor], 2);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::CostFailed);
+}
+
+namespace
+{
+bool TranslateQuiver(const World&, const AbilityCostRow& row, std::vector<AuthoredValue>& arguments)
+{
+    EntityId bearer;
+    if (row.Arguments.empty() || !row.Arguments[0].TryGetEntity(bearer) || !bearer.IsValid())
+        return false;
+    arguments.push_back(AuthoredValue::Entity(bearer));
+    arguments.push_back(AuthoredValue::Int(1));
+    return true;
+}
+
+AbilityCostProviderDefinition Quiver(std::string name, std::string spendsThrough)
+{
+    AbilityCostProviderDefinition quiver;
+    quiver.Name = std::move(name);
+    quiver.Arguments.Children = { MakeDataField(DataFieldKind::Entity, "bearer", "Bearer") };
+    quiver.SpendsThrough = std::move(spendsThrough);
+    quiver.Translate = &TranslateQuiver;
+    return quiver;
+}
+}
+
+TEST_F(AbilityRuntime, ARowSpentThroughAnotherProviderJoinsItsBatch)
+{
+    DeclareCounters();
+    {
+        AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.quiver");
+        ASSERT_TRUE(scope.Declare(Quiver("test.quiver", "test.counter")));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const AbilityId volley = Define("asset://abilities/volley.sdata", R"({
+        "costs": [ { "key": "g_volley",
+                     "resources": [ { "key": "r_nock", "provider": "test.counter",
+                                      "arguments": { "holder": { "port": "actor" } } },
+                                    { "key": "r_draw", "provider": "test.quiver",
+                                      "arguments": { "bearer": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_loose",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_volley"] },
+                       { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "const": 1 } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, volley);
+    Counters& counters = Entities.GetResource<Counters>();
+    counters.Held[actor] = 1;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = volley });
+    Step();
+    EXPECT_TRUE(Marks.Values.empty()) << "one arrow cannot pay both rows";
+    EXPECT_EQ(counters.Held[actor], 1);
+
+    counters.Held[actor] = 2;
+    const std::size_t checks = counters.Checks;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = volley });
+    Step();
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 1.0 });
+    EXPECT_EQ(counters.Held[actor], 0);
+    EXPECT_EQ(counters.Checks, checks + 1) << "one batch for the one resource";
+}
+
+TEST_F(AbilityRuntime, AProviderOwnsItsResourceOrSpendsThroughAnotherNeverBoth)
+{
+    DeclareCounters();
+    AbilityCostProviderDefinition both = Quiver("test.both", "test.counter");
+    both.Check = &CheckCounters;
+    both.Apply = &ApplyCounters;
+    AbilityCostProviderDefinition neither;
+    neither.Name = "test.neither";
+    AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.bad");
+    EXPECT_FALSE(scope.Declare(std::move(both)));
+    EXPECT_FALSE(scope.Declare(std::move(neither)));
+    EXPECT_FALSE(scope.Declare(Quiver("test.self", "test.self")));
+}
+
+TEST_F(AbilityRuntime, ASpendThroughATranslatingProviderFailsItsGroup)
+{
+    DeclareCounters();
+    {
+        AbilityCostProviderRegistrationScope scope(Entities.GetResource<AbilityCostProviderCatalog>(), "test.quiver");
+        ASSERT_TRUE(scope.Declare(Quiver("test.quiver", "test.counter")));
+        ASSERT_TRUE(scope.Declare(Quiver("test.sling", "test.quiver")));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const AbilityId sling = Define("asset://abilities/sling.sdata", R"({
+        "costs": [ { "key": "g_sling", "when": "start",
+                     "resources": [ { "key": "r_stone", "provider": "test.sling",
+                                      "arguments": { "bearer": { "port": "actor" } } } ] } ],
+        "phases": [ { "key": "p_throw", "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, sling);
+    Entities.GetResource<Counters>().Held[actor] = 5;
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = sling });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, sling), nullptr);
+    EXPECT_EQ(Entities.GetResource<Counters>().Held[actor], 5);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::CostFailed);
+}
+
+TEST_F(AbilityRuntime, AProviderChecksEveryGroupsRowsInOneBatch)
+{
+    DeclareCounters();
+    const AbilityId volley = Define("asset://abilities/volley.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "costs": [ { "key": "g_left", "resources": [ { "key": "r_a", "provider": "test.counter",
+                                                       "arguments": { "holder": { "port": "actor" } } } ] },
+                   { "key": "g_right", "resources": [ { "key": "r_b", "provider": "test.counter",
+                                                        "arguments": { "holder": { "port": "actor" }, "count": 1 } } ] } ],
+        "phases": [ { "key": "p_loose",
+            "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_left", "g_right"] } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, volley);
+    Counters& quiver = Entities.GetResource<Counters>();
+    quiver.Held[actor] = 1;
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(quiver.Checks, 1u) << "once, with both groups' rows";
+    EXPECT_EQ(quiver.Held[actor], 1) << "one arrow does not pay for two";
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Ended).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::CommitFailed);
+}
+
+TEST_F(AbilityRuntime, ASourceTargetedEffectCostChargesTheSource)
+{
+    const AbilityId fire = Define("asset://abilities/clip_fire.sdata", R"({
+        "costs": [ { "key": "g_round", "target": "source", "effects": [ { "data": "asset://effects/ammo_1.sdata" } ] } ],
+        "phases": [ { "key": "p_fire", "enter": [ { "key": "o_pay", "op": "commit", "groups": ["g_round"] } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    const EntityId pistol = Entities.CreateEntity();
+    Entities.AddComponent<AttributeSet>(pistol);
+    Entities.TryGet<AttributeSet>(pistol)->Add(Ammo, 18.0f);
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), fire, AbilityGrantKind::Request,
+                       Entities.GetResource<AbilityGrantEntries>().Intern({ "g", fire, {} }), {}, pistol);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = fire });
+    Step();
+    EXPECT_FLOAT_EQ(Base(pistol, Ammo), 17.0f) << "the clip lives on the weapon";
+    EXPECT_FLOAT_EQ(Base(actor, Ammo), 3.0f);
+}
+
+TEST_F(AbilityRuntime, AnUnknownProviderOrArgumentIsRefusedAtDeclaration)
+{
+    DeclareCounters();
+    const auto refusal = [&](std::string_view json) {
+        const std::optional<JsonValue> data = JsonParse(json);
+        AbilityDeclaration declaration;
+        std::vector<AssetRef> dependencies;
+        std::vector<AbilityDiagnostic> diagnostics;
+        EXPECT_TRUE(CompileAbilityDeclaration(*data, declaration, dependencies, diagnostics)) << Describe(diagnostics);
+        AbilityDefinition definition;
+        EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/x.sdata",
+                                               MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
+        return diagnostics.empty() ? std::string{} : diagnostics.front().Code;
+    };
+    EXPECT_EQ(refusal(R"({ "costs": [ { "key": "g", "resources": [ { "key": "r", "provider": "test.nothing" } ] } ],
+        "phases": [ { "key": "p", "enter": [ { "key": "o", "op": "commit", "groups": ["g"] } ],
+                      "then": [ { "key": "t", "to": "end" } ] } ] })"),
+              "provider_unknown");
+    EXPECT_EQ(refusal(R"({ "costs": [ { "key": "g", "resources": [ { "key": "r", "provider": "test.counter",
+                                         "arguments": { "holder": { "port": "actor" }, "colour": 3 } } ] } ],
+        "phases": [ { "key": "p", "enter": [ { "key": "o", "op": "commit", "groups": ["g"] } ],
+                      "then": [ { "key": "t", "to": "end" } ] } ] })"),
+              "schema");
 }
 
 TEST_F(AbilityRuntime, StepBudgetEndsTheRecord)
@@ -1224,6 +1504,76 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
     EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Refused);
 }
 
+// Two rings, each an entity whose Infinite effect grants Fireball with its own power and priority.
+constexpr std::string_view kFireball = R"({
+    "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+    "parameters": [ { "key": "power", "default": 0 } ],
+    "phases": [ { "key": "p_cast",
+        "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "param": "power" } } } ],
+        "then": [ { "key": "t_loose", "on": "release", "to": "end" } ] } ] })";
+
+class TwoRings : public AbilityRuntime
+{
+protected:
+    void Wear(std::int32_t firePriority, std::int32_t emberPriority)
+    {
+        Fireball = Define("asset://abilities/fireball.sdata", kFireball);
+        Hero = Actor();
+        Fire = Ring("asset://effects/ring_fire.sdata", firePriority, 10.0);
+        Ember = Ring("asset://effects/ring_ember.sdata", emberPriority, 14.0);
+        Step();
+    }
+
+    EntityId Ring(std::string_view path, std::int32_t priority, double power)
+    {
+        EffectDefinition worn{};
+        worn.Duration = EffectDuration::Infinite;
+        const EffectId effect = Entities.GetResource<EffectRegistry>().Define(path, worn);
+        DeclareEffectGrants(Entities, effect,
+                            { AbilityGrantDeclaration{ .Key = "g_fireball", .Ability = "asset://abilities/fireball.sdata",
+                                                       .Override = { .Priority = priority },
+                                                       .Parameters = { { "power", power } } } });
+        const EntityId ring = Entities.CreateEntity();
+        (void)ApplyEffect(Entities, Hero, effect, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                          LeaseOwner{ .Entity = ring });
+        return ring;
+    }
+
+    AbilityId Fireball;
+    EntityId Hero;
+    EntityId Fire;
+    EntityId Ember;
+};
+
+TEST_F(TwoRings, APressCastsFromTheHigherSlotsRingAndFallsBackWhenItIsTakenOff)
+{
+    Wear(20, 21);
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(Hero)->Count, 2u) << "one entry each: their powers differ";
+
+    Step({ Press(kFire) });
+    EXPECT_EQ(Marks.Values, std::vector<double>{ 14.0 }) << "the ember ring's power";
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, Hero, Ember));
+
+    ASSERT_EQ(RemoveEffectsOwnedBy(Entities, LeaseOwner{ .Entity = Ember }), 1u);
+    Steps(2);
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, Hero, Ember));
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Ended).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::GrantRevoked);
+
+    Step({ Release(kFire) });
+    Step({ Press(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 14.0, 10.0 })) << "the fire ring's power";
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, Hero, Fire));
+}
+
+TEST_F(TwoRings, RingsTiedOnPriorityCastNothingAndSaySo)
+{
+    Wear(20, 20);
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "nothing collapses silently";
+    EXPECT_FALSE(Traced(AbilityTraceEvent::BindingAmbiguous).empty());
+}
+
 TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
 {
     const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
@@ -1241,7 +1591,7 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
     ASSERT_EQ(grants.Count, 1u);
     EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Effect);
-    EXPECT_EQ(grants.Entries[0].Effect, held);
+    EXPECT_EQ(grants.Entries[0].Holder, held);
 
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u) << "granted once, not once per pass";
@@ -1249,6 +1599,219 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
+}
+
+constexpr std::string_view kReadSource = R"({
+    "input_default": { "action": "Input.AltFire", "policy": "press_release" },
+    "locals": [ { "key": "l_source", "type": "entity" } ],
+    "phases": [ { "key": "p_hold",
+        "enter": [ { "key": "o_read", "op": "set", "local": "l_source", "from": { "port": "source" } } ],
+        "then": [ { "key": "t_stop", "on": "release", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, ARequestTakesTheHighestPriorityGrantThenTheLowestId)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    const EntityId low = Entities.CreateEntity();
+    const EntityId high = Entities.CreateEntity();
+    const EntityId later = Entities.CreateEntity();
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const auto grant = [&](std::int32_t priority, EntityId source) {
+        const std::uint16_t entry = entries.Intern({ "g_" + std::to_string(priority), read, { .Priority = priority } });
+        return GrantAbility(*Entities.TryGet<AbilityGrants>(actor), read, AbilityGrantKind::Request, entry, {}, source);
+    };
+    (void)grant(20, low);
+    const AbilityGrantId top = grant(21, high);
+    (void)grant(21, later);
+    const auto request = [&](EntityId source) {
+        Entities.GetResource<AbilityRequestQueue>().Push(
+            { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = read, .Source = source });
+        Step();
+    };
+
+    request({});
+    ASSERT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_EQ(LiveRecord(actor, read)->Grant, top) << "the highest priority, and of two at it the first granted";
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::Cancel, .Actor = actor, .Ability = read });
+    Step();
+
+    request(low);
+    ASSERT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, low)) << "a source names its grant exactly";
+}
+
+TEST_F(AbilityRuntime, ARequestFromASourceWithNoSuchGrantIsNotGranted)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    Grant(actor, read);
+    Entities.GetResource<AbilityRequestQueue>().Push(
+        { .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = read, .Source = Entities.CreateEntity() });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, read), nullptr);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).front().Refusal, AbilityRefusal::NotGranted);
+}
+
+TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    const EntityId ring = Entities.CreateEntity();
+    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
+    const auto invoke = [&](std::string_view verb, bool keyed) {
+        VerbBindingDesc desc;
+        desc.Key = std::string(verb) + ".test";
+        desc.KeyId = MakeVerbBindingKey(desc.Key);
+        desc.VerbName = std::string(verb);
+        desc.Inputs = { "target", "source" };
+        const auto argument = [](std::string key, VerbArgumentSource from, std::string text) {
+            VerbBindingArgument made;
+            made.Key = std::move(key);
+            made.Source = from;
+            made.Text = std::move(text);
+            return made;
+        };
+        desc.Arguments = { argument("target", VerbArgumentSource::Input, "target"),
+                           argument("ability", VerbArgumentSource::DataAsset, "asset://abilities/read_source.sdata"),
+                           argument("source", VerbArgumentSource::Input, "source") };
+        if (keyed)
+        {
+            desc.Arguments.push_back(argument("key", VerbArgumentSource::Literal, {}));
+            desc.Arguments.back().Literal = JsonValue("ringed");
+        }
+        CompiledVerbBinding binding;
+        std::vector<std::string> errors;
+        EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), binding, errors))
+            << (errors.empty() ? "" : errors.front());
+        const AuthoredValue inputs[] = { AuthoredValue::Entity(actor), AuthoredValue::Entity(ring) };
+        return Verbs->Invoke(binding, std::span(inputs)).Status;
+    };
+
+    EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Entries[0].Source, ring);
+    EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
+    Step();
+    EXPECT_NE(LiveRecord(actor, read), nullptr);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, ring));
+}
+
+constexpr std::string_view kPowered = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "parameters": [ { "key": "power", "default": 5 } ],
+    "phases": [ { "key": "p_fire",
+        "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark", "arguments": { "value": { "param": "power" } } } ],
+        "then": [ { "key": "t_end", "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, AnAbilityReadsItsGrantsParameterElseItsDefault)
+{
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const EntityId strong = Actor();
+    const EntityId plain = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(strong), powered, AbilityGrantKind::Authored,
+                       entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 14.0 } } }));
+    Grant(plain, powered);
+
+    Step({ Press(kFire), Release(kFire) });
+    std::ranges::sort(Marks.Values);
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 5.0, 14.0 }));
+}
+
+TEST_F(AbilityRuntime, EntriesThatDifferOnlyInAParameterAreTwoEntries)
+{
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    AbilityGrantEntries& entries = Entities.GetResource<AbilityGrantEntries>();
+    const std::uint16_t fire = entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 10.0 } } });
+    const std::uint16_t ember = entries.Intern({ .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 14.0 } } });
+    ASSERT_NE(fire, kAbilityNoGrantEntry);
+    ASSERT_NE(ember, kAbilityNoGrantEntry);
+    EXPECT_NE(fire, ember);
+    EXPECT_NE(entries.WireKey(fire), entries.WireKey(ember));
+    const std::uint16_t again = entries.Intern(
+        { .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "power", 10.0 } } });
+    EXPECT_EQ(again, fire);
+}
+
+TEST_F(AbilityRuntime, AGrantParameterItsAbilityDoesNotDeclareIsReported)
+{
+    std::vector<std::string> lines;
+    struct Captured : ILogSink
+    {
+        std::vector<std::string>* Lines = nullptr;
+        void Write(LogLevel, std::string_view, std::string_view message) override { Lines->emplace_back(message); }
+    };
+    LoggingProvider logging;
+    logging.AddSink<Captured>().Lines = &lines;
+    Host.Logging = &logging;
+    const AbilityId powered = Define("asset://abilities/powered.sdata", kPowered);
+    const EntityId actor = Actor();
+    (void)GrantAbility(*Entities.TryGet<AbilityGrants>(actor), powered, AbilityGrantKind::Authored,
+                       Entities.GetResource<AbilityGrantEntries>().Intern(
+                           { .Key = "g", .Ability = powered, .Override = {}, .Parameters = { { "pwer", 14.0 } } }));
+    Step({ Press(kFire), Release(kFire) });
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 5.0 })) << "the default stands";
+    EXPECT_EQ(std::ranges::count_if(lines, [](const std::string& line) { return line.find("pwer") != std::string::npos; }), 1);
+}
+
+TEST_F(AbilityRuntime, AnEffectsGrantHasTheEffectsOwnerAsItsSource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    EffectDefinition worn{};
+    worn.Duration = EffectDuration::Infinite;
+    const EffectId ring = Entities.GetResource<EffectRegistry>().Define("asset://effects/ring.sdata", worn);
+    DeclareEffectGrants(Entities, ring,
+                        { AbilityGrantDeclaration{ .Key = "g_read", .Ability = "asset://abilities/read_source.sdata", .Override = {} } });
+    const EntityId actor = Actor();
+    const EntityId wornRing = Entities.CreateEntity();
+    const EntityId held = ApplyEffect(Entities, actor, ring, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now },
+                                      LeaseOwner{ .Entity = wornRing });
+
+    Step({ Press(kAlt) });
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Holder, held);
+    EXPECT_EQ(grants.Entries[0].Source, wornRing);
+    const AbilityRecordLocals* locals = LiveLocals(actor, read);
+    ASSERT_NE(locals, nullptr);
+    EXPECT_EQ(locals->Values[0].Entity, wornRing);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, wornRing));
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, actor, actor));
+
+    Step({ Release(kAlt) });
+    EXPECT_FALSE(HasLiveActivationFrom(Entities, actor, wornRing));
+}
+
+TEST_F(AbilityRuntime, AnAuthoredGrantHasNoSource)
+{
+    const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
+    const EntityId actor = Actor();
+    Grant(actor, read);
+    Step({ Press(kAlt) });
+    const AbilityRecordLocals* locals = LiveLocals(actor, read);
+    ASSERT_NE(locals, nullptr);
+    EXPECT_FALSE(locals->Values[0].Entity.IsValid());
+}
+
+TEST_F(AbilityRuntime, ASourceHandedToAnOperationNeedsAGuard)
+{
+    const std::optional<JsonValue> data = JsonParse(R"({
+        "phases": [ { "key": "p_go",
+            "enter": [ { "key": "o_spend", "op": "invoke", "verb": "effect.apply",
+                         "arguments": { "target": { "port": "source" },
+                                        "effect": { "data": "asset://effects/ammo_1.sdata" } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    ASSERT_TRUE(data.has_value());
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*data, declaration, dependencies, diagnostics)) << Describe(diagnostics);
+    AbilityDefinition definition;
+    EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/spend.sdata",
+                                           MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
+    EXPECT_TRUE(std::ranges::any_of(diagnostics, [](const AbilityDiagnostic& d) { return d.Code == "unguarded_recipient"; }))
+        << Describe(diagnostics);
 }
 
 TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)
@@ -1519,4 +2082,274 @@ TEST_F(AbilityRuntime, APhasesTimeoutRunsInItsActorsTime)
     EXPECT_NE(LiveRecord(actor, waiting), nullptr) << "half way through its own ten ticks";
     Steps(10);
     EXPECT_EQ(LiveRecord(actor, waiting), nullptr);
+}
+
+TEST_F(AbilityRuntime, AFullGrantTableSwapsOneEffectsGrantForAnothersOnOneTick)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kAbilityGrantCapacity);
+
+    ASSERT_TRUE(RemoveEffect(Entities, held.front()));
+    const EntityId newcomer = ApplyNow(actor, granting.back());
+    Step();
+
+    EXPECT_FALSE(HoldsGrantOf(actor, held.front())) << "an ended effect's grant outlived the pass after it ended";
+    EXPECT_TRUE(HoldsGrantOf(actor, newcomer))
+        << "the new effect's grant waited a pass for room the ended effect was still holding";
+}
+
+TEST_F(AbilityRuntime, AGrantingEffectIsRefusedWhenAppliedIfItsGrantsWouldNotFit)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, kAbilityGrantCapacity - 1);
+
+    // Room for one, asked for twice in one tick: the first reserved it.
+    const EntityId first = ApplyNow(actor, granting[kAbilityGrantCapacity - 1]);
+    const EntityId second = ApplyNow(actor, granting[kAbilityGrantCapacity]);
+    ASSERT_TRUE(first.IsValid());
+    EXPECT_FALSE(second.IsValid()) << "refused when applied, not left to fail in the pass";
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, first));
+    EXPECT_TRUE(Traced(AbilityTraceEvent::GrantRefused).empty());
+    EXPECT_EQ(Entities.GetResource<AbilityGrantReservations>().Size(), 0u) << "the pass consumed the reservation";
+}
+
+// A grant asked for between an effect's apply and its pass must not take the room the effect reserved.
+constexpr std::string_view kUse = R"({
+    "locals": [ { "key": "l_source", "type": "entity" } ],
+    "activation": [ { "key": "act_calm", "tags": { "none": ["State.Stunned"] } } ],
+    "phases": [ { "key": "p_drink",
+        "enter": [ { "key": "o_read", "op": "set", "local": "l_source", "from": { "port": "source" } } ],
+        "then": [ { "key": "t_done", "on": "timeout", "ticks": 3, "to": "end" } ] } ] })";
+
+TEST_F(AbilityRuntime, ATransientGrantLastsExactlyAsLongAsItsActivation)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    const EntityId potion = Entities.CreateEntity();
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = potion, .Entry = entry });
+    Step();
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Transient);
+    EXPECT_EQ(grants.Entries[0].Source, potion);
+    ASSERT_NE(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(LiveLocals(actor, drink)->Values[0].Entity, potion);
+    EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, potion));
+
+    Steps(4);
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u) << "the grant ended with its activation";
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).back().EndReason, AbilityEndReason::Completed);
+}
+
+TEST_F(AbilityRuntime, ARefusedTransientActivationLeavesNoGrant)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    (void)Entities.TryGet<GameplayTagContainer>(actor)->Grant(Tag("State.Stunned"));
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = Entities.CreateEntity(), .Entry = entry });
+    Step();
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::ActivationFailed);
+}
+
+TEST_F(AbilityRuntime, ATransientActivationFromASourceThatHasGoneIsNotGranted)
+{
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    const EntityId potion = Entities.CreateEntity();
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = potion, .Entry = entry });
+    Entities.DestroyEntity(potion);
+    Step();
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::NotGranted);
+}
+
+TEST_F(AbilityRuntime, ATransientActivationDoesNotTakeRoomAnEffectReserved)
+{
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    const AbilityId drink = Define("asset://abilities/drink.sdata", kUse);
+    const EntityId actor = Actor();
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId last = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(last.IsValid());
+    const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "use", drink, {} });
+    Entities.GetResource<AbilityRequestQueue>().Push({ .Kind = AbilityRequestKind::ActivateEntry, .Actor = actor,
+                                                       .Ability = drink, .Instigator = {}, .Cause = {},
+                                                       .Source = {}, .Entry = entry });
+    Step();
+    EXPECT_EQ(LiveRecord(actor, drink), nullptr);
+    ASSERT_FALSE(Traced(AbilityTraceEvent::Refused).empty());
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused).back().Refusal, AbilityRefusal::Capacity);
+    EXPECT_TRUE(HoldsGrantOf(actor, last));
+}
+
+TEST_F(AbilityRuntime, AGrantAskedForDoesNotTakeRoomAnEffectReserved)
+{
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    const EntityId actor = Actor();
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId last = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(last.IsValid());
+
+    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
+    VerbBindingDesc desc;
+    desc.Key = "grant.test";
+    desc.KeyId = MakeVerbBindingKey(desc.Key);
+    desc.VerbName = std::string(kAbilityGrantVerb);
+    desc.Inputs = { "target" };
+    VerbBindingArgument target;
+    target.Key = "target";
+    target.Source = VerbArgumentSource::Input;
+    target.Text = "target";
+    VerbBindingArgument ability;
+    ability.Key = "ability";
+    ability.Source = VerbArgumentSource::DataAsset;
+    ability.Text = "asset://abilities/charge.sdata";
+    VerbBindingArgument key;
+    key.Key = "key";
+    key.Literal = JsonValue("scripted");
+    desc.Arguments = { target, ability, key };
+    CompiledVerbBinding binding;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), binding, errors));
+    const AuthoredValue input = AuthoredValue::Entity(actor);
+    EXPECT_EQ(Verbs->Invoke(binding, std::span(&input, 1)).Status, VerbAdmission::Refused)
+        << "the last slot is the reserved effect's";
+
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, last));
+    EXPECT_TRUE(Traced(AbilityTraceEvent::GrantRefused).empty());
+}
+
+TEST_F(AbilityRuntime, AReservationEndsWithAnEffectRemovedBeforeThePass)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity + 1);
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        (void)ApplyNow(actor, granting[i]);
+    Step();
+    const EntityId withdrawn = ApplyNow(actor, granting[kAbilityGrantCapacity - 1]);
+    ASSERT_TRUE(RemoveEffect(Entities, withdrawn));
+    const EntityId replacement = ApplyNow(actor, granting[kAbilityGrantCapacity]);
+    ASSERT_TRUE(replacement.IsValid()) << "a removed effect reserves nothing";
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, replacement));
+    EXPECT_EQ(Entities.GetResource<AbilityGrantReservations>().Size(), 0u);
+}
+
+// Only a grant nothing reserved can find no room: one taken after the effect applied.
+TEST_F(AbilityRuntime, AnUnreservedEffectGrantThatDoesNotFitIsTracedOnce)
+{
+    const EntityId actor = Actor();
+    const std::vector<EffectId> granting = DefineGrantingEffects(kAbilityGrantCapacity);
+    std::vector<EntityId> held;
+    for (std::size_t i = 0; i + 1 < kAbilityGrantCapacity; ++i)
+        held.push_back(ApplyNow(actor, granting[i]));
+    Step();
+    const EntityId late = ApplyNow(actor, granting.back());
+    ASSERT_TRUE(late.IsValid());
+    (void)Grant(actor, Define("asset://abilities/squatter.sdata", kGrantedInstant), {}, "g_squat");
+    Steps(3);
+
+    const std::vector<AbilityTraceRecord> refused = Traced(AbilityTraceEvent::GrantRefused);
+    ASSERT_EQ(refused.size(), 1u) << "a grant with no room is reported once, not every pass it waits";
+    EXPECT_EQ(refused.front().Actor, actor);
+    EXPECT_EQ(refused.front().Key.Ability, Entities.GetResource<AbilityRegistry>().Find(
+                                               "asset://abilities/granted_" + std::to_string(kAbilityGrantCapacity - 1) + ".sdata"));
+    EXPECT_EQ(refused.front().Refusal, AbilityRefusal::Capacity);
+
+    ASSERT_TRUE(RemoveEffect(Entities, held.front()));
+    Step();
+    EXPECT_TRUE(HoldsGrantOf(actor, late));
+    EXPECT_EQ(Traced(AbilityTraceEvent::GrantRefused).size(), 1u);
+}
+
+TEST_F(AbilityRuntime, AnEffectGrantTheEntryTableRefusesIsReportedNotDropped)
+{
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition weapon{};
+    weapon.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/weapon.sdata", weapon);
+    // These two keys share one FNV-1a wire key, so the wire could not tell them apart.
+    const std::vector<std::string> refused = DeclareEffectGrants(
+        Entities, equipped,
+        { AbilityGrantDeclaration{ .Key = "k32728", .Ability = "asset://abilities/charge.sdata", .Override = {} },
+          AbilityGrantDeclaration{ .Key = "k261234", .Ability = "asset://abilities/charge.sdata", .Override = {} } });
+    EXPECT_EQ(refused, (std::vector<std::string>{ "k261234" }));
+    EXPECT_EQ(Entities.GetResource<AbilityEffectGrants>().Of(equipped).size(), 1u);
+}
+
+TEST_F(AbilityRuntime, ReloadingAnEffectsGrantBindingReplacesItsGrant)
+{
+    (void)Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition weapon{};
+    weapon.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/weapon.sdata", weapon);
+    DeclareEffectGrants(Entities, equipped,
+                        { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                   .Override = { .Action = "Input.AltFire" } } });
+    const EntityId actor = Actor();
+    (void)ApplyNow(actor, equipped);
+    Step();
+    ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
+
+    DeclareEffectGrants(Entities, equipped,
+                        { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                   .Override = { .Action = "Input.PrimaryFire" } } });
+    Step();
+
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u) << "the reloaded grant was added beside the one it replaces";
+    const AbilityGrantEntry* entry = Entities.GetResource<AbilityGrantEntries>().Find(grants.Entries[0].Entry);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->Override.Action, std::optional<std::string>("Input.PrimaryFire"));
+}
+
+// A projected tag has only its projection to write it.
+TEST(AbilityDeclarationResolve, AProjectedTagIsNotOwned)
+{
+    World world;
+    RegisterAbilityKit(world);
+    GameplayTagRegistry& tags = world.GetResource<GameplayTagRegistry>();
+    tags.SetProjected(*tags.RegisterTag("movement.grounded"), "movement.support");
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*JsonParse(R"({ "owned_tags": [ "movement.grounded" ],
+        "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })"),
+                                          declaration, dependencies, diagnostics));
+    AbilityDefinition definition;
+    EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/projected.sdata",
+                                           MakeAbilityResolveEnvironment(world), definition, diagnostics));
+    ASSERT_FALSE(diagnostics.empty());
+    EXPECT_EQ(diagnostics.back().Code, "tag_projected");
 }

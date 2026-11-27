@@ -8,6 +8,7 @@
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <time/ActorTime.h>
 #include <time/ActorTimeLeases.h>
 
@@ -35,10 +36,26 @@ struct EffectPassState
         float Scale = 1.0f;
     };
 
+    struct Override
+    {
+        AttributeId Attribute;
+        std::int32_t Precedence = 0;
+        EffectId Def;
+    };
+
     std::uint64_t NextSequence = 1;
     std::vector<FoldEntry> Fold;
+    std::vector<Override> Overrides;
     std::vector<EntityId> Ending;
 };
+
+void RecordOverrideTie(World& world, const EffectOverrideTie& tie)
+{
+    EffectOverrideTies& ties = world.HasResource<EffectOverrideTies>() ? world.GetResource<EffectOverrideTies>()
+                                                                        : world.AddResource<EffectOverrideTies>();
+    if (std::ranges::find(ties.Seen, tie) == ties.Seen.end())
+        ties.Seen.push_back(tie);
+}
 
 EffectPassState& PassStateOf(World& world)
 {
@@ -216,7 +233,7 @@ void FoldActiveEffectsImpl(
              < std::tie(b.Target.Index, b.Target.Generation, b.Def.Value, b.Sequence);
     });
 
-    for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply, ModifierOp::Override })
+    for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply })
     {
         for (const EffectPassState::FoldEntry& entry : state.Fold)
         {
@@ -231,6 +248,38 @@ void FoldActiveEffectsImpl(
                 if (float* c = set->CurrentPtr(m.Attr))
                     ApplyModifier(*c, op, m.Magnitude * entry.Scale);
             }
+        }
+    }
+
+    // The fold is sorted by target: overrides reset when the target changes.
+    EntityId target;
+    state.Overrides.clear();
+    for (const EffectPassState::FoldEntry& entry : state.Fold)
+    {
+        const EffectDefinition* def = effReg->Get(entry.Def);
+        AttributeSet* set = world.TryGet<AttributeSet>(entry.Target);
+        if (def == nullptr || set == nullptr)
+            continue;
+        if (entry.Target != target)
+        {
+            target = entry.Target;
+            state.Overrides.clear();
+        }
+        for (const EffectModifier& m : def->Modifiers)
+        {
+            float* c = m.Op == ModifierOp::Override ? set->CurrentPtr(m.Attr) : nullptr;
+            if (c == nullptr)
+                continue;
+            const auto held = std::ranges::find(state.Overrides, m.Attr, &EffectPassState::Override::Attribute);
+            if (held != state.Overrides.end() && m.Precedence < held->Precedence)
+                continue;
+            if (held != state.Overrides.end() && m.Precedence == held->Precedence && held->Def != entry.Def)
+                RecordOverrideTie(world, { m.Attr, entry.Def, held->Def });
+            ApplyModifier(*c, ModifierOp::Override, m.Magnitude * entry.Scale);
+            if (held != state.Overrides.end())
+                *held = { m.Attr, m.Precedence, entry.Def };
+            else
+                state.Overrides.push_back({ m.Attr, m.Precedence, entry.Def });
         }
     }
 }
@@ -256,6 +305,10 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         return {};
     }
 
+    const EffectApplicationAdmission* admission = std::as_const(world).TryGetResource<EffectApplicationAdmission>();
+    if (admission != nullptr && admission->Admit != nullptr && !admission->Admit(world, target, effect))
+        return {};
+
     ActiveEffect ae{};
     ae.Target = target;
     ae.Def = effect;
@@ -276,10 +329,13 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     {
         for (GameplayTagId tag : def->GrantedTags)
         {
-            const bool fits = tag.IsValid()
-                && (tags->StackCount(tag) > 0 || tags->Size() < GameplayTagContainer::Capacity);
-            if (!fits || ae.GrantedTagCount == kEffectGrantedTagCapacity)
+            if (!tag.IsValid() || ae.GrantedTagCount == kEffectGrantedTagCapacity)
                 continue;
+            if (!tags->CanHold(tag))
+            {
+                NoteGameplayTagOverflow(world, target, tag);
+                continue;
+            }
             tags->Grant(tag);
             ae.GrantedTags[ae.GrantedTagCount++] = tag;
         }
@@ -299,6 +355,8 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
                                     std::llround(static_cast<double>(def->TimeScale) * static_cast<double>(kActorTimeOne)),
                                     now.TickIndex);
     }
+    if (admission != nullptr && admission->Applied != nullptr)
+        admission->Applied(world, target, effect, fx);
     return fx;
 }
 

@@ -775,3 +775,29 @@ TEST(AnimReplication, ImpulseRequestPresentsRemotely)
     EXPECT_EQ(session.Client.BehaviorName(session.Mirror), "Anim.Idle") << "once: the wave completes and does not start again";
     EXPECT_EQ(session.Authority.BehaviorName(session.Prop), "Anim.Idle");
 }
+
+TEST(AnimReplication, ARequestWhoseSourceArrivesLateIsNotObservedTwice)
+{
+    World world;
+    ReplicationClientIdentity identity;
+    const EntityId holder = world.CreateEntity();
+    const EntityId source = world.CreateEntity();
+    AnimRequestSetWire wire;
+    wire.R0.Words.Values[9] = 1u;
+    wire.R0.Words.Values[0] = 7u;
+    wire.R0.Ticks.Values[0] = 42u;
+    wire.R0.Ticks.Values[1] = 10u;
+
+    std::vector<std::uint64_t> unresolved;
+    AnimRequestSet set;
+    ReplicationCodec<AnimRequestSet>::FromWire(
+        { .Entities = &world, .Entity = holder, .Client = &identity, .Unresolved = &unresolved }, wire, set);
+    EXPECT_FALSE(set.Records[0].Id.Source.IsValid());
+    EXPECT_EQ(unresolved, std::vector<std::uint64_t>{ 42u });
+    set.Records[0].Observed = true;
+
+    identity.Bind(NetEntityId{ 42 }, source);
+    ReplicationCodec<AnimRequestSet>::FromWire({ .Entities = &world, .Entity = holder, .Client = &identity }, wire, set);
+    EXPECT_EQ(set.Records[0].Id.Source, source);
+    EXPECT_TRUE(set.Records[0].Observed) << "the source arriving does not make it a new request";
+}

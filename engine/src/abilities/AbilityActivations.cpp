@@ -1,5 +1,6 @@
 #include <abilities/AbilityActivations.h>
 
+#include <abilities/AbilityGrants.h>
 #include <ecs/World.h>
 
 #include <algorithm>
@@ -98,21 +99,42 @@ void AbilityActivations::CollectOrphans(const World& world)
         Retire(orphan);
 }
 
+namespace
+{
+    template <typename Match>
+    bool AnyLiveRecord(const World& world, EntityId actor, Match&& match)
+    {
+        const AbilityActivations* activations = world.TryGetResource<AbilityActivations>();
+        if (activations == nullptr || !world.IsRegistered<ActiveAbilities>())
+            return false;
+        const ActiveAbilities* active = world.TryGet<ActiveAbilities>(actor);
+        if (active == nullptr)
+            return false;
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+        {
+            const AbilityRecord& record = activations->Record(*active, slot);
+            if (record.State == AbilityRecordState::Live && match(record))
+                return true;
+        }
+        return false;
+    }
+}
+
 bool IsAbilityLive(const World& world, EntityId actor, AbilityId ability)
 {
-    const AbilityActivations* activations = world.TryGetResource<AbilityActivations>();
-    if (activations == nullptr || !ability.IsValid() || !world.IsRegistered<ActiveAbilities>())
+    return ability.IsValid()
+        && AnyLiveRecord(world, actor, [&](const AbilityRecord& record) { return record.Key.Ability == ability; });
+}
+
+bool HasLiveActivationFrom(const World& world, EntityId actor, EntityId source)
+{
+    if (!source.IsValid() || !world.IsAlive(actor) || !world.IsRegistered<AbilityGrants>())
         return false;
-    const ActiveAbilities* active = world.TryGet<ActiveAbilities>(actor);
-    if (active == nullptr)
-        return false;
-    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
-    {
-        const AbilityRecord& record = activations->Record(*active, slot);
-        if (record.State == AbilityRecordState::Live && record.Key.Ability == ability)
-            return true;
-    }
-    return false;
+    const AbilityGrants* grants = world.TryGet<AbilityGrants>(actor);
+    return grants != nullptr && AnyLiveRecord(world, actor, [&](const AbilityRecord& record) {
+        const AbilityGrant* grant = grants->Find(record.Grant);
+        return grant != nullptr && grant->Source == source;
+    });
 }
 
 std::array<AbilityRecord, kAbilitySlotCapacity> AbilityRecordsOf(const World& world, EntityId actor)

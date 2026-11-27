@@ -84,7 +84,8 @@ bool DataResidentSync::IsResident(const DataDocument& document) const
 bool DataResidentSync::Apply(const DataDocument& document)
 {
     const AssetRecord* record = Assets.Registry.FindByPath(document.VirtualPath());
-    AssetStaging staged = Assets.StageDataRoot(*record, document.CommittedRoot());
+    DataSourceScope sources(Roots);
+    AssetStaging staged = Assets.StageDataRoot(*record, document.CommittedRoot(), sources.Reader());
     DataResidentState& state = States[&document];
     if (!staged.IsValid())
     {

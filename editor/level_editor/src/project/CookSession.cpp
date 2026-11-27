@@ -1,6 +1,7 @@
 #include "CookSession.h"
 
 #include "document/CookGraph.h"
+#include "document/DocumentRecook.h"
 #include "document/EditorDocument.h"
 #include "document/WorldCook.h"
 #include "document/WorldDocument.h"
@@ -306,6 +307,20 @@ std::vector<CookProfile> CookSession::AvailableProfiles() const
     if (Project_ == nullptr)
         return ResolveCookProfiles({});
     return ResolveCookProfiles(Project_->CookProfiles);
+}
+
+void CookSession::RecookDependents(std::span<const std::string> savedSources)
+{
+    if (Project_ == nullptr || savedSources.empty())
+        return;
+    if (IsActive())
+    {
+        Engine_.Logging().GetLogger<CookSession>().Warn(
+            "cook: a cook is running; dependents of the saved scenes are not recooked");
+        return;
+    }
+    (void)RecookComposedDependents(savedSources, std::filesystem::path(Project_->Directory) / "assets",
+                                   ReadDouble(Engine_, "editor.cook.cell_size", 16.0), Engine_.Logging(), Assets_);
 }
 
 void CookSession::Cancel()

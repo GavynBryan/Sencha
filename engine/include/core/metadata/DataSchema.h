@@ -98,6 +98,12 @@ struct DataEditorHint
     bool Multiline = false;
 };
 
+enum class DataMergePolicy : uint8_t
+{
+    Override,
+    AppendOnly,
+};
+
 struct DataFieldSchema
 {
     std::string Key;
@@ -117,6 +123,9 @@ struct DataFieldSchema
     std::vector<DataFieldSchema> Children;
     std::vector<DataEnumChoice> EnumChoices;
     uint32_t VectorLength = 3;
+
+    std::string MergeKey;
+    DataMergePolicy MergePolicy = DataMergePolicy::Override;
 
     bool Required = true;
     bool Advanced = false;
@@ -152,6 +161,7 @@ struct DataValidationError
 struct DataValueRules
 {
     bool AllowUnknownFields = false;
+    bool RequireMembers = true;
     // An absent member takes its declared default before it is checked.
     bool FillDefaults = false;
     // Asset, data asset, tag and entity fields: empty to accept, otherwise why
@@ -171,9 +181,24 @@ struct DataValueRules
                                       JsonValue* out,
                                       std::vector<DataValidationError>& errors);
 
+[[nodiscard]] const DataFieldSchema* UnwrapDataField(const DataFieldSchema* field);
+
+[[nodiscard]] const DataFieldSchema* DataFieldElement(const DataFieldSchema& field);
+
+[[nodiscard]] DataFieldSchema MakeKeyedListRecordSchema(std::string listKey, std::string elementKey);
+
+[[nodiscard]] const DataFieldSchema* ArrayMergeKey(const DataFieldSchema& array);
+
+enum class DataValidationMode : uint8_t
+{
+    Complete,
+    Partial,
+};
+
 [[nodiscard]] bool ValidateDataAgainstSchema(const JsonValue& value,
                                              const DataSchema& schema,
-                                             std::vector<DataValidationError>& errors);
+                                             std::vector<DataValidationError>& errors,
+                                             DataValidationMode mode = DataValidationMode::Complete);
 
 // One line naming the first few errors, for load and compile messages.
 [[nodiscard]] std::string FormatDataValidationErrors(std::span<const DataValidationError> errors);

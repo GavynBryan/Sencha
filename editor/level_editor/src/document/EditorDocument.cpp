@@ -262,6 +262,12 @@ BrushRecord EditorDocument::CurrentMaterials(BrushRecord record) const
 SceneSourceDocument EditorDocument::BuildSceneSource() const
 {
     SceneSourceDocument out;
+    out.Extends = Retained_.Extends;
+    out.ExtendsId = Retained_.ExtendsId;
+    out.Includes = Retained_.Includes;
+    out.Abstract = Retained_.Abstract;
+    out.InheritedPatches = Retained_.InheritedPatches;
+    out.InheritedRemovals = Retained_.InheritedRemovals;
     out.Instances = Retained_.Instances;
     SettleSources(out.Instances);
     out.UnknownRoot = Retained_.UnknownRoot;
@@ -370,6 +376,10 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         Scene.SyncFromRegistry();
         return false;
     }
+
+    for (const std::string& path : UpgradeSceneSourceFormat(*parsed))
+        Logging.GetLogger<EditorDocument>().Warn(
+            "scene source: {} was written as null, which this version reads as removing it", path);
 
     const auto fail = [&](std::string message)
     {

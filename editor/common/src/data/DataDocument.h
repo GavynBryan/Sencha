@@ -1,6 +1,7 @@
 #pragma once
 
 #include "commands/CommandStack.h"
+#include "data/DataSourceScope.h"
 #include "documents/FileBaseline.h"
 
 #include <assets/data/DataAssetTypeRegistry.h>
@@ -15,11 +16,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-// Splits a subtype compiler's "<json-path> <message>" error back into the two.
-// Exposed for testing: getting the path right is what lets a form mark the
-// field that is actually wrong, and the formats are easy to regress.
-[[nodiscard]] DataValidationError SplitCompileError(std::string message);
 
 // The first validation error at `path` or anywhere under it, or null. A form
 // marks a collapsed card with this: the error may belong to a field the author
@@ -111,6 +107,15 @@ public:
 
     void Validate(const DataAssetTypeRegistry& types,
                   const DataSchemaRegistry& schemas);
+    void SetSourceRoots(DataRootProvider roots) { Roots = std::move(roots); }
+    [[nodiscard]] const JsonValue& ComposedData() const { return Composed; }
+    [[nodiscard]] bool Composes() const { return Composition.has_value(); }
+    [[nodiscard]] const JsonValue& InheritedData() const { return Inherited; }
+    [[nodiscard]] const std::vector<std::string>& CompositionSources() const { return Sources; }
+    [[nodiscard]] const CompositionReport* CompositionResult() const
+    {
+        return Composition ? &*Composition : nullptr;
+    }
     [[nodiscard]] const std::vector<DataValidationError>& ValidationErrors() const
     {
         return Errors;
@@ -147,6 +152,11 @@ private:
 
     CommandStack History;
     std::vector<DataValidationError> Errors;
+    DataRootProvider Roots;
+    JsonValue Composed;
+    JsonValue Inherited;
+    std::optional<CompositionReport> Composition;
+    std::vector<std::string> Sources;
 };
 
 [[nodiscard]] JsonValue CreateDefaultDataValue(const DataFieldSchema& field);

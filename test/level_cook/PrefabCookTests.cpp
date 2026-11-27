@@ -5,10 +5,12 @@
 // nested placed source defeating the hit.
 
 #include "document/DocumentCook.h"
+#include "document/DocumentRecook.h"
 #include "document/EditorDocument.h"
 #include "document/DocumentSerialization.h"
 #include "CookedSmapReaders.h"
 
+#include <assets/cook/CookedCache.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
@@ -143,4 +145,117 @@ TEST_F(PrefabCookTest, RecookHitsTheCacheUntilANestedSourceChanges)
     const JsonValue* intensity = lamp->Find("intensity");
     ASSERT_NE(intensity, nullptr);
     EXPECT_EQ(intensity->AsNumber(), 9.0);
+}
+
+namespace
+{
+    std::string ReadText(const fs::path& path)
+    {
+        std::ifstream in(path);
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }
+
+    std::optional<double> CookedIntensity(const fs::path& smap)
+    {
+        const std::optional<JsonValue> lamp = FindFirstCookedComponent(ReadCookedScene(smap), "PointLight");
+        const JsonValue* intensity = lamp ? lamp->Find("intensity") : nullptr;
+        return intensity != nullptr ? std::optional<double>(intensity->AsNumber()) : std::nullopt;
+    }
+}
+
+TEST_F(PrefabCookTest, ADerivedPrefabCooksComposedAndRecooksWhenItsBaseIsSaved)
+{
+    (void)AuthorPrefab("prefabs/bulb.sscene", Vec3d{ 0, 1, 0 });
+    const std::string base = ReadText(Root / "prefabs/bulb.sscene");
+    WriteFile("prefabs/bright_bulb.sscene", "{ format_version: 2, extends: 'asset://prefabs/bulb.sscene', entities: [] }");
+
+    const DocumentCookResult cooked = CookDocument(Root / "prefabs/bright_bulb.sscene", Root, 16.0);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+    EXPECT_EQ(CookedIntensity(Root / ".cooked/prefabs/bright_bulb.smap"), 7.0);
+
+    CookedCacheIndex index;
+    ASSERT_TRUE(CookedCacheIndex::LoadFromFile((Root / ".cooked/index.json").generic_string(), index));
+    const CookedSourceEntry* entry = index.Find("prefabs/bright_bulb.sscene");
+    ASSERT_NE(entry, nullptr);
+    ASSERT_EQ(entry->AdditionalSources.size(), 1u);
+    EXPECT_EQ(entry->AdditionalSources[0].RelPath, "prefabs/bulb.sscene");
+
+    std::string brighter = base;
+    const std::size_t at = brighter.find("intensity: 7");
+    ASSERT_NE(at, std::string::npos);
+    brighter.replace(at, sizeof("intensity: 7") - 1, "intensity: 11");
+    WriteFile("prefabs/bulb.sscene", brighter);
+    const std::string saved[] = { std::string("asset://prefabs/bulb.sscene") };
+    const std::vector<std::string> recooked = RecookComposedDependents(saved, Root, 16.0, Logging);
+    EXPECT_EQ(recooked, std::vector<std::string>{ "prefabs/bright_bulb.sscene" });
+    EXPECT_EQ(CookedIntensity(Root / ".cooked/prefabs/bright_bulb.smap"), 11.0);
+}
+
+TEST_F(PrefabCookTest, AnAbstractPrefabIsNotCooked)
+{
+    WriteFile("prefabs/fragments/glow.sscene",
+              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }");
+    const DocumentCookResult refused = CookDocument(Root / "prefabs/fragments/glow.sscene", Root, 16.0);
+    EXPECT_FALSE(refused.Success);
+    EXPECT_NE(refused.Error.find("abstract"), std::string::npos) << refused.Error;
+    EXPECT_FALSE(fs::exists(Root / ".cooked/prefabs/fragments/glow.smap"));
+}
+
+namespace
+{
+    constexpr std::string_view kHumanoid = R"({ format_version: 2, entities: [
+        { id: '00000000000000a1', components: {
+            Transform: { local: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+            LookOrientation: { yaw: 0 },
+            PointLight: { intensity: 5, range: 3 } } },
+        { id: '00000000000000a2', parent: '00000000000000a1', components: {
+            Transform: { local: { position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } } } } ] })";
+
+    const JsonValue* RootComponent(const SmapContents& cooked, std::string_view name)
+    {
+        for (const SmapEntityRecord& record : cooked.Entities)
+            if (record.Parent == SmapEntityRecord{}.Parent)
+                return FindCookedComponent(record, name);
+        return nullptr;
+    }
+}
+
+TEST_F(PrefabCookTest, AGuardChainCooksFlatAndRecordsItsSources)
+{
+    WriteFile("prefabs/actors/humanoid.sscene", kHumanoid);
+    WriteFile("prefabs/fragments/alertable.sscene",
+              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: { AimFacing: {} } } ] }");
+    WriteFile("prefabs/fragments/combat_training.sscene",
+              "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f2', components: "
+              "{ LookOrientation: { yaw: 1.5 } } } ] }");
+    WriteFile("prefabs/actors/guard.sscene",
+              "{ format_version: 2, extends: 'asset://prefabs/actors/humanoid.sscene', includes: [ "
+              "{ fragment: 'asset://prefabs/fragments/alertable.sscene' }, "
+              "{ fragment: 'asset://prefabs/fragments/combat_training.sscene' } ], entities: [] }");
+    WriteFile("prefabs/actors/elite_guard.sscene",
+              "{ format_version: 2, extends: 'asset://prefabs/actors/guard.sscene', entities: [], "
+              "patch: { '00000000000000a1': { PointLight: { intensity: 9 } } } }");
+
+    const DocumentCookResult cooked = CookDocument(Root / "prefabs/actors/elite_guard.sscene", Root, 16.0);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+    const SmapContents scene = ReadCookedScene(Root / ".cooked/prefabs/actors/elite_guard.smap");
+    EXPECT_EQ(CountRootRecords(scene), 1u) << "one root: spawnable as a prefab";
+    EXPECT_EQ(scene.Entities.size(), 2u);
+    ASSERT_NE(RootComponent(scene, "AimFacing"), nullptr) << "a fragment's component";
+    const JsonValue* look = RootComponent(scene, "LookOrientation");
+    ASSERT_NE(look, nullptr);
+    EXPECT_FLOAT_EQ(static_cast<float>(look->Find("yaw")->AsNumber()), 1.5f) << "the other fragment's value";
+    const JsonValue* light = RootComponent(scene, "PointLight");
+    ASSERT_NE(light, nullptr);
+    EXPECT_EQ(light->Find("intensity")->AsNumber(), 9.0) << "the elite guard's own patch";
+    EXPECT_EQ(light->Find("range")->AsNumber(), 3.0) << "the humanoid's value, through the guard";
+    EXPECT_EQ(RootComponent(scene, "scene_instance"), nullptr) << "inherited entities are the prefab's own";
+
+    CookedCacheIndex index;
+    ASSERT_TRUE(CookedCacheIndex::LoadFromFile((Root / ".cooked/index.json").generic_string(), index));
+    const CookedSourceEntry* entry = index.Find("prefabs/actors/elite_guard.sscene");
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->AdditionalSources.size(), 4u) << "the guard, the humanoid, and both fragments";
 }

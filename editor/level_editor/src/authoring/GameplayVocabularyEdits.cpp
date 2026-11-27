@@ -13,6 +13,7 @@
 #include <movement/components/CharacterMovement.h>
 
 #include <algorithm>
+#include <cassert>
 #include <optional>
 #include <string>
 
@@ -41,6 +42,9 @@ VocabularyEdit GrantTagByName(GameplayTagContainer& tags,
     const std::optional<GameplayTagId> id = registry.RegisterTag(name, &error);
     if (!id.has_value())
         return Refused(error.Message);
+    if (const std::string_view projection = registry.ProjectedBy(*id); !projection.empty())
+        return Refused("This tag is projected by " + std::string(projection)
+                       + " from state it owns, so it is never authored.");
 
     if (tags.HasExact(*id))
         return Refused("This entity already carries that tag.");
@@ -48,7 +52,7 @@ VocabularyEdit GrantTagByName(GameplayTagContainer& tags,
         return Refused("An entity holds at most "
                        + std::to_string(GameplayTagContainer::Capacity) + " tags.");
 
-    tags.Grant(*id, stacks);
+    tags.GrantBaseline(*id, stacks);
     return Applied();
 }
 
@@ -56,7 +60,8 @@ VocabularyEdit SetTagStacks(GameplayTagContainer& tags,
                             GameplayTagId tag,
                             std::uint16_t stacks)
 {
-    const std::uint16_t held = tags.StackCount(tag);
+    assert(tags.ContributedCount(tag) == 0 && "a document's tags are authored, so all baseline");
+    const std::uint16_t held = tags.BaselineCount(tag);
     if (held == 0)
         return Refused("This entity does not carry that tag.");
     if (held == stacks)
@@ -64,19 +69,20 @@ VocabularyEdit SetTagStacks(GameplayTagContainer& tags,
 
     // Grant adds stacks rather than setting them, so a set is the revoke of
     // what is held followed by the grant of what was asked for.
-    tags.Revoke(tag, held);
+    tags.RevokeBaseline(tag, held);
     if (stacks > 0)
-        tags.Grant(tag, stacks);
+        tags.GrantBaseline(tag, stacks);
     return Applied();
 }
 
 VocabularyEdit RevokeTag(GameplayTagContainer& tags, GameplayTagId tag)
 {
-    const std::uint16_t held = tags.StackCount(tag);
+    assert(tags.ContributedCount(tag) == 0 && "a document's tags are authored, so all baseline");
+    const std::uint16_t held = tags.BaselineCount(tag);
     if (held == 0)
         return Unchanged();
 
-    tags.Revoke(tag, held);
+    tags.RevokeBaseline(tag, held);
     return Applied();
 }
 

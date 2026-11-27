@@ -48,6 +48,7 @@ struct EffectModifier
     AttributeId Attr;
     ModifierOp Op = ModifierOp::Add;
     float Magnitude = 0.0f;
+    std::int32_t Precedence = 0;
 };
 
 struct EffectDefinition

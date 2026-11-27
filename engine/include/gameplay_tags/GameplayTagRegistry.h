@@ -50,6 +50,9 @@ public:
     void SetReplicatedToAll(GameplayTagId id, bool replicated);
     [[nodiscard]] bool IsReplicatedToAll(GameplayTagId id) const;
 
+    void SetProjected(GameplayTagId id, std::string_view projection);
+    [[nodiscard]] std::string_view ProjectedBy(GameplayTagId id) const;
+
 private:
     struct TagRecord
     {
@@ -57,6 +60,7 @@ private:
         GameplayTagId Parent;
         std::vector<GameplayTagId> Children;
         bool ReplicatedToAll = false;
+        std::string ProjectedBy;
     };
 
     [[nodiscard]] bool IsKnown(GameplayTagId id) const;

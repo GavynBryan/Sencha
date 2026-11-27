@@ -65,7 +65,7 @@ std::string ActionCardTitle(const JsonValue& action, const DataFieldSchema* reco
 std::optional<std::size_t> ActionTypeKey(std::string_view key)
 {
     const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(key);
-    if (!steps.has_value() || steps->size() != 3 || (*steps)[0].Key != "actions" || !(*steps)[1].Index.has_value()
+    if (!steps.has_value() || steps->size() != 3 || (*steps)[0].Key != "actions" || (*steps)[1].Kind != DataPathStepKind::Index
         || (*steps)[2].Key != "type")
         return std::nullopt;
     return (*steps)[1].Index;

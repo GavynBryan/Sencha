@@ -13,6 +13,8 @@
 #include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 
+#include "SpawnGroupStamp.h"
+
 #include <cassert>
 #include <string>
 #include <utility>
@@ -152,19 +154,16 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
         // inputs; serializer registration is sealed before spawns run.
         [this, build, instance, source]() {
             build->Build(Serializers,
-                         SmapPackageOptions{ .StripPersistentIdentity = true });
+                         SmapPackageOptions{ .StripAuthoredIdentity = true });
 
             // Every spawned entity carries its group identity; the index
             // hooks make the spawn addressable the moment it imports.
-            if (EntityBuildPackage* package = build->Package())
-                for (std::uint32_t i = 0; i < package->EntityCount(); ++i)
-                    (void)package->AddComponent(
-                        PackageEntityId{ i }, SceneInstance{ source, instance });
-            return 0;
+            EntityBuildPackage* package = build->Package();
+            return package == nullptr || StampSpawnGroup(*package, SceneInstance{ source, instance }) ? 0 : 1;
         },
         // Commit, on the owner thread at the drain: record the product; the
         // pump publishes in request order.
-        [this, build, id = record->Id](int) {
+        [this, build, id = record->Id](int stampRefused) {
             Request* pending = FindRequest(id);
             if (pending == nullptr)
                 return;
@@ -175,6 +174,16 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
                 Logging.GetLogger<SceneSpawnService>().Error(
                     "SceneSpawnService: spawn of '{}' failed: {}",
                     pending->ScenePath, pending->Error);
+                return;
+            }
+            if (stampRefused != 0)
+            {
+                build->ReleaseScene();
+                pending->State = Request::Phase::Failed;
+                pending->Error = "an entity of '" + pending->ScenePath
+                    + "' already carries a group identity";
+                Logging.GetLogger<SceneSpawnService>().Error(
+                    "SceneSpawnService: spawn refused: {}", pending->Error);
                 return;
             }
             if (pending->Lifetime == SceneSpawnLifetime::OwnedByRoot)

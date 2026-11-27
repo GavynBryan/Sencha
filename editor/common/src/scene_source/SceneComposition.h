@@ -2,6 +2,8 @@
 
 #include "scene_source/SceneSourceDocument.h"
 
+#include <core/composition/Composition.h>
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -44,6 +46,7 @@ struct ResolvedSceneEntity
     // The innermost instance this entity came from; invalid for locals.
     SceneInstanceId Instance;
     bool IsInstanceRoot = false;
+    bool IsInherited = false;
     // True when the RESOLVING document's own placement record added this
     // entity (D4). An inner document's additions arrive as ordinary members:
     // the outer document overrides them, it does not own them.
@@ -61,6 +64,8 @@ struct ResolvedSceneEntity
     // consumer instantiating a brush component can fetch the geometry it
     // names. Non-owning; valid while the source lookup's documents are.
     const Json5Value* SourceBrushMeshes = nullptr;
+    CompositionProvenance Provenance;
+    std::vector<std::string> RemovedComponents;
 };
 
 struct SceneCompositionResult
@@ -72,6 +77,8 @@ struct SceneCompositionResult
     std::vector<std::pair<SceneInstanceId, SceneElementPath>> MissingIds;
     // Override targets that matched nothing, as "<instance>: <path>" text.
     std::vector<std::string> DanglingOverrides;
+    std::vector<CompositionDiagnostic> Diagnostics;
+    std::vector<std::string> Sources;
 };
 
 // Where the resolver finds a source scene by its asset://...sscene reference.
@@ -84,10 +91,17 @@ public:
     [[nodiscard]] virtual const SceneSourceDocument* Find(std::string_view assetPath) = 0;
 };
 
-// Nullopt on a structural failure: an unresolvable source reference or a cycle
-// through the source graph. Missing minted ids and dangling overrides are not
-// failures here -- they are reported in the result for the caller to judge.
+class ISceneComponentRules
+{
+public:
+    virtual ~ISceneComponentRules() = default;
+    [[nodiscard]] virtual const DataFieldSchema* SchemaOf(std::string_view component) const = 0;
+    [[nodiscard]] virtual std::vector<std::string> OwedBy(std::string_view component) const = 0;
+    [[nodiscard]] virtual bool IsRemovable(std::string_view component) const = 0;
+};
+
 [[nodiscard]] std::optional<SceneCompositionResult> ResolveSceneComposition(
     const SceneSourceDocument& root,
     ISceneSourceLookup& sources,
-    std::string* error = nullptr);
+    std::string* error = nullptr,
+    const ISceneComponentRules* rules = nullptr);

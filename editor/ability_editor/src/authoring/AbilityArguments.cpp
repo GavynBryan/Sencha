@@ -21,11 +21,12 @@ constexpr std::string_view kArgument = "arg.";
 constexpr std::string_view kSourceSuffix = ".source";
 constexpr std::string_view kValueSuffix = ".value";
 
-constexpr std::array<std::pair<AbilityArgumentSource, std::string_view>, 4> kSourceNames{ {
+constexpr std::array<std::pair<AbilityArgumentSource, std::string_view>, 5> kSourceNames{ {
     { AbilityArgumentSource::Unset, "Unset" },
     { AbilityArgumentSource::Constant, "Constant" },
     { AbilityArgumentSource::Port, "Port" },
     { AbilityArgumentSource::Local, "Local" },
+    { AbilityArgumentSource::Parameter, "Parameter" },
 } };
 
 std::string_view SourceName(AbilityArgumentSource source)
@@ -61,6 +62,20 @@ std::vector<std::pair<std::string, JsonValue>> LocalChoices(const JsonValue& dat
                                                                   { "field", JsonValue(std::string(field.Name)) } }));
     }
     return choices;
+}
+
+std::vector<std::string> ParameterKeys(const JsonValue& data)
+{
+    std::vector<std::string> keys;
+    if (const JsonValue* parameters = FindMember(data, "parameters"); parameters != nullptr && parameters->IsArray())
+        for (const JsonValue& parameter : parameters->AsArray())
+            keys.push_back(ReadMemberString(parameter, "key"));
+    return keys;
+}
+
+JsonValue ParameterValue(std::string key)
+{
+    return JsonValue(JsonValue::Object{ { "param", JsonValue(std::move(key)) } });
 }
 
 std::string LocalText(const JsonValue& data, const JsonValue& argument)
@@ -139,6 +154,8 @@ std::vector<AbilityArgumentSource> AbilityArgumentSources(const DataFieldSchema&
         sources.push_back(AbilityArgumentSource::Port);
         sources.push_back(AbilityArgumentSource::Local);
     }
+    if (Numeric(kind))
+        sources.push_back(AbilityArgumentSource::Parameter);
     return sources;
 }
 
@@ -150,6 +167,8 @@ AbilityArgumentSource AbilityArgumentSourceOf(const JsonValue* argument)
         return AbilityArgumentSource::Port;
     if (FindMember(*argument, "local") != nullptr)
         return AbilityArgumentSource::Local;
+    if (FindMember(*argument, "param") != nullptr)
+        return AbilityArgumentSource::Parameter;
     return AbilityArgumentSource::Constant;
 }
 
@@ -196,6 +215,17 @@ std::vector<PropertyNode> AbilityArgumentProperties::Nodes() const
                 ports.push_back(port.Name);
             }
             row.Children.push_back(ChoiceProperty(valueKey, "Port", ports, current));
+        }
+        else if (source == AbilityArgumentSource::Parameter)
+        {
+            std::vector<std::string> keys = ParameterKeys(*data);
+            const std::string current = ReadMemberString(*argument, "param");
+            if (std::ranges::find(keys, current) == keys.end())
+                keys.push_back(current);
+            std::vector<std::string_view> options(keys.begin(), keys.end());
+            row.Children.push_back(ChoiceProperty(
+                valueKey, "Parameter", options,
+                static_cast<std::size_t>(std::ranges::find(keys, current) - keys.begin())));
         }
         else if (source == AbilityArgumentSource::Local)
         {
@@ -248,7 +278,8 @@ PropertyEditResult AbilityArgumentProperties::CommitEdit(std::string_view key, s
     if (parsed->Source)
     {
         const auto source = std::ranges::find(kSourceNames, value, &std::pair<AbilityArgumentSource, std::string_view>::second);
-        if (source == kSourceNames.end())
+        const std::vector<AbilityArgumentSource> allowed = AbilityArgumentSources(*field);
+        if (source == kSourceNames.end() || std::ranges::find(allowed, source->first) == allowed.end())
             return PropertyEditResult::Refused;
         if (source->first == AbilityArgumentSourceOf(argument))
             return PropertyEditResult::Unchanged;
@@ -261,6 +292,12 @@ PropertyEditResult AbilityArgumentProperties::CommitEdit(std::string_view key, s
         {
             const std::vector<std::pair<std::string, JsonValue>> locals = LocalChoices(*data);
             written = locals.empty() ? JsonValue(JsonValue::Object{ { "local", JsonValue("") } }) : locals.front().second;
+            break;
+        }
+        case AbilityArgumentSource::Parameter:
+        {
+            const std::vector<std::string> keys = ParameterKeys(*data);
+            written = ParameterValue(keys.empty() ? std::string{} : keys.front());
             break;
         }
         }
@@ -280,6 +317,13 @@ PropertyEditResult AbilityArgumentProperties::CommitEdit(std::string_view key, s
                 if (name == value)
                     written = local;
             break;
+        case AbilityArgumentSource::Parameter:
+        {
+            const std::vector<std::string> keys = ParameterKeys(*data);
+            if (std::ranges::find(keys, value) != keys.end())
+                written = ParameterValue(std::string(value));
+            break;
+        }
         }
     }
     if (!written)

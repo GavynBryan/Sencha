@@ -304,12 +304,11 @@ private:
     void FreeEntry(uint32_t index, TEntry& entry)
     {
         if (!entry.PathKey.empty())
-        {
             PathLookup.erase(entry.PathKey);
-            entry.PathKey.clear();
-        }
 
+        // OnFree still reads the path the entry was registered under.
         Derived().OnFree(entry);
+        entry.PathKey.clear();
 
         // Generation stays so the next AllocHandle can bump it.
         entry.RefCount = 0;

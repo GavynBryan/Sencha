@@ -230,4 +230,85 @@ namespace
         EXPECT_FALSE(SceneElementPath::FromString("0000000000000100/").has_value());
         EXPECT_FALSE(SceneElementPath::FromString("zz").has_value());
     }
+
+    constexpr std::string_view kDerivedPrefab = R"({
+  format_version: 2,
+  abstract: true,
+  extends: 'asset://prefabs/humanoid.sscene',
+  includes: [
+    { fragment: 'asset://prefabs/fragments/alertable.sscene' },
+    { fragment: 'asset://prefabs/fragments/torch.sscene', onto: '00000000000000c2' },
+  ],
+  entities: [
+    { id: '00000000000000c2', parent: '00000000000000a1', components: {} },
+  ],
+  patch: {
+    '00000000000000a1': { Attributes: { attributes: { Health: { base: 200 }, Stealth: null } } },
+  },
+  remove: { '00000000000000a1': ['LookOrientation'] },
+})";
+
+    TEST(SceneSourceDocument, AVersionTwoDocumentStatesWhatItExtendsIncludesPatchesAndRemoves)
+    {
+        const SceneSourceDocument doc = ParseOk(kDerivedPrefab);
+        EXPECT_EQ(doc.FormatVersion, 2u);
+        EXPECT_TRUE(doc.Abstract);
+        EXPECT_EQ(doc.Extends, "asset://prefabs/humanoid.sscene");
+        ASSERT_EQ(doc.Includes.size(), 2u);
+        EXPECT_EQ(doc.Includes[0].Fragment, "asset://prefabs/fragments/alertable.sscene");
+        EXPECT_FALSE(doc.Includes[0].Onto.IsValid());
+        EXPECT_EQ(doc.Includes[1].Onto.Value, 0xc2ull);
+        ASSERT_EQ(doc.InheritedPatches.size(), 1u);
+        EXPECT_EQ(doc.InheritedPatches[0].first.Value, 0xa1ull);
+        ASSERT_EQ(doc.InheritedRemovals.size(), 1u);
+        EXPECT_EQ(doc.InheritedRemovals[0].second, std::vector<std::string>{ "LookOrientation" });
+        EXPECT_EQ(doc.Entities[0].Parent.Value, 0xa1ull) << "a local may hang under an inherited entity";
+
+        const std::string once = WriteSceneSource(doc);
+        const SceneSourceDocument reparsed = ParseOk(once);
+        EXPECT_EQ(WriteSceneSource(reparsed), once);
+        EXPECT_EQ(reparsed.Includes[1].Onto.Value, 0xc2ull);
+        EXPECT_NE(once.find("format_version: 2"), std::string::npos) << once;
+    }
+
+    TEST(SceneSourceDocument, AVersionOneDocumentStaysVersionOne)
+    {
+        const SceneSourceDocument doc = ParseOk(kTwoEntityScene);
+        EXPECT_EQ(doc.FormatVersion, 1u);
+        EXPECT_NE(WriteSceneSource(doc).find("format_version: 1"), std::string::npos);
+    }
+
+    TEST(SceneSourceDocument, CompositionMembersNeedVersionTwo)
+    {
+        for (const char* member : { "extends: 'asset://prefabs/a.sscene'", "abstract: true",
+                                    "includes: []", "patch: {}", "remove: {}" })
+        {
+            const std::string error = ParseFailure(
+                std::string("{ format_version: 1, entities: [], ") + member + " }");
+            EXPECT_NE(error.find("format_version 2"), std::string::npos) << member << ": " << error;
+        }
+        EXPECT_NE(ParseFailure("{ format_version: 3, entities: [] }").find("unsupported"), std::string::npos);
+        EXPECT_NE(ParseFailure("{ format_version: 2, entities: [ { id: '00000000000000c2', "
+                               "parent: '00000000000000a1', components: {} } ] }").find("does not exist"),
+                  std::string::npos)
+            << "without a base, a parent must be local";
+    }
+
+    TEST(SceneSourceDocument, UpgradingAVersionOneDocumentNamesEachInstanceNullItNowRemoves)
+    {
+        SceneSourceDocument doc = ParseOk(R"({
+  format_version: 1,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/door.sscene',
+      entity_ids: { '0000000000000001': '0000000000000200' },
+      patch: { '0000000000000001': { PointLight: { intensity: 40, cookie: null } } } },
+  ],
+})");
+        const std::vector<std::string> nulls = UpgradeSceneSourceFormat(doc);
+        EXPECT_EQ(doc.FormatVersion, 2u);
+        EXPECT_EQ(nulls, std::vector<std::string>{ "0000000000000100: 0000000000000001.PointLight.cookie" });
+        EXPECT_NE(WriteSceneSource(doc).find("format_version: 2"), std::string::npos);
+        EXPECT_TRUE(UpgradeSceneSourceFormat(doc).empty()) << "a version-2 document is left as it is";
+    }
 } // namespace

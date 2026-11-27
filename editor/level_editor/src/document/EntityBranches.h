@@ -21,6 +21,8 @@ class EditorScene;
 // Every entity in the branches of `roots`, parents before children, each once.
 // A root inside another root's branch rides along with it.
 [[nodiscard]] std::vector<EntityId> CollectBranches(const EditorScene& scene, std::span<const EntityId> roots);
+[[nodiscard]] std::vector<EntityId> CollectDeletableBranches(const EditorDocument& document,
+                                                             std::span<const EntityId> roots);
 
 // What a source entity brings with it when copied. A source normally means
 // its branch; a split, which turns one brush into two, copies the brush alone.

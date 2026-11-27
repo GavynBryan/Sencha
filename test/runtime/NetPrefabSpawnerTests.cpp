@@ -22,10 +22,14 @@
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
+#include <world/SimulationAuthority.h>
 #include <world/scene/SceneInstance.h>
 #include <world/scene/SceneInstanceIndex.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
+
+#include "SceneSpawnHarness.h"
+#include "SmapSceneFixture.h"
 
 #include <gtest/gtest.h>
 
@@ -206,4 +210,119 @@ TEST_F(NetPrefabSpawnerTest, WithNoAssetSystemEveryPrefabIsUnavailable)
     EXPECT_FALSE(
         Spawner->Instantiate(PawnId, Runtime->Entities(), PersistentStoragePartition)
             .IsValid());
+}
+
+// The spawned root's identity is what a host replicates to its peers.
+TEST(NetPrefabSpawnerGroup, APlacedRootNamesTheSpawnedPrefab)
+{
+    SpawnHarness h;
+    const auto placed = [](SmapEntityRecord& record, double marker) {
+        record.Components.emplace_back(MakeComponentTypeId("spawn_marker"),
+                                       JsonValue(JsonValue::Object{ { "value", JsonValue(marker) } }));
+        record.Components.emplace_back(
+            MakeComponentTypeId("scene_instance"),
+            JsonValue(JsonValue::Object{
+                { "source", JsonValue(std::string("asset://prefabs/bulb.sscene")) },
+                { "id", JsonValue(std::string("00000000000000f0")) } }));
+    };
+    SmapContents contents;
+    SmapEntityRecord root;
+    placed(root, 1.0);
+    contents.Entities.push_back(std::move(root));
+    SmapEntityRecord child;
+    child.Parent = 0;
+    placed(child, 2.0);
+    contents.Entities.push_back(std::move(child));
+    const AssetId sceneId{ 0x5EEDu };
+    TempSmapScene scene(h.Registry, h.Serializers, contents, "net_variant", sceneId);
+
+    NetPrefabSpawner spawner(h.Schema, h.Serializers, h.Logging);
+    spawner.ConnectAssets(&h.Assets, &h.Scenes);
+    ASSERT_EQ(spawner.Prepare(sceneId), NetPrefabReadiness::Ready);
+
+    World& world = h.World.Entities();
+    const EntityId spawned = spawner.Instantiate(sceneId, world, PersistentStoragePartition);
+    ASSERT_TRUE(spawned.IsValid());
+    const SceneInstance* group = world.TryGet<SceneInstance>(spawned);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->Source, sceneId) << "the root names the placed prefab, which peers would be told to spawn";
+    EXPECT_NE(group->Id.Value & SceneInstanceIdRuntimeBit, 0u);
+
+    spawner.Despawn(world, spawned);
+    EXPECT_TRUE(world.GetAliveEntities().empty());
+    spawner.ConnectAssets(nullptr, nullptr);
+}
+
+namespace
+{
+    SmapContents RootMaterializedChildGrandchild(bool materializedRoot)
+    {
+        const auto component = [](std::string_view name, double value) {
+            return std::pair{ MakeComponentTypeId(name), JsonValue(JsonValue::Object{ { "value", JsonValue(value) } }) };
+        };
+        SmapContents contents;
+        SmapEntityRecord root;
+        root.Components.push_back(component(materializedRoot ? "materialized_marker" : "spawn_marker", 1.0));
+        contents.Entities.push_back(std::move(root));
+        SmapEntityRecord child;
+        child.Parent = 0;
+        child.Components.push_back(component(materializedRoot ? "spawn_marker" : "materialized_marker", 2.0));
+        contents.Entities.push_back(std::move(child));
+        SmapEntityRecord grandchild;
+        grandchild.Parent = 1;
+        grandchild.Components.push_back(component("spawn_marker", 3.0));
+        contents.Entities.push_back(std::move(grandchild));
+        return contents;
+    }
+
+    std::size_t Alive(const World& world) { return world.GetAliveEntities().size(); }
+}
+
+// A client that built every member got what the authority replicates on its own twice.
+TEST(NetPrefabSpawnerGroup, AClientSkipsWhatOnlyTheAuthorityMaterializes)
+{
+    SpawnHarness h;
+    const AssetId sceneId{ 0x5EED1u };
+    TempSmapScene scene(h.Registry, h.Serializers, RootMaterializedChildGrandchild(false), "materialized_child", sceneId);
+    NetPrefabSpawner spawner(h.Schema, h.Serializers, h.Logging);
+    spawner.ConnectAssets(&h.Assets, &h.Scenes);
+    ASSERT_EQ(spawner.Prepare(sceneId), NetPrefabReadiness::Ready);
+    World& world = h.World.Entities();
+
+    world.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+    const EntityId root = spawner.Instantiate(sceneId, world, PersistentStoragePartition);
+    ASSERT_TRUE(root.IsValid()) << "the root is still the client's to build";
+    EXPECT_EQ(Alive(world), 1u) << "the materialized child and its child were built anyway";
+    EXPECT_EQ(world.GetResource<SceneInstanceIndex>().Entities(world.TryGet<SceneInstance>(root)->Id).size(), 1u)
+        << "the group lists only what was built";
+    spawner.Despawn(world, root);
+    EXPECT_EQ(Alive(world), 0u);
+
+    world.SetResource(SimulationAuthority{ .Authoritative = true, .TickOffset = 0 });
+    const EntityId whole = spawner.Instantiate(sceneId, world, PersistentStoragePartition);
+    ASSERT_TRUE(whole.IsValid());
+    EXPECT_EQ(Alive(world), 3u) << "the authority builds every member";
+    spawner.Despawn(world, whole);
+    spawner.ConnectAssets(nullptr, nullptr);
+}
+
+TEST(NetPrefabSpawnerGroup, AMaterializedRootIsABareEntityOnAClient)
+{
+    SpawnHarness h;
+    const AssetId sceneId{ 0x5EED2u };
+    TempSmapScene scene(h.Registry, h.Serializers, RootMaterializedChildGrandchild(true), "materialized_root", sceneId);
+    NetPrefabSpawner spawner(h.Schema, h.Serializers, h.Logging);
+    spawner.ConnectAssets(&h.Assets, &h.Scenes);
+    ASSERT_EQ(spawner.Prepare(sceneId), NetPrefabReadiness::Ready);
+    World& world = h.World.Entities();
+    world.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+
+    const EntityId root = spawner.Instantiate(sceneId, world, PersistentStoragePartition);
+    ASSERT_TRUE(root.IsValid()) << "a spawn the wire names must bind to something";
+    EXPECT_EQ(Alive(world), 1u);
+    EXPECT_FALSE(world.HasComponent<SpawnMarker>(root));
+    EXPECT_FALSE(world.HasComponent<MaterializedMarker>(root));
+    spawner.Despawn(world, root);
+    EXPECT_EQ(Alive(world), 0u);
+    spawner.ConnectAssets(nullptr, nullptr);
 }

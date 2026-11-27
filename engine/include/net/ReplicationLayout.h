@@ -114,6 +114,7 @@ struct ReplicatedComponent
     // order, or a width. Folding it in would refuse a handshake between builds
     // that understand each other perfectly.
     bool Predicted = false;
+    bool AuthorityMaterialized = false;
     std::vector<ReplicatedField> Fields;
 };
 
@@ -182,11 +183,14 @@ public:
                       "and cannot run them. Replicate a handle-free component, or "
                       "carry this one in the spawn payload instead.");
 
-        return AddErased(ResolveComponentTypeId<T>(),
-                         ResolveComponentName<T>(),
-                         sizeof(T),
-                         ComponentIsPredicted<T>,
-                         RuntimeFieldsOf<T, SchemaPurpose::Replication>());
+        if (!AddErased(ResolveComponentTypeId<T>(),
+                       ResolveComponentName<T>(),
+                       sizeof(T),
+                       ComponentIsPredicted<T>,
+                       RuntimeFieldsOf<T, SchemaPurpose::Replication>()))
+            return false;
+        Components_.back().AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
+        return true;
     }
 
     template <ComponentHasReplicationCodec T>
@@ -204,6 +208,7 @@ public:
             return false;
         ReplicatedComponent& added = Components_.back();
         added.LocalSize = sizeof(T);
+        added.AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
         {
             const T local{};
             Wire image{};

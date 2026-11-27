@@ -7,6 +7,7 @@
 #include <net/NetSnapshotAck.h>
 #include <net/NetZoneScope.h>
 #include <net/ReplicationCodec.h>
+#include <net/ReplicationDeferredReferences.h>
 #include <net/ReplicationLayout.h>
 
 #include <array>
@@ -131,6 +132,8 @@ public:
     // said once and forgotten leaves a client holding an entity that will never
     // be mentioned again, because the authority has nothing left to mention.
     void NoteDeparted(NetEntityId id);
+    // Supersedes any destroy of `id` still owed or in flight to this peer.
+    void NoteSeeded(NetEntityId id);
     [[nodiscard]] std::span<const NetEntityId> OwedDestroys() const
     {
         return { Departed.data(), Departed.size() };
@@ -257,7 +260,11 @@ public:
     {
         Entries.clear();
         Names.clear();
+        Waiting.Clear();
     }
+
+    [[nodiscard]] ReplicationDeferredReferences& Deferred() { return Waiting; }
+    [[nodiscard]] const ReplicationDeferredReferences& Deferred() const { return Waiting; }
 
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
     [[nodiscard]] const std::unordered_map<NetEntityId, EntityId>& All() const
@@ -268,6 +275,7 @@ public:
 private:
     std::unordered_map<NetEntityId, EntityId> Entries;
     std::unordered_map<EntityId, NetEntityId, EntityIdHash> Names;
+    ReplicationDeferredReferences Waiting;
 };
 
 //-----------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 #include <ecs/EntityId.h>
 
 #include <cstdint>
+#include <vector>
 
 class ReplicationAuthorityIdentity;
 class ReplicationClientIdentity;
@@ -18,6 +19,7 @@ struct ReplicationWireContext
     EntityId Entity;
     ReplicationAuthorityIdentity* Authority = nullptr;
     const ReplicationClientIdentity* Client = nullptr;
+    std::vector<std::uint64_t>* Unresolved = nullptr;
 
     // Its NetEntityId, or zero for an entity that is not replicated.
     [[nodiscard]] std::uint64_t WireEntity(EntityId entity) const;

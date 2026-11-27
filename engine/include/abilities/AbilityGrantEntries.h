@@ -5,20 +5,21 @@
 #include <gameplay_tags/GameplayTagQuery.h>
 
 #include <cstdint>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class AbilityRegistry;
 class GameplayTagRegistry;
 class InputActionRegistry;
 
-// One authored grant: which ability, under which stable key, and what of its
-// binding the grant overrides. A prefab spawned sixteen times interns one entry.
 struct AbilityGrantEntry
 {
     std::string Key;
     AbilityId Ability;
     AbilityBindingDecl Override;
+    std::vector<AbilityGrantParameter> Parameters{};
 
     friend bool operator==(const AbilityGrantEntry&, const AbilityGrantEntry&) = default;
 };
@@ -41,20 +42,23 @@ struct AbilityEffectiveBinding
     AbilityInterrupt OnInterrupt = AbilityInterrupt::Cancel;
 };
 
+inline constexpr std::string_view kAbilityGrantEntryRefusal =
+    "was refused: the grant entry table is full, or another entry of its ability has the same wire key";
+
 // The World's grant entries and their effective bindings. Bindings rebuild when the
 // abilities, the action vocabulary or the gameplay tags they were resolved against change.
 class AbilityGrantEntries
 {
 public:
     // The index of an entry equal to `entry`, adding it if new. kAbilityNoGrantEntry
-    // when the table is full.
+    // when the table is full or another entry of its ability has the same wire key.
     std::uint16_t Intern(AbilityGrantEntry entry);
 
     [[nodiscard]] const AbilityGrantEntry* Find(std::uint16_t index) const;
-    // The first entry for `ability` whose key's NameWireKey is `key`, as another
-    // machine names the grant; kAbilityNoGrantEntry when this World interned none.
+    [[nodiscard]] std::uint32_t WireKey(std::uint16_t index) const;
     [[nodiscard]] std::uint16_t FindByWireKey(std::uint32_t key, AbilityId ability) const;
     [[nodiscard]] const AbilityEffectiveBinding* Binding(std::uint16_t index) const;
+    [[nodiscard]] std::span<const double> Parameters(std::uint16_t index) const;
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
 
     // Re-resolves every binding when anything it was resolved against moved. A name
@@ -68,6 +72,8 @@ private:
     {
         AbilityGrantEntry Entry;
         AbilityEffectiveBinding Binding;
+        std::vector<double> Parameters;
+        std::uint32_t WireKey = 0;
     };
 
     std::vector<Slot> Entries;

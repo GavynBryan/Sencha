@@ -2,7 +2,12 @@
 
 #include <gameplay_tags/GameplayTagId.h>
 
+#include <string_view>
+
 class GameplayTagRegistry;
+
+inline constexpr std::string_view kModeTagProjection = "movement.mode";
+inline constexpr std::string_view kSupportTagProjection = "movement.support";
 
 //=============================================================================
 // MovementTags

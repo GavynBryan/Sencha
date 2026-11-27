@@ -104,8 +104,11 @@ void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& co
         request.CancelReason = static_cast<AnimCancelReason>(static_cast<std::uint8_t>(shape >> 16));
         request.AnchorSection = static_cast<std::uint8_t>(shape >> 24);
         request.Received = received;
-        request.Observed = received && before.Received && before.Observed && before.Id == request.Id
-                        && before.StartTick == request.StartTick;
+        const bool sourceUnchanged = before.Id.Source == request.Id.Source;
+        const bool sourceArrivedSince = !before.Id.Source.IsValid();
+        const bool sameSource = sourceUnchanged || sourceArrivedSince;
+        request.Observed = received && before.Received && before.Observed && sameSource
+                        && before.Id.Sequence == request.Id.Sequence && before.StartTick == request.StartTick;
     }
     set.NextSequence = wire.NextSequence;
     set.RigTiming = wire.RigTiming;

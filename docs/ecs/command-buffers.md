@@ -69,15 +69,16 @@ If the entity is no longer alive at flush time, the command is a no-op.
 ### CreateEntity
 
 ```cpp
-cmds.CreateEntity(); // creates an entity in the empty archetype at flush
+const PendingEntity spawned = cmds.CreateEntity(view.Partition());
+cmds.AddComponent<Health>(spawned, Health{ 100 });
 ```
 
-The buffered `CreateEntity()` command does not return an `EntityId`. It is useful for
-fire-and-forget creation where another system can discover the entity later, but it is
-not the right API when the creator must immediately add components to that new entity.
-For fully initialized spawns, create directly with `World::CreateEntity()` outside query
-scope, or add a higher-level spawn queue that owns logical spawn requests and realizes
-them at a safe scheduler boundary.
+`CreateEntity(partition)` returns a `PendingEntity`, not an `EntityId`: the row does not
+exist until `Flush`. Later commands in the same recording can target it, as above, so an
+entity can be created and given its components from inside a query. The handle cannot be
+given to the World, and using it after the buffer flushes or clears asserts.
+`CreateEntity()` with no argument creates in the persistent partition, as
+`World::CreateEntity()` does.
 
 ---
 

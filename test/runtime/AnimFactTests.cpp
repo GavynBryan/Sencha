@@ -11,6 +11,7 @@
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimationRegistration.h>
 #include <assets/data/DataAssetTypeRegistry.h>
+#include <assets/data/DataDefinitionStaging.h>
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -26,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <map>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -49,6 +51,7 @@ namespace
         DataSchemaRegistry Schemas;
         DataAssetCache Data;
         World Entities;
+        std::map<std::string, JsonValue, std::less<>> Sources;
 
         AnimFixture()
         {
@@ -72,27 +75,63 @@ namespace
         GameplayTagRegistry& Tags() { return Entities.GetResource<GameplayTagRegistry>(); }
         AnimRigBindings& Bindings() { return Entities.GetResource<AnimRigBindings>(); }
 
-        DataAssetHandle Load(std::string_view path, std::string_view type, std::string_view json)
+        DataDefinitionStaging Stage(std::string_view path, std::string_view type, std::string_view data,
+                                    std::string_view extends = {})
         {
-            const DataAssetCompileResult compiled = Types.Find(type)->Compile(*JsonParse(json));
-            EXPECT_TRUE(compiled.IsValid()) << path << ": " << compiled.Error;
-            return Data.Register(path, std::string(type), compiled.Value);
+            JsonValue::Object envelope{ { "type", JsonValue(std::string(type)) },
+                                        { "version", JsonValue(static_cast<double>(Types.Find(type)->CurrentVersion)) } };
+            if (!extends.empty())
+                envelope.emplace_back("extends", JsonValue(std::string(extends)));
+            envelope.emplace_back("data", *JsonParse(data));
+            Sources.insert_or_assign(std::string(path), JsonValue(std::move(envelope)));
+            return Restage(path);
         }
 
-        void Reload(std::string_view path, std::string_view type, std::string_view json)
+        DataDefinitionStaging Restage(std::string_view path)
         {
-            const DataAssetCompileResult compiled = Types.Find(type)->Compile(*JsonParse(json));
-            ASSERT_TRUE(compiled.IsValid()) << compiled.Error;
-            ASSERT_TRUE(Data.ReloadInPlace(path, type, compiled.Value));
+            const AssetPathsById current;
+            return StageDataDefinition(Sources.find(path)->second, DataDefinitionContext{
+                .Types = Types, .Schemas = &Schemas, .Current = current,
+                .Read = [this](std::string_view source) -> const JsonValue* {
+                    const auto found = Sources.find(source);
+                    return found != Sources.end() ? &found->second : nullptr;
+                },
+                .Asset = path });
         }
 
-        // A schema over the core one and a rig naming it.
+        DataAssetHandle Load(std::string_view path, std::string_view type, std::string_view data,
+                             std::string_view extends = {})
+        {
+            DataDefinitionStaging staged = Stage(path, type, data, extends);
+            EXPECT_TRUE(staged.Ok()) << path << ": " << staged.Errors.front().Path << " " << staged.Errors.front().Message;
+            if (!staged.Ok())
+                return {};
+            return Data.Register(path, std::string(type), staged.Value, {}, std::move(staged.Sources));
+        }
+
+        void Reload(std::string_view path, std::string_view type, std::string_view data)
+        {
+            DataDefinitionStaging staged = Stage(path, type, data);
+            ASSERT_TRUE(staged.Ok()) << staged.Errors.front().Message;
+            ASSERT_TRUE(Data.ReloadInPlace(path, type, staged.Value, {}, std::move(staged.Sources)));
+            for (const std::string& dependent : Data.ComposedFrom(path))
+            {
+                DataDefinitionStaging recomposed = Restage(dependent);
+                ASSERT_TRUE(recomposed.Ok()) << dependent;
+                ASSERT_TRUE(Data.ReloadInPlace(dependent, recomposed.TypeName, recomposed.Value, {},
+                                               std::move(recomposed.Sources)));
+            }
+        }
+
         DataAssetHandle Rig(std::string_view schemaData,
                             std::string_view rigExtra = {},
-                            std::string_view name = "game")
+                            std::string_view name = "game",
+                            std::string_view extends = {})
         {
             const std::string schemaPath = std::format("asset://animation/{}.facts.sdata", name);
-            (void)Load(schemaPath, kAnimFactSchemaType, schemaData);
+            if (DataDefinitionStaging staged = Stage(schemaPath, kAnimFactSchemaType, schemaData, extends); staged.Ok())
+                (void)Data.Register(schemaPath, std::string(kAnimFactSchemaType), staged.Value, {},
+                                    std::move(staged.Sources));
             const std::string rig = std::format(
                 R"({{ "facts": "{}", {} "layers": [ {{ "name": "anim.layer.base" }} ] }})",
                 schemaPath, rigExtra);
@@ -102,8 +141,7 @@ namespace
         // A rig over the core schema with these derived facts.
         DataAssetHandle DerivedRig(std::string_view derived)
         {
-            return Rig(std::format(
-                R"({{ "extends": "asset://animation/engine.facts.sdata", "derived": {} }})", derived));
+            return Rig(std::format(R"({{ "derived": {} }})", derived), {}, "game", kAnimEngineFactSchemaPath);
         }
 
         const AnimBoundRig& Bound(DataAssetHandle rig)
@@ -178,14 +216,13 @@ TEST(AnimRigBinding, MergesTheChainBaseFirstAndResolvesNames)
         "intents": [ { "intent": "anim.intent.reload",
                        "params": [ { "name": "rate", "kind": "float" } ] } ] })");
     (void)fx.Load("asset://animation/game.facts.sdata", kAnimFactSchemaType, R"({
-        "extends": "asset://animation/engine.facts.sdata",
         "slots": [ { "name": "Crouched", "kind": "bool" },
                    { "name": "CameraYaw", "kind": "float", "local": true } ],
         "derived": [
             { "name": "JustLanded", "op": "edge", "source": { "fact": "Grounded" },
               "direction": "rising", "window_ms": 120 },
             { "name": "LookingAway", "op": "compare", "source": { "fact": "CameraYaw" },
-              "compare": "gt", "constant": 1.5 } ] })");
+              "compare": "gt", "constant": 1.5 } ] })", kAnimEngineFactSchemaPath);
     const DataAssetHandle rig = fx.Load("asset://animation/game.rig.sdata", kAnimRigType, R"({
         "facts": "asset://animation/game.facts.sdata",
         "requests": "asset://animation/requests.sdata",
@@ -202,8 +239,10 @@ TEST(AnimRigBinding, MergesTheChainBaseFirstAndResolvesNames)
     ASSERT_EQ(bound.Slots.size(), expected.size());
     for (std::size_t i = 0; i < expected.size(); ++i)
         EXPECT_EQ(bound.Slots[i].Name, expected[i]) << i;
-    EXPECT_EQ(bound.Slots[0].DeclaredIn, "asset://animation/engine.facts.sdata");
-    EXPECT_EQ(bound.Slots[4].DeclaredIn, "asset://animation/game.facts.sdata");
+    EXPECT_EQ(bound.Slots[0].DeclaredIn, "asset://animation/game.facts.sdata");
+    EXPECT_EQ(bound.Slots[0].DeclaredAt, "$.data.slots{Grounded}");
+    EXPECT_EQ(bound.Slots[4].DeclaredAt, "$.data.slots{Crouched}");
+    EXPECT_EQ(bound.Slots[6].DeclaredAt, "$.data.derived{JustLanded}");
 
     // A fact derived from a local fact is local.
     EXPECT_FALSE(bound.Slots[6].Local);
@@ -226,19 +265,79 @@ TEST(AnimRigBinding, MergesTheChainBaseFirstAndResolvesNames)
     EXPECT_EQ(reload->Params[0].Name, "rate");
 }
 
-TEST(AnimRigBinding, ASlotRedeclaredAnywhereInTheChainIsALocatedError)
+TEST(AnimRigBinding, ASlotRedeclaredOverItsBaseDoesNotCompose)
 {
     AnimFixture fx;
-    const DataAssetHandle rig = fx.Rig(R"({
-        "extends": "asset://animation/engine.facts.sdata",
-        "slots": [ { "name": "Speed", "kind": "int" } ] })");
+    const DataDefinitionStaging staged = fx.Stage("asset://animation/game.facts.sdata", kAnimFactSchemaType,
+                                                  R"({ "slots": [ { "name": "Speed", "kind": "int" } ] })",
+                                                  kAnimEngineFactSchemaPath);
+    ASSERT_FALSE(staged.Ok());
+    EXPECT_EQ(staged.Errors.front().Path, "$.data.slots{Speed}");
+    EXPECT_NE(staged.Errors.front().Message.find("inherited"), std::string::npos) << staged.Errors.front().Message;
+}
+
+TEST(AnimRigBinding, ASchemaChainThatLoopsOrRunsTooDeepDoesNotCompose)
+{
+    AnimFixture fx;
+    (void)fx.Stage("asset://animation/left.facts.sdata", kAnimFactSchemaType, R"({ "slots": [] })",
+                   "asset://animation/right.facts.sdata");
+    const DataDefinitionStaging loop = fx.Stage("asset://animation/right.facts.sdata", kAnimFactSchemaType,
+                                                R"({ "slots": [] })", "asset://animation/left.facts.sdata");
+    ASSERT_FALSE(loop.Ok());
+    EXPECT_EQ(loop.Errors.front().Path, "$.extends");
+
+    for (int i = 0; i < 17; ++i)
+        (void)fx.Stage(std::format("asset://animation/link{}.facts.sdata", i), kAnimFactSchemaType,
+                       R"({ "slots": [] })", std::format("asset://animation/link{}.facts.sdata", i + 1));
+    (void)fx.Stage("asset://animation/link17.facts.sdata", kAnimFactSchemaType, R"({ "slots": [] })");
+    const DataDefinitionStaging deep = fx.Stage("asset://animation/deep.facts.sdata", kAnimFactSchemaType,
+                                                R"({ "slots": [] })", "asset://animation/link0.facts.sdata");
+    ASSERT_FALSE(deep.Ok());
+    EXPECT_NE(deep.Errors.front().Message.find("deeper than"), std::string::npos) << deep.Errors.front().Message;
+}
+
+TEST(AnimRigBinding, AVersionOneSchemaIsRefusedWithWhatMoved)
+{
+    AnimFixture fx;
+    const JsonValue old = *JsonParse(R"({ "type": "animation.fact_schema", "version": 1,
+        "data": { "extends": "asset://animation/engine.facts.sdata", "slots": [] } })");
+    const AssetPathsById current;
+    const DataDefinitionStaging staged = StageDataDefinition(
+        old, DataDefinitionContext{ .Types = fx.Types, .Schemas = &fx.Schemas, .Current = current });
+    ASSERT_FALSE(staged.Ok());
+    EXPECT_EQ(staged.Errors.front().Path, "$.version");
+    EXPECT_NE(staged.Errors.front().Message.find("'extends' moved"), std::string::npos) << staged.Errors.front().Message;
+}
+
+TEST(AnimRigBinding, AnInheritedFactNobodyProvidesIsLocatedInTheRigsSchemaByName)
+{
+    AnimFixture fx;
+    ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
+    const DataAssetHandle rig = fx.Rig(R"({ "slots": [] })", {}, "game", kAnimEngineFactSchemaPath);
+
+    const AnimBoundRig& bound = fx.Bound(rig);
+    const AnimDiagnostic* unprovided = FindCode(bound, "anim.fact.unprovided");
+    ASSERT_NE(unprovided, nullptr) << Describe(bound);
+    EXPECT_EQ(unprovided->Severity, AnimDiagnosticSeverity::Warning);
+    EXPECT_EQ(unprovided->AssetPath, "asset://animation/game.facts.sdata");
+    EXPECT_EQ(unprovided->FieldPath, "$.data.slots{Dead}.name");
+}
+
+TEST(AnimRigBinding, AnInheritedFactOfTheWrongKindIsLocatedInTheRigsSchemaByName)
+{
+    AnimFixture fx;
+    ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
+    (void)fx.Load("asset://animation/odd.facts.sdata", kAnimFactSchemaType,
+                  R"({ "slots": [ { "name": "Speed", "kind": "int" } ] })");
+    const DataAssetHandle rig = fx.Rig(R"({ "slots": [] })", {}, "game", "asset://animation/odd.facts.sdata");
 
     const AnimBoundRig& bound = fx.Bound(rig);
     EXPECT_FALSE(bound.Valid);
-    const AnimDiagnostic* diagnostic = FindCode(bound, "anim.fact.duplicate_slot");
+    const AnimDiagnostic* diagnostic = FindCode(bound, "anim.fact.provider_kind");
     ASSERT_NE(diagnostic, nullptr) << Describe(bound);
+    EXPECT_EQ(diagnostic->Severity, AnimDiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic->AssetPath, "asset://animation/game.facts.sdata");
-    EXPECT_EQ(diagnostic->FieldPath, "$.data.slots[0].name");
+    EXPECT_EQ(diagnostic->FieldPath, "$.data.slots{Speed}.kind");
 }
 
 TEST(AnimRigBinding, ADerivationMayReadOnlyEarlierFacts)
@@ -252,7 +351,7 @@ TEST(AnimRigBinding, ADerivationMayReadOnlyEarlierFacts)
     EXPECT_FALSE(bound.Valid);
     const AnimDiagnostic* diagnostic = FindCode(bound, "anim.fact.unknown_operand");
     ASSERT_NE(diagnostic, nullptr) << Describe(bound);
-    EXPECT_EQ(diagnostic->FieldPath, "$.data.derived[0].source.fact");
+    EXPECT_EQ(diagnostic->FieldPath, "$.data.derived{A}.source.fact");
 }
 
 TEST(AnimRigBinding, OperandKindsAreCheckedPerOp)
@@ -348,7 +447,7 @@ TEST(AnimRigBinding, AProviderOfTheWrongKindIsLocatedAtTheSlot)
     const AnimDiagnostic* diagnostic = FindCode(bound, "anim.fact.provider_kind");
     ASSERT_NE(diagnostic, nullptr) << Describe(bound);
     EXPECT_EQ(diagnostic->AssetPath, "asset://animation/game.facts.sdata");
-    EXPECT_EQ(diagnostic->FieldPath, "$.data.slots[1].kind");
+    EXPECT_EQ(diagnostic->FieldPath, "$.data.slots{Speed}.kind");
     EXPECT_LT(bound.Slots[1].Provider, 0);
 }
 
@@ -714,9 +813,9 @@ TEST(AnimFactGather, ASubjectSlotIsReadFromTheEntityItsSubjectNames)
     ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
     ASSERT_TRUE(BindLookAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
     const DataAssetHandle rig = fx.Rig(R"({
-        "extends": "asset://animation/engine.facts.sdata",
         "slots": [ { "name": "StrideCycle", "kind": "float", "from": "subject" },
-                   { "name": "LookYaw", "kind": "float", "from": "subject" } ] })");
+                   { "name": "LookYaw", "kind": "float", "from": "subject" } ] })",
+                                       {}, "game", kAnimEngineFactSchemaPath);
     const AnimBoundRig& bound = fx.Bound(rig);
     ASSERT_TRUE(bound.Valid) << Describe(bound);
     EXPECT_TRUE(bound.HasSubjectFacts);
@@ -751,9 +850,8 @@ TEST(AnimFactGather, AnInvalidRigGathersNothing)
 {
     AnimFixture fx;
     ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
-    const DataAssetHandle rig = fx.Rig(R"({
-        "extends": "asset://animation/engine.facts.sdata",
-        "slots": [ { "name": "Grounded", "kind": "bool" } ] })");
+    const DataAssetHandle rig = fx.Rig(R"({ "slots": [ { "name": "Grounded", "kind": "bool" } ] })", {}, "game",
+                                       kAnimEngineFactSchemaPath);
 
     const EntityId character = fx.Entities.CreateEntity();
     fx.Entities.AddComponent(character, AnimRig{ rig });

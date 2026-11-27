@@ -444,9 +444,11 @@ bool AnimationWorkspace::RevealProblem(const Problem& problem)
         ShowCard(CardSubject::Stage);
         return true;
     }
-    if (!problem.Document || problem.Document->Source != &Workspace->Documents.Store())
+    if (!problem.Document || problem.Document->Source != &Workspace->Documents.Store()
+        || !OpenDocument(problem.Document->Key))
         return false;
-    return OpenDocument(problem.Document->Key);
+    Sheet->Reveal(problem.Document->Key, problem.Location);
+    return true;
 }
 
 void AnimationWorkspace::DefineRuns(ActionCatalog& catalog)
@@ -1129,7 +1131,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
     if (const DataDocument* document = Workspace->Documents.Active(); Subject == CardSubject::Document && document)
         return { .Title = std::string(PathLeaf(document->VirtualPath())),
                  .Actions = { "file.save", std::string(kCloseAction) },
-                 .Sections = Sheet->Sections() };
+                 .Sections = Sheet->Sections(),
+                 .Focus = Sheet->RevealedField() };
 
     const bool rigOpen = Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty();
     WorkspaceSelectionFacet stage;

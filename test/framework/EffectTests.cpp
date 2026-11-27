@@ -3,10 +3,14 @@
 #include <effects/ActiveEffect.h>
 #include <effects/EffectApplicationLog.h>
 #include <effects/EffectCost.h>
+#include <effects/EffectDefinitionData.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <gameplay_tags/GameplayTagSerialization.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
@@ -200,6 +204,53 @@ TEST_F(EffectFixture, FoldAppliesAddThenMultiplyThenOverride)
     EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 50.0f); // override wins last
 }
 
+TEST_F(EffectFixture, TheHighestPrecedenceOverrideWinsInEitherOrder)
+{
+    EffectDefinition frozen{};
+    frozen.Duration = EffectDuration::Infinite;
+    frozen.Modifiers = { { speed, ModifierOp::Override, 0.0f, 100 } };
+    EffectDefinition boots{};
+    boots.Duration = EffectDuration::Infinite;
+    boots.Modifiers = { { speed, ModifierOp::Override, 8.0f, 10 } };
+    const EffectId frozenFx = Define("Frozen", frozen);
+    const EffectId bootsFx = Define("SprintBoots", boots);
+
+    const EntityId first = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, first, frozenFx, At(0));
+    ApplyEffect(world, first, bootsFx, At(0));
+    const EntityId second = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, second, bootsFx, At(0));
+    ApplyEffect(world, second, frozenFx, At(0));
+    ResolveAttributesWithEffects(world);
+    EXPECT_FLOAT_EQ(Set(first).GetCurrent(speed), 0.0f);
+    EXPECT_FLOAT_EQ(Set(second).GetCurrent(speed), 0.0f);
+    EXPECT_EQ(world.TryGetResource<EffectOverrideTies>(), nullptr) << "nothing tied";
+}
+
+TEST_F(EffectFixture, OverridesTiedAtTheTopFoldAsBeforeAndAreRecordedOnce)
+{
+    EffectDefinition slow{};
+    slow.Duration = EffectDuration::Infinite;
+    slow.Modifiers = { { speed, ModifierOp::Override, 2.0f } };
+    EffectDefinition fast{};
+    fast.Duration = EffectDuration::Infinite;
+    fast.Modifiers = { { speed, ModifierOp::Override, 9.0f } };
+    const EffectId slowFx = Define("Slow", slow);
+    const EffectId fastFx = Define("Fast", fast);
+    const EntityId hero = MakeActor(100.0f, 5.0f);
+    ApplyEffect(world, hero, slowFx, At(0));
+    ApplyEffect(world, hero, fastFx, At(0));
+    for (int i = 0; i < 3; ++i)
+        ResolveAttributesWithEffects(world);
+    EXPECT_FLOAT_EQ(Set(hero).GetCurrent(speed), 9.0f) << "definition order, as with no precedence";
+    const EffectOverrideTies* ties = world.TryGetResource<EffectOverrideTies>();
+    ASSERT_NE(ties, nullptr);
+    ASSERT_EQ(ties->Seen.size(), 1u);
+    EXPECT_EQ(ties->Seen[0].Attribute, speed);
+    EXPECT_EQ(ties->Seen[0].Kept, fastFx);
+    EXPECT_EQ(ties->Seen[0].Passed, slowFx);
+}
+
 TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
 {
     const GameplayTagId marked = *tags->RegisterTag("State.Marked");
@@ -217,6 +268,28 @@ TEST_F(EffectFixture, GrantedTagsAreRefCountedAcrossStackedEffects)
 
     Pass(4); // long ends for tick 5
     EXPECT_FALSE(Tags(hero).HasExact(marked));
+}
+
+// Saved with the actor, the tag would be held twice once its effect is applied again.
+TEST_F(EffectFixture, ARestoredActorHoldsAnEffectsTagOnceWhenTheEffectReturns)
+{
+    const GameplayTagId humanoid = *tags->RegisterTag("Creature.Humanoid");
+    const GameplayTagId marked = *tags->RegisterTag("State.Marked");
+    const EffectId mark = Marker("Mark", marked, 0.0f);
+    const EntityId hero = MakeActor(100.0f, 5.0f);
+    Tags(hero).GrantBaseline(humanoid);
+    ApplyEffect(world, hero, mark, At(0));
+
+    JsonWriteArchive saved;
+    ASSERT_TRUE(WriteGameplayTags(saved, Tags(hero), *tags));
+    const JsonValue scene = saved.TakeValue();
+    const EntityId restored = MakeActor(100.0f, 5.0f);
+    JsonReadArchive read(scene);
+    ASSERT_TRUE(ReadGameplayTags(read, Tags(restored), *tags));
+    ApplyEffect(world, restored, mark, At(1));
+
+    EXPECT_EQ(Tags(restored).StackCount(marked), 1u);
+    EXPECT_EQ(Tags(restored).StackCount(humanoid), 1u);
 }
 
 TEST_F(EffectFixture, RemovingAnEffectRevokesItsTags)
@@ -293,6 +366,28 @@ TEST_F(EffectFixture, ATagTheContainerCannotHoldIsNeitherGrantedNorRevoked)
 
     RemoveEffect(world, applied);
     EXPECT_EQ(Tags(hero).Size(), GameplayTagContainer::Capacity);
+}
+
+TEST_F(EffectFixture, AFullContainerRefusingAnEffectsTagCountsIt)
+{
+    EntityId hero = MakeActor(100.0f, 5.0f);
+    for (std::uint8_t i = 0; i + 1 < GameplayTagContainer::Capacity; ++i)
+        Tags(hero).GrantBaseline(*tags->RegisterTag("Fill.T" + std::to_string(i)));
+    const GameplayTagId last = *tags->RegisterTag("State.Last");
+    const GameplayTagId extra = *tags->RegisterTag("State.Extra");
+
+    const EntityId fits = ApplyEffect(world, hero, Marker("Last", last, 0.0f), At(0));
+    EXPECT_TRUE(Tags(hero).HasExact(last));
+    EXPECT_EQ(world.TryGet<ActiveEffect>(fits)->GrantedTagCount, 1u);
+    EXPECT_FALSE(world.HasResource<GameplayTagOverflow>()) << "nothing was refused yet";
+
+    const EntityId refused = ApplyEffect(world, hero, Marker("Extra", extra, 0.0f), At(0));
+    EXPECT_FALSE(Tags(hero).HasExact(extra));
+    EXPECT_EQ(world.TryGet<ActiveEffect>(refused)->GrantedTagCount, 0u);
+    ASSERT_TRUE(world.HasResource<GameplayTagOverflow>());
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().Refused, 1u);
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().FirstHolder, hero);
+    EXPECT_EQ(world.GetResource<GameplayTagOverflow>().FirstTag, extra);
 }
 
 TEST_F(EffectFixture, TheRegistryRefusesMoreGrantedTagsThanAnEffectRecords)
@@ -400,12 +495,14 @@ TEST(EffectCost, CostsOnOneAttributeAreSummedBeforeTheyAreCompared)
     const EffectId second = w.fx->Register("SixtyB", half);
     const EntityId hero = w.MakeActor(100.0f, 5.0f);
 
-    const std::array one{ first };
-    EXPECT_TRUE(CheckEffectCosts(w.world, hero, one).Affordable());
+    const std::array one{ EffectCostRow{ hero, first } };
+    EXPECT_TRUE(CheckEffectCosts(w.world, one).Affordable());
 
-    const std::array both{ first, second };
-    const EffectCostCheck check = CheckEffectCosts(w.world, hero, both);
+    const std::array both{ EffectCostRow{ hero, first }, EffectCostRow{ hero, second } };
+    const EffectCostCheck check = CheckEffectCosts(w.world, both);
     EXPECT_EQ(check.Status, EffectCostStatus::Insufficient);
+    EXPECT_EQ(check.Target, hero);
+    EXPECT_EQ(check.Effect, first) << "the first cost on the attribute that ran short";
     EXPECT_EQ(check.Attribute, w.health);
     EXPECT_FLOAT_EQ(check.Needed, 120.0f);
     EXPECT_FLOAT_EQ(check.Available, 100.0f);
@@ -434,8 +531,8 @@ TEST(EffectCost, ACostFailsClosedOnAnythingMissingOrInexact)
     w.world.AddComponent<AttributeSet>(empty);
 
     const auto check = [&](EntityId actor, EffectId cost) {
-        const std::array costs{ cost };
-        return CheckEffectCosts(w.world, actor, costs).Status;
+        const std::array costs{ EffectCostRow{ actor, cost } };
+        return CheckEffectCosts(w.world, costs).Status;
     };
     EXPECT_EQ(check(hero, EffectId{ 99 }), EffectCostStatus::DefinitionMissing);
     EXPECT_EQ(check(hero, lastingFx), EffectCostStatus::NotAnInstantCost);
@@ -454,8 +551,25 @@ TEST(EffectCost, ACostNeverTakesAnUnboundedAttributeBelowZero)
     const EffectId cost = w.fx->Register("Costly", costly);
     const EntityId hero = w.MakeActor(100.0f, 5.0f);
 
-    const std::array costs{ cost };
-    EXPECT_EQ(CheckEffectCosts(w.world, hero, costs).Status, EffectCostStatus::Insufficient);
+    const std::array costs{ EffectCostRow{ hero, cost } };
+    EXPECT_EQ(CheckEffectCosts(w.world, costs).Status, EffectCostStatus::Insufficient);
+}
+
+TEST(EffectCost, CostsOnTwoTargetsAreSummedApart)
+{
+    EffectWorld w;
+    EffectDefinition half{};
+    half.Modifiers = { { w.health, ModifierOp::Add, -60.0f } };
+    const EffectId cost = w.fx->Register("Sixty", half);
+    const EntityId hero = w.MakeActor(100.0f, 5.0f);
+    const EntityId weapon = w.MakeActor(100.0f, 5.0f);
+
+    const std::array apart{ EffectCostRow{ hero, cost }, EffectCostRow{ weapon, cost } };
+    EXPECT_TRUE(CheckEffectCosts(w.world, apart).Affordable()) << "sixty from each, not a hundred and twenty from one";
+    const std::array together{ EffectCostRow{ hero, cost }, EffectCostRow{ weapon, cost }, EffectCostRow{ weapon, cost } };
+    const EffectCostCheck check = CheckEffectCosts(w.world, together);
+    EXPECT_EQ(check.Status, EffectCostStatus::Insufficient);
+    EXPECT_EQ(check.Target, weapon);
 }
 
 TEST_F(EffectFixture, AnApplicationRecordsWhatItChangedAsItLandedAndWhereItCameFrom)
@@ -517,4 +631,21 @@ TEST_F(EffectFixture, APeriodFallingDueIsRecordedAndALastingFoldIsNot)
     ASSERT_EQ(log.Applications().size(), 1u);
     EXPECT_EQ(log.Applications()[0].Effect, poisoned);
     EXPECT_FLOAT_EQ(log.ChangeIn(log.Applications()[0], health), -3.0f);
+}
+
+// An effect granting a projected tag would have its stack set away every tick.
+TEST(EffectDeclarationResolve, AProjectedTagIsNotGranted)
+{
+    AttributeRegistry attributes;
+    GameplayTagRegistry tags;
+    tags.SetProjected(*tags.RegisterTag("movement.grounded"), "movement.support");
+    EffectDeclaration declaration;
+    declaration.Duration = EffectDuration::Infinite;
+    declaration.GrantedTags = { "movement.grounded" };
+    EffectDefinition definition;
+    std::vector<std::string> errors;
+    EXPECT_FALSE(ResolveEffectDeclaration(declaration, attributes, tags, definition, errors));
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("movement.support"), std::string::npos) << errors[0];
+    EXPECT_TRUE(definition.GrantedTags.empty());
 }

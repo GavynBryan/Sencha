@@ -956,3 +956,162 @@ and exports and installs its durable part. `ZoneComponentMemories` and
 
 **Files.** `HashedChunkFileWriter` and `ReadHashedChunkFile`
 (`core/serialization/HashedChunkFile.h`); `SlugOf` (`core/text/Slug.h`).
+
+## v48
+
+**Spawn group identity.** `SmapPackageOptions::StripPersistentIdentity` is
+`StripAuthoredIdentity` and also drops `scene_instance`, so every member of a
+spawned prefab, placed members included, joins the spawn's group. A refused
+group stamp fails the spawn.
+
+**Grant entry wire identity.** `AbilityGrantEntries` names an entry on the wire
+by the `NameWireKey` of its key and binding (`WireKey`), not of its key alone,
+and `Intern` refuses a second entry of one ability with the same wire key
+(`kAbilityGrantEntryRefusal`). `DeclareEffectGrants` returns the keys it could
+not intern, and content declaration reports them. The grant codec's layout is
+unchanged, so the replication table hash does not move; the word's meaning does,
+so `kNetProtocolVersion` is 9. The ability pass revokes ended effect grants, and
+grants whose entry a reload took off their effect, before it grants;
+`AbilityTraceEvent` appends `GrantRefused`.
+
+**Composition operator.** `core/composition/Composition.h` (`ComposeLayers`,
+`ApplyCompositionPatch`, `CompositionReport`, `CompositionLogicalPath`) and
+`JsonComposition.h`; `JsonEquals`. `DataFieldSchema` gains `MergeKey` and
+`MergePolicy` (`DataMergePolicy`), which moves every later member;
+`DataValueRules` gains `RequireMembers`. `ValidateDataAgainstSchema` takes a
+`DataValidationMode`. `UnwrapDataField`, `DataFieldElement` and `ArrayMergeKey`.
+
+**Composed data definitions.** `StageDataDefinition`, `DataDefinitionContext`,
+`DataDefinitionStaging`, `DataSourceReader`, `IsAbstractDataDefinition` and
+`SplitCompileError` (`assets/data/DataDefinitionStaging.h`); the data loader and
+Kyusu both stage through it. A data envelope may name `extends`, `includes` and
+`abstract`. `DataAssetLoader::StageRoot` and `RuntimeAssets::StageDataRoot` take
+a reader; `CompiledDataAsset` and `DataAssetEntry` carry `Sources`;
+`DataAssetCache::Register` and `ReloadInPlace` take them and `ComposedFrom`
+answers the reverse. `AssetCommitResult` gains `Error`. A kind's `Reload`
+returns `AssetReloadOutcome`, and `AssetKindRegistration` gains `ComposedFrom`,
+which the hot reloader consults for every changed file. `PeekDataAssetEnvelope`.
+
+**Fact schemas compose.** `animation.fact_schema` is subtype version 2:
+`extends` moved from `data` to the envelope, and `slots` and `derived` are
+append-only lists keyed by name. A version-1 file is refused with the note
+`DataAssetTypeRegistration::Migration` carries, a new member; a game's version-1
+schema that never extended anything only changes its version. `AnimFactSchema`
+loses `Extends`; the binder's chain walk and `anim.fact.extends_cycle` and
+`anim.fact.duplicate_slot` are gone, and a bound slot's `DeclaredAt` names it by
+key. A rig's `sockets` compose by name. `DataAssetCache::GetCompositionSources`,
+`AssetHotReloader::SetHostHeld`, `SourceReloadRoots::SetHeldFilter`.
+
+**Scene composition schemas.** `IComponentSerializer` gains
+`CompositionSchema()`, a new virtual with a default declared before the
+destructor: a record schema saying how the component's scene form composes when
+a prefab extends or includes another, or a placement patches it (which lists
+merge by which member). `MakeKeyedListRecordSchema` builds the common shape.
+
+**Grant source.** `AbilityGrant` renames `Effect` to `Holder` and gains
+`Source`, which changes `AbilityGrants`' layout; `GrantAbility` takes the source
+after the holder, `AbilityPort` gains `Source`, and `HasLiveActivationFrom`
+joins `IsAbilityLive`. The grants wire sends the source in place of the holding
+effect (`AbilityGrantsWireSources`, field `sources`): no bytes change, the
+replication table hash does, and the protocol stays 9.
+
+**Request selection.** `AbilityRequest` gains `Source`. An activation request
+takes the grant with the highest effective priority, then the lowest grant id;
+`AbilityEffectiveBinding::Priority` is resolved for an entry bound to no
+action. `ability.activate` and `ability.grant` take an optional `source`.
+
+**Late-bound references.** `ReplicationWireContext` gains `Unresolved`, and
+`ReplicationClientIdentity` holds the `ReplicationDeferredReferences`
+(`net/ReplicationDeferredReferences.h`) it translates again once an entity an
+image named binds. No wire layout changes.
+
+**Grant parameters.** `AbilityGrantDeclaration` and `AbilityGrantEntry` gain
+`Parameters` (`AbilityGrantParameter`), which join an entry's content and its
+wire key; `AbilityDeclaration` and `AbilityDefinition` gain `Parameters`
+(`AbilityParameterDecl`, at most `kAbilityParameterCapacity`), `AbilityValue`
+and `AbilityValueDecl` gain `Parameter`, and `AbilityValueSource` gains
+`Parameter`. `AbilityGrantEntries::Parameters` answers an entry's resolved
+values. Scene grants and effect grant entries read and write `parameters`; a
+file without them loads as before.
+
+**Override precedence.** `EffectModifier` and `EffectDeclaration::Modifier`
+gain `Precedence`, authored `precedence` (default 0): of the overrides of one
+attribute on one target the highest wins, and `effects/EffectSystem.h` declares
+`EffectOverrideTies`, where a tie at the top is recorded once per attribute and
+pair of definitions.
+
+**Cost providers.** `abilities/AbilityCostProviders.h` declares the cost
+provider catalog (`AbilityCostProviderCatalog`, its registration scope, and
+`AbilityCostProviderDefinition` with `Check` and `Apply`, or `SpendsThrough` and
+`Translate`), installed with the AbilityKit vocabulary. `AbilityCostGroupDecl`
+and `AbilityCostGroup` gain `Target` (`AbilityCostTarget`) and `Resources`, and
+`AbilityResolveEnvironment` gains `CostProviders`. `CheckEffectCosts` takes
+`EffectCostRow`s (a target and an effect each) in place of one actor and a list
+of effects, and `EffectCostCheck` gains `Target`.
+
+**Grant reservations.** `effects/EffectSystem.h` declares
+`EffectApplicationAdmission`, which `ApplyEffect` asks before it spawns a lasting
+effect and tells once it has; `abilities/AbilityEffectGrants.h` declares
+`AbilityGrantReservations`, `AbilityGrantRoom` and
+`InstallAbilityGrantAdmission`, which `RegisterAbilityKit` installs. A granting
+effect whose grants would not fit is refused at application, and
+`ability.grant` leaves the room a reservation holds.
+
+**Transient grants.** `AbilityGrantKind` gains `Transient`, and
+`AbilityRequest` gains `Entry`, with the request kind `ActivateEntry`: a grant
+that lives as long as the one activation it was made for. The grant codec sends
+the kind as it always has.
+
+**Named definition registry.** `core/identity/NamedDefinitionRegistry.h`
+declares the registry of one World's definitions named by asset path, which
+`AbilityRegistry` now is; its members and their behaviour are unchanged, and
+`abilities/AbilityRegistry.cpp` is gone.
+
+**Runtime persistent ids.** `world/identity/PersistentIdMint.h` declares
+`PersistentIdMint`, `MintRuntimePersistentId` and `EnsurePersistentId`. The
+snapshot writer sends a persistent id as authored only outside the runtime
+namespace, and the package importer refuses a package entity holding a
+runtime-namespace id. No wire layout changes.
+
+**Persistable references.** `world/identity/PersistableRef.h` declares
+`PersistableRef`, `MakePersistableRef`, `ResolvePersistableRef`,
+`RefreshPersistableRef` and its scene codec. `SceneSerializationContext` gains
+`PackageMembers` (`PackageMember`), `PackageEntity` gains `MemberId`
+(`EntityBuildPackage::SetMemberId`), and `World` gains
+`AssignEmptyEntitySignature`.
+
+**Authority-materialized components.** `SENCHA_AUTHORITY_MATERIALIZED` is a new
+component annotation: `ComponentDefinition` and `TypeSchema` may state
+`AuthorityMaterialized` (`ComponentIsAuthorityMaterialized`),
+`WorldComponentSchema::Entry` and `ReplicatedComponent` gain the flag, and
+`zone/ZonePackageImporter.h` declares `IsAuthorityMaterialized`. The flag is not
+part of the replication table hash.
+
+**Per-entity relevance.** `NetRelevanceAnchor` is a new engine component in
+`NetComponents` (`kNetRelevanceAnchorDepth`), and the change store's
+`EntityState` gains `Anchored`, `AnchorPastBound` and `RelevantPeer`.
+`ReplicationPeerState` gains `NoteSeeded`, and `NoteDeparted` voids what
+pending snapshots said about the entity. The anchor does not travel, so the
+replication table hash does not move.
+
+**Baseline tag stacks.** `GameplayTagContainer` gains `Baseline`, which adds 64
+bytes, and `GrantBaseline`, `RevokeBaseline`, `Erase`, `SetContribution`,
+`BaselineCount` and `ContributedCount`; `Grant` and `Revoke` are contributions,
+and a revoke never takes the baseline. The tag serializer writes the baseline
+alone and `ReadGameplayTags` gains a `dropped` list. `GameplayTagRegistry` gains
+`SetProjected` and `ProjectedBy`. `ModeTagProjectionSystem` is a new movement
+system, and `movement/MovementTags.h` declares `kModeTagProjection` and
+`kSupportTagProjection`. The container's local size moves the replication table
+hash; its wire image is unchanged, and the protocol stays 9.
+
+**Tag overflow.** `gameplay_tags/GameplayTagOverflow.h` declares
+`GameplayTagOverflow`, `NoteGameplayTagOverflow` and
+`ReportGameplayTagOverflow`; `GameplayTagContainer` gains `CanHold`. An
+effect's granted tag or an ability's owned tag that a full container refuses
+is counted, and `AbilitySystem` reports the count.
+
+**Tag verbs.** `abilities/GameplayTagVerbs.h` declares the `tags.grant` and
+`tags.revoke` verbs (`DeclareGameplayTagVerbs`, `GameplayTagOperations`),
+declared with the engine vocabulary after the ability verbs, which moves every
+later engine verb's place in the catalog. `EngineVocabularyBindings` gains
+`Tags`.

@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <random>
 
 namespace
@@ -184,6 +185,24 @@ TEST_F(AbilityWorkbenchTest, AnOpsArgumentsAreLaidOutFromItsContractAndSetAsStep
         << "one step each: back to the first local the switch to a local took";
 }
 
+TEST_F(AbilityWorkbenchTest, ANumberArgumentCanReadAParameter)
+{
+    ASSERT_TRUE(Bench->Edit([](JsonValue& data) {
+        SetMember(data, "parameters", *JsonParse(R"([ { "key": "reach", "default": 80 } ])"));
+        return true;
+    }));
+    AbilityArgumentProperties arguments(*Bench, {});
+    Bench->Select("o_trace");
+    ASSERT_EQ(arguments.CommitEdit("arg.range.source", "Parameter"), PropertyEditResult::Applied);
+    EXPECT_EQ(ReadMemberString(ArgumentOf("o_trace", "range"), "param"), "reach");
+    const std::vector<PropertyNode> nodes = arguments.Nodes();
+    EXPECT_EQ(Find(nodes, "arg.range.source")->Value, "Parameter");
+    EXPECT_EQ(Find(nodes, "arg.range.value")->Value, "reach");
+    EXPECT_EQ(arguments.CommitEdit("arg.range.value", "nowhere"), PropertyEditResult::Refused);
+    EXPECT_EQ(arguments.CommitEdit("arg.origin.source", "Parameter"), PropertyEditResult::Refused)
+        << "a parameter is a number, and an origin is a point";
+}
+
 TEST_F(AbilityWorkbenchTest, AnUnguardedRecipientIsFixedWithOneStep)
 {
     ASSERT_TRUE(Bench->Edit([](JsonValue& data) { return SetAbilityGuard(data, "o_damage", JsonValue()).empty(); }));
@@ -236,4 +255,24 @@ TEST_F(AbilityWorkbenchTest, TheAbilityStaysOpenWhileAnEffectIsShown)
     EXPECT_FALSE(Bench->ShowingAbility());
     ASSERT_TRUE(Bench->Open(kCharge, error));
     EXPECT_TRUE(Bench->ShowingAbility());
+}
+
+TEST_F(AbilityWorkbenchTest, AVariantIsShownComposedInTheSheetNotAsItsPatch)
+{
+    std::ofstream(Root / "abilities" / "charge_long.sdata") << R"({ "type": "ability.definition", "version": 1,
+        "extends": "asset://abilities/charge_release.sdata",
+        "data": { "phases": { "p_fire": { "enter": { "o_trace": { "arguments": { "range": { "const": 120.0 } } } } } } } })";
+    (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
+    std::string error;
+    ASSERT_TRUE(Bench->Open("asset://abilities/charge_long.sdata", error)) << error;
+    EXPECT_EQ(Bench->Ability(), nullptr) << "the workbench edits a definition whole, never its patch";
+    EXPECT_FALSE(Bench->ShowingAbility());
+
+    DataProperties sheet(Bench->Documents, [this] { return Bench->Documents.Active(); });
+    const std::vector<PropertyNode> nodes = sheet.Nodes();
+    const PropertyNode* query = Find(nodes, "$.data.phases{p_fire}.enter{o_trace}.query");
+    ASSERT_NE(query, nullptr) << "the sheet lays the variant out as it composes";
+    EXPECT_EQ(query->Value, "physics.trace");
+    EXPECT_NE(query->Descriptor.Tooltip.find("inherited from asset://abilities/charge_release.sdata"), std::string::npos)
+        << query->Descriptor.Tooltip;
 }

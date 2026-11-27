@@ -25,39 +25,6 @@
 
 namespace
 {
-    // Brush geometry is a per-document sidecar, so it never crosses documents
-    // through the diff -- the projection copies the mesh in and rewrites the id,
-    // and the harvest must not read that rewrite as an authored edit.
-    [[nodiscard]] bool IsDocumentLocalComponent(std::string_view key)
-    {
-        return key == "brush" || key == "baked_brush";
-    }
-
-    // The sparse difference of two serializer-shaped objects: members that
-    // changed, objects recursed into, anything else replaced whole. Null when
-    // nothing differs.
-    [[nodiscard]] Json5Value DiffValue(const Json5Value& live, const Json5Value& baseline)
-    {
-        if (live.IsObject() && baseline.IsObject())
-        {
-            Json5Value patch = Json5Value::MakeObject();
-            for (const Json5Value::Member& member : live.Members)
-            {
-                const Json5Value* was = baseline.Find(member.first);
-                if (was == nullptr)
-                {
-                    patch.Members.push_back(member);
-                    continue;
-                }
-                Json5Value inner = DiffValue(member.second, *was);
-                if (!inner.IsNull())
-                    patch.Members.emplace_back(member.first, std::move(inner));
-            }
-            return patch.Members.empty() ? Json5Value{} : patch;
-        }
-        return live.SameValueAs(baseline) ? Json5Value{} : live;
-    }
-
     // Strips the document-local components from a record destined for a
     // placement: brush geometry cannot cross documents by id.
     void StripDocumentLocal(Json5Value& components, Logger& log,
@@ -70,36 +37,6 @@ namespace
             log.Warn("scene projection: entity {} carries brush geometry the "
                      "placement record cannot hold; it stays editor-local",
                      PersistentEntityIdToString(id));
-    }
-
-    // The three ways one entity's components can differ from its baseline:
-    // changed fields (a sparse patch), whole components the baseline lacked,
-    // and baseline components the entity dropped. Document-local components
-    // never cross into records.
-    void DiffComponents(const Json5Value& live, const Json5Value& baseline,
-                        Json5Value& patch, Json5Value& added,
-                        std::vector<std::string>& removed)
-    {
-        for (const Json5Value::Member& member : live.Members)
-        {
-            if (IsDocumentLocalComponent(member.first))
-                continue;
-            const Json5Value* was = baseline.Find(member.first);
-            if (was == nullptr)
-            {
-                added.Members.push_back(member);
-                continue;
-            }
-            Json5Value diff = DiffValue(member.second, *was);
-            if (!diff.IsNull())
-                patch.Members.emplace_back(member.first, std::move(diff));
-        }
-        for (const Json5Value::Member& member : baseline.Members)
-            if (!IsDocumentLocalComponent(member.first)
-                && live.Find(member.first) == nullptr)
-            {
-                removed.push_back(member.first);
-            }
     }
 
     [[nodiscard]] SceneElementPath InnerPath(const SceneElementPath& outer)
@@ -118,7 +55,13 @@ SceneInstanceProjection::SceneInstanceProjection(Registry& registry,
     , Scene(scene)
     , Records(records)
     , Logging(logging)
+    , Rules(registry.Components)
 {
+}
+
+SceneComponentSchemaFn SceneInstanceProjection::SchemaOf() const
+{
+    return [this](std::string_view component) { return Rules.SchemaOf(component); };
 }
 
 void SceneInstanceProjection::Reset()
@@ -234,14 +177,15 @@ void SceneInstanceProjection::Expand()
     }
     Elements.clear();
     Diagnostics_ = SceneProjectionDiagnostics{};
+    ComposedFrom_.clear();
 
-    if (Records.Instances.empty())
+    if (Records.Instances.empty() && Records.Extends.empty() && Records.Includes.empty())
         return;
 
     SceneSourceCache& sources = Sources();
     std::string resolveError;
     const std::optional<SceneCompositionResult> resolved =
-        ResolveSceneComposition(Records, sources, &resolveError);
+        ResolveSceneComposition(Records, sources, &resolveError, &Rules);
     if (!resolved.has_value())
     {
         if (!sources.LastError().empty())
@@ -257,6 +201,9 @@ void SceneInstanceProjection::Expand()
             PersistentEntityIdToString(PersistentEntityId{ instance.Value })
             + ": " + path.ToString());
     Diagnostics_.DanglingOverrides = resolved->DanglingOverrides;
+    ComposedFrom_ = resolved->Sources;
+    for (const CompositionDiagnostic& diagnostic : resolved->Diagnostics)
+        Diagnostics_.Composition.push_back(diagnostic.Code + " " + diagnostic.Path + ": " + diagnostic.Message);
 
     // Instantiate the expanded entities -- everything the resolver produced
     // beyond the document's own locals, which are already live.
@@ -266,7 +213,7 @@ void SceneInstanceProjection::Expand()
 
     for (const ResolvedSceneEntity& element : resolved->Entities)
     {
-        if (!element.Instance.IsValid())
+        if (!element.Instance.IsValid() && !element.IsInherited)
             continue; // a local: already live
 
         const EntityId entity = Registry_.Components.CreateEntity();
@@ -333,6 +280,7 @@ void SceneInstanceProjection::Expand()
         record.Instance = element.Instance;
         record.Root = element.IsInstanceRoot;
         record.Added = element.IsAdded;
+        record.Inherited = element.IsInherited;
         record.Baseline = SerializeSourceBaseline(element.SourceComponents, context);
         Elements.emplace(element.Id.Value, std::move(record));
     }
@@ -435,7 +383,7 @@ bool SceneInstanceProjection::DependsOnSource(std::string_view assetPath) const
     for (const SceneInstanceRecord& record : Records.Instances)
         if (record.Source == assetPath)
             return true;
-    return Sources_ != nullptr && Sources_->HasLoaded(assetPath);
+    return Sources_ != nullptr && Sources_->HasRequested(assetPath);
 }
 
 bool SceneInstanceProjection::ReloadSources(std::span<const std::string> assetPaths)
@@ -464,6 +412,8 @@ void SceneInstanceProjection::Harvest()
     if (index == nullptr)
         return;
 
+    HarvestInherited(*index);
+
     std::unordered_map<std::uint64_t, RecordHarvest> byInstance;
     for (const SceneInstanceRecord& record : Records.Instances)
         byInstance.emplace(record.Id.Value, RecordHarvest{});
@@ -471,6 +421,45 @@ void SceneInstanceProjection::Harvest()
     HarvestProjectedElements(*index, byInstance);
     AbsorbAuthoredChildren(byInstance);
     FoldHarvestsIntoRecords(*index, byInstance);
+}
+
+void SceneInstanceProjection::HarvestInherited(const PersistentEntityIndex& index)
+{
+    SceneSerializationContext context(Logging, Assets);
+    std::vector<std::pair<PersistentEntityId, Json5Value>> patches;
+    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> removals;
+    std::vector<std::uint64_t> harvested;
+    for (const auto& [pid, element] : Elements)
+    {
+        if (!element.Inherited)
+            continue;
+        const EntityId entity = index.TryResolve(PersistentEntityId{ pid });
+        if (!entity.IsValid() || !Scene.HasEntity(entity))
+            continue;
+        harvested.push_back(pid);
+        SceneComponentDiff diff =
+            DiffSceneComponents(SerializeEntityComponents(entity, Registry_, context), element.Baseline, SchemaOf());
+        for (Json5Value::Member& added : diff.Added.Members)
+            diff.Patch.Members.push_back(std::move(added));
+        if (!diff.Patch.Members.empty())
+            patches.emplace_back(PersistentEntityId{ pid }, std::move(diff.Patch));
+        if (!diff.Removed.empty())
+            removals.emplace_back(PersistentEntityId{ pid }, std::move(diff.Removed));
+    }
+    const auto harvestedId = [&](PersistentEntityId id) {
+        return std::ranges::find(harvested, id.Value) != harvested.end();
+    };
+    for (auto& entry : Records.InheritedPatches)
+        if (!harvestedId(entry.first))
+            patches.push_back(std::move(entry));
+    for (auto& entry : Records.InheritedRemovals)
+        if (!harvestedId(entry.first))
+            removals.push_back(std::move(entry));
+    const auto byId = [](const auto& a, const auto& b) { return a.first.Value < b.first.Value; };
+    std::ranges::sort(patches, byId);
+    std::ranges::sort(removals, byId);
+    Records.InheritedPatches = std::move(patches);
+    Records.InheritedRemovals = std::move(removals);
 }
 
 // Phase one: every element the projection produced lands in its instance's
@@ -496,6 +485,8 @@ void SceneInstanceProjection::HarvestProjectedElements(
     {
         const std::uint64_t pid = entry->first;
         const ProjectedElement& element = entry->second;
+        if (element.Inherited)
+            continue;
         const std::uint64_t owner = element.Path.Elements.front();
         const auto harvest = byInstance.find(owner);
         if (harvest == byInstance.end())
@@ -544,18 +535,15 @@ void SceneInstanceProjection::HarvestProjectedElements(
         }
 
         const Json5Value live = SerializeEntityComponents(entity, Registry_, context);
-        Json5Value patch = Json5Value::MakeObject();
-        Json5Value added = Json5Value::MakeObject();
-        std::vector<std::string> removed;
-        DiffComponents(live, element.Baseline, patch, added, removed);
+        SceneComponentDiff diff = DiffSceneComponents(live, element.Baseline, SchemaOf());
 
         const SceneElementPath inner = InnerPath(element.Path);
-        if (!patch.Members.empty())
-            harvest->second.Patches.emplace_back(inner, std::move(patch));
-        if (!added.Members.empty())
-            harvest->second.Added.emplace_back(inner, std::move(added));
-        if (!removed.empty())
-            harvest->second.Removed.emplace_back(inner, std::move(removed));
+        if (!diff.Patch.Members.empty())
+            harvest->second.Patches.emplace_back(inner, std::move(diff.Patch));
+        if (!diff.Added.Members.empty())
+            harvest->second.Added.emplace_back(inner, std::move(diff.Added));
+        if (!diff.Removed.empty())
+            harvest->second.Removed.emplace_back(inner, std::move(diff.Removed));
     }
 }
 
@@ -592,7 +580,7 @@ void SceneInstanceProjection::AbsorbAuthoredChildren(
             else
                 crossedLocal = true;
         }
-        if (anchor == nullptr)
+        if (anchor == nullptr || anchor->Inherited)
             continue;
         if (crossedLocal)
             log.Warn("scene projection: entity {} sits below another authored "
@@ -630,7 +618,7 @@ void SceneInstanceProjection::FoldHarvestsIntoRecords(
     std::unordered_map<std::uint64_t, std::vector<std::vector<std::uint64_t>>>
         projectedInner;
     for (const auto& [pid, element] : Elements)
-        if (!element.Root)
+        if (!element.Root && !element.Inherited)
             projectedInner[element.Path.Elements.front()].push_back(
                 InnerPath(element.Path).Elements);
     for (auto& [instance, paths] : projectedInner)
@@ -718,7 +706,16 @@ bool SceneInstanceProjection::IsMember(EntityId entity) const
     if (id == nullptr)
         return false;
     const auto found = Elements.find(id->Id.Value);
-    return found != Elements.end() && !found->second.Root;
+    return found != Elements.end() && !found->second.Root && !found->second.Inherited;
+}
+
+bool SceneInstanceProjection::IsInherited(EntityId entity) const
+{
+    const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
+    if (id == nullptr)
+        return false;
+    const auto found = Elements.find(id->Id.Value);
+    return found != Elements.end() && found->second.Inherited;
 }
 
 bool SceneInstanceProjection::IsRoot(EntityId entity) const
@@ -736,7 +733,7 @@ SceneInstanceId SceneInstanceProjection::OwnerOf(EntityId entity) const
     if (id == nullptr)
         return {};
     const auto found = Elements.find(id->Id.Value);
-    if (found == Elements.end() || found->second.Path.Elements.empty())
+    if (found == Elements.end() || found->second.Path.Elements.empty() || found->second.Inherited)
         return {};
     return SceneInstanceId{ found->second.Path.Elements.front() };
 }
