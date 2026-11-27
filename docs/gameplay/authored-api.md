@@ -91,6 +91,7 @@ without dependency files (Visual Studio) only the header itself is tracked.
 | `SENCHA_RANGE(min, max)` | parameter | The numeric range the argument accepts. |
 | `SENCHA_MIN(x)`, `SENCHA_MAX(x)` | parameter | One end of that range, or both; not beside `SENCHA_RANGE`. |
 | `SENCHA_UNITS(text)` | parameter | `DataFieldSchema::Units`. |
+| `SENCHA_WIDGET(name)` | parameter | The editor widget its row uses (`DataFieldSchema::Editor.Widget`), such as `direction`. |
 | `SENCHA_ASSET(Kind)` | `AssetRef` parameter | The `AssetType` the argument names (`Reference.AssetTypeFilter`). |
 | `SENCHA_DATA_ASSET(subtype)` | `AuthoredDataRef` parameter | A structured-data asset of that subtype, written as the literal or the constant naming it. |
 | `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. On a parameter, the description is its `Summary`. |
@@ -124,7 +125,8 @@ already knows:
 
 - parameter, return and member types;
 - whether a query is `const` (it must be);
-- C++ default arguments, which become the schema's default;
+- C++ default arguments, which become the schema's default and make the argument
+  one content may leave out (`Required = false`);
 - a leading `const VerbInvocation&` on a verb, which receives the request's
   provenance (`Id`, `Instigator`, `Tick`, `Parent`) and is not an argument;
 - `std::optional<T>`, which is the only way to say an argument may be absent,
@@ -148,6 +150,16 @@ Some types go one way only:
   call copies what it keeps, as it copies anything it queues. With these a
   warmed invocation allocates nothing for a text or an asset argument; a
   `std::string` or a by-value `AssetRef` parameter costs a copy.
+- **Read against the World.** A data-definition id with a `NamedIdField`
+  (`ItemId`, `AbilityId`, `EquipmentLayoutId`) is written as the definition's
+  data asset and decoded by the vocabulary's non-creating `Find` against the
+  provider's `AuthoredWorld()`; a definition the World does not declare refuses
+  the argument as invalid, and nothing is reserved. A search that should find
+  nothing for an undeclared definition takes `AuthoredDataRef` instead
+  (`inventory.count`, `.entry`, `.total`).
+- **A tag query.** `GameplayTagQueryNames` is an argument written as a record of
+  optional `all`, `any` and `none` lists of tag names, resolved where it runs
+  (`effect.remove`'s `kinds`).
 - **Answered whole, for results.** `std::vector<T>` answers an array of `T`,
   and a `SENCHA_RECORD` struct a record of its `SENCHA_FIELD` members, in
   declaration order (`equipment.sources` and the physics queries are their

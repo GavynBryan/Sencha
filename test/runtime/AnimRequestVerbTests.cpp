@@ -7,6 +7,7 @@
 #include <anim/AnimEventSystem.h>
 #include <anim/AnimRequestJournal.h>
 #include <anim/AnimRequestVerbs.h>
+#include <authored/AuthoredApi.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/VerbRegistry.h>
@@ -66,14 +67,15 @@ namespace
         FixedSimulationLoop Clock;
         std::optional<AnimRequestOperations> Operations;
         MarkRecorder Marks;
-        VerbBindingToken Tokens[4];
+        VerbBindingToken Tokens[1];
+        AuthoredApiBindings Animation;
         std::optional<AnimEventSystem> Events;
 
         VerbFixture()
         {
             {
                 VerbRegistrationScope scope(Verbs(), "engine");
-                DeclareAnimRequestVerbs(scope);
+                DeclareAuthoredApi<AnimRequestOperations>(&scope, nullptr);
                 VerbDefinition mark;
                 mark.Name = "test.mark";
                 mark.Scope = AuthoredScope::Cosmetic;
@@ -93,10 +95,8 @@ namespace
 
             Dispatcher.emplace(Verbs());
             Operations.emplace(Entities, Clock);
-            Tokens[0] = Dispatcher->Bind<&InvokeAnimRequest>(Verbs().Find(kAnimRequestVerb), *Operations);
-            Tokens[1] = Dispatcher->Bind<&InvokeAnimCancel>(Verbs().Find(kAnimCancelVerb), *Operations);
-            Tokens[2] = Dispatcher->Bind(Verbs().Find("test.mark"), Marks);
-            Tokens[3] = Dispatcher->Bind<&InvokeAnimHold>(Verbs().Find(kAnimHoldLease), *Operations);
+            Animation = BindAuthoredApi(&*Dispatcher, nullptr, *Operations);
+            Tokens[0] = Dispatcher->Bind(Verbs().Find("test.mark"), Marks);
             Events.emplace(&*Dispatcher, true);
         }
 
@@ -146,7 +146,7 @@ TEST(AnimRequestVerbs, ARequestFromContentIsTheInstigatorsAndParentsWhatItPlays)
     VerbFixture fx;
     fx.Step(2);
     const VerbInvocationResult asked =
-        fx.Invoke(kAnimRequestVerb, { FromInput("target"), TagArgument("intent", "anim.intent.reload"),
+        fx.Invoke(AuthoredApiDefinition<AnimRequestOperations>::Name_Request, { FromInput("target"), TagArgument("intent", "anim.intent.reload"),
                                       Constant("lifetime", JsonValue("held")), Constant("ticks", JsonValue(0.0)) });
     ASSERT_TRUE(asked.Accepted()) << VerbAdmissionName(asked.Status);
 
@@ -166,7 +166,7 @@ TEST(AnimRequestVerbs, ARequestFromContentIsTheInstigatorsAndParentsWhatItPlays)
     EXPECT_EQ(fx.Marks.Calls[0].Parent, asked.Id);
 
     const VerbInvocationResult ended =
-        fx.Invoke(kAnimCancelVerb, { FromInput("target"), TagArgument("intent", "anim.intent.reload") });
+        fx.Invoke(AuthoredApiDefinition<AnimRequestOperations>::Name_Cancel, { FromInput("target"), TagArgument("intent", "anim.intent.reload") });
     ASSERT_TRUE(ended.Accepted()) << VerbAdmissionName(ended.Status);
     EXPECT_TRUE(request->IsCancelled());
     EXPECT_EQ(request->CancelReason, AnimCancelReason::Released);
@@ -179,11 +179,11 @@ TEST(AnimRequestVerbs, ContentAsksOnlyForWhatTheRigDeclares)
     VerbFixture fx;
     (void)fx.Tags().RegisterTag("anim.intent.undeclared");
     fx.Step(1);
-    EXPECT_EQ(fx.Invoke(kAnimRequestVerb, { FromInput("target"), TagArgument("intent", "anim.intent.undeclared"),
+    EXPECT_EQ(fx.Invoke(AuthoredApiDefinition<AnimRequestOperations>::Name_Request, { FromInput("target"), TagArgument("intent", "anim.intent.undeclared"),
                                             Constant("lifetime", JsonValue("held")), Constant("ticks", JsonValue(0.0)) })
                   .Status,
               VerbAdmission::Refused);
-    EXPECT_EQ(fx.Invoke(kAnimCancelVerb, { FromInput("target"), TagArgument("intent", "anim.intent.reload") }).Status,
+    EXPECT_EQ(fx.Invoke(AuthoredApiDefinition<AnimRequestOperations>::Name_Cancel, { FromInput("target"), TagArgument("intent", "anim.intent.reload") }).Status,
               VerbAdmission::Refused);
 }
 
@@ -194,7 +194,7 @@ TEST(AnimRequestVerbs, AHoldIsTheOwnersUntilItLetsGo)
     fx.Step(2);
     const LeaseOwner holder{ .Entity = fx.Player, .Key = 9 };
     const CompiledVerbBinding hold =
-        fx.Compile(kAnimHoldLease, { FromInput("target"), TagArgument("intent", "anim.intent.reload") });
+        fx.Compile(AuthoredApiDefinition<AnimRequestOperations>::Name_Hold, { FromInput("target"), TagArgument("intent", "anim.intent.reload") });
     const AuthoredValue target = AuthoredValue::Entity(fx.Prop);
     const VerbInvocationResult acquired = fx.Dispatcher->AcquireLease(hold, std::span(&target, 1), holder, fx.Source());
     ASSERT_TRUE(acquired.Accepted()) << VerbAdmissionName(acquired.Status);
@@ -210,7 +210,7 @@ TEST(AnimRequestVerbs, AHoldIsTheOwnersUntilItLetsGo)
 
     fx.Step(3);
     EXPECT_FALSE(request->IsCancelled());
-    const VerbId lease = fx.Verbs().Find(kAnimHoldLease);
+    const VerbId lease = fx.Verbs().Find(AuthoredApiDefinition<AnimRequestOperations>::Name_Hold);
     EXPECT_EQ(fx.Dispatcher->ReleaseLease(lease, LeaseOwner{ .Entity = fx.Player, .Key = 8 }, fx.Source()),
               VerbAdmission::Accepted);
     EXPECT_FALSE(request->IsCancelled()) << "another holder's release";

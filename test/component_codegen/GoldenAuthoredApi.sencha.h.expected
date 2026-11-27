@@ -227,6 +227,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             DataFieldSchema field;
             field.Key = "brightness";
             AuthoredValueTraits<GoldenLamp>::Describe(field);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<GoldenLamp>::ToDefault(static_cast<GoldenLamp>(2));
             definition.Arguments.Children.push_back(std::move(field));
         }
@@ -236,6 +237,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             AuthoredValueTraits<float>::Describe(field);
             AuthoredValueField(field).Numeric.Minimum = static_cast<double>(0.5);
             AuthoredValueField(field).Numeric.Maximum = static_cast<double>(60);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<float>::ToDefault(static_cast<float>(5));
             definition.Arguments.Children.push_back(std::move(field));
         }
@@ -294,6 +296,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             field.Key = "name";
             field.DisplayName = "Name";
             AuthoredValueTraits<std::string>::Describe(field);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<std::string>::ToDefault(std::string{ "torch" });
             definition.Arguments.Children.push_back(std::move(field));
         }
@@ -393,6 +396,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             field.Editor.Widget = "slider";
             AuthoredValueTraits<float>::Describe(field);
             AuthoredValueField(field).Numeric.Minimum = static_cast<double>(0);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<float>::ToDefault(static_cast<float>(10));
             definition.Arguments.Children.push_back(std::move(field));
         }
@@ -467,6 +471,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             AuthoredValueTraits<float>::Describe(field);
             AuthoredValueField(field).Numeric.Minimum = static_cast<double>(0);
             AuthoredValueField(field).Numeric.Maximum = static_cast<double>(30);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<float>::ToDefault(static_cast<float>(1));
             definition.Arguments.Children.push_back(std::move(field));
         }
@@ -536,6 +541,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             DataFieldSchema field;
             field.Key = "note";
             AuthoredValueTraits<std::string_view>::Describe(field);
+            field.Required = false;
             field.Default = AuthoredSchemaDefault<std::string_view>::ToDefault(std::string_view{ "glint" });
             definition.Arguments.Children.push_back(std::move(field));
         }

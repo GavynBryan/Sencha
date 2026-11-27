@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include <abilities/AbilityDefinitionData.h>
@@ -556,10 +557,10 @@ TEST(InteractUse, OnlyTheAuthorityUses)
     arguments.Set(0, AuthoredValue::Entity(harness.Pawn));
     arguments.Set(1, AuthoredValue::Float(2.5));
     VerbInvocation invocation;
-    invocation.Verb = harness.Verbs->Registry().Find(kInteractUseVerb);
+    invocation.Verb = harness.Verbs->Registry().Find(AuthoredApiDefinition<InteractUseOperations>::Name_Use);
     invocation.Arguments = &arguments;
     InteractUseOperations operations(harness.Entities(), harness.Physics(), *harness.Pass);
-    EXPECT_EQ(operations.Use(invocation), VerbAdmission::Refused);
+    EXPECT_EQ(CallGeneratedVerb(operations, AuthoredApiDefinition<InteractUseOperations>::Name_Use, invocation).Status, VerbAdmission::Refused);
     (void)scene;
 }
 
@@ -575,9 +576,9 @@ TEST(InteractUse, TheVerbSaysWhyItDidNotUse)
         arguments.Set(0, AuthoredValue::Entity(harness.Pawn));
         arguments.Set(1, AuthoredValue::Float(range));
         VerbInvocation invocation;
-        invocation.Verb = harness.Verbs->Registry().Find(kInteractUseVerb);
+        invocation.Verb = harness.Verbs->Registry().Find(AuthoredApiDefinition<InteractUseOperations>::Name_Use);
         invocation.Arguments = &arguments;
-        return operations.Use(invocation);
+        return CallGeneratedVerb(operations, AuthoredApiDefinition<InteractUseOperations>::Name_Use, invocation).Status;
     };
 
     EXPECT_EQ(use(0.0), VerbAdmission::Refused) << "a zero reach is allowed and reaches nothing";
@@ -685,9 +686,9 @@ TEST(InteractUse, TheVerbAndTheOccurrenceShareANameInSeparateCatalogs)
     const VerbRegistry& verbs = harness.Verbs->Registry();
     const AuthoredEventRegistry* events = FindAuthoredEventRegistry(std::as_const(harness.Entities()));
     ASSERT_NE(events, nullptr);
-    ASSERT_TRUE(verbs.Find(kInteractUseVerb).IsValid());
+    ASSERT_TRUE(verbs.Find(AuthoredApiDefinition<InteractUseOperations>::Name_Use).IsValid());
     ASSERT_TRUE(events->Find(kInteractUseEvent).IsValid());
-    EXPECT_EQ(verbs.Get(verbs.Find(kInteractUseVerb))->Arguments.Children.size(), 4u);
+    EXPECT_EQ(verbs.Get(verbs.Find(AuthoredApiDefinition<InteractUseOperations>::Name_Use))->Arguments.Children.size(), 4u);
     EXPECT_EQ(events->Get(events->Find(kInteractUseEvent))->Instigator, "activator");
 }
 

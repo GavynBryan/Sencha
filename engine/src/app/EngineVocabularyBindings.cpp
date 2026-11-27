@@ -47,42 +47,27 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , FovScale(std::make_unique<CameraFovScaleOperations>(entities, clock))
     , Shake(std::make_unique<CameraShakeOperations>(entities, clock, verbs))
     , Responses(std::make_unique<ResponseOperations>(entities, clock))
+    , Perception(std::make_unique<PerceptionOperations>(entities))
+    , Claims(std::make_unique<ClaimOperations>(entities))
 {
-    const VerbRegistry& catalog = verbs.Registry();
-    Verbs.push_back(verbs.Bind<&InvokeAnimRequest>(catalog.Find(kAnimRequestVerb), *Animation));
-    Verbs.push_back(verbs.Bind<&InvokeAnimCancel>(catalog.Find(kAnimCancelVerb), *Animation));
-    Verbs.push_back(verbs.Bind<&InvokeAnimHold>(catalog.Find(kAnimHoldLease), *Animation));
-    Verbs.push_back(verbs.Bind<&InvokeAnimPresent>(catalog.Find(kAnimPresentVerb), *Animation));
-    Verbs.push_back(verbs.Bind<&InvokeEffectApply>(catalog.Find(kEffectApplyVerb), *Effects));
-    Verbs.push_back(verbs.Bind<&InvokeEffectHold>(catalog.Find(kEffectHoldLease), *Effects));
-    Verbs.push_back(verbs.Bind<&InvokeEffectRemove>(catalog.Find(kEffectRemoveVerb), *Effects));
-    Verbs.push_back(verbs.Bind<&InvokeTimeScale>(catalog.Find(kTimeScaleLease), *Time));
-    Verbs.push_back(verbs.Bind<&InvokeAbilityActivate>(catalog.Find(kAbilityActivateVerb), *Abilities));
-    Verbs.push_back(verbs.Bind<&InvokeAbilityCancel>(catalog.Find(kAbilityCancelVerb), *Abilities));
-    Verbs.push_back(verbs.Bind<&InvokeAbilityGrant>(catalog.Find(kAbilityGrantVerb), *Abilities));
-    Verbs.push_back(verbs.Bind<&InvokeAbilityRevoke>(catalog.Find(kAbilityRevokeVerb), *Abilities));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Animation));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Effects));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Time));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Abilities));
     Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Tags));
-    Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
-    Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
-    Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
-    Verbs.push_back(verbs.Bind<&InvokeMovementLaunch>(catalog.Find(kMovementLaunchVerb), *Movement));
-    Verbs.push_back(verbs.Bind<&InvokeMovementImpulse>(catalog.Find(kMovementImpulseVerb), *Movement));
-    Verbs.push_back(verbs.Bind<&InvokeNavigationMoveTo>(catalog.Find(kNavigationMoveToVerb), *Navigation));
-    Verbs.push_back(verbs.Bind<&InvokeNavigationApproach>(catalog.Find(kNavigationApproachVerb), *Navigation));
-    Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
-    Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
-    Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
-    Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(catalog.Find(kPresentationAttachLease), *Attachments));
-    Verbs.push_back(verbs.Bind<&InvokePresentationLight>(catalog.Find(kPresentationLightLease), *AttachedLights));
-    Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(catalog.Find(kCameraFovScaleVerb), *FovScale));
-    Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(catalog.Find(kCameraFovScaleHoldLease), *FovScale));
-    Verbs.push_back(verbs.Bind<&InvokeCameraShake>(catalog.Find(kCameraShakeVerb), *Shake));
-    Verbs.push_back(verbs.Bind<&InvokeCameraShakeHold>(catalog.Find(kCameraShakeHoldLease), *Shake));
-    Verbs.push_back(verbs.Bind<&InvokeResponsesEnable>(catalog.Find(kResponsesEnableVerb), *Responses));
-    Verbs.push_back(verbs.Bind<&InvokeResponsesDisable>(catalog.Find(kResponsesDisableVerb), *Responses));
-    Verbs.push_back(verbs.Bind<&InvokeTriggerInteract>(catalog.Find(kTriggerInteractVerb), *Responses));
-    Verbs.push_back(BindPerceptionVerbs(verbs, entities));
-    Verbs.push_back(BindClaimVerbs(verbs, entities));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Movement));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Navigation));
+    Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(verbs.Registry().Find(kAudioPlayVerb), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(verbs.Registry().Find(kAudioLoopLease), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokePresentationAttach>(verbs.Registry().Find(kPresentationAttachLease), *Attachments));
+    Verbs.push_back(verbs.Bind<&InvokePresentationLight>(verbs.Registry().Find(kPresentationLightLease), *AttachedLights));
+    Verbs.push_back(verbs.Bind<&InvokeCameraFovScale>(verbs.Registry().Find(kCameraFovScaleVerb), *FovScale));
+    Verbs.push_back(verbs.Bind<&InvokeCameraFovScaleHold>(verbs.Registry().Find(kCameraFovScaleHoldLease), *FovScale));
+    Verbs.push_back(verbs.Bind<&InvokeCameraShake>(verbs.Registry().Find(kCameraShakeVerb), *Shake));
+    Verbs.push_back(verbs.Bind<&InvokeCameraShakeHold>(verbs.Registry().Find(kCameraShakeHoldLease), *Shake));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Responses));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Perception));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Claims));
 }
 
 EngineVocabularyBindings::~EngineVocabularyBindings()
@@ -125,38 +110,32 @@ void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQuer
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
 {
-    for (AuthoredQueryBindingToken& token : BindPerceptionQueries(queries, Entities))
-        Queries.push_back(std::move(token));
-    for (AuthoredQueryBindingToken& token : BindClaimQueries(queries, Entities))
-        Queries.push_back(std::move(token));
+    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Perception));
+    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Claims));
 }
 
 void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
 {
-    for (AuthoredQueryBindingToken& token : BindNavigationQueries(queries, Entities))
-        Queries.push_back(std::move(token));
+    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Navigation));
 }
 
 void EngineVocabularyBindings::BindProjectiles(ProjectileSystem& projectiles, VerbDispatcher& verbs)
 {
-    Verbs.push_back(verbs.Bind<&InvokeProjectileLaunch>(verbs.Registry().Find(kProjectileLaunchVerb), projectiles));
+    Projectiles = std::make_unique<ProjectileOperations>(projectiles);
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Projectiles));
 }
 
 void EngineVocabularyBindings::BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs,
                                                 AuthoredQueryDispatcher& queries)
 {
-    Verbs.push_back(verbs.Bind<&InvokeLineExtend>(verbs.Registry().Find(kLineExtendLease), lines));
-    Verbs.push_back(verbs.Bind<&InvokeLineCut>(verbs.Registry().Find(kLineCutVerb), lines));
-    Verbs.push_back(verbs.Bind<&InvokeLineRetract>(verbs.Registry().Find(kLineRetractVerb), lines));
-    for (AuthoredQueryBindingToken& token : BindContactLineQueries(queries, lines))
-        Queries.push_back(std::move(token));
+    Generated.push_back(BindAuthoredApi(&verbs, &queries, lines));
 }
 
 void EngineVocabularyBindings::BindInteraction(const PhysicsWorld& physics, ResponsesSystem& responses,
                                                VerbDispatcher& verbs)
 {
     Interaction = std::make_unique<InteractUseOperations>(Entities, physics, responses);
-    Verbs.push_back(verbs.Bind<&InvokeInteractUse>(verbs.Registry().Find(kInteractUseVerb), *Interaction));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Interaction));
 }
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)

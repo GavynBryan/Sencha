@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
@@ -395,9 +396,7 @@ protected:
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.second"), *Second));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.refuse"), *Refuse));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.strike"), Strike));
-        Tokens.push_back(Dispatcher->Bind<&InvokeResponsesEnable>(Verbs->Find(kResponsesEnableVerb), *Operations));
-        Tokens.push_back(Dispatcher->Bind<&InvokeResponsesDisable>(Verbs->Find(kResponsesDisableVerb), *Operations));
-        Tokens.push_back(Dispatcher->Bind<&InvokeTriggerInteract>(Verbs->Find(kTriggerInteractVerb), *Operations));
+        ResponseVerbs = BindAuthoredApi(Dispatcher.get(), nullptr, *Operations);
         QueryToken = Queries->Bind<&RedQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.is_red"),
                                                        *RedAnswer);
         StacksToken = Queries->Bind<&StacksQuery::Evaluate>(
@@ -420,6 +419,7 @@ protected:
         QueryToken.Reset();
         StacksToken.Reset();
         ReachToken.Reset();
+        ResponseVerbs.Reset();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
     }
@@ -501,7 +501,11 @@ protected:
         arguments.Set(0, AuthoredValue::Entity(entity));
         arguments.Set(1, AuthoredValue::String(std::string(binding)));
         request.Arguments = &arguments;
-        return enabled ? Operations->Enable(request) : Operations->Disable(request);
+        return CallGeneratedVerb(*Operations,
+                                 enabled ? AuthoredApiDefinition<ResponseOperations>::Name_Enable
+                                         : AuthoredApiDefinition<ResponseOperations>::Name_Disable,
+                                 request)
+            .Status;
     }
 
     LoggingProvider Logging;
@@ -530,6 +534,7 @@ protected:
     std::unique_ptr<ResponseOperations> Operations;
     std::unique_ptr<RedQuery> RedAnswer;
     std::vector<VerbBindingToken> Tokens;
+    AuthoredApiBindings ResponseVerbs;
     AuthoredQueryBindingToken QueryToken;
     std::unique_ptr<StacksQuery> StacksAnswer;
     AuthoredQueryBindingToken StacksToken;
@@ -961,7 +966,7 @@ TEST_F(ResponsesFixture, AnInteractionRunsTheVolumesTheActivatorStandsIn)
     AuthoredArguments arguments(1);
     arguments.Set(0, AuthoredValue::Entity(activator));
     request.Arguments = &arguments;
-    EXPECT_EQ(Operations->Interact(request), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(*Operations, AuthoredApiDefinition<ResponseOperations>::Name_Interact, request).Status, VerbAdmission::Accepted);
     Step({ { inside, activator }, { elsewhere, other } });
 
     ASSERT_EQ(Calls.size(), 1u);

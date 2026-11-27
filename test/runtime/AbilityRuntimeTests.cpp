@@ -10,6 +10,7 @@
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityRequestQueue.h>
 #include <abilities/AbilityVerbs.h>
+#include <authored/AuthoredApi.h>
 #include <app/EngineVocabulary.h>
 #include <anim/AnimRequestVerbs.h>
 #include <authored/AuthoredQueryDispatcher.h>
@@ -183,11 +184,9 @@ protected:
         const VerbRegistry& catalog = Verbs->Registry();
         Tokens.push_back(Verbs->Bind(catalog.Find("test.mark"), Marks));
         Tokens.push_back(Verbs->Bind(catalog.Find("test.hold"), Held));
-        Tokens.push_back(Verbs->Bind(catalog.Find(kAnimHoldLease), Posed));
-        Tokens.push_back(Verbs->Bind<&InvokeEffectApply>(catalog.Find(kEffectApplyVerb), Effects));
-        Tokens.push_back(Verbs->Bind<&InvokeEffectHold>(catalog.Find(kEffectHoldLease), Effects));
-        Tokens.push_back(Verbs->Bind<&InvokeAbilityActivate>(catalog.Find(kAbilityActivateVerb), AbilityVerbs));
-        Tokens.push_back(Verbs->Bind<&InvokeAbilityCancel>(catalog.Find(kAbilityCancelVerb), AbilityVerbs));
+        Tokens.push_back(Verbs->Bind(catalog.Find(AuthoredApiDefinition<AnimRequestOperations>::Name_Hold), Posed));
+        Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, Effects));
+        Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, AbilityVerbs));
         QueryTokens.push_back(Queries->Bind<&EvaluateReady>(Queries->Registry().Find("test.ready"), std::as_const(Ready)));
         QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsTrace>(Queries->Registry().Find(kPhysicsTraceQuery),
                                                                    std::as_const(Traces)));
@@ -412,6 +411,7 @@ protected:
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
     std::vector<VerbBindingToken> Tokens;
+    std::vector<AuthoredApiBindings> Generated;
     std::vector<AuthoredQueryBindingToken> QueryTokens;
     AbilityHost Host;
 };
@@ -1571,7 +1571,6 @@ TEST_F(AbilityRuntime, AWarmPassAllocatesNothing)
 
 TEST_F(AbilityRuntime, AStartThatGrantsAnotherAbilityLeavesThePressesOtherBindingsIntact)
 {
-    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
     (void)Define("asset://abilities/primary.sdata", kInstant);
     const AbilityId granter = Define("asset://abilities/granter.sdata", R"({
         "input_default": { "action": "Input.PrimaryFire" },
@@ -1601,9 +1600,6 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
 {
     const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
     const EntityId actor = Actor();
-    const VerbRegistry& catalog = Verbs->Registry();
-    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(catalog.Find(kAbilityGrantVerb), AbilityVerbs));
-    Tokens.push_back(Verbs->Bind<&InvokeAbilityRevoke>(catalog.Find(kAbilityRevokeVerb), AbilityVerbs));
 
     const auto invoke = [&](std::string_view verb, bool keyed) {
         VerbBindingDesc desc;
@@ -1635,21 +1631,53 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
         return Verbs->Invoke(binding, std::span(&input, 1)).Status;
     };
 
-    EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Activate, false), VerbAdmission::Accepted);
     Step();
     EXPECT_EQ(Traced(AbilityTraceEvent::Refused).front().Refusal, AbilityRefusal::NotGranted);
 
-    EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
-    EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Grant, true), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Activate, false), VerbAdmission::Accepted);
     Step();
     EXPECT_NE(LiveRecord(actor, charge), nullptr);
-    EXPECT_EQ(invoke(kAbilityCancelVerb, false), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Cancel, false), VerbAdmission::Accepted);
     Step();
     EXPECT_EQ(LiveRecord(actor, charge), nullptr);
 
-    EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Revoke, true), VerbAdmission::Accepted);
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
-    EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Refused);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Revoke, true), VerbAdmission::Refused);
+}
+
+TEST_F(AbilityRuntime, AnAbilityVerbRefusesAnAbilityNobodyDeclaredAndNamesTheArgument)
+{
+    const EntityId actor = Actor();
+    VerbBindingDesc desc;
+    desc.Key = "grant.undeclared";
+    desc.KeyId = MakeVerbBindingKey(desc.Key);
+    desc.VerbName = std::string(AuthoredApiDefinition<AbilityOperations>::Name_Grant);
+    desc.Inputs = { "target" };
+    VerbBindingArgument target;
+    target.Key = "target";
+    target.Source = VerbArgumentSource::Input;
+    target.Text = "target";
+    VerbBindingArgument ability;
+    ability.Key = "ability";
+    ability.Source = VerbArgumentSource::DataAsset;
+    ability.Text = "asset://abilities/never_declared.sdata";
+    VerbBindingArgument key;
+    key.Key = "key";
+    key.Literal = JsonValue("scripted");
+    desc.Arguments = { target, ability, key };
+    CompiledVerbBinding binding;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), binding, errors)) << errors.front();
+    const AuthoredValue input = AuthoredValue::Entity(actor);
+    const VerbInvocationResult result = Verbs->Invoke(binding, std::span(&input, 1));
+    EXPECT_EQ(result.Status, VerbAdmission::InvalidArguments);
+    EXPECT_EQ(DescribeVerbAnswer(Verbs->Registry(), binding.Verb, VerbAnswer(result.Status, result.Detail)),
+              "invalid argument 'ability'");
+    EXPECT_FALSE(Entities.GetResource<AbilityRegistry>().Find("asset://abilities/never_declared.sdata").IsValid())
+        << "a verb never reserves a name";
 }
 
 // Two rings, each an entity whose Infinite effect grants Fireball with its own power and priority.
@@ -1806,7 +1834,6 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
     const AbilityId read = Define("asset://abilities/read_source.sdata", kReadSource);
     const EntityId actor = Actor();
     const EntityId ring = Entities.CreateEntity();
-    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
     const auto invoke = [&](std::string_view verb, bool keyed) {
         VerbBindingDesc desc;
         desc.Key = std::string(verb) + ".test";
@@ -1836,10 +1863,10 @@ TEST_F(AbilityRuntime, TheGrantAndActivateVerbsTakeASource)
         return Verbs->Invoke(binding, std::span(inputs)).Status;
     };
 
-    EXPECT_EQ(invoke(kAbilityGrantVerb, true), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Grant, true), VerbAdmission::Accepted);
     ASSERT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u);
     EXPECT_EQ(AbilityGrantsOf(Entities, actor)[0].Source.Entity, ring);
-    EXPECT_EQ(invoke(kAbilityActivateVerb, false), VerbAdmission::Accepted);
+    EXPECT_EQ(invoke(AuthoredApiDefinition<AbilityOperations>::Name_Activate, false), VerbAdmission::Accepted);
     Step();
     EXPECT_NE(LiveRecord(actor, read), nullptr);
     EXPECT_TRUE(HasLiveActivationFrom(Entities, actor, ring));
@@ -2368,11 +2395,10 @@ TEST_F(AbilityRuntime, AGrantAskedForDoesNotTakeRoomAnEffectReserved)
     const EntityId last = ApplyNow(actor, granting.back());
     ASSERT_TRUE(last.IsValid());
 
-    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
     VerbBindingDesc desc;
     desc.Key = "grant.test";
     desc.KeyId = MakeVerbBindingKey(desc.Key);
-    desc.VerbName = std::string(kAbilityGrantVerb);
+    desc.VerbName = std::string(AuthoredApiDefinition<AbilityOperations>::Name_Grant);
     desc.Inputs = { "target" };
     VerbBindingArgument target;
     target.Key = "target";

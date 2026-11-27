@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <abilities/AbilityKit.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
@@ -313,7 +314,7 @@ namespace
         VerbInvocation invocation;
         invocation.Arguments = &arguments;
         invocation.Result = &result;
-        Removal removal{ .Answer = operations.Remove(invocation) };
+        Removal removal{ .Answer = CallGeneratedVerb(operations, AuthoredApiDefinition<EffectOperations>::Name_Remove, invocation) };
         (void)result.TryGetInt(removal.Count);
         return removal;
     }
@@ -338,7 +339,7 @@ TEST(AppliedEffects, EffectRemoveEndsOnlyWhatItNamesAndAnswersHowManyAndRefusesN
     const Removal neither = Remove(world, player, AuthoredValue{}, AuthoredValue{});
     EXPECT_EQ(neither.Answer.Status, VerbAdmission::Refused);
     EXPECT_EQ(neither.Answer.Detail, static_cast<std::uint16_t>(EffectRemoveRefusal::NothingNamed));
-    const Removal both = Remove(world, player, AuthoredValue::DataAsset(AssetRef{ .Path = "test.story" }),
+    const Removal both = Remove(world, player, AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = "test.story" }),
                                 AnyOf("test.kind.rest"));
     EXPECT_EQ(both.Answer.Detail, static_cast<std::uint16_t>(EffectRemoveRefusal::BothNamed));
     EXPECT_EQ(world.On(player).size(), 3u) << "a refused removal ended something";
@@ -349,7 +350,7 @@ TEST(AppliedEffects, EffectRemoveEndsOnlyWhatItNamesAndAnswersHowManyAndRefusesN
     ASSERT_EQ(world.On(player).size(), 1u);
     EXPECT_EQ(world.On(player).front()->Def, story) << "an effect of another kind did not survive";
 
-    const Removal named = Remove(world, player, AuthoredValue::DataAsset(AssetRef{ .Path = "test.story" }), AuthoredValue{});
+    const Removal named = Remove(world, player, AuthoredValue::DataAsset(AssetRef{ .Type = AssetType::Data, .Path = "test.story" }), AuthoredValue{});
     EXPECT_TRUE(named.Answer.Accepted());
     EXPECT_EQ(named.Count, 1);
     EXPECT_TRUE(world.On(player).empty());

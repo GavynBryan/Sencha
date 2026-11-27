@@ -2,6 +2,7 @@
 // projectile met level geometry, striking characters once, cut by what stands
 // across it, and drawn home when let go.
 
+#include "GeneratedVerbCall.h"
 #include <movement/components/HeldMotion.h>
 #include <set>
 
@@ -145,7 +146,7 @@ protected:
         invocation.Step = step;
         invocation.Arguments = step == LeaseStep::Acquire ? &arguments : nullptr;
         invocation.Tick = TickIndex + 1;
-        return Lines->Extend(invocation);
+        return CallGeneratedVerb(*Lines, AuthoredApiDefinition<ContactLineSystem>::Name_Extend, invocation).Status;
     }
 
     void Throw(const Vec3d& at) { ASSERT_EQ(Lease(LeaseStep::Acquire, at), VerbAdmission::Accepted); }
@@ -341,7 +342,7 @@ TEST_F(ContactLines, CuttingEndsItAtOnceAndItsInstigatorGoingEndsIt)
     VerbInvocation cut;
     cut.Arguments = &arguments;
     cut.Tick = TickIndex + 1;
-    EXPECT_EQ(Lines->Cut(cut), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(*Lines, AuthoredApiDefinition<ContactLineSystem>::Name_Cut, cut).Status, VerbAdmission::Accepted);
     EXPECT_EQ(LinesOut(), 0u);
     EXPECT_EQ(CutCues(), 1u);
 
@@ -454,7 +455,7 @@ TEST_F(ContactLines, CuttingAThrowEndsItsTipToo)
     VerbInvocation cut;
     cut.Arguments = &arguments;
     cut.Tick = TickIndex + 1;
-    EXPECT_EQ(Lines->Cut(cut), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(*Lines, AuthoredApiDefinition<ContactLineSystem>::Name_Cut, cut).Status, VerbAdmission::Accepted);
     Tick(30);
     EXPECT_FLOAT_EQ(HealthOf(target), 100.0f) << "no tip goes on without its line";
 }

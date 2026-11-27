@@ -1,29 +1,38 @@
 #pragma once
 
+#include <anim/AnimTypes.h>
+#include <authored/AuthoredAnnotations.h>
+#include <authored/AuthoredApiDefinition.h>
 #include <authored/VerbInvocation.h>
-#include <authored/VerbRegistry.h>
+#include <core/metadata/EnumSchema.h>
+#include <ecs/EntityId.h>
+#include <gameplay_tags/GameplayTagId.h>
 
-#include <string_view>
+#include <array>
+#include <cstdint>
 
 class FixedSimulationLoop;
 class World;
 
-// Ask `target` to present `intent`: held until anim.cancel, for a fixed number of
-// ticks, or for the tick it is asked on.
-inline constexpr std::string_view kAnimRequestVerb = "anim.request";
-// End the held request this producer asked `target` for, by its intent.
-inline constexpr std::string_view kAnimCancelVerb = "anim.cancel";
-// Ask `target` to present `intent` for as long as the lease's owner holds it.
-inline constexpr std::string_view kAnimHoldLease = "anim.hold";
-// Play `intent` on `target`'s presentation layers, on this machine alone, for a
-// fixed number of ticks or the tick it is asked on.
-inline constexpr std::string_view kAnimPresentVerb = "anim.present";
+// The lifetimes a presentation-only request can have: one with no simulation behind it
+// cannot be held.
+enum class AnimPresentLifetime : std::uint8_t
+{
+    Impulse,
+    Fixed,
+};
 
-// The contracts, declared with the engine's own vocabulary.
-void DeclareAnimRequestVerbs(VerbRegistrationScope& scope);
+template <>
+struct EnumSchema<AnimPresentLifetime>
+{
+    static constexpr std::array Values = {
+        EnumValue{ AnimPresentLifetime::Impulse, "impulse", "Impulse" },
+        EnumValue{ AnimPresentLifetime::Fixed, "fixed", "Fixed" },
+    };
+};
 
 // The authored API's door to animation requests, for producers with no ability to
-// own one: level logic, scripted gameplay, AI, props. Both go through
+// own one: level logic, scripted gameplay, AI, props. Every request goes through
 // RequestAnimation and CancelAnimation, the one path every producer uses.
 class AnimRequestOperations
 {
@@ -34,32 +43,68 @@ public:
     {
     }
 
-    VerbAdmission Request(const VerbInvocation& invocation);
-    VerbAdmission Cancel(const VerbInvocation& invocation);
-    VerbAdmission Hold(const VerbInvocation& invocation);
-    VerbAdmission Present(const VerbInvocation& invocation);
+    SENCHA_VERB("anim.request")
+    SENCHA_LABEL("Request animation")
+    SENCHA_CATEGORY("Animation")
+    SENCHA_DESCRIPTION("Asks an animated entity to present an intent its rig declares.")
+    SENCHA_PREDICTION(Simulation)
+    VerbAdmission Request(
+        const VerbInvocation& invocation,
+        SENCHA_TARGET("target") SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The animated entity.") EntityId target,
+        SENCHA_ARG("intent") SENCHA_LABEL("Intent") SENCHA_DESCRIPTION("What to present, as its rig names it.")
+            GameplayTagId intent,
+        SENCHA_ARG("lifetime") SENCHA_LABEL("Lifetime")
+            SENCHA_DESCRIPTION("Held lasts until anim.cancel; fixed for `ticks`; impulse for one tick.")
+                AnimRequestLifetime lifetime = AnimRequestLifetime::Held,
+        SENCHA_ARG("ticks") SENCHA_LABEL("Ticks") SENCHA_DESCRIPTION("How long a fixed request lasts.")
+            std::uint32_t ticks = 0);
+
+    SENCHA_VERB("anim.cancel")
+    SENCHA_LABEL("End animation request")
+    SENCHA_CATEGORY("Animation")
+    SENCHA_DESCRIPTION("Ends the held request this producer asked the entity for.")
+    SENCHA_PREDICTION(Simulation)
+    VerbAdmission Cancel(
+        const VerbInvocation& invocation,
+        SENCHA_TARGET("target") SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The animated entity.") EntityId target,
+        SENCHA_ARG("intent") SENCHA_LABEL("Intent") SENCHA_DESCRIPTION("The intent it was asked for.")
+            GameplayTagId intent);
+
+    SENCHA_LEASE("anim.hold")
+    SENCHA_LABEL("Hold animation")
+    SENCHA_CATEGORY("Animation")
+    SENCHA_DESCRIPTION("Keeps an animated entity presenting an intent until its holder lets go.")
+    SENCHA_PREDICTION(Simulation)
+    VerbAdmission Hold(
+        const VerbInvocation& invocation,
+        SENCHA_TARGET("target") SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The animated entity.") EntityId target,
+        SENCHA_ARG("intent") SENCHA_LABEL("Intent") SENCHA_DESCRIPTION("What to present, as its rig names it.")
+            GameplayTagId intent);
+    SENCHA_LEASE_RELEASE("anim.hold")
+    VerbAdmission EndHold(const VerbInvocation& invocation);
+
+    SENCHA_VERB("anim.present")
+    SENCHA_LABEL("Present animation")
+    SENCHA_CATEGORY("Animation")
+    SENCHA_DESCRIPTION("Plays an intent on the entity's presentation layers, on this machine alone.")
+    SENCHA_COSMETIC
+    VerbAdmission Present(
+        const VerbInvocation& invocation,
+        SENCHA_TARGET("target") SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The animated entity.") EntityId target,
+        SENCHA_ARG("intent") SENCHA_LABEL("Intent") SENCHA_DESCRIPTION("What to present, as its rig names it.")
+            GameplayTagId intent,
+        SENCHA_ARG("lifetime") SENCHA_LABEL("Lifetime") SENCHA_DESCRIPTION("Fixed for `ticks`; impulse for one tick.")
+            AnimPresentLifetime lifetime = AnimPresentLifetime::Impulse,
+        SENCHA_ARG("ticks") SENCHA_LABEL("Ticks") SENCHA_DESCRIPTION("How long a fixed one lasts.")
+            std::uint32_t ticks = 0);
+
+    [[nodiscard]] const World& AuthoredWorld() const { return *Entities; }
 
 private:
     World* Entities;
     const FixedSimulationLoop* Clock;
 };
 
-inline VerbAdmission InvokeAnimRequest(AnimRequestOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Request(invocation);
-}
-
-inline VerbAdmission InvokeAnimCancel(AnimRequestOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Cancel(invocation);
-}
-
-inline VerbAdmission InvokeAnimHold(AnimRequestOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Hold(invocation);
-}
-
-inline VerbAdmission InvokeAnimPresent(AnimRequestOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Present(invocation);
-}
+#if !defined(SENCHA_CODEGEN)
+#  include <anim/AnimRequestVerbs.sencha.h>
+#endif

@@ -1,6 +1,8 @@
 // A scene's grants name abilities by asset and grants by stable key, and survive a
 // save and a load with their binding overrides, whatever the loading World knows.
 
+#include "GeneratedVerbCall.h"
+#include <abilities/AbilityRegistry.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityGrants.h>
 #include <abilities/AbilityGrantsSerializer.h>
@@ -127,6 +129,11 @@ namespace
 {
 struct IdentifiedGrantsScene : GrantsScene
 {
+    IdentifiedGrantsScene()
+    {
+        (void)Scene.Components.GetResource<AbilityRegistry>().Reserve("asset://abilities/primary.sdata");
+    }
+
     AbilityOperations Verbs{ Scene.Components };
     AuthoredArguments Arguments;
 
@@ -143,19 +150,29 @@ struct IdentifiedGrantsScene : GrantsScene
         invocation.Arguments = &Arguments;
         return invocation;
     }
+
+    VerbAdmission Grant(const VerbInvocation& invocation)
+    {
+        return CallGeneratedVerb(Verbs, AuthoredApiDefinition<AbilityOperations>::Name_Grant, invocation).Status;
+    }
+
+    VerbAdmission Revoke(const VerbInvocation& invocation)
+    {
+        return CallGeneratedVerb(Verbs, AuthoredApiDefinition<AbilityOperations>::Name_Revoke, invocation).Status;
+    }
 };
 }
 
 TEST(AbilityGrantsSerializer, ARequestedGrantIsStillRevocableAfterASaveAndLoad)
 {
     IdentifiedGrantsScene first;
-    ASSERT_EQ(first.Verbs.Grant(first.Invocation("unlocked")), VerbAdmission::Accepted);
+    ASSERT_EQ(first.Grant(first.Invocation("unlocked")), VerbAdmission::Accepted);
 
     IdentifiedGrantsScene second;
     ASSERT_TRUE(second.Load(first.Save()));
     ASSERT_EQ(second.Held().size(), 1u);
     EXPECT_EQ(second.Held()[0].Kind, AbilityGrantKind::Request);
-    EXPECT_EQ(second.Verbs.Revoke(second.Invocation("unlocked")), VerbAdmission::Accepted);
+    EXPECT_EQ(second.Revoke(second.Invocation("unlocked")), VerbAdmission::Accepted);
     EXPECT_EQ(second.Grants().Count, 0u);
 }
 
@@ -167,14 +184,14 @@ TEST(AbilityGrantsSerializer, AnAuthoredGrantIsNotRevocableAfterASaveAndLoad)
     IdentifiedGrantsScene second;
     ASSERT_TRUE(second.Load(first.Save()));
     EXPECT_EQ(second.Held()[0].Kind, AbilityGrantKind::Authored);
-    EXPECT_EQ(second.Verbs.Revoke(second.Invocation("authored")), VerbAdmission::Refused);
+    EXPECT_EQ(second.Revoke(second.Invocation("authored")), VerbAdmission::Refused);
 }
 
 TEST(AbilityGrantsSerializer, ARequestedGrantsSourceIsFoundAgainAfterASaveAndLoad)
 {
     IdentifiedGrantsScene first;
     const EntityId pickup = first.Scene.Components.CreateEntity();
-    ASSERT_EQ(first.Verbs.Grant(first.Invocation("from_pickup", pickup)), VerbAdmission::Accepted);
+    ASSERT_EQ(first.Grant(first.Invocation("from_pickup", pickup)), VerbAdmission::Accepted);
     const PersistentIdComponent* minted = first.Scene.Components.TryGet<PersistentIdComponent>(pickup);
     ASSERT_NE(minted, nullptr) << "a source a save must find again is given an identity when it grants";
 

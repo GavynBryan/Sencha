@@ -1,23 +1,16 @@
 #pragma once
 
+#include <abilities/AbilityGrants.h>
+#include <abilities/AbilityId.h>
+#include <authored/AuthoredAnnotations.h>
+#include <authored/AuthoredApiDefinition.h>
 #include <authored/VerbInvocation.h>
-#include <authored/VerbRegistry.h>
+#include <ecs/EntityId.h>
 
+#include <optional>
 #include <string_view>
 
 class World;
-
-// Start an ability an entity is granted, by name rather than by input. Admission
-// still applies, in the next ability pass.
-inline constexpr std::string_view kAbilityActivateVerb = "ability.activate";
-// End an entity's running activations of an ability.
-inline constexpr std::string_view kAbilityCancelVerb = "ability.cancel";
-// Grant or revoke an ability under a key, for scripts and tests; an entity with no
-// grants gains them.
-inline constexpr std::string_view kAbilityGrantVerb = "ability.grant";
-inline constexpr std::string_view kAbilityRevokeVerb = "ability.revoke";
-
-void DeclareAbilityVerbs(VerbRegistrationScope& scope);
 
 class AbilityOperations
 {
@@ -27,31 +20,57 @@ public:
     {
     }
 
-    VerbAdmission Activate(const VerbInvocation& invocation);
-    VerbAdmission Cancel(const VerbInvocation& invocation);
-    VerbAdmission Grant(const VerbInvocation& invocation);
-    VerbAdmission Revoke(const VerbInvocation& invocation);
+    SENCHA_VERB("ability.activate")
+    SENCHA_LABEL("Activate ability")
+    SENCHA_CATEGORY("Abilities")
+    SENCHA_DESCRIPTION("Starts an ability the actor is granted, if admission allows, in the next ability pass; with a "
+                       "source, only the grant that source supplied.")
+    VerbAdmission Activate(const VerbInvocation& invocation,
+                           SENCHA_TARGET("target", AbilityGrants) SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The actor.")
+                               EntityId target,
+                           SENCHA_ARG("ability") SENCHA_LABEL("Ability") AbilityId ability,
+                           SENCHA_ARG("source") SENCHA_LABEL("Source")
+                               SENCHA_DESCRIPTION("What the grant comes from, as its activations read it.")
+                                   std::optional<EntityId> source = std::nullopt);
+
+    SENCHA_VERB("ability.cancel")
+    SENCHA_LABEL("Cancel ability")
+    SENCHA_CATEGORY("Abilities")
+    SENCHA_DESCRIPTION("Ends the actor's running activations of an ability.")
+    VerbAdmission Cancel(const VerbInvocation& invocation,
+                         SENCHA_TARGET("target", AbilityGrants) SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The actor.")
+                             EntityId target,
+                         SENCHA_ARG("ability") SENCHA_LABEL("Ability") AbilityId ability);
+
+    SENCHA_VERB("ability.grant")
+    SENCHA_LABEL("Grant ability")
+    SENCHA_CATEGORY("Abilities")
+    SENCHA_DESCRIPTION("Lets the actor run an ability, under a key.")
+    VerbAdmission Grant(SENCHA_TARGET("target", AbilityGrants) SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The actor.")
+                            EntityId target,
+                        SENCHA_ARG("ability") SENCHA_LABEL("Ability") AbilityId ability,
+                        SENCHA_ARG("key") SENCHA_LABEL("Key") SENCHA_DESCRIPTION("Names the grant, so it can be revoked.")
+                            std::string_view key,
+                        SENCHA_ARG("source") SENCHA_LABEL("Source")
+                            SENCHA_DESCRIPTION("What the grant comes from, as its activations read it.")
+                                std::optional<EntityId> source = std::nullopt);
+
+    SENCHA_VERB("ability.revoke")
+    SENCHA_LABEL("Revoke ability")
+    SENCHA_CATEGORY("Abilities")
+    SENCHA_DESCRIPTION("Takes back an ability granted under a key.")
+    VerbAdmission Revoke(SENCHA_TARGET("target", AbilityGrants) SENCHA_LABEL("Target") SENCHA_DESCRIPTION("The actor.")
+                             EntityId target,
+                         SENCHA_ARG("ability") SENCHA_LABEL("Ability") AbilityId ability,
+                         SENCHA_ARG("key") SENCHA_LABEL("Key") SENCHA_DESCRIPTION("Names the grant, so it can be revoked.")
+                             std::string_view key);
+
+    [[nodiscard]] const World& AuthoredWorld() const { return *Entities; }
 
 private:
     World* Entities;
 };
 
-inline VerbAdmission InvokeAbilityActivate(AbilityOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Activate(invocation);
-}
-
-inline VerbAdmission InvokeAbilityCancel(AbilityOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Cancel(invocation);
-}
-
-inline VerbAdmission InvokeAbilityGrant(AbilityOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Grant(invocation);
-}
-
-inline VerbAdmission InvokeAbilityRevoke(AbilityOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Revoke(invocation);
-}
+#if !defined(SENCHA_CODEGEN)
+#  include <abilities/AbilityVerbs.sencha.h>
+#endif

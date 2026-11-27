@@ -1,9 +1,5 @@
 #include <movement/MovementVerbs.h>
-#include <core/metadata/DataSchemaFields.h>
-#include <authored/AuthoredValueTraits.h>
-#include <world/transform/TransformComponents.h>
 
-#include <authored/AuthoredValue.h>
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <movement/LocomotionMode.h>
@@ -12,30 +8,14 @@
 #include <movement/components/HeldMotion.h>
 #include <movement/components/MotionChannels.h>
 #include <world/SimulationAuthority.h>
+#include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <cmath>
-#include <string>
 #include <utility>
 
 namespace
 {
-VerbDefinition Lease(std::string_view name, std::string displayName, std::string description)
-{
-    VerbDefinition lease;
-    lease.Name = std::string(name);
-    lease.DisplayName = std::move(displayName);
-    lease.Description = std::move(description);
-    lease.Category = "Movement";
-    lease.Kind = VerbKind::Lease;
-    lease.Prediction = AuthoredPrediction::Simulation;
-    DataFieldSchema target = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character it holds.");
-    target.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
-    lease.Arguments.Children.push_back(std::move(target));
-    return lease;
-}
-
-// Every slot of `T` the owner holds, on whichever character it is.
 template <typename T, typename F>
 void ForEachHeld(World& world, F&& release)
 {
@@ -48,91 +28,7 @@ void ForEachHeld(World& world, F&& release)
             release(view.Entity(i), slots[i]);
     });
 }
-} // namespace
 
-void DeclareMovementVerbs(VerbRegistrationScope& scope)
-{
-    VerbDefinition burst = Lease(kMovementBurstLease, "Burst of motion",
-                                 "Drives the character at a velocity while held, or for a time.");
-    DataFieldSchema direction =
-        MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, as aim.direction gives it.");
-    direction.VectorLength = 3;
-    direction.Editor.Widget = "direction";
-    burst.Arguments.Children.push_back(std::move(direction));
-    burst.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second of the character's time.", 10.0, 0.0));
-    burst.Arguments.Children.push_back(DataField::OptionalNumber("seconds", "Seconds", "How long; zero holds it until let go.", 0.0, 0.0));
-    DataFieldSchema rises = MakeDataField(DataFieldKind::Bool, "rises", "Rises", "Its upward part lifts the character too.");
-    rises.Required = false;
-    rises.Default = false;
-    burst.Arguments.Children.push_back(std::move(rises));
-    burst.Completes = true;
-    (void)scope.Declare(std::move(burst));
-
-    VerbDefinition tether = Lease(kMovementTetherLease, "Tether",
-                                  "Pulls the character toward an anchor once it is farther away than the rope.");
-    DataFieldSchema anchor = MakeDataField(DataFieldKind::Entity, "anchor", "Anchor", "An entity to follow; it ends the tether when it goes.");
-    anchor.Required = false;
-    tether.Arguments.Children.push_back(std::move(anchor));
-    DataFieldSchema point = MakeDataField(DataFieldKind::Vector, "point", "Point", "Where the anchor is, when no entity is.");
-    point.VectorLength = 3;
-    point.Required = false;
-    tether.Arguments.Children.push_back(std::move(point));
-    tether.Arguments.Children.push_back(DataField::OptionalNumber("length", "Length", "Metres of rope.", 2.0, 0.0));
-    tether.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "How fast it pulls, in metres per second.", 12.0, 0.0));
-    DataFieldSchema until = MakeDataField(DataFieldKind::Vector, "until", "Until",
-                                          "A point along the rope: the length becomes its distance from the anchor, "
-                                          "and reaching it stops the character and completes the tether.");
-    until.VectorLength = 3;
-    until.Required = false;
-    tether.Arguments.Children.push_back(std::move(until));
-    tether.Completes = true;
-    (void)scope.Declare(std::move(tether));
-
-    VerbDefinition mode = Lease(kMovementModeLease, "Locomotion mode",
-                                "Puts the character in a locomotion mode while held.");
-    mode.Arguments.Children.push_back(
-        MakeDataField(DataFieldKind::String, "mode", "Mode", "The mode's name, as movement.mode.<name>."));
-    (void)scope.Declare(std::move(mode));
-
-    VerbDefinition launch;
-    launch.Name = std::string(kMovementLaunchVerb);
-    launch.DisplayName = "Launch";
-    launch.Description = "Sets the character moving at a velocity, whatever it was moving at; "
-                         "it keeps that momentum afterwards.";
-    launch.Category = "Movement";
-    DataFieldSchema launched = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character launched.");
-    launched.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
-    launch.Arguments.Children.push_back(std::move(launched));
-    DataFieldSchema heading = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, in world space.");
-    heading.VectorLength = 3;
-    heading.Editor.Widget = "direction";
-    launch.Arguments.Children.push_back(std::move(heading));
-    launch.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second along the direction.", 10.0, 0.0));
-    DataFieldSchema rise = DataField::OptionalNumber("rise", "Rise", "Metres per second added straight up, along the character's up axis.",
-                                  0.0, 0.0);
-    launch.Arguments.Children.push_back(std::move(rise));
-    (void)scope.Declare(std::move(launch));
-
-    VerbDefinition impulse;
-    impulse.Name = std::string(kMovementImpulseVerb);
-    impulse.DisplayName = "Impulse";
-    impulse.Description = "Adds a velocity to the character's, on top of whatever it was moving at: a shove.";
-    impulse.Category = "Movement";
-    DataFieldSchema shoved = MakeDataField(DataFieldKind::Entity, "target", "Target", "The character shoved.");
-    shoved.Reference.ComponentIdentity = std::string(ComponentDefinition<CharacterMovement>::Identity);
-    impulse.Arguments.Children.push_back(std::move(shoved));
-    DataFieldSchema way = MakeDataField(DataFieldKind::Vector, "direction", "Direction", "Which way, in world space.");
-    way.VectorLength = 3;
-    way.Editor.Widget = "direction";
-    impulse.Arguments.Children.push_back(std::move(way));
-    impulse.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "Metres per second along the direction.", 1.0, 0.0));
-    impulse.Arguments.Children.push_back(
-        DataField::OptionalNumber("rise", "Rise", "Metres per second added straight up, along the character's up axis.", 0.0, 0.0));
-    (void)scope.Declare(std::move(impulse));
-}
-
-namespace
-{
 bool HeldBy(const MotionBursts& bursts, const LeaseOwner& owner)
 {
     return std::ranges::any_of(bursts.Slots, [&](const MotionBurst& burst) { return burst.Owner == owner; });
@@ -145,7 +41,7 @@ bool HeldBy(const TetherSession& tether, const LeaseOwner& owner)
 } // namespace
 
 template <typename T>
-bool MovementOperations::Holds(std::optional<Query<Read<T>>>& everyone, const LeaseOwner& owner)
+bool MovementOperations::Holds(std::optional<Query<Read<T>>>& everyone, const LeaseOwner& owner) const
 {
     if (!Entities->IsRegistered<T>())
         return false;
@@ -164,29 +60,9 @@ bool MovementOperations::Holds(std::optional<Query<Read<T>>>& everyone, const Le
     return held;
 }
 
-VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
+VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation, EntityId target, Vec3d direction,
+                                        float speed, float seconds, bool rises)
 {
-    if (invocation.Step == LeaseStep::Probe)
-        return Holds(Bursts, invocation.Owner) ? VerbAdmission::Accepted : VerbAdmission::Refused;
-    if (invocation.Step == LeaseStep::Release)
-    {
-        ForEachHeld<MotionBursts>(*Entities, [&](EntityId, MotionBursts& bursts) {
-            for (MotionBurst& burst : bursts.Slots)
-                if (burst.Owner == invocation.Owner)
-                    burst = {};
-        });
-        return VerbAdmission::Accepted;
-    }
-    EntityId target;
-    Vec3d way;
-    double speed = 0.0;
-    double seconds = 0.0;
-    bool rises = false;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !ReadAuthoredArgument(*invocation.Arguments, 1, way) || !invocation.Arguments->TryGetFloat(2, speed)
-        || !invocation.Arguments->TryGetFloat(3, seconds) || !invocation.Arguments->TryGetBool(4, rises)
-        || !Entities->IsAlive(target))
-        return VerbAdmission::InvalidArguments;
     MotionBursts* bursts = Entities->IsRegistered<MotionBursts>() ? Entities->TryGet<MotionBursts>(target) : nullptr;
     if (bursts == nullptr)
         return VerbAdmission::Refused;
@@ -194,80 +70,74 @@ VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
     if (free == std::end(bursts->Slots))
         return VerbAdmission::Refused;
     *free = MotionBurst{ .Owner = invocation.Owner,
-                         .Velocity = way.SqrMagnitude() > 0.0f ? way.Normalized() * static_cast<float>(speed) : Vec3d::Zero(),
-                         .RemainingSeconds = static_cast<float>(seconds),
-                         .Expires = seconds > 0.0,
+                         .Velocity = direction.SqrMagnitude() > 0.0f ? direction.Normalized() * speed : Vec3d::Zero(),
+                         .RemainingSeconds = seconds,
+                         .Expires = seconds > 0.0f,
                          .Rises = rises };
     return VerbAdmission::Accepted;
 }
 
-VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation)
+VerbAdmission MovementOperations::EndBurst(const VerbInvocation& invocation)
 {
-    if (invocation.Step == LeaseStep::Probe)
-        return Holds(Tethers, invocation.Owner) ? VerbAdmission::Accepted : VerbAdmission::Refused;
-    if (invocation.Step == LeaseStep::Release)
-    {
-        ForEachHeld<TetherSession>(*Entities, [&](EntityId, TetherSession& tether) {
-            if (tether.Owner == invocation.Owner)
-                tether = {};
-        });
-        return VerbAdmission::Accepted;
-    }
-    EntityId target;
-    double length = 0.0;
-    double speed = 0.0;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !invocation.Arguments->TryGetFloat(3, length) || !invocation.Arguments->TryGetFloat(4, speed)
-        || !Entities->IsAlive(target))
+    ForEachHeld<MotionBursts>(*Entities, [&](EntityId, MotionBursts& bursts) {
+        for (MotionBurst& burst : bursts.Slots)
+            if (burst.Owner == invocation.Owner)
+                burst = {};
+    });
+    return VerbAdmission::Accepted;
+}
+
+bool MovementOperations::BurstHolds(const LeaseOwner& owner) const
+{
+    return Holds(Bursts, owner);
+}
+
+VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation, EntityId target,
+                                         std::optional<EntityId> anchor, std::optional<Vec3d> point, float length,
+                                         float speed, std::optional<Vec3d> until)
+{
+    const bool followed = anchor.has_value();
+    if (followed ? !Entities->IsAlive(*anchor) : !point.has_value())
         return VerbAdmission::InvalidArguments;
-    EntityId anchor;
-    Vec3d fixedPoint = Vec3d::Zero();
-    const bool followed = invocation.Arguments->TryGetEntity(1, anchor);
-    if (followed ? !Entities->IsAlive(anchor) : !ReadAuthoredArgument(*invocation.Arguments, 2, fixedPoint))
-        return VerbAdmission::InvalidArguments;
-    float reach = static_cast<float>(length);
-    Vec3d until;
-    const bool arrives = ReadAuthoredArgument(*invocation.Arguments, 5, until);
-    if (arrives)
+    const Vec3d fixedPoint = point.value_or(Vec3d::Zero());
+    float reach = length;
+    if (until.has_value())
     {
         const LocalTransform* followedPose =
-            followed ? static_cast<const World&>(*Entities).TryGet<LocalTransform>(anchor) : nullptr;
+            followed ? static_cast<const World&>(*Entities).TryGet<LocalTransform>(*anchor) : nullptr;
         if (followed && followedPose == nullptr)
             return VerbAdmission::InvalidArguments;
-        reach = (until - (followed ? followedPose->Value.Position : fixedPoint)).Magnitude();
+        reach = (*until - (followed ? followedPose->Value.Position : fixedPoint)).Magnitude();
     }
     TetherSession* tether = Entities->IsRegistered<TetherSession>() ? Entities->TryGet<TetherSession>(target) : nullptr;
     if (tether == nullptr || (tether->Owner.IsSet() && tether->Owner != invocation.Owner && !tether->Yields))
         return VerbAdmission::Refused;
     *tether = TetherSession{ .Owner = invocation.Owner,
-                             .Anchor = followed ? anchor : EntityId{},
+                             .Anchor = followed ? *anchor : EntityId{},
                              .Point = fixedPoint,
                              .Length = reach,
-                             .Speed = static_cast<float>(speed),
-                             .Arrives = arrives };
+                             .Speed = speed,
+                             .Arrives = until.has_value() };
     return VerbAdmission::Accepted;
 }
 
-VerbAdmission MovementOperations::Mode(const VerbInvocation& invocation)
+VerbAdmission MovementOperations::EndTether(const VerbInvocation& invocation)
+{
+    ForEachHeld<TetherSession>(*Entities, [&](EntityId, TetherSession& tether) {
+        if (tether.Owner == invocation.Owner)
+            tether = {};
+    });
+    return VerbAdmission::Accepted;
+}
+
+bool MovementOperations::TetherHolds(const LeaseOwner& owner) const
+{
+    return Holds(Tethers, owner);
+}
+
+VerbAdmission MovementOperations::Mode(const VerbInvocation& invocation, EntityId target, std::string_view name)
 {
     const LocomotionModeRegistry* modes = Entities->TryGetResource<LocomotionModeRegistry>();
-    if (invocation.Step == LeaseStep::Release)
-    {
-        ForEachHeld<LocomotionModeLease>(*Entities, [&](EntityId character, LocomotionModeLease& lease) {
-            if (lease.Owner != invocation.Owner)
-                return;
-            const CharacterMovement* movement = static_cast<const World&>(*Entities).TryGet<CharacterMovement>(character);
-            if (modes != nullptr && movement != nullptr && movement->Mode == lease.Mode)
-                (void)RequestLocomotionMode(*Entities, character, modes->FreeMode(), ModeRequestClass::Explicit);
-            lease = {};
-        });
-        return VerbAdmission::Accepted;
-    }
-    EntityId target;
-    std::string_view name;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !invocation.Arguments->TryGetString(1, name) || !Entities->IsAlive(target))
-        return VerbAdmission::InvalidArguments;
     const LocomotionModeEntry* mode = modes != nullptr ? modes->Find(name) : nullptr;
     LocomotionModeLease* lease =
         Entities->IsRegistered<LocomotionModeLease>() ? Entities->TryGet<LocomotionModeLease>(target) : nullptr;
@@ -278,45 +148,43 @@ VerbAdmission MovementOperations::Mode(const VerbInvocation& invocation)
     return VerbAdmission::Accepted;
 }
 
-namespace
+VerbAdmission MovementOperations::EndMode(const VerbInvocation& invocation)
 {
-// The velocity a launch or an impulse names: `direction` scaled to `speed`, plus
-// `rise` along the target's up axis.
-VerbAdmission ReadVelocity(World& world, const VerbInvocation& invocation, EntityId& target, Vec3d& velocity,
-                           Vec3d& up)
-{
-    if (!IsSimulationAuthority(world))
-        return VerbAdmission::Refused;
-    Vec3d heading;
-    double speed = 0.0;
-    double rise = 0.0;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
-        || !ReadAuthoredArgument(*invocation.Arguments, 1, heading)
-        || !invocation.Arguments->TryGetFloat(2, speed) || !invocation.Arguments->TryGetFloat(3, rise)
-        || !std::isfinite(speed) || !std::isfinite(rise))
-        return VerbAdmission::InvalidArguments;
-    const float length = heading.Magnitude();
-    if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0))
-        return VerbAdmission::InvalidArguments;
-    if (!world.IsAlive(target) || std::as_const(world).TryGet<CharacterMovement>(target) == nullptr)
-        return VerbAdmission::Refused;
-
-    const LocomotionOutput* locomotion =
-        world.IsRegistered<LocomotionOutput>() ? std::as_const(world).TryGet<LocomotionOutput>(target) : nullptr;
-    up = locomotion != nullptr ? locomotion->UpAxis.Normalized() : Vec3d(0.0f, 1.0f, 0.0f);
-    velocity = (length > 1.0e-6f ? heading * (static_cast<float>(speed) / length) : Vec3d::Zero())
-        + up * static_cast<float>(rise);
+    const LocomotionModeRegistry* modes = Entities->TryGetResource<LocomotionModeRegistry>();
+    ForEachHeld<LocomotionModeLease>(*Entities, [&](EntityId character, LocomotionModeLease& lease) {
+        if (lease.Owner != invocation.Owner)
+            return;
+        const CharacterMovement* movement = static_cast<const World&>(*Entities).TryGet<CharacterMovement>(character);
+        if (modes != nullptr && movement != nullptr && movement->Mode == lease.Mode)
+            (void)RequestLocomotionMode(*Entities, character, modes->FreeMode(), ModeRequestClass::Explicit);
+        lease = {};
+    });
     return VerbAdmission::Accepted;
 }
-} // namespace
 
-VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
+VerbAdmission MovementOperations::Velocity(EntityId target, Vec3d direction, float speed, float rise, Vec3d& velocity,
+                                           Vec3d& up) const
 {
-    EntityId target;
+    if (!IsSimulationAuthority(*Entities))
+        return VerbAdmission::Refused;
+    const float length = direction.Magnitude();
+    if (!std::isfinite(length) || (length <= 1.0e-6f && speed != 0.0f))
+        return VerbAdmission::InvalidArguments;
+    const World& reader = *Entities;
+    if (reader.TryGet<CharacterMovement>(target) == nullptr)
+        return VerbAdmission::Refused;
+    const LocomotionOutput* locomotion =
+        reader.IsRegistered<LocomotionOutput>() ? reader.TryGet<LocomotionOutput>(target) : nullptr;
+    up = locomotion != nullptr ? locomotion->UpAxis.Normalized() : Vec3d(0.0f, 1.0f, 0.0f);
+    velocity = (length > 1.0e-6f ? direction * (speed / length) : Vec3d::Zero()) + up * rise;
+    return VerbAdmission::Accepted;
+}
+
+VerbAdmission MovementOperations::Launch(EntityId target, Vec3d direction, float speed, float rise)
+{
     Vec3d velocity;
     Vec3d up;
-    if (const VerbAdmission read = ReadVelocity(*Entities, invocation, target, velocity, up);
-        read != VerbAdmission::Accepted)
+    if (const VerbAdmission read = Velocity(target, direction, speed, rise, velocity, up); read != VerbAdmission::Accepted)
         return read;
     const float upward = velocity.Dot(up);
     const bool planar = ForceSetPlanarMotionOverride(*Entities, target, velocity - up * upward);
@@ -324,13 +192,11 @@ VerbAdmission MovementOperations::Launch(const VerbInvocation& invocation)
     return planar && vertical ? VerbAdmission::Accepted : VerbAdmission::Refused;
 }
 
-VerbAdmission MovementOperations::Impulse(const VerbInvocation& invocation)
+VerbAdmission MovementOperations::Impulse(EntityId target, Vec3d direction, float speed, float rise)
 {
-    EntityId target;
     Vec3d velocity;
     Vec3d up;
-    if (const VerbAdmission read = ReadVelocity(*Entities, invocation, target, velocity, up);
-        read != VerbAdmission::Accepted)
+    if (const VerbAdmission read = Velocity(target, direction, speed, rise, velocity, up); read != VerbAdmission::Accepted)
         return read;
     return AddMotionImpulse(*Entities, target, velocity) ? VerbAdmission::Accepted : VerbAdmission::Refused;
 }

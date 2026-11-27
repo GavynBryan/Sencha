@@ -1520,7 +1520,8 @@ void EmitArgumentSchema(std::ostream& out, const ParamFacts& param, const std::s
     }
     if (!param.Default.empty())
     {
-        out << "            field.Default = AuthoredSchemaDefault<" << param.Type
+        out << "            field.Required = false;\n"
+            << "            field.Default = AuthoredSchemaDefault<" << param.Type
             << ">::ToDefault(" << param.Default << ");\n";
     }
     out << "            " << root << ".Children.push_back(std::move(field));\n"

@@ -1,7 +1,9 @@
 // A claim admits only as many holders as it has places, a place goes with its
 // holder, and content holds one through the claims.hold lease.
 
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredQueryDispatcher.h>
+#include "GeneratedVerbCall.h"
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -100,7 +102,8 @@ TEST(Claims, ContentHoldsAPlaceThroughTheLeaseAndLetsGo)
     InstallAuthoredVocabulary(world.Entities);
     ASSERT_TRUE(InstallClaimVocabulary(world.Entities));
     AuthoredQueryDispatcher queries(*FindAuthoredQueryRegistry(world.Entities));
-    const std::vector<AuthoredQueryBindingToken> answers = BindClaimQueries(queries, world.Entities);
+    ClaimOperations claims(world.Entities);
+    const AuthoredApiBindings answers = BindAuthoredApi(nullptr, &queries, claims);
     const EntityId a = world.Member();
     const EntityId b = world.Member();
 
@@ -114,14 +117,14 @@ TEST(Claims, ContentHoldsAPlaceThroughTheLeaseAndLetsGo)
         call.Arguments = step == LeaseStep::Release ? nullptr : &arguments;
         call.Owner = { owner, 7 };
         call.Step = step;
-        return HoldClaim(world.Entities, call);
+        return CallGeneratedVerb(claims, AuthoredApiDefinition<ClaimOperations>::Name_Hold, call).Status;
     };
     EXPECT_EQ(invoke(a, LeaseStep::Acquire), VerbAdmission::Accepted);
     EXPECT_EQ(invoke(b, LeaseStep::Acquire), VerbAdmission::Refused) << "one place, taken";
 
     AuthoredValue answer;
     const std::vector<AuthoredValue> asked{ AuthoredValue::Tag(world.Squad), AuthoredValue::Tag(world.Flank) };
-    ASSERT_EQ(queries.Evaluate(queries.Registry().Resolve(kClaimsCountQuery), asked, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(queries.Evaluate(queries.Registry().Resolve(AuthoredApiDefinition<ClaimOperations>::Name_Count), asked, answer), AuthoredQueryStatus::Value);
     std::int64_t held = 0;
     ASSERT_TRUE(answer.TryGetInt(held));
     EXPECT_EQ(held, 1);
@@ -130,7 +133,7 @@ TEST(Claims, ContentHoldsAPlaceThroughTheLeaseAndLetsGo)
     EXPECT_EQ(invoke(b, LeaseStep::Acquire), VerbAdmission::Accepted);
     const std::vector<AuthoredValue> holder{ AuthoredValue::Entity(b), AuthoredValue::Tag(world.Squad),
                                              AuthoredValue::Tag(world.Flank) };
-    ASSERT_EQ(queries.Evaluate(queries.Registry().Resolve(kClaimsHeldQuery), holder, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(queries.Evaluate(queries.Registry().Resolve(AuthoredApiDefinition<ClaimOperations>::Name_Held), holder, answer), AuthoredQueryStatus::Value);
     bool holds = false;
     ASSERT_TRUE(answer.TryGetBool(holds));
     EXPECT_TRUE(holds);

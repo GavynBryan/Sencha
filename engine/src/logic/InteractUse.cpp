@@ -1,17 +1,11 @@
 #include <logic/InteractUse.h>
 
-#include <core/metadata/DataSchemaFields.h>
-#include <authored/AuthoredValueTraits.h>
+#include <authored/AuthoredApi.h>
 #include <ecs/World.h>
 #include <world/SimulationAuthority.h>
 
 #include <array>
 #include <string>
-#include <utility>
-
-namespace
-{
-} // namespace
 
 UseCandidate FindUseCandidate(ResponsesSystem& responses, const PhysicsQueries& physics, EntityId activator,
                               const Aim& ray, float range)
@@ -36,24 +30,7 @@ UseCandidate FindUseCandidate(ResponsesSystem& responses, const PhysicsQueries& 
 
 void DeclareInteractUseVocabulary(VerbRegistrationScope& verbs, AuthoredEventRegistrationScope& events)
 {
-    VerbDefinition use;
-    use.Name = std::string(kInteractUseVerb);
-    use.DisplayName = "Use";
-    use.Description = "Uses the one thing the activator points at: the first body its aim strikes within range, "
-                      "when that entity answers interact.use. Trigger volumes are passed through. Authority only.";
-    use.Category = "Interaction";
-    use.Arguments.Children.push_back(
-        MakeDataField(DataFieldKind::Entity, "activator", "Activator", "Who is using it, and whose aim is cast."));
-    DataFieldSchema range =
-        MakeDataField(DataFieldKind::Float, "range", "Range", "How far, in metres, the ray reaches.");
-    range.Numeric.Minimum = 0.0;
-    use.Arguments.Children.push_back(std::move(range));
-    use.Arguments.Children.push_back(DataField::Vector("origin", "Origin", "Where the ray starts. The activator's aim when absent.", 3, false));
-    DataFieldSchema direction =
-        DataField::Vector("direction", "Direction", "Which way the ray goes. The activator's aim when absent.", 3, false);
-    direction.Editor.Widget = "direction";
-    use.Arguments.Children.push_back(std::move(direction));
-    (void)verbs.Declare(std::move(use));
+    DeclareAuthoredApi<InteractUseOperations>(&verbs, nullptr);
 
     AuthoredEventDefinition used;
     used.Name = std::string(kInteractUseEvent);
@@ -74,28 +51,22 @@ InteractUseOperations::InteractUseOperations(const World& world, const PhysicsWo
 {
 }
 
-VerbAdmission InteractUseOperations::Use(const VerbInvocation& invocation)
+VerbAdmission InteractUseOperations::Use(EntityId activator, float range, std::optional<Vec3d> origin,
+                                         std::optional<Vec3d> direction)
 {
     if (!IsSimulationAuthority(*Entities))
         return VerbAdmission::Refused;
-    const AuthoredArguments* arguments = invocation.Arguments;
-    EntityId activator;
-    double range = 0.0;
-    if (arguments == nullptr || !arguments->TryGetEntity(0, activator) || !arguments->TryGetFloat(1, range)
-        || !(range >= 0.0))
-        return VerbAdmission::InvalidArguments;
-    if (!Entities->IsAlive(activator))
-        return VerbAdmission::Refused;
-
     Aim ray = AimOf(*Entities, activator);
-    (void)ReadAuthoredArgument(*arguments, 2, ray.Origin);
-    (void)ReadAuthoredArgument(*arguments, 3, ray.Direction);
+    if (origin.has_value())
+        ray.Origin = *origin;
+    if (direction.has_value())
+        ray.Direction = *direction;
     const float length = ray.Direction.Magnitude();
     if (!(length > 1.0e-6f))
         return VerbAdmission::InvalidArguments;
     ray.Direction = ray.Direction / length;
 
-    const UseCandidate candidate = FindUseCandidate(*Responses, Physics, activator, ray, static_cast<float>(range));
+    const UseCandidate candidate = FindUseCandidate(*Responses, Physics, activator, ray, range);
     if (!candidate.Target.IsValid() || candidate.Availability.Readiness != ResponseReadiness::Available)
         return VerbAdmission::Refused;
     const std::uint64_t refusedBefore = Responses->Stats().Refused;

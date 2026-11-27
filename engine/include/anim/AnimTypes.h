@@ -1,6 +1,9 @@
 #pragma once
 
+#include <core/metadata/EnumSchema.h>
+
 #include <cstddef>
+#include <array>
 #include <cstdint>
 #include <string_view>
 
@@ -60,6 +63,16 @@ enum class AnimRequestLifetime : std::uint8_t
     Fixed,
     // Observed for exactly the tick it starts on.
     Impulse,
+};
+
+template <>
+struct EnumSchema<AnimRequestLifetime>
+{
+    static constexpr std::array Values = {
+        EnumValue{ AnimRequestLifetime::Held, "held", "Held" },
+        EnumValue{ AnimRequestLifetime::Fixed, "fixed", "Fixed" },
+        EnumValue{ AnimRequestLifetime::Impulse, "impulse", "Impulse" },
+    };
 };
 
 enum class AnimCancelReason : std::uint8_t

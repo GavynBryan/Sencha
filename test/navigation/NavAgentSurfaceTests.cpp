@@ -10,6 +10,7 @@
 #include <authored/WorldVocabulary.h>
 #include <debug/DebugLines.h>
 #include <ecs/EntityText.h>
+#include <authored/AuthoredApi.h>
 #include <navigation/NavigationVerbs.h>
 
 #include <gtest/gtest.h>
@@ -27,8 +28,7 @@ namespace
         std::unique_ptr<VerbDispatcher> Verbs;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         NavigationOperations Operations;
-        std::vector<VerbBindingToken> VerbTokens;
-        std::vector<AuthoredQueryBindingToken> QueryTokens;
+        AuthoredApiBindings Bound;
 
         explicit AuthoredNavigation(NavAgentHarness& harness)
             : Harness(harness)
@@ -39,10 +39,7 @@ namespace
             EXPECT_TRUE(InstallEngineVocabulary(world));
             Verbs = std::make_unique<VerbDispatcher>(*FindVerbRegistry(world));
             Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(world));
-            const VerbRegistry& catalog = Verbs->Registry();
-            VerbTokens.push_back(Verbs->Bind<&InvokeNavigationMoveTo>(catalog.Find(kNavigationMoveToVerb), Operations));
-            VerbTokens.push_back(Verbs->Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), Operations));
-            QueryTokens = BindNavigationQueries(*Queries, world);
+            Bound = BindAuthoredApi(Verbs.get(), Queries.get(), Operations);
         }
 
         VerbAdmission Invoke(std::string_view verb, std::vector<std::string> inputs, std::vector<AuthoredValue> values)
@@ -108,25 +105,25 @@ TEST(NavAgentSurface, AuthoredContentOrdersAnAgentAndReadsWhatBecameOfIt)
     AuthoredNavigation authored(harness);
     const EntityId agent = harness.SpawnAgent(Vec3d(2.0f, 0.0f, 5.0f));
 
-    EXPECT_EQ(authored.AskEnum(kNavigationPhaseQuery, agent), "idle");
-    EXPECT_EQ(authored.Invoke(kNavigationMoveToVerb, { "target", "point" },
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Phase, agent), "idle");
+    EXPECT_EQ(authored.Invoke(AuthoredApiDefinition<NavigationOperations>::Name_MoveTo, { "target", "point" },
                               { AuthoredValue::Entity(agent), PointArgument(12.0f, 0.0f, 5.0f) }),
               VerbAdmission::Accepted);
     harness.Step();
-    EXPECT_EQ(authored.AskEnum(kNavigationPhaseQuery, agent), "moving");
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Phase, agent), "moving");
     ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
-    EXPECT_EQ(authored.AskEnum(kNavigationPhaseQuery, agent), "arrived");
-    EXPECT_EQ(authored.AskEnum(kNavigationFailureQuery, agent), "none");
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Phase, agent), "arrived");
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Failure, agent), "none");
 
-    EXPECT_EQ(authored.Invoke(kNavigationStopVerb, { "target" }, { AuthoredValue::Entity(agent) }),
+    EXPECT_EQ(authored.Invoke(AuthoredApiDefinition<NavigationOperations>::Name_Stop, { "target" }, { AuthoredValue::Entity(agent) }),
               VerbAdmission::Accepted);
     harness.Step();
-    EXPECT_EQ(authored.AskEnum(kNavigationPhaseQuery, agent), "cancelled");
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Phase, agent), "cancelled");
 
     const EntityId bystander = harness.SpawnMarker(Vec3d(5.0f, 0.0f, 5.0f));
-    EXPECT_EQ(authored.Invoke(kNavigationStopVerb, { "target" }, { AuthoredValue::Entity(bystander) }),
+    EXPECT_EQ(authored.Invoke(AuthoredApiDefinition<NavigationOperations>::Name_Stop, { "target" }, { AuthoredValue::Entity(bystander) }),
               VerbAdmission::Refused);
-    EXPECT_EQ(authored.AskEnum(kNavigationPhaseQuery, bystander), "unavailable");
+    EXPECT_EQ(authored.AskEnum(AuthoredApiDefinition<NavigationOperations>::Name_Phase, bystander), "unavailable");
 }
 
 TEST(NavAgentSurface, TheConsoleOrdersAndListsAgents)

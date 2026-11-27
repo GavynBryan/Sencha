@@ -4,6 +4,7 @@
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/EnumSchema.h>
 #include <core/metadata/NamedIdField.h>
+#include <gameplay_tags/GameplayTagQueryNames.h>
 #include <math/Vec.h>
 #include <world/serialization/NamedIdVocabulary.h>
 
@@ -249,6 +250,41 @@ struct AuthoredValueTraits<AuthoredDataRef>
 {
     static void Describe(DataFieldSchema& field) { field.Kind = DataFieldKind::DataAssetRef; }
     static bool Decode(const AuthoredValue& value, AuthoredDataRef& out) { return value.TryGetDataAsset(out.Reference); }
+};
+
+// A tag query as content spells it: optional all, any and none lists of tag names,
+// resolved where it is run.
+template<>
+struct AuthoredValueTraits<GameplayTagQueryNames>
+{
+    static void Describe(DataFieldSchema& field)
+    {
+        const auto names = [](std::string key, std::string label) {
+            DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(key), std::move(label));
+            list.Required = false;
+            list.Children.push_back(MakeDataField(DataFieldKind::String, "tag", "Tag"));
+            return list;
+        };
+        field.Kind = DataFieldKind::Record;
+        field.Children = { names("all", "All of"), names("any", "Any of"), names("none", "None of") };
+    }
+
+    static bool Decode(const AuthoredValue& value, GameplayTagQueryNames& out)
+    {
+        if (value.Kind() != AuthoredValueKind::Record)
+            return false;
+        const std::span<const AuthoredValue> lists = value.Children();
+        const auto namesAt = [&](std::size_t slot) {
+            std::vector<std::string> names;
+            if (slot < lists.size())
+                for (const AuthoredValue& element : lists[slot].Children())
+                    if (std::string_view name; element.TryGetString(name))
+                        names.emplace_back(name);
+            return names;
+        };
+        out = GameplayTagQueryNames{ .All = namesAt(0), .Any = namesAt(1), .None = namesAt(2) };
+        return true;
+    }
 };
 
 // A definition named by its data asset, found in the World's vocabulary of that kind of

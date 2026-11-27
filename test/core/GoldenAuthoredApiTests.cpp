@@ -292,9 +292,8 @@ TEST_F(GoldenAuthoredApiTest, DeclaresTheContractTheSignatureStates)
     EXPECT_EQ(arguments[1].Kind, DataFieldKind::Enum);
     ASSERT_EQ(arguments[1].EnumChoices.size(), 3u);
     EXPECT_EQ(arguments[1].EnumChoices[2].Value, "bright");
-    // A default leaves the argument required.
     EXPECT_EQ(arguments[1].Default, DataDefaultValue(std::string("bright")));
-    EXPECT_TRUE(arguments[1].Required);
+    EXPECT_FALSE(arguments[1].Required);
 
     EXPECT_EQ(arguments[2].Kind, DataFieldKind::Float);
     EXPECT_EQ(arguments[2].Numeric.Minimum, 0.5);

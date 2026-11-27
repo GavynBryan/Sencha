@@ -1862,3 +1862,22 @@ widget. `LevelKind`, `LevelMemory` and `LevelChangeBodies` gain an `EnumSchema`.
 `level.change` lists `kind` after `bodies`; `inventory.give` and
 `inventory.transfer` declare their count's range. Save format, scene format and
 net protocol are unchanged.
+
+## v89
+
+The ability, effect, animation, movement, navigation, actor time, claim,
+response, interaction, projectile, contact line and perception verbs and
+queries are declared by annotations and read through generated companions.
+`AbilityOperations`, `EffectOperations`, `AnimRequestOperations`,
+`MovementOperations`, `NavigationOperations`, `ActorTimeOperations`,
+`ResponseOperations`, `InteractUseOperations` and `ContactLineSystem` take
+typed arguments; `ClaimOperations`, `PerceptionOperations` and
+`ProjectileOperations` are new providers over the claim board, the perception
+frame and the projectile system. Their `Invoke*`, `Bind*Queries`, `HoldClaim`
+and name constants go. An ability is an `AbilityId` decoded against the World,
+refused when undeclared. `AnimRequestLifetime` gains an `EnumSchema`, and
+`AnimPresentLifetime` names the two lifetimes `anim.present` takes. A tag query
+(`GameplayTagQueryNames`) is an authored argument. A defaulted generated
+argument is not required. `anim.request` and `anim.present` declare their ticks'
+range, `claims.hold` its count's and share's, and `perception.stimulus` its
+radius's. Save format, scene format and net protocol are unchanged.
