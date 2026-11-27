@@ -424,3 +424,48 @@ TEST(PropertySheet, APlottedValueIsBarsScaledToItsLargestAndNothingToEdit)
     EXPECT_NE(std::ranges::find(rows.front().Parts, PercentLength(1.0)), rows.front().Parts.end())
         << "the largest sample fills its bar";
 }
+
+namespace
+{
+class Reference final : public IPropertySource
+{
+public:
+    std::vector<PropertyNode> Nodes() const override
+    {
+        PropertyNode holder = EntityReferenceProperty("holder", "Holder", "00000000000c4e57", "The world");
+        holder.Reading = "Chest \xC2\xB7 Cellar";
+        return { holder, EntityReferenceProperty("target", "Target", "", "None") };
+    }
+    std::vector<EntityReferenceChoice> ReferenceChoices(std::string_view key) const override
+    {
+        if (key != "holder")
+            return {};
+        return { { .Value = "00000000000c4e57", .Label = "Chest", .Place = "Cellar" } };
+    }
+    bool BeginEdit(std::string_view) override { return true; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    void CancelEdit(std::string_view) override {}
+};
+} // namespace
+
+TEST(PropertySheet, AnEntityReferenceReadsAsItsTargetAndAsksItsSourceForChoices)
+{
+    Reference reference;
+    PropertySheet sheet;
+    const std::vector<PropertySection> sections{ { .Source = &reference } };
+    const std::vector<UiRow> rows = sheet.Present(sections);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].Control, RowControls::Entity);
+    EXPECT_EQ(rows[0].Value, "00000000000c4e57") << "the identity is what a pick compares";
+    EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "Chest \xC2\xB7 Cellar" }));
+    EXPECT_EQ(rows[1].Parts, (std::vector<std::string>{ "None" })) << "nothing held reads as the field's none";
+    ASSERT_EQ(rows[0].Verbs.size(), 1u);
+    EXPECT_EQ(rows[0].Verbs.front().Key, EntityReferenceVerbs::Clear);
+    EXPECT_TRUE(rows[1].Verbs.empty());
+
+    const std::vector<EntityReferenceChoice> choices = sheet.ReferenceChoicesOf(sections, 0);
+    ASSERT_EQ(choices.size(), 1u);
+    EXPECT_EQ(choices.front().Label, "Chest");
+    EXPECT_TRUE(sheet.ReferenceChoicesOf(sections, 1).empty());
+}

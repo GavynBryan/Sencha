@@ -1,6 +1,7 @@
 #pragma once
 
 #include "authoring/EntityMarkers.h"
+#include "authoring/EntityReferences.h"
 #include "overlay/EditorOverlayState.h"
 #include "properties/PropertySource.h"
 #include <graphics/vulkan/ColoredVertexPipelines.h>
@@ -150,6 +151,14 @@ public:
                                             std::string_view /*verb*/, std::string_view /*choice*/) const
     {
         return PropertyEditResult::Gone;
+    }
+    // What the entity-reference property `key` may name, asked when its picker
+    // opens; none for a key that is not one. Picking and clearing arrive as
+    // SetInspectorValue, the target's identity as text or empty.
+    [[nodiscard]] virtual std::optional<EntityReferenceFilter> ReferenceFilter(const EditorComponentInspectorContext&,
+                                                                               std::string_view /*key*/) const
+    {
+        return std::nullopt;
     }
     // What the component starts as when added to this entity, written over its
     // defaults in `added` (the component's bytes): a collider sized to the

@@ -1,6 +1,7 @@
 #include "authoring/ComponentPropertySource.h"
 
 #include "authoring/EditorComponentAdapter.h"
+#include "authoring/EntityReferences.h"
 #include "authoring/RuntimeFieldText.h"
 #include "commands/CommandStack.h"
 #include "commands/CompositeCommand.h"
@@ -514,6 +515,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         derived.Descriptor.Label = std::format("Derived \xC2\xB7 {}", derivedCount);
         nodes.push_back(std::move(derived));
     }
+    ShowEntityReferences(nodes, WorldDoc);
     return nodes;
 }
 
@@ -755,15 +757,13 @@ PropertyEditResult ComponentPropertySource::PreviewEditBy(std::string_view key, 
 
 PropertyEditResult ComponentPropertySource::CommitEdit(std::string_view key, std::string_view value)
 {
-    if (const std::size_t separator = key.find(kAdapterSeparator); separator != std::string_view::npos)
+    if (key.find(kAdapterSeparator) != std::string_view::npos)
     {
-        const EntityId holder = SoleHolder(key);
-        const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
-        const IEditorComponentAdapter* adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr;
-        if (!holder.IsValid() || adapter == nullptr)
+        const AdapterProperty property = AdapterPropertyOf(key);
+        if (!property.Holder.IsValid() || property.Adapter == nullptr)
             return PropertyEditResult::Gone;
-        EditorComponentInspectorContext context = InspectorContext(holder);
-        return adapter->SetInspectorValue(context, key.substr(separator + 1), value);
+        EditorComponentInspectorContext context = InspectorContext(property.Holder);
+        return property.Adapter->SetInspectorValue(context, property.Key, value);
     }
     if (const std::optional<Field> field = Resolve(key); field.has_value() && field->Leaf->Asset != AssetType::Unknown)
     {
@@ -826,19 +826,62 @@ PropertyEditResult ComponentPropertySource::Act(std::string_view key, std::strin
     // would restore over it.
     if (Phase != EditPhase::Idle)
         CancelEdit(EditingKey);
-    if (const std::size_t separator = key.find(kAdapterSeparator); separator != std::string_view::npos)
+    if (key.find(kAdapterSeparator) != std::string_view::npos)
     {
-        const EntityId holder = SoleHolder(key);
-        const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
-        const IEditorComponentAdapter* adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr;
-        if (adapter == nullptr)
+        const AdapterProperty property = AdapterPropertyOf(key);
+        if (property.Adapter == nullptr)
             return PropertyEditResult::Gone;
-        if (!holder.IsValid())
+        if (!property.Holder.IsValid())
             return PropertyEditResult::Refused;
-        EditorComponentInspectorContext context = InspectorContext(holder);
-        return adapter->ActInspector(context, key.substr(separator + 1), verb, choice);
+        EditorComponentInspectorContext context = InspectorContext(property.Holder);
+        if (verb == EntityReferenceVerbs::Clear || verb == EntityReferenceVerbs::Select)
+            if (const std::optional<std::string> reference = ReferenceValue(property, context))
+                return ActOnReference(key, *reference, verb);
+        return property.Adapter->ActInspector(context, property.Key, verb, choice);
     }
     return ActOnComponents(entities, key, verb, choice);
+}
+
+ComponentPropertySource::AdapterProperty ComponentPropertySource::AdapterPropertyOf(std::string_view key) const
+{
+    const std::size_t separator = key.find(kAdapterSeparator);
+    if (separator == std::string_view::npos)
+        return {};
+    const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
+    return AdapterProperty{ .Adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr,
+                            .Holder = SoleHolder(key),
+                            .Key = key.substr(separator + 1) };
+}
+
+std::optional<std::string> ComponentPropertySource::ReferenceValue(const AdapterProperty& property,
+                                                                   const EditorComponentInspectorContext& context)
+{
+    const std::vector<PropertyNode> nodes = property.Adapter->InspectorNodes(context);
+    const PropertyNode* node = FindProperty(nodes, property.Key);
+    if (node == nullptr || node->Descriptor.Kind != PropertyKind::EntityReference)
+        return std::nullopt;
+    return node->Value;
+}
+
+PropertyEditResult ComponentPropertySource::ActOnReference(std::string_view key, std::string_view value,
+                                                           std::string_view verb)
+{
+    if (verb == EntityReferenceVerbs::Clear)
+        return CommitEdit(key, {});
+    return SelectEntityReference(WorldDoc, Selection, Commands, value) ? PropertyEditResult::Applied
+                                                                     : PropertyEditResult::Refused;
+}
+
+std::vector<EntityReferenceChoice> ComponentPropertySource::ReferenceChoices(std::string_view key) const
+{
+    const AdapterProperty property = AdapterPropertyOf(key);
+    if (property.Adapter == nullptr || !property.Holder.IsValid())
+        return {};
+    const EditorComponentInspectorContext context = InspectorContext(property.Holder);
+    if (!ReferenceValue(property, context).has_value())
+        return {};
+    const std::optional<EntityReferenceFilter> filter = property.Adapter->ReferenceFilter(context, property.Key);
+    return filter.has_value() ? EntityReferenceCandidates(WorldDoc, *filter) : std::vector<EntityReferenceChoice>{};
 }
 
 PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<EntityId>& entities,

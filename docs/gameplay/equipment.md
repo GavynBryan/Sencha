@@ -432,11 +432,13 @@ one. A slot that holds nothing, or holds a sourceless record, cannot pay.
 ## Authoring
 
 In Kyusu an `EquipmentState` shows its layout and one row per slot
-(`EquipmentStateEditorAdapter`). A slot's row offers `Empty` and the identified
+(`EquipmentStateEditorAdapter`). A slot's row is an entity reference
+(`editor/ARCHITECTURE.md`, `authoring/`) whose picker offers the identified
 entries the wearer holds, by the document's `Held` components, whose item's
-first `occupies` name covers that slot and which the slot accepts. Choosing one
-writes the record an equip would leave (`ResolveEquipmentSlots`), replacing
-what held its slots; it is one undoable edit. The layout changes only while
+first `occupies` name covers that slot and which the slot accepts; clearing it
+empties the slot. Picking one writes the record an equip would leave
+(`ResolveEquipmentSlots`), replacing what held its slots; it is one undoable
+edit. A worn entry the wearer no longer holds reads as such. The layout changes only while
 nothing is worn, since records name slots of the layout they were made in. The
 editor derives nothing: an authored record is `Pending` until a running World's
 pass derives it.

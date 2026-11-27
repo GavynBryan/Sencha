@@ -73,6 +73,9 @@ public:
     // What an asset row may be set to.
     [[nodiscard]] std::vector<std::string> CandidatesOf(std::span<const PropertySection> sections,
                                                         std::size_t index) const;
+    // What an entity-reference row may be set to.
+    [[nodiscard]] std::vector<EntityReferenceChoice> ReferenceChoicesOf(std::span<const PropertySection> sections,
+                                                                        std::size_t index) const;
     // A toggle row turned the other way.
     PropertyEditResult Flip(IPropertySource& source, std::size_t index);
     PropertyEditResult Flip(std::span<const PropertySection> sections, std::size_t index);

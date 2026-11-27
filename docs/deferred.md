@@ -745,17 +745,48 @@ described in `docs/navigation/runtime.md`, "Agents".
   belongs on the sensor occurrence, as a vector field of the `sensor.*`
   events' payload, which a response then reads as a port.
 
-## Response inspector: query sources and picking entities
+## Response inspector: query sources and picking entities in the view
 
 - **What:** a sequence argument may be a query's answer (or one member of it),
   and an entity named by identity; both run and are tested. The inspector
-  offers constants, ports and a typed identity, but no query source and no
-  picking an entity in the view.
+  offers constants, ports, results and an entity picked by name from every
+  loaded zone (the entity-reference property), but no query source, and an
+  entity cannot be picked by clicking it in a view.
 - **Where:** `editor/common/src/vocabulary/VerbSequenceRows.cpp` (the argument
-  sources) and `editor/level_editor/src/authoring/ResponsesEditorAdapter.cpp`.
-- **Trigger:** a designer authoring a query-driven argument or pointing a
-  command at another placed entity -- a switch that opens a remote door is the
-  first -- or the owner's walkthrough of response authoring.
+  sources), `editor/level_editor/src/authoring/ResponsesEditorAdapter.cpp`, and
+  for picking in a view, `editor/level_editor/src/authoring/EntityReferences.h`
+  (the filter a view pick would be checked against).
+- **Trigger:** a designer authoring a query-driven argument, or asking to aim a
+  command at an entity by clicking it, or the owner's walkthrough of response
+  authoring.
+
+## Component fields holding an entity reference
+
+- **What:** an entity reference is edited only where an adapter lays out its
+  row (`Held`, an equipment slot, a response command's argument). A
+  `PersistableRef` or `EntityId` field the generic inspector walks still shows
+  as unsupported: a flattened `RuntimeField` does not say that its leaf is a
+  reference, and nothing writes one through the byte path.
+- **Where:** `KindOf` in
+  `editor/level_editor/src/authoring/ComponentPropertySource.cpp`;
+  `RuntimeField` in `engine/include/core/metadata/RuntimeSchema.h`.
+- **Trigger:** the first component whose reference field a designer must edit
+  and that has no adapter of its own. The link endpoints of the spatial portals
+  plan are adapter rows (a filter of unclaimed apertures, zones written with
+  them), so they do not trigger it.
+
+## Which closed zone holds a reference's target
+
+- **What:** a reference whose target is in no loaded document names the zone it
+  is in only when its holder records one (`ReadEntityReference`'s `expected`);
+  otherwise it reads "Not in a loaded zone" with the identity. The editor keeps
+  no index of the identities in zones it has not loaded.
+- **Where:** `ReadEntityReference` in
+  `editor/level_editor/src/authoring/EntityReferences.cpp`.
+- **Trigger:** a designer needing to find a reference's target in a closed zone
+  when its holder records no zone -- a response command aimed at an entity in
+  another zone is the first likely one. A world link passes its recorded zones
+  as `expected` and does not need it.
 
 ## Turning a trigger's direction in the view
 

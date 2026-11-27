@@ -20,6 +20,7 @@ enum class PropertyKind : std::uint8_t
     Color,
     Asset,
     Plot,         // a value sampled at even steps, read-only: the samples, "a, b, c"
+    EntityReference, // another entity, by its persistent identity as text; empty for none
     Unsupported,  // shown for completeness, never edited
 };
 
@@ -78,6 +79,9 @@ struct PropertyNode
     PropertyDescriptor Descriptor;
     std::string Value = {};
     std::vector<PropertyNode> Children = {};
+    // How the value reads where the value itself means nothing to a person: an
+    // entity reference's target by name and place. Empty reads as the value.
+    std::string Reading = {};
     // Stands for several values that differ -- the same field of several
     // selected objects -- so Value is empty: setting it sets them all alike,
     // and moving it by an amount moves each from where it is.

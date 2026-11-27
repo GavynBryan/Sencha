@@ -1,9 +1,12 @@
 #include "vocabulary/VerbSequenceRows.h"
 
 #include "data/JsonObjectEdit.h"
+#include "properties/EntityReferenceProperty.h"
 #include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 #include "vocabulary/AuthoredConstantText.h"
+
+#include <core/identity/Id.h>
 
 #include <algorithm>
 #include <array>
@@ -307,8 +310,9 @@ void ArgumentRows(const std::string& prefix, const DataFieldSchema& contract, co
             break;
         }
         case ArgumentSource::Entity:
-            row.Children.push_back(TextProperty(key + ".value", "Identity", ReadMemberString(*argument, "entity"),
-                                                "The entity's persistent identity, sixteen hex digits."));
+            row.Children.push_back(EntityReferenceProperty(key + ".value", "Entity",
+                                                           ReadMemberString(*argument, "entity"), "None",
+                                                           "A placed entity, wherever in the world it is."));
             break;
         case ArgumentSource::Result:
         {
@@ -572,7 +576,10 @@ std::optional<JsonValue> ArgumentValue(const DataFieldSchema& field, const JsonV
             return std::nullopt;
         return Port(value);
     }
-    case ArgumentSource::Entity: return JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(value)) } });
+    case ArgumentSource::Entity:
+        if (!value.empty() && !PersistentEntityIdFromString(value).has_value())
+            return std::nullopt;
+        return JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(value)) } });
     case ArgumentSource::Result:
     {
         const std::vector<std::string_view> fitting = ResultsFor(field, results);

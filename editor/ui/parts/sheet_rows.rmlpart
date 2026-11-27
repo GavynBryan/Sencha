@@ -63,6 +63,10 @@
          data-event-dragdrop="shell_sheet_drop('${sheet}', ri)">
         <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
     </div>
+    <div class="setting_control key theme-key" data-if="row.control == 'entity'"
+         data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('${sheet}', ri, ev.ctrl_key)">
+        <span class="asset_name">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span>
+    </div>
     <div class="setting_plot theme-field" data-if="row.control == 'plot'">
         <div class="plot_bar theme-fill" data-for="height : row.parts" data-style-height="height"></div>
     </div>

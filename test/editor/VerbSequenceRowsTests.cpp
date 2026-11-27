@@ -103,6 +103,31 @@ TEST_F(VerbSequenceRowsTest, AValueTheArgumentCannotTakeIsRefused)
     EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k3.verb", "movement.launch").has_value());
 }
 
+// A command aimed at one placed entity names it by its persistent identity,
+// through the entity-reference kind the inspector picks it with.
+TEST_F(VerbSequenceRowsTest, AnArgumentFromAnEntityIsAnEntityReference)
+{
+    JsonValue sequence = Must(ActOnVerbSequence(EmptyVerbSequence(), Vocabulary, "commands", "add", "movement.launch"));
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.source", "Entity"));
+    const std::vector<PropertyNode> unsetRows = VerbSequenceRows(sequence, Vocabulary, {});
+    const PropertyNode* unset = Find(unsetRows, "k0.arg.target.value");
+    ASSERT_NE(unset, nullptr);
+    EXPECT_EQ(unset->Descriptor.Kind, PropertyKind::EntityReference);
+    EXPECT_EQ(unset->Reading, "None");
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "00000000000c4e57"));
+    const JsonValue& target = *sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target");
+    EXPECT_EQ(JsonStringify(target), R"({"entity":"00000000000c4e57"})");
+    const std::vector<PropertyNode> rows = VerbSequenceRows(sequence, Vocabulary, {});
+    EXPECT_EQ(Find(rows, "k0.arg.target.value")->Value, "00000000000c4e57");
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "nowhere").has_value())
+        << "text that is no persistent identity was taken";
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", ""));
+    EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target")),
+              R"({"entity":""})");
+}
+
 TEST_F(VerbSequenceRowsTest, CommandsReorderAndAChangedVerbKeepsWhatItStillTakes)
 {
     JsonValue sequence = EmptyVerbSequence();

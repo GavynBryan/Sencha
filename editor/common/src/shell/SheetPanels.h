@@ -46,7 +46,7 @@ struct SheetPanelsHost
 
 // The tool card's sheet and the selection's: their rows, and what a person does
 // to a row -- set it, flip it, act on it, fold it, type into or drag a number,
-// pick an asset for it or drop one on it.
+// pick an asset or an entity for it or drop an asset on it.
 class SheetPanels
 {
 public:
@@ -88,6 +88,7 @@ private:
     // What was typed into a row's number set as one step; how many numbers it has.
     std::size_t FinishTyping(SheetPoint at);
     void PickAsset(SheetPoint at, bool follows);
+    void PickReference(SheetPoint at, bool follows);
     void DropCarried(SheetPoint at);
     void PublishTyping();
 
