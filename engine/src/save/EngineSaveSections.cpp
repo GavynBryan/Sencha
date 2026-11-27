@@ -12,6 +12,7 @@
 #include <participant/ParticipantControl.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <save/HeldRecordSaves.h>
 #include <save/SavedGames.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
@@ -28,7 +29,16 @@
 namespace
 {
     constexpr std::uint32_t kBodiesVersion = 1;
+    constexpr std::uint32_t kHeldVersion = 1;
     constexpr std::uint32_t kPersistentIdsVersion = 1;
+
+    EntityId LocalBodyOf(const World& world)
+    {
+        const EntityId participant = LocalParticipantOf(world);
+        const ParticipantControl* control =
+            participant.IsValid() ? world.TryGet<ParticipantControl>(participant) : nullptr;
+        return control != nullptr && world.IsAlive(control->Body) ? control->Body : EntityId{};
+    }
 
     std::optional<EntityBuildPackage> PrefabOf(Engine& engine, const World& world, EntityId body)
     {
@@ -50,12 +60,9 @@ namespace
 
     JsonValue CaptureBodies(Engine& engine, World& world)
     {
-        const EntityId participant = LocalParticipantOf(world);
-        const ParticipantControl* control =
-            participant.IsValid() ? world.TryGet<ParticipantControl>(participant) : nullptr;
-        if (control == nullptr || !world.IsAlive(control->Body))
+        const EntityId body = LocalBodyOf(world);
+        if (!body.IsValid())
             return JsonValue(JsonValue::Object{});
-        const EntityId body = control->Body;
         (void)EnsurePersistentId(world, body);
         const std::optional<EntityBuildPackage> prefab = PrefabOf(engine, world, body);
         if (!prefab.has_value())
@@ -112,6 +119,20 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
         .Version = kBodiesVersion,
         .Capture = [&engine](World& world) { return CaptureBodies(engine, world); },
         .Restore = &RestoreBodies });
+    // Before the id counter: capturing gives records without an id one.
+    (void)saves.RegisterSection(SavedGameSectionDefinition{
+        .Name = "sencha.held",
+        .Version = kHeldVersion,
+        .Capture =
+            [&engine](World& world) {
+                const EntityId body = LocalBodyOf(world);
+                return CaptureHeldRecords(world, std::span(&body, body.IsValid() ? 1 : 0), engine.SceneSerializers(),
+                                          engine.Content().SceneContext());
+            },
+        .Restore =
+            [&engine](World& world, std::uint32_t, const JsonValue& data) {
+                RestoreHeldRecords(world, data, engine.SceneSerializers(), engine.Content().SceneContext());
+            } });
     (void)saves.RegisterSection(SavedGameSectionDefinition{ .Name = "sencha.persistent_ids",
                                                             .Version = kPersistentIdsVersion,
                                                             .Capture = &CapturePersistentIds,

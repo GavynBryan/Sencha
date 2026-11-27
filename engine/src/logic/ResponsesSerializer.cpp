@@ -6,6 +6,7 @@
 #include <logic/ResponseSet.h>
 #include <logic/Responses.h>
 #include <world/serialization/ComponentSerializer.h>
+#include <world/serialization/TypedComponentSerializer.h>
 
 #include <cstring>
 #include <string_view>
@@ -14,34 +15,14 @@ namespace
 {
 constexpr std::string_view kBindingsKey = "bindings";
 
-class ResponsesSerializer final : public IComponentSerializer
+class ResponsesSerializer final : public TypedComponentSerializer<Responses>
 {
 public:
-    ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Responses>(); }
     std::string_view JsonKey() const override { return "responses"; }
     std::uint32_t BinaryChunkId() const override { return MakeFourCC('R', 'S', 'P', 'N'); }
 
     std::span<const RuntimeField> RuntimeFields() const override { return {}; }
     std::optional<EditorVisual> GetEditorVisual() const override { return ComponentEditorVisual<Responses>::Value; }
-
-    std::vector<std::byte> DefaultBytes() const override
-    {
-        const Responses value{};
-        std::vector<std::byte> bytes(sizeof(Responses));
-        std::memcpy(bytes.data(), &value, sizeof(Responses));
-        return bytes;
-    }
-
-    void RegisterStorage(Registry& registry) const override
-    {
-        if (!registry.Components.IsRegistered<Responses>())
-            registry.Components.RegisterComponent<Responses>();
-    }
-
-    bool HasComponent(EntityId entity, const Registry& registry) const override
-    {
-        return registry.Components.IsRegistered<Responses>() && registry.Components.HasComponent<Responses>(entity);
-    }
 
     bool Save(IWriteArchive& archive, EntityId entity, const World& world,
               SceneSerializationContext& context) const override
@@ -64,12 +45,6 @@ public:
         return archive.Ok();
     }
 
-    bool Load(IReadArchive& archive, EntityId entity, Registry& registry,
-              SceneSerializationContext& context) override
-    {
-        return LoadIntoWorld(archive, entity, registry.Components, context);
-    }
-
     bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                        SceneSerializationContext& context) override
     {
@@ -88,17 +63,7 @@ public:
         // What did not read is kept as authored and reported; the rest still loads.
         for (const std::string& error : definitions.Sets.Diagnostics(responses.Set))
             context.Logging->GetLogger<SceneSerializationContext>().Warn("Responses: {}", error);
-        if (world.HasComponent<Responses>(entity))
-            return world.InitializeComponent<Responses>(entity, responses);
-        world.AddComponent<Responses>(entity, responses);
-        return true;
-    }
-
-    bool Remove(EntityId entity, Registry& registry) const override
-    {
-        if (registry.Components.IsRegistered<Responses>() && registry.Components.HasComponent<Responses>(entity))
-            registry.Components.RemoveComponent<Responses>(entity);
-        return true;
+        return Place(world, entity, responses);
     }
 };
 } // namespace

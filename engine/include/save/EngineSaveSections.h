@@ -4,5 +4,6 @@ class Engine;
 class SavedGames;
 
 // The sections every save carries: the local participant's body
-// ("sencha.bodies") and the runtime persistent id counter ("sencha.persistent_ids").
+// ("sencha.bodies"), what the world and that body hold ("sencha.held") and the
+// runtime persistent id counter ("sencha.persistent_ids").
 void RegisterEngineSaveSections(SavedGames& saves, Engine& engine);

@@ -169,19 +169,11 @@ public:
         static_assert(HasTypeSchema<T>,
                       "A replicated component needs a TypeSchema: the schema is "
                       "what says which of its bytes travel.");
-        // The structural half of the snapshot-apply contract. Applying a
-        // snapshot overwrites component bytes in place, which cannot fire
-        // OnAdd for what arrives or OnRemove for what it replaces -- so a
-        // component that retains an external handle would leak the old one and
-        // hold an unretained new one. Made impossible here rather than written
-        // down somewhere: state that must reach clients and whose component
-        // owns handles travels in a spawn payload, which goes through the
-        // typed import path and fires hooks exactly once.
         static_assert(!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>,
-                      "A replicated component must not declare ComponentTraits "
-                      "lifecycle hooks: snapshot apply overwrites bytes in place "
-                      "and cannot run them. Replicate a handle-free component, or "
-                      "carry this one in the spawn payload instead.");
+                      "A component replicated as its bytes must not declare ComponentTraits "
+                      "lifecycle hooks: they would be handed another machine's handles and "
+                      "entities. Give it a ReplicationCodec, which translates what arrives "
+                      "before its hooks see it, or carry it in the spawn payload.");
 
         if (!AddErased(ResolveComponentTypeId<T>(),
                        ResolveComponentName<T>(),
@@ -200,9 +192,6 @@ public:
         static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<Wire>,
                       "A replicated component and its wire image must be trivially copyable.");
         static_assert(HasTypeSchema<Wire>, "A wire image needs a TypeSchema: it says what of the image travels.");
-        static_assert(!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>,
-                      "A replicated component must not declare ComponentTraits lifecycle hooks: snapshot "
-                      "apply overwrites bytes in place and cannot run them.");
         if (!AddErased(ResolveComponentTypeId<T>(), ResolveComponentName<T>(), sizeof(Wire), false,
                        RuntimeFieldsOf<Wire, SchemaPurpose::Replication>()))
             return false;

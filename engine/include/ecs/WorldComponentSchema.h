@@ -159,14 +159,23 @@ public:
             {
                 if (bytes.size() != sizeof(T))
                     return false;
-                // Non-const TryGet publishes the column's write version, so a
-                // value arriving this way is visible to Changed<T> exactly as a
-                // system's own write would be.
-                T* target = world.TryGet<T>(entity);
-                if (target == nullptr)
-                    return false;
-                std::memcpy(target, bytes.data(), sizeof(T));
-                return true;
+                if constexpr (ComponentHasOnAdd<T> || ComponentHasOnRemove<T>)
+                {
+                    T value{};
+                    std::memcpy(&value, bytes.data(), sizeof(T));
+                    return world.ReplaceComponent<T>(entity, value);
+                }
+                else
+                {
+                    // Non-const TryGet publishes the column's write version, so a
+                    // value arriving this way is visible to Changed<T> exactly as a
+                    // system's own write would be.
+                    T* target = world.TryGet<T>(entity);
+                    if (target == nullptr)
+                        return false;
+                    std::memcpy(target, bytes.data(), sizeof(T));
+                    return true;
+                }
             }
         };
         entry.Defaults = [](std::span<std::byte> bytes) {
@@ -266,15 +275,11 @@ public:
             && entry->Initialize(world, entity, bytes);
     }
 
-    // Overwrites a component that is already on the entity, without adding,
-    // removing, or firing a lifecycle hook. This is how replication applies a
-    // snapshot: the value changes, the entity's shape does not.
-    //
-    // Deliberately not a fallback for ImportComponent. A component whose
-    // ComponentTraits retain external handles cannot be overwritten this way --
-    // OnAdd would not run for the incoming handles and OnRemove would not run
-    // for the outgoing ones -- so anything reachable through here must be
-    // hook-free, which the replication registry enforces at registration.
+    // Overwrites a component that is already on the entity, without adding or
+    // removing it. This is how replication applies a snapshot: the value
+    // changes, the entity's shape does not. A component with lifecycle hooks is
+    // overwritten as ReplaceComponent does, so its hooks see the old value leave
+    // and the new one arrive. Not a fallback for ImportComponent.
     bool SetComponentBytes(
         World& world,
         EntityId entity,

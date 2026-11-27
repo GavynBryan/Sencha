@@ -14,6 +14,7 @@
 #include <navigation/NavigationVerbs.h>
 #include <line/ContactLineSystem.h>
 #include <logic/ClaimVocabulary.h>
+#include <logic/CounterVocabulary.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
@@ -90,6 +91,16 @@ void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher&
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeSaveWrite>(catalog.Find(kSaveWriteVerb), saves));
     Verbs.push_back(verbs.Bind<&InvokeSaveRestore>(catalog.Find(kSaveRestoreVerb), saves));
+}
+
+void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,
+                                            AuthoredEventDispatcher* events)
+{
+    Counters = std::make_unique<CounterOperations>(Entities, log, events);
+    const VerbRegistry& catalog = verbs.Registry();
+    Verbs.push_back(verbs.Bind<&InvokeCounterSet>(catalog.Find(kCounterSetVerb), *Counters));
+    Verbs.push_back(verbs.Bind<&InvokeCounterAdd>(catalog.Find(kCounterAddVerb), *Counters));
+    Queries.push_back(BindCounterQuery(queries, std::as_const(Entities)));
 }
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
