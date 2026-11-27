@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include "AttachmentFixture.h"
@@ -66,6 +67,7 @@ namespace
             arguments.Set(3, AuthoredValue::Vector({ .Components = { 0.1, 0.3, 1.0, 0.0 }, .Length = 3 }));
             arguments.Set(4, AuthoredValue::Float(intensity));
             arguments.Set(5, AuthoredValue::Float(6.0));
+            arguments.Set(6, AuthoredValue::Float(1.0));
             arguments.Set(7, AuthoredValue::Float(0.1));
             arguments.Set(8, AuthoredValue::Float(0.0));
             arguments.Set(9, AuthoredValue::Float(0.2));
@@ -80,7 +82,7 @@ namespace
             invocation.Step = step;
             invocation.Tick = kStart;
             invocation.Arguments = arguments;
-            return Operations.Light(invocation);
+            return CallGeneratedVerb(Operations, AuthoredApiDefinition<AttachedLightOperations>::Name_Light, invocation).Status;
         }
     };
 }

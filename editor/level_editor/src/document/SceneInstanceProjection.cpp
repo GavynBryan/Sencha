@@ -7,8 +7,10 @@
 #include "EntityNameComponent.h"
 #include "brush/BrushMeshSerialization.h"
 #include "brush/BrushModifierSerialization.h"
+#include "scene_source/Json5Composition.h"
 #include "scene_source/Json5Convert.h"
 
+#include <core/composition/CompositionPatch.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <cstring>
@@ -20,11 +22,24 @@
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
 namespace
 {
+    bool IsDocumentLocalComponent(std::string_view component)
+    {
+        return component == "brush" || component == "baked_brush";
+    }
+
+    Json5Value WithoutDocumentLocal(const Json5Value& components)
+    {
+        Json5Value kept = components;
+        std::erase_if(kept.Members, [](const Json5Value::Member& member) { return IsDocumentLocalComponent(member.first); });
+        return kept;
+    }
+
     // Strips the document-local components from a record destined for a
     // placement: brush geometry cannot cross documents by id.
     void StripDocumentLocal(Json5Value& components, Logger& log,
@@ -59,9 +74,10 @@ SceneInstanceProjection::SceneInstanceProjection(Registry& registry,
 {
 }
 
-SceneComponentSchemaFn SceneInstanceProjection::SchemaOf() const
+std::optional<Json5Value> SceneInstanceProjection::PatchFromBaseline(const Json5Value& baseline,
+                                                                    const Json5Value& live) const
 {
-    return [this](std::string_view component) { return Rules.SchemaOf(component); };
+    return PatchFrom(WithoutDocumentLocal(baseline), WithoutDocumentLocal(live), &Rules.EntitySchema());
 }
 
 void SceneInstanceProjection::Reset()
@@ -427,7 +443,6 @@ void SceneInstanceProjection::HarvestInherited(const PersistentEntityIndex& inde
 {
     SceneSerializationContext context(Logging, Assets);
     std::vector<std::pair<PersistentEntityId, Json5Value>> patches;
-    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> removals;
     std::vector<std::uint64_t> harvested;
     for (const auto& [pid, element] : Elements)
     {
@@ -437,14 +452,9 @@ void SceneInstanceProjection::HarvestInherited(const PersistentEntityIndex& inde
         if (!entity.IsValid() || !Scene.HasEntity(entity))
             continue;
         harvested.push_back(pid);
-        SceneComponentDiff diff =
-            DiffSceneComponents(SerializeEntityComponents(entity, Registry_, context), element.Baseline, SchemaOf());
-        for (Json5Value::Member& added : diff.Added.Members)
-            diff.Patch.Members.push_back(std::move(added));
-        if (!diff.Patch.Members.empty())
-            patches.emplace_back(PersistentEntityId{ pid }, std::move(diff.Patch));
-        if (!diff.Removed.empty())
-            removals.emplace_back(PersistentEntityId{ pid }, std::move(diff.Removed));
+        if (std::optional<Json5Value> patch =
+                PatchFromBaseline(element.Baseline, SerializeEntityComponents(entity, Registry_, context)))
+            patches.emplace_back(PersistentEntityId{ pid }, std::move(*patch));
     }
     const auto harvestedId = [&](PersistentEntityId id) {
         return std::ranges::find(harvested, id.Value) != harvested.end();
@@ -452,14 +462,9 @@ void SceneInstanceProjection::HarvestInherited(const PersistentEntityIndex& inde
     for (auto& entry : Records.InheritedPatches)
         if (!harvestedId(entry.first))
             patches.push_back(std::move(entry));
-    for (auto& entry : Records.InheritedRemovals)
-        if (!harvestedId(entry.first))
-            removals.push_back(std::move(entry));
     const auto byId = [](const auto& a, const auto& b) { return a.first.Value < b.first.Value; };
     std::ranges::sort(patches, byId);
-    std::ranges::sort(removals, byId);
     Records.InheritedPatches = std::move(patches);
-    Records.InheritedRemovals = std::move(removals);
 }
 
 // Phase one: every element the projection produced lands in its instance's
@@ -470,9 +475,6 @@ void SceneInstanceProjection::HarvestProjectedElements(
     std::unordered_map<std::uint64_t, RecordHarvest>& byInstance)
 {
     SceneSerializationContext context(Logging, Assets);
-    // Sorted by projected path: this loop's append order becomes the saved
-    // file's patch/added/removed order, and unordered_map bucket order would
-    // reshuffle those blocks whenever the projection rehashes.
     std::vector<std::pair<const std::uint64_t, ProjectedElement>*> ordered;
     ordered.reserve(Elements.size());
     for (auto& entry : Elements)
@@ -535,15 +537,8 @@ void SceneInstanceProjection::HarvestProjectedElements(
         }
 
         const Json5Value live = SerializeEntityComponents(entity, Registry_, context);
-        SceneComponentDiff diff = DiffSceneComponents(live, element.Baseline, SchemaOf());
-
-        const SceneElementPath inner = InnerPath(element.Path);
-        if (!diff.Patch.Members.empty())
-            harvest->second.Patches.emplace_back(inner, std::move(diff.Patch));
-        if (!diff.Added.Members.empty())
-            harvest->second.Added.emplace_back(inner, std::move(diff.Added));
-        if (!diff.Removed.empty())
-            harvest->second.Removed.emplace_back(inner, std::move(diff.Removed));
+        if (std::optional<Json5Value> patch = PatchFromBaseline(element.Baseline, live))
+            harvest->second.Patches.emplace_back(InnerPath(element.Path), std::move(*patch));
     }
 }
 
@@ -673,8 +668,6 @@ void SceneInstanceProjection::FoldHarvestsIntoRecords(
             stored = std::move(rebuilt);
         };
         carryDangling(record.Patches, fresh.Patches);
-        carryDangling(record.AddedComponents, fresh.Added);
-        carryDangling(record.RemovedComponents, fresh.Removed);
 
         // A suppression's target is, by construction, not in the projection
         // (the resolver dropped it), so prior suppressions carry unless their

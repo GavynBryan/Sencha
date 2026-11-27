@@ -1,10 +1,10 @@
 #pragma once
 
-#include <authored/AuthoredQueryDispatcher.h>
-#include <authored/AuthoredQueryRegistry.h>
+#include <authored/AuthoredAnnotations.h>
+#include <authored/AuthoredApiDefinition.h>
 #include <authored/VerbInvocation.h>
-#include <authored/VerbRegistry.h>
 #include <core/assets/AssetId.h>
+#include <core/assets/AssetRef.h>
 #include <ecs/EntityId.h>
 #include <ecs/LeaseOwner.h>
 #include <ecs/Query.h>
@@ -25,16 +25,7 @@ class World;
 struct FixedLogicContext;
 struct FixedSimTime;
 
-inline constexpr std::string_view kLineExtendLease = "line.extend";
-inline constexpr std::string_view kLineCutVerb = "line.cut";
-inline constexpr std::string_view kLineRetractVerb = "line.retract";
-inline constexpr std::string_view kLineAnchoredQuery = "line.anchored";
-inline constexpr std::string_view kLineAnchoredWithinQuery = "line.anchored_within";
-inline constexpr std::string_view kLineAnchorQuery = "line.anchor";
-inline constexpr std::string_view kLineStuckQuery = "line.stuck";
-inline constexpr std::string_view kLineStuckPointQuery = "line.stuck_point";
 
-void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries);
 
 //=============================================================================
 // ContactLineSystem
@@ -63,20 +54,91 @@ public:
 
     void FixedLogic(FixedLogicContext& ctx);
 
-    VerbAdmission Extend(const VerbInvocation& invocation);
-    VerbAdmission Cut(const VerbInvocation& invocation);
-    VerbAdmission Retract(const VerbInvocation& invocation);
+    SENCHA_LEASE("line.extend")
+    SENCHA_LABEL("Extend line")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Throws a line with a projectile and keeps it out while held. Letting go draws it home.")
+    SENCHA_COMPLETES
+    VerbAdmission Extend(const VerbInvocation& invocation,
+                         SENCHA_TARGET("instigator") SENCHA_LABEL("Instigator")
+                             SENCHA_DESCRIPTION("Whose line it is: where it runs from.") EntityId instigator,
+                         SENCHA_ARG("line") SENCHA_LABEL("Line") SENCHA_ASSET(Scene)
+                             SENCHA_DESCRIPTION("The prefab: a scene whose root carries Contact Line.") const AssetRef& line,
+                         SENCHA_ARG("projectile") SENCHA_LABEL("Projectile") SENCHA_ASSET(Scene)
+                             SENCHA_DESCRIPTION("The projectile prefab that throws its tip.") const AssetRef& projectile,
+                         SENCHA_ARG("at") SENCHA_LABEL("At") SENCHA_DESCRIPTION("A point to throw it at. The aim when absent.")
+                             std::optional<Vec3d> at = std::nullopt,
+                         SENCHA_ARG("keep") SENCHA_LABEL("Keep")
+                             SENCHA_DESCRIPTION("Left where it stuck when let go, rather than drawn home.")
+                                 std::optional<bool> keep = std::nullopt);
+    SENCHA_LEASE_RELEASE("line.extend")
+    VerbAdmission EndExtend(const VerbInvocation& invocation);
+    SENCHA_LEASE_HOLDS("line.extend")
+    bool ExtendHolds(const LeaseOwner& owner) const;
+
+    SENCHA_VERB("line.cut")
+    SENCHA_LABEL("Cut lines")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Ends every line the instigator has out, where it is, striking nothing more.")
+    VerbAdmission Cut(const VerbInvocation& invocation, SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator);
+
+    SENCHA_VERB("line.retract")
+    SENCHA_LABEL("Retract lines")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Draws home every line the instigator has left anchored.")
+    VerbAdmission Retract(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator,
+                          SENCHA_ARG("keep_newest") SENCHA_LABEL("Keep newest")
+                              SENCHA_DESCRIPTION("Leaves the newest of them where it is.")
+                                  std::optional<bool> keepNewest = std::nullopt);
+
+    SENCHA_QUERY("line.anchored")
+    SENCHA_LABEL("Line anchored")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Whether the instigator is holding a line anchored.")
+    bool Anchored(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator) const;
+
+    SENCHA_QUERY("line.anchored_within")
+    SENCHA_LABEL("Line anchored within")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Whether the instigator is holding a line anchored within a distance of a point.")
+    bool AnchoredWithin(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator,
+                        SENCHA_ARG("point") SENCHA_LABEL("Point") Vec3d point,
+                        SENCHA_ARG("distance") SENCHA_LABEL("Distance") SENCHA_DESCRIPTION("In metres.")
+                            float distance) const;
 
     // Where `instigator` holds a line anchored, if it does. Kept lines it has let
     // go of are not held.
-    [[nodiscard]] std::optional<Vec3d> AnchorOf(EntityId instigator) const;
+    SENCHA_QUERY("line.anchor")
+    SENCHA_LABEL("Line anchor")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Where the line the instigator is holding is anchored; unavailable when none is.")
+    [[nodiscard]] std::optional<Vec3d> AnchorOf(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator")
+                                                    EntityId instigator) const;
+
+    SENCHA_QUERY("line.stuck")
+    SENCHA_LABEL("Line stuck")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("Whether the instigator has let go of a line and left it stuck where it landed.")
+    bool Stuck(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator) const;
+
     // The point `shortOf` metres back along the newest line `instigator` has let
     // go of and left stuck, if it has one.
-    [[nodiscard]] std::optional<Vec3d> StuckPoint(EntityId instigator, float shortOf) const;
+    SENCHA_QUERY("line.stuck_point")
+    SENCHA_LABEL("Line stuck point")
+    SENCHA_CATEGORY("Lines")
+    SENCHA_DESCRIPTION("A point on the newest line the instigator has left stuck, some metres short of where it "
+                       "landed; unavailable when none is.")
+    [[nodiscard]] std::optional<Vec3d> StuckPoint(SENCHA_ARG("instigator") SENCHA_LABEL("Instigator") EntityId instigator,
+                                                  SENCHA_ARG("short_of") SENCHA_LABEL("Short of")
+                                                      SENCHA_DESCRIPTION("In metres, back along the line.")
+                                                          float shortOf) const;
+
+    [[nodiscard]] const World& AuthoredWorld() const { return *Entities; }
 
 private:
     void LetGo(const LeaseOwner& owner, std::uint64_t tick);
-    VerbAdmission Throw(const VerbInvocation& invocation);
+    VerbAdmission Throw(const VerbInvocation& invocation, EntityId instigator, const AssetRef& line,
+                        const AssetRef& projectile, std::optional<Vec3d> at, bool keep);
     VerbAdmission LaunchTip(ContactLineState& state, const ContactLine& authored, AssetId shot,
                             const std::optional<Vec3d>& at, std::uint64_t tick);
     void Step(EntityId line, const FixedSimTime& now);
@@ -87,8 +149,8 @@ private:
                      const FixedSimTime& now);
     [[nodiscard]] bool CrossesSolid(const ContactLineState& state, const Vec3d& root, const Vec3d& direction,
                                     float length) const;
-    void Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point, const Vec3d& away,
-                const FixedSimTime& now);
+    void Strike(EntityId line, const ContactLineState& state, GameplayTagId kind, EntityId target, const Vec3d& point,
+                const Vec3d& away, const FixedSimTime& now);
     void CueAt(const ContactLineState& state, EntityId line, GameplayTagId cue, const Vec3d& point, std::uint64_t tick);
     // Ends the line, and its throw if that is still in the air: a tip nobody can
     // see must not go on striking.
@@ -116,24 +178,6 @@ private:
 ContactLineSystem& RegisterContactLineSystem(EngineSchedule& schedule, World& world,
                                              const ContactLineSystem::Services& services);
 
-inline VerbAdmission InvokeLineExtend(ContactLineSystem& system, const VerbInvocation& invocation)
-{
-    return system.Extend(invocation);
-}
-
-inline VerbAdmission InvokeLineCut(ContactLineSystem& system, const VerbInvocation& invocation)
-{
-    return system.Cut(invocation);
-}
-
-inline VerbAdmission InvokeLineRetract(ContactLineSystem& system, const VerbInvocation& invocation)
-{
-    return system.Retract(invocation);
-}
-
-[[nodiscard]] std::vector<AuthoredQueryBindingToken> BindContactLineQueries(AuthoredQueryDispatcher& dispatcher,
-                                                                            const ContactLineSystem& system);
-
 // Where a line runs from: its instigator's aim origin, moved to its slot.
 [[nodiscard]] Vec3d ContactLineRoot(const World& world, const ContactLineState& state);
 
@@ -160,3 +204,7 @@ void RetractKeptContactLines(World& world, EntityId instigator, bool keepNewest 
 // Stretches every line's span from its tip to where its instigator is drawn.
 // Each frame on a presenting host, before propagation.
 void PlaceContactLines(World& world, double presentationAlpha);
+
+#if !defined(SENCHA_CODEGEN)
+#  include <line/ContactLineSystem.sencha.h>
+#endif

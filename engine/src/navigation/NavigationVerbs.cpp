@@ -1,116 +1,26 @@
 #include <navigation/NavigationVerbs.h>
 
-#include <core/metadata/DataSchemaFields.h>
-#include <authored/AuthoredValueTraits.h>
-#include <authored/AuthoredValue.h>
 #include <ecs/World.h>
 #include <navigation/NavAgentRequests.h>
 #include <navigation/NavTraversal.h>
 
-#include <string>
-#include <utility>
-
 namespace
 {
-    DataFieldSchema AgentTargetField()
+    const NavAgentProgress* ProgressOf(const World& world, EntityId agent)
     {
-        DataFieldSchema agent = MakeDataField(DataFieldKind::Entity, "target", "Agent", "The agent given the order.");
-        agent.Reference.ComponentIdentity = std::string(ComponentDefinition<NavAgent>::Identity);
-        return agent;
-    }
-
-    VerbDefinition OrderVerbDefinition(std::string_view name, std::string display, std::string description)
-    {
-        VerbDefinition verb;
-        verb.Name = std::string(name);
-        verb.DisplayName = std::move(display);
-        verb.Description = std::move(description);
-        verb.Category = "Navigation";
-        verb.Arguments.Children.push_back(AgentTargetField());
-        return verb;
-    }
-
-    template <typename E>
-    DataFieldSchema EnumResultField(std::string key)
-    {
-        DataFieldSchema result = MakeDataField(DataFieldKind::Enum, std::move(key), {});
-        for (const auto& value : EnumSchema<E>::Values)
-            result.EnumChoices.push_back({ std::string(value.Name), std::string(value.Display), {} });
-        return result;
-    }
-
-    AuthoredQueryDefinition AgentQuery(std::string_view name, std::string display, std::string description,
-                                       DataFieldSchema result)
-    {
-        AuthoredQueryDefinition query;
-        query.Name = std::string(name);
-        query.DisplayName = std::move(display);
-        query.Description = std::move(description);
-        query.Category = "Navigation";
-        query.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "agent", "Agent"));
-        query.Result = std::move(result);
-        return query;
-    }
-
-    const NavAgentProgress* QueriedAgentProgress(const World& world, std::span<const AuthoredValue> arguments)
-    {
-        EntityId agent;
-        if (arguments.empty() || !arguments[0].TryGetEntity(agent) || !world.IsRegistered<NavAgentProgress>())
-            return nullptr;
-        return world.TryGet<NavAgentProgress>(agent);
-    }
-
-    AuthoredQueryStatus EvaluatePhaseQuery(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
-    {
-        const NavAgentProgress* progress = QueriedAgentProgress(world, arguments);
-        if (progress == nullptr)
-            return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Enum(std::string(NavEnumName(progress->Phase)));
-        return AuthoredQueryStatus::Value;
+        return world.IsRegistered<NavAgentProgress>() ? world.TryGet<NavAgentProgress>(agent) : nullptr;
     }
 
     template <Vec3d NavAbilityCrossing::*Point, bool NeedsAnchor>
-    AuthoredQueryStatus EvaluateCrossingPoint(const World& world, std::span<const AuthoredValue> arguments,
-                                              AuthoredValue& result)
+    std::optional<Vec3d> CrossingPoint(const World& world, EntityId agent)
     {
-        EntityId agent;
         const NavAbilityCrossings* crossings = world.TryGetResource<NavAbilityCrossings>();
-        if (arguments.empty() || !arguments[0].TryGetEntity(agent) || crossings == nullptr)
-            return AuthoredQueryStatus::Unavailable;
+        if (crossings == nullptr)
+            return std::nullopt;
         for (const NavAbilityCrossing& crossing : crossings->Active)
             if (crossing.Agent == agent && (!NeedsAnchor || crossing.Anchored))
-            {
-                const Vec3d& point = crossing.*Point;
-                result = AuthoredValueTraits<Vec3d>::Encode(point);
-                return AuthoredQueryStatus::Value;
-            }
-        return AuthoredQueryStatus::Unavailable;
-    }
-
-    AuthoredQueryStatus EvaluateFailureQuery(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
-    {
-        const NavAgentProgress* progress = QueriedAgentProgress(world, arguments);
-        if (progress == nullptr)
-            return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Enum(std::string(NavEnumName(progress->Failure)));
-        return AuthoredQueryStatus::Value;
-    }
-
-    AuthoredQueryStatus EvaluateRemainingQuery(const World& world, std::span<const AuthoredValue> arguments, AuthoredValue& result)
-    {
-        const NavAgentProgress* progress = QueriedAgentProgress(world, arguments);
-        if (progress == nullptr)
-            return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Float(progress->Remaining);
-        return AuthoredQueryStatus::Value;
-    }
-
-    float OptionalFloatArgument(const VerbInvocation& invocation, std::size_t slot, double fallback)
-    {
-        double value = fallback;
-        if (!invocation.Arguments->TryGetFloat(slot, value))
-            value = fallback;
-        return static_cast<float>(value);
+                return crossing.*Point;
+        return std::nullopt;
     }
 
     VerbAdmission AdmissionFor(NavRequestId issued)
@@ -119,108 +29,64 @@ namespace
     }
 }
 
-void DeclareNavigationVerbs(VerbRegistrationScope& scope)
+VerbAdmission NavigationOperations::MoveTo(EntityId target, Vec3d point, float arriveRadius, float speed)
 {
-    VerbDefinition moveTo = OrderVerbDefinition(kNavigationMoveToVerb, "Move to", "Sends the agent to a point, replacing any order it has.");
-    DataFieldSchema point = MakeDataField(DataFieldKind::Vector, "point", "Point", "Where to go.");
-    point.VectorLength = 3;
-    moveTo.Arguments.Children.push_back(std::move(point));
-    moveTo.Arguments.Children.push_back(
-        DataField::OptionalNumber("arrive_radius", "Arrive radius", "Metres from the point that count as there; zero is the default.", 0.0, 0.0));
-    moveTo.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "The fraction of its top speed it walks at.", 1.0, 0.0));
-    (void)scope.Declare(std::move(moveTo));
-
-    VerbDefinition approach =
-        OrderVerbDefinition(kNavigationApproachVerb, "Approach", "Sends the agent to an entity, replacing any order it has.");
-    approach.Arguments.Children.push_back(
-        MakeDataField(DataFieldKind::Entity, "subject", "Subject", "What to go to; the order fails if it goes away."));
-    DataFieldSchema follow = MakeDataField(DataFieldKind::Bool, "follow", "Follow",
-                                           "Keep up with it after arriving instead of ending the order.");
-    follow.Required = false;
-    follow.Default = false;
-    approach.Arguments.Children.push_back(std::move(follow));
-    approach.Arguments.Children.push_back(
-        DataField::OptionalNumber("arrive_radius", "Arrive radius", "Metres from it that count as there; zero is the default.", 0.0, 0.0));
-    approach.Arguments.Children.push_back(DataField::OptionalNumber("speed", "Speed", "The fraction of its top speed it walks at.", 1.0, 0.0));
-    (void)scope.Declare(std::move(approach));
-
-    (void)scope.Declare(OrderVerbDefinition(kNavigationStopVerb, "Stop", "Ends the agent's order; it stands where it is."));
-}
-
-void DeclareNavigationQueries(AuthoredQueryRegistrationScope& scope)
-{
-    (void)scope.Declare(AgentQuery(kNavigationPhaseQuery, "Navigation phase",
-                                   "Where the agent's latest order stands.", EnumResultField<NavAgentPhase>("phase")));
-    (void)scope.Declare(AgentQuery(kNavigationFailureQuery, "Navigation failure",
-                                   "Why the agent's latest order failed; none while it has not.",
-                                   EnumResultField<NavAgentFailure>("failure")));
-    (void)scope.Declare(AgentQuery(kNavigationRemainingQuery, "Distance remaining",
-                                   "Metres of route the agent still has to walk.",
-                                   MakeDataField(DataFieldKind::Float, "remaining", "Remaining")));
-    const auto crossing = [&](std::string_view name, std::string display, std::string description) {
-        DataFieldSchema point = MakeDataField(DataFieldKind::Vector, "point", "Point");
-        point.VectorLength = 3;
-        (void)scope.Declare(AgentQuery(name, std::move(display), std::move(description), std::move(point)));
-    };
-    crossing(kNavigationCrossingStartQuery, "Crossing start",
-             "Where the agent's centre stands to begin the crossing it is making by ability.");
-    crossing(kNavigationCrossingExitQuery, "Crossing exit",
-             "Where the agent's centre stands at the end of the crossing it is making by ability.");
-    crossing(kNavigationCrossingAnchorQuery, "Crossing anchor",
-             "The point the crossing it is making by ability hangs from; unavailable when none.");
-    crossing(kNavigationCrossingReleaseQuery, "Crossing release",
-             "Where along its rope the agent lets go to drop onto the exit.");
-}
-
-VerbAdmission NavigationOperations::MoveTo(const VerbInvocation& invocation)
-{
-    EntityId agent;
     NavDestination destination;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, agent)
-        || !ReadAuthoredArgument(*invocation.Arguments, 1, destination.Point))
-        return VerbAdmission::InvalidArguments;
-    destination.ArriveRadius = OptionalFloatArgument(invocation, 2, 0.0);
-    destination.SpeedScale = OptionalFloatArgument(invocation, 3, 1.0);
-    return AdmissionFor(RequestNavigation(*Entities, agent, destination));
+    destination.Point = point;
+    destination.ArriveRadius = arriveRadius;
+    destination.SpeedScale = speed;
+    return AdmissionFor(RequestNavigation(*Entities, target, destination));
 }
 
-VerbAdmission NavigationOperations::Approach(const VerbInvocation& invocation)
+VerbAdmission NavigationOperations::Approach(EntityId target, EntityId subject, bool follow, float arriveRadius,
+                                             float speed)
 {
-    EntityId agent;
-    NavDestination destination = NavDestination::AtEntity(EntityId{});
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, agent)
-        || !invocation.Arguments->TryGetEntity(1, destination.Target) || !Entities->IsAlive(destination.Target))
-        return VerbAdmission::InvalidArguments;
-    bool follow = false;
-    if (invocation.Arguments->TryGetBool(2, follow))
-        destination.Follow = follow;
-    destination.ArriveRadius = OptionalFloatArgument(invocation, 3, 0.0);
-    destination.SpeedScale = OptionalFloatArgument(invocation, 4, 1.0);
-    return AdmissionFor(RequestNavigation(*Entities, agent, destination));
+    NavDestination destination = NavDestination::AtEntity(subject);
+    destination.Follow = follow;
+    destination.ArriveRadius = arriveRadius;
+    destination.SpeedScale = speed;
+    return AdmissionFor(RequestNavigation(*Entities, target, destination));
 }
 
-VerbAdmission NavigationOperations::Stop(const VerbInvocation& invocation)
+VerbAdmission NavigationOperations::Stop(EntityId target)
 {
-    EntityId agent;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, agent))
-        return VerbAdmission::InvalidArguments;
-    return AdmissionFor(CancelNavigation(*Entities, agent));
+    return AdmissionFor(CancelNavigation(*Entities, target));
 }
 
-std::vector<AuthoredQueryBindingToken> BindNavigationQueries(AuthoredQueryDispatcher& dispatcher, const World& world)
+std::optional<NavAgentPhase> NavigationOperations::Phase(EntityId agent) const
 {
-    const AuthoredQueryRegistry& registry = dispatcher.Registry();
-    std::vector<AuthoredQueryBindingToken> tokens;
-    tokens.push_back(dispatcher.Bind<&EvaluatePhaseQuery>(registry.Find(kNavigationPhaseQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateFailureQuery>(registry.Find(kNavigationFailureQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateRemainingQuery>(registry.Find(kNavigationRemainingQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Start, false>>(
-        registry.Find(kNavigationCrossingStartQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Exit, false>>(
-        registry.Find(kNavigationCrossingExitQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Anchor, true>>(
-        registry.Find(kNavigationCrossingAnchorQuery), world));
-    tokens.push_back(dispatcher.Bind<&EvaluateCrossingPoint<&NavAbilityCrossing::Release, false>>(
-        registry.Find(kNavigationCrossingReleaseQuery), world));
-    return tokens;
+    const NavAgentProgress* progress = ProgressOf(*Entities, agent);
+    return progress != nullptr ? std::optional<NavAgentPhase>(progress->Phase) : std::nullopt;
+}
+
+std::optional<NavAgentFailure> NavigationOperations::Failure(EntityId agent) const
+{
+    const NavAgentProgress* progress = ProgressOf(*Entities, agent);
+    return progress != nullptr ? std::optional<NavAgentFailure>(progress->Failure) : std::nullopt;
+}
+
+std::optional<float> NavigationOperations::Remaining(EntityId agent) const
+{
+    const NavAgentProgress* progress = ProgressOf(*Entities, agent);
+    return progress != nullptr ? std::optional<float>(progress->Remaining) : std::nullopt;
+}
+
+std::optional<Vec3d> NavigationOperations::CrossingStart(EntityId agent) const
+{
+    return CrossingPoint<&NavAbilityCrossing::Start, false>(*Entities, agent);
+}
+
+std::optional<Vec3d> NavigationOperations::CrossingExit(EntityId agent) const
+{
+    return CrossingPoint<&NavAbilityCrossing::Exit, false>(*Entities, agent);
+}
+
+std::optional<Vec3d> NavigationOperations::CrossingAnchor(EntityId agent) const
+{
+    return CrossingPoint<&NavAbilityCrossing::Anchor, true>(*Entities, agent);
+}
+
+std::optional<Vec3d> NavigationOperations::CrossingRelease(EntityId agent) const
+{
+    return CrossingPoint<&NavAbilityCrossing::Release, false>(*Entities, agent);
 }

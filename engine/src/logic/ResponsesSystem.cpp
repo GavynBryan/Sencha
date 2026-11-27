@@ -6,18 +6,16 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/BinaryReader.h>
-#include <core/serialization/BinaryWriter.h>
+#include <ecs/EntityText.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Responses.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
-#include <zone/ZoneStateMemory.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <sstream>
+#include <string>
 #include <utility>
 
 namespace
@@ -58,66 +56,18 @@ bool SatisfiesDeclaration(const AuthoredEventDefinition& definition, const Autho
     return valid;
 }
 
-// What a zone remembers of a binding that differs from authored: whose state
-// (its key), the text it had, and its two bits. Version 1 writes each as
-// key hash, definition hash and a flags byte.
-constexpr std::uint8_t kRememberedDisabled = 1;
-constexpr std::uint8_t kRememberedConsumed = 2;
-constexpr std::size_t kRememberedBindingBytes = 2 * sizeof(std::uint64_t) + 1;
-
-void CaptureRememberedBindings(const World& world, EntityId entity, std::vector<std::byte>& out)
-{
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    const Responses* state = world.TryGet<Responses>(entity);
-    if (definitions == nullptr || state == nullptr)
-        return;
-    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
-    const std::uint32_t authored = definitions->Sets.StartsDisabled(state->Set);
-    std::ostringstream stream;
-    BinaryWriter writer(stream);
-    for (std::size_t i = 0; i < bindings.size(); ++i)
-    {
-        const std::uint32_t bit = 1u << i;
-        if (((state->Disabled ^ authored) & bit) == 0 && (state->Consumed & bit) == 0)
-            continue;
-        const std::uint8_t flags = ((state->Disabled & bit) != 0 ? kRememberedDisabled : 0)
-            | ((state->Consumed & bit) != 0 ? kRememberedConsumed : 0);
-        (void)writer.Write(bindings[i].KeyHash);
-        (void)writer.Write(bindings[i].DefinitionHash);
-        (void)writer.Write(flags);
-    }
-    const std::string written = std::move(stream).str();
-    const auto* begin = reinterpret_cast<const std::byte*>(written.data());
-    out.assign(begin, begin + written.size());
-}
-
-void RestoreRememberedBindings(World& world, EntityId entity, std::uint16_t, std::span<const std::byte> bytes)
-{
-    const ResponseDefinitions* definitions = world.TryGetResource<ResponseDefinitions>();
-    Responses* state = world.TryGet<Responses>(entity);
-    if (definitions == nullptr || state == nullptr || bytes.size() % kRememberedBindingBytes != 0)
-        return;
-    const std::span<const ResponseBindingDesc> bindings = definitions->Sets.Bindings(state->Set);
-    std::istringstream stream(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-    BinaryReader reader(stream);
-    for (std::size_t read = 0; read < bytes.size(); read += kRememberedBindingBytes)
-    {
-        std::uint64_t keyHash = 0;
-        std::uint64_t definitionHash = 0;
-        std::uint8_t flags = 0;
-        if (!reader.Read(keyHash) || !reader.Read(definitionHash) || !reader.Read(flags))
-            return;
-        const int index = FindResponseBinding(bindings, keyHash);
-        // Remembered only for the text it had: a binding authored anew starts anew.
-        if (index < 0 || bindings[static_cast<std::size_t>(index)].DefinitionHash != definitionHash)
-            continue;
-        const std::uint32_t bit = 1u << static_cast<std::uint32_t>(index);
-        state->Disabled = (flags & kRememberedDisabled) != 0 ? (state->Disabled | bit) : (state->Disabled & ~bit);
-        state->Consumed = (flags & kRememberedConsumed) != 0 ? (state->Consumed | bit) : (state->Consumed & ~bit);
-    }
-}
-
 const CompiledVerbSequence kEmptySequence{};
+
+#ifdef NDEBUG
+constexpr bool kLogRefusalsByDefault = false;
+#else
+constexpr bool kLogRefusalsByDefault = true;
+#endif
+
+std::uint64_t Mix(std::uint64_t hash, std::uint64_t value)
+{
+    return (hash ^ value) * 0x100000001b3ull;
+}
 } // namespace
 
 ResponsesSystem::ResponsesSystem(World& world,
@@ -134,14 +84,10 @@ ResponsesSystem::ResponsesSystem(World& world,
     , Assets(assets)
     , DataAssets(dataAssets)
     , Log(log)
+    , LogRefusals(kLogRefusalsByDefault)
 {
     if (world.IsRegistered<Responses>())
         ResponsesComponent = world.GetComponentId<Responses>();
-    if (ZoneComponentMemories* memories = world.TryGetResource<ZoneComponentMemories>())
-        memories->Register(ZoneComponentMemory{ .Type = ResolveComponentTypeId<Responses>(),
-                                                .Version = 1,
-                                                .Capture = &CaptureRememberedBindings,
-                                                .Restore = &RestoreRememberedBindings });
 }
 
 void ResponsesSystem::SetCapacity(std::size_t activations)
@@ -518,6 +464,8 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
         ++Counts.Activations;
         Counts.Invoked += outcome.Invoked;
         Counts.Failed += outcome.Failed;
+        if (outcome.Failed > 0 && LogRefusals)
+            ReportRefusal(world, *definitions, activation, *sequence, outcome);
         if (const std::uint64_t cooldown = TicksIn(activation.CooldownSeconds, ctx.Time.DeltaSeconds); cooldown > 0)
         {
             const CooldownKey key{ activation.Recipient, activation.KeyHash,
@@ -535,6 +483,40 @@ void ResponsesSystem::RunQueue(FixedLogicContext& ctx)
         }
     }
     Compact(waiting);
+}
+
+void ResponsesSystem::ReportRefusal(World& world, ResponseDefinitions& definitions, const Activation& activation,
+                                    const CompiledVerbSequence& sequence, const SequenceOutcome& outcome)
+{
+    if (RefusalLogStopped)
+        return;
+    std::uint64_t hash = 0xcbf29ce484222325ull;
+    hash = Mix(hash, (static_cast<std::uint64_t>(activation.Recipient.Index) << 32) | activation.Recipient.Generation);
+    hash = Mix(hash, activation.KeyHash);
+    hash = Mix(hash, outcome.FirstFailedCommand);
+    hash = Mix(hash, (static_cast<std::uint64_t>(outcome.FirstFailure) << 16) | outcome.FirstFailureDetail);
+    const auto logged = LoggedRefusals.begin() + static_cast<std::ptrdiff_t>(LoggedRefusalCount);
+    if (std::find(LoggedRefusals.begin(), logged, hash) != logged)
+        return;
+    if (LoggedRefusalCount == LoggedRefusals.size())
+    {
+        RefusalLogStopped = true;
+        Log.Warn("responses: {} distinct failed commands were logged; further ones are counted, not logged, until "
+                 "a zone detaches",
+                 LoggedRefusals.size());
+        return;
+    }
+    LoggedRefusals[LoggedRefusalCount++] = hash;
+
+    const ResponseSetView set = definitions.Sets.Resolve(activation.Set, world);
+    const std::string_view key =
+        activation.Binding < set.Bindings.size() ? std::string_view(set.Bindings[activation.Binding].Key) : "?";
+    const CompiledSequenceCommand& command = sequence.Commands[outcome.FirstFailedCommand];
+    std::string entity;
+    AppendEntityText(entity, activation.Recipient);
+    Log.Warn("responses: '{}'.{} command {} ({}) {}", entity, key, outcome.FirstFailedCommand + 1, command.Verb,
+             DescribeVerbAnswer(Verbs.Registry(), command.Binding.Verb,
+                                VerbAnswer(outcome.FirstFailure, outcome.FirstFailureDetail)));
 }
 
 // What waits keeps its order, ahead of what this pass admitted; payloads move
@@ -611,6 +593,13 @@ void ResponsesSystem::FixedLogic(FixedLogicContext& ctx)
 void ResponsesSystem::ZoneResidency(ZoneResidencyContext& ctx)
 {
     World& world = ctx.Entities;
+    if (std::ranges::any_of(ctx.Changes, [](const ZoneResidencyChange& change) {
+            return change.Kind == ZoneResidencyChangeKind::Detaching;
+        }))
+    {
+        LoggedRefusalCount = 0;
+        RefusalLogStopped = false;
+    }
     if (ResponsesComponent == InvalidComponentId)
         return;
     for (const ZoneResidencyChange& change : ctx.Changes)
@@ -684,6 +673,18 @@ ResponsesSystem& RegisterResponsesSystem(EngineSchedule& schedule,
         .OnChange = [&system](const CVarChangeContext& ctx) {
             system.SetCommandBudget(static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
         },
+    });
+    (void)console.RegisterCVar({
+        .Name = "logic.responses.log_refusals",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = kLogRefusalsByDefault,
+        .CurrentValue = kLogRefusalsByDefault,
+        .Flags = CVarFlags::None,
+        .Help = "Log a response command the verb did not accept, with its reason: once per entity, binding, command "
+                "and answer, for the first 256, until a zone detaches. On in development builds.",
+        .Source = { "engine" },
+        .OnChange = [&system](const CVarChangeContext& ctx) { system.SetLogRefusals(std::get<bool>(ctx.NewValue)); },
     });
     return system;
 }

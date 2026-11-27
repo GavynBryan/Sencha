@@ -16,11 +16,13 @@
 
 template<typename T>
 concept IsVerbImplementation = requires(T& implementation, const VerbInvocation& invocation) {
-    { implementation.Invoke(invocation) } -> std::same_as<VerbAdmission>;
+    { implementation.Invoke(invocation) } -> std::convertible_to<VerbAnswer>;
 };
 
 class DataAssetCache;
+class Logger;
 class PersistentEntityIndex;
+class World;
 class VerbDispatcher;
 
 using VerbBindingToken = AuthoredBindingToken<VerbDispatcher, VerbId, VerbBindingGeneration>;
@@ -68,17 +70,17 @@ public:
     [[nodiscard]] VerbBindingToken Bind(VerbId verb, T& implementation)
     {
         return BindErased(verb, &implementation, [](void* self, const VerbInvocation& invocation) {
-            return static_cast<T*>(self)->Invoke(invocation);
+            return VerbAnswer(static_cast<T*>(self)->Invoke(invocation));
         });
     }
 
     // Binds a free adapter, so one object can serve several verbs.
     template<auto Invoke, typename T>
-        requires std::is_invocable_r_v<VerbAdmission, decltype(Invoke), T&, const VerbInvocation&>
+        requires std::is_invocable_r_v<VerbAnswer, decltype(Invoke), T&, const VerbInvocation&>
     [[nodiscard]] VerbBindingToken Bind(VerbId verb, T& target)
     {
         return BindErased(verb, &target, [](void* self, const VerbInvocation& invocation) {
-            return Invoke(*static_cast<T*>(self), invocation);
+            return VerbAnswer(Invoke(*static_cast<T*>(self), invocation));
         });
     }
 
@@ -89,9 +91,11 @@ public:
     // `inputs` are the producer's values, in the order the binding declared its
     // input slots. The constants are already in place; this fills the dynamic
     // slots, checks them against what the binding recorded, and calls.
+    // `result` receives a declared result an accepted call answered, and is otherwise left absent.
     [[nodiscard]] VerbInvocationResult Invoke(const CompiledVerbBinding& binding,
                                               std::span<const AuthoredValue> inputs,
-                                              const VerbInvocationSource& source = {});
+                                              const VerbInvocationSource& source = {},
+                                              AuthoredValue* result = nullptr);
 
     // Invoke's counterpart for a lease: the same checks, with `owner` recorded as
     // the holder that ReleaseLease later names.
@@ -114,6 +118,9 @@ public:
     // with UnresolvedReference, never dispatched with an invalid handle.
     void SetEntityIndex(const PersistentEntityIndex* entities) { Entities = entities; }
 
+    // The World whose SimulationAuthority admits an AuthorityOnly verb; none admits every one.
+    void SetAuthority(const World* world) { Authority = world; }
+
     // Where a dynamic data-asset reference's subtype is read, for an input
     // whose field constrains one. Borrowed and outlived by its owner. Null
     // means such an input is refused as InvalidArguments rather than accepted
@@ -134,6 +141,9 @@ public:
     void SetTrace(VerbTraceRing* trace) { Trace_ = trace; }
     [[nodiscard]] VerbTraceRing* Trace() const { return Trace_; }
 
+    // Where a provider's defects are reported, once per verb. Borrowed; null reports nothing.
+    void SetLog(const Logger* log) { Log = log; }
+
     // Whether a call is in progress. Registration, unbinding, and destroying an
     // implementation are all forbidden while it is.
     [[nodiscard]] bool IsDispatching() const { return Dispatching; }
@@ -141,7 +151,7 @@ public:
 private:
     friend VerbBindingToken;
 
-    using InvokeFn = VerbAdmission (*)(void*, const VerbInvocation&);
+    using InvokeFn = VerbAnswer (*)(void*, const VerbInvocation&);
 
     struct Implementation
     {
@@ -158,8 +168,10 @@ private:
                                                 std::span<const AuthoredValue> inputs,
                                                 const VerbInvocationSource& source,
                                                 const LeaseOwner& owner,
-                                                LeaseStep step);
-    VerbAdmission Call(Implementation& entry, const VerbInvocation& invocation);
+                                                LeaseStep step,
+                                                AuthoredValue* result);
+    VerbAnswer Call(Implementation& entry, const VerbInvocation& invocation);
+    void Deliver(const VerbDefinition& definition, VerbId verb, AuthoredValue& result);
     [[nodiscard]] VerbInvocation Begin(VerbId verb, const VerbInvocationSource& source);
 
     [[nodiscard]] VerbBindingToken BindErased(VerbId verb, void* target, InvokeFn invoke);
@@ -169,7 +181,7 @@ private:
     [[nodiscard]] const Implementation* Find(VerbId verb) const;
 
     void RecordTrace(VerbTraceEvent event,
-                     VerbAdmission status,
+                     VerbAnswer answer,
                      const VerbInvocation& invocation);
 
     const VerbRegistry& Verbs;
@@ -183,7 +195,11 @@ private:
     AuthoredArguments Scratch;
 
     VerbTraceRing* Trace_ = nullptr;
+    const Logger* Log = nullptr;
+    // Indexed like Implementations: whether a verb's defective result was reported.
+    std::vector<bool> ResultDefectReported;
     const PersistentEntityIndex* Entities = nullptr;
+    const World* Authority = nullptr;
     const DataAssetCache* DataAssets = nullptr;
     std::uint64_t NextInvocation = 0;
     std::uint32_t NextGeneration = 0;

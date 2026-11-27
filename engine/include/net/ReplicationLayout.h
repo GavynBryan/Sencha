@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/metadata/RuntimeSchema.h>
+#include <net/ReplicationImage.h>
 #include <net/ReplicationSchemas.h>
 #include <net/ReplicationWireContext.h>
 #include <ecs/ComponentTraits.h>
@@ -9,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <tuple>
+#include <utility>
 #include <span>
 #include <string>
 #include <string_view>
@@ -71,11 +74,43 @@ struct ReplicatedField
     bool OwnerLocal = false;
 };
 
+// A run of 0..MaxCount elements a codec declares beside its fixed head. Its
+// fields are runs inside one element, at offsets from the element's start.
+struct ReplicatedList
+{
+    std::string Name;
+    std::size_t Stride = 0;
+    std::uint16_t MaxCount = 0;
+    std::vector<ReplicatedField> Fields;
+    std::vector<std::byte> ElementDefault;
+};
+
+inline constexpr std::size_t kMaxReplicatedRunsPerListElement = 8;
+
+// The `Wire` of a codec whose component is its lists alone.
+struct ReplicationNoHead
+{
+};
+
+template <>
+struct TypeSchema<ReplicationNoHead>
+{
+    static constexpr std::string_view Name = "replication_no_head";
+    static auto Fields() { return std::tuple{}; }
+};
+
+template <typename Element, std::size_t Most>
+struct ReplicatedListOf
+{
+    using Type = Element;
+    static constexpr std::size_t MaxCount = Most;
+};
+
 // FromWire writes into the receiver's own value, so what the image does not
 // carry keeps this machine's value.
 using ReplicationToWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> component,
-                                   std::span<std::byte> wire);
-using ReplicationFromWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> wire,
+                                   ReplicationImage& wire);
+using ReplicationFromWire = void (*)(const ReplicationWireContext& context, const ReplicationImage& wire,
                                      std::span<std::byte> component);
 
 // Specialized by a component holding process-local values (an entity, a tag id).
@@ -86,6 +121,43 @@ struct ReplicationCodec;
 
 template <typename T>
 concept ComponentHasReplicationCodec = requires { typename ReplicationCodec<T>::Wire; };
+
+// A codec naming `Lists` (a tuple of ReplicatedListOf) and `ListNames` translates
+// through the whole ReplicationImage rather than its head alone.
+template <typename T>
+concept ComponentCodecHasLists = ComponentHasReplicationCodec<T> && requires { typename ReplicationCodec<T>::Lists; };
+
+// A component member that is a named id: it travels as its name's wire key.
+template <typename T, typename Fields>
+struct ComponentNamedIdMembers : std::false_type
+{
+};
+
+template <typename T, typename... FieldTs>
+struct ComponentNamedIdMembers<T, std::tuple<FieldTs...>>
+    : std::bool_constant<(IsNamedIdField<std::remove_cvref_t<decltype(std::declval<const T&>().*(std::declval<FieldTs>().Ptr))>> || ...)>
+{
+};
+
+template <typename T>
+inline constexpr bool ComponentHasNamedIdField = []
+{
+    if constexpr (HasTypeSchema<T>)
+        return ComponentNamedIdMembers<T, decltype(TypeSchema<T>::Fields())>::value;
+    else
+        return false;
+}();
+
+// The leaves of a component that travel as wire keys, at their offsets in its own image.
+struct ReplicatedNamedLeaf
+{
+    std::size_t Offset = 0;
+    const NamedIdVocabulary* Names = nullptr;
+};
+
+[[nodiscard]] std::vector<ReplicatedNamedLeaf> ReplicatedNamedLeaves(const std::vector<RuntimeField>& fields);
+void TranslateNamedLeaves(std::span<const ReplicatedNamedLeaf> leaves, const ReplicationWireContext& context,
+                          std::span<std::byte> image, bool toWire);
 
 //-----------------------------------------------------------------------------
 // A replicated component type and the fields of it that travel.
@@ -116,6 +188,7 @@ struct ReplicatedComponent
     bool Predicted = false;
     bool AuthorityMaterialized = false;
     std::vector<ReplicatedField> Fields;
+    std::vector<ReplicatedList> Lists;
 };
 
 // Why a component could not be registered for replication. Every one of these
@@ -143,6 +216,9 @@ enum class ReplicationLayoutError : std::uint8_t
     // is no reading of the pair that is safe to guess at, and picking the
     // member over the composite would send what the composite called private.
     ContradictoryFieldPolicy,
+    // The component's widest encoding, every list at its most, would not fit
+    // the default snapshot budget. A list never spans snapshots.
+    ListTooLarge,
 };
 
 // A component's per-field presence mask is one machine word, so this is how
@@ -169,7 +245,7 @@ public:
         static_assert(HasTypeSchema<T>,
                       "A replicated component needs a TypeSchema: the schema is "
                       "what says which of its bytes travel.");
-        static_assert(!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>,
+        static_assert((!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>) || ComponentHasNamedIdField<T>,
                       "A component replicated as its bytes must not declare ComponentTraits "
                       "lifecycle hooks: they would be handed another machine's handles and "
                       "entities. Give it a ReplicationCodec, which translates what arrives "
@@ -181,48 +257,78 @@ public:
                        ComponentIsPredicted<T>,
                        RuntimeFieldsOf<T, SchemaPurpose::Replication>()))
             return false;
-        Components_.back().AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
+        ReplicatedComponent& added = Components_.back();
+        added.AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
+        if (!NamedLeavesOf<T>().empty())
+        {
+            added.ToWire = [](const ReplicationWireContext& context, std::span<const std::byte> component,
+                              ReplicationImage& wire) {
+                const std::span<std::byte> head = wire.Head();
+                std::memcpy(head.data(), component.data(), sizeof(T));
+                TranslateNamedLeaves(NamedLeavesOf<T>(), context, head, true);
+            };
+            added.FromWire = [](const ReplicationWireContext& context, const ReplicationImage& wire,
+                                std::span<std::byte> component) {
+                std::memcpy(component.data(), wire.Bytes().data(), sizeof(T));
+                TranslateNamedLeaves(NamedLeavesOf<T>(), context, component, false);
+            };
+            const T defaults{};
+            added.WireDefault.resize(sizeof(T));
+            std::memcpy(added.WireDefault.data(), &defaults, sizeof(T));
+        }
         return true;
     }
 
     template <ComponentHasReplicationCodec T>
     bool AddCodec()
     {
-        using Wire = typename ReplicationCodec<T>::Wire;
+        using Codec = ReplicationCodec<T>;
+        using Wire = typename Codec::Wire;
         static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<Wire>,
                       "A replicated component and its wire image must be trivially copyable.");
         static_assert(HasTypeSchema<Wire>, "A wire image needs a TypeSchema: it says what of the image travels.");
+        std::vector<ReplicatedList> lists;
+        if constexpr (ComponentCodecHasLists<T>)
+        {
+            using Lists = typename Codec::Lists;
+            static_assert(std::tuple_size_v<Lists> >= 1 && std::tuple_size_v<Lists> <= kMaxReplicatedListsPerComponent,
+                          "A codec declares one to kMaxReplicatedListsPerComponent lists.");
+            static_assert(std::size(Codec::ListNames) == std::tuple_size_v<Lists>, "Every list is named.");
+            if (!CompileLists<T, Lists>(lists, std::make_index_sequence<std::tuple_size_v<Lists>>{}))
+                return false;
+        }
         if (!AddErased(ResolveComponentTypeId<T>(), ResolveComponentName<T>(), sizeof(Wire), false,
-                       RuntimeFieldsOf<Wire, SchemaPurpose::Replication>()))
+                       RuntimeFieldsOf<Wire, SchemaPurpose::Replication>(), std::move(lists)))
             return false;
         ReplicatedComponent& added = Components_.back();
         added.LocalSize = sizeof(T);
         added.AuthorityMaterialized = ComponentIsAuthorityMaterialized<T>;
-        {
-            const T local{};
-            Wire image{};
-            ReplicationCodec<T>::ToWire(ReplicationWireContext{}, local, image);
-            added.WireDefault.resize(sizeof(Wire));
-            std::memcpy(added.WireDefault.data(), &image, sizeof(Wire));
-        }
         added.ToWire = [](const ReplicationWireContext& context, std::span<const std::byte> component,
-                          std::span<std::byte> wire) {
+                          ReplicationImage& wire) {
             T local;
-            Wire image;
             std::memcpy(&local, component.data(), sizeof(T));
-            std::memcpy(&image, wire.data(), sizeof(Wire));
-            ReplicationCodec<T>::ToWire(context, local, image);
-            std::memcpy(wire.data(), &image, sizeof(Wire));
+            if constexpr (ComponentCodecHasLists<T>)
+                Codec::ToWire(context, local, wire);
+            else
+                Codec::ToWire(context, local, wire.HeadAs<Wire>());
         };
-        added.FromWire = [](const ReplicationWireContext& context, std::span<const std::byte> wire,
+        added.FromWire = [](const ReplicationWireContext& context, const ReplicationImage& wire,
                             std::span<std::byte> component) {
             T local;
-            Wire image;
             std::memcpy(&local, component.data(), sizeof(T));
-            std::memcpy(&image, wire.data(), sizeof(Wire));
-            ReplicationCodec<T>::FromWire(context, image, local);
+            if constexpr (ComponentCodecHasLists<T>)
+                Codec::FromWire(context, wire, local);
+            else
+                Codec::FromWire(context, wire.HeadAs<Wire>(), local);
             std::memcpy(component.data(), &local, sizeof(T));
         };
+        {
+            const T local{};
+            ReplicationImage image(added);
+            added.ToWire(ReplicationWireContext{}, std::span(reinterpret_cast<const std::byte*>(&local), sizeof(T)),
+                         image);
+            added.WireDefault.assign(image.Bytes().begin(), image.Bytes().begin() + sizeof(Wire));
+        }
         return true;
     }
 
@@ -253,11 +359,47 @@ public:
     [[nodiscard]] const std::string& ErrorDetail() const { return ErrorDetail_; }
 
 private:
+    template <typename T>
+    static const std::vector<ReplicatedNamedLeaf>& NamedLeavesOf()
+    {
+        static const std::vector<ReplicatedNamedLeaf> leaves =
+            ReplicatedNamedLeaves(RuntimeFieldsOf<T, SchemaPurpose::Replication>());
+        return leaves;
+    }
+
+    template <typename T, typename Lists, std::size_t... Index>
+    bool CompileLists(std::vector<ReplicatedList>& out, std::index_sequence<Index...>)
+    {
+        return (CompileList<T, std::tuple_element_t<Index, Lists>>(ReplicationCodec<T>::ListNames[Index], out) && ...);
+    }
+
+    template <typename T, typename Declared>
+    bool CompileList(std::string_view name, std::vector<ReplicatedList>& out)
+    {
+        using Element = typename Declared::Type;
+        static_assert(std::is_trivially_copyable_v<Element> && alignof(Element) <= 8,
+                      "A list element must be trivially copyable and at most eight-aligned.");
+        static_assert(HasTypeSchema<Element>, "A list element needs a TypeSchema: it says what of it travels.");
+        static_assert(Declared::MaxCount >= 1 && Declared::MaxCount <= 0xFFFF, "A list holds 1 to 65535 elements at most.");
+        const Element defaults{};
+        return CompileListErased(ResolveComponentName<T>(), name, sizeof(Element),
+                                 static_cast<std::uint16_t>(Declared::MaxCount),
+                                 RuntimeFieldsOf<Element, SchemaPurpose::Replication>(),
+                                 std::span(reinterpret_cast<const std::byte*>(&defaults), sizeof(Element)), out);
+    }
+
+    bool CompileListErased(std::string_view component, std::string_view name, std::size_t stride,
+                           std::uint16_t most, const std::vector<RuntimeField>& fields,
+                           std::span<const std::byte> elementDefault, std::vector<ReplicatedList>& out);
+    bool CompileFields(std::string_view owner, std::size_t size, const std::vector<RuntimeField>& fields,
+                       std::vector<ReplicatedField>& out);
+
     bool AddErased(ComponentTypeId type,
                    std::string_view name,
                    std::size_t size,
                    bool predicted,
-                   const std::vector<RuntimeField>& fields);
+                   const std::vector<RuntimeField>& fields,
+                   std::vector<ReplicatedList> lists = {});
 
     void Fail(ReplicationLayoutError error, std::string detail);
 

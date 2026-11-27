@@ -113,6 +113,7 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
 
         set(_companion "${_generated}/${_dir}/${_stem}.sencha.h")
         set(_index "${_generated}/${_dir}/${_stem}.index")
+        set(_depfile "${_generated}/${_dir}/${_stem}.sencha.d")
 
         # A placeholder at configure time so the tree is always includable: a
         # fresh checkout compiles, and an editor does not show red before the
@@ -122,12 +123,23 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
         endif()
 
 
+        # A companion bakes in what its header's includes say -- a default
+        # naming another header's constant -- so every header the parse read
+        # is a dependency, not only its own.
+        set(_depends_on_reads "")
+        set(_depfile_argument "")
+        if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+            set(_depends_on_reads DEPFILE "${_depfile}")
+            set(_depfile_argument "--depfile=${_depfile}")
+        endif()
         add_custom_command(
             OUTPUT "${_companion}" "${_index}"
             COMMAND sencha::component-codegen "${_abs}"
                     "--output=${_companion}" "--index=${_index}"
                     "--logical=${_logical}" "--flags=${_flags}"
+                    ${_depfile_argument}
             DEPENDS "${_abs}" "${_flags}" sencha::component-codegen
+            ${_depends_on_reads}
             COMMENT "Generating component metadata for ${_logical}"
             VERBATIM)
 

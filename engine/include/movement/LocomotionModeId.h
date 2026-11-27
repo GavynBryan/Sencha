@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/metadata/Field.h>
+#include <core/metadata/NamedIdField.h>
 #include <core/metadata/TypeSchema.h>
 
 #include <compare>
@@ -31,4 +32,12 @@ struct TypeSchema<LocomotionModeId>
             MakeField("value", &LocomotionModeId::Value),
         };
     }
+};
+
+// A mode is a name content states; an unregistered or absent one reads as the free mode.
+template <>
+struct NamedIdField<LocomotionModeId>
+{
+    static constexpr NamedIdKind Kind = NamedIdKind::RegisteredName;
+    static const NamedIdVocabulary& Vocabulary();
 };

@@ -1,12 +1,16 @@
 #include "DocumentCookFingerprints.h"
 
+#include "CellArtifactCook.h"
 #include "CookGraph.h"
 
 #include <assets/cook/CookFingerprint.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonStringify.h>
 #include <assets/static_mesh/MeshGeometry.h>
+#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -139,10 +143,31 @@ namespace
         }
         return fingerprint.Value();
     }
+    std::uint64_t HashComponentSchemas(const DocumentCookSnapshot& snapshot,
+                                       const ComponentSerializerRegistry& serializers)
+    {
+        std::set<std::string_view> keys;
+        if (const JsonValue* entities = snapshot.PassthroughScene.Find("entities");
+            entities != nullptr && entities->IsArray())
+            for (const JsonValue& entity : entities->AsArray())
+                if (const JsonValue* components = entity.Find("components");
+                    components != nullptr && components->IsObject())
+                    for (const auto& [key, payload] : components->AsObject())
+                        keys.insert(key);
+        if (!snapshot.Brushes.empty())
+            keys.insert(CellEntityComponentKeys().begin(), CellEntityComponentKeys().end());
+
+        CookFingerprint fingerprint("component_schemas", 1);
+        for (std::string_view key : keys)
+            if (const IComponentSerializer* serializer = serializers.FindByJsonKey(key))
+                fingerprint.AddU64(key, ComponentSchemaFingerprint(*serializer));
+        return fingerprint.Value();
+    }
 } // namespace
 
 DocumentCookFingerprints ComputeDocumentCookFingerprints(
     const DocumentCookSnapshot& snapshot,
+    const ComponentSerializerRegistry& serializers,
     double cellSize,
     std::span<const ProbeHaloZone* const> reachableHalo)
 {
@@ -222,8 +247,9 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
     AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
     fp.Probe = probeIdentity.Value();
 
-    CookFingerprint documentFingerprint("document_cook", 11);
-    documentFingerprint.AddDependency("brush_cells", fp.Brush)
+    CookFingerprint documentFingerprint("document_cook", 12);
+    documentFingerprint.AddDependency("component_schemas", HashComponentSchemas(snapshot, serializers))
+        .AddDependency("brush_cells", fp.Brush)
         .AddDependency("placements", fp.Placements)
         .AddDependency("direct_lights", HashDirectLights(bakeLights))
         .AddU64("passthrough_scene",

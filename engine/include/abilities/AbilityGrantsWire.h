@@ -7,56 +7,56 @@
 
 #include <cstdint>
 
-// Per grant: its id, the ability's wire key, its entry key's NameWireKey, its kind.
-struct AbilityGrantsWireWords
+// A grant's id, the ability's wire key, its entry key's NameWireKey, its kind.
+struct AbilityGrantWireWords
 {
-    std::uint32_t Values[4 * kAbilityGrantCapacity] = {};
+    std::uint32_t Values[4] = {};
 };
 
-struct AbilityGrantsWireSources
+struct AbilityGrantWire
 {
-    std::uint64_t Values[kAbilityGrantCapacity] = {};
+    AbilityGrantWireWords Words;
+    std::uint64_t Source = 0;
 };
 
-// An actor's grants go to its owner alone, who predicts with them; NextId too, so
-// the owner's grants keep the authority's ids.
-struct AbilityGrantsWire
+// NextId travels so the owner's grants keep the authority's ids.
+struct AbilityGrantsWireHead
 {
-    AbilityGrantsWireWords Words;
-    AbilityGrantsWireSources Sources;
     std::uint32_t NextId = 1;
 };
 
 template <>
-struct PackedScalarGroup<AbilityGrantsWireWords>
+struct PackedScalarGroup<AbilityGrantWireWords>
 {
-    static constexpr std::size_t Count = 4 * kAbilityGrantCapacity;
+    static constexpr std::size_t Count = 4;
     using Component = std::uint32_t;
 };
 
 template <>
-struct PackedScalarGroup<AbilityGrantsWireSources>
+struct TypeSchema<AbilityGrantWire>
 {
-    static constexpr std::size_t Count = kAbilityGrantCapacity;
-    using Component = std::uint64_t;
-};
-
-template <>
-struct TypeSchema<AbilityGrantsWire>
-{
-    static constexpr std::string_view Name = "ability_grants_wire";
+    static constexpr std::string_view Name = "ability_grant_wire";
     static auto Fields()
     {
-        return std::tuple{ MakeField("words", &AbilityGrantsWire::Words).OwnerOnly(),
-                           MakeField("sources", &AbilityGrantsWire::Sources).OwnerOnly(),
-                           MakeField("next_id", &AbilityGrantsWire::NextId).OwnerOnly() };
+        return std::tuple{ MakeField("words", &AbilityGrantWire::Words).OwnerOnly(),
+                           MakeField("source", &AbilityGrantWire::Source).OwnerOnly() };
     }
 };
 
 template <>
+struct TypeSchema<AbilityGrantsWireHead>
+{
+    static constexpr std::string_view Name = "ability_grants_wire_head";
+    static auto Fields() { return std::tuple{ MakeField("next_id", &AbilityGrantsWireHead::NextId).OwnerOnly() }; }
+};
+
+// An actor's grants go to its owner alone, who predicts with them, in grant order.
+template <>
 struct ReplicationCodec<AbilityGrants>
 {
-    using Wire = AbilityGrantsWire;
-    static void ToWire(const ReplicationWireContext& context, const AbilityGrants& grants, AbilityGrantsWire& wire);
-    static void FromWire(const ReplicationWireContext& context, const AbilityGrantsWire& wire, AbilityGrants& grants);
+    using Wire = AbilityGrantsWireHead;
+    using Lists = std::tuple<ReplicatedListOf<AbilityGrantWire, kAbilityGrantCapacity>>;
+    static constexpr std::string_view ListNames[] = { "grants" };
+    static void ToWire(const ReplicationWireContext& context, const AbilityGrants& grants, ReplicationImage& wire);
+    static void FromWire(const ReplicationWireContext& context, const ReplicationImage& wire, AbilityGrants& grants);
 };

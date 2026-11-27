@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -46,6 +47,7 @@ public:
 
     // For a participant with no living body and no attempt in flight.
     void StartSpawn(EntityId participant);
+    // Settles landed spawns, and says where each body a level change kept stands (LevelArrival).
     void Update();
 
     // A published group still awaiting assignment is destroyed at the next pump.
@@ -58,6 +60,7 @@ private:
     {
         SceneSpawnId Spawn;
         std::string Path;
+        bool Restored = false;
     };
     struct Attempt
     {
@@ -66,6 +69,8 @@ private:
     };
 
     bool NeedsBody(EntityId participant) const;
+    void PlaceKeptBodies();
+    [[nodiscard]] Transform3f ArrivalRoot(std::string_view arrival, const Transform3f& fallback) const;
     bool MatchesPending(EntityId participant, SceneSpawnId spawn) const;
     void Settle(const Attempt& attempt);
 

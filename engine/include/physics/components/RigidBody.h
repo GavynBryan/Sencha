@@ -1,36 +1,56 @@
 #pragma once
 
+#include <core/metadata/ComponentHoldsPlacement.h>
 #include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
 #include <physics/PhysicsTypes.h>
 
-//=============================================================================
-// RigidBody
-//
-// Data-only ECS component. Marks an entity's collider as participating in
-// dynamics and carries its motion parameters. An entity with a Collider but no
-// RigidBody is treated as static world geometry.
-//
-// Velocities are the round-trip state: pushed into the body at bind, pulled
-// back after every step for dynamic bodies. GravityScale is pushed every
-// step, so a runtime edit (a held prop going weightless) takes effect on the
-// next tick without a structural change. Damping is applied when the body is
-// created; the backend exposes no cheap per-step setter for it. Logic lives
-// in the physics systems; this struct holds no behavior.
-//=============================================================================
-struct SENCHA_COMPONENT("sencha.physics.rigid_body") RigidBody
+// How a collider's body moves, and its motion as a save keeps it: docs/physics/rigid-bodies.md.
+struct SENCHA_COMPONENT("sencha.physics.rigid_body")
+       SENCHA_SCHEMA("RigidBody")
+       SENCHA_SCENE_CHUNK("RGBD")
+       SENCHA_SAVED
+RigidBody
 {
+    SENCHA_FIELD("motion")
+    SENCHA_TOOLTIP("Static never moves, kinematic is moved by its transform, dynamic falls and is pushed.")
     BodyMotion Motion = BodyMotion::Dynamic;
-    float Mass = 1.0f; // <= 0 lets the backend derive mass from the shape
+
+    SENCHA_FIELD("mass")
+    SENCHA_TOOLTIP("Kilograms. Zero or less takes the mass from the shape.")
+    float Mass = 1.0f;
+
+    SENCHA_FIELD("linear_velocity")
+    SENCHA_LABEL("Velocity")
+    SENCHA_TOOLTIP("Metres per second in world space; what a dynamic body starts moving at.")
     Vec3d LinearVelocity = Vec3d::Zero();
+
+    SENCHA_FIELD("gravity_scale")
+    SENCHA_TOOLTIP("How much of the world's gravity it falls with.")
     float GravityScale = 1.0f;
 
-    Vec3d AngularVelocity = Vec3d::Zero(); // radians/second, world space
+    SENCHA_FIELD("angular_velocity")
+    SENCHA_LABEL("Spin")
+    SENCHA_TOOLTIP("Radians per second about each world axis; what a dynamic body starts turning at.")
+    Vec3d AngularVelocity = Vec3d::Zero();
 
-    // Velocity fraction removed per second, matching the backend's default so
-    // a default component behaves exactly like a body without these fields.
+    SENCHA_FIELD("linear_damping")
+    SENCHA_TOOLTIP("Fraction of its velocity a body loses each second.")
     float LinearDamping = 0.05f;
+
+    SENCHA_FIELD("angular_damping")
+    SENCHA_TOOLTIP("Fraction of its spin a body loses each second.")
     float AngularDamping = 0.05f;
+
+    SENCHA_FIELD("asleep")
+    SENCHA_TOOLTIP("Starts settled: a dynamic body that does not move until something touches it.")
+    bool Asleep = false;
+};
+
+template <>
+struct ComponentHoldsPlacement<RigidBody>
+{
+    static bool Holds(const RigidBody& body) { return body.Motion == BodyMotion::Dynamic; }
 };
 
 #if !defined(SENCHA_CODEGEN)

@@ -1244,3 +1244,713 @@ move no longer owes an owner-only run still at the default it was added with.
 The packet framing changed, so `kNetProtocolVersion` is 10. The replicated
 table gains `EquipmentState`, and its frozen hash moves
 (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+## v53
+
+**Row lists.** `ListPool` (`core/containers/ListPool.h`, `docs/ecs/row-lists.md`):
+lists a component row names by handle, referenced through the component's
+lifecycle hooks.
+
+**Grants.** `AbilityGrants` no longer holds its grants: it is a handle into the
+World's `AbilityGrantLists`, 16-bit counts of all, effect-held and transient
+grants, and the next id, and declares
+`OnAdd` and `OnRemove`. `AbilityGrants::Find` and the member array are gone;
+read with `AbilityGrantsOf` and `FindAbilityGrant`. `GrantAbility` and
+`RevokeAbilityGrant` take the World and the actor, or an `AbilityGrantList`
+(the by-value form, new, with `CopyAbilityGrants`, `MakeAbilityGrants` and
+`SetAbilityGrants`). `kAbilityGrantCapacity` is 64. `AbilityGrantsWire` is
+sixteen pages of four grants (`kAbilityGrantsPerWirePage`,
+`kAbilityGrantWirePages`).
+
+**Equipment.** `EquipmentState` no longer holds its records: it is the layout,
+a count, the next key and a handle into the World's `EquipmentRecordLists`, and
+declares `OnAdd` and `OnRemove`. Read with `EquipmentRecordsOf`; write with
+`EditEquipmentRecords`, `AddEquipmentRecord`, `RemoveEquipmentRecord`, or by
+value through `EquipmentRecordList`, `CopyEquipment`, `MakeEquipmentState` and
+`SetEquipment`. `kEquipmentRecordCapacity` is `kMaxEquipmentSlots` (32).
+`EquipmentRefusal::Full` is removed, which renumbers the refusals after it.
+`ResolveEquipmentSlots` takes the worn records as a span. `EquipmentStateWire`
+is 32 record runs and 16 runs of two sources; `EquipmentWireRecord` is gone.
+
+**Wire.** Both images changed, so `kNetProtocolVersion` is 11 and the frozen
+replication hash moves (`test/core/ComponentIdentityFreezeTests.cpp`).
+
+A module that assigns over either component's row, or copies the row to keep
+its value, must use the calls above instead (`docs/ecs/row-lists.md`, "What may
+not be done with such a component").
+
+## v54
+
+**Restore progress.** `SavedGames::RestoreStatus()` is a `RestoreProgress`
+(`Pending`, `Reading`, `Loading`, `BodiesRestored`, `Failed`) that follows the
+restore's own level change to the participants' bodies; `Restores()` counts
+accepted restores. `RestoreChange()` and `Failure()` are gone; `WriteFailure()`
+and `RestoreFailure()` replace the shared reason. `RestoredFromBackup()`,
+`Finish()` and `Advance()` are new. `SavedGames` writes the persistent id
+counter itself (`kPersistentIdsSection`), and `RegisterEngineSaveSections` no
+longer registers it; every registered section's `Restore` runs on every
+restore, with null data when the save lacks it.
+
+**Level change.** `LevelChangeRequest::RuntimeState`
+(`LevelChangeRuntimeState::Keep` or `Discard`) and `LevelChange::RuntimeState()`;
+`LevelChangeAdmissionReason`. A first load is admitted on any machine, and the
+`map` and `world` commands are level change requests. `RestoredBodies::Refusal`.
+
+**Files and formats.** `DecodeSavedGame` returns a `DecodedSavedGame` (the
+save, its error, and whether a newer build wrote it); `ReadHashedChunkFile`
+returns a `HashedChunkFileRead`. `SaveSlotFiles::Write` no longer rotates;
+`WriteBackup` is new. `ApplySpawnOverlay` takes the list of what a retuned
+scene set aside. The save file format is unchanged (format 1, chunk versions 1).
+
+## v55
+
+**Tag writes.** `GameplayTagContainer::Grant`, `GrantBaseline` and
+`SetContribution` return a `GameplayTagWrite` (`Unchanged`, `Added`,
+`Restacked`, `Removed`, `Full`) in place of a bool, and never assert; a full
+container answers `Full` and changes nothing. `CanHoldAll` replaces `CanHold`. A baseline
+stack added at saturation no longer displaces a contributed one.
+`gameplay_tags/GameplayTagOverflow.h` gains `AdmitGameplayTags`,
+`kGameplayTagOverflowQuietReports` and `GameplayTagOverflow::QuietReports`;
+`gameplay_tags/BaselineGameplayTags.h` declares `GrantBaselineTag` and
+`RevokeBaselineTag`. The tag verbs moved from `abilities/GameplayTagVerbs.h`
+to `gameplay_tags/GameplayTagVerbs.h`. `ReadGameplayTags` reports dropped tags
+as `DroppedGameplayTag` (name and `GameplayTagDrop`), and `ReadAttributes`
+takes an optional list of dropped attributes. `ApplyEffect` refuses a lasting
+effect whose granted tags would not fit, and `AbilityRefusal::TagsFull` is
+appended.
+
+**Grants.** `AbilityGrant::Source` is a `PersistableRef`, and `GrantAbility`
+takes the source as one. `AbilityGrantEntries::Intern` takes an optional
+`AbilityGrantEntryRefusal*`; `kAbilityGrantEntryRefusal` is replaced by
+`AbilityGrantEntryRefusalText`, and `DeclareEffectGrants` returns a message
+per refused grant instead of its key.
+
+**References.** `MakePersistableRef` takes a mutable World and mints the
+target a persistent id on the authority; `PersistableRefOf` is the const,
+never-minting form.
+
+The grants serializer writes `"kind": "request"` and `"source"` on a requested
+grant; both are optional, so older scenes and saves load as before. The wire
+and the save format version are unchanged.
+
+## v56
+
+**Inventory.** `Inventory` takes the tick it runs in (`Inventory(world, now)`),
+as `Equipment` does; a counted pickup's take effects are applied in that tick,
+scaled by its count. `InventoryOperations` and `EquipmentOperations` take the
+simulation clock and a `Logger`, and `EngineVocabularyBindings::BindInventory`
+and `BindEquipment` take the logger. `InventoryRefusal` and `EquipmentRefusal`
+gain an `EnumSchema`. `inventory/Inventory.h` declares `ItemStackHolds` and
+`SetItemCount`.
+
+**Equipment.** `Equipment::UnequipRecord` ends a record by its key.
+`EquipmentComponents.h` replaces `AddEquipmentRecord` with `WearRecord` and
+`WearEquipmentRecord`, and declares `FindEquipmentRecordHolding` and
+`kNoEquipmentRecord`; `Equipment.h` declares `ItemTakesSlotFirst`.
+
+**Held records.** `HeldRecordIndex` keys records (`HeldRecordKey`, `Key`,
+`Unkey`, `FindKeyed`), answers `IsWithin`, `PositionOf` and `Renumber`, and
+loses `ForgetHolder`; a holder holding nothing has revision 0. `Counter` gains
+lifecycle hooks and `CounterKey`. `world/held/HeldRecords.h` declares
+`PlaceHeldRecord` and `NameHeldHolder`.
+
+**Tags.** `GameplayTagContainer::CanHoldAll` answers no for a tag already at
+0xFFFF stacks, so `AdmitGameplayTags` refuses it.
+
+`NamedDefinitionRegistry` gains `ForEachName` and `ForEachDefined`. The wire,
+the replicated layout and the save format version are unchanged; a scene or
+save naming an entry count its stack cannot hold, or none, now fails to load.
+
+## v57
+
+`SavedGames::Remembers` answers whether this session wrote or restored a slot,
+where `Holds` also answers yes for a file an earlier run left on disk.
+`inventory/Inventory.h` declares `ItemStackClamp`, which `ItemStackHolds` is
+defined by; a scene or save entry naming a count its stack cannot hold now
+loads with the count clamped into 1 to `stack.max` and a warning, instead of
+failing to load. The wire, the replicated layout and the save format version
+are unchanged.
+
+## v58
+
+`IWriteArchive` and `IReadArchive` gain `Field(std::string_view, std::int32_t)`,
+so a signed integer member has a scene form: JSON writes and reads the number
+itself (a priority of -1 is written -1, not 4294967295), and the binary archive
+writes the same four bytes it wrote before. `ReadArchiveValue` refuses a number
+that is not whole or does not fit the member's type, where it used to truncate,
+and an integer wider than 32 bits has no archive form. Cooked data, the wire,
+the replicated layout and the save format version are unchanged.
+
+## v59
+
+`IComponentSerializer` gains the virtual `Persistence()`, returning the new
+`ComponentPersistence` (`core/metadata/ComponentPersistence.h`: `Authored`,
+`Saved`, `Identity`), declared before the destructor so every later slot
+moves. `SENCHA_SAVED` is a new component annotation: `ComponentDefinition` may
+state `Saved`, which `ComponentPersistenceOf<T>` projects and both
+`ComponentSerializer<T>` and `TypedComponentSerializer<T>` return; a component
+may instead specialize `ComponentPersistenceOf` by hand, as
+`PersistentIdComponent` and `SceneInstance` do for `Identity`. The generator's
+format version is unchanged, since the member is optional. A save's body patch
+now holds only `Saved` components, a held record leaves out `Identity` ones,
+and a spawn strips `Identity` ones from a prefab, each read from the
+declaration. Cooked data, the wire, the replicated layout and the save format
+version are unchanged.
+
+## v60
+
+`world/serialization/EntityPatch.h` is new: `WriteEntityRecord`,
+`AuthoredComponentsOf`, `CaptureEntityPatch` and `ApplyEntityPatch`, with
+`ComponentPersistenceSet`, `AuthoredComponent`, `EntityScope` and
+`EntityPatchOutcome`, write and diff an entity's components as one record.
+`ComponentSerializerRegistry` gains `EntitySchema()` and the member that holds
+it. `IComponentSerializer` gains the virtual `SaveDefault(IWriteArchive&)`,
+declared before the destructor so every later slot moves; `ComponentSerializer<T>`
+writes the default-constructed component through it. `SceneSerializationContext`
+gains `Purpose` (`SceneRecordPurpose`). `PackageEntity` gains `Unpatched` and
+the `Find`, `SetSerialized` and `Remove` members, and `EntityBuildPackage` gains
+`FindEntity`. A body's saved patch and a held record's components are written
+in component key order, a `Saved` component the body gained is written as its
+difference from its default, and a bytes-authored component the body lost is
+written as a removal. The save format version, cooked data, the wire and the
+replicated layout are unchanged.
+
+## v61
+
+`SavedGameSectionDefinition::Capture` takes `const World&` (was `World&`): a
+write settles held records and brings the zone store up to date before any
+section captures, and capture reads only, so a section can no longer mint ids
+or change the world. `CaptureHeldRecords` takes `const World&` too and no longer
+gives a record an id or names its holder; a record without an id after the
+settle is logged and left out. A body nothing references is saved without an
+id. `participant/ParticipantLifecycle.h` gains `LivingBodyOf`. A write on a
+settled level whose local participant has no body fails with "the local
+participant has no body". The save format version, cooked data, the wire and
+the replicated layout are unchanged.
+
+## v62
+
+Zone state is keyed by level. `world/LevelReference.h` replaces
+`app/LevelReference.h`. `zone/ZoneId.h` names the two reserved zone ids,
+`kSceneLevelZone` and `kWorldSceneZone`, which the manifest reader and the
+world cook refuse. `zone/ZoneStateScope.h` is new: `ZoneStateLevelId` and
+`ZoneStateScope`, which `ZoneStateStore::Scope` hands out and every store call,
+`CaptureZoneState`, `ParkHeldRecords` and the importer's `stateScope` take in
+place of a `ZoneId`. `RuntimeZoneRecord` gains `StateScope`; `ZoneLoadRecipe`
+gains `StateScope`; `AsyncZoneLoader::BeginLoad` and `BeginLoadScene` and the
+`ImportZonePackage` family take a trailing `ZoneStateScope`.
+
+Level entities are saved by the entity patch. `ZoneComponentMemory`,
+`ZoneComponentMemories`, `RestoreZoneState`, `RememberedComponentState` and the
+store's component-state methods are gone. `AuthoredEntityState` gains
+`Baseline`; `ZoneStateStore::RecordAuthoredSet` takes the authored set by value
+and the store gains `RecordPatch`, `ForgetPatchMember`, `PatchOf` and
+`BaselineOf`. `ZoneStateSerialization` is a new World resource, installed by the
+new `SavedGames::KeepLevelState()`. `EntityPatchOutcome` gains
+`MisfitMembers`, and `AuthoredComponent` gains `Diffed`: a capture leaves a
+baseline entry marked false out of the patch, which is how a level entity's
+component cooked as bytes is not diffed. The responses serializer writes
+a binding's `enabled` and `consumed` state in its save form and reads
+`consumed` back.
+
+Save format 2. `zone/ZoneStateLists.h` is new: `EncodedZoneLists`,
+`ZoneStateList`, the known list names, `kZoneListVersion` and their codecs.
+`DurableZoneState` holds a zone's encoded lists and its encoded held records
+(`DurableComponentState` is gone), `DurableLevelState` is new, and the store's
+`ExportDurable` and `Install` take every level; the store gains `ForgetLevel`,
+`CarriedLists` and `LevelOf`. `SavedGame` holds `Levels`, an optional
+`Thumbnail` and `Carried` chunks; `SavedGameSummary` gains `Game`;
+`DecodeSavedGameSummary` reads a file's prefix. `kSavedGameFormatVersion` is 2
+and the oldest version read is 2. `HashedChunkFileWriter` gains `HashChunk`.
+`HeldRecordIndex::Await` takes the holder's zone state scope; the index gains
+`SetAside`, `Resume`, `AwaitingScopeOf` and `SetAsideRecords`.
+`CaptureLevelHeldRecords`, `RestoreLevelHeldRecords` and `ScopedHeldRecords`
+are new. `SavedGames::RequestWrite` takes an optional arrival, which
+`RestoredBody::Arrival` carries back, and `SavedGames` gains `WritingArrival`;
+`LoadedLevel` gains `WorldSceneStateScope`.
+
+`LevelChangeRequest` is a class built only through `Travel(level, memory,
+bodies)`, `NewGame(level)` and `Restore(level, remembered)`, with `At(arrival)`
+and `Focused(zone)`; `LevelMemory`, `LevelChangeBodies` (one value, `Fresh`),
+`LevelChangeKind` and the `LevelArrival` World resource are new.
+`LevelChangeRuntimeState` and `LevelChange::RuntimeState()` are gone;
+`LevelChange::Kind()` replaces it. `DestroyAwaitingHeldRecords` is replaced by
+`SetAsideHeldRecords`, `ResumeHeldRecords` and `DestroySetAsideHeldRecords`.
+`ZoneStateStore` gains `Level`.
+
+`IComponentSerializer` gains the virtual `SavedFormEquals(const World&, EntityId,
+const JsonValue&)`, declared before the destructor, so every later slot moves;
+`CaptureEntityPatch` asks it before writing a baseline component, and the
+responses serializer answers it. One bump covers the whole series: ABI 62.
+
+
+## v63
+
+A verb answers a reason. `VerbAnswer` (`authored/VerbInvocation.h`) is a
+`VerbAdmission` and a 16-bit `Detail`, and the dispatcher's erased call returns
+it: `VerbDispatcher::Bind` takes an implementation returning either
+`VerbAdmission` or `VerbAnswer`. `VerbAnswerOf`, `VerbArgumentAnswer` and
+`AnswerOf(VerbInvocationResult)` are new. `VerbInvocation` gains `Result`, an
+`AuthoredValue*`; `VerbInvocationResult` and `VerbTraceRecord` gain `Detail`.
+`VerbDispatcher::Invoke` takes a trailing `AuthoredValue* result`, and the
+dispatcher gains `SetLog`. `VerbDefinition` gains `Refusals` (a vector of the
+new `VerbRefusalReason`) and `Result` (an optional `DataFieldSchema`), both
+compared by `VerbCatalogTraits::ContractsMatch`; `VerbRefusalsOf`,
+`VerbRefusalName` and `DescribeVerbAnswer` are new. `SequenceOutcome` gains
+`FirstFailureDetail` and `FirstFailedCommand`. `AbilityTraceRecord::Admission`
+and `AnimDecisionRecord::Admission` become `Answer`, a `VerbAnswer`.
+`InventoryOperations` and `EquipmentOperations` take no `Logger` and answer
+`VerbAnswer`, as do `InvokeSaveWrite` and `InvokeSaveRestore`;
+`EngineVocabularyBindings::BindInventory` and `BindEquipment` take no logger.
+`SaveAdmission` and `LevelChangeAdmission` gain an `EnumSchema`, and
+`core/metadata/EnumSchema.h` gains `FindEnumValue`. `ProjectileLaunchAdmission`
+(`projectile/ProjectileVerbs.h`) is new. `ResponsesSystem` gains
+`SetLogRefusals`, `LogsRefusals` and `kLoggedRefusals`.
+
+## v64
+
+A sequence names a verb's result and a later command reads it.
+`SequenceValueSource` gains `Result`; `SequenceCommandDesc` gains `As`;
+`CompiledSequenceValue` and `CompiledSequenceCommand` gain `Result`, a slot
+index, with `kNoSequenceResult` for none; `CompiledVerbSequence` gains
+`Results`, its slot count. `VerbSequenceRunner` keeps a result slot per name
+for the run under way. `inventory.give` and `inventory.take` declare an `entry`
+result, which moves their contract revision.
+
+## v65
+
+`ParkHeldRecords` (`world/held/HeldRecords.h`) takes the holders to look at, a
+span of entities, instead of a storage partition, so `LoadedLevel::Unload`
+parks what a world scene's entities hold before it destroys them.
+
+`LevelChangeBodies` gains `Kept` and `LevelChangeAdmission` gains `BodyInZone`.
+`LevelArrival` moves from `app/LevelChange.h` to the new
+`participant_spawn/LevelArrival.h` and gains `Kept`, a list of the new
+`KeptArrival`. `ActorScaleAt` answers zero while a lease of scale zero is in
+force, whatever the limits.
+
+`LevelLandmark` (`world/LevelLandmark.h`, `sencha.level_landmark`) is a new
+component in `WorldComponents`, with `LevelLandmarkPlace` and
+`FindLevelLandmark`. `LevelArrival` gains `Spawning`. A save written with an
+arrival holds no `root` for its body, and its summary's focus is the zone the
+landmark stands in; the save format does not change.
+
+The `level.change` verb (`app/LevelChangeVocabulary.h`: `kLevelChangeVerb`,
+`DeclareLevelChangeVerbs`, `InvokeLevelChange`) joins the engine's catalog,
+answering `LevelChangeAdmission` as its reason, and
+`EngineVocabularyBindings` gains `BindLevelChanges`.
+
+## v66
+
+`KeptWithZone` (`zone/KeptWithZone.h`, `sencha.kept_with_zone`) is a new tag
+component in `WorldComponents`, with `KeepWithZone`, `IsKeptWithZone` and
+`ForgettingOfKept`. `ZoneStateStore` gains `GainedEntityState`,
+`RecordGained`, `ForgetGained` and `GainedOf`, and loses `CarriedLists`; its
+private zone record gains its gained members. `zone/ZoneStateLists.h` gains
+`kWholeGainedForm`, `EncodeWholeGainedMember`, `DecodeWholeGainedMember` and
+`WholeGainedMemberId`. `world/serialization/EntityPatch.h` gains
+`ReadEntityRecord`. The save format does not change: the `gained` list format 2
+reserved now holds `whole` members.
+
+`ZonePlacement` (`zone/ZonePlacement.h`) is a new World resource, which
+`LoadedLevel` installs and answers from the new `LoadedLevel::ZoneAt`;
+`LoadedLevel`'s destructor is no longer defaulted. `InnermostZoneAt` takes an
+optional filter on the zones it considers. `inventory.drop` gains `keep`,
+which moves its contract revision.
+
+## v67
+
+`SavedGames` gains `SetSummary`, `RequestList`, `RequestThumbnail`,
+`RequestDelete` and `RequestCopy`, and its private in-flight write record
+gains the copy's source and a work function; it keeps the slot of the restore
+under way and the slots deleted while a listing is outstanding; `Holds` reads
+file prefixes.
+`SavedGameSummaryDefinition` is new. `save/SaveSlotListing.h` is new:
+`SaveSlotSummary`, `SaveSlotListing`, `ListSaveSlots`, `ReadSaveSlotSummary`
+and `ReadSaveSlotThumbnail`. `save/SavedGame.h` gains `SavedGameThumbnail`,
+`EncodeSavedGameThumbnail`, `DecodeSavedGameThumbnail` and
+`SavedGamePrefixWanted`, and `DecodedSavedGameSummary` carries the thumbnail
+chunk in place of `HasThumbnail`. `SaveSlotFiles` gains `ReadPrefix`,
+`ReadBackupPrefix`, `Remove`, `RemoveBackup` and `Slots`, and
+`core/io/FileBytes.h` gains `ReadFilePrefix`. The `save.delete` and
+`save.copy` verbs (`kSaveDeleteVerb`, `kSaveCopyVerb`, `InvokeSaveDelete`,
+`InvokeSaveCopy`) join the engine's catalog, answering `SaveAdmission` as
+their reason, and `BindSavedGames` binds them. The save format does not change:
+the `game` member and the `THMB` chunk format 2 reserved are now written.
+
+## v68
+
+`RigidBody` gains `Asleep` and a scene form (`SENCHA_SCHEMA("RigidBody")`,
+chunk `RGBD`) and is `Saved`; `BodyMotion` gains an `EnumSchema`. `BodyDesc`
+gains `StartAsleep`. The binding pulls a parented body's pose relative to its
+parent and leaves a sleeping body's row alone (`docs/physics/rigid-bodies.md`).
+The save format does not change: a body's velocities and sleep are members of
+a level entity's patch.
+
+## v69
+
+`IComponentSerializer` gains `HoldsPlacement` (a new vtable slot before the
+destructor), answered for a generated serializer by the new
+`ComponentHoldsPlacement` trait (`core/metadata/ComponentHoldsPlacement.h`),
+which `RigidBody` (dynamic only) and `CharacterController` specialize.
+`ZoneStateLifetime` gains `Placement` (`ZoneStatePlacement`), so its layout
+moves. `RuntimeZoneRecord` gains `CapturedAtDetach`; `LoadedLevel::Unload`
+takes an `UnloadedState`; `world/serialization/EntityPatch.h` gains
+`SavedDefaultRecord`. The save format does not change: a level entity's kept
+transform and an owed component's difference are members of its patch.
+
+## v70
+
+`SensorOverlaps` gains awaited and entity seeds (`Await`, `Awaited`,
+`ForgetAwaitedIf`, `RefusedSeedCount`, `Seed`, `Seeds`, `ForgetSeedsIf`) and
+`ForgetOccurrencesIf`, so its layout moves; `SensorSeed` is new.
+`zone/ZoneStateLists.h` gains the `occupied` list (`kOccupiedZoneList`,
+`EncodeOccupiedList`, `DecodeOccupiedList`) and `ZoneStateStore` gains
+`RecordOccupied` and `OccupiedOf`. The save format does not change: `occupied`
+is a new named list, which an earlier build carries unread.
+
+## v71
+
+`IComponentSerializer` loses `SavedFormEquals` and gains
+`SavedFormFromRowAlone` in its place, so the vtable keeps its size but the
+slot changes meaning; `SceneFieldCodec` specializations gain
+`WrittenFromValue`. `CaptureEntityPatch` takes an `unchanged` list.
+`World` gains `ArchetypeOf`. `zone/ZoneCaptureImage.h` is new;
+`AuthoredEntityState` gains `Image` and `ZoneStateStore` gains `ResidentOf`,
+`GainedMemberOf`, `GainedImageOf` and `RecordGainedImage`, so its layout moves.
+The save format does not change: the filter decides only what a capture
+writes again (`docs/gameplay/saves.md`, "Capture at scale").
+
+## v72
+
+`ZoneStateStore` gains `RecordHeld` and `TakeHeld` and two encoded lists per
+zone record, so its layout moves; `Install` takes each zone's `held` list and
+`ExportDurable` gives it back. `world/held/HeldRecordForms.h` is new
+(`HeldRecordClosure`, `WriteHeldRecords`, `MakeHeldRecord`).
+`RestoreLevelHeldRecords` (`save/HeldRecordSaves.h`) and
+`SavedGames::RestoreHeldLists` are removed: a restore's `held` lists go into
+the zone store and are made when their zones import. The save format does not
+change: the store holds exactly the `held` list a save already wrote.
+
+## v73
+
+`Field` gains `IsRuntime` and `IsUnsaved` (`Runtime()`, `Unsaved()`), and the
+generator emits them for `SENCHA_RUNTIME` and `SENCHA_UNSAVED`
+(`kComponentCodegenFormatVersion` 3). `IComponentSerializer` gains
+`Authorable`, so its vtable grows. `SceneSerializationContext` gains
+`Entities` and `Unresolved`, so its layout moves; `UnresolvedEntityReference`
+and `SceneFieldCodec<EntityId>` are new. `world/identity/PendingReferences.h`
+is new. `KinematicState`, `DecisionAgent` and `NavAgentRequest` gain scene
+chunks and are `Saved`, `CharacterMovement` is `Saved`, `NavAgentRequest::Target`
+gains an initializer and `ComponentTraits<NavAgentRequest>` an `OnAdd`; no
+layout of these moves. The save format and the net protocol do not change:
+the new members are patch members against default records, and run-time
+fields travel exactly as they did (`docs/gameplay/saves.md`, "Run-time
+fields").
+
+## v74
+
+`ActiveEffect` gains `Kept`, so its layout moves. `ApplyEffect` takes an
+`EffectKeeping` after its source; `EffectKeeping`, `KeptEffect`,
+`RestoreEffect` and both `RemoveEffectsOn` overloads are new.
+`effects/AppliedEffects.h` is new (`AppliedEffects`, `SettleAppliedEffects`,
+`OverfullAppliedEffects`, `RestoreAppliedEffects`,
+`MakeAppliedEffectsSerializer`), and `AbilityKitComponents` gains
+`AppliedEffects`. `EffectOperations` gains `Remove`, and `effect.remove`,
+`EffectRemoveRefusal` and `InvokeEffectRemove` are new. The save format does
+not change: kept effects are a patch member of their target
+(`docs/gameplay/saves.md`, "Lasting effects"), and `ActiveEffect` is not on
+the wire.
+
+## v75
+
+`ProjectileFlight` and `ProjectileMotion` gain scene chunks and are `Saved`,
+with their run-time state as run-time fields, and `Projectile` gains `Kept`, so
+its layout moves; `ProjectileSystem` gains `KeepInZoneAt` and `Adopt`.
+`SceneFieldCodec<std::array<EntityId, N>>` and `SceneEntityReference` are new.
+`ZoneStateSerialization` gains `SourcePackage`, so its layout moves;
+`zone/GainedSpawnRequests.h`, `runtime/spawn/GainedMemberSpawns.h`,
+`SpawnSourcePackage`, `SceneSpawnService::RequestSpawn` by asset id,
+`DropRecordsAwaiting`, `KeepsLevelState`, `kSourceGainedForm` and
+`IsMadeGainedForm` are new; the gained member codec is renamed
+`EncodeGainedMember`, `DecodeGainedMember` and `GainedMemberId`, since both
+forms share it. `Engine` holds a `GainedMemberSpawns`, so its layout moves. The
+save format does not change: `from_source` is a form tag on `gained` members,
+which a build that does not make it carries (`docs/gameplay/saves.md`, "What a
+zone gained"). The net protocol does not change: `ProjectileMotion` is not on
+the wire and `ProjectileFlight` travels through its codec as before.
+
+## v76
+
+`LevelChangeRequest` gains `Carrying`, `Carried` and `CarryLandmark`, and
+`LevelChange` a `LevelCarry`, so both layouts move; `LevelChangeAdmission`
+gains `NoLandmark` and `NotCarriable`. `app/LevelCarry.h` is new (`LevelCarry`,
+`CarryRefusal`, `RefuseCarrying`). `RuntimeWorld` gains `HoldingPartition`, so
+its layout moves. `ZoneStateStore` gains `RecordDeparted` and
+`IsRecordedDeparted`, and keeps departed ids through `ForgetLevel`;
+`kDepartedZoneList` is new, and the id list codec is renamed `EncodeIdList`
+and `DecodeIdList`, since `destroyed` and `departed` share it.
+`KeepArrivedWithZone`, `ForgetDecisionPlace` and `LoadedLevel::ScopeOfEntity`
+are new. `level.change` takes `landmark` and `carry_within`, and
+`InvokeLevelChange` takes `LevelChangeOperations`;
+`DeclareLevelChangeVerbs` takes an event scope, and `level.arrived`
+(`LevelArrived`) is new. The save format does not change: `departed` is a new
+named list, which a build that does not read it carries
+(`docs/gameplay/saves.md`, "The file"). The net protocol does not change.
+
+## v77
+
+The engine no longer installs inventory and equipment: a game installs each as a
+kit, as it does movement. `RegisterInventorySystems` moves from
+`inventory/InventorySystem.h` to `inventory/InventoryKit.h`, and
+`RegisterEquipmentSystems` from `equipment/EquipmentSystem.h` to
+`equipment/EquipmentKit.h`; `InstallEquipmentVocabulary` installs inventory's
+vocabulary and `RegisterEquipmentSystems` inventory's systems. `Engine::Run`
+binds each kit's verbs and queries after `OnRegisterSystems` only when its
+system is registered, and refuses to start a half-installed kit.
+`InstallItemMoveAdmission` is new; `InstallEquipmentMoveAdmission` returns
+whether it installed, and `HoldsEquipmentMoveAdmission` is new.
+`InstallEveryKitVocabulary` and `UninstalledKitContent` are new. The save
+format, the scene format and the net protocol do not change: the component
+schema, and so the replicated table, is the same in every build.
+
+## v78
+
+The component generator writes format 4 (`kComponentCodegenFormatVersion`), so
+every companion is regenerated. `AuthoredVerbEntry::Invoke` returns
+`VerbAnswer`; generated adapters answer `InvalidArguments` and
+`UnresolvedReference` naming the slot and refuse a `SENCHA_TARGET` that is not
+alive, through the new `AuthoredTargetAlive`, which needs the provider's
+`AuthoredWorld()`. `authored/VerbResult.h` is new (`VerbRefusal`, `VerbResult`,
+`VerbNoReason`), with `AuthoredVerbReturn`, `AnswerAuthoredVerb` and
+`AuthoredHeldArgument` beside the generated shapes. `AuthoredValueTraits` gains
+`IsAuthoredArgumentType`, `IsAuthoredResultType`, `AuthoredBorrowable`,
+`AuthoredBoundFits`, `AuthoredDataRef` and the `std::string_view`,
+`AuthoredDataRef` and `std::vector<T>` traits; `AssetRef` can be borrowed.
+`AuthoredArguments::Set` takes a const reference or an rvalue. New annotations:
+`SENCHA_LEASE`, `SENCHA_LEASE_RELEASE`, `SENCHA_LEASE_HOLDS`,
+`SENCHA_COSMETIC`, `SENCHA_PREDICTION`, `SENCHA_COMPLETES`, `SENCHA_RESULT`,
+`SENCHA_MIN`, `SENCHA_MAX`, `SENCHA_UNITS` and `SENCHA_RECORD`;
+`SENCHA_TARGET_PICK` is renamed `SENCHA_ANNOTATION_PICK`. The save format and
+the net protocol do not change.
+
+## v79
+
+`inventory/Inventory.h` gains the one walk over what a container holds:
+`ItemFilter`, `ItemEntryVisitor`, `VisitItemEntries`, `ForEachItemEntry`,
+`ItemEntryPick`, `FindItemEntry` and `CountItemUnits`. `InventoryOperations`
+declares the query `inventory.entry` with `SENCHA_QUERY` and answers
+`AuthoredWorld()`, so `inventory/InventoryVocabulary.h` includes its companion.
+`authored/AuthoredApi.h` gains `DeclareAuthoredApi`, and
+`AuthoredVocabularyScope` loses its private `DeclareVerb`.
+`EngineVocabularyBindings` holds the generated bindings it made. The save
+format, the scene format and the net protocol do not change.
+
+## v80
+
+`EquipmentRefusal` gains `Unmet`, after `Undeclared`, and
+`EquipRequirementMet` is new. `ItemDefinition` gains `EquipRequire` and
+`HasEquipRequire`, and `ItemDeclaration` gains `EquipRequire`, so
+`inventory/ItemDefinition.h` includes `gameplay_tags/GameplayTagQuery.h` and
+`inventory/ItemDefinitionData.h` includes
+`gameplay_tags/GameplayTagQueryNames.h`. `item.definition` gains the optional
+`equip.require.tags`; its data version stays 1. The save format, the scene
+format and the net protocol do not change.
+
+## v81
+
+`ItemDefinition` gains `Properties`, a list of the new `ItemProperty { Name,
+Value }`, so `inventory/ItemDefinition.h` includes `authored/AuthoredValue.h`.
+`ItemDeclaration` gains `Properties` (`ItemDeclaration::Property`) and
+`EquipEffect::ScaleBy`. `inventory/Inventory.h` gains `ItemPropertyOf`,
+`ItemNumberOf` and `ItemPropertyTotal`, and `ItemFilter`'s members are
+value-initialised. `InventoryOperations` declares the queries
+`inventory.property` and `inventory.total` with `SENCHA_QUERY`.
+`item.definition` gains the optional `properties` and
+`equip.effects[].scale_by`; its data version stays 1. Content declaration
+refuses an item that equips in a World with no `EquipmentLayoutRegistry`. The
+save format, the scene format and the net protocol do not change.
+
+## v82
+
+A named id is a field kind. `core/metadata/NamedIdField.h` declares
+`NamedIdField<Id>` and `NamedIdKind`, and `GameplayTagId`, `ItemId`,
+`AbilityId` and `EquipmentLayoutId` specialise it beside their declarations.
+`world/serialization/NamedIdVocabulary.h` declares `NamedIdVocabulary`,
+`SaveNamedId` and `LoadNamedId`; `world/serialization/DefinitionVocabulary.h`
+builds a vocabulary over a `NamedDefinitionRegistry`. `SceneFieldCodec` gains a
+specialisation for every named id, and `SceneComponentSerialization`'s
+`SaveField`, `LoadField`, `SaveFields` and `LoadFields` take the World.
+`WriteSceneDefinitionRef` and `ReadSceneDefinitionRef` leave `SceneAssetRef.h`.
+No component's scene, save or wire form changes; the save format, the scene
+format and the net protocol do not change.
+
+## v83
+
+`RuntimeField` gains `Names`, the vocabulary of a named-id leaf, and
+`Optional`; a named leaf is no longer read-only. `net/ReplicationLayout.h`
+gains `ComponentHasNamedIdField`, `ReplicatedNamedLeaf`,
+`ReplicatedNamedLeaves` and `TranslateNamedLeaves`, and `Add<T>` gives a
+component with a named leaf a translated wire image of its own layout; the
+lifecycle-hook assertion admits such a component. No component in the engine or
+Loss Function takes the new path yet, so the replication table hash and the net
+protocol do not change; neither does the save or scene format.
+
+## v84
+
+`Counter`, `ItemContainer` and `ItemPickup` declare their fields
+(`SENCHA_SCHEMA`, `SENCHA_FIELD`) and are serialized by the generated path;
+`Counter` and `ItemEntry` are `SENCHA_REPLICATED` and travel as their own
+layouts with their names as wire keys. `CounterSerializer.h`, `CounterWire.h`
+and `ItemEntryWire.h` are deleted; `InventorySerializers.h` keeps
+`MakeItemEntrySerializer` (the count clamp) and makes the container and pickup
+serializers from the new `ComponentSerializerWithoutDefault<T>`, which
+`ComponentSerializer<T>` (no longer `final`) admits. `World` gains
+`ReplaceComponentRaw`, and an inspector edit replaces a component as
+`ReplaceComponent` does, so its hooks run. Scene and save JSON are unchanged
+(pinned); the replication table hash is unchanged, so the net protocol stays
+11. The schema fingerprints of the four components change, so cooked scenes
+holding them are recooked.
+
+## v85
+
+`LocomotionModeId` specialises `NamedIdField` (`NamedIdKind::RegisteredName`;
+an unregistered or absent name resolves to the free mode), and the runtime
+schema marks a named id with a schema of its own as the named leaf.
+`CharacterMovement` gains `SENCHA_SCENE_CHUNK("CHMV")` and a label, and
+`MakeCharacterMovementSerializer` now makes a `ComponentSerializer<CharacterMovement>`
+that leaves out a leased mode, registered before the component. The scene key,
+chunk and JSON are unchanged; the replication table hash and the net protocol
+do not change. Its schema fingerprint changes, so cooked scenes holding it are
+recooked.
+
+## v86
+
+`Projectile`'s `PassesThrough`, `HitKind`, `ImpactCue` and `Ignores`,
+`ContactLine`'s `Kind`, `Ignores`, `AnchorCue` and `CutCue`, and `HitRegion`'s
+`Region` are `GameplayTagId` named fields instead of `InlineString<64>`:
+`Projectile` is 236 bytes smaller, `ContactLine` 240 and `HitRegion` 60.
+`ResolvedProjectile` loses its four resolved tag ids and `ContactLineState` its
+four, and `ContactLineSystem::Strike` takes the strike's kind. Their scene form
+is unchanged (a tag's name), but a tag content does not declare now refuses the
+prefab where it is read instead of every launch. Schema fingerprints change, so
+cooked prefabs holding them are recooked; the save format, the replication
+table hash and the net protocol do not change.
+
+## v87
+
+`SceneCache::Replace` and `SceneAssetLoader::CommitReload` let a resident cooked
+scene take new contents in place, so the scene kind registers a reload.
+`MountCookedFile` (`assets/runtime/ContentMount.h`) mounts one file a cook wrote
+into a stack: registered when new, reloaded where resident. A document cook's
+cache key now holds the schema fingerprints of the components its scene carries,
+so cooked scenes recook once. No format, save or protocol change.
+
+## v88
+
+The tag, save, level-change, counter, inventory and equipment verbs and queries
+are declared by annotations on their operation classes and read through their
+generated companions: `GameplayTagOperations`, `SavedGameOperations` (new, over
+`SavedGames`), `LevelChangeOperations` (now a class), `CounterOperations`,
+`InventoryOperations` and `EquipmentOperations` take typed arguments, and their
+`Invoke*` trampolines, `Bind*Query` functions and name constants go
+(`AuthoredApiDefinition<T>::Name_<Method>` names a verb). A data-definition id
+with a `NamedIdField` is an authored argument decoded against the provider's
+World (`AuthoredWorldDecoded`, `DecodeAuthoredArgument`); `VerbRefusal` and
+`VerbResult` take a `VerbAnswer`; `SENCHA_WIDGET` names a parameter's editor
+widget. `LevelKind`, `LevelMemory` and `LevelChangeBodies` gain an `EnumSchema`.
+`level.change` lists `kind` after `bodies`; `inventory.give` and
+`inventory.transfer` declare their count's range. Save format, scene format and
+net protocol are unchanged.
+
+## v89
+
+The ability, effect, animation, movement, navigation, actor time, claim,
+response, interaction, projectile, contact line and perception verbs and
+queries are declared by annotations and read through generated companions.
+`AbilityOperations`, `EffectOperations`, `AnimRequestOperations`,
+`MovementOperations`, `NavigationOperations`, `ActorTimeOperations`,
+`ResponseOperations`, `InteractUseOperations` and `ContactLineSystem` take
+typed arguments; `ClaimOperations`, `PerceptionOperations` and
+`ProjectileOperations` are new providers over the claim board, the perception
+frame and the projectile system. Their `Invoke*`, `Bind*Queries`, `HoldClaim`
+and name constants go. An ability is an `AbilityId` decoded against the World,
+refused when undeclared. `AnimRequestLifetime` gains an `EnumSchema`, and
+`AnimPresentLifetime` names the two lifetimes `anim.present` takes. A tag query
+(`GameplayTagQueryNames`) is an authored argument. A defaulted generated
+argument is not required. `anim.request` and `anim.present` declare their ticks'
+range, `claims.hold` its count's and share's, and `perception.stimulus` its
+radius's. Save format, scene format and net protocol are unchanged.
+
+## v90
+
+The audio, attachment, attached light, camera shake and field-of-view verbs,
+the physics queries, and `runtime.resume` and `application.quit` are declared by
+annotations and read through generated companions. `PhysicsQueryOperations`
+(over `PhysicsQueries`) answers the physics queries, `physics.trace` with a
+`PhysicsTraceAnswer` record; `RuntimeResumeOperation::Resume` and
+`ApplicationQuitOperation::Quit` replace their `Invoke`, and `Engine` holds
+their bindings as `AuthoredApiBindings`. `MakeGameplayVerb`, `MakeCosmeticVerb`
+and `MakeEntityArgument` go from `authored/VerbRegistry.h`, with
+`kRuntimeResumeVerb`, `kApplicationQuitVerb` and the other name constants and
+`Invoke*` trampolines. `presentation.light` declares its intensity and range at
+least 0.001, its socket as optional, and `physics.overlap` its radius at least
+0.001; the trace, overlap and clear-path limits are in their schemas. Save
+format, scene format and net protocol are unchanged.
+
+## v91
+
+`VerbAdmission` gains `NotAuthority`, appended; `VerbDispatcher::SetAuthority`
+names the World whose `SimulationAuthority` admits an `AuthorityOnly` verb, and
+the engine sets it to its runtime World. Verb bodies no longer check authority
+themselves. The replication table hash and the net protocol do not change: no
+admission travels on the wire. Save and scene formats are unchanged.
+
+## v92
+
+A replication codec may declare lists beside its fixed head
+(`ReplicatedListOf`, `ReplicatedList`, `ReplicatedComponent::Lists`), and every
+translated component now goes through `ReplicationImage`
+(`net/ReplicationImage.h`): `ReplicationToWire` and `ReplicationFromWire` take
+the image, a codec without lists still writes its `Wire` head unchanged.
+`ReplicationEncodeComponent` and `ReplicationEncodedComponentBits` take the
+image and per-element run masks, `ReplicationDecodeImage` decodes onto an image,
+`ReplicationFoldFields` is `ReplicationFoldVisible` (it takes the peer's
+ownership rather than a mask), `ReplicationOwedFields` can return element masks,
+`ReplicationChangeStore::ComponentState` gains `CountChangedAt`, the store
+counts clamped elements (`Clamped`), and `ReplicationLayoutError` gains
+`ListTooLarge`. No engine component declares a list yet, so the replication
+table hash, the wire and the net protocol (11) are unchanged. Save and scene
+formats are unchanged.
+
+## v93
+
+`AbilityGrants` and `EquipmentState` cross as replicated lists. `AbilityGrantsWire`
+is `AbilityGrantsWireHead` (`NextId`) and a list of up to
+`kAbilityGrantCapacity` `AbilityGrantWire` (its words and its source, both
+owner-only); `EquipmentStateWire` is `EquipmentStateWireHead` (the layout) and
+a list of up to `kEquipmentRecordCapacity` `EquipmentRecordWire` (its words for
+everyone, its source for the owner). Their codecs take a `ReplicationImage`.
+The page and record members, their member-pointer tables, the "names one member
+per" asserts, `kAbilityGrantsPerWirePage`, `kAbilityGrantWirePages` and
+`kEquipmentSourcesPerWireRun` go. The replication table hash moves, and the
+list grammar now reaches the wire, so `kNetProtocolVersion` is 12. Save and
+scene formats are unchanged.
+
+## v94
+
+`GameplayTagContainer` and `AttributeSet` cross as replicated lists, and both
+stay fixed rows. The tag image is two lists of up to
+`GameplayTagContainer::Capacity`: `owned` (`GameplayTagOwnedWire`: key and
+count, owner-only) and `shared` (`GameplayTagSharedWire`: key, everyone); the
+attribute image is one list of up to `AttributeSet::Capacity` `AttributeWire`
+(key, base, current, owner-only). Each list is written in wire-key order, which
+every machine computes alike, so a receiver stages its own image position for
+position under the authority's. A component made of lists alone names
+`ReplicationNoHead` as its `Wire`. `GameplayTagContainerWire`,
+`GameplayTagWireOwned`, `GameplayTagWireShared` with its `R0..R3` and `Key()`,
+`GameplayTagWireSharedRun`, `kGameplayTagSharedRunLength`,
+`kGameplayTagSharedCapacity`, `AttributeSetWire`, `AttributeSetWireKeys` and
+`AttributeSetWireValues` go. The replication table hash moves; the net
+protocol stays 12, which this series introduced. Save and scene formats are
+unchanged.

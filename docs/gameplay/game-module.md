@@ -42,10 +42,12 @@ and the arena count as one consumer: the arena is the FPS with a session).
    `RegisterGameDataAssets`.
    Before the content stack exists, the engine installs the vocabulary
    registries a game declares into (`InstallAbilityKitVocabulary`: tags,
-   attributes, effects, abilities -- registries only; movement stays a
-   feature the game opts into, so a game declaring a locomotion mode calls
-   `InstallMovementVocabulary` in this same hook first, and the declaration
-   then lands identically in the runtime World and in every editor's) and the
+   attributes, effects, abilities -- registries only; movement, inventory and
+   equipment stay kits the game opts into, so a game declaring a locomotion
+   mode calls `InstallMovementVocabulary` in this same hook first, a game with
+   items calls `InstallInventoryVocabulary` or `InstallEquipmentVocabulary`
+   (which installs inventory's too), and the declaration then lands identically
+   in the runtime World and in every editor's) and the
    runtime World's authored vocabulary (`InstallAuthoredVocabulary`: the verb
    catalog, with its own `runtime.resume` and `application.quit`, and the query
    and event catalogs), then calls `OnRegisterVocabulary` once. A game declares
@@ -57,7 +59,12 @@ and the arena count as one consumer: the arena is the FPS with a session).
    against `Engine::TryVerbs()` and `Engine::TryAuthoredQueries()`, events are
    published through `Engine::TryAuthoredEvents()`, and an editor calling the
    same hook on a document's World gets the names with nothing behind them.
-   See `docs/gameplay/authored-api.md`.
+   A provider's header goes in `API_HEADERS` of `sencha_game_module` so its
+   companion is generated. Its declaration names the provider's generated
+   adapters, so a tool or test that declares the vocabulary outside the module
+   links the provider's sources too. `RenderVocabularyReference` with each of
+   the game's providers renders its vocabulary for a checked-in reference, as
+   Loss Function's `docs/Vocabulary.md` is. See `docs/gameplay/authored-api.md`.
 4. The engine composes `RuntimeContent` (the asset stack), mounts the content
    roots, publishes the world's asset resources, connects the spawn services and
    the render pipeline, and constructs `LoadedLevel`. Under a cook-enabled
@@ -67,12 +74,18 @@ and the arena count as one consumer: the arena is the FPS with a session).
    where a game registers the world-storage features its world carries
    (`RegisterPhysicsComponents`, `RegisterMovement`, ...), binds its input, and
    installs its participant policies.
-6. The startup script runs (`+map`, `+world`, `+host`, ...). `map`, `world`,
-   `zone`, `zones`, `scene.spawn`, and `scene.despawn` are engine commands over
-   `LoadedLevel`.
-7. `OnRegisterSystems` -- the composition root. The engine's own systems
-   (hot-reload polling) register after the game's, so a game's ordering edges
-   already exist.
+6. The startup script runs (`+map`, `+world`, `+host`, ...). `map` and `world`
+   request a level change (see "Changing level"), carried out at the first
+   frame's zone-residency phase; `zone`, `zones`, `scene.spawn`, and
+   `scene.despawn` are engine commands over `LoadedLevel`.
+7. `OnRegisterSystems` -- the composition root. A game that installed a kit's
+   vocabulary registers its systems here (`RegisterInventorySystems`,
+   `RegisterEquipmentSystems`). After the hook the engine binds each kit's verbs
+   and queries only when the kit's system is registered, as it binds physics',
+   and refuses to start a kit installed by halves -- a registry without its
+   system, or a system without its registry -- printing the missing call. The
+   engine's own systems (hot-reload polling) register after the game's, so a
+   game's ordering edges already exist.
 8. Frames.
 9. `OnShutdown` -- every lease a game took into `Content().Assets()` is
    released here, every binding and subscription token it holds
@@ -123,7 +136,7 @@ neither rule applies. `ConsoleRegistry::CheckSessionRules` applies them before
 the callback runs, with the same wording a refused `Cheat` or `Replicated` cvar
 gets, and a deferred command is judged when it runs rather than when it was
 queued. `map` and `world` carry neither: a client runs `map` itself when it is
-admitted.
+admitted, and the level change admits a first load on any machine.
 
 The console's `ConsoleAuthorityPolicy` and the World's `SimulationAuthority`
 are one answer read twice: `Engine::PublishSimulationAuthority` writes both from
@@ -153,35 +166,225 @@ authored camera from the same hook.
 ## Changing level
 
 `Engine::LevelChanges()` replaces what is loaded with another level, or the same
-one again, as one request:
+one again, as one request. A request is built only through a named constructor
+that says what the change keeps, so a caller written against an older request
+fails to compile rather than meaning something else:
 
 ```cpp
 const LevelChangeAdmission admission = engine.LevelChanges().Request(
-    LevelChangeRequest{ .Level = *engine.Level().Loaded() });
+    LevelChangeRequest::Travel(*engine.Level().Loaded(), LevelMemory::Authored, LevelChangeBodies::Fresh));
 ```
 
-`LoadedLevel::Loaded()` is a `LevelReference`: whether `map` or `world` loaded
-it, and the name it was given. The request is checked when it is made (the
-level is cooked, this machine is the authority, no network session is running,
-no other change is under way) and carried out at the next zone-residency phase,
-before streaming, where no frame view is live. Carrying it out:
+- `Travel(level, memory, bodies)`: the game goes on, in another level or this
+  one again. `LevelMemory::Remembered` enters the level as the game left it:
+  what its zones remember applies. `LevelMemory::Authored` enters it as content
+  made it: what was remembered of that level, and the records waiting in it,
+  are forgotten first; every other level's memory stays. `LevelChangeBodies::Fresh`
+  releases the bodies and the game's prefab spawns in the new level.
+  `LevelChangeBodies::Kept` carries the same bodies across: see "A body across a
+  level change" below.
+- `NewGame(level)`: every level's memory, every runtime held record and every
+  section a restored save carried that nothing registered go.
+- `Restore(level, remembered)`: what every level remembers is replaced by a
+  save's; bodies come from the save. `SavedGames` makes this one.
 
-1. lets every participant's body go (`Engine::ReleaseParticipantBody`, through
-   the game's `ReapBody` policy); the participants stay;
-2. unloads, so the game's residency systems see their content leave;
-3. resets zone state memory to authored, so what the level lost comes back;
-4. clears the active camera if it went with the level;
-5. loads the requested level.
+`At(arrival)` names the landmark a body arrives at ("Arrivals" below),
+`Focused(zone)` a world's starting zone, and `Carrying(entities, landmark)` what
+crosses with the bodies ("Carrying" below). `LevelChange::Kind()` says which
+kind the latest accepted request was.
+
+Level data asks for a `Travel` with the `level.change` verb:
+`{ level, kind = scene, memory, bodies, arrival = "", landmark = "",
+carry_within }`, where `kind` is `scene` or `world`, `memory` is `remembered`
+or `authored` and `bodies` is `kept` or `fresh`, both with no default, as the
+constructor has none; `carry_within` is an optional volume whose occupants
+cross by `landmark` ("Carrying"). A refusal answers the `LevelChangeAdmission`
+reason (`busy`, `not_cooked`, `not_authority`, `in_session`, `body_in_zone`,
+`no_landmark`, `not_carriable`). An autosave at a transition is
+`level.change` followed by `save.write` in one sequence: a write requested
+while a change is under way waits until the bodies have arrived, so the save is
+of the arrival. A game whose areas are zones of one world never needs the verb:
+moving between zones is streaming, and the body is untouched.
+
+How the request and an entity's `ZoneStateLifetime` meet:
+
+| Event | `never` | `at_restore` | `at_detach` |
+|---|---|---|---|
+| its zone unloads (streaming, or its level is left) | kept | kept | forgotten |
+| `Travel`, `Remembered` | applies on arrival | applies | (already gone) |
+| `Travel`, `Authored` | that level's forgotten | that level's forgotten | |
+| a save is written | in the file | not in the file | |
+| `Restore` | replaced by the file's | forgotten in every level | |
+| `NewGame` | forgotten in every level | forgotten in every level | |
+
+Anything permanent inside a level entered `Authored` (a course a player re-enters
+from the start) must be a counter, since entering it that way forgets its
+`never` state too.
+
+The `map` and `world` console commands are `Travel(level, Authored, Fresh)`, so
+the first load and every later one take the same path. `LoadedLevel::Loaded()` is a
+`LevelReference` (`world/LevelReference.h`): a scene or a world, and the name it
+was given. The request is checked when it is made (the level is cooked, no
+other change is under way, and, unless nothing is loaded yet, this machine is
+the authority and no network session is running) and carried out at the next
+zone-residency phase, before streaming, where no frame view is live. A first
+load is admitted anywhere because it changes nothing a peer was told: a client
+loads the map its authority announced, and a host may load after it began
+hosting, since the announcement is refreshed every frame. Carrying it out:
+
+1. on the authority, lets every participant's body go
+   (`Engine::ReleaseParticipantBody`, through the game's `ReapBody` policy);
+   the participants stay. A `Travel` that keeps its bodies holds each one
+   still instead, and what it carries leaves for the holding partition
+   ("Carrying");
+2. unloads, so the game's residency systems see their content leave and each
+   zone's state is captured;
+3. sets the left level's waiting held records aside, so they are in no lookup
+   while another level is loaded (`docs/gameplay/held-records.md`);
+4. applies the request's kind: a `Travel` into a level `Remembered` puts that
+   level's set-aside records back, one into a level `Authored` forgets that
+   level and destroys its set-aside records; a `NewGame` forgets every level and
+   destroys every runtime held record; a `Restore` installs the save's level
+   state and destroys every runtime held record, which the save's sections and
+   level lists bring back;
+5. records the arrival name and the kept bodies (`LevelArrival`,
+   `participant_spawn/LevelArrival.h`) and drops a restored body no spawn has
+   taken (`RestoredBodies`), so only the restore that is under way can give one
+   out;
+6. clears the active camera if it went with the level;
+7. loads the requested level.
 
 The game provides bodies when the level arrives, as for any load. `Status()`
 moves through `Pending`, `Loading`, `Resident` and `BodiesRestored` (every
-participant whose body was let go has one again), or ends at `Failed` with
+participant whose body was let go has one again, and every kept body stands in
+the new level), or ends at `Failed` with
 `Failure()` saying why. `Serial()` counts accepted requests, so a caller that
 holds a screen up while it waits can tell its own change from a later one.
 Hiding the change is the game's: a fade, a door, a dialogue box.
 
 Changing level inside a network session is refused: peers are told which map
 to load only when they are admitted.
+
+### A body across a level change
+
+`LevelChangeBodies::Kept` keeps each participant's body alive across the change:
+the same entity, with its lasting effects, cooldowns, abilities in progress,
+leases, counters and held records, because nothing happens to them. Bodies live
+in the persistent partition, which an unload does not touch; a request that
+would keep a body living in a zone's partition is refused (`BodyInZone`).
+
+Two things are owed in return, and the engine pays both:
+
+- **Standing still while no level stands.** At the commit each kept body that
+  has an actor clock takes a time-scale lease of zero, a hold
+  (`docs/core-systems-map.md`, actor time), so its movement, effects, cooldowns
+  and phases do not advance while there is nothing to stand on. A body whose
+  leases are all in use is not held, and that is logged. An effect authored in
+  `simulation` time keeps the simulation's clock and does age.
+- **Arriving.** `LevelArrival::Kept` lists the bodies waiting for a place. The
+  game's `ParticipantBodySpawns::Update` asks its `Select` for each, as it would
+  for a new body, and records the root it answers once there is content to
+  stand in; the level change then moves the body there through its character
+  mover (a teleport), stops it, and lets go of its hold. A game that provides
+  bodies itself fills `KeptArrival::Place` the same way.
+
+A kept body arrives at rest and keeps its movement mode. When the change names
+an arrival, the root `Update` records is that landmark's ("Arrivals"). What it referred to in
+the old level (a target, a tether to geometry) is gone on arrival, as when a
+zone unloads under a body in a world; generational ids make those references
+fail safe, and ending abilities that depended on them is the game's. A failed
+change lets go of its holds where the bodies stand.
+
+### Carrying
+
+`Carrying(entities, landmark)` takes other entities across a `Travel` with the
+bodies: the crate in the lift, the squadmate at the door
+(`app/LevelCarry.h`). The `level.change` verb's `carry_within` names a volume
+whose occupants are carried: each sensor pair of that volume, each occupant
+taken at its topmost ancestor, bodies left out since they cross by `bodies`.
+The landmark is the request's own argument, apart from the arrival name: what
+crosses keeps its offset from the landmark of that name in the level it leaves
+and stands at the same offset from the landmark of that name in the level it
+enters. The request is refused `no_landmark` when it names none, or the loaded
+level has none of that name, and `not_carriable` for an entity that is gone, a
+body, a held record, parented, or has children without being the root of a
+scene instance (its children would be lost at its first save, since such an
+entity is kept whole), and for a change that is not a `Travel`.
+
+1. **Out of the simulation for the gap.** At the commit, before the level
+   unloads, each carried entity and its descendants move into
+   `RuntimeWorld::HoldingPartition`, a partition no frame domain and no
+   residency batch includes, and physics evicts its body and its character
+   mover there and then, capturing its motion into `RigidBody`; no logic,
+   perception, navigation or effect pass touches it; what it holds follows it. So nothing it is falls or
+   decides during the load.
+2. **Identity is kept.** It keeps its persistent id, so what refers to it by id
+   and what it holds stay valid, and its scene instance, so a carried prefab
+   instance is saved from its source. Only when the level it enters already has
+   an entity with that id (a copied level file) does it take a runtime id, and
+   what it holds is renamed to it.
+3. **Gone from its origin for good.** Its id is added to its origin zone's
+   `departed` list (`docs/gameplay/saves.md`), which `ForgetLevel` keeps and no
+   lifetime forgets; only a new game, or a restore of a save written before it
+   left, does. So entering the old level `Authored`, or a rest for an
+   `at_restore` entity, puts no second copy there.
+4. **What it referred to is cleared on arrival:** its navigation order is
+   given again (below), so its route is planned again; its decision agent lets
+   go of its claim, target, destination and contact (`ForgetDecisionPlace`);
+   its observation memory empties; its sensor pairs are forgotten; an effect
+   whose owner stayed behind ended when the owner unloaded.
+5. **Arrival.** Once the level is resident the landmark is looked for as a
+   body's arrival is; it stands at the landmark composed with its offset, in the
+   resident zone whose bounds hold that place (a drop's rule, `ZonePlacement`),
+   its velocities turned with the landmark, and, in a game that keeps level
+   state, marked `KeptWithZone` (`KeepArrivedWithZone`, which lets it keep an
+   authored id). It is then a gained member of the level it entered, saved with
+   that zone, and a save asked for during the change, which waits for the
+   bodies, holds it there.
+6. **Its order is issued again.** A navigation order in place when it left is
+   requested again on arrival with a fresh id, a point order's point moved with
+   the landmark, so a follower of a kept body keeps following.
+7. **The level it enters can find it.** Its landmark receives `level.arrived`,
+   once per carried entity, with the entity as instigator; responses on the
+   landmark filter by the arrival's tags, and later addressing is by the sensors
+   it enters.
+
+What is carried when the level it enters has no loaded landmark of that name, or
+when the change fails or another replaces it before it arrives, is destroyed,
+and logged as an error with its count.
+
+A save that names an arrival keeps no motion for the body only
+(`docs/gameplay/saves.md`, "Writing"); a carried entity's velocity, movement
+mode and order are kept in its member like any other gained member's, and its
+order is the one given again on arrival.
+
+### Arrivals
+
+A level authors a named place with a `LevelLandmark` (`world/LevelLandmark.h`):
+an entity with a transform and a `name`, placed like any other component in a
+scene or in Kyusu (Place, "Level Landmark"). It is opt-in and on no entity by
+default. A level change's `At(name)` and a save's `arrival`
+(`docs/gameplay/saves.md`, "Writing") name one, and a body arriving through
+either stands at it: at the landmark's position and facing in the world, at
+rest, from its prefab's default movement mode when it is a new body.
+
+One resolution serves every arrival, in `ParticipantBodySpawns`: a body the
+change let go is spawned at the landmark (`LevelArrival::Spawning` lists the
+participants whose next body arrives), a body a save restores is spawned at the
+landmark its save names, and a kept body is moved there. The game's `Select`
+still decides which prefab and supplies the fallback: when no loaded landmark
+has the name, the body arrives where `Select` says, and the spawn logs it once.
+A later respawn with no level change between is the game's, as before.
+
+The landmark is looked for when the body is placed, which is once the level's
+play zone is resident: in a scene level anywhere in it; in a world among the
+zones resident then and the world scene. A save names the zone its arrival
+stands in as its focus, so a restore streams that zone in first, whichever zone
+the player stood in when it was written. A level change into a world focuses
+its start zone, or the zone `Focused` names, so an arrival there must be in
+that zone's neighbourhood or the world scene ("Finding an arrival in a zone
+that is not loaded" in `docs/deferred.md`). Two landmarks of one name in a
+level are an authoring mistake; the one with the lowest persistent id wins.
 
 ## Bodies from prefabs
 
@@ -197,8 +400,10 @@ world and spawn service and gives it three callbacks -- which prefab and where,
 the engine's `AssignParticipantBody`, and an optional step that runs on the
 landed root before assignment. Its `StartSpawn` is the lifecycle's
 `ProvideBody`, answering no body now. The game's spawn system calls `Update`
-each frame; a landed spawn is prepared and assigned, and a spawn whose
-participant left or found a body some other way is withdrawn. `CancelAllPending`
+each frame; a landed spawn is prepared and assigned, a spawn whose
+participant left or found a body some other way is withdrawn, and a body a
+level change kept is given the root `Select` answers ("A body across a level
+change"). `CancelAllPending`
 is the game's call when the content a request was made for goes away, and
 `Close` runs at the start of `OnShutdown`, before anything the callbacks
 captured.

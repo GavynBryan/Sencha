@@ -44,13 +44,13 @@ ContactLine
     SENCHA_OPTIONAL
     SENCHA_LABEL("Kind")
     SENCHA_TOOLTIP("The gameplay tag the projectile.hit occurrence of a strike carries.")
-    InlineString<64> Kind;
+    GameplayTagId Kind;
 
     SENCHA_FIELD("ignores")
     SENCHA_OPTIONAL
     SENCHA_LABEL("Ignores")
     SENCHA_TOOLTIP("A gameplay tag: a character carrying it is not struck.")
-    InlineString<64> Ignores;
+    GameplayTagId Ignores;
 
     SENCHA_FIELD("anchor_seconds")
     SENCHA_LABEL("Anchor seconds")
@@ -100,13 +100,13 @@ ContactLine
     SENCHA_OPTIONAL
     SENCHA_LABEL("Anchor cue")
     SENCHA_TOOLTIP("A cue appended to the instigator's cue log where the tip stops in level geometry.")
-    InlineString<64> AnchorCue;
+    GameplayTagId AnchorCue;
 
     SENCHA_FIELD("cut_cue")
     SENCHA_OPTIONAL
     SENCHA_LABEL("Cut cue")
     SENCHA_TOOLTIP("A cue appended to the instigator's cue log where the line is cut.")
-    InlineString<64> CutCue;
+    GameplayTagId CutCue;
 };
 
 // A mesh of a line's prefab stretched from the tip back to the instigator's aim
@@ -153,10 +153,6 @@ struct SENCHA_COMPONENT("sencha.contact_line_state") ContactLineState
     // Stays anchored when let go, until it times out or is drawn home.
     bool Kept = false;
     EffectId Effect;
-    GameplayTagId Kind;
-    GameplayTagId Ignores;
-    GameplayTagId AnchorCue;
-    GameplayTagId CutCue;
 };
 
 static_assert(std::is_trivially_copyable_v<ContactLine>);

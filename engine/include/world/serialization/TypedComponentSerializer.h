@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentPersistence.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <world/serialization/IComponentSerializer.h>
@@ -7,13 +8,15 @@
 #include <cstring>
 #include <vector>
 
-// What every hand-written serializer of T does alike: T's identity, defaults
-// and storage. A serializer derived from this writes only T's persisted form:
+// What every hand-written serializer of T does alike: T's identity, persistence,
+// defaults and storage. A serializer derived from this writes only T's persisted form:
 // JsonKey, BinaryChunkId, RuntimeFields, Save and LoadIntoWorld.
 template <typename T>
 struct TypedComponentSerializer : IComponentSerializer
 {
     ComponentTypeId TypeId() const final { return ResolveComponentTypeId<T>(); }
+
+    ComponentPersistence Persistence() const final { return ComponentPersistenceOf<T>::Value; }
 
     std::vector<std::byte> DefaultBytes() const final
     {

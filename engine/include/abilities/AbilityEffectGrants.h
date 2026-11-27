@@ -73,5 +73,6 @@ void InstallAbilityGrantAdmission(World& world);
 
 // Records what `effect` grants, reserving every ability it names. Replaces what it
 // granted before, so a reloaded effect's next application grants the new list.
+// Returns a message for each grant it refused.
 std::vector<std::string> DeclareEffectGrants(World& world, EffectId effect,
                                              const std::vector<AbilityGrantDeclaration>& grants);

@@ -1,14 +1,16 @@
 #pragma once
 
-#include <app/LevelReference.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <ecs/EntityId.h>
 #include <core/console/ConsoleTypes.h>
+#include <world/LevelReference.h>
 #include <world/scene/SmapFormat.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <zone/ZoneId.h>
+#include <zone/ZoneStateScope.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -50,6 +52,13 @@ enum class LevelResidency : std::uint8_t
     Failed,
 };
 
+// Whether an unload records the level's zone state, or leaves a level that is about to be forgotten uncaptured.
+enum class UnloadedState : std::uint8_t
+{
+    Captured,
+    Forgotten,
+};
+
 class LoadedLevel
 {
 public:
@@ -74,7 +83,7 @@ public:
 
     // Detaches every zone this loaded, destroys the entities a world scene
     // imported, and drops the loaders. Idempotent; safe with nothing loaded.
-    void Unload();
+    void Unload(UnloadedState state = UnloadedState::Captured);
 
     // Where a level's collision goes. Called once the schedule is known,
     // because physics is a game's choice: a game without it never calls this
@@ -93,9 +102,17 @@ public:
     // world scene, as an unload would, without unloading.
     void CaptureState();
 
+    // What a loaded world's world scene is captured under; invalid otherwise.
+    [[nodiscard]] ZoneStateScope WorldSceneStateScope() const { return WorldSceneScope; }
+    // What the zone or world scene an entity of the loaded level belongs to is captured under; invalid otherwise.
+    [[nodiscard]] ZoneStateScope ScopeOfEntity(EntityId entity) const;
+
     // The zone a loaded scene occupies, or the world's focus zone. Invalid
     // with nothing loaded.
     [[nodiscard]] ZoneId PlayZone() const;
+
+    // Where a run-time entity at `point` belongs: docs/gameplay/inventory.md, "Where a drop lands".
+    [[nodiscard]] ZoneId ZoneAt(const Vec3d& point) const;
 
     // The loaded world's manifest; null for a single scene or nothing loaded.
     [[nodiscard]] const WorldPartitionManifest* Manifest() const;
@@ -131,6 +148,7 @@ private:
     // because the partition also holds whatever the game spawned there, and
     // unload owns only what it loaded.
     std::vector<EntityId> WorldSceneEntities;
+    ZoneStateScope WorldSceneScope;
     // Collision a level carried before physics existed, loaded once there is
     // somewhere to put it.
     std::vector<SmapCollisionCell> PendingCollision;

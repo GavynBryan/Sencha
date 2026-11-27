@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <vector>
+
 // Attributes persist by name and reload against a registry that assigns different
 // ids (different registration order) — base values ride on names, not ids.
 TEST(AttributeSerialization, RoundTripsByNameAcrossDifferingRegistries)
@@ -55,4 +58,31 @@ TEST(AttributeSerialization, UnknownAttributesAreSkippedNotFatal)
     EXPECT_TRUE(ReadAttributes(ra, s2, sparse));
     EXPECT_EQ(s2.Size(), 1u);
     EXPECT_TRUE(s2.Has(sparse.FindAttribute("Health")));
+}
+
+TEST(AttributeSerialization, AttributesPastTheSetsCapacityAreDroppedAndReported)
+{
+    AttributeRegistry registry;
+    JsonWriteArchive wa;
+    wa.BeginObject(std::string_view{});
+    wa.BeginArray(std::string_view{ "attributes" }, AttributeSet::Capacity + 1u);
+    for (std::size_t i = 0; i <= AttributeSet::Capacity; ++i)
+    {
+        const std::string name = "Stat" + std::to_string(i);
+        (void)registry.RegisterAttribute(name);
+        wa.BeginObject(std::string_view{});
+        wa.Field(std::string_view{ "name" }, std::string_view(name));
+        wa.Field(std::string_view{ "base" }, 1.0f);
+        wa.End();
+    }
+    wa.End();
+    wa.End();
+
+    AttributeSet loaded{};
+    std::vector<std::string> dropped;
+    const JsonValue saved = wa.TakeValue();
+    JsonReadArchive ra(saved);
+    ASSERT_TRUE(ReadAttributes(ra, loaded, registry, &dropped));
+    EXPECT_EQ(loaded.Size(), AttributeSet::Capacity);
+    EXPECT_EQ(dropped, (std::vector<std::string>{ "Stat16" }));
 }

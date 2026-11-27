@@ -6,3 +6,7 @@
 // serialized in the world partition manifest, and used verbatim as the runtime
 // residency key in RuntimeWorld. Zero is invalid (StrongId convention).
 using ZoneId = StrongId<struct ZoneIdTag, uint64_t>;
+
+// Reserved: no world manifest may give a zone either id.
+inline constexpr ZoneId kSceneLevelZone{ 1 };
+inline constexpr ZoneId kWorldSceneZone{ 2 };

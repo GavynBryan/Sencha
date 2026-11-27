@@ -665,6 +665,22 @@ TEST_F(WorldCookTest, RefusesReservedRuntimeNamespaceIds)
         << cooked.Error;
 }
 
+TEST_F(WorldCookTest, RefusesAZoneWithTheIdASceneLevelOrAWorldSceneHolds)
+{
+    for (const ZoneId reserved : { kSceneLevelZone, kWorldSceneZone })
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+        world.Manifest().Zones[0].Id = reserved;
+
+        const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+        EXPECT_FALSE(cooked.Success);
+        EXPECT_NE(cooked.Error.find("is reserved"), std::string::npos) << cooked.Error;
+    }
+}
+
 TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone)
 {
     WorldDocument world(Logging);

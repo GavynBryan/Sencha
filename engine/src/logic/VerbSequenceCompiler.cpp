@@ -1,6 +1,7 @@
 #include <logic/VerbSequenceCompiler.h>
 
 #include <authored/AuthoredArgumentMatch.h>
+#include <authored/AuthoredConstantText.h>
 #include <authored/AuthoredLiteral.h>
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbRegistry.h>
@@ -13,11 +14,6 @@
 
 namespace
 {
-const DataFieldSchema& Unwrapped(const DataFieldSchema& field)
-{
-    return field.Kind == DataFieldKind::Optional && field.Children.size() == 1 ? field.Children.front() : field;
-}
-
 bool IsVector3(const DataFieldSchema& field)
 {
     return field.Kind == DataFieldKind::Vector && field.VectorLength == 3;
@@ -25,8 +21,8 @@ bool IsVector3(const DataFieldSchema& field)
 
 bool SameShape(const DataFieldSchema& produced, const DataFieldSchema& expected)
 {
-    const DataFieldSchema& a = Unwrapped(produced);
-    const DataFieldSchema& b = Unwrapped(expected);
+    const DataFieldSchema& a = UnwrappedField(produced);
+    const DataFieldSchema& b = UnwrappedField(expected);
     return a.Kind == b.Kind && (a.Kind != DataFieldKind::Vector || a.VectorLength == b.VectorLength);
 }
 
@@ -86,7 +82,7 @@ public:
             ok = query != nullptr;
             if (query != nullptr)
             {
-                const DataFieldKind answer = Unwrapped(query->Result).Kind;
+                const DataFieldKind answer = UnwrappedField(query->Result).Kind;
                 if (answer != DataFieldKind::Bool && answer != DataFieldKind::Int && answer != DataFieldKind::Float)
                 {
                     Report(where, std::format("'{}' answers neither true or false nor a number", desc.Query));
@@ -139,11 +135,12 @@ public:
 
         std::vector<std::string> errors;
         bool ok = CompileVerbBinding(binding, Env.Bindings, out.Binding, errors);
+        const VerbDefinition* compiledVerb = ok ? Env.Bindings.Verbs->Get(out.Binding.Verb) : nullptr;
         for (std::string& error : errors)
             Report(where, std::move(error));
         if (ok)
         {
-            const VerbDefinition* verb = Env.Bindings.Verbs->Get(out.Binding.Verb);
+            const VerbDefinition* verb = compiledVerb;
             if (verb != nullptr && verb->Kind == VerbKind::Lease)
             {
                 Report(where, "is a lease; a sequence invokes instant verbs");
@@ -165,11 +162,41 @@ public:
                 out.Inputs.push_back(std::move(value));
             }
         }
+        if (!desc.As.empty())
+            ok = NameResult(desc, compiledVerb, where, out) && ok;
         out.Resolved = ok;
         return out;
     }
 
+    [[nodiscard]] std::uint32_t ResultCount() const { return static_cast<std::uint32_t>(Results.size()); }
+
 private:
+    struct NamedResult
+    {
+        std::string Name;
+        DataFieldSchema Field;
+    };
+
+    bool NameResult(const SequenceCommandDesc& desc, const VerbDefinition* verb, std::string_view where,
+                    CompiledSequenceCommand& out)
+    {
+        if (std::ranges::find(Results, desc.As, &NamedResult::Name) != Results.end())
+        {
+            Report(where, std::format("result '{}' is already named by an earlier command", desc.As));
+            return false;
+        }
+        if (verb == nullptr)
+            return false;
+        if (!verb->Result.has_value())
+        {
+            Report(where, std::format("'{}' declares no result to name", desc.Verb));
+            return false;
+        }
+        out.Result = static_cast<std::uint32_t>(Results.size());
+        Results.push_back(NamedResult{ desc.As, *verb->Result });
+        return true;
+    }
+
     void Report(std::string_view where, std::string message)
     {
         Diagnostics.push_back(std::format("{}: {}", where, message));
@@ -269,7 +296,7 @@ private:
                CompiledSequenceValue& out)
     {
         out.Source = desc.Source;
-        const DataFieldSchema& field = Unwrapped(expected);
+        const DataFieldSchema& field = UnwrappedField(expected);
         if (!desc.Frame.empty())
         {
             if (!IsVector3(field))
@@ -310,13 +337,41 @@ private:
                 Report(where, std::format("port '{}' is not the kind this argument takes", desc.Name));
             return fits;
         }
+        case SequenceValueSource::Result:
+        {
+            const auto named = std::ranges::find(Results, desc.Name, &NamedResult::Name);
+            if (named == Results.end())
+            {
+                Report(where, std::format("no earlier command names a result '{}'", desc.Name));
+                return false;
+            }
+            out.Result = static_cast<std::uint32_t>(named - Results.begin());
+            const DataFieldSchema* produced = &UnwrappedField(named->Field);
+            if (!desc.Member.empty())
+            {
+                const auto member = std::ranges::find(produced->Children, desc.Member, &DataFieldSchema::Key);
+                if (produced->Kind != DataFieldKind::Record || member == produced->Children.end())
+                {
+                    Report(where, std::format("result '{}' has no member '{}'", desc.Name, desc.Member));
+                    return false;
+                }
+                out.Member = static_cast<std::int32_t>(member - produced->Children.begin());
+                produced = &*member;
+            }
+            if (!SameShape(*produced, expected))
+            {
+                Report(where, std::format("result '{}' is a different kind than this argument takes", desc.Name));
+                return false;
+            }
+            return true;
+        }
         case SequenceValueSource::Query:
         {
             const AuthoredQueryDefinition* query = FindQuery(desc.Name, where, out.Query);
             if (query == nullptr)
                 return false;
             bool ok = QueryArguments(*query, desc.Arguments, where, out.Arguments);
-            const DataFieldSchema* produced = &Unwrapped(query->Result);
+            const DataFieldSchema* produced = &UnwrappedField(query->Result);
             if (!desc.Member.empty())
             {
                 const auto member = std::ranges::find(produced->Children, desc.Member, &DataFieldSchema::Key);
@@ -341,6 +396,7 @@ private:
 
     const VerbSequenceEnvironment& Env;
     std::vector<std::string>& Diagnostics;
+    std::vector<NamedResult> Results;
 };
 } // namespace
 
@@ -355,4 +411,5 @@ void CompileVerbSequence(const VerbSequenceDesc& desc,
         out.Conditions.push_back(compilation.Condition(desc.Conditions[i], i));
     for (std::size_t i = 0; i < desc.Commands.size(); ++i)
         out.Commands.push_back(compilation.Command(desc.Commands[i], i));
+    out.Results = compilation.ResultCount();
 }

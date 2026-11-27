@@ -3,7 +3,9 @@
 // (never silent) failure modes -- missing minted ids, dangling targets,
 // unresolvable sources, and cycles.
 
+#include "scene_source/Json5Writer.h"
 #include "scene_source/SceneComposition.h"
+#include "scene_source/SceneSourceUpgrade.h"
 
 #include <gtest/gtest.h>
 
@@ -53,7 +55,7 @@ namespace
 
     // A door prop: a body with a light hanging from it.
     constexpr std::string_view kDoorSource = R"({
-  format_version: 1,
+  format_version: 3,
   entities: [
     { id: '0000000000000001',
       components: { Transform: { local: { position: [0, 1, 0] } },
@@ -71,7 +73,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [ { id: '00000000000000aa', components: {} } ],
   instances: [
     { id: '0000000000000100', parent: '00000000000000aa',
@@ -116,7 +118,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/door.sscene',
@@ -143,7 +145,7 @@ namespace
         sources.Add("asset://props/door.sscene", kDoorSource);
         // A room that places the door inside itself.
         sources.Add("asset://rooms/hall.sscene", R"({
-  format_version: 1,
+  format_version: 3,
   entities: [ { id: '0000000000000010', components: {} } ],
   instances: [
     { id: '0000000000000020', parent: '0000000000000010',
@@ -155,7 +157,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://rooms/hall.sscene',
@@ -191,7 +193,7 @@ namespace
         sources.Add("asset://props/door.sscene", kDoorSource);
         // The room turns the door light up and recolors nothing else.
         sources.Add("asset://rooms/hall.sscene", R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000020', source: 'asset://props/door.sscene',
@@ -205,7 +207,7 @@ namespace
         // The world patches the same light's range; intensity keeps the room's
         // inner override because outer only speaks where it differs.
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://rooms/hall.sscene',
@@ -235,7 +237,7 @@ namespace
     {
         MemorySources sources;
         sources.Add("asset://props/switch.sscene", R"({
-  format_version: 1,
+  format_version: 3,
   entities: [
     { id: '0000000000000001',
       components: { responses: { bindings: {
@@ -248,7 +250,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/switch.sscene',
@@ -285,7 +287,7 @@ namespace
     {
         MemorySources sources;
         sources.Add("asset://props/switch.sscene", R"({
-  format_version: 2,
+  format_version: 3,
   entities: [
     { id: '0000000000000001',
       components: { responses: { bindings: {
@@ -297,7 +299,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 2,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/switch.sscene',
@@ -316,21 +318,20 @@ namespace
         EXPECT_EQ(bindings->Find("use")->Find("on")->Text, "game.used");
     }
 
-    TEST(SceneComposition, StructuralOverridesAddRemoveAndSuppress)
+    TEST(SceneComposition, StructuralOverridesPatchAddEntitiesAndSuppress)
     {
         MemorySources sources;
         sources.Add("asset://props/door.sscene", kDoorSource);
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/door.sscene',
       entity_ids: { '0000000000000001': '0000000000000201',
                     '0000000000000002': '0000000000000202' },
-      add: { '0000000000000001': { Shadow: { soft: true } } },
-      remove: { '0000000000000001': ['Body'] },
+      patch: { '0000000000000001': { Shadow: { soft: true }, Body: null } },
       add_entities: [
         { id: '0000000000000210', parent_path: '0000000000000001',
           components: { Trigger: { radius: 2 } } },
@@ -363,7 +364,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/door.sscene',
@@ -390,7 +391,7 @@ namespace
         // Only the body has a recorded id; the light's path is unrecorded, as
         // it would be after the door source grew a new entity.
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/door.sscene',
@@ -414,7 +415,7 @@ namespace
 
         std::string error;
         const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000100', source: 'asset://props/door.sscene',
@@ -437,7 +438,7 @@ namespace
         MemorySources sources;
         std::string error;
         const auto missing = ParseSceneSource(R"({
-  format_version: 1, entities: [],
+  format_version: 3, entities: [],
   instances: [ { id: '0000000000000100', source: 'asset://gone.sscene' } ],
 })", &error);
         ASSERT_TRUE(missing.has_value()) << error;
@@ -445,11 +446,11 @@ namespace
         EXPECT_NE(error.find("did not resolve"), std::string::npos);
 
         sources.Add("asset://a.sscene", R"({
-  format_version: 1, entities: [],
+  format_version: 3, entities: [],
   instances: [ { id: '0000000000000100', source: 'asset://b.sscene' } ],
 })");
         sources.Add("asset://b.sscene", R"({
-  format_version: 1, entities: [],
+  format_version: 3, entities: [],
   instances: [ { id: '0000000000000101', source: 'asset://a.sscene' } ],
 })");
         const SceneSourceDocument* a = sources.Find("asset://a.sscene");
@@ -462,7 +463,7 @@ namespace
 namespace
 {
     constexpr std::string_view kEmitterSource = R"({
-  format_version: 1,
+  format_version: 3,
   entities: [
     { id: '0000000000000001',
       components: { Emitter: { colors: [1, 2, 3], shape: { r: 1 }, label: 'x' } } },
@@ -470,14 +471,13 @@ namespace
 })";
 }
 
-// Pinned before composition moved to the shared operator.
-TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole)
+TEST(SceneComposition, WithoutComponentRulesAPatchMergesObjectsAndWritesEverythingElseWhole)
 {
     MemorySources sources;
     sources.Add("asset://props/emitter.sscene", kEmitterSource);
     std::string error;
     const auto root = ParseSceneSource(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [],
   instances: [
     { id: '0000000000000020', source: 'asset://props/emitter.sscene',
@@ -504,12 +504,68 @@ TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole
     EXPECT_EQ(emitter->Find("colors")->Elements[0].Number, 9.0);
     EXPECT_EQ(emitter->Find("shape")->Find("r")->Number, 1.0);
     EXPECT_EQ(emitter->Find("shape")->Find("s")->Number, 2.0);
-    ASSERT_NE(emitter->Find("label"), nullptr);
-    EXPECT_TRUE(emitter->Find("label")->IsNull());
+    EXPECT_EQ(emitter->Find("label"), nullptr);
 
-    ASSERT_EQ(emitter->Members.size(), 4u);
+    ASSERT_EQ(emitter->Members.size(), 3u);
     EXPECT_EQ(emitter->Members.back().first, "extra");
     EXPECT_EQ(emitter->Members.back().second.Number, 7.0);
     ASSERT_EQ(emitter->Members.back().second.LeadingComments.size(), 1u);
     EXPECT_NE(emitter->Members.back().second.LeadingComments[0].find("added by the room"), std::string::npos);
 }
+
+    TEST(SceneComposition, AnUpgradedAddAndRemovalResolveAsTheirPatch)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/door.sscene", kDoorSource);
+        const auto resolve = [&](std::string_view version, std::string_view overrides) {
+            std::string error;
+            const std::string text = std::string(R"({
+  format_version: )") + std::string(version) + R"(,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/door.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201',
+                    '0000000000000002': '0000000000000202' },
+      )" + std::string(overrides) + R"( } ],
+})";
+            const std::optional<SceneSourceUpgrade> upgrade = UpgradeSceneSourceText(text, &error);
+            EXPECT_TRUE(upgrade.has_value() && upgrade->Refused.empty()) << error;
+            const auto root = ParseSceneSource(upgrade.has_value() ? upgrade->Text : std::string(), &error);
+            EXPECT_TRUE(root.has_value()) << error;
+            const auto result = ResolveSceneComposition(*root, sources, &error);
+            EXPECT_TRUE(result.has_value()) << error;
+            return Json5Write(FindEntity(*result, 0x201)->Components);
+        };
+        EXPECT_EQ(resolve("2", "add: { '0000000000000001': { Shadow: { soft: true } } }, "
+                               "remove: { '0000000000000001': ['Body'] }"),
+                  resolve("3", "patch: { '0000000000000001': { Shadow: { soft: true }, Body: null } }"));
+    }
+
+    TEST(SceneComposition, AnUpgradedAddMergesWithTheComponentItsSourceGainedLater)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/lamp.sscene", R"({
+  format_version: 3,
+  entities: [ { id: '0000000000000001', components: { Light: { color: [0, 0, 1], intensity: 4 } } } ],
+})");
+        std::string error;
+        const std::optional<SceneSourceUpgrade> upgrade = UpgradeSceneSourceText(R"({
+  format_version: 2,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/lamp.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201' },
+      add: { '0000000000000001': { Light: { color: [1, 0, 0] } } } } ],
+})", &error);
+        ASSERT_TRUE(upgrade.has_value()) << error;
+        ASSERT_TRUE(upgrade->Refused.empty());
+        const auto root = ParseSceneSource(upgrade->Text, &error);
+        ASSERT_TRUE(root.has_value()) << error;
+        const auto result = ResolveSceneComposition(*root, sources, &error);
+        ASSERT_TRUE(result.has_value()) << error;
+        const Json5Value* light = FindEntity(*result, 0x201)->Components.Find("Light");
+        ASSERT_NE(light, nullptr);
+        EXPECT_EQ(light->Find("color")->Elements[0].Number, 1.0) << "the placement's value wins";
+        ASSERT_NE(light->Find("intensity"), nullptr) << "the source's field the placement never stated comes through";
+        EXPECT_EQ(light->Find("intensity")->Number, 4.0);
+    }

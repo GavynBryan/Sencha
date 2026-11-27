@@ -5,13 +5,20 @@
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <app/RuntimeContent.h>
+#include <app/VocabularyCommands.h>
 #include <core/assets/AssetStoreTable.h>
 #include <ecs/World.h>
+#include <equipment/EquipmentComponents.h>
+#include <equipment/EquipmentLayout.h>
+#include <equipment/EquipmentSystem.h>
+#include <inventory/ItemDefinition.h>
+#include <inventory/InventorySystem.h>
 #include <world/RuntimeWorld.h>
 
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <format>
 #include <string>
 
 //=============================================================================
@@ -185,4 +192,57 @@ TEST(EmptyGameBoot, TheEngineMountsAGamesContentWithoutTheGame)
 
     EXPECT_EQ(app.Run(game), 0);
     EXPECT_GE(game.Frames, 8);
+}
+
+namespace
+{
+    struct GiveProbe
+    {
+        Engine* Host = nullptr;
+        std::string Answer;
+
+        void FrameUpdate(FrameUpdateContext& ctx)
+        {
+            if (Host == nullptr || !Answer.empty())
+                return;
+            const EntityId into = ctx.Entities.CreateEntity();
+            const std::vector<std::string> line{ "inventory.give",
+                                                 std::format("into={}:{}", into.Index, into.Generation),
+                                                 "definition=items/key.sdata" };
+            const ConsoleResult result = RunVerbCommand(
+                VocabularyConsoleTarget{ .Entities = ctx.Entities,
+                                         .Verbs = Host->TryVerbs(),
+                                         .Queries = Host->TryAuthoredQueries() },
+                line);
+            for (const ConsoleOutputEntry& output : result.Output)
+                Answer += output.Text;
+        }
+    };
+}
+
+TEST(EmptyGameBoot, AGameThatInstallsNoKitCarriesNoInventoryOrEquipment)
+{
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    const EmptyRoot root;
+    EmptyGame game({ root.String() });
+
+    EngineConfig config;
+    GameConfigureContext configure{ .Config = config };
+    game.OnConfigure(configure);
+
+    Engine engine(config);
+    GiveProbe& probe = engine.Schedule().Register<GiveProbe>();
+    probe.Host = &engine;
+    ASSERT_EQ(engine.Run(game), 0);
+
+    const World& world = engine.World().Entities();
+    EXPECT_FALSE(world.HasResource<ItemRegistry>());
+    EXPECT_FALSE(world.HasResource<EquipmentRecordLists>());
+    EXPECT_FALSE(world.HasResource<EquipmentLayoutRegistry>());
+    EXPECT_FALSE(engine.Schedule().Has<InventorySystem>());
+    EXPECT_FALSE(engine.Schedule().Has<EquipmentSystem>());
+    EXPECT_EQ(probe.Answer, "inventory.give: no implementation");
+
+    engine.Shutdown();
 }

@@ -172,3 +172,7 @@ private:
     struct State;
     std::unique_ptr<State> Impl;
 };
+
+// Lets go of what `agent` held in the world it was in -- its claim, its target, where its option sent it,
+// what it last knew of a contact -- so it chooses again from nothing, as after a level change carried it.
+void ForgetDecisionPlace(World& world, EntityId agent);

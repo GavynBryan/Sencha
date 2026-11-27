@@ -144,7 +144,7 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
     std::vector<EntityId> created;
     ZoneImportError importError;
     const bool imported = ImportPackageIntoPartition(
-        world, Schema, *package, partition, ZoneId{}, Serializers, *SceneContext,
+        world, Schema, *package, partition, ZoneStateScope{}, Serializers, *SceneContext,
         &importError, &created);
     build.ReleaseScene();
 

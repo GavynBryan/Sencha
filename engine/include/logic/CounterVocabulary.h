@@ -1,23 +1,21 @@
 #pragma once
 
+#include <authored/AuthoredAnnotations.h>
 #include <authored/AuthoredApiDefinition.h>
 #include <authored/AuthoredEventRegistry.h>
-#include <authored/AuthoredQueryDispatcher.h>
+#include <authored/AuthoredQueryRegistry.h>
 #include <authored/AuthoredValue.h>
-#include <authored/VerbDispatcher.h>
+#include <authored/VerbRegistry.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
-#include <vector>
 
 class AuthoredEventDispatcher;
 class Logger;
 class World;
 
-inline constexpr std::string_view kCounterSetVerb = "counter.set";
-inline constexpr std::string_view kCounterAddVerb = "counter.add";
-inline constexpr std::string_view kCounterValueQuery = "counter.value";
 inline constexpr std::string_view kCounterChangedEvent = "counter.changed";
 
 struct CounterChanged
@@ -44,7 +42,6 @@ struct AuthoredApiDefinition<CounterChanged>
 void DeclareCounterVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries,
                               AuthoredEventRegistrationScope& events);
 
-// An invalid holder is the world. Zero when unset.
 [[nodiscard]] std::int32_t CounterValue(const World& world, GameplayTagId name, EntityId holder);
 [[nodiscard]] EntityId FindCounter(const World& world, GameplayTagId name, EntityId holder);
 
@@ -59,14 +56,11 @@ struct CounterWrite
 {
     std::int32_t Value = 0;
     bool Changed = false;
-    // The bound the value was clamped to, when it lay beyond one.
     CounterBound Saturated = CounterBound::None;
 };
 
-// Authority only. Zero removes the counter's record.
 CounterWrite WriteCounter(World& world, GameplayTagId name, EntityId holder, std::int64_t value);
 
-// Writes clamped to a bound, by bound. A World resource.
 struct CounterSaturation
 {
     std::uint64_t AtMaximum = 0;
@@ -76,13 +70,47 @@ struct CounterSaturation
 class CounterOperations
 {
 public:
-    // `events` may be null; nothing is then announced.
     CounterOperations(World& world, Logger& log, AuthoredEventDispatcher* events);
 
-    VerbAdmission Set(const VerbInvocation& invocation);
-    VerbAdmission Add(const VerbInvocation& invocation);
+    SENCHA_VERB("counter.set")
+    SENCHA_LABEL("Set counter")
+    SENCHA_CATEGORY("Counters")
+    SENCHA_DESCRIPTION("Sets a named number, kept by saves. Zero unsets it. Values past a 32-bit integer are held at "
+                       "its bound.")
+    VerbAnswer Set(const VerbInvocation& invocation,
+                      SENCHA_ARG("name") SENCHA_LABEL("Name") SENCHA_DESCRIPTION("Which counter.") GameplayTagId name,
+                      SENCHA_ARG("value") SENCHA_LABEL("Value") SENCHA_DESCRIPTION("What it becomes.") std::int64_t value,
+                      SENCHA_ARG("holder") SENCHA_LABEL("Holder")
+                          SENCHA_DESCRIPTION("Whose counter, such as a participant's body. The world's when absent.")
+                              std::optional<EntityId> holder = std::nullopt);
+
+    SENCHA_VERB("counter.add")
+    SENCHA_LABEL("Add to counter")
+    SENCHA_CATEGORY("Counters")
+    SENCHA_DESCRIPTION("Adds to a named number, kept by saves. Reaching zero unsets it. Values past a 32-bit integer "
+                       "are held at its bound.")
+    VerbAnswer Add(const VerbInvocation& invocation,
+                      SENCHA_ARG("name") SENCHA_LABEL("Name") SENCHA_DESCRIPTION("Which counter.") GameplayTagId name,
+                      SENCHA_ARG("amount") SENCHA_LABEL("Amount") SENCHA_DESCRIPTION("What is added; negative takes away.")
+                          std::int64_t amount = 1,
+                      SENCHA_ARG("holder") SENCHA_LABEL("Holder")
+                          SENCHA_DESCRIPTION("Whose counter, such as a participant's body. The world's when absent.")
+                              std::optional<EntityId> holder = std::nullopt);
+
+    SENCHA_QUERY("counter.value")
+    SENCHA_LABEL("Counter value")
+    SENCHA_CATEGORY("Counters")
+    SENCHA_DESCRIPTION("A named number; zero when it was never set.")
+    std::optional<std::int64_t> Value(
+        SENCHA_ARG("name") SENCHA_LABEL("Name") SENCHA_DESCRIPTION("Which counter.") GameplayTagId name,
+        SENCHA_ARG("holder") SENCHA_LABEL("Holder")
+            SENCHA_DESCRIPTION("Whose counter, such as a participant's body. The world's when absent.")
+                std::optional<EntityId> holder = std::nullopt) const;
+
+    [[nodiscard]] const World& AuthoredWorld() const { return *Entities; }
 
 private:
+    VerbAnswer Admit(GameplayTagId name, std::optional<EntityId> holder) const;
     VerbAdmission Write(const VerbInvocation& invocation, GameplayTagId name, EntityId holder, std::int64_t value);
 
     World* Entities;
@@ -90,14 +118,6 @@ private:
     AuthoredEventDispatcher* Events;
 };
 
-inline VerbAdmission InvokeCounterSet(CounterOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Set(invocation);
-}
-
-inline VerbAdmission InvokeCounterAdd(CounterOperations& operations, const VerbInvocation& invocation)
-{
-    return operations.Add(invocation);
-}
-
-[[nodiscard]] AuthoredQueryBindingToken BindCounterQuery(AuthoredQueryDispatcher& dispatcher, const World& world);
+#if !defined(SENCHA_CODEGEN)
+#  include <logic/CounterVocabulary.sencha.h>
+#endif

@@ -44,6 +44,8 @@
 #include <projectile/ProjectileState.h>
 #include <projectile/ProjectileSystem.h>
 #include <projectile/ProjectileVerbs.h>
+#include <authored/AuthoredApi.h>
+#include "GeneratedVerbCall.h"
 #include <render/StaticMeshComponent.h>
 #include <runtime/RuntimeFrameLoop.h>
 #include <time/SimClock.h>
@@ -156,7 +158,8 @@ protected:
                                                                        .Logging = &Logging,
                                                                        .Queries = Queries.get() });
         Schedule.After<ProjectileSystem, ResponsesSystem>();
-        Tokens.push_back(Dispatcher->Bind<&InvokeProjectileLaunch>(Verbs->Find(kProjectileLaunchVerb), *System));
+        Launcher.emplace(*System);
+        Launched = BindAuthoredApi(Dispatcher.get(), nullptr, *Launcher);
         Schedule.Init();
 
         Shooter = WorldState.CreateEntity();
@@ -169,6 +172,7 @@ protected:
     void TearDown() override
     {
         Schedule.Shutdown();
+        Launched.Reset();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
         for (AuthoredQueryBindingToken& token : QueryTokens)
@@ -192,7 +196,7 @@ protected:
         WorldState.AddComponent<WorldTransform>(part, WorldTransform{ Transform3f{ centre, Quatf::Identity(), Vec3d::One() } });
         WorldState.AddComponent<Parent>(part, Parent{ owner });
         HitRegion region;
-        region.Region = "Test.Region.Head";
+        region.Region = Head;
         region.Shape = CollisionShape::MakeSphere(radius);
         WorldState.AddComponent<HitRegion>(part, region);
     }
@@ -208,8 +212,8 @@ protected:
         projectile.Radius = 0.1f;
         projectile.Lifetime = 2.0f;
         projectile.HitEffect = "asset://effects/damage.sdata";
-        projectile.ImpactCue = "Cue.Test.Impact";
-        projectile.HitKind = "Test.Shot.Charged";
+        projectile.ImpactCue = Impact;
+        projectile.HitKind = Charged;
         if (shape)
             shape(projectile);
         Prefabs.Register(Prefab, [projectile](World& world, StoragePartitionId partition) {
@@ -343,6 +347,8 @@ protected:
     GameplayTagId Head;
     ResponsesSystem* Responses = nullptr;
     ProjectileSystem* System = nullptr;
+    std::optional<ProjectileOperations> Launcher;
+    AuthoredApiBindings Launched;
     EntityId Shooter;
     AssetId Prefab;
     std::uint64_t Shapes = 0;
@@ -436,8 +442,8 @@ TEST_F(ProjectileFixture, ItStrikesAWalkingCharacter)
 
 TEST_F(ProjectileFixture, ItPassesThroughWhatItsTagLetsItWhileItsHitsLast)
 {
-    Bolt([](Projectile& p) {
-        p.PassesThrough = "Test.Penetrable";
+    Bolt([this](Projectile& p) {
+        p.PassesThrough = Penetrable;
         p.MaxHits = 2;
     });
     const EntityId first = Box(Vec3d(2.0f, 0.0f, 0.0f), Vec3d(0.2f, 1.0f, 1.0f));
@@ -456,8 +462,8 @@ TEST_F(ProjectileFixture, ItPassesThroughWhatItsTagLetsItWhileItsHitsLast)
 
 TEST_F(ProjectileFixture, AnythingWithoutThePassThroughTagStopsIt)
 {
-    Bolt([](Projectile& p) {
-        p.PassesThrough = "Test.Penetrable";
+    Bolt([this](Projectile& p) {
+        p.PassesThrough = Penetrable;
         p.MaxHits = 4;
     });
     const EntityId wall = Box(Vec3d(2.0f, 0.0f, 0.0f), Vec3d(0.2f, 1.0f, 1.0f));
@@ -651,12 +657,12 @@ TEST_F(ProjectileFixture, TheLaunchVerbLaunchesTheCompiledPrefabByIdWithNoPathTo
     arguments.Set(7, AuthoredValue::Float(1.0));
     VerbInvocation call;
     call.Arguments = &arguments;
-    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::Accepted)
+    EXPECT_EQ(CallGeneratedVerb(*Launcher, AuthoredApiDefinition<ProjectileOperations>::Name_Launch, call).Status, VerbAdmission::Accepted)
         << "this host has no asset system: the id alone names the prefab";
     EXPECT_EQ(ProjectilesInFlight(WorldState), 1u);
 
     arguments.Set(1, AuthoredValue::String("asset://prefabs/not/mounted.smap"));
-    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::InvalidArguments)
+    EXPECT_EQ(CallGeneratedVerb(*Launcher, AuthoredApiDefinition<ProjectileOperations>::Name_Launch, call).Status, VerbAdmission::InvalidArguments)
         << "a path string is not a prefab";
 }
 
@@ -672,12 +678,12 @@ TEST_F(ProjectileFixture, TheLaunchVerbRefusesWhatItCannotResolve)
     arguments.Set(7, AuthoredValue::Float(1.0));
     VerbInvocation call;
     call.Arguments = &arguments;
-    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::UnresolvedReference)
+    EXPECT_EQ(CallGeneratedVerb(*Launcher, AuthoredApiDefinition<ProjectileOperations>::Name_Launch, call).Status, VerbAdmission::UnresolvedReference)
         << "a host with no asset system resolves no path";
     AuthoredArguments missing(1);
     missing.Set(0, AuthoredValue::Entity(Shooter));
     call.Arguments = &missing;
-    EXPECT_EQ(InvokeProjectileLaunch(*System, call), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(CallGeneratedVerb(*Launcher, AuthoredApiDefinition<ProjectileOperations>::Name_Launch, call).Status, VerbAdmission::InvalidArguments);
 }
 
 TEST_F(ProjectileFixture, AMachineThatIsNotTheAuthorityNeverLaunchesFliesOrStrikes)

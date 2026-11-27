@@ -28,6 +28,7 @@
 #include <runtime/RuntimeFrameLoop.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
+#include <authored/AuthoredValueText.h>
 #include <world/ComponentRegistrar.h>
 #include <world/SimulationAuthority.h>
 
@@ -38,56 +39,6 @@
 
 namespace
 {
-    std::string ValueText(const AuthoredValue& value, const GameplayTagRegistry* tags)
-    {
-        const auto list = [&](std::string_view open, std::string_view close) {
-            std::string text(open);
-            for (std::size_t i = 0; i < value.Children().size(); ++i)
-                text += (i == 0 ? "" : ", ") + ValueText(value.Children()[i], tags);
-            return text + std::string(close);
-        };
-        bool flag = false;
-        std::int64_t whole = 0;
-        double number = 0.0;
-        std::string_view text;
-        AuthoredVectorValue vector;
-        const AssetRef* asset = nullptr;
-        GameplayTagId tag;
-        EntityId entity;
-        switch (value.Kind())
-        {
-        case AuthoredValueKind::None: return "(none)";
-        case AuthoredValueKind::Bool: return value.TryGetBool(flag) && flag ? "true" : "false";
-        case AuthoredValueKind::Int: return value.TryGetInt(whole) ? std::format("{}", whole) : "?";
-        case AuthoredValueKind::Float: return value.TryGetFloat(number) ? std::format("{}", number) : "?";
-        case AuthoredValueKind::String: return value.TryGetString(text) ? std::format("\"{}\"", text) : "?";
-        case AuthoredValueKind::Enum: return value.TryGetEnum(text) ? std::string(text) : "?";
-        case AuthoredValueKind::Vector:
-        {
-            if (!value.TryGetVector(vector))
-                return "?";
-            std::string out = "(";
-            for (std::size_t i = 0; i < vector.Length; ++i)
-                out += std::format("{}{}", i == 0 ? "" : ", ", vector.Components[i]);
-            return out + ")";
-        }
-        case AuthoredValueKind::Record: return list("{", "}");
-        case AuthoredValueKind::Array: return list("[", "]");
-        case AuthoredValueKind::AssetRef:
-            return value.TryGetAsset(asset) ? asset->Path : "?";
-        case AuthoredValueKind::DataAssetRef:
-            return value.TryGetDataAsset(asset) ? asset->Path : "?";
-        case AuthoredValueKind::GameplayTag:
-            if (value.TryGetTag(tag) && tags != nullptr)
-                return std::string(tags->GetName(tag));
-            return "?";
-        case AuthoredValueKind::Entity:
-            return value.TryGetEntity(entity) ? std::format("entity {}", entity.Index) : "?";
-        case AuthoredValueKind::PersistentEntity: return "(persistent entity)";
-        }
-        return "?";
-    }
-
     bool SameRequest(const AnimRequest& a, const AnimRequest& b)
     {
         return a.Id == b.Id && a.Intent == b.Intent && a.SourceTag == b.SourceTag
@@ -106,7 +57,7 @@ namespace
             && a.RejectReason == b.RejectReason && a.Reason == b.Reason && a.Rule == b.Rule
             && a.PreviousRule == b.PreviousRule && a.Behavior == b.Behavior && a.Row == b.Row
             && a.Content == b.Content && a.EventKey == b.EventKey && a.EventOutcome == b.EventOutcome
-            && a.Admission == b.Admission && a.Section == b.Section && a.PreviousSection == b.PreviousSection;
+            && a.Answer.Status == b.Answer.Status && a.Answer.Detail == b.Answer.Detail && a.Section == b.Section && a.PreviousSection == b.PreviousSection;
     }
 
     template <typename T, typename F>
@@ -602,7 +553,7 @@ VerbAdmission AnimationPreviewSession::Recorder::Invoke(const VerbInvocation& in
     if (definition != nullptr && invocation.Arguments != nullptr)
         for (std::size_t slot = 0; slot < definition->Arguments.Children.size(); ++slot)
             recorded.Arguments.emplace_back(definition->Arguments.Children[slot].Key,
-                                            ValueText(invocation.Arguments->At(slot), Session->Tags()));
+                                            AuthoredValueText(invocation.Arguments->At(slot), Session->Tags()));
     Session->InvocationSink->push_back(std::move(recorded));
     return VerbAdmission::Accepted;
 }

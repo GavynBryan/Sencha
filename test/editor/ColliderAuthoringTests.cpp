@@ -9,6 +9,7 @@
 #include "document/EditorDocument.h"
 
 #include <physics/components/Collider.h>
+#include <physics/components/RigidBody.h>
 
 #include <cstring>
 #include <memory>
@@ -172,4 +173,34 @@ TEST_F(ColliderAuthoringTest, ASelectedBoxIsDrawnAndItsHandlesResizeItInTheEntit
     Workspace.Commands.Undo();
     EXPECT_FLOAT_EQ(ColliderOn(crate).Shape.HalfExtents.X, 0.5f);
     EXPECT_FLOAT_EQ(ColliderOn(crate).Shape.Center.X, 0.0f);
+}
+
+TEST_F(ColliderAuthoringTest, TheMotionRowGivesTheColliderABodyAndStaticTakesItAway)
+{
+    const EntityId crate = Crate();
+    ASSERT_EQ(Inspector->Act("components", "add", "collider"), PropertyEditResult::Applied);
+    std::vector<PropertyNode> rows = Inspector->Nodes();
+    ASSERT_NE(Find(rows, "collider:motion"), nullptr) << "the collider offers no motion";
+    EXPECT_EQ(Find(rows, "collider:motion")->Value, "Static");
+    EXPECT_FALSE(Entities().HasComponent<RigidBody>(crate));
+
+    ASSERT_EQ(Inspector->CommitEdit("collider:motion", "Dynamic"), PropertyEditResult::Applied);
+    ASSERT_TRUE(Entities().HasComponent<RigidBody>(crate));
+    EXPECT_EQ(Entities().TryGet<RigidBody>(crate)->Motion, BodyMotion::Dynamic);
+    EXPECT_EQ(Find(Inspector->Nodes(), "collider:motion")->Value, "Dynamic");
+
+    ASSERT_EQ(Inspector->CommitEdit("collider:motion", "Kinematic"), PropertyEditResult::Applied);
+    EXPECT_EQ(Entities().TryGet<RigidBody>(crate)->Motion, BodyMotion::Kinematic);
+    EXPECT_EQ(Inspector->CommitEdit("collider:motion", "Kinematic"), PropertyEditResult::Unchanged);
+
+    ASSERT_EQ(Inspector->CommitEdit("collider:motion", "Static"), PropertyEditResult::Applied);
+    EXPECT_FALSE(Entities().HasComponent<RigidBody>(crate));
+
+    Workspace.Commands.Undo();
+    ASSERT_TRUE(Entities().HasComponent<RigidBody>(crate));
+    EXPECT_EQ(Entities().TryGet<RigidBody>(crate)->Motion, BodyMotion::Kinematic);
+    Workspace.Commands.Undo();
+    EXPECT_EQ(Entities().TryGet<RigidBody>(crate)->Motion, BodyMotion::Dynamic);
+    Workspace.Commands.Undo();
+    EXPECT_FALSE(Entities().HasComponent<RigidBody>(crate));
 }

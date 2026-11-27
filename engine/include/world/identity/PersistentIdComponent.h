@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/identity/Id.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
@@ -34,6 +35,12 @@ PersistentIdComponent
     PersistentEntityId Id;
 };
 
+template <>
+struct ComponentPersistenceOf<PersistentIdComponent>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Identity;
+};
+
 // Index membership: an identified entity resolves through the world's
 // PersistentEntityIndex for exactly as long as it carries the component.
 template <>
@@ -46,6 +53,7 @@ struct ComponentTraits<PersistentIdComponent>
 template <>
 struct SceneFieldCodec<PersistentEntityId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, PersistentEntityId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, PersistentEntityId&,

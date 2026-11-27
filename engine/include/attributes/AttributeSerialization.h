@@ -9,6 +9,9 @@
 // in GameplayTagSerialization for the shared array-count limitation.
 //=============================================================================
 
+#include <string>
+#include <vector>
+
 struct IWriteArchive;
 struct IReadArchive;
 struct AttributeSet;
@@ -20,4 +23,5 @@ bool WriteAttributes(IWriteArchive& archive,
 
 bool ReadAttributes(IReadArchive& archive,
                     AttributeSet& attributes,
-                    const AttributeRegistry& registry);
+                    const AttributeRegistry& registry,
+                    std::vector<std::string>* dropped = nullptr);

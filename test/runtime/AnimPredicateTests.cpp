@@ -119,7 +119,7 @@ TEST(AnimPredicate, TagQueriesAreHierarchical)
     const AnimProgram none = fx.Compile(R"([ { "fact": "Tags", "has": "none", "query": [ "state.stunned" ] } ])");
     EXPECT_FALSE(fx.Evaluate(any).Passed);
     EXPECT_TRUE(fx.Evaluate(none).Passed);
-    ASSERT_TRUE(fx.Container.Grant(fx.Tag("state.stunned.hard")));
+    ASSERT_EQ(fx.Container.Grant(fx.Tag("state.stunned.hard")), GameplayTagWrite::Added);
     EXPECT_TRUE(fx.Evaluate(any).Passed);
     EXPECT_FALSE(fx.Evaluate(none).Passed);
 }

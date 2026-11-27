@@ -13,9 +13,11 @@
 #include <controller/LookIntegrationSystem.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputRegistration.h>
+#include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 #include <navigation/NavAgentRegistration.h>
 #include <participant/ParticipantLifecycle.h>
+#include <save/SavedGames.h>
 #include <perception/PerceptionRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <world/RuntimeWorld.h>
@@ -39,6 +41,11 @@ void FpsGame::OnConfigure(GameConfigureContext& ctx)
     ctx.Config.App.Name = "Sencha FPS Template";
 }
 
+void FpsGame::OnRegisterVocabulary(World& world)
+{
+    InstallInventoryVocabulary(world);
+}
+
 void FpsGame::OnStart(GameStartupContext&)
 {
     Engine& engine = GetEngine();
@@ -51,6 +58,7 @@ void FpsGame::OnStart(GameStartupContext&)
 
     SessionState.emplace(engine, engine.Logging().GetLogger<FpsGame>());
     SessionState->Open();
+    engine.Saves().KeepLevelState();
 
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
@@ -98,6 +106,7 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterMovementSystems(ctx.Schedule, Session().Assets().DataAssets,
                             &GetEngine().Logging());
     RegisterControllerSystems(ctx.Schedule);
+    RegisterInventorySystems(ctx.Schedule);
     ctx.Schedule.Register<FpsSteeringSystem>();
 
     // Everything that reads actions runs after they are resolved: the aim

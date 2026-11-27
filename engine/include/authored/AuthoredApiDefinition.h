@@ -7,7 +7,9 @@
 #include <authored/AuthoredValueTraits.h>
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
+#include <authored/VerbResult.h>
 #include <ecs/ComponentTypeId.h>
+#include <ecs/EntityId.h>
 
 #include <array>
 #include <cstddef>
@@ -17,6 +19,7 @@
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 class World;
 
@@ -33,7 +36,7 @@ struct AuthoredVerbEntry
 {
     std::string_view Name;
     VerbDefinition (*Describe)();
-    VerbAdmission (*Invoke)(T&, const VerbInvocation&);
+    VerbAnswer (*Invoke)(T&, const VerbInvocation&);
 };
 
 template<typename T>
@@ -147,3 +150,80 @@ void DescribeAuthoredComponentTarget(DataFieldSchema& arguments)
     field.Reference.ComponentIdentity = AuthoredComponentIdentity<C>();
     arguments.Children.push_back(std::move(field));
 }
+
+// What a verb method's return type declares beyond its arguments: its reasons, and its result's kind.
+template<typename R>
+struct AuthoredVerbReturn
+{
+    static std::vector<VerbRefusalReason> Refusals() { return {}; }
+};
+
+template<AuthoredRefusalReason E>
+struct AuthoredVerbReturn<VerbRefusal<E>>
+{
+    static std::vector<VerbRefusalReason> Refusals() { return VerbRefusalsOf<E>(); }
+};
+
+template<typename T, typename E>
+struct AuthoredVerbReturn<VerbResult<T, E>>
+{
+    static std::vector<VerbRefusalReason> Refusals() { return VerbRefusalsOf<E>(); }
+    static void DescribeResult(DataFieldSchema& result) { AuthoredValueTraits<T>::Describe(result); }
+};
+
+[[nodiscard]] constexpr VerbAnswer AnswerAuthoredVerb(VerbAnswer answer, AuthoredValue*)
+{
+    return answer;
+}
+
+template<AuthoredRefusalReason E>
+[[nodiscard]] constexpr VerbAnswer AnswerAuthoredVerb(const VerbRefusal<E>& answer, AuthoredValue*)
+{
+    return answer.Answer();
+}
+
+// Encodes the value only when accepted and asked for.
+template<typename T, typename E>
+[[nodiscard]] VerbAnswer AnswerAuthoredVerb(const VerbResult<T, E>& answer, AuthoredValue* result)
+{
+    if (result != nullptr && answer.Answer().Accepted() && answer.Value().has_value())
+        *result = AuthoredValueTraits<T>::Encode(*answer.Value());
+    return answer.Answer();
+}
+
+// One argument as the generated adapter reads it: plainly, or against the provider's World.
+template<typename T, typename Provider>
+[[nodiscard]] bool DecodeAuthoredArgument(const Provider& provider, const AuthoredValue& value, T& out)
+{
+    if constexpr (AuthoredWorldDecoded<T>)
+        return AuthoredValueTraits<T>::DecodeIn(provider.AuthoredWorld(), value, out);
+    else
+        return AuthoredValueTraits<T>::Decode(value, out);
+}
+
+[[nodiscard]] bool AuthoredTargetAlive(const World& world, EntityId target);
+
+// An absent optional target is not checked.
+[[nodiscard]] inline bool AuthoredTargetAlive(const World& world, const std::optional<EntityId>& target)
+{
+    return !target.has_value() || AuthoredTargetAlive(world, *target);
+}
+
+// A const reference argument: borrowed from the argument pack where its type allows, decoded otherwise.
+template<typename T>
+struct AuthoredHeldArgument
+{
+    T Value{};
+
+    [[nodiscard]] bool Read(const AuthoredValue& value) { return AuthoredValueTraits<T>::Decode(value, Value); }
+    [[nodiscard]] const T& Get() const { return Value; }
+};
+
+template<AuthoredBorrowable T>
+struct AuthoredHeldArgument<T>
+{
+    const T* Pointer = nullptr;
+
+    [[nodiscard]] bool Read(const AuthoredValue& value) { return AuthoredValueTraits<T>::Borrow(value, Pointer); }
+    [[nodiscard]] const T& Get() const { return *Pointer; }
+};

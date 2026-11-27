@@ -3,6 +3,7 @@
 // exists only where something presents, and the binder keeps root motion and
 // gameplay events off whatever such a request can make it play.
 
+#include "GeneratedVerbCall.h"
 #include "AnimRigFixture.h"
 
 #include <anim/AnimPresentationRequests.h>
@@ -101,7 +102,7 @@ namespace
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
             invocation.Tick = Now;
-            return operations.Present(invocation);
+            return CallGeneratedVerb(operations, AuthoredApiDefinition<AnimRequestOperations>::Name_Present, invocation).Status;
         }
 
         [[nodiscard]] bool Refuses(std::string_view needle) const

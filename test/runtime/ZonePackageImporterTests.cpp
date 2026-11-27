@@ -199,7 +199,7 @@ TEST(ZonePackageImporter, ImportsPersistentWorldSceneIntoPartitionZero)
         schema,
         package,
         PersistentStoragePartition,
-        ZoneId{ 30 },
+        ZoneStateScope{ .Level = ZoneStateLevelId{ 1 }, .Zone = ZoneId{ 30 } },
         &error)) << error.Message;
 
     EXPECT_TRUE(runtime.Entities().IsAlive(existing));
@@ -232,7 +232,7 @@ TEST(ZonePackageImporter, PersistentImportFailurePreservesExistingEntities)
         schema,
         package,
         PersistentStoragePartition,
-        ZoneId{ 40 },
+        ZoneStateScope{ .Level = ZoneStateLevelId{ 1 }, .Zone = ZoneId{ 40 } },
         &error));
     EXPECT_FALSE(error.Message.empty());
     EXPECT_TRUE(runtime.Entities().IsAlive(existing));

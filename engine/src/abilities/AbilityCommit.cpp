@@ -3,6 +3,7 @@
 #include <effects/EffectCost.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
+#include <gameplay_tags/GameplayTagOverflow.h>
 
 #include <algorithm>
 #include <optional>
@@ -60,15 +61,32 @@ AbilityCommitResult AbilityPass::CheckCosts(const AbilityActor& actor, std::size
     const EffectDefinition* lasting = effects != nullptr ? effects->Get(definition.Cooldown->Effect) : nullptr;
     if (lasting == nullptr)
         return { .Paid = false, .Group = definition.Cooldown->Group };
-    if (const GameplayTagContainer* tags = actor.Tags())
-    {
-        const auto fresh = std::ranges::count_if(lasting->GrantedTags, [&](GameplayTagId tag) {
-            return tags->StackCount(tag) == 0;
-        });
-        if (tags->Size() + fresh > GameplayTagContainer::Capacity)
-            return { .Paid = false, .Group = definition.Cooldown->Group };
-    }
+    const GameplayTagContainer* tags = std::as_const(Entities).TryGet<GameplayTagContainer>(actor.Entity);
+    if (tags != nullptr && !AdmitGameplayTags(Entities, actor.Entity, *tags, lasting->GrantedTags))
+        return { .Paid = false, .Group = definition.Cooldown->Group };
     return { .Paid = true };
+}
+
+bool AbilityPass::StartTagsFit(const AbilityActor& actor, const AbilityDefinition& definition, bool cooldown,
+                               bool costed)
+{
+    const GameplayTagContainer* tags = std::as_const(Entities).TryGet<GameplayTagContainer>(actor.Entity);
+    if (tags == nullptr)
+        return true;
+    const EffectRegistry* effects = std::as_const(Entities).TryGetResource<EffectRegistry>();
+    const auto granting = [&](EffectId effect) {
+        const EffectDefinition* lasting = effects != nullptr ? effects->Get(effect) : nullptr;
+        if (lasting != nullptr && lasting->Duration != EffectDuration::Instant)
+            StartTags.insert(StartTags.end(), lasting->GrantedTags.begin(), lasting->GrantedTags.end());
+    };
+    StartTags.assign(definition.OwnedTags.begin(), definition.OwnedTags.end());
+    if (cooldown)
+        granting(definition.Cooldown->Effect);
+    if (costed)
+        for (const EffectCostRow& cost : EffectCosts)
+            if (cost.Target == actor.Entity)
+                granting(cost.Effect);
+    return AdmitGameplayTags(Entities, actor.Entity, *tags, StartTags);
 }
 
 std::optional<std::uint8_t> AbilityPass::CheckResources(const AbilityActor& actor, std::size_t slot,
@@ -166,9 +184,8 @@ AbilityCommitResult AbilityPass::Commit(const AbilityActor& actor, std::size_t s
     if (payable == 0 && !cooldown)
         return { .Paid = true };
 
-    const AbilityGrants* grants = actor.Grants();
-    const AbilityGrant* grant = grants != nullptr ? grants->Find(record.Grant) : nullptr;
-    const EntityId source = grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
+    const AbilityGrant* grant = actor.Grant(record.Grant);
+    const EntityId source = grant != nullptr ? ResolvePersistableRef(Entities, grant->Source) : EntityId{};
     const AbilityCommitResult check = CheckCosts(actor, slot, definition, payable, cooldown, source);
     if (!check.Paid)
         return check;

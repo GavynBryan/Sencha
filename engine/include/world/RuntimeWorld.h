@@ -6,6 +6,7 @@
 #include <world/ResourceRegistry.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -66,6 +67,10 @@ struct RuntimeZoneRecord
     StoragePartitionId Partition = PersistentStoragePartition;
     RuntimeZoneLoadState State = RuntimeZoneLoadState::Resident;
     ZoneParticipation Participation;
+    // What the zone was imported under; its detach captures into the same.
+    ZoneStateScope StateScope;
+    // False when the level it belongs to is about to be forgotten, so its detach captures nothing.
+    bool CapturedAtDetach = true;
     ResourceRegistry Resources;
 };
 
@@ -119,6 +124,10 @@ public:
     bool MoveEntityToZone(EntityId entity, ZoneId destination);
     bool MoveEntityToPersistent(EntityId entity);
 
+    // A partition in no frame domain and no residency batch, for entities held out of the simulation
+    // while no level stands (what a level change carries). Made on first use, kept for the session.
+    [[nodiscard]] StoragePartitionId HoldingPartition();
+
     // Requests are legal while a frame view or residency batch is live. They do
     // not mutate current participation. FlushLifecycleRequests applies the
     // coalesced requests at the next owner-thread lifecycle drain.
@@ -169,6 +178,7 @@ private:
     std::unordered_map<ZoneId, StoragePartitionId> PartitionByZone_;
     std::vector<std::unique_ptr<RuntimeZoneRecord>> ZonesByPartition_;
     std::vector<std::uint16_t> FreePartitions_;
+    std::optional<StoragePartitionId> Holding_;
 
     std::vector<ParticipationRequest> ParticipationRequests_;
     std::vector<ZoneId> DetachRequests_;

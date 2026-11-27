@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredConstantText.h>
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
 
@@ -7,16 +8,9 @@
 #include <string>
 #include <string_view>
 
-// A verb or query argument's constant as a person types and reads it, in the
-// verb-binding wrapper ({const}, {tag}, {data}, {asset}).
-
-// The field an optional argument wraps, or the field itself.
-[[nodiscard]] const DataFieldSchema& UnwrappedField(const DataFieldSchema& field);
+// A verb or query argument's constant as a person reads it; authored/AuthoredConstantText.h reads it back.
 
 [[nodiscard]] std::string AuthoredConstantText(const JsonValue& argument);
-
-// The constant `text` spells for `field`'s kind; none when it spells no such value.
-[[nodiscard]] std::optional<JsonValue> AuthoredConstantFromText(const DataFieldSchema& field, std::string_view text);
 
 // What a newly chosen constant argument starts at.
 [[nodiscard]] JsonValue DefaultAuthoredConstant(const DataFieldSchema& field);

@@ -3,6 +3,7 @@
 
 #include "document/DocumentCookFingerprints.h"
 #include "document/DocumentCookSnapshot.h"
+#include "document/DocumentSerialization.h"
 
 #include <gtest/gtest.h>
 
@@ -24,7 +25,7 @@ namespace
 
     DocumentCookFingerprints Compute(const DocumentCookSnapshot& snapshot)
     {
-        return ComputeDocumentCookFingerprints(snapshot, /*cellSize*/ 16.0, {});
+        return ComputeDocumentCookFingerprints(snapshot, EditorSceneSerializers(), 16.0, {});
     }
 } // namespace
 

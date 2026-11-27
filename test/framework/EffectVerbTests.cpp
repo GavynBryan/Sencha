@@ -6,6 +6,7 @@
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 #include <effects/EffectVerbs.h>
+#include "GeneratedVerbCall.h"
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -61,6 +62,16 @@ protected:
         return invocation;
     }
 
+    VerbAdmission Apply(const VerbInvocation& invocation)
+    {
+        return CallGeneratedVerb(Operations, AuthoredApiDefinition<EffectOperations>::Name_Apply, invocation).Status;
+    }
+
+    VerbAdmission Hold(const VerbInvocation& invocation)
+    {
+        return CallGeneratedVerb(Operations, AuthoredApiDefinition<EffectOperations>::Name_Hold, invocation).Status;
+    }
+
     float HealthOf(EntityId entity) { return Entities.TryGet<AttributeSet>(entity)->GetBase(Health); }
 
     World Entities;
@@ -78,17 +89,17 @@ protected:
 
 TEST_F(EffectVerbTest, ApplyScalesEveryModifier)
 {
-    EXPECT_EQ(Operations.Apply(Invocation(Target, "asset://fx/hit.sdata", 2.5)), VerbAdmission::Accepted);
+    EXPECT_EQ(Apply(Invocation(Target, "asset://fx/hit.sdata", 2.5)), VerbAdmission::Accepted);
     EXPECT_FLOAT_EQ(HealthOf(Target), 75.0f);
 }
 
 TEST_F(EffectVerbTest, ApplyRefusesARecipientItCannotModify)
 {
     const EntityId bare = Entities.CreateEntity();
-    EXPECT_EQ(Operations.Apply(Invocation(bare, "asset://fx/hit.sdata")), VerbAdmission::Refused);
-    EXPECT_EQ(Operations.Apply(Invocation(Target, "asset://fx/slow.sdata")), VerbAdmission::Refused)
+    EXPECT_EQ(Apply(Invocation(bare, "asset://fx/hit.sdata")), VerbAdmission::Refused);
+    EXPECT_EQ(Apply(Invocation(Target, "asset://fx/slow.sdata")), VerbAdmission::Refused)
         << "the target has no Speed for the effect to modify";
-    EXPECT_EQ(Operations.Apply(Invocation(Target, "asset://fx/missing.sdata")), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(Apply(Invocation(Target, "asset://fx/missing.sdata")), VerbAdmission::InvalidArguments);
     EXPECT_FLOAT_EQ(HealthOf(Target), 100.0f);
 }
 
@@ -98,7 +109,7 @@ TEST_F(EffectVerbTest, AHoldLastsUntilItsOwnerReleasesIt)
     VerbInvocation acquire = Invocation(Target, "asset://fx/burn.sdata", 2.0);
     acquire.Step = LeaseStep::Acquire;
     acquire.Owner = holder;
-    ASSERT_EQ(Operations.Hold(acquire), VerbAdmission::Accepted);
+    ASSERT_EQ(Hold(acquire), VerbAdmission::Accepted);
     ResolveAttributesWithEffects(Entities);
     EXPECT_FLOAT_EQ(Entities.TryGet<AttributeSet>(Target)->GetCurrent(Health), 90.0f) << "folded at its scale";
     EXPECT_GT(Entities.TryGet<GameplayTagContainer>(Target)->StackCount(Burning), 0u);
@@ -106,7 +117,7 @@ TEST_F(EffectVerbTest, AHoldLastsUntilItsOwnerReleasesIt)
     VerbInvocation release;
     release.Step = LeaseStep::Release;
     release.Owner = holder;
-    EXPECT_EQ(Operations.Hold(release), VerbAdmission::Accepted);
+    EXPECT_EQ(Hold(release), VerbAdmission::Accepted);
     ResolveAttributesWithEffects(Entities);
     EXPECT_FLOAT_EQ(Entities.TryGet<AttributeSet>(Target)->GetCurrent(Health), 100.0f);
     EXPECT_EQ(Entities.TryGet<GameplayTagContainer>(Target)->StackCount(Burning), 0u);
@@ -117,6 +128,6 @@ TEST_F(EffectVerbTest, AnInstantEffectCannotBeHeld)
     VerbInvocation acquire = Invocation(Target, "asset://fx/hit.sdata");
     acquire.Step = LeaseStep::Acquire;
     acquire.Owner = LeaseOwner{ .Entity = Target, .Key = 1 };
-    EXPECT_EQ(Operations.Hold(acquire), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(Hold(acquire), VerbAdmission::InvalidArguments);
     EXPECT_FLOAT_EQ(HealthOf(Target), 100.0f);
 }

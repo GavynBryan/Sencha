@@ -13,7 +13,8 @@ class LoggingProvider;
 // Staged-load contract for cooked scenes. Stage: bytes -> validated
 // SmapContents, every component fingerprint-checked against the serializer
 // registry, so schema skew refuses on the task thread with the component
-// named. Commit: register with SceneCache. Payload type: SmapContents.
+// named. Commit: register with SceneCache; reload: replace a resident entry's
+// contents. Payload type: SmapContents.
 //
 // The stage half declares no dependency edges: a .smap's dependency table
 // carries paths whose types only the registry knows at load, while staged
@@ -35,6 +36,10 @@ public:
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller).
     [[nodiscard]] SceneHandle CommitTyped(AssetStaging&& staged);
+
+    // Owner-thread reload: the resident scene at the staged path takes the
+    // staged contents in place.
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
     Logger& Log;

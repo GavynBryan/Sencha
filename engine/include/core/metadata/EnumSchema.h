@@ -93,3 +93,14 @@ constexpr std::span<const EnumOption> EnumOptionsOf()
 {
     return EnumSchemaDetail::OptionsStorage<E>;
 }
+
+// The schema's entry for `value`, or null when it lists none.
+template <typename E>
+    requires HasEnumSchema<E>
+constexpr const EnumValue<E>* FindEnumValue(E value)
+{
+    for (const EnumValue<E>& entry : EnumSchema<E>::Values)
+        if (entry.Value == value)
+            return &entry;
+    return nullptr;
+}

@@ -6,11 +6,12 @@
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/held/Held.h>
+#include <world/held/HeldRecordForms.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
-#include <zone/ZoneStateMemory.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZoneStateStore.h>
 
 #include <vector>
@@ -74,10 +75,15 @@ namespace
         const std::vector<EntityId> held(listed.begin(), listed.end());
         for (const EntityId inner : held)
         {
-            if (Held* relation = world.TryGet<Held>(inner); relation != nullptr && identity.IsValid())
-                relation->Holder = PersistableRef{ .Entity = record, .Target = identity };
+            if (identity.IsValid())
+                NameHeldHolder(world, inner);
             LeaveAuthoredSelf(world, index, inner, leaving, depth + 1);
         }
+    }
+
+    StoragePartitionId SettledPartition(const World& world, EntityId holder)
+    {
+        return holder.IsValid() ? world.GetEntityPartition(holder) : PersistentStoragePartition;
     }
 
     void Settle(World& world, const HeldRecordIndex& index, EntityId record)
@@ -98,19 +104,24 @@ namespace
             AnchorTo(world, record, EntityId{});
             return;
         }
-        StoragePartitionId partition = PersistentStoragePartition;
         if (holder.IsValid())
         {
-            const PersistableRef ref{ .Entity = holder, .Target = EnsurePersistentId(world, holder) };
-            if (Held* held = world.TryGet<Held>(record); held != nullptr && held->Holder != ref)
-                held->Holder = ref;
+            NameHeldHolder(world, record);
             AnchorTo(world, record, holder);
-            partition = world.GetEntityPartition(holder);
         }
         else
             AnchorTo(world, record, std::nullopt);
-        if (world.GetEntityPartition(record) != partition)
+        if (const StoragePartitionId partition = SettledPartition(world, holder);
+            world.GetEntityPartition(record) != partition)
             (void)world.MoveEntityToPartition(record, partition);
+    }
+
+    std::uint16_t PositionAfterLast(World& world, HeldRecordIndex& index, EntityId holder)
+    {
+        if (index.Renumber(holder))
+            for (const EntityId listed : index.RecordsOf(holder))
+                world.TryGet<Held>(listed)->Position = index.PositionOf(listed);
+        return index.NextPosition(holder);
     }
 }
 
@@ -134,14 +145,54 @@ void HoldRecord(World& world, EntityId record, EntityId holder, std::optional<st
     HeldRecordIndex& index = InstallHeldRecords(world);
     if (index.Lists(record) && (index.HolderOf(record) != holder || index.AwaitedHolderOf(record).IsValid()))
         LeaveAuthoredSelf(world, index, record, Leaving::IdentityAndGroup, 0);
-    const Held held{ .Holder = { .Entity = holder, .Target = holder.IsValid() ? EnsurePersistentId(world, holder)
-                                                                               : PersistentEntityId{} },
-                     .Position = position.value_or(index.NextPosition(holder)) };
+    const Held held{ .Holder = MakePersistableRef(world, holder),
+                     .Position = position.has_value() ? *position : PositionAfterLast(world, index, holder) };
     if (world.HasComponent<Held>(record))
         (void)world.ReplaceComponent<Held>(record, held);
     else
         world.AddComponent<Held>(record, held);
     Settle(world, index, record);
+}
+
+EntityId PlaceHeldRecord(World& world, EntityId holder, ArchetypeSignature values, std::optional<std::uint16_t> position)
+{
+    if (!IsSimulationAuthority(world) || !world.IsRegistered<Held>() || (holder.IsValid() && !world.IsAlive(holder)))
+        return {};
+    HeldRecordIndex& index = InstallHeldRecords(world);
+    const Held held{ .Holder = MakePersistableRef(world, holder),
+                     .Position = position.has_value() ? *position : PositionAfterLast(world, index, holder) };
+    const PersistentEntityId identity =
+        world.IsRegistered<PersistentIdComponent>() ? MintRuntimePersistentId(world) : PersistentEntityId{};
+    const bool replicated = world.IsRegistered<NetReplicated>();
+    const bool anchored = holder.IsValid() && world.IsRegistered<NetRelevanceAnchor>();
+    values.set(world.GetComponentId<Held>());
+    if (identity.IsValid())
+        values.set(world.GetComponentId<PersistentIdComponent>());
+    if (replicated)
+        values.set(world.GetComponentId<NetReplicated>());
+    if (anchored)
+        values.set(world.GetComponentId<NetRelevanceAnchor>());
+
+    const EntityId record = world.CreateEntityWithSignature(SettledPartition(world, holder), values);
+    if (identity.IsValid())
+        (void)world.InitializeComponent<PersistentIdComponent>(record, PersistentIdComponent{ identity });
+    if (replicated)
+        (void)world.InitializeComponent<NetReplicated>(record);
+    if (anchored)
+        (void)world.InitializeComponent<NetRelevanceAnchor>(record, NetRelevanceAnchor{ .Anchor = holder });
+    (void)world.InitializeComponent<Held>(record, held);
+    return record;
+}
+
+void NameHeldHolder(World& world, EntityId record)
+{
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    const EntityId holder = index != nullptr ? index->HolderOf(record) : EntityId{};
+    if (!holder.IsValid())
+        return;
+    const PersistableRef named = MakePersistableRef(world, holder);
+    if (Held* held = world.TryGet<Held>(record); held != nullptr && held->Holder != named)
+        held->Holder = named;
 }
 
 void NoteHeldRecordChanged(World& world, EntityId record)
@@ -169,17 +220,13 @@ void SettleHeldRecords(World& world)
             return;
         for (const EntityId holder : departed)
         {
-            if (world.IsAlive(holder))
+            if (world.IsAlive(holder) || !authority)
                 continue;
-            if (authority)
-            {
-                const std::span<const EntityId> held = index->RecordsOf(holder);
-                records.assign(held.begin(), held.end());
-                for (const EntityId record : records)
-                    if (world.IsAlive(record))
-                        world.DestroyEntity(record);
-            }
-            index->ForgetHolder(holder);
+            const std::span<const EntityId> held = index->RecordsOf(holder);
+            records.assign(held.begin(), held.end());
+            for (const EntityId record : records)
+                if (world.IsAlive(record))
+                    world.DestroyEntity(record);
         }
         if (authority)
             for (const EntityId record : unsettled)
@@ -187,37 +234,104 @@ void SettleHeldRecords(World& world)
     }
 }
 
-void ParkHeldRecords(World& world, ZoneId zone, StoragePartitionId partition)
+void ParkHeldRecords(World& world, ZoneStateScope scope, std::span<const EntityId> holders)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
-    const ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>();
+    const ZoneStateSerialization* kept = world.TryGetResource<ZoneStateSerialization>();
+    const bool keepsGained = kept != nullptr && kept->Serializers != nullptr;
+    const bool writes = keepsGained && kept->Context != nullptr && memory != nullptr && scope.IsValid();
+    std::vector<EntityId> durable;
+    std::vector<EntityId> session;
     std::vector<EntityId> records;
-    for (const EntityId holder : IdentifiedEntitiesIn(world, partition))
+    for (const EntityId holder : holders)
     {
-        const PersistentEntityId id = world.TryGet<PersistentIdComponent>(holder)->Id;
+        const PersistentIdComponent* identity =
+            world.IsAlive(holder) ? world.TryGet<PersistentIdComponent>(holder) : nullptr;
+        if (identity == nullptr)
+            continue;
+        if (const PersistentEntityId awaited = index->AwaitedHolderOf(holder); awaited.IsValid())
+        {
+            const ZoneStateForgetting forgotten =
+                writes ? memory->ForgettingOf(scope, awaited) : ZoneStateForgetting::AtDetach;
+            if (forgotten != ZoneStateForgetting::AtDetach && !HasAuthoredPersistentId(world, holder))
+                (forgotten == ZoneStateForgetting::Never ? durable : session).push_back(holder);
+            continue;
+        }
+        const PersistentEntityId id = identity->Id;
         const std::span<const EntityId> held = index->RecordsOf(holder);
-        if (held.empty() || !IsAuthoredPersistentEntityId(id)
-            || (memory != nullptr && memory->ForgettingOf(zone, id) == ZoneStateForgetting::AtDetach))
+        const bool authored = IsAuthoredPersistentEntityId(id);
+        if (held.empty() || (!authored && !(keepsGained && IsKeptWithZone(world, holder))))
+            continue;
+        const ZoneStateForgetting forgotten = !authored ? ForgettingOfKept(world, holder)
+            : memory != nullptr                         ? memory->ForgettingOf(scope, id)
+                                                        : ZoneStateForgetting::Never;
+        if (forgotten == ZoneStateForgetting::AtDetach)
             continue;
         records.assign(held.begin(), held.end());
+        std::erase_if(records, [&](EntityId record) { return HasAuthoredPersistentId(world, record); });
+        if (writes)
+        {
+            std::vector<EntityId>& into = authored || forgotten == ZoneStateForgetting::Never ? durable : session;
+            into.insert(into.end(), records.begin(), records.end());
+            continue;
+        }
         for (const EntityId record : records)
         {
-            if (HasAuthoredPersistentId(world, record))
-                continue;
-            index->Await(record, id);
+            index->Await(record, id, scope);
             (void)world.MoveEntityToPartition(record, PersistentStoragePartition);
         }
     }
+    if (!writes || (durable.empty() && session.empty()))
+        return;
+    const std::vector<EntityId> durableClosure = HeldRecordClosure(world, *index, std::move(durable));
+    const std::vector<EntityId> sessionClosure = HeldRecordClosure(world, *index, std::move(session));
+    for (const std::vector<EntityId>* closure : { &durableClosure, &sessionClosure })
+        for (const EntityId record : *closure)
+            (void)EnsurePersistentId(world, record);
+    memory->RecordHeld(scope, WriteHeldRecords(world, durableClosure, *kept->Serializers, *kept->Context),
+                       WriteHeldRecords(world, sessionClosure, *kept->Serializers, *kept->Context));
+    for (const std::vector<EntityId>* closure : { &durableClosure, &sessionClosure })
+        for (auto record = closure->rbegin(); record != closure->rend(); ++record)
+            if (world.IsAlive(*record))
+                world.DestroyEntity(*record);
 }
 
-void DestroyAwaitingHeldRecords(World& world)
+std::size_t DropRecordsAwaiting(World& world, PersistentEntityId holder)
+{
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr || !holder.IsValid())
+        return 0;
+    std::size_t dropped = 0;
+    for (const EntityId record : index->AwaitingRecords())
+        if (world.IsAlive(record) && index->AwaitedHolderOf(record) == holder)
+        {
+            world.DestroyEntity(record);
+            ++dropped;
+        }
+    return dropped;
+}
+
+void SetAsideHeldRecords(World& world, ZoneStateLevelId level)
+{
+    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
+        index->SetAside(level);
+}
+
+void ResumeHeldRecords(World& world, ZoneStateLevelId level)
+{
+    if (HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>())
+        index->Resume(level);
+}
+
+void DestroySetAsideHeldRecords(World& world, ZoneStateLevelId level)
 {
     HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !IsSimulationAuthority(world))
         return;
-    for (const EntityId record : index->AwaitingRecords())
+    for (const EntityId record : index->SetAsideRecords(level))
         if (world.IsAlive(record))
             world.DestroyEntity(record);
 }

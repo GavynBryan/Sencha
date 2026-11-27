@@ -128,12 +128,12 @@ bool IsAbilityLive(const World& world, EntityId actor, AbilityId ability)
 
 bool HasLiveActivationFrom(const World& world, EntityId actor, EntityId source)
 {
-    if (!source.IsValid() || !world.IsAlive(actor) || !world.IsRegistered<AbilityGrants>())
+    if (!source.IsValid())
         return false;
-    const AbilityGrants* grants = world.TryGet<AbilityGrants>(actor);
-    return grants != nullptr && AnyLiveRecord(world, actor, [&](const AbilityRecord& record) {
-        const AbilityGrant* grant = grants->Find(record.Grant);
-        return grant != nullptr && grant->Source == source;
+    const std::span<const AbilityGrant> grants = AbilityGrantsOf(world, actor);
+    return !grants.empty() && AnyLiveRecord(world, actor, [&](const AbilityRecord& record) {
+        const AbilityGrant* grant = FindAbilityGrant(grants, record.Grant);
+        return grant != nullptr && ResolvePersistableRef(world, grant->Source) == source;
     });
 }
 

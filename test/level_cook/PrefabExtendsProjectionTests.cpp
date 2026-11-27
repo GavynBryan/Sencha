@@ -7,6 +7,8 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
+#include <world/transform/TransformComponents.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <gtest/gtest.h>
@@ -78,7 +80,7 @@ protected:
         return doc.GetScene().GetRegistry().Components.TryGet<PointLightComponent>(FindById(doc, id));
     }
 
-    static constexpr std::string_view kDerived = "{ format_version: 2, extends: 'asset://props/lamp_post.sscene', entities: [] }";
+    static constexpr std::string_view kDerived = "{ format_version: 3, extends: 'asset://props/lamp_post.sscene', entities: [] }";
 
     LoggingProvider Logging;
     fs::path Root;
@@ -145,7 +147,7 @@ TEST_F(PrefabExtendsProjectionTest, RemovingAnInheritedComponentIsWrittenAsARemo
     EditorDocument derived = Load(kDerived);
     derived.GetScene().GetRegistry().Components.RemoveComponent<PointLightComponent>(FindById(derived, LightId));
     const std::string saved = derived.ToSceneText();
-    EXPECT_NE(saved.find("remove"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("PointLight: null"), std::string::npos) << saved;
 
     EditorDocument reopened = Load(saved);
     EXPECT_TRUE(FindById(reopened, LightId).IsValid()) << "the entity stays; its component goes";
@@ -188,19 +190,19 @@ TEST_F(PrefabExtendsProjectionTest, DeletingAnInheritedEntityDeletesOnlyWhatThis
     EXPECT_FALSE(FindById(derived, addedId).IsValid()) << "what this document added beneath it goes";
 }
 
-// Kyusu harvests version 2.
-TEST_F(PrefabExtendsProjectionTest, AnOpenedVersionOneLevelIsSavedAsVersionTwo)
+TEST_F(PrefabExtendsProjectionTest, ALevelAtARetiredFormatIsNotOpenedButNamesTheCommand)
 {
-    EditorDocument level = Load("{ format_version: 1, entities: [] }");
-    const std::string saved = level.ToSceneText();
-    EXPECT_NE(saved.find("format_version: 2"), std::string::npos) << saved;
+    EditorDocument level(Logging);
+    std::string error;
+    EXPECT_FALSE(level.LoadFromSceneText("{ format_version: 1, entities: [] }", &error));
+    EXPECT_NE(error.find("kyusu_batch --upgrade-scenes"), std::string::npos) << error;
 }
 
 TEST_F(PrefabExtendsProjectionTest, AChildIsRebuiltWhenItsMissingBaseAppears)
 {
     EditorDocument derived(Logging);
     derived.SetContentRoots({ Root });
-    (void)derived.LoadFromSceneText("{ format_version: 2, extends: 'asset://props/later.sscene', entities: [] }");
+    (void)derived.LoadFromSceneText("{ format_version: 3, extends: 'asset://props/later.sscene', entities: [] }");
     EXPECT_FALSE(FindById(derived, PostId).IsValid());
     EXPECT_FALSE(derived.SourcesChangedOnDisk());
 
@@ -215,9 +217,31 @@ TEST_F(PrefabExtendsProjectionTest, AChildIsRebuiltWhenItsMissingBaseAppears)
 TEST_F(PrefabExtendsProjectionTest, AnAbstractPrefabIsNeverPlaced)
 {
     std::ofstream(Root / "props/glow.sscene")
-        << "{ format_version: 2, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }";
-    EditorDocument level = Load("{ format_version: 2, entities: [] }");
+        << "{ format_version: 3, abstract: true, entities: [ { id: '00000000000000f1', components: {} } ] }";
+    EditorDocument level = Load("{ format_version: 3, entities: [] }");
     std::string error;
     EXPECT_FALSE(level.PlaceSceneInstance("asset://props/glow.sscene", Transform3f::Identity(), {}, &error).IsValid());
     EXPECT_NE(error.find("abstract"), std::string::npos) << error;
+}
+
+TEST_F(PrefabExtendsProjectionTest, AnAddARemovalAndAnEditOnAnInheritedEntityAreOnePatch)
+{
+    EditorDocument derived = Load(kDerived);
+    World& world = derived.GetScene().GetRegistry().Components;
+    const EntityId light = FindById(derived, LightId);
+    world.RemoveComponent<PointLightComponent>(light);
+    world.AddComponent(light, SpotLightComponent{});
+    world.TryGet<LocalTransform>(light)->Value.Position.X = 4.0f;
+    const std::string saved = derived.ToSceneText();
+    EXPECT_EQ(saved.find("remove:"), std::string::npos) << saved;
+    EXPECT_EQ(saved.find("add:"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("PointLight: null"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("SpotLight: {"), std::string::npos) << saved;
+
+    EditorDocument reopened = Load(saved);
+    const EntityId again = FindById(reopened, LightId);
+    EXPECT_EQ(Lamp(reopened, LightId), nullptr);
+    EXPECT_NE(reopened.GetScene().GetRegistry().Components.TryGet<SpotLightComponent>(again), nullptr);
+    EXPECT_EQ(reopened.GetScene().GetRegistry().Components.TryGet<LocalTransform>(again)->Value.Position.X, 4.0f);
+    EXPECT_EQ(reopened.ToSceneText(), saved);
 }

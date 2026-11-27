@@ -1,10 +1,12 @@
 #pragma once
 
-#include <app/Engine.h>
+#include <authored/AuthoredAnnotations.h>
+#include <authored/AuthoredApiDefinition.h>
 #include <authored/VerbInvocation.h>
 
 #include <string_view>
 
+class Engine;
 class PauseMenu;
 
 //=============================================================================
@@ -41,7 +43,12 @@ class RuntimeResumeOperation
 public:
     explicit RuntimeResumeOperation(PauseMenu& menu) : Menu(&menu) {}
 
-    VerbAdmission Invoke(const VerbInvocation& invocation);
+    // What resuming does to the world is PauseState's answer, not a caller's choice.
+    SENCHA_VERB("runtime.resume")
+    SENCHA_LABEL("Resume")
+    SENCHA_CATEGORY("Runtime")
+    SENCHA_DESCRIPTION("Closes the application shell and resumes local play.")
+    VerbAdmission Resume();
 
 private:
     PauseMenu* Menu;
@@ -54,8 +61,16 @@ class ApplicationQuitOperation
 public:
     explicit ApplicationQuitOperation(Engine& engine) : Host(&engine) {}
 
-    VerbAdmission Invoke(const VerbInvocation& invocation);
+    SENCHA_VERB("application.quit")
+    SENCHA_LABEL("Quit")
+    SENCHA_CATEGORY("Application")
+    SENCHA_DESCRIPTION("Asks the host to exit. The game's exit handler still sees the request.")
+    VerbAdmission Quit();
 
 private:
     Engine* Host;
 };
+
+#if !defined(SENCHA_CODEGEN)
+#  include <app/ShellVerbs.sencha.h>
+#endif

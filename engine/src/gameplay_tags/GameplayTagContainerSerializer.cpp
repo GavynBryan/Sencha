@@ -57,6 +57,14 @@ public:
             && WriteGameplayTags(archive, *tags, *tagRegistry);
     }
 
+    bool SavedFormFromRowAlone() const override { return true; }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        static const GameplayTagRegistry kNoTags;
+        return WriteGameplayTags(archive, GameplayTagContainer{}, kNoTags);
+    }
+
     bool LoadIntoWorld(
         IReadArchive& archive,
         EntityId entity,
@@ -69,13 +77,17 @@ public:
             return false;
 
         GameplayTagContainer tags{};
-        std::vector<std::string> dropped;
+        std::vector<DroppedGameplayTag> dropped;
         if (!ReadGameplayTags(archive, tags, *tagRegistry, &dropped))
             return false;
-        for (const std::string& name : dropped)
-            context.Logging->GetLogger<SceneSerializationContext>().Warn(
-                "gameplay tag '{}' is projected by {} and cannot be authored; it was not loaded", name,
-                tagRegistry->ProjectedBy(tagRegistry->FindTag(name)));
+        const Logger& log = context.Logging->GetLogger<SceneSerializationContext>();
+        for (const DroppedGameplayTag& tag : dropped)
+            if (tag.Reason == GameplayTagDrop::Projected)
+                log.Warn("gameplay tag '{}' is projected by {} and cannot be authored; it was not loaded", tag.Name,
+                         tagRegistry->ProjectedBy(tagRegistry->FindTag(tag.Name)));
+            else
+                log.Warn("gameplay tag '{}' was not loaded: an entity holds at most {} tags", tag.Name,
+                         GameplayTagContainer::Capacity);
 
         return Place(world, entity, tags);
     }

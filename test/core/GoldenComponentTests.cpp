@@ -8,13 +8,18 @@
 #include "component_codegen/GoldenComponent.h"
 #include "component_codegen/GoldenComponent.sencha.h.expected"
 
+#include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/ComponentTypeId.h>
 #include <math/Angle.h>
+#include <ecs/World.h>
 #include <net/ReplicationLayout.h>
+#include <world/serialization/ComponentSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -27,6 +32,8 @@ TEST(GeneratedComponentMetadata, ProjectsIntoEveryConsumer)
     EXPECT_TRUE(TypeSchema<CodegenGolden>::Replicated);
     EXPECT_TRUE(TypeSchema<CodegenGolden>::Predicted);
     EXPECT_FALSE(ComponentRemovable<CodegenGolden>::Value);
+    EXPECT_EQ(ComponentPersistenceOf<CodegenGolden>::Value, ComponentPersistence::Saved);
+    EXPECT_EQ(ComponentPersistenceOf<CodegenGoldenTag>::Value, ComponentPersistence::Authored);
 
     ASSERT_TRUE(ComponentEditorVisual<CodegenGolden>::Value.has_value());
     EXPECT_EQ(ComponentEditorVisual<CodegenGolden>::Value->AssetPath, "golden.glb");
@@ -125,4 +132,55 @@ TEST(GeneratedComponentMetadata, AnUntaggedMemberIsNotInTheSchema)
         layout.Find(ResolveComponentTypeId<CodegenGolden>());
     ASSERT_NE(replicated, nullptr);
     EXPECT_TRUE(replicated->Predicted);
+}
+
+TEST(GeneratedComponentMetadata, ARunTimeFieldIsWrittenOnlyInASaveAndAnUnsavedOneOnlyInAScene)
+{
+    World world;
+    world.RegisterComponent<CodegenGolden>();
+    const EntityId entity = world.CreateEntity();
+    CodegenGolden golden;
+    golden.Engaged = true;
+    golden.Tethered = true;
+    world.AddComponent<CodegenGolden>(entity, golden);
+    ComponentSerializer<CodegenGolden> serializer;
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
+
+    JsonWriteArchive authored;
+    ASSERT_TRUE(serializer.Save(authored, entity, world, context));
+    const JsonValue scene = authored.TakeValue();
+    EXPECT_EQ(scene.Find("engaged"), nullptr);
+    ASSERT_NE(scene.Find("tethered"), nullptr);
+
+    context.Purpose = SceneRecordPurpose::Save;
+    JsonWriteArchive saving;
+    ASSERT_TRUE(serializer.Save(saving, entity, world, context));
+    const JsonValue saved = saving.TakeValue();
+    ASSERT_NE(saved.Find("engaged"), nullptr);
+    EXPECT_TRUE(saved.Find("engaged")->AsBool());
+    EXPECT_EQ(saved.Find("tethered"), nullptr);
+
+    JsonWriteArchive defaults;
+    ASSERT_TRUE(serializer.SaveDefault(defaults));
+    const JsonValue defaulted = defaults.TakeValue();
+    EXPECT_NE(defaulted.Find("engaged"), nullptr);
+    EXPECT_EQ(defaulted.Find("tethered"), nullptr);
+
+    EXPECT_TRUE(serializer.Authorable());
+    bool offersEngaged = false;
+    bool offersTethered = false;
+    for (const RuntimeField& field : serializer.RuntimeFields())
+    {
+        offersEngaged = offersEngaged || field.Name == "engaged";
+        offersTethered = offersTethered || field.Name == "tethered";
+    }
+    EXPECT_FALSE(offersEngaged) << "a tool offers a run-time field";
+    EXPECT_TRUE(offersTethered);
+
+    const EntityId restored = world.CreateEntity();
+    JsonReadArchive reading(saved);
+    ASSERT_TRUE(serializer.LoadIntoWorld(reading, restored, world, context));
+    EXPECT_TRUE(world.TryGet<CodegenGolden>(restored)->Engaged);
+    EXPECT_FALSE(world.TryGet<CodegenGolden>(restored)->Tethered) << "a save that leaves it out reads its default";
 }

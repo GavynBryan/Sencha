@@ -259,7 +259,7 @@ namespace
     TEST_F(DocumentPersistenceTest, AShellWithoutAThicknessTakesTheConventionDefault)
     {
         EditorDocument doc(Logging);
-        ASSERT_TRUE(doc.LoadFromSceneText(R"({ format_version: 1, entities: [
+        ASSERT_TRUE(doc.LoadFromSceneText(R"({ format_version: 3, entities: [
             { id: '00000000000000ab', components: { space: {}, shell: {} } } ] })"));
         const EntityId entity = doc.GetScene().GetAllEntities()[0];
         EXPECT_FLOAT_EQ(doc.GetRegistry().Components.TryGet<Shell>(entity)->Thickness,
@@ -275,7 +275,7 @@ namespace
     TEST_F(DocumentPersistenceTest, SavePreservesCommentsAndUnknownsButNotStaleValues)
     {
         constexpr std::string_view source = R"({
-  format_version: 1,
+  format_version: 3,
   entities: [
     // the boss door
     { id: '00000000000000aa',

@@ -6,6 +6,7 @@
 #include <zone/ZoneLoadFailure.h>
 #include <world/build/EntityBuildPackage.h>
 #include <zone/ZoneParticipation.h>
+#include <zone/ZoneStateScope.h>
 
 #include <functional>
 #include <memory>
@@ -72,7 +73,8 @@ public:
         BuildFn build,
         FinalizeFn finalize,
         ZoneParticipation participation,
-        std::shared_ptr<AssetPreload> assets);
+        std::shared_ptr<AssetPreload> assets,
+        ZoneStateScope stateScope = {});
 
     // Extra task-thread work beside a scene parse (probe file IO), handed the
     // parsed contents. Same restrictions as BuildFn.
@@ -98,7 +100,8 @@ public:
         SceneStageFn stageExtra,
         SceneFinalizeFn finalize,
         ZoneParticipation participation,
-        std::shared_ptr<AssetPreload> preload = nullptr);
+        std::shared_ptr<AssetPreload> preload = nullptr,
+        ZoneStateScope stateScope = {});
 
     [[nodiscard]] bool IsLoading(ZoneId zone) const;
 
@@ -136,6 +139,7 @@ private:
     // rides along so a caller-held reference (the scene lease) survives a
     // deferred import and releases on the owner thread after it settles.
     void CommitOrDefer(
+        ZoneStateScope stateScope,
         ZoneId zone,
         std::unique_ptr<EntityBuildPackage> package,
         FinalizeFn finalize,
@@ -143,6 +147,7 @@ private:
         std::shared_ptr<AssetPreload> assets,
         std::shared_ptr<void> keepAlive = nullptr);
     void ImportAndFinalize(
+        ZoneStateScope stateScope,
         ZoneId zone,
         std::unique_ptr<EntityBuildPackage> package,
         FinalizeFn& finalize,

@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 struct IWriteArchive;
 struct IReadArchive;
@@ -33,6 +34,7 @@ struct IWriteArchive
     virtual IWriteArchive& Field(std::string_view key, bool value) = 0;
     virtual IWriteArchive& Field(std::string_view key, float value) = 0;
     virtual IWriteArchive& Field(std::string_view key, double value) = 0;
+    virtual IWriteArchive& Field(std::string_view key, std::int32_t value) = 0;
     virtual IWriteArchive& Field(std::string_view key, std::uint32_t value) = 0;
     virtual IWriteArchive& Field(std::string_view key, std::string_view value) = 0;
     // A value whose shape no schema fixes, written whole: authored data that
@@ -66,6 +68,7 @@ struct IReadArchive
     virtual IReadArchive& Field(std::string_view key, bool& value) = 0;
     virtual IReadArchive& Field(std::string_view key, float& value) = 0;
     virtual IReadArchive& Field(std::string_view key, double& value) = 0;
+    virtual IReadArchive& Field(std::string_view key, std::int32_t& value) = 0;
     virtual IReadArchive& Field(std::string_view key, std::uint32_t& value) = 0;
     virtual IReadArchive& Field(std::string_view key, std::string& value) = 0;
     virtual IReadArchive& Subtree(std::string_view key, JsonValue& value) = 0;
@@ -145,7 +148,11 @@ void WriteArchiveValue(IWriteArchive& archive, std::string_view key, const T& va
     }
     else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
     {
-        archive.Field(key, static_cast<std::uint32_t>(value));
+        static_assert(sizeof(T) <= sizeof(std::uint32_t), "An integer wider than 32 bits has no archive form.");
+        if constexpr (std::is_signed_v<T>)
+            archive.Field(key, static_cast<std::int32_t>(value));
+        else
+            archive.Field(key, static_cast<std::uint32_t>(value));
     }
     else if constexpr (std::is_same_v<T, std::string>)
     {
@@ -197,9 +204,15 @@ void ReadArchiveValue(IReadArchive& archive, std::string_view key, T& value)
     }
     else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
     {
-        std::uint32_t temp = 0;
-        archive.Field(key, temp);
-        value = static_cast<T>(temp);
+        static_assert(sizeof(T) <= sizeof(std::uint32_t), "An integer wider than 32 bits has no archive form.");
+        std::conditional_t<std::is_signed_v<T>, std::int32_t, std::uint32_t> read = 0;
+        archive.Field(key, read);
+        if (!std::in_range<T>(read))
+        {
+            archive.MarkInvalidField(key);
+            return;
+        }
+        value = static_cast<T>(read);
     }
     else if constexpr (std::is_same_v<T, std::string>)
     {

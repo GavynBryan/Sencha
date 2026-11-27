@@ -12,7 +12,7 @@ public:
     {
     }
 
-    [[nodiscard]] const DataFieldSchema* SchemaOf(std::string_view component) const override;
+    [[nodiscard]] const DataFieldSchema& EntitySchema() const override;
     [[nodiscard]] std::vector<std::string> OwedBy(std::string_view component) const override;
     [[nodiscard]] bool IsRemovable(std::string_view component) const override;
 

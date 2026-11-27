@@ -9,10 +9,15 @@ HashedChunkFileWriter::HashedChunkFileWriter(std::uint32_t magic, std::uint32_t 
     Ok = WriteBinaryHeader(Bytes, magic, version);
 }
 
-std::vector<std::byte> HashedChunkFileWriter::Finish(std::uint32_t hashChunkId)
+bool HashedChunkFileWriter::HashChunk(std::uint32_t id)
 {
     const std::uint64_t hash = HashBytes64(std::string_view(Stream.str()));
-    if (!Chunk(hashChunkId, 1, [&] { return Bytes.Write(hash); }))
+    return Chunk(id, 1, [&] { return Bytes.Write(hash); });
+}
+
+std::vector<std::byte> HashedChunkFileWriter::Finish(std::uint32_t hashChunkId)
+{
+    if (!HashChunk(hashChunkId))
         return {};
     const std::string body = Stream.str();
     std::vector<std::byte> bytes(body.size());
@@ -22,15 +27,15 @@ std::vector<std::byte> HashedChunkFileWriter::Finish(std::uint32_t hashChunkId)
 
 namespace
 {
-    bool Fail(std::string* error, std::string message)
+    HashedChunkFileRead Fail(std::string* error, std::string message)
     {
         if (error != nullptr)
             *error = std::move(message);
-        return false;
+        return HashedChunkFileRead::Refused;
     }
 }
 
-bool ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFileFormat& format,
+HashedChunkFileRead ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFileFormat& format,
                          const std::function<bool(const ChunkHeader&, BinaryReader&)>& read, std::string* error)
 {
     const std::string subject(format.Subject);
@@ -42,7 +47,11 @@ bool ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFile
     if (!ReadBinaryHeader(reader, header) || header.Magic != format.Magic)
         return Fail(error, "not a " + subject);
     if (header.Version < format.OldestVersion || header.Version > format.Version)
-        return Fail(error, subject + " version " + std::to_string(header.Version) + " " + std::string(format.VersionAdvice));
+    {
+        const HashedChunkFileRead refused =
+            Fail(error, subject + " version " + std::to_string(header.Version) + " " + std::string(format.VersionAdvice));
+        return header.Version > format.Version ? HashedChunkFileRead::Newer : refused;
+    }
 
     while (stream.peek() != std::istream::traits_type::eof())
     {
@@ -58,7 +67,7 @@ bool ReadHashedChunkFile(std::span<const std::byte> bytes, const HashedChunkFile
                 return Fail(error, subject + " hash mismatch");
             if (!chunk.Skip(reader) || stream.peek() != std::istream::traits_type::eof())
                 return Fail(error, "data after the " + subject + " hash");
-            return true;
+            return HashedChunkFileRead::Read;
         }
         if (!read(chunk.GetHeader(), reader))
             return Fail(error, "malformed " + subject + " chunk");

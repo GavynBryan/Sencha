@@ -9,6 +9,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <cstring>
+#include <optional>
 #include <vector>
 
 namespace
@@ -37,6 +38,11 @@ namespace
         for (const ReplicationChangeStore::ComponentState& held : entity.Components)
         {
             for (const std::uint64_t changedAt : held.ChangedAt)
+            {
+                if (changedAt > floor)
+                    return false;
+            }
+            for (const std::uint64_t changedAt : held.CountChangedAt)
             {
                 if (changedAt > floor)
                     return false;
@@ -139,9 +145,7 @@ void NetBuildDesyncReport(const ReplicationChangeStore& changes,
             // almost nothing.
             if (component->Predicted && isOwner)
                 continue;
-            hash = ReplicationFoldFields(
-                hash, *component, held.Bytes,
-                ReplicationVisibleFields(*component, isOwner));
+            hash = ReplicationFoldVisible(hash, *component, held.Bytes, isOwner);
         }
 
         samples.push_back(NetDesyncSample{ entity.Id, hash });
@@ -168,7 +172,7 @@ bool NetFoldLocalEntity(const World& world, const ReplicationLayout& layout,
     }
 
     hash = kSeed;
-    std::vector<std::byte> image;
+    std::optional<ReplicationImage> image;
     // Walked in layout order rather than in storage order, because the two sides
     // have to fold the same fields in the same sequence and only the layout is
     // the same on both.
@@ -204,15 +208,17 @@ bool NetFoldLocalEntity(const World& world, const ReplicationLayout& layout,
         // folded as its wire image here too.
         if (component->ToWire != nullptr)
         {
-            image.assign(component->Size, std::byte{});
+            if (image.has_value())
+                image->Reset(*component);
+            else
+                image.emplace(*component);
             const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
                                                   .Client = &identity };
-            component->ToWire(context, std::span(bytes, component->LocalSize), image);
-            bytes = image.data();
+            component->ToWire(context, std::span(bytes, component->LocalSize), *image);
+            hash = ReplicationFoldVisible(hash, *component, image->Bytes(), isOwner);
+            continue;
         }
-        hash = ReplicationFoldFields(
-            hash, *component, std::span(bytes, component->Size),
-            ReplicationVisibleFields(*component, isOwner));
+        hash = ReplicationFoldVisible(hash, *component, std::span(bytes, component->Size), isOwner);
     }
     return true;
 }

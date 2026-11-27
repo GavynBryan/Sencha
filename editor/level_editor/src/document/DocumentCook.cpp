@@ -21,6 +21,7 @@
 #include "DocumentProbeBake.h"
 #include "DocumentPublication.h"
 #include "DocumentPublicationPlan.h"
+#include "DocumentSerialization.h"
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
@@ -32,6 +33,7 @@
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/LightmapAtlasPack.h>
 #include <assets/cook/TextureCook.h>
+#include <assets/runtime/ContentMount.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
@@ -77,7 +79,8 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     const DocumentBakeExtent bakeExtent = SelectDocumentBakeExtent(snapshot);
 
     const DocumentCookFingerprints fingerprints =
-        ComputeDocumentCookFingerprints(snapshot, cellSize, bakeExtent.ReachableHalo);
+        ComputeDocumentCookFingerprints(snapshot, EditorSceneSerializers(), cellSize,
+                                        bakeExtent.ReachableHalo);
     const std::uint64_t geometryHash = fingerprints.Document;
     const DocumentCookPaths paths = DeriveDocumentCookPaths(
         assetsRoot, sourceRel, levelName, request.OutputNamespace, geometryHash);
@@ -270,6 +273,17 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     return result;
 }
 
+namespace
+{
+    DocumentCookResult MountPublishedScene(DocumentCookResult result, const std::filesystem::path& assetsRoot,
+                                           RuntimeAssets* assets)
+    {
+        if (result.Success && assets != nullptr)
+            MountCookedFile(ResolveContentRoot(assetsRoot), *assets, result.CookedScenePath);
+        return result;
+    }
+}
+
 DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
                           const std::filesystem::path& assetsRoot,
                           double cellSize,
@@ -306,9 +320,9 @@ DocumentCookResult CookDocument(const std::filesystem::path& authoredLevelPath,
         result.Error = "CookDocument: " + inputError;
         return result;
     }
-    return ExecuteDocumentCook(std::move(*input),
-                               authoredLevelPath.stem().generic_string(), sourceRel,
-                               assetsRoot, log);
+    return MountPublishedScene(ExecuteDocumentCook(std::move(*input), authoredLevelPath.stem().generic_string(),
+                                                   sourceRel, assetsRoot, log),
+                               assetsRoot, assets);
 }
 
 DocumentCookResult CookDocument(const EditorDocument& liveDocument,
@@ -339,6 +353,6 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
     {
         sourceRel = assetPath.substr(sizeof("asset://") - 1);
     }
-    return ExecuteDocumentCook(std::move(*input), levelName, sourceRel,
-                               assetsRoot, logging);
+    return MountPublishedScene(ExecuteDocumentCook(std::move(*input), levelName, sourceRel, assetsRoot, logging),
+                               assetsRoot, assets);
 }

@@ -23,14 +23,22 @@ enum class ArgumentSource : std::uint8_t
     Constant,
     Port,
     Entity,
+    Result,
 };
 
-constexpr std::array<std::pair<ArgumentSource, std::string_view>, 4> kSourceNames{ {
+constexpr std::array<std::pair<ArgumentSource, std::string_view>, 5> kSourceNames{ {
     { ArgumentSource::Unset, "Unset" },
     { ArgumentSource::Constant, "Constant" },
     { ArgumentSource::Port, "Port" },
     { ArgumentSource::Entity, "Entity" },
+    { ArgumentSource::Result, "Result of" },
 } };
+
+struct NamedResult
+{
+    std::string_view Name;
+    const DataFieldSchema* Field = nullptr;
+};
 
 std::string_view SourceName(ArgumentSource source)
 {
@@ -48,6 +56,8 @@ ArgumentSource SourceOf(const JsonValue* argument)
         return ArgumentSource::Port;
     if (FindMember(*argument, "entity") != nullptr)
         return ArgumentSource::Entity;
+    if (FindMember(*argument, "result") != nullptr)
+        return ArgumentSource::Result;
     return ArgumentSource::Constant;
 }
 
@@ -64,6 +74,20 @@ std::vector<std::string_view> PortsFor(const DataFieldSchema& field, std::span<c
     for (const SequencePort& port : ports)
         if (SequencePortFits(port, shown))
             names.push_back(port.Name);
+    return names;
+}
+
+std::vector<std::string_view> ResultsFor(const DataFieldSchema& field, std::span<const NamedResult> results)
+{
+    const DataFieldSchema& shown = UnwrappedField(field);
+    std::vector<std::string_view> names;
+    for (const NamedResult& result : results)
+    {
+        const DataFieldSchema& produced = UnwrappedField(*result.Field);
+        if (produced.Kind == shown.Kind
+            && (shown.Kind != DataFieldKind::Vector || produced.VectorLength == shown.VectorLength))
+            names.push_back(result.Name);
+    }
     return names;
 }
 
@@ -94,7 +118,7 @@ std::vector<std::string_view> TagPorts(std::span<const SequencePort> ports)
 
 
 std::vector<ArgumentSource> SourcesFor(const DataFieldSchema& field, std::span<const SequencePort> ports,
-                                       bool absent)
+                                       std::span<const NamedResult> results, bool absent)
 {
     const DataFieldSchema& shown = UnwrappedField(field);
     std::vector<ArgumentSource> sources;
@@ -106,6 +130,8 @@ std::vector<ArgumentSource> SourcesFor(const DataFieldSchema& field, std::span<c
         sources.push_back(ArgumentSource::Port);
     if (shown.Kind == DataFieldKind::Entity)
         sources.push_back(ArgumentSource::Entity);
+    if (!ResultsFor(field, results).empty())
+        sources.push_back(ArgumentSource::Result);
     return sources;
 }
 
@@ -150,6 +176,11 @@ JsonValue Port(std::string_view name)
     return JsonValue(JsonValue::Object{ { "port", JsonValue(std::string(name)) } });
 }
 
+JsonValue ResultOf(std::string_view name)
+{
+    return JsonValue(JsonValue::Object{ { "result", JsonValue(std::string(name)) } });
+}
+
 const VerbDefinition* VerbNamed(const VerbSequenceVocabulary& vocabulary, std::string_view name)
 {
     return vocabulary.Verbs != nullptr ? vocabulary.Verbs->Get(vocabulary.Verbs->Find(name)) : nullptr;
@@ -158,6 +189,37 @@ const VerbDefinition* VerbNamed(const VerbSequenceVocabulary& vocabulary, std::s
 const AuthoredQueryDefinition* QueryNamed(const VerbSequenceVocabulary& vocabulary, std::string_view name)
 {
     return vocabulary.Queries != nullptr ? vocabulary.Queries->Get(vocabulary.Queries->Find(name)) : nullptr;
+}
+
+std::vector<NamedResult> EarlierResults(const JsonValue* commands, const VerbSequenceVocabulary& vocabulary,
+                                        std::size_t index)
+{
+    std::vector<NamedResult> results;
+    if (commands == nullptr || !commands->IsArray())
+        return results;
+    for (std::size_t i = 0; i < index && i < commands->AsArray().size(); ++i)
+    {
+        const JsonValue& command = commands->AsArray()[i];
+        const JsonValue* as = FindMember(command, "as");
+        const VerbDefinition* verb = VerbNamed(vocabulary, ReadMemberString(command, "verb"));
+        if (as != nullptr && as->IsString() && verb != nullptr && verb->Result.has_value())
+            results.push_back(NamedResult{ as->AsString(), &*verb->Result });
+    }
+    return results;
+}
+
+std::string VerbSummary(const VerbDefinition& verb)
+{
+    std::string summary = verb.Description;
+    if (!verb.Refusals.empty())
+    {
+        summary += "\nMay refuse: ";
+        for (std::size_t i = 0; i < verb.Refusals.size(); ++i)
+            summary += (i == 0 ? "" : ", ") + verb.Refusals[i].Name;
+    }
+    if (verb.Result.has_value())
+        summary += std::format("\nAnswers: {}", DataFieldKindName(UnwrappedField(*verb.Result).Kind));
+    return summary;
 }
 
 std::vector<std::string> InstantVerbs(const VerbSequenceVocabulary& vocabulary, std::vector<std::string>* notes)
@@ -215,13 +277,14 @@ std::vector<std::string_view> Views(const std::vector<std::string>& strings)
 
 // The arguments of one call, laid out from what it declares.
 void ArgumentRows(const std::string& prefix, const DataFieldSchema& contract, const JsonValue* arguments,
-                  std::span<const SequencePort> ports, bool entityReferences, PropertyNode& into)
+                  std::span<const SequencePort> ports, std::span<const NamedResult> results, bool entityReferences,
+                  PropertyNode& into)
 {
     for (const DataFieldSchema& field : contract.Children)
     {
         const JsonValue* argument = arguments != nullptr ? FindMember(*arguments, field.Key) : nullptr;
         const ArgumentSource source = SourceOf(argument);
-        std::vector<ArgumentSource> sources = SourcesFor(field, ports, argument == nullptr);
+        std::vector<ArgumentSource> sources = SourcesFor(field, ports, results, argument == nullptr);
         if (!entityReferences)
             std::erase(sources, ArgumentSource::Entity);
         std::vector<std::string_view> names;
@@ -247,6 +310,14 @@ void ArgumentRows(const std::string& prefix, const DataFieldSchema& contract, co
             row.Children.push_back(TextProperty(key + ".value", "Identity", ReadMemberString(*argument, "entity"),
                                                 "The entity's persistent identity, sixteen hex digits."));
             break;
+        case ArgumentSource::Result:
+        {
+            const std::vector<std::string_view> options = ResultsFor(field, results);
+            row.Children.push_back(ChoiceProperty(key + ".value", "Result", options,
+                                                  IndexOf(options, ReadMemberString(*argument, "result")),
+                                                  "What an earlier command of this run answered."));
+            break;
+        }
         case ArgumentSource::Constant:
         {
             PropertyNode constant = TextProperty(key + ".value", "Value", AuthoredConstantText(*argument));
@@ -323,7 +394,7 @@ PropertyNode ConditionRow(const JsonValue& condition, std::size_t index, std::si
                                                   expect == nullptr || !expect->IsBool() || expect->AsBool()));
         }
         if (query != nullptr)
-            ArgumentRows(prefix, query->Arguments, FindMember(condition, "arguments"), vocabulary.Ports, false, row);
+            ArgumentRows(prefix, query->Arguments, FindMember(condition, "arguments"), vocabulary.Ports, {}, false, row);
         return Movable(std::move(row), index, count);
     }
 
@@ -349,7 +420,7 @@ PropertyNode ConditionRow(const JsonValue& condition, std::size_t index, std::si
 }
 
 PropertyNode CommandRow(const JsonValue& command, std::size_t index, std::size_t count,
-                        const VerbSequenceVocabulary& vocabulary)
+                        const VerbSequenceVocabulary& vocabulary, std::span<const NamedResult> results)
 {
     const std::string prefix = std::format("k{}", index);
     const std::string name = ReadMemberString(command, "verb");
@@ -368,7 +439,14 @@ PropertyNode CommandRow(const JsonValue& command, std::size_t index, std::size_t
                                           ReadMemberString(command, "on_failure") == "stop" ? 1 : 0,
                                           "Continue runs the commands after it; Stop ends this activation."));
     if (verb != nullptr)
-        ArgumentRows(prefix, verb->Arguments, FindMember(command, "arguments"), vocabulary.Ports, true, row);
+    {
+        row.Descriptor.Tooltip = VerbSummary(*verb);
+        if (verb->Result.has_value())
+            row.Children.push_back(TextProperty(prefix + ".as", "Name its result", ReadMemberString(command, "as"),
+                                                "A later command of this run reads it as \"Result of\"; empty names "
+                                                "nothing."));
+        ArgumentRows(prefix, verb->Arguments, FindMember(command, "arguments"), vocabulary.Ports, results, true, row);
+    }
     return Movable(std::move(row), index, count);
 }
 
@@ -435,7 +513,8 @@ JsonValue StartingArguments(const DataFieldSchema& contract, std::span<const Seq
 }
 
 std::optional<JsonValue> ArgumentValue(const DataFieldSchema& field, const JsonValue* current, std::string_view rest,
-                                       std::string_view value, std::span<const SequencePort> ports)
+                                       std::string_view value, std::span<const SequencePort> ports,
+                                       std::span<const NamedResult> results)
 {
     if (rest == "source")
     {
@@ -453,6 +532,13 @@ std::optional<JsonValue> ArgumentValue(const DataFieldSchema& field, const JsonV
             if (fitting.empty())
                 return std::nullopt;
             return Port(fitting.front());
+        }
+        case ArgumentSource::Result:
+        {
+            const std::vector<std::string_view> fitting = ResultsFor(field, results);
+            if (fitting.empty())
+                return std::nullopt;
+            return ResultOf(fitting.front());
         }
         }
         return std::nullopt;
@@ -487,6 +573,13 @@ std::optional<JsonValue> ArgumentValue(const DataFieldSchema& field, const JsonV
         return Port(value);
     }
     case ArgumentSource::Entity: return JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(value)) } });
+    case ArgumentSource::Result:
+    {
+        const std::vector<std::string_view> fitting = ResultsFor(field, results);
+        if (std::ranges::find(fitting, value) == fitting.end())
+            return std::nullopt;
+        return ResultOf(value);
+    }
     case ArgumentSource::Constant:
     {
         std::optional<JsonValue> constant = AuthoredConstantFromText(field, value);
@@ -533,7 +626,8 @@ std::vector<PropertyNode> VerbSequenceRows(const JsonValue& sequence, const Verb
     then.Descriptor.Verbs.push_back(std::move(addCommand));
     if (commands != nullptr && commands->IsArray())
         for (std::size_t i = 0; i < commands->AsArray().size(); ++i)
-            then.Children.push_back(CommandRow(commands->AsArray()[i], i, commands->AsArray().size(), vocabulary));
+            then.Children.push_back(CommandRow(commands->AsArray()[i], i, commands->AsArray().size(), vocabulary,
+                                               EarlierResults(commands, vocabulary, i)));
 
     std::vector<PropertyNode> rows{ std::move(when), std::move(then) };
     if (!problems.empty())
@@ -575,6 +669,18 @@ std::optional<JsonValue> SetVerbSequenceValue(const JsonValue& sequence, const V
         for (const auto& [name, initial] : starting.AsObject())
             if (FindMember(arguments, name) == nullptr)
                 SetMember(arguments, name, initial);
+        return edited;
+    }
+    if (rest == "as")
+    {
+        const VerbDefinition* verb = entry->List == "commands" ? VerbNamed(vocabulary, ReadMemberString(target, "verb"))
+                                                               : nullptr;
+        if (verb == nullptr || !verb->Result.has_value())
+            return std::nullopt;
+        if (value.find_first_not_of(' ') == std::string_view::npos)
+            EraseMember(target, "as");
+        else
+            SetMember(target, "as", JsonValue(std::string(value)));
         return edited;
     }
     if (rest == "on_failure")
@@ -669,9 +775,12 @@ std::optional<JsonValue> SetVerbSequenceValue(const JsonValue& sequence, const V
             : std::vector<DataFieldSchema>::const_iterator{};
         if (contract == nullptr || field == contract->Children.end())
             return std::nullopt;
+        const std::vector<NamedResult> results = entry->List == "commands"
+            ? EarlierResults(&list, vocabulary, entry->Index)
+            : std::vector<NamedResult>{};
         JsonValue& arguments = ArgumentsOf(target);
-        const std::optional<JsonValue> written =
-            ArgumentValue(*field, FindMember(arguments, name), argument.substr(dot + 1), value, vocabulary.Ports);
+        const std::optional<JsonValue> written = ArgumentValue(*field, FindMember(arguments, name),
+                                                               argument.substr(dot + 1), value, vocabulary.Ports, results);
         if (!written)
             return std::nullopt;
         if (written->IsNull())

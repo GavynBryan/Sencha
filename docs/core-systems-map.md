@@ -160,8 +160,12 @@ for `kActorTimeHistoryTicks`, in room of their own so history never refuses a ne
 lease, which lets a replayed tick recompute the scale it had. The factors are
 multiplied in ascending order with Q16 rounding at each step, so machines that hold
 the same leases reach the same scale whoever holds them, and the result is clamped
-to `time.actor_scale_min` and `time.actor_scale_max` (at most 4). A lease whose
-holder's entity is gone ends the tick after. Dilation never changes the tick
+to `time.actor_scale_min` and `time.actor_scale_max` (at most 4). A lease of
+scale zero is a hold, not a slowdown: while one is in force the scale is zero
+whatever the limits, so the actor's movement, effects and phases stand still.
+Only the engine takes one (a level change holds the bodies it keeps,
+`docs/gameplay/game-module.md`, "Changing level"); `time.scale` refuses a scale
+below 0.01. A lease whose holder's entity is gone ends the tick after. Dilation never changes the tick
 cadence: it changes how far an actor's own timers move per tick. Effects count in
 their target's time unless authored `time_domain: simulation`, and ability phases in
 their actor's unless authored `simulation`. Abilities scale time through the
@@ -293,6 +297,15 @@ Scene serialization is schema-driven:
 - `ComponentSerializer<T>` saves/loads a component by visiting its schema.
 - `SceneFieldCodec<T>` handles special field types, especially runtime handles
   that serialize as asset paths.
+- Integers up to 32 bits wide go through the archive's signed or unsigned
+  32-bit field, so a member nested in a struct gets the same form as a
+  component's own. JSON holds the number itself; binary holds four bytes. A read
+  refuses a number that is not whole or does not fit the member's type rather
+  than truncating it. An integer wider than 32 bits has no archive form and
+  fails to compile; identities have their own codecs.
+- A named-id field (`GameplayTagId`, `ItemId`, `AbilityId`,
+  `EquipmentLayoutId`, `LocomotionModeId`) is described in "Named-id fields" below; its scene form
+  is its name.
 - `ComponentStorageTraits<T>` defines how a serialized component enters
   registry storage. The primary template handles any component whose schema
   names a `SceneChunkId`; only `LocalTransform` is specialized (it co-registers
@@ -314,6 +327,55 @@ JSON scene format:
 - entities are saved in alive-entity order
 - each entity has a `components` object keyed by serializer JSON key
 - hierarchy entries use entity array indices, not serialized runtime IDs
+
+### Named-id fields
+
+A 32-bit id that names an entry of a vocabulary a World holds says so once,
+beside the id type: `NamedIdField<Id>` (`core/metadata/NamedIdField.h`) gives
+it a `Kind` and a `NamedIdVocabulary`
+(`world/serialization/NamedIdVocabulary.h`), a table of functions over the
+World: the name of an id, a non-creating `Find`, the `Resolve` a read uses, the
+names it holds, and, for a vocabulary whose ids differ between machines, the
+name's wire key. Every reader takes the fact from there:
+
+- **Scene and save.** `SceneFieldCodec<Id>` writes the name and reads it back
+  through the World the serializer was handed (`ComponentSerializer<T>` passes
+  it to a codec whose `Save` and `Load` take one). A tag and a registered name
+  (a locomotion mode, which reads an unregistered or absent name as the free
+  mode, with a warning for the former) are a string; a definition is an asset reference (`{id, path}`, or the path).
+  An unset id writes nothing, and an absent optional or defaulted field reads
+  as what the vocabulary resolves for no name. A name the vocabulary does not
+  hold refuses the field with `'<key>' names <label> '<name>', which this
+  content does not declare`; a definition is reserved by name instead, so a
+  scene may name an item before its asset is declared. In the binary archive
+  every named id is its name as a string, empty for none. The field's
+  composition kind is `GameplayTag` or `DataAssetRef`, and its saved form
+  follows its row (`WrittenFromValue`), since a vocabulary never renames an id.
+  A hand-written serializer calls the same codec for its named members.
+- **Wire.** The flattened description marks a named leaf with its vocabulary
+  (`RuntimeField::Names`, and `Optional` for a field that may be absent); the
+  leaf stays a `UInt32` and is no longer read-only. `ReplicationLayout::Add<T>`
+  gives a component with such a leaf, whose vocabulary has wire functions, a
+  translated image of its own size and offsets: each named leaf is sent as its
+  name's wire key and read back as the receiver's id, so two machines that
+  registered names in different orders agree. A leaf whose vocabulary has no
+  wire functions travels as its bytes. Lifecycle hooks are allowed on a
+  component that has a named member, since what reaches them is translated.
+- **Inspector.** Kyusu's generic inspector draws a named leaf as a choice among
+  the vocabulary's names, with "None" first for an optional field, and commits
+  the chosen name's id through the ordinary component edit, undoable like any
+  other. A name the vocabulary does not hold is refused.
+- **What a save does with a name content no longer declares** is in
+  `docs/gameplay/saves.md` ("The entity patch"): a patched component that does not decode
+  follows content.
+
+A named id may be a value type with a schema of its own (`LocomotionModeId`
+describes one `value`); its leaf keeps that name and is marked as the named
+field. A mode has no wire functions: it travels as its id between two
+processes of one build.
+
+A component's own members only: a named id nested inside a struct member, or a
+list of them, has no codec (`docs/deferred.md`).
 
 Binary scene format exists and uses chunk IDs, but asset-backed handle codecs
 currently reject binary serialization. In practice, scene assets with meshes,
@@ -655,7 +717,9 @@ New component:
    every engine one.
 3. If it is authored, add `SENCHA_SCHEMA("<name>")` and tag each authored
    member with `SENCHA_FIELD("<snake_case key>")`. A member initializer is the
-   field's default; a member without one is required. An initializer may be
+   field's default; a member without one is required. A member whose type is
+   a named id (a tag, an item, an ability, an equipment layout) is written by
+   its name ("Named-id fields"). An initializer may be
    any expression, so a `SENCHA_DEGREES` angle, stored in radians, states its
    default as `ToRadians(60.0f)` from `<math/Angle.h>`. Untagged members are
    invisible to the schema, so adding one never changes the scene format or
@@ -669,6 +733,17 @@ New component:
    - the writer never sends such an entity's authored id;
    - the component must travel (a static assertion says so), since the wire is
      the only way it arrives.
+
+   `SENCHA_SAVED` says a save holds it: a body keeps it as a patch against its
+   prefab. A component without it follows content and a save never holds it
+   there, so state a player must keep is annotated and session state is not
+   (`docs/gameplay/saves.md`, "What a save holds of an entity"). A hand-written
+   serializer derived from `TypedComponentSerializer` reads the same
+   annotation off its component. On a `SENCHA_SAVED` component two field
+   annotations split the forms: `SENCHA_RUNTIME` is in the saved form only,
+   never authored and never offered by tools, and `SENCHA_UNSAVED` is in the
+   scene form only; either needs a member initializer
+   (`docs/gameplay/saves.md`, "Run-time fields").
 4. List the header under `sencha_generate_component_metadata(...)` in the
    owning target's CMake (a game module lists it as `COMPONENT_HEADERS` of
    `sencha_game_module`) and include `<path/Header.sencha.h>` at the end of

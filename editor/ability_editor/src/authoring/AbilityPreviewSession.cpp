@@ -22,8 +22,6 @@
 #include <input/InputActionSource.h>
 #include <input/InputActionState.h>
 #include <input/InputActionVocabulary.h>
-#include <equipment/EquipmentKit.h>
-#include <inventory/InventoryKit.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MovementRegistration.h>
 #include <movement/components/CharacterMovement.h>
@@ -104,6 +102,15 @@ const AbilityDefinition* AbilityPreviewSession::Definition() const
     return Preview != nullptr && Shown.IsValid() ? Preview->GetResource<AbilityRegistry>().Get(Shown) : nullptr;
 }
 
+std::string AbilityPreviewSession::DescribeAnswer(const AbilityTraceRecord& record) const
+{
+    const AbilityDefinition* definition = Definition();
+    const VerbRegistry* verbs = Preview != nullptr ? FindVerbRegistry(std::as_const(*Preview)) : nullptr;
+    if (verbs == nullptr || definition == nullptr || record.Element >= definition->Ops.size())
+        return VerbAdmissionName(record.Answer.Status);
+    return DescribeVerbAnswer(*verbs, definition->Ops[record.Element].Binding.Verb, record.Answer);
+}
+
 const CharacterController* AbilityPreviewSession::FixtureCapsule() const
 {
     return Preview != nullptr ? static_cast<const World&>(*Preview).TryGet<CharacterController>(FixtureEntity) : nullptr;
@@ -130,8 +137,7 @@ bool AbilityPreviewSession::Rebuild()
         RegisterEngineComponents(registrar);
     }
     RegisterMovement(world);
-    InstallInventoryVocabulary(world);
-    InstallEquipmentVocabulary(world);
+    InstallEveryKitVocabulary(world);
     InstallAuthoredVocabulary(world);
     (void)InstallEngineVocabulary(world);
     if (Vocabulary)
@@ -206,7 +212,7 @@ bool AbilityPreviewSession::Rebuild()
         (void)set.Add(AttributeId{ id }, attributes.DefaultBase(AttributeId{ id }));
     world.AddComponent<AbilityGrants>(FixtureEntity, AbilityGrants{});
     const std::uint16_t entry = world.GetResource<AbilityGrantEntries>().Intern({ "preview", Shown, {} });
-    (void)GrantAbility(*world.TryGet<AbilityGrants>(FixtureEntity), Shown, AbilityGrantKind::Authored, entry);
+    (void)GrantAbility(world, FixtureEntity, Shown, AbilityGrantKind::Authored, entry);
     return true;
 }
 

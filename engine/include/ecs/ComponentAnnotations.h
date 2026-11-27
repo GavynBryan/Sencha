@@ -38,6 +38,8 @@
 // Created only by the simulation authority; a client receives it from the wire.
 #define SENCHA_AUTHORITY_MATERIALIZED SENCHA_ANNOTATE("sencha.authority_materialized")
 #define SENCHA_NON_REMOVABLE         SENCHA_ANNOTATE("sencha.non_removable")
+// A save holds it on every entity content made, as a patch against content.
+#define SENCHA_SAVED                 SENCHA_ANNOTATE("sencha.saved")
 #define SENCHA_VISUAL_MESH(asset)    SENCHA_ANNOTATE("sencha.visual_mesh=" asset)
 // A thing of its own in a world: a tool may put an entity carrying just this
 // component (at its defaults) somewhere, under this name. SENCHA_PLACE_ICON
@@ -51,6 +53,10 @@
 // A member initializer is the field's default, which a scene may then omit; a
 // member without one is required.
 #define SENCHA_FIELD(name)           SENCHA_ANNOTATE("sencha.field=" name)
+// In the saved form only: never authored, never offered by tools.
+#define SENCHA_RUNTIME               SENCHA_ANNOTATE("sencha.runtime")
+// In the scene form as declared, never in a save.
+#define SENCHA_UNSAVED               SENCHA_ANNOTATE("sencha.unsaved")
 
 #define SENCHA_OWNER_ONLY            SENCHA_ANNOTATE("sencha.owner_only")
 #define SENCHA_OWNER_LOCAL           SENCHA_ANNOTATE("sencha.owner_local")

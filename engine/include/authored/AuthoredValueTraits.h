@@ -3,7 +3,10 @@
 #include <authored/AuthoredValue.h>
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/EnumSchema.h>
+#include <core/metadata/NamedIdField.h>
+#include <gameplay_tags/GameplayTagQueryNames.h>
 #include <math/Vec.h>
+#include <world/serialization/NamedIdVocabulary.h>
 
 #include <cmath>
 #include <concepts>
@@ -15,21 +18,48 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 // How a C++ type crosses the authored boundary: its schema, and decode/encode
 // to AuthoredValue. A failed decode is a refusal, never a default. The numeric
 // contract (int64 integers, double floats, enums by name) is described in
 // docs/gameplay/authored-api.md.
 
+class World;
+
 template<typename T>
 struct AuthoredValueTraits;
 
 template<typename T>
-concept IsAuthoredValueType = requires(const AuthoredValue& value, T& out, const T& in,
-                                       DataFieldSchema& field) {
-    AuthoredValueTraits<T>::Describe(field);
+concept AuthoredPlainDecoded = requires(const AuthoredValue& value, T& out) {
     { AuthoredValueTraits<T>::Decode(value, out) } -> std::same_as<bool>;
+};
+
+// Decoded against the World a provider answers for: a name its vocabulary holds.
+template<typename T>
+concept AuthoredWorldDecoded = requires(const World& world, const AuthoredValue& value, T& out) {
+    { AuthoredValueTraits<T>::DecodeIn(world, value, out) } -> std::same_as<bool>;
+};
+
+// What an argument may be: described and decoded.
+template<typename T>
+concept IsAuthoredArgumentType = requires(DataFieldSchema& field) { AuthoredValueTraits<T>::Describe(field); }
+                              && (AuthoredPlainDecoded<T> || AuthoredWorldDecoded<T>);
+
+// What a result, a field or a payload member may be: described and encoded.
+template<typename T>
+concept IsAuthoredResultType = requires(const T& in, DataFieldSchema& field) {
+    AuthoredValueTraits<T>::Describe(field);
     { AuthoredValueTraits<T>::Encode(in) } -> std::same_as<AuthoredValue>;
+};
+
+template<typename T>
+concept IsAuthoredValueType = IsAuthoredArgumentType<T> && IsAuthoredResultType<T>;
+
+// An argument read in place for the call, with no copy.
+template<typename T>
+concept AuthoredBorrowable = requires(const AuthoredValue& value, const T*& out) {
+    { AuthoredValueTraits<T>::Borrow(value, out) } -> std::same_as<bool>;
 };
 
 // Integers an int64 holds exactly. Character types and bool are excluded.
@@ -120,6 +150,14 @@ struct AuthoredValueTraits<std::string>
     static AuthoredValue Encode(const std::string& value) { return AuthoredValue::String(value); }
 };
 
+// Decode only: the view is the argument's own text, valid for the call.
+template<>
+struct AuthoredValueTraits<std::string_view>
+{
+    static void Describe(DataFieldSchema& field) { field.Kind = DataFieldKind::String; }
+    static bool Decode(const AuthoredValue& value, std::string_view& out) { return value.TryGetString(out); }
+};
+
 template<typename E>
     requires(std::is_enum_v<E> && HasEnumSchema<E>)
 struct AuthoredValueTraits<E>
@@ -196,7 +234,80 @@ struct AuthoredValueTraits<AssetRef>
         return true;
     }
 
+    static bool Borrow(const AuthoredValue& value, const AssetRef*& out) { return value.TryGetAsset(out); }
+
     static AuthoredValue Encode(const AssetRef& value) { return AuthoredValue::Asset(value); }
+};
+
+// A structured-data asset an argument names, borrowed for the call.
+struct AuthoredDataRef
+{
+    const AssetRef* Reference = nullptr;
+};
+
+template<>
+struct AuthoredValueTraits<AuthoredDataRef>
+{
+    static void Describe(DataFieldSchema& field) { field.Kind = DataFieldKind::DataAssetRef; }
+    static bool Decode(const AuthoredValue& value, AuthoredDataRef& out) { return value.TryGetDataAsset(out.Reference); }
+};
+
+// A tag query as content spells it: optional all, any and none lists of tag names,
+// resolved where it is run.
+template<>
+struct AuthoredValueTraits<GameplayTagQueryNames>
+{
+    static void Describe(DataFieldSchema& field)
+    {
+        const auto names = [](std::string key, std::string label) {
+            DataFieldSchema list = MakeDataField(DataFieldKind::Array, std::move(key), std::move(label));
+            list.Required = false;
+            list.Children.push_back(MakeDataField(DataFieldKind::String, "tag", "Tag"));
+            return list;
+        };
+        field.Kind = DataFieldKind::Record;
+        field.Children = { names("all", "All of"), names("any", "Any of"), names("none", "None of") };
+    }
+
+    static bool Decode(const AuthoredValue& value, GameplayTagQueryNames& out)
+    {
+        if (value.Kind() != AuthoredValueKind::Record)
+            return false;
+        const std::span<const AuthoredValue> lists = value.Children();
+        const auto namesAt = [&](std::size_t slot) {
+            std::vector<std::string> names;
+            if (slot < lists.size())
+                for (const AuthoredValue& element : lists[slot].Children())
+                    if (std::string_view name; element.TryGetString(name))
+                        names.emplace_back(name);
+            return names;
+        };
+        out = GameplayTagQueryNames{ .All = namesAt(0), .Any = namesAt(1), .None = namesAt(2) };
+        return true;
+    }
+};
+
+// A definition named by its data asset, found in the World's vocabulary of that kind of
+// definition; one the World does not hold refuses.
+template<IsNamedIdField Id>
+    requires(NamedIdField<Id>::Kind == NamedIdKind::DataDefinition)
+struct AuthoredValueTraits<Id>
+{
+    static void Describe(DataFieldSchema& field)
+    {
+        field.Kind = DataFieldKind::DataAssetRef;
+        field.Reference.DataSubtype = std::string(NamedIdField<Id>::Vocabulary().DataSubtype);
+    }
+
+    static bool DecodeIn(const World& world, const AuthoredValue& value, Id& out)
+    {
+        const AssetRef* reference = nullptr;
+        if (!value.TryGetDataAsset(reference))
+            return false;
+        const std::uint32_t found = NamedIdField<Id>::Vocabulary().Find(world, reference->Path);
+        out = Id{ found };
+        return found != 0;
+    }
 };
 
 // Floating-point only: an integer vector would narrow the double components.
@@ -240,9 +351,32 @@ struct AuthoredValueTraits<Vec<N, T>>
     }
 };
 
+// Encode only, for results.
+template<IsAuthoredResultType T>
+struct AuthoredValueTraits<std::vector<T>>
+{
+    static void Describe(DataFieldSchema& field)
+    {
+        field.Kind = DataFieldKind::Array;
+        DataFieldSchema element;
+        AuthoredValueTraits<T>::Describe(element);
+        field.Children.clear();
+        field.Children.push_back(std::move(element));
+    }
+
+    static AuthoredValue Encode(const std::vector<T>& values)
+    {
+        std::vector<AuthoredValue> elements;
+        elements.reserve(values.size());
+        for (const T& value : values)
+            elements.push_back(AuthoredValueTraits<T>::Encode(value));
+        return AuthoredValue::Array(std::move(elements));
+    }
+};
+
 // The only way to declare an absent value. One level only.
-template<IsAuthoredValueType T>
-    requires(!IsStdOptional<T>)
+template<typename T>
+    requires(!IsStdOptional<T> && (IsAuthoredArgumentType<T> || IsAuthoredResultType<T>))
 struct AuthoredValueTraits<std::optional<T>>
 {
     static void Describe(DataFieldSchema& field)
@@ -256,6 +390,7 @@ struct AuthoredValueTraits<std::optional<T>>
     }
 
     static bool Decode(const AuthoredValue& value, std::optional<T>& out)
+        requires AuthoredPlainDecoded<T>
     {
         if (value.IsNone())
         {
@@ -269,7 +404,23 @@ struct AuthoredValueTraits<std::optional<T>>
         return true;
     }
 
+    static bool DecodeIn(const World& world, const AuthoredValue& value, std::optional<T>& out)
+        requires AuthoredWorldDecoded<T>
+    {
+        if (value.IsNone())
+        {
+            out.reset();
+            return true;
+        }
+        T inner{};
+        if (!AuthoredValueTraits<T>::DecodeIn(world, value, inner))
+            return false;
+        out = std::move(inner);
+        return true;
+    }
+
     static AuthoredValue Encode(const std::optional<T>& value)
+        requires IsAuthoredResultType<T>
     {
         return value ? AuthoredValueTraits<T>::Encode(*value) : AuthoredValue{};
     }
@@ -298,6 +449,22 @@ consteval bool AuthoredRangeFits(long double minimum, long double maximum)
         return minimum <= maximum
             && minimum >= -static_cast<long double>(std::numeric_limits<T>::max())
             && maximum <= static_cast<long double>(std::numeric_limits<T>::max());
+    else
+        return false;
+}
+
+// Inside what T holds, for a bound with no other side. Checked by generated static_asserts.
+template<typename T>
+consteval bool AuthoredBoundFits(long double bound)
+{
+    if constexpr (IsStdOptional<T>)
+        return AuthoredBoundFits<typename T::value_type>(bound);
+    else if constexpr (AuthoredInteger<T>)
+        return bound >= static_cast<long double>(std::numeric_limits<T>::min())
+            && bound <= static_cast<long double>(std::numeric_limits<T>::max());
+    else if constexpr (std::same_as<T, float> || std::same_as<T, double>)
+        return bound >= -static_cast<long double>(std::numeric_limits<T>::max())
+            && bound <= static_cast<long double>(std::numeric_limits<T>::max());
     else
         return false;
 }
@@ -339,6 +506,12 @@ struct AuthoredSchemaDefault<std::string>
     static DataDefaultValue ToDefault(const std::string& value) { return value; }
 };
 
+template<>
+struct AuthoredSchemaDefault<std::string_view>
+{
+    static DataDefaultValue ToDefault(std::string_view value) { return std::string(value); }
+};
+
 template<typename E>
     requires(std::is_enum_v<E> && HasEnumSchema<E>)
 struct AuthoredSchemaDefault<E>
@@ -375,14 +548,14 @@ template<IsAuthoredValueType T>
 }
 
 // Decodes slot `slot`; a slot past the end reads as absent.
-template<IsAuthoredValueType T>
+template<AuthoredPlainDecoded T>
 [[nodiscard]] bool ReadAuthoredArgument(std::span<const AuthoredValue> arguments, std::size_t slot, T& out)
 {
     static const AuthoredValue absent;
     return AuthoredValueTraits<T>::Decode(slot < arguments.size() ? arguments[slot] : absent, out);
 }
 
-template<IsAuthoredValueType T>
+template<AuthoredPlainDecoded T>
 [[nodiscard]] bool ReadAuthoredArgument(const AuthoredArguments& arguments, std::size_t slot, T& out)
 {
     return ReadAuthoredArgument(arguments.Values(), slot, out);

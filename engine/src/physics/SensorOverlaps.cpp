@@ -37,6 +37,28 @@ bool SensorOverlaps::Observe(SensorPair pair, bool occupied)
     return true;
 }
 
+void SensorOverlaps::Await(std::span<const SensorSeed> seeds)
+{
+    for (const SensorSeed& seed : seeds)
+    {
+        if (std::ranges::find(AwaitedSeeds, seed) != AwaitedSeeds.end())
+            continue;
+        if (AwaitedSeeds.size() + Seeded.size() >= Limit)
+        {
+            ++RefusedSeeds;
+            continue;
+        }
+        AwaitedSeeds.push_back(seed);
+    }
+}
+
+void SensorOverlaps::Seed(SensorPair pair)
+{
+    const auto at = std::lower_bound(Seeded.begin(), Seeded.end(), pair);
+    if (at == Seeded.end() || *at != pair)
+        Seeded.insert(at, pair);
+}
+
 bool SensorOverlaps::Commit(std::uint64_t tick)
 {
     if (Overflow)
@@ -61,10 +83,15 @@ bool SensorOverlaps::Commit(std::uint64_t tick)
         const bool wasInside = previous < Active.size() && Active[previous] == observation.Pair;
         if (wasInside)
             ++previous;
+        const auto seeded = std::lower_bound(Seeded.begin(), Seeded.end(), observation.Pair);
+        const bool established = seeded != Seeded.end() && *seeded == observation.Pair && observation.Occupied;
+        if (established)
+            Seeded.erase(seeded);
         if (observation.Occupied)
         {
             Next.push_back(observation.Pair);
-            Published.push_back({ observation.Pair, wasInside ? SensorTransition::Stay : SensorTransition::Enter, tick });
+            Published.push_back({ observation.Pair,
+                                  wasInside || established ? SensorTransition::Stay : SensorTransition::Enter, tick });
         }
         else
         {

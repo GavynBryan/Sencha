@@ -4,7 +4,10 @@
 #include "authoring/AffordanceStrokes.h"
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
+#include "document/DocumentSerialization.h"
 #include "document/EditorScene.h"
+#include "document/commands/RawComponentAddCommand.h"
+#include "document/commands/RawComponentRemoveCommand.h"
 #include "document/commands/ValueCommand.h"
 #include "properties/SettingProperties.h"
 
@@ -12,7 +15,9 @@
 #include <physics/CollisionShape.h>
 #include <physics/RigidBodyBinding.h>
 #include <physics/components/Collider.h>
+#include <physics/components/RigidBody.h>
 #include <render/StaticMeshComponent.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <render/static_mesh/GpuStaticMesh.h>
 #include <render/static_mesh/StaticMeshCache.h>
 
@@ -32,6 +37,8 @@ namespace
 constexpr std::array<std::string_view, 3> kShapes = { "Box", "Sphere", "Capsule" };
 constexpr std::array<CollisionShapeType, 3> kShapeTypes = { CollisionShapeType::Box, CollisionShapeType::Sphere,
                                                             CollisionShapeType::Capsule };
+constexpr std::array<std::string_view, 3> kMotions = { "Static", "Kinematic", "Dynamic" };
+constexpr std::array<BodyMotion, 3> kMotionKinds = { BodyMotion::Static, BodyMotion::Kinematic, BodyMotion::Dynamic };
 constexpr float kSmallest = 0.001f;
 
 std::size_t ShapeIndex(CollisionShapeType type)
@@ -43,6 +50,18 @@ const Collider* ColliderOf(const EditorScene& scene, EntityId entity)
 {
     const World& world = scene.GetRegistry().Components;
     return world.IsRegistered<Collider>() ? world.TryGet<Collider>(entity) : nullptr;
+}
+
+const RigidBody* BodyOf(const EditorScene& scene, EntityId entity)
+{
+    const World& world = scene.GetRegistry().Components;
+    return world.IsRegistered<RigidBody>() ? world.TryGet<RigidBody>(entity) : nullptr;
+}
+
+BodyMotion MotionOf(const EditorScene& scene, EntityId entity)
+{
+    const RigidBody* body = BodyOf(scene, entity);
+    return body != nullptr ? body->Motion : BodyMotion::Static;
 }
 
 std::array<double, 3> Doubles(const Vec3d& value)
@@ -290,6 +309,12 @@ public:
         }
         nodes.push_back(ToggleProperty("sensor", "Sensor", collider->IsTrigger,
                                        "Reports what overlaps it instead of blocking."));
+        nodes.push_back(ChoiceProperty(
+            "motion", "Motion", kMotions,
+            static_cast<std::size_t>(std::ranges::find(kMotionKinds, MotionOf(context.Scene, context.Entity))
+                                     - kMotionKinds.begin()),
+            "Static never moves. Kinematic is moved by its transform. Dynamic falls and is pushed, and a save "
+            "keeps where it went."));
 
         if (const Transform3f* transform = context.Scene.TryGetWorldTransform(context.Entity);
             transform != nullptr && transform->Scale != Vec3d::One())
@@ -303,6 +328,8 @@ public:
         const Collider* current = ColliderOf(context.Scene, context.Entity);
         if (current == nullptr)
             return PropertyEditResult::Gone;
+        if (key == "motion")
+            return SetMotion(context, value);
         Collider after = *current;
         CollisionShape& shape = after.Shape;
         if (key == "shape")
@@ -393,6 +420,44 @@ public:
     }
 
 private:
+    static PropertyEditResult SetMotion(EditorComponentInspectorContext& context, std::string_view value)
+    {
+        const std::optional<std::size_t> index = ParseChoice(value, kMotions);
+        if (!index)
+            return PropertyEditResult::Refused;
+        const BodyMotion motion = kMotionKinds[*index];
+        const RigidBody* body = BodyOf(context.Scene, context.Entity);
+        if (MotionOf(context.Scene, context.Entity) == motion)
+            return PropertyEditResult::Unchanged;
+        World& world = context.Scene.GetRegistry().Components;
+        IComponentSerializer* serializer = EditorSceneSerializers().FindByType(ResolveComponentTypeId<RigidBody>());
+        if (serializer == nullptr || !world.IsRegistered<RigidBody>())
+            return PropertyEditResult::Refused;
+        if (motion == BodyMotion::Static)
+            context.Commands.Execute(std::make_unique<RawComponentRemoveCommand>(context.Entity, *serializer,
+                                                                                 context.Scene, context.Document));
+        else if (body == nullptr)
+        {
+            const RigidBody added{ .Motion = motion };
+            std::vector<std::byte> bytes(sizeof(RigidBody));
+            std::memcpy(bytes.data(), &added, sizeof(RigidBody));
+            context.Commands.Execute(std::make_unique<RawComponentAddCommand>(
+                context.Entity, world.GetComponentId<RigidBody>(), std::move(bytes), context.Scene, context.Document));
+        }
+        else
+        {
+            RigidBody after = *body;
+            after.Motion = motion;
+            context.Commands.Execute(std::make_unique<ValueCommand<RigidBody>>(
+                *body, after,
+                [&scene = context.Scene, entity = context.Entity](const RigidBody& set) {
+                    scene.SetComponent(entity, set);
+                },
+                context.Document));
+        }
+        return PropertyEditResult::Applied;
+    }
+
     static std::string ScaledText(const Transform3f& transform, const CollisionShape& authored)
     {
         const CollisionShape shape = ScaledCollisionShape(authored, transform.Scale);

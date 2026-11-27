@@ -1,6 +1,7 @@
 // The authored perception queries answer from the frame, and answer
 // Unavailable rather than false whenever the scan could not prove absence.
 
+#include <authored/AuthoredApi.h>
 #include "PerceptionHarness.h"
 
 #include <authored/AuthoredQueryDispatcher.h>
@@ -16,7 +17,8 @@ namespace
     struct QueryHarness : PerceptionHarness
     {
         std::optional<AuthoredQueryDispatcher> Dispatcher;
-        std::vector<AuthoredQueryBindingToken> Bindings;
+        std::optional<PerceptionOperations> Perception;
+        AuthoredApiBindings Bindings;
         GameplayTagId Hostile;
 
         QueryHarness()
@@ -24,7 +26,8 @@ namespace
             InstallAuthoredVocabulary(Entities);
             EXPECT_TRUE(InstallPerceptionVocabulary(Entities));
             Dispatcher.emplace(*FindAuthoredQueryRegistry(Entities));
-            Bindings = BindPerceptionQueries(*Dispatcher, Entities);
+            Perception.emplace(Entities);
+            Bindings = BindAuthoredApi(nullptr, &*Dispatcher, *Perception);
             GameplayTagRegistry& tags = Entities.GetResource<GameplayTagRegistry>();
             Hostile = *tags.RegisterTag("faction.hostile");
             (void)tags.RegisterTag("faction.hostile.drone");
@@ -53,16 +56,16 @@ TEST(PerceptionQueries, SeesAnswersTrueFalseAndUnavailable)
     AuthoredValue answer;
 
     // Before any scan the observer has no coverage: no answer, not "no".
-    EXPECT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(target) }, answer),
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Sees, { AuthoredValue::Entity(eye), AuthoredValue::Entity(target) }, answer),
               AuthoredQueryStatus::Unavailable);
 
     harness.Step();
     bool seen = false;
-    ASSERT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(target) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Sees, { AuthoredValue::Entity(eye), AuthoredValue::Entity(target) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_TRUE(seen);
-    ASSERT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(hidden) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Sees, { AuthoredValue::Entity(eye), AuthoredValue::Entity(hidden) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_FALSE(seen);
@@ -90,7 +93,7 @@ TEST(PerceptionQueries, APartialScanNeverAnswersFalse)
     harness.Step();
 
     AuthoredValue answer;
-    EXPECT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(untested) }, answer),
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Sees, { AuthoredValue::Entity(eye), AuthoredValue::Entity(untested) }, answer),
               AuthoredQueryStatus::Unavailable);
 }
 
@@ -107,13 +110,13 @@ TEST(PerceptionQueries, TaggedQueriesMatchBeneathTheTagAndPickTheNearest)
 
     AuthoredValue answer;
     bool seen = false;
-    ASSERT_EQ(harness.Ask(kSeesTaggedQuery, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_SeesTagged, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_TRUE(seen);
 
     EntityId nearest;
-    ASSERT_EQ(harness.Ask(kNearestSeenTaggedQuery,
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_NearestSeenTagged,
                           { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetEntity(nearest));
@@ -129,11 +132,11 @@ TEST(PerceptionQueries, NearestAnswersUnavailableWhenNothingMatchingWasSeen)
     harness.Step();
 
     AuthoredValue answer;
-    EXPECT_EQ(harness.Ask(kNearestSeenTaggedQuery,
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_NearestSeenTagged,
                           { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Unavailable);
     bool seen = true;
-    ASSERT_EQ(harness.Ask(kSeesTaggedQuery, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_SeesTagged, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_FALSE(seen);
@@ -161,15 +164,15 @@ TEST(PerceptionQueries, TheSightQueriesIgnoreEveryOtherSense)
 
     AuthoredValue answer;
     bool seen = true;
-    ASSERT_EQ(harness.Ask(kSeesQuery, { AuthoredValue::Entity(eye), AuthoredValue::Entity(subject) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Sees, { AuthoredValue::Entity(eye), AuthoredValue::Entity(subject) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_FALSE(seen);
-    ASSERT_EQ(harness.Ask(kSeesTaggedQuery, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_SeesTagged, { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(seen));
     EXPECT_FALSE(seen);
-    EXPECT_EQ(harness.Ask(kNearestSeenTaggedQuery,
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_NearestSeenTagged,
                           { AuthoredValue::Entity(eye), AuthoredValue::Tag(harness.Hostile) }, answer),
               AuthoredQueryStatus::Unavailable);
 }

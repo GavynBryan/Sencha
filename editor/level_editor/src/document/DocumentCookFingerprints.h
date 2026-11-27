@@ -8,6 +8,8 @@
 #include <span>
 #include <string_view>
 
+class ComponentSerializerRegistry;
+
 // One named identity per cook step plus the document publication identity.
 // Constructed once, before cache resolution; execution reads these values and
 // never recomputes a hash. Dependencies compose in resolved graph order, so a
@@ -25,9 +27,12 @@ struct DocumentCookFingerprints
 };
 
 // `reachableHalo` is the neighbor-zone occluder set within probe-ray reach,
-// resolved by the caller (the occlusion BVH consumes the same set).
+// resolved by the caller (the occlusion BVH consumes the same set). The document
+// key folds the schema fingerprint `serializers` gives every component the cooked
+// scene will hold, the check a runtime makes before it reads that scene.
 [[nodiscard]] DocumentCookFingerprints ComputeDocumentCookFingerprints(
     const DocumentCookSnapshot& snapshot,
+    const ComponentSerializerRegistry& serializers,
     double cellSize,
     std::span<const ProbeHaloZone* const> reachableHalo);
 

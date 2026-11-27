@@ -135,6 +135,8 @@ public:
     [[nodiscard]] EntityId Fixture() const { return FixtureEntity; }
     [[nodiscard]] AbilityId Ability() const { return Shown; }
     [[nodiscard]] const AbilityDefinition* Definition() const;
+    // What an operated or skipped op answered, with its reason named by its verb's catalog entry.
+    [[nodiscard]] std::string DescribeAnswer(const AbilityTraceRecord& record) const;
     [[nodiscard]] const CharacterController* FixtureCapsule() const;
 
     static constexpr std::uint32_t kTickRate = 60;

@@ -31,6 +31,20 @@ std::string EventName(const AnimationPreviewWorkspace& workspace, const AnimDeci
                                    event.Binding);
     return std::format("{}", record.EventKey);
 }
+
+std::string AnswerText(const AnimationPreviewWorkspace& workspace, const AnimDecisionRecord& record)
+{
+    const AnimationPreviewSession& session = workspace.Rig.Simulation;
+    const AnimBoundRig* rig = session.Rig();
+    const VerbRegistry* verbs = session.Verbs();
+    if (rig != nullptr && verbs != nullptr && record.Content < rig->Contents.size())
+        if (const AnimationClipData* clip = workspace.Clips().Get(rig->Contents[record.Content].Clip))
+            for (const AnimationClipEvent& event : clip->Events)
+                if (const CompiledVerbBinding* binding = rig->Bindings.Find(event.Binding);
+                    event.Key == record.EventKey && binding != nullptr)
+                    return DescribeVerbAnswer(*verbs, binding->Verb, record.Answer);
+    return VerbAdmissionName(record.Answer.Status);
+}
 } // namespace
 
 std::vector<PropertyNode> AnimationAdmissionProperties::Nodes() const
@@ -68,7 +82,7 @@ std::vector<PropertyNode> AnimationAdmissionProperties::Nodes() const
                 std::format("{} at {}", AnimDecisionCauseName(record.Cause), record.Tick),
                 std::format("{}: {}{}", what, AnimEventOutcomeName(record.EventOutcome),
                             record.EventOutcome == AnimEventOutcome::Fired
-                                ? std::format(", {}", VerbAdmissionName(record.Admission))
+                                ? std::format(", {}", AnswerText(Workspace, record))
                                 : std::string())));
         }
         for (const AnimationPreviewInvocation& invocation : tick->Invocations)

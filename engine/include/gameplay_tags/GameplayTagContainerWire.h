@@ -1,92 +1,53 @@
 #pragma once
 
-#include <core/metadata/ScalarGroup.h>
 #include <core/metadata/TypeSchema.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <net/ReplicationLayout.h>
 
 #include <cstdint>
 
-// Every tag a container can hold can be shown to everyone, so none is ever
-// dropped. Split into runs so an actor showing only a few sends only the first.
-inline constexpr std::size_t kGameplayTagSharedRunLength = 8;
-inline constexpr std::size_t kGameplayTagSharedCapacity = GameplayTagContainer::Capacity;
-
-// Tags only the owner is sent, by wire key, and their stack counts.
-struct GameplayTagWireOwned
+// A tag only the owner is sent, by wire key, and its stack count.
+struct GameplayTagOwnedWire
 {
-    std::uint32_t Keys[GameplayTagContainer::Capacity] = {};
-    std::uint32_t Counts[GameplayTagContainer::Capacity] = {};
+    std::uint32_t Key = 0;
+    std::uint32_t Count = 0;
 };
 
-struct GameplayTagWireSharedRun
+// A tag declared replicated to all, by wire key, which everyone is sent.
+struct GameplayTagSharedWire
 {
-    std::uint32_t Keys[kGameplayTagSharedRunLength] = {};
-};
-
-// Tags declared replicated to all, by wire key, which everyone is sent, filled
-// from the first run.
-struct GameplayTagWireShared
-{
-    GameplayTagWireSharedRun R0, R1, R2, R3;
-
-    [[nodiscard]] std::uint32_t& Key(std::size_t index);
-    [[nodiscard]] std::uint32_t Key(std::size_t index) const;
-};
-
-static_assert(4 * kGameplayTagSharedRunLength == kGameplayTagSharedCapacity,
-              "GameplayTagWireShared names one member per run.");
-
-struct GameplayTagContainerWire
-{
-    GameplayTagWireOwned Owned;
-    GameplayTagWireShared Shared;
+    std::uint32_t Key = 0;
 };
 
 template <>
-struct PackedScalarGroup<GameplayTagWireOwned>
+struct TypeSchema<GameplayTagOwnedWire>
 {
-    static constexpr std::size_t Count = 2 * GameplayTagContainer::Capacity;
-    using Component = std::uint32_t;
-};
-
-template <>
-struct PackedScalarGroup<GameplayTagWireSharedRun>
-{
-    static constexpr std::size_t Count = kGameplayTagSharedRunLength;
-    using Component = std::uint32_t;
-};
-
-template <>
-struct TypeSchema<GameplayTagWireShared>
-{
-    static constexpr std::string_view Name = "gameplay_tag_wire_shared";
+    static constexpr std::string_view Name = "gameplay_tag_owned_wire";
     static auto Fields()
     {
-        return std::tuple{ MakeField("r0", &GameplayTagWireShared::R0), MakeField("r1", &GameplayTagWireShared::R1),
-                           MakeField("r2", &GameplayTagWireShared::R2), MakeField("r3", &GameplayTagWireShared::R3) };
+        return std::tuple{ MakeField("key", &GameplayTagOwnedWire::Key).OwnerOnly(),
+                           MakeField("count", &GameplayTagOwnedWire::Count).OwnerOnly() };
     }
 };
 
 template <>
-struct TypeSchema<GameplayTagContainerWire>
+struct TypeSchema<GameplayTagSharedWire>
 {
-    static constexpr std::string_view Name = "gameplay_tag_container_wire";
-    static auto Fields()
-    {
-        return std::tuple{ MakeField("owned", &GameplayTagContainerWire::Owned).OwnerOnly(),
-                           MakeField("shared", &GameplayTagContainerWire::Shared) };
-    }
+    static constexpr std::string_view Name = "gameplay_tag_shared_wire";
+    static auto Fields() { return std::tuple{ MakeField("key", &GameplayTagSharedWire::Key) }; }
 };
 
 // The two halves split by the tag, on every machine alike, so what a machine
-// was never sent is never in what it sends back as its own image.
+// was never sent is never in what it sends back as its own image. Each half is
+// in wire-key order, which every machine computes alike from the same tags.
 template <>
 struct ReplicationCodec<GameplayTagContainer>
 {
-    using Wire = GameplayTagContainerWire;
-    static void ToWire(const ReplicationWireContext& context, const GameplayTagContainer& tags,
-                       GameplayTagContainerWire& wire);
-    static void FromWire(const ReplicationWireContext& context, const GameplayTagContainerWire& wire,
+    using Wire = ReplicationNoHead;
+    using Lists = std::tuple<ReplicatedListOf<GameplayTagOwnedWire, GameplayTagContainer::Capacity>,
+                             ReplicatedListOf<GameplayTagSharedWire, GameplayTagContainer::Capacity>>;
+    static constexpr std::string_view ListNames[] = { "owned", "shared" };
+    static void ToWire(const ReplicationWireContext& context, const GameplayTagContainer& tags, ReplicationImage& wire);
+    static void FromWire(const ReplicationWireContext& context, const ReplicationImage& wire,
                          GameplayTagContainer& tags);
 };

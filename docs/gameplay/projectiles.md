@@ -33,10 +33,16 @@ like. Its fields:
 | `hits_characters`, `ends_with_instigator` | whether walking characters stop it; whether it ends when its instigator is gone |
 | `ignores` | a gameplay tag: what carries it is neither struck nor in the way |
 | `hit_scale_query` | an authored query `{target, region, kind}` whose number scales the hit and scaled effects, as the game reads where it struck; empty applies them as authored |
+| `kept` | a save keeps it while it flies ("Kept in a save"): a grenade or a slow rocket; false, the default, for a bullet |
 
-Effects and tags are named, as `asset://effects/<name>.sdata` and tag names, and
-resolved the first time the prefab is launched. A name nobody declared refuses
-every launch of that prefab, with the prefab and the name in the log.
+Tags are named fields (`docs/core-systems-map.md`, "Named-id fields"): the
+prefab states a tag's name and the component holds its id, so a tag nobody
+declared refuses the prefab where it is read, naming the field and the tag.
+Effects are named as `asset://effects/<name>.sdata` and resolved the first time
+the prefab is launched; an effect nobody declared refuses every launch of that
+prefab, with the prefab and the name in the log. Effect names stay text until
+effects can be reserved by name (`docs/deferred.md`, "Effect names in
+projectiles and contact lines as ids").
 
 The root's mesh is drawn facing its path: +Z is forward, and its scale is the
 prefab's own.
@@ -71,6 +77,12 @@ replay of the same launches scatters the same way, and no other instigator's
 launches change it. The cone itself is `ScatterInCone`
 (`math/geometry/3d/ConeScatter.h`), so a hitscan weapon's spread means exactly
 what a projectile's does.
+
+A kept projectile, in a game that keeps level state, is built the same way and
+then moved, with the rest of its prefab, into the zone whose bounds hold its
+origin (`ZonePlacement`, the rule a drop uses), and marked `KeptWithZone`, which
+gives it a runtime persistent id ("Kept in a save"). One launched where no zone
+is resident stays in the instigator's partition, unmarked.
 
 A projectile flies on the tick it is launched: the system runs after the ability
 pass, where most launches come from, and before attributes resolve, so what it
@@ -158,7 +170,39 @@ other machine moves one or applies anything.
   replicates, so whatever presents an ability's cues presents a projectile's.
 
 Never replicated: `ProjectileMotion` -- velocity, remaining life, what it has
-struck. A client could not use it without second-guessing the authority.
+struck. A client could not use it without second-guessing the authority. A save
+of a kept projectile holds it ("Kept in a save").
+
+## Kept in a save
+
+A projectile is kept only when its prefab says `kept`. A projectile that does
+not is never marked, never takes an id and is in no save, so an arena shooter
+pays nothing for this; nor is one marked in a game that does not keep level
+state (`docs/gameplay/saves.md`, "Level entities").
+
+A kept projectile in flight is a gained member of its zone saved from its source
+(`docs/gameplay/saves.md`, "What a zone gained"): its prefab, where it is, and
+its patch, whose members are its run-time state, against the default records of
+components its prefab does not author:
+
+- `ProjectileMotion`: its velocity, the seconds of flight left, what the
+  launcher measured (`magnitude`, `splash_scale`), and everything it has
+  struck, each slot written as its target's persistent id or empty, with the
+  count. So a piercing shot does not strike again after a load what it struck
+  before it. Its definition index is not saved; it is resolved again from the
+  prefab.
+- `ProjectileFlight`: its instigator, as a persistent id, which a load resolves
+  when the instigator arrives (`PendingReferences`), so a strike after both have
+  landed credits it. Neither tick is saved: a loaded projectile's launch tick is
+  the tick it is loaded on, and its end tick is zero while it flies.
+
+A load spawns the prefab again a few frames after its zone, with the patch over
+its root, and on its first tick the authority resolves its definition, stamps
+its launch tick and marks it for replication again (`ProjectileSystem::Adopt`).
+A projectile that ends stops being kept, so the stretch it lingers after its end
+is never saved. Both components' saved forms hold entity references, so neither
+follows its row alone (`SavedFormFromRowAlone` is false) and a moving one is
+written at every capture of its zone.
 
 ### Not yet
 

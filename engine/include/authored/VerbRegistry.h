@@ -4,8 +4,12 @@
 #include <authored/AuthoredClassification.h>
 #include <authored/AuthoredSchema.h>
 #include <authored/VerbId.h>
+#include <authored/VerbInvocation.h>
 #include <core/metadata/DataSchema.h>
+#include <core/metadata/EnumSchema.h>
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -42,6 +46,30 @@ enum class VerbKind : std::uint8_t
     Lease,
 };
 
+// One reason a verb may refuse: the code it answers in VerbAnswer::Detail.
+struct VerbRefusalReason
+{
+    std::uint16_t Code = 0;
+    std::string Name;
+    std::string DisplayName;
+    std::string Description;
+};
+
+// Every non-zero value of a reason enum, in its schema's order.
+template<typename E>
+    requires HasEnumSchema<E>
+[[nodiscard]] std::vector<VerbRefusalReason> VerbRefusalsOf()
+{
+    std::vector<VerbRefusalReason> reasons;
+    for (const EnumValue<E>& value : EnumSchema<E>::Values)
+        if (value.Value != E{})
+            reasons.push_back(VerbRefusalReason{ .Code = static_cast<std::uint16_t>(value.Value),
+                                                 .Name = std::string(value.Name),
+                                                 .DisplayName = std::string(value.Display),
+                                                 .Description = std::string(value.Tooltip) });
+    return reasons;
+}
+
 // What a verb is called, what it takes, and how an authoring surface should
 // say it. The name is the persisted contract; everything else but the argument
 // schema, kind and classification is presentation.
@@ -68,44 +96,12 @@ struct VerbDefinition
     // A lease whose hold can finish while still held, as a timed burst does; only
     // such a lease's provider is asked (LeaseStep::Probe) whether a hold goes on.
     bool Completes = false;
+
+    // The reasons it may refuse with. Part of the contract, by code and name.
+    std::vector<VerbRefusalReason> Refusals;
+    // What it answers with when accepted, for a producer that asks. Part of the contract.
+    std::optional<DataFieldSchema> Result;
 };
-
-// A verb only a presentation runs, on every machine that presents: cosmetic in
-// scope, so a simulation producer cannot bind it.
-[[nodiscard]] inline VerbDefinition MakeCosmeticVerb(std::string_view name, std::string displayName,
-                                                     std::string description, std::string category, VerbKind kind)
-{
-    VerbDefinition verb;
-    verb.Name = std::string(name);
-    verb.DisplayName = std::move(displayName);
-    verb.Description = std::move(description);
-    verb.Category = std::move(category);
-    verb.Kind = kind;
-    verb.Scope = AuthoredScope::Cosmetic;
-    verb.Prediction = AuthoredPrediction::Presentation;
-    return verb;
-}
-
-[[nodiscard]] inline VerbDefinition MakeGameplayVerb(std::string_view name, std::string displayName,
-                                                     std::string description, std::string category,
-                                                     std::vector<DataFieldSchema> arguments)
-{
-    VerbDefinition verb;
-    verb.Name = std::string(name);
-    verb.DisplayName = std::move(displayName);
-    verb.Description = std::move(description);
-    verb.Category = std::move(category);
-    verb.Arguments.Children = std::move(arguments);
-    return verb;
-}
-
-[[nodiscard]] inline DataFieldSchema MakeEntityArgument(std::string key, std::string displayName,
-                                                        std::string_view componentIdentity, std::string summary)
-{
-    DataFieldSchema field = MakeDataField(DataFieldKind::Entity, std::move(key), std::move(displayName), std::move(summary));
-    field.Reference.ComponentIdentity = std::string(componentIdentity);
-    return field;
-}
 
 struct VerbCatalogTraits
 {
@@ -120,9 +116,20 @@ struct VerbCatalogTraits
     static bool ContractsMatch(const VerbDefinition& left, const VerbDefinition& right)
     {
         return left.Kind == right.Kind && left.Scope == right.Scope && left.Prediction == right.Prediction
-            && left.Completes == right.Completes && AuthoredContractsMatch(left.Arguments, right.Arguments);
+            && left.Completes == right.Completes && AuthoredContractsMatch(left.Arguments, right.Arguments)
+            && RefusalsMatch(left.Refusals, right.Refusals) && ResultsMatch(left.Result, right.Result);
     }
+
+private:
+    static bool RefusalsMatch(const std::vector<VerbRefusalReason>& left, const std::vector<VerbRefusalReason>& right);
+    static bool ResultsMatch(const std::optional<DataFieldSchema>& left, const std::optional<DataFieldSchema>& right);
 };
 
 using VerbRegistry = AuthoredCatalog<VerbCatalogTraits>;
 using VerbRegistrationScope = AuthoredRegistrationScope<VerbCatalogTraits>;
+
+// The name of `code` among `verb`'s declared reasons; empty when it declares none by that code or is gone.
+[[nodiscard]] std::string_view VerbRefusalName(const VerbRegistry& verbs, VerbId verb, std::uint16_t code);
+
+// "refused: container_full", "invalid argument 'count'", "unresolved reference 'target'".
+[[nodiscard]] std::string DescribeVerbAnswer(const VerbRegistry& verbs, VerbId verb, VerbAnswer answer);

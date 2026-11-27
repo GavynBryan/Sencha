@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -183,4 +184,5 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error);
 [[nodiscard]] std::optional<ZoneId> ZoneDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name);
 [[nodiscard]] std::optional<GraphId> GraphDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name);
 // The innermost zone holding `point`: the smallest by volume where zones overlap.
-[[nodiscard]] const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point);
+[[nodiscard]] const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point,
+                                                const std::function<bool(const ZoneHeader&)>& among = {});

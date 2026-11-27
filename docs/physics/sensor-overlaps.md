@@ -38,10 +38,38 @@ the new pose. A moving sensor is not swept through stationary activators.
 
 Entity destruction, removal of the sensor collider or activator backend link,
 and departure from physics participation forget a pair without a gameplay
-Exit. Zone-residency teardown also removes already published occurrences for
-the departing partition while its entities are still available. A restored zone
-starts with fresh Enter observations. A consumer holding its own pending work
+Exit. Zone-residency teardown removes already published occurrences for the
+departing partition while its entities are still available; a detaching zone's
+pairs themselves stay until its entities are gone at the next sample, so the
+zone's capture can still read them. A consumer holding its own pending work
 must independently discard requests against departed or destroyed entities.
+
+## Across a load
+
+What is inside a sensor is saved with its zone, so a load does not report
+Enter for what was already inside: three crates on three counting plates read
+three after a load, and a poison cloud does not apply itself again to whoever
+stands in it. In a game that keeps level state (`docs/gameplay/saves.md`), the
+zone's capture writes its `occupied` list: each pair of `Pairs()` whose sensor
+is one of the zone's identified entities and whose occupant has a persistent
+id, as the two ids. An occupant with no id is not written, since nothing would
+bring it back; the body has one from its assignment, so a player saved standing
+on a plate counts.
+
+When the zone imports, its list is handed to `SensorOverlaps::Await` as
+`SensorSeed`s. A seed waits there until both ends are alive, which for the
+body is frames after the zone, and then becomes an entity seed (`Seed`). The
+first sample that finds a seeded pair occupied establishes it and publishes
+Stay instead of Enter; from then on it is an ordinary pair, so leaving it
+publishes Exit. A seeded pair whose two ends were both sampled without
+overlapping is dropped, so a later real entry fires Enter, as it does for a
+body a save brings back at an arrival landmark away from the plate. A seed
+whose occupant never arrives is dropped at its zone's next capture, and every
+awaited seed is dropped when a level unloads.
+
+Seeds share the sample's bound: past the capacity `Await` refuses a seed and
+counts it (`RefusedSeedCount`); a refused seed's pair reports Enter again on
+load, the behaviour without seeding.
 
 The sample is owner-thread only. Jolt's current simulation is single-threaded;
 this mechanism adds no workers or contact-listener threading. Sorting removes

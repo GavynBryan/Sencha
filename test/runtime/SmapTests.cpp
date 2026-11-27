@@ -1,4 +1,5 @@
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
@@ -61,6 +62,26 @@ struct TypeSchema<SmapSkewValue>
             MakeField("value", &SmapSkewValue::Value),
         };
     }
+};
+
+struct SmapTestBadge
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<SmapTestBadge>
+{
+    static constexpr std::string_view Name = "smap_test_badge";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('S', 'M', 'B', 'G');
+
+    static auto Fields() { return std::tuple{ MakeField("value", &SmapTestBadge::Value) }; }
+};
+
+template <>
+struct ComponentPersistenceOf<SmapTestBadge>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Identity;
 };
 
 namespace
@@ -391,4 +412,25 @@ TEST(SmapFormat, PresentationSettingsRoundTripAndStayOutWhenUnset)
 
     ASSERT_TRUE(ReadSmap(without, serializers, read, &error)) << error.Message;
     EXPECT_TRUE(read.Presentation.IsEmpty());
+}
+
+TEST(SmapFormat, ASpawnLeavesOutWhatItsPrefabIsKnownByAndKeepsTheRest)
+{
+    ComponentSerializerRegistry serializers = MakeSerializers();
+    ASSERT_EQ(serializers.Register(std::make_unique<ComponentSerializer<SmapTestBadge>>()),
+              ComponentSerializerRegistry::RegisterResult::Added);
+    SmapContents contents = MakeContents();
+    contents.Entities[0].Components.emplace_back(ResolveComponentTypeId<SmapTestBadge>(),
+                                                 JsonValue(JsonValue::Object{ { "value", JsonValue(5.0) } }));
+
+    EntityBuildPackage package;
+    SmapError error;
+    ASSERT_TRUE(BuildEntityPackageFromSmap(contents, serializers, package,
+                                           SmapPackageOptions{ .StripAuthoredIdentity = true }, &error))
+        << error.Message;
+
+    const PackageEntity& root = package.Entities()[0];
+    ASSERT_EQ(root.Components.size(), 1u);
+    EXPECT_EQ(root.Components[0].Type, ResolveComponentTypeId<SmapTestValue>());
+    EXPECT_FALSE(root.PersistentId.IsValid());
 }

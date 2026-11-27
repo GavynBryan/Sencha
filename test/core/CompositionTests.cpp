@@ -1,5 +1,10 @@
+#include "CompositionRoundTrip.h"
+
+#include <core/composition/CompositionPatch.h>
 #include <core/composition/JsonComposition.h>
+#include <core/json/JsonEquals.h>
 #include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <core/metadata/DataSchema.h>
 
 #include <gtest/gtest.h>
@@ -105,8 +110,7 @@ namespace
     Composed Compose(const Layers& layers)
     {
         static const DataFieldSchema schema = DefinitionSchema();
-        const CompositionPolicy policy{ .Schema = &schema, .Null = CompositionNull::Removes,
-                                        .Provenance = layers.Provenance };
+        const CompositionPolicy policy{ .Schema = &schema, .Provenance = layers.Provenance };
         std::vector<JsonValue> values;
         values.reserve(layers.Includes.size() + 2);
         std::optional<CompositionLayerInput<JsonValue>> base;
@@ -316,18 +320,106 @@ TEST(Composition, ACompositionsIndexPathsMapToKeys)
     EXPECT_EQ(CompositionLogicalPath(composed.Value, schema, "$.facts[0].name"), "$.facts{Grounded}.name");
 }
 
+namespace
+{
+    Composed RoundTrip(const DataFieldSchema& schema, const JsonValue& base, const JsonValue& target)
+    {
+        const std::optional<JsonValue> patch = PatchFrom(base, target, &schema);
+        const JsonValue nothing{ JsonValue::Object{} };
+        const CompositionLayerInput<JsonValue> baseLayer{ &base, "base", nullptr };
+        const CompositionLayerInput<JsonValue> local{ patch ? &*patch : &nothing, "save", nullptr };
+        Composed composed;
+        composed.Value = ComposeLayers<JsonValue>(&baseLayer, {}, local,
+                                                  { .Schema = &schema },
+                                                  composed.Report);
+        return composed;
+    }
+
+    std::string Codes(const CompositionReport& report)
+    {
+        std::string codes;
+        for (const CompositionDiagnostic& diagnostic : report.Diagnostics)
+            codes += diagnostic.Code + " at " + diagnostic.Path + "; ";
+        return codes;
+    }
+}
+
+TEST(CompositionPatch, AKeyedListsNewOrderComposesBack)
+{
+    const DataFieldSchema schema = CompositionRoundTrip::Schema();
+    const JsonValue base = Parse(R"({ "req": 1, "mods": [ { "key": "a", "magnitude": 1 }, { "key": "b", "magnitude": 2 } ] })");
+    for (const std::string_view target :
+         { R"({ "req": 1, "mods": [ { "key": "b", "magnitude": 2 }, { "key": "a", "magnitude": 1 } ] })",
+           R"({ "req": 1, "mods": [ { "key": "a", "magnitude": 1 }, { "key": "new", "magnitude": 3 },
+                                    { "key": "b", "magnitude": 2 } ] })" })
+    {
+        const JsonValue live = Parse(target);
+        const Composed composed = RoundTrip(schema, base, live);
+        EXPECT_TRUE(composed.Report.Diagnostics.empty()) << Codes(composed.Report);
+        EXPECT_TRUE(JsonEquals(composed.Value, live)) << target << " came back as " << JsonStringify(composed.Value);
+    }
+}
+
+TEST(CompositionPatch, AKeyedListWithARepeatedOrUnspellableKeyComposesBack)
+{
+    const DataFieldSchema schema = CompositionRoundTrip::Schema();
+    const JsonValue base = Parse(R"({ "req": 1, "mods": [ { "key": "a", "magnitude": 1 } ] })");
+    for (const std::string_view target :
+         { R"({ "req": 1, "mods": [ { "key": "a", "magnitude": 1 }, { "key": "a", "magnitude": 5 } ] })",
+           R"({ "req": 1, "mods": [ { "key": "a", "magnitude": 1 }, { "key": "not a key", "magnitude": 5 } ] })" })
+    {
+        const JsonValue live = Parse(target);
+        const Composed composed = RoundTrip(schema, base, live);
+        EXPECT_TRUE(composed.Report.Diagnostics.empty()) << Codes(composed.Report);
+        EXPECT_TRUE(JsonEquals(composed.Value, live)) << target << " came back as " << JsonStringify(composed.Value);
+    }
+}
+
+TEST(CompositionPatch, WhatNoPatchCanStateIsReportedWhenComposed)
+{
+    const DataFieldSchema schema = CompositionRoundTrip::Schema();
+    const JsonValue base = Parse(R"({ "req": 1, "mods": [ { "key": "a" } ],
+        "facts": [ { "name": "Grounded", "kind": "bool" }, { "name": "Speed", "kind": "float" } ] })");
+    EXPECT_TRUE(RoundTrip(schema, base, Parse(R"({ "req": 1, "mods": [ { "key": "a" }, { "magnitude": 2 } ],
+        "facts": [ { "name": "Grounded", "kind": "bool" }, { "name": "Speed", "kind": "float" } ] })")).Has("missing_key"));
+    EXPECT_TRUE(RoundTrip(schema, base, Parse(R"({ "req": 1, "mods": [ { "key": "a" } ],
+        "facts": [ { "name": "Grounded", "kind": "int" }, { "name": "Speed", "kind": "float" } ] })")).Has("redeclares_inherited"));
+    EXPECT_TRUE(RoundTrip(schema, base, Parse(R"({ "req": 1, "mods": [ { "key": "a" } ],
+        "facts": [ { "name": "Speed", "kind": "float" } ] })")).Has("removes_inherited"));
+    EXPECT_TRUE(RoundTrip(schema, base, Parse(R"({ "req": 1, "mods": [ { "key": "a" } ],
+        "facts": [ { "name": "Speed", "kind": "float" }, { "name": "Grounded", "kind": "bool" } ] })")).Has("redeclares_inherited"))
+        << "an append-only list's inherited entries keep their order";
+    EXPECT_TRUE(RoundTrip(schema, base, Parse(R"({ "mods": [ { "key": "a" } ],
+        "facts": [ { "name": "Grounded", "kind": "bool" }, { "name": "Speed", "kind": "float" } ] })")).Has("cannot_clear_required"));
+}
+
+TEST(CompositionPatch, EveryTargetComposesBackFromItsPatch)
+{
+    const DataFieldSchema schema = CompositionRoundTrip::Schema();
+    CompositionRoundTrip::Generator generator(20261119u);
+    for (int i = 0; i < 2000; ++i)
+    {
+        const CompositionRoundTrip::Case pair = generator.Next();
+        const JsonValue base = Parse(pair.Base);
+        const JsonValue target = Parse(pair.Target);
+        const Composed composed = RoundTrip(schema, base, target);
+        ASSERT_TRUE(composed.Report.Diagnostics.empty())
+            << Codes(composed.Report) << "\nbase   " << pair.Base << "\ntarget " << pair.Target;
+        ASSERT_TRUE(JsonEquals(composed.Value, target))
+            << "base   " << pair.Base << "\ntarget " << pair.Target << "\ngot    " << JsonStringify(composed.Value);
+    }
+}
+
 TEST(Composition, WithoutASchemaObjectsMergeAndAnythingElseIsWrittenWhole)
 {
-    JsonValue target = Parse(R"({ "a": { "x": 1 }, "list": [ 1, 2 ], "keep": 3 })");
+    JsonValue target = Parse(R"({ "a": { "x": 1 }, "list": [ 1, 2 ], "keep": 3, "gone": 4 })");
     const JsonValue patch = Parse(R"({ "a": { "y": 2 }, "list": [ 9 ], "gone": null })");
     CompositionReport report;
-    ApplyCompositionPatch(target, patch, "scene", CompositionPolicy{ .Schema = nullptr, .Null = CompositionNull::IsAValue },
-                          report);
+    ApplyCompositionPatch(target, patch, "scene", CompositionPolicy{}, report);
     EXPECT_TRUE(report.Diagnostics.empty());
     EXPECT_EQ(target.Find("a")->Find("x")->AsNumber(), 1.0);
     EXPECT_EQ(target.Find("a")->Find("y")->AsNumber(), 2.0);
     ASSERT_EQ(target.Find("list")->Size(), 1u);
-    ASSERT_NE(target.Find("gone"), nullptr) << "with null as a value, null is written";
-    EXPECT_TRUE(target.Find("gone")->IsNull());
+    EXPECT_EQ(target.Find("gone"), nullptr);
     EXPECT_EQ(target.Find("keep")->AsNumber(), 3.0);
 }

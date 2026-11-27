@@ -1,98 +1,42 @@
 #include <effects/EffectVerbs.h>
 
-#include <authored/AuthoredValueTraits.h>
 #include <attributes/AttributeSet.h>
-#include <authored/AuthoredValue.h>
 #include <ecs/World.h>
-#include <effects/EffectDefinitionData.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <time/SimClock.h>
 
 #include <string>
-#include <utility>
+#include <vector>
 
 namespace
 {
-    DataFieldSchema EffectArguments()
+    VerbAnswer Admit(const World& world, EntityId target, AuthoredDataRef named, EffectId& effect)
     {
-        DataFieldSchema target = MakeDataField(DataFieldKind::Entity, "target", "Target",
-                                               "The entity whose attributes the effect modifies.");
-        target.Reference.ComponentIdentity = std::string(ComponentDefinition<AttributeSet>::Identity);
-        DataFieldSchema effect = MakeDataField(DataFieldKind::DataAssetRef, "effect", "Effect");
-        effect.Reference.DataSubtype = std::string(kEffectDefinitionType);
-        DataFieldSchema scale = MakeDataField(DataFieldKind::Float, "scale", "Scale",
-                                              "Multiplies every modifier's magnitude.");
-        scale.Default = 1.0;
-        DataFieldSchema instigator = MakeDataField(DataFieldKind::Entity, "instigator", "Instigator",
-                                                   "Who applied it, for whatever reacts to it.");
-        instigator.Required = false;
-        DataFieldSchema from = MakeDataField(DataFieldKind::Vector, "from", "From",
-                                             "Where it came from, for whatever reacts to it. The instigator when "
-                                             "absent.");
-        from.Required = false;
-        from.VectorLength = 3;
-        DataFieldSchema arguments = EmptyVerbArguments();
-        arguments.Children = { std::move(target), std::move(effect), std::move(scale), std::move(instigator),
-                               std::move(from) };
-        return arguments;
-    }
-
-    struct EffectRequest
-    {
-        EntityId Target;
-        EffectId Effect;
-        float Scale = 1.0f;
-        EffectSource Source;
-    };
-
-    // Reads and checks the arguments both operations share.
-    VerbAdmission ReadRequest(const World& world, const VerbInvocation& invocation, EffectRequest& out)
-    {
-        const AssetRef* effect = nullptr;
-        double scale = 1.0;
-        if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, out.Target)
-            || !invocation.Arguments->TryGetDataAsset(1, effect) || !invocation.Arguments->TryGetFloat(2, scale))
-            return VerbAdmission::InvalidArguments;
-        out.Scale = static_cast<float>(scale);
-        (void)invocation.Arguments->TryGetEntity(3, out.Source.Instigator);
-        out.Source.HasPoint = ReadAuthoredArgument(*invocation.Arguments, 4, out.Source.Point);
-
         const EffectRegistry* effects = world.TryGetResource<EffectRegistry>();
-        out.Effect = effects != nullptr ? effects->Find(effect->Path) : EffectId{};
-        const EffectDefinition* definition = effects != nullptr ? effects->Get(out.Effect) : nullptr;
-        if (definition == nullptr || !world.IsAlive(out.Target))
-            return VerbAdmission::InvalidArguments;
-
-        const AttributeSet* attributes =
-            world.IsRegistered<AttributeSet>() ? world.TryGet<AttributeSet>(out.Target) : nullptr;
+        effect = effects != nullptr ? effects->Find(named.Reference->Path) : EffectId{};
+        const EffectDefinition* definition = effects != nullptr ? effects->Get(effect) : nullptr;
+        if (definition == nullptr)
+            return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+        const AttributeSet* attributes = world.IsRegistered<AttributeSet>() ? world.TryGet<AttributeSet>(target) : nullptr;
         if (attributes == nullptr)
             return VerbAdmission::Refused;
         for (const EffectModifier& modifier : definition->Modifiers)
             if (!attributes->Has(modifier.Attr))
                 return VerbAdmission::Refused;
-        return VerbAdmission::Accepted;
+        return VerbAnswer{};
     }
-}
 
-void DeclareEffectVerbs(VerbRegistrationScope& scope)
-{
-    VerbDefinition apply;
-    apply.Name = std::string(kEffectApplyVerb);
-    apply.DisplayName = "Apply effect";
-    apply.Description = "Applies an effect to an entity's attributes.";
-    apply.Category = "Effects";
-    apply.Arguments = EffectArguments();
-    (void)scope.Declare(std::move(apply));
-
-    VerbDefinition hold;
-    hold.Name = std::string(kEffectHoldLease);
-    hold.DisplayName = "Hold effect";
-    hold.Description = "Keeps a lasting effect on an entity until its holder lets go.";
-    hold.Category = "Effects";
-    hold.Kind = VerbKind::Lease;
-    hold.Arguments = EffectArguments();
-    (void)scope.Declare(std::move(hold));
+    EffectSource SourceOf(std::optional<EntityId> instigator, std::optional<Vec3d> from)
+    {
+        EffectSource source;
+        source.Instigator = instigator.value_or(EntityId{});
+        source.HasPoint = from.has_value();
+        if (from.has_value())
+            source.Point = *from;
+        return source;
+    }
 }
 
 FixedSimTime EffectOperations::Now(const VerbInvocation& invocation) const
@@ -100,31 +44,58 @@ FixedSimTime EffectOperations::Now(const VerbInvocation& invocation) const
     return Clock->TimeOfTick(invocation.Tick);
 }
 
-VerbAdmission EffectOperations::Apply(const VerbInvocation& invocation)
+VerbAnswer EffectOperations::Apply(const VerbInvocation& invocation, EntityId target, AuthoredDataRef effect,
+                                   float scale, std::optional<EntityId> instigator, std::optional<Vec3d> from,
+                                   std::optional<bool> keep)
 {
-    EffectRequest request;
-    if (const VerbAdmission read = ReadRequest(*Entities, invocation, request); read != VerbAdmission::Accepted)
-        return read;
-    (void)ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), {}, request.Scale, request.Source);
-    return VerbAdmission::Accepted;
+    EffectId applied;
+    if (const VerbAnswer admitted = Admit(*Entities, target, effect, applied); !admitted.Accepted())
+        return admitted;
+    const EffectKeeping keeping = !keep.has_value() ? EffectKeeping::ByOwner
+                                  : *keep           ? EffectKeeping::Kept
+                                                    : EffectKeeping::NotKept;
+    (void)ApplyEffect(*Entities, target, applied, Now(invocation), {}, scale, SourceOf(instigator, from), keeping);
+    return VerbAnswer{};
 }
 
-VerbAdmission EffectOperations::Hold(const VerbInvocation& invocation)
+VerbResult<std::int64_t, EffectRemoveRefusal> EffectOperations::Remove(EntityId target,
+                                                                       std::optional<AuthoredDataRef> effect,
+                                                                       std::optional<GameplayTagQueryNames> kinds)
 {
-    if (invocation.Step == LeaseStep::Release)
+    if (effect.has_value() == kinds.has_value())
+        return effect.has_value() ? EffectRemoveRefusal::BothNamed : EffectRemoveRefusal::NothingNamed;
+    if (effect.has_value())
     {
-        (void)RemoveEffectsOwnedBy(*Entities, invocation.Owner);
-        return VerbAdmission::Accepted;
+        const EffectRegistry* effects = Entities->TryGetResource<EffectRegistry>();
+        const EffectId definition = effects != nullptr ? effects->Find(effect->Reference->Path) : EffectId{};
+        if (!definition.IsValid())
+            return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+        return static_cast<std::int64_t>(RemoveEffectsOn(*Entities, target, definition));
     }
-    EffectRequest request;
-    if (const VerbAdmission read = ReadRequest(*Entities, invocation, request); read != VerbAdmission::Accepted)
-        return read;
-    const EffectDefinition* definition = Entities->GetResource<EffectRegistry>().Get(request.Effect);
-    if (definition->Duration == EffectDuration::Instant)
-        return VerbAdmission::InvalidArguments;
-    return ApplyEffect(*Entities, request.Target, request.Effect, Now(invocation), invocation.Owner, request.Scale,
-                       request.Source)
+    const GameplayTagRegistry* tags = Entities->TryGetResource<GameplayTagRegistry>();
+    std::vector<std::string> missing;
+    const GameplayTagQuery query = tags != nullptr ? ResolveTagQuery(*kinds, *tags, missing) : GameplayTagQuery{};
+    if (tags == nullptr || !missing.empty() || kinds->Empty())
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 2);
+    return static_cast<std::int64_t>(RemoveEffectsOn(*Entities, target, query));
+}
+
+VerbAnswer EffectOperations::Hold(const VerbInvocation& invocation, EntityId target, AuthoredDataRef effect,
+                                  float scale, std::optional<EntityId> instigator, std::optional<Vec3d> from)
+{
+    EffectId held;
+    if (const VerbAnswer admitted = Admit(*Entities, target, effect, held); !admitted.Accepted())
+        return admitted;
+    if (Entities->GetResource<EffectRegistry>().Get(held)->Duration == EffectDuration::Instant)
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+    return ApplyEffect(*Entities, target, held, Now(invocation), invocation.Owner, scale, SourceOf(instigator, from))
                .IsValid()
-        ? VerbAdmission::Accepted
-        : VerbAdmission::Refused;
+        ? VerbAnswer{}
+        : VerbAnswer(VerbAdmission::Refused);
+}
+
+VerbAdmission EffectOperations::EndHold(const VerbInvocation& invocation)
+{
+    (void)RemoveEffectsOwnedBy(*Entities, invocation.Owner);
+    return VerbAdmission::Accepted;
 }

@@ -17,16 +17,12 @@ class World;
 // list that nothing forces to agree.
 //=============================================================================
 
-// Leave the shell's pages and resume local play. Takes no arguments: what
-// resuming does to the world is PauseState's answer, not a caller's choice.
-inline constexpr std::string_view kRuntimeResumeVerb = "runtime.resume";
-
-// Ask the host to exit. A request, not a termination -- a game's exit handler
-// still gets to put a confirmation in front of it.
-inline constexpr std::string_view kApplicationQuitVerb = "application.quit";
-
-// The above, every engine domain's verbs, leases and queries, and perception's
+// Every engine domain's verbs, leases and queries, and perception's
 // senses and queries, into a World that InstallAuthoredVocabulary gave catalogs,
 // as the provider "engine". False means a catalog is missing or a declaration
 // was refused; the reasons are on the registries' installation errors.
 [[nodiscard]] bool InstallEngineVocabulary(World& world);
+
+// Every kit's registries -- movement, inventory, equipment -- whichever a game installs, for a
+// tool World that must read any project's content.
+void InstallEveryKitVocabulary(World& world);

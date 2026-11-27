@@ -6,7 +6,8 @@
 // one is part of a component layout or a compiled table, so changing one is an ABI
 // change; the compiler reports content that exceeds one as `capacity`.
 
-inline constexpr std::size_t kAbilityGrantCapacity = 16;
+// Grants one actor holds; its owner is sent a list of the same most (AbilityGrantsWire.h).
+inline constexpr std::size_t kAbilityGrantCapacity = 64;
 inline constexpr std::size_t kAbilityLiveRecordCapacity = 4;
 inline constexpr std::size_t kAbilityLingeringRecordCapacity = 2;
 // The authority's records: the slots every machine is sent.

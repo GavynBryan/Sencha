@@ -2,86 +2,147 @@
 
 #include <app/Engine.h>
 #include <app/RuntimeContent.h>
-#include <assets/runtime/AssetSystem.h>
 #include <assets/runtime/RuntimeAssets.h>
-#include <assets/scene/SceneCache.h>
-#include <core/assets/AssetLease.h>
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/Serialize.h>
+#include <ecs/EntityText.h>
 #include <ecs/World.h>
 #include <math/MathSchemas.h>
-#include <participant/ParticipantControl.h>
+#include <movement/components/CharacterFacts.h>
+#include <movement/components/CharacterMovement.h>
 #include <participant/ParticipantLifecycle.h>
 #include <participant_spawn/RestoredBodies.h>
+#include <runtime/spawn/SceneSpawnOverlay.h>
 #include <save/HeldRecordSaves.h>
 #include <save/SavedGames.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/Held.h>
 #include <world/identity/PersistentIdMint.h>
 #include <world/scene/SceneInstance.h>
-#include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace
 {
     constexpr std::uint32_t kBodiesVersion = 1;
     constexpr std::uint32_t kHeldVersion = 1;
-    constexpr std::uint32_t kPersistentIdsVersion = 1;
 
-    EntityId LocalBodyOf(const World& world)
-    {
-        const EntityId participant = LocalParticipantOf(world);
-        const ParticipantControl* control =
-            participant.IsValid() ? world.TryGet<ParticipantControl>(participant) : nullptr;
-        return control != nullptr && world.IsAlive(control->Body) ? control->Body : EntityId{};
-    }
+    EntityId LocalBodyOf(const World& world) { return LivingBodyOf(world, LocalParticipantOf(world)); }
 
     std::optional<EntityBuildPackage> PrefabOf(Engine& engine, const World& world, EntityId body)
     {
         const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(body) : nullptr;
+        if (instance == nullptr)
+            return std::nullopt;
         RuntimeAssets& assets = engine.Content().Assets();
-        const AssetRecord* record = instance != nullptr ? assets.Registry.FindById(instance->Source) : nullptr;
-        if (record == nullptr)
-            return std::nullopt;
-        const AssetLease lease = assets.Assets.LoadLease(record->Path, AssetType::Scene);
-        const SmapContents* contents =
-            lease.IsValid() ? assets.Scenes.Get(SceneHandle::FromToken(lease.OpaqueToken())) : nullptr;
-        EntityBuildPackage prefab;
-        if (contents == nullptr
-            || !BuildEntityPackageFromSmap(*contents, engine.SceneSerializers(), prefab,
-                                           SmapPackageOptions{ .StripAuthoredIdentity = true }))
-            return std::nullopt;
-        return prefab;
+        return SpawnSourcePackage(assets.Assets, assets.Scenes, engine.SceneSerializers(), instance->Source);
     }
 
-    JsonValue CaptureBodies(Engine& engine, World& world)
+    void LeaveOutMotion(JsonValue& patch)
+    {
+        if (!patch.IsObject())
+            return;
+        std::erase_if(patch.AsObject(), [](const JsonValue::Object::value_type& member) {
+            return member.first == TypeSchema<KinematicState>::Name || member.first == TypeSchema<CharacterMovement>::Name;
+        });
+    }
+
+    JsonValue CaptureBodies(Engine& engine, const World& world)
     {
         const EntityId body = LocalBodyOf(world);
         if (!body.IsValid())
             return JsonValue(JsonValue::Object{});
-        (void)EnsurePersistentId(world, body);
         const std::optional<EntityBuildPackage> prefab = PrefabOf(engine, world, body);
         if (!prefab.has_value())
+        {
+            engine.Logging().GetLogger<SavedGames>().Error(
+                "save: the local body's prefab cannot be resolved, so the body is not saved");
             return JsonValue(JsonValue::Object{});
-        const SceneSpawnOverlay overlay =
+        }
+        SceneSpawnOverlay overlay =
             CaptureSpawnOverlay(world, body, *prefab, engine.SceneSerializers(), engine.Content().SceneContext());
-        const LocalTransform* placed = world.TryGet<LocalTransform>(body);
-        JsonValue::Object local{ { "root", ToJson(placed != nullptr ? placed->Value : Transform3f::Identity()) },
-                                 { "patch", overlay.RootPatch } };
+        const std::string& arrival = engine.Saves().WritingArrival();
+        if (!arrival.empty())
+            LeaveOutMotion(overlay.RootPatch);
+        JsonValue::Object local;
+        if (arrival.empty())
+        {
+            const LocalTransform* placed = world.TryGet<LocalTransform>(body);
+            local.emplace_back("root", ToJson(placed != nullptr ? placed->Value : Transform3f::Identity()));
+        }
+        local.emplace_back("patch", overlay.RootPatch);
         if (overlay.RootId.IsValid())
             local.emplace_back("id", JsonValue(PersistentEntityIdToString(overlay.RootId)));
+        if (!arrival.empty())
+            local.emplace_back("arrival", JsonValue(arrival));
         return JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } });
+    }
+
+    std::string_view PersistenceName(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "authored";
+        case ComponentPersistence::Saved:
+            return "saved";
+        case ComponentPersistence::Identity:
+            return "identity";
+        }
+        return "";
+    }
+
+    std::string_view BodyFate(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "follows its prefab";
+        case ComponentPersistence::Saved:
+            return "in the patch where it differs from its prefab";
+        case ComponentPersistence::Identity:
+            return "given by its spawn";
+        }
+        return "";
+    }
+
+    std::string_view LevelEntityFate(ComponentPersistence persistence)
+    {
+        switch (persistence)
+        {
+        case ComponentPersistence::Authored:
+            return "follows the level";
+        case ComponentPersistence::Saved:
+            return "in the patch where it differs from the level";
+        case ComponentPersistence::Identity:
+            return "given by the level";
+        }
+        return "";
+    }
+
+    std::string_view RecordFate(ComponentPersistence persistence)
+    {
+        return persistence == ComponentPersistence::Identity ? "beside the record" : "in the record";
     }
 
     void RestoreBodies(World& world, std::uint32_t, const JsonValue& data)
     {
+        RestoredBodies* existing = world.TryGetResource<RestoredBodies>();
         const JsonValue* local = data.Find("local");
         if (local == nullptr || !local->IsObject())
+        {
+            if (existing != nullptr)
+                existing->Local.reset();
             return;
+        }
         RestoredBody restored;
         if (const JsonValue* root = local->Find("root"))
             (void)FromJson(*root, restored.Root);
@@ -89,27 +150,14 @@ namespace
             restored.Overlay.RootPatch = *patch;
         if (const JsonValue* id = local->Find("id"); id != nullptr && id->IsString())
             restored.Overlay.RootId = PersistentEntityIdFromString(id->AsString()).value_or(PersistentEntityId{});
-        if (RestoredBodies* existing = world.TryGetResource<RestoredBodies>())
+        if (const JsonValue* arrival = local->Find("arrival"); arrival != nullptr && arrival->IsString())
+            restored.Arrival = arrival->AsString();
+        if (existing != nullptr)
             existing->Local = std::move(restored);
         else
             world.AddResource<RestoredBodies>().Local = std::move(restored);
     }
 
-    JsonValue CapturePersistentIds(World& world)
-    {
-        const PersistentIdMint* mint = world.TryGetResource<PersistentIdMint>();
-        return JsonValue(JsonValue::Object{
-            { "next", JsonValue(static_cast<double>(mint != nullptr ? mint->Next : 1)) } });
-    }
-
-    void RestorePersistentIds(World& world, std::uint32_t, const JsonValue& data)
-    {
-        const auto next = static_cast<std::uint64_t>(data.NumberOr("next", 1.0));
-        PersistentIdMint* mint = world.TryGetResource<PersistentIdMint>();
-        if (mint == nullptr)
-            mint = &world.AddResource<PersistentIdMint>();
-        mint->Next = std::max(mint->Next, next);
-    }
 }
 
 void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
@@ -117,14 +165,13 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
     (void)saves.RegisterSection(SavedGameSectionDefinition{
         .Name = "sencha.bodies",
         .Version = kBodiesVersion,
-        .Capture = [&engine](World& world) { return CaptureBodies(engine, world); },
+        .Capture = [&engine](const World& world) { return CaptureBodies(engine, world); },
         .Restore = &RestoreBodies });
-    // Before the id counter: capturing gives records without an id one.
     (void)saves.RegisterSection(SavedGameSectionDefinition{
         .Name = "sencha.held",
         .Version = kHeldVersion,
         .Capture =
-            [&engine](World& world) {
+            [&engine](const World& world) {
                 const EntityId body = LocalBodyOf(world);
                 return CaptureHeldRecords(world, std::span(&body, body.IsValid() ? 1 : 0), engine.SceneSerializers(),
                                           engine.Content().SceneContext());
@@ -133,8 +180,42 @@ void RegisterEngineSaveSections(SavedGames& saves, Engine& engine)
             [&engine](World& world, std::uint32_t, const JsonValue& data) {
                 RestoreHeldRecords(world, data, engine.SceneSerializers(), engine.Content().SceneContext());
             } });
-    (void)saves.RegisterSection(SavedGameSectionDefinition{ .Name = "sencha.persistent_ids",
-                                                            .Version = kPersistentIdsVersion,
-                                                            .Capture = &CapturePersistentIds,
-                                                            .Restore = &RestorePersistentIds });
+}
+
+std::vector<std::string> DescribeSavedEntity(const World& world, EntityId entity,
+                                             const ComponentSerializerRegistry& serializers)
+{
+    std::string name;
+    AppendEntityText(name, entity);
+    const bool body = entity.IsValid() && entity == LocalBodyOf(world);
+    const bool record = !body && world.IsRegistered<Held>() && world.HasComponent<Held>(entity)
+        && !HasAuthoredPersistentId(world, entity);
+    const bool level = !body && !record && HasAuthoredPersistentId(world, entity);
+    std::vector<std::string> lines;
+    if (body)
+        lines.push_back(name + " is the local body: a save keeps its saved components as a patch against its prefab");
+    else if (record)
+        lines.push_back(name + " is a held record made at run time: a save keeps it whole, its identity beside it");
+    else if (level)
+        lines.push_back(name + " is a level entity: its zone keeps whether it was destroyed and, when the game keeps"
+                               " level state, its saved components as a patch against what the level authored");
+    else
+        lines.push_back(name + " is neither the local body, a level entity nor a held record made at run time:"
+                               " a save does not hold it");
+    for (const auto& serializer : serializers.Entries())
+    {
+        const ComponentId column = world.GetComponentIdByType(serializer->TypeId());
+        if (column == InvalidComponentId || !world.HasComponent(entity, column))
+            continue;
+        const ComponentPersistence persistence = serializer->Persistence();
+        std::string line = "  " + std::string(serializer->JsonKey()) + ": " + std::string(PersistenceName(persistence));
+        if (body)
+            line += ", " + std::string(BodyFate(persistence));
+        else if (level)
+            line += ", " + std::string(LevelEntityFate(persistence));
+        else if (record)
+            line += ", " + std::string(RecordFate(persistence));
+        lines.push_back(std::move(line));
+    }
+    return lines;
 }

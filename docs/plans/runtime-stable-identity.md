@@ -140,12 +140,38 @@ this document. `SerializedEntityId` was removed with no consumers.
   (`SENCHA_AUTHORITY_MATERIALIZED`, `docs/core-systems-map.md`), so its detach
   never records that member destroyed. A
   suppressed parent leaves its child unparented, matching how destruction
-  orphans rather than cascades. The world scene of a partitioned world is
-  remembered under its own scope, and captured when the world unloads.
-- Component state: a component's owner registers a `ZoneComponentMemory`, a
-  versioned byte form with a capture and a restore function. Capture records
-  it for every identified entity that differs from authored; the importer
-  restores it on the entities it creates. Responses are the first user.
+  orphans rather than cascades. Every record is keyed by level and zone
+  (`ZoneStateScope`, from `ZoneStateStore::Scope`): `LoadedLevel` makes the
+  scope when it starts an import, `RuntimeZoneRecord::StateScope` keeps it,
+  and the detach capture reads it from the record, so it cannot capture under
+  the wrong level. A scene level's one zone is `kSceneLevelZone`; a world's
+  zones are keyed by manifest id and its world scene by `kWorldSceneZone`,
+  captured when the world unloads. The same scene file loaded as a map and as
+  a zone of a world is two levels with separate records. The world cook and
+  the manifest reader refuse a zone with either reserved id.
+- Changed entities: when the game keeps level state
+  (`SavedGames::KeepLevelState`, which installs `ZoneStateSerialization`), the
+  importer records each authored entity's baseline beside its id: the cooked
+  records of its `Saved` components (a component cooked as bytes has no record,
+  is not diffed, and is reported once per zone and type). Capture diffs each
+  live authored entity against its baseline through the entity patch
+  (`world/serialization/EntityPatch.h`) and records a non-empty patch with the
+  entity's lifetime; an empty one is forgotten. A `Saved` component the entity
+  gained is diffed against its default record. At import the importer copies a
+  patched entity's package record, composes the patch over it and builds the
+  entity once at its final value. What a retune set aside is a warning and the
+  scene decides; a member that no longer fits follows content, is logged as an
+  error naming the entity and the component, and leaves the store; a member
+  naming a component this build lacks is carried untouched. Only the authority
+  records or applies patches: a client imports its zone as authored. Without
+  `ZoneStateSerialization` a zone keeps destroyed sets only.
+- Gained entities: under the same condition, capture writes every live
+  run-time entity of the zone marked `KeptWithZone` whole into the zone's
+  `gained` members with its lifetime (`ZoneStateStore::RecordGained`, which
+  replaces the members this build makes and keeps those of other forms), and
+  import makes each one in the zone's partition, after the authored set is
+  recorded and before the zone is published (`docs/gameplay/saves.md`, "What
+  a zone gained").
 
 ### Zone state lifetime
 
@@ -153,7 +179,7 @@ The zone record alone cannot tell a killed enemy from a taken pickup: both are
 authored entities that are gone. `ZoneStateLifetime`, authored on an entity,
 says when the zone forgets it was destroyed or changed:
 
-| `forgotten` | Destroyed, it stays gone | Use |
+| `forgotten` | Destroyed or changed, it stays so | Use |
 |---|---|---|
 | `never` (no component) | for good, and in saves | pickups, doors, switches, bosses |
 | `at_restore` | until a save is restored or the level restarts | enemies that return when the player rests |
@@ -165,7 +191,17 @@ placement, so marking a prefab's root marks the whole enemy. The importer
 works each entity's lifetime out when it imports the zone and the store keeps
 it beside the authored id, because a destroyed entity is not there to ask.
 Only what is never forgotten is durable: `ZoneStateStore::ExportDurable` is
-what a save keeps, and `Install` replaces the store with it.
+what a save keeps, every level's zones as the encoded lists a save file holds
+(`docs/gameplay/saves.md`, "The file"), and `Install` replaces the store with
+them. A zone that is not loaded is held as that encoded blob, parsed again when
+it imports, unless it holds `at_restore` state, which the blob does not carry;
+a write copies each blob's pointer, so a zone untouched since the last write is
+the same blob in both. `ForgetLevel` forgets one level.
+
+The same component's `placement` says whether a save keeps where the entity
+stands: by its components (the default; a dynamic body's place is kept),
+`kept` or `authored` (`docs/gameplay/saves.md`, "Placement"). It is resolved
+the way `forgotten` is.
 
 Worlds without the resources (editor documents, minimal fixtures) skip all of
 it; the import and detach paths check for the store and for component

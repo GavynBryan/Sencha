@@ -1,6 +1,6 @@
 {
   "id": "a5e1ca4b7f3e0d21",
-  "format_version": 1,
+  "format_version": 3,
   "settings": {
     "default_material": "asset://materials/dev/generated_tonemap_ramp.smat"
   },

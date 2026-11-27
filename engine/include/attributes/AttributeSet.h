@@ -15,7 +15,7 @@
 // folded with active modifiers, then clamped). Attribute *definitions* live in
 // AttributeRegistry.
 //=============================================================================
-struct SENCHA_COMPONENT("sencha.attribute_set") AttributeSet
+struct SENCHA_COMPONENT("sencha.attribute_set") SENCHA_SAVED AttributeSet
 {
     static constexpr std::uint8_t Capacity = 16;
 

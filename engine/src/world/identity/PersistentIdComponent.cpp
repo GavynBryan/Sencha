@@ -3,6 +3,7 @@
 #include <core/serialization/Archive.h>
 #include <ecs/World.h>
 #include <world/held/HeldRecordIndex.h>
+#include <world/identity/PendingReferences.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <string>
@@ -13,9 +14,12 @@ void ComponentTraits<PersistentIdComponent>::OnAdd(PersistentIdComponent& compon
     if (!component.Id.IsValid())
         return;
     auto* index = world.TryGetResource<PersistentEntityIndex>();
-    if (index != nullptr && index->Register(component.Id, entity))
-        if (auto* held = world.TryGetResource<HeldRecordIndex>())
-            held->HolderArrived(component.Id, entity);
+    if (index == nullptr || !index->Register(component.Id, entity))
+        return;
+    if (auto* held = world.TryGetResource<HeldRecordIndex>())
+        held->HolderArrived(component.Id, entity);
+    if (auto* pending = world.TryGetResource<PendingReferences>())
+        pending->Arrived(world, component.Id, entity);
 }
 
 void ComponentTraits<PersistentIdComponent>::OnRemove(const PersistentIdComponent& component,

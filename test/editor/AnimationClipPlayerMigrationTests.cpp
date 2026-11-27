@@ -20,7 +20,7 @@ namespace
     constexpr const char* kClip = "asset://meshes/man.blend#anim:Wave";
 
     constexpr std::string_view kScene = R"({
-  "format_version": 1,
+  "format_version": 3,
   "entities": [
     { "id": "01", "components": { "AnimationClipPlayer": { "clip": "asset://meshes/man.blend#anim:Wave",
                                                            "time_seconds": 0.5, "rate": 0.0, "loop": true } } },

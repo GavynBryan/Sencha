@@ -51,16 +51,34 @@ TEST_F(FileBytes, AWriteReplacesTheWholeFileAndLeavesNothingBesideIt)
     EXPECT_EQ(std::distance(std::filesystem::directory_iterator(Root), std::filesystem::directory_iterator{}), 1);
 }
 
-TEST_F(FileBytes, AWriteThatCannotFinishLeavesTheOldFileIntact)
+TEST_F(FileBytes, AWriteThatCannotReplaceLeavesWhatWasThere)
 {
     const std::filesystem::path path = Root / "save.bin";
-    ASSERT_TRUE(WriteFileText(path, "kept"));
-    std::filesystem::path staging = path;
-    staging += ".tmp";
-    std::filesystem::create_directories(staging);
+    std::filesystem::create_directories(path);
 
     EXPECT_FALSE(WriteFileText(path, "lost"));
-    EXPECT_EQ(Read(path), "kept");
+    EXPECT_TRUE(std::filesystem::is_directory(path)) << "the replace removed what it could not replace";
+    EXPECT_EQ(std::distance(std::filesystem::directory_iterator(Root), std::filesystem::directory_iterator{}), 1)
+        << "the staged file was left beside it";
+}
+
+TEST_F(FileBytes, AWriteThatCannotStartLeavesNothing)
+{
+    EXPECT_FALSE(WriteFileText(Root / "missing" / "save.bin", "lost"));
+    EXPECT_EQ(std::distance(std::filesystem::directory_iterator(Root), std::filesystem::directory_iterator{}), 0);
+}
+
+TEST_F(FileBytes, AnotherWritersStagingFileIsLeftAlone)
+{
+    const std::filesystem::path path = Root / "settings.json";
+    std::filesystem::path theirs = path;
+    theirs += ".tmp";
+    ASSERT_TRUE(WriteFileText(theirs, "theirs"));
+
+    ASSERT_TRUE(WriteFileText(path, "mine"));
+    EXPECT_EQ(Read(path), "mine");
+    ASSERT_TRUE(std::filesystem::exists(theirs));
+    EXPECT_EQ(Read(theirs), "theirs");
 }
 
 TEST_F(FileBytes, AnEmptyWriteLeavesAnEmptyFile)
@@ -71,4 +89,22 @@ TEST_F(FileBytes, AnEmptyWriteLeavesAnEmptyFile)
     std::vector<std::byte> read{ std::byte{ 9 } };
     ASSERT_TRUE(ReadFileBytes(path, read));
     EXPECT_TRUE(read.empty());
+}
+
+TEST_F(FileBytes, APrefixReadStopsWhereItsReaderAsksAndAtTheFilesEnd)
+{
+    const std::filesystem::path path = Root / "chunked.bin";
+    ASSERT_TRUE(WriteFileText(path, "0123456789abcdef"));
+    std::vector<std::size_t> asked;
+    std::vector<std::byte> read;
+    ASSERT_TRUE(ReadFilePrefix(path, [&](std::span<const std::byte> sofar) {
+        asked.push_back(sofar.size());
+        return sofar.size() < 4 ? std::size_t{ 4 } : std::size_t{ 10 };
+    }, read));
+    EXPECT_EQ(std::string(reinterpret_cast<const char*>(read.data()), read.size()), "0123456789");
+    EXPECT_EQ(asked, (std::vector<std::size_t>{ 0, 4, 10 }));
+
+    ASSERT_TRUE(ReadFilePrefix(path, [](std::span<const std::byte>) { return std::size_t{ 1000 }; }, read));
+    EXPECT_EQ(read.size(), 16u);
+    EXPECT_FALSE(ReadFilePrefix(Root / "missing.bin", [](std::span<const std::byte>) { return std::size_t{ 1 }; }, read));
 }

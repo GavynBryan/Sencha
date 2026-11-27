@@ -90,17 +90,34 @@ AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
     return merged;
 }
 
-std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry)
+std::string_view AbilityGrantEntryRefusalText(AbilityGrantEntryRefusal refusal)
 {
+    switch (refusal)
+    {
+    case AbilityGrantEntryRefusal::Full: return "was refused: the grant entry table holds 65535 entries, the most it can";
+    case AbilityGrantEntryRefusal::WireKeyTaken:
+        return "was refused: another entry of its ability travels under the same wire key, so a peer could not tell "
+               "them apart; rename one";
+    }
+    return "was refused";
+}
+
+std::uint16_t AbilityGrantEntries::Intern(AbilityGrantEntry entry, AbilityGrantEntryRefusal* refusal)
+{
+    const auto refuse = [&](AbilityGrantEntryRefusal why) {
+        if (refusal != nullptr)
+            *refusal = why;
+        return kAbilityNoGrantEntry;
+    };
     std::ranges::sort(entry.Parameters, {}, &AbilityGrantParameter::Key);
     const std::uint32_t key = EntryWireKey(entry);
     const auto [found, added] = ByWireKey.try_emplace(WireIndexKey(entry.Ability, key), kAbilityNoGrantEntry);
     if (!added)
-        return Entries[found->second].Entry == entry ? found->second : kAbilityNoGrantEntry;
+        return Entries[found->second].Entry == entry ? found->second : refuse(AbilityGrantEntryRefusal::WireKeyTaken);
     if (Entries.size() >= kAbilityNoGrantEntry)
     {
         ByWireKey.erase(found);
-        return kAbilityNoGrantEntry;
+        return refuse(AbilityGrantEntryRefusal::Full);
     }
     found->second = static_cast<std::uint16_t>(Entries.size());
     Entries.push_back(Slot{ std::move(entry), {}, {}, key });

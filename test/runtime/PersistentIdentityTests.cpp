@@ -285,13 +285,28 @@ TEST(PersistableRef, AReferenceFollowsItsTargetThroughARestream)
     EXPECT_EQ(held.Entity, after);
 }
 
-TEST(PersistableRef, AnEntityWithNoIdentityIsHeldButNotPersistable)
+TEST(PersistableRef, ReadingAReferenceToAnEntityWithNoIdentityHoldsItButCannotPersistIt)
+{
+    IndexedWorld world;
+    const EntityId bare = world.Entities.CreateEntity();
+    const PersistableRef held = PersistableRefOf(world.Entities, bare);
+    EXPECT_EQ(ResolvePersistableRef(world.Entities, held), bare);
+    EXPECT_FALSE(held.Target.IsValid());
+    EXPECT_FALSE(world.Entities.HasComponent<PersistentIdComponent>(bare));
+}
+
+TEST(PersistableRef, MakingAReferenceGivesTheEntityAnIdentityOnTheAuthority)
 {
     IndexedWorld world;
     const EntityId bare = world.Entities.CreateEntity();
     const PersistableRef held = MakePersistableRef(world.Entities, bare);
-    EXPECT_EQ(ResolvePersistableRef(world.Entities, held), bare);
-    EXPECT_FALSE(held.Target.IsValid());
+    ASSERT_TRUE(held.Target.IsValid());
+    EXPECT_EQ(world.Entities.TryGet<PersistentIdComponent>(bare)->Id, held.Target);
+    EXPECT_EQ(MakePersistableRef(world.Entities, bare), held);
+
+    world.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+    const EntityId received = world.Entities.CreateEntity();
+    EXPECT_FALSE(MakePersistableRef(world.Entities, received).Target.IsValid());
 }
 
 TEST(PersistableRef, AReferenceBetweenASpawnsMembersFindsThatSpawnsMember)
@@ -334,7 +349,7 @@ TEST(PersistableRef, AReferenceBetweenASpawnsMembersFindsThatSpawnsMember)
     {
         ZoneImportError error;
         ASSERT_TRUE(ImportPackageIntoPartition(runtime.Entities(), schema, package, StoragePartitionId::Default(),
-                                               ZoneId{}, serializers, context, &error, &spawned))
+                                               ZoneStateScope{}, serializers, context, &error, &spawned))
             << error.Message;
         ASSERT_EQ(spawned.size(), 2u);
     }

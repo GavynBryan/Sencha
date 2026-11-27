@@ -86,12 +86,15 @@ struct SENCHA_COMPONENT("sencha.immersion") Immersion
 // with the machine that sent it.
 struct SENCHA_COMPONENT("sencha.kinematic_state")
        SENCHA_SCHEMA("KinematicState")
+       SENCHA_SCENE_CHUNK("KNST")
        SENCHA_REPLICATED
        SENCHA_PREDICTED
+       SENCHA_SAVED
 KinematicState
 {
     SENCHA_FIELD("velocity")
     SENCHA_OWNER_ONLY
+    SENCHA_RUNTIME
     Vec3d Velocity = Vec3d::Zero();
 };
 

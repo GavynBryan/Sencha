@@ -46,6 +46,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/AimOrigin.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/effects/AppliedEffects.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/equipment/EquipmentComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/InputActionSource.h"
@@ -95,11 +96,13 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTime.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTimeLeases.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/held/Held.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/LevelLandmark.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/PresentationOffset.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformHistory.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/zone/KeptWithZone.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/zone/WorldConnectionComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/zone/ZoneStateLifetime.h"
 )
@@ -672,9 +675,39 @@ sencha_warnings(sencha_engine)
 if(SENCHA_COMPONENT_CODEGEN_EXECUTABLE)
     sencha_require_component_codegen_format("${SENCHA_ENGINE_INCLUDE_DIR}")
 endif()
+# The headers declaring the engine's own verbs, queries and leases: generator
+# input like the component headers, without their data-only discipline.
+set(SENCHA_ENGINE_API_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/app/EngineVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/app/LevelChangeVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/app/ShellVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/attach/AttachmentVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraFovScaleVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraShakeVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/effects/EffectVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/equipment/EquipmentVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/inventory/InventoryVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/line/ContactLineSystem.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/ClaimVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/CounterVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/InteractUse.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/logic/ResponseVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/MovementVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavigationVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/PerceptionVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/physics/PhysicsAuthoredQueries.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/projectile/ProjectileVerbs.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/save/SavedGameVocabulary.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTimeVerbs.h"
+)
 sencha_generate_component_metadata(sencha_engine
     INCLUDE_ROOT "${SENCHA_ENGINE_INCLUDE_DIR}"
     HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS}
+    API_HEADERS ${SENCHA_ENGINE_API_HEADERS}
 )
 
 # The application shell's own content -- the default pause document and the

@@ -2,11 +2,13 @@
 
 #include <world/ComponentRegistrar.h>
 #include <world/held/Held.h>
+#include <world/LevelLandmark.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+#include <zone/KeptWithZone.h>
 #include <zone/ZoneStateLifetime.h>
 
 // Where a thing is, what it hangs off, and what it is called across a save.
@@ -31,7 +33,11 @@ using WorldComponents = ComponentSet<
     // Which placed scene an entity came from; cooked placements and runtime
     // spawns carry it alike, and SceneInstanceIndex keeps the group live.
     SceneInstance,
-    ZoneStateLifetime>;
+    ZoneStateLifetime,
+    // Where a body arrives when a level change or a save names it.
+    LevelLandmark,
+    // A run-time entity its zone keeps: docs/gameplay/saves.md.
+    KeptWithZone>;
 
 inline void RegisterWorldComponents(ComponentRegistrar& registrar)
 {

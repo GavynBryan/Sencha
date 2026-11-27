@@ -13,6 +13,7 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <world/scene/SmapFormat.h>
@@ -89,7 +90,7 @@ namespace
         [[nodiscard]] std::string HostText() const
         {
             return std::string(R"({
-  format_version: 1,
+  format_version: 3,
   entities: [ { id: '00000000000000aa',
       components: { Transform: { local: { position: [0, 0, 0],
                                           rotation: [0, 0, 0, 1],
@@ -925,5 +926,27 @@ namespace
                     << "face " << f << " vertex " << v << " normal diverged";
             }
         }
+    }
+
+    TEST_F(SceneProjectionTest, AnAddARemovalAndAnEditOnAMemberAreOnePatch)
+    {
+        EditorDocument host = LoadHost(HostText());
+        World& world = host.GetScene().GetRegistry().Components;
+        const EntityId light = FindById(host, PersistentEntityId{ 0x202 });
+        world.RemoveComponent<PointLightComponent>(light);
+        world.AddComponent(light, SpotLightComponent{});
+        world.TryGet<LocalTransform>(light)->Value.Position.X = 4.0f;
+        const std::string saved = host.ToSceneText();
+        EXPECT_EQ(saved.find("remove:"), std::string::npos) << saved;
+        EXPECT_EQ(saved.find("add:"), std::string::npos) << saved;
+        EXPECT_NE(saved.find("PointLight: null"), std::string::npos) << saved;
+        EXPECT_NE(saved.find("SpotLight: {"), std::string::npos) << saved;
+
+        EditorDocument reloaded = LoadHost(saved);
+        const EntityId again = FindById(reloaded, PersistentEntityId{ 0x202 });
+        World& loaded = reloaded.GetScene().GetRegistry().Components;
+        EXPECT_EQ(loaded.TryGet<PointLightComponent>(again), nullptr);
+        EXPECT_NE(loaded.TryGet<SpotLightComponent>(again), nullptr);
+        EXPECT_EQ(reloaded.ToSceneText(), saved);
     }
 } // namespace

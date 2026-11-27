@@ -22,12 +22,6 @@ enum class CompositionLayer : std::uint8_t
     Local,
 };
 
-enum class CompositionNull : std::uint8_t
-{
-    Removes,
-    IsAValue,
-};
-
 struct CompositionOrigin
 {
     CompositionLayer Layer = CompositionLayer::Local;
@@ -54,7 +48,6 @@ struct CompositionReport
 struct CompositionPolicy
 {
     const DataFieldSchema* Schema = nullptr;
-    CompositionNull Null = CompositionNull::Removes;
     bool Provenance = false;
 };
 
@@ -148,7 +141,7 @@ namespace CompositionDetail
                 const DataFieldSchema* child =
                     node != nullptr && node->Kind == DataFieldKind::Record ? FindChild(*node, name) : nullptr;
                 const std::string childPath = path + "." + std::string(name);
-                if (T::IsNull(value) && Policy.Null == CompositionNull::Removes)
+                if (T::IsNull(value))
                 {
                     RemoveMember(target, name, child, childPath);
                     return;
@@ -510,10 +503,11 @@ void ApplyCompositionPatch(V& target, const V& patch, std::string_view asset, co
     composer.Merge(target, patch, policy.Schema, "$");
 }
 
+// `inherited`, when given, receives the value before the local layer.
 template <typename V>
 [[nodiscard]] V ComposeLayers(const CompositionLayerInput<V>* base, std::span<const CompositionLayerInput<V>> includes,
                               const CompositionLayerInput<V>& local, const CompositionPolicy& policy,
-                              CompositionReport& report)
+                              CompositionReport& report, V* inherited = nullptr)
 {
     using T = CompositionValueTraits<V>;
     CompositionDetail::Composer<V> composer(policy, report);
@@ -528,6 +522,8 @@ template <typename V>
         composer.Layer(CompositionLayer::Include, includes[i].Asset, includes[i].Provenance, i);
         composer.Merge(result, *includes[i].Value, policy.Schema, "$");
     }
+    if (inherited != nullptr)
+        *inherited = result;
     composer.Layer(CompositionLayer::Local, local.Asset, nullptr);
     composer.Merge(result, *local.Value, policy.Schema, "$");
     composer.ReportConflicts(local.Asset);

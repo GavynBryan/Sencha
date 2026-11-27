@@ -26,9 +26,17 @@ inline constexpr std::size_t kProjectileMaxHits = 16;
 // The two ticks are what let a machine that is drawing the world in the past
 // draw a projectile only for the stretch of that past it existed in: not at its
 // muzzle before it was launched, and not at the wall after it struck.
+//
+// A save of a kept projectile holds its instigator and never a tick: a loaded
+// projectile's launch tick is the tick it is loaded on.
 //=============================================================================
-struct SENCHA_COMPONENT("sencha.projectile_flight") ProjectileFlight
+struct SENCHA_COMPONENT("sencha.projectile_flight")
+       SENCHA_SCHEMA("ProjectileFlight")
+       SENCHA_SCENE_CHUNK("PFLT")
+       SENCHA_SAVED
+ProjectileFlight
 {
+    SENCHA_FIELD("instigator") SENCHA_RUNTIME
     EntityId Instigator{};
     // Authority ticks. LaunchTick is the tick of the first step it flew; EndTick
     // is zero while it flies.
@@ -46,19 +54,31 @@ static_assert(std::is_trivially_copyable_v<ProjectileFlight>,
 //
 // The authority's working state for a projectile still in flight, removed when
 // it ends. Never replicated: no other machine moves it or decides what it meets.
+// A save of a kept projectile holds all of it but its definition, which a load
+// resolves again from the prefab.
 //=============================================================================
-struct SENCHA_COMPONENT("sencha.projectile_motion") ProjectileMotion
+struct SENCHA_COMPONENT("sencha.projectile_motion")
+       SENCHA_SCHEMA("ProjectileMotion")
+       SENCHA_SCENE_CHUNK("PMOT")
+       SENCHA_SAVED
+ProjectileMotion
 {
+    SENCHA_FIELD("velocity") SENCHA_RUNTIME
     Vec3d Velocity = Vec3d::Zero();
     // Seconds of flight left.
+    SENCHA_FIELD("remaining") SENCHA_RUNTIME
     float Remaining = 0.0f;
     // What the launcher measured: scales the scaled effect, and the splash.
+    SENCHA_FIELD("magnitude") SENCHA_RUNTIME
     float Magnitude = 0.0f;
+    SENCHA_FIELD("splash_scale") SENCHA_RUNTIME
     float SplashScale = 1.0f;
     // Index into the World's ProjectileDefinitions.
     std::uint32_t Definition = 0;
     // Everything struck so far, each at most once.
+    SENCHA_FIELD("hits") SENCHA_RUNTIME
     std::array<EntityId, kProjectileMaxHits> Hits{};
+    SENCHA_FIELD("hit_count") SENCHA_RUNTIME
     std::uint8_t HitCount = 0;
 };
 

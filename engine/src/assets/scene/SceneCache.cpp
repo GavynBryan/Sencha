@@ -20,6 +20,15 @@ SceneHandle SceneCache::Register(std::string_view path, SmapContents contents)
     return AllocNamedHandle(path, std::move(entry));
 }
 
+bool SceneCache::Replace(std::string_view path, SmapContents contents)
+{
+    SceneEntry* entry = Resolve(FindRegisteredHandle(path));
+    if (entry == nullptr)
+        return false;
+    entry->Contents = std::make_shared<const SmapContents>(std::move(contents));
+    return true;
+}
+
 SceneHandle SceneCache::Find(std::string_view path) const
 {
     return FindRegisteredHandle(path);

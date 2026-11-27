@@ -35,7 +35,7 @@ namespace
     }
 
     void Record(AnimDecisionLog* log, AnimTick now, std::size_t layer, const AnimLayerContent& state,
-                const AnimBoundEvent& event, AnimEventOutcome outcome, VerbAdmission admission,
+                const AnimBoundEvent& event, AnimEventOutcome outcome, VerbAnswer answer,
                 AnimPendingKind kind = AnimPendingKind::Clip, std::uint8_t section = 0xFF)
     {
         if (log == nullptr)
@@ -49,7 +49,7 @@ namespace
         record.Content = state.Content;
         record.EventKey = event.Key;
         record.EventOutcome = outcome;
-        record.Admission = admission;
+        record.Answer = answer;
         record.Section = section;
         log->Append(record);
     }
@@ -382,7 +382,7 @@ void Drain(World& world, std::span<const AnimPendingEvent> pending, VerbDispatch
 
         const AnimBoundEvent& event = *found;
         const CompiledVerbBinding* binding = rig->Bindings.Find(event.Binding);
-        VerbAdmission admission = VerbAdmission::Accepted;
+        VerbAnswer admission;
         if (binding == nullptr)
             admission = VerbAdmission::UnresolvedBinding;
         else if (!event.Resolved)
@@ -397,7 +397,7 @@ void Drain(World& world, std::span<const AnimPendingEvent> pending, VerbDispatch
             source.Parent = record.Cause;
             source.Tick = record.Tick;
             source.Scope = event.Scope;
-            admission = dispatcher->Invoke(*binding, event.Inputs, source).Status;
+            admission = AnswerOf(dispatcher->Invoke(*binding, event.Inputs, source));
         }
         Record(log, record.Tick, record.Layer, layer, event, AnimEventOutcome::Fired, admission, record.Kind,
                SectionOf(record));

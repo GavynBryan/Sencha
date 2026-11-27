@@ -5,6 +5,6 @@
 #include <memory>
 
 // The scene form of an entity's responses: its bindings verbatim as authored,
-// so a World that cannot resolve one of their names still saves them. Runtime
-// state is not scene data; a zone remembers it (logic/ResponsesSystem.h).
+// so a World that cannot resolve one of their names still saves them; a save's
+// form adds each binding's state (docs/gameplay/responses.md).
 [[nodiscard]] std::unique_ptr<IComponentSerializer> MakeResponsesSerializer();

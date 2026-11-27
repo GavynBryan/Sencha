@@ -13,6 +13,13 @@
 #include "selection/SelectionService.h"
 
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/FourCC.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <logic/Counter.h>
+#include <logic/CounterVocabulary.h>
+#include <world/held/HeldRecords.h>
+#include <world/serialization/ComponentSerializer.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
@@ -331,4 +338,157 @@ TEST(ComponentPropertySource, WhatTheEditorKeepsIsShownButNeverEdited)
     EXPECT_EQ(f.Source.Act("generated_wall", "remove", {}), PropertyEditResult::Refused);
     EXPECT_EQ(f.Components().TryGet<GeneratedWall>(f.Entity)->Slot, 7u);
     EXPECT_FALSE(f.Commands.CanUndo());
+}
+
+TEST(ComponentPropertySource, AComponentOfRunTimeFieldsAloneIsNeitherOfferedNorShownAsAuthored)
+{
+    Fixture f;
+    const std::vector<PropertyNode> before = f.Source.Nodes();
+    const PropertyVerb& add = before.front().Descriptor.Verbs.front();
+    EXPECT_EQ(std::ranges::find(add.ChoiceKeys, "KinematicState"), add.ChoiceKeys.end());
+    EXPECT_EQ(std::ranges::find(add.ChoiceKeys, "DecisionAgent"), add.ChoiceKeys.end());
+    EXPECT_EQ(f.Source.Act("components", "add", "KinematicState"), PropertyEditResult::Refused) << "nor added";
+
+    ASSERT_EQ(f.Source.Act("components", "add", "CharacterMovement"), PropertyEditResult::Applied);
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    EXPECT_EQ(std::ranges::find(nodes, std::string("KinematicState"), &PropertyNode::Key), nodes.end())
+        << "a component content cannot author is shown as one it can";
+    const PropertyNode& derived = nodes.back();
+    ASSERT_EQ(derived.Key, "derived");
+    bool listed = false;
+    for (const PropertyNode& from : derived.Children)
+        for (const PropertyNode& row : from.Children)
+            listed = listed || row.Descriptor.Label.find("Kinematic") != std::string::npos
+                  || row.Key.find("kinematic") != std::string::npos;
+    EXPECT_TRUE(listed) << "what character movement owes lists its velocity";
+}
+
+struct InspectedNames
+{
+    GameplayTagId Required;
+    GameplayTagId Optional;
+};
+
+template <>
+struct TypeSchema<InspectedNames>
+{
+    static constexpr std::string_view Name = "InspectedNames";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('I', 'N', 'S', 'N');
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("required", &InspectedNames::Required),
+                           MakeField("optional", &InspectedNames::Optional).Optional() };
+    }
+};
+
+namespace
+{
+struct NamesFixture
+{
+    struct ProbeFirst
+    {
+        ProbeFirst()
+        {
+            RegisterDocumentSerializers();
+            if (EditorSceneSerializers().FindByType(ResolveComponentTypeId<InspectedNames>()) == nullptr)
+                (void)EditorSceneSerializers().Register(std::make_unique<ComponentSerializer<InspectedNames>>());
+        }
+    } Registered;
+
+    NamesFixture()
+        : World(Logging)
+        , Selection(SelectionCtx)
+        , Source(World, Selection, Commands, Adapters)
+    {
+        ::World& components = World.FocusDocument().GetScene().GetRegistry().Components;
+        GameplayTagRegistry& tags = components.GetResource<GameplayTagRegistry>();
+        Armed = *tags.RegisterTag("probe.armed");
+        Cold = *tags.RegisterTag("probe.cold");
+        Selection.BindDocument(&components);
+        Entity = World.FocusDocument().GetScene().CreateEntity(Vec3d(0.0f, 0.0f, 0.0f));
+        components.AddComponent<InspectedNames>(Entity, InspectedNames{ .Required = Armed, .Optional = {} });
+        Selection.SetSelection({ SelectableRef::EntitySelection(World.FocusDocument().GetScene().GetRegistry().Id, Entity) });
+    }
+
+    const InspectedNames& Held()
+    {
+        return *World.FocusDocument().GetScene().GetRegistry().Components.TryGet<InspectedNames>(Entity);
+    }
+
+    LoggingProvider Logging;
+    WorldDocument World;
+    SelectionContext SelectionCtx;
+    SelectionService Selection;
+    CommandStack Commands;
+    EditorComponentAdapterRegistry Adapters;
+    ComponentPropertySource Source;
+    EntityId Entity{};
+    GameplayTagId Armed;
+    GameplayTagId Cold;
+};
+} // namespace
+
+TEST(ComponentPropertySource, ANamedFieldIsAChoiceOfDeclaredNamesChosenUndoneAndRedone)
+{
+    NamesFixture f;
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyNode* required = FindNode(nodes, "InspectedNames/required");
+    const PropertyNode* optional = FindNode(nodes, "InspectedNames/optional");
+    ASSERT_NE(required, nullptr);
+    ASSERT_NE(optional, nullptr);
+    EXPECT_EQ(required->Descriptor.Kind, PropertyKind::Choice);
+    EXPECT_FALSE(required->Descriptor.ReadOnly);
+    EXPECT_EQ(required->Value, "probe.armed");
+    EXPECT_NE(std::ranges::find(required->Descriptor.Choices, "probe.cold"), required->Descriptor.Choices.end());
+    EXPECT_EQ(std::ranges::find(required->Descriptor.Choices, "None"), required->Descriptor.Choices.end());
+    EXPECT_EQ(optional->Value, "None");
+    EXPECT_EQ(optional->Descriptor.Choices.front(), "None");
+
+    PropertyEditSession session;
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "probe.cold"), PropertyEditResult::Applied);
+    EXPECT_EQ(f.Held().Required, f.Cold);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "probe.missing"), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/required", "None"), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Set(f.Source, "InspectedNames/optional", "probe.armed"), PropertyEditResult::Applied);
+    EXPECT_EQ(f.Held().Optional, f.Armed);
+
+    f.Commands.Undo();
+    EXPECT_FALSE(f.Held().Optional.IsValid());
+    f.Commands.Undo();
+    EXPECT_EQ(f.Held().Required, f.Armed);
+    f.Commands.Redo();
+    EXPECT_EQ(f.Held().Required, f.Cold);
+    EXPECT_EQ(FindNode(f.Source.Nodes(), "InspectedNames/required")->Value, "probe.cold");
+}
+
+TEST(ComponentPropertySource, APlacedCounterRenamedInTheInspectorIsFoundByItsNewNameAndUndoneByItsOld)
+{
+    Fixture f;
+    ::World& components = f.Components();
+    GameplayTagRegistry& tags = components.GetResource<GameplayTagRegistry>();
+    const GameplayTagId coins = *tags.RegisterTag("count.coins");
+    const GameplayTagId keys = *tags.RegisterTag("count.keys");
+    (void)InstallHeldRecords(components);
+    const EntityId counter = f.World.FocusDocument().GetScene().CreateEntity(Vec3d(0.0f, 0.0f, 0.0f));
+    components.AddComponent<Counter>(counter, Counter{ .Name = coins, .Value = 3 });
+    HoldRecord(components, counter, EntityId{});
+    f.Selection.SetSelection({ SelectableRef::EntitySelection(f.World.FocusDocument().GetScene().GetRegistry().Id, counter) });
+    ASSERT_EQ(FindCounter(components, coins, EntityId{}), counter);
+
+    const PropertyNode* name = FindNode(f.Source.Nodes(), "Counter/name");
+    ASSERT_NE(name, nullptr) << "a counter's name is shown";
+    EXPECT_EQ(name->Value, "count.coins");
+    PropertyEditSession session;
+    ASSERT_EQ(session.Set(f.Source, "Counter/name", "count.keys"), PropertyEditResult::Applied);
+    EXPECT_EQ(FindCounter(components, keys, EntityId{}), counter);
+    EXPECT_FALSE(FindCounter(components, coins, EntityId{}).IsValid());
+    ASSERT_EQ(session.Set(f.Source, "Counter/value", "7"), PropertyEditResult::Applied);
+    EXPECT_EQ(components.TryGet<Counter>(counter)->Value, 7);
+
+    f.Commands.Undo();
+    f.Commands.Undo();
+    EXPECT_EQ(FindCounter(components, coins, EntityId{}), counter);
+    EXPECT_FALSE(FindCounter(components, keys, EntityId{}).IsValid());
+    f.Commands.Redo();
+    EXPECT_EQ(FindCounter(components, keys, EntityId{}), counter);
 }

@@ -1,6 +1,7 @@
 // An actor's time: the scale its leases put in force on each tick, how that clock
 // advances, and what runs on it.
 
+#include <authored/AuthoredApi.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
 #include <authored/VerbBindingCompiler.h>
@@ -122,6 +123,37 @@ TEST(ActorTime, TheScaleIsClampedToItsLimits)
     EXPECT_EQ(ActorScaleAt(slowed, 1, {}), Q16(0.1));
 }
 
+TEST(ActorTime, AZeroLeaseHoldsTheActorStillWhateverTheLimitsAndOtherLeases)
+{
+    ActorTimeLeases leases;
+    ASSERT_TRUE(AcquireActorTimeLease(leases, Holder(1), Q16(3.0), 0));
+    ASSERT_TRUE(AcquireActorTimeLease(leases, Holder(2), 0, 4));
+    EXPECT_EQ(ActorScaleAt(leases, 4, {}), Q16(2.0));
+    EXPECT_EQ(ActorScaleAt(leases, 5, {}), 0);
+    EXPECT_EQ(ActorScaleAt(leases, 5, { .MinimumQ16 = Q16(0.5), .MaximumQ16 = Q16(4.0) }), 0);
+    ReleaseActorTimeLeases(leases, Holder(2), 8);
+    EXPECT_EQ(ActorScaleAt(leases, 8, {}), 0);
+    EXPECT_EQ(ActorScaleAt(leases, 9, {}), Q16(2.0));
+}
+
+TEST(ActorTime, AnActorHeldStillAgesNoEffect)
+{
+    TimeWorld time;
+    EffectDefinition brief{};
+    brief.Duration = EffectDuration::Duration;
+    brief.DurationSeconds = 10.0f;
+    const EffectId timed = time.Entities.GetResource<EffectRegistry>().Define("held", brief);
+    time.Step();
+    const EntityId effect =
+        ApplyEffect(time.Entities, time.Actor, timed, FixedSimTime{ .DeltaSeconds = 1.0, .TickIndex = time.Now });
+    ASSERT_TRUE(effect.IsValid());
+    ASSERT_TRUE(AcquireActorTimeLease(time.Leases(), LeaseOwner{ .Entity = time.Actor }, 0, time.Now - 1));
+    time.Step(30);
+    ASSERT_TRUE(time.Entities.IsAlive(effect));
+    EXPECT_EQ(time.Entities.TryGet<ActiveEffect>(effect)->RemainingTicks, 10u);
+    EXPECT_EQ(time.Clock().ScaleQ16, 0);
+}
+
 TEST(ActorTime, HistoryNeverUsesTheRoomANewLeaseNeeds)
 {
     ActorTimeLeases leases;
@@ -216,18 +248,18 @@ TEST(ActorTime, TheTimeScaleLeaseIsTakenAndLetGo)
     VerbRegistry& verbs = InstallVerbRegistry(time.Entities);
     {
         VerbRegistrationScope scope(verbs, "engine");
-        DeclareActorTimeVerbs(scope);
+        DeclareAuthoredApi<ActorTimeOperations>(&scope, nullptr);
         ASSERT_TRUE(scope.Commit());
     }
     FixedSimulationLoop clock;
     ActorTimeOperations operations(time.Entities, clock);
     VerbDispatcher dispatcher(verbs);
-    const VerbBindingToken token = dispatcher.Bind<&InvokeTimeScale>(verbs.Find(kTimeScaleLease), operations);
+    const AuthoredApiBindings token = BindAuthoredApi(&dispatcher, nullptr, operations);
 
     VerbBindingDesc desc;
     desc.Key = "slow";
     desc.KeyId = MakeVerbBindingKey(desc.Key);
-    desc.VerbName = std::string(kTimeScaleLease);
+    desc.VerbName = std::string(AuthoredApiDefinition<ActorTimeOperations>::Name_Scale);
     desc.Inputs = { "target" };
     VerbBindingArgument target;
     target.Key = "target";
@@ -246,7 +278,7 @@ TEST(ActorTime, TheTimeScaleLeaseIsTakenAndLetGo)
     ASSERT_TRUE(dispatcher.AcquireLease(binding, std::span(&subject, 1), owner, { .Tick = time.Now }).Accepted());
     time.Step(2);
     EXPECT_EQ(time.Clock().ScaleQ16, Q16(0.25));
-    EXPECT_EQ(dispatcher.ReleaseLease(verbs.Find(kTimeScaleLease), owner, { .Tick = time.Now }),
+    EXPECT_EQ(dispatcher.ReleaseLease(verbs.Find(AuthoredApiDefinition<ActorTimeOperations>::Name_Scale), owner, { .Tick = time.Now }),
               VerbAdmission::Accepted);
     time.Step(2);
     EXPECT_EQ(time.Clock().ScaleQ16, kActorTimeOne);

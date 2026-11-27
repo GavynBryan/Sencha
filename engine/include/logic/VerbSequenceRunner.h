@@ -33,6 +33,9 @@ struct SequenceOutcome
     bool Stopped = false;
     // The first failed command's answer, Accepted when none failed.
     VerbAdmission FirstFailure = VerbAdmission::Accepted;
+    std::uint16_t FirstFailureDetail = 0;
+    // Its index among the sequence's commands.
+    std::uint32_t FirstFailedCommand = 0;
 };
 
 // Owner-thread. Holds scratch so a warmed run allocates nothing for its inputs.
@@ -47,6 +50,7 @@ public:
     SequenceOutcome Run(const CompiledVerbSequence& sequence, const SequenceRun& run);
 
 private:
+    [[nodiscard]] VerbAnswer Invoke(const CompiledSequenceCommand& command, const SequenceRun& run);
     [[nodiscard]] bool HoldsCondition(const CompiledSequenceCondition& condition, const SequenceRun& run,
                                       std::uint32_t depth);
     [[nodiscard]] bool Read(const CompiledSequenceValue& value, const SequenceRun& run, std::uint32_t depth,
@@ -55,6 +59,8 @@ private:
                            const SequenceRun& run, std::uint32_t depth, AuthoredValue& answer);
 
     std::vector<AuthoredValue> Inputs;
+    // What the commands named, for the run under way: absent until a command answers.
+    std::vector<AuthoredValue> Results;
     // One argument pack per query nesting depth, kept between runs.
     std::vector<std::vector<AuthoredValue>> QueryArguments;
 };

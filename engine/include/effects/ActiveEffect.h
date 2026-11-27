@@ -33,6 +33,8 @@ struct SENCHA_COMPONENT("sencha.active_effect") ActiveEffect
     std::uint8_t GrantedTagCount = 0;
     // The definition revision it applied from (IsEffectInstanceCurrent).
     std::uint32_t Revision = 0;
+    // A save keeps it (EffectKeeping).
+    bool Kept = false;
 };
 
 static_assert(std::is_trivially_copyable_v<ActiveEffect>,

@@ -9,6 +9,7 @@
 #include <ecs/PartitionFollowers.h>
 #include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
+#include <effects/AppliedEffects.h>
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -49,7 +50,6 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // entities and the detach path below captures the deviation, so a zone
     // that streams out and back does not resurrect consumed content.
     Entities_.AddResource<ZoneStateStore>();
-    Entities_.AddResource<ZoneComponentMemories>();
 
     // Partition zero is persistent and never receives a RuntimeZoneRecord.
     ZonesByPartition_.resize(1);
@@ -141,6 +141,8 @@ bool RuntimeWorld::CancelZoneImport(ZoneId zone)
         return false;
 
     const StoragePartitionId partition = record->Partition;
+    ParkHeldRecords(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, partition));
+    (void)DispatchPartitionMoves(Entities_);
     (void)Entities_.DestroyPartition(partition);
     [[maybe_unused]] const std::size_t erased = PartitionByZone_.erase(zone);
     assert(erased == 1 && "Cancelled import was missing from ZoneId index");
@@ -356,8 +358,10 @@ void RuntimeWorld::FinalizeResidencyProcessing()
     // moved out of one this frame leaves with it.
     for (const ZoneResidencyChange& change : ProcessingChanges_)
         if (change.Kind == ZoneResidencyChangeKind::Detaching)
-            ParkHeldRecords(Entities_, change.Zone, change.Partition);
+            if (const RuntimeZoneRecord* record = FindPartition(change.Partition))
+                ParkHeldRecords(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition));
     SettleHeldRecords(Entities_);
+    (void)SettleAppliedEffects(Entities_);
     (void)DispatchPartitionMoves(Entities_);
 
     for (const ZoneResidencyChange& change : ProcessingChanges_)
@@ -374,8 +378,9 @@ void RuntimeWorld::FinalizeResidencyProcessing()
 
         // While the zone's entities are still alive: the moment "unload" stops
         // meaning "forget".
-        CaptureZoneState(Entities_, change.Zone, IdentifiedEntitiesIn(Entities_, change.Partition),
-                         ZoneCapture::Detach);
+        if (record->CapturedAtDetach)
+            CaptureZoneState(Entities_, record->StateScope, IdentifiedEntitiesIn(Entities_, change.Partition),
+                             ZoneCapture::Detach);
 
         // Backend scenes receive the residency batch before this point. Entity
         // hooks then run through the ordinary World destruction path while
@@ -444,6 +449,13 @@ void RuntimeWorld::EndFrameView()
     // advance every write in the process shares one frame number and no
     // consumer can tell them apart.
     Entities_.AdvanceFrame();
+}
+
+StoragePartitionId RuntimeWorld::HoldingPartition()
+{
+    if (!Holding_.has_value())
+        Holding_ = AllocatePartition();
+    return *Holding_;
 }
 
 StoragePartitionId RuntimeWorld::AllocatePartition()

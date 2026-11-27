@@ -209,15 +209,65 @@ namespace
         assert(false && "replicated field has no encoder");
     }
 
-    // Runs a component actually has. A mask bit past the end would be written as
-    // a field the reader has no description of, so it is dropped rather than
-    // trusted.
+    std::uint64_t RunMask(std::size_t runs)
+    {
+        return runs >= 64 ? ~std::uint64_t{ 0 } : (std::uint64_t{ 1 } << runs) - 1;
+    }
+
+    // Runs and lists a component actually has. A mask bit past the end would be
+    // written as a field the reader has no description of, so it is dropped
+    // rather than trusted.
     std::uint64_t AddressableFields(const ReplicatedComponent& component)
     {
-        return component.Fields.size() >= 64
-                   ? ~std::uint64_t{ 0 }
-                   : (std::uint64_t{ 1 } << component.Fields.size()) - 1;
+        return RunMask(component.Fields.size() + component.Lists.size());
     }
+
+    std::uint64_t ListBit(const ReplicatedComponent& component, std::size_t list)
+    {
+        return std::uint64_t{ 1 } << (component.Fields.size() + list);
+    }
+
+    std::size_t RunBits(const ReplicatedField& field);
+
+    std::size_t RunsBits(std::span<const ReplicatedField> fields, std::uint64_t mask)
+    {
+        std::size_t bits = 0;
+        for (std::size_t i = 0; i < fields.size(); ++i)
+            if ((mask & (std::uint64_t{ 1 } << i)) != 0)
+                bits += RunBits(fields[i]);
+        return bits;
+    }
+
+    std::uint64_t VisibleRuns(std::span<const ReplicatedField> fields, bool forOwner)
+    {
+        std::uint64_t visible = 0;
+        for (std::size_t i = 0; i < fields.size(); ++i)
+        {
+            const ReplicatedField& field = fields[i];
+            if (field.OwnerOnly && !forOwner)
+                continue;
+            // The owner's own answer is newer than anything that could come back
+            // to them, so sending it would only overwrite it with a stale one.
+            if (field.OwnerLocal && forOwner)
+                continue;
+            visible |= (std::uint64_t{ 1 } << i);
+        }
+        return visible;
+    }
+
+    void SnapRuns(std::span<const ReplicatedField> fields, std::span<std::byte> bytes);
+
+    std::uint64_t ChangedRuns(std::span<const ReplicatedField> fields, std::span<const std::byte> current,
+                              std::span<const std::byte> previous);
+
+    std::uint64_t FoldRuns(std::uint64_t hash, std::span<const ReplicatedField> fields,
+                           std::span<const std::byte> bytes, std::uint64_t mask);
+
+    void WriteRuns(std::span<const ReplicatedField> fields, std::span<const std::byte> bytes, std::uint64_t mask,
+                   NetBitWriter& writer);
+
+    bool ReadRuns(std::span<const ReplicatedField> fields, std::span<std::byte> bytes, std::uint64_t mask,
+                  NetBitReader& reader);
 
     bool ReadScalar(const ReplicatedField& field, std::byte* at, NetBitReader& reader)
     {
@@ -290,6 +340,129 @@ namespace
         }
         return false;
     }
+}
+
+namespace
+{
+    std::size_t RunBits(const ReplicatedField& field)
+    {
+        return static_cast<std::size_t>(ScalarBits(field)) * field.Count;
+    }
+
+    void SnapRuns(std::span<const ReplicatedField> fields, std::span<std::byte> bytes)
+    {
+        for (const ReplicatedField& field : fields)
+        {
+            if (!IsQuantizedFloat(field))
+                continue;
+            for (std::uint8_t i = 0; i < field.Count; ++i)
+            {
+                std::byte* at = ScalarAt(bytes, field, i);
+                const float snapped = ReplicationDequantize(
+                    ReplicationQuantize(LoadAs<float>(at), field.Quantization), field.Quantization);
+                StoreAs(at, snapped);
+            }
+        }
+    }
+
+    std::uint64_t ChangedRuns(std::span<const ReplicatedField> fields, std::span<const std::byte> current,
+                              std::span<const std::byte> previous)
+    {
+        std::uint64_t changed = 0;
+        for (std::size_t i = 0; i < fields.size(); ++i)
+            if (previous.empty() || FieldDiffers(fields[i], current, previous))
+                changed |= (std::uint64_t{ 1 } << i);
+        return changed;
+    }
+
+    // FNV-1a's constants over a 64-bit accumulator. Chosen for being one line
+    // and order-dependent rather than for collision strength: this compares two
+    // machines that should agree exactly, so what matters is that a changed byte
+    // changes the answer and that both sides fold identically.
+    constexpr std::uint64_t kFoldPrime = 1099511628211ull;
+
+    std::uint64_t FoldRuns(std::uint64_t hash, std::span<const ReplicatedField> fields,
+                           std::span<const std::byte> bytes, std::uint64_t mask)
+    {
+        for (std::size_t run = 0; run < fields.size(); ++run)
+        {
+            if ((mask & (std::uint64_t{ 1 } << run)) == 0)
+                continue;
+            const ReplicatedField& field = fields[run];
+
+            // The run index folds in as well, so two adjacent runs with swapped
+            // values do not hash the same as the pair in the right places.
+            hash = (hash ^ static_cast<std::uint64_t>(run)) * kFoldPrime;
+
+            for (std::uint8_t i = 0; i < field.Count; ++i)
+            {
+                const std::byte* at = ScalarAt(bytes, field, i);
+                for (std::size_t byte = 0; byte < field.Size; ++byte)
+                    hash = (hash ^ std::to_integer<std::uint64_t>(at[byte])) * kFoldPrime;
+            }
+        }
+        return hash;
+    }
+
+    void WriteRuns(std::span<const ReplicatedField> fields, std::span<const std::byte> bytes, std::uint64_t mask,
+                   NetBitWriter& writer)
+    {
+        for (std::size_t i = 0; i < fields.size(); ++i)
+        {
+            if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+                continue;
+            const ReplicatedField& field = fields[i];
+            for (std::uint8_t scalar = 0; scalar < field.Count; ++scalar)
+                WriteScalar(field, ScalarAt(bytes, field, scalar), writer);
+        }
+    }
+
+    bool ReadRuns(std::span<const ReplicatedField> fields, std::span<std::byte> bytes, std::uint64_t mask,
+                  NetBitReader& reader)
+    {
+        for (std::size_t i = 0; i < fields.size(); ++i)
+        {
+            if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+                continue;
+            const ReplicatedField& field = fields[i];
+            for (std::uint8_t scalar = 0; scalar < field.Count; ++scalar)
+                if (!ReadScalar(field, ScalarAt(bytes, field, scalar), reader))
+                    return false;
+        }
+        return true;
+    }
+
+    bool ReadMask(std::size_t bits, NetBitReader& reader, std::uint64_t& mask)
+    {
+        mask = 0;
+        for (std::size_t i = 0; i < bits; ++i)
+        {
+            bool present = false;
+            if (!reader.ReadBool(present))
+                return false;
+            if (present)
+                mask |= (std::uint64_t{ 1 } << i);
+        }
+        return true;
+    }
+
+    bool ElementMasksFit(const ReplicatedComponent& component, const ReplicationImageParts& parts,
+                         std::uint64_t fields, std::span<const std::uint64_t> elements)
+    {
+        std::size_t needed = 0;
+        for (std::size_t list = 0; list < component.Lists.size(); ++list)
+            if ((fields & ListBit(component, list)) != 0)
+                needed += parts.Lists[list].Count;
+        return elements.size() == needed;
+    }
+}
+
+std::size_t NetVarUIntBits(std::uint64_t value)
+{
+    std::size_t groups = 1;
+    for (std::uint64_t rest = value >> 7; rest != 0; rest >>= 7)
+        ++groups;
+    return groups * 8;
 }
 
 //=============================================================================
@@ -499,56 +672,50 @@ float ReplicationDequantize(std::uint32_t quantized, const FieldQuantization& ra
 }
 
 void ReplicationSnapToWire(const ReplicatedComponent& component,
-                           std::span<std::byte> componentBytes)
+                           std::span<std::byte> image)
 {
-    assert(componentBytes.size() == component.Size);
-
-    for (const ReplicatedField& field : component.Fields)
+    SnapRuns(component.Fields, image.subspan(0, component.Size));
+    if (component.Lists.empty())
+        return;
+    ReplicationImageParts parts;
+    if (!ReplicationSplitImage(component, image, parts))
     {
-        if (!IsQuantizedFloat(field))
-            continue;
-        for (std::uint8_t i = 0; i < field.Count; ++i)
-        {
-            std::byte* at = ScalarAt(componentBytes, field, i);
-            const float snapped = ReplicationDequantize(
-                ReplicationQuantize(LoadAs<float>(at), field.Quantization),
-                field.Quantization);
-            StoreAs(at, snapped);
-        }
+        assert(false && "snapping an image that is not well formed");
+        return;
+    }
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
+    {
+        const ReplicatedList& declared = component.Lists[list];
+        for (std::size_t element = 0; element < parts.Lists[list].Count; ++element)
+            SnapRuns(declared.Fields, image.subspan(parts.Lists[list].Offset + element * declared.Stride, declared.Stride));
     }
 }
 
-std::uint64_t ReplicationFoldFields(std::uint64_t hash,
-                                    const ReplicatedComponent& component,
-                                    std::span<const std::byte> componentBytes,
-                                    std::uint64_t fields)
+std::uint64_t ReplicationFoldVisible(std::uint64_t hash,
+                                     const ReplicatedComponent& component,
+                                     std::span<const std::byte> image,
+                                     bool forOwner)
 {
-    assert(componentBytes.size() == component.Size);
-
-    // FNV-1a's constants over a 64-bit accumulator. Chosen for being one line
-    // and order-dependent rather than for collision strength: this compares two
-    // machines that should agree exactly, so what matters is that a changed byte
-    // changes the answer and that both sides fold identically.
-    constexpr std::uint64_t kPrime = 1099511628211ull;
-
-    for (std::size_t run = 0; run < component.Fields.size(); ++run)
+    assert(component.Lists.empty() ? image.size() == component.Size : image.size() >= component.Size);
+    hash = FoldRuns(hash, component.Fields, image, VisibleRuns(component.Fields, forOwner));
+    if (component.Lists.empty())
+        return hash;
+    ReplicationImageParts parts;
+    if (!ReplicationSplitImage(component, image, parts))
+        return hash;
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
-        if ((fields & (std::uint64_t{ 1 } << run)) == 0)
+        const ReplicatedList& declared = component.Lists[list];
+        const std::uint64_t visible = VisibleRuns(declared.Fields, forOwner);
+        if (visible == 0)
             continue;
-        const ReplicatedField& field = component.Fields[run];
-
-        // The run index folds in as well, so two adjacent runs with swapped
-        // values do not hash the same as the pair in the right places.
-        hash = (hash ^ static_cast<std::uint64_t>(run)) * kPrime;
-
-        for (std::uint8_t i = 0; i < field.Count; ++i)
-        {
-            const std::byte* at = ScalarAt(componentBytes, field, i);
-            for (std::size_t byte = 0; byte < field.Size; ++byte)
-                hash = (hash ^ std::to_integer<std::uint64_t>(at[byte])) * kPrime;
-        }
+        const std::size_t count = parts.Lists[list].Count;
+        hash = (hash ^ static_cast<std::uint64_t>(component.Fields.size() + list)) * kFoldPrime;
+        hash = (hash ^ static_cast<std::uint64_t>(count)) * kFoldPrime;
+        for (std::size_t element = 0; element < count; ++element)
+            hash = FoldRuns(hash, declared.Fields,
+                            image.subspan(parts.Lists[list].Offset + element * declared.Stride, declared.Stride), visible);
     }
-
     return hash;
 }
 
@@ -558,9 +725,14 @@ std::uint64_t ReplicationFoldFields(std::uint64_t hash,
 
 std::size_t ReplicationMaxComponentBits(const ReplicatedComponent& component)
 {
-    std::size_t bits = component.Fields.size();  // the mask
-    for (const ReplicatedField& field : component.Fields)
-        bits += static_cast<std::size_t>(ScalarBits(field)) * field.Count;
+    std::size_t bits = component.Fields.size() + component.Lists.size();  // the mask
+    bits += RunsBits(component.Fields, ~std::uint64_t{ 0 });
+    for (const ReplicatedList& list : component.Lists)
+    {
+        const std::size_t runMask = list.Fields.size() > 1 ? list.Fields.size() : 0;
+        bits += NetVarUIntBits(list.MaxCount)
+              + static_cast<std::size_t>(list.MaxCount) * (1 + runMask + RunsBits(list.Fields, ~std::uint64_t{ 0 }));
+    }
     return bits;
 }
 
@@ -568,72 +740,135 @@ std::uint64_t ReplicationChangedFields(const ReplicatedComponent& component,
                                        std::span<const std::byte> current,
                                        std::span<const std::byte> previous)
 {
-    assert(current.size() == component.Size);
-    assert(previous.empty() || previous.size() == component.Size);
+    assert(current.size() >= component.Size);
+    std::uint64_t changed =
+        ChangedRuns(component.Fields, current.subspan(0, component.Size),
+                    previous.empty() ? previous : previous.subspan(0, component.Size));
+    if (component.Lists.empty())
+        return changed;
 
-    std::uint64_t changed = 0;
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    ReplicationImageParts now;
+    ReplicationImageParts before;
+    const bool fresh = previous.empty() || !ReplicationSplitImage(component, previous, before);
+    if (!ReplicationSplitImage(component, current, now))
+        return changed | (AddressableFields(component) & ~RunMask(component.Fields.size()));
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
-        if (previous.empty() || FieldDiffers(component.Fields[i], current, previous))
-            changed |= (std::uint64_t{ 1 } << i);
+        const ReplicatedList& declared = component.Lists[list];
+        const std::size_t count = now.Lists[list].Count;
+        bool differs = fresh || count != before.Lists[list].Count;
+        for (std::size_t element = 0; !differs && element < count; ++element)
+            differs = ChangedRuns(declared.Fields,
+                                  current.subspan(now.Lists[list].Offset + element * declared.Stride, declared.Stride),
+                                  previous.subspan(before.Lists[list].Offset + element * declared.Stride, declared.Stride))
+                   != 0;
+        if (differs)
+            changed |= ListBit(component, list);
     }
     return changed;
+}
+
+std::uint64_t ReplicationChangedElementRuns(const ReplicatedList& list,
+                                            std::span<const std::byte> current,
+                                            std::span<const std::byte> previous)
+{
+    return ChangedRuns(list.Fields, current, previous);
 }
 
 std::uint64_t ReplicationVisibleFields(const ReplicatedComponent& component,
                                        bool forOwner)
 {
-    std::uint64_t visible = 0;
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
-    {
-        const ReplicatedField& field = component.Fields[i];
-        if (field.OwnerOnly && !forOwner)
-            continue;
-        // The owner's own answer is newer than anything that could come back
-        // to them, so sending it would only overwrite it with a stale one.
-        if (field.OwnerLocal && forOwner)
-            continue;
-        visible |= (std::uint64_t{ 1 } << i);
-    }
+    std::uint64_t visible = VisibleRuns(component.Fields, forOwner);
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
+        if (VisibleRuns(component.Lists[list].Fields, forOwner) != 0)
+            visible |= ListBit(component, list);
     return visible;
 }
 
-bool ReplicationEncodeComponent(const ReplicatedComponent& component,
-                                std::span<const std::byte> current,
-                                std::uint64_t fields,
-                                NetBitWriter& writer)
+std::uint64_t ReplicationVisibleElementRuns(const ReplicatedList& list, bool forOwner)
 {
-    assert(current.size() == component.Size);
+    return VisibleRuns(list.Fields, forOwner);
+}
+
+bool ReplicationEncodeComponent(const ReplicatedComponent& component,
+                                std::span<const std::byte> image,
+                                std::uint64_t fields,
+                                NetBitWriter& writer,
+                                std::span<const std::uint64_t> elements)
+{
+    assert(component.Lists.empty() ? image.size() == component.Size : image.size() >= component.Size);
 
     const std::uint64_t mask = fields & AddressableFields(component);
-
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    const std::size_t maskBits = component.Fields.size() + component.Lists.size();
+    for (std::size_t i = 0; i < maskBits; ++i)
         writer.WriteBool((mask & (std::uint64_t{ 1 } << i)) != 0);
+    WriteRuns(component.Fields, image, mask, writer);
 
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    if ((mask & ~RunMask(component.Fields.size())) == 0)
+        return !writer.Overflowed();
+
+    ReplicationImageParts parts;
+    if (!ReplicationSplitImage(component, image, parts))
+        return false;
+    if (!ElementMasksFit(component, parts, mask, elements))
+        return false;
+    const std::uint64_t* masks = elements.data();
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
-        if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+        if ((mask & ListBit(component, list)) == 0)
             continue;
-        const ReplicatedField& field = component.Fields[i];
-        for (std::uint8_t scalar = 0; scalar < field.Count; ++scalar)
-            WriteScalar(field, ScalarAt(current, field, scalar), writer);
+        const ReplicatedList& declared = component.Lists[list];
+        const std::uint64_t runs = RunMask(declared.Fields.size());
+        const std::size_t count = parts.Lists[list].Count;
+        writer.WriteVarUInt(count);
+        for (std::size_t element = 0; element < count; ++element)
+        {
+            const std::uint64_t carried = *masks++ & runs;
+            writer.WriteBool(carried != 0);
+            if (carried == 0)
+                continue;
+            if (declared.Fields.size() > 1)
+                for (std::size_t run = 0; run < declared.Fields.size(); ++run)
+                    writer.WriteBool((carried & (std::uint64_t{ 1 } << run)) != 0);
+            WriteRuns(declared.Fields, image.subspan(parts.Lists[list].Offset + element * declared.Stride, declared.Stride),
+                      carried, writer);
+        }
     }
-
     return !writer.Overflowed();
 }
 
 std::size_t ReplicationEncodedComponentBits(const ReplicatedComponent& component,
-                                            std::uint64_t fields)
+                                            std::span<const std::byte> image,
+                                            std::uint64_t fields,
+                                            std::span<const std::uint64_t> elements)
 {
     const std::uint64_t mask = fields & AddressableFields(component);
+    std::size_t bits = component.Fields.size() + component.Lists.size();  // the mask
+    bits += RunsBits(component.Fields, mask);
+    if ((mask & ~RunMask(component.Fields.size())) == 0)
+        return bits;
 
-    std::size_t bits = component.Fields.size();  // the mask
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    ReplicationImageParts parts;
+    if (!ReplicationSplitImage(component, image, parts))
+        return bits;
+    if (!ElementMasksFit(component, parts, mask, elements))
+        return bits;
+    const std::uint64_t* masks = elements.data();
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
-        if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+        if ((mask & ListBit(component, list)) == 0)
             continue;
-        const ReplicatedField& field = component.Fields[i];
-        bits += static_cast<std::size_t>(ScalarBits(field)) * field.Count;
+        const ReplicatedList& declared = component.Lists[list];
+        const std::uint64_t runs = RunMask(declared.Fields.size());
+        const std::size_t count = parts.Lists[list].Count;
+        bits += NetVarUIntBits(count) + count;
+        for (std::size_t element = 0; element < count; ++element)
+        {
+            const std::uint64_t carried = *masks++ & runs;
+            if (carried == 0)
+                continue;
+            bits += (declared.Fields.size() > 1 ? declared.Fields.size() : 0) + RunsBits(declared.Fields, carried);
+        }
     }
     return bits;
 }
@@ -645,32 +880,58 @@ bool ReplicationDecodeComponent(const ReplicatedComponent& component,
 {
     if (fieldMask != nullptr)
         *fieldMask = 0;
-    if (target.size() != component.Size)
+    if (target.size() != component.Size || !component.Lists.empty())
         return false;
 
     std::uint64_t mask = 0;
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
-    {
-        bool present = false;
-        if (!reader.ReadBool(present))
-            return false;
-        if (present)
-            mask |= (std::uint64_t{ 1 } << i);
-    }
+    if (!ReadMask(component.Fields.size(), reader, mask) || !ReadRuns(component.Fields, target, mask, reader))
+        return false;
 
-    for (std::size_t i = 0; i < component.Fields.size(); ++i)
+    if (fieldMask != nullptr)
+        *fieldMask = mask;
+    return true;
+}
+
+ReplicationDecodeError ReplicationDecodeImage(const ReplicatedComponent& component,
+                                              NetBitReader& reader,
+                                              ReplicationImage& target,
+                                              std::uint64_t* fieldMask)
+{
+    if (fieldMask != nullptr)
+        *fieldMask = 0;
+
+    std::uint64_t mask = 0;
+    if (!ReadMask(component.Fields.size() + component.Lists.size(), reader, mask)
+        || !ReadRuns(component.Fields, target.Head(), mask, reader))
+        return ReplicationDecodeError::Truncated;
+
+    for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
-        if ((mask & (std::uint64_t{ 1 } << i)) == 0)
+        if ((mask & ListBit(component, list)) == 0)
             continue;
-        const ReplicatedField& field = component.Fields[i];
-        for (std::uint8_t scalar = 0; scalar < field.Count; ++scalar)
+        const ReplicatedList& declared = component.Lists[list];
+        std::uint64_t count = 0;
+        if (!reader.ReadVarUInt(count))
+            return ReplicationDecodeError::Truncated;
+        if (count > declared.MaxCount)
+            return ReplicationDecodeError::CountAboveMost;
+        const std::span<std::byte> elements = target.ResizeElements(list, static_cast<std::size_t>(count));
+        for (std::size_t element = 0; element < count; ++element)
         {
-            if (!ReadScalar(field, ScalarAt(target, field, scalar), reader))
-                return false;
+            bool present = false;
+            if (!reader.ReadBool(present))
+                return ReplicationDecodeError::Truncated;
+            if (!present)
+                continue;
+            std::uint64_t runs = 1;
+            if (declared.Fields.size() > 1 && !ReadMask(declared.Fields.size(), reader, runs))
+                return ReplicationDecodeError::Truncated;
+            if (!ReadRuns(declared.Fields, elements.subspan(element * declared.Stride, declared.Stride), runs, reader))
+                return ReplicationDecodeError::Truncated;
         }
     }
 
     if (fieldMask != nullptr)
         *fieldMask = mask;
-    return true;
+    return ReplicationDecodeError::None;
 }

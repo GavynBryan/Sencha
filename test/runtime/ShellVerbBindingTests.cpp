@@ -1,3 +1,4 @@
+#include <authored/AuthoredApi.h>
 #include <gtest/gtest.h>
 
 #include <app/BackRouter.h>
@@ -188,8 +189,8 @@ public:
 
         Controller = std::make_unique<VerbDispatcher>(*Verbs);
         Resume = std::make_unique<RuntimeResumeOperation>(*Menu);
-        ResumeToken = Controller->Bind(Verbs->Find(kRuntimeResumeVerb), *Resume);
-        QuitToken = Controller->Bind(Verbs->Find(kApplicationQuitVerb), Exit);
+        ResumeToken = BindAuthoredApi(Controller.get(), nullptr, *Resume);
+        QuitToken = Controller->Bind(Verbs->Find(AuthoredApiDefinition<ApplicationQuitOperation>::Name_Quit), Exit);
 
         Menu->SetVerbBindings(Controller.get(), &Bindings);
         return Menu->Model().SetBinding(kPauseResume, MakeVerbBindingKey(kShellResumeBinding))
@@ -221,7 +222,7 @@ public:
     std::unique_ptr<VerbDispatcher> Controller;
     std::unique_ptr<RuntimeResumeOperation> Resume;
     ExitRecorder Exit;
-    VerbBindingToken ResumeToken;
+    AuthoredApiBindings ResumeToken;
     VerbBindingToken QuitToken;
 };
 }
@@ -236,8 +237,8 @@ TEST(ShellVerbBindings, TheShippedAssetResolvesAgainstTheEnginesOwnVocabulary)
     const CompiledVerbBinding* quit = host.Bindings.Find(kShellQuitBinding);
     ASSERT_NE(resume, nullptr);
     ASSERT_NE(quit, nullptr);
-    EXPECT_EQ(resume->Verb, host.Verbs->Find(kRuntimeResumeVerb));
-    EXPECT_EQ(quit->Verb, host.Verbs->Find(kApplicationQuitVerb));
+    EXPECT_EQ(resume->Verb, host.Verbs->Find(AuthoredApiDefinition<RuntimeResumeOperation>::Name_Resume));
+    EXPECT_EQ(quit->Verb, host.Verbs->Find(AuthoredApiDefinition<ApplicationQuitOperation>::Name_Quit));
     // No arguments and no inputs: what resuming does to the world is PauseState's
     // answer, not a caller's choice.
     EXPECT_TRUE(resume->Inputs.empty());

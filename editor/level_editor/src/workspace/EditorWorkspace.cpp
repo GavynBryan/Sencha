@@ -223,10 +223,7 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeGameplayTagEditorAdapter());
     Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
     Affordances->Registry().Register(MakeAbilityGrantsEditorAdapter());
-    Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     Affordances->Registry().Register(MakeItemEntryEditorAdapter());
-    Affordances->Registry().Register(MakeItemContainerEditorAdapter());
-    Affordances->Registry().Register(MakeItemPickupEditorAdapter());
     Affordances->Registry().Register(MakeHeldEditorAdapter());
     Affordances->Registry().Register(MakeEquipmentStateEditorAdapter());
     Affordances->Registry().Register(MakeResponsesEditorAdapter());

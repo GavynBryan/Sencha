@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -29,8 +31,8 @@ TEST(GameplayTagContainer, GrantRevokeStackTransitions)
     GameplayTagContainer c{};
 
     EXPECT_TRUE(c.Empty());
-    EXPECT_TRUE(c.Grant(f.Root));        // absent -> present reports true
-    EXPECT_FALSE(c.Grant(f.Root));       // additional stack reports false
+    EXPECT_EQ(c.Grant(f.Root), GameplayTagWrite::Added);
+    EXPECT_EQ(c.Grant(f.Root), GameplayTagWrite::Restacked);
     EXPECT_EQ(c.StackCount(f.Root), 2u);
     EXPECT_TRUE(c.HasExact(f.Root));
 
@@ -45,8 +47,8 @@ TEST(GameplayTagContainer, AContributionNeverWithdrawsTheBaseline)
 {
     TagFixture f;
     GameplayTagContainer c{};
-    EXPECT_TRUE(c.GrantBaseline(f.Dash));
-    EXPECT_FALSE(c.Grant(f.Dash, 2));
+    EXPECT_EQ(c.GrantBaseline(f.Dash), GameplayTagWrite::Added);
+    EXPECT_EQ(c.Grant(f.Dash, 2), GameplayTagWrite::Restacked);
     EXPECT_EQ(c.StackCount(f.Dash), 3u);
     EXPECT_EQ(c.BaselineCount(f.Dash), 1u);
 
@@ -79,21 +81,21 @@ TEST(GameplayTagContainer, SettingAContributionMakesItExact)
 {
     TagFixture f;
     GameplayTagContainer c{};
-    EXPECT_TRUE(c.SetContribution(f.Dash, 1));
+    EXPECT_EQ(c.SetContribution(f.Dash, 1), GameplayTagWrite::Added);
     EXPECT_EQ(c.StackCount(f.Dash), 1u);
-    EXPECT_FALSE(c.SetContribution(f.Dash, 1)) << "already so";
+    EXPECT_EQ(c.SetContribution(f.Dash, 1), GameplayTagWrite::Unchanged) << "already so";
     c.Grant(f.Dash, 2);
-    EXPECT_TRUE(c.SetContribution(f.Dash, 1));
+    EXPECT_EQ(c.SetContribution(f.Dash, 1), GameplayTagWrite::Restacked);
     EXPECT_EQ(c.StackCount(f.Dash), 1u) << "repaired";
     c.GrantBaseline(f.Root);
-    EXPECT_TRUE(c.SetContribution(f.Root, 2));
+    EXPECT_EQ(c.SetContribution(f.Root, 2), GameplayTagWrite::Restacked);
     EXPECT_EQ(c.StackCount(f.Root), 3u);
     EXPECT_EQ(c.BaselineCount(f.Root), 1u);
-    EXPECT_TRUE(c.SetContribution(f.Root, 0));
+    EXPECT_EQ(c.SetContribution(f.Root, 0), GameplayTagWrite::Restacked);
     EXPECT_EQ(c.StackCount(f.Root), 1u) << "the baseline stays";
-    EXPECT_TRUE(c.SetContribution(f.Dash, 0));
+    EXPECT_EQ(c.SetContribution(f.Dash, 0), GameplayTagWrite::Removed);
     EXPECT_FALSE(c.HasExact(f.Dash));
-    EXPECT_FALSE(c.SetContribution(f.Dash, 0));
+    EXPECT_EQ(c.SetContribution(f.Dash, 0), GameplayTagWrite::Unchanged);
     EXPECT_EQ(c.ContributedCount(f.Root), 0u);
 }
 
@@ -131,8 +133,8 @@ TEST(GameplayTagContainer, InvalidAndZeroStackAreNoOps)
 {
     TagFixture f;
     GameplayTagContainer c{};
-    EXPECT_FALSE(c.Grant(GameplayTagId{}));   // invalid id
-    EXPECT_FALSE(c.Grant(f.Dash, 0));         // zero stacks
+    EXPECT_EQ(c.Grant(GameplayTagId{}), GameplayTagWrite::Unchanged);
+    EXPECT_EQ(c.Grant(f.Dash, 0), GameplayTagWrite::Unchanged);
     EXPECT_TRUE(c.Empty());
     EXPECT_FALSE(c.Revoke(f.Dash));           // revoke absent tag
 }
@@ -150,7 +152,7 @@ TEST(GameplayTagContainer, IntegratesAsEcsComponentAndRegistryAsResource)
     world.AddComponent<GameplayTagContainer>(e);
 
     ASSERT_NE(world.TryGet<GameplayTagContainer>(e), nullptr);
-    EXPECT_TRUE(world.TryGet<GameplayTagContainer>(e)->Grant(burning));
+    EXPECT_EQ(world.TryGet<GameplayTagContainer>(e)->Grant(burning), GameplayTagWrite::Added);
 
     // mutation persists in chunk storage
     EXPECT_TRUE(world.TryGet<GameplayTagContainer>(e)->HasExact(burning));
@@ -165,10 +167,10 @@ TEST(GameplayTagContainer, AFullContainerHoldsOnlyWhatItAlreadyHas)
         c.Grant(*reg.RegisterTag("Fill.T" + std::to_string(i)));
     const GameplayTagId last = *reg.RegisterTag("Fill.Last");
     const GameplayTagId extra = *reg.RegisterTag("Fill.Extra");
-    EXPECT_TRUE(c.CanHold(last)) << "one place left";
+    EXPECT_TRUE(c.CanHoldAll(std::array{ last })) << "one place left";
     c.Grant(last);
-    EXPECT_FALSE(c.CanHold(extra));
-    EXPECT_TRUE(c.CanHold(last)) << "another stack of a held tag needs no place";
+    EXPECT_FALSE(c.CanHoldAll(std::array{ extra }));
+    EXPECT_TRUE(c.CanHoldAll(std::array{ last })) << "another stack of a held tag needs no place";
 }
 
 namespace
@@ -201,8 +203,88 @@ TEST(GameplayTagOverflow, RefusalsAreReportedWhenTheyBeginAndEndAndCountedBetwee
     ASSERT_EQ(sink.Written.size(), 1u) << "once as it began, not once a tick";
     EXPECT_NE(sink.Written[0].find("State.Extra"), std::string::npos) << sink.Written[0];
 
+    for (std::uint32_t quiet = 1; quiet < kGameplayTagOverflowQuietReports; ++quiet)
+        ReportGameplayTagOverflow(world, log);
+    EXPECT_EQ(sink.Written.size(), 1u) << "not over until it has been quiet a while";
     ReportGameplayTagOverflow(world, log);
     ASSERT_EQ(sink.Written.size(), 2u);
     EXPECT_NE(sink.Written[1].find("6 refused"), std::string::npos) << sink.Written[1];
     EXPECT_EQ(world.GetResource<GameplayTagOverflow>().Refused, 6u);
+}
+
+TEST(GameplayTagContainer, ABaselineGrantAtSaturationNeverTakesAContributedStack)
+{
+    TagFixture f;
+    GameplayTagContainer c{};
+    (void)c.Grant(f.Dash, 10);
+    EXPECT_EQ(c.GrantBaseline(f.Dash, 0xFFFF), GameplayTagWrite::Restacked);
+    EXPECT_EQ(c.StackCount(f.Dash), 0xFFFFu);
+    EXPECT_EQ(c.ContributedCount(f.Dash), 10u);
+    EXPECT_EQ(c.BaselineCount(f.Dash), 0xFFFFu - 10u);
+    EXPECT_EQ(c.GrantBaseline(f.Dash), GameplayTagWrite::Unchanged) << "saturated";
+    EXPECT_EQ(c.Grant(f.Dash), GameplayTagWrite::Unchanged);
+
+    EXPECT_FALSE(c.RevokeBaseline(f.Dash, 0xFFFF)) << "the effects' stacks keep it";
+    EXPECT_EQ(c.StackCount(f.Dash), 10u);
+    EXPECT_EQ(c.ContributedCount(f.Dash), 10u);
+}
+
+TEST(GameplayTagContainer, AFullContainerRefusesANewTagWithoutChangingAnything)
+{
+    GameplayTagRegistry reg;
+    GameplayTagContainer c{};
+    for (std::uint8_t i = 0; i < GameplayTagContainer::Capacity; ++i)
+        (void)c.Grant(*reg.RegisterTag("Fill.T" + std::to_string(i)));
+    const GameplayTagId extra = *reg.RegisterTag("Fill.Extra");
+    const GameplayTagContainer before = c;
+    EXPECT_EQ(c.Grant(extra), GameplayTagWrite::Full);
+    EXPECT_EQ(c.GrantBaseline(extra), GameplayTagWrite::Full);
+    EXPECT_EQ(c.SetContribution(extra, 1), GameplayTagWrite::Full);
+    EXPECT_EQ(std::memcmp(&before, &c, sizeof(c)), 0);
+    EXPECT_EQ(c.Grant(reg.FindTag("Fill.T0")), GameplayTagWrite::Restacked) << "a held tag needs no place";
+}
+
+TEST(GameplayTagContainer, CanHoldAllCountsEachNewTagOnce)
+{
+    GameplayTagRegistry reg;
+    GameplayTagContainer c{};
+    for (std::uint8_t i = 0; i + 2 < GameplayTagContainer::Capacity; ++i)
+        (void)c.Grant(*reg.RegisterTag("Fill.T" + std::to_string(i)));
+    const GameplayTagId held = reg.FindTag("Fill.T0");
+    const GameplayTagId a = *reg.RegisterTag("New.A");
+    const GameplayTagId b = *reg.RegisterTag("New.B");
+    const GameplayTagId d = *reg.RegisterTag("New.D");
+    const std::array two{ a, b, a, held, GameplayTagId{} };
+    const std::array three{ a, b, d };
+    EXPECT_TRUE(c.CanHoldAll(two)) << "two places for two new tags";
+    EXPECT_FALSE(c.CanHoldAll(three));
+}
+
+TEST(GameplayTagContainer, ATagHoldingEveryStackItCanHasNoRoomForAnother)
+{
+    GameplayTagRegistry reg;
+    GameplayTagContainer c{};
+    const GameplayTagId full = *reg.RegisterTag("Stack.Full");
+    (void)c.GrantBaseline(full, 0xFFFE);
+    EXPECT_TRUE(c.CanHoldAll(std::array{ full })) << "one stack short of the most";
+    (void)c.Grant(full);
+    EXPECT_FALSE(c.CanHoldAll(std::array{ full }));
+}
+
+TEST(GameplayTagOverflow, RefusalsAMomentApartAreOneEpisodeNotOneLinePairEach)
+{
+    World world;
+    GameplayTagRegistry& reg = world.AddResource<GameplayTagRegistry>();
+    const GameplayTagId extra = *reg.RegisterTag("State.Extra");
+    const EntityId holder = world.CreateEntity();
+    Lines sink;
+    const Logger log("tags", { &sink });
+
+    for (int tick = 0; tick < 100; ++tick)
+    {
+        if (tick % 10 == 0)
+            NoteGameplayTagOverflow(world, holder, extra);
+        ReportGameplayTagOverflow(world, log);
+    }
+    EXPECT_EQ(sink.Written.size(), 1u) << "a periodic refusal is reported as it begins, then counted";
 }

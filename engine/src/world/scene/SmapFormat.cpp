@@ -694,8 +694,7 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
                 return false;
             }
             if (options.StripAuthoredIdentity
-                && (serializer->JsonKey() == "persistent_id"
-                    || serializer->JsonKey() == "scene_instance"))
+                && serializer->Persistence() == ComponentPersistence::Identity)
                 continue;
             if (!built.AddSerializedJson(entity, type, payload))
             {

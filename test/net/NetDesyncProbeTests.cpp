@@ -196,7 +196,7 @@ TEST(NetDesyncFold, TheSameBytesFoldTheSame)
     const ReplicatedComponent* transform = nullptr;
     for (const ReplicatedComponent& component : tables.Layout.Components())
     {
-        if (!component.Fields.empty()
+        if (!component.Fields.empty() && component.Lists.empty()
             && ReplicationVisibleFields(component, true) != 0)
         {
             transform = &component;
@@ -207,15 +207,14 @@ TEST(NetDesyncFold, TheSameBytesFoldTheSame)
 
     std::vector<std::byte> a(transform->Size, std::byte{ 0 });
     std::vector<std::byte> b = a;
-    const std::uint64_t mask = ReplicationVisibleFields(*transform, true);
 
-    EXPECT_EQ(ReplicationFoldFields(0, *transform, a, mask),
-              ReplicationFoldFields(0, *transform, b, mask));
+    EXPECT_EQ(ReplicationFoldVisible(0, *transform, a, true),
+              ReplicationFoldVisible(0, *transform, b, true));
 
     // One byte inside a declared field changes the answer.
     b[transform->Fields[0].Offset] = std::byte{ 0x7f };
-    EXPECT_NE(ReplicationFoldFields(0, *transform, a, mask),
-              ReplicationFoldFields(0, *transform, b, mask));
+    EXPECT_NE(ReplicationFoldVisible(0, *transform, a, true),
+              ReplicationFoldVisible(0, *transform, b, true));
 }
 
 // Only the bytes the fields declare. The padding between two fields is
@@ -231,13 +230,12 @@ TEST(NetDesyncFold, PaddingIsNotFolded)
         std::size_t declared = 0;
         for (const ReplicatedField& field : component.Fields)
             declared += field.Size * field.Count;
-        if (declared >= component.Size)
+        if (declared >= component.Size || !component.Lists.empty())
             continue;
 
         std::vector<std::byte> a(component.Size, std::byte{ 0 });
         std::vector<std::byte> b = a;
-        const std::uint64_t mask = ReplicationVisibleFields(component, true);
-        const std::uint64_t before = ReplicationFoldFields(0, component, a, mask);
+        const std::uint64_t before = ReplicationFoldVisible(0, component, a, true);
 
         // Dirty every byte no field claims.
         std::vector<bool> claimed(component.Size, false);
@@ -256,7 +254,7 @@ TEST(NetDesyncFold, PaddingIsNotFolded)
                 b[byte] = std::byte{ 0xcd };
         }
 
-        EXPECT_EQ(before, ReplicationFoldFields(0, component, b, mask))
+        EXPECT_EQ(before, ReplicationFoldVisible(0, component, b, true))
             << component.Name << ": padding reached the hash";
         return;
     }
@@ -276,12 +274,11 @@ TEST(NetDesyncFold, AWithheldFieldDoesNotReachTheHash)
             if (field.OwnerOnly || field.OwnerLocal)
                 ++gated;
         }
-        if (gated == 0)
+        if (gated == 0 || !component.Lists.empty())
             continue;
 
-        const std::uint64_t asOwner = ReplicationVisibleFields(component, true);
-        const std::uint64_t asOther = ReplicationVisibleFields(component, false);
-        ASSERT_NE(asOwner, asOther) << component.Name;
+        ASSERT_NE(ReplicationVisibleFields(component, true), ReplicationVisibleFields(component, false))
+            << component.Name;
 
         std::vector<std::byte> bytes(component.Size, std::byte{ 0 });
         // Dirty an owner-only field: the owner's fold must move, a non-owner's
@@ -290,16 +287,12 @@ TEST(NetDesyncFold, AWithheldFieldDoesNotReachTheHash)
         {
             if (!component.Fields[run].OwnerOnly)
                 continue;
-            const std::uint64_t ownerBefore =
-                ReplicationFoldFields(0, component, bytes, asOwner);
-            const std::uint64_t otherBefore =
-                ReplicationFoldFields(0, component, bytes, asOther);
+            const std::uint64_t ownerBefore = ReplicationFoldVisible(0, component, bytes, true);
+            const std::uint64_t otherBefore = ReplicationFoldVisible(0, component, bytes, false);
             bytes[component.Fields[run].Offset] = std::byte{ 0x5a };
-            EXPECT_NE(ownerBefore,
-                      ReplicationFoldFields(0, component, bytes, asOwner))
+            EXPECT_NE(ownerBefore, ReplicationFoldVisible(0, component, bytes, true))
                 << component.Name << ": the owner did not fold its own field";
-            EXPECT_EQ(otherBefore,
-                      ReplicationFoldFields(0, component, bytes, asOther))
+            EXPECT_EQ(otherBefore, ReplicationFoldVisible(0, component, bytes, false))
                 << component.Name
                 << ": a field this peer was never sent reached its hash";
             return;

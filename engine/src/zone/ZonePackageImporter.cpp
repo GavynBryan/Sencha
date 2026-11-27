@@ -1,23 +1,36 @@
 #include <zone/ZonePackageImporter.h>
 
+#include <core/logging/Logger.h>
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/JsonArchive.h>
+#include <core/serialization/Serialize.h>
+#include <math/MathSchemas.h>
+#include <physics/SensorOverlaps.h>
 #include <ecs/WorldComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/held/HeldRecordForms.h>
+#include <world/held/HeldRecordIndex.h>
+#include <world/held/HeldRecords.h>
+#include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/GainedSpawnRequests.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneStateLifetime.h>
-#include <zone/ZoneStateMemory.h>
 #include <zone/ZoneStateStore.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -171,11 +184,16 @@ bool WriteOwedComponents(World& world,
     return true;
 }
 
+struct ZonePackageImport
+{
+};
+
 bool ImportComponent(
     World& world,
     EntityId entity,
     const WorldComponentSchema& schema,
     const PackageComponent& component,
+    std::span<const PackageComponent> unpatched,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     std::string& failure)
@@ -211,17 +229,18 @@ bool ImportComponent(
         }
 
         JsonReadArchive archive(*component.SerializedJson);
-        if (!serializer->LoadIntoWorld(
-                archive,
-                entity,
-                world,
-                *sceneContext)
-            || !archive.Ok())
+        const bool loaded = serializer->LoadIntoWorld(archive, entity, world, *sceneContext);
+        if (loaded && archive.Ok())
+            return true;
+        const auto content = std::ranges::find(unpatched, component.Type, &PackageComponent::Type);
+        if (loaded || content == unpatched.end())
         {
             failure = "Package serialized component decode failed" + named + ".";
             return false;
         }
-        return true;
+        sceneContext->Logging->GetLogger<ZonePackageImport>().Warn(
+            "the saved {} does not decode; the entity keeps content's", entry->Name);
+        return ImportComponent(world, entity, schema, *content, {}, serializers, sceneContext, failure);
     }
 
     if (entry->Size != component.RuntimeBytes.size())
@@ -245,19 +264,19 @@ bool ImportComponent(
 
 // An entity's own lifetime, else the nearest ancestor's, else the one authored
 // elsewhere in the placed scene it belongs to.
-ZoneStateForgetting ForgettingOf(const World& world, EntityId entity,
-                                 const std::unordered_map<std::uint64_t, ZoneStateForgetting>& byInstance)
+const ZoneStateLifetime* LifetimeOf(const World& world, EntityId entity,
+                                    const std::unordered_map<std::uint64_t, ZoneStateLifetime>& byInstance)
 {
     for (EntityId at = entity; at.IsValid() && world.IsAlive(at);)
     {
         if (const ZoneStateLifetime* lifetime = world.TryGet<ZoneStateLifetime>(at))
-            return lifetime->Forgotten;
+            return lifetime;
         const Parent* parent = world.IsRegistered<Parent>() ? world.TryGet<Parent>(at) : nullptr;
         at = parent != nullptr ? parent->Entity : EntityId{};
     }
     const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(entity) : nullptr;
     const auto found = instance != nullptr ? byInstance.find(instance->Id.Value) : byInstance.end();
-    return found != byInstance.end() ? found->second : ZoneStateForgetting::Never;
+    return found != byInstance.end() ? &found->second : nullptr;
 }
 
 std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentSchema& schema,
@@ -279,21 +298,259 @@ std::vector<bool> AuthorityOnlyMembers(const World& world, const WorldComponentS
     return skipped;
 }
 
-std::vector<AuthoredEntityState> AuthoredStates(const World& world, const EntityBuildPackage& package,
-                                                std::span<const EntityId> entities,
-                                                const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
-                                                ZoneId scope)
+struct LevelEntityPatches
 {
-    std::unordered_map<std::uint64_t, ZoneStateForgetting> byInstance;
+    ZoneStateStore* Store = nullptr;
+    const ComponentSerializerRegistry* Serializers = nullptr;
+    SceneSerializationContext* Context = nullptr;
+    ZoneStateScope Scope;
+};
+
+LevelEntityPatches KeptLevelState(World& world, ZoneStateStore* store, ZoneStateScope scope,
+                                  const ComponentSerializerRegistry* serializers, SceneSerializationContext* context)
+{
+    const ZoneStateSerialization* kept = world.TryGetResource<ZoneStateSerialization>();
+    if (store == nullptr || serializers == nullptr || context == nullptr || kept == nullptr
+        || kept->Serializers == nullptr || !IsSimulationAuthority(world))
+        return {};
+    return LevelEntityPatches{ store, serializers, context, scope };
+}
+
+std::optional<PackageEntity> Patched(const PackageEntity& content, const LevelEntityPatches& patches)
+{
+    const JsonValue* patch = patches.Store->PatchOf(patches.Scope, content.PersistentId);
+    if (patch == nullptr)
+        return std::nullopt;
+    PackageEntity patched = content;
+    const EntityPatchOutcome outcome = ApplyEntityPatch(patched, *patch, *patches.Serializers);
+    Logger& log = patches.Context->Logging->GetLogger<ZonePackageImport>();
+    const std::string id = PersistentEntityIdToString(content.PersistentId);
+    for (const std::string& line : outcome.Retuned)
+        log.Warn("zone state: {}: what was kept of {} is set aside; the scene decides", id, line);
+    for (const std::string& line : outcome.Misfit)
+        log.Error("zone state: {}: what was kept no longer fits its scene and follows content: {}", id, line);
+    for (const std::string& member : outcome.MisfitMembers)
+        patches.Store->ForgetPatchMember(patches.Scope, content.PersistentId, member);
+    return patched;
+}
+
+void ReportCarriedMembers(const ZoneStateStore& store, ZoneStateScope scope, SceneSerializationContext* context)
+{
+    if (context == nullptr)
+        return;
+    std::vector<std::string_view> forms;
+    for (const GainedEntityState& member : store.GainedOf(scope))
+        if (!member.Id.IsValid() && std::ranges::find(forms, member.Member.Form) == forms.end())
+            forms.push_back(member.Member.Form);
+    for (const std::string_view form : forms)
+        context->Logging->GetLogger<ZonePackageImport>().Warn(
+            "zone state: what the zone gained in the form '{}' is kept and not made; this build does not make it",
+            form);
+}
+
+std::optional<GainedSpawnRequest> SourceRequest(const ZoneListEntity& saved, ZoneStateScope scope,
+                                                StoragePartitionId partition)
+{
+    const JsonValue* source = saved.Value.Find("source");
+    const JsonValue* root = saved.Value.Find("root");
+    const JsonValue* patch = saved.Value.Find("patch");
+    GainedSpawnRequest request;
+    request.Scope = scope;
+    request.Partition = partition;
+    request.Id = saved.Id;
+    const std::optional<AssetId> asset =
+        source != nullptr && source->IsString() ? AssetIdFromString(source->AsString()) : std::nullopt;
+    if (!asset.has_value() || root == nullptr || !FromJson(*root, request.Root) || patch == nullptr || !patch->IsObject())
+        return std::nullopt;
+    request.Source = *asset;
+    request.Patch = *patch;
+    return request;
+}
+
+void MakeGainedMembers(World& world, StoragePartitionId partition, const LevelEntityPatches& patches,
+                       const EntityBuildPackage& package, bool worldHasTransforms, std::vector<EntityId>& made)
+{
+    const std::span<const GainedEntityState> recorded = patches.Store->GainedOf(patches.Scope);
+    if (recorded.empty() || !world.IsRegistered<KeptWithZone>() || !world.IsRegistered<PersistentIdComponent>())
+        return;
+    const std::vector<GainedEntityState> gained(recorded.begin(), recorded.end());
+    Logger& log = patches.Context->Logging->GetLogger<ZonePackageImport>();
+    ZoneCaptureImager imager(world, *patches.Serializers);
+    const PersistentEntityIndex* identities = world.TryGetResource<PersistentEntityIndex>();
+    for (const GainedEntityState& member : gained)
+    {
+        if (!member.Id.IsValid())
+            continue;
+        const std::string named = PersistentEntityIdToString(member.Id);
+        const std::optional<ZoneListEntity> saved = DecodeGainedMember(member.Member.Payload);
+        const bool fromSource = member.Member.Form == kSourceGainedForm;
+        const std::optional<GainedSpawnRequest> request =
+            saved.has_value() && fromSource ? SourceRequest(*saved, patches.Scope, partition) : std::nullopt;
+        const bool authoredHere = saved.has_value() && IsAuthoredPersistentEntityId(saved->Id)
+            && std::ranges::any_of(package.Entities(),
+                                   [&](const PackageEntity& entity) { return entity.PersistentId == saved->Id; });
+        if (patches.Store->IsRecordedDeparted(patches.Scope, member.Id))
+        {
+            patches.Store->ForgetGained(patches.Scope, member.Id);
+            continue;
+        }
+        if (!saved.has_value() || authoredHere || (fromSource && !request.has_value()))
+        {
+            log.Error("zone state: what the zone gained, {}, is not an entity its zone did not author, written {};"
+                      " it is dropped",
+                      named, member.Member.Form);
+            patches.Store->ForgetGained(patches.Scope, member.Id);
+            continue;
+        }
+        if (identities != nullptr && world.IsAlive(identities->TryResolve(saved->Id)))
+        {
+            log.Warn("zone state: what the zone gained, {}, is not made; a live entity already has its id", named);
+            continue;
+        }
+        if (request.has_value())
+        {
+            GainedSpawnRequests& spawning = world.HasResource<GainedSpawnRequests>()
+                ? world.GetResource<GainedSpawnRequests>()
+                : world.AddResource<GainedSpawnRequests>();
+            spawning.Add(*request);
+            continue;
+        }
+        const EntityId entity = world.CreateEntity(partition);
+        world.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ saved->Id });
+        world.AddComponent<KeptWithZone>(entity);
+        if (std::string failed; !ReadEntityRecord(world, entity, saved->Value, *patches.Serializers,
+                                                  *patches.Context, &failed))
+        {
+            log.Error("zone state: what the zone gained, {}, does not read its '{}'; it is dropped", named, failed);
+            world.DestroyEntity(entity);
+            patches.Store->ForgetGained(patches.Scope, member.Id);
+            continue;
+        }
+        SeedDerivedTransform(world, entity, worldHasTransforms);
+        patches.Store->RecordGainedImage(patches.Scope, member.Id, imager.Gained(entity));
+        made.push_back(entity);
+    }
+}
+
+void MakeHeldRecords(World& world, StoragePartitionId partition, ZoneStateStore& store, ZoneStateScope scope,
+                     const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
+{
+    const std::vector<ZoneListEntity> held = store.TakeHeld(scope);
+    if (held.empty())
+        return;
+    std::vector<EntityId> made;
+    for (const ZoneListEntity& record : held)
+        if (const EntityId entity = MakeHeldRecord(world, partition, record, serializers, context); entity.IsValid())
+            made.push_back(entity);
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr)
+        return;
+    const GainedSpawnRequests* spawning = world.TryGetResource<GainedSpawnRequests>();
+    std::vector<PersistentEntityId> absent;
+    for (const EntityId entity : made)
+        if (const PersistentEntityId holder = world.IsAlive(entity) ? index->AwaitedHolderOf(entity) : PersistentEntityId{};
+            holder.IsValid() && std::ranges::find(absent, holder) == absent.end()
+            && (spawning == nullptr || !spawning->AwaitsHolder(holder)))
+            absent.push_back(holder);
+    for (const PersistentEntityId holder : absent)
+        context.Logging->GetLogger<ZonePackageImport>().Error(
+            "zone state: {} held records waiting for {}, which did not arrive, are dropped",
+            DropRecordsAwaiting(world, holder), PersistentEntityIdToString(holder));
+}
+
+struct BaselineRules
+{
+    const World& Entities;
+    const WorldComponentSchema& Schema;
+    const LevelEntityPatches& Patches;
+    std::vector<ComponentTypeId> BytesReported;
+    std::vector<std::pair<ComponentTypeId, std::optional<JsonValue>>> OwedDefaults;
+};
+
+bool HoldsPlacement(const PackageEntity& content, const ComponentSerializerRegistry& serializers)
+{
+    return std::ranges::any_of(content.Components, [&](const PackageComponent& component) {
+        const IComponentSerializer* serializer = serializers.FindByType(component.Type);
+        return serializer != nullptr && component.SerializedJson.has_value()
+            && serializer->HoldsPlacement(*component.SerializedJson);
+    });
+}
+
+const std::optional<JsonValue>& OwedDefault(BaselineRules& rules, ComponentTypeId type)
+{
+    const auto cached = std::ranges::find(rules.OwedDefaults, type, &std::pair<ComponentTypeId, std::optional<JsonValue>>::first);
+    if (cached != rules.OwedDefaults.end())
+        return cached->second;
+    const IComponentSerializer* serializer = rules.Patches.Serializers->FindByType(type);
+    return rules.OwedDefaults
+        .emplace_back(type, serializer != nullptr ? SavedDefaultRecord(*serializer) : std::nullopt)
+        .second;
+}
+
+void AddOwedDefaults(BaselineRules& rules, const PackageEntity& content, std::vector<AuthoredComponent>& baseline)
+{
+    for (const PackageComponent& component : content.Components)
+    {
+        const WorldComponentSchema::Entry* entry = rules.Schema.Find(component.Type);
+        if (entry == nullptr)
+            continue;
+        for (const ComponentTypeId owed : entry->Owed)
+        {
+            if (content.Find(owed) != nullptr || rules.Entities.GetComponentIdByType(owed) == InvalidComponentId
+                || std::ranges::find(baseline, owed, &AuthoredComponent::Type) != baseline.end())
+                continue;
+            if (const std::optional<JsonValue>& record = OwedDefault(rules, owed); record.has_value())
+                baseline.push_back({ .Type = owed, .Record = *record, .InContent = true, .Diffed = true });
+        }
+    }
+}
+
+std::vector<AuthoredComponent> BaselineOf(const PackageEntity& content, ZoneStatePlacement placement,
+                                          BaselineRules& rules)
+{
+    const LevelEntityPatches& patches = rules.Patches;
+    const ComponentTypeId transform = ResolveComponentTypeId<LocalTransform>();
+    const bool placed = placement == ZoneStatePlacement::Kept
+        || (placement == ZoneStatePlacement::ByComponents && HoldsPlacement(content, *patches.Serializers));
+    std::vector<AuthoredComponent> baseline = AuthoredComponentsOf(
+        content, *patches.Serializers,
+        { .Listed = placed ? std::span<const ComponentTypeId>(&transform, 1) : std::span<const ComponentTypeId>(),
+          .Declared = { .Saved = true } });
+    AddOwedDefaults(rules, content, baseline);
+    std::vector<ComponentTypeId>& bytesReported = rules.BytesReported;
+    for (AuthoredComponent& component : baseline)
+    {
+        if (!component.InContent || !component.Record.IsNull())
+            continue;
+        component.Diffed = false;
+        if (std::ranges::find(bytesReported, component.Type) != bytesReported.end())
+            continue;
+        bytesReported.push_back(component.Type);
+        const IComponentSerializer* serializer = patches.Serializers->FindByType(component.Type);
+        patches.Context->Logging->GetLogger<ZonePackageImport>().Warn(
+            "zone state: '{}' is cooked as bytes in this zone, so changes to it are not kept",
+            serializer != nullptr ? serializer->JsonKey() : std::string_view("?"));
+    }
+    return baseline;
+}
+
+std::vector<AuthoredEntityState> AuthoredStates(const World& world, const WorldComponentSchema& schema,
+                                                const EntityBuildPackage& package, std::span<const EntityId> entities,
+                                                const std::vector<bool>& authorityOnly, const ZoneStateStore& store,
+                                                ZoneStateScope scope, const LevelEntityPatches& patches)
+{
+    BaselineRules rules{ .Entities = world, .Schema = schema, .Patches = patches, .BytesReported = {}, .OwedDefaults = {} };
+    std::unordered_map<std::uint64_t, ZoneStateLifetime> byInstance;
     const bool lifetimes = world.IsRegistered<ZoneStateLifetime>();
     if (lifetimes && world.IsRegistered<SceneInstance>())
         for (const EntityId entity : entities)
             if (const ZoneStateLifetime* lifetime = entity.IsValid() ? world.TryGet<ZoneStateLifetime>(entity) : nullptr)
                 if (const SceneInstance* instance = world.TryGet<SceneInstance>(entity))
-                    byInstance.emplace(instance->Id.Value, lifetime->Forgotten);
+                    byInstance.emplace(instance->Id.Value, *lifetime);
 
     std::vector<AuthoredEntityState> authored;
     authored.reserve(package.EntityCount());
+    std::optional<ZoneCaptureImager> imager;
     std::size_t index = 0;
     for (const PackageEntity& packageEntity : package.Entities())
     {
@@ -301,12 +558,39 @@ std::vector<AuthoredEntityState> AuthoredStates(const World& world, const Entity
         const EntityId entity = entities[index++];
         if (materializedElsewhere || !packageEntity.PersistentId.IsValid())
             continue;
+        const ZoneStateLifetime* lifetime =
+            entity.IsValid() && lifetimes ? LifetimeOf(world, entity, byInstance) : nullptr;
         const ZoneStateForgetting forgotten = !entity.IsValid() ? store.ForgettingOf(scope, packageEntity.PersistentId)
-                                              : lifetimes        ? ForgettingOf(world, entity, byInstance)
-                                                                 : ZoneStateForgetting::Never;
-        authored.push_back(AuthoredEntityState{ packageEntity.PersistentId, forgotten });
+                                              : lifetime != nullptr ? lifetime->Forgotten
+                                                                    : ZoneStateForgetting::Never;
+        const bool diffed = patches.Store != nullptr && entity.IsValid() && forgotten != ZoneStateForgetting::AtDetach;
+        AuthoredEntityState& state = authored.emplace_back(AuthoredEntityState{
+            packageEntity.PersistentId, forgotten,
+            diffed ? BaselineOf(packageEntity, lifetime != nullptr ? lifetime->Placement : ZoneStatePlacement::ByComponents,
+                                rules)
+                   : std::vector<AuthoredComponent>{},
+            {} });
+        if (diffed && patches.Store->PatchOf(scope, packageEntity.PersistentId) == nullptr)
+        {
+            if (!imager.has_value())
+                imager.emplace(world, *patches.Serializers);
+            state.Image = imager->Authored(entity, state.Baseline);
+        }
     }
     return authored;
+}
+
+void SeedOccupancy(World& world, const ZoneStateStore& store, ZoneStateScope scope)
+{
+    const std::vector<SensorSeed> pairs = store.OccupiedOf(scope);
+    if (pairs.empty())
+        return;
+    SensorOverlaps& overlaps =
+        world.HasResource<SensorOverlaps>() ? world.GetResource<SensorOverlaps>() : world.AddResource<SensorOverlaps>();
+    overlaps.ForgetAwaitedIf([&](const SensorSeed& seed) {
+        return std::ranges::any_of(pairs, [&](const SensorSeed& pair) { return pair.Sensor == seed.Sensor; });
+    });
+    overlaps.Await(pairs);
 }
 
 bool ImportPackageIntoPartitionImpl(
@@ -314,7 +598,7 @@ bool ImportPackageIntoPartitionImpl(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     const ComponentSerializerRegistry* serializers,
     SceneSerializationContext* sceneContext,
     ZoneImportError* error,
@@ -337,8 +621,11 @@ bool ImportPackageIntoPartitionImpl(
     // test worlds) import the cooked scene verbatim, and so does an import that
     // names no scope -- content built for this import alone has no prior
     // residency to have destroyed anything.
-    const ZoneStateStore* zoneState =
+    ZoneStateStore* zoneState =
         stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr;
+    const LevelEntityPatches patches = KeptLevelState(world, zoneState, stateScope, serializers, sceneContext);
+    if (zoneState != nullptr)
+        ReportCarriedMembers(*zoneState, stateScope, sceneContext);
 
     // Which entities are parented has to be known before any row is built, so
     // Parent joins the initial signature instead of costing a later archetype
@@ -371,7 +658,8 @@ bool ImportPackageIntoPartitionImpl(
     {
         const bool skipped = authorityOnly[entities.size()]
             || (zoneState != nullptr && packageEntity.PersistentId.IsValid()
-                && zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId));
+                && (zoneState->IsRecordedDestroyed(stateScope, packageEntity.PersistentId)
+                    || zoneState->IsRecordedDeparted(stateScope, packageEntity.PersistentId)));
         entities.push_back(skipped ? EntityId{} : world.CreateEntity(partition));
         if (packageEntity.MemberId.IsValid())
             members.push_back({ packageEntity.MemberId, entities.back(), packageEntity.PersistentId });
@@ -395,7 +683,7 @@ bool ImportPackageIntoPartitionImpl(
     std::vector<ComponentTypeId> owed;
     std::vector<std::byte> owedDefaults;
     std::size_t packageIndex = 0;
-    for (const PackageEntity& packageEntity : package.Entities())
+    for (const PackageEntity& content : package.Entities())
     {
         const EntityId entity = entities[packageIndex];
         if (!entity.IsValid())
@@ -403,6 +691,10 @@ bool ImportPackageIntoPartitionImpl(
             ++packageIndex;
             continue;
         }
+        const std::optional<PackageEntity> patched = patches.Store != nullptr && content.PersistentId.IsValid()
+            ? Patched(content, patches)
+            : std::nullopt;
+        const PackageEntity& packageEntity = patched.has_value() ? *patched : content;
 
         std::string failure;
         if (!BuildEntitySignature(
@@ -430,6 +722,7 @@ bool ImportPackageIntoPartitionImpl(
                     entity,
                     schema,
                     component,
+                    packageEntity.Unpatched,
                     serializers,
                     sceneContext,
                     failure))
@@ -471,19 +764,20 @@ bool ImportPackageIntoPartitionImpl(
     // Successful import records what the cooked scene authored, so the detach
     // capture can diff live state against it. Scopeless imports record nothing:
     // there is no residency for a later detach to diff.
-    if (auto* mutableState =
-            stateScope.IsValid() ? world.TryGetResource<ZoneStateStore>() : nullptr)
+    if (zoneState != nullptr)
     {
-        const std::vector<AuthoredEntityState> authored =
-            AuthoredStates(world, package, entities, authorityOnly, *mutableState, stateScope);
+        std::vector<AuthoredEntityState> authored =
+            AuthoredStates(world, schema, package, entities, authorityOnly, *zoneState, stateScope, patches);
         if (!authored.empty())
-            mutableState->RecordAuthoredSet(stateScope, authored);
-        std::vector<EntityId> live;
-        for (const EntityId entity : entities)
-            if (entity.IsValid())
-                live.push_back(entity);
-        RestoreZoneState(world, stateScope, live);
+            zoneState->RecordAuthoredSet(stateScope, std::move(authored));
     }
+    std::vector<EntityId> gained;
+    if (patches.Store != nullptr)
+        MakeGainedMembers(world, partition, patches, package, worldHasTransforms, gained);
+    if (zoneState != nullptr && serializers != nullptr && sceneContext != nullptr && IsSimulationAuthority(world))
+        MakeHeldRecords(world, partition, *zoneState, stateScope, *serializers, *sceneContext);
+    if (patches.Store != nullptr)
+        SeedOccupancy(world, *patches.Store, stateScope);
 
     // The caller's own record of what it made -- which entity is the root, and
     // which are the group a later teardown has to take with it. Only on
@@ -494,6 +788,7 @@ bool ImportPackageIntoPartitionImpl(
         for (const EntityId entity : entities)
             if (entity.IsValid())
                 created->push_back(entity);
+        created->insert(created->end(), gained.begin(), gained.end());
     }
 
     if (error != nullptr)
@@ -510,7 +805,8 @@ bool ImportZonePackageImpl(
     SceneSerializationContext* sceneContext,
     bool publish,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     if (!zone.IsValid())
     {
@@ -525,13 +821,20 @@ bool ImportZonePackageImpl(
         return false;
     }
 
+    if (stateScope.IsValid() && stateScope.Zone != zone)
+    {
+        SetError(error, "Zone package's state scope names another zone.");
+        return false;
+    }
+
     RuntimeZoneRecord& importing = runtime.BeginZoneImport(zone);
+    importing.StateScope = stateScope;
     if (!ImportPackageIntoPartitionImpl(
             runtime.Entities(),
             schema,
             package,
             importing.Partition,
-            zone,
+            stateScope,
             serializers,
             sceneContext,
             error,
@@ -563,7 +866,7 @@ bool ImportPackageIntoPartition(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     ZoneImportError* error)
 {
     return ImportPackageIntoPartitionImpl(
@@ -583,7 +886,7 @@ bool ImportPackageIntoPartition(
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneImportError* error,
@@ -606,7 +909,8 @@ bool ImportZonePackageHidden(
     const WorldComponentSchema& schema,
     ZoneId zone,
     const EntityBuildPackage& package,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -617,7 +921,8 @@ bool ImportZonePackageHidden(
         nullptr,
         false,
         ZoneParticipation{},
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackageHidden(
@@ -627,7 +932,8 @@ bool ImportZonePackageHidden(
     const EntityBuildPackage& package,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -638,7 +944,8 @@ bool ImportZonePackageHidden(
         &sceneContext,
         false,
         ZoneParticipation{},
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackage(
@@ -647,7 +954,8 @@ bool ImportZonePackage(
     ZoneId zone,
     const EntityBuildPackage& package,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -658,7 +966,8 @@ bool ImportZonePackage(
         nullptr,
         true,
         participation,
-        error);
+        error,
+        stateScope);
 }
 
 bool ImportZonePackage(
@@ -669,7 +978,8 @@ bool ImportZonePackage(
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneParticipation participation,
-    ZoneImportError* error)
+    ZoneImportError* error,
+    ZoneStateScope stateScope)
 {
     return ImportZonePackageImpl(
         runtime,
@@ -680,7 +990,8 @@ bool ImportZonePackage(
         &sceneContext,
         true,
         participation,
-        error);
+        error,
+        stateScope);
 }
 
 bool IsAuthorityMaterialized(const WorldComponentSchema& schema, const PackageEntity& entity)

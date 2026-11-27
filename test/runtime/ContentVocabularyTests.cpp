@@ -35,7 +35,8 @@ namespace
 {
     struct Content
     {
-        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_content_tags";
+        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_content_tags"
+                                   / ::testing::UnitTest::GetInstance()->current_test_info()->name();
         LoggingProvider Logging;
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
@@ -511,4 +512,51 @@ TEST(ContentVocabulary, TwoLayoutsWhoseWireKeysCollideAreReported)
     const EquipmentLayoutRegistry& layouts = world.Entities.GetResource<EquipmentLayoutRegistry>();
     EXPECT_NE(layouts.Get(layouts.Find("asset://items/i1396044.sdata")), nullptr);
     EXPECT_FALSE(layouts.Find("asset://items/i975248.sdata").IsValid());
+}
+
+TEST(ContentVocabulary, ItemAssetsAWorldInstallsNoKitForAreReportedOncePerKind)
+{
+    Content content;
+    std::filesystem::create_directories(content.Root / "items");
+    content.Write("items/ring.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Ring" } })");
+    content.Write("items/rope.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Rope" } })");
+    content.Write("items/hands.sdata",
+                  R"({ "type": "equipment.layout", "version": 1, "data": { "slots": [ { "key": "hand" } ] } })");
+    content.Scan();
+    VocabularyWorld world;
+
+    const std::vector<std::string> reports = UninstalledKitContent(content.Assets, world.Entities);
+
+    ASSERT_EQ(reports.size(), 2u);
+    EXPECT_EQ(reports[0], "2 item.definition assets, and this game installs no inventory");
+    EXPECT_EQ(reports[1], "1 equipment.layout asset, and this game installs no equipment");
+    InstallEquipmentVocabulary(world.Entities);
+    EXPECT_TRUE(UninstalledKitContent(content.Assets, world.Entities).empty());
+}
+
+TEST(ContentVocabulary, AnItemThatEquipsIsRefusedInAWorldThatWearsNothing)
+{
+    Content content;
+    std::filesystem::create_directories(content.Root / "items");
+    content.Write("items/ring.sdata", R"({ "type": "item.definition", "version": 1,
+        "data": { "name": "Ring", "equip": { "occupies": [ "ring" ] } } })");
+    content.Write("items/rope.sdata", R"({ "type": "item.definition", "version": 1, "data": { "name": "Rope" } })");
+    content.Scan();
+    VocabularyWorld inventoryOnly;
+    InstallInventoryVocabulary(inventoryOnly.Entities);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, inventoryOnly.Entities, ContentVocabularyReload::Once, errors);
+
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors[0].find("asset://items/ring.sdata"), std::string::npos) << errors[0];
+    EXPECT_NE(errors[0].find("wears nothing"), std::string::npos) << errors[0];
+    const ItemRegistry& items = inventoryOnly.Entities.GetResource<ItemRegistry>();
+    EXPECT_EQ(items.Get(items.Find("asset://items/ring.sdata")), nullptr) << "reserved, not defined";
+    EXPECT_NE(items.Get(items.Find("asset://items/rope.sdata")), nullptr);
+
+    VocabularyWorld wearing;
+    InstallEquipmentVocabulary(wearing.Entities);
+    errors.clear();
+    DeclareContentVocabulary(content.Assets, wearing.Entities, ContentVocabularyReload::Once, errors);
+    EXPECT_TRUE(errors.empty()) << errors.front();
 }

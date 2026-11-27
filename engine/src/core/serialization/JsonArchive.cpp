@@ -1,5 +1,6 @@
 #include <core/serialization/JsonArchive.h>
 
+#include <cmath>
 #include <limits>
 
 namespace
@@ -7,6 +8,19 @@ namespace
     JsonValue Number(double value)
     {
         return JsonValue(value);
+    }
+
+    template <typename Integer>
+    bool ReadInteger(const JsonValue* json, Integer& value)
+    {
+        if (json == nullptr || !json->IsNumber())
+            return false;
+        const double number = json->AsNumber();
+        if (std::trunc(number) != number || number < static_cast<double>(std::numeric_limits<Integer>::min())
+            || number > static_cast<double>(std::numeric_limits<Integer>::max()))
+            return false;
+        value = static_cast<Integer>(number);
+        return true;
     }
 }
 
@@ -25,6 +39,12 @@ IWriteArchive& JsonWriteArchive::Field(std::string_view key, float value)
 IWriteArchive& JsonWriteArchive::Field(std::string_view key, double value)
 {
     AddValue(key, Number(value));
+    return *this;
+}
+
+IWriteArchive& JsonWriteArchive::Field(std::string_view key, std::int32_t value)
+{
+    AddValue(key, Number(static_cast<double>(value)));
     return *this;
 }
 
@@ -149,17 +169,15 @@ IReadArchive& JsonReadArchive::Field(std::string_view key, double& value)
     return *this;
 }
 
+IReadArchive& JsonReadArchive::Field(std::string_view key, std::int32_t& value)
+{
+    IsOk = ReadInteger(TakeValue(key), value) && IsOk;
+    return *this;
+}
+
 IReadArchive& JsonReadArchive::Field(std::string_view key, std::uint32_t& value)
 {
-    const JsonValue* json = TakeValue(key);
-    if (!json || !json->IsNumber() || json->AsNumber() < 0.0
-        || json->AsNumber() > static_cast<double>(std::numeric_limits<std::uint32_t>::max()))
-    {
-        IsOk = false;
-        return *this;
-    }
-
-    value = static_cast<std::uint32_t>(json->AsNumber());
+    IsOk = ReadInteger(TakeValue(key), value) && IsOk;
     return *this;
 }
 

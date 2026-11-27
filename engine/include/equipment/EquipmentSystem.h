@@ -4,11 +4,9 @@
 
 #include <cstdint>
 
-class EngineSchedule;
 class World;
 struct FixedLogicContext;
 
-// docs/gameplay/equipment.md, "The equipment pass".
 void RunEquipmentPass(World& world, const FixedSimTime& now);
 [[nodiscard]] std::uint64_t EquipmentRebindWalks(const World& world);
 
@@ -18,6 +16,6 @@ public:
     void FixedLogic(FixedLogicContext& ctx);
 };
 
-void RegisterEquipmentSystems(EngineSchedule& schedule);
-
-void InstallEquipmentMoveAdmission(World& world);
+// False, leaving the World's admission as it is, when another layer installed one.
+[[nodiscard]] bool InstallEquipmentMoveAdmission(World& world);
+[[nodiscard]] bool HoldsEquipmentMoveAdmission(const World& world);

@@ -18,6 +18,7 @@
 #include <net/NetReplicationComponents.h>
 #include <ecs/Query.h>
 #include <net/NetSpawnPrefab.h>
+#include "ReplicatedListFixture.h"
 #include "StubPrefabSpawner.h"
 #include <net/ReplicationInterpolation.h>
 #include <net/ReplicationChangeStore.h>
@@ -35,6 +36,7 @@
 
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <vector>
 
 namespace
@@ -228,6 +230,29 @@ namespace
         Transform3f pose;
         pose.Position = Vec3d{ x, y, z };
         return pose;
+    }
+
+    std::size_t BitsSentFor(const Pair& pair, EntityId entity)
+    {
+        const NetEntityId id = pair.Identity.TryFind(entity);
+        for (const SnapshotWriteResult::EntityCost& cost : pair.LastWrite.Costliest)
+        {
+            if (id.IsValid() && cost.Id.Value == id.Value)
+                return cost.Bits;
+        }
+        ADD_FAILURE() << "the last snapshot did not carry the entity";
+        return 0;
+    }
+
+    void MoveTo(Pair& pair, std::initializer_list<EntityId> entities, float x)
+    {
+        for (const EntityId entity : entities)
+            pair.Authority.TryGet<LocalTransform>(entity)->Value.Position.X = x;
+    }
+
+    void RegisterPointer(ComponentRegistrar& components)
+    {
+        components.Add<Pointer>();
     }
 }
 
@@ -524,6 +549,82 @@ TEST(ReplicationSnapshot, OwnerOnlyStateReachesOnlyItsOwner)
     ASSERT_NE(owner, nullptr);
     EXPECT_EQ(owner->Peer, 7u)
         << "a client has to learn which entity is its own";
+}
+
+TEST(ReplicationSnapshot, AComponentNothingIsOwedOnIsNotMentioned)
+{
+    Pair pair(RegisterPointer);
+    const EntityId bare = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId carrying = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<LookOrientation>(carrying, LookOrientation{ .Yaw = 1.5f, .Pitch = 0.25f });
+    pair.Authority.AddComponent<Pointer>(carrying, Pointer{ .Target = bare, .Count = 3 });
+    pair.Replicate();
+
+    MoveTo(pair, { bare, carrying }, 4.0f);
+    pair.Replicate();
+
+    ASSERT_EQ(pair.LastWrite.EntitiesWritten, 2u);
+    EXPECT_EQ(BitsSentFor(pair, carrying), BitsSentFor(pair, bare))
+        << "a component nothing moved on still cost its index and its field mask";
+    const EntityId mirror = pair.Mirror(carrying);
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(mirror)->Value.Position.X, 4.0f, kWirePosition);
+    EXPECT_FLOAT_EQ(pair.Client.TryGet<LookOrientation>(mirror)->Yaw, 1.5f);
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, pair.Mirror(bare));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 3u);
+}
+
+TEST(ReplicationSnapshot, AComponentAddedLaterIsAnnouncedOnce)
+{
+    Pair pair(RegisterPointer);
+    const EntityId bare = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId growing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Replicate();
+
+    pair.Authority.AddComponent<Pointer>(growing, Pointer{});
+    pair.Deliver = false;
+    pair.Replicate();
+    pair.Deliver = true;
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(growing);
+    ASSERT_TRUE(pair.Client.HasComponent<Pointer>(mirror))
+        << "a component added at its defaults was never announced, so the client does not know it is there";
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 0u);
+
+    for (int step = 1; step <= 3; ++step)
+    {
+        MoveTo(pair, { bare, growing }, static_cast<float>(step));
+        pair.Replicate();
+        EXPECT_EQ(BitsSentFor(pair, growing), BitsSentFor(pair, bare)) << "announced again at step " << step;
+    }
+    EXPECT_TRUE(pair.Client.HasComponent<Pointer>(mirror));
+}
+
+TEST(ReplicationSnapshot, ARemovedAndReturnedComponentIsAnnounced)
+{
+    Pair pair(RegisterPointer);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<Pointer>(entity, Pointer{ .Target = {}, .Count = 3 });
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(entity);
+    ASSERT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 3u);
+
+    pair.Authority.RemoveComponent<Pointer>(entity);
+    pair.Replicate();
+    ASSERT_FALSE(pair.Client.HasComponent<Pointer>(mirror));
+    pair.Authority.AddComponent<Pointer>(entity, Pointer{});
+    pair.Replicate();
+    ASSERT_TRUE(pair.Client.HasComponent<Pointer>(mirror)) << "returned at its defaults and never announced";
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 0u);
+
+    pair.Authority.RemoveComponent<Pointer>(entity);
+    pair.Deliver = false;
+    pair.Replicate();
+    pair.Deliver = true;
+    pair.Authority.AddComponent<Pointer>(entity, Pointer{ .Target = {}, .Count = 5 });
+    pair.Replicate();
+    ASSERT_TRUE(pair.Client.HasComponent<Pointer>(mirror));
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 5u) << "a return the peer never saw leave";
 }
 
 //=============================================================================
@@ -1552,6 +1653,33 @@ TEST(ReplicationRelevance, OwnershipMovingTakesTheHeldEntityAwayAndBringsItBack)
     const EntityId again = pair.Mirror(pack.Held);
     ASSERT_TRUE(again.IsValid());
     EXPECT_TRUE(pair.Client.HasComponent<LocalTransform>(again)) << "seeded whole, not as a delta";
+}
+
+TEST(ReplicationSnapshot, AnEntityThatLeftRelevanceIsAnnouncedWholeWhenItReturns)
+{
+    Pair pair(RegisterPointer);
+    const Holding pack = HeldBy(pair, 5);
+    pair.Authority.AddComponent<LookOrientation>(pack.Held, LookOrientation{ .Yaw = 1.5f, .Pitch = 0.25f });
+    pair.Authority.AddComponent<Pointer>(pack.Held, Pointer{});
+    pair.Replicate(5);
+    const EntityId first = pair.Mirror(pack.Held);
+    ASSERT_TRUE(first.IsValid());
+    ASSERT_TRUE(pair.Client.HasComponent<Pointer>(first));
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 6;
+    pair.Replicate(5);
+    ASSERT_FALSE(pair.Client.IsAlive(first));
+    MoveTo(pair, { pack.Held }, 9.0f);
+    pair.Replicate(5);
+
+    pair.Authority.TryGet<NetOwner>(pack.Holder)->Peer = 5;
+    pair.Replicate(5);
+    const EntityId again = pair.Mirror(pack.Held);
+    ASSERT_TRUE(again.IsValid());
+    EXPECT_NEAR(pair.Client.TryGet<LocalTransform>(again)->Value.Position.X, 9.0f, kWirePosition);
+    EXPECT_TRUE(pair.Client.HasComponent<LookOrientation>(again))
+        << "a component with no run this peer may see was not announced again";
+    EXPECT_TRUE(pair.Client.HasComponent<Pointer>(again)) << "a component at its defaults was not announced again";
 }
 
 // A destroy written after the seed would leave the peer without what the authority believes it holds.
@@ -3202,10 +3330,12 @@ TEST(ReplicationEquipment, AnOwnerSeesWhereItsEquipmentCameFromAndOthersSeeOnlyW
         const EntityId wearer = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
         pair.Authority.AddComponent<NetOwner>(wearer, NetOwner{ .Peer = 5 });
         const EntityId band = pair.SpawnReplicated(PoseAt(0.0f, 1.0f, 0.0f));
-        EquipmentState state{ .Layout = humanoid, .Count = 1, .NextKey = 2, .Records = {} };
-        state.Records[0] = EquipmentRecord{ .Key = 1, .Definition = ring, .Slots = 1u << 1, .Primary = 1,
-                                            .Source = { .Entity = band, .Target = {} }, .Derivation = EquipmentDerivation::Pending };
-        pair.Authority.AddComponent<EquipmentState>(wearer, state);
+        SetEquipment(pair.Authority, wearer,
+                     { .Layout = humanoid,
+                       .NextKey = 2,
+                       .Records = { EquipmentRecord{ .Key = 1, .Definition = ring, .Slots = 1u << 1, .Primary = 1,
+                                                     .Source = { .Entity = band, .Target = {} },
+                                                     .Derivation = EquipmentDerivation::Pending } } });
         pair.Replicate(viewer);
 
         const EquipmentState* seen = pair.Client.TryGet<EquipmentState>(pair.Mirror(wearer));
@@ -3213,14 +3343,15 @@ TEST(ReplicationEquipment, AnOwnerSeesWhereItsEquipmentCameFromAndOthersSeeOnlyW
         EXPECT_EQ(pair.Client.GetResource<EquipmentLayoutRegistry>().GetName(seen->Layout),
                   "asset://equipment/humanoid.sdata");
         ASSERT_EQ(seen->Count, 1u);
-        EXPECT_EQ(seen->Records[0].Key, 1u);
-        EXPECT_EQ(pair.Client.GetResource<ItemRegistry>().GetName(seen->Records[0].Definition), "asset://items/ring.sdata");
-        EXPECT_EQ(seen->Records[0].Slots, 1u << 1);
-        EXPECT_EQ(seen->Records[0].Primary, 1u);
+        const EquipmentRecord& worn = EquipmentRecordsOf(pair.Client, *seen)[0];
+        EXPECT_EQ(worn.Key, 1u);
+        EXPECT_EQ(pair.Client.GetResource<ItemRegistry>().GetName(worn.Definition), "asset://items/ring.sdata");
+        EXPECT_EQ(worn.Slots, 1u << 1);
+        EXPECT_EQ(worn.Primary, 1u);
         if (viewer == 5)
-            EXPECT_EQ(seen->Records[0].Source.Entity, pair.Mirror(band)) << "the owner knows which entry it wears";
+            EXPECT_EQ(worn.Source.Entity, pair.Mirror(band)) << "the owner knows which entry it wears";
         else
-            EXPECT_FALSE(seen->Records[0].Source.Entity.IsValid()) << "another peer is not told";
+            EXPECT_FALSE(worn.Source.Entity.IsValid()) << "another peer is not told";
     }
 }
 
@@ -3244,5 +3375,205 @@ TEST(ReplicationEquipment, AnOwnerIsNotSentOwnerOnlyFieldsStillAtTheirDefault)
                                                     EquipmentState{ .Layout = humanoid, .Count = 0, .NextKey = 1, .Records = {} });
         bytes[viewer - 5] = pair.Replicate(viewer);
     }
-    EXPECT_EQ(bytes[0], bytes[1]) << "sixteen empty sources would be 128 bytes more";
+    EXPECT_EQ(bytes[0], bytes[1]) << "thirty-two empty sources would be 256 bytes more";
+}
+
+namespace
+{
+    void RegisterLists(ComponentRegistrar& components)
+    {
+        components.Add<Roster>();
+        components.Add<Ledger>();
+    }
+
+    Roster RosterOf(std::uint32_t label, std::initializer_list<std::uint32_t> values)
+    {
+        Roster roster;
+        roster.Label = label;
+        for (const std::uint32_t value : values)
+            roster.Entries[roster.Count++] = RosterEntry{ .Value = value, .Secret = value * 10, .Target = {} };
+        return roster;
+    }
+
+    void ExpectSameRoster(const Pair& pair, EntityId entity, bool secrets)
+    {
+        const Roster* sent = pair.Authority.TryGet<Roster>(entity);
+        const Roster* held = pair.Client.TryGet<Roster>(pair.Mirror(entity));
+        ASSERT_NE(held, nullptr);
+        EXPECT_EQ(held->Label, sent->Label);
+        ASSERT_EQ(held->Count, std::min<std::uint32_t>(sent->Count, kRosterMost));
+        for (std::uint32_t i = 0; i < held->Count; ++i)
+        {
+            EXPECT_EQ(held->Entries[i].Value, sent->Entries[i].Value) << i;
+            EXPECT_EQ(held->Entries[i].Secret, secrets ? sent->Entries[i].Secret : 0u) << i;
+        }
+    }
+
+    void Remove(Roster& roster, std::uint32_t at)
+    {
+        for (std::uint32_t i = at; i + 1 < roster.Count; ++i)
+            roster.Entries[i] = roster.Entries[i + 1];
+        roster.Entries[--roster.Count] = RosterEntry{};
+    }
+}
+
+TEST(ReplicationSnapshot, AListArrivesWithItsCountAndElements)
+{
+    for (const std::uint32_t viewer : { 5u, 6u })
+    {
+        Pair pair(RegisterLists);
+        const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<NetOwner>(entity, NetOwner{ .Peer = 5 });
+        pair.Authority.AddComponent<Roster>(entity, RosterOf(3, { 7, 8, 9 }));
+        pair.Replicate(viewer);
+        ExpectSameRoster(pair, entity, viewer == 5);
+    }
+}
+
+TEST(ReplicationSnapshot, AListAppendSendsOneElement)
+{
+    const auto appendBits = [](std::uint32_t had) {
+        Pair pair(RegisterLists);
+        const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        Roster roster;
+        for (std::uint32_t i = 0; i < had; ++i)
+            roster.Entries[roster.Count++] = RosterEntry{ .Value = i + 1, .Secret = 0, .Target = {} };
+        pair.Authority.AddComponent<Roster>(entity, roster);
+        pair.Replicate();
+        Roster& grown = *pair.Authority.TryGet<Roster>(entity);
+        grown.Entries[grown.Count++] = RosterEntry{ .Value = 99, .Secret = 0, .Target = {} };
+        pair.Replicate();
+        ExpectSameRoster(pair, entity, false);
+        return BitsSentFor(pair, entity);
+    };
+    EXPECT_EQ(appendBits(20), appendBits(3) + 17) << "an append costs one element and a bit per element held";
+}
+
+TEST(ReplicationSnapshot, AListsMiddleRemovalConverges)
+{
+    Pair pair(RegisterLists);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(entity, NetOwner{ .Peer = 5 });
+    pair.Authority.AddComponent<Roster>(entity, RosterOf(1, { 10, 20, 30, 40, 50 }));
+    pair.Replicate(5);
+    Remove(*pair.Authority.TryGet<Roster>(entity), 1);
+    pair.Replicate(5);
+    ExpectSameRoster(pair, entity, true);
+    EXPECT_EQ(pair.Client.TryGet<Roster>(pair.Mirror(entity))->Count, 4u);
+}
+
+TEST(ReplicationSnapshot, AListConvergesAfterALostSnapshot)
+{
+    Pair pair(RegisterLists);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(entity, NetOwner{ .Peer = 5 });
+    pair.Authority.AddComponent<Roster>(entity, RosterOf(1, { 1, 2, 3, 4 }));
+    pair.Replicate(5);
+
+    Roster& roster = *pair.Authority.TryGet<Roster>(entity);
+    Remove(roster, 0);
+    Remove(roster, 0);
+    pair.Deliver = false;
+    pair.Replicate(5);
+    pair.Deliver = true;
+    roster.Entries[roster.Count++] = RosterEntry{ .Value = 0, .Secret = 0, .Target = {} };
+    roster.Entries[roster.Count++] = RosterEntry{ .Value = 4, .Secret = 40, .Target = {} };
+    pair.Replicate(5);
+    ExpectSameRoster(pair, entity, true);
+    EXPECT_EQ(pair.Client.TryGet<Roster>(pair.Mirror(entity))->Count, 4u);
+}
+
+TEST(ReplicationSnapshot, AListsGatedRunsFollowOwnership)
+{
+    Pair pair(RegisterLists);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(entity, NetOwner{ .Peer = 5 });
+    pair.Authority.AddComponent<Roster>(entity, RosterOf(1, { 3, 4 }));
+    pair.Replicate(6);
+    ExpectSameRoster(pair, entity, false);
+
+    pair.Authority.TryGet<NetOwner>(entity)->Peer = 6;
+    pair.Replicate(6);
+    ExpectSameRoster(pair, entity, true);
+}
+
+TEST(ReplicationSnapshot, ANonOwnerIsSentNoCountOfAnOwnerOnlyList)
+{
+    Pair pair(RegisterLists);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<NetOwner>(entity, NetOwner{ .Peer = 5 });
+    pair.Authority.AddComponent<Ledger>(entity, Ledger{ .Count = 2, .Amounts = { 4, 5 } });
+    pair.Replicate(6);
+    ASSERT_EQ(pair.Client.TryGet<Ledger>(pair.Mirror(entity))->Count, 0u);
+
+    pair.Authority.TryGet<Ledger>(entity)->Count = 3;
+    pair.Replicate(6);
+    EXPECT_EQ(pair.LastWrite.EntitiesWritten, 0u) << "an owner-only list moving owes another peer nothing";
+    EXPECT_EQ(pair.Client.TryGet<Ledger>(pair.Mirror(entity))->Count, 0u);
+}
+
+TEST(ReplicationSnapshot, AListPastItsMostIsClampedAndCounted)
+{
+    Pair pair(RegisterLists);
+    const EntityId entity = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    Roster full;
+    for (std::uint32_t i = 0; i < kRosterMost; ++i)
+        full.Entries[full.Count++] = RosterEntry{ .Value = i + 1, .Secret = 0, .Target = {} };
+    pair.Authority.AddComponent<Roster>(entity, full);
+    pair.Replicate();
+    EXPECT_EQ(pair.Changes.Clamped(), 0u);
+    ExpectSameRoster(pair, entity, false);
+
+    Roster& over = *pair.Authority.TryGet<Roster>(entity);
+    over.Entries[over.Count++] = RosterEntry{ .Value = 1000, .Secret = 0, .Target = {} };
+    pair.Replicate();
+    EXPECT_EQ(pair.Changes.Clamped(), 1u);
+    ExpectSameRoster(pair, entity, false);
+}
+
+TEST(ReplicationSnapshot, AListsDeferredReferenceKeepsItsImage)
+{
+    const auto build = [](Pair& pair, EntityId& holder, EntityId& target) {
+        holder = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+        Roster roster = RosterOf(2, { 1, 2 });
+        roster.Entries[1].Target = target;
+        pair.Authority.AddComponent<Roster>(holder, roster);
+        pair.Authority.AddComponent<Roster>(target, RosterOf(0, { 5, 6, 7, 8, 9, 10, 11, 12 }));
+    };
+    std::size_t whole = 0;
+    std::size_t delta = 0;
+    {
+        Pair measure(RegisterLists);
+        EntityId holder;
+        EntityId target;
+        build(measure, holder, target);
+        whole = measure.Replicate();
+        measure.Authority.TryGet<Roster>(holder)->Entries[0].Value = 3;
+        delta = measure.Replicate();
+    }
+
+    Pair pair(RegisterLists);
+    EntityId holder;
+    EntityId target;
+    build(pair, holder, target);
+    pair.Budget = whole - 1;
+    pair.Replicate();
+    const EntityId mirror = pair.Mirror(holder);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_FALSE(pair.Mirror(target).IsValid());
+
+    pair.Authority.TryGet<Roster>(holder)->Entries[0].Value = 3;
+    pair.Budget = delta;
+    pair.Replicate();
+    ASSERT_FALSE(pair.Mirror(target).IsValid()) << "the target must not fit the delta's snapshot either";
+    ASSERT_EQ(pair.Client.TryGet<Roster>(mirror)->Entries[0].Value, 3u);
+
+    pair.Budget = kSnapshotBytes;
+    pair.Replicate();
+    ASSERT_TRUE(pair.Mirror(target).IsValid());
+    const Roster* held = pair.Client.TryGet<Roster>(mirror);
+    EXPECT_EQ(held->Entries[1].Target, pair.Mirror(target));
+    EXPECT_EQ(held->Entries[0].Value, 3u);
+    EXPECT_EQ(held->Count, 2u);
 }

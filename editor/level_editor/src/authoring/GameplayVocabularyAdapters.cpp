@@ -12,9 +12,8 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <movement/LocomotionMode.h>
-#include <movement/components/CharacterMovement.h>
 
 #include <algorithm>
 #include <array>
@@ -23,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace
@@ -307,15 +307,13 @@ namespace
 
             PropertyNode abilities = GroupProperty("abilities", "Abilities");
             std::vector<std::string> offered;
-            ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
-                if (registry->Get(id) != nullptr)
-                    offered.emplace_back(registry->GetName(id));
+            registry->ForEachDefined([&](AbilityId id, const AbilityDefinition&) {
+                offered.emplace_back(registry->GetName(id));
             });
             if (!offered.empty())
                 abilities.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Ability", .Choices = std::move(offered) });
-            for (std::uint8_t i = 0; i < held->Count; ++i)
+            for (const AbilityGrant& grant : AbilityGrantsOf(world, *held))
             {
-                const AbilityGrant& grant = held->Entries[i];
                 const AbilityDefinition* definition = registry->Get(grant.Ability);
                 const std::string name = definition != nullptr ? definition->DisplayName
                                                                : std::string(registry->GetName(grant.Ability));
@@ -338,7 +336,8 @@ namespace
             auto* entries = world.TryGetResource<AbilityGrantEntries>();
             if (held == nullptr || registry == nullptr || entries == nullptr)
                 return PropertyEditResult::Gone;
-            AbilityGrants working = *held;
+            const AbilityGrantList before = CopyAbilityGrants(world, context.Entity);
+            AbilityGrantList working = before;
             VocabularyEdit edit;
             if (key == "abilities" && verb == "grant")
             {
@@ -352,74 +351,27 @@ namespace
             else
                 return PropertyEditResult::Gone;
             const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
-            return result == PropertyEditResult::Applied ? CommitComponentValue(context, *held, working) : result;
+            if (result != PropertyEditResult::Applied)
+                return result;
+            context.Commands.Execute(std::make_unique<ValueCommand<AbilityGrantList>>(
+                before, working,
+                [&scene = context.Scene, entity = context.Entity](const AbilityGrantList& grants) {
+                    SetAbilityGrants(scene.GetRegistry().Components, entity, grants);
+                },
+                context.Document));
+            return PropertyEditResult::Applied;
         }
 
     private:
         RefusalNote Refusal;
     };
 
-    //=========================================================================
-    // Locomotion mode
-    //=========================================================================
-    class CharacterMovementEditorAdapter final : public IEditorComponentAdapter
-    {
-    public:
-        ComponentTypeId Type() const override
-        {
-            return ResolveComponentTypeId<CharacterMovement>();
-        }
-
-        bool AuthorsInspectorRows() const override { return true; }
-
-        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
-        {
-            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-            const CharacterMovement* held = world.TryGet<CharacterMovement>(context.Entity);
-            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-            if (held == nullptr)
-                return {};
-            if (modes == nullptr)
-                return { NoteProperty("missing", "Starting mode", "This document has no locomotion mode registry.") };
-
-            PropertyNode mode;
-            mode.Key = "mode";
-            mode.Descriptor.Kind = PropertyKind::Choice;
-            mode.Descriptor.Label = "Starting mode";
-            mode.Descriptor.Tooltip = "Which locomotion rules the character spawns under. Modes change during play; "
-                                      "this is only where it begins.";
-            for (const LocomotionModeEntry& entry : modes->Entries())
-                mode.Descriptor.Choices.push_back(entry.Name);
-            const LocomotionModeEntry* current = modes->Find(held->Mode);
-            mode.Value = current != nullptr ? current->Name : std::string("<unregistered>");
-            if (current == nullptr)
-                mode.Descriptor.Choices.push_back(mode.Value);
-            return { std::move(mode) };
-        }
-
-        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
-                                             std::string_view value) const override
-        {
-            World& world = context.Scene.GetRegistry().Components;
-            const CharacterMovement* held = std::as_const(world).TryGet<CharacterMovement>(context.Entity);
-            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-            if (key != "mode" || held == nullptr || modes == nullptr)
-                return PropertyEditResult::Gone;
-            CharacterMovement after = *held;
-            if (!SetLocomotionMode(after, *modes, value).Changed)
-                return PropertyEditResult::Unchanged;
-            return CommitComponentValue(context, *held, after);
-        }
-    };
-
-    constexpr std::string_view kAnything = "Anything";
-
     PropertyNode ItemDefinitionRow(const World& world, ItemId definition)
     {
         const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
         std::vector<std::string> names;
         if (items != nullptr)
-            ForEachRegistered<ItemId>(*items, [&](ItemId id) { names.push_back(DisplayName(items->GetName(id))); });
+            items->ForEachName([&](ItemId, std::string_view name) { names.push_back(DisplayName(name)); });
         const std::string current = DisplayName(items != nullptr ? items->GetName(definition) : std::string_view{});
         if (std::ranges::find(names, current) == names.end())
             names.push_back(current);
@@ -447,8 +399,9 @@ namespace
             const Counted* held = world.TryGet<Counted>(context.Entity);
             if (held == nullptr)
                 return {};
+            const auto [least, most] = CountRange(world, held->Definition);
             return { ItemDefinitionRow(world, held->Definition),
-                     NumberProperty("count", "Count", static_cast<double>(held->Count), 0.0, 4294967295.0, 1.0,
+                     NumberProperty("count", "Count", static_cast<double>(held->Count), least, most, 1.0,
                                     std::string(CountTooltip)) };
         }
 
@@ -478,68 +431,23 @@ namespace
                 return PropertyEditResult::Gone;
             if (after.Definition == held->Definition && after.Count == held->Count)
                 return PropertyEditResult::Unchanged;
+            if constexpr (std::is_same_v<Counted, ItemEntry>)
+                if (const ItemDefinition* item = FindItemDefinition(world, after.Definition);
+                    item != nullptr && !ItemStackHolds(*item, after.Count))
+                    return PropertyEditResult::Refused;
             return CommitComponentValue(context, *held, after);
         }
 
     private:
+        static std::pair<double, double> CountRange(const World& world, ItemId definition)
+        {
+            if constexpr (std::is_same_v<Counted, ItemEntry>)
+                if (const ItemDefinition* item = FindItemDefinition(world, definition))
+                    return { 1.0, static_cast<double>(std::max<std::uint32_t>(item->StackMax, 1)) };
+            return { 0.0, 4294967295.0 };
+        }
+
         std::string_view CountTooltip;
-    };
-
-    class ItemContainerEditorAdapter final : public IEditorComponentAdapter
-    {
-    public:
-        ComponentTypeId Type() const override { return ResolveComponentTypeId<ItemContainer>(); }
-        bool AuthorsInspectorRows() const override { return true; }
-
-        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
-        {
-            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-            const ItemContainer* container = world.TryGet<ItemContainer>(context.Entity);
-            if (container == nullptr)
-                return {};
-            std::vector<std::string> names{ std::string(kAnything) };
-            std::size_t current = 0;
-            if (const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
-                ForEachRegistered<GameplayTagId>(*tags, [&](GameplayTagId tag) {
-                    if (tag == container->Accepts)
-                        current = names.size();
-                    names.emplace_back(tags->GetName(tag));
-                });
-            const std::vector<std::string_view> options(names.begin(), names.end());
-            return { NumberProperty("capacity", "Holds", static_cast<double>(container->Capacity), 0.0, 65535.0, 1.0,
-                                    "Entries it holds at most; zero is as many as a capacity can say."),
-                     ChoiceProperty("accepts", "Accepts", options, current,
-                                    "An item must carry this tag, or one beneath it.") };
-        }
-
-        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
-                                             std::string_view value) const override
-        {
-            World& world = context.Scene.GetRegistry().Components;
-            const ItemContainer* held = std::as_const(world).TryGet<ItemContainer>(context.Entity);
-            if (held == nullptr)
-                return PropertyEditResult::Gone;
-            ItemContainer after = *held;
-            if (key == "capacity")
-            {
-                const std::optional<double> capacity = ParseNumber(value, 0.0, 65535.0);
-                if (!capacity)
-                    return PropertyEditResult::Refused;
-                after.Capacity = static_cast<std::uint16_t>(*capacity);
-            }
-            else if (key == "accepts")
-            {
-                const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
-                after.Accepts = value == kAnything || tags == nullptr ? GameplayTagId{} : tags->FindTag(value);
-                if (value != kAnything && !after.Accepts.IsValid())
-                    return PropertyEditResult::Refused;
-            }
-            else
-                return PropertyEditResult::Gone;
-            if (after.Capacity == held->Capacity && after.Accepts == held->Accepts)
-                return PropertyEditResult::Unchanged;
-            return CommitComponentValue(context, *held, after);
-        }
     };
 }
 
@@ -558,23 +466,8 @@ std::unique_ptr<IEditorComponentAdapter> MakeAbilityGrantsEditorAdapter()
     return std::make_unique<AbilityGrantsEditorAdapter>();
 }
 
-std::unique_ptr<IEditorComponentAdapter> MakeCharacterMovementEditorAdapter()
-{
-    return std::make_unique<CharacterMovementEditorAdapter>();
-}
-
 std::unique_ptr<IEditorComponentAdapter> MakeItemEntryEditorAdapter()
 {
-    return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds; zero is spent.");
+    return std::make_unique<CountedItemEditorAdapter<ItemEntry>>("How many units this entry holds, from one to what its stack holds.");
 }
 
-std::unique_ptr<IEditorComponentAdapter> MakeItemContainerEditorAdapter()
-{
-    return std::make_unique<ItemContainerEditorAdapter>();
-}
-
-std::unique_ptr<IEditorComponentAdapter> MakeItemPickupEditorAdapter()
-{
-    return std::make_unique<CountedItemEditorAdapter<ItemPickup>>(
-        "How many units taking it gives, when it holds no entry of its own.");
-}

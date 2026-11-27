@@ -15,6 +15,7 @@
 #include <app/LoadedLevel.h>
 #include <save/SavedGames.h>
 #include <app/RuntimeContent.h>
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
@@ -78,6 +79,7 @@ struct PlatformServices;
 class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
+class GainedMemberSpawns;
 class EngineVocabularyBindings;
 class RuntimeResumeOperation;
 class ApplicationQuitOperation;
@@ -648,6 +650,7 @@ private:
     std::unique_ptr<RuntimeWorld> RuntimeWorldState;
     // Constructed with the world; torn down before it (they borrow the world).
     std::unique_ptr<SceneSpawnService> SpawnServiceState;
+    std::unique_ptr<GainedMemberSpawns> GainedSpawnState;
     std::unique_ptr<NetPrefabSpawner> NetPrefabState;
     // The authored half. The catalog is a resource of the world above; this is
     // the executable side of it, composed by the host and given back before the
@@ -678,8 +681,8 @@ private:
     std::unique_ptr<EngineVocabularyBindings> VocabularyBindings;
     std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
-    VerbBindingToken ResumeBinding;
-    VerbBindingToken QuitBinding;
+    AuthoredApiBindings ResumeBinding;
+    AuthoredApiBindings QuitBinding;
     // Declared after the services it connects and the world it publishes into,
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.

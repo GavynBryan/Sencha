@@ -118,7 +118,7 @@ struct AnimDecisionRecord
     // Event records, including lifecycle events.
     std::uint32_t EventKey = 0;
     AnimEventOutcome EventOutcome = AnimEventOutcome::Fired;
-    VerbAdmission Admission = VerbAdmission::Accepted;
+    VerbAnswer Answer{};
     // Section records, including section lifecycle events.
     std::uint8_t Section = 0xFF;
     std::uint8_t PreviousSection = 0xFF;

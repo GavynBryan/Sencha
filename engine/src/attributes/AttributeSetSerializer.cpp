@@ -4,6 +4,7 @@
 #include <attributes/AttributeSerialization.h>
 #include <attributes/AttributeSet.h>
 
+#include <core/logging/LoggingProvider.h>
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/serialization/TypedComponentSerializer.h>
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace
@@ -55,11 +57,19 @@ public:
             && WriteAttributes(archive, *set, *attributes);
     }
 
+    bool SavedFormFromRowAlone() const override { return true; }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        static const AttributeRegistry kNoAttributes;
+        return WriteAttributes(archive, AttributeSet{}, kNoAttributes);
+    }
+
     bool LoadIntoWorld(
         IReadArchive& archive,
         EntityId entity,
         World& world,
-        SceneSerializationContext&) override
+        SceneSerializationContext& context) override
     {
         AttributeRegistry* attributes =
             world.TryGetResource<AttributeRegistry>();
@@ -67,8 +77,12 @@ public:
             return false;
 
         AttributeSet set{};
-        if (!ReadAttributes(archive, set, *attributes))
+        std::vector<std::string> dropped;
+        if (!ReadAttributes(archive, set, *attributes, &dropped))
             return false;
+        for (const std::string& name : dropped)
+            context.Logging->GetLogger<SceneSerializationContext>().Warn(
+                "attribute '{}' was not loaded: an entity holds at most {} attributes", name, AttributeSet::Capacity);
 
         return Place(world, entity, set);
     }

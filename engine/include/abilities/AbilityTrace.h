@@ -21,6 +21,7 @@ enum class AbilityRefusal : std::uint8_t
     CostFailed,
     // A client's guess the prediction journal has no room to decide.
     PredictionFull,
+    TagsFull,
 };
 
 [[nodiscard]] std::string_view AbilityRefusalName(AbilityRefusal refusal);
@@ -59,7 +60,7 @@ struct AbilityTraceRecord
     AbilityTraceEvent Event = AbilityTraceEvent::Started;
     AbilityRefusal Refusal = AbilityRefusal::None;
     AbilityEndReason EndReason = AbilityEndReason::None;
-    VerbAdmission Admission = VerbAdmission::Accepted;
+    VerbAnswer Answer{};
     std::uint8_t Phase = 0;
     std::uint16_t Element = 0xFFFF;
     GameplayTagId Cue{};

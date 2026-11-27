@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/EditorVisual.h>
@@ -76,8 +77,22 @@ struct IComponentSerializer
     // empty label when it is not a thing of its own. Pure tooling metadata.
     virtual ComponentPlacementFacts Placement() const { return {}; }
 
-    // Which lists of the scene form merge by which member. Pure tooling metadata.
+    // Which lists of the scene form merge by which member; composition and the save patch read it.
     virtual const DataFieldSchema* CompositionSchema() const { return nullptr; }
+
+    virtual ComponentPersistence Persistence() const { return ComponentPersistence::Authored; }
+
+    // The saved form of a default-constructed component, written with no World or assets; false when there is none.
+    virtual bool SaveDefault(IWriteArchive&) const { return false; }
+
+    // Whether equal bytes of the component always write the same saved form, so a capture may keep an unchanged row's last result.
+    virtual bool SavedFormFromRowAlone() const { return false; }
+
+    // Whether an entity built from `cooked` has a transform nothing can recompute, so a save keeps it.
+    virtual bool HoldsPlacement(const JsonValue&) const { return false; }
+
+    // Whether content can author it; false when every field is run-time state, so it has no authoring form.
+    virtual bool Authorable() const { return true; }
 
     // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;

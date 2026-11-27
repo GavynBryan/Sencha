@@ -128,18 +128,22 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     { "AbilityGrants",       0xED200FDB07495669ull, MakeFourCC('A','B','G','R'), 0x2BD2B28870E6133Aull },
     { "AimOrigin",           0x15FDEA7DFC8BE3DDull, MakeFourCC('A','I','M','O'), 0xCB6817E050F1E919ull },
     { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F'), 0x141188942D7459D8ull },
+    { "AppliedEffects",      0xE27A50938E1A35B3ull, MakeFourCC('A','E','F','X'), 0x129283A64B3BC0A4ull },
     { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R'), 0x0DB13B4D4DCFF19Cull },
     { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P'), 0xD7974DBF9F9CAD02ull },
     { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C'), 0x7A7F3ECBA5C09B6Cull },
     { "Camera",              0x54D1B2A64667E32Eull, MakeFourCC('C','A','M','R'), 0x42DB5872ADA403FEull },
     { "CharacterController", 0x9F1D2CE24A903B74ull, MakeFourCC('C','H','C','T'), 0x2EF3100BF4535222ull },
-    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V'), 0xC075703BBFDCB7FFull },
+    { "CharacterMovement",   0xD1A31FA332384D88ull, MakeFourCC('C','H','M','V'), 0xEC8B33C79065BB2Cull },
+    { "DecisionAgent",       0xCCDF07E040670BB4ull, MakeFourCC('D','C','A','G'), 0x343C2E608FCE2010ull },
     { "Dock Gate Binding",   0x9D8D4FD13397EBFCull, MakeFourCC('D','G','A','T'), 0x1B5191F0EC56CBF3ull },
     { "GameplayTags",        0x8AD70174123D7D06ull, MakeFourCC('G','T','A','G'), 0x8CAB70CB062B6AF0ull },
     { "IrradianceVolume",    0xB477A83303BC3F19ull, MakeFourCC('I','R','V','L'), 0xCCA25403DBEC5178ull },
+    { "KinematicState",      0x912794F991AC3D64ull, MakeFourCC('K','N','S','T'), 0xA1549DC738487EA1ull },
     { "LookOrientation",     0x457DFC612E50E277ull, MakeFourCC('L','O','O','K'), 0x02E7F865828EE5CBull },
     { "MovementTuning",      0xF266148A7AF04584ull, MakeFourCC('M','T','U','N'), 0x75C60F44DC220B00ull },
     { "Nav Agent",           0x775C60F13B8FA8C4ull, MakeFourCC('N','A','G','T'), 0x2468E13CB665229Bull },
+    { "Nav Agent Request",   0x6F37578BCE0A31B6ull, MakeFourCC('N','A','G','R'), 0xBE257C2468E6865Aull },
     { "Nav Link",            0xCCCBA53DADE6C9F3ull, MakeFourCC('N','L','N','K'), 0xD0462B30022F2BE2ull },
     { "Nav Link State",      0xC634FEDD79698D79ull, MakeFourCC('N','L','S','T'), 0xF4222739CE2AEA8Eull },
     { "PointLight",          0x6A79ACB9CBC5CDDBull, MakeFourCC('P','L','G','T'), 0x133C5B9C945CFC5Aull },
@@ -174,15 +178,16 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
         "scene_instance",
         "sencha.movement_tuning_source",
         "sencha.navigation.agent",
+        "sencha.navigation.agent_request",
         "sencha.mesh_overrides",
         "sencha.attachment_set",
         "sencha.attachment",
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving
-// it is a deliberate act with a reason, never a side effect: the last move added
-// held records, counters, item entries and equipment state to the table.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xF4C46C07FA2C9081ULL;
+// it is a deliberate act with a reason, never a side effect: the last move sent
+// gameplay tags and attributes as replicated lists, after grants and equipment.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x418C2B35C04CC7D7ULL;
 
 struct EngineVocabulary
 {

@@ -12,12 +12,6 @@ AuthoredVocabularyScope::AuthoredVocabularyScope(World& world, std::string provi
         Events.emplace(*events, provider);
 }
 
-void AuthoredVocabularyScope::DeclareVerb(VerbDefinition definition)
-{
-    if (Verbs)
-        (void)Verbs->Declare(std::move(definition));
-}
-
 void AuthoredVocabularyScope::DeclareQuery(AuthoredQueryDefinition definition)
 {
     if (Queries)
@@ -35,4 +29,9 @@ bool AuthoredVocabularyScope::Commit()
     if (!Verbs || !Queries || !Events)
         return false;
     return CommitTogether(*Verbs, *Queries, *Events);
+}
+
+bool AuthoredTargetAlive(const World& world, EntityId target)
+{
+    return world.IsAlive(target);
 }

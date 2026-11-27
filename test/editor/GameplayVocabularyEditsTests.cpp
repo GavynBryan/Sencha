@@ -12,9 +12,7 @@
 #include <attributes/AttributeSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
-#include <movement/LocomotionMode.h>
 #include <movement/components/CharacterFacts.h>
-#include <movement/components/CharacterMovement.h>
 
 #include <gtest/gtest.h>
 
@@ -161,12 +159,12 @@ TEST(GameplayVocabularyEdits, AGrantIsAddedUnderAFreshKeyOnlyForADeclaredAbility
     AbilityGrantEntries entries;
     const AbilityId dash = registry.Define("asset://abilities/dash.sdata", AbilityDefinition{});
     const AbilityId undeclared = registry.Reserve("asset://abilities/missing.sdata");
-    AbilityGrants grants{};
+    AbilityGrantList grants;
 
     ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed);
     ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed)
         << "a second grant of one ability is a second binding of it";
-    ASSERT_EQ(grants.Count, 2);
+    ASSERT_EQ(grants.Entries.size(), 2u);
     EXPECT_NE(entries.Find(grants.Entries[0].Entry)->Key, entries.Find(grants.Entries[1].Entry)->Key);
     EXPECT_FALSE(AddAbilityGrant(grants, entries, registry, undeclared).Changed);
 
@@ -179,33 +177,14 @@ TEST(GameplayVocabularyEdits, AFullGrantListRefusesRatherThanSilentlyDropping)
     AbilityRegistry registry;
     AbilityGrantEntries entries;
     const AbilityId dash = registry.Define("asset://abilities/dash.sdata", AbilityDefinition{});
-    AbilityGrants grants{};
+    AbilityGrantList grants;
     for (std::size_t i = 0; i < kAbilityGrantCapacity; ++i)
         ASSERT_TRUE(AddAbilityGrant(grants, entries, registry, dash).Changed);
 
     const VocabularyEdit overflow = AddAbilityGrant(grants, entries, registry, dash);
     EXPECT_FALSE(overflow.Changed);
     EXPECT_FALSE(overflow.Error.empty());
-    EXPECT_EQ(grants.Count, kAbilityGrantCapacity);
-}
-
-TEST(GameplayVocabularyEdits, AnUnknownLocomotionModeNameIsTheFreeMode)
-{
-    GameplayTagRegistry tags;
-    LocomotionModeRegistry modes(tags);
-    const LocomotionModeId free = modes.RegisterFree();
-    const LocomotionModeId climbing = modes.Register<KinematicState>("movement.mode.climb");
-
-    CharacterMovement movement{};
-    ASSERT_TRUE(SetLocomotionMode(movement, modes, "movement.mode.climb").Changed);
-    EXPECT_EQ(movement.Mode, climbing);
-
-    // Not this process's vocabulary, and no mode at all, mean the same thing --
-    // which is what an absent mode already means in a scene.
-    EXPECT_TRUE(SetLocomotionMode(movement, modes, "movement.mode.hoverboard").Changed);
-    EXPECT_EQ(movement.Mode, free);
-    EXPECT_FALSE(SetLocomotionMode(movement, modes, "").Changed);
-    EXPECT_EQ(movement.Mode, free);
+    EXPECT_EQ(grants.Entries.size(), kAbilityGrantCapacity);
 }
 
 TEST(GameplayVocabularyEdits, AProjectedTagIsNotAuthored)

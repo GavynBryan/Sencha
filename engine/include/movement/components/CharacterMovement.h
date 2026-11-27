@@ -37,15 +37,21 @@
 // A snapshot is not content: it is traffic between two processes the identity
 // gate has already proved are the same build, so their registration orders are
 // the same order -- the argument the action columns in a player command already
-// run on. It is session-transient in both directions and is never written down.
+// run on. Content and a save write the mode's name instead (a named id), and a
+// save leaves out a mode a lease holds (docs/gameplay/saves.md, "Characters").
 struct SENCHA_COMPONENT("sencha.character_movement")
        SENCHA_SCHEMA("CharacterMovement")
+       SENCHA_SCENE_CHUNK("CHMV")
        SENCHA_REPLICATED
        SENCHA_PREDICTED
+       SENCHA_SAVED
 CharacterMovement
 {
     SENCHA_FIELD("mode")
     SENCHA_OWNER_ONLY
+    SENCHA_LABEL("Starting mode")
+    SENCHA_TOOLTIP("Which locomotion rules the character spawns under. Modes change during play; this is only "
+                   "where it begins.")
     LocomotionModeId Mode{};
 };
 

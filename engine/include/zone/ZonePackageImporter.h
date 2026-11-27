@@ -4,6 +4,7 @@
 #include <ecs/StoragePartitionId.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneParticipation.h>
+#include <zone/ZoneStateScope.h>
 
 #include <string>
 #include <vector>
@@ -30,7 +31,7 @@ struct ZoneImportError
 // applies and the package imports verbatim, which is what content built for a
 // single import wants. It is a separate parameter from the partition because
 // the two genuinely differ -- the persistent world scene imports into partition
-// zero under a zone's saved state.
+// zero under its level's kWorldSceneZone scope.
 //
 // This is the common semantic kernel for persistent world-scene import and
 // hidden zone import.
@@ -39,7 +40,7 @@ struct ZoneImportError
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     ZoneImportError* error = nullptr);
 
 // `created` receives the entities this call made, in package order, and only
@@ -50,7 +51,7 @@ struct ZoneImportError
     const WorldComponentSchema& schema,
     const EntityBuildPackage& package,
     StoragePartitionId partition,
-    ZoneId stateScope,
+    ZoneStateScope stateScope,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneImportError* error = nullptr,
@@ -66,7 +67,8 @@ struct ZoneImportError
     const WorldComponentSchema& schema,
     ZoneId zone,
     const EntityBuildPackage& package,
-    ZoneImportError* error = nullptr);
+    ZoneImportError* error = nullptr,
+    ZoneStateScope stateScope = {});
 
 [[nodiscard]] bool ImportZonePackageHidden(
     RuntimeWorld& runtime,
@@ -75,7 +77,8 @@ struct ZoneImportError
     const EntityBuildPackage& package,
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
-    ZoneImportError* error = nullptr);
+    ZoneImportError* error = nullptr,
+    ZoneStateScope stateScope = {});
 
 [[nodiscard]] bool ImportZonePackage(
     RuntimeWorld& runtime,
@@ -83,7 +86,8 @@ struct ZoneImportError
     ZoneId zone,
     const EntityBuildPackage& package,
     ZoneParticipation participation = {},
-    ZoneImportError* error = nullptr);
+    ZoneImportError* error = nullptr,
+    ZoneStateScope stateScope = {});
 
 [[nodiscard]] bool ImportZonePackage(
     RuntimeWorld& runtime,
@@ -93,4 +97,5 @@ struct ZoneImportError
     const ComponentSerializerRegistry& serializers,
     SceneSerializationContext& sceneContext,
     ZoneParticipation participation = {},
-    ZoneImportError* error = nullptr);
+    ZoneImportError* error = nullptr,
+    ZoneStateScope stateScope = {});

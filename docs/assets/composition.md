@@ -9,7 +9,8 @@ The operator is `ComposeLayers` in `core/composition/Composition.h`, a template
 over a small value-access trait (`CompositionValueTraits`). `JsonComposition.h`
 implements the trait for `JsonValue`; the editor's `Json5Composition.h` does it
 for `Json5Value`, comments included. `ApplyCompositionPatch` applies one patch
-as a local layer.
+as a local layer. `ComposeLayers` also hands back, when asked, the value before
+the local layer, which is what a child inherits, so no caller composes twice.
 
 ## Rules
 
@@ -20,9 +21,7 @@ composed = Local( Includes( composed(base) ) )
 - **Absent inherits, present overrides.** A member the patch leaves out keeps
   the inherited value. A member it states overrides, even when equal to the
   inherited value.
-- **`null` removes,** under `CompositionNull::Removes`. Removing a required
-  member is `cannot_clear_required`. Under `CompositionNull::IsAValue`
-  (version-1 scene instance patches) `null` is written as a value.
+- **`null` removes.** Removing a required member is `cannot_clear_required`.
 - **Records merge member by member.** Anything else is written whole.
 - **Keyed arrays** merge by key. An array is keyed when its schema names a
   `MergeKey`, or when its element record has exactly one `StableKey` member.
@@ -46,6 +45,59 @@ composed = Local( Includes( composed(base) ) )
   Equal values are not a conflict.
 
 Without a schema, objects merge and anything else is written whole.
+
+## Chains of sources
+
+Every walker over sources, data definitions and scenes alike, keeps the
+sources it is resolving in one `CompositionChain`
+(`core/composition/CompositionChain.h`), so the two share one rule:
+
+- A source met again while it is still being resolved is a cycle, refused with
+  every source on it (`source cycle: 'a' composes from itself through a -> b -> a`).
+- A chain is at most `CompositionChain::MaxDepth` (16) sources deep, the
+  outermost included. A deeper one is refused, naming the source that went
+  past it. The limit bounds the walkers' recursion; no authored chain comes
+  near it. A data definition reports the refusal at the field that named the
+  source; a scene fails to resolve with it.
+
+## Patches from a difference
+
+`PatchFrom(baseline, live, schema)` (`core/composition/CompositionPatch.h`) is
+the operator's inverse: composed over `baseline` as a local patch, its patch
+gives back `live`, member order aside.
+Nothing when the two are equal. Kyusu's harvest uses it, and so does the
+entity patch over a whole entity's record (`docs/gameplay/saves.md`, "The
+entity patch").
+
+- Members that differ are stated, members `live` lacks are `null`, and a
+  record recurses.
+- A keyed list is written in the map form when that composes back exactly:
+  every element of both lists states a key the list accepts, no key repeats,
+  and the elements `live` kept from `baseline` come first, in `baseline`'s
+  order. Otherwise it is written in the list form, which replaces the list, so
+  a new order, a repeated key or an inserted element survives.
+- An append-only list states only its new elements, in the list form, so a key
+  the map form would refuse is still added.
+
+`ComposeLayers` reaches some values no patch can state. `PatchFrom` still writes
+its best patch for them, and composing it reports what it could not keep:
+
+- an element of a keyed list without its key (`missing_key`);
+- an append-only list whose inherited entries changed, went or moved
+  (`redeclares_inherited`, `removes_inherited`);
+- a required member that is gone (`cannot_clear_required`).
+
+One difference passes unreported: a member that is `null` in `live` and not in
+`baseline`, since a `null` in a patch removes. No serializer writes `null`
+(`JsonWriteArchive` has no null field), so neither a harvest nor a saved body
+meets it.
+
+The property is tested over generated baseline and live pairs, for both value
+traits (`CompositionPatch.EveryTargetComposesBackFromItsPatch`,
+`Json5Composition.EveryTargetComposesBackFromItsPatch`).
+
+Both traits compare values alike: object members by name in any order, list
+elements in order (`JsonEquals`, `Json5Value::SameValueAs`).
 
 ## Paths and provenance
 
@@ -80,8 +132,10 @@ A data definition's envelope may name a base and fragments beside `data`:
   inherits as though it had written it, ranking that over the base and
   conflicting falsely with other fragments. A fragment may include fragments.
 - Composition is refused, at the envelope field that named the source, for a
-  cycle, a chain deeper than 16 definitions, a source that does not exist or
-  does not compose, and a source of another subtype.
+  cycle, a chain deeper than 16 definitions, a source that does not exist, is
+  not valid JSON or does not compose, and a source of another subtype. A cycle
+  names every definition on it; a source that does not compose gives every one
+  of its errors.
 - An `abstract` definition composes and validates partially (kinds, ranges and
   keys, not required members, `DataValidationMode::Partial`), and is never
   compiled. It does not load as a value, is never declared as vocabulary, and
@@ -97,7 +151,13 @@ the open document's working copy in Kyusu.
 
 A runtime definition with sources composes when it commits, on the owner thread:
 a staging worker receives only the id-to-path snapshot and cannot read another
-definition's source. Each cache entry records the definitions it composed from,
+definition's source. The loader keeps the parsed sources it read, keyed by
+path and content hash: a commit still reads each source's bytes, so an edited
+file is never stale, but parses it only when the hash changed, so variants of
+one base parse that base once. It holds at most
+`DataAssetLoader::ParsedSourceCapacity` (64) between commits; past that, the
+source read longest ago is let go and costs one parse when next read. Nothing
+is reported, since nothing is lost. Each cache entry records the definitions it composed from,
 and `DataAssetCache::ComposedFrom` answers which resident definitions a path
 feeds. The hot reloader consults it for every changed file, resident or not, so
 editing an abstract base reloads its concrete children. A child that fails to
@@ -136,10 +196,7 @@ choosing what it extends and includes and whether it is abstract.
 
 Scene composition (`docs/editor/scene-composition.md`) uses the same operator.
 
-- A version-1 instance patch applies through `ApplyCompositionPatch` with no
-  schema and `CompositionNull::IsAValue`: objects merge, anything else is
-  written whole, and `null` is written.
-- A version-2 instance patch, and a prefab's own `patch` over what it extends
-  and includes, compose with `CompositionNull::Removes` and an entity schema
-  built from each component's `IComponentSerializer::CompositionSchema`, so a
-  component's keyed lists merge by key.
+- An instance patch, and a prefab's own `patch` over what it extends and
+  includes, compose with an entity schema built from each component's
+  `IComponentSerializer::CompositionSchema`, so a component's keyed lists merge
+  by key.

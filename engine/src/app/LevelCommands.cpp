@@ -1,6 +1,7 @@
 #include <app/LevelCommands.h>
 
 #include <app/Engine.h>
+#include <app/LevelChange.h>
 #include <app/LoadedLevel.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -22,6 +23,20 @@ namespace
     result.Error(std::move(text));
     return result;
 }
+
+[[nodiscard]] ConsoleResult ChangeLevel(Engine& engine, LevelReference level)
+{
+    ConsoleResult result;
+    const std::string name = level.Name;
+    const LevelChangeAdmission admission =
+        engine.LevelChanges().Request(
+            LevelChangeRequest::Travel(std::move(level), LevelMemory::Authored, LevelChangeBodies::Fresh));
+    if (admission == LevelChangeAdmission::Accepted)
+        result.Info("loading '" + name + "'");
+    else
+        result.Error("cannot load '" + name + "': " + LevelChangeAdmissionReason(admission));
+    return result;
+}
 } // namespace
 
 void RegisterLevelCommands(ConsoleService& console, Engine& engine)
@@ -32,13 +47,13 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Name = "map",
         .Owner = "engine",
         .Usage = "map <path>",
-        .Help = "Load a cooked scene as the play map.",
+        .Help = "Change level to a cooked scene.",
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine](ConsoleExecutionContext&,
                                         std::span<const std::string> args) {
             if (args.size() != 1)
                 return Usage("usage: map <path>");
-            return engine.Level().LoadScene(args[0]);
+            return ChangeLevel(engine, LevelReference{ .Kind = LevelKind::Scene, .Name = args[0] });
         },
     });
 
@@ -46,15 +61,13 @@ void RegisterLevelCommands(ConsoleService& console, Engine& engine)
         .Name = "world",
         .Owner = "engine",
         .Usage = "world <name>",
-        .Help = "Load a cooked partitioned world and stream its zones.",
+        .Help = "Change level to a cooked partitioned world, streaming its zones.",
         .RequiredPhase = ConsolePhase::GameLoaded,
         .Callback = [&engine](ConsoleExecutionContext&,
                                         std::span<const std::string> args) {
             if (args.size() != 1)
                 return Usage("usage: world <name>");
-            // Focus follows the manifest's start zone. A game that knows
-            // better -- a saved position -- calls LoadWorld itself.
-            return engine.Level().LoadWorld(args[0], std::nullopt);
+            return ChangeLevel(engine, LevelReference{ .Kind = LevelKind::World, .Name = args[0] });
         },
     });
 

@@ -1,5 +1,5 @@
 {
-  format_version: 2,
+  format_version: 3,
   extends: "asset://prefabs/humanoid.sscene",
   includes: [{ fragment: "asset://prefabs/fragments/alertable.sscene" }],
   entities: [],

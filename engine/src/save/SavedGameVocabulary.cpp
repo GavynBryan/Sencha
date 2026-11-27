@@ -1,129 +1,133 @@
 #include <save/SavedGameVocabulary.h>
 
 #include <app/Engine.h>
+#include <app/VocabularyCommands.h>
 #include <authored/AuthoredValue.h>
 #include <authored/VerbRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/identity/Id.h>
+#include <ecs/EntityText.h>
+#include <ecs/World.h>
+#include <participant/LocalControl.h>
+#include <save/EngineSaveSections.h>
+#include <save/SaveSlotFiles.h>
 #include <save/SavedGames.h>
+#include <world/RuntimeWorld.h>
+#include <world/identity/PersistentEntityIndex.h>
 
+#include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
-    VerbDefinition SaveVerb(std::string_view name, std::string displayName, std::string description)
+    std::string SlotOrDefault(std::string_view slot)
     {
-        VerbDefinition verb;
-        verb.Name = std::string(name);
-        verb.DisplayName = std::move(displayName);
-        verb.Description = std::move(description);
-        verb.Category = "Saves";
-        DataFieldSchema slot = MakeDataField(DataFieldKind::String, "slot", "Slot",
-                                             "Letters, digits, '-' and '_'; the default slot when empty.");
-        slot.Required = false;
-        slot.Default = std::string();
-        verb.Arguments.Children.push_back(std::move(slot));
-        return verb;
+        return slot.empty() ? std::string(kDefaultSaveSlot) : std::string(slot);
     }
 
-    std::string SlotOf(const VerbInvocation& invocation)
+    VerbAnswer SaveAnswer(SaveAdmission admission)
     {
-        std::string_view slot;
-        if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetString(0, slot) || slot.empty())
-            return std::string(kDefaultSaveSlot);
-        return std::string(slot);
+        return admission == SaveAdmission::BadSlot ? VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0)
+                                                   : VerbAnswerOf(admission);
     }
 
-    VerbAdmission AsVerbAdmission(SaveAdmission admission)
+    EntityId EntityNamed(const World& world, std::string_view text)
     {
-        switch (admission)
-        {
-        case SaveAdmission::Accepted:
-            return VerbAdmission::Accepted;
-        case SaveAdmission::BadSlot:
-            return VerbAdmission::InvalidArguments;
-        default:
-            return VerbAdmission::Refused;
-        }
+        if (text == "me")
+            return LocalControlSubjectOf(world);
+        if (const std::optional<EntityId> entity = ParseEntityText(text))
+            return world.IsAlive(*entity) ? *entity : EntityId{};
+        const std::optional<PersistentEntityId> id = PersistentEntityIdFromString(text);
+        const PersistentEntityIndex* index = world.TryGetResource<PersistentEntityIndex>();
+        return id.has_value() && index != nullptr ? index->TryResolve(*id) : EntityId{};
     }
 
-    const char* Describe(SaveAdmission admission)
+    ConsoleResult RunAlias(Engine& engine, std::string_view verb, std::span<const std::string> args)
     {
-        switch (admission)
-        {
-        case SaveAdmission::Accepted:
-            return "accepted";
-        case SaveAdmission::Busy:
-            return "another is under way";
-        case SaveAdmission::BadSlot:
-            return "a slot is letters, digits, '-' and '_'";
-        case SaveAdmission::NothingLoaded:
-            return "nothing is loaded";
-        case SaveAdmission::NotAuthority:
-            return "this machine is not the authority";
-        case SaveAdmission::InSession:
-            return "a network session is running";
-        }
-        return "";
-    }
-
-    ConsoleResult Report(std::string_view what, const std::string& slot, SaveAdmission admission)
-    {
-        ConsoleResult result;
-        if (admission == SaveAdmission::Accepted)
-            result.Info(std::string(what) + " slot '" + slot + "'");
-        else
-            result.Error(std::string(what) + " refused: " + Describe(admission));
-        return result;
+        std::vector<std::string> line{ std::string(verb) };
+        for (std::size_t i = 0; i < args.size(); ++i)
+            line.push_back(std::format("{}={}", i == 0 ? "slot" : "arrival", args[i]));
+        return RunVerbCommand(VocabularyConsoleTarget{ .Entities = engine.World().Entities(),
+                                                       .Verbs = engine.TryVerbs(),
+                                                       .Queries = engine.TryAuthoredQueries() },
+                              line);
     }
 }
 
-void DeclareSavedGameVerbs(VerbRegistrationScope& scope)
+VerbRefusal<SaveAdmission> SavedGameOperations::Write(std::string_view slot, std::string_view arrival)
 {
-    (void)scope.Declare(SaveVerb(kSaveWriteVerb, "Save", "Writes how the world differs from its authored content."));
-    (void)scope.Declare(SaveVerb(kSaveRestoreVerb, "Restore",
-                                 "Loads the saved level again and puts back what the save kept."));
+    return SaveAnswer(Saves->RequestWrite(SlotOrDefault(slot), std::string(arrival)));
 }
 
-VerbAdmission InvokeSaveWrite(SavedGames& saves, const VerbInvocation& invocation)
+VerbRefusal<SaveAdmission> SavedGameOperations::Restore(std::string_view slot)
 {
-    return AsVerbAdmission(saves.RequestWrite(SlotOf(invocation)));
+    return SaveAnswer(Saves->RequestRestore(SlotOrDefault(slot)));
 }
 
-VerbAdmission InvokeSaveRestore(SavedGames& saves, const VerbInvocation& invocation)
+VerbRefusal<SaveAdmission> SavedGameOperations::Delete(std::string_view slot)
 {
-    return AsVerbAdmission(saves.RequestRestore(SlotOf(invocation)));
+    if (!SaveSlotFiles::IsSlotName(slot))
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    return Saves->RequestDelete(std::string(slot));
+}
+
+VerbRefusal<SaveAdmission> SavedGameOperations::Copy(std::string_view from, std::string_view to)
+{
+    if (!SaveSlotFiles::IsSlotName(from))
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    if (!SaveSlotFiles::IsSlotName(to))
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
+    return Saves->RequestCopy(std::string(from), std::string(to));
 }
 
 void RegisterSavedGameCommands(ConsoleService& console, Engine& engine)
 {
-    const auto slotOf = [](std::span<const std::string> args) {
-        return args.empty() ? std::string(kDefaultSaveSlot) : args[0];
-    };
     console.Registry().RegisterCommand({
-        .Name = std::string(kSaveWriteVerb),
+        .Name = std::string(AuthoredApiDefinition<SavedGameOperations>::Name_Write),
         .Owner = "engine",
-        .Usage = "save.write [slot]",
-        .Help = "Write a save.",
+        .Usage = "save.write [slot] [arrival]",
+        .Help = "verb save.write slot=<slot> arrival=<arrival>: write a save, naming where its body comes back.",
         .Flags = ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
-            const std::string slot = slotOf(args);
-            return Report("save", slot, engine.Saves().RequestWrite(slot));
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return RunAlias(engine, AuthoredApiDefinition<SavedGameOperations>::Name_Write, args);
         },
     });
     console.Registry().RegisterCommand({
-        .Name = std::string(kSaveRestoreVerb),
+        .Name = std::string(AuthoredApiDefinition<SavedGameOperations>::Name_Restore),
         .Owner = "engine",
         .Usage = "save.restore [slot]",
-        .Help = "Restore a save: its level loads again with what it kept.",
+        .Help = "verb save.restore slot=<slot>: restore a save; its level loads again with what it kept.",
         .Flags = ConsoleCommandFlags::AuthorityOnly,
         .RequiredPhase = ConsolePhase::GameLoaded,
-        .Callback = [&engine, slotOf](ConsoleExecutionContext&, std::span<const std::string> args) {
-            const std::string slot = slotOf(args);
-            return Report("restore", slot, engine.Saves().RequestRestore(slot));
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            return RunAlias(engine, AuthoredApiDefinition<SavedGameOperations>::Name_Restore, args);
+        },
+    });
+    console.Registry().RegisterCommand({
+        .Name = "save.describe",
+        .Owner = "engine",
+        .Usage = "save.describe <me | index:generation | persistent id>",
+        .Help = "List what a save holds of an entity: each component it carries and its persistence.",
+        .RequiredPhase = ConsolePhase::GameLoaded,
+        .Callback = [&engine](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            const World& world = engine.World().Entities();
+            const EntityId entity = args.size() == 1 ? EntityNamed(world, args[0]) : EntityId{};
+            if (!world.IsAlive(entity))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("name a living entity: me, index:generation or a persistent id");
+                return result;
+            }
+            for (std::string& line : DescribeSavedEntity(world, entity, engine.SceneSerializers()))
+                result.Info(std::move(line));
+            return result;
         },
     });
 }

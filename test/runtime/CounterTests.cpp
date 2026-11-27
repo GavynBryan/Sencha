@@ -7,8 +7,9 @@
 #include <ecs/WorldComponentSchema.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Counter.h>
-#include <logic/CounterSerializer.h>
 #include <logic/CounterVocabulary.h>
+#include <authored/AuthoredApi.h>
+#include "GeneratedVerbCall.h"
 #include <net/NetReplicationComponents.h>
 #include <save/HeldRecordSaves.h>
 #include <world/ComponentRegistrar.h>
@@ -23,6 +24,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -65,7 +67,6 @@ namespace
         std::vector<Heard> Occurrences;
     };
 
-    // One World with the counter vocabulary bound, as the engine binds it.
     struct CounterWorld
     {
         CounterWorld()
@@ -76,7 +77,6 @@ namespace
             registrar.Add<PersistentIdComponent>();
             registrar.Add<Held>();
             registrar.Add<Counter>();
-            registrar.AddSerializer(MakeCounterSerializer());
             registrar.Add<NetReplicated>();
             registrar.Add<NetRelevanceAnchor>();
             Schema.Seal();
@@ -99,9 +99,9 @@ namespace
             Events = std::make_unique<AuthoredEventDispatcher>(*FindAuthoredEventRegistry(Entities),
                                                                Logging.GetLogger<CounterWorld>());
             Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(Entities));
-            ValueToken = BindCounterQuery(*Queries, Entities);
             Operations = std::make_unique<CounterOperations>(Entities, Logging.GetLogger<CounterOperations>(),
                                                              Events.get());
+            ValueToken = BindAuthoredApi(nullptr, Queries.get(), *Operations);
             Subscription = Events->Subscribe<&Listener::Hear>(
                 FindAuthoredEventRegistry(Entities)->Resolve(kCounterChangedEvent), EntityId{}, Heard);
         }
@@ -127,7 +127,8 @@ namespace
             const AuthoredArguments arguments = Arguments(name, value, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return Operations->Set(invocation);
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Set, invocation, &Entities)
+                .Status;
         }
 
         VerbAdmission Add(GameplayTagId name, std::int64_t amount, std::optional<EntityId> holder = {})
@@ -135,7 +136,8 @@ namespace
             const AuthoredArguments arguments = Arguments(name, amount, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return Operations->Add(invocation);
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Add, invocation, &Entities)
+                .Status;
         }
 
         std::optional<std::int64_t> Value(GameplayTagId name, std::optional<EntityId> holder = {})
@@ -144,7 +146,7 @@ namespace
                                                 holder.has_value() ? AuthoredValue::Entity(*holder) : AuthoredValue{} };
             AuthoredValue result;
             std::int64_t value = 0;
-            if (Queries->Evaluate(FindAuthoredQueryRegistry(Entities)->Resolve(kCounterValueQuery), arguments, result)
+            if (Queries->Evaluate(FindAuthoredQueryRegistry(Entities)->Resolve(AuthoredApiDefinition<CounterOperations>::Name_Value), arguments, result)
                     != AuthoredQueryStatus::Value
                 || !result.TryGetInt(value))
                 return std::nullopt;
@@ -179,7 +181,7 @@ namespace
         std::unique_ptr<AuthoredEventDispatcher> Events;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         std::unique_ptr<CounterOperations> Operations;
-        AuthoredQueryBindingToken ValueToken;
+        AuthoredApiBindings ValueToken;
         AuthoredEventSubscription Subscription;
         Listener Heard;
     };
@@ -276,11 +278,11 @@ TEST(Counters, OnlyTheAuthorityChangesACounterAndAGoneHolderIsRefused)
     CounterWorld world;
     const EntityId body = world.Body();
     world.Entities.DestroyEntity(body);
-    EXPECT_EQ(world.Set(world.Boss, 1, body), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(world.Set(world.Boss, 1, body), VerbAdmission::UnresolvedReference);
     EXPECT_EQ(world.Value(world.Boss, body), std::nullopt);
 
     world.Entities.AddResource<SimulationAuthority>().Authoritative = false;
-    EXPECT_EQ(world.Set(world.Boss, 1), VerbAdmission::Refused);
+    EXPECT_EQ(world.Set(world.Boss, 1), VerbAdmission::NotAuthority);
     EXPECT_EQ(world.Index->Count(), 0u);
 }
 
@@ -356,4 +358,66 @@ TEST(Counters, ACounterNamingAnUndeclaredTagIsNotRestored)
     EXPECT_EQ(after.Index->Count(), 1u);
     EXPECT_EQ(after.Value(after.Quest), 2);
     EXPECT_FALSE(after.Sink.Warnings.empty());
+}
+
+TEST(Counters, ACounterIsFoundUnderTheHolderItIsListedUnderAndNeverUnderTheWorldWhileItWaits)
+{
+    CounterWorld world;
+    const EntityId body = world.Body(PersistentEntityId{ 0x33 });
+    (void)world.Set(world.Boss, 2, body);
+    const EntityId record = FindCounter(world.Entities, world.Boss, body);
+    ASSERT_TRUE(record.IsValid());
+
+    world.Index->Await(record, PersistentEntityId{ 0x99 });
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, body).IsValid());
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid()) << "waiting is not the world";
+
+    const EntityId other = world.Body(PersistentEntityId{ 0x99 });
+    EXPECT_EQ(FindCounter(world.Entities, world.Boss, other), record);
+    EXPECT_EQ(world.Value(world.Boss, other), 2);
+}
+
+TEST(Counters, ANameArrivingFromTheWireIsTheNameTheCounterIsFoundBy)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    Counter renamed{ .Name = world.Quest, .Value = 5 };
+    std::byte bytes[sizeof(Counter)];
+    std::memcpy(bytes, &renamed, sizeof(Counter));
+
+    ASSERT_TRUE(world.Schema.SetComponentBytes(world.Entities, record, ResolveComponentTypeId<Counter>(), bytes));
+
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
+    EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
+}
+
+TEST(Counters, ACounterReplacedInPlaceUnderItsOwnNameIsStillFoundByIt)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Boss, .Value = 6 }));
+
+    EXPECT_EQ(FindCounter(world.Entities, world.Boss, EntityId{}), record);
+    EXPECT_EQ(world.Value(world.Boss), 6);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid()) << "and its one key goes with it";
+}
+
+TEST(Counters, ACounterReplacedInPlaceUnderAnotherNameIsFoundOnlyByTheNewOne)
+{
+    CounterWorld world;
+    (void)world.Set(world.Boss, 5);
+    const EntityId record = FindCounter(world.Entities, world.Boss, EntityId{});
+    ASSERT_TRUE(record.IsValid());
+
+    ASSERT_TRUE(world.Entities.ReplaceComponent<Counter>(record, Counter{ .Name = world.Quest, .Value = 5 }));
+
+    EXPECT_FALSE(FindCounter(world.Entities, world.Boss, EntityId{}).IsValid());
+    EXPECT_EQ(FindCounter(world.Entities, world.Quest, EntityId{}), record);
+    world.Entities.DestroyEntity(record);
+    EXPECT_FALSE(FindCounter(world.Entities, world.Quest, EntityId{}).IsValid());
 }

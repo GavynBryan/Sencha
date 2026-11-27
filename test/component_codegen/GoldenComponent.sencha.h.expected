@@ -7,7 +7,7 @@
 #include <core/serialization/FourCC.h>
 #include <math/MathSchemas.h>
 
-static_assert(kComponentCodegenFormatVersion == 2,
+static_assert(kComponentCodegenFormatVersion == 4,
               "generated component metadata predates the headers reading it: "
               "rebuild with a matching sencha-component-codegen");
 
@@ -20,6 +20,7 @@ struct ComponentDefinition<CodegenGolden>
     static constexpr bool Replicated = true;
     static constexpr bool Predicted = true;
     static constexpr bool Removable = false;
+    static constexpr bool Saved = true;
     static constexpr std::string_view VisualMeshAsset = "golden.glb";
 
     static auto Fields()
@@ -41,6 +42,12 @@ struct ComponentDefinition<CodegenGolden>
             MakeField("derived", &CodegenGolden::Derived)
                 .Default(defaults.Derived)
                 .LocalOnly(),
+            MakeField("engaged", &CodegenGolden::Engaged)
+                .Default(defaults.Engaged)
+                .Runtime(),
+            MakeField("tethered", &CodegenGolden::Tethered)
+                .Default(defaults.Tethered)
+                .Unsaved(),
         };
     }
 };

@@ -64,8 +64,7 @@ const AbilityGrant* AbilityPass::GrantOf(const AbilityActor& actor, std::size_t 
 {
     if (slot >= kAbilitySlotCapacity)
         return Admitting.Id.IsValid() ? &Admitting : nullptr;
-    const AbilityGrants* grants = actor.Grants();
-    return grants != nullptr ? grants->Find(actor.Record(slot).Grant) : nullptr;
+    return actor.Grant(actor.Record(slot).Grant);
 }
 
 EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, const AbilityValue& value) const
@@ -81,7 +80,7 @@ EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, cons
         case AbilityPort::Source:
         {
             const AbilityGrant* grant = GrantOf(actor, slot);
-            return grant != nullptr && Entities.IsAlive(grant->Source) ? grant->Source : EntityId{};
+            return grant != nullptr ? ResolvePersistableRef(Entities, grant->Source) : EntityId{};
         }
         default: return EntityId{};
         }

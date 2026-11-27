@@ -163,7 +163,7 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     const AnimDecisionRecord* crossing = LastCrossing(workspace.Rig.Simulation);
     ASSERT_NE(crossing, nullptr);
     EXPECT_EQ(crossing->EventKey, key);
-    EXPECT_EQ(crossing->Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(crossing->Answer.Status, VerbAdmission::Accepted);
     EXPECT_FALSE(project.Exists("hero.glb.meta")) << "nothing is written until saved";
 
     const DocumentSaveResult saved = workspace.Sources.Save(workspace.ClipEvents.RefOf(*events));

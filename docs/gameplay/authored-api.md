@@ -59,21 +59,42 @@ public:
 
 A header of components goes in the game's `COMPONENT_HEADERS`. A header that
 declares behaviour — a system's verbs, an event — goes in `API_HEADERS`, which
-is generated the same way but is not held to the components-are-data check.
+is generated the same way but is not held to the components-are-data check. The
+engine passes its own provider headers the same way
+(`SENCHA_ENGINE_API_HEADERS` in `engine/CMakeLists.txt`).
+
+A companion is regenerated when its header changes, or any header the parse of
+it read: the generator writes a dependency file beside the companion
+(`<Header>.sencha.d`) and the build reads it, so a default that names a constant
+or an enumerator from another header follows that header. Under a generator
+without dependency files (Visual Studio) only the header itself is tracked.
 
 ### Annotation reference
 
 | Annotation | On | Meaning |
 |---|---|---|
-| `SENCHA_VERB(id)` | method | An operation content may request. Returns `VerbAdmission`. |
+| `SENCHA_VERB(id)` | method | An operation content may request. Returns `VerbAdmission`, `VerbAnswer`, `VerbRefusal<E>` or `VerbResult<T, E>` (see "What a verb answers"). |
+| `SENCHA_LEASE(id)` | method | The acquire half of a lease: its arguments and its contract. Returns as a verb does, but never a `VerbResult`. |
+| `SENCHA_LEASE_RELEASE(id)` | method | The release half: takes only `const VerbInvocation&` and returns `VerbAdmission` or `VerbAnswer`. Every lease has one. |
+| `SENCHA_LEASE_HOLDS(id)` | const method | Whether an owner's hold goes on: takes `const LeaseOwner&`, returns `bool`. A `SENCHA_COMPLETES` lease has one and no other lease may. |
+| `SENCHA_COSMETIC` | verb, lease | `Scope = Cosmetic`, `Prediction = Presentation`. |
+| `SENCHA_PREDICTION(p)` | verb, lease | `AuthorityOnly` (the default) or `Simulation`. A cosmetic verb names none. |
+| `SENCHA_COMPLETES` | lease | `Completes = true`: the hold can finish while held. |
+| `SENCHA_RESULT(key[, C])` | verb | The result a `VerbResult<T, E>` answers, by its key; `C` is the component an entity result is expected to carry. |
 | `SENCHA_QUERY(id)` | const method | A question content may ask. |
 | `SENCHA_QUERY(name)` | component member | Readable as `<component identity>.<name>`. |
 | `SENCHA_EVENT(id)` | struct | A typed announcement; its `SENCHA_FIELD` members are the payload. |
 | `SENCHA_EVENT_SOURCE(C)` | event | The component a source entity is expected to carry. |
+| `SENCHA_RECORD` | struct | A result answered whole: its `SENCHA_FIELD` members are the record's. |
 | `SENCHA_ARG(key)` | parameter | An argument, by its persisted key. |
-| `SENCHA_TARGET(key[, C])` | parameter | An entity argument, optionally expected to carry `C`. |
+| `SENCHA_TARGET(key[, C])` | parameter | An entity argument, optionally expected to carry `C`. On a verb or lease, a target that is not alive is refused before the method runs. |
 | `SENCHA_RANGE(min, max)` | parameter | The numeric range the argument accepts. |
-| `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. |
+| `SENCHA_MIN(x)`, `SENCHA_MAX(x)` | parameter | One end of that range, or both; not beside `SENCHA_RANGE`. |
+| `SENCHA_UNITS(text)` | parameter | `DataFieldSchema::Units`. |
+| `SENCHA_WIDGET(name)` | parameter | The editor widget its row uses (`DataFieldSchema::Editor.Widget`), such as `direction`. |
+| `SENCHA_ASSET(Kind)` | `AssetRef` parameter | The `AssetType` the argument names (`Reference.AssetTypeFilter`). |
+| `SENCHA_DATA_ASSET(subtype)` | `AuthoredDataRef` parameter | A structured-data asset of that subtype, written as the literal or the constant naming it. |
+| `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. On a parameter, the description is its `Summary`. |
 
 Every parameter except a leading `const VerbInvocation&` needs `SENCHA_ARG` or
 `SENCHA_TARGET`. The annotations expand to nothing outside the generator.
@@ -104,7 +125,8 @@ already knows:
 
 - parameter, return and member types;
 - whether a query is `const` (it must be);
-- C++ default arguments, which become the schema's default;
+- C++ default arguments, which become the schema's default and make the argument
+  one content may leave out (`Required = false`);
 - a leading `const VerbInvocation&` on a verb, which receives the request's
   provenance (`Id`, `Instigator`, `Tick`, `Parent`) and is not an argument;
 - `std::optional<T>`, which is the only way to say an argument may be absent,
@@ -115,7 +137,34 @@ already knows:
 One trait, `AuthoredValueTraits<T>` (`authored/AuthoredValueTraits.h`), decides
 what may cross: `bool`, integers, `float` and `double`, `std::string`, enums
 with an `EnumSchema`, `EntityId`, `GameplayTagId`, `AssetRef`, floating-point
-`Vec<2..4>`, and `std::optional` of any of those.
+`Vec<2..4>`, and `std::optional` of any of those. An argument's type is
+described and decoded (`IsAuthoredArgumentType`); a result's, a payload
+member's or a record member's is described and encoded (`IsAuthoredResultType`).
+Some types go one way only:
+
+- **Read in place, for arguments.** `std::string_view` is the argument's own
+  text, valid for the call, and `AuthoredDataRef` points at the data asset the
+  argument names. A `const T&` parameter is bound to the argument's stored value
+  where the trait can lend it (`Borrow`; `AssetRef` can) and decoded into a
+  local otherwise (`const std::string&`). A verb that keeps any of them past the
+  call copies what it keeps, as it copies anything it queues. With these a
+  warmed invocation allocates nothing for a text or an asset argument; a
+  `std::string` or a by-value `AssetRef` parameter costs a copy.
+- **Read against the World.** A data-definition id with a `NamedIdField`
+  (`ItemId`, `AbilityId`, `EquipmentLayoutId`) is written as the definition's
+  data asset and decoded by the vocabulary's non-creating `Find` against the
+  provider's `AuthoredWorld()`; a definition the World does not declare refuses
+  the argument as invalid, and nothing is reserved. A search that should find
+  nothing for an undeclared definition takes `AuthoredDataRef` instead
+  (`inventory.count`, `.entry`, `.total`).
+- **A tag query.** `GameplayTagQueryNames` is an argument written as a record of
+  optional `all`, `any` and `none` lists of tag names, resolved where it runs
+  (`effect.remove`'s `kinds`).
+- **Answered whole, for results.** `std::vector<T>` answers an array of `T`,
+  and a `SENCHA_RECORD` struct a record of its `SENCHA_FIELD` members, in
+  declaration order (`equipment.sources` and the physics queries are their
+  first consumers). A record's companion specializes `AuthoredValueTraits` for
+  it, so it is used where its header's companion is included.
 
 - An authored integer is a signed 64-bit value. Signed types up to 64 bits and
   unsigned types up to 32 are supported; `std::uint64_t` and `std::size_t` are
@@ -180,6 +229,13 @@ void TorchGame::OnShutdown(GameShutdownContext&)
     TorchQueries.Reset();
 }
 ```
+
+A provider whose vocabulary already holds registration scopes declares a
+generated type into them with `DeclareAuthoredApi<T>(verbs, queries)`, which is
+what `Declare<T>()` does for verbs and queries. The engine's own vocabulary
+declares this way: `InstallEngineVocabulary` holds one scope per catalog and
+declares each engine provider type into them, and `EngineVocabularyBindings`
+binds each provider object with `BindAuthoredApi`.
 
 `BindAuthoredApi` puts one live object behind every verb and query its type
 declares, looking each name up once, and returns the tokens. Resetting them
@@ -260,64 +316,161 @@ Animation events are producers with a scope: a cosmetic event bound to a
 gameplay verb, or to a lease, is reported when the rig binds
 (`anim.event.scope_mismatch`) and refused if it fires anyway.
 
-The generated API declares instant gameplay verbs only; a lease or a cosmetic
-verb is declared by hand, as the engine's own are (`docs/deferred.md`).
+The generated API declares all three. A lease is three methods on one
+identity, because a release carries no arguments and a probe carries only the
+owner:
+
+```cpp
+SENCHA_LEASE("movement.burst") SENCHA_PREDICTION(Simulation) SENCHA_COMPLETES
+VerbAnswer Burst(const VerbInvocation& invocation, SENCHA_TARGET("target", CharacterMovement) EntityId target,
+                 SENCHA_ARG("speed") SENCHA_MIN(0) float speed = 10.0f);
+SENCHA_LEASE_RELEASE("movement.burst") VerbAnswer EndBurst(const VerbInvocation& invocation);
+SENCHA_LEASE_HOLDS("movement.burst")   bool BurstHolds(const LeaseOwner& owner) const;
+```
+
+The generated adapter switches on `invocation.Step`: `Release` calls the release
+method, `Probe` the holds method (a lease that does not complete is never
+probed, and its adapter answers `Refused` to one), and `Acquire` decodes the
+arguments and calls the annotated method. The generator refuses a lease without
+a release, a completing lease without a holds method, a holds method on a lease
+that does not complete, a release that takes arguments, and a result on a lease.
+
+## What a verb answers
+
+An implementation answers a `VerbAnswer`: a `VerbAdmission` and a 16-bit
+`Detail`. An implementation that returns a plain `VerbAdmission` answers it with
+no detail, and `Bind` takes either.
+
+- **Refused with a reason.** A verb declares the reasons it may refuse with in
+  `VerbDefinition::Refusals`, each a code and a name; `VerbRefusalsOf<E>()` lists
+  every non-zero value of an enum with an `EnumSchema`, and `VerbAnswerOf(reason)`
+  answers `Accepted` for its zero value and `Refused` with the code otherwise.
+  The codes and names are part of the contract. The detail is only a number: a
+  trace record outlives the module that declared the verb, so a reader resolves
+  the name against the verb's catalog entry when it reads, and prints the number
+  once that entry is retired.
+- **An argument at fault.** `InvalidArguments` and `UnresolvedReference` carry
+  one past the argument's slot (`VerbArgumentAnswer`), or 0 when no one argument
+  is at fault. The dispatcher's own checks name the slot they reject.
+- **Reading it.** `DescribeVerbAnswer(verbs, verb, answer)` reads `refused:
+  container_full`, `invalid argument 'count'`, `unresolved reference 'target'`,
+  or the admission's name. `VerbInvocationResult::Detail` and
+  `VerbTraceRecord::Detail` carry it; a game's C++ compares the detail with its
+  own enum. A response that runs a failed command logs it
+  (`docs/gameplay/responses.md`, "Diagnostics"), and the Ability Workbench's
+  lanes and the animation editor's admissions describe each op's answer.
+
+**A result.** A verb that makes something can say what: `VerbDefinition::Result`
+declares the field it answers with, and is part of the contract. A producer that
+wants it passes `Invoke(binding, inputs, source, &result)`. The implementation
+writes `*invocation.Result` when the pointer is not null and skips encoding when
+it is; the dispatcher hands a verb that declares no result a null pointer
+whatever the producer asked. The result is checked against the declaration
+before it is handed on: a refusal hands on nothing, and a verb that accepts
+without writing its result, or writes one of the wrong kind, is a provider
+defect — the producer receives no value and the dispatcher logs it once per
+verb. A verb that declares a result acts before it returns: one that queues its
+work has nothing to answer yet, and cannot declare one. Nothing checks that
+rule mechanically. A response's sequence names a command's result and reads it
+in a later command (`docs/gameplay/responses.md`, "Results");
+`inventory.give` and `inventory.take` answer the entry the units went into.
+
+**From a generated method.** The return type says what the verb declares:
+
+```cpp
+VerbAdmission                      // no reasons, no result
+VerbAnswer                         // a status and a detail the method sets itself
+VerbRefusal<E>                     // E's reasons, from its EnumSchema; E's zero value refuses nothing
+VerbResult<T, E = VerbNoReason>    // a value, or E's reason, or a status; needs SENCHA_RESULT
+```
+
+`VerbRefusal` and `VerbResult` (`authored/VerbResult.h`) fill `Refusals` from
+`EnumSchema<E>`, and `VerbResult` fills `Result` from `T` under the key
+`SENCHA_RESULT` names. The adapter encodes the value only when the call was
+accepted and a producer asked for it. The adapter also answers the common cases
+before the method runs: an argument that does not decode is `InvalidArguments`
+naming its slot, and a `SENCHA_TARGET` entity that is not alive is
+`UnresolvedReference` naming it (a present optional target is checked, an absent
+one is not). For that check a provider whose verbs take a target answers
+`const World& AuthoredWorld() const`; the companion refuses to compile one that
+does not. Queries keep answering `Unavailable` for a target that does not apply.
+
+The answer for the same situation is the same whichever verb gives it:
+
+| Situation | Answer |
+|---|---|
+| A value of the wrong kind, out of range, an unknown enum choice or definition | `InvalidArguments`, naming the argument |
+| An entity the request names is not in this World | `UnresolvedReference`, naming the argument |
+| An `AuthorityOnly` verb asked where this World is not the authority | `NotAuthority`: the dispatcher answers |
+| The feature is not installed in this World | `Unavailable`: nothing is bound, so the dispatcher answers |
+| Anything else | `Refused`, with the verb's reason |
+| A query whose arguments are well formed but do not apply | `Unavailable` |
+
+The dispatcher checks kind, range and choice from the schema and resolves
+entities named by persistent identity; everything else is the verb's.
+
+The dispatcher also checks authority once, for every verb: a host tells it which
+World it answers for (`VerbDispatcher::SetAuthority`, which the engine sets to
+its runtime World), and an `AuthorityOnly` verb invoked where that World's
+`SimulationAuthority` says it is not the authority answers `NotAuthority` before
+any provider runs, a lease's acquire included. Both producers already withhold
+such verbs on a client (a predicting ability pass skips them, responses run only
+on the authority), so this guards a direct call: a console line or game C++. A
+verb body does not check authority again; a domain function that other code
+calls keeps its own check (`Inventory`, `SavedGames`, `LevelChange`,
+`WriteCounter`). A dispatcher no host told about authority admits every verb, as
+an editor preview's does.
 
 ## The engine's vocabulary
 
 `InstallEngineVocabulary` (`app/EngineVocabulary.h`) declares, as provider
-`engine`, into every runtime and editor World:
+`engine`, into every runtime and editor World the verbs, leases, queries and
+events listed in [the vocabulary reference](../reference/vocabulary.md): each
+one's kind, scope and prediction, arguments with their defaults and ranges, a
+verb's result and the reasons it may refuse with, and description.
 
-| Name | Kind | Scope / prediction | Does |
-|---|---|---|---|
-| `runtime.resume`, `application.quit` | verb | gameplay / authority only | the application shell |
-| `anim.request`, `anim.cancel` | verb | gameplay / simulation | `docs/gameplay/animation.md` |
-| `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
-| `anim.present {target, intent, lifetime = impulse, ticks}` | verb | cosmetic / presentation | the intent played on the target's presentation layers, on this machine alone (`docs/gameplay/animation.md`, "Presentation layers") |
-| `effect.apply {target, effect, scale = 1, instigator?, from?}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale`; `instigator` and `from` are its source, for reactions |
-| `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
-| `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
-| `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
-| `tags.grant`, `tags.revoke {target, tag, stacks = 1}` | verb | gameplay / authority only | stacks of a tag the target keeps (its baseline), which a save keeps: a permanent grant from level data, such as an unlock. A revoke takes at most what the target keeps, never what an effect or ability holds. Both refuse a projected tag, and a grant refuses a tag new to a full container (`docs/gameplay/abilitykit.md`, D-A) |
-| `time.scale {target, scale}` | lease | gameplay / simulation | the actor's time scaled while held (`docs/core-systems-map.md`) |
-| `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time; completes when they run out |
-| `movement.tether {target, anchor?, point?, length = 2, speed = 12, until?}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends, or on reaching `until` |
-| `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
-| `movement.launch {target, direction, speed = 10, rise = 0}` | verb | gameplay / authority only | the character set moving at that velocity once (`docs/gameplay/movement.md`, "Launch") |
-| `movement.impulse {target, direction, speed = 1, rise = 0}` | verb | gameplay / authority only | that velocity added to the character's once (`docs/gameplay/movement.md`, "Impulse") |
-| `claims.hold {group, claim, count = 1, share = 0}` | lease | gameplay / authority only | a place in a group's claim while held (`docs/gameplay/claims.md`) |
-| `claims.count {group, claim}`, `claims.held {holder, group, claim}` | query | | how many places are held; whether an entity holds one |
-| `counter.set {name, value, holder?}`, `counter.add {name, amount = 1, holder?}` | verb | gameplay / authority only | a named number of the world or of the holder, kept by saves; zero unsets it, and a value past a 32-bit integer is held at its bound (`docs/gameplay/counters.md`) |
-| `counter.value {name, holder?}` | query | — | the counter's value, zero when unset; test it with `require` |
-| `counter.changed {name, value, holder}` | event | published to the World's dispatcher, source the holder | a verb changed a counter; zero when it was unset |
-| `inventory.give {into, definition, count = 1}` | verb | gameplay / authority only | units of an item into a container, open stacks first, all or none (`docs/gameplay/inventory.md`) |
-| `inventory.take {pickup, into}` | verb | gameplay / authority only | an entry the pickup holds, or what it counts, into a container; the pickup goes once empty |
-| `inventory.transfer {entry, into, count = 0, force = false}`, `inventory.drop {entry, at?, force = false}` | verb | gameplay / authority only | an entry, or part of a stack, into a container, or out into a pickup in its holder's zone; only a requested move can be withheld by a layer above |
-| `inventory.use {entry, user?}` | verb | gameplay / authority only | the item's use, run by `user` (its holder when absent) in the next ability pass, when that actor may use it |
-| `inventory.count {container, definition?, tag?, within = false}` | query | — | units held, spent entries not counted, of a definition and carrying a tag; `within` counts what entries hold too; test it with `require` |
-| `equipment.equip {wearer, entry, slot?}` | verb | gameplay / authority only | an entry the wearer may use into the slots its item occupies, replacing what holds them; checked whole, refused under a lock (`docs/gameplay/equipment.md`) |
-| `equipment.unequip {wearer, slot, force = false}`, `equipment.cycle {wearer, group}` | verb | gameplay / authority only | ends the record holding a slot (forced, whatever lock holds it); or wears the next entry the group's first slot takes, unequipping when nothing else fits |
-| `equipment.in_slot {wearer, slot}` | query | — | the entry a slot holds; unavailable when it holds none or waits for one |
-| `equipment.sources {wearer, tag}` | query | — | every worn entry whose item carries the tag |
-| `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
-| `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
-| `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |
-| `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
-| `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
-| `presentation.light {target, socket = "", position?, color, intensity, range, peak_scale = 1, pulse_seconds = 0, attack = 0, release = 0, packs_first = false}` | lease | cosmetic / presentation | a point light worn by the target while held, then faded (`docs/gameplay/attachments.md`) |
-| `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
-| `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
-| `physics.clear_path {from, to, radius, height, ignore?}` | query | — | whether a line, or an upright capsule centred on it, meets nothing solid; a line's last quarter metre does not count |
-| `line.extend {instigator, line, projectile, at?}` | lease | gameplay / authority only | a contact line thrown and kept out while held (`docs/gameplay/contact-lines.md`) |
-| `line.cut {instigator}` | verb | gameplay / authority only | every line the instigator has out ended where it is |
-| `line.anchored {instigator}`, `line.anchored_within {instigator, point, distance}` | query | — | whether it has a line anchored, or anchored that close to a point |
+The reference is rendered from the catalog by `RenderVocabularyReference`
+(`authored/VocabularyReference.h`), one table per catalog in name order, so a
+change to any contract shows as a reviewed diff of that one file.
+`VocabularyReference.TheEnginesReferenceIsWhatItsCatalogDeclares` fails with the
+difference when the file and the catalog disagree; run it with
+`SENCHA_WRITE_VOCABULARY_REFERENCE=1` to rewrite the file. An argument reads
+`key: type = default [minimum .. maximum] (units)`, and `key?` is one that may be
+left out and has no default.
 
 Both effect operations refuse a target without an attribute set, or without an
 attribute the effect modifies. The physics queries are answered only in a host
 whose game registered physics. `EngineVocabularyBindings` binds every operation
-above into a World's dispatchers; the runtime and the Ability Workbench's preview
+in the reference into a World's dispatchers; the runtime and the Ability Workbench's preview
 both bind through it. The movement leases are described in
 `docs/gameplay/movement.md`, "Held motion".
+
+## From the console
+
+Every declared verb and query can be run from the developer console:
+
+```
+verb  <name> [key=value ...]     verb inventory.give into=@me definition=items/key.sdata count=2
+query <name> [key=value ...]     query counter.value name=quest.keys
+```
+
+`app/VocabularyCommands.h` builds a binding of constants from the line and
+compiles it with `CompileVerbBinding` against the live catalog, so the schema
+checks every value and fills every default, then invokes it through the
+dispatcher with the local participant as instigator and prints the answer
+`DescribeVerbAnswer` gives, and the result when the verb declares one. A value
+is read as its argument's kind (`authored/AuthoredConstantText.h`): an entity is
+`@me` (the entity this machine controls), `index:generation`, or a persistent
+id; an asset or data path may leave out `asset://`. A key the verb does not take
+is refused with the keys it does. A lease is refused, since a console line has
+no owner to hold one. An `AuthorityOnly` verb is refused where this World is not
+the authority: a client connected to a server runs it at the server's console.
+Both commands are `Developer` commands.
+
+`save.write [slot] [arrival]` and `save.restore [slot]` are aliases for `verb
+save.write slot=... arrival=...` and `verb save.restore slot=...`. A developer
+command that is not a verb or a query, such as `save.describe`, stays its own
+command.
 
 ## Handles, not slot numbers
 
@@ -434,7 +587,11 @@ A companion is plain C++ and meant to be read. For each verb it has a
 `Describe_<Method>` that builds the `VerbDefinition` the way a person would and
 an `Invoke_<Method>` that decodes each argument slot and calls the method; for
 each query a `Describe_` and an `Evaluate_`; for each event a `DescribeEvent`
-and an `Encode`; and a table listing them. Registries hold only the
+and an `Encode`; for each record an `AuthoredValueTraits` specialization; and a
+table listing them. Each verb, lease and query also has
+`static constexpr std::string_view Name_<Method>`, so C++ that must name it — a
+test, a menu binding — reads the declaration instead of keeping a second
+constant. Registries hold only the
 definitions; the adapters live behind the dispatchers' tokens, which is why
 every token is reset in `OnShutdown`, before the module unloads.
 

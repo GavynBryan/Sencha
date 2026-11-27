@@ -75,7 +75,7 @@ TEST(ProjectFiles, OneFileIsFoundByItsAssetPath)
 TEST(ProjectFiles, AReferenceIsMadeCurrentFromTheProjectsFiles)
 {
     ContentRoot content;
-    content.Write("prefabs/moved/door.sscene", R"({ id: "00000000000000d0", format_version: 1 })");
+    content.Write("prefabs/moved/door.sscene", R"({ id: "00000000000000d0", format_version: 3 })");
     const std::vector<std::filesystem::path> roots{ content.Root };
 
     const AssetRef stale = CurrentInProject(roots, AssetRef{ AssetType::Scene, "asset://prefabs/door.sscene", AssetId{ 0xd0 } });

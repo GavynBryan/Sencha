@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredBindingToken.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbDispatcher.h>
@@ -27,11 +28,17 @@ class InventoryOperations;
 class Logger;
 class MovementOperations;
 class NavigationOperations;
-class PhysicsQueries;
+class PerceptionOperations;
+class PhysicsQueryOperations;
+class ClaimOperations;
+class ProjectileOperations;
 class PhysicsWorld;
 class ProjectileSystem;
 class ResponseOperations;
 class ResponsesSystem;
+class LevelChange;
+class LevelChangeOperations;
+class SavedGameOperations;
 class SavedGames;
 class World;
 
@@ -69,8 +76,9 @@ public:
     // line.extend, line.cut and the line.* queries, answered by `lines`, which must outlive this.
     void BindContactLines(ContactLineSystem& lines, VerbDispatcher& verbs, AuthoredQueryDispatcher& queries);
 
-    // save.write and save.restore, answered by `saves`, which must outlive this.
+    // The save verbs, answered by `saves`, which must outlive this.
     void BindSavedGames(SavedGames& saves, VerbDispatcher& verbs);
+    void BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs);
 
     // counter.set, counter.add and counter.value; `events`, which may be null,
     // hears counter.changed and must outlive this.
@@ -99,11 +107,15 @@ private:
     std::unique_ptr<CameraFovScaleOperations> FovScale;
     std::unique_ptr<CameraShakeOperations> Shake;
     std::unique_ptr<ResponseOperations> Responses;
-    std::unique_ptr<PhysicsQueries> Physics;
+    std::unique_ptr<PerceptionOperations> Perception;
+    std::unique_ptr<ClaimOperations> Claims;
+    std::unique_ptr<ProjectileOperations> Projectiles;
+    std::unique_ptr<PhysicsQueryOperations> Physics;
     std::unique_ptr<InteractUseOperations> Interaction;
     std::unique_ptr<CounterOperations> Counters;
     std::unique_ptr<InventoryOperations> Items;
     std::unique_ptr<EquipmentOperations> Worn;
-    std::vector<VerbBindingToken> Verbs;
-    std::vector<AuthoredQueryBindingToken> Queries;
+    std::unique_ptr<LevelChangeOperations> LevelChanges;
+    std::unique_ptr<SavedGameOperations> Saves;
+    std::vector<AuthoredApiBindings> Generated;
 };

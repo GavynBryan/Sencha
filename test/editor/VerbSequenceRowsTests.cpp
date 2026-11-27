@@ -192,3 +192,38 @@ TEST_F(VerbSequenceRowsTest, ANumberQueryIsConditionedOnBoundsEitherOfWhichMayBe
     EXPECT_NE(Find(rows, "c0.require.min"), nullptr);
     EXPECT_EQ(Find(rows, "c0.expect"), nullptr) << "a number query was offered true or false";
 }
+
+TEST_F(VerbSequenceRowsTest, ACommandNamesItsResultAndALaterOneReadsIt)
+{
+    JsonValue sequence = EmptyVerbSequence();
+    sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "inventory.take"));
+    sequence = Must(ActOnVerbSequence(sequence, Vocabulary, "commands", "add", "equipment.equip"));
+    std::vector<PropertyNode> rows = VerbSequenceRows(sequence, Vocabulary, {});
+    ASSERT_NE(Find(rows, "k0.as"), nullptr) << "a verb that answers an entry offered no name for it";
+    EXPECT_EQ(Find(rows, "k1.as"), nullptr) << "a verb that answers nothing offered a name";
+    EXPECT_NE(Find(rows, "k0")->Descriptor.Tooltip.find("container_full"), std::string::npos)
+        << "the card does not list the reasons its verb may refuse with";
+    const auto& unnamed = Find(rows, "k1.arg.entry.source")->Descriptor.Choices;
+    EXPECT_EQ(std::ranges::find(unnamed, "Result of"), unnamed.end()) << "offered a result nothing named";
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.as", "taken"));
+    EXPECT_EQ(sequence.Find("commands")->AsArray()[0].Find("as")->AsString(), "taken");
+    rows = VerbSequenceRows(sequence, Vocabulary, {});
+    EXPECT_EQ(Find(rows, "k0.as")->Value, "taken");
+    const auto& named = Find(rows, "k1.arg.entry.source")->Descriptor.Choices;
+    EXPECT_NE(std::ranges::find(named, "Result of"), named.end());
+    EXPECT_EQ(Find(rows, "k0.arg.into.source")->Descriptor.Choices.size(),
+              Find(rows, "k0.arg.pickup.source")->Descriptor.Choices.size())
+        << "a command was offered its own result";
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k1.arg.entry.source", "Result of"));
+    EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[1].Find("arguments")->Find("entry")),
+              R"({"result":"taken"})");
+    rows = VerbSequenceRows(sequence, Vocabulary, {});
+    EXPECT_EQ(Find(rows, "k1.arg.entry.value")->Value, "taken");
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k1.arg.entry.value", "nothing").has_value());
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.as", ""));
+    EXPECT_EQ(sequence.Find("commands")->AsArray()[0].Find("as"), nullptr);
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k1.as", "worn").has_value());
+}

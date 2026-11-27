@@ -140,7 +140,7 @@ TEST(NamingMovedAsset, PartsAndACookedSceneMoveWithTheirSource)
 TEST(ProjectFileSteps, AMoveTakesTheIdAndNamesItAnewAndUndoPutsEveryByteBack)
 {
     Project project;
-    const std::string level = "{ format_version: 1, settings: { default_material: \"asset://m/stone.smat\" } }";
+    const std::string level = "{ format_version: 3, settings: { default_material: \"asset://m/stone.smat\" } }";
     const std::string material = "{\n  \"version\": 2\n}\n";
     project.Write("levels/hub.sscene", level);
     project.Write("m/stone.smat", material);

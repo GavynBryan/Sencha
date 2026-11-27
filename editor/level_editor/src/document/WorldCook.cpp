@@ -183,6 +183,9 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     halos.reserve(data->Manifest.Zones.size());
     for (const ZoneHeader& zone : data->Manifest.Zones)
     {
+        if (zone.Id == kSceneLevelZone || zone.Id == kWorldSceneZone)
+            return fail("CookWorld: zone '" + zone.Name + "' has the id "
+                + ZoneIdToString(zone.Id) + ", which is reserved");
         const fs::path scenePath = world.ResolveScenePath(zone.SceneRef);
         std::error_code ec;
         if (zone.SceneRef.empty() || !fs::exists(scenePath, ec))

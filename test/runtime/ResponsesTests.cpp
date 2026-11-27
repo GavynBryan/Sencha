@@ -1,3 +1,4 @@
+#include "GeneratedVerbCall.h"
 #include <gtest/gtest.h>
 
 #include <app/EngineSchedule.h>
@@ -11,16 +12,20 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
+#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/serialization/JsonArchive.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Counter.h>
+#include <authored/AuthoredApi.h>
 #include <logic/CounterVocabulary.h>
 #include <logic/ResponseSet.h>
 #include <logic/ResponseVerbs.h>
 #include <logic/Responses.h>
+#include <logic/ResponsesSerializer.h>
 #include <logic/ResponsesSystem.h>
 #include <physics/SensorOverlaps.h>
 #include <runtime/RuntimeFrameLoop.h>
@@ -32,10 +37,13 @@
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
-#include <zone/ZoneStateMemory.h>
+#include <authored/AuthoredValueTraits.h>
 #include <zone/ZoneStateStore.h>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <initializer_list>
@@ -112,6 +120,16 @@ struct AuthoredApiDefinition<TestMisstruck>
 
 namespace
 {
+struct LogLines : ILogSink
+{
+    std::vector<std::string> Written;
+    void Write(LogLevel, std::string_view, std::string_view message) override
+    {
+        if (message.starts_with("responses: "))
+            Written.emplace_back(message);
+    }
+};
+
 struct RecordedCall
 {
     std::string Verb;
@@ -305,6 +323,7 @@ class ResponsesFixture : public ::testing::Test
 protected:
     void SetUp() override
     {
+        Lines = &Logging.AddSink<LogLines>();
         ComponentRegistrar registrar(WorldState);
         registrar.Add<Responses>();
         registrar.Add<GameplayTagContainer>();
@@ -316,7 +335,6 @@ protected:
         WorldState.AddResource<PersistentEntityIndex>();
         (void)InstallHeldRecords(WorldState);
         ZoneState = &WorldState.AddResource<ZoneStateStore>();
-        WorldState.AddResource<ZoneComponentMemories>();
 
         Tags = &WorldState.AddResource<GameplayTagRegistry>();
         Red = *Tags->RegisterTag("Test.Red");
@@ -378,9 +396,7 @@ protected:
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.second"), *Second));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.refuse"), *Refuse));
         Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.strike"), Strike));
-        Tokens.push_back(Dispatcher->Bind<&InvokeResponsesEnable>(Verbs->Find(kResponsesEnableVerb), *Operations));
-        Tokens.push_back(Dispatcher->Bind<&InvokeResponsesDisable>(Verbs->Find(kResponsesDisableVerb), *Operations));
-        Tokens.push_back(Dispatcher->Bind<&InvokeTriggerInteract>(Verbs->Find(kTriggerInteractVerb), *Operations));
+        ResponseVerbs = BindAuthoredApi(Dispatcher.get(), nullptr, *Operations);
         QueryToken = Queries->Bind<&RedQuery::Evaluate>(FindAuthoredQueryRegistry(WorldState)->Find("test.is_red"),
                                                        *RedAnswer);
         StacksToken = Queries->Bind<&StacksQuery::Evaluate>(
@@ -403,6 +419,7 @@ protected:
         QueryToken.Reset();
         StacksToken.Reset();
         ReachToken.Reset();
+        ResponseVerbs.Reset();
         for (VerbBindingToken& token : Tokens)
             token.Reset();
     }
@@ -484,10 +501,15 @@ protected:
         arguments.Set(0, AuthoredValue::Entity(entity));
         arguments.Set(1, AuthoredValue::String(std::string(binding)));
         request.Arguments = &arguments;
-        return enabled ? Operations->Enable(request) : Operations->Disable(request);
+        return CallGeneratedVerb(*Operations,
+                                 enabled ? AuthoredApiDefinition<ResponseOperations>::Name_Enable
+                                         : AuthoredApiDefinition<ResponseOperations>::Name_Disable,
+                                 request)
+            .Status;
     }
 
     LoggingProvider Logging;
+    LogLines* Lines = nullptr;
     EngineConfig Config;
     RuntimeFrameLoop Runtime;
     ConsoleRegistry Console;
@@ -512,6 +534,7 @@ protected:
     std::unique_ptr<ResponseOperations> Operations;
     std::unique_ptr<RedQuery> RedAnswer;
     std::vector<VerbBindingToken> Tokens;
+    AuthoredApiBindings ResponseVerbs;
     AuthoredQueryBindingToken QueryToken;
     std::unique_ptr<StacksQuery> StacksAnswer;
     AuthoredQueryBindingToken StacksToken;
@@ -789,7 +812,8 @@ TEST_F(ResponsesFixture, ACounterGatesAResponseThroughItsBounds)
         DeclareCounterVocabulary(verbs, queries, events);
         ASSERT_TRUE(CommitTogether(verbs, queries, events));
     }
-    AuthoredQueryBindingToken counter = BindCounterQuery(*Queries, WorldState);
+    CounterOperations counters(WorldState, Logging.GetLogger<CounterOperations>(), nullptr);
+    AuthoredApiBindings counter = BindAuthoredApi(nullptr, Queries.get(), counters);
     const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
         "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Boss.Warden.Defeated"}},
                         "require": {"min": 1}}],
@@ -798,11 +822,39 @@ TEST_F(ResponsesFixture, ACounterGatesAResponseThroughItsBounds)
     const EntityId late = WorldState.CreateEntity();
 
     Step({ { door, early } });
-    (void)WriteCounter(WorldState, defeated, EntityId{}, 1);
+    (void)WriteCounter(WorldState, defeated, EntityId{}, 2);
     Step({ { door, late } });
 
     ASSERT_EQ(Calls.size(), 1u);
-    EXPECT_EQ(Calls[0].Target, late) << "the door opens only once the warden's counter is set";
+    EXPECT_EQ(Calls[0].Target, late) << "a bound left out is open: two meets at least one";
+    counter.Reset();
+}
+
+TEST_F(ResponsesFixture, ABoundsBlockWithOnlyAMaximumAdmitsZero)
+{
+    const GameplayTagId alarms = *Tags->RegisterTag("Alarm.Raised");
+    {
+        VerbRegistrationScope verbs(*Verbs, "counters");
+        AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(WorldState), "counters");
+        AuthoredEventRegistrationScope events(*FindAuthoredEventRegistry(WorldState), "counters");
+        DeclareCounterVocabulary(verbs, queries, events);
+        ASSERT_TRUE(CommitTogether(verbs, queries, events));
+    }
+    CounterOperations counters(WorldState, Logging.GetLogger<CounterOperations>(), nullptr);
+    AuthoredApiBindings counter = BindAuthoredApi(nullptr, Queries.get(), counters);
+    const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
+        "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Alarm.Raised"}},
+                        "require": {"max": 5}}],
+        "commands": [{"verb": "test.record", "arguments": {"target": {"port": "activator"}}}]})");
+    const EntityId quiet = WorldState.CreateEntity();
+    const EntityId loud = WorldState.CreateEntity();
+
+    Step({ { door, quiet } });
+    (void)WriteCounter(WorldState, alarms, EntityId{}, 6);
+    Step({ { door, loud } });
+
+    ASSERT_EQ(Calls.size(), 1u);
+    EXPECT_EQ(Calls[0].Target, quiet) << "a bound left out is open: zero meets at most five";
     counter.Reset();
 }
 
@@ -914,7 +966,7 @@ TEST_F(ResponsesFixture, AnInteractionRunsTheVolumesTheActivatorStandsIn)
     AuthoredArguments arguments(1);
     arguments.Set(0, AuthoredValue::Entity(activator));
     request.Arguments = &arguments;
-    EXPECT_EQ(Operations->Interact(request), VerbAdmission::Accepted);
+    EXPECT_EQ(CallGeneratedVerb(*Operations, AuthoredApiDefinition<ResponseOperations>::Name_Interact, request).Status, VerbAdmission::Accepted);
     Step({ { inside, activator }, { elsewhere, other } });
 
     ASSERT_EQ(Calls.size(), 1u);
@@ -1374,37 +1426,74 @@ TEST_F(ResponsesFixture, AnUndeclaredEventIsReportedAndItsBindingNeverMatches)
     EXPECT_EQ(System->Deliver(target, TestStruck{ target, Charge, {} }), 0u);
 }
 
-TEST_F(ResponsesFixture, AZoneRemembersConsumedAndDisabledBindingsAcrossUnloadAndReload)
+TEST_F(ResponsesFixture, ASavedFormWritesConsumedAndDisabledBindingsAndReadsThemBack)
 {
-    const StoragePartitionId zone{ 5 };
-    Logic.Add(zone);
     const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)"),
                                             Binding("use", "test.used", kRecordSelf),
                                             Binding("idle", "test.used", kRecordInstigator) });
-    const PersistentEntityId identity{ 0x1234 };
-    const EntityId placed = Place(bindings, zone);
-    WorldState.AddComponent<PersistentIdComponent>(placed, PersistentIdComponent{ identity });
+    const EntityId placed = Place(bindings);
     ASSERT_EQ(System->Deliver(placed, TestStruck{ placed, Charge, {} }), 1u);
     Tick();
     ASSERT_EQ(SetEnabled(placed, "use", false), VerbAdmission::Accepted);
     const Responses before = StateOf(placed);
+    ASSERT_NE(before.Consumed, 0u);
 
-    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ placed }, ZoneCapture::Detach);
-    WorldState.DestroyEntity(placed);
-    EXPECT_FALSE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+    const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
+    SceneSerializationContext context(Logging);
+    context.Purpose = SceneRecordPurpose::Save;
+    JsonWriteArchive written;
+    ASSERT_TRUE(serializer->Save(written, placed, WorldState, context));
+    const JsonValue saved = written.TakeValue();
+    const JsonValue* open = saved.Find("bindings")->Find("open");
+    const JsonValue* use = saved.Find("bindings")->Find("use");
+    ASSERT_NE(open, nullptr);
+    ASSERT_NE(use, nullptr);
+    EXPECT_EQ(JsonStringify(*open->Find("consumed")), "true");
+    EXPECT_EQ(JsonStringify(*use->Find("enabled")), "false");
+    EXPECT_EQ(saved.Find("bindings")->Find("idle")->Find("consumed"), nullptr);
 
-    // The zone comes back: the entity as authored, then its remembered state.
-    const EntityId reloaded = Place(bindings, zone);
-    WorldState.AddComponent<PersistentIdComponent>(reloaded, PersistentIdComponent{ identity });
-    EXPECT_EQ(StateOf(reloaded).Consumed, 0u);
-    RestoreZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded });
+    const EntityId reloaded = WorldState.CreateEntity();
+    JsonReadArchive read(saved);
+    ASSERT_TRUE(serializer->LoadIntoWorld(read, reloaded, WorldState, context));
     EXPECT_EQ(StateOf(reloaded).Consumed, before.Consumed);
     EXPECT_EQ(StateOf(reloaded).Disabled, before.Disabled);
+    EXPECT_TRUE(ResponseDefinitionsOf(WorldState).Sets.Diagnostics(StateOf(reloaded).Set).empty())
+        << "consumed is state, not an authored member";
+}
 
-    // Back as authored, the zone forgets it.
-    *WorldState.TryGet<Responses>(reloaded) = Responses{ StateOf(reloaded).Set, 0, 0 };
-    CaptureZoneState(WorldState, ZoneId{ 1 }, std::array{ reloaded }, ZoneCapture::Detach);
-    EXPECT_TRUE(ZoneState->ComponentState(ZoneId{ 1 }, identity, ResolveComponentTypeId<Responses>()).Bytes.empty());
+TEST_F(ResponsesFixture, EqualRowsWriteTheSameSavedFormWhateverIsInternedSince)
+{
+    const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)") });
+    const EntityId placed = Place(bindings);
+    const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
+    EXPECT_TRUE(serializer->SavedFormFromRowAlone());
+    SceneSerializationContext context(Logging);
+    context.Purpose = SceneRecordPurpose::Save;
+    const auto saved = [&] {
+        JsonWriteArchive archive;
+        EXPECT_TRUE(serializer->Save(archive, placed, WorldState, context));
+        return JsonStringify(archive.TakeValue());
+    };
+    WorldState.TryGet<Responses>(placed)->Consumed = 1u;
+    const std::string before = saved();
+    (void)Place(Bindings({ Binding("use", "test.struck", kRecordSelf, R"("once": true)") }));
+    EXPECT_EQ(saved(), before);
+}
+
+TEST_F(ResponsesFixture, AnAuthoredFormWritesNoState)
+{
+    const std::string bindings = Bindings({ Binding("open", "test.struck", kRecordSelf, R"("once": true)") });
+    const EntityId placed = Place(bindings);
+    WorldState.TryGet<Responses>(placed)->Consumed = 1u;
+    WorldState.TryGet<Responses>(placed)->Disabled = 1u;
+
+    const std::unique_ptr<IComponentSerializer> serializer = MakeResponsesSerializer();
+    SceneSerializationContext context(Logging);
+    JsonWriteArchive written;
+    ASSERT_TRUE(serializer->Save(written, placed, WorldState, context));
+    const std::string text = JsonStringify(written.TakeValue());
+    EXPECT_EQ(text.find("consumed"), std::string::npos) << text;
+    EXPECT_EQ(text.find("enabled"), std::string::npos) << text;
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,4 +1514,262 @@ TEST_F(ResponsesFixture, ASensorResponseAndANativeOccurrenceRunThroughTheSamePas
     EXPECT_EQ(Calls[0].Target, shooter) << "the earlier admission ran first";
     EXPECT_EQ(Calls[1].Target, walker);
     EXPECT_EQ(System->Stats().Activations, 2u);
+}
+
+namespace
+{
+enum class TestFullRefusal : std::uint8_t
+{
+    None,
+    ContainerFull,
+};
+
+struct FullOperation
+{
+    VerbAnswer Invoke(const VerbInvocation&) { return VerbAnswerOf(TestFullRefusal::ContainerFull); }
+};
+
+constexpr std::string_view kRefuseSelf = R"({"commands": [
+    {"verb": "test.refuse", "arguments": {"target": {"port": "self"}}}]})";
+} // namespace
+
+template<>
+struct EnumSchema<TestFullRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ TestFullRefusal::None, "none" },
+        EnumValue{ TestFullRefusal::ContainerFull, "container_full" },
+    };
+};
+
+TEST_F(ResponsesFixture, ARefusedCommandIsLoggedOnceByItsReasonAndAnAcceptedOneNotAtAll)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    {
+        VerbRegistrationScope scope(*Verbs, "test.reasons");
+        VerbDefinition full;
+        full.Name = "test.full";
+        full.Arguments = RecordArguments();
+        full.Refusals = VerbRefusalsOf<TestFullRefusal>();
+        (void)scope.Declare(std::move(full));
+        ASSERT_TRUE(scope.Commit());
+    }
+    FullOperation fullOperation;
+    Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.full"), fullOperation));
+
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", R"({"commands": [
+        {"verb": "test.record", "arguments": {"target": {"port": "self"}}},
+        {"verb": "test.full", "arguments": {"target": {"port": "self"}}}]})") }));
+    const EntityId recorder = Place(Bindings({ Binding("use", "test.used", kRecordSelf) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    for (int i = 0; i < 3; ++i)
+    {
+        ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+        ASSERT_EQ(System->Deliver(recorder, TestUsed{ user }), 1u);
+        Tick();
+    }
+
+    ASSERT_EQ(lines.Written.size(), 1u);
+    EXPECT_NE(lines.Written[0].find(".take command 2 (test.full) refused: container_full"), std::string::npos)
+        << lines.Written[0];
+    EXPECT_EQ(System->Stats().Failed, 3u);
+}
+
+TEST_F(ResponsesFixture, TheRefusalLogHoldsABoundedSetAndSaysOnceThatItStopped)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    const EntityId user = WorldState.CreateEntity();
+    std::vector<EntityId> refusing;
+    for (int i = 0; i < 267; ++i)
+        refusing.push_back(Place(Bindings({ Binding("b", "test.used", kRefuseSelf) })));
+
+    for (std::size_t i = 0; i < refusing.size(); ++i)
+    {
+        ASSERT_EQ(System->Deliver(refusing[i], TestUsed{ user }), 1u);
+        if (i % 100 == 99 || i + 1 == refusing.size())
+            Tick();
+    }
+
+    ASSERT_EQ(lines.Written.size(), 257u);
+    EXPECT_EQ(std::ranges::count_if(lines.Written,
+                                    [](const std::string& line) { return line.find("not logged") != std::string::npos; }),
+              1);
+    EXPECT_NE(lines.Written[256].find("not logged"), std::string::npos) << lines.Written[256];
+    EXPECT_EQ(System->Stats().Failed, 267u);
+}
+
+TEST_F(ResponsesFixture, TheRefusalLogIsForgottenWhenAZoneDetachesAndCanBeTurnedOff)
+{
+    LogLines& lines = *Lines;
+    System->SetLogRefusals(true);
+    const EntityId refusing = Place(Bindings({ Binding("b", "test.used", kRefuseSelf) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    ASSERT_EQ(lines.Written.size(), 1u);
+
+    Residency(ZoneResidencyChangeKind::Detaching, StoragePartitionId{ 7 });
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    EXPECT_EQ(lines.Written.size(), 2u) << "a refusal from before the zone left kept the next one quiet";
+
+    ASSERT_TRUE(
+        Console.SetCVarFromString("logic.responses.log_refusals", "false", { "console" }, ConsolePhase::EngineReady)
+            .Succeeded());
+    Residency(ZoneResidencyChangeKind::Detaching, StoragePartitionId{ 7 });
+    ASSERT_EQ(System->Deliver(refusing, TestUsed{ user }), 1u);
+    Tick();
+    EXPECT_EQ(lines.Written.size(), 2u);
+    EXPECT_EQ(System->Stats().Failed, 3u);
+}
+
+namespace
+{
+struct TakingOperation
+{
+    World* Entities = nullptr;
+    bool Refuse = false;
+    bool Answers = true;
+    std::vector<EntityId> Made;
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        if (Refuse)
+            return VerbAdmission::Refused;
+        Made.push_back(Entities->CreateEntity());
+        if (invocation.Result != nullptr && Answers)
+            *invocation.Result = AuthoredValue::Entity(Made.back());
+        return VerbAdmission::Accepted;
+    }
+};
+
+struct EquippingOperation
+{
+    std::vector<EntityId> Worn;
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        EntityId entry;
+        if (!invocation.Arguments->TryGetEntity(1, entry))
+            return VerbAdmission::InvalidArguments;
+        Worn.push_back(entry);
+        return VerbAdmission::Accepted;
+    }
+};
+
+class ResponsesResultFixture : public ResponsesFixture
+{
+protected:
+    void SetUp() override
+    {
+        ResponsesFixture::SetUp();
+        VerbRegistrationScope scope(*Verbs, "test.results");
+        VerbDefinition take;
+        take.Name = "test.take";
+        take.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "pickup", "Pickup"));
+        take.Result = AuthoredField<std::optional<EntityId>>("entry", "Entry");
+        (void)scope.Declare(std::move(take));
+        VerbDefinition equip;
+        equip.Name = "test.equip";
+        equip.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "wearer", "Wearer"));
+        equip.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "entry", "Entry"));
+        (void)scope.Declare(std::move(equip));
+        ASSERT_TRUE(scope.Commit());
+        Taking.Entities = &WorldState;
+        Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.take"), Taking));
+        Tokens.push_back(Dispatcher->Bind(Verbs->Find("test.equip"), Equipping));
+    }
+
+    std::span<const std::string> DiagnosticsOf(EntityId entity)
+    {
+        const ResponseDefinitions& definitions = ResponseDefinitionsOf(WorldState);
+        return definitions.Sequences.Diagnostics(definitions.Sets.Bindings(StateOf(entity).Set).front().Sequence);
+    }
+
+    TakingOperation Taking;
+    EquippingOperation Equipping;
+};
+
+constexpr std::string_view kTakeThenEquip = R"({"commands": [
+    {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+    {"verb": "test.equip", "arguments": {"wearer": {"port": "user"}, "entry": {"result": "taken"}}}]})";
+} // namespace
+
+TEST_F(ResponsesResultFixture, ATakeThenAnEquipWearsWhatTheTakeAnswered)
+{
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", kTakeThenEquip) }));
+    const EntityId user = WorldState.CreateEntity();
+
+    for (int i = 0; i < 2; ++i)
+    {
+        ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+        Tick();
+    }
+
+    EXPECT_TRUE(DiagnosticsOf(pickup).empty()) << DiagnosticsOf(pickup).front();
+    ASSERT_EQ(Taking.Made.size(), 2u);
+    ASSERT_EQ(Equipping.Worn.size(), 2u);
+    EXPECT_EQ(Equipping.Worn[0], Taking.Made[0]);
+    EXPECT_EQ(Equipping.Worn[1], Taking.Made[1]) << "the second run read the first run's result";
+    EXPECT_EQ(System->Stats().Failed, 0u);
+}
+
+TEST_F(ResponsesResultFixture, AnEquipWithNoResultToReadFailsNamingTheArgument)
+{
+    System->SetLogRefusals(true);
+    const EntityId pickup = Place(Bindings({ Binding("take", "test.used", kTakeThenEquip) }));
+    const EntityId user = WorldState.CreateEntity();
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+    Taking.Answers = false;
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+    Taking.Refuse = true;
+    ASSERT_EQ(System->Deliver(pickup, TestUsed{ user }), 1u);
+    Tick();
+
+    EXPECT_EQ(Equipping.Worn.size(), 1u) << "the equip ran without a result to read";
+    EXPECT_EQ(System->Stats().Failed, 3u) << "an equip after a refused take did not fail";
+    EXPECT_NE(std::ranges::find_if(Lines->Written,
+                                   [](const std::string& line) {
+                                       return line.find("command 2 (test.equip) invalid argument 'entry'")
+                                           != std::string::npos;
+                                   }),
+              Lines->Written.end());
+    EXPECT_NE(std::ranges::find_if(Lines->Written,
+                                   [](const std::string& line) {
+                                       return line.find("command 1 (test.take) refused") != std::string::npos;
+                                   }),
+              Lines->Written.end());
+}
+
+TEST_F(ResponsesResultFixture, AResultIsRefusedWhenItCannotBeRead)
+{
+    const EntityId undeclared = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.record", "as": "recorded", "arguments": {"target": {"port": "self"}}}]})") }));
+    const EntityId unknown = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.equip", "arguments": {"wearer": {"port": "self"}, "entry": {"result": "taken"}}},
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}}]})") }));
+    const EntityId mismatched = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+        {"verb": "test.record", "arguments": {"target": {"port": "self"}, "amount": {"result": "taken"}}}]})") }));
+    const EntityId twice = Place(Bindings({ Binding("b", "test.used", R"({"commands": [
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}},
+        {"verb": "test.take", "as": "taken", "arguments": {"pickup": {"port": "self"}}}]})") }));
+    const EntityId user = WorldState.CreateEntity();
+    for (const EntityId entity : { undeclared, unknown, mismatched, twice })
+        ASSERT_EQ(System->Deliver(entity, TestUsed{ user }), 1u);
+    Tick();
+
+    const auto says = [&](EntityId entity, std::string_view text) {
+        const std::span<const std::string> diagnostics = DiagnosticsOf(entity);
+        return std::ranges::any_of(diagnostics,
+                                   [&](const std::string& line) { return line.find(text) != std::string::npos; });
+    };
+    EXPECT_TRUE(says(undeclared, "declares no result")) << DiagnosticsOf(undeclared).size();
+    EXPECT_TRUE(says(unknown, "no earlier command names a result 'taken'"));
+    EXPECT_TRUE(says(mismatched, "result 'taken' is a different kind"));
+    EXPECT_TRUE(says(twice, "result 'taken' is already named"));
 }

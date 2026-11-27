@@ -23,6 +23,9 @@ namespace
     constexpr std::string_view kBinding = "binding";
     constexpr std::string_view kParameters = "parameters";
     constexpr std::string_view kValue = "value";
+    constexpr std::string_view kKind = "kind";
+    constexpr std::string_view kRequested = "request";
+    constexpr std::string_view kSource = "source";
 
     template<typename E, std::size_t N>
     void ReadChoice(IReadArchive& archive, std::string_view field, const std::array<AbilityNamed<E>, N>& names,
@@ -162,8 +165,10 @@ public:
     {
         static const DataFieldSchema schema = [] {
             DataFieldSchema grants = MakeKeyedListRecordSchema(std::string(kGrants), std::string(kKey));
-            grants.Children.front().Children.front().Children.push_back(
+            std::vector<DataFieldSchema>& record = grants.Children.front().Children.front().Children;
+            record.push_back(
                 std::move(MakeKeyedListRecordSchema(std::string(kParameters), std::string(kKey)).Children.front()));
+            record.push_back(MakeDataField(DataFieldKind::Entity, std::string(kSource), {}));
             return grants;
         }();
         return &schema;
@@ -190,24 +195,43 @@ public:
         const auto lasting = [](const AbilityGrant& grant) {
             return grant.Kind == AbilityGrantKind::Authored || grant.Kind == AbilityGrantKind::Request;
         };
-        const auto count = std::count_if(grants->Entries, grants->Entries + grants->Count, lasting);
+        const std::span<const AbilityGrant> held = AbilityGrantsOf(world, *grants);
+        const auto count = std::ranges::count_if(held, lasting);
 
         archive.BeginObject(std::string_view{});
         archive.BeginArray(kGrants, static_cast<std::size_t>(count));
-        for (std::uint8_t i = 0; i < grants->Count; ++i)
+        for (const AbilityGrant& grant : held)
         {
-            const AbilityGrant& grant = grants->Entries[i];
             const AbilityGrantEntry* entry = entries->Find(grant.Entry);
             if (!lasting(grant) || entry == nullptr)
                 continue;
             archive.BeginObject(std::string_view{});
             archive.Field(kKey, std::string_view(entry->Key));
-            if (!WriteSceneAssetRef(archive, kAbility, AssetType::Data, abilities->GetName(grant.Ability), context))
+            if (!grant.Ability.IsValid() || !SceneFieldCodec<AbilityId>::Save(archive, kAbility, grant.Ability, &world, context))
                 return false;
             WriteBinding(archive, entry->Override);
             WriteParameters(archive, entry->Parameters);
+            if (grant.Kind == AbilityGrantKind::Request)
+                archive.Field(kKind, kRequested);
+            if (grant.Source.Target.IsValid()
+                && !SceneFieldCodec<PersistableRef>::Save(archive, kSource, grant.Source, context))
+                return false;
             archive.End();
         }
+        archive.End();
+        archive.End();
+        return archive.Ok();
+    }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        if (!archive.IsText())
+        {
+            archive.MarkInvalidField(kGrants);
+            return false;
+        }
+        archive.BeginObject(std::string_view{});
+        archive.BeginArray(kGrants, 0);
         archive.End();
         archive.End();
         return archive.Ok();
@@ -226,7 +250,7 @@ public:
         if (abilities == nullptr || entries == nullptr)
             return false;
 
-        AbilityGrants grants{};
+        AbilityGrantList grants;
         archive.BeginObject(std::string_view{});
         std::size_t count = 0;
         archive.BeginArray(kGrants, count);
@@ -235,21 +259,34 @@ public:
             archive.BeginObject(std::string_view{});
             AbilityGrantEntry entry;
             archive.Field(kKey, entry.Key);
-            std::string path;
-            if (!ReadSceneAssetRef(archive, kAbility, AssetType::Data, path, context))
+            if (!SceneFieldCodec<AbilityId>::Load(archive, kAbility, entry.Ability, &world, context)
+                || !entry.Ability.IsValid())
+            {
+                archive.MarkInvalidField(kAbility);
                 return false;
-            // Reserved, not looked up: a grant read before its ability is declared,
-            // or of one that failed to compile, keeps its name for the next save.
-            entry.Ability = abilities->Reserve(path);
+            }
             if (archive.HasField(kBinding))
                 ReadBinding(archive, entry.Override);
             if (archive.HasField(kParameters))
                 ReadParameters(archive, entry.Parameters);
+            AbilityGrantKind kind = AbilityGrantKind::Authored;
+            if (archive.HasField(kKind))
+            {
+                std::string text;
+                archive.Field(kKind, text);
+                if (text == kRequested)
+                    kind = AbilityGrantKind::Request;
+                else
+                    archive.MarkInvalidField(kKind);
+            }
+            PersistableRef source;
+            if (archive.HasField(kSource) && !SceneFieldCodec<PersistableRef>::Load(archive, kSource, source, context))
+                return false;
             archive.End();
             const AbilityId ability = entry.Ability;
             const std::uint16_t index = entries->Intern(std::move(entry));
             if (index == kAbilityNoGrantEntry
-                || !GrantAbility(grants, ability, AbilityGrantKind::Authored, index).IsValid())
+                || !GrantAbility(grants, ability, kind, index, {}, source).IsValid())
                 archive.MarkInvalidField(kGrants);
         }
         archive.End();
@@ -257,7 +294,7 @@ public:
         if (!archive.Ok())
             return false;
 
-        return Place(world, entity, grants);
+        return Place(world, entity, MakeAbilityGrants(world, grants));
     }
 };
 } // namespace

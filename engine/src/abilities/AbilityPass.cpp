@@ -37,6 +37,7 @@ AbilityPass::AbilityPass(World& world, AbilityPassBuffers& buffers, const Abilit
     , CostBatches(buffers.CostBatches)
     , CostTranslating(buffers.CostTranslating)
     , Emitted(buffers.Emitted)
+    , StartTags(buffers.StartTags)
 {
     Emitted.clear();
 }
@@ -165,9 +166,13 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
         return AbilityRefusal::Capacity;
 
     const bool cooldown = definition->Cooldown && definition->Cooldown->Start == AbilityCooldownStart::OnStart;
-    if ((definition->StartGroups != 0 || cooldown)
-        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown, grant.Source).Paid)
+    const bool costed = definition->StartGroups != 0 || cooldown;
+    if (costed
+        && !CheckCosts(actor, kAbilitySlotCapacity, *definition, definition->StartGroups, cooldown,
+                        ResolvePersistableRef(Entities, grant.Source)).Paid)
         return AbilityRefusal::CostFailed;
+    if (!StartTagsFit(actor, *definition, cooldown, costed))
+        return AbilityRefusal::TagsFull;
     return AbilityRefusal::None;
 }
 
@@ -232,12 +237,11 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         AbilityRecord& granted = actor.Record(slot);
         for (GameplayTagId tag : definition.OwnedTags)
         {
-            if (!tags->CanHold(tag))
+            if (tags->Grant(tag) == GameplayTagWrite::Full)
             {
                 NoteGameplayTagOverflow(Entities, actor.Entity, tag);
                 continue;
             }
-            tags->Grant(tag);
             granted.OwnedTags[granted.OwnedTagCount++] = tag;
         }
     }
@@ -461,7 +465,7 @@ bool AbilityPass::RunOp(const AbilityActor& actor, std::size_t slot, const Abili
         if (stale || (op.When != kAbilityNoCondition && !Holds(actor, slot, definition, op.When)))
         {
             Trace({ .Actor = actor.Entity, .Key = key, .Event = AbilityTraceEvent::Skipped,
-                    .Admission = stale ? VerbAdmission::UnresolvedReference : VerbAdmission::Accepted, .Element = index });
+                    .Answer = stale ? VerbAdmission::UnresolvedReference : VerbAdmission::Accepted, .Element = index });
             continue;
         }
         if (!Operate(actor, slot, definition, index))
@@ -493,7 +497,7 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
     if ((op.Kind == AbilityOpKind::Invoke || op.Kind == AbilityOpKind::Lease) && !Predicts(definition, op))
     {
         traced.Event = AbilityTraceEvent::Skipped;
-        traced.Admission = VerbAdmission::Refused;
+        traced.Answer = VerbAdmission::Refused;
         Trace(traced);
         return true;
     }
@@ -502,22 +506,22 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
     {
     case AbilityOpKind::Invoke:
         fill(op.Inputs);
-        traced.Admission = Host.Verbs != nullptr ? Host.Verbs->Invoke(op.Binding, Inputs, source).Status
-                                                 : VerbAdmission::Unavailable;
+        traced.Answer = Host.Verbs != nullptr ? AnswerOf(Host.Verbs->Invoke(op.Binding, Inputs, source))
+                                              : VerbAdmission::Unavailable;
         Trace(traced);
         return Live(actor, slot);
     case AbilityOpKind::Lease:
     {
         fill(op.Inputs);
         const LeaseOwner owner = OwnerOf(actor, slot, static_cast<std::uint8_t>(index));
-        traced.Admission = Host.Verbs == nullptr ? VerbAdmission::Unavailable
-                         : actor.Record(slot).LeaseCount == kAbilityRecordLeaseCapacity
-                             ? VerbAdmission::QueueFull
-                             : Host.Verbs->AcquireLease(op.Binding, Inputs, owner, source).Status;
+        traced.Answer = Host.Verbs == nullptr ? VerbAdmission::Unavailable
+                      : actor.Record(slot).LeaseCount == kAbilityRecordLeaseCapacity
+                          ? VerbAdmission::QueueFull
+                          : AnswerOf(Host.Verbs->AcquireLease(op.Binding, Inputs, owner, source));
         Trace(traced);
         if (!Live(actor, slot))
             return false;
-        if (traced.Admission != VerbAdmission::Accepted)
+        if (!traced.Answer.Accepted())
         {
             End(actor, slot, AbilityEndReason::LeaseRefused, index);
             return false;
@@ -533,7 +537,7 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
             ? Host.Queries->Evaluate(op.Query, Inputs, Answer)
             : AuthoredQueryStatus::Unbound;
         Write(actor, slot, definition, op.Local, Answer, status == AuthoredQueryStatus::Value);
-        traced.Admission = status == AuthoredQueryStatus::Value ? VerbAdmission::Accepted : VerbAdmission::Unavailable;
+        traced.Answer = status == AuthoredQueryStatus::Value ? VerbAdmission::Accepted : VerbAdmission::Unavailable;
         Trace(traced);
         return Live(actor, slot);
     }
@@ -653,10 +657,18 @@ void AbilityPass::Sweep(const AbilityActor& actor)
                 return true;
         return false;
     };
-    if (AbilityGrants* grants = Predicting ? nullptr : Entities.TryGet<AbilityGrants>(actor.Entity))
-        for (std::uint8_t i = grants->Count; i-- > 0;)
-            if (grants->Entries[i].Kind == AbilityGrantKind::Transient && !runsThrough(grants->Entries[i].Id))
-                (void)RevokeAbilityGrant(*grants, grants->Entries[i].Id);
+    if (const AbilityGrants* row = Predicting ? nullptr : actor.GrantRow(); row != nullptr && row->Transient > 0)
+    {
+        std::span<const AbilityGrant> grants = actor.Grants();
+        for (std::size_t i = grants.size(); i-- > 0;)
+        {
+            const AbilityGrant grant = grants[i];
+            if (grant.Kind != AbilityGrantKind::Transient || runsThrough(grant.Id))
+                continue;
+            (void)RevokeAbilityGrant(Entities, actor.Entity, grant.Id);
+            grants = actor.Grants();
+        }
+    }
     for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))
@@ -677,8 +689,7 @@ void AbilityPass::Sweep(const AbilityActor& actor)
             }
             record.Revision = Abilities->Revision(record.Key.Ability);
         }
-        const AbilityGrants* grants = actor.Grants();
-        if (grants == nullptr || grants->Find(record.Grant) == nullptr)
+        if (actor.Grant(record.Grant) == nullptr)
         {
             End(actor, slot, AbilityEndReason::GrantRevoked);
             continue;

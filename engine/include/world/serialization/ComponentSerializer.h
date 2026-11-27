@@ -1,21 +1,27 @@
 #pragma once
 
 #include <core/handle/Handle.h>
+#include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentHoldsPlacement.h>
+#include <core/metadata/ComponentPersistence.h>
 #include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
+#include <core/serialization/JsonArchive.h>
 #include <world/serialization/ComponentStorageTraits.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/serialization/SceneAssetFieldIo.h>
 #include <world/serialization/SceneFieldCodec.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -40,6 +46,7 @@ namespace SceneComponentSerialization
     bool SaveField(IWriteArchive& archive,
                    const Component& component,
                    const FieldT& field,
+                   const World* world,
                    SceneSerializationContext& context)
     {
         using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
@@ -52,6 +59,10 @@ namespace SceneComponentSerialization
             return SaveAssetField(archive, field.Name, (component.*field.Ptr).ToToken(),
                                   field.Asset, field.Arity, context);
         }
+        else if constexpr (requires { SceneFieldCodec<FieldType>::Save(archive, field.Name, component.*field.Ptr, world, context); })
+        {
+            return SceneFieldCodec<FieldType>::Save(archive, field.Name, component.*field.Ptr, world, context);
+        }
         else
         {
             return SceneFieldCodec<FieldType>::Save(
@@ -63,6 +74,7 @@ namespace SceneComponentSerialization
     bool LoadField(IReadArchive& archive,
                    Component& component,
                    const FieldT& field,
+                   World* world,
                    SceneSerializationContext& context)
     {
         using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
@@ -75,6 +87,10 @@ namespace SceneComponentSerialization
             component.*field.Ptr = FieldType::FromToken(token);
             return ok;
         }
+        else if constexpr (requires { SceneFieldCodec<FieldType>::Load(archive, field.Name, component.*field.Ptr, world, context); })
+        {
+            return SceneFieldCodec<FieldType>::Load(archive, field.Name, component.*field.Ptr, world, context);
+        }
         else
         {
             return SceneFieldCodec<FieldType>::Load(
@@ -82,10 +98,17 @@ namespace SceneComponentSerialization
         }
     }
 
+    template<typename FieldT>
+    bool WrittenFor(const FieldT& field, SceneRecordPurpose purpose)
+    {
+        return purpose == SceneRecordPurpose::Save ? !field.IsUnsaved : !field.IsRuntime;
+    }
+
     template<typename Component>
     bool SaveFields(IWriteArchive& archive,
                     const Component& component,
-                    SceneSerializationContext& context)
+                    SceneSerializationContext& context,
+                    const World* world = nullptr)
     {
         archive.BeginObject(std::string_view{});
 
@@ -93,7 +116,7 @@ namespace SceneComponentSerialization
         auto fields = TypeSchema<Component>::Fields();
         std::apply([&](auto&... field)
         {
-            ((ok = SaveField(archive, component, field, context) && ok), ...);
+            ((ok = (!WrittenFor(field, context.Purpose) || SaveField(archive, component, field, world, context)) && ok), ...);
         }, fields);
 
         archive.End();
@@ -103,7 +126,8 @@ namespace SceneComponentSerialization
     template<typename Component>
     bool LoadFields(IReadArchive& archive,
                     Component& component,
-                    SceneSerializationContext& context)
+                    SceneSerializationContext& context,
+                    World* world = nullptr)
     {
         archive.BeginObject(std::string_view{});
 
@@ -113,8 +137,17 @@ namespace SceneComponentSerialization
         {
             (([&]
             {
+                using FieldType = std::remove_cvref_t<decltype(component.*field.Ptr)>;
                 if (!archive.HasField(field.Name))
                 {
+                    if constexpr (IsNamedIdField<FieldType>)
+                    {
+                        if (field.DefaultValue || field.IsOptional)
+                        {
+                            ok = LoadField(archive, component, field, world, context) && ok;
+                            return;
+                        }
+                    }
                     if (field.DefaultValue)
                         component.*field.Ptr = *field.DefaultValue;
                     else if (!field.IsOptional)
@@ -123,7 +156,7 @@ namespace SceneComponentSerialization
                     return;
                 }
 
-                ok = LoadField(archive, component, field, context) && ok;
+                ok = LoadField(archive, component, field, world, context) && ok;
             }()), ...);
         }, fields);
 
@@ -144,6 +177,61 @@ namespace SceneComponentSerialization
             }()), ...);
         }, TypeSchema<Component>::Fields());
         return record.Children.empty() ? std::nullopt : std::optional(std::move(record));
+    }
+
+    template<typename Component>
+    bool HasAuthoringForm()
+    {
+        return std::apply([](const auto&... field) { return sizeof...(field) == 0 || (!field.IsRuntime || ...); },
+                          TypeSchema<Component>::Fields());
+    }
+
+    template<typename Component>
+    const std::vector<RuntimeField>& AuthoredRuntimeFieldsOf()
+    {
+        static const std::vector<RuntimeField> authored = [] {
+            std::vector<std::string_view> runtime;
+            std::apply([&](const auto&... field) { ((field.IsRuntime ? runtime.push_back(field.Name) : void()), ...); },
+                       TypeSchema<Component>::Fields());
+            const auto underRuntime = [&](const RuntimeField& leaf) {
+                return std::ranges::any_of(runtime, [&](std::string_view name) {
+                    return leaf.Name == name
+                        || (leaf.Name.size() > name.size() && leaf.Name.starts_with(name) && leaf.Name[name.size()] == '.');
+                });
+            };
+            std::vector<RuntimeField> kept;
+            for (const RuntimeField& leaf : RuntimeFieldsOf<Component>())
+                if (!underRuntime(leaf))
+                    kept.push_back(leaf);
+            return kept;
+        }();
+        return authored;
+    }
+
+    void AwaitEntityReferences(World& world, EntityId owner, ComponentTypeId type, const void* component,
+                               std::span<const UnresolvedEntityReference> unresolved);
+
+    template<typename FieldType>
+    constexpr bool WrittenFromValue()
+    {
+        if constexpr (IsHandleType<FieldType>)
+            return false;
+        else if constexpr (requires { SceneFieldCodec<FieldType>::WrittenFromValue; })
+            return SceneFieldCodec<FieldType>::WrittenFromValue;
+        else
+            return false;
+    }
+
+    template<typename Component>
+    bool SavedFormFromRowAlone()
+    {
+        if constexpr (!std::is_trivially_copyable_v<Component>)
+            return false;
+        else
+            return std::apply([](const auto&... field) {
+                return (WrittenFromValue<std::remove_cvref_t<decltype(std::declval<const Component&>().*field.Ptr)>>()
+                        && ...);
+            }, TypeSchema<Component>::Fields());
     }
 
     // Drops whatever LoadFields acquired. Called once the loaded value has
@@ -185,9 +273,33 @@ namespace SceneComponentSerialization
 //=============================================================================
 template <typename Component>
     requires HasTypeSchema<Component>
-class ComponentSerializer final : public IComponentSerializer
+class ComponentSerializer : public IComponentSerializer
 {
     using Traits = ComponentStorageTraits<Component>;
+
+    struct EntitiesInScope
+    {
+        EntitiesInScope(SceneSerializationContext& context, const World* world,
+                        std::vector<UnresolvedEntityReference>* unresolved)
+            : Context(context)
+            , World(context.Entities)
+            , Unresolved(context.Unresolved)
+        {
+            Context.Entities = world;
+            Context.Unresolved = unresolved;
+        }
+        ~EntitiesInScope()
+        {
+            Context.Entities = World;
+            Context.Unresolved = Unresolved;
+        }
+        EntitiesInScope(const EntitiesInScope&) = delete;
+        EntitiesInScope& operator=(const EntitiesInScope&) = delete;
+
+        SceneSerializationContext& Context;
+        const ::World* World;
+        std::vector<UnresolvedEntityReference>* Unresolved;
+    };
 
 public:
     ComponentTypeId TypeId() const override { return ResolveComponentTypeId<Component>(); }
@@ -196,7 +308,7 @@ public:
 
     std::span<const RuntimeField> RuntimeFields() const override
     {
-        return RuntimeFieldsOf<Component>();
+        return SceneComponentSerialization::AuthoredRuntimeFieldsOf<Component>();
     }
 
     std::optional<EditorVisual> GetEditorVisual() const override
@@ -214,11 +326,61 @@ public:
         return ComponentPlacement<Component>::Value;
     }
 
+    ComponentPersistence Persistence() const override
+    {
+        return ComponentPersistenceOf<Component>::Value;
+    }
+
     const DataFieldSchema* CompositionSchema() const override
     {
         static const std::optional<DataFieldSchema> schema =
             SceneComponentSerialization::CompositionSchemaOf<Component>();
         return schema.has_value() ? &*schema : nullptr;
+    }
+
+    bool SaveDefault(IWriteArchive& archive) const override
+    {
+        if constexpr (std::is_empty_v<Component>)
+        {
+            return false;
+        }
+        else
+        {
+            LoggingProvider unheard;
+            SceneSerializationContext bare(unheard);
+            bare.Purpose = SceneRecordPurpose::Save;
+            return SceneComponentSerialization::SaveFields(archive, Component{}, bare);
+        }
+    }
+
+    bool SavedFormFromRowAlone() const override
+    {
+        static const bool alone = SceneComponentSerialization::SavedFormFromRowAlone<Component>();
+        return alone;
+    }
+
+    bool Authorable() const override
+    {
+        static const bool authorable = SceneComponentSerialization::HasAuthoringForm<Component>();
+        return authorable;
+    }
+
+    bool HoldsPlacement(const JsonValue& cooked) const override
+    {
+        if constexpr (DeclaresHoldsPlacement<Component>)
+        {
+            LoggingProvider unheard;
+            SceneSerializationContext bare(unheard);
+            JsonReadArchive archive(cooked);
+            Component value{};
+            const bool read = SceneComponentSerialization::LoadFields(archive, value, bare);
+            SceneComponentSerialization::ReleaseFields(value, bare);
+            return read && ComponentHoldsPlacement<Component>::Holds(value);
+        }
+        else
+        {
+            return false;
+        }
     }
 
     std::vector<std::byte> DefaultBytes() const override
@@ -252,6 +414,9 @@ public:
               const World& world,
               SceneSerializationContext& context) const override
     {
+        if (context.Purpose == SceneRecordPurpose::Authoring && !Authorable())
+            return true;
+        const EntitiesInScope reading(context, &world, context.Unresolved);
         if constexpr (std::is_empty_v<Component>)
         {
             // A tag's presence is its whole value: it has no column, so
@@ -260,7 +425,7 @@ public:
                 || !world.HasComponent<Component>(entity))
                 return true;
             const Component tag{};
-            return SceneComponentSerialization::SaveFields(archive, tag, context);
+            return SceneComponentSerialization::SaveFields(archive, tag, context, &world);
         }
         else
         {
@@ -271,8 +436,7 @@ public:
             if (!component)
                 return true;
 
-            return SceneComponentSerialization::SaveFields(archive, *component,
-                                                           context);
+            return SceneComponentSerialization::SaveFields(archive, *component, context, &world);
         }
     }
 
@@ -294,7 +458,13 @@ public:
                        SceneSerializationContext& context) override
     {
         Component component{};
-        if (!SceneComponentSerialization::LoadFields(archive, component, context))
+        std::vector<UnresolvedEntityReference> unresolved;
+        bool read = false;
+        {
+            const EntitiesInScope reading(context, &world, &unresolved);
+            read = SceneComponentSerialization::LoadFields(archive, component, context, &world);
+        }
+        if (!read)
         {
             // A partial load still acquired whatever it got through.
             SceneComponentSerialization::ReleaseFields(component, context);
@@ -314,6 +484,8 @@ public:
         // or nothing was added and nothing owns one. The load's reference is
         // spent either way.
         SceneComponentSerialization::ReleaseFields(component, context);
+        if (added && !unresolved.empty())
+            SceneComponentSerialization::AwaitEntityReferences(world, entity, TypeId(), &component, unresolved);
         return added;
     }
 
@@ -327,4 +499,13 @@ public:
         registry.Components.RemoveComponent<Component>(entity);
         return true;
     }
+};
+
+// The generated serializer of a component that is still state at its defaults: it has no default
+// record, so a capture writes one an entity gained whole (docs/gameplay/saves.md, "The entity patch").
+template <typename Component>
+class ComponentSerializerWithoutDefault final : public ComponentSerializer<Component>
+{
+public:
+    bool SaveDefault(IWriteArchive&) const override { return false; }
 };

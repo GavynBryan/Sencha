@@ -41,12 +41,12 @@ namespace
         EntityId Part(EntityId owner, std::string_view region, const CollisionShape& shape, const Vec3d& position,
                       std::int32_t priority = 0)
         {
-            (void)Tags->RegisterTag(region);
+            const GameplayTagId named = *Tags->RegisterTag(region);
             const EntityId entity = Entities.CreateEntity();
             Entities.AddComponent<WorldTransform>(entity, WorldTransform{ At(position) });
             Entities.AddComponent<Parent>(entity, Parent{ owner });
             HitRegion part;
-            part.Region = region;
+            part.Region = named;
             part.Shape = shape;
             part.Priority = priority;
             Entities.AddComponent<HitRegion>(entity, part);

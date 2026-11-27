@@ -19,6 +19,7 @@
 #include <cassert>
 #include <string>
 #include <utility>
+#include <vector>
 
 const char* SceneSpawnStatusName(SceneSpawnStatus status)
 {
@@ -31,6 +32,15 @@ const char* SceneSpawnStatusName(SceneSpawnStatus status)
     case SceneSpawnStatus::Despawned: return "despawned";
     }
     return "unknown";
+}
+
+namespace
+{
+    struct OverlaidPackage
+    {
+        std::string Refused;
+        std::vector<std::string> Retuned;
+    };
 }
 
 // One spawn from request to settlement. Phase is the internal lifecycle;
@@ -153,7 +163,7 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
     auto build = std::make_shared<ScenePackageBuild>(*Assets, *Scenes, *asset);
     const SceneInstanceId instance = record->Instance;
     const AssetId source = record->Source;
-    (void)Tasks.Submit<std::string>(
+    (void)Tasks.Submit<OverlaidPackage>(
         // Work, on a task thread: parse and package build against immutable
         // inputs; serializer registration is sealed before spawns run.
         [this, build, instance, source, overlay = std::move(overlay)]() {
@@ -163,19 +173,25 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
             // Every spawned entity carries its group identity; the index
             // hooks make the spawn addressable the moment it imports.
             EntityBuildPackage* package = build->Package();
-            std::string refused;
-            if (package == nullptr || !ApplySpawnOverlay(*package, overlay, Serializers, refused))
-                return refused;
+            OverlaidPackage outcome;
+            if (package == nullptr
+                || !ApplySpawnOverlay(*package, overlay, Serializers, outcome.Refused, outcome.Retuned))
+                return outcome;
             if (!StampSpawnGroup(*package, SceneInstance{ source, instance }))
-                return std::string("an entity already carries a group identity");
-            return std::string();
+                outcome.Refused = "an entity already carries a group identity";
+            return outcome;
         },
         // Commit, on the owner thread at the drain: record the product; the
         // pump publishes in request order.
-        [this, build, id = record->Id](std::string refused) {
+        [this, build, id = record->Id](OverlaidPackage outcome) {
             Request* pending = FindRequest(id);
             if (pending == nullptr)
                 return;
+            for (const std::string& retuned : outcome.Retuned)
+                Logging.GetLogger<SceneSpawnService>().Warn(
+                    "SceneSpawnService: '{}' keeps its scene's value over the saved one: {}", pending->ScenePath,
+                    retuned);
+            const std::string& refused = outcome.Refused;
             if (!build->Settle())
             {
                 pending->State = Request::Phase::Failed;
@@ -216,6 +232,17 @@ SceneSpawnId SceneSpawnService::RequestSpawn(std::string_view sceneAssetPath,
         });
 
     return record->Id;
+}
+
+SceneSpawnId SceneSpawnService::RequestSpawn(AssetId scene, const Transform3f& root, StoragePartitionId partition,
+                                             SceneSpawnLifetime lifetime, SceneSpawnOverlay overlay)
+{
+    std::string path = Assets != nullptr && scene.IsValid()
+        ? std::string(Assets->ResolveRefPath(scene, std::string_view{}, AssetType::Scene))
+        : std::string();
+    if (path.empty())
+        path = AssetIdToString(scene);
+    return RequestSpawn(path, root, partition, lifetime, std::move(overlay));
 }
 
 bool SceneSpawnService::RequestDespawn(SceneSpawnId id)
@@ -303,7 +330,7 @@ void SceneSpawnService::Instantiate(Request& request)
     ZoneImportError importError;
     const bool imported = SceneContext != nullptr
         && ImportPackageIntoPartition(WorldState.Entities(), Schema, *request.Package,
-                                      request.Partition, ZoneId{}, Serializers,
+                                      request.Partition, ZoneStateScope{}, Serializers,
                                       *SceneContext, &importError);
     request.Package.reset();
 

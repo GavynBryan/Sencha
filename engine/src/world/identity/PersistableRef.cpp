@@ -3,12 +3,18 @@
 #include <ecs/World.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/identity/PersistentIdMint.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <algorithm>
 #include <string>
 
-PersistableRef MakePersistableRef(const World& world, EntityId entity)
+PersistableRef MakePersistableRef(World& world, EntityId entity)
+{
+    return PersistableRef{ .Entity = entity, .Target = EnsurePersistentId(world, entity) };
+}
+
+PersistableRef PersistableRefOf(const World& world, EntityId entity)
 {
     PersistableRef ref{ .Entity = entity, .Target = {} };
     if (world.IsAlive(entity) && world.IsRegistered<PersistentIdComponent>())

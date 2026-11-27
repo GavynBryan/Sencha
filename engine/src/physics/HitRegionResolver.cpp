@@ -16,7 +16,6 @@ std::optional<HitRegionHit> HitRegionResolver::Resolve(const World& world, Entit
     const bool parented = world.IsRegistered<Parent>();
     std::optional<HitRegionHit> best;
     std::int32_t bestPriority = 0;
-    InlineString<64> bestName;
     Regions->ForEachChunk([&](auto& view) {
         const auto regions = view.template Read<HitRegion>();
         const auto poses = view.template Read<WorldTransform>();
@@ -36,13 +35,9 @@ std::optional<HitRegionHit> HitRegionResolver::Resolve(const World& world, Entit
                     && (priority > bestPriority || (priority == bestPriority && part < best->Part)));
             if (!wins)
                 continue;
-            best = HitRegionHit{ .Part = part, .Region = {}, .Distance = *distance };
+            best = HitRegionHit{ .Part = part, .Region = regions[row].Region, .Distance = *distance };
             bestPriority = priority;
-            bestName = regions[row].Region;
         }
     });
-    if (best)
-        if (const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
-            best->Region = tags->FindTag(bestName.View());
     return best;
 }

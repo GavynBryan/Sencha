@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -52,6 +53,13 @@ public:
         Entries_.push_back(std::move(serializer));
         ByType_.emplace(raw->TypeId().Value, raw);
         ByKey_.emplace(raw->JsonKey(), raw);
+        if (const DataFieldSchema* schema = raw->CompositionSchema())
+        {
+            DataFieldSchema component = *schema;
+            component.Key = std::string(raw->JsonKey());
+            component.Required = false;
+            Entity_.Children.push_back(std::move(component));
+        }
         return RegisterResult::Added;
     }
 
@@ -60,6 +68,7 @@ public:
         Entries_.clear();
         ByType_.clear();
         ByKey_.clear();
+        Entity_.Children.clear();
     }
 
     // Remove the serializer for a specific component identity. A module calls this
@@ -72,6 +81,8 @@ public:
         {
             if ((*it)->TypeId() == type)
             {
+                std::erase_if(Entity_.Children,
+                              [key = (*it)->JsonKey()](const DataFieldSchema& component) { return component.Key == key; });
                 ByType_.erase((*it)->TypeId().Value);
                 ByKey_.erase((*it)->JsonKey());
                 Entries_.erase(it);
@@ -101,6 +112,9 @@ public:
         return found != ByKey_.end() ? found->second : nullptr;
     }
 
+    // An entity's scene form: one optional child per serializer with a CompositionSchema, under its JsonKey.
+    [[nodiscard]] const DataFieldSchema& EntitySchema() const { return Entity_; }
+
     [[nodiscard]] IComponentSerializer* FindByChunkId(std::uint32_t chunkId) const
     {
         for (const auto& entry : Entries_)
@@ -116,4 +130,5 @@ private:
     // so entries leave the maps in the same breath they leave Entries_.
     std::unordered_map<std::uint64_t, IComponentSerializer*> ByType_;
     std::unordered_map<std::string_view, IComponentSerializer*> ByKey_;
+    DataFieldSchema Entity_ = MakeDataField(DataFieldKind::Record, {}, {});
 };

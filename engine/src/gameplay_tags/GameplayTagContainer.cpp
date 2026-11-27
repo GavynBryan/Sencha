@@ -3,7 +3,6 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
-#include <cassert>
 
 namespace
 {
@@ -44,10 +43,7 @@ namespace
         if (i < tags.Count && tags.Tags[i] == tag)
             return i;
         if (tags.Count >= GameplayTagContainer::Capacity)
-        {
-            assert(false && "GameplayTagContainer capacity exceeded");
             return -1;
-        }
         for (int j = tags.Count; j > i; --j)
         {
             tags.Tags[j] = tags.Tags[j - 1];
@@ -72,11 +68,6 @@ namespace
         --tags.Count;
     }
 
-    std::uint16_t Saturating(std::uint16_t held, std::uint16_t added)
-    {
-        return static_cast<std::uint16_t>(std::min<std::uint32_t>(std::uint32_t{ held } + added, 0xFFFFu));
-    }
-
     bool Withdraw(GameplayTagContainer& tags, GameplayTagId tag, std::uint16_t stacks, bool fromBaseline)
     {
         if (stacks == 0)
@@ -96,22 +87,25 @@ namespace
         return true;
     }
 
-    bool Add(GameplayTagContainer& tags, GameplayTagId tag, std::uint16_t stacks, bool toBaseline)
+    GameplayTagWrite Add(GameplayTagContainer& tags, GameplayTagId tag, std::uint16_t stacks, bool toBaseline)
     {
         if (stacks == 0 || !tag.IsValid())
-            return false;
+            return GameplayTagWrite::Unchanged;
         const std::uint8_t before = tags.Count;
         const int i = Insert(tags, tag);
         if (i < 0)
-            return false;
-        tags.Counts[i] = Saturating(tags.Counts[i], stacks);
+            return GameplayTagWrite::Full;
+        const auto added = static_cast<std::uint16_t>(std::min<std::uint32_t>(stacks, 0xFFFFu - tags.Counts[i]));
+        tags.Counts[i] = static_cast<std::uint16_t>(tags.Counts[i] + added);
         if (toBaseline)
-            tags.Baseline[i] = Saturating(tags.Baseline[i], stacks);
-        return tags.Count != before;
+            tags.Baseline[i] = static_cast<std::uint16_t>(tags.Baseline[i] + added);
+        if (tags.Count != before)
+            return GameplayTagWrite::Added;
+        return added > 0 ? GameplayTagWrite::Restacked : GameplayTagWrite::Unchanged;
     }
 }
 
-bool GameplayTagContainer::Grant(GameplayTagId tag, std::uint16_t stacks)
+GameplayTagWrite GameplayTagContainer::Grant(GameplayTagId tag, std::uint16_t stacks)
 {
     return Add(*this, tag, stacks, false);
 }
@@ -121,7 +115,7 @@ bool GameplayTagContainer::Revoke(GameplayTagId tag, std::uint16_t stacks)
     return Withdraw(*this, tag, stacks, false);
 }
 
-bool GameplayTagContainer::GrantBaseline(GameplayTagId tag, std::uint16_t stacks)
+GameplayTagWrite GameplayTagContainer::GrantBaseline(GameplayTagId tag, std::uint16_t stacks)
 {
     return Add(*this, tag, stacks, true);
 }
@@ -152,16 +146,32 @@ std::uint16_t GameplayTagContainer::ContributedCount(GameplayTagId tag) const
     return (i < Count && Tags[i] == tag) ? static_cast<std::uint16_t>(Counts[i] - Baseline[i]) : std::uint16_t{ 0 };
 }
 
-bool GameplayTagContainer::SetContribution(GameplayTagId tag, std::uint16_t stacks)
+GameplayTagWrite GameplayTagContainer::SetContribution(GameplayTagId tag, std::uint16_t stacks)
 {
     const std::uint16_t held = ContributedCount(tag);
     if (held == stacks || !tag.IsValid())
-        return false;
-    if (held > stacks)
-        (void)Withdraw(*this, tag, static_cast<std::uint16_t>(held - stacks), false);
-    else
-        (void)Add(*this, tag, static_cast<std::uint16_t>(stacks - held), false);
-    return ContributedCount(tag) != held;
+        return GameplayTagWrite::Unchanged;
+    if (held < stacks)
+        return Add(*this, tag, static_cast<std::uint16_t>(stacks - held), false);
+    return Withdraw(*this, tag, static_cast<std::uint16_t>(held - stacks), false) ? GameplayTagWrite::Removed
+                                                                                  : GameplayTagWrite::Restacked;
+}
+
+bool GameplayTagContainer::CanHoldAll(std::span<const GameplayTagId> tags) const
+{
+    std::size_t absent = 0;
+    for (std::size_t i = 0; i < tags.size(); ++i)
+    {
+        const GameplayTagId tag = tags[i];
+        const bool repeated = std::find(tags.begin(), tags.begin() + static_cast<std::ptrdiff_t>(i), tag)
+            != tags.begin() + static_cast<std::ptrdiff_t>(i);
+        if (!tag.IsValid() || repeated)
+            continue;
+        if (StackCount(tag) == 0xFFFF)
+            return false;
+        absent += HasExact(tag) ? 0 : 1;
+    }
+    return Count + absent <= Capacity;
 }
 
 bool GameplayTagContainer::HasDescendantOf(const GameplayTagRegistry& registry,

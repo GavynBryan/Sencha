@@ -70,7 +70,7 @@ JsonValue WriteAnimTrace(const World& world, EntityId entity, const AnimBoundRig
         {
             out.emplace_back("event", Number(record.EventKey));
             out.emplace_back("outcome", Text(AnimEventOutcomeName(record.EventOutcome)));
-            out.emplace_back("admission", Text(VerbAdmissionName(record.Admission)));
+            out.emplace_back("admission", Text(VerbAdmissionName(record.Answer.Status)));
         }
         if (record.Cause == AnimDecisionCause::BlendApplied)
             out.emplace_back("blend", JsonValue(JsonValue::Object{

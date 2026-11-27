@@ -1,0 +1,53 @@
+# --check-scenes lists an old scene and fails, --upgrade-scenes restamps it, and the check then passes.
+# -DBATCH=<kyusu_batch> -DWORK=<scratch directory>
+set(old_scene "{\n  format_version: 1,\n  entities: [],\n}\n")
+set(current_scene "{\n  format_version: 3,\n  entities: [],\n}\n")
+set(refused_scene "{ format_version: 1, entities: [], instances: [ { id: '0000000000000100', source: 'asset://a.sscene', patch: { '0000000000000001': { Light: { cookie: null } } } } ] }\n")
+
+file(REMOVE_RECURSE "${WORK}")
+file(WRITE "${WORK}/assets/levels/old.sscene" "${old_scene}")
+file(WRITE "${WORK}/assets/levels/current.sscene" "${current_scene}")
+file(WRITE "${WORK}/.cooked/hidden.sscene" "${old_scene}")
+file(WRITE "${WORK}/build/CMakeCache.txt" "")
+file(WRITE "${WORK}/build/copied.sscene" "${old_scene}")
+
+function(run_batch mode expected_result)
+    execute_process(COMMAND "${BATCH}" --project "${WORK}" ${mode}
+                    OUTPUT_VARIABLE output ERROR_VARIABLE errors RESULT_VARIABLE result)
+    if(NOT result EQUAL expected_result)
+        message(FATAL_ERROR "kyusu_batch ${mode} exited ${result}, not ${expected_result}:\n${output}${errors}")
+    endif()
+    set(output "${output}" PARENT_SCOPE)
+endfunction()
+
+run_batch(--check-scenes 1)
+if(NOT output MATCHES "assets/levels/old.sscene" OR output MATCHES "current.sscene|hidden.sscene|copied.sscene")
+    message(FATAL_ERROR "--check-scenes listed the wrong files:\n${output}")
+endif()
+
+run_batch(--upgrade-scenes 0)
+if(NOT output MATCHES "upgraded assets/levels/old.sscene" OR NOT output MATCHES "current assets/levels/current.sscene")
+    message(FATAL_ERROR "--upgrade-scenes did not report each file:\n${output}")
+endif()
+file(READ "${WORK}/assets/levels/old.sscene" upgraded)
+string(REPLACE "format_version: 1" "format_version: 3" expected "${old_scene}")
+if(NOT upgraded STREQUAL expected)
+    message(FATAL_ERROR "old.sscene was not restamped:\n${upgraded}")
+endif()
+file(READ "${WORK}/.cooked/hidden.sscene" hidden)
+if(NOT hidden STREQUAL old_scene)
+    message(FATAL_ERROR "a hidden directory was upgraded")
+endif()
+
+run_batch(--check-scenes 0)
+
+file(WRITE "${WORK}/assets/levels/refused.sscene" "${refused_scene}")
+run_batch(--upgrade-scenes 1)
+if(NOT output MATCHES "refused assets/levels/refused.sscene")
+    message(FATAL_ERROR "--upgrade-scenes did not name the refused file:\n${output}")
+endif()
+file(READ "${WORK}/assets/levels/refused.sscene" refused)
+if(NOT refused STREQUAL refused_scene)
+    message(FATAL_ERROR "a refused file was rewritten")
+endif()
+run_batch(--check-scenes 1)

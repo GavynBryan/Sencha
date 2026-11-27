@@ -4,6 +4,7 @@
 // the kernel the live tick uses. A phase waits on what it holds completing, and
 // an activation ends when the target it grabbed is gone.
 
+#include "GeneratedVerbCall.h"
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityKit.h>
@@ -126,7 +127,7 @@ protected:
         const AbilityId ability =
             Entities.GetResource<AbilityRegistry>().Define("asset://abilities/held.sdata", std::move(definition));
         const std::uint16_t entry = Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
-        (void)GrantAbility(*Entities.TryGet<AbilityGrants>(Character), ability, AbilityGrantKind::Authored, entry);
+        (void)GrantAbility(Entities, Character, ability, AbilityGrantKind::Authored, entry);
     }
 
     // One fixed tick: input, the actor clock, abilities, attributes and effects, then movement and the motor.
@@ -172,8 +173,7 @@ protected:
     }
 
     // A lease taken or let go by hand, as its provider sees the call.
-    VerbAdmission Lease(VerbAdmission (MovementOperations::*call)(const VerbInvocation&), const LeaseOwner& owner,
-                        std::vector<AuthoredValue> arguments)
+    VerbAdmission Lease(std::string_view lease, const LeaseOwner& owner, std::vector<AuthoredValue> arguments)
     {
         AuthoredArguments record(arguments.size());
         for (std::size_t slot = 0; slot < arguments.size(); ++slot)
@@ -183,7 +183,7 @@ protected:
         invocation.Step = arguments.empty() ? LeaseStep::Release : LeaseStep::Acquire;
         invocation.Arguments = &record;
         invocation.Tick = Now;
-        return (Provider.*call)(invocation);
+        return CallGeneratedVerb(Provider, lease, invocation).Status;
     }
 
     World Entities;
@@ -338,7 +338,7 @@ TEST_F(AbilityMovement, ATetherPullsTowardItsAnchorAndEndsWhenTheAnchorGoes)
         anchor, LocalTransform{ Transform3f{ Vec3d(10.0f, 1.5f, 0.0f), Quatf::Identity(), Vec3d::One() } });
     Steps(10);
     const LeaseOwner holder{ .Entity = Character, .Key = 1 };
-    ASSERT_EQ(Lease(&MovementOperations::Tether, holder,
+    ASSERT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Tether, holder,
                     { AuthoredValue::Entity(Character), AuthoredValue::Entity(anchor), AuthoredValue{},
                       AuthoredValue::Float(2.0), AuthoredValue::Float(12.0) }),
               VerbAdmission::Accepted);
@@ -357,7 +357,7 @@ TEST_F(AbilityMovement, ATetherRefusedForItsArrivalLeavesTheSlotAsItWas)
     const EntityId anchor = Entities.CreateEntity();
     Steps(10);
     const LeaseOwner holder{ .Entity = Character, .Key = 1 };
-    EXPECT_EQ(Lease(&MovementOperations::Tether, holder,
+    EXPECT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Tether, holder,
                     { AuthoredValue::Entity(Character), AuthoredValue::Entity(anchor), AuthoredValue{},
                       AuthoredValue::Float(2.0), AuthoredValue::Float(12.0),
                       AuthoredValue::Vector({ .Components = { 1.0, 0.0, 0.0, 0.0 }, .Length = 3 }) }),
@@ -429,18 +429,18 @@ TEST_F(AbilityMovement, AModeLeaseHoldsTheModeUntilLetGoOrItsHolderGoes)
 {
     Steps(2);
     const LeaseOwner holder{ .Entity = Character, .Key = 1 };
-    ASSERT_EQ(Lease(&MovementOperations::Mode, holder,
+    ASSERT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Mode, holder,
                     { AuthoredValue::Entity(Character), AuthoredValue::String("movement.mode.flight") }),
               VerbAdmission::Accepted);
     Step();
     EXPECT_EQ(Entities.TryGet<CharacterMovement>(Character)->Mode, Flight);
-    ASSERT_EQ(Lease(&MovementOperations::Mode, holder, {}), VerbAdmission::Accepted);
+    ASSERT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Mode, holder, {}), VerbAdmission::Accepted);
     Step();
     EXPECT_EQ(Entities.TryGet<CharacterMovement>(Character)->Mode,
               Entities.GetResource<LocomotionModeRegistry>().FreeMode());
 
     const EntityId holderEntity = Entities.CreateEntity();
-    ASSERT_EQ(Lease(&MovementOperations::Mode, { .Entity = holderEntity },
+    ASSERT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Mode, { .Entity = holderEntity },
                     { AuthoredValue::Entity(Character), AuthoredValue::String("movement.mode.flight") }),
               VerbAdmission::Accepted);
     Step();
@@ -505,7 +505,7 @@ TEST_F(AbilityMovement, AReelStopsTheCharacterAtItsPointAndCompletes)
     const Vec3d line = (anchor - start).Normalized();
     const Vec3d until = start + line * 5.0f;
     const LeaseOwner holder{ .Entity = Character, .Key = 1 };
-    ASSERT_EQ(Lease(&MovementOperations::Tether, holder,
+    ASSERT_EQ(Lease(AuthoredApiDefinition<MovementOperations>::Name_Tether, holder,
                     { AuthoredValue::Entity(Character), AuthoredValue{},
                       AuthoredValue::Vector({ { anchor.X, anchor.Y, anchor.Z }, 3 }), AuthoredValue::Float(2.0),
                       AuthoredValue::Float(12.0), AuthoredValue::Vector({ { until.X, until.Y, until.Z }, 3 }) }),

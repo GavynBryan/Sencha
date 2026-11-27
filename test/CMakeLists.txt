@@ -245,6 +245,7 @@ if(FRAMEWORK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)
     target_include_directories(framework_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/support
         ${CMAKE_SOURCE_DIR}/templates/fps/src
         ${CMAKE_SOURCE_DIR}/templates/platformer/src
         ${CMAKE_SOURCE_DIR}/templates/horror/src)
@@ -326,6 +327,11 @@ if(TARGET kyusu_batch)
         FIXTURES_REQUIRED kyusu_batch_proposal
         PASS_REGULAR_EXPRESSION "\"operation\":\"entity.describe\",\"status\":\"ok\""
         FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
+    add_test(NAME kyusu_batch.UpgradesAndChecksAProjectsScenes
+        COMMAND "${CMAKE_COMMAND}"
+            -DBATCH=$<TARGET_FILE:kyusu_batch>
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/scene_upgrade_project
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckSceneUpgrade.cmake")
 endif()
 
 # The transport, protocol, and channel layers. Their own target because they
@@ -418,8 +424,16 @@ if(TEMPLATE_TEST_SOURCES AND TARGET level_cook_tests)
             COMMAND level_cook_tests --gtest_filter=CookLevel.Generate)
         set_tests_properties(CookFpsTemplateContent PROPERTIES
             FIXTURES_SETUP TemplateContent
+            RESOURCE_LOCK FpsTemplateCook
             ENVIRONMENT
                 "SENCHA_COOK_LEVEL=${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/room_2.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/levels/bumper.sscene,${CMAKE_SOURCE_DIR}/templates/fps/assets/prefabs/player_pawn.sscene;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
+        add_test(NAME CookFpsTemplateWorld
+            COMMAND level_cook_tests --gtest_filter=CookWorld.Generate)
+        set_tests_properties(CookFpsTemplateWorld PROPERTIES
+            FIXTURES_SETUP TemplateContent
+            RESOURCE_LOCK FpsTemplateCook
+            ENVIRONMENT
+                "SENCHA_COOK_WORLD=${CMAKE_SOURCE_DIR}/templates/fps/assets/traversal3.sworld;SENCHA_COOK_ROOT=${CMAKE_SOURCE_DIR}/templates/fps/assets")
     endif()
     foreach(_template platformer horror)
         if(TARGET ${_template}_game)
@@ -647,12 +661,19 @@ if(NOT WIN32)
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_engine_layering.sh ${CMAKE_SOURCE_DIR}
     )
     add_test(
+        NAME declared_vocabulary
+        COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_declared_vocabulary.sh ${CMAKE_SOURCE_DIR}
+    )
+    add_test(
         NAME component_codegen
         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_component_codegen.sh
                 $<TARGET_FILE:sencha::component-codegen>
                 ${CMAKE_SOURCE_DIR}
                 ${CMAKE_BINARY_DIR}/engine/generated-public
                 ${CMAKE_CXX_COMPILER}
+                ${CMAKE_COMMAND}
+                ${CMAKE_GENERATOR}
+                ${CMAKE_MAKE_PROGRAM}
     )
     add_test(
         NAME component_index_validation

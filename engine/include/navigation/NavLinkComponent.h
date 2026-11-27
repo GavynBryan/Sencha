@@ -70,6 +70,7 @@ NavLink
 template <>
 struct SceneFieldCodec<NavLinkId>
 {
+    static constexpr bool WrittenFromValue = true;
     static bool Save(IWriteArchive&, std::string_view, NavLinkId,
                      SceneSerializationContext&);
     static bool Load(IReadArchive&, std::string_view, NavLinkId&,

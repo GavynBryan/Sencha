@@ -1,46 +1,80 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
+#include <core/json/JsonValue.h>
 #include <ecs/ComponentTypeId.h>
+#include <world/LevelReference.h>
+#include <world/build/EntityBuildPackage.h>
+#include <world/serialization/EntityPatch.h>
+#include <zone/ZoneCaptureImage.h>
 #include <zone/ZoneId.h>
 #include <zone/ZoneStateLifetime.h>
+#include <zone/ZoneStateLists.h>
+#include <zone/ZoneStateScope.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
-struct DurableComponentState
-{
-    PersistentEntityId Entity;
-    ComponentTypeId Type;
-    std::uint16_t Version = 0;
-    std::vector<std::byte> Bytes;
+class ComponentSerializerRegistry;
 
-    friend bool operator==(const DurableComponentState&, const DurableComponentState&) = default;
-};
-
-// What a zone never forgets, in id order: the part a save keeps.
+// One zone's durable state, as a save holds it.
 struct DurableZoneState
 {
     ZoneId Zone;
-    std::vector<PersistentEntityId> Destroyed;
-    std::vector<DurableComponentState> Components;
+    // destroyed, changed, and any list this build does not read, as read.
+    EncodedZoneLists Lists;
+    // The `held` list: records held by this zone's entities.
+    EncodedZoneLists Held;
+};
 
-    friend bool operator==(const DurableZoneState&, const DurableZoneState&) = default;
+struct DurableLevelState
+{
+    LevelReference Level;
+    std::vector<DurableZoneState> Zones;
+};
+
+// A run-time entity its zone keeps, as its `gained` member.
+struct GainedEntityState
+{
+    // Invalid for a member of a form this build does not make, which is kept as read.
+    PersistentEntityId Id;
+    ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+    GainedZoneMember Member;
+
+    friend bool operator==(const GainedEntityState&, const GainedEntityState&) = default;
 };
 
 struct AuthoredEntityState
 {
     PersistentEntityId Id;
     ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+    // What a capture diffs this entity against: by default its Saved components.
+    std::vector<AuthoredComponent> Baseline;
+    // Its rows as they match its kept patch; none when unknown.
+    ZoneCaptureImage Image;
 };
 
-struct RememberedComponentState
+// A resident authored entity as a capture reads it; both null when the store has no baseline for it.
+struct ResidentEntityState
 {
-    std::uint16_t Version = 0;
-    std::span<const std::byte> Bytes;
+    const std::vector<AuthoredComponent>* Baseline = nullptr;
+    ZoneCaptureImage* Image = nullptr;
+};
+
+// World resource SavedGames::KeepLevelState installs; without it a zone keeps destroyed sets only.
+struct ZoneStateSerialization
+{
+    const ComponentSerializerRegistry* Serializers = nullptr;
+    SceneSerializationContext* Context = nullptr;
+    // What a spawn of the scene builds, for a gained member saved from its source; nothing when it does not resolve.
+    std::function<std::optional<EntityBuildPackage>(AssetId)> SourcePackage = {};
 };
 
 enum class ZoneCapture : std::uint8_t
@@ -52,66 +86,131 @@ enum class ZoneCapture : std::uint8_t
     Detach,
 };
 
-// How each zone's live state deviates from its cooked scene, keyed by
+// How each zone of each level deviates from its cooked scene, keyed by
 // persistent identity: docs/plans/runtime-stable-identity.md.
 class ZoneStateStore
 {
 public:
+    [[nodiscard]] ZoneStateScope Scope(const LevelReference& level, ZoneId zone);
+    [[nodiscard]] ZoneStateLevelId Level(const LevelReference& level);
+
     // At import, with every entity the cooked scene authored, those this import
     // suppressed included.
-    void RecordAuthoredSet(ZoneId zone, std::span<const AuthoredEntityState> authored);
+    void RecordAuthoredSet(ZoneStateScope scope, std::vector<AuthoredEntityState> authored);
 
     // While the zone's entities are alive: authored minus live is destroyed.
-    void RecordCapture(ZoneId zone, std::span<const PersistentEntityId> live, ZoneCapture capture);
+    void RecordCapture(ZoneStateScope scope, std::span<const PersistentEntityId> live, ZoneCapture capture);
 
-    [[nodiscard]] bool IsRecordedDestroyed(ZoneId zone, PersistentEntityId id) const;
-    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneId zone) const;
+    // An empty patch forgets the entity's.
+    void RecordPatch(ZoneStateScope scope, PersistentEntityId id, JsonValue patch);
+    void ForgetPatchMember(ZoneStateScope scope, PersistentEntityId id, std::string_view member);
+
+    // The zone's kept entities alive at a capture; members of forms this build does not make stay.
+    void RecordGained(ZoneStateScope scope, std::vector<GainedEntityState> gained);
+    void ForgetGained(ZoneStateScope scope, PersistentEntityId id);
+    // Members of forms this build does not make first, as read, then the rest by id.
+    [[nodiscard]] std::span<const GainedEntityState> GainedOf(ZoneStateScope scope) const;
+    [[nodiscard]] const GainedEntityState* GainedMemberOf(ZoneStateScope scope, PersistentEntityId id) const;
+    // A resident gained member's rows as they match its kept member; kept until the zone detaches or forgets it.
+    [[nodiscard]] ZoneCaptureImage* GainedImageOf(ZoneStateScope scope, PersistentEntityId id);
+    void RecordGainedImage(ZoneStateScope scope, PersistentEntityId id, ZoneCaptureImage image);
+
+    // Records the zone's entities held when it left, made again when it imports; `session` ones are never saved.
+    void RecordHeld(ZoneStateScope scope, std::vector<ZoneListEntity> durable, std::vector<ZoneListEntity> session);
+    [[nodiscard]] std::vector<ZoneListEntity> TakeHeld(ZoneStateScope scope);
+
+    // The zone's sensors and what was inside each at a capture; each pair is forgotten with its sensor.
+    void RecordOccupied(ZoneStateScope scope, std::vector<SensorSeed> pairs);
+    [[nodiscard]] std::vector<SensorSeed> OccupiedOf(ZoneStateScope scope) const;
+
+    // Gone from the zone for good, whatever its lifetime; only Clear and Install forget it.
+    void RecordDeparted(ZoneStateScope scope, PersistentEntityId id);
+
+    [[nodiscard]] bool IsRecordedDestroyed(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] bool IsRecordedDeparted(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] std::size_t RecordedDestroyedCount(ZoneStateScope scope) const;
     // Never for an entity this store has no record of.
-    [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneId zone, PersistentEntityId id) const;
+    [[nodiscard]] ZoneStateForgetting ForgettingOf(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] const JsonValue* PatchOf(ZoneStateScope scope, PersistentEntityId id) const;
+    // Null unless the zone's current residency authored the entity, and for one forgotten at detach.
+    [[nodiscard]] const std::vector<AuthoredComponent>* BaselineOf(ZoneStateScope scope, PersistentEntityId id) const;
+    [[nodiscard]] ResidentEntityState ResidentOf(ZoneStateScope scope, PersistentEntityId id);
 
-    void RecordComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type, std::uint16_t version,
-                              std::span<const std::byte> state);
-    void ForgetComponentState(ZoneId zone, PersistentEntityId id, ComponentTypeId type);
-    // Empty bytes when nothing was recorded.
-    [[nodiscard]] RememberedComponentState ComponentState(ZoneId zone, PersistentEntityId id,
-                                                          ComponentTypeId type) const;
+    [[nodiscard]] const LevelReference* LevelOf(ZoneStateLevelId level) const;
 
-    // Reset-to-authored: the next import of every zone replays the cooked scene.
+    // What the level's zones keep; what departed from them stays.
+    void ForgetLevel(const LevelReference& level);
     void Clear() { Zones_.clear(); }
 
-    [[nodiscard]] std::vector<DurableZoneState> ExportDurable() const;
-    // Replaces everything with `durable`.
-    void Install(std::span<const DurableZoneState> durable);
+    // Sorted by level, then zone; a zone unchanged since the last export is the same blob.
+    [[nodiscard]] std::vector<DurableLevelState> ExportDurable() const;
+    // Replaces everything with `durable`; each zone is read when it next imports.
+    void Install(std::span<const DurableLevelState> durable);
 
 private:
-    struct ComponentStateKey
+    struct ScopeKey
     {
-        std::uint64_t Entity = 0;
-        std::uint64_t Type = 0;
-        friend bool operator==(const ComponentStateKey&, const ComponentStateKey&) = default;
+        std::uint32_t Level = 0;
+        std::uint64_t Zone = 0;
+        friend bool operator==(const ScopeKey&, const ScopeKey&) = default;
     };
 
-    struct ComponentStateKeyHash
+    struct ScopeKeyHash
     {
-        std::size_t operator()(const ComponentStateKey& key) const
+        std::size_t operator()(const ScopeKey& key) const
         {
-            return static_cast<std::size_t>(key.Entity * 1099511628211ull ^ key.Type);
+            return static_cast<std::size_t>(key.Zone * 1099511628211ull ^ key.Level);
         }
     };
 
-    struct ComponentRecord
+    struct AuthoredRecord
     {
         ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
-        std::uint16_t Version = 0;
-        std::vector<std::byte> Bytes;
+        std::vector<AuthoredComponent> Baseline;
+        ZoneCaptureImage Image;
     };
 
+    struct PatchRecord
+    {
+        ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+        JsonValue Patch;
+    };
+
+    struct OccupiedRecord
+    {
+        ZoneStateForgetting Forgotten = ZoneStateForgetting::Never;
+        SensorSeed Pair;
+        friend bool operator==(const OccupiedRecord&, const OccupiedRecord&) = default;
+    };
+
+    // Parsed while resident or holding what a save does not keep; otherwise only Encoded.
     struct ZoneRecord
     {
-        std::unordered_map<std::uint64_t, ZoneStateForgetting> Authored;
+        bool Parsed = true;
+        std::unordered_map<std::uint64_t, AuthoredRecord> Authored;
         std::unordered_map<std::uint64_t, ZoneStateForgetting> Destroyed;
-        std::unordered_map<ComponentStateKey, ComponentRecord, ComponentStateKeyHash> Components;
+        std::unordered_map<std::uint64_t, PatchRecord> Patches;
+        std::vector<GainedEntityState> Gained;
+        std::unordered_map<std::uint64_t, ZoneCaptureImage> GainedImages;
+        std::vector<OccupiedRecord> Occupied;
+        std::vector<std::uint64_t> Departed;
+        std::vector<ZoneStateList> Carried;
+        // The never-forgotten part as a save holds it; null when stale or empty.
+        EncodedZoneLists Encoded;
+        // While the zone is away: the `held` list a save holds, and the records no save holds.
+        EncodedZoneLists Held;
+        EncodedZoneLists SessionHeld;
     };
 
-    std::unordered_map<ZoneId, ZoneRecord> Zones_;
+    [[nodiscard]] static ScopeKey KeyOf(ZoneStateScope scope) { return { scope.Level.Value, scope.Zone.Value }; }
+    [[nodiscard]] ZoneStateLevelId FindLevel(const LevelReference& level) const;
+    [[nodiscard]] ZoneRecord* Find(ZoneStateScope scope) const;
+    [[nodiscard]] ZoneRecord& Open(ZoneStateScope scope);
+    static void RecordDestroyed(ZoneRecord& record, std::span<const PersistentEntityId> live, bool detaching);
+    static void Parse(ZoneRecord& record);
+    [[nodiscard]] static EncodedZoneLists Encode(const ZoneRecord& record);
+    static void Close(ZoneRecord& record);
+
+    std::vector<LevelReference> Levels_;
+    mutable std::unordered_map<ScopeKey, ZoneRecord, ScopeKeyHash> Zones_;
 };

@@ -56,7 +56,6 @@ namespace
         return (index != nullptr ? index->Depth(into) : 0) + 1 + height <= kHeldDeepestNesting;
     }
 
-    // Not lying in a pickup, held by the world, or waiting for a holder that is away.
     bool Contained(const World& world, EntityId entry)
     {
         const EntityId holder = HolderOf(world, entry);
@@ -89,25 +88,33 @@ namespace
     EntityId CreateEntry(World& world, EntityId container, ItemId item, const ItemDefinition& definition,
                          std::uint32_t count)
     {
-        const EntityId entry = world.CreateEntity(world.GetEntityPartition(container));
-        world.AddComponent<ItemEntry>(entry, ItemEntry{ .Definition = item, .Count = count });
-        if (!definition.Attributes.empty())
+        const bool attributes = !definition.Attributes.empty();
+        const bool tags = (!definition.InstanceTags.empty() || !definition.EquipLockTags.empty())
+            && world.IsRegistered<GameplayTagContainer>();
+        ArchetypeSignature values;
+        values.set(world.GetComponentId<ItemEntry>());
+        if (attributes)
+            values.set(world.GetComponentId<AttributeSet>());
+        if (tags)
+            values.set(world.GetComponentId<GameplayTagContainer>());
+        const EntityId entry = PlaceHeldRecord(world, container, values);
+        if (!entry.IsValid())
+            return entry;
+        (void)world.InitializeComponent<ItemEntry>(entry, ItemEntry{ .Definition = item, .Count = count });
+        if (attributes)
         {
-            AttributeSet attributes{};
+            AttributeSet seeded{};
             for (const ItemAttributeSeed& seed : definition.Attributes)
-                (void)attributes.Add(seed.Attribute, seed.Base);
-            world.AddComponent<AttributeSet>(entry, attributes);
+                (void)seeded.Add(seed.Attribute, seed.Base);
+            (void)world.InitializeComponent<AttributeSet>(entry, seeded);
         }
-        // A curse laid on an entry by an effect needs somewhere to land.
-        if ((!definition.InstanceTags.empty() || !definition.EquipLockTags.empty())
-            && world.IsRegistered<GameplayTagContainer>())
+        if (tags)
         {
-            GameplayTagContainer tags{};
+            GameplayTagContainer granted{};
             for (const GameplayTagId tag : definition.InstanceTags)
-                (void)tags.GrantBaseline(tag);
-            world.AddComponent<GameplayTagContainer>(entry, tags);
+                (void)granted.GrantBaseline(tag);
+            (void)world.InitializeComponent<GameplayTagContainer>(entry, granted);
         }
-        HoldRecord(world, entry, container);
         return entry;
     }
 
@@ -117,7 +124,6 @@ namespace
         std::uint32_t Remaining = 0;
     };
 
-    // A depleted stack is never refilled.
     StackFill FillOpenStacks(const World& world, EntityId container, ItemId definition, const ItemDefinition& item,
                              std::uint32_t units, EntityId except)
     {
@@ -138,20 +144,12 @@ namespace
         return fill;
     }
 
-    void ChangeCount(World& world, EntityId entry, std::uint32_t count)
-    {
-        world.TryGet<ItemEntry>(entry)->Count = count;
-        NoteHeldRecordChanged(world, entry);
-        if (count == 0)
-            NoteDepleted(world, entry, EntityId{});
-    }
-
     EntityId ApplyFills(World& world, const StackFill& fill)
     {
         EntityId last;
         for (const auto& [entry, added] : fill.Fills)
         {
-            ChangeCount(world, entry, std::as_const(world).TryGet<ItemEntry>(entry)->Count + added);
+            SetItemCount(world, entry, std::as_const(world).TryGet<ItemEntry>(entry)->Count + added);
             last = entry;
         }
         return last;
@@ -162,17 +160,19 @@ namespace
     {
         const ItemEntry held = *std::as_const(world).TryGet<ItemEntry>(entry);
         const bool whole = units >= held.Count;
+        const bool stays = whole && HolderOf(world, entry) == into;
         const StackFill fill = FillOpenStacks(world, into, held.Definition, item, units, entry);
-        if (!HasRoom(world, container, into, fill.Remaining > 0 ? 1 : 0))
+        if (!HasRoom(world, container, into, fill.Remaining > 0 && !stays ? 1 : 0))
             return Refused(InventoryRefusal::ContainerFull);
 
         EntityId moved = ApplyFills(world, fill);
         const std::uint32_t left = held.Count - (whole ? units - fill.Remaining : units);
         if (left != held.Count)
-            ChangeCount(world, entry, left);
+            SetItemCount(world, entry, left);
         if (whole && fill.Remaining > 0)
         {
-            HoldRecord(world, entry, into);
+            if (!stays)
+                HoldRecord(world, entry, into);
             moved = entry;
         }
         else if (fill.Remaining > 0)
@@ -243,15 +243,16 @@ InventoryResult Inventory::Take(EntityId pickup, EntityId into)
     const ItemDefinition* item = FindItemDefinition(world, definition);
     if (item == nullptr || !world.IsAlive(into))
         return Refused(InventoryRefusal::Missing);
+    const std::uint32_t units = lying->Count;
     InventoryResult result;
     if (item->Keep)
     {
-        result = Give(into, definition, lying->Count);
+        result = Give(into, definition, units);
         if (result.Refusal != InventoryRefusal::None)
             return result;
     }
     for (const EffectId effect : item->TakeEffects)
-        (void)ApplyEffect(world, into, effect, FixedSimTime{});
+        (void)ApplyEffect(world, into, effect, Now, {}, static_cast<float>(units));
     world.DestroyEntity(pickup);
     return result;
 }
@@ -318,6 +319,14 @@ InventoryResult Inventory::Use(EntityId user, EntityId entry)
     return { .Refusal = InventoryRefusal::None, .Entry = entry };
 }
 
+bool InstallItemMoveAdmission(World& world, const ItemMoveAdmission& admission)
+{
+    if (const ItemMoveAdmission* installed = world.TryGetResource<ItemMoveAdmission>())
+        return installed->Admit == admission.Admit && installed->Moved == admission.Moved;
+    world.AddResource<ItemMoveAdmission>(admission);
+    return true;
+}
+
 const ItemDefinition* FindItemDefinition(const World& world, ItemId item)
 {
     const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
@@ -367,16 +376,29 @@ bool MayUseItem(const World& world, EntityId actor, EntityId item)
 
 bool ItemIsWithin(const World& world, EntityId inner, EntityId outer)
 {
-    if (!outer.IsValid())
-        return false;
-    EntityId at = inner;
-    for (int depth = 0; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
-    {
-        if (at == outer)
-            return true;
-        at = HolderOf(world, at);
-    }
-    return false;
+    const HeldRecordIndex* index = IndexOf(world);
+    return index != nullptr ? index->IsWithin(inner, outer) : inner.IsValid() && inner == outer;
+}
+
+std::uint32_t ItemStackClamp(const ItemDefinition& item, std::uint32_t count)
+{
+    return std::clamp<std::uint32_t>(count, 1, std::max<std::uint32_t>(item.StackMax, 1));
+}
+
+bool ItemStackHolds(const ItemDefinition& item, std::uint32_t count)
+{
+    return ItemStackClamp(item, count) == count;
+}
+
+void SetItemCount(World& world, EntityId entry, std::uint32_t count, EntityId spender)
+{
+    ItemEntry* item = world.IsAlive(entry) ? world.TryGet<ItemEntry>(entry) : nullptr;
+    if (item == nullptr || item->Count == count)
+        return;
+    item->Count = count;
+    NoteHeldRecordChanged(world, entry);
+    if (count == 0)
+        NoteDepleted(world, entry, spender);
 }
 
 bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId tag)
@@ -386,4 +408,77 @@ bool ItemCarries(const World& world, const ItemDefinition& item, GameplayTagId t
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     return tags != nullptr
         && std::ranges::any_of(item.Tags, [&](GameplayTagId held) { return tags->IsDescendantOf(held, tag); });
+}
+
+void VisitItemEntries(const World& world, EntityId container, const ItemFilter& filter, void* visitor,
+                      ItemEntryVisitor visit)
+{
+    const HeldRecordIndex* index = IndexOf(world);
+    if (index == nullptr || !container.IsValid() || !world.IsRegistered<ItemEntry>())
+        return;
+    const ItemRegistry* items = world.TryGetResource<ItemRegistry>();
+    const auto walk = [&](const auto& self, EntityId holder, int depth) -> bool {
+        if (depth >= kHeldDeepestNesting)
+            return true;
+        for (const EntityId record : index->RecordsOf(holder))
+        {
+            const ItemEntry* held = world.TryGet<ItemEntry>(record);
+            if (held == nullptr)
+                continue;
+            const ItemDefinition* item = items != nullptr ? items->Get(held->Definition) : nullptr;
+            const bool matches = held->Count > 0
+                && (!filter.Definition.IsValid() || held->Definition == filter.Definition)
+                && (!filter.Tag.IsValid() || (item != nullptr && ItemCarries(world, *item, filter.Tag)));
+            if (matches && !visit(visitor, record, held->Count, item))
+                return false;
+            if (filter.Within && !self(self, record, depth + 1))
+                return false;
+        }
+        return true;
+    };
+    (void)walk(walk, container, 0);
+}
+
+EntityId FindItemEntry(const World& world, EntityId container, const ItemFilter& filter, ItemEntryPick pick)
+{
+    EntityId found;
+    ForEachItemEntry(world, container, filter, [&](EntityId entry, std::uint32_t, const ItemDefinition*) {
+        found = entry;
+        return pick == ItemEntryPick::Last;
+    });
+    return found;
+}
+
+const AuthoredValue* ItemPropertyOf(const ItemDefinition& item, GameplayTagId name)
+{
+    const auto found = std::ranges::find(item.Properties, name, &ItemProperty::Name);
+    return name.IsValid() && found != item.Properties.end() ? &found->Value : nullptr;
+}
+
+std::optional<double> ItemNumberOf(const ItemDefinition& item, GameplayTagId name)
+{
+    const AuthoredValue* value = ItemPropertyOf(item, name);
+    double number = 0.0;
+    return value != nullptr && value->TryGetNumber(number) ? std::optional<double>(number) : std::nullopt;
+}
+
+double ItemPropertyTotal(const World& world, EntityId container, GameplayTagId name, const ItemFilter& filter)
+{
+    double total = 0.0;
+    ForEachItemEntry(world, container, filter, [&](EntityId, std::uint32_t count, const ItemDefinition* item) {
+        const std::optional<double> number = item != nullptr ? ItemNumberOf(*item, name) : std::nullopt;
+        total += number.value_or(0.0) * count;
+        return true;
+    });
+    return total;
+}
+
+std::uint64_t CountItemUnits(const World& world, EntityId container, const ItemFilter& filter)
+{
+    std::uint64_t units = 0;
+    ForEachItemEntry(world, container, filter, [&](EntityId, std::uint32_t count, const ItemDefinition*) {
+        units += count;
+        return true;
+    });
+    return units;
 }

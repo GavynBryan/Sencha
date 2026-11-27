@@ -1,6 +1,15 @@
+#include <core/json/JsonStringify.h>
+#include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
+#include <core/metadata/ComponentPersistence.h>
+#include <core/serialization/FourCC.h>
 #include <ecs/World.h>
+#include <ecs/EntityText.h>
 #include <ecs/WorldComponentSchema.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
+#include <inventory/InventoryKit.h>
+#include <logic/LogicRegistration.h>
+#include <save/EngineSaveSections.h>
 #include <save/HeldRecordSaves.h>
 #include <world/ComponentRegistrar.h>
 #include <world/held/Held.h>
@@ -9,6 +18,7 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/ComponentSerializer.h>
 #include <world/serialization/SceneSerializationContext.h>
 
 #include <gtest/gtest.h>
@@ -17,8 +27,94 @@
 #include <string>
 #include <vector>
 
+struct RecordLabel
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordLabel>
+{
+    static constexpr std::string_view Name = "record_label";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'L', 'B', 'L');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordLabel::Value) }; }
+};
+
+template <>
+struct ComponentPersistenceOf<RecordLabel>
+{
+    static constexpr ComponentPersistence Value = ComponentPersistence::Identity;
+};
+
+struct RecordWeight
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordWeight>
+{
+    static constexpr std::string_view Name = "record_weight";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'W', 'G', 'T');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordWeight::Value) }; }
+};
+
+struct RecordTally
+{
+    int Value = 0;
+};
+
+template <>
+struct TypeSchema<RecordTally>
+{
+    static constexpr std::string_view Name = "record_tally";
+    static constexpr std::uint32_t SceneChunkId = MakeFourCC('R', 'T', 'L', 'Y');
+    static auto Fields() { return std::tuple{ MakeField("value", &RecordTally::Value) }; }
+};
+
 namespace
 {
+    struct ErrorSink final : ILogSink
+    {
+        void Write(LogLevel level, std::string_view, std::string_view message) override
+        {
+            if (level == LogLevel::Error)
+                Errors.emplace_back(message);
+        }
+
+        std::vector<std::string> Errors;
+    };
+
+    class UnwritableWeightSerializer final : public IComponentSerializer
+    {
+    public:
+        ComponentTypeId TypeId() const override { return Inner.TypeId(); }
+        std::string_view JsonKey() const override { return Inner.JsonKey(); }
+        std::uint32_t BinaryChunkId() const override { return Inner.BinaryChunkId(); }
+        std::span<const RuntimeField> RuntimeFields() const override { return Inner.RuntimeFields(); }
+        std::vector<std::byte> DefaultBytes() const override { return Inner.DefaultBytes(); }
+        void RegisterStorage(Registry& registry) const override { Inner.RegisterStorage(registry); }
+        bool HasComponent(EntityId entity, const Registry& registry) const override
+        {
+            return Inner.HasComponent(entity, registry);
+        }
+        bool Save(IWriteArchive&, EntityId, const World&, SceneSerializationContext&) const override { return false; }
+        bool Load(IReadArchive& archive, EntityId entity, Registry& registry,
+                  SceneSerializationContext& context) override
+        {
+            return Inner.Load(archive, entity, registry, context);
+        }
+        bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
+                           SceneSerializationContext& context) override
+        {
+            return Inner.LoadIntoWorld(archive, entity, world, context);
+        }
+        bool Remove(EntityId entity, Registry& registry) const override { return Inner.Remove(entity, registry); }
+
+    private:
+        ComponentSerializer<RecordWeight> Inner;
+    };
+
     struct SavingWorld
     {
         SavingWorld()
@@ -26,7 +122,11 @@ namespace
         {
             ComponentRegistrar registrar(&Schema, &Serializers, nullptr);
             registrar.Add<PersistentIdComponent>();
+            registrar.Add<RecordTally>();
             registrar.Add<Held>();
+            registrar.Add<RecordLabel>();
+            Schema.Add<RecordWeight>();
+            (void)Serializers.Register(std::make_unique<UnwritableWeightSerializer>());
             Schema.Seal();
             Schema.Apply(Entities);
             Entities.AddResource<PersistentEntityIndex>();
@@ -127,21 +227,36 @@ TEST(HeldRecordSaves, AFreshWorldTakesTheSavedRecordsAndTheBodysWaitForIt)
     EXPECT_EQ(after.Index->HolderOf(after.Resolve(bagId)), body);
 }
 
-TEST(HeldRecordSaves, CapturingGivesARecordMadeAtRunTimeAnId)
+TEST(HeldRecordSaves, ARecordStillWithoutAnIdIsLoggedAndLeftOutWithoutBeingGivenOne)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.Entities.CreateEntity();
+    world.Entities.AddComponent<Held>(record, Held{});
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    EXPECT_TRUE(saved.Find("records")->AsArray().empty());
+    EXPECT_EQ(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    ASSERT_EQ(errors.Errors.size(), 1u);
+    EXPECT_NE(errors.Errors[0].find("no persistent id"), std::string::npos) << errors.Errors[0];
+}
+
+TEST(HeldRecordSaves, ARecordMadeAtRunTimeIsSavedUnderTheIdSettlingGaveIt)
 {
     SavingWorld world;
     const EntityId record = world.Entities.CreateEntity();
     world.Entities.AddComponent<Held>(record, Held{});
-    ASSERT_EQ(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    SettleHeldRecords(world.Entities);
 
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
 
-    ASSERT_NE(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
     EXPECT_EQ(saved.Find("records")->AsArray().front().Find("id")->AsString(),
               PersistentEntityIdToString(world.IdOf(record)));
 }
 
-TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatContentAuthored)
+TEST(HeldRecordSaves, WhatALevelEntityHoldsIsSavedUnderItsZoneAndWhatWaitsForABodyBesideTheBody)
 {
     SavingWorld world;
     const EntityId chest = world.Identified(PersistentEntityId{ 0xC4E57 });
@@ -151,17 +266,153 @@ TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatCont
     const EntityId deposit = world.HeldBy(chest);
     const EntityId inAuthored = world.HeldBy(authored);
     const EntityId waiting = world.Entities.CreateEntity();
-    world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0x99 } } });
+    world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x99 } } });
+    const EntityId parked = world.Entities.CreateEntity();
+    world.Entities.AddComponent<Held>(parked, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0xB0C5 } } });
+    SettleHeldRecords(world.Entities);
+    const ZoneStateScope cellar{ .Level = ZoneStateLevelId{ 1 }, .Zone = ZoneId{ 0x51 } };
+    const ZoneStateScope attic{ .Level = ZoneStateLevelId{ 2 }, .Zone = ZoneId{ 0x52 } };
+    world.Entities.GetResource<HeldRecordIndex>().Await(parked, PersistentEntityId{ 0xB0C5 }, attic);
+
+    const auto idsOf = [&](std::span<const ZoneListEntity> records) {
+        std::vector<std::string> ids;
+        for (const ZoneListEntity& record : records)
+            ids.push_back(PersistentEntityIdToString(record.Id));
+        std::ranges::sort(ids);
+        return ids;
+    };
+    const std::vector<ScopedHeldRecords> scoped = CaptureLevelHeldRecords(
+        world.Entities, [&](EntityId) { return cellar; }, world.Serializers, world.Context);
+    ASSERT_EQ(scoped.size(), 2u);
+    EXPECT_EQ(scoped[0].Scope, cellar);
+    std::vector<std::string> expected{ PersistentEntityIdToString(world.IdOf(deposit)),
+                                       PersistentEntityIdToString(world.IdOf(inAuthored)) };
+    std::ranges::sort(expected);
+    EXPECT_EQ(idsOf(scoped[0].Records), expected) << "the authored record comes back with its zone, not from the save";
+    EXPECT_EQ(scoped[1].Scope, attic);
+    EXPECT_EQ(idsOf(scoped[1].Records), std::vector{ PersistentEntityIdToString(world.IdOf(parked)) });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+    std::vector<std::string> beside;
+    for (const JsonValue& record : saved.Find("records")->AsArray())
+        beside.push_back(record.Find("id")->AsString());
+    EXPECT_EQ(beside, std::vector{ PersistentEntityIdToString(world.IdOf(waiting)) });
+}
+
+TEST(HeldRecordSaves, ARecordsSavedFormLeavesOutWhatItIsKnownBy)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordLabel>(record, RecordLabel{ .Value = 3 });
 
     const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
 
-    std::vector<std::string> ids;
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
+    const JsonValue& entry = saved.Find("records")->AsArray().front();
+    std::vector<std::string> keys;
+    for (const auto& [key, value] : entry.Find("components")->AsObject())
+        keys.push_back(key);
+    EXPECT_EQ(keys, std::vector<std::string>{ "Held" }) << "identity travels beside the record, not in it";
+    EXPECT_EQ(entry.Find("id")->AsString(), PersistentEntityIdToString(world.IdOf(record)));
+    EXPECT_TRUE(errors.Errors.empty());
+}
+
+TEST(HeldRecordSaves, AComponentThatCannotBeWrittenIsLoggedAndLeftOutOfTheRecord)
+{
+    SavingWorld world;
+    ErrorSink& errors = world.Logging.AddSink<ErrorSink>();
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordWeight>(record, RecordWeight{ .Value = 4 });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    const JsonValue& entry = saved.Find("records")->AsArray().front();
+    EXPECT_EQ(entry.Find("components")->Find("record_weight"), nullptr);
+    EXPECT_NE(entry.Find("components")->Find("Held"), nullptr);
+    ASSERT_EQ(errors.Errors.size(), 1u);
+    EXPECT_NE(errors.Errors[0].find("record_weight"), std::string::npos) << errors.Errors[0];
+}
+
+TEST(HeldRecordSaves, ADescriptionSaysARecordIsKeptWholeWithWhatItIsKnownByBeside)
+{
+    SavingWorld world;
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordLabel>(record, RecordLabel{ .Value = 3 });
+    const EntityId chest = world.Identified(PersistentEntityId{ 0xC4E57 });
+    std::string recordName;
+    AppendEntityText(recordName, record);
+    std::string chestName;
+    AppendEntityText(chestName, chest);
+
+    EXPECT_EQ(DescribeSavedEntity(world.Entities, record, world.Serializers),
+              (std::vector<std::string>{
+                  recordName + " is a held record made at run time: a save keeps it whole, its identity beside it",
+                  "  persistent_id: identity, beside the record", "  Held: saved, in the record",
+                  "  record_label: identity, beside the record" }));
+    EXPECT_EQ(DescribeSavedEntity(world.Entities, chest, world.Serializers),
+              (std::vector<std::string>{ chestName + " is a level entity: its zone keeps whether it was destroyed and, "
+                                                     "when the game keeps level state, its saved components as a patch "
+                                                     "against what the level authored",
+                                         "  persistent_id: identity, given by the level" }));
+}
+
+TEST(HeldRecordSaves, ARecordsSavedFormIsPinnedWithItsComponentsInKeyOrder)
+{
+    SavingWorld world;
+    const EntityId record = world.HeldBy(EntityId{});
+    world.Entities.AddComponent<RecordTally>(record, RecordTally{ .Value = 4 });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    ASSERT_EQ(saved.Find("records")->AsArray().size(), 1u);
+    EXPECT_EQ(JsonStringify(*saved.Find("records")->AsArray().front().Find("components")), R"({"Held":{"holder":"","position":0},"record_tally":{"value":4}})");
+}
+
+TEST(HeldRecordSaves, TheNamedRecordsSavedFormsArePinned)
+{
+    LoggingProvider logging;
+    SceneSerializationContext context(logging);
+    WorldComponentSchema schema;
+    ComponentSerializerRegistry serializers;
+    {
+        ComponentRegistrar registrar(&schema, &serializers, nullptr);
+        registrar.Add<PersistentIdComponent>();
+        registrar.Add<Held>();
+        RegisterLogicComponents(registrar);
+        RegisterInventoryComponents(registrar);
+    }
+    schema.Seal();
+    World entities;
+    schema.Apply(entities);
+    entities.AddResource<PersistentEntityIndex>();
+    (void)InstallHeldRecords(entities);
+    GameplayTagRegistry& tags = entities.AddResource<GameplayTagRegistry>();
+    const GameplayTagId coins = *tags.RegisterTag("count.coins");
+    const GameplayTagId ammo = *tags.RegisterTag("item.ammo");
+    InstallInventoryVocabulary(entities);
+    const ItemId medkit = entities.GetResource<ItemRegistry>().Reserve("items/medkit.sdata");
+
+    const auto held = [&](auto component) {
+        const EntityId record = entities.CreateEntity();
+        HoldRecord(entities, record, EntityId{});
+        entities.AddComponent(record, component);
+        return record;
+    };
+    (void)held(Counter{ .Name = coins, .Value = -3 });
+    (void)held(ItemEntry{ .Definition = medkit, .Count = 2 });
+    (void)held(ItemPickup{ .Definition = medkit, .Count = 5 });
+    (void)held(ItemContainer{ .Capacity = 4, .Accepts = ammo });
+    (void)held(ItemContainer{ .Capacity = 6, .Accepts = {} });
+
+    const JsonValue saved = CaptureHeldRecords(entities, {}, serializers, context);
+    std::vector<std::string> forms;
     for (const JsonValue& record : saved.Find("records")->AsArray())
-        ids.push_back(record.Find("id")->AsString());
-    std::ranges::sort(ids);
-    std::vector<std::string> expected{ PersistentEntityIdToString(world.IdOf(deposit)),
-                                       PersistentEntityIdToString(world.IdOf(inAuthored)),
-                                       PersistentEntityIdToString(world.IdOf(waiting)) };
-    std::ranges::sort(expected);
-    EXPECT_EQ(ids, expected) << "the authored record comes back with its zone, not from the save";
+        forms.push_back(JsonStringify(*record.Find("components")));
+    EXPECT_EQ(forms, (std::vector<std::string>{
+                         R"({"Counter":{"name":"count.coins","value":-3},"Held":{"holder":"","position":0}})",
+                         R"({"Held":{"holder":"","position":1},"ItemEntry":{"definition":"items/medkit.sdata","count":2}})",
+                         R"({"Held":{"holder":"","position":2},"ItemPickup":{"definition":"items/medkit.sdata","count":5}})",
+                         R"({"Held":{"holder":"","position":3},"ItemContainer":{"capacity":4,"accepts":"item.ammo"}})",
+                         R"({"Held":{"holder":"","position":4},"ItemContainer":{"capacity":6}})" }));
 }

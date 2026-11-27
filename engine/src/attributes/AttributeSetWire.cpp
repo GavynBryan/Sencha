@@ -3,6 +3,8 @@
 #include <attributes/AttributeRegistry.h>
 #include <ecs/World.h>
 
+#include <algorithm>
+
 namespace
 {
 const AttributeRegistry* AttributesOf(const ReplicationWireContext& context)
@@ -12,35 +14,30 @@ const AttributeRegistry* AttributesOf(const ReplicationWireContext& context)
 }
 
 void ReplicationCodec<AttributeSet>::ToWire(const ReplicationWireContext& context, const AttributeSet& set,
-                                            AttributeSetWire& wire)
+                                            ReplicationImage& wire)
 {
-    wire = AttributeSetWire{};
     const AttributeRegistry* attributes = AttributesOf(context);
     if (attributes == nullptr)
         return;
-    for (std::uint8_t i = 0; i < set.Count; ++i)
-    {
-        wire.Keys.Values[i] = attributes->WireKey(set.Ids[i]);
-        wire.Base.Values[i] = set.Base[i];
-        wire.Current.Values[i] = set.Current[i];
-    }
+    const std::span<AttributeWire> sent = wire.Resize<AttributeWire>(0, set.Count);
+    for (std::size_t i = 0; i < sent.size(); ++i)
+        sent[i] = AttributeWire{ .Key = attributes->WireKey(set.Ids[i]), .Base = set.Base[i], .Current = set.Current[i] };
+    std::sort(sent.begin(), sent.end(), [](const AttributeWire& a, const AttributeWire& b) { return a.Key < b.Key; });
 }
 
-void ReplicationCodec<AttributeSet>::FromWire(const ReplicationWireContext& context, const AttributeSetWire& wire,
+void ReplicationCodec<AttributeSet>::FromWire(const ReplicationWireContext& context, const ReplicationImage& wire,
                                               AttributeSet& set)
 {
     const AttributeRegistry* attributes = AttributesOf(context);
     set = AttributeSet{};
     if (attributes == nullptr)
         return;
-    for (std::size_t i = 0; i < AttributeSet::Capacity; ++i)
+    for (const AttributeWire& sent : wire.List<AttributeWire>(0))
     {
-        const AttributeId id = attributes->FindByWireKey(wire.Keys.Values[i]);
+        const AttributeId id = attributes->FindByWireKey(sent.Key);
         if (!id.IsValid())
             continue;
-        set.Ids[set.Count] = id;
-        set.Base[set.Count] = wire.Base.Values[i];
-        set.Current[set.Count] = wire.Current.Values[i];
-        ++set.Count;
+        (void)set.Add(id, sent.Base);
+        *set.CurrentPtr(id) = sent.Current;
     }
 }

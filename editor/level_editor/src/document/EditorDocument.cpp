@@ -19,8 +19,6 @@
 #include <core/serialization/JsonArchive.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
-#include <equipment/EquipmentKit.h>
-#include <inventory/InventoryKit.h>
 #include <movement/MovementRegistration.h>
 #include <world/serialization/IComponentSerializer.h>
 #include <world/identity/PersistentEntityIndex.h>
@@ -156,8 +154,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // back what it wrote. This installs the engine's own vocabulary; a loaded
     // game module adds its names to the same registries.
     RegisterMovement(world);
-    InstallInventoryVocabulary(world);
-    InstallEquipmentVocabulary(world);
+    InstallEveryKitVocabulary(world);
     // Declarations only: no dispatcher, so nothing a module declares can run.
     InstallAuthoredVocabulary(world);
     (void)InstallEngineVocabulary(world);
@@ -271,7 +268,6 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
     out.Includes = Retained_.Includes;
     out.Abstract = Retained_.Abstract;
     out.InheritedPatches = Retained_.InheritedPatches;
-    out.InheritedRemovals = Retained_.InheritedRemovals;
     out.Instances = Retained_.Instances;
     SettleSources(out.Instances);
     out.UnknownRoot = Retained_.UnknownRoot;
@@ -380,10 +376,6 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
         Scene.SyncFromRegistry();
         return false;
     }
-
-    for (const std::string& path : UpgradeSceneSourceFormat(*parsed))
-        Logging.GetLogger<EditorDocument>().Warn(
-            "scene source: {} was written as null, which this version reads as removing it", path);
 
     const auto fail = [&](std::string message)
     {

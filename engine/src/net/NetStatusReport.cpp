@@ -187,6 +187,12 @@ namespace
             out += Line("! %u entity(s) too large for a snapshot -- raise "
                         "net.snapshot_bytes", publish.EntitiesUnsendable);
         }
+
+        if (const std::uint64_t clamped = replication.PublishedState().Clamped(); clamped > 0)
+        {
+            Continue(out);
+            out += Line("! %" PRIu64 " list element(s) past a list's most were not sent", clamped);
+        }
     }
 
     std::string ChannelHealth(const NetChannelSet& channels)
@@ -401,13 +407,14 @@ namespace
         if (mask == 0)
             return "-";
         std::string names;
-        for (std::size_t run = 0; run < component.Fields.size(); ++run)
+        const std::size_t runs = component.Fields.size();
+        for (std::size_t bit = 0; bit < runs + component.Lists.size(); ++bit)
         {
-            if ((mask & (std::uint64_t{ 1 } << run)) == 0)
+            if ((mask & (std::uint64_t{ 1 } << bit)) == 0)
                 continue;
             if (!names.empty())
                 names += ", ";
-            names += component.Fields[run].Name;
+            names += bit < runs ? component.Fields[bit].Name : component.Lists[bit - runs].Name;
         }
         return names;
     }
@@ -579,6 +586,12 @@ std::string NetFormatEntity(const NetEntityReportSources& sources, NetEntityId i
                             component->Fields[run].Name.c_str(),
                             run < state.ChangedAt.size() ? state.ChangedAt[run]
                                                          : std::uint64_t{ 0 });
+            }
+            for (std::size_t list = 0; list < component->Lists.size(); ++list)
+            {
+                Continue(out);
+                out += Line("      %-24s count moved at gen %" PRIu64,
+                            component->Lists[list].Name.c_str(), state.CountChangedAt[list]);
             }
         }
 

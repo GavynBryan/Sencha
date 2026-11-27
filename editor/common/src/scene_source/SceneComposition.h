@@ -95,13 +95,20 @@ class ISceneComponentRules
 {
 public:
     virtual ~ISceneComponentRules() = default;
-    [[nodiscard]] virtual const DataFieldSchema* SchemaOf(std::string_view component) const = 0;
+    // Which lists of each component merge by which member: one optional child per component key.
+    [[nodiscard]] virtual const DataFieldSchema& EntitySchema() const = 0;
     [[nodiscard]] virtual std::vector<std::string> OwedBy(std::string_view component) const = 0;
     [[nodiscard]] virtual bool IsRemovable(std::string_view component) const = 0;
+};
+
+struct SceneCompositionOptions
+{
+    bool Provenance = false;
 };
 
 [[nodiscard]] std::optional<SceneCompositionResult> ResolveSceneComposition(
     const SceneSourceDocument& root,
     ISceneSourceLookup& sources,
     std::string* error = nullptr,
-    const ISceneComponentRules* rules = nullptr);
+    const ISceneComponentRules* rules = nullptr,
+    SceneCompositionOptions options = {});

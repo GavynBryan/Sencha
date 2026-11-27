@@ -23,28 +23,6 @@ namespace
 constexpr std::array<std::string_view, 2> kScopes{ "Cosmetic", "Gameplay" };
 constexpr std::string_view kInputKey = "inputs.";
 
-std::string_view KindName(DataFieldKind kind)
-{
-    switch (kind)
-    {
-    case DataFieldKind::Bool:         return "bool";
-    case DataFieldKind::Int:          return "int";
-    case DataFieldKind::Float:        return "float";
-    case DataFieldKind::String:       return "string";
-    case DataFieldKind::Enum:         return "choice";
-    case DataFieldKind::Vector:       return "vector";
-    case DataFieldKind::Record:       return "record";
-    case DataFieldKind::Array:        return "array";
-    case DataFieldKind::Optional:     return "optional";
-    case DataFieldKind::AssetRef:     return "asset";
-    case DataFieldKind::DataAssetRef: return "data asset";
-    case DataFieldKind::GameplayTag:  return "tag";
-    case DataFieldKind::Entity:       return "entity";
-    case DataFieldKind::StableKey:    return "key";
-    }
-    return "?";
-}
-
 DataFieldKind InputKind(const VerbCompiledInput& input)
 {
     return input.Destinations.empty() ? DataFieldKind::Float : input.Destinations.front().Expected.Kind;
@@ -265,7 +243,7 @@ std::vector<PropertyNode> AnimationEventProperties::BindingNodes(const Animation
     {
         std::string arguments;
         for (const DataFieldSchema& argument : definition->Arguments.Children)
-            arguments += std::format("{}{} {}", arguments.empty() ? "" : ", ", argument.Key, KindName(argument.Kind));
+            arguments += std::format("{}{} {}", arguments.empty() ? "" : ", ", argument.Key, DataFieldKindName(argument.Kind));
         nodes.push_back(NoteProperty("contract", "Contract", std::format("{}({})", definition->Name, arguments)));
     }
 

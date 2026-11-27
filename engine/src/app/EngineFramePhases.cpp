@@ -18,6 +18,7 @@
 #include <jobs/AsyncTaskQueue.h>
 #include <runtime/FrameDriver.h>
 #include <runtime/spawn/NetPrefabSpawner.h>
+#include <runtime/spawn/GainedMemberSpawns.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
 #include <zone/AsyncZoneLoader.h>
@@ -731,7 +732,9 @@ void Engine::RegisterSimulationFramePhases()
         // this frame; the pump itself enforces request order.
         {
             const ScheduleFrameWorkScope timing(engine.Schedule(), "SpawnPump");
+            engine.GainedSpawnState->Request();
             engine.Spawns().Pump();
+            engine.GainedSpawnState->Settle();
         }
         engine.World().FlushLifecycleRequests();
     });
@@ -765,6 +768,7 @@ void Engine::RegisterSimulationFramePhases()
         engine.Schedule().RunZoneResidency(residency);
         runtimeWorld.FinalizeResidencyProcessing();
         engine.LevelChanges().Advance();
+        engine.Saves().Advance();
     });
 
     driver.Register(FramePhase::ScheduleTicks, [&engine, &config](PhaseContext& ctx) {

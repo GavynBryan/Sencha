@@ -5,10 +5,12 @@
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
 #include <core/identity/Id.h>
+#include <core/logging/LoggingProvider.h>
 #include <world/identity/PersistentEntityIndex.h>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -602,4 +604,245 @@ TEST_F(VerbDispatchTest, ProvenanceReachesTheOperationAndTheTrace)
     ASSERT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
     EXPECT_FALSE(operation.Instigator.IsValid());
     EXPECT_EQ(operation.Tick, 0u);
+}
+
+namespace
+{
+enum class TestTakeRefusal : std::uint8_t
+{
+    None,
+    ContainerFull,
+    Missing,
+};
+} // namespace
+
+template<>
+struct EnumSchema<TestTakeRefusal>
+{
+    static constexpr std::array Values = {
+        EnumValue{ TestTakeRefusal::None, "none" },
+        EnumValue{ TestTakeRefusal::ContainerFull, "container_full", "Container full" },
+        EnumValue{ TestTakeRefusal::Missing, "missing" },
+    };
+};
+
+namespace
+{
+bool DeclareDefinition(VerbRegistry& registry, VerbDefinition definition)
+{
+    VerbRegistrationScope scope(registry, "test");
+    (void)scope.Declare(std::move(definition));
+    return scope.Commit();
+}
+
+struct ReasonOperation
+{
+    TestTakeRefusal Reason = TestTakeRefusal::None;
+    VerbAnswer Invoke(const VerbInvocation&) { return VerbAnswerOf(Reason); }
+};
+
+struct ResultOperation
+{
+    AuthoredValue Answer = AuthoredValue::Int(5);
+    VerbAdmission Status = VerbAdmission::Accepted;
+    std::size_t Encoded = 0;
+    std::size_t Calls = 0;
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        ++Calls;
+        if (invocation.Result != nullptr)
+        {
+            *invocation.Result = Answer;
+            ++Encoded;
+        }
+        return Status;
+    }
+};
+
+VerbAnswer InvokeReasonFree(ReasonOperation& operation, const VerbInvocation& invocation)
+{
+    return operation.Invoke(invocation);
+}
+
+VerbAdmission InvokeCountingFree(CountingOperation& operation, const VerbInvocation& invocation)
+{
+    return operation.Invoke(invocation);
+}
+} // namespace
+
+TEST_F(VerbDispatchTest, ARefusalCarriesTheReasonCodeItsVerbDeclares)
+{
+    VerbDefinition take;
+    take.Name = "test.take";
+    take.Refusals = VerbRefusalsOf<TestTakeRefusal>();
+    ASSERT_TRUE(DeclareDefinition(Verbs, std::move(take)));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("take", "test.take"), binding));
+
+    VerbDispatcher dispatcher(Verbs);
+    VerbTraceRing ring(4);
+    dispatcher.SetTrace(&ring);
+    ReasonOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    operation.Reason = TestTakeRefusal::ContainerFull;
+    const VerbInvocationResult refused = dispatcher.Invoke(binding, {});
+    EXPECT_EQ(refused.Status, VerbAdmission::Refused);
+    EXPECT_EQ(refused.Detail, static_cast<std::uint16_t>(TestTakeRefusal::ContainerFull));
+    ASSERT_EQ(ring.Snapshot().size(), 1u);
+    EXPECT_EQ(ring.Snapshot()[0].Detail, refused.Detail);
+    EXPECT_EQ(VerbRefusalName(Verbs, binding.Verb, refused.Detail), "container_full");
+    EXPECT_EQ(DescribeVerbAnswer(Verbs, binding.Verb, { refused.Status, refused.Detail }), "refused: container_full");
+
+    operation.Reason = TestTakeRefusal::None;
+    const VerbInvocationResult accepted = dispatcher.Invoke(binding, {});
+    EXPECT_TRUE(accepted.Accepted());
+    EXPECT_EQ(accepted.Detail, 0u);
+
+    Verbs.RetireProvider("test");
+    EXPECT_EQ(DescribeVerbAnswer(Verbs, binding.Verb, { VerbAdmission::Refused, 1 }), "refused: 1");
+}
+
+TEST_F(VerbDispatchTest, AVerbAnsweringAPlainAdmissionIsUnchanged)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.op", Record({ Field("Amount", DataFieldKind::Int) })));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("op", "test.op", { Literal("Amount", JsonValue(2.0)) }), binding));
+
+    VerbDispatcher dispatcher(Verbs);
+    CountingOperation operation;
+    VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+    EXPECT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
+    operation.Refuse = true;
+    const VerbInvocationResult refused = dispatcher.Invoke(binding, {});
+    EXPECT_EQ(refused.Status, VerbAdmission::Refused);
+    EXPECT_EQ(refused.Detail, 0u);
+    EXPECT_EQ(DescribeVerbAnswer(Verbs, binding.Verb, { refused.Status, refused.Detail }), "refused");
+
+    token = dispatcher.Bind<&InvokeCountingFree>(binding.Verb, operation);
+    EXPECT_EQ(dispatcher.Invoke(binding, {}).Status, VerbAdmission::Refused);
+
+    ReasonOperation reasons{ .Reason = TestTakeRefusal::Missing };
+    token = dispatcher.Bind<&InvokeReasonFree>(binding.Verb, reasons);
+    const VerbInvocationResult named = dispatcher.Invoke(binding, {});
+    EXPECT_EQ(named.Status, VerbAdmission::Refused);
+    EXPECT_EQ(named.Detail, static_cast<std::uint16_t>(TestTakeRefusal::Missing));
+}
+
+TEST_F(VerbDispatchTest, ARejectedInputNamesItsArgument)
+{
+    ASSERT_TRUE(Declare(Verbs, "test.op",
+                        Record({ Field("label", DataFieldKind::String), Field("amount", DataFieldKind::Int) })));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("op", "test.op", { Literal("label", JsonValue("x")), FromInput("amount", "amount") },
+                                { "amount" }),
+                        binding));
+
+    VerbDispatcher dispatcher(Verbs);
+    CountingOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+    const AuthoredValue text = AuthoredValue::String("three");
+    const VerbInvocationResult rejected = dispatcher.Invoke(binding, { &text, 1 });
+    EXPECT_EQ(rejected.Status, VerbAdmission::InvalidArguments);
+    EXPECT_EQ(rejected.Detail, 2u);
+    EXPECT_EQ(DescribeVerbAnswer(Verbs, binding.Verb, { rejected.Status, rejected.Detail }),
+              "invalid argument 'amount'");
+    EXPECT_EQ(dispatcher.Invoke(binding, {}).Detail, 0u);
+
+    ASSERT_TRUE(Declare(Verbs, "test.target", Record({ Field("target", DataFieldKind::Entity) })));
+    VerbBindingArgument anchor;
+    anchor.Key = "target";
+    anchor.Source = VerbArgumentSource::Entity;
+    anchor.Text = PersistentEntityIdToString(PersistentEntityId{ 0xabcdull });
+    CompiledVerbBinding targeted;
+    ASSERT_TRUE(Compile(Binding("target", "test.target", { anchor }), targeted));
+    CountingOperation target;
+    const VerbBindingToken targetToken = dispatcher.Bind(targeted.Verb, target);
+    const VerbInvocationResult absent = dispatcher.Invoke(targeted, {});
+    EXPECT_EQ(absent.Status, VerbAdmission::UnresolvedReference);
+    EXPECT_EQ(DescribeVerbAnswer(Verbs, targeted.Verb, { absent.Status, absent.Detail }),
+              "unresolved reference 'target'");
+}
+
+TEST_F(VerbDispatchTest, AnAcceptedVerbDeliversTheResultItDeclares)
+{
+    VerbDefinition give;
+    give.Name = "test.give";
+    give.Result = Field("entry", DataFieldKind::Int);
+    ASSERT_TRUE(DeclareDefinition(Verbs, std::move(give)));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("give", "test.give"), binding));
+
+    VerbDispatcher dispatcher(Verbs);
+    ResultOperation operation;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    AuthoredValue result;
+    ASSERT_TRUE(dispatcher.Invoke(binding, {}, {}, &result).Accepted());
+    std::int64_t entry = 0;
+    ASSERT_TRUE(result.TryGetInt(entry));
+    EXPECT_EQ(entry, 5);
+
+    operation.Status = VerbAdmission::Refused;
+    EXPECT_EQ(dispatcher.Invoke(binding, {}, {}, &result).Status, VerbAdmission::Refused);
+    EXPECT_TRUE(result.IsNone()) << "a refused call delivered what it wrote";
+}
+
+TEST_F(VerbDispatchTest, AResultOfTheWrongKindOrNoneAtAllIsWithheldAndReportedOnce)
+{
+    VerbDefinition give;
+    give.Name = "test.give";
+    give.Result = Field("entry", DataFieldKind::Int);
+    ASSERT_TRUE(DeclareDefinition(Verbs, std::move(give)));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("give", "test.give"), binding));
+
+    struct Lines : ILogSink
+    {
+        std::vector<std::string> Written;
+        void Write(LogLevel, std::string_view, std::string_view message) override { Written.emplace_back(message); }
+    };
+    LoggingProvider logging;
+    Lines& lines = logging.AddSink<Lines>();
+    VerbDispatcher dispatcher(Verbs);
+    dispatcher.SetLog(&logging.GetLogger<VerbDispatcher>());
+    ResultOperation operation;
+    operation.Answer = AuthoredValue::String("wrong");
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+
+    AuthoredValue result = AuthoredValue::Int(1);
+    EXPECT_TRUE(dispatcher.Invoke(binding, {}, {}, &result).Accepted());
+    EXPECT_TRUE(result.IsNone());
+    operation.Answer = AuthoredValue{};
+    EXPECT_TRUE(dispatcher.Invoke(binding, {}, {}, &result).Accepted());
+    EXPECT_TRUE(result.IsNone());
+    EXPECT_EQ(lines.Written.size(), 1u);
+}
+
+TEST_F(VerbDispatchTest, AProducerThatWantsNoResultCostsNoEncode)
+{
+    VerbDefinition give;
+    give.Name = "test.give";
+    give.Result = Field("entry", DataFieldKind::Int);
+    ASSERT_TRUE(DeclareDefinition(Verbs, std::move(give)));
+    ASSERT_TRUE(Declare(Verbs, "test.plain", EmptyVerbArguments()));
+    CompiledVerbBinding binding;
+    ASSERT_TRUE(Compile(Binding("give", "test.give"), binding));
+    CompiledVerbBinding plain;
+    ASSERT_TRUE(Compile(Binding("plain", "test.plain"), plain));
+
+    VerbDispatcher dispatcher(Verbs);
+    ResultOperation operation;
+    ResultOperation undeclared;
+    const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
+    const VerbBindingToken plainToken = dispatcher.Bind(plain.Verb, undeclared);
+
+    ASSERT_TRUE(dispatcher.Invoke(binding, {}).Accepted());
+    EXPECT_EQ(operation.Calls, 1u);
+    EXPECT_EQ(operation.Encoded, 0u);
+
+    AuthoredValue result;
+    ASSERT_TRUE(dispatcher.Invoke(plain, {}, {}, &result).Accepted());
+    EXPECT_EQ(undeclared.Encoded, 0u) << "a verb that declares no result was handed somewhere to write one";
+    EXPECT_TRUE(result.IsNone());
 }

@@ -3,11 +3,18 @@
 #include "BenchRecorder.h"
 #include "AllocationCounter.h"
 
+#include <abilities/AbilityGrantEntries.h>
+#include <abilities/AbilityGrants.h>
+#include <abilities/AbilityKit.h>
+#include <abilities/AbilityRegistry.h>
+#include <attributes/AttributeRegistry.h>
+#include <attributes/AttributeSet.h>
 #include <ecs/ArchetypeSignature.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <net/NetReplicationComponents.h>
 #include <net/NetSnapshotAck.h>
+#include <net/ReplicationCodec.h>
 #include <net/ReplicationChangeStore.h>
 #include <net/ReplicationLayout.h>
 #include <net/ReplicationRuntime.h>
@@ -16,17 +23,22 @@
 #include <world/RuntimeComponentSchema.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
 
 #include <malloc.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <memory>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -154,6 +166,37 @@ namespace
             }
         }
 
+        void MakeActors(std::size_t count, std::size_t grants)
+        {
+            RegisterAbilityKit(Entities);
+            std::vector<std::pair<AbilityId, std::uint16_t>> abilities;
+            for (std::size_t g = 0; g < grants; ++g)
+            {
+                const std::string path = std::format("asset://bench/ability_{}.sdata", g);
+                const AbilityId ability = Entities.GetResource<AbilityRegistry>().Define(path, AbilityDefinition{});
+                abilities.emplace_back(
+                    ability, Entities.GetResource<AbilityGrantEntries>().Intern({ std::format("g_{}", g), ability, {} }));
+            }
+            AttributeRegistry& names = Entities.GetResource<AttributeRegistry>();
+            AttributeSet attributes;
+            for (const char* name : { "Health", "Energy", "Armor", "MoveSpeed" })
+                (void)attributes.Add(names.RegisterAttribute(name), 50.0f);
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const EntityId actor = Entities.CreateEntity();
+                Entities.AddComponent<NetReplicated>(actor);
+                Entities.AddComponent<LocalTransform>(actor, LocalTransform{});
+                if (grants != 0)
+                {
+                    Entities.AddComponent<AbilityGrants>(actor, AbilityGrants{});
+                    Entities.AddComponent<AttributeSet>(actor, attributes);
+                    for (const auto& [ability, entry] : abilities)
+                        (void)GrantAbility(Entities, actor, ability, AbilityGrantKind::Authored, entry);
+                }
+                Entries.push_back(actor);
+            }
+        }
+
         WorldComponentSchema Schema;
         ReplicationLayout Layout;
         World Entities;
@@ -178,6 +221,8 @@ namespace
             double WriteMs = 0.0;
             std::size_t Allocations = 0;
             std::size_t Bytes = 0;
+            std::size_t Written = 0;
+            std::size_t Deferred = 0;
         };
 
         Cost Publish()
@@ -200,6 +245,8 @@ namespace
                 write.Sequence = Peers[p].NextSnapshotSequence();
                 const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
                 cost.Bytes += written.BytesWritten;
+                cost.Written += written.EntitiesWritten;
+                cost.Deferred += written.EntitiesDeferred + written.EntitiesUnsendable;
                 Acks[p].Observe(write.Sequence);
                 Peers[p].Acknowledge(Acks[p]);
             }
@@ -334,6 +381,111 @@ namespace
         Recorder.Record(scenario + ".bytes_all_peers", "bytes", Bench::Median(bytes));
     }
 
+    double MeasureImageWork(Publisher& publisher, int reps)
+    {
+        World& world = publisher.World_.Entities;
+        const ReplicationLayout& layout = publisher.World_.Layout;
+        std::vector<ComponentId> columns(layout.Size());
+        for (std::size_t i = 0; i < layout.Size(); ++i)
+        {
+            const ReplicatedComponent* component = layout.At(static_cast<std::uint8_t>(i));
+            if (world.IsRegistered(component->Type))
+                columns[i] = world.GetComponentIdByType(component->Type);
+        }
+        std::vector<ReplicationImage> images;
+        for (std::size_t i = 0; i < layout.Size(); ++i)
+            images.emplace_back(*layout.At(static_cast<std::uint8_t>(i)));
+        std::vector<std::byte> scratch;
+        std::vector<std::byte> copy;
+        std::size_t equal = 0;
+        std::vector<double> work;
+        for (int rep = 0; rep < 30 + reps; ++rep)
+        {
+            const auto start = Bench::Clock::now();
+            for (const ReplicationChangeStore::EntityState& entity : publisher.Changes.Live())
+            {
+                const EntityId local = publisher.Identity.TryResolve(entity.Id);
+                for (const ReplicationChangeStore::ComponentState& held : entity.Components)
+                {
+                    const ReplicatedComponent& component = *layout.At(held.WireIndex);
+                    const auto* raw = static_cast<const std::byte*>(world.GetComponentRaw(local, columns[held.WireIndex]));
+                    if (component.ToWire != nullptr)
+                    {
+                        ReplicationImage& image = images[held.WireIndex];
+                        image.Reset();
+                        const ReplicationWireContext context{ .Entities = &world, .Entity = local,
+                                                              .Authority = &publisher.Identity };
+                        component.ToWire(context, std::span(raw, component.LocalSize), image);
+                        scratch.assign(image.Bytes().begin(), image.Bytes().end());
+                    }
+                    else
+                    {
+                        scratch.assign(raw, raw + component.Size);
+                    }
+                    ReplicationSnapToWire(component, scratch);
+                    equal += held.Bytes.size() == scratch.size()
+                                     && std::memcmp(held.Bytes.data(), scratch.data(), scratch.size()) == 0
+                                 ? 1
+                                 : 0;
+                    copy.assign(held.Bytes.begin(), held.Bytes.end());
+                }
+            }
+            if (rep >= 30)
+                work.push_back(Bench::MillisecondsSince(start));
+        }
+        EXPECT_GT(equal, 0u);
+        return Bench::Median(work);
+    }
+
+    void MeasureActors(std::size_t count, std::size_t grants, int reps)
+    {
+        Authority authority;
+        authority.MakeActors(count, grants);
+        Publisher publisher(authority, 1);
+        (void)publisher.Seed();
+
+        std::size_t touched = 0;
+        for (const ReplicationChangeStore::EntityState& entity : publisher.Changes.Live())
+            for (const ReplicationChangeStore::ComponentState& held : entity.Components)
+                touched += held.Bytes.size();
+
+        const std::string scenario = std::format("actors_{}.grants_{}", count, grants);
+        for (const bool moving : { false, true })
+        {
+            std::vector<double> update;
+            std::size_t bytes = 0;
+            std::size_t written = 0;
+            std::size_t deferred = 0;
+            for (int rep = 0; rep < 30 + reps; ++rep)
+            {
+                if (moving)
+                    for (const EntityId actor : authority.Entries)
+                        authority.Entities.TryGet<LocalTransform>(actor)->Value.Position.X += 0.25f;
+                const Publisher::Cost cost = publisher.Publish();
+                if (rep < 30)
+                    continue;
+                update.push_back(cost.UpdateMs);
+                bytes += cost.Bytes;
+                written += cost.Written;
+                deferred += cost.Deferred;
+            }
+            const std::string state = scenario + (moving ? ".moving" : ".still");
+            Recorder.Record(state + ".change_store_update", "ms", Bench::Median(update));
+            if (!moving)
+                continue;
+            Recorder.Record(state + ".bytes_per_written_actor", "bytes",
+                            static_cast<double>(bytes) / static_cast<double>(std::max<std::size_t>(written, 1)));
+            Recorder.Record(state + ".actors_written_per_publish", "count",
+                            static_cast<double>(written) / static_cast<double>(reps));
+            Recorder.Record(state + ".actors_deferred_per_publish", "count",
+                            static_cast<double>(deferred) / static_cast<double>(reps));
+        }
+        Recorder.Record(scenario + ".image_bytes_touched_per_publish", "bytes", static_cast<double>(touched));
+        Recorder.Record(scenario + ".image_build_compare_copy", "ms", MeasureImageWork(publisher, reps));
+        Recorder.Record(scenario + ".image_bytes_per_actor", "bytes",
+                        static_cast<double>(touched) / static_cast<double>(count));
+    }
+
     void MeasureSeeding(std::size_t count, std::size_t peers)
     {
         Authority authority;
@@ -370,6 +522,9 @@ TEST(EntityReplicationBench, Generate)
                 MeasurePublish(count, peers, changing, Reps(120));
     MeasureSeeding(300, 1);
     MeasureSeeding(150 * 16, 16);
+    for (const std::size_t count : { std::size_t{ 300 }, std::size_t{ 1000 } })
+        for (const std::size_t grants : { std::size_t{ 0 }, std::size_t{ 3 } })
+            MeasureActors(count, grants, Reps(120));
 
     ASSERT_TRUE(Recorder.WriteJson(json)) << "cannot write " << json.generic_string();
     std::filesystem::path csv = json;

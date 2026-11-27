@@ -48,19 +48,6 @@ do the work and delete the entry.
   teardown exits. Cover shape,
   sensor/layer, motion, mass, mesh ownership, scale, and residency together.
 
-## Authoring a rigid body in a scene
-
-- **What:** `RigidBody` declares no schema, so a level cannot say a collider's
-  body is kinematic or dynamic: every authored collider is static world
-  geometry unless code adds the component. Loss Function's `Sway` adds a
-  kinematic one to the entity it moves, before its first physics step.
-- **Where:** `engine/include/physics/components/RigidBody.h`; the Kyusu
-  collider rows in `editor/level_editor/src/authoring/ColliderEditorAdapter.cpp`.
-- **Trigger:** the first authored prop that falls, or a mover that is not a
-  game's own component. Give `RigidBody` a schema whose persisted fields are
-  motion, mass, gravity scale and damping (velocities stay runtime state), a
-  scene chunk, and a motion choice beside the collider's rows.
-
 ## Animation decision log depth
 
 - **What:** the runtime plan (`docs/plans/animation-runtime.md`, decision
@@ -499,20 +486,6 @@ do the work and delete the entry.
 - **Trigger:** a measured lost trigger tap (a semi-automatic weapon on a trigger
   that drops shots at the frame rates players run).
 
-## Leases and cosmetic verbs through the generated authored API
-
-- **What:** `SENCHA_VERB` declares an instant gameplay verb that only the authority
-  runs. It has no way to declare a lease (`VerbKind::Lease`, with its release
-  half), a cosmetic verb, or a prediction class, so a game declares those by hand
-  as the engine's own are (`engine/src/effects/EffectVerbs.cpp`).
-- **Where:** the annotations are `engine/include/authored/AuthoredAnnotations.h`;
-  the generator is `tools/component-codegen/ComponentCodegen.cpp`; what it emits
-  is read by `AuthoredVocabularyScope` and `BindAuthoredApi`
-  (`engine/include/authored/AuthoredApi.h`).
-- **Trigger:** the first game module that declares a lease, a cosmetic verb or a
-  predicted verb. The Loss Function module (AbilityKit 2, Stage 10) is the known
-  candidate, if any of its abilities needs an operation the engine does not offer.
-
 ## An animation hold whose holder is gone
 
 - **What:** an `anim.hold` lease whose owner's entity ends without releasing it is
@@ -826,6 +799,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   and `sencha-component-codegen`.
 - **Trigger:** the first event declared through the generated API that a
   response's cooldown or a verb's provenance needs to attribute.
+
+## Naming and bounding a query's answer by annotation
+
+- **What:** a generated query's result has no key and no limits. Loss
+  Function's `lf.ctx.spread` declared its answer `spread`, at least 0, by hand;
+  generated, it answers an unnamed `float`. No consumer reads a query result's
+  key (an ability op names its own local), and nothing checks a result against
+  a bound, so only the reference shows the difference.
+- **Where:** the annotations in `engine/include/authored/AuthoredAnnotations.h`
+  (`SENCHA_RESULT` and `SENCHA_MIN`/`SENCHA_MAX` read on verbs and parameters,
+  not on a query's return) and `sencha-component-codegen`.
+- **Trigger:** an editor that offers a query's answer by name or range, such as
+  a response inspector reading a query source (above).
 
 ## Captured payload size
 
@@ -1141,9 +1127,11 @@ described in `docs/navigation/runtime.md`, "Agents".
 
 ## Changing level inside a network session
 
-- **What:** `LevelChange::Request` refuses while a session runs, because a peer
-  is told which map to load only when it is admitted (`NetSession`'s announced
-  map) and would stay on the old level.
+- **What:** `LevelChange::Request` refuses while a session runs once a level
+  is loaded, because a peer is told which map to load only when it is admitted
+  (`NetSession`'s announced map) and would stay on the old level. The first
+  load is admitted, which is how `map` works for a client and for a host that
+  began hosting first.
 - **Where:** `engine/src/app/LevelChange.cpp`; the announcement in
   `engine/src/app/EngineFramePhases.cpp`.
 - **Trigger:** a co-op game that changes level, rests or restores a save with a
@@ -1153,28 +1141,26 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Saving what was created at run time
 
 - **What:** a save keeps the local participant's body root as a patch against
-  its prefab (`sencha.bodies`) and the runtime records held by the world, by
-  that body and by authored holders, with what they hold (`sencha.held`). It
-  does not keep the body's children, another participant's body or what it
-  holds, records held by a runtime entity other than the local body (a dropped
-  item's pickup, a spawned NPC), or any other entity created at run time; a
-  runtime entity in a zone that is not a record of an authored holder is
+  its prefab (`sencha.bodies`), the runtime records held by the world and by
+  that body (`sencha.held`), the run-time entities a zone keeps
+  (`KeptWithZone`, each in the zone's `gained` list, a prefab spawn as its
+  source and a patch, anything else whole), and the records held by authored
+  and kept holders in their zone's `held` list, each with what it holds. It
+  does not keep what a body's or a kept spawn's children carry (they come back
+  as their prefab authored them), another participant's body or what it
+  holds, the children of a kept entity that is not a prefab spawn, or a
+  run-time entity nothing marked (a spawned NPC); such an entity in a zone is
   destroyed unrecorded when the zone unloads.
 - **Where:** `save/EngineSaveSections.cpp`, `save/HeldRecordSaves.cpp`,
   `world/held/HeldRecords.cpp` (`ParkHeldRecords`),
-  `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateStore.h`.
-- **Trigger:** a body whose children carry state, a counter or item held by a
-  spawned NPC that must outlive its zone, a dropped item that must stay where
-  it fell (see "A dropped item's world scene"), or a second player restored in
-  co-op.
-
-## Unknown save chunks are dropped on rewrite
-
-- **What:** `DecodeSavedGame` skips a chunk it does not know, and the next
-  write does not carry it. Unknown sections are kept; unknown chunks are not.
-- **Where:** `engine/src/save/SavedGame.cpp`.
-- **Trigger:** a second chunk kind added after format 1. Then either fold new
-  data into sections or keep unknown chunks' bytes in `SavedGame`.
+  `runtime/spawn/SceneSpawnOverlay.h`, `zone/ZoneStateMemory.cpp` and
+  `zone/ZonePackageImporter.cpp` (`MakeGainedMembers`), `app/LevelChange.cpp`.
+- **Trigger:** a body or a kept spawn whose children carry state a player
+  would miss (a turret's head aimed, a lit fuse on a child), a dropped item
+  with a visible scene (see "A dropped item's world scene"), or a second
+  player restored in co-op.
+  Then give a kept member's and a body's children patches of their own, keyed
+  by their place in the prefab.
 
 ## Replication change store copies every live entity each publish
 
@@ -1202,7 +1188,11 @@ described in `docs/navigation/runtime.md`, "Agents".
     - `hero.facts.sdata` commits in about 180 µs and `examples.facts.sdata` in
       about 85 µs, each with one source;
     - a plain definition commits in about 3 µs.
-  - Every commit reads its sources again; nothing is cached across commits.
+  - Every commit reads its sources' bytes again, but parses a source only
+    when its content hash changed (`DataAssetLoader`; "Data definitions" in
+    `docs/assets/composition.md`). `DataCompositionBench` loads 500 variants
+    of one 40-modifier base: 333 ms before the parsed sources were kept,
+    209 ms after, in a debug build.
 - **Where:**
   - `DataAssetLoader::ComposePending` (`engine/src/assets/data/DataAssetLoader.cpp`).
   - The worker cannot do this today. `IAssetStager::LoadStaged` receives only
@@ -1288,18 +1278,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the first prefab whose response binding names another of its
   own members.
 
-## Prefab harvest pins and keyed-list order
+## Prefab harvest pins
 
 - **What:** Kyusu rebuilds a derived prefab's patches from a diff of live state
   against the composed base. A value pinned equal to the base's (so a later
-  base change does not reach it) is dropped, and so is the order of a keyed
-  list. Data definitions keep both, because their patches are edited, not
-  diffed.
-- **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
-  `editor/common/src/scene_source/SceneComponentDiff.cpp`.
-- **Trigger:** the first prefab that must keep a value its base later changes,
-  or a keyed list whose order is meaningful (a priority list) on a derived
-  prefab.
+  base change does not reach it) is dropped. Data definitions keep it, because
+  their patches are edited, not diffed. A keyed list's order is kept: a
+  reordered list is harvested whole (`PatchFrom`).
+- **Where:** `SceneInstanceProjection::Harvest` and its
+  `PatchFromBaseline` (`editor/level_editor/src/document/SceneInstanceProjection.cpp`).
+- **Trigger:** the first prefab that must keep a value its base later changes.
 
 ## Recomposing resident children while their base is edited
 
@@ -1364,6 +1352,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   `HeldRecordIndex` revisions or subscribe to `counter.changed`.
 - **Trigger:** a game that shows the player its quests or objectives.
 
+## A thumbnail of the last presented frame
+
+- **What:** a save's thumbnail is what the game's `SavedGameSummaryDefinition::Thumbnail`
+  returns at capture. The engine cannot give it the picture a player expects,
+  the last presented frame: a capture runs at the zone-residency step, before
+  rendering, and the renderer has no readback.
+- **Where:** `save/SavedGames.h` (`SetSummary`), the renderer's frame
+  presentation.
+- **Trigger:** a game whose load menu draws thumbnails. Then add a readback of
+  the last presented frame that a thumbnail callback can encode, as a
+  rendering item; the save side takes the bytes as it does now.
+- **Consumer:** Loss Function's load menu.
+
 ## Counters that outlive a save slot
 
 - **What:** every counter belongs to one save. Nothing holds progress shared by
@@ -1375,15 +1376,13 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## What a death without a save keeps
 
 - **What:** a death with no save restarts the level from authored content
-  (`LevelChange`). Counters the world holds survive it: they are runtime
-  entities in the persistent partition, which the level change does not own.
-  Counters a body holds go with the released body. A game that restores its
-  last save on death gets both back as saved.
+  (`LevelChange`). Counters the world holds survive it unless the request is a
+  `LevelChangeRequest::NewGame` (a run that starts over). Counters a body holds always go with the released body. A game that
+  restores its last save on death gets both back as saved.
 - **Where:** `app/LevelChange.cpp`, `world/held/HeldRecords.cpp`.
-- **Trigger:** a game whose death must reset the world's progress without a
-  save (a run that starts over), or keep a body's (a counter of deaths). Then
-  let the level change request say what happens to held records, defaulting to
-  today's behaviour.
+- **Trigger:** a game whose death must keep a body's counters without a save
+  (a counter of deaths). Then let the released body's records move to its
+  participant, or to the next body, through the same request field.
 
 ## Counter changes on a client
 
@@ -1394,27 +1393,47 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** a client presentation that must react to a counter changing
   rather than poll it, such as a co-op HUD popup when a star is collected.
 
-## Item display data
+## A held record revision per kind
 
-- **What:** an `item.definition` has a name and tags, and nothing a menu shows:
-  no icon, description or sort category.
-- **Where:** `inventory/ItemDefinitionData.cpp` (schema and compile),
-  `inventory/ItemDefinition.h`.
-- **Trigger:** the first inventory screen or pickup prompt that shows an item.
-  Then add display fields to the definition, read by presentation only.
+- **What:** `HeldRecordIndex` keeps one revision per holder, moved by any
+  record beneath it. A body's counter changing (a kill count) moves the body's
+  revision, so the equipment pass re-walks a wearer's entries when a record is
+  waiting for one, and a game's view of the body's entries rebuilds.
+- **Where:** `world/held/HeldRecordIndex.cpp` (`BumpFrom`),
+  `equipment/EquipmentSystem.cpp` (`Rebind`).
+- **Trigger:** a profile in which counter writes on a holder show in the
+  equipment pass or an inventory view's rebuilds. Then keep a revision per
+  record kind beside the holder's, using the kind records are keyed by.
+- **Consumer:** the equipment rebind and an inventory screen of a body that
+  also holds per-player counters.
 
 ## A dropped item's world scene
 
 - **What:** `Inventory::Drop` makes a bare pickup with a transform holding the
-  entry. Nothing spawns a visible scene for it, and a pickup dropped into a
-  zone, with its entry, is destroyed unrecorded when the zone unloads.
+  entry. Nothing spawns a visible scene for it. A pickup `inventory.drop`
+  keeps stays with its zone (`KeptWithZone`), written whole, since it is no
+  prefab spawn; a scene spawned for it as a child would be lost at the first
+  save, since a whole member keeps no children.
 - **Where:** `inventory/Inventory.cpp` (`Drop`); the branch's definition field
-  `world` (a scene by asset path) was left out because nothing spawned it.
+  `world` (a scene by asset path) was left out because nothing spawned it; a
+  pickup that is itself a spawn of that scene is kept as its source and a
+  patch (`docs/gameplay/saves.md`, "What a zone gained").
 - **Trigger:** a game whose dropped items are seen and picked back up in the
-  world, or must stay where they fell across a zone's round trip. Then give
-  definitions a world scene spawned as the pickup's presentation, and keep a
-  zone's runtime pickups with the zone the way records of authored holders are
-  kept.
+  world. Then give definitions a world scene spawned as the pickup's
+  presentation, saved as its source and a patch.
+
+## A definition section a layer registers
+
+- **What:** `item.definition` is one schema inventory owns. It carries
+  equipment's `equip` and `grants`, and a game's facts only as typed
+  properties of one value each. Structured game data (a list of recipes, a
+  table of upgrade costs) cannot live in the item's own file.
+- **Where:** `inventory/ItemDefinitionData.cpp` (`MakeSchema`, `Compile`),
+  `assets/data/DataAssetTypeRegistry.h`, which seals a registered schema.
+- **Trigger:** the first structured game data that must live in the item's
+  own file, or a second layer besides equipment that needs engine-read fields
+  on an item. Then let the data type registry accept amendments to a
+  registered schema, and move `equip` and `grants` into equipment's section.
 
 ## Predicting gives and transfers
 
@@ -1429,11 +1448,15 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## Weight, volume and grid rules
 
 - **What:** a container admits by tag (`Accepts`) and entry count
-  (`Capacity`). Nothing weighs, measures or places an entry on a grid.
+  (`Capacity`). Item properties and `ItemPropertyTotal` (`inventory.total`)
+  give the measure, so carried weight can be read and gated on, but no
+  container refuses an entry past a weight, and nothing places an entry on a
+  grid.
 - **Where:** `inventory/Inventory.cpp` (`Admission`, `HasRoom`).
-- **Trigger:** a survival game with carry weight, or an RPG with a grid
-  inventory. Then add destination admission beside accepts and capacity, as
-  data a container carries, consulted by the same admission step.
+- **Trigger:** a survival game whose containers refuse past a carry weight,
+  or an RPG with a grid inventory. Then a container carries
+  `limit { property, max }`, consulted by `Admission` through
+  `ItemPropertyTotal`.
 
 ## Inventory change events
 
@@ -1460,21 +1483,30 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **What:** `MayUseItem` lets an actor use what it holds, however deep. A
   container several actors use, such as a party's bag or a co-op team's stash,
   answers no to all but its holder.
-- **Where:** `inventory/Inventory.cpp` (`MayUseItem`); every use, item cost and
-  equip asks it.
-- **Trigger:** a co-op or party game whose players draw from one bag. Then
-  extend `MayUseItem` with the sharing rule, and nothing else.
+- **Where:** every site that asks who holds an entry, not `MayUseItem` alone:
+  `MayUseItem` (`inventory/Inventory.cpp`), which every use, item cost and equip
+  asks; the walks over what a holder holds, which share `ForEachItemEntry`
+  except `HeldEntries` in `Equipment::Cycle` and the rebind scan in
+  `equipment/EquipmentSystem.cpp`; `ItemHolder` in the move admission, the
+  former-holder lookup and the default `user` of `inventory.use`; and relevance
+  anchoring, which sends an entry to its root holder's owner only.
+- **Trigger:** a co-op or party game whose players draw from one bag. Then put
+  the sharing rule in `MayUseItem` and `ForEachItemEntry`, move the two
+  remaining walks onto it, and anchor a shared container's entries to every
+  sharer.
 
-## Held records parked for an import that is cancelled
+## Placing an entry at a position, and dropping part of a stack
 
-- **What:** a record waiting for its authored holder moves into the holder's
-  partition when the holder's identity arrives, even while the zone is still
-  importing hidden. If that import is cancelled, the partition is destroyed
-  and the record with it.
-- **Where:** `world/held/HeldRecords.cpp`, `zone/AsyncZoneLoader.cpp`.
-- **Trigger:** an import cancelled after its entities were made (a finalize
-  failure) in a zone where something was deposited. Then settle a record whose
-  holder lies in a hidden partition only once the zone is published.
+- **What:** `Inventory::Transfer` takes no position and `Inventory::Drop` no
+  count. A give or a move appends to the container's order; nothing places an
+  entry in a hotbar slot or a grid cell, sorts a container, or drops three
+  arrows of twenty.
+- **Where:** `inventory/Inventory.cpp` (`Transfer`, `Drop`), `HoldRecord` for
+  the position.
+- **Trigger:** a hotbar, a sort or a grid inventory. `inventory.entry` searches
+  in the container's order and promises nothing about when an entry arrived, so
+  it stays true when this lands; content that means "the entry just given"
+  already reads the give's result.
 
 ## Authoring a container's contents from the container
 
@@ -1488,19 +1520,101 @@ described in `docs/navigation/runtime.md`, "Agents".
   whose holder list is too long to read. Then add a container verb that makes
   an entry held by it, and picking in the view.
 
-## More than sixteen worn records or grants
+## Keyed list deltas
 
-- **What:** a wearer holds at most `kEquipmentRecordCapacity` (16) records, in
-  a fixed row of `EquipmentState`, and `kAbilityGrantCapacity` (16) grants, in
-  a fixed row of `AbilityGrants`. Both report at the edge (`Full`,
-  `GrantRoom`), and both are too small for a body that wears about 25 things
-  or a weapon that grants nine abilities beside a second one.
-- **Where:** `equipment/EquipmentComponents.h`, `equipment/EquipmentStateWire.h`
-  (one wire member per record), `abilities/AbilityGrants.h`.
-- **Trigger:** the per-actor cap lift planned next: grants move off the actor's
-  row as running abilities did, and the worn relation moves onto the item
-  entry, leaving per-slot hold memory on the wearer. Measure the equipment
-  bench before and after.
+- **What:** a replicated list resends by position, so a removal from the
+  middle resends every element after it. Sending removed keys and changed
+  elements avoids that, at the price of a tombstone per removed key held until
+  every peer confirms it, as removed components are.
+- **Where:** `ReplicationOwedFields` and the change store's list stamps
+  (`engine/src/net/ReplicationChangeStore.cpp`), the list grammar in
+  `engine/src/net/ReplicationCodec.cpp`.
+- **Consumer:** `AbilityGrants`, whose revoke closes the gap.
+- **Trigger:** a measured session where resends after middle removals exceed
+  a tenth of an owner's bytes.
+
+## Slot tables as replicated lists
+
+- **What:** `ActorTimeLeases`, `AbilityCueLog`, `ActiveAbilities` and
+  `AnimRequestSet` stay fixed slot tables on the wire and in the change store
+  (about 2.7 KB of images per actor carrying all four, computed); grants,
+  equipment, tags and attributes cross as replicated lists.
+- **Where:** `time/ActorTimeLeasesWire.h`, `abilities/AbilityCueLogWire.h`,
+  `abilities/ActiveAbilitiesWire.h`, `anim/AnimRequestWire.h`.
+- **Consumer:** `ActorTimeLeases` first, then the cue log.
+- **Trigger:** the replication bench or a session profile after the port
+  showing these images as the largest remaining share of `Update`. After the
+  port `EntityReplicationBench` measures images at 71% of `Update` at 1,000
+  grant-holding actors, with these two tables 1,000 of the 1,216 B an actor
+  carries (`docs/plans/evidence/replicated-lists/results.md`); their share of
+  the time is not measured per component yet, which is the first step.
+
+## A predicted replicated list
+
+- **What:** a codec component is never predicted, so a list is never held in
+  `PawnStateReplay`'s fixed shadow bytes or rolled back; the owner predicts
+  with its grants, tags and attributes and keeps guesses in `ActiveAbilities`.
+- **Where:** `net/ClientPrediction.h`, `prediction/PawnStateReplay.cpp`.
+- **Consumer:** none yet.
+- **Trigger:** a list the owner must simulate between snapshots. It needs
+  variable-size shadow state.
+
+## A list too large for one snapshot
+
+- **What:** a replicated list never spans snapshots, because an entity is the
+  unit of acknowledgement and is sent whole; a component whose widest encoding
+  exceeds `kNetDefaultSnapshotBytes` is refused at startup (`ListTooLarge`).
+  A collection that cannot fit one snapshot is entities (held records), not a
+  list. Not planned.
+- **Where:** `ReplicationLayout::AddErased` (`engine/src/net/ReplicationLayout.cpp`).
+- **Consumer:** none.
+- **Trigger:** a bounded value list that cannot be entities and exceeds
+  `kNetDefaultSnapshotBytes`.
+
+## A list declared once in a component's field description
+
+- **What:** a list's scene form, save form and wire form meet at a by-value
+  type written by hand (`AbilityGrantList`, `EquipmentRecordList`). Declaring
+  the list on the handle member, its element a described struct, needs from
+  the field-description work: a wire form per field kind taking
+  `ReplicationWireContext` (tags, named ids, entities and `PersistableRef`,
+  the last two not named ids), a described struct not tied to an offset in a
+  row, a list kind (element, optional key member, most elements; scene form a
+  JSON array composed by `MakeKeyedListRecordSchema`), and
+  `RuntimeFieldsOf<T, SchemaPurpose::Replication>` stopping at a list as it
+  stops at a `PackedScalarGroup`. This is the one entry for the list kind;
+  the field-description work does not own it.
+- **Where:** `core/metadata/TypeSchema.h`, `net/ReplicationLayout.h`,
+  `abilities/AbilityGrantsSerializer.cpp`, `equipment/EquipmentStateWire.h`.
+- **Consumer:** the first list component whose element is plain described
+  fields.
+- **Trigger:** field descriptions able to carry a wire form for entities and
+  `PersistableRef` and a list kind. The replicated list field is built, and a
+  named id already carries its wire form (`ReplicatedNamedLeaves`), so a list
+  whose element is named ids and plain scalars needs only the list kind.
+
+## More than thirty-two slots in a layout
+
+- **What:** a record's slots are a 32-bit mask, so a layout has at most
+  `kMaxEquipmentSlots` (32) slots and a wearer at most 32 records. Neither
+  record storage nor the wire bounds it: the records cross as a replicated list
+  declared at `kEquipmentRecordCapacity`.
+- **Where:** `equipment/EquipmentLayout.h`, `EquipmentRecord::Slots`.
+- **Trigger:** a layout that needs a thirty-third slot. Then widen the mask to
+  64 bits and raise the capacity; the wire follows the constant.
+
+## Effect grants are matched against every grant the target holds
+
+- **What:** each pass, every grant entry of every lasting effect is looked for
+  among its target's grants, and every effect-held grant is checked against its
+  effect's entries: work proportional to effect grants times grants held on
+  that actor, every tick, though nothing changed. Measured at 64 grants an
+  actor (`docs/plans/evidence/actor-caps/results.md`).
+- **Where:** `SyncEffectGrants` and `RevokeEndedEffectGrants` in
+  `engine/src/abilities/AbilitySystem.cpp`.
+- **Trigger:** a World where many actors hold tens of effect-held grants each
+  (the evidence's full-room row is the shape), or the pass nearing the 1 ms
+  mark. Then resynchronise an actor only when an effect on it began or ended.
 
 ## Tracing equipped grants that tie on an action
 
@@ -1543,15 +1657,62 @@ described in `docs/navigation/runtime.md`, "Agents".
   apply step, with the entry as their source, and decide whether a restore or
   a derivation replays them (it should not).
 
+## Attribute bounds in an equip requirement
+
+- **What:** an item's `equip.require` is a tag query on the wearer. Nothing
+  refuses an equip on a stat ("requires Strength 16").
+- **Where:** `inventory/ItemDefinitionData.cpp` (schema, compile, resolve),
+  `EquipRequirementMet` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first game that refuses an equip on a stat or a level. Then
+  add `require.attributes`, a keyed list of `{ key, attribute, require }` with
+  `ValueBounds` (`math/ValueBounds.h`), and one struct in `attributes/` for the
+  tag query and the bounds together, held by the item and by a slot.
+
+## A requirement on a layout slot
+
+- **What:** a requirement belongs to an item. A slot opened by progress (a
+  third ring slot) cannot require anything of its wearer.
+- **Where:** `EquipmentSlot` in `equipment/EquipmentLayout.h`,
+  `ResolveEquipmentSlots` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first slot unlocked by progress. Then put the same tag query
+  on `EquipmentSlot`, checked by `EquipRequirementMet`'s rule.
+
+## Asking whether an equip would be admitted without doing it
+
+- **What:** `Equipment::Equip` checks everything before it changes anything,
+  but only as part of equipping. Nothing answers "could this be worn" without
+  wearing it.
+- **Where:** `Equipment::Equip` in `engine/src/equipment/Equipment.cpp`.
+- **Trigger:** the first inventory screen that greys out what cannot be worn.
+  Then split the check out of `Equip` into a const function both call.
+
 ## A second layer that takes part in moving an entry
 
 - **What:** `ItemMoveAdmission` is one World resource with one `Admit` and one
-  `Moved`. Equipment installs it; a second installer would replace equipment's.
+  `Moved`. Equipment installs it through `InstallItemMoveAdmission`, which
+  leaves another layer's admission in place and answers false, and the engine
+  refuses to start a game whose equipment does not hold it. Two layers cannot
+  both take part.
 - **Where:** `inventory/Inventory.h`, `InstallEquipmentMoveAdmission` in
-  `engine/src/equipment/EquipmentSystem.cpp`.
+  `engine/src/equipment/EquipmentSystem.cpp`, the kit check in
+  `engine/src/app/Engine.cpp`.
 - **Trigger:** a second layer that must refuse or follow a move, such as a
   quest item that cannot be dropped. Then make the resource a list asked in
   order.
+
+## Tool surfaces limited to the kits a game installs
+
+- **What:** Kyusu and the Ability Workbench install every kit
+  (`InstallEveryKitVocabulary`), so they list inventory and equipment
+  components, verbs, queries and cost providers for a game that installs
+  neither, as they already do for movement and physics. A runtime World
+  installs only what its game asks for, and its verbs answer `Unavailable`.
+- **Where:** `engine/src/app/EngineVocabulary.cpp`; the three editor hosts
+  (`EditorDocument.cpp`, `VocabularyCatalog.cpp`, `AbilityPreviewSession.cpp`).
+- **Trigger:** content authored for an uninstalled kit more than once (the
+  content stack's "installs no inventory" warning in a real project), or the
+  owner finding Kyusu's lists noisy for a game without inventory. Then the
+  editor asks the loaded module which kits it installs and offers only those.
 
 ## Owner-only fields a former owner keeps
 
@@ -1575,3 +1736,274 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** the owner's walkthrough of equipping a guard in Kyusu, or the
   first content that authors a waiting slot (an empty quiver) or an item whose
   second slot must be chosen.
+
+## Abilities and animation in progress across a load
+
+- **What:** a load restores where characters are, how they move, what they
+  were alerted to and told to do (`docs/gameplay/saves.md`, "Characters and
+  actors"), but not what they were in the middle of. Ability records have no
+  saved form, so an attack, a reload, a charge or any long action ends and is
+  started again by whoever decides it; an NPC decides again within its
+  decision interval. A toggled or held ability (a cloak, a sprint) is off after
+  a load, and the effects it held through its lease end with it, since they are
+  owned and not kept (`docs/gameplay/saves.md`, "Lasting effects"). Animation
+  playback has no saved form either, so everything starts from its idle pose
+  and blends.
+- **Where:** `abilities/ActiveAbilities.h` (the records, which also hold a
+  predicting client's guesses), `anim/` playback state.
+- **Trigger:** a game with a toggle a player expects a quickload to keep (a
+  cloak, a sprint), or a long action whose restart is visible. Then give
+  ability records and animation playback saved forms, with an answer for a
+  predicting client's guesses.
+
+## A kept effect's time across a change of tick rate
+
+- **What:** a save keeps a lasting effect's time left as ticks of the rate the
+  game ran at (`AppliedEffects`, `remaining_ticks` and `ticks_to_period`), so a
+  save loaded by a build with another fixed tick rate gives each effect that
+  many of its own ticks: longer or shorter in seconds.
+- **Where:** `engine/src/effects/AppliedEffects.cpp`, `RestoreEffect` in
+  `engine/src/effects/EffectSystem.cpp`.
+- **Trigger:** a game that changes its fixed tick rate between releases while
+  old saves must keep loading. Then write time left in seconds, converted with
+  the capturing tick length, in a new member read beside the old.
+
+## System memory with no saved form
+
+- **What:** what a system keeps in memory rather than on an entity has no
+  saved form unless it registers a section. The responses system's rate limits
+  (`ResponsesSystem::Cooldowns`, an absolute tick per entity) last within one
+  run, since the process tick is monotonic, and are gone after quitting, so a
+  rate-limited trigger can be fired again by quitting and loading. A game
+  system's own memory is the same.
+- **Where:** `engine/src/logic/ResponsesSystem.cpp`; `SavedGames::RegisterSection`.
+- **Trigger:** the first rate-limited trigger a player can farm by quitting and
+  reloading. Then give that memory a section of its own, writing time left
+  rather than an absolute tick (`docs/gameplay/saves.md`, "Ticks").
+
+## The frames before a restored body lands
+
+- **What:** a restored level's actors act from the frame their zone is
+  published, and the body and source-spawned members land a few frames later.
+  An order or a sensor naming the body waits for it (`PendingReferences`,
+  "occupied" seeds), but an NPC can take a step or a decision in the gap. A
+  game holds its cover until `RestoreStatus()` reports `BodiesRestored`.
+- **Where:** `engine/src/participant_spawn/ParticipantBodySpawns.cpp`, the zone
+  import in `engine/src/zone/ZonePackageImporter.cpp`.
+- **Trigger:** a game that cannot cover the gap. Then hold a restored level's
+  actors still until its bodies are restored.
+
+## A game-extended list of save roots
+
+- **What:** whose body and held records a save keeps is fixed to the local
+  participant: `sencha.bodies` and `sencha.held` capture `LivingBodyOf` the
+  local participant, `RestoredBodies` has one slot and the body spawn takes it
+  for the local participant only, and a write with a bodiless local
+  participant fails. The file is already keyed (`sencha.bodies` is
+  `{"local": {...}}`); only the API is single-slot. Not built: a World
+  resource of keyed roots, a body per participant root, a participant taking
+  its saved id by key, and a per-root answer to "a write with no body".
+- **Where:** `engine/src/save/EngineSaveSections.cpp`,
+  `engine/include/participant_spawn/RestoredBodies.h`,
+  `engine/src/participant_spawn/ParticipantBodySpawns.cpp`,
+  `SavedGames::WriteRefusal` in `engine/src/save/SavedGames.cpp`.
+- **Trigger:** a restore or level change admitted inside a network session
+  (see "Changing level inside a network session"), so a co-op game can save a
+  second player's body; or a game whose participant has no body and saves.
+  Its consumer is co-op, and it also covers the other-participant part of
+  "Saving what was created at run time".
+
+## A capture spread over frames
+
+- **What:** a zone capture skips entities and gained members whose rows did not
+  change (`docs/gameplay/saves.md`, "Capture at scale"), but when every entity
+  of a zone changed at once (5,000 props all moving) each is written and diffed
+  in the one capture, on the owner thread. Not built: diffing a few changed
+  entities per frame ahead of the capture, so a save or detach has little left.
+- **Where:** `engine/src/zone/ZoneStateMemory.cpp` (`RecordPatches`).
+- **Trigger:** the level-state bench's "every prop changed" capture over 8 ms
+  (`docs/plans/evidence/level-state/results.md`), or a save or detach seen in a
+  profile. Its consumer is a physics-heavy level. The bench measured 11.9 ms
+  when the filter landed (10.7 ms before it), so the figure is past the
+  trigger; building this waits on the owner's call.
+
+## Capture off the owner thread
+
+- **What:** a capture reads the World through every serializer's `Save`, so it
+  runs on the owner thread. A serializer whose saved form follows its row
+  (`IComponentSerializer::SavedFormFromRowAlone`) could write from copied bytes
+  on a worker instead. Not built: copying changed rows out and writing them on
+  the async lane.
+- **Where:** `engine/src/zone/ZoneStateMemory.cpp`,
+  `engine/include/world/serialization/IComponentSerializer.h`.
+- **Trigger:** serializers that write from copied bytes, wanted for a capture
+  that spreading over frames does not bring under budget.
+
+## A cook warning for ids shared between level files
+
+- **What:** two level files copied from one share authored ids. Waiting held
+  records are scoped by level, so they never cross, but a bare `PersistableRef`
+  from an entity that outlives a level (a kept body, a world record) to a level
+  entity resolves by id against whatever is live and could find the twin.
+  Nothing holds such a reference today, and no cook pass sees every level.
+- **Where:** `editor/level_editor/src/document/WorldCook.cpp` (the world cook
+  checks only within a world).
+- **Trigger:** the first component on a body or a world record that references
+  a level entity by `PersistableRef`.
+
+## Exporting only the levels entered since the last write
+
+- **What:** a write copies every level's encoded zones (pointers) and encodes
+  the resident ones that changed. A game of many levels pays the walk over every
+  zone record per write.
+- **Where:** `ZoneStateStore::ExportDurable`, `engine/src/zone/ZoneStateStore.cpp`.
+- **Trigger:** a write measured above a millisecond on the owner thread in a
+  many-level game.
+
+## State kept for content that no longer exists
+
+- **What:** a level renamed or removed between releases leaves its record in
+  every save; it is carried forever, since nothing tells a missing level from
+  one not yet visited.
+- **Where:** `engine/src/zone/ZoneStateStore.cpp`, `engine/src/save/SavedGame.cpp`.
+- **Trigger:** a shipped game that renames levels between releases.
+
+## Keeping a body that lives in a zone's partition
+
+- **What:** a `Travel` that keeps its bodies is refused (`BodyInZone`) when a
+  body lives in a zone's partition rather than the persistent one; the change
+  does not move it there with its spawn group, because a partition move carries
+  held records and attachments but not a spawn group's other entities.
+- **Where:** `engine/src/app/LevelChange.cpp` (`Request`, `HoldKeptBodies`);
+  the group is `SceneSpawnService::Entities`.
+- **Trigger:** a game that spawns its bodies in a zone's partition and keeps
+  them across a level change. Then move the group with the body at the commit,
+  and refuse only a group that cannot be moved.
+
+## Finding an arrival in a zone that is not loaded
+
+- **What:** an arrival name is resolved against the loaded landmarks when the
+  body is placed, once the play zone is resident. A save in a world records the
+  zone its landmark stands in as its focus, so a restore streams it in; a level
+  change into a world focuses its start zone (or the zone `Focused` names) and
+  finds only a landmark in that zone's neighbourhood or the world scene, and a
+  save whose landmark was not loaded when it was written cannot find its zone.
+  An index of each zone's landmark names in the cooked world manifest, which
+  the world cook would fill as it fills docks and links, would let either
+  focus the right zone first. A carry's landmark is found the same way, and
+  what a level change carries is lost, with an error, when its landmark is not
+  loaded once the level is resident (`docs/gameplay/game-module.md`,
+  "Carrying").
+- **Where:** `engine/src/participant_spawn/ParticipantBodySpawns.cpp`
+  (`ArrivalRoot`), `engine/src/app/LevelCarry.cpp` (`LevelCarry::Arrive`),
+  `engine/src/save/SavedGames.cpp` (the focus of a save with an arrival),
+  `editor/level_editor/src/document/WorldCook.cpp`.
+- **Trigger:** a game of separate worlds joined by `level.change` whose doors
+  arrive outside the start zone's neighbourhood, or a save naming an arrival
+  far from where it is written.
+
+## A sequence branching on a command's refusal reason
+
+- **What:** a sequence command's `on_failure` distinguishes only accepted from
+  not accepted. The grammar kept for it is `"on_refused": { "container_full":
+  [commands], "*": [commands] }` beside `on_failure`, compiled to reason codes
+  against the verb's declared `Refusals`.
+- **Where:** `engine/src/logic/VerbSequence.cpp` (`ReadCommand`),
+  `VerbSequenceCompiler.cpp` and `VerbSequenceRunner.cpp`, which already carries
+  the failed command's detail in `SequenceOutcome`.
+- **Trigger:** the first authored response that must react differently to two
+  reasons, such as a pickup that posts "inventory full" from authored data, or
+  the first HUD message that would otherwise need a C++ special case.
+
+## A verb op's result kept in an ability local
+
+- **What:** a response's sequence names a verb's result and reads it in a later
+  command; an ability's verb op cannot. An ability op already stores a query's
+  answer in an entity local, so this is one more destination kind for a verb op.
+- **Where:** `engine/src/abilities/AbilityPass.cpp` (`Operate`, the `Invoke`
+  case) and the ability op's compiled form.
+- **Trigger:** the first ability that must name what one of its ops made.
+
+## Results for verbs beyond give and take
+
+- **What:** `inventory.give` and `inventory.take` declare their entry as a
+  result; no other verb declares one. Each further result is one declaration
+  and one write through `VerbInvocation::Result`.
+- **Where:** the verb's declaration and implementation; `inventory.transfer`,
+  `projectile.launch` and `effect.apply` are the likely next.
+- **Trigger:** a sequence that needs to name what one of those verbs made.
+
+## Completing a verb or query command's names and keys
+
+- **What:** the console completes a command's name and, for its first
+  argument, a cvar name; it has no per-command completion, so `verb` and
+  `query` do not offer the catalog's names or a verb's argument keys.
+- **Where:** `engine/src/core/console/ConsoleCompletion.cpp` and
+  `ConsoleCommandMetadata` (`core/console/ConsoleTypes.h`), whose layout a game
+  module compiles against; `engine/src/app/VocabularyCommands.cpp` would supply
+  the names.
+- **Trigger:** the next module-ABI change to the console's command metadata, or
+  a developer asking for it; then give a command an argument-completion
+  function and have `verb` and `query` offer the live catalog.
+
+## A client's console forwarding a verb to the server
+
+- **What:** `verb` refuses an `AuthorityOnly` verb on a client, so a developer
+  connected to a dedicated server cannot give an item from the client's console.
+- **Where:** `engine/src/app/VocabularyCommands.cpp` (`RunVerbCommand`).
+- **Trigger:** a developer who must give items while connected to a dedicated
+  server without access to its console.
+
+## Named ids inside nested structs and lists
+
+- **What:** a named id (`docs/core-systems-map.md`, "Named-id fields") has a
+  scene form only as a component's own member. One nested inside a described
+  struct member goes through `WriteArchiveValue`, which has no form for it, and
+  a list of named ids is the list field kind ("A list declared once in a
+  component's field description").
+- **Where:** `SceneComponentSerialization::SaveField` and `LoadField`
+  (`world/serialization/ComponentSerializer.h`), and `WriteArchiveValue`
+  (`core/serialization/Archive.h`), which takes no World.
+- **Consumer:** the first component that holds a named id inside a struct.
+- **Trigger:** that component; then route nested members through
+  `SceneFieldCodec` with the World, as a component's own members are.
+
+## Names as text in perception, navigation and traversal components
+
+- **What:** `ObservationSharing`, `ObservationMemory`, the navigation profile
+  and traversal names hold tag or profile names as `InlineString`, resolved at
+  run time, where a named-id field would hold 4 bytes and be checked at load.
+- **Where:** `perception/ObservationSharing.h`, `perception/ObservationMemory.h`,
+  `navigation/NavAgent.h`, `navigation/NavLinkComponent.h`.
+- **Consumer:** none waiting.
+- **Trigger:** the next change to any of those components; convert its names
+  then to named-id fields.
+
+## Effect names in projectiles and contact lines as ids
+
+- **What:** `Projectile` holds its hit, scaled and splash effects, and
+  `ContactLine` its effect, as `InlineString<192>` (576 of a projectile's
+  bytes, 192 of a line's), resolved at the first launch. As named-id fields
+  they would be 4 bytes each and checked at load, as their tags now are.
+- **Where:** `projectile/Projectile.h`, `line/ContactLine.h`,
+  `ProjectileSystem::Resolve`, `ResolveLine` (`ContactLineSystem.cpp`), and
+  `EffectRegistry` (`effects/EffectRegistry.h`), which has `Find` and `GetName`
+  but no reserve and no wire key, while content names an effect before its
+  asset is declared.
+- **Consumer:** an arena shooter's projectile counts.
+- **Trigger:** `EffectRegistry` moving onto `NamedDefinitionRegistry`, or a
+  projectile-count profile where chunk size shows; then give `EffectId` a
+  definition vocabulary and convert the fields.
+
+## Removing an authored entity in the same patch as component edits
+
+- **What:** a placement drops a source entity with `suppress`, a list beside
+  its `patch`, while a component goes as `<component>: null` inside it. Writing
+  entity removal as `"<path>": null` in `patch` would retire `suppress` and
+  leave one member for every edit a placement makes.
+- **Where:** `SceneInstanceRecord::Suppressed`
+  (`editor/common/src/scene_source/SceneSourceDocument.h`), the resolver's
+  `ApplyOverrides` and the harvest's suppression.
+- **Consumer:** none yet.
+- **Trigger:** a plan that needs "this authored entity is gone" in the same
+  patch document as component edits.

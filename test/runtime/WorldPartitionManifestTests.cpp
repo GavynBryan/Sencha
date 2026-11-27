@@ -107,6 +107,19 @@ TEST(WorldPartitionManifest, ReadRejectsMalformedZoneId)
     EXPECT_EQ(error, "zones[0].id is malformed");
 }
 
+TEST(WorldPartitionManifest, ReadRejectsTheZoneIdsSceneLevelsAndWorldScenesHold)
+{
+    for (const char* reserved : { "0000000000000001", "0000000000000002" })
+    {
+        std::string error;
+        const std::string text = std::string(R"json({ "format_version": 1, "zones": [ { "id": ")json") + reserved
+            + R"json(", "bounds": { "min": [0,0,0], "max": [1,1,1] } } ] })json";
+        const auto manifest = TryParse(text.c_str(), &error);
+        EXPECT_FALSE(manifest.has_value()) << reserved;
+        EXPECT_EQ(error, "zones[0].id is reserved") << reserved;
+    }
+}
+
 TEST(WorldPartitionManifest, ReadRejectsUnknownTopology)
 {
     std::string error;

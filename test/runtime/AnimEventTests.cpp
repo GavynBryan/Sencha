@@ -338,7 +338,7 @@ TEST(AnimEvents, ACyclicMarkFiresOncePerLoop)
     ASSERT_EQ(records.size(), 2u);
     EXPECT_EQ(records[0]->EventKey, 5u);
     EXPECT_EQ(records[0]->EventOutcome, AnimEventOutcome::Fired);
-    EXPECT_EQ(records[0]->Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(records[0]->Answer.Status, VerbAdmission::Accepted);
     EXPECT_EQ(records[0]->Tick, h.Footsteps.Calls[0].Tick);
 }
 
@@ -436,10 +436,10 @@ TEST(AnimEvents, EveryAdmissionIsRecorded)
 
     const std::vector<const AnimDecisionRecord*> records = h.EventRecords(walker);
     ASSERT_EQ(records.size(), 4u);
-    EXPECT_EQ(records[0]->Admission, VerbAdmission::UnresolvedBinding);
-    EXPECT_EQ(records[1]->Admission, VerbAdmission::Unavailable);
-    EXPECT_EQ(records[2]->Admission, VerbAdmission::UnresolvedBinding);
-    EXPECT_EQ(records[3]->Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(records[0]->Answer.Status, VerbAdmission::UnresolvedBinding);
+    EXPECT_EQ(records[1]->Answer.Status, VerbAdmission::Unavailable);
+    EXPECT_EQ(records[2]->Answer.Status, VerbAdmission::UnresolvedBinding);
+    EXPECT_EQ(records[3]->Answer.Status, VerbAdmission::Accepted);
 }
 
 // Ticks the event pass did not see were not played: their marks are recorded
@@ -518,8 +518,8 @@ TEST(AnimEvents, CrossingsPastCapacityAreRecordedAsQueueFull)
     const std::vector<const AnimDecisionRecord*> a = h.EventRecords(first);
     const std::vector<const AnimDecisionRecord*> b = h.EventRecords(second);
     ASSERT_EQ(a.size() + b.size(), 2u);
-    const VerbAdmission firstAdmission = a.empty() ? VerbAdmission::Accepted : a[0]->Admission;
-    const VerbAdmission secondAdmission = b.empty() ? VerbAdmission::Accepted : b[0]->Admission;
+    const VerbAdmission firstAdmission = a.empty() ? VerbAdmission::Accepted : a[0]->Answer.Status;
+    const VerbAdmission secondAdmission = b.empty() ? VerbAdmission::Accepted : b[0]->Answer.Status;
     EXPECT_TRUE((firstAdmission == VerbAdmission::QueueFull) != (secondAdmission == VerbAdmission::QueueFull));
 }
 
@@ -547,7 +547,7 @@ TEST(AnimEvents, APendingEventFromAnOlderBindingIsStale)
     EXPECT_TRUE(h.Footsteps.Calls.empty());
     const std::vector<const AnimDecisionRecord*> records = h.EventRecords(walker);
     ASSERT_FALSE(records.empty());
-    EXPECT_EQ(records.back()->Admission, VerbAdmission::StaleBinding);
+    EXPECT_EQ(records.back()->Answer.Status, VerbAdmission::StaleBinding);
 }
 
 // -- What a pass crosses ---------------------------------------------------------------
@@ -559,7 +559,7 @@ namespace
     {
         std::vector<std::uint32_t> keys;
         for (const AnimDecisionRecord* record : records)
-            if (record->EventOutcome == AnimEventOutcome::Fired && record->Admission == VerbAdmission::Accepted)
+            if (record->EventOutcome == AnimEventOutcome::Fired && record->Answer.Status == VerbAdmission::Accepted)
                 keys.push_back(record->EventKey);
         return keys;
     }
@@ -722,7 +722,7 @@ TEST(AnimEvents, AGameplayOverflowIsCountedAndRecorded)
     std::size_t queueFull = 0;
     for (const EntityId entity : { first, second })
         for (const AnimDecisionRecord* record : h.EventRecords(entity))
-            queueFull += record->Admission == VerbAdmission::QueueFull ? 1u : 0u;
+            queueFull += record->Answer.Status == VerbAdmission::QueueFull ? 1u : 0u;
     EXPECT_EQ(queueFull, 1u);
 }
 
@@ -807,7 +807,7 @@ TEST(AnimEvents, ABehaviorChangeAnnouncesTheExitThenTheEntry)
     ASSERT_NE(entered, nullptr);
     EXPECT_EQ(exited->Behavior, h.Fx.Tag("Anim.Walk"));
     EXPECT_EQ(entered->Behavior, h.Fx.Tag("Anim.Door.Open"));
-    EXPECT_EQ(entered->Admission, VerbAdmission::Accepted);
+    EXPECT_EQ(entered->Answer.Status, VerbAdmission::Accepted);
 }
 
 // A lifecycle event supplies the behavior's tag and nothing else, so a

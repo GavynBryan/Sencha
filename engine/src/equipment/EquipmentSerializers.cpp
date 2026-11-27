@@ -22,7 +22,6 @@ namespace
     constexpr std::string_view kSlots = "slots";
     constexpr std::string_view kSource = "source";
 
-    // Records replace whole on a patch; their sources are entities a placement renames.
     DataFieldSchema MakeCompositionSchema()
     {
         DataFieldSchema record = MakeDataField(DataFieldKind::Record, {}, {});
@@ -34,7 +33,6 @@ namespace
         return state;
     }
 
-    // The primary slot first, so a load finds it where it was.
     std::vector<std::uint8_t> SlotsInOrder(const EquipmentRecord& record)
     {
         std::vector<std::uint8_t> slots;
@@ -51,8 +49,7 @@ namespace
     {
         archive.BeginObject(std::string_view{});
         archive.Field(kKey, record.Key);
-        if (!WriteSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), record.Definition,
-                                     context))
+        if (!SceneFieldCodec<ItemId>::Save(archive, kDefinition, record.Definition, &world, context))
             return false;
         const std::vector<std::uint8_t> slots = SlotsInOrder(record);
         archive.BeginArray(kSlots, slots.size());
@@ -67,7 +64,7 @@ namespace
         }
         archive.End();
         // The id the source carries now: a moved or changed entry may have taken a runtime one.
-        PersistableRef source = MakePersistableRef(world, ResolvePersistableRef(world, record.Source));
+        PersistableRef source = PersistableRefOf(world, ResolvePersistableRef(world, record.Source));
         if (!source.Target.IsValid())
             source = record.Source;
         if (!SceneFieldCodec<PersistableRef>::Save(archive, kSource, source, context))
@@ -81,9 +78,12 @@ namespace
     {
         archive.BeginObject(std::string_view{});
         archive.Field(kKey, record.Key);
-        if (!ReadSceneDefinitionRef(archive, kDefinition, world.TryGetResource<ItemRegistry>(), record.Definition,
-                                    context))
+        if (!SceneFieldCodec<ItemId>::Load(archive, kDefinition, record.Definition, &world, context)
+            || !record.Definition.IsValid())
+        {
+            archive.MarkInvalidField(kDefinition);
             return false;
+        }
         std::size_t slots = 0;
         archive.BeginArray(kSlots, slots);
         for (std::size_t s = 0; s < slots; ++s)
@@ -113,9 +113,9 @@ namespace
         return true;
     }
 
-    bool ReadRecords(IReadArchive& archive, EquipmentState& state, World& world, SceneSerializationContext& context)
+    bool ReadRecords(IReadArchive& archive, EquipmentRecordList& worn, World& world, SceneSerializationContext& context)
     {
-        const EquipmentLayout* layout = FindEquipmentLayout(world, state.Layout);
+        const EquipmentLayout* layout = FindEquipmentLayout(world, worn.Layout);
         std::size_t count = 0;
         std::uint32_t held = 0;
         archive.BeginArray(kRecords, count);
@@ -126,17 +126,16 @@ namespace
         }
         for (std::size_t i = 0; i < count; ++i)
         {
-            EquipmentRecord& record = state.Records[i];
+            EquipmentRecord record;
             if (!ReadRecord(archive, record, held, *layout, world, context))
                 return false;
-            const bool reused = std::ranges::any_of(state.Records, state.Records + i,
-                                                    [&](const EquipmentRecord& earlier) { return earlier.Key == record.Key; });
-            if (record.Key == 0 || record.Key >= state.NextKey || reused)
+            const bool reused = std::ranges::find(worn.Records, record.Key, &EquipmentRecord::Key) != worn.Records.end();
+            if (record.Key == 0 || record.Key >= worn.NextKey || reused)
             {
                 archive.MarkInvalidField(kKey);
                 return false;
             }
-            state.Count = static_cast<std::uint8_t>(i + 1);
+            worn.Records.push_back(record);
         }
         archive.End();
         return true;
@@ -163,14 +162,14 @@ namespace
             if (state == nullptr)
                 return true;
             archive.BeginObject(std::string_view{});
-            if (!WriteSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(),
-                                         state->Layout, context))
+            if (!SceneFieldCodec<EquipmentLayoutId>::Save(archive, kLayout, state->Layout, &world, context))
                 return false;
             archive.Field(kNextKey, state->NextKey);
             const EquipmentLayout* layout = FindEquipmentLayout(world, state->Layout);
-            archive.BeginArray(kRecords, state->Count);
-            for (std::uint8_t i = 0; i < state->Count; ++i)
-                if (!WriteRecord(archive, state->Records[i], layout, world, context))
+            const std::span<const EquipmentRecord> records = EquipmentRecordsOf(world, *state);
+            archive.BeginArray(kRecords, records.size());
+            for (const EquipmentRecord& record : records)
+                if (!WriteRecord(archive, record, layout, world, context))
                     return false;
             archive.End();
             archive.End();
@@ -180,17 +179,20 @@ namespace
         bool LoadIntoWorld(IReadArchive& archive, EntityId entity, World& world,
                            SceneSerializationContext& context) override
         {
-            EquipmentState state{};
+            EquipmentRecordList worn;
             archive.BeginObject(std::string_view{});
-            if (!ReadSceneDefinitionRef(archive, kLayout, world.TryGetResource<EquipmentLayoutRegistry>(), state.Layout,
-                                        context))
+            if (!SceneFieldCodec<EquipmentLayoutId>::Load(archive, kLayout, worn.Layout, &world, context)
+                || !worn.Layout.IsValid())
+            {
+                archive.MarkInvalidField(kLayout);
                 return false;
+            }
             if (archive.HasField(kNextKey))
-                archive.Field(kNextKey, state.NextKey);
-            if (archive.HasField(kRecords) && !ReadRecords(archive, state, world, context))
+                archive.Field(kNextKey, worn.NextKey);
+            if (archive.HasField(kRecords) && !ReadRecords(archive, worn, world, context))
                 return false;
             archive.End();
-            return archive.Ok() && Place(world, entity, state);
+            return archive.Ok() && Place(world, entity, MakeEquipmentState(world, worn));
         }
     };
 }

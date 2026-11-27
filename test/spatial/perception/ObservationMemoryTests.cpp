@@ -1,6 +1,7 @@
 // Memory keeps where a subject was, measures how it moved, forgets on a
 // clock, and answers its authored queries only on the authority.
 
+#include <authored/AuthoredApi.h>
 #include "PerceptionHarness.h"
 
 #include <authored/AuthoredQueryDispatcher.h>
@@ -24,7 +25,8 @@ namespace
     {
         ObservationMemorySystem Memory;
         std::optional<AuthoredQueryDispatcher> Dispatcher;
-        std::vector<AuthoredQueryBindingToken> Bindings;
+        std::optional<PerceptionOperations> Perception;
+        AuthoredApiBindings Bindings;
 
         MemoryHarness()
         {
@@ -33,7 +35,8 @@ namespace
             InstallAuthoredVocabulary(Entities);
             EXPECT_TRUE(InstallPerceptionVocabulary(Entities));
             Dispatcher.emplace(*FindAuthoredQueryRegistry(Entities));
-            Bindings = BindPerceptionQueries(*Dispatcher, Entities);
+            Perception.emplace(Entities);
+            Bindings = BindAuthoredApi(nullptr, &*Dispatcher, *Perception);
         }
 
         EntityId RememberingObserver(const Vec3d& position, float retainSeconds = 2.0f)
@@ -233,24 +236,24 @@ TEST(ObservationMemory, QueriesAnswerFromMemory)
 
     AuthoredValue answer;
     bool remembered = false;
-    ASSERT_EQ(harness.Ask(kRemembersQuery, eye, target, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Remembers, eye, target, answer), AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(remembered));
     EXPECT_TRUE(remembered);
-    ASSERT_EQ(harness.Ask(kRemembersQuery, eye, stranger, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Remembers, eye, stranger, answer), AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetBool(remembered));
     EXPECT_FALSE(remembered);
 
     AuthoredVectorValue position;
-    ASSERT_EQ(harness.Ask(kLastSeenPositionQuery, eye, target, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_LastSeenPosition, eye, target, answer), AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetVector(position));
     EXPECT_DOUBLE_EQ(position.Components[2], -5.0);
-    EXPECT_EQ(harness.Ask(kLastSeenPositionQuery, eye, stranger, answer), AuthoredQueryStatus::Unavailable);
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_LastSeenPosition, eye, stranger, answer), AuthoredQueryStatus::Unavailable);
 
     double seconds = 0.0;
-    ASSERT_EQ(harness.Ask(kSecondsSinceSeenQuery, eye, target, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_SecondsSinceSeen, eye, target, answer), AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetFloat(seconds));
     EXPECT_NEAR(seconds, 6 * kDt, 1e-4);
-    ASSERT_EQ(harness.Ask(kSecondsTrackedQuery, eye, target, answer), AuthoredQueryStatus::Value);
+    ASSERT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_SecondsTracked, eye, target, answer), AuthoredQueryStatus::Value);
     ASSERT_TRUE(answer.TryGetFloat(seconds));
     EXPECT_NEAR(seconds, 2 * kDt, 1e-4);
 }
@@ -276,7 +279,7 @@ TEST(ObservationMemory, NearestRememberedTaggedSkipsTheDeadAndTheUntagged)
         AuthoredValue answer;
         const std::vector<AuthoredValue> arguments{ AuthoredValue::Entity(eye), AuthoredValue::Tag(hostile) };
         const AuthoredQueryStatus status = harness.Dispatcher->Evaluate(
-            harness.Dispatcher->Registry().Resolve(kNearestRememberedTaggedQuery), arguments, answer);
+            harness.Dispatcher->Registry().Resolve(AuthoredApiDefinition<PerceptionOperations>::Name_NearestRememberedTagged), arguments, answer);
         EntityId entity;
         return status == AuthoredQueryStatus::Value && answer.TryGetEntity(entity) ? entity : EntityId{};
     };
@@ -296,7 +299,7 @@ TEST(ObservationMemory, AClientRemembersNothingAndAnswersUnavailable)
 
     EXPECT_EQ(harness.Entities.TryGet<ObservationMemory>(eye)->Count, 0u);
     AuthoredValue answer;
-    EXPECT_EQ(harness.Ask(kRemembersQuery, eye, target, answer), AuthoredQueryStatus::Unavailable);
+    EXPECT_EQ(harness.Ask(AuthoredApiDefinition<PerceptionOperations>::Name_Remembers, eye, target, answer), AuthoredQueryStatus::Unavailable);
 }
 
 TEST(ObservationMemory, RemembersTheWayTheSubjectFacedWhenItWasSeen)
@@ -367,7 +370,7 @@ TEST(ObservationMemory, AFullMemoryForgetsWhatItPrefersLast)
     harness.Entities.TryGet<ObservationMemory>(eye)->Prefer = "faction.hostile";
     const EntityId foe = harness.Target(Vec3d(0, 0, -10));
     GameplayTagContainer tags{};
-    ASSERT_TRUE(tags.Grant(hostile));
+    ASSERT_EQ(tags.Grant(hostile), GameplayTagWrite::Added);
     harness.Entities.AddComponent<GameplayTagContainer>(foe, tags);
     harness.Tick();
     harness.Place(foe, Vec3d(0, 0, 50));

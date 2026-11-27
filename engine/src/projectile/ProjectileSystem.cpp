@@ -33,6 +33,9 @@
 #include <world/scene/SceneInstanceIndex.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZonePlacement.h>
+#include <zone/ZoneStateMemory.h>
 
 #include <algorithm>
 #include <array>
@@ -171,10 +174,6 @@ std::optional<std::uint32_t> ProjectileSystem::Resolve(AssetId prefab, EntityId 
     names.Effect(d.HitEffect.View(), resolved.HitEffect);
     names.Effect(d.ScaledEffect.View(), resolved.ScaledEffect);
     names.Effect(d.SplashEffect.View(), resolved.SplashEffect);
-    names.Tag(d.PassesThrough.View(), resolved.PassesThrough);
-    names.Tag(d.HitKind.View(), resolved.HitKind);
-    names.Tag(d.ImpactCue.View(), resolved.ImpactCue);
-    names.Tag(d.Ignores.View(), resolved.Ignores);
     if (!d.HitScaleQuery.Empty() && names.Resolved())
     {
         resolved.HitScale = Host.Queries != nullptr ? Host.Queries->Registry().Resolve(d.HitScaleQuery.View())
@@ -237,6 +236,8 @@ EntityId ProjectileSystem::Launch(const ProjectileLaunch& launch, ProjectileLaun
         return refuse(ProjectileLaunchResult::Unresolved);
     }
     const ResolvedProjectile& definition = world.GetResource<ProjectileDefinitions>().Entries[*index];
+    if (definition.Definition.Kept && KeepsLevelState(world))
+        KeepInZoneAt(root, launch.Origin);
 
     const Vec3d direction = ScatterInCone(launch.Direction.Normalized(), launch.SpreadDegrees, launch.Seed);
     world.AddComponent<ProjectileFlight>(root, ProjectileFlight{ .Instigator = launch.Instigator,
@@ -311,9 +312,59 @@ void ProjectileSystem::FixedLogic(FixedLogicContext& ctx)
             Host.Prefabs != nullptr ? Host.Prefabs->Despawn(world, ended) : world.DestroyEntity(ended);
 }
 
+void ProjectileSystem::KeepInZoneAt(EntityId root, const Vec3d& origin)
+{
+    World& world = *Entities;
+    const ZonePlacement* zones = world.TryGetResource<ZonePlacement>();
+    const std::optional<StoragePartitionId> zone =
+        zones != nullptr && zones->PartitionAt ? zones->PartitionAt(origin) : std::nullopt;
+    if (!zone.has_value())
+        return;
+    const SceneInstance* instance = world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(root) : nullptr;
+    const SceneInstanceIndex* groups = world.TryGetResource<SceneInstanceIndex>();
+    std::vector<EntityId> group;
+    if (instance != nullptr && groups != nullptr)
+    {
+        const std::span<const EntityId> members = groups->Entities(instance->Id);
+        group.assign(members.begin(), members.end());
+    }
+    else
+        group.push_back(root);
+    for (const EntityId member : group)
+        if (world.IsAlive(member) && world.GetEntityPartition(member) != *zone)
+            (void)world.MoveEntityToPartition(member, *zone);
+    (void)KeepWithZone(world, root);
+}
+
+bool ProjectileSystem::Adopt(EntityId projectile, std::uint64_t tick)
+{
+    World& world = *Entities;
+    const SceneInstance* instance =
+        world.IsRegistered<SceneInstance>() ? world.TryGet<SceneInstance>(projectile) : nullptr;
+    const AssetId prefab = instance != nullptr ? instance->Source : AssetId{};
+    const std::optional<std::uint32_t> index = prefab.IsValid() ? Resolve(prefab, projectile) : std::nullopt;
+    ProjectileMotion* motion = world.TryGet<ProjectileMotion>(projectile);
+    ProjectileFlight* flight = world.TryGet<ProjectileFlight>(projectile);
+    if (!index.has_value() || motion == nullptr || flight == nullptr)
+        return false;
+    motion->Definition = *index;
+    flight->LaunchTick = tick;
+    if (!world.HasComponent<NetReplicated>(projectile))
+        world.AddComponent<NetReplicated>(projectile, NetReplicated{});
+    if (!world.HasComponent<NetSpawnPrefab>(projectile))
+        world.AddComponent<NetSpawnPrefab>(projectile, NetSpawnPrefab{ .Scene = prefab });
+    return true;
+}
+
 void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
 {
     World& world = *Entities;
+    if (const ProjectileFlight* loaded = std::as_const(world).TryGet<ProjectileFlight>(projectile);
+        loaded != nullptr && loaded->LaunchTick == 0 && !Adopt(projectile, now.TickIndex))
+    {
+        End(projectile, now.TickIndex);
+        return;
+    }
     const ProjectileDefinitions& definitions = world.GetResource<ProjectileDefinitions>();
     ProjectileMotion* motion = world.TryGet<ProjectileMotion>(projectile);
     const ProjectileFlight* flight = std::as_const(world).TryGet<ProjectileFlight>(projectile);
@@ -367,10 +418,10 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         position += direction * contact->Distance;
         remaining -= contact->Distance;
 
-        if (contact->Entity.IsValid() && definition.Ignores.IsValid() && [&] {
+        if (contact->Entity.IsValid() && definition.Definition.Ignores.IsValid() && [&] {
                 const GameplayTagContainer* tags =
                     std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
-                return tags != nullptr && tags->HasExact(definition.Ignores);
+                return tags != nullptr && tags->HasExact(definition.Definition.Ignores);
             }())
         {
             if (passedCount == passed.size())
@@ -384,10 +435,10 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
 
         // Asked before the strike, whose effects may end what was met.
         const bool level = IsLevelGeometry(world, contact->Entity);
-        const bool passes = contact->Entity.IsValid() && definition.PassesThrough.IsValid() && [&] {
+        const bool passes = contact->Entity.IsValid() && definition.Definition.PassesThrough.IsValid() && [&] {
             const GameplayTagContainer* tags =
                 std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
-            return tags != nullptr && tags->HasExact(definition.PassesThrough);
+            return tags != nullptr && tags->HasExact(definition.Definition.PassesThrough);
         }();
         (void)Strike(projectile, state, definition, instigator, *contact, now);
         if (!world.IsAlive(projectile))
@@ -412,7 +463,7 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         ended = true;
         if (authored.SplashOnExpire)
             Splash(state, definition, instigator, position, -direction, now);
-        Cue(instigator, projectile, definition.ImpactCue, position, -direction, EntityId{}, now.TickIndex);
+        Cue(instigator, projectile, definition.Definition.ImpactCue, position, -direction, EntityId{}, now.TickIndex);
     }
 
     if (!world.IsAlive(projectile))
@@ -479,7 +530,7 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
                               EntityId instigator, const Contact& contact, const FixedSimTime& now)
 {
     World& world = *Entities;
-    Cue(instigator, projectile, definition.ImpactCue, contact.Point, contact.Normal, contact.Entity, now.TickIndex);
+    Cue(instigator, projectile, definition.Definition.ImpactCue, contact.Point, contact.Normal, contact.Entity, now.TickIndex);
     // Level geometry with no entity of its own takes nothing and is told nothing.
     if (!contact.Entity.IsValid() || !world.IsAlive(contact.Entity) || Struck(motion, contact.Entity)
         || motion.HitCount >= kProjectileMaxHits)
@@ -503,7 +554,7 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = instigator,
                                                             .Projectile = projectile,
-                                                            .Kind = definition.HitKind,
+                                                            .Kind = definition.Definition.HitKind,
                                                             .Point = contact.Point,
                                                             .Normal = contact.Normal,
                                                             .Region = part });
@@ -517,7 +568,7 @@ float ProjectileSystem::HitScale(const ResolvedProjectile& definition, EntityId 
     ScaleArguments.Resize(3);
     ScaleArguments.Set(0, AuthoredValue::Entity(target));
     ScaleArguments.Set(1, AuthoredValue::Tag(region));
-    ScaleArguments.Set(2, AuthoredValue::Tag(definition.HitKind));
+    ScaleArguments.Set(2, AuthoredValue::Tag(definition.Definition.HitKind));
     double scale = 1.0;
     if (Host.Queries->Evaluate(definition.HitScale, ScaleArguments.Values(), ScaleAnswer) != AuthoredQueryStatus::Value
         || !ScaleAnswer.TryGetFloat(scale) || !std::isfinite(scale) || scale < 0.0)
@@ -606,6 +657,8 @@ void ProjectileSystem::End(EntityId projectile, std::uint64_t tick)
     Show(projectile, false);
     if (world.HasComponent<ProjectileMotion>(projectile))
         world.RemoveComponent<ProjectileMotion>(projectile);
+    if (IsKeptWithZone(world, projectile))
+        world.RemoveComponent<KeptWithZone>(projectile);
 }
 
 void ProjectileSystem::Present(FixedLogicContext& ctx)

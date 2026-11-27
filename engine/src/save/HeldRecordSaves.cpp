@@ -1,20 +1,24 @@
 #include <save/HeldRecordSaves.h>
 
 #include <core/logging/LoggingProvider.h>
-#include <core/serialization/JsonArchive.h>
 #include <ecs/ComponentTypeId.h>
 #include <ecs/World.h>
 #include <world/RuntimeWorld.h>
 #include <world/held/Held.h>
+#include <world/held/HeldRecordForms.h>
 #include <world/held/HeldRecordIndex.h>
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/identity/PersistentIdMint.h>
-#include <world/scene/SceneInstance.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+#include <world/serialization/EntityPatch.h>
 #include <world/serialization/SceneSerializationContext.h>
+#include <zone/KeptWithZone.h>
+#include <zone/ZoneStateStore.h>
 
+#include <algorithm>
+#include <map>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -22,107 +26,58 @@
 
 namespace
 {
-    struct HeldRecordSaves
+    std::vector<ZoneListEntity> SavedRecords(const World& world, const HeldRecordIndex& index,
+                                             std::vector<EntityId> records,
+                                             const ComponentSerializerRegistry& serializers,
+                                             SceneSerializationContext& context)
     {
+        return WriteHeldRecords(world, HeldRecordClosure(world, index, std::move(records)), serializers, context);
+    }
+
+    std::vector<EntityId> HeldBy(const HeldRecordIndex& index, EntityId holder)
+    {
+        return std::vector<EntityId>(index.RecordsOf(holder).begin(), index.RecordsOf(holder).end());
+    }
+
+    std::vector<EntityId> Waiting(const HeldRecordIndex& index)
+    {
+        std::vector<EntityId> records = index.AwaitingRecords();
+        const std::vector<EntityId> aside = index.SetAsideRecords();
+        records.insert(records.end(), aside.begin(), aside.end());
+        return records;
+    }
+
+    struct ScopeOrder
+    {
+        bool operator()(ZoneStateScope a, ZoneStateScope b) const
+        {
+            return a.Level != b.Level ? a.Level < b.Level : a.Zone < b.Zone;
+        }
     };
-
-    [[nodiscard]] bool SavedBeside(ComponentTypeId type)
-    {
-        return type == ResolveComponentTypeId<PersistentIdComponent>() || type == ResolveComponentTypeId<SceneInstance>();
-    }
-
-    void NameHolder(World& world, EntityId record, EntityId holder)
-    {
-        Held* held = world.TryGet<Held>(record);
-        if (held != nullptr && holder.IsValid() && !held->Holder.Target.IsValid())
-            held->Holder = PersistableRef{ .Entity = holder, .Target = EnsurePersistentId(world, holder) };
-    }
-
-    JsonValue SaveRecord(World& world, EntityId record, PersistentEntityId id,
-                         const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
-    {
-        JsonValue::Object components;
-        for (const auto& serializer : serializers.Entries())
-        {
-            if (SavedBeside(serializer->TypeId()))
-                continue;
-            JsonWriteArchive archive;
-            if (!serializer->Save(archive, record, world, context) || !archive.Ok())
-                continue;
-            if (JsonValue value = archive.TakeValue(); !value.IsNull())
-                components.emplace_back(std::string(serializer->JsonKey()), std::move(value));
-        }
-        return JsonValue(JsonValue::Object{ { "id", JsonValue(PersistentEntityIdToString(id)) },
-                                            { "components", JsonValue(std::move(components)) } });
-    }
-
-    void LoadRecord(World& world, PersistentEntityId id, const JsonValue& components,
-                    const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
-    {
-        Logger& log = context.Logging->GetLogger<HeldRecordSaves>();
-        const PersistentEntityIndex* identities = world.TryGetResource<PersistentEntityIndex>();
-        if (identities != nullptr && world.IsAlive(identities->TryResolve(id)))
-        {
-            log.Warn("save: held record {} was not restored; a live entity already has its id",
-                     PersistentEntityIdToString(id));
-            return;
-        }
-        const EntityId record = world.CreateEntity(PersistentStoragePartition);
-        world.AddComponent<PersistentIdComponent>(record, PersistentIdComponent{ id });
-        for (const auto& [key, value] : components.AsObject())
-        {
-            IComponentSerializer* serializer = serializers.FindByJsonKey(key);
-            JsonReadArchive archive(value);
-            if (serializer == nullptr || !serializer->LoadIntoWorld(archive, record, world, context) || !archive.Ok())
-            {
-                log.Warn("save: held record {} was not restored; this build cannot read its '{}'",
-                         PersistentEntityIdToString(id), key);
-                world.DestroyEntity(record);
-                return;
-            }
-        }
-        if (!world.HasComponent<Held>(record))
-            world.DestroyEntity(record);
-    }
 }
 
-JsonValue CaptureHeldRecords(World& world, std::span<const EntityId> roots,
+JsonValue CaptureHeldRecords(const World& world, std::span<const EntityId> roots,
                              const ComponentSerializerRegistry& serializers, SceneSerializationContext& context)
 {
     JsonValue::Array saved;
     const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
     if (index == nullptr || !world.IsRegistered<Held>())
         return JsonValue(JsonValue::Object{ { "records", JsonValue(std::move(saved)) } });
-    std::vector<EntityId> holders{ EntityId{} };
+    std::vector<EntityId> records;
+    for (const EntityId record : index->AwaitingRecords())
+        if (!index->AwaitingScopeOf(record).IsValid())
+            records.push_back(record);
+    const auto take = [&](EntityId holder) {
+        const std::vector<EntityId> held = HeldBy(*index, holder);
+        records.insert(records.end(), held.begin(), held.end());
+    };
+    take(EntityId{});
     for (const EntityId root : roots)
         if (world.IsAlive(root))
-            holders.push_back(root);
-    for (const EntityId holder : index->Holders())
-        if (HasAuthoredPersistentId(world, holder))
-            holders.push_back(holder);
-    std::vector<EntityId> records = index->AwaitingRecords();
-    for (const EntityId holder : holders)
-        records.insert(records.end(), index->RecordsOf(holder).begin(), index->RecordsOf(holder).end());
-    std::unordered_set<EntityId, EntityIdHash> seen;
-    for (int depth = 0; depth < kHeldDeepestNesting && !records.empty(); ++depth)
-    {
-        std::vector<EntityId> next;
-        for (const EntityId record : records)
-        {
-            if (!seen.insert(record).second)
-                continue;
-            if (!HasAuthoredPersistentId(world, record))
-            {
-                const PersistentEntityId id = EnsurePersistentId(world, record);
-                if (!id.IsValid())
-                    continue;
-                NameHolder(world, record, index->HolderOf(record));
-                saved.push_back(SaveRecord(world, record, id, serializers, context));
-            }
-            next.insert(next.end(), index->RecordsOf(record).begin(), index->RecordsOf(record).end());
-        }
-        records = std::move(next);
-    }
+            take(root);
+    for (ZoneListEntity& record : SavedRecords(world, *index, std::move(records), serializers, context))
+        saved.push_back(JsonValue(JsonValue::Object{ { "id", JsonValue(PersistentEntityIdToString(record.Id)) },
+                                                     { "components", std::move(record.Value) } }));
     return JsonValue(JsonValue::Object{ { "records", JsonValue(std::move(saved)) } });
 }
 
@@ -140,6 +95,43 @@ void RestoreHeldRecords(World& world, const JsonValue& data, const ComponentSeri
         const std::optional<PersistentEntityId> parsed =
             id != nullptr && id->IsString() ? PersistentEntityIdFromString(id->AsString()) : std::nullopt;
         if (parsed.has_value() && parsed->IsValid() && components != nullptr && components->IsObject())
-            LoadRecord(world, *parsed, *components, serializers, context);
+            (void)MakeHeldRecord(world, PersistentStoragePartition, ZoneListEntity{ *parsed, *components }, serializers,
+                                 context);
     }
+}
+
+std::vector<ScopedHeldRecords> CaptureLevelHeldRecords(const World& world,
+                                                      const std::function<ZoneStateScope(EntityId)>& scopeOf,
+                                                      const ComponentSerializerRegistry& serializers,
+                                                      SceneSerializationContext& context)
+{
+    std::vector<ScopedHeldRecords> scoped;
+    const HeldRecordIndex* index = world.TryGetResource<HeldRecordIndex>();
+    if (index == nullptr || !world.IsRegistered<Held>())
+        return scoped;
+    const ZoneStateStore* store = world.TryGetResource<ZoneStateStore>();
+    std::map<ZoneStateScope, std::vector<EntityId>, ScopeOrder> roots;
+    for (const EntityId holder : index->Holders())
+        if (HasAuthoredPersistentId(world, holder)
+            || (IsKeptWithZone(world, holder) && ForgettingOfKept(world, holder) == ZoneStateForgetting::Never))
+            if (const ZoneStateScope scope = scopeOf(holder); scope.IsValid())
+            {
+                const std::vector<EntityId> held = HeldBy(*index, holder);
+                roots[scope].insert(roots[scope].end(), held.begin(), held.end());
+            }
+    for (const EntityId record : Waiting(*index))
+        if (const ZoneStateScope scope = index->AwaitingScopeOf(record); scope.IsValid())
+        {
+            const PersistentEntityId holder = index->AwaitedHolderOf(record);
+            if (IsAuthoredPersistentEntityId(holder) || store == nullptr
+                || store->ForgettingOf(scope, holder) == ZoneStateForgetting::Never)
+                roots[scope].push_back(record);
+        }
+    for (auto& [scope, records] : roots)
+    {
+        std::vector<ZoneListEntity> saved = SavedRecords(world, *index, std::move(records), serializers, context);
+        if (!saved.empty())
+            scoped.push_back(ScopedHeldRecords{ scope, std::move(saved) });
+    }
+    return scoped;
 }

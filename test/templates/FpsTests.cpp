@@ -11,6 +11,7 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <logic/CounterVocabulary.h>
 #include <logic/Responses.h>
 #include <logic/ResponsesSystem.h>
 #include <movement/components/CharacterFacts.h>
@@ -24,6 +25,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 //=============================================================================
@@ -202,8 +204,6 @@ namespace
             World& world = ctx.Entities;
             ++Frames;
             const LevelChangeStatus status = Host->LevelChanges().Status();
-            if (Seen.empty() || Seen.back() != status)
-                Seen.push_back(status);
 
             EntityId participant;
             EntityId body;
@@ -225,10 +225,13 @@ namespace
                 if (lost.IsValid())
                     world.DestroyEntity(lost);
                 Admission = Host->LevelChanges().Request(
-                    LevelChangeRequest{ .Level = { .Kind = LevelKind::Scene, .Name = "levels/room_2" } });
+                    LevelChangeRequest::Travel({ .Kind = LevelKind::Scene, .Name = "levels/room_2" }, LevelMemory::Authored,
+                                               LevelChangeBodies::Fresh));
                 StatusOnRequest = Host->LevelChanges().Status();
             }
-            if (status == LevelChangeStatus::BodiesRestored && !BodyAfter.IsValid())
+            if (Frames > 120 && (Seen.empty() || Seen.back() != status))
+                Seen.push_back(status);
+            if (Frames > 120 && status == LevelChangeStatus::BodiesRestored && !BodyAfter.IsValid())
             {
                 BodyAfter = body;
                 AuthoredAfter = Authored(world);
@@ -249,8 +252,8 @@ TEST(FpsTemplate, AChangeToTheSameLevelGivesThePlayerAFreshBodyAndAuthoredConten
     ASSERT_EQ(seen.Admission, LevelChangeAdmission::Accepted);
     ASSERT_TRUE(seen.BodyBefore.IsValid()) << "no body to let go of by frame 120";
     EXPECT_EQ(seen.StatusOnRequest, LevelChangeStatus::Pending) << "carried out before the phase it waits for";
-    const std::vector<LevelChangeStatus> expected{ LevelChangeStatus::Idle, LevelChangeStatus::Loading,
-                                                   LevelChangeStatus::Resident, LevelChangeStatus::BodiesRestored };
+    const std::vector<LevelChangeStatus> expected{ LevelChangeStatus::Loading, LevelChangeStatus::Resident,
+                                                   LevelChangeStatus::BodiesRestored };
     EXPECT_EQ(seen.Seen, expected);
     EXPECT_TRUE(seen.BodyAfter.IsValid());
     EXPECT_NE(seen.BodyAfter, seen.BodyBefore) << "the old body was kept";
@@ -319,8 +322,7 @@ namespace
                 world.DestroyEntity(later);
                 Admission = Host->Saves().RequestRestore();
             }
-            if (!Restored && Frames > 120 && Host->LevelChanges().Serial() == Host->Saves().RestoreChange()
-                && Host->LevelChanges().Status() == LevelChangeStatus::BodiesRestored)
+            if (!Restored && Frames > 120 && Host->Saves().RestoreStatus() == RestoreProgress::BodiesRestored)
             {
                 Restored = true;
                 LostStaysLost = !index.TryResolve(LostBeforeTheSave).IsValid();
@@ -358,11 +360,13 @@ TEST(FpsTemplate, ASaveWrittenInOneRunIsRestoredInTheNext)
 }
 
 // The player's body comes back from a save in a fresh run: where it stood, the
-// tag it was given, and its persistent id.
+// tag it was given, the counter it holds, and the persistent id that counter
+// gave it by naming it as its holder.
 namespace
 {
     const std::filesystem::path kBodySavesRoot = std::filesystem::temp_directory_path() / "sencha_fps_body_saves";
     constexpr Vec3d kMovedTo{ 3.0, 1.0, 2.0 };
+    PersistentEntityId GivenBodyId;
     PersistentEntityId SavedBodyId;
     Vec3d SavedBodyAt = Vec3d::Zero();
 
@@ -382,6 +386,9 @@ namespace
                 GameplayTagRegistry& tags = world.GetResource<GameplayTagRegistry>();
                 world.TryGet<GameplayTagContainer>(body)->GrantBaseline(*tags.RegisterTag("test.saved"));
                 world.TryGet<LocalTransform>(body)->Value.Position = kMovedTo;
+                (void)WriteCounter(world, *tags.RegisterTag("test.held"), body, 2);
+                if (const PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(body))
+                    GivenBodyId = id->Id;
                 (void)Host->Saves().RequestWrite();
             }
             Status = Host->Saves().WriteStatus();
@@ -401,6 +408,7 @@ namespace
         int Frames = 0;
         bool Restored = false;
         bool Tagged = false;
+        std::optional<std::int32_t> Held;
         PersistentEntityId Id;
         Vec3d At = Vec3d::Zero();
 
@@ -408,17 +416,20 @@ namespace
         {
             World& world = ctx.Entities;
             if (++Frames == 1)
+            {
                 (void)world.GetResource<GameplayTagRegistry>().RegisterTag("test.saved");
+                (void)world.GetResource<GameplayTagRegistry>().RegisterTag("test.held");
+            }
             if (Frames == 60)
                 (void)Host->Saves().RequestRestore();
-            if (Restored || Frames <= 60 || Host->LevelChanges().Serial() != Host->Saves().RestoreChange()
-                || Host->LevelChanges().Status() != LevelChangeStatus::BodiesRestored)
+            if (Restored || Frames <= 60 || Host->Saves().RestoreStatus() != RestoreProgress::BodiesRestored)
                 return;
             Restored = true;
             const EntityId body = LocalControlSubjectOf(world);
             const auto tag = world.GetResource<GameplayTagRegistry>().FindTag("test.saved");
             const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(body);
             Tagged = tag.IsValid() && tags != nullptr && tags->BaselineCount(tag) > 0;
+            Held = CounterValue(world, world.GetResource<GameplayTagRegistry>().FindTag("test.held"), body);
             if (const PersistentIdComponent* id = world.TryGet<PersistentIdComponent>(body))
                 Id = id->Id;
             At = world.TryGet<LocalTransform>(body)->Value.Position;
@@ -436,7 +447,8 @@ TEST(FpsTemplate, ThePlayersBodyComesBackFromASaveInTheNextRun)
         ASSERT_TRUE(run.Loaded());
         ASSERT_EQ(run.Exit(), 0);
         ASSERT_EQ(run.Seen().Status, SaveStatus::Done);
-        ASSERT_TRUE(SavedBodyId.IsValid()) << "saving gave the body no persistent id";
+        ASSERT_TRUE(GivenBodyId.IsValid()) << "holding a counter gave the body no persistent id";
+        ASSERT_EQ(SavedBodyId, GivenBodyId) << "saving changed the id the body was given";
     }
     TemplateModuleRun<BodyRestoreProbe> run(TEST_FPS_MODULE_PATH, SENCHA_REPO_ROOT "/templates/fps/assets",
                                             "levels/room_2", 360, savesHere);
@@ -445,7 +457,8 @@ TEST(FpsTemplate, ThePlayersBodyComesBackFromASaveInTheNextRun)
     const BodyRestoreProbe& seen = run.Seen();
     ASSERT_TRUE(seen.Restored);
     EXPECT_TRUE(seen.Tagged) << "the baseline tag given before the save was lost";
-    EXPECT_EQ(seen.Id, SavedBodyId) << "the body came back under another identity";
+    EXPECT_EQ(seen.Id, GivenBodyId) << "the body came back under another identity";
+    EXPECT_EQ(seen.Held, 2) << "the counter the body held did not come back to it";
     EXPECT_NEAR(seen.At.X, SavedBodyAt.X, 0.5);
     EXPECT_NEAR(seen.At.Z, SavedBodyAt.Z, 0.5);
     std::filesystem::remove_all(kBodySavesRoot);

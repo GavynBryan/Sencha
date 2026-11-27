@@ -2,6 +2,7 @@
 // or one observer alone, through the same frame sight reports to; content
 // stages a stimulus through perception.stimulus.
 
+#include <authored/AuthoredApi.h>
 #include "PerceptionHarness.h"
 
 #include <authored/VerbBindingCompiler.h>
@@ -106,7 +107,8 @@ TEST(Hearing, ContentStagesThroughTheVerbAndMemoryKeepsWhoWasHeard)
     InstallAuthoredVocabulary(harness.Entities);
     ASSERT_TRUE(InstallPerceptionVocabulary(harness.Entities));
     VerbDispatcher verbs(*FindVerbRegistry(harness.Entities));
-    VerbBindingToken token = BindPerceptionVerbs(verbs, harness.Entities);
+    PerceptionOperations perception(harness.Entities);
+    AuthoredApiBindings token = BindAuthoredApi(&verbs, nullptr, perception);
     const EntityId shooter = harness.Target(Vec3d(0, 0, 8));
     const EntityId ear = harness.Ear(Vec3d::Zero());
     harness.Entities.AddComponent<ObservationMemory>(ear, ObservationMemory{});
@@ -114,7 +116,7 @@ TEST(Hearing, ContentStagesThroughTheVerbAndMemoryKeepsWhoWasHeard)
     VerbBindingDesc binding;
     binding.Key = "stimulus";
     binding.KeyId = MakeVerbBindingKey(binding.Key);
-    binding.VerbName = std::string(kPerceptionStimulusVerb);
+    binding.VerbName = std::string(AuthoredApiDefinition<PerceptionOperations>::Name_Stimulus);
     binding.Inputs = { "source" };
     VerbBindingArgument source;
     source.Key = "source";

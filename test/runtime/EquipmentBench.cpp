@@ -1,10 +1,3 @@
-// Records what equipment costs per tick: the ability pass over equipped
-// instances against the same effects applied directly, the movement tag
-// projections, a waiting record's rebinding with unrelated holders changing,
-// and the first pass after many wearers' records arrive at once. Env-gated:
-// SENCHA_EQUIPMENT_BENCH_OUT names the JSON written (a .csv beside it); run it
-// from the profile preset (docs/plans/evidence/equipment-overlay/results.md).
-
 #include "BenchRecorder.h"
 
 #include <abilities/AbilityDefinitionData.h>
@@ -54,11 +47,9 @@ namespace
     constexpr std::string_view kInstant = R"({
         "phases": [ { "key": "p_go", "then": [ { "key": "t_end", "to": "end" } ] } ] })";
 
-    // An authority World with a layout of two ring slots and a holding use.x,
-    // rings whose effect grants one ability, and bombs that hold their slot.
     struct EquipmentWorld
     {
-        EquipmentWorld()
+        explicit EquipmentWorld(std::size_t ringSlots = 2, std::size_t grantsPerRing = 1)
         {
             WorldComponentSchema schema;
             RegisterEngineRuntimeComponents(schema);
@@ -73,7 +64,11 @@ namespace
             Ring = *tags.RegisterTag("Item.Ring");
             Usable = *tags.RegisterTag("Item.Usable");
             EquipmentLayout layout;
-            for (const char* key : { "ring.left", "ring.right", "use.x" })
+            std::vector<std::string> keys;
+            for (std::size_t ring = 0; ring < ringSlots; ++ring)
+                keys.push_back(std::format("ring.{}", ring));
+            keys.push_back("use.x");
+            for (const std::string& key : keys)
             {
                 EquipmentSlot slot;
                 slot.Key = key;
@@ -93,8 +88,10 @@ namespace
             EffectDefinition lasting{};
             lasting.Duration = EffectDuration::Infinite;
             Glow = Entities().GetResource<EffectRegistry>().Define("asset://effects/glow.sdata", lasting);
-            (void)DeclareEffectGrants(Entities(), Glow,
-                                      { { .Key = "g_bolt", .Ability = "asset://abilities/bolt.sdata", .Override = {} } });
+            std::vector<AbilityGrantDeclaration> granted;
+            for (std::size_t g = 0; g < grantsPerRing; ++g)
+                granted.push_back({ .Key = std::format("g_bolt{}", g), .Ability = "asset://abilities/bolt.sdata", .Override = {} });
+            (void)DeclareEffectGrants(Entities(), Glow, granted);
             ItemRegistry& items = Entities().GetResource<ItemRegistry>();
             RingItem = items.Define("asset://items/ring.sdata",
                                     ItemDefinition{ .Name = "Ring", .Tags = { Ring }, .Occupies = { "ring" },
@@ -121,7 +118,6 @@ namespace
 
         FixedSimTime Time() const { return FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }; }
 
-        // Microseconds `fn` takes, averaged over `ticks` calls.
         template <typename Fn>
         double Average(int ticks, Fn&& fn)
         {
@@ -144,9 +140,6 @@ namespace
         std::uint64_t Now = 0;
     };
 
-    // The ability pass and the equipment pass over `wearers`, each wearing one
-    // ring through Equipment, or holding it with the ring's effect applied
-    // directly: the per-instance grant table's own cost is the difference.
     void RecordOverlay(std::size_t wearers, bool viaEquipment)
     {
         EquipmentWorld bench;
@@ -154,7 +147,7 @@ namespace
         for (std::size_t i = 0; i < wearers; ++i)
         {
             const EntityId wearer = bench.Wearer();
-            const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
+            const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
             if (viaEquipment)
                 EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, ring).Refusal, EquipmentRefusal::None);
             else
@@ -173,8 +166,32 @@ namespace
                         bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
     }
 
-    // The mode and support projections over `characters` that stand still: the
-    // per-tick read that finds nothing to write.
+    void RecordWorn(std::size_t wearers, std::size_t records, std::size_t grantsPerRing)
+    {
+        EquipmentWorld bench(records, grantsPerRing);
+        World& world = bench.Entities();
+        for (std::size_t i = 0; i < wearers; ++i)
+        {
+            const EntityId wearer = bench.Wearer();
+            for (std::size_t r = 0; r < records; ++r)
+            {
+                const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
+                EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, ring).Refusal, EquipmentRefusal::None);
+            }
+        }
+        const auto tick = [&] {
+            RunAbilityPass(world, AbilityHost{}, bench.Time());
+            RunEquipmentPass(world, bench.Time());
+        };
+        (void)bench.Average(5, tick);
+        const int ticks = Reps(100);
+        const std::string scenario = std::format("worn.wearers_{}.records_{}.grants_{}", wearers, records, records * grantsPerRing);
+        Recorder.Record(scenario + ".ability_pass", "us",
+                        bench.Average(ticks, [&] { RunAbilityPass(world, AbilityHost{}, bench.Time()); }));
+        Recorder.Record(scenario + ".equipment_pass", "us",
+                        bench.Average(ticks, [&] { RunEquipmentPass(world, bench.Time()); }));
+    }
+
     void RecordProjection(std::size_t characters)
     {
         World world;
@@ -212,8 +229,6 @@ namespace
         Recorder.Record(std::format("projection.{}.still", characters), "us", total / ticks);
     }
 
-    // `holders` wearers each with a record waiting in use.x, and one of them
-    // given a pebble every tick: the walks the pass takes, and its time.
     void RecordUnrelatedHolders(std::size_t holders)
     {
         EquipmentWorld bench;
@@ -224,8 +239,8 @@ namespace
             const EntityId wearer = bench.Wearer();
             wearers.push_back(wearer);
             for (int pebble = 0; pebble < 20; ++pebble)
-                (void)Inventory(world).Give(wearer, bench.Pebble, 1);
-            const EntityId bomb = Inventory(world).Give(wearer, bench.Bomb, 1).Entry;
+                (void)Inventory(world, FixedSimTime{}).Give(wearer, bench.Pebble, 1);
+            const EntityId bomb = Inventory(world, FixedSimTime{}).Give(wearer, bench.Bomb, 1).Entry;
             EXPECT_EQ(Equipment(world, bench.Time()).Equip(wearer, bomb).Refusal, EquipmentRefusal::None);
             world.TryGet<ItemEntry>(bomb)->Count = 0;
             NoteDepleted(world, bomb, EntityId{});
@@ -236,7 +251,7 @@ namespace
         const std::uint64_t before = EquipmentRebindWalks(world);
         const int ticks = Reps(100);
         const double pass = bench.Average(ticks, [&] {
-            (void)Inventory(world).Give(wearers.front(), bench.Pebble, 1);
+            (void)Inventory(world, FixedSimTime{}).Give(wearers.front(), bench.Pebble, 1);
             RunEquipmentPass(world, bench.Time());
         });
         Recorder.Record(std::format("rebind.{}.walks_per_tick", holders), "walks",
@@ -244,8 +259,6 @@ namespace
         Recorder.Record(std::format("rebind.{}.equipment_pass", holders), "us", pass);
     }
 
-    // `wearers` whose two records each arrive together, as a zone's NPCs do when
-    // it loads: the first pass derives every one of them.
     void RecordAdoptionBurst(std::size_t wearers)
     {
         EquipmentWorld bench;
@@ -253,17 +266,15 @@ namespace
         for (std::size_t i = 0; i < wearers; ++i)
         {
             const EntityId wearer = bench.Wearer();
-            // Giving moves the wearer's row, so its records are written once, after.
-            EquipmentState state = *std::as_const(world).TryGet<EquipmentState>(wearer);
+            EquipmentRecordList worn = CopyEquipment(world, wearer);
             for (std::uint8_t slot = 0; slot < 2; ++slot)
             {
-                const EntityId ring = Inventory(world).Give(wearer, bench.RingItem, 1).Entry;
-                state.Records[state.Count++] = EquipmentRecord{ .Key = state.NextKey++, .Definition = bench.RingItem,
-                                                                .Slots = 1u << slot, .Primary = slot,
-                                                                .Source = MakePersistableRef(world, ring),
-                                                                .Derivation = EquipmentDerivation::Pending };
+                const EntityId ring = Inventory(world, FixedSimTime{}).Give(wearer, bench.RingItem, 1).Entry;
+                worn.Records.push_back({ .Key = worn.NextKey++, .Definition = bench.RingItem, .Slots = 1u << slot,
+                                         .Primary = slot, .Source = MakePersistableRef(world, ring),
+                                         .Derivation = EquipmentDerivation::Pending });
             }
-            *world.TryGet<EquipmentState>(wearer) = state;
+            SetEquipment(world, wearer, worn);
         }
         const auto start = std::chrono::steady_clock::now();
         RunEquipmentPass(world, bench.Time());
@@ -290,6 +301,10 @@ TEST(EquipmentBench, Generate)
     for (const std::size_t holders : { 100u, 1000u })
         RecordUnrelatedHolders(holders);
     RecordAdoptionBurst(200);
+    RecordWorn(1000, 4, 1);
+    RecordWorn(100, 16, 1);
+    RecordWorn(100, 32, 2);
+    RecordWorn(1, 32, 2);
     const std::filesystem::path json(out);
     EXPECT_TRUE(Recorder.WriteJson(json));
     EXPECT_TRUE(Recorder.WriteCsv(std::filesystem::path(json).replace_extension(".csv")));

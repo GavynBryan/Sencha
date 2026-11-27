@@ -12,6 +12,7 @@ std::string_view AbilityRefusalName(AbilityRefusal refusal)
     case AbilityRefusal::Capacity: return "no room";
     case AbilityRefusal::CostFailed: return "cannot pay";
     case AbilityRefusal::PredictionFull: return "too many guesses undecided";
+    case AbilityRefusal::TagsFull: return "no room for its tags";
     }
     return "unknown";
 }

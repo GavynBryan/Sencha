@@ -227,3 +227,26 @@ TEST_F(ResponsesAuthoringTest, UndoingAPolicyEditAcrossASequenceEditKeepsTheSequ
     Workspace.Commands.Redo();
     EXPECT_EQ(Sequence(brush), configured);
 }
+
+TEST_F(ResponsesAuthoringTest, ATakeNamesItsEntryAndAnEquipReadsItInUndoableSteps)
+{
+    const EntityId brush = AddBrush({ 0, 0.5, 0 }, { 1, 0.5, 1 });
+    SelectEntity(brush);
+    Workspace.Actions.AddComponentsToBrushes(kTriggerVolume);
+    ASSERT_EQ(Inspector->Act("responses:b.enter.s.commands", "add", "inventory.take"), PropertyEditResult::Applied);
+    ASSERT_EQ(Inspector->Act("responses:b.enter.s.commands", "add", "equipment.equip"), PropertyEditResult::Applied);
+    const std::string unnamed = Sequence(brush);
+    ASSERT_EQ(Set("responses:b.enter.s.k0.as", "taken"), PropertyEditResult::Applied);
+    ASSERT_EQ(Set("responses:b.enter.s.k1.arg.entry.source", "Result of"), PropertyEditResult::Applied);
+    const std::string configured = Sequence(brush);
+    EXPECT_NE(configured.find(R"("as":"taken")"), std::string::npos) << configured;
+    EXPECT_NE(configured.find(R"({"result":"taken"})"), std::string::npos) << configured;
+    EXPECT_EQ(Find(Inspector->Nodes(), "responses:b.enter.s.k1.arg.entry.value")->Value, "taken");
+
+    Workspace.Commands.Undo();
+    Workspace.Commands.Undo();
+    EXPECT_EQ(Sequence(brush), unnamed);
+    Workspace.Commands.Redo();
+    Workspace.Commands.Redo();
+    EXPECT_EQ(Sequence(brush), configured);
+}

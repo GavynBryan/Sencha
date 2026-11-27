@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/text/InlineString.h>
+#include <gameplay_tags/GameplayTagId.h>
 #include <ecs/ComponentAnnotations.h>
 #include <physics/CollisionShape.h>
 
@@ -17,7 +17,7 @@ HitRegion
 {
     SENCHA_FIELD("region")
     SENCHA_TOOLTIP("The gameplay tag naming this part, as whatever reads strikes knows it.")
-    InlineString<64> Region;
+    GameplayTagId Region;
 
     SENCHA_FIELD("shape")
     SENCHA_TOOLTIP("Where the part is, in this entity's frame.")

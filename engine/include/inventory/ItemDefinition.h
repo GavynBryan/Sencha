@@ -3,16 +3,26 @@
 #include <abilities/AbilityDeclaration.h>
 #include <abilities/AbilityGrants.h>
 #include <attributes/AttributeId.h>
+#include <authored/AuthoredValue.h>
 #include <core/identity/NamedDefinitionRegistry.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/NamedIdField.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
+#include <gameplay_tags/GameplayTagQuery.h>
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
 using ItemId = StrongId<struct ItemIdTag, std::uint32_t>;
+
+template <>
+struct NamedIdField<ItemId>
+{
+    static constexpr NamedIdKind Kind = NamedIdKind::DataDefinition;
+    static const NamedIdVocabulary& Vocabulary();
+};
 
 struct ItemAttributeSeed
 {
@@ -34,7 +44,12 @@ struct ItemGrantParameters
     friend bool operator==(const ItemGrantParameters&, const ItemGrantParameters&) = default;
 };
 
-// docs/gameplay/inventory.md, "Item definitions"; equip fields: docs/gameplay/equipment.md.
+struct ItemProperty
+{
+    GameplayTagId Name;
+    AuthoredValue Value;
+};
+
 struct ItemDefinition
 {
     std::string Name{};
@@ -44,12 +59,14 @@ struct ItemDefinition
     std::vector<EffectId> TakeEffects{};
     std::vector<ItemAttributeSeed> Attributes{};
     std::vector<GameplayTagId> InstanceTags{};
-    // In the World's AbilityGrantEntries.
     std::uint16_t UseEntry = kAbilityNoGrantEntry;
     std::vector<std::string> Occupies{};
     std::vector<ItemEquipEffect> EquipEffects{};
     std::vector<GameplayTagId> EquipLockTags{};
     std::vector<ItemGrantParameters> GrantParameters{};
+    GameplayTagQuery EquipRequire{};
+    bool HasEquipRequire = false;
+    std::vector<ItemProperty> Properties{};
 };
 
 class ItemRegistry final : public NamedDefinitionRegistry<ItemId, ItemDefinition>

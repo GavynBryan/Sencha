@@ -132,6 +132,11 @@ public:
 
     void SetCapacity(std::size_t activations);
     void SetCommandBudget(std::size_t commands);
+    // Whether a failed command is logged, once per entity, binding, command and answer.
+    void SetLogRefusals(bool log) { LogRefusals = log; }
+    [[nodiscard]] bool LogsRefusals() const { return LogRefusals; }
+    // How many distinct failures are logged before the rest are only counted.
+    static constexpr std::size_t kLoggedRefusals = 256;
     [[nodiscard]] std::size_t Capacity() const { return QueueCapacity; }
     [[nodiscard]] std::size_t CommandBudget() const { return Budget; }
     [[nodiscard]] std::size_t Pending() const { return Queue.size(); }
@@ -239,6 +244,8 @@ private:
     void Observe(const SensorOverlaps& overlaps);
     void AnswerInteractions(World& world, const SensorOverlaps* overlaps, std::uint64_t now);
     void RunQueue(FixedLogicContext& ctx);
+    void ReportRefusal(World& world, ResponseDefinitions& definitions, const Activation& activation,
+                       const CompiledVerbSequence& sequence, const SequenceOutcome& outcome);
     void Compact(std::size_t waiting);
 
     World& Entities;
@@ -271,6 +278,10 @@ private:
     std::uint64_t ReportedOverflows = 0;
     std::uint64_t ReportedCompiles = 0;
     bool QueueFullReported = false;
+    bool LogRefusals = false;
+    std::array<std::uint64_t, kLoggedRefusals> LoggedRefusals{};
+    std::size_t LoggedRefusalCount = 0;
+    bool RefusalLogStopped = false;
     std::vector<bool> InvalidPayloadReported;
     Counters Counts;
     VerbSequenceRunner JudgeRunner;

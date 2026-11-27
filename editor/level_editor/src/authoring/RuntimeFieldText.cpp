@@ -306,7 +306,7 @@ bool IsRuntimeFieldEditable(const RuntimeField& field)
 {
     // An asset handle is refcounted and session-local, so it never travels as
     // bytes; it needs a picker and the command that goes with one.
-    if (field.ReadOnly || field.Asset != AssetType::Unknown)
+    if (field.ReadOnly || field.Asset != AssetType::Unknown || field.Names != nullptr)
         return false;
     return field.InlineText || IsScalarKind(field);
 }

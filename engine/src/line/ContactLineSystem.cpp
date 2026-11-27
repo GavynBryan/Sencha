@@ -23,6 +23,7 @@
 #include <physics/components/CharacterMoverLink.h>
 #include <projectile/ProjectileHit.h>
 #include <projectile/ProjectileSystem.h>
+#include <projectile/ProjectileVerbs.h>
 #include <world/SimulationAuthority.h>
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
@@ -62,180 +63,7 @@ void BeginRetract(ContactLineState& state)
     state.Remaining = kMostRetractSeconds;
 }
 
-AuthoredQueryStatus EvaluateAnchored(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
-                                     AuthoredValue& result)
-{
-    EntityId instigator;
-    if (!ReadAuthoredArgument(arguments, 0, instigator))
-        return AuthoredQueryStatus::InvalidArguments;
-    result = AuthoredValue::Bool(system.AnchorOf(instigator).has_value());
-    return AuthoredQueryStatus::Value;
-}
-
-AuthoredQueryStatus EvaluateAnchoredWithin(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
-                                           AuthoredValue& result)
-{
-    EntityId instigator;
-    Vec3d point;
-    float distance = 0.0f;
-    if (!ReadAuthoredArgument(arguments, 0, instigator)
-        || !ReadAuthoredArgument(arguments, 1, point)
-        || !ReadAuthoredArgument(arguments, 2, distance))
-        return AuthoredQueryStatus::InvalidArguments;
-    const std::optional<Vec3d> anchor = system.AnchorOf(instigator);
-    result = AuthoredValue::Bool(anchor.has_value() && (*anchor - point).Magnitude() <= distance);
-    return AuthoredQueryStatus::Value;
-}
-
-AuthoredQueryStatus EvaluateAnchor(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
-                                   AuthoredValue& result)
-{
-    EntityId instigator;
-    if (!ReadAuthoredArgument(arguments, 0, instigator))
-        return AuthoredQueryStatus::InvalidArguments;
-    const std::optional<Vec3d> anchor = system.AnchorOf(instigator);
-    if (!anchor)
-        return AuthoredQueryStatus::Unavailable;
-    result = AuthoredValueTraits<Vec3d>::Encode(*anchor);
-    return AuthoredQueryStatus::Value;
-}
-
-AuthoredQueryStatus EvaluateStuck(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
-                                  AuthoredValue& result)
-{
-    EntityId instigator;
-    if (!ReadAuthoredArgument(arguments, 0, instigator))
-        return AuthoredQueryStatus::InvalidArguments;
-    result = AuthoredValue::Bool(system.StuckPoint(instigator, 0.0f).has_value());
-    return AuthoredQueryStatus::Value;
-}
-
-AuthoredQueryStatus EvaluateStuckPoint(const ContactLineSystem& system, std::span<const AuthoredValue> arguments,
-                                       AuthoredValue& result)
-{
-    EntityId instigator;
-    float shortOf = 0.0f;
-    if (!ReadAuthoredArgument(arguments, 0, instigator)
-        || !ReadAuthoredArgument(arguments, 1, shortOf))
-        return AuthoredQueryStatus::InvalidArguments;
-    const std::optional<Vec3d> point = system.StuckPoint(instigator, shortOf);
-    if (!point)
-        return AuthoredQueryStatus::Unavailable;
-    result = AuthoredValueTraits<Vec3d>::Encode(*point);
-    return AuthoredQueryStatus::Value;
-}
 } // namespace
-
-void DeclareContactLineVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries)
-{
-    VerbDefinition extend;
-    extend.Name = std::string(kLineExtendLease);
-    extend.DisplayName = "Extend line";
-    extend.Description = "Throws a line with a projectile and keeps it out while held. Letting go draws it home.";
-    extend.Category = "Lines";
-    extend.Kind = VerbKind::Lease;
-    extend.Completes = true;
-    extend.Arguments.Children.push_back(
-        MakeDataField(DataFieldKind::Entity, "instigator", "Instigator", "Whose line it is: where it runs from."));
-    DataFieldSchema line = MakeDataField(DataFieldKind::AssetRef, "line", "Line", "The prefab: a scene whose root "
-                                                                                 "carries Contact Line.");
-    line.Reference.AssetTypeFilter = AssetType::Scene;
-    extend.Arguments.Children.push_back(std::move(line));
-    DataFieldSchema projectile =
-        MakeDataField(DataFieldKind::AssetRef, "projectile", "Projectile", "The projectile prefab that throws its tip.");
-    projectile.Reference.AssetTypeFilter = AssetType::Scene;
-    extend.Arguments.Children.push_back(std::move(projectile));
-    DataFieldSchema at = MakeDataField(DataFieldKind::Vector, "at", "At", "A point to throw it at. The aim when absent.");
-    at.VectorLength = 3;
-    at.Required = false;
-    extend.Arguments.Children.push_back(std::move(at));
-    DataFieldSchema keep = MakeDataField(DataFieldKind::Bool, "keep", "Keep",
-                                         "Left where it stuck when let go, rather than drawn home.");
-    keep.Required = false;
-    extend.Arguments.Children.push_back(std::move(keep));
-    (void)verbs.Declare(std::move(extend));
-
-    VerbDefinition cut;
-    cut.Name = std::string(kLineCutVerb);
-    cut.DisplayName = "Cut lines";
-    cut.Description = "Ends every line the instigator has out, where it is, striking nothing more.";
-    cut.Category = "Lines";
-    cut.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "instigator", "Instigator"));
-    (void)verbs.Declare(std::move(cut));
-
-    VerbDefinition retract;
-    retract.Name = std::string(kLineRetractVerb);
-    retract.DisplayName = "Retract lines";
-    retract.Description = "Draws home every line the instigator has left anchored.";
-    retract.Category = "Lines";
-    retract.Arguments.Children.push_back(MakeDataField(DataFieldKind::Entity, "instigator", "Instigator"));
-    DataFieldSchema keepNewest = MakeDataField(DataFieldKind::Bool, "keep_newest", "Keep newest",
-                                               "Leaves the newest of them where it is.");
-    keepNewest.Required = false;
-    retract.Arguments.Children.push_back(std::move(keepNewest));
-    (void)verbs.Declare(std::move(retract));
-
-    AuthoredQueryDefinition anchored;
-    anchored.Name = std::string(kLineAnchoredQuery);
-    anchored.DisplayName = "Line anchored";
-    anchored.Description = "Whether the instigator is holding a line anchored.";
-    anchored.Category = "Lines";
-    anchored.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
-    anchored.Result = AuthoredField<bool>("anchored", "Anchored");
-    (void)queries.Declare(std::move(anchored));
-
-    AuthoredQueryDefinition within;
-    within.Name = std::string(kLineAnchoredWithinQuery);
-    within.DisplayName = "Line anchored within";
-    within.Description = "Whether the instigator is holding a line anchored within a distance of a point.";
-    within.Category = "Lines";
-    within.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator"), AuthoredField<Vec3d>("point", "Point"),
-                                  AuthoredField<float>("distance", "Distance", "In metres.") };
-    within.Result = AuthoredField<bool>("anchored", "Anchored");
-    (void)queries.Declare(std::move(within));
-
-    AuthoredQueryDefinition anchor;
-    anchor.Name = std::string(kLineAnchorQuery);
-    anchor.DisplayName = "Line anchor";
-    anchor.Description = "Where the line the instigator is holding is anchored; unavailable when none is.";
-    anchor.Category = "Lines";
-    anchor.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
-    anchor.Result = AuthoredField<Vec3d>("anchor", "Anchor");
-    (void)queries.Declare(std::move(anchor));
-
-    AuthoredQueryDefinition stuck;
-    stuck.Name = std::string(kLineStuckQuery);
-    stuck.DisplayName = "Line stuck";
-    stuck.Description = "Whether the instigator has let go of a line and left it stuck where it landed.";
-    stuck.Category = "Lines";
-    stuck.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator") };
-    stuck.Result = AuthoredField<bool>("stuck", "Stuck");
-    (void)queries.Declare(std::move(stuck));
-
-    AuthoredQueryDefinition stuckPoint;
-    stuckPoint.Name = std::string(kLineStuckPointQuery);
-    stuckPoint.DisplayName = "Line stuck point";
-    stuckPoint.Description = "A point on the newest line the instigator has left stuck, some metres short of where "
-                             "it landed; unavailable when none is.";
-    stuckPoint.Category = "Lines";
-    stuckPoint.Arguments.Children = { AuthoredField<EntityId>("instigator", "Instigator"),
-                                      AuthoredField<float>("short_of", "Short of", "In metres, back along the line.") };
-    stuckPoint.Result = AuthoredField<Vec3d>("point", "Point");
-    (void)queries.Declare(std::move(stuckPoint));
-}
-
-std::vector<AuthoredQueryBindingToken> BindContactLineQueries(AuthoredQueryDispatcher& dispatcher,
-                                                              const ContactLineSystem& system)
-{
-    const AuthoredQueryRegistry& registry = dispatcher.Registry();
-    std::vector<AuthoredQueryBindingToken> tokens;
-    tokens.push_back(dispatcher.Bind<&EvaluateAnchored>(registry.Find(kLineAnchoredQuery), system));
-    tokens.push_back(dispatcher.Bind<&EvaluateAnchoredWithin>(registry.Find(kLineAnchoredWithinQuery), system));
-    tokens.push_back(dispatcher.Bind<&EvaluateAnchor>(registry.Find(kLineAnchorQuery), system));
-    tokens.push_back(dispatcher.Bind<&EvaluateStuck>(registry.Find(kLineStuckQuery), system));
-    tokens.push_back(dispatcher.Bind<&EvaluateStuckPoint>(registry.Find(kLineStuckPointQuery), system));
-    return tokens;
-}
 
 ContactLineSystem::ContactLineSystem(World& world, const Services& services)
     : Entities(&world)
@@ -264,10 +92,6 @@ bool ResolveLine(const World& world, const ContactLine* authored, ContactLineSta
     AuthoredNameResolver names(world);
     if (authored == nullptr || !std::isfinite(authored->Radius) || authored->Radius <= 0.0f)
         return false;
-    names.Tag(authored->Kind.View(), state.Kind);
-    names.Tag(authored->Ignores.View(), state.Ignores);
-    names.Tag(authored->AnchorCue.View(), state.AnchorCue);
-    names.Tag(authored->CutCue.View(), state.CutCue);
     names.Effect(authored->Effect.View(), state.Effect);
     return names.Resolved();
 }
@@ -300,53 +124,29 @@ bool TakeSlot(World& world, const ContactLine& authored, ContactLineState& state
     return true;
 }
 
-struct LineThrow
-{
-    EntityId Instigator;
-    const AssetRef* Line = nullptr;
-    const AssetRef* Projectile = nullptr;
-    std::optional<Vec3d> At;
-    bool Keep = false;
-};
-
-bool ReadThrow(const AuthoredArguments* arguments, LineThrow& out)
-{
-    if (arguments == nullptr || !arguments->TryGetEntity(0, out.Instigator) || !arguments->TryGetAsset(1, out.Line)
-        || !arguments->TryGetAsset(2, out.Projectile))
-        return false;
-    if (Vec3d at; ReadAuthoredArgument(*arguments, 3, at))
-        out.At = at;
-    (void)arguments->TryGetBool(4, out.Keep);
-    return true;
-}
-
-VerbAdmission AdmissionOf(ProjectileLaunchResult result)
-{
-    switch (result)
-    {
-    case ProjectileLaunchResult::Launched: return VerbAdmission::Accepted;
-    case ProjectileLaunchResult::Full: return VerbAdmission::QueueFull;
-    case ProjectileLaunchResult::Unresolved: return VerbAdmission::UnresolvedReference;
-    default: return VerbAdmission::Refused;
-    }
-}
 } // namespace
 
-VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation)
+VerbAdmission ContactLineSystem::Extend(const VerbInvocation& invocation, EntityId instigator, const AssetRef& line,
+                                       const AssetRef& projectile, std::optional<Vec3d> at, std::optional<bool> keep)
 {
-    if (invocation.Step == LeaseStep::Probe)
-    {
-        bool out = false;
-        ForEachHeldBy(*Entities, invocation.Owner,
-                      [&](EntityId, const ContactLineState& state) { out = out || state.Stage != ContactLineStage::Retracting; });
-        return out ? VerbAdmission::Accepted : VerbAdmission::Refused;
-    }
-    if (invocation.Step == LeaseStep::Release)
-    {
-        LetGo(invocation.Owner, invocation.Tick);
-        return VerbAdmission::Accepted;
-    }
-    return Throw(invocation);
+    return Throw(invocation, instigator, line, projectile, at, keep.value_or(false));
+}
+
+VerbAdmission ContactLineSystem::EndExtend(const VerbInvocation& invocation)
+{
+    LetGo(invocation.Owner, invocation.Tick);
+    return VerbAdmission::Accepted;
+}
+
+bool ContactLineSystem::ExtendHolds(const LeaseOwner& owner) const
+{
+    const World& world = *Entities;
+    bool out = false;
+    if (world.IsRegistered<ContactLineState>())
+        world.ForEachComponent<ContactLineState>([&](EntityId, const ContactLineState& state) {
+            out = out || (state.Owner == owner && state.Stage != ContactLineStage::Retracting);
+        });
+    return out;
 }
 
 void ContactLineSystem::LetGo(const LeaseOwner& owner, std::uint64_t tick)
@@ -366,30 +166,28 @@ void ContactLineSystem::LetGo(const LeaseOwner& owner, std::uint64_t tick)
         Remove(line, tick);
 }
 
-VerbAdmission ContactLineSystem::Throw(const VerbInvocation& invocation)
+VerbAdmission ContactLineSystem::Throw(const VerbInvocation& invocation, EntityId instigator, const AssetRef& line,
+                                      const AssetRef& projectile, std::optional<Vec3d> at, bool keep)
 {
     World& world = *Entities;
-    LineThrow request;
-    if (!ReadThrow(invocation.Arguments, request) || !world.IsAlive(request.Instigator))
-        return VerbAdmission::InvalidArguments;
-    if (!IsSimulationAuthority(world) || Host.Prefabs == nullptr || Host.Projectiles == nullptr)
+    if (Host.Prefabs == nullptr || Host.Projectiles == nullptr)
         return VerbAdmission::Refused;
-    const AssetId lineId = Host.Projectiles->PrefabOf(*request.Line);
-    const AssetId shotId = Host.Projectiles->PrefabOf(*request.Projectile);
+    const AssetId lineId = Host.Projectiles->PrefabOf(line);
+    const AssetId shotId = Host.Projectiles->PrefabOf(projectile);
     if (!lineId.IsValid() || !shotId.IsValid() || Host.Prefabs->Prepare(lineId) != NetPrefabReadiness::Ready)
         return VerbAdmission::UnresolvedReference;
 
-    const EntityId root = Host.Prefabs->Instantiate(lineId, world, world.GetEntityPartition(request.Instigator));
+    const EntityId root = Host.Prefabs->Instantiate(lineId, world, world.GetEntityPartition(instigator));
     if (!root.IsValid())
         return VerbAdmission::UnresolvedReference;
     ContactLineState state;
     state.Owner = invocation.Owner;
-    state.Instigator = request.Instigator;
-    state.Kept = request.Keep;
+    state.Instigator = instigator;
+    state.Kept = keep;
     const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(root);
     VerbAdmission admission = VerbAdmission::UnresolvedReference;
     if (ResolveLine(world, authored, state))
-        admission = TakeSlot(world, *authored, state) ? LaunchTip(state, *authored, shotId, request.At, invocation.Tick)
+        admission = TakeSlot(world, *authored, state) ? LaunchTip(state, *authored, shotId, at, invocation.Tick)
                                                       : VerbAdmission::Refused;
     if (admission != VerbAdmission::Accepted)
     {
@@ -418,17 +216,12 @@ VerbAdmission ContactLineSystem::LaunchTip(ContactLineState& state, const Contac
     launch.Seed = Host.Projectiles->NextSeed(state.Instigator, tick);
     ProjectileLaunchResult result = ProjectileLaunchResult::Refused;
     state.Projectile = Host.Projectiles->Launch(launch, &result);
-    return AdmissionOf(result);
+    return ProjectileLaunchAdmission(result);
 }
 
-VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation)
+VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation, EntityId instigator)
 {
     World& world = *Entities;
-    EntityId instigator;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, instigator))
-        return VerbAdmission::InvalidArguments;
-    if (!IsSimulationAuthority(world))
-        return VerbAdmission::Refused;
     if (!world.IsRegistered<ContactLineState>())
         return VerbAdmission::Accepted;
     Scratch.clear();
@@ -438,24 +231,35 @@ VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation)
     });
     for (const EntityId line : Scratch)
     {
-        if (const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line))
-            CueAt(*state, line, state->CutCue, state->Tip, invocation.Tick);
+        const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line);
+        const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
+        if (state != nullptr && authored != nullptr)
+            CueAt(*state, line, authored->CutCue, state->Tip, invocation.Tick);
         Remove(line, invocation.Tick);
     }
     return VerbAdmission::Accepted;
 }
 
-VerbAdmission ContactLineSystem::Retract(const VerbInvocation& invocation)
+VerbAdmission ContactLineSystem::Retract(EntityId instigator, std::optional<bool> keepNewest)
 {
-    EntityId instigator;
-    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, instigator))
-        return VerbAdmission::InvalidArguments;
-    if (!IsSimulationAuthority(*Entities))
-        return VerbAdmission::Refused;
-    bool keepNewest = false;
-    (void)invocation.Arguments->TryGetBool(1, keepNewest);
-    RetractKeptContactLines(*Entities, instigator, keepNewest);
+    RetractKeptContactLines(*Entities, instigator, keepNewest.value_or(false));
     return VerbAdmission::Accepted;
+}
+
+bool ContactLineSystem::Anchored(EntityId instigator) const
+{
+    return AnchorOf(instigator).has_value();
+}
+
+bool ContactLineSystem::AnchoredWithin(EntityId instigator, Vec3d point, float distance) const
+{
+    const std::optional<Vec3d> anchor = AnchorOf(instigator);
+    return anchor.has_value() && (*anchor - point).Magnitude() <= distance;
+}
+
+bool ContactLineSystem::Stuck(EntityId instigator) const
+{
+    return StuckPoint(instigator, 0.0f).has_value();
 }
 
 std::optional<Vec3d> ContactLineSystem::AnchorOf(EntityId instigator) const
@@ -548,13 +352,13 @@ bool TakeStrike(ContactLineState& state, const ContactLine& authored, EntityId t
     return true;
 }
 
-const WorldTransform* StrikablePose(const World& world, const ContactLineState& state, EntityId target)
+const WorldTransform* StrikablePose(const World& world, const ContactLine& authored, EntityId target)
 {
     if (!world.IsAlive(target) || !world.HasComponent<CharacterMoverLink>(target))
         return nullptr;
-    if (state.Ignores.IsValid())
+    if (authored.Ignores.IsValid())
         if (const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target);
-            tags != nullptr && tags->HasExact(state.Ignores))
+            tags != nullptr && tags->HasExact(authored.Ignores))
             return nullptr;
     return world.TryGet<WorldTransform>(target);
 }
@@ -661,7 +465,7 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
 
     if (state.Stage != ContactLineStage::Retracting && !StrikeAlong(line, state, authored, root, now))
     {
-        CueAt(state, line, state.CutCue, state.Tip, now.TickIndex);
+        CueAt(state, line, authored.CutCue, state.Tip, now.TickIndex);
         Remove(line, now.TickIndex);
         return;
     }
@@ -686,7 +490,7 @@ void ContactLineSystem::FollowTip(EntityId line, ContactLineState& state, const 
         state.Remaining = authored.AnchorSeconds;
         if (const LocalTransform* body = world.TryGet<LocalTransform>(state.Instigator))
             state.Length = (state.Tip - body->Value.Position).Magnitude();
-        CueAt(state, line, state.AnchorCue, state.Tip, tick);
+        CueAt(state, line, authored.AnchorCue, state.Tip, tick);
         return;
     }
     const LocalTransform* tip = world.IsAlive(state.Projectile) ? world.TryGet<LocalTransform>(state.Projectile) : nullptr;
@@ -742,13 +546,13 @@ bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, cons
                       root + direction * (reach * 0.5f), CapsuleAlong(direction), Overlaps, touching);
     for (const EntityId target : Overlaps)
     {
-        const WorldTransform* pose = StrikablePose(*Entities, state, target);
+        const WorldTransform* pose = StrikablePose(*Entities, authored, target);
         if (pose == nullptr || !TakeStrike(state, authored, target))
             continue;
         const float along = std::clamp((pose->Value.Position - root).Dot(direction), 0.0f, reach);
         const Vec3d point = root + direction * along;
         const Vec3d away = pose->Value.Position - point;
-        Strike(line, state, target, point,
+        Strike(line, state, authored.Kind, target, point,
                away.SqrMagnitude() > 1.0e-6f ? away.Normalized() : direction.Cross(Vec3d::Up()).Normalized(), now);
     }
     return true;
@@ -767,8 +571,8 @@ bool ContactLineSystem::CrossesSolid(const ContactLineState& state, const Vec3d&
     return PhysicsQueries(*Host.Physics).Raycast(root, direction, clear, solid).Hit;
 }
 
-void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point,
-                               const Vec3d& away, const FixedSimTime& now)
+void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, GameplayTagId kind, EntityId target,
+                               const Vec3d& point, const Vec3d& away, const FixedSimTime& now)
 {
     World& world = *Entities;
     const EffectSource source{ .Instigator = state.Instigator, .Point = point, .Direction = away,
@@ -778,7 +582,7 @@ void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, Ent
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = state.Instigator,
                                                              .Projectile = line,
-                                                             .Kind = state.Kind,
+                                                             .Kind = kind,
                                                              .Point = point,
                                                              .Normal = away });
 }

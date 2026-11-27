@@ -19,6 +19,7 @@ struct SENCHA_COMPONENT("test.codegen.golden")
        SENCHA_REPLICATED
        SENCHA_PREDICTED
        SENCHA_NON_REMOVABLE
+       SENCHA_SAVED
        SENCHA_VISUAL_MESH("golden.glb")
 CodegenGolden
 {
@@ -40,6 +41,14 @@ CodegenGolden
     SENCHA_FIELD("derived")
     SENCHA_LOCAL_ONLY
     float Derived = 0.0f;
+
+    SENCHA_FIELD("engaged")
+    SENCHA_RUNTIME
+    bool Engaged = false;
+
+    SENCHA_FIELD("tethered")
+    SENCHA_UNSAVED
+    bool Tethered = false;
 
     // Untagged: not part of the schema, and adding one must never change the
     // scene format or the replication layout.

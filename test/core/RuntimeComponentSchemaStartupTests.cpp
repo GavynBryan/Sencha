@@ -226,9 +226,12 @@ TEST(RuntimeComponentSchema, OneRegistrationFillsEveryRegistryConsistently)
     EXPECT_NE(serializers.FindByType(ResolveComponentTypeId<PointLightComponent>()), nullptr);
     EXPECT_EQ(layout.Find(ResolveComponentTypeId<PointLightComponent>()), nullptr);
 
-    // KinematicState is a fact the last step achieved, never authored.
+    EXPECT_NE(layout.Find(ResolveComponentTypeId<SupportState>()), nullptr);
+    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<SupportState>()), nullptr);
     EXPECT_NE(layout.Find(ResolveComponentTypeId<KinematicState>()), nullptr);
-    EXPECT_EQ(serializers.FindByType(ResolveComponentTypeId<KinematicState>()), nullptr);
+    const IComponentSerializer* velocity = serializers.FindByType(ResolveComponentTypeId<KinematicState>());
+    ASSERT_NE(velocity, nullptr);
+    EXPECT_FALSE(velocity->Authorable());
 
     // Declaring both puts a component in both, and nothing about either policy
     // is conditioned on the other.

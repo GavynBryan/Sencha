@@ -20,7 +20,7 @@ struct ValueBounds
     [[nodiscard]] static ValueBounds Exactly(double value) { return { value, value }; }
 };
 
-// Reads {min, max} or {expect}.
+// Reads {min, max} or {expect}; a bound left out is open.
 [[nodiscard]] bool ReadValueBounds(const JsonValue& require, ValueBounds& out, std::string_view subject,
                                    std::vector<std::string>& errors);
 
