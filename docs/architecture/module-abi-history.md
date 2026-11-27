@@ -1836,3 +1836,12 @@ is unchanged (a tag's name), but a tag content does not declare now refuses the
 prefab where it is read instead of every launch. Schema fingerprints change, so
 cooked prefabs holding them are recooked; the save format, the replication
 table hash and the net protocol do not change.
+
+## v87
+
+`SceneCache::Replace` and `SceneAssetLoader::CommitReload` let a resident cooked
+scene take new contents in place, so the scene kind registers a reload.
+`MountCookedFile` (`assets/runtime/ContentMount.h`) mounts one file a cook wrote
+into a stack: registered when new, reloaded where resident. A document cook's
+cache key now holds the schema fingerprints of the components its scene carries,
+so cooked scenes recook once. No format, save or protocol change.

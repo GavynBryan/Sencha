@@ -159,6 +159,15 @@ inherited value came from with revert and restore, are not built yet
   (`RecookComposedDependents`), on the owner thread, skipped while a cook runs.
 - The derived `.smap` keeps the derived scene's asset id, so spawning and
   `NetSpawnPrefab` are unchanged.
+- A document's cache key holds the schema fingerprint of every component its
+  cooked scene carries, the composed members' and the generated cells' among
+  them: the check a runtime makes before it reads the `.smap`. A schema change
+  recooks the documents that hold the component instead of leaving a scene the
+  runtime refuses with "recook the level".
+- A cook given an asset stack (`CookDocument(..., RuntimeAssets*)`) mounts the
+  scene it wrote into that stack (`MountCookedFile`): a new `.smap` is
+  registered, and a resident one takes the new contents in place. So one cook
+  run can cook a prefab and then a level whose data loads it.
 
 The rules and their rationale are in
 `docs/plans/composition-stage2-prefab-extends.md`.

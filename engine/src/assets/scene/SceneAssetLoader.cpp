@@ -3,6 +3,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
+#include <any>
 #include <cstddef>
 #include <format>
 #include <utility>
@@ -79,4 +80,12 @@ SceneHandle SceneAssetLoader::CommitTyped(AssetStaging&& staged)
         Log.Error("SceneAssetLoader: failed to register scene '{}'", staged.Record.Path);
 
     return handle;
+}
+
+bool SceneAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    SmapContents* contents = std::any_cast<SmapContents>(&staged.Payload);
+    if (!staged.IsValid() || Cache == nullptr || contents == nullptr)
+        return false;
+    return Cache->Replace(staged.Record.Path, std::move(*contents));
 }

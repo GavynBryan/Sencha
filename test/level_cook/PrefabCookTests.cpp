@@ -11,10 +11,13 @@
 #include "CookedSmapReaders.h"
 
 #include <assets/cook/CookedCache.h>
+#include <assets/runtime/ContentMount.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
 #include <world/scene/SmapFormat.h>
+#include <world/serialization/ComponentSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -258,4 +261,134 @@ TEST_F(PrefabCookTest, AGuardChainCooksFlatAndRecordsItsSources)
     const CookedSourceEntry* entry = index.Find("prefabs/actors/elite_guard.sscene");
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->AdditionalSources.size(), 4u) << "the guard, the humanoid, and both fragments";
+}
+
+namespace
+{
+    class ReshapedPointLightSerializer final : public ComponentSerializer<PointLightComponent>
+    {
+    public:
+        ReshapedPointLightSerializer()
+        {
+            const std::span<const RuntimeField> fields = ComponentSerializer<PointLightComponent>::RuntimeFields();
+            Fields.assign(fields.begin(), fields.end());
+            Fields.front().Name += "_reshaped";
+        }
+
+        std::span<const RuntimeField> RuntimeFields() const override { return Fields; }
+
+    private:
+        std::vector<RuntimeField> Fields;
+    };
+
+    class ReshapedPointLightSchema
+    {
+    public:
+        ReshapedPointLightSchema() { Swap(std::make_unique<ReshapedPointLightSerializer>()); }
+        ~ReshapedPointLightSchema() { Swap(std::make_unique<ComponentSerializer<PointLightComponent>>()); }
+        ReshapedPointLightSchema(const ReshapedPointLightSchema&) = delete;
+        ReshapedPointLightSchema& operator=(const ReshapedPointLightSchema&) = delete;
+
+    private:
+        static void Swap(std::unique_ptr<IComponentSerializer> serializer)
+        {
+            ComponentSerializerRegistry& serializers = EditorSceneSerializers();
+            ASSERT_TRUE(serializers.Remove(serializer->TypeId()));
+            ASSERT_EQ(serializers.Register(std::move(serializer)), ComponentSerializerRegistry::RegisterResult::Added);
+        }
+    };
+
+    constexpr std::string_view kLaunchBindings = R"({ "type": "authored.bindings", "version": 1, "data": {
+        "bindings": [ { "key": "fire", "verb": "test.fire",
+            "arguments": { "projectile": { "asset": "asset://prefabs/bolt.smap" } } } ] } })";
+
+    constexpr std::string_view kRange = R"({ format_version: 2, entities: [
+        { id: '00000000000000b1', components: {
+            Transform: { local: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+            PointLight: { intensity: 5, range: 3 },
+            verb_relay: { bindings: 'asset://data/launch.sdata', binding: 'fire' } } } ] })";
+
+    bool ReadsUnderTodaysSchema(const fs::path& smap)
+    {
+        SmapContents contents;
+        return ReadSmapFile(smap, EditorSceneSerializers(), contents);
+    }
+
+    std::optional<double> ResidentIntensity(RuntimeAssets& assets, std::string_view path)
+    {
+        const SmapContents* contents = assets.Scenes.Get(assets.Scenes.Find(path));
+        if (contents == nullptr)
+            return std::nullopt;
+        for (const SmapEntityRecord& record : contents->Entities)
+            if (const JsonValue* light = FindCookedComponent(record, "PointLight"))
+                return light->Find("intensity")->AsNumber();
+        return std::nullopt;
+    }
+}
+
+TEST_F(PrefabCookTest, ACachedLevelRecooksWhenAComponentSchemaChanges)
+{
+    const fs::path level = AuthorPrefab("levels/lamp_room.sscene", Vec3d{ 0, 2, 0 });
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).Success);
+    ASSERT_TRUE(CookDocument(level, Root, 16.0).CacheHit);
+
+    const ReshapedPointLightSchema reshaped;
+    ASSERT_FALSE(ReadsUnderTodaysSchema(Root / ".cooked/levels/lamp_room.smap"));
+
+    const DocumentCookResult recook = CookDocument(level, Root, 16.0);
+    ASSERT_TRUE(recook.Success) << recook.Error;
+    EXPECT_FALSE(recook.CacheHit);
+    EXPECT_TRUE(ReadsUnderTodaysSchema(Root / ".cooked/levels/lamp_room.smap"));
+}
+
+TEST_F(PrefabCookTest, ALevelAndThePrefabItUsesBothStaleCookInOneRun)
+{
+    const fs::path prefab = AuthorPrefab("prefabs/bolt.sscene", Vec3d{ 0, 1, 0 });
+    WriteFile("data/launch.sdata", kLaunchBindings);
+    WriteFile("levels/range.sscene", kRange);
+    ASSERT_TRUE(CookDocument(prefab, Root, 16.0).Success);
+    {
+        RuntimeAssets earlier(Logging, EditorSceneSerializers(), RuntimeAssets::ReferenceOnly{});
+        MountContentRoot(ResolveContentRoot(Root), earlier);
+        ASSERT_TRUE(CookDocument(Root / "levels/range.sscene", Root, 16.0, &Logging, &earlier).Success);
+    }
+
+    const ReshapedPointLightSchema reshaped;
+    RuntimeAssets assets(Logging, EditorSceneSerializers(), RuntimeAssets::ReferenceOnly{});
+    MountContentRoot(ResolveContentRoot(Root), assets);
+
+    const DocumentCookResult prefabCook = CookDocument(prefab, Root, 16.0, &Logging, &assets);
+    ASSERT_TRUE(prefabCook.Success) << prefabCook.Error;
+    EXPECT_FALSE(prefabCook.CacheHit);
+    const DocumentCookResult levelCook = CookDocument(Root / "levels/range.sscene", Root, 16.0, &Logging, &assets);
+    ASSERT_TRUE(levelCook.Success) << levelCook.Error;
+    EXPECT_FALSE(levelCook.CacheHit);
+
+    EXPECT_TRUE(ReadsUnderTodaysSchema(Root / ".cooked/prefabs/bolt.smap"));
+    EXPECT_TRUE(ReadsUnderTodaysSchema(Root / ".cooked/levels/range.smap"));
+    for (const AssetSystem::LoadFailure& failure : assets.Assets.LoadFailures())
+        ADD_FAILURE() << failure.Path << ": " << failure.Reason;
+    EXPECT_TRUE(assets.Assets.LoadLease("asset://data/launch.sdata", AssetType::Data).IsValid())
+        << "the level's bindings load against the prefab this run cooked";
+}
+
+TEST_F(PrefabCookTest, APrefabRecookedInARunReplacesTheCopyTheRunHolds)
+{
+    const fs::path prefab = AuthorPrefab("prefabs/bolt.sscene", Vec3d{ 0, 1, 0 });
+    RuntimeAssets assets(Logging, EditorSceneSerializers(), RuntimeAssets::ReferenceOnly{});
+    MountContentRoot(ResolveContentRoot(Root), assets);
+
+    ASSERT_TRUE(CookDocument(prefab, Root, 16.0, &Logging, &assets).Success);
+    const AssetLease held = assets.Assets.LoadLease("asset://prefabs/bolt.smap", AssetType::Scene);
+    ASSERT_TRUE(held.IsValid()) << "a prefab cooked in this run is registered for it";
+    EXPECT_EQ(ResidentIntensity(assets, "asset://prefabs/bolt.smap"), 7.0);
+
+    std::string brighter = ReadText(prefab);
+    const std::size_t at = brighter.find("intensity: 7");
+    ASSERT_NE(at, std::string::npos);
+    brighter.replace(at, sizeof("intensity: 7") - 1, "intensity: 9");
+    WriteFile("prefabs/bolt.sscene", brighter);
+
+    ASSERT_TRUE(CookDocument(prefab, Root, 16.0, &Logging, &assets).Success);
+    EXPECT_EQ(ResidentIntensity(assets, "asset://prefabs/bolt.smap"), 9.0);
 }

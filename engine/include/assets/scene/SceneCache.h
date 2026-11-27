@@ -64,6 +64,11 @@ public:
     // dedup contract every cache shares.
     [[nodiscard]] SceneHandle Register(std::string_view path, SmapContents contents);
 
+    // Replaces the contents a registered path holds, keeping its handle and its
+    // references; a consumer that took the shared payload keeps the one it took.
+    // False when `path` is not registered.
+    [[nodiscard]] bool Replace(std::string_view path, SmapContents contents);
+
     // Resolves a registered path without taking a reference. Invalid handle
     // if the path is unknown.
     [[nodiscard]] SceneHandle Find(std::string_view path) const;

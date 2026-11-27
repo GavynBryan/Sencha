@@ -8,11 +8,15 @@
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 struct DocumentCookContext;
+
+// The components every cell entity the cook generates carries, by scene key.
+[[nodiscard]] std::span<const std::string_view> CellEntityComponentKeys();
 
 // A cell mesh staged but not yet written: the lighting bake needs every cell's
 // geometry (for the shared occlusion BVH) before any cell mesh is finalized on

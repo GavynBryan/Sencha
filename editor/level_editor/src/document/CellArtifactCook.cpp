@@ -11,6 +11,8 @@
 #include <assets/cook/StaticCollisionGeometry.h>
 #include <core/assets/AssetRef.h>
 #include <project/CookProfile.h>
+#include <render/StaticMeshComponent.h>
+#include <world/transform/TransformComponents.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +22,9 @@
 
 namespace
 {
+    constexpr std::string_view kCellComponentKeys[] = { TypeSchema<LocalTransform>::Name,
+                                                         TypeSchema<StaticMeshComponent>::Name };
+
     std::string CellBase(const Vec3i& coord)
     {
         return "cell_" + std::to_string(coord.X) + "_" + std::to_string(coord.Y)
@@ -61,12 +66,18 @@ namespace
 
         return JsonValue(JsonValue::Object{
             { "components", JsonValue(JsonValue::Object{
-                { "Transform", JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } }) },
-                { "StaticMesh", JsonValue(std::move(staticMesh)) },
+                { std::string(kCellComponentKeys[0]),
+                  JsonValue(JsonValue::Object{ { "local", JsonValue(std::move(local)) } }) },
+                { std::string(kCellComponentKeys[1]), JsonValue(std::move(staticMesh)) },
             }) },
         });
     }
 } // namespace
+
+std::span<const std::string_view> CellEntityComponentKeys()
+{
+    return kCellComponentKeys;
+}
 
 bool EmitCellArtifacts(const DocumentCookContext& ctx,
                        const std::vector<BrushCell>& cells,

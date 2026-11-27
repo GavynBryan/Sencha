@@ -16,9 +16,10 @@ struct RuntimeAssets;
 // and before the cooked overlay is registered, so a dropped .png or .blend is
 // cooked and then resolves through the cooked index like any other artifact.
 //
-// These functions fill an AssetRegistry and nothing else. They do not compose
-// the stack, publish a world resource, or decide which roots exist -- the
-// caller owns all three.
+// These functions fill an AssetRegistry, and MountCookedFile also replaces what
+// the stack holds of a file a cook rewrote. They do not compose the stack,
+// publish a world resource, or decide which roots exist -- the caller owns all
+// three.
 struct ContentRootPaths
 {
     // The authored directory, as given.
@@ -42,3 +43,8 @@ void RegisterCookedContent(const ContentRootPaths& root, RuntimeAssets& assets);
 
 // Both steps in order, for a caller with nothing to do between them.
 void MountContentRoot(const ContentRootPaths& root, RuntimeAssets& assets);
+
+// A file a cook wrote into the root's cook cache, as the stack reads it from now
+// on: registered by its location when it is new, and replaced in place where the
+// stack holds it already.
+void MountCookedFile(const ContentRootPaths& root, RuntimeAssets& assets, const std::filesystem::path& file);
