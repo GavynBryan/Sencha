@@ -24,6 +24,7 @@ namespace
     amount.Numeric.Minimum = 1.0;
     amount.Numeric.Maximum = 1000.0;
     amount.Default = std::int64_t{ 1 };
+    amount.Required = false;
 
     DataFieldSchema source;
     source.Key = "Source";
