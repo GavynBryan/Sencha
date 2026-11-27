@@ -67,19 +67,19 @@ public:
     bool Save(
         IWriteArchive& archive,
         EntityId entity,
-        const Registry& registry,
+        const World& world,
         SceneSerializationContext&) const override
     {
-        if (!registry.Components.IsRegistered<GameplayTagContainer>())
+        if (!world.IsRegistered<GameplayTagContainer>())
             return true;
 
         const GameplayTagContainer* tags =
-            registry.Components.TryGet<GameplayTagContainer>(entity);
+            world.TryGet<GameplayTagContainer>(entity);
         if (tags == nullptr)
             return true;
 
         const GameplayTagRegistry* tagRegistry =
-            registry.Components.TryGetResource<GameplayTagRegistry>();
+            world.TryGetResource<GameplayTagRegistry>();
         return tagRegistry != nullptr
             && WriteGameplayTags(archive, *tags, *tagRegistry);
     }

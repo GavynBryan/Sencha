@@ -225,15 +225,15 @@ public:
 
     bool Save(IWriteArchive& archive,
               EntityId entity,
-              const Registry& registry,
+              const World& world,
               SceneSerializationContext& context) const override
     {
         if constexpr (std::is_empty_v<Component>)
         {
             // A tag's presence is its whole value: it has no column, so
             // TryGet answers null even when the signature bit is set.
-            if (!registry.Components.IsRegistered<Component>()
-                || !registry.Components.HasComponent<Component>(entity))
+            if (!world.IsRegistered<Component>()
+                || !world.HasComponent<Component>(entity))
                 return true;
             const Component tag{};
             return SceneComponentSerialization::SaveFields(archive, tag, context);
@@ -241,8 +241,8 @@ public:
         else
         {
             const Component* component =
-                registry.Components.IsRegistered<Component>()
-                    ? registry.Components.TryGet<Component>(entity)
+                world.IsRegistered<Component>()
+                    ? world.TryGet<Component>(entity)
                     : nullptr;
             if (!component)
                 return true;

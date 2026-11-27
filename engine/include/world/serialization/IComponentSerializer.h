@@ -48,7 +48,7 @@ struct IComponentSerializer
     virtual bool HasComponent(EntityId entity, const Registry& registry) const = 0;
     virtual bool Save(IWriteArchive& archive,
                       EntityId entity,
-                      const Registry& registry,
+                      const World& world,
                       SceneSerializationContext& context) const = 0;
     virtual bool Load(IReadArchive& archive,
                       EntityId entity,

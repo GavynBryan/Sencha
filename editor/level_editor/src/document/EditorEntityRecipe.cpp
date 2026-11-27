@@ -43,7 +43,7 @@ void AppendComponent(EntitySnapshot& snapshot, Registry& registry, EntityId enti
             continue;
         SceneSerializationContext context(logging);
         JsonWriteArchive archive;
-        if (!serializer->Save(archive, entity, registry, context) || !archive.Ok())
+        if (!serializer->Save(archive, entity, registry.Components, context) || !archive.Ok())
             return;
         snapshot.Components.AsObject().emplace_back(
             std::string(serializer->JsonKey()), archive.TakeValue());

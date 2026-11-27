@@ -40,6 +40,7 @@
 
 #include <app/EngineVocabularyBindings.h>
 #include <core/text/Slug.h>
+#include <save/EngineSaveSections.h>
 #include <save/SavedGameVocabulary.h>
 
 #include <assets/runtime/EngineContentRoot.h>
@@ -1238,6 +1239,7 @@ int Engine::Run(Game& game)
                                       ? std::filesystem::path()
                                       : std::filesystem::path(Configuration.Runtime.SavesRoot)
                                             / SlugOf(Configuration.App.Name) / "saves");
+    RegisterEngineSaveSections(*SavedGameState, *this);
 
     // The player's own settings, before the shell that offers them and before
     // the saved values are applied: the shell asks which of them this host

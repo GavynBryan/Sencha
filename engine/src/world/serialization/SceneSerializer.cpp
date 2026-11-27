@@ -105,7 +105,7 @@ JsonValue SaveSceneJson(const Registry& registry,
         for (const auto& entry : serializers.Entries())
         {
             JsonWriteArchive archive;
-            if (!entry->Save(archive, entity, registry, context) || !archive.Ok())
+            if (!entry->Save(archive, entity, registry.Components, context) || !archive.Ok())
                 return {};
 
             JsonValue component = archive.TakeValue();

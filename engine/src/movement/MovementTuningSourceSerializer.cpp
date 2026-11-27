@@ -68,14 +68,14 @@ public:
 
     bool Save(IWriteArchive& archive,
               EntityId entity,
-              const Registry& registry,
+              const World& world,
               SceneSerializationContext& context) const override
     {
-        if (!registry.Components.IsRegistered<MovementTuningSource>())
+        if (!world.IsRegistered<MovementTuningSource>())
             return true;
 
         const MovementTuningSource* tuning =
-            registry.Components.TryGet<MovementTuningSource>(entity);
+            world.TryGet<MovementTuningSource>(entity);
         if (tuning == nullptr)
             return true;
 

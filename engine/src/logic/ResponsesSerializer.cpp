@@ -43,10 +43,9 @@ public:
         return registry.Components.IsRegistered<Responses>() && registry.Components.HasComponent<Responses>(entity);
     }
 
-    bool Save(IWriteArchive& archive, EntityId entity, const Registry& registry,
+    bool Save(IWriteArchive& archive, EntityId entity, const World& world,
               SceneSerializationContext& context) const override
     {
-        const World& world = registry.Components;
         const Responses* responses = world.IsRegistered<Responses>() ? world.TryGet<Responses>(entity) : nullptr;
         if (responses == nullptr)
             return true;

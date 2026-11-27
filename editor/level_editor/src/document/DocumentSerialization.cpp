@@ -145,7 +145,7 @@ Json5Value SerializeEntityComponents(EntityId entity, const Registry& registry,
         if (!serializer->HasComponent(entity, registry))
             continue;
         JsonWriteArchive archive;
-        if (!serializer->Save(archive, entity, registry, context) || !archive.Ok())
+        if (!serializer->Save(archive, entity, registry.Components, context) || !archive.Ok())
             continue;
         JsonValue value = archive.TakeValue();
         if (!value.IsNull())
