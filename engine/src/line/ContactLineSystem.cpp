@@ -265,10 +265,6 @@ bool ResolveLine(const World& world, const ContactLine* authored, ContactLineSta
     AuthoredNameResolver names(world);
     if (authored == nullptr || !std::isfinite(authored->Radius) || authored->Radius <= 0.0f)
         return false;
-    names.Tag(authored->Kind.View(), state.Kind);
-    names.Tag(authored->Ignores.View(), state.Ignores);
-    names.Tag(authored->AnchorCue.View(), state.AnchorCue);
-    names.Tag(authored->CutCue.View(), state.CutCue);
     names.Effect(authored->Effect.View(), state.Effect);
     return names.Resolved();
 }
@@ -429,8 +425,10 @@ VerbAdmission ContactLineSystem::Cut(const VerbInvocation& invocation)
     });
     for (const EntityId line : Scratch)
     {
-        if (const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line))
-            CueAt(*state, line, state->CutCue, state->Tip, invocation.Tick);
+        const ContactLineState* state = std::as_const(world).TryGet<ContactLineState>(line);
+        const ContactLine* authored = std::as_const(world).TryGet<ContactLine>(line);
+        if (state != nullptr && authored != nullptr)
+            CueAt(*state, line, authored->CutCue, state->Tip, invocation.Tick);
         Remove(line, invocation.Tick);
     }
     return VerbAdmission::Accepted;
@@ -539,13 +537,13 @@ bool TakeStrike(ContactLineState& state, const ContactLine& authored, EntityId t
     return true;
 }
 
-const WorldTransform* StrikablePose(const World& world, const ContactLineState& state, EntityId target)
+const WorldTransform* StrikablePose(const World& world, const ContactLine& authored, EntityId target)
 {
     if (!world.IsAlive(target) || !world.HasComponent<CharacterMoverLink>(target))
         return nullptr;
-    if (state.Ignores.IsValid())
+    if (authored.Ignores.IsValid())
         if (const GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target);
-            tags != nullptr && tags->HasExact(state.Ignores))
+            tags != nullptr && tags->HasExact(authored.Ignores))
             return nullptr;
     return world.TryGet<WorldTransform>(target);
 }
@@ -652,7 +650,7 @@ void ContactLineSystem::Step(EntityId line, const FixedSimTime& now)
 
     if (state.Stage != ContactLineStage::Retracting && !StrikeAlong(line, state, authored, root, now))
     {
-        CueAt(state, line, state.CutCue, state.Tip, now.TickIndex);
+        CueAt(state, line, authored.CutCue, state.Tip, now.TickIndex);
         Remove(line, now.TickIndex);
         return;
     }
@@ -677,7 +675,7 @@ void ContactLineSystem::FollowTip(EntityId line, ContactLineState& state, const 
         state.Remaining = authored.AnchorSeconds;
         if (const LocalTransform* body = world.TryGet<LocalTransform>(state.Instigator))
             state.Length = (state.Tip - body->Value.Position).Magnitude();
-        CueAt(state, line, state.AnchorCue, state.Tip, tick);
+        CueAt(state, line, authored.AnchorCue, state.Tip, tick);
         return;
     }
     const LocalTransform* tip = world.IsAlive(state.Projectile) ? world.TryGet<LocalTransform>(state.Projectile) : nullptr;
@@ -733,13 +731,13 @@ bool ContactLineSystem::StrikeAlong(EntityId line, ContactLineState& state, cons
                       root + direction * (reach * 0.5f), CapsuleAlong(direction), Overlaps, touching);
     for (const EntityId target : Overlaps)
     {
-        const WorldTransform* pose = StrikablePose(*Entities, state, target);
+        const WorldTransform* pose = StrikablePose(*Entities, authored, target);
         if (pose == nullptr || !TakeStrike(state, authored, target))
             continue;
         const float along = std::clamp((pose->Value.Position - root).Dot(direction), 0.0f, reach);
         const Vec3d point = root + direction * along;
         const Vec3d away = pose->Value.Position - point;
-        Strike(line, state, target, point,
+        Strike(line, state, authored.Kind, target, point,
                away.SqrMagnitude() > 1.0e-6f ? away.Normalized() : direction.Cross(Vec3d::Up()).Normalized(), now);
     }
     return true;
@@ -758,8 +756,8 @@ bool ContactLineSystem::CrossesSolid(const ContactLineState& state, const Vec3d&
     return PhysicsQueries(*Host.Physics).Raycast(root, direction, clear, solid).Hit;
 }
 
-void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point,
-                               const Vec3d& away, const FixedSimTime& now)
+void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, GameplayTagId kind, EntityId target,
+                               const Vec3d& point, const Vec3d& away, const FixedSimTime& now)
 {
     World& world = *Entities;
     const EffectSource source{ .Instigator = state.Instigator, .Point = point, .Direction = away,
@@ -769,7 +767,7 @@ void ContactLineSystem::Strike(EntityId line, const ContactLineState& state, Ent
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = state.Instigator,
                                                              .Projectile = line,
-                                                             .Kind = state.Kind,
+                                                             .Kind = kind,
                                                              .Point = point,
                                                              .Normal = away });
 }

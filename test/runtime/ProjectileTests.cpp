@@ -192,7 +192,7 @@ protected:
         WorldState.AddComponent<WorldTransform>(part, WorldTransform{ Transform3f{ centre, Quatf::Identity(), Vec3d::One() } });
         WorldState.AddComponent<Parent>(part, Parent{ owner });
         HitRegion region;
-        region.Region = "Test.Region.Head";
+        region.Region = Head;
         region.Shape = CollisionShape::MakeSphere(radius);
         WorldState.AddComponent<HitRegion>(part, region);
     }
@@ -208,8 +208,8 @@ protected:
         projectile.Radius = 0.1f;
         projectile.Lifetime = 2.0f;
         projectile.HitEffect = "asset://effects/damage.sdata";
-        projectile.ImpactCue = "Cue.Test.Impact";
-        projectile.HitKind = "Test.Shot.Charged";
+        projectile.ImpactCue = Impact;
+        projectile.HitKind = Charged;
         if (shape)
             shape(projectile);
         Prefabs.Register(Prefab, [projectile](World& world, StoragePartitionId partition) {
@@ -436,8 +436,8 @@ TEST_F(ProjectileFixture, ItStrikesAWalkingCharacter)
 
 TEST_F(ProjectileFixture, ItPassesThroughWhatItsTagLetsItWhileItsHitsLast)
 {
-    Bolt([](Projectile& p) {
-        p.PassesThrough = "Test.Penetrable";
+    Bolt([this](Projectile& p) {
+        p.PassesThrough = Penetrable;
         p.MaxHits = 2;
     });
     const EntityId first = Box(Vec3d(2.0f, 0.0f, 0.0f), Vec3d(0.2f, 1.0f, 1.0f));
@@ -456,8 +456,8 @@ TEST_F(ProjectileFixture, ItPassesThroughWhatItsTagLetsItWhileItsHitsLast)
 
 TEST_F(ProjectileFixture, AnythingWithoutThePassThroughTagStopsIt)
 {
-    Bolt([](Projectile& p) {
-        p.PassesThrough = "Test.Penetrable";
+    Bolt([this](Projectile& p) {
+        p.PassesThrough = Penetrable;
         p.MaxHits = 4;
     });
     const EntityId wall = Box(Vec3d(2.0f, 0.0f, 0.0f), Vec3d(0.2f, 1.0f, 1.0f));

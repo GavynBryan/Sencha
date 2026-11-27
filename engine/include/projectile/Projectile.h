@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/text/InlineString.h>
+#include <gameplay_tags/GameplayTagId.h>
 #include <ecs/ComponentAnnotations.h>
 
 #include <cstdint>
@@ -56,9 +57,9 @@ Projectile
     SENCHA_FIELD("passes_through")
     SENCHA_OPTIONAL
     SENCHA_LABEL("Passes through")
-    SENCHA_TOOLTIP("A gameplay tag: an entity carrying it is struck and passed through, while hits remain. "
-                   "Empty passes through nothing.")
-    InlineString<64> PassesThrough;
+    SENCHA_TOOLTIP("An entity carrying this gameplay tag is struck and passed through, while hits remain. "
+                   "None passes through nothing.")
+    GameplayTagId PassesThrough;
 
     SENCHA_FIELD("hit_effect")
     SENCHA_OPTIONAL
@@ -102,14 +103,14 @@ Projectile
     SENCHA_LABEL("Hit kind")
     SENCHA_TOOLTIP("A gameplay tag the projectile.hit occurrence carries, so a response can tell one kind "
                    "of shot from another.")
-    InlineString<64> HitKind;
+    GameplayTagId HitKind;
 
     SENCHA_FIELD("impact_cue")
     SENCHA_OPTIONAL
     SENCHA_LABEL("Impact cue")
     SENCHA_TOOLTIP("A cue appended to the instigator's cue log wherever it strikes or ends, for its "
-                   "presentation. Empty appends none.")
-    InlineString<64> ImpactCue;
+                   "presentation. None appends none.")
+    GameplayTagId ImpactCue;
 
     SENCHA_FIELD("hits_characters")
     SENCHA_LABEL("Hits characters")
@@ -131,9 +132,9 @@ Projectile
     SENCHA_FIELD("ignores")
     SENCHA_OPTIONAL
     SENCHA_LABEL("Ignores")
-    SENCHA_TOOLTIP("A gameplay tag: an entity carrying it is neither struck nor stops it, as if it were not "
-                   "there. Empty ignores nothing.")
-    InlineString<64> Ignores;
+    SENCHA_TOOLTIP("An entity carrying this gameplay tag is neither struck nor stops it, as if it were not "
+                   "there. None ignores nothing.")
+    GameplayTagId Ignores;
 
     SENCHA_FIELD("kept")
     SENCHA_TOOLTIP("A save keeps it while it flies, with the zone it was launched in, as a grenade or a slow "

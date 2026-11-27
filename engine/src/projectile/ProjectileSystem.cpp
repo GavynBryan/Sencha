@@ -174,10 +174,6 @@ std::optional<std::uint32_t> ProjectileSystem::Resolve(AssetId prefab, EntityId 
     names.Effect(d.HitEffect.View(), resolved.HitEffect);
     names.Effect(d.ScaledEffect.View(), resolved.ScaledEffect);
     names.Effect(d.SplashEffect.View(), resolved.SplashEffect);
-    names.Tag(d.PassesThrough.View(), resolved.PassesThrough);
-    names.Tag(d.HitKind.View(), resolved.HitKind);
-    names.Tag(d.ImpactCue.View(), resolved.ImpactCue);
-    names.Tag(d.Ignores.View(), resolved.Ignores);
     if (!d.HitScaleQuery.Empty() && names.Resolved())
     {
         resolved.HitScale = Host.Queries != nullptr ? Host.Queries->Registry().Resolve(d.HitScaleQuery.View())
@@ -422,10 +418,10 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         position += direction * contact->Distance;
         remaining -= contact->Distance;
 
-        if (contact->Entity.IsValid() && definition.Ignores.IsValid() && [&] {
+        if (contact->Entity.IsValid() && definition.Definition.Ignores.IsValid() && [&] {
                 const GameplayTagContainer* tags =
                     std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
-                return tags != nullptr && tags->HasExact(definition.Ignores);
+                return tags != nullptr && tags->HasExact(definition.Definition.Ignores);
             }())
         {
             if (passedCount == passed.size())
@@ -439,10 +435,10 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
 
         // Asked before the strike, whose effects may end what was met.
         const bool level = IsLevelGeometry(world, contact->Entity);
-        const bool passes = contact->Entity.IsValid() && definition.PassesThrough.IsValid() && [&] {
+        const bool passes = contact->Entity.IsValid() && definition.Definition.PassesThrough.IsValid() && [&] {
             const GameplayTagContainer* tags =
                 std::as_const(world).TryGet<GameplayTagContainer>(contact->Entity);
-            return tags != nullptr && tags->HasExact(definition.PassesThrough);
+            return tags != nullptr && tags->HasExact(definition.Definition.PassesThrough);
         }();
         (void)Strike(projectile, state, definition, instigator, *contact, now);
         if (!world.IsAlive(projectile))
@@ -467,7 +463,7 @@ void ProjectileSystem::Fly(EntityId projectile, const FixedSimTime& now)
         ended = true;
         if (authored.SplashOnExpire)
             Splash(state, definition, instigator, position, -direction, now);
-        Cue(instigator, projectile, definition.ImpactCue, position, -direction, EntityId{}, now.TickIndex);
+        Cue(instigator, projectile, definition.Definition.ImpactCue, position, -direction, EntityId{}, now.TickIndex);
     }
 
     if (!world.IsAlive(projectile))
@@ -534,7 +530,7 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
                               EntityId instigator, const Contact& contact, const FixedSimTime& now)
 {
     World& world = *Entities;
-    Cue(instigator, projectile, definition.ImpactCue, contact.Point, contact.Normal, contact.Entity, now.TickIndex);
+    Cue(instigator, projectile, definition.Definition.ImpactCue, contact.Point, contact.Normal, contact.Entity, now.TickIndex);
     // Level geometry with no entity of its own takes nothing and is told nothing.
     if (!contact.Entity.IsValid() || !world.IsAlive(contact.Entity) || Struck(motion, contact.Entity)
         || motion.HitCount >= kProjectileMaxHits)
@@ -558,7 +554,7 @@ bool ProjectileSystem::Strike(EntityId projectile, ProjectileMotion& motion, con
     if (Host.Responses != nullptr)
         (void)Host.Responses->Deliver(target, ProjectileHit{ .Instigator = instigator,
                                                             .Projectile = projectile,
-                                                            .Kind = definition.HitKind,
+                                                            .Kind = definition.Definition.HitKind,
                                                             .Point = contact.Point,
                                                             .Normal = contact.Normal,
                                                             .Region = part });
@@ -572,7 +568,7 @@ float ProjectileSystem::HitScale(const ResolvedProjectile& definition, EntityId 
     ScaleArguments.Resize(3);
     ScaleArguments.Set(0, AuthoredValue::Entity(target));
     ScaleArguments.Set(1, AuthoredValue::Tag(region));
-    ScaleArguments.Set(2, AuthoredValue::Tag(definition.HitKind));
+    ScaleArguments.Set(2, AuthoredValue::Tag(definition.Definition.HitKind));
     double scale = 1.0;
     if (Host.Queries->Evaluate(definition.HitScale, ScaleArguments.Values(), ScaleAnswer) != AuthoredQueryStatus::Value
         || !ScaleAnswer.TryGetFloat(scale) || !std::isfinite(scale) || scale < 0.0)

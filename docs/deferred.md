@@ -1984,3 +1984,19 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Consumer:** none waiting.
 - **Trigger:** the next change to any of those components; convert its names
   then to named-id fields.
+
+## Effect names in projectiles and contact lines as ids
+
+- **What:** `Projectile` holds its hit, scaled and splash effects, and
+  `ContactLine` its effect, as `InlineString<192>` (576 of a projectile's
+  bytes, 192 of a line's), resolved at the first launch. As named-id fields
+  they would be 4 bytes each and checked at load, as their tags now are.
+- **Where:** `projectile/Projectile.h`, `line/ContactLine.h`,
+  `ProjectileSystem::Resolve`, `ResolveLine` (`ContactLineSystem.cpp`), and
+  `EffectRegistry` (`effects/EffectRegistry.h`), which has `Find` and `GetName`
+  but no reserve and no wire key, while content names an effect before its
+  asset is declared.
+- **Consumer:** an arena shooter's projectile counts.
+- **Trigger:** `EffectRegistry` moving onto `NamedDefinitionRegistry`, or a
+  projectile-count profile where chunk size shows; then give `EffectId` a
+  definition vocabulary and convert the fields.

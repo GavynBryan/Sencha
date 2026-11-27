@@ -35,9 +35,14 @@ like. Its fields:
 | `hit_scale_query` | an authored query `{target, region, kind}` whose number scales the hit and scaled effects, as the game reads where it struck; empty applies them as authored |
 | `kept` | a save keeps it while it flies ("Kept in a save"): a grenade or a slow rocket; false, the default, for a bullet |
 
-Effects and tags are named, as `asset://effects/<name>.sdata` and tag names, and
-resolved the first time the prefab is launched. A name nobody declared refuses
-every launch of that prefab, with the prefab and the name in the log.
+Tags are named fields (`docs/core-systems-map.md`, "Named-id fields"): the
+prefab states a tag's name and the component holds its id, so a tag nobody
+declared refuses the prefab where it is read, naming the field and the tag.
+Effects are named as `asset://effects/<name>.sdata` and resolved the first time
+the prefab is launched; an effect nobody declared refuses every launch of that
+prefab, with the prefab and the name in the log. Effect names stay text until
+effects can be reserved by name (`docs/deferred.md`, "Effect names in
+projectiles and contact lines as ids").
 
 The root's mesh is drawn facing its path: +Z is forward, and its scale is the
 prefab's own.

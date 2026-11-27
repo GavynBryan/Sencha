@@ -87,8 +87,8 @@ private:
                      const FixedSimTime& now);
     [[nodiscard]] bool CrossesSolid(const ContactLineState& state, const Vec3d& root, const Vec3d& direction,
                                     float length) const;
-    void Strike(EntityId line, const ContactLineState& state, EntityId target, const Vec3d& point, const Vec3d& away,
-                const FixedSimTime& now);
+    void Strike(EntityId line, const ContactLineState& state, GameplayTagId kind, EntityId target, const Vec3d& point,
+                const Vec3d& away, const FixedSimTime& now);
     void CueAt(const ContactLineState& state, EntityId line, GameplayTagId cue, const Vec3d& point, std::uint64_t tick);
     // Ends the line, and its throw if that is still in the air: a tip nobody can
     // see must not go on striking.

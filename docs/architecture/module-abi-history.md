@@ -1823,3 +1823,16 @@ that leaves out a leased mode, registered before the component. The scene key,
 chunk and JSON are unchanged; the replication table hash and the net protocol
 do not change. Its schema fingerprint changes, so cooked scenes holding it are
 recooked.
+
+## v86
+
+`Projectile`'s `PassesThrough`, `HitKind`, `ImpactCue` and `Ignores`,
+`ContactLine`'s `Kind`, `Ignores`, `AnchorCue` and `CutCue`, and `HitRegion`'s
+`Region` are `GameplayTagId` named fields instead of `InlineString<64>`:
+`Projectile` is 236 bytes smaller, `ContactLine` 240 and `HitRegion` 60.
+`ResolvedProjectile` loses its four resolved tag ids and `ContactLineState` its
+four, and `ContactLineSystem::Strike` takes the strike's kind. Their scene form
+is unchanged (a tag's name), but a tag content does not declare now refuses the
+prefab where it is read instead of every launch. Schema fingerprints change, so
+cooked prefabs holding them are recooked; the save format, the replication
+table hash and the net protocol do not change.

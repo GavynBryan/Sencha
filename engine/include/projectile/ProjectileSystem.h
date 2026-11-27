@@ -44,10 +44,6 @@ struct ResolvedProjectile
     EffectId HitEffect{};
     EffectId ScaledEffect{};
     EffectId SplashEffect{};
-    GameplayTagId PassesThrough{};
-    GameplayTagId HitKind{};
-    GameplayTagId ImpactCue{};
-    GameplayTagId Ignores{};
     AuthoredQueryHandle HitScale{};
 };
 
