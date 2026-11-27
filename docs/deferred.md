@@ -1543,7 +1543,11 @@ described in `docs/navigation/runtime.md`, "Agents".
   `abilities/ActiveAbilitiesWire.h`, `anim/AnimRequestWire.h`.
 - **Consumer:** `ActorTimeLeases` first, then the cue log.
 - **Trigger:** the replication bench or a session profile after the port
-  showing these images as the largest remaining share of `Update`.
+  showing these images as the largest remaining share of `Update`. After the
+  port `EntityReplicationBench` measures images at 71% of `Update` at 1,000
+  grant-holding actors, with these two tables 1,000 of the 1,216 B an actor
+  carries (`docs/plans/evidence/replicated-lists/results.md`); their share of
+  the time is not measured per component yet, which is the first step.
 
 ## A predicted replicated list
 

@@ -125,3 +125,76 @@ would cost if named; they are no longer written.
   was on that difference, which is no longer a cost, so the test now bounds
   the two totals instead (moving 1,150, firing 1,730, about 10% above these
   figures) and reports the difference without asserting on it.
+
+## After: replicated lists
+
+Rerun once `AbilityGrants`, `EquipmentState`, `GameplayTagContainer` and
+`AttributeSet` cross as replicated lists (net protocol 12), by the same
+commands. Bytes from the dev build at the parent of the list work
+(`seeds.before.txt`) and at the last port (`seeds.after.txt`); publish times
+from three profile runs of `EntityReplicationBench.Generate`, pinned to the
+performance cores, under `timeout 900` (`bench.lists.csv`, median last; the
+`before` column is `bench.after.csv`, the stage that left out components
+nothing is owed on, measured 61 commits before this work began, so its
+times are a reference rather than a clean baseline; its bytes are exact).
+
+### Bytes
+
+| | Before | After | Change |
+|---|---|---|---|
+| A tag gaining a stack, to the owner | 265.9 B | 14.9 B | −94% |
+| An attribute's current value, to the owner | 73.6 B | 15.3 B | −79% |
+| Shipping pawn's owner seed (nine grants, two tags, four attributes) | 929 B | 467 B | −50% |
+| The same, observer seed of a full grant list | 205 B | 200 B | −2% |
+| The same wearing 4 records, owner | 1,116 B | 650 B | −42% |
+| The same wearing 32 records, owner | 2,369 B | 1,913 B | −19% |
+| The same wearing 32 records, observer | 779 B | 754 B | −3% |
+| Full pawn, 64 grants, 32 tags, 16 attributes, owner | 1,773 B | 1,816 B | +2.4% |
+| Full pawn, 16 grants, owner | 1,005 B | 1,030 B | +2.5% |
+| Unequipping one of three records, owner | 98 B | 54 B | −45% |
+| Moving pawn's delta to an observer | 12.3 B | 12.3 B | none |
+| A firing / moving actor to one peer | 1,570 / 1,050 B/s | 1,570 / 1,050 B/s | none |
+
+- **Within 5% at every seed.** A seed is smaller wherever a list holds less
+  than its most, because the fixed images sent a whole run (the tags' 64-word
+  owner run, a page of four grants) for any part of it. A list at its most
+  costs a little more than the full fixed image: each element pays a present
+  bit and its run mask (three bits a grant), against one mask bit a page.
+- **What a change resends** is now the element and run that moved: a tag's
+  count, an attribute's current value, the record moved into a removed one's
+  place, and the count.
+
+### The authority's publish
+
+| Actors | Carrying | `Update` still | `Update` moving | Image work | Share | Image bytes a publish |
+|---|---|---|---|---|---|---|
+| 300 | three grants, before | 0.422 ms | 0.441 ms | 0.293 ms | 69% | 948,000 |
+| 300 | three grants, after | 0.410 ms | 0.431 ms | 0.292 ms | 71% | 364,800 |
+| 1,000 | three grants, before | 1.440 ms | 1.507 ms | 0.984 ms | 68% | 3,160,000 |
+| 1,000 | three grants, after | 1.382 ms | 1.446 ms | 0.975 ms | 71% | 1,216,000 |
+| 1,000 | transform, before | 0.184 ms | 0.239 ms | 0.066 ms | 36% | 40,000 |
+| 1,000 | transform, after | 0.212 ms | 0.267 ms | 0.067 ms | 32% | 40,000 |
+
+- **Bytes touched fell 62%**, from 3,160 B to 1,216 B an actor: its grants
+  are 88 B where they were 1,540, its attributes 64 B where they were 192,
+  its tags 24 B where they were 384.
+- **Time did not follow.** Image work at 1,000 grant-holding actors is
+  0.975 ms against 0.984: images remain 71% of `Update`'s 1.38 ms, and the
+  list trigger's figure (10%) is still exceeded. The work is not proportional
+  to bytes; what does not shrink with a list (each component's translation,
+  its image reset and copies) is the likely remainder, not measured per
+  component. Of the 1,216 B left, 1,000 are the fixed slot tables
+  `ActiveAbilities` (480 B) and `AbilityCueLog` (520 B) the bench's actor
+  carries.
+- **A bare entity's publish measured slower**, 0.212 against 0.184 ms at
+  1,000. The `before` column was measured at the commit that left out
+  components nothing is owed on, 61 commits before this work began, so it is
+  not a clean baseline for this row. Holding the list count stamps inside
+  `ChangedAt` instead of beside it, so that `ComponentState` is no larger than
+  before lists, measured the same 0.211 ms (three runs; tried and not kept), so
+  the 32 B of count stamps are not the cause. Not attributed further.
+- **What is left is the slot tables.** The deferred "slot tables as replicated
+  lists" names this profile after the port, with those tables the largest
+  remaining share of `Update`, as its trigger. By bytes they are 82% of what
+  the actor carries; the bench does not time components separately, so their
+  share of the 0.975 ms is not measured.
