@@ -98,10 +98,11 @@ namespace
         EXPECT_EQ(instance.Placement.Position.X, 5.0f);
         ASSERT_EQ(instance.EntityIds.size(), 2u);
         EXPECT_EQ(instance.EntityIds[0].second.Value, 0x200ull);
-        ASSERT_EQ(instance.Patches.size(), 1u);
+        ASSERT_EQ(instance.Patches.size(), 2u);
         EXPECT_NE(instance.Patches[0].second.Find("PointLight"), nullptr);
-        ASSERT_EQ(instance.RemovedComponents.size(), 1u);
-        EXPECT_EQ(instance.RemovedComponents[0].second[0], "Shadow");
+        EXPECT_NE(instance.Patches[1].second.Find("AudioSource"), nullptr) << "an add is read into the patch";
+        ASSERT_NE(instance.Patches[1].second.Find("Shadow"), nullptr);
+        EXPECT_TRUE(instance.Patches[1].second.Find("Shadow")->IsNull()) << "a removal is read as null";
         ASSERT_EQ(instance.AddedEntities.size(), 1u);
         EXPECT_EQ(instance.AddedEntities[0].Id.Value, 0x202ull);
         ASSERT_EQ(instance.Suppressed.size(), 1u);
@@ -182,6 +183,15 @@ namespace
                 add:    { '0000000000000001': { Shadow: {} } },
                 remove: { '0000000000000001': ['Shadow'] } } ] })");
         EXPECT_NE(error.find("both added and removed"), std::string::npos) << error;
+        const std::string patchedAndAdded = ParseFailure(R"({ format_version: 2, entities: [],
+            instances: [ { id: '0000000000000100', source: 'asset://a.sscene',
+                patch: { '0000000000000001': { Shadow: { soft: true } } },
+                add:   { '0000000000000001': { Shadow: {} } } } ] })");
+        EXPECT_NE(patchedAndAdded.find("both patched and added"), std::string::npos) << patchedAndAdded;
+        const std::string patchedAndRemoved = ParseFailure(R"({ format_version: 2, entities: [],
+            patch: { '00000000000000a1': { Shadow: { soft: true } } },
+            remove: { '00000000000000a1': ['Shadow'] } })");
+        EXPECT_NE(patchedAndRemoved.find("both patched and removed"), std::string::npos) << patchedAndRemoved;
     }
 
     TEST(SceneSourceDocument, RejectsMalformedInstanceRecords)
@@ -260,8 +270,8 @@ namespace
         EXPECT_EQ(doc.Includes[1].Onto.Value, 0xc2ull);
         ASSERT_EQ(doc.InheritedPatches.size(), 1u);
         EXPECT_EQ(doc.InheritedPatches[0].first.Value, 0xa1ull);
-        ASSERT_EQ(doc.InheritedRemovals.size(), 1u);
-        EXPECT_EQ(doc.InheritedRemovals[0].second, std::vector<std::string>{ "LookOrientation" });
+        ASSERT_NE(doc.InheritedPatches[0].second.Find("LookOrientation"), nullptr);
+        EXPECT_TRUE(doc.InheritedPatches[0].second.Find("LookOrientation")->IsNull()) << "a removal is read as null";
         EXPECT_EQ(doc.Entities[0].Parent.Value, 0xa1ull) << "a local may hang under an inherited entity";
 
         const std::string once = WriteSceneSource(doc);

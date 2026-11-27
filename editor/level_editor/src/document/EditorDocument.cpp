@@ -268,7 +268,6 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
     out.Includes = Retained_.Includes;
     out.Abstract = Retained_.Abstract;
     out.InheritedPatches = Retained_.InheritedPatches;
-    out.InheritedRemovals = Retained_.InheritedRemovals;
     out.Instances = Retained_.Instances;
     SettleSources(out.Instances);
     out.UnknownRoot = Retained_.UnknownRoot;

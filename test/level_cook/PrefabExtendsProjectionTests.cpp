@@ -7,6 +7,8 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
+#include <world/transform/TransformComponents.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <gtest/gtest.h>
@@ -145,7 +147,7 @@ TEST_F(PrefabExtendsProjectionTest, RemovingAnInheritedComponentIsWrittenAsARemo
     EditorDocument derived = Load(kDerived);
     derived.GetScene().GetRegistry().Components.RemoveComponent<PointLightComponent>(FindById(derived, LightId));
     const std::string saved = derived.ToSceneText();
-    EXPECT_NE(saved.find("remove"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("PointLight: null"), std::string::npos) << saved;
 
     EditorDocument reopened = Load(saved);
     EXPECT_TRUE(FindById(reopened, LightId).IsValid()) << "the entity stays; its component goes";
@@ -220,4 +222,26 @@ TEST_F(PrefabExtendsProjectionTest, AnAbstractPrefabIsNeverPlaced)
     std::string error;
     EXPECT_FALSE(level.PlaceSceneInstance("asset://props/glow.sscene", Transform3f::Identity(), {}, &error).IsValid());
     EXPECT_NE(error.find("abstract"), std::string::npos) << error;
+}
+
+TEST_F(PrefabExtendsProjectionTest, AnAddARemovalAndAnEditOnAnInheritedEntityAreOnePatch)
+{
+    EditorDocument derived = Load(kDerived);
+    World& world = derived.GetScene().GetRegistry().Components;
+    const EntityId light = FindById(derived, LightId);
+    world.RemoveComponent<PointLightComponent>(light);
+    world.AddComponent(light, SpotLightComponent{});
+    world.TryGet<LocalTransform>(light)->Value.Position.X = 4.0f;
+    const std::string saved = derived.ToSceneText();
+    EXPECT_EQ(saved.find("remove:"), std::string::npos) << saved;
+    EXPECT_EQ(saved.find("add:"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("PointLight: null"), std::string::npos) << saved;
+    EXPECT_NE(saved.find("SpotLight: {"), std::string::npos) << saved;
+
+    EditorDocument reopened = Load(saved);
+    const EntityId again = FindById(reopened, LightId);
+    EXPECT_EQ(Lamp(reopened, LightId), nullptr);
+    EXPECT_NE(reopened.GetScene().GetRegistry().Components.TryGet<SpotLightComponent>(again), nullptr);
+    EXPECT_EQ(reopened.GetScene().GetRegistry().Components.TryGet<LocalTransform>(again)->Value.Position.X, 4.0f);
+    EXPECT_EQ(reopened.ToSceneText(), saved);
 }

@@ -7,10 +7,9 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/IComponentSerializer.h>
 
-const DataFieldSchema* EditorSceneComponentRules::SchemaOf(std::string_view component) const
+const DataFieldSchema& EditorSceneComponentRules::EntitySchema() const
 {
-    const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(component);
-    return serializer != nullptr ? serializer->CompositionSchema() : nullptr;
+    return EditorSceneSerializers().EntitySchema();
 }
 
 std::vector<std::string> EditorSceneComponentRules::OwedBy(std::string_view component) const

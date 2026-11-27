@@ -8,6 +8,7 @@
 #include <core/assets/AssetRefCodec.h>
 
 #include <algorithm>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -135,6 +136,41 @@ namespace
         return true;
     }
 
+    template<typename Key>
+    Json5Value& PatchOf(std::vector<std::pair<Key, Json5Value>>& patches, const Key& key)
+    {
+        const auto found = std::ranges::find_if(patches, [&](const auto& entry) { return entry.first == key; });
+        if (found != patches.end())
+            return found->second;
+        return patches.emplace_back(key, Json5Value::MakeObject()).second;
+    }
+
+    template<typename Key>
+    bool FoldRemovals(std::vector<std::pair<Key, Json5Value>>& patches,
+                      const std::vector<std::pair<Key, std::vector<std::string>>>& removals,
+                      const std::vector<std::pair<Key, Json5Value>>& added, const std::string& what,
+                      const std::function<std::string(const Key&)>& nameOf, std::string* error)
+    {
+        for (const auto& [key, names] : removals)
+        {
+            Json5Value& patch = PatchOf(patches, key);
+            const auto addedHere = std::ranges::find_if(added, [&](const auto& entry) { return entry.first == key; });
+            for (const std::string& name : names)
+            {
+                if (const Json5Value* stated = patch.Find(name); stated != nullptr)
+                {
+                    if (stated->IsNull())
+                        continue;
+                    const bool wasAdded = addedHere != added.end() && addedHere->second.Find(name) != nullptr;
+                    return Fail(error, what + ": component '" + name + "' on '" + nameOf(key) + "' is both "
+                                           + (wasAdded ? "added" : "patched") + " and removed");
+                }
+                patch.Members.emplace_back(name, Json5Value{});
+            }
+        }
+        return true;
+    }
+
     bool ReadInstance(const Json5Value& record, SceneInstanceRecord& out, std::string* error)
     {
         if (!record.IsObject())
@@ -211,12 +247,22 @@ namespace
             }
             return true;
         };
-        if (!readPathObject("patch", out.Patches)
-            || !readPathObject("add", out.AddedComponents))
-        {
+        std::vector<std::pair<SceneElementPath, Json5Value>> addedComponents;
+        if (!readPathObject("patch", out.Patches) || !readPathObject("add", addedComponents))
             return false;
+        for (const auto& [path, components] : addedComponents)
+        {
+            Json5Value& patch = PatchOf(out.Patches, path);
+            for (const Json5Value::Member& component : components.Members)
+            {
+                if (patch.Find(component.first) != nullptr)
+                    return Fail(error, what + ": component '" + component.first + "' on '" + path.ToString()
+                                           + "' is both patched and added");
+                patch.Members.push_back(component);
+            }
         }
 
+        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> removed;
         if (const Json5Value* removes = record.Find("remove"))
         {
             if (!removes->IsObject())
@@ -236,9 +282,12 @@ namespace
                         return Fail(error, what + ": remove entries must be strings");
                     names.push_back(name.Text);
                 }
-                out.RemovedComponents.emplace_back(std::move(path), std::move(names));
+                removed.emplace_back(std::move(path), std::move(names));
             }
         }
+        if (!FoldRemovals<SceneElementPath>(out.Patches, removed, addedComponents, what,
+                                            [](const SceneElementPath& path) { return path.ToString(); }, error))
+            return false;
 
         if (const Json5Value* added = record.Find("add_entities"))
         {
@@ -371,21 +420,6 @@ namespace
             }
         }
 
-        // A component both added and removed on one target contradicts itself.
-        for (const SceneInstanceRecord& instance : document.Instances)
-            for (const auto& [removePath, names] : instance.RemovedComponents)
-                for (const auto& [addPath, components] : instance.AddedComponents)
-                {
-                    if (!(removePath == addPath))
-                        continue;
-                    for (const std::string& name : names)
-                        if (components.Find(name) != nullptr)
-                            return Fail(error,
-                                "instance " + SceneIdText(instance.Id.Value) + ": component '"
-                                    + name + "' on '" + removePath.ToString()
-                                    + "' is both added and removed");
-                }
-
         return true;
     }
 
@@ -463,6 +497,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
     document.TrailingComments = parsed->TrailingComments;
     document.EndComments = std::move(endComments);
 
+    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> inheritedRemovals;
     for (const Json5Value::Member& member : parsed->Members)
     {
         const std::string& key = member.first;
@@ -585,7 +620,7 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
                 return std::nullopt;
             if (key == "remove"
                 && !ReadIdKeyed<std::vector<std::string>>(
-                    value, key, document.InheritedRemovals, error,
+                    value, key, inheritedRemovals, error,
                     [&](const Json5Value& entry, std::vector<std::string>& out, const std::string& what) {
                         if (!entry.IsArray())
                             return Fail(error, what + ": a list of component names");
@@ -620,6 +655,9 @@ std::optional<SceneSourceDocument> ParseSceneSource(std::string_view text,
         }
     }
 
+    if (!FoldRemovals<PersistentEntityId>(document.InheritedPatches, inheritedRemovals, {}, "patch",
+                                          [](const PersistentEntityId& id) { return SceneIdText(id.Value); }, error))
+        return std::nullopt;
     if (!Validate(document, error))
         return std::nullopt;
     return document;
@@ -677,19 +715,6 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
             patches.Members.emplace_back(SceneIdText(id.Value), patch);
         root.Members.emplace_back("patch", std::move(patches));
     }
-    if (!document.InheritedRemovals.empty())
-    {
-        Json5Value removals = Json5Value::MakeObject();
-        for (const auto& [id, names] : document.InheritedRemovals)
-        {
-            Json5Value list = Json5Value::MakeArray();
-            for (const std::string& name : names)
-                list.Elements.emplace_back(std::string(name));
-            removals.Members.emplace_back(SceneIdText(id.Value), std::move(list));
-        }
-        root.Members.emplace_back("remove", std::move(removals));
-    }
-
     if (!document.Instances.empty())
     {
         Json5Value instances = Json5Value::MakeArray();
@@ -727,19 +752,6 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
                 record.Members.emplace_back(key, std::move(object));
             };
             writePathObject("patch", instance.Patches);
-            writePathObject("add", instance.AddedComponents);
-            if (!instance.RemovedComponents.empty())
-            {
-                Json5Value removes = Json5Value::MakeObject();
-                for (const auto& [path, names] : instance.RemovedComponents)
-                {
-                    Json5Value list = Json5Value::MakeArray();
-                    for (const std::string& name : names)
-                        list.Elements.emplace_back(std::string(name));
-                    removes.Members.emplace_back(path.ToString(), std::move(list));
-                }
-                record.Members.emplace_back("remove", std::move(removes));
-            }
             if (!instance.AddedEntities.empty())
             {
                 Json5Value added = Json5Value::MakeArray();
@@ -800,7 +812,11 @@ std::vector<std::string> UpgradeSceneSourceFormat(SceneSourceDocument& document)
         return nulls;
     for (const SceneInstanceRecord& instance : document.Instances)
         for (const auto& [path, patch] : instance.Patches)
-            CollectMemberNulls(patch, SceneIdText(instance.Id.Value) + ": " + path.ToString(), nulls);
+            for (const Json5Value::Member& component : patch.Members)
+                if (!component.second.IsNull())
+                    CollectMemberNulls(component.second,
+                                       SceneIdText(instance.Id.Value) + ": " + path.ToString() + "." + component.first,
+                                       nulls);
     document.FormatVersion = SceneSourceDocument::Version;
     return nulls;
 }

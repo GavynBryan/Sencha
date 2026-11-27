@@ -14,8 +14,8 @@ merge through the shared operator (`docs/assets/composition.md`).
 | `instances` | 1, 2 | Placements of other scenes, each under a synthetic root whose id is the placement's. |
 | `extends` | 2 | A scene whose entities this one adopts, ids and all, with no wrapper. |
 | `includes` | 2 | Fragments: one-entity scenes merged onto the root, or onto the inherited entity `onto` names. |
-| `patch` | 2 | Sparse edits to inherited entities, keyed by id. |
-| `remove` | 2 | Inherited components this document drops, keyed by id. |
+| `patch` | 2 | Sparse edits to inherited entities, keyed by id: a component member patches, adds the component whole, or removes it as `null`. |
+| `remove` | 2 | Read only: folded into `patch` as `<component>: null`. |
 | `abstract` | 2 | Only ever extended or included: never cooked, never placed. |
 
 ## Format versions
@@ -30,6 +30,16 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
 - The versions differ in one place: an instance patch. Version 1 replaces lists
   whole and writes `null` as a value; version 2 merges keyed lists by key and
   `null` removes.
+- **One model.** A placement's `patch` and a derived prefab's `patch` are the
+  only spellings the model holds (`SceneInstanceRecord::Patches`,
+  `SceneSourceDocument::InheritedPatches`). The parser folds the retired
+  members in as it reads: each placement `add` entry is merged into that
+  path's patch, and each `remove` name, a placement's or a prefab's, becomes
+  `<name>: null` there. A name both patched and added, or patched (or added)
+  and removed, is refused with the component and its path. The writer emits
+  `patch` only, so a file Kyusu saves never holds `add` or `remove`. A
+  component-level `null` removes in either version; within a component a
+  version-1 patch still writes `null` as a value.
 - A parsed document keeps the version it was read at, so a version-1 file
   round-trips byte for byte, and a version-1 source another document places or
   extends composes by the version-1 rules.
@@ -53,9 +63,11 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
    - `null` removes a member or a keyed element.
    - Two fragments that set one value differently are an `include_conflict`,
      until the document's own patch states the value.
-3. **Apply removals.** A component goes by `remove` or by a `null` in place of
-   the component in `patch`; both join one removal list per entity, checked
-   once against what stays once the whole list goes. Removing a component
+3. **Apply removals.** A component goes by a `null` in place of the component
+   in `patch`; an entity's nulls are its one removal list, checked once
+   against what stays once the whole list goes. A null naming a component the
+   entity does not have is reported as an override that matched nothing
+   (`$.patch: <id>.<component>`). Removing a component
    another remaining component owes is `removes_owed`; removing a structural
    one is `not_removable`; either leaves the component in place.
 4. **Add the document's own entities and placements.** A local may hang
@@ -63,8 +75,11 @@ leaves the cooked format alone: a derived prefab cooks to an ordinary flat map.
 
 A version-2 instance patch composes the same way, so a placement can drop an
 inherited response binding by writing `bindings.<key>: null`. A placement's
-removals, its `remove` and a component `null` in its patch, are held to the
-same check after its patch and `add` apply.
+removals, the component `null`s in its patch, are held to the same check after
+the rest of its patch applies. A component a placement adds merges into one its
+source gains later: the placement's values win field by field and fields it
+never stated come from the source (the retired `add` replaced the source's
+component whole; no checked-in file used it).
 
 **References between a placement's members.** Each placement mints its own
 ids for the source's entities. A component field that names another entity
@@ -85,8 +100,9 @@ cycle through the source graph or a chain of extends, includes and placements
 deeper than 16 scenes (`CompositionChain`, `docs/assets/composition.md`,
 "Chains of sources"), or a local entity reusing an inherited id, which would
 make every patch and parent naming it ambiguous. Without component rules
-(`ISceneComponentRules`) every component composes by the version-1 rules and no
-removal is checked.
+(`ISceneComponentRules`, whose `EntitySchema` is the serializer registry's entity
+schema) every component composes by the version-1 rules and no removal is
+checked.
 
 **Cost.** One call resolves each source once: extends, fragments and
 placements of a source already resolved in that call copy its result rather
@@ -114,13 +130,15 @@ remain.
 
 - **Projection.** Inherited entities are live, under their own ids. Their
   baseline is what they inherit, before the document's own patch.
-- **Harvest.** `DiffSceneComponents` writes an inherited entity's edits as the
-  document's `patch`: only what changed, keyed lists by key (whole when their
-  order changed), removed elements and cleared members `null` (`PatchFrom`,
-  `docs/assets/composition.md`). Dropped components become `remove`. Placement
-  overrides are harvested by the same diff. Patch entries for ids the projection
-  did not produce carry over. Brush geometry never crosses documents through a
-  diff (`IsDocumentLocalComponent`): it names ids in its own document's sidecar.
+- **Harvest.** `PatchFrom` over the two component objects, with the registry's
+  entity schema, writes an inherited entity's edits as the document's `patch`:
+  only what changed, keyed lists by key (whole when their order changed),
+  removed elements and cleared members `null`, a component the entity gained
+  whole and one it lost as `null` (`docs/assets/composition.md`). Placement
+  overrides are harvested the same way into the placement's `patch`. Patch
+  entries for ids the projection did not produce carry over. Brush geometry
+  never crosses documents through a patch (`IsDocumentLocalComponent`, in
+  `SceneInstanceProjection.cpp`): it names ids in its own document's sidecar.
 - **Structure.** Deleting an inherited entity deletes only what the document
   authored beneath it. Reparenting one is refused. Both cases are
   `EditorDocument::IsSourced`.

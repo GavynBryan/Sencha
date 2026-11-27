@@ -1,7 +1,6 @@
 #pragma once
 
 #include "EditorSceneComponentRules.h"
-#include "scene_source/SceneComponentDiff.h"
 #include "scene_source/SceneComposition.h"
 #include "scene_source/SceneSourceCache.h"
 #include "scene_source/SceneSourceDocument.h"
@@ -169,8 +168,6 @@ private:
     struct RecordHarvest
     {
         std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
-        std::vector<std::pair<SceneElementPath, Json5Value>> Added;
-        std::vector<std::pair<SceneElementPath, std::vector<std::string>>> Removed;
         std::vector<SceneAddedEntity> AddedEntities;
         std::vector<SceneElementPath> Suppressed;
         // Seen distinguishes "the projection produced this placement's root"
@@ -192,7 +189,7 @@ private:
     void AbsorbAuthoredChildren(
         std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);
     void HarvestInherited(const PersistentEntityIndex& index);
-    [[nodiscard]] SceneComponentSchemaFn SchemaOf() const;
+    [[nodiscard]] std::optional<Json5Value> PatchFromBaseline(const Json5Value& baseline, const Json5Value& live) const;
     void FoldHarvestsIntoRecords(
         const PersistentEntityIndex& index,
         std::unordered_map<std::uint64_t, RecordHarvest>& byInstance);

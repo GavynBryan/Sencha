@@ -3,6 +3,7 @@
 // (never silent) failure modes -- missing minted ids, dangling targets,
 // unresolvable sources, and cycles.
 
+#include "scene_source/Json5Writer.h"
 #include "scene_source/SceneComposition.h"
 
 #include <gtest/gtest.h>
@@ -513,3 +514,54 @@ TEST(SceneComposition, AVersionOnePatchMergesObjectsAndWritesEverythingElseWhole
     ASSERT_EQ(emitter->Members.back().second.LeadingComments.size(), 1u);
     EXPECT_NE(emitter->Members.back().second.LeadingComments[0].find("added by the room"), std::string::npos);
 }
+
+    TEST(SceneComposition, AnAddAndARemovalResolveAsTheirFoldedPatch)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/door.sscene", kDoorSource);
+        const auto resolve = [&](std::string_view overrides) {
+            std::string error;
+            const auto root = ParseSceneSource(std::string(R"({
+  format_version: 2,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/door.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201',
+                    '0000000000000002': '0000000000000202' },
+      )") + std::string(overrides) + R"( } ],
+})", &error);
+            EXPECT_TRUE(root.has_value()) << error;
+            const auto result = ResolveSceneComposition(*root, sources, &error);
+            EXPECT_TRUE(result.has_value()) << error;
+            return Json5Write(FindEntity(*result, 0x201)->Components);
+        };
+        EXPECT_EQ(resolve("add: { '0000000000000001': { Shadow: { soft: true } } }, "
+                          "remove: { '0000000000000001': ['Body'] }"),
+                  resolve("patch: { '0000000000000001': { Shadow: { soft: true }, Body: null } }"));
+    }
+
+    TEST(SceneComposition, APlacementsAddedComponentMergesWithOneItsSourceGainsLater)
+    {
+        MemorySources sources;
+        sources.Add("asset://props/lamp.sscene", R"({
+  format_version: 2,
+  entities: [ { id: '0000000000000001', components: { Light: { color: [0, 0, 1], intensity: 4 } } } ],
+})");
+        std::string error;
+        const auto root = ParseSceneSource(R"({
+  format_version: 2,
+  entities: [],
+  instances: [
+    { id: '0000000000000100', source: 'asset://props/lamp.sscene',
+      entity_ids: { '0000000000000001': '0000000000000201' },
+      add: { '0000000000000001': { Light: { color: [1, 0, 0] } } } } ],
+})", &error);
+        ASSERT_TRUE(root.has_value()) << error;
+        const auto result = ResolveSceneComposition(*root, sources, &error);
+        ASSERT_TRUE(result.has_value()) << error;
+        const Json5Value* light = FindEntity(*result, 0x201)->Components.Find("Light");
+        ASSERT_NE(light, nullptr);
+        EXPECT_EQ(light->Find("color")->Elements[0].Number, 1.0) << "the placement's value wins";
+        ASSERT_NE(light->Find("intensity"), nullptr) << "the source's field the placement never stated comes through";
+        EXPECT_EQ(light->Find("intensity")->Number, 4.0);
+    }

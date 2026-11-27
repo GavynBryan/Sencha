@@ -1272,8 +1272,8 @@ described in `docs/navigation/runtime.md`, "Agents".
   base change does not reach it) is dropped. Data definitions keep it, because
   their patches are edited, not diffed. A keyed list's order is kept: a
   reordered list is harvested whole (`PatchFrom`).
-- **Where:** `SceneInstanceProjection::Harvest` and `DiffSceneComponents` in
-  `editor/common/src/scene_source/SceneComponentDiff.cpp`.
+- **Where:** `SceneInstanceProjection::Harvest` and its
+  `PatchFromBaseline` (`editor/level_editor/src/document/SceneInstanceProjection.cpp`).
 - **Trigger:** the first prefab that must keep a value its base later changes.
 
 ## Recomposing resident children while their base is edited
@@ -2000,3 +2000,16 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Trigger:** `EffectRegistry` moving onto `NamedDefinitionRegistry`, or a
   projectile-count profile where chunk size shows; then give `EffectId` a
   definition vocabulary and convert the fields.
+
+## Removing an authored entity in the same patch as component edits
+
+- **What:** a placement drops a source entity with `suppress`, a list beside
+  its `patch`, while a component goes as `<component>: null` inside it. Writing
+  entity removal as `"<path>": null` in `patch` would retire `suppress` and
+  leave one member for every edit a placement makes.
+- **Where:** `SceneInstanceRecord::Suppressed`
+  (`editor/common/src/scene_source/SceneSourceDocument.h`), the resolver's
+  `ApplyOverrides` and the harvest's suppression.
+- **Consumer:** none yet.
+- **Trigger:** a plan that needs "this authored entity is gone" in the same
+  patch document as component edits.

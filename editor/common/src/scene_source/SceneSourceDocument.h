@@ -72,14 +72,12 @@ struct SceneInstanceRecord
     // because it is written down, not recomputed.
     std::vector<std::pair<SceneElementPath, PersistentEntityId>> EntityIds;
 
-    // Sparse overrides, path-keyed. Patch objects merge field-by-field over
-    // the source values; Add supplies whole components the source entity lacks;
-    // Remove suppresses component names. AddedEntities and Suppressed are the
-    // structural pair: new children inside the instance, and source entities
-    // this placement omits.
+    // Sparse overrides, path-keyed: a member merges into the source's
+    // component, adds one the source lacks whole, or removes it as null. A
+    // read folds the retired add and remove spellings in. AddedEntities and
+    // Suppressed are the structural pair: new children inside the instance,
+    // and source entities this placement omits.
     std::vector<std::pair<SceneElementPath, Json5Value>> Patches;
-    std::vector<std::pair<SceneElementPath, Json5Value>> AddedComponents;
-    std::vector<std::pair<SceneElementPath, std::vector<std::string>>> RemovedComponents;
     std::vector<SceneAddedEntity> AddedEntities;
     std::vector<SceneElementPath> Suppressed;
 
@@ -107,7 +105,6 @@ struct SceneSourceDocument
     std::vector<SceneFragmentInclude> Includes;
     bool Abstract = false;
     std::vector<std::pair<PersistentEntityId, Json5Value>> InheritedPatches;
-    std::vector<std::pair<PersistentEntityId, std::vector<std::string>>> InheritedRemovals;
 
     std::vector<SceneSourceEntity> Entities;
     std::vector<SceneInstanceRecord> Instances;

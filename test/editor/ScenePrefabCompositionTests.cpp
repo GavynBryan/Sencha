@@ -48,13 +48,16 @@ public:
         DataFieldSchema entry = MakeDataField(DataFieldKind::Record, {}, {});
         entry.Children.push_back(MakeDataField(DataFieldKind::Entity, "anchor", "Anchor"));
         Schemas.emplace("Tether", std::move(entry));
+        for (auto& [key, schema] : Schemas)
+        {
+            DataFieldSchema component = schema;
+            component.Key = key;
+            component.Required = false;
+            Entity.Children.push_back(std::move(component));
+        }
     }
 
-    const DataFieldSchema* SchemaOf(std::string_view component) const override
-    {
-        const auto found = Schemas.find(std::string(component));
-        return found != Schemas.end() ? &found->second : nullptr;
-    }
+    const DataFieldSchema& EntitySchema() const override { return Entity; }
 
     std::vector<std::string> OwedBy(std::string_view component) const override
     {
@@ -67,6 +70,7 @@ public:
 
 private:
     std::map<std::string, DataFieldSchema> Schemas;
+    DataFieldSchema Entity = MakeDataField(DataFieldKind::Record, {}, {});
 };
 
 constexpr std::string_view kHumanoid = R"({
