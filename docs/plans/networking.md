@@ -613,6 +613,26 @@ consumed by the tick scheduler (Section 3.1) to keep the client's predicted time
 a configured lead ahead of the authority and the interpolation timeline a configured
 lag behind (both cvars; Section 7.3).
 
+### 5.1 Protocol versions
+
+`kNetProtocolVersion` (`net/NetProtocol.h`) is bumped on any change to what a
+peer writes or how a reader takes it. Sessions never span versions, so there is
+no migration; this list is what each version changed.
+
+| Version | Change |
+|---|---|
+| 1 | The protocol codec and its decode boundary. |
+| 2 | A client acknowledges which snapshots reached it (`NetSnapshotAck`). |
+| 3 | A transform travels quantized to what an eye can tell apart. |
+| 4 | The accept names the world the authority serves. |
+| 5 | A component leaving an entity is replicated. |
+| 6 | A first reliable message no longer acknowledges itself. |
+| 7 | Commands carry ordered action edges instead of a latch. |
+| 8 | Every shared tag a container can hold is sent. |
+| 9 | A grant's entry key is its key and binding together; a placing prefab spawns as one group. |
+| 10 | An unreliable snapshot spans datagrams. |
+| 11 | Grant and equipment images reshaped when they moved off the row into pooled lists. |
+
 ---
 
 ## 6. Replication
@@ -719,6 +739,37 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   reference: an animation request is not observed twice. The first user is
   `AnimRequestSet` (`anim/AnimRequestWire.h`).
 
+  *Replicated lists (2026-11-27):* a codec may declare, beside its fixed head
+  (`Wire`), up to `kMaxReplicatedListsPerComponent` (4) lists:
+  `using Lists = std::tuple<ReplicatedListOf<Element, Most>...>` with
+  `ListNames`, and `ToWire`/`FromWire` taking a `ReplicationImage`
+  (`net/ReplicationImage.h`) instead of the head. A list is 0..`Most` elements
+  of one trivially copyable type with its own `TypeSchema`, so each element has
+  its own runs (at most `kMaxReplicatedRunsPerListElement`, 8), each with its
+  own audience; `ReplicationLayout` compiles it into a `ReplicatedList` beside
+  the component's head runs. The image is the head, then each list as a count
+  word and its elements, each part eight-aligned; a component without lists is
+  its head alone, byte for byte what it was. Every translated component goes
+  through the image, so there is one erased path. `ReplicationImage::Resize`
+  past a list's most keeps the most and counts the rest; the change store sums
+  that (`ReplicationChangeStore::Clamped`) and `net_status` reports it. A
+  component whose widest encoding, every list at its most, exceeds
+  `kNetDefaultSnapshotBytes` is refused at startup (`ListTooLarge`): a list
+  never spans snapshots, and a collection that cannot fit one is entities, not
+  a list. A list component is never predicted.
+
+  On the wire a component is its head mask (one bit per head run, then one per
+  list, 64 bits at most), the masked head runs, then each mentioned list in
+  declared order: its count (a VarUInt, refused above the list's most), and per
+  element a present bit, then for a present element its run mask (absent when
+  the element has one run) and the masked runs. Order is positional and part of
+  the value: the receiver holds the authority's order exactly. The receiver
+  stages the image of its own value, resizes a mentioned list to the wire's
+  count (new elements start at the element default, dropped ones go), decodes
+  the present elements in place, and translates back. Staging never grows past
+  the layout's most, whatever a peer says. `ReplicationFoldVisible` folds each
+  visible list's count and each element's visible runs.
+
 There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
 puts one component into storage, the scene serializers, and the replicated table at
 once, deciding each from what that component's own `TypeSchema` declares. The engine
@@ -767,6 +818,21 @@ snapshots and a set of destroys owed.
 A field run travels iff `ChangedAt > floor`. First contact has floor zero, so
 everything is owed and the first send is full state; nothing special-cases a
 join.
+
+A list keeps a change generation per element run and one for its count
+(`ComponentState::CountChangedAt`). An element that stood at the same position
+before is compared run by run at wire precision; an appended element is stamped
+on every run, even where its bytes match what stood there before a shrink; a
+shrink drops the dropped elements' stamps. On first sight a list's count is
+stamped only when it holds something, and an element run still at the element
+default is not stamped, matching the head rule (not for a component coming
+back). A list is owed when its count moved after the floor, or any element run
+is owed by the run rule above; an owner-gated list a new owner may see is owed
+on an ownership move. A list no run of which a peer may see is never mentioned
+to it, so an all-owner-only list costs a non-owner one clear bit. Under loss a
+list converges because any element whose value or presence changed after a
+peer's floor is stamped after it. A removal from the middle resends the
+elements that shifted.
 
 **Proof, not transmission.** Floors advance only when an acknowledgement names
 the specific snapshot that carried the state. A snapshot that was written is not

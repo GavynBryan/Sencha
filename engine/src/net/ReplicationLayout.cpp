@@ -1,5 +1,7 @@
 #include <net/ReplicationLayout.h>
 
+#include <net/ReplicationCodec.h>
+#include <net/ReplicationRuntime.h>
 #include <world/serialization/NamedIdVocabulary.h>
 
 #include <cassert>
@@ -28,6 +30,22 @@ namespace
     void MixText(std::uint64_t& hash, std::string_view text)
     {
         MixBytes(hash, text.data(), text.size());
+    }
+
+    void MixField(std::uint64_t& hash, const ReplicatedField& field)
+    {
+        // The name goes in because a field list that agrees on every offset
+        // but disagrees on which member is which is still a disagreement.
+        MixText(hash, field.Name);
+        MixU64(hash, field.Offset);
+        MixU64(hash, field.Size);
+        MixU64(hash, field.Count);
+        MixU64(hash, static_cast<std::uint64_t>(field.Scalar));
+        MixU64(hash, field.Quantization.Bits);
+        MixBytes(hash, &field.Quantization.Min, sizeof(float));
+        MixBytes(hash, &field.Quantization.Max, sizeof(float));
+        MixU64(hash, field.OwnerOnly ? 1u : 0u);
+        MixU64(hash, field.OwnerLocal ? 1u : 0u);
     }
 
     bool IsWireScalar(FieldScalar scalar)
@@ -105,6 +123,8 @@ std::string_view ReplicationLayoutErrorToString(ReplicationLayoutError error)
     case ReplicationLayoutError::TooManyFields:       return "too many replicated fields";
     case ReplicationLayoutError::ContradictoryFieldPolicy:
         return "owner-only and everyone-but-owner on one field";
+    case ReplicationLayoutError::ListTooLarge:
+        return "a list at its most would not fit one snapshot";
     }
     return "unknown";
 }
@@ -118,11 +138,104 @@ void ReplicationLayout::Fail(ReplicationLayoutError error, std::string detail)
     ErrorDetail_ = std::move(detail);
 }
 
+bool ReplicationLayout::CompileFields(std::string_view owner, std::size_t size,
+                                      const std::vector<RuntimeField>& fields, std::vector<ReplicatedField>& out)
+{
+    for (const RuntimeField& field : fields)
+    {
+        // Checked first because it subsumes the rest: a field that never leaves
+        // this machine cannot also be contradictory about who receives it, and
+        // an inherited LocalOnly landing on a member that named an audience of
+        // its own is a narrowing rather than a disagreement.
+        if (field.LocalOnly)
+            continue;
+
+        if (field.OwnerOnly && field.OwnerLocal)
+        {
+            Fail(ReplicationLayoutError::ContradictoryFieldPolicy,
+                 std::string(owner) + "." + field.Name);
+            return false;
+        }
+
+        if (!IsWireScalar(field.Scalar))
+        {
+            Fail(ReplicationLayoutError::UnsupportedField,
+                 std::string(owner) + "." + field.Name);
+            return false;
+        }
+
+        // A Color3 leaf is three floats the flattener collapsed into one entry;
+        // the wire treats it as the three floats it is. Resolved before
+        // anything is validated, so every check below asks about the scalar the
+        // codec will actually see rather than the one the schema wrote down.
+        const bool packedColor = field.Scalar == FieldScalar::Color3;
+        const FieldScalar wire = packedColor ? FieldScalar::Float : field.Scalar;
+        const std::size_t wireSize = packedColor ? sizeof(float) : field.Size;
+
+        if (!QuantizationIsUsable(wire, field.Quantization))
+        {
+            Fail(ReplicationLayoutError::InvalidQuantization,
+                 std::string(owner) + "." + field.Name);
+            return false;
+        }
+
+        ReplicatedField compiled;
+        compiled.Name = field.Name;
+        compiled.Offset = field.Offset;
+        compiled.Count = packedColor ? std::uint8_t{ 3 } : field.Count;
+        compiled.Size = wireSize;
+        compiled.Scalar = wire;
+        compiled.Quantization = field.Quantization;
+        compiled.OwnerOnly = field.OwnerOnly;
+        compiled.OwnerLocal = field.OwnerLocal;
+
+        assert(compiled.Offset + compiled.Count * compiled.Size <= size
+               && "a replicated field runs past the end of its component");
+        // The width the codec will actually touch, which is not the same
+        // question as the one above: that one asks whether the field fits its
+        // component, this one asks whether the codec has an access sized to the
+        // field. Every integral narrower than four bytes lands in the 32-bit
+        // category, so the category cannot answer it.
+        assert(WidthIsAddressable(compiled.Scalar, compiled.Size)
+               && "a replicated field has a width the codec cannot address");
+        (void)size;
+        out.push_back(std::move(compiled));
+    }
+    return true;
+}
+
+bool ReplicationLayout::CompileListErased(std::string_view component, std::string_view name, std::size_t stride,
+                                          std::uint16_t most, const std::vector<RuntimeField>& fields,
+                                          std::span<const std::byte> elementDefault, std::vector<ReplicatedList>& out)
+{
+    const std::string qualified = std::string(component) + "." + std::string(name);
+    ReplicatedList list;
+    list.Name = std::string(name);
+    list.Stride = stride;
+    list.MaxCount = most;
+    list.ElementDefault.assign(elementDefault.begin(), elementDefault.end());
+    if (!CompileFields(qualified, stride, fields, list.Fields))
+        return false;
+    if (list.Fields.empty())
+    {
+        Fail(ReplicationLayoutError::NoReplicatedFields, qualified);
+        return false;
+    }
+    if (list.Fields.size() > kMaxReplicatedRunsPerListElement)
+    {
+        Fail(ReplicationLayoutError::TooManyFields, qualified);
+        return false;
+    }
+    out.push_back(std::move(list));
+    return true;
+}
+
 bool ReplicationLayout::AddErased(ComponentTypeId type,
                                   std::string_view name,
                                   std::size_t size,
                                   bool predicted,
-                                  const std::vector<RuntimeField>& fields)
+                                  const std::vector<RuntimeField>& fields,
+                                  std::vector<ReplicatedList> lists)
 {
     assert(!Sealed_ && "Cannot add components after ReplicationLayout::Seal");
 
@@ -138,75 +251,24 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
     component.Size = size;
     component.LocalSize = size;
     component.Predicted = predicted;
+    component.Lists = std::move(lists);
 
-    for (const RuntimeField& field : fields)
-    {
-        // Checked first because it subsumes the rest: a field that never leaves
-        // this machine cannot also be contradictory about who receives it, and
-        // an inherited LocalOnly landing on a member that named an audience of
-        // its own is a narrowing rather than a disagreement.
-        if (field.LocalOnly)
-            continue;
+    if (!CompileFields(name, size, fields, component.Fields))
+        return false;
 
-        if (field.OwnerOnly && field.OwnerLocal)
-        {
-            Fail(ReplicationLayoutError::ContradictoryFieldPolicy,
-                 std::string(name) + "." + field.Name);
-            return false;
-        }
-
-        if (!IsWireScalar(field.Scalar))
-        {
-            Fail(ReplicationLayoutError::UnsupportedField,
-                 std::string(name) + "." + field.Name);
-            return false;
-        }
-
-        // A Color3 leaf is three floats the flattener collapsed into one entry;
-        // the wire treats it as the three floats it is. Resolved before
-        // anything is validated, so every check below asks about the scalar the
-        // codec will actually see rather than the one the schema wrote down.
-        const bool packedColor = field.Scalar == FieldScalar::Color3;
-        const FieldScalar wire = packedColor ? FieldScalar::Float : field.Scalar;
-        const std::size_t wireSize = packedColor ? sizeof(float) : field.Size;
-
-        if (!QuantizationIsUsable(wire, field.Quantization))
-        {
-            Fail(ReplicationLayoutError::InvalidQuantization,
-                 std::string(name) + "." + field.Name);
-            return false;
-        }
-
-        ReplicatedField out;
-        out.Name = field.Name;
-        out.Offset = field.Offset;
-        out.Count = packedColor ? std::uint8_t{ 3 } : field.Count;
-        out.Size = wireSize;
-        out.Scalar = wire;
-        out.Quantization = field.Quantization;
-        out.OwnerOnly = field.OwnerOnly;
-        out.OwnerLocal = field.OwnerLocal;
-
-        assert(out.Offset + out.Count * out.Size <= size
-               && "a replicated field runs past the end of its component");
-        // The width the codec will actually touch, which is not the same
-        // question as the one above: that one asks whether the field fits its
-        // component, this one asks whether the codec has an access sized to the
-        // field. Every integral narrower than four bytes lands in the 32-bit
-        // category, so the category cannot answer it.
-        assert(WidthIsAddressable(out.Scalar, out.Size)
-               && "a replicated field has a width the codec cannot address");
-        component.Fields.push_back(std::move(out));
-    }
-
-    if (component.Fields.empty())
+    if (component.Fields.empty() && component.Lists.empty())
     {
         Fail(ReplicationLayoutError::NoReplicatedFields, std::string(name));
         return false;
     }
-    if (component.Fields.size() > kMaxReplicatedFieldsPerComponent)
+    if (component.Fields.size() + component.Lists.size() > kMaxReplicatedFieldsPerComponent)
     {
         Fail(ReplicationLayoutError::TooManyFields, std::string(name));
+        return false;
+    }
+    if (!component.Lists.empty() && (ReplicationMaxComponentBits(component) + 7) / 8 > kNetDefaultSnapshotBytes)
+    {
+        Fail(ReplicationLayoutError::ListTooLarge, std::string(name));
         return false;
     }
 
@@ -250,19 +312,18 @@ std::uint64_t ReplicationLayout::TableHash() const
             MixU64(hash, component.LocalSize);
         MixU64(hash, component.Fields.size());
         for (const ReplicatedField& field : component.Fields)
+            MixField(hash, field);
+        if (component.Lists.empty())
+            continue;
+        MixU64(hash, component.Lists.size());
+        for (const ReplicatedList& list : component.Lists)
         {
-            // The name goes in because a field list that agrees on every offset
-            // but disagrees on which member is which is still a disagreement.
-            MixText(hash, field.Name);
-            MixU64(hash, field.Offset);
-            MixU64(hash, field.Size);
-            MixU64(hash, field.Count);
-            MixU64(hash, static_cast<std::uint64_t>(field.Scalar));
-            MixU64(hash, field.Quantization.Bits);
-            MixBytes(hash, &field.Quantization.Min, sizeof(float));
-            MixBytes(hash, &field.Quantization.Max, sizeof(float));
-            MixU64(hash, field.OwnerOnly ? 1u : 0u);
-            MixU64(hash, field.OwnerLocal ? 1u : 0u);
+            MixText(hash, list.Name);
+            MixU64(hash, list.Stride);
+            MixU64(hash, list.MaxCount);
+            MixU64(hash, list.Fields.size());
+            for (const ReplicatedField& field : list.Fields)
+                MixField(hash, field);
         }
     }
     return hash;

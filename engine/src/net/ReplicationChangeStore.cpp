@@ -24,10 +24,80 @@ void ReplicationChangeStore::Reset()
     LiveEntities.clear();
     DepartedEntities.clear();
     LastGeneration = 0;
+    ClampedElements = 0;
 }
 
 namespace
 {
+    std::span<const std::byte> ElementAt(std::span<const std::byte> image, const ReplicationImageParts& parts,
+                                         const ReplicatedList& list, std::size_t index, std::size_t element)
+    {
+        return image.subspan(parts.Lists[index].Offset + element * list.Stride, list.Stride);
+    }
+
+    void StampListsOnFirstSight(const ReplicatedComponent& layout, std::span<const std::byte> image, bool returning,
+                                std::uint64_t generation, ReplicationChangeStore::ComponentState& added)
+    {
+        ReplicationImageParts parts;
+        if (!ReplicationSplitImage(layout, image, parts))
+            return;
+        for (std::size_t index = 0; index < layout.Lists.size(); ++index)
+        {
+            const ReplicatedList& list = layout.Lists[index];
+            const std::size_t count = parts.Lists[index].Count;
+            added.CountChangedAt[index] = returning || count > 0 ? generation : 0;
+            for (std::size_t element = 0; element < count; ++element)
+            {
+                const std::span<const std::byte> bytes = ElementAt(image, parts, list, index, element);
+                for (const ReplicatedField& field : list.Fields)
+                {
+                    const bool atDefault = std::memcmp(bytes.data() + field.Offset,
+                                                       list.ElementDefault.data() + field.Offset,
+                                                       field.Size * field.Count)
+                                        == 0;
+                    added.ChangedAt.push_back(atDefault && !returning ? 0 : generation);
+                }
+            }
+        }
+    }
+
+    void RestampLists(const ReplicatedComponent& layout, std::span<const std::byte> image, std::uint64_t generation,
+                      std::vector<std::uint64_t>& stamps, ReplicationChangeStore::ComponentState& held)
+    {
+        ReplicationImageParts now;
+        ReplicationImageParts before;
+        const bool readable = ReplicationSplitImage(layout, held.Bytes, before);
+        if (!ReplicationSplitImage(layout, image, now))
+            return;
+        const std::size_t headRuns = layout.Fields.size();
+        stamps.assign(held.ChangedAt.begin(), held.ChangedAt.begin() + std::min(headRuns, held.ChangedAt.size()));
+        stamps.resize(headRuns, generation);
+        std::size_t cursor = headRuns;
+        for (std::size_t index = 0; index < layout.Lists.size(); ++index)
+        {
+            const ReplicatedList& list = layout.Lists[index];
+            const std::size_t runs = list.Fields.size();
+            const std::size_t had = readable ? before.Lists[index].Count : 0;
+            const std::size_t count = now.Lists[index].Count;
+            for (std::size_t element = 0; element < count; ++element)
+            {
+                const bool kept = element < had && cursor + (element + 1) * runs <= held.ChangedAt.size();
+                const std::uint64_t moved =
+                    kept ? ReplicationChangedElementRuns(list, ElementAt(image, now, list, index, element),
+                                                         ElementAt(held.Bytes, before, list, index, element))
+                         : ~std::uint64_t{ 0 };
+                for (std::size_t run = 0; run < runs; ++run)
+                    stamps.push_back((moved & (std::uint64_t{ 1 } << run)) != 0
+                                         ? generation
+                                         : held.ChangedAt[cursor + element * runs + run]);
+            }
+            if (count != had || !readable)
+                held.CountChangedAt[index] = generation;
+            cursor += had * runs;
+        }
+        held.ChangedAt.swap(stamps);
+    }
+
     std::uint32_t AnchoredPeer(const World& world, EntityId anchor, bool hasOwners, bool& pastBound)
     {
         pastBound = false;
@@ -94,6 +164,11 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
         });
     }
 
+    std::vector<ReplicationImage> images;
+    images.reserve(columns.size());
+    for (const ResolvedComponent& column : columns)
+        images.emplace_back(*column.Layout);
+
     std::vector<ComponentId> authorityOnly;
     for (const ResolvedComponent& column : columns)
         if (column.Layout->AuthorityMaterialized)
@@ -109,6 +184,7 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
     // moved on most publishes, and that case must not pay an allocation just to
     // find out.
     std::vector<std::byte> scratch;
+    std::vector<std::uint64_t> stamps;
 
     // A const walk: this reads the world without publishing a write, so
     // running it cannot make everything look changed on the next tick.
@@ -165,8 +241,9 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 state.OwnerChangedAt = generation;
             }
 
-            for (const ResolvedComponent& column : columns)
+            for (std::size_t c = 0; c < columns.size(); ++c)
             {
+                const ResolvedComponent& column = columns[c];
                 if (!reading.HasComponent(entity, column.Column))
                     continue;
                 const void* raw = reading.GetComponentRaw(entity, column.Column);
@@ -182,10 +259,13 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 const auto* rawBytes = static_cast<const std::byte*>(raw);
                 if (column.Layout->ToWire != nullptr)
                 {
-                    scratch.assign(size, std::byte{ 0 });
+                    ReplicationImage& image = images[c];
+                    image.Reset();
                     const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
                                                           .Authority = &identity };
-                    column.Layout->ToWire(context, std::span(rawBytes, column.Layout->LocalSize), scratch);
+                    column.Layout->ToWire(context, std::span(rawBytes, column.Layout->LocalSize), image);
+                    ClampedElements += image.Clamped();
+                    scratch.assign(image.Bytes().begin(), image.Bytes().end());
                 }
                 else
                 {
@@ -228,6 +308,8 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                                 added.ChangedAt[run] = 0;
                         }
                     }
+                    if (!column.Layout->Lists.empty())
+                        StampListsOnFirstSight(*column.Layout, scratch, returning, generation, added);
                     added.SeenAt = generation;
                     added.AddedAt = generation;
                     state.Components.push_back(std::move(added));
@@ -239,15 +321,17 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 // A whole-component compare first, because most components do
                 // not move on most publishes and this settles them in one pass
                 // rather than one per run.
-                if (existing->Bytes.size() == size
-                    && std::memcmp(existing->Bytes.data(), scratch.data(), size) == 0)
+                if (existing->Bytes.size() == scratch.size()
+                    && std::memcmp(existing->Bytes.data(), scratch.data(), scratch.size()) == 0)
                 {
                     continue;
                 }
 
                 const std::uint64_t moved = ReplicationChangedFields(
                     *column.Layout, scratch, existing->Bytes);
-                existing->ChangedAt.resize(runs, generation);
+                if (!column.Layout->Lists.empty())
+                    RestampLists(*column.Layout, scratch, generation, stamps, *existing);
+                existing->ChangedAt.resize(std::max(existing->ChangedAt.size(), runs), generation);
                 for (std::size_t run = 0; run < runs; ++run)
                 {
                     if ((moved & (std::uint64_t{ 1 } << run)) != 0)
@@ -318,20 +402,63 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
 std::uint64_t ReplicationOwedFields(
     const ReplicatedComponent& component,
     const ReplicationChangeStore::ComponentState& held,
-    std::uint64_t floor, bool ownershipMoved, bool forOwner)
+    std::uint64_t floor, bool ownershipMoved, bool forOwner,
+    std::vector<std::uint64_t>* elements)
 {
+    // A run still at the default it was added with is what any peer holds
+    // already, so an ownership move newly showing it to one says nothing.
+    const auto owedRun = [&](const ReplicatedField& field, std::uint64_t changedAt) {
+        const bool gated = field.OwnerOnly || field.OwnerLocal;
+        return changedAt > floor || (gated && ownershipMoved && changedAt != 0);
+    };
+
     std::uint64_t owed = 0;
     for (std::size_t run = 0; run < component.Fields.size(); ++run)
-    {
-        const bool moved =
-            run < held.ChangedAt.size() && held.ChangedAt[run] > floor;
-        const bool gated =
-            component.Fields[run].OwnerOnly || component.Fields[run].OwnerLocal;
-        // A run still at the default it was added with is what any peer holds
-        // already, so an ownership move newly showing it to one says nothing.
-        const bool everMoved = run < held.ChangedAt.size() && held.ChangedAt[run] != 0;
-        if (moved || (gated && ownershipMoved && everMoved))
+        if (run < held.ChangedAt.size() && owedRun(component.Fields[run], held.ChangedAt[run]))
             owed |= (std::uint64_t{ 1 } << run);
+    owed &= ReplicationVisibleFields(component, forOwner);
+    if (component.Lists.empty())
+        return owed;
+
+    ReplicationImageParts parts;
+    if (!ReplicationSplitImage(component, held.Bytes, parts))
+        return owed;
+    std::size_t cursor = component.Fields.size();
+    for (std::size_t index = 0; index < component.Lists.size(); ++index)
+    {
+        const ReplicatedList& list = component.Lists[index];
+        const std::size_t runs = list.Fields.size();
+        const std::size_t count = parts.Lists[index].Count;
+        const std::size_t first = cursor;
+        cursor += count * runs;
+        const std::uint64_t visible = ReplicationVisibleElementRuns(list, forOwner);
+        if (visible == 0 || first + count * runs > held.ChangedAt.size())
+            continue;
+
+        std::uint64_t gatedVisible = 0;
+        for (std::size_t run = 0; run < runs; ++run)
+            if (list.Fields[run].OwnerOnly || list.Fields[run].OwnerLocal)
+                gatedVisible |= (std::uint64_t{ 1 } << run);
+        gatedVisible &= visible;
+        const std::uint64_t countAt = held.CountChangedAt[index];
+        bool mentioned = countAt > floor || (gatedVisible != 0 && ownershipMoved && countAt != 0);
+
+        const std::size_t written = elements != nullptr ? elements->size() : 0;
+        for (std::size_t element = 0; element < count; ++element)
+        {
+            std::uint64_t carried = 0;
+            for (std::size_t run = 0; run < runs; ++run)
+                if (owedRun(list.Fields[run], held.ChangedAt[first + element * runs + run]))
+                    carried |= (std::uint64_t{ 1 } << run);
+            carried &= visible;
+            mentioned = mentioned || carried != 0;
+            if (elements != nullptr)
+                elements->push_back(carried);
+        }
+        if (mentioned)
+            owed |= std::uint64_t{ 1 } << (component.Fields.size() + index);
+        else if (elements != nullptr)
+            elements->resize(written);
     }
-    return owed & ReplicationVisibleFields(component, forOwner);
+    return owed;
 }

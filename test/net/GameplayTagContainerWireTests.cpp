@@ -119,7 +119,8 @@ TEST(GameplayTagContainerWire, AFewSharedTagsSendOnlyTheFirstRun)
         const std::size_t runs = (shared + kGameplayTagSharedRunLength - 1) / kGameplayTagSharedRunLength;
         const std::uint64_t sent = sentFor(shared);
         EXPECT_EQ(std::popcount(sent), static_cast<int>(runs)) << shared << " shared tags";
-        EXPECT_EQ(ReplicationEncodedComponentBits(*component, sent),
+        const GameplayTagContainerWire none{};
+        EXPECT_EQ(ReplicationEncodedComponentBits(*component, std::as_bytes(std::span(&none, 1)), sent),
                   component->Fields.size() + runs * kGameplayTagSharedRunLength * 32u)
             << shared << " shared tags cost the mask and their runs, nothing more";
     }

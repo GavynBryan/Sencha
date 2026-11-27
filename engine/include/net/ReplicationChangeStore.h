@@ -5,6 +5,7 @@
 #include <net/ReplicationSnapshot.h>
 #include <zone/ZoneId.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -46,8 +47,11 @@ public:
         std::uint8_t WireIndex = 0;
         // Wire-snapped bytes, sized to the component.
         std::vector<std::byte> Bytes;
-        // One entry per field run: the generation that run last moved at.
+        // The generation each head run last moved at, then each list's
+        // elements' runs, element by element, in declared order.
         std::vector<std::uint64_t> ChangedAt;
+        // The generation each list's count last moved at.
+        std::array<std::uint64_t, kMaxReplicatedListsPerComponent> CountChangedAt{};
         // The last pass that found this component on the entity, for the same
         // reason EntityState carries one: what a pass did not see is gone.
         std::uint64_t SeenAt = 0;
@@ -141,6 +145,8 @@ public:
     [[nodiscard]] const EntityState* Find(NetEntityId id) const;
     [[nodiscard]] std::uint64_t Generation() const { return LastGeneration; }
     [[nodiscard]] std::size_t Size() const { return LiveEntities.size(); }
+    // List elements a codec asked to send past its list's most, over every Update.
+    [[nodiscard]] std::uint64_t Clamped() const { return ClampedElements; }
 
     void Reset();
 
@@ -151,6 +157,7 @@ private:
     std::vector<EntityState> LiveEntities;
     std::vector<NetEntityId> DepartedEntities;
     std::uint64_t LastGeneration = 0;
+    std::uint64_t ClampedElements = 0;
 };
 
 // Which runs of a component a peer is owed: the ones that moved after its
@@ -161,7 +168,12 @@ private:
 // because a diagnostic that answers "why has this field not reached that peer"
 // has to answer it with the rule the writer actually applies. Two copies of it
 // would agree until the day the answer mattered.
+//
+// A list is owed when its count moved after the floor or any element run is
+// owed by the same rule. For each owed list, `elements` receives one run mask per
+// element, in declared order, which is what ReplicationEncodeComponent takes.
 [[nodiscard]] std::uint64_t ReplicationOwedFields(
     const ReplicatedComponent& component,
     const ReplicationChangeStore::ComponentState& held,
-    std::uint64_t floor, bool ownershipMoved, bool forOwner);
+    std::uint64_t floor, bool ownershipMoved, bool forOwner,
+    std::vector<std::uint64_t>* elements = nullptr);

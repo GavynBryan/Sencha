@@ -1905,3 +1905,20 @@ names the World whose `SimulationAuthority` admits an `AuthorityOnly` verb, and
 the engine sets it to its runtime World. Verb bodies no longer check authority
 themselves. The replication table hash and the net protocol do not change: no
 admission travels on the wire. Save and scene formats are unchanged.
+
+## v92
+
+A replication codec may declare lists beside its fixed head
+(`ReplicatedListOf`, `ReplicatedList`, `ReplicatedComponent::Lists`), and every
+translated component now goes through `ReplicationImage`
+(`net/ReplicationImage.h`): `ReplicationToWire` and `ReplicationFromWire` take
+the image, a codec without lists still writes its `Wire` head unchanged.
+`ReplicationEncodeComponent` and `ReplicationEncodedComponentBits` take the
+image and per-element run masks, `ReplicationDecodeImage` decodes onto an image,
+`ReplicationFoldFields` is `ReplicationFoldVisible` (it takes the peer's
+ownership rather than a mask), `ReplicationOwedFields` can return element masks,
+`ReplicationChangeStore::ComponentState` gains `CountChangedAt`, the store
+counts clamped elements (`Clamped`), and `ReplicationLayoutError` gains
+`ListTooLarge`. No engine component declares a list yet, so the replication
+table hash, the wire and the net protocol (11) are unchanged. Save and scene
+formats are unchanged.

@@ -74,7 +74,7 @@ TEST(NamedIdWire, TwoMachinesThatRegisteredNamesInDifferentOrdersExchangeACompon
 
     const NamedWireProbe sent{ .Side = sender.Tag("faction.red"), .Carried = sender.Item("items/medkit.sdata"),
                                .Standing = -7 };
-    std::vector<std::byte> image(component->Size);
+    ReplicationImage image(*component);
     ReplicationWireContext sending;
     sending.Entities = &sender.Entities;
     component->ToWire(sending,

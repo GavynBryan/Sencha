@@ -992,7 +992,7 @@ TEST(ReplicationCodec, WhatTheSizerReservesIsWhatTheWriterSpends)
                 ASSERT_TRUE(ReplicationEncodeComponent(component, current, mask, writer))
                     << component.Name;
                 EXPECT_EQ(writer.BitsWritten(),
-                          ReplicationEncodedComponentBits(component, mask))
+                          ReplicationEncodedComponentBits(component, current, mask))
                     << component.Name << " measured differently than it was written";
             }
         }

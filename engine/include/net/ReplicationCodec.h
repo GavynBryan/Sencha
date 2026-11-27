@@ -1,5 +1,6 @@
 #pragma once
 
+#include <net/ReplicationImage.h>
 #include <net/ReplicationLayout.h>
 
 #include <cstddef>
@@ -70,6 +71,9 @@ private:
     bool Overflow = false;
 };
 
+// What NetBitWriter::WriteVarUInt spends on a value, for a caller sizing before it writes.
+[[nodiscard]] std::size_t NetVarUIntBits(std::uint64_t value);
+
 class NetBitReader
 {
 public:
@@ -120,27 +124,24 @@ private:
 // that what it believes a client has is exactly what the client got, and a
 // desync comparison reports real divergence rather than rounding.
 void ReplicationSnapToWire(const ReplicatedComponent& component,
-                           std::span<std::byte> componentBytes);
+                           std::span<std::byte> image);
 
-// Folds the named field runs of one component into a rolling hash, so two
-// machines can say whether they hold the same value without sending the value.
+// Folds what one peer may receive of a component's image into a rolling hash,
+// so two machines can say whether they hold the same value without sending it:
+// each visible head run, and for each visible list its count and every
+// element's visible runs.
 //
-// Only the bytes the fields declare, run by run. Never the whole component: the
+// Only the bytes the fields declare, run by run. Never the whole image: the
 // padding between two fields is uninitialized on both sides and folding it
-// would report divergence in bytes neither machine has an opinion about.
-//
-// The caller chooses the mask, and the choice is the whole design. Fold what
-// the peer was eligible to receive -- ReplicationVisibleFields answers that per
-// peer -- because an owner-only field withheld from a non-owner is a field both
-// sides are correct to disagree about, and a check that fires on those gets
-// turned off, which is worse than not having it.
+// would report divergence in bytes neither machine has an opinion about. An
+// owner-only run withheld from a non-owner is a run both sides are correct to
+// disagree about, so it is left out for that peer.
 //
 // Bytes are expected already snapped to wire precision on the authority's side.
-// Order matters: the same fields folded in a different order give a different
-// hash, which is why both sides walk the layout rather than their own storage.
-[[nodiscard]] std::uint64_t ReplicationFoldFields(
+// Order matters: both sides walk the layout rather than their own storage.
+[[nodiscard]] std::uint64_t ReplicationFoldVisible(
     std::uint64_t hash, const ReplicatedComponent& component,
-    std::span<const std::byte> componentBytes, std::uint64_t fields);
+    std::span<const std::byte> image, bool forOwner);
 
 //-----------------------------------------------------------------------------
 // Component encode and decode
@@ -154,36 +155,52 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
 // The two halves of the answer are below, so a caller composes them rather than
 // reinventing either.
 //
+// `fields` holds one bit per head run and then one bit per list. `elements`
+// holds, for each list whose bit is set and in declared order, one run mask per
+// element of that list; an element whose mask is clear travels as one bit.
+//
 // Returns false if the component did not fit, which is a budgeting error on the
 // authority and never a wire condition.
 //-----------------------------------------------------------------------------
 [[nodiscard]] bool ReplicationEncodeComponent(const ReplicatedComponent& component,
-                                              std::span<const std::byte> current,
+                                              std::span<const std::byte> image,
                                               std::uint64_t fields,
-                                              NetBitWriter& writer);
+                                              NetBitWriter& writer,
+                                              std::span<const std::uint64_t> elements = {});
 
 // Exactly what the call above would write for the same mask, without writing it.
 // A caller filling a fixed budget needs this because a bit writer cannot be
 // rewound: an entity that turns out not to fit part way through cannot be taken
 // back out, and a half-written entity is not a smaller snapshot, it is a corrupt
-// one. The value depends on the mask, not on the bytes.
+// one. The value depends on the masks and the list counts, not on the values.
 [[nodiscard]] std::size_t ReplicationEncodedComponentBits(
-    const ReplicatedComponent& component, std::uint64_t fields);
+    const ReplicatedComponent& component, std::span<const std::byte> image,
+    std::uint64_t fields, std::span<const std::uint64_t> elements = {});
 
-// Which of a component's field runs the wire would carry differently. An empty
-// `previous` means every run: there is nothing to difference against, which is
-// the fresh-state form. Quantized runs compare at wire precision, so movement
-// finer than the declared resolution is not a change.
+// Which of a component's field runs the wire would carry differently, and
+// which lists differ in count or in any element. An empty `previous` means
+// every run: there is nothing to difference against, which is the fresh-state
+// form. Quantized runs compare at wire precision, so movement finer than the
+// declared resolution is not a change.
 [[nodiscard]] std::uint64_t ReplicationChangedFields(
     const ReplicatedComponent& component,
+    std::span<const std::byte> current,
+    std::span<const std::byte> previous);
+
+// The same question for one element of a list, its bytes at the element's start.
+[[nodiscard]] std::uint64_t ReplicationChangedElementRuns(
+    const ReplicatedList& list,
     std::span<const std::byte> current,
     std::span<const std::byte> previous);
 
 // Which of a component's field runs a particular peer is allowed to receive:
 // owner-only runs to the owner, owner-local runs to everyone else. A fact about
 // the receiver, not about the value.
+// A list's bit is set when any of its element runs is visible.
 [[nodiscard]] std::uint64_t ReplicationVisibleFields(
     const ReplicatedComponent& component, bool forOwner);
+[[nodiscard]] std::uint64_t ReplicationVisibleElementRuns(
+    const ReplicatedList& list, bool forOwner);
 
 // Applies a decoded component onto `target`, which must already hold the
 // receiver's current value for this component: fields whose mask bit is clear
@@ -198,13 +215,31 @@ void ReplicationSnapToWire(const ReplicatedComponent& component,
 // that instantiates a prefab there was no entity to stage from, and the fields
 // the message left alone have to keep what the prefab put there rather than
 // the type's defaults.
+//
+// For a component without lists only; one with lists decodes into its image.
 [[nodiscard]] bool ReplicationDecodeComponent(const ReplicatedComponent& component,
                                               NetBitReader& reader,
                                               std::span<std::byte> target,
                                               std::uint64_t* fieldMask = nullptr);
 
+enum class ReplicationDecodeError : std::uint8_t
+{
+    None = 0,
+    Truncated,
+    // A list's count above the most its layout declares.
+    CountAboveMost,
+};
+
+// The same onto an image: a mentioned list is resized to the wire's count (new
+// elements start at the element default), then its present elements are
+// decoded in place. Staging never grows past the layout's most.
+[[nodiscard]] ReplicationDecodeError ReplicationDecodeImage(const ReplicatedComponent& component,
+                                                            NetBitReader& reader,
+                                                            ReplicationImage& target,
+                                                            std::uint64_t* fieldMask = nullptr);
+
 // Widest a single component can be on the wire: the mask plus every field at
-// full width. Callers size staging buffers from this rather than from anything
-// a peer said.
+// full width, and every list at its most. Callers size staging buffers from
+// this rather than from anything a peer said.
 [[nodiscard]] std::size_t ReplicationMaxComponentBits(
     const ReplicatedComponent& component);

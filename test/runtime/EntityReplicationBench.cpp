@@ -392,6 +392,9 @@ namespace
             if (world.IsRegistered(component->Type))
                 columns[i] = world.GetComponentIdByType(component->Type);
         }
+        std::vector<ReplicationImage> images;
+        for (std::size_t i = 0; i < layout.Size(); ++i)
+            images.emplace_back(*layout.At(static_cast<std::uint8_t>(i)));
         std::vector<std::byte> scratch;
         std::vector<std::byte> copy;
         std::size_t equal = 0;
@@ -408,17 +411,22 @@ namespace
                     const auto* raw = static_cast<const std::byte*>(world.GetComponentRaw(local, columns[held.WireIndex]));
                     if (component.ToWire != nullptr)
                     {
-                        scratch.assign(component.Size, std::byte{ 0 });
+                        ReplicationImage& image = images[held.WireIndex];
+                        image.Reset();
                         const ReplicationWireContext context{ .Entities = &world, .Entity = local,
                                                               .Authority = &publisher.Identity };
-                        component.ToWire(context, std::span(raw, component.LocalSize), scratch);
+                        component.ToWire(context, std::span(raw, component.LocalSize), image);
+                        scratch.assign(image.Bytes().begin(), image.Bytes().end());
                     }
                     else
                     {
                         scratch.assign(raw, raw + component.Size);
                     }
                     ReplicationSnapToWire(component, scratch);
-                    equal += std::memcmp(held.Bytes.data(), scratch.data(), component.Size) == 0 ? 1 : 0;
+                    equal += held.Bytes.size() == scratch.size()
+                                     && std::memcmp(held.Bytes.data(), scratch.data(), scratch.size()) == 0
+                                 ? 1
+                                 : 0;
                     copy.assign(held.Bytes.begin(), held.Bytes.end());
                 }
             }

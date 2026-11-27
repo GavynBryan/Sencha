@@ -576,9 +576,8 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
 
                 text += "\n  " + std::to_string(index) + "  "
                       + std::string(component->Name);
-                for (const ReplicatedField& field : component->Fields)
-                {
-                    text += "\n      " + field.Name;
+                const auto describe = [&text](const ReplicatedField& field, std::string_view indent) {
+                    text += "\n" + std::string(indent) + field.Name;
                     if (field.OwnerOnly)
                         text += "  owner-only";
                     if (field.OwnerLocal)
@@ -588,6 +587,14 @@ void RegisterNetConsoleCommands(ConsoleRegistry& registry, Engine& engine)
                         text += "  quantized " + std::to_string(field.Quantization.Bits)
                               + " bits";
                     }
+                };
+                for (const ReplicatedField& field : component->Fields)
+                    describe(field, "      ");
+                for (const ReplicatedList& list : component->Lists)
+                {
+                    text += "\n      " + list.Name + "[0.." + std::to_string(list.MaxCount) + "]";
+                    for (const ReplicatedField& field : list.Fields)
+                        describe(field, "          ");
                 }
             }
             result.Info(text);

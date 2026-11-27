@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <optional>
 
 namespace
 {
@@ -48,8 +49,10 @@ namespace
     {
         const ReplicatedComponent* Layout = nullptr;
         SnapshotSink Sink = SnapshotSink::World;
-        // Where this component's decoded bytes start in the plan's arena.
+        // Where this component's decoded bytes start in the plan's arena, and
+        // how many: its size, or the length of its staged wire image.
         std::size_t Offset = 0;
+        std::size_t Size = 0;
         // Whether the entity will already carry the column when this is
         // written: overwrite in place, or add. Decided while reading, which is
         // sound for an entity that already exists, because reading changes
@@ -122,20 +125,10 @@ namespace
         return true;
     }
 
-    // What a variable-width value costs on the wire, which the fill has to know
-    // before it writes one.
-    std::size_t VarUIntBits(std::uint64_t value)
-    {
-        std::size_t groups = 1;
-        for (std::uint64_t rest = value >> 7; rest != 0; rest >>= 7)
-            ++groups;
-        return groups * 8;
-    }
-
     // Not a constant any more: an identity is as wide as it needs to be.
     std::size_t NetEntityIdBits(NetEntityId id)
     {
-        return VarUIntBits(id.Value);
+        return NetVarUIntBits(id.Value);
     }
 }
 
@@ -442,6 +435,8 @@ namespace
     {
         std::uint32_t Component = 0;
         std::uint64_t Fields = 0;
+        std::size_t FirstElement = 0;
+        std::size_t ElementCount = 0;
     };
 
     // What a snapshot would say about one entity for one peer, and what saying
@@ -485,7 +480,8 @@ namespace
     bool PlanEntity(const ReplicationChangeStore::EntityState& entity,
                     const ReplicationLayout& layout,
                     const ReplicationPeerState& peer, std::uint32_t ownerPeer,
-                    std::vector<MentionedComponent>& mentions, PlannedEntity& out)
+                    std::vector<MentionedComponent>& mentions, std::vector<std::uint64_t>& elements,
+                    PlannedEntity& out)
     {
         const std::uint64_t floor = peer.Floor(entity.Id);
         const bool isOwner = ownerPeer != 0 && entity.Owner == ownerPeer;
@@ -497,6 +493,7 @@ namespace
         const bool ownershipMoved = entity.OwnerChangedAt > floor;
 
         const std::size_t first = mentions.size();
+        const std::size_t firstElement = elements.size();
         // One bit for whether anything was removed, and the count only when
         // something was. A component leaving is rare and an entity is common,
         // so a byte-wide count on every entity of every snapshot costs more
@@ -513,7 +510,7 @@ namespace
         const bool sendAuthored = IsAuthoredPersistentEntityId(entity.Persistent) && !peer.Knows(entity.Id);
         bits += kAuthoredPresentBits;
         if (sendAuthored)
-            bits += VarUIntBits(entity.Persistent.Value);
+            bits += NetVarUIntBits(entity.Persistent.Value);
 
         bool owedAnything = false;
 
@@ -542,16 +539,22 @@ namespace
             // from, and the index about to be written names nothing.
             assert(component != nullptr && "store holds a component the layout lost");
 
+            const std::size_t elementStart = elements.size();
             const std::uint64_t owed =
-                ReplicationOwedFields(*component, held, floor, ownershipMoved, seesOwnerFields);
+                ReplicationOwedFields(*component, held, floor, ownershipMoved, seesOwnerFields, &elements);
             const bool announced = held.AddedAt <= floor;
             const bool seedsOwnersPrediction = isOwner && component->Predicted;
             if (owed == 0 && announced && !seedsOwnersPrediction)
                 continue;
-            mentions.push_back(MentionedComponent{ .Component = static_cast<std::uint32_t>(i), .Fields = owed });
+            const std::span<const std::uint64_t> carried =
+                std::span<const std::uint64_t>(elements).subspan(elementStart);
+            mentions.push_back(MentionedComponent{ .Component = static_cast<std::uint32_t>(i),
+                                                   .Fields = owed,
+                                                   .FirstElement = elementStart,
+                                                   .ElementCount = carried.size() });
             owedAnything = owedAnything || owed != 0 || !announced;
             bits += kComponentIndexBits
-                  + ReplicationEncodedComponentBits(*component, owed);
+                  + ReplicationEncodedComponentBits(*component, held.Bytes, owed, carried);
         }
 
         // An entity this peer has confirmed nothing about still needs announcing
@@ -561,6 +564,7 @@ namespace
         if (!owedAnything && peer.Knows(entity.Id))
         {
             mentions.resize(first);
+            elements.resize(firstElement);
             return false;
         }
 
@@ -688,6 +692,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
     // What this peer is owed about each entity, and what saying it would cost.
     std::vector<MentionedComponent> mentions;
     mentions.reserve(changes.Size() * 2);
+    std::vector<std::uint64_t> elements;
     std::vector<PlannedEntity> planned;
     planned.reserve(changes.Size());
     for (const ReplicationChangeStore::EntityState& entity : changes.Live())
@@ -700,7 +705,7 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             continue;
 
         PlannedEntity plan;
-        if (PlanEntity(entity, layout, peer, request.OwnerPeer, mentions, plan))
+        if (PlanEntity(entity, layout, peer, request.OwnerPeer, mentions, elements, plan))
             planned.push_back(plan);
     }
 
@@ -840,7 +845,9 @@ SnapshotWriteResult ReplicationWriteSnapshot(const SnapshotWriteRequest& request
             const ReplicatedComponent* component = layout.At(held.WireIndex);
             writer.WriteBits(held.WireIndex, kComponentIndexBits);
 
-            if (!ReplicationEncodeComponent(*component, held.Bytes, mention.Fields, writer))
+            if (!ReplicationEncodeComponent(
+                    *component, held.Bytes, mention.Fields, writer,
+                    std::span<const std::uint64_t>(elements).subspan(mention.FirstElement, mention.ElementCount)))
                 return result;
         }
 
@@ -971,6 +978,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     std::vector<std::byte> decoded;
     // A codec component's local value, staged to translate to or from its image.
     std::vector<std::byte> codecLocal;
+    std::optional<ReplicationImage> staging;
     planned.reserve(updatedCount);
 
     for (std::uint32_t i = 0; i < updatedCount; ++i)
@@ -1086,6 +1094,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             PlannedComponent slot;
             slot.Layout = component;
             slot.Offset = decoded.size();
+            slot.Size = component->Size;
             decoded.resize(slot.Offset + component->Size);
             // Taken after the resize, which is why nothing holds one across it.
             const std::span<std::byte> target(decoded.data() + slot.Offset,
@@ -1204,39 +1213,59 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 || (!spawned && world.HasComponent(entity, column));
             slot.PresentInWorld = present;
 
+            if (component->ToWire != nullptr)
+            {
+                if (staging.has_value())
+                    staging->Reset(*component);
+                else
+                    staging.emplace(*component);
+                const ReplicationDeferredReferences::Waiting* waiting =
+                    !spawned && earlier == nullptr ? identity.Deferred().Find(entity, component->Type) : nullptr;
+                if (earlier != nullptr)
+                {
+                    (void)staging->Assign(std::span(decoded).subspan(earlier->Offset, earlier->Size));
+                }
+                else if (waiting == nullptr || !staging->Assign(waiting->Image))
+                {
+                    // A delta lands on the wire image of what this machine holds,
+                    // so the receiver's own value is translated before decoding.
+                    codecLocal.assign(component->LocalSize, std::byte{});
+                    const void* current = !spawned && world.HasComponent(entity, column)
+                                              ? world.GetComponentRaw(entity, column)
+                                              : nullptr;
+                    if (current != nullptr)
+                    {
+                        std::memcpy(codecLocal.data(), current, component->LocalSize);
+                    }
+                    else if (!schema.WriteDefaultBytes(component->Type, codecLocal))
+                    {
+                        result.Error = SnapshotApplyError::UnknownComponentStorage;
+                        return result;
+                    }
+                    const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
+                                                          .Client = &identity };
+                    component->ToWire(context, codecLocal, *staging);
+                }
+                const ReplicationDecodeError decodeError =
+                    ReplicationDecodeImage(*component, reader, *staging, &slot.FieldMask);
+                if (decodeError != ReplicationDecodeError::None)
+                {
+                    result.Error = decodeError == ReplicationDecodeError::CountAboveMost
+                                       ? SnapshotApplyError::CapExceeded
+                                       : SnapshotApplyError::Truncated;
+                    return result;
+                }
+                decoded.resize(slot.Offset);
+                decoded.insert(decoded.end(), staging->Bytes().begin(), staging->Bytes().end());
+                slot.Size = staging->Bytes().size();
+                plannedComponents.push_back(slot);
+                continue;
+            }
+
             if (earlier != nullptr)
             {
                 std::memcpy(target.data(), decoded.data() + earlier->Offset,
                             component->Size);
-            }
-            else if (const ReplicationDeferredReferences::Waiting* waiting =
-                         !spawned && component->ToWire != nullptr ? identity.Deferred().Find(entity, component->Type)
-                                                                  : nullptr;
-                     waiting != nullptr && waiting->Image.size() == component->Size)
-            {
-                std::memcpy(target.data(), waiting->Image.data(), component->Size);
-            }
-            else if (component->ToWire != nullptr)
-            {
-                // A delta lands on the wire image of what this machine holds,
-                // so the receiver's own value is translated before decoding.
-                codecLocal.assign(component->LocalSize, std::byte{});
-                const void* current = !spawned && world.HasComponent(entity, column)
-                                          ? world.GetComponentRaw(entity, column)
-                                          : nullptr;
-                if (current != nullptr)
-                {
-                    std::memcpy(codecLocal.data(), current, component->LocalSize);
-                }
-                else if (!schema.WriteDefaultBytes(component->Type, codecLocal))
-                {
-                    result.Error = SnapshotApplyError::UnknownComponentStorage;
-                    return result;
-                }
-                std::fill(target.begin(), target.end(), std::byte{});
-                const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
-                                                      .Client = &identity };
-                component->ToWire(context, codecLocal, target);
             }
             else if (!spawned && world.HasComponent(entity, column))
             {
@@ -1420,8 +1449,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
             const PlannedComponent& slot =
                 plannedComponents[update.FirstComponent + c];
             const ReplicatedComponent& component = *slot.Layout;
-            const std::span<const std::byte> value(decoded.data() + slot.Offset,
-                                                   component.Size);
+            const std::span<const std::byte> value(decoded.data() + slot.Offset, slot.Size);
 
             switch (slot.Sink)
             {
@@ -1559,6 +1587,15 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     std::vector<std::uint64_t> unresolved;
     const auto translate = [&](EntityId entity, const ReplicatedComponent& component,
                                std::span<const std::byte> image) {
+        if (staging.has_value())
+            staging->Reset(component);
+        else
+            staging.emplace(component);
+        if (!staging->Assign(image))
+        {
+            identity.Deferred().Remember(entity, component.Type, {}, {});
+            return;
+        }
         const ComponentId column = world.GetComponentIdByType(component.Type);
         const bool present = world.HasComponent(entity, column);
         codecLocal.assign(component.LocalSize, std::byte{});
@@ -1570,7 +1607,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         unresolved.clear();
         const ReplicationWireContext context{ .Entities = &world, .Receiving = &world, .Entity = entity,
                                               .Client = &identity, .Unresolved = &unresolved };
-        component.FromWire(context, image, codecLocal);
+        component.FromWire(context, *staging, codecLocal);
         const bool wrote = present ? schema.SetComponentBytes(world, entity, component.Type, codecLocal)
                                    : schema.ImportComponent(world, entity, component.Type, codecLocal);
         assert(wrote && "a component the read half accepted would not write");
@@ -1580,7 +1617,7 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     for (const CodecWrite& pending : codecWrites)
     {
         const PlannedComponent& slot = plannedComponents[pending.Slot];
-        translate(pending.Entity, *slot.Layout, std::span(decoded.data() + slot.Offset, slot.Layout->Size));
+        translate(pending.Entity, *slot.Layout, std::span(decoded.data() + slot.Offset, slot.Size));
     }
     std::vector<ReplicationDeferredReferences::Waiting> bound;
     for (const ReplicationDeferredReferences::Waiting& waiting : identity.Deferred().All())
