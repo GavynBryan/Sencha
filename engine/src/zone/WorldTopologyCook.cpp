@@ -1,8 +1,10 @@
 #include <zone/WorldTopologyCook.h>
 
+#include <math/geometry/3d/ApertureFrame.h>
+
 #include <algorithm>
-#include <cmath>
 #include <format>
+#include <optional>
 #include <utility>
 
 namespace
@@ -30,9 +32,23 @@ void SetError(std::string* error, std::string message)
         *error = std::move(message);
 }
 
-bool Finite(Vec3d value)
+const AuthoredApertureCookInput* FindAperture(std::span<const AuthoredApertureCookInput> apertures,
+                                              const PersistableRef& ref)
 {
-    return std::isfinite(value.X) && std::isfinite(value.Y) && std::isfinite(value.Z);
+    if (!ref.Target.IsValid())
+        return nullptr;
+    for (const AuthoredApertureCookInput& aperture : apertures)
+        if (aperture.Id == ref.Target)
+            return &aperture;
+    return nullptr;
+}
+
+std::optional<ApertureFrame> CookedFrame(const AuthoredApertureCookInput* aperture)
+{
+    if (aperture == nullptr
+        || CheckApertureFrame(aperture->Transform, aperture->Aperture.HalfExtents) != ApertureFrameFault::None)
+        return std::nullopt;
+    return MakeApertureFrame(aperture->Transform, aperture->Aperture.HalfExtents);
 }
 
 } // namespace
@@ -40,6 +56,7 @@ bool Finite(Vec3d value)
 bool CookWorldTopology(WorldPartitionManifest& manifest,
                        std::span<const AuthoredDockCookInput> docks,
                        std::span<const AuthoredLinkCookInput> links,
+                       std::span<const AuthoredApertureCookInput> apertures,
                        std::string* error)
 {
     WorldPartitionManifest cooked = manifest;
@@ -75,30 +92,25 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
                                         DockIdToString(dock.Id)));
             return false;
         }
-        if (!std::isfinite(dock.HalfExtents.X) || !std::isfinite(dock.HalfExtents.Y)
-            || !(dock.HalfExtents.X > 0.0f) || !(dock.HalfExtents.Y > 0.0f)
-            || dock.Directions < 1u || dock.Directions > 3u)
+        // A dock's rectangle is held to an aperture's rule; only its normal
+        // differs, pointing from zone A into zone B.
+        const ApertureFrameFault fault = CheckApertureFrame(input.Transform, dock.HalfExtents);
+        if (fault == ApertureFrameFault::InvalidExtents || dock.Directions < 1u || dock.Directions > 3u)
         {
             SetError(error, std::format("dock {} has invalid geometry",
                                         DockIdToString(dock.Id)));
             return false;
         }
-
-        const bool unitScale = std::abs(input.Transform.Scale.X - 1.0f) <= 1e-4f
-            && std::abs(input.Transform.Scale.Y - 1.0f) <= 1e-4f
-            && std::abs(input.Transform.Scale.Z - 1.0f) <= 1e-4f;
-        const Vec3d normal = (-input.Transform.Forward()).Normalized();
-        const Vec3d right = input.Transform.Right().Normalized();
-        const Vec3d up = input.Transform.Up().Normalized();
-        if (!unitScale || !Finite(input.Transform.Position) || !Finite(normal)
-            || !Finite(right) || !Finite(up)
-            || normal.SqrMagnitude() < 0.99f || right.SqrMagnitude() < 0.99f
-            || up.SqrMagnitude() < 0.99f)
+        if (fault != ApertureFrameFault::None)
         {
             SetError(error, std::format("dock {} has non-finite transform",
                                         DockIdToString(dock.Id)));
             return false;
         }
+        const ApertureFrame frame = MakeApertureFrame(input.Transform, dock.HalfExtents);
+        const Vec3d normal = -frame.Normal;
+        const Vec3d right = frame.Right;
+        const Vec3d up = frame.Up;
 
         DockEndpoint endpointA{
             .Id = dock.Id,
@@ -141,9 +153,10 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
             SetError(error, "world link ids must be valid and unique");
             return false;
         }
+        const bool spatial = link.EndpointA.Target.IsValid() && link.EndpointB.Target.IsValid();
         const ZoneHeader* zoneA = FindZone(std::as_const(cooked), link.ZoneA);
         const ZoneHeader* zoneB = FindZone(std::as_const(cooked), link.ZoneB);
-        if (zoneA == nullptr || zoneB == nullptr || zoneA == zoneB)
+        if (zoneA == nullptr || zoneB == nullptr || (zoneA == zoneB && !spatial))
         {
             SetError(error, std::format("link {} has invalid endpoint zones",
                                         LinkIdToString(link.Id)));
@@ -169,6 +182,16 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
         endpointB.OwnerZone = zoneB->Id;
         endpointB.OtherZone = zoneA->Id;
         endpointB.Side = DockSide::B;
+        if (spatial)
+        {
+            const std::optional<ApertureFrame> frameA = CookedFrame(FindAperture(apertures, link.EndpointA));
+            const std::optional<ApertureFrame> frameB = CookedFrame(FindAperture(apertures, link.EndpointB));
+            if (frameA.has_value() && frameB.has_value())
+            {
+                endpointA.Aperture = frameA;
+                endpointB.Aperture = frameB;
+            }
+        }
 
         FindZone(cooked, zoneA->Id)->Links.push_back(std::move(endpointA));
         FindZone(cooked, zoneB->Id)->Links.push_back(std::move(endpointB));

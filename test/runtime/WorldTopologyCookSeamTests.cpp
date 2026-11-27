@@ -98,7 +98,7 @@ TEST(WorldTopologyCookSeam, AuthoredDocksSurviveCookSerializationAndDriveACrossi
     const AuthoredDockCookInput docks[] = { AuthoredDock(spec, 0, 0x11),
                                             AuthoredDock(spec, 1, 0x12) };
     std::string cookError;
-    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, &cookError)) << cookError;
+    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, {}, &cookError)) << cookError;
 
     // Through the file format the cook actually writes.
     const JsonValue written = WriteWorldPartitionManifest(manifest);
@@ -145,7 +145,7 @@ TEST(WorldTopologyCookSeam, AnUnmirroredEndpointIsRejectedByValidation)
 
     const AuthoredDockCookInput docks[] = { AuthoredDock(spec, 0, 0x21) };
     std::string cookError;
-    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, &cookError)) << cookError;
+    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, {}, &cookError)) << cookError;
 
     {
         const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
@@ -177,7 +177,7 @@ TEST(WorldTopologyCookSeam, AnEndpointNamingAMissingZoneIsRejectedByValidation)
 
     const AuthoredDockCookInput docks[] = { AuthoredDock(spec, 0, 0x31) };
     std::string cookError;
-    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, &cookError)) << cookError;
+    ASSERT_TRUE(CookWorldTopology(manifest, docks, {}, {}, &cookError)) << cookError;
 
     const ZoneId missing{ kZoneIdBase + 999 };
     for (DockEndpoint& endpoint : manifest.Zones[0].Docks)
@@ -203,7 +203,7 @@ TEST(WorldTopologyCookSeam, TheCookRefusesADockNamingAMissingZone)
 
     const AuthoredDockCookInput docks[] = { dock };
     std::string cookError;
-    EXPECT_FALSE(CookWorldTopology(manifest, docks, {}, &cookError));
+    EXPECT_FALSE(CookWorldTopology(manifest, docks, {}, {}, &cookError));
     EXPECT_FALSE(cookError.empty()) << "the cook refused without saying why";
 }
 
@@ -224,7 +224,7 @@ TEST(WorldTopologyCookSeam, AuthoredLinksSurviveCookAndAppearAsAdjacency)
 
     const AuthoredLinkCookInput links[] = { link };
     std::string cookError;
-    ASSERT_TRUE(CookWorldTopology(manifest, {}, links, &cookError)) << cookError;
+    ASSERT_TRUE(CookWorldTopology(manifest, {}, links, {}, &cookError)) << cookError;
 
     const JsonValue written = WriteWorldPartitionManifest(manifest);
     std::string readError;

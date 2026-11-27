@@ -10,6 +10,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
+#include <zone/WorldLinkValidation.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/WorldTopologyCook.h>
 
@@ -281,8 +282,24 @@ std::optional<WorldCookInput> CollectWorldCookInput(
     std::string topologyError;
     if (!world.CollectAuthoredTopology(dockInputs, linkInputs, &topologyError))
         return fail("CookWorld: " + topologyError);
+    // Every zone is loaded here, so a link is judged against all of them.
+    std::vector<AuthoredApertureCookInput> apertureInputs;
+    std::vector<ZoneId> zoneIds;
+    for (std::size_t zoneIndex = 0; zoneIndex < documents.size(); ++zoneIndex)
+    {
+        const ZoneId zone = data->Manifest.Zones[zoneIndex].Id;
+        zoneIds.push_back(zone);
+        WorldDocument::CollectAuthoredApertures(*documents[zoneIndex], zone, apertureInputs);
+    }
+    for (const ContentRiskRecord& record :
+         ValidateAuthoredLinks(data->Manifest, dockInputs, linkInputs, apertureInputs, zoneIds))
+    {
+        if (record.Severity == ContentRiskSeverity::Error)
+            return fail("CookWorld: " + record.RuleId + ": " + record.Message);
+        logging.GetLogger<WorldDocument>().Warn("CookWorld: {}: {}", record.RuleId, record.Message);
+    }
     const Registry& registry = world.WorldSceneDocument().GetRegistry();
-    if (!CookWorldTopology(data->Manifest, dockInputs, linkInputs, &topologyError))
+    if (!CookWorldTopology(data->Manifest, dockInputs, linkInputs, apertureInputs, &topologyError))
         return fail("CookWorld: " + topologyError);
 
     std::vector<DockId> authoredDocks;

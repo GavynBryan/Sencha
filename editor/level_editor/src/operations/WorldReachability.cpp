@@ -13,7 +13,9 @@
 #include <navigation/NavQueryContext.h>
 #include <navigation/NavigationQuery.h>
 #include <math/geometry/3d/Aabb3d.h>
+#include <math/geometry/3d/ApertureFrame.h>
 #include <navigation/tooling/NavMeshSnapshot.h>
+#include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
@@ -47,28 +49,45 @@ namespace
         std::unordered_map<std::uint64_t, std::uint32_t> PolygonOf;
     };
 
-    // A dock, as travel sees it: a rectangle in its plane, crossed from zone A
-    // to zone B along its normal, the other way, or both, and maybe gated.
+    enum class Side : std::uint8_t
+    {
+        A,
+        B,
+    };
+
+    [[nodiscard]] Side Other(Side side) { return side == Side::A ? Side::B : Side::A; }
+
+    // A way between zones as travel sees it: a dock, one rectangle in its
+    // plane crossed from zone A to zone B along its normal; or a spatial link,
+    // entered through the front of one aperture and left through the front of
+    // the other. Either goes one way, the other or both, and a dock may be gated.
     struct Connection
     {
-        DockId Id;
-        std::string Name;
-        ZoneId A;
-        ZoneId B;
-        Transform3f Frame;
-        Vec2d Half;
+        DockId Dock{};
+        LinkId Link{};
+        std::string Name{};
+        ZoneId A{};
+        ZoneId B{};
+        // Where each side is entered; a dock's two are its one plane.
+        Transform3f FrameA{};
+        Transform3f FrameB{};
+        Vec2d Half{};
         std::uint32_t Directions = DockDirectionBoth;
         bool Gated = false;
 
-        [[nodiscard]] bool Leaves(ZoneId zone) const
+        [[nodiscard]] ZoneId Zone(Side side) const { return side == Side::A ? A : B; }
+        [[nodiscard]] const Transform3f& Frame(Side side) const { return side == Side::A ? FrameA : FrameB; }
+        [[nodiscard]] bool Leaves(Side side) const
         {
-            return (zone == A && (Directions & DockDirectionAToB) != 0) || (zone == B && (Directions & DockDirectionBToA) != 0);
+            return (Directions & (side == Side::A ? DockDirectionAToB : DockDirectionBToA)) != 0;
         }
-        [[nodiscard]] ZoneId Beyond(ZoneId zone) const { return zone == A ? B : A; }
-        [[nodiscard]] Vec3d Into(ZoneId zone) const
+        // Which way is into the zone of `side`, from its frame.
+        [[nodiscard]] Vec3d Into(Side side) const
         {
-            const Vec3d normal = Frame.Rotation.RotateVector(Vec3d{ 0, 0, 1 });
-            return zone == B ? normal : normal * -1.0f;
+            if (Link.IsValid())
+                return Frame(side).Rotation.RotateVector(Vec3d::Forward());
+            const Vec3d normal = FrameA.Rotation.RotateVector(Vec3d{ 0, 0, 1 });
+            return side == Side::B ? normal : normal * -1.0f;
         }
     };
 
@@ -85,6 +104,8 @@ namespace
         std::vector<ZoneWalk> Zones;
         std::vector<Connection> Connections;
         std::vector<std::string> Unknown;
+        // World links travel cannot use: demand edges with no apertures, links
+        // whose apertures are missing, and links that tip a walker over.
         std::vector<std::string> Unconsidered;
         std::string Profile;
 
@@ -94,6 +115,41 @@ namespace
             return found != Zones.end() ? &*found : nullptr;
         }
     };
+
+    struct ApertureAt
+    {
+        Transform3f Frame;
+        Vec2d Half;
+    };
+
+    std::optional<ApertureAt> FindAperture(WorldDocument& world, ZoneId zone, const PersistableRef& ref)
+    {
+        const EditorDocument* document = world.ZoneDocument(zone);
+        if (document == nullptr || !ref.Target.IsValid())
+            return std::nullopt;
+        const EntityId entity = document->GetScene().EntityWithPersistentId(ref.Target);
+        const LinkAperture* aperture = document->GetRegistry().Components.TryGet<LinkAperture>(entity);
+        const Transform3f* frame = document->GetScene().TryGetWorldTransform(entity);
+        if (aperture == nullptr || frame == nullptr
+            || CheckApertureFrame(*frame, aperture->HalfExtents) != ApertureFrameFault::None)
+            return std::nullopt;
+        return ApertureAt{ *frame, aperture->HalfExtents };
+    }
+
+    // A spatial link a walker can pass: both apertures found, and the link
+    // keeps up pointing up.
+    std::optional<Connection> LinkCrossing(WorldDocument& world, const WorldLink& link)
+    {
+        const std::optional<ApertureAt> a = FindAperture(world, link.ZoneA, link.EndpointA);
+        const std::optional<ApertureAt> b = FindAperture(world, link.ZoneB, link.EndpointB);
+        if (!a || !b)
+            return std::nullopt;
+        const Transform3f aToB = ApertureMapping(MakeApertureFrame(a->Frame, a->Half), MakeApertureFrame(b->Frame, b->Half));
+        if (!IsUprightMapping(aToB))
+            return std::nullopt;
+        return Connection{ .Link = link.Id, .Name = LinkIdToString(link.Id), .A = link.ZoneA, .B = link.ZoneB,
+                           .FrameA = a->Frame, .FrameB = b->Frame, .Half = a->Half, .Directions = link.Directions };
+    }
 
     std::optional<WorldGraph> BuildGraph(WorldDocument& world, const JsonValue& arguments, EditorOperationOutcome& refusal)
     {
@@ -145,13 +201,20 @@ namespace
         for (const EntityId entity : scene.GetScene().GetAllEntities())
         {
             if (const WorldLink* link = components.TryGet<WorldLink>(entity))
-                graph.Unconsidered.push_back(LinkIdToString(link->Id));
+            {
+                if (std::optional<Connection> crossing = LinkCrossing(world, *link))
+                    graph.Connections.push_back(std::move(*crossing));
+                else
+                    graph.Unconsidered.push_back(LinkIdToString(link->Id));
+            }
             const WorldDock* dock = components.TryGet<WorldDock>(entity);
             const Transform3f* frame = scene.GetScene().TryGetWorldTransform(entity);
             if (dock == nullptr || frame == nullptr)
                 continue;
-            graph.Connections.push_back({ dock->Id, DockIdToString(dock->Id), dock->ZoneA, dock->ZoneB, *frame,
-                                          dock->HalfExtents, dock->Directions, gated.contains(dock->Id.Value) });
+            graph.Connections.push_back({ .Dock = dock->Id, .Name = DockIdToString(dock->Id), .A = dock->ZoneA,
+                                          .B = dock->ZoneB, .FrameA = *frame, .FrameB = *frame,
+                                          .Half = dock->HalfExtents, .Directions = dock->Directions,
+                                          .Gated = gated.contains(dock->Id.Value) });
         }
         return graph;
     }
@@ -159,8 +222,8 @@ namespace
     std::optional<DockId> DockNamed(const WorldGraph& graph, std::string_view text)
     {
         for (const Connection& connection : graph.Connections)
-            if (connection.Name == text)
-                return connection.Id;
+            if (connection.Dock.IsValid() && connection.Name == text)
+                return connection.Dock;
         return std::nullopt;
     }
 
@@ -168,9 +231,10 @@ namespace
     {
         std::size_t Zone = 0;
         NavLocation At;
-        // The arrival this one left from, and through which connection.
+        // The arrival this one left from, through which connection, from which side.
         std::optional<std::size_t> From;
         std::size_t Through = 0;
+        Side Departed = Side::A;
     };
 
     struct Walked
@@ -192,17 +256,19 @@ namespace
     {
         if (!connection.Gated)
             return true;
-        if (gates.Open.contains(connection.Id.Value))
+        if (gates.Open.contains(connection.Dock.Value))
             return true;
-        return possible && !gates.Closed.contains(connection.Id.Value);
+        return possible && !gates.Closed.contains(connection.Dock.Value);
     }
 
-    // Where the reached polygon of `zone` nearest the dock's middle meets its
-    // mouth: the middle of the part of that polygon inside the box the dock's
-    // rectangle reaches, so a long edge across a narrow dock counts, and the
-    // place to route to lies on the polygon.
-    std::optional<NavLocation> Mouth(const ZoneWalk& zone, const std::set<std::uint64_t>& reached, const Connection& connection)
+    // Where the reached polygon of `zone` nearest the middle of `side`'s
+    // rectangle meets its mouth: the middle of the part of that polygon inside
+    // the box the rectangle reaches, so a long edge across a narrow rectangle
+    // counts, and the place to route to lies on the polygon.
+    std::optional<NavLocation> Mouth(const ZoneWalk& zone, const std::set<std::uint64_t>& reached, const Connection& connection,
+                                     Side side)
     {
+        const Transform3f& frame = connection.Frame(side);
         const Aabb3d mouth(Vec3d{ -(connection.Half.X + kMouthReach), -(connection.Half.Y + kMouthReach), -kMouthDepth },
                            Vec3d{ connection.Half.X + kMouthReach, connection.Half.Y + kMouthReach, kMouthDepth });
         std::optional<NavLocation> best;
@@ -213,15 +279,15 @@ namespace
             const NavSnapshotPolygon& polygon = zone.Snapshot.Polygons[zone.PolygonOf.at(ref)];
             local.clear();
             for (std::uint32_t v = 0; v < polygon.VertexCount; ++v)
-                local.push_back(connection.Frame.InverseTransformPoint(zone.Snapshot.Vertices[polygon.FirstVertex + v]));
+                local.push_back(frame.InverseTransformPoint(zone.Snapshot.Vertices[polygon.FirstVertex + v]));
             const std::vector<Vec3d> inside = ClipConvexPolygon(local, mouth);
             if (inside.empty())
                 continue;
             Vec3d middle = Vec3d::Zero();
             for (const Vec3d& point : inside)
                 middle = middle + point;
-            middle = connection.Frame.TransformPoint(middle * (1.0f / static_cast<float>(inside.size())));
-            const float distance = (middle - connection.Frame.Position).Magnitude();
+            middle = frame.TransformPoint(middle * (1.0f / static_cast<float>(inside.size())));
+            const float distance = (middle - frame.Position).Magnitude();
             if (best && distance >= bestDistance)
                 continue;
             best = NavLocation{ polygon.Region.Zone, polygon.Region.Generation, polygon.Region.Profile, 0, ref, middle };
@@ -230,27 +296,27 @@ namespace
         return best;
     }
 
-    // Where crossing the dock into `zone` puts you: its middle carried a step
-    // into the zone, dropped onto the floor below it.
+    // Where crossing into `side`'s zone puts you: the middle of that side's
+    // rectangle carried a step into the zone, dropped onto the floor below it.
     std::optional<NavLocation> Landing(const ZoneWalk& zone, NavQueryContext& context, const Connection& connection,
-                                       bool possible)
+                                       Side side, bool possible)
     {
-        const Vec3d into = connection.Into(zone.Zone);
+        const Vec3d into = connection.Into(side);
         const float across = std::max(connection.Half.X, connection.Half.Y) + kMouthReach;
         const NavProjectResult landed = NavProjectPoint(zone.Navigation->Navigation, context,
-            zone.Navigation->Request(Capabilities(zone, possible)), connection.Frame.Position + into * kMouthDepth,
+            zone.Navigation->Request(Capabilities(zone, possible)), connection.Frame(side).Position + into * kMouthDepth,
             Vec3d{ across, kLandingDrop, across });
         return landed.Status == NavStatus::Success ? std::optional<NavLocation>(landed.Location) : std::nullopt;
     }
 
-    // Whether a walk got to `zone`'s side of the dock: to its mouth there, or,
-    // for a dock that drops into `zone`, to where it lands.
+    // Whether a walk got to `side` of the dock: to its mouth there, or, for a
+    // dock that drops into that side's zone, to where it lands.
     bool SideReached(const ZoneWalk& zone, const std::set<std::uint64_t>& reached, const Connection& connection,
-                     NavQueryContext& context)
+                     Side side, NavQueryContext& context)
     {
-        if (Mouth(zone, reached, connection))
+        if (Mouth(zone, reached, connection, side))
             return true;
-        const std::optional<NavLocation> landed = Landing(zone, context, connection, false);
+        const std::optional<NavLocation> landed = Landing(zone, context, connection, side, false);
         return landed && reached.contains(landed->Ref);
     }
 
@@ -285,15 +351,22 @@ namespace
             for (std::size_t c = 0; c < graph.Connections.size(); ++c)
             {
                 const Connection& connection = graph.Connections[c];
-                if (!connection.Leaves(zone.Zone) || !Passable(connection, gates, possible) || !Mouth(zone, reached, connection))
+                if (!Passable(connection, gates, possible))
                     continue;
-                const auto beyond = std::ranges::find(graph.Zones, connection.Beyond(zone.Zone), &ZoneWalk::Zone);
-                if (beyond == graph.Zones.end())
-                    continue;
-                const std::size_t other = static_cast<std::size_t>(beyond - graph.Zones.begin());
-                const std::optional<NavLocation> landed = Landing(*beyond, context, connection, possible);
-                if (landed && visited.insert({ other, landed->Ref }).second)
-                    walked.Arrivals.push_back({ other, *landed, next, c });
+                for (const Side side : { Side::A, Side::B })
+                {
+                    if (connection.Zone(side) != zone.Zone || !connection.Leaves(side)
+                        || !Mouth(zone, reached, connection, side))
+                        continue;
+                    const Side arriving = Other(side);
+                    const auto beyond = std::ranges::find(graph.Zones, connection.Zone(arriving), &ZoneWalk::Zone);
+                    if (beyond == graph.Zones.end())
+                        continue;
+                    const std::size_t other = static_cast<std::size_t>(beyond - graph.Zones.begin());
+                    const std::optional<NavLocation> landed = Landing(*beyond, context, connection, arriving, possible);
+                    if (landed && visited.insert({ other, landed->Ref }).second)
+                        walked.Arrivals.push_back({ other, *landed, next, c, side });
+                }
             }
         }
         return walked;
@@ -324,7 +397,7 @@ namespace
                     const std::optional<DockId> dock = DockNamed(graph, name.AsString());
                     if (!dock)
                         return EditorOperationOutcome::Refused("world.dock_unknown", "the world has no dock " + name.AsString());
-                    const auto connection = std::ranges::find(graph.Connections, *dock, &Connection::Id);
+                    const auto connection = std::ranges::find(graph.Connections, *dock, &Connection::Dock);
                     if (!connection->Gated)
                         return EditorOperationOutcome::Refused("world.dock_not_gated",
                                                                "dock " + name.AsString() + " has no gate to assume open or shut");
@@ -375,9 +448,10 @@ namespace
             NavLocation end = goal;
             if (step + 1 < chain.size())
             {
-                const std::size_t through = walked.Arrivals[chain[step + 1]].Through;
-                docks.push_back(through);
-                end = Mouth(zone, walked.Reached[arrival.Zone], graph.Connections[through]).value_or(arrival.At);
+                const Arrival& onward = walked.Arrivals[chain[step + 1]];
+                docks.push_back(onward.Through);
+                end = Mouth(zone, walked.Reached[arrival.Zone], graph.Connections[onward.Through], onward.Departed)
+                          .value_or(arrival.At);
             }
             Leg leg{ zone.Zone, {} };
             NavRouteBuffer route(256, 4096, 256);
@@ -410,9 +484,11 @@ namespace
         entry.Definition.Category = "World";
         entry.Definition.Description =
             "Whether one point of a world reaches another, across zones, asked twice like nav.reachable. A zone "
-            "is left only through a dock: by walking to its mouth, crossing it the ways it allows, and landing "
+            "is left through a dock: by walking to its mouth, crossing it the ways it allows, and landing "
             "where it puts you, so a dock in a floor is a drop. A gated dock counts as shut in the sure walk unless "
-            "assumed open. World links have no positions yet and are listed as unconsidered. Opens every zone.";
+            "assumed open. A world link with two apertures is walked the same way, in at the front of one and out "
+            "at the front of the other, within a zone or between two; a link with no apertures, or whose apertures "
+            "are missing or tip a walker over, is listed as unconsidered. Opens every zone.";
         entry.Definition.Parameters = DataField::Record({}, {}, {}, Parameters({
             DataField::Vector("from", {}, "world position"), DataField::Vector("to", {}, "world position") }));
         entry.Definition.Result = DataField::Record({}, {}, {}, {
@@ -428,7 +504,8 @@ namespace
                     DataField::ArrayOf("crossed", {}, "traversal kinds crossed", DataField::Field({}, DataFieldKind::String, {}, {})) }),
                 true),
             DataField::ArrayOf("docks", {}, "the docks crossed, in order", DataField::Field({}, DataFieldKind::String, {}, {})),
-            DataField::ArrayOf("unconsidered", {}, "world links, which have no positions", DataField::Field({}, DataFieldKind::String, {}, {})),
+            DataField::ArrayOf("links", {}, "the world links crossed, in order", DataField::Field({}, DataFieldKind::String, {}, {})),
+            DataField::ArrayOf("unconsidered", {}, "world links travel cannot use", DataField::Field({}, DataFieldKind::String, {}, {})),
             AssumptionsSchema(),
             DataField::Field("profile", DataFieldKind::String, {}, {}),
         });
@@ -469,11 +546,13 @@ namespace
                                                                 { "crossed", Names(leg.Crossed) } }));
             }
             std::vector<std::string> crossedDocks;
+            std::vector<std::string> crossedLinks;
             for (const std::size_t c : docks)
             {
-                crossedDocks.push_back(graph->Connections[c].Name);
-                if (!reached && graph->Connections[c].Gated && !gates.Open.contains(graph->Connections[c].Id.Value))
-                    dependsOnGates.push_back(graph->Connections[c].Name);
+                const Connection& connection = graph->Connections[c];
+                (connection.Link.IsValid() ? crossedLinks : crossedDocks).push_back(connection.Name);
+                if (!reached && connection.Gated && !gates.Open.contains(connection.Dock.Value))
+                    dependsOnGates.push_back(connection.Name);
             }
             std::string outcome = reached ? "reached" : possible.Goal ? "depends_on" : "unreached";
             if (!shown.Goal && (!sure.Complete || !possible.Complete))
@@ -491,6 +570,7 @@ namespace
                 { "depends_on_gates", Names(dependsOnGates) },
                 { "legs", JsonValue(std::move(legsJson)) },
                 { "docks", Names(crossedDocks) },
+                { "links", Names(crossedLinks) },
                 { "unconsidered", Names(graph->Unconsidered) },
                 { "assumptions", std::move(scenario) },
                 { "profile", JsonValue(graph->Profile) },
@@ -517,7 +597,7 @@ namespace
                 }),
                 true),
             DataField::Field("complete", DataFieldKind::Bool, {}, "false when a search ran out of room"),
-            DataField::ArrayOf("unconsidered", {}, "world links, which have no positions", DataField::Field({}, DataFieldKind::String, {}, {})),
+            DataField::ArrayOf("unconsidered", {}, "world links travel cannot use", DataField::Field({}, DataFieldKind::String, {}, {})),
         });
         entry.Execute = [&level](const JsonValue& arguments) {
             WorldDocument& world = level.LevelWorld();
@@ -537,15 +617,15 @@ namespace
             JsonValue::Array bypasses;
             for (const Connection& connection : graph->Connections)
             {
-                if (!connection.Gated || gates.Open.contains(connection.Id.Value))
+                if (!connection.Gated || gates.Open.contains(connection.Dock.Value))
                     continue;
                 bool bothSides = true;
-                for (const ZoneId side : { connection.A, connection.B })
+                for (const Side side : { Side::A, Side::B })
                 {
-                    const auto zone = std::ranges::find(graph->Zones, side, &ZoneWalk::Zone);
+                    const auto zone = std::ranges::find(graph->Zones, connection.Zone(side), &ZoneWalk::Zone);
                     bothSides = bothSides && zone != graph->Zones.end()
                         && SideReached(*zone, sure.Reached[static_cast<std::size_t>(zone - graph->Zones.begin())], connection,
-                                       *context);
+                                       side, *context);
                 }
                 if (bothSides)
                     bypasses.push_back(JsonValue(JsonValue::Object{

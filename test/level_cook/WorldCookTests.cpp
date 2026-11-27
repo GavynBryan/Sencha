@@ -7,6 +7,7 @@
 #include "scene_source/Json5Parser.h"
 #include "scene_source/Json5Writer.h"
 #include "document/WorldDocument.h"
+#include "document/EditorScene.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
 
 #include <assets/probes/ProbeVolumeFormat.h>
@@ -720,4 +721,123 @@ TEST_F(WorldCookTest, CookedSceneCarriesAuthoredIdsAndGeneratedEntitiesCarryNone
         << "the authored entity's id must cook through verbatim";
     EXPECT_GT(withoutId, 0u)
         << "cook-generated entities (cell meshes) must not carry identity";
+}
+
+namespace
+{
+// Two zones well apart, an aperture standing in each, and a world link naming
+// both: the smallest world a spatial link cooks from.
+struct LinkedWorld
+{
+    ZoneId First{};
+    ZoneId Second{};
+    PersistentEntityId ApertureA{};
+    PersistentEntityId ApertureB{};
+    EntityId LinkEntity{};
+};
+
+PersistentEntityId PlaceAperture(EditorDocument& document, const Transform3f& frame)
+{
+    EditorScene& scene = document.GetScene();
+    const EntityId entity = scene.CreateEntity(frame.Position);
+    scene.SetWorldTransform(entity, frame);
+    scene.GetRegistry().Components.AddComponent(entity, LinkAperture{});
+    scene.RefreshDerivedTransforms();
+    document.MarkDirty();
+    return scene.PersistentIdOf(entity);
+}
+
+LinkedWorld AuthorLinkedWorld(WorldDocument& world, std::optional<PersistentEntityId> endpointB = std::nullopt)
+{
+    LinkedWorld linked;
+    world.NewWorld("TestWorld");
+    linked.First = world.Manifest().Zones[0].Id;
+    linked.Second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+    EXPECT_TRUE(world.SetZoneBounds(linked.First, Aabb3d::FromMinMax(Vec3d{ -8, 0, -8 }, Vec3d{ 8, 4, 8 })));
+    EXPECT_TRUE(world.SetZoneBounds(linked.Second, Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 0, 0, 0 });
+    linked.ApertureA = PlaceAperture(world.FocusDocument(), Transform3f{ Vec3d{ 0, 2, 0 }, Quatf::Identity(), Vec3d::One() });
+    EXPECT_TRUE(world.SetFocusZone(linked.Second));
+    world.FocusDocument().GetScene().CreateBrush(Vec3d{ 32, 0, 0 });
+    linked.ApertureB = PlaceAperture(world.FocusDocument(),
+                                     Transform3f{ Vec3d{ 32, 2, 0 },
+                                                  Quatf::FromAxisAngle(Vec3d::Up(), 1.57079633f), Vec3d::One() });
+
+    EditorDocument& worldScene = world.WorldSceneDocument();
+    linked.LinkEntity = worldScene.GetScene().CreateEntity(Vec3d{});
+    WorldLink link;
+    link.Id = world.MintLinkId();
+    link.ZoneA = linked.First;
+    link.ZoneB = linked.Second;
+    link.EndpointA.Target = linked.ApertureA;
+    link.EndpointB.Target = endpointB.value_or(linked.ApertureB);
+    worldScene.GetScene().GetRegistry().Components.AddComponent(linked.LinkEntity, link);
+    worldScene.MarkDirty();
+    return linked;
+}
+} // namespace
+
+TEST_F(WorldCookTest, CooksASpatialLinkWithBothApertureFrames)
+{
+    WorldDocument world(Logging);
+    const LinkedWorld linked = AuthorLinkedWorld(world);
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+    const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
+    ASSERT_EQ(manifest.Zones.size(), 2u);
+    ASSERT_EQ(manifest.Zones[0].Links.size(), 1u);
+    ASSERT_EQ(manifest.Zones[1].Links.size(), 1u);
+    const LinkEndpoint& a = manifest.Zones[0].Links[0];
+    const LinkEndpoint& b = manifest.Zones[1].Links[0];
+    ASSERT_TRUE(a.Aperture.has_value());
+    ASSERT_TRUE(b.Aperture.has_value());
+    EXPECT_EQ(a.Side, DockSide::A);
+    EXPECT_NEAR(a.Aperture->Origin.Y, 2.0f, 1.0e-4f);
+    EXPECT_NEAR(a.Aperture->Normal.Z, -1.0f, 1.0e-4f) << "the front is the entity's forward";
+    EXPECT_NEAR(b.Aperture->Origin.X, 32.0f, 1.0e-4f);
+    EXPECT_NEAR(b.Aperture->Normal.X, -1.0f, 1.0e-4f);
+    EXPECT_EQ(a.Aperture->HalfExtents, LinkAperture{}.HalfExtents);
+
+    // The scene holds each endpoint as the aperture's persistent id and nothing live.
+    const fs::path scenePath = world.ResolveScenePath(world.Manifest().WorldSceneRef);
+    const std::string scene = ReadFile(scenePath);
+    EXPECT_NE(scene.find(PersistentEntityIdToString(linked.ApertureA)), std::string::npos);
+    EXPECT_NE(scene.find(PersistentEntityIdToString(linked.ApertureB)), std::string::npos);
+}
+
+TEST_F(WorldCookTest, RefusesALinkNamingNoAperture)
+{
+    WorldDocument world(Logging);
+    (void)AuthorLinkedWorld(world, PersistentEntityId{ 0x1234 });
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+
+    const WorldCookResult cooked = CookWorld(world, Root, 16.0, Logging, nullptr);
+    EXPECT_FALSE(cooked.Success);
+    EXPECT_NE(cooked.Error.find("partition.link.endpoint_not_aperture"), std::string::npos) << cooked.Error;
+}
+
+TEST_F(WorldCookTest, ALinkEditRestalesNoZone)
+{
+    WorldDocument world(Logging);
+    const LinkedWorld linked = AuthorLinkedWorld(world);
+    ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    const WorldCookResult first = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(first.Success) << first.Error;
+    const WorldPartitionManifest before = ParseCookedManifest(first.CookedManifestPath);
+
+    Registry& worldRegistry = world.WorldSceneDocument().GetScene().GetRegistry();
+    worldRegistry.Components.TryGet<WorldLink>(linked.LinkEntity)->Directions = DockDirectionAToB;
+    world.WorldSceneDocument().MarkDirty();
+    ASSERT_TRUE(world.SaveWorld());
+    const WorldCookResult second = CookWorld(world, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(second.Success) << second.Error;
+    const WorldPartitionManifest after = ParseCookedManifest(second.CookedManifestPath);
+
+    ASSERT_EQ(after.Zones.size(), before.Zones.size());
+    for (std::size_t zone = 0; zone < after.Zones.size(); ++zone)
+        EXPECT_EQ(after.Zones[zone].CookedContentHash, before.Zones[zone].CookedContentHash)
+            << "a link's frames live in the manifest, not in a zone's cooked content";
+    EXPECT_EQ(after.Zones[0].Links[0].Directions, DockDirectionAToB);
 }

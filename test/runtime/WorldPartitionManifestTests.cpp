@@ -295,6 +295,39 @@ TEST(WorldPartitionManifest, EndpointAndDebugMapsRoundTrip)
     EXPECT_EQ(*reread, manifest);
 }
 
+TEST(WorldPartitionManifest, LinkApertureFramesRoundTripAndAreAllOrNothing)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    manifest.Transitions.clear();
+    LinkEndpoint link{
+        .Id = LinkId{ 0xe1 },
+        .OwnerZone = ZoneId{ 0xa1 },
+        .OtherZone = ZoneId{ 0xa1 },
+        .Side = DockSide::A,
+        .Aperture = ApertureFrame{ .Origin = { 1, 2, 3 }, .Normal = { 0, 0, -1 }, .Right = { 1, 0, 0 },
+                                   .Up = { 0, 1, 0 }, .HalfExtents = { 0.5f, 1.5f } },
+    };
+    LinkEndpoint other = link;
+    other.Side = DockSide::B;
+    other.Aperture->Origin = { 6, 2, 3 };
+    manifest.Zones[0].Links = { link, other };
+
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    std::string error;
+    const auto reread = ReadWorldPartitionManifest(written, &error);
+    ASSERT_TRUE(reread.has_value()) << error;
+    EXPECT_EQ(*reread, manifest);
+
+    // An endpoint with some of a frame's keys and not the rest is malformed.
+    std::string text = JsonStringify(written, false);
+    const std::size_t up = text.find("\"up\"");
+    ASSERT_NE(up, std::string::npos);
+    text.replace(up, 4, "\"upp\"");
+    const auto damaged = JsonParse(text);
+    ASSERT_TRUE(damaged.has_value());
+    EXPECT_FALSE(ReadWorldPartitionManifest(*damaged, &error).has_value());
+}
+
 TEST(WorldPartitionManifest, GraphStreamingRoundTripsPresentSubset)
 {
     WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);

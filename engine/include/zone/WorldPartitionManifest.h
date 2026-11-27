@@ -9,6 +9,7 @@
 
 #include <core/assets/AssetId.h>
 #include <math/geometry/3d/Aabb3d.h>
+#include <math/geometry/3d/ApertureFrame.h>
 #include <render/PresentationSettings.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
@@ -37,6 +38,7 @@ struct DockEndpoint
     friend bool operator==(const DockEndpoint&, const DockEndpoint&) = default;
 };
 
+// A same-zone link puts both of its endpoints in one zone, told apart by Side.
 struct LinkEndpoint
 {
     LinkId Id;
@@ -45,6 +47,8 @@ struct LinkEndpoint
     DockSide Side = DockSide::A;
     uint32_t Kind = 0;
     uint32_t Directions = 3;
+    // This side's aperture; absent on a link that is a demand edge only.
+    std::optional<ApertureFrame> Aperture{};
 
     friend bool operator==(const LinkEndpoint&, const LinkEndpoint&) = default;
 };
