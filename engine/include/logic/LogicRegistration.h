@@ -28,3 +28,6 @@ inline void RegisterLogicComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeVerbRelaySerializer());
     registrar.AddSerializer(MakeResponsesSerializer());
 }
+
+// A relocated decision agent lets go of the places it chose on the side it left.
+void RegisterLogicRelocation(World& world);

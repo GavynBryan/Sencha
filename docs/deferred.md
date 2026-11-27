@@ -2007,3 +2007,23 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Consumer:** none yet.
 - **Trigger:** a plan that needs "this authored entity is gone" in the same
   patch document as component edits.
+
+## Discontinuous moves without a mapping
+
+- **What:** `RelocationSerial` advances only through `RelocateEntity`. A move
+  that places an entity somewhere rather than carrying it through a rigid
+  mapping snaps its transform history and leaves the serial alone: a level
+  change placing a kept body at its arrival landmark (`LevelChange::MoveBody`),
+  the dock clamp holding a pawn at a zone that is not ready
+  (`templates/fps/src/PawnStreaming.cpp`), and `PlaceSpawnedRoot`. A consumer
+  comparing serials sees continuous motion across them.
+- **Where:** `engine/src/app/LevelChange.cpp`, `templates/fps/src/PawnStreaming.cpp`,
+  `engine/src/world/transform/TransformHistory.cpp`; the serial in
+  `engine/include/world/relocation/RelocationSerial.h`.
+- **Consumer:** remote interpolation that holds across a serial change, which
+  the spatial portal suite's replicated traversal stage adds.
+- **Trigger:** the first serial consumer that also sees one of these moves: a
+  networked level change (see "Changing level inside a network session"), or a
+  replicated pawn the dock clamp corrects. Give a placement the serial without
+  a mapping (advance it and record no mapping in `FrameRelocations`), rather
+  than a second counter.

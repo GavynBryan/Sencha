@@ -5,8 +5,38 @@
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
 
+#include <math/geometry/3d/RigidMapping.h>
+
+#include <algorithm>
 #include <cstdint>
 #include <utility>
+
+namespace
+{
+// Every transition of a history at a capture, in one place.
+void Roll(WorldTransformHistory& history, const Transform3f& pose, bool snap)
+{
+    if (snap)
+    {
+        // Both ends of the blend are this tick: drawn exactly where the simulation put it.
+        history.Previous = pose;
+        history.Current = pose;
+        history.Snap = false;
+        history.Crossing = HistoryCrossing::None;
+        return;
+    }
+    if (history.Crossing == HistoryCrossing::Pending)
+    {
+        history.Previous = history.CrossingMapping * history.Current;
+        history.Current = pose;
+        history.Crossing = HistoryCrossing::Presenting;
+        return;
+    }
+    history.Previous = history.Current;
+    history.Current = pose;
+    history.Crossing = HistoryCrossing::None;
+}
+} // namespace
 
 void CaptureWorldTransformHistory(World& world,
                                   const StoragePartitionSet& partitions,
@@ -22,25 +52,16 @@ void CaptureWorldTransformHistory(World& world,
         const auto worlds = view.template Read<WorldTransform>();
 
         for (uint32_t row = 0; row < view.Count(); ++row)
-        {
-            WorldTransformHistory& history = histories[row];
-            const Transform3f& pose = worlds[row].Value;
-
-            // A snapped entity has no earlier pose worth blending from, so both
-            // ends of the blend are this tick and rendering shows it exactly
-            // where the simulation put it.
-            if (snapAll || history.Snap)
-            {
-                history.Previous = pose;
-                history.Current = pose;
-                history.Snap = false;
-                continue;
-            }
-
-            history.Previous = history.Current;
-            history.Current = pose;
-        }
+            Roll(histories[row], worlds[row].Value, snapAll || histories[row].Snap);
     });
+}
+
+void CarryWorldTransformHistory(WorldTransformHistory& history, const Transform3f& mapping, float tickFraction)
+{
+    history.CrossingMapping =
+        history.Crossing == HistoryCrossing::Pending ? mapping * history.CrossingMapping : mapping;
+    history.CrossedAt = std::clamp(tickFraction, 0.0f, 1.0f);
+    history.Crossing = HistoryCrossing::Pending;
 }
 
 void RequestTransformHistorySnap(World& world, EntityId entity)
@@ -123,5 +144,8 @@ Transform3f PresentationPoseOf(const World& world, EntityId entity, double alpha
 Transform3f ResolvePresentationPose(const WorldTransformHistory& history, double alpha)
 {
     const float t = alpha <= 0.0 ? 0.0f : (alpha >= 1.0 ? 1.0f : static_cast<float>(alpha));
-    return Transform3f::Interpolate(history.Previous, history.Current, t);
+    const Transform3f blended = Transform3f::Interpolate(history.Previous, history.Current, t);
+    if (history.Crossing != HistoryCrossing::Presenting || t >= history.CrossedAt)
+        return blended;
+    return InverseRigidMapping(history.CrossingMapping) * blended;
 }

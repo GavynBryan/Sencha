@@ -1,8 +1,11 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
+#include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
+#include <physics/components/CharacterController.h>
+#include <physics/components/CharacterMoverLink.h>
 #include <physics/components/Collider.h>
 #include <physics/components/PhysicsBodyLink.h>
 #include <physics/components/RigidBody.h>
@@ -137,4 +140,40 @@ TEST(PhysicsPartitionMigration, MovingIntoDormantPartitionEvictsThenRestores)
         physics.GetLinearVelocity(
             world.TryGet<PhysicsBodyLink>(projectile)->Body).X,
         4.0f);
+}
+
+TEST(PhysicsPartitionMigration, ActiveToActiveKeepsCharacterMoverAndEntityIdentity)
+{
+    constexpr StoragePartitionId first{ 1 };
+    constexpr StoragePartitionId second{ 2 };
+
+    PhysicsWorld physics;
+    World world;
+    RegisterPhysicsWorld(world);
+    CharacterMoverPool movers(physics);
+    const StoragePartitionSet active = Active(first, second);
+
+    const EntityId character = world.CreateEntity(first);
+    Transform3f transform;
+    transform.Position = Vec3d(0.0f, 2.0f, 0.0f);
+    world.AddComponent<LocalTransform>(character, LocalTransform{ transform });
+    world.AddComponent<WorldTransform>(character, WorldTransform{ transform });
+    world.AddComponent<CharacterController>(character, CharacterController{});
+    movers.Reconcile(world, active);
+    const CharacterMoverLink* before = world.TryGet<CharacterMoverLink>(character);
+    ASSERT_NE(before, nullptr);
+    const std::uint32_t slot = before->MoverSlot;
+    const std::uint64_t passes = movers.ReconcilePasses();
+
+    ASSERT_TRUE(world.MoveEntityToPartition(character, second));
+    movers.Reconcile(world, active);
+
+    const CharacterMoverLink* after = world.TryGet<CharacterMoverLink>(character);
+    ASSERT_NE(after, nullptr);
+    EXPECT_EQ(after->MoverSlot, slot);
+    EXPECT_EQ(movers.MoverCount(), 1u);
+    EXPECT_GT(movers.ReconcilePasses(), passes) << "the move is structural churn the pool looked at";
+    EXPECT_TRUE(movers.RestorePosition(world, character, Vec3d(0.0f, 3.0f, 0.0f)))
+        << "the slot still holds this entity's own mover";
+    EXPECT_EQ(world.GetEntityPartition(character), second);
 }

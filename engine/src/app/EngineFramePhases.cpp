@@ -21,6 +21,7 @@
 #include <runtime/spawn/GainedMemberSpawns.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
+#include <world/relocation/Relocation.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
 #include <world/transform/TransformHistory.h>
@@ -943,6 +944,8 @@ void Engine::RegisterSimulationFramePhases()
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
+        // After every presentation consumer of this frame has read them.
+        ClearFrameRelocations(*zones.Entities);
 
         engine.World().EndFrameView();
         ctx.Zones = nullptr;

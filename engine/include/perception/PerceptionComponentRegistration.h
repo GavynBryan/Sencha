@@ -13,3 +13,6 @@ inline void RegisterPerceptionComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<PerceptionComponents>();
 }
+
+// A relocated observer forgets what it observed.
+void RegisterPerceptionRelocation(World& world);

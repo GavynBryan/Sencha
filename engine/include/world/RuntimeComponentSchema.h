@@ -8,6 +8,7 @@
 class ComponentRegistrar;
 class ComponentSerializerRegistry;
 class ReplicationLayout;
+class World;
 class WorldComponentSchema;
 
 // Composes the engine's component vocabulary by asking each owning feature, in
@@ -28,6 +29,11 @@ std::span<const ComponentTypeId> EngineComponentIds();
 // registry or a replicated table: the streaming and zone fixtures that seal a
 // schema and apply it to a World.
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema);
+
+// Each owning feature's relocation rules for the components it registered in
+// `world` (docs/gameplay/relocation.md). Rules that reach a backend are installed
+// by the host that owns the backend. Idempotent.
+void RegisterEngineRelocation(World& world);
 
 // Every serializable scene component must also have runtime storage in the
 // sealed world vocabulary. Returns false and names the first missing serializer

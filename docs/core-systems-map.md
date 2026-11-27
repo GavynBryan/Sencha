@@ -177,9 +177,12 @@ blend at `PresentationTime::Alpha`. Mesh and shadow-caster extraction and the
 follow camera all read that blended pose, so they agree about where a thing is;
 entities without the component render their live `WorldTransform` unchanged.
 The history snaps rather than blends where there is no meaningful earlier pose:
-a spawn, a streamed-in entity, a teleport (`RequestTransformHistorySnap`, which
-`CharacterMoverPool::SetPosition` calls), or a frame-wide temporal
-discontinuity.
+a spawn, a streamed-in entity, a teleport with no mapping
+(`RequestTransformHistorySnap`, which `CharacterMoverPool::SetPosition` calls),
+or a frame-wide temporal discontinuity. A relocation through a rigid mapping
+(`RelocateEntity`) is carried instead: the blend stays continuous in the new
+space and the entity is drawn on the side it came from until the alpha at which
+it crossed (`docs/gameplay/relocation.md`, "Presenting").
 
 Input edges follow from the same rule. A frame's ordered transitions are
 attributed to actions once, before its ticks, and the first tick of the frame

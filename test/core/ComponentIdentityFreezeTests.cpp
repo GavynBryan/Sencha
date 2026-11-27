@@ -65,6 +65,7 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "sencha.world_transform_history",       0x1F8E43B74AB5D91Full },
     { "persistent_id",                        0xBB21CC0122FC1DD8ull },
     { "scene_instance",                       0x17084CA474E1957Full },
+    { "sencha.relocation_serial",             0x66FC12F5AE8C21B4ull },
     { "StaticMesh",                           0xC8A13ED72D0FBD7Eull },
     { "SkinnedMesh",                          0x1EE6CB7FBD7486D6ull },
     { "ZoneLightmap",                         0xC85ECD44D42C5D5Dull },
@@ -187,7 +188,7 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 // The wire contract: two builds refuse each other unless these agree. Moving
 // it is a deliberate act with a reason, never a side effect: the last move sent
 // gameplay tags and attributes as replicated lists, after grants and equipment.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0x418C2B35C04CC7D7ULL;
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x4155CC5B73E34B85ULL;
 
 struct EngineVocabulary
 {

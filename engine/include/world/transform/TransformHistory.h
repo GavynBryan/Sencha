@@ -4,6 +4,7 @@
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cstdint>
 #include <optional>
 
 class StoragePartitionSet;
@@ -26,15 +27,33 @@ class World;
 // streamed-in entity, or one that was teleported. Blending across a teleport
 // would draw the entity streaking through the space between.
 //
+// A relocation through a rigid mapping is carried instead of snapped: the blend
+// stays continuous in the new space and the entity is drawn on the side it came
+// from until the moment it crossed (docs/gameplay/relocation.md, "Presenting").
+//
 // Mesh and shadow-caster extraction consume this; they have to agree or a
 // shadow separates from the object casting it. Light extraction does not, so a
 // light on a history-carrying entity still steps at the tick rate.
 //=============================================================================
+enum class HistoryCrossing : std::uint8_t
+{
+    None,
+    // Relocated since the last capture, which has yet to carry Previous across.
+    Pending,
+    // The blend the last capture opened crosses at CrossedAt.
+    Presenting,
+};
+
 struct SENCHA_COMPONENT("sencha.world_transform_history") WorldTransformHistory
 {
     Transform3f Previous;
     Transform3f Current;
     bool Snap = true;
+    HistoryCrossing Crossing = HistoryCrossing::None;
+    // Old space to new space for the crossing; rigid.
+    Transform3f CrossingMapping = Transform3f::Identity();
+    // The presentation alpha at which the entity crossed.
+    float CrossedAt = 0.0f;
 };
 #if !defined(SENCHA_CODEGEN)
 #  include <world/transform/TransformHistory.sencha.h>
@@ -49,16 +68,23 @@ void CaptureWorldTransformHistory(World& world,
                                   bool snapAll);
 
 // Collapse one entity's history, for a teleport that the rest of the frame
-// should not blend through. Safe to call on an entity without history.
+// should not blend through. Safe to call on an entity without history. A snap
+// outranks a carried relocation, whichever was asked for first.
 void RequestTransformHistorySnap(World& world, EntityId entity);
+
+// Carry the history across a relocation through `mapping` that happened at
+// `tickFraction` of the tick the next capture closes. A second relocation before
+// that capture composes with the first and crosses at the later fraction.
+void CarryWorldTransformHistory(WorldTransformHistory& history, const Transform3f& mapping, float tickFraction);
 
 // Moves a parentless root just spawned to `position`, and `rotation` when given,
 // and gives it a history snapped there, so it is drawn between ticks from here
 // on without streaking from wherever its prefab was built.
 void PlaceSpawnedRoot(World& world, EntityId root, const Vec3d& position, std::optional<Quatf> rotation);
 
-// The pose to render: the blend between the last two ticks, or the current
-// pose when there is nothing meaningful to blend from.
+// The pose to render: the blend between the last two ticks, carried back across
+// a crossing the blend has not reached yet. The one place that decides which
+// side of a relocation an entity is drawn on; every reader goes through it.
 [[nodiscard]] Transform3f ResolvePresentationPose(const WorldTransformHistory& history,
                                                   double alpha);
 

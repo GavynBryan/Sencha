@@ -56,16 +56,15 @@ public:
                             const MotionRequest& request, float dt,
                             const Vec3d& gravity);
 
-    // Put a character back where the authority says it was, without the
-    // presentation snap. Reconciliation is not a teleport: the pawn is being
-    // returned to a position it is already near, the replay that follows moves
-    // it from there, and blending across the residual is the correct look.
+    // Move a character and its authored transform without the presentation
+    // snap. Reconciliation returns the pawn to a position it is already near and
+    // blends across the residual; a relocation carries the history across itself.
     [[nodiscard]] bool RestorePosition(World& world, EntityId entity,
                                        const Vec3d& position);
 
-    // Move an existing character and its authored transform atomically. Used
-    // by world-partition threshold clamps and explicit gameplay teleports so
-    // the next physics tick cannot restore the pre-clamp position.
+    // RestorePosition, then a history snap. Used by world-partition threshold
+    // clamps and explicit gameplay teleports so the next physics tick cannot
+    // restore the pre-clamp position.
     [[nodiscard]] bool SetPosition(World& world, EntityId entity,
                                    const Vec3d& position);
 

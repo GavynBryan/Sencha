@@ -122,6 +122,10 @@ behavior.
   against: the hook sequence `Engine::Run` calls, what `RuntimeContent` and
   `LoadedLevel` own, the things the engine will not decide for a game, and the
   five starter templates under `templates/`.
+- `docs/gameplay/relocation.md` is the one operation that moves an entity
+  discontinuously through a rigid mapping: the per-component relocation rules,
+  `RelocationSerial`, the frame's relocation record, and how transform history
+  draws a crossing.
 - `docs/gameplay/camera.md` is the engine's camera vocabulary, its shake and
   field-of-view presentation effects, and the three template camera policies as
   worked examples of why the rest is game code.

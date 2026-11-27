@@ -427,17 +427,8 @@ void CharacterMoverPool::EvictAll(World& world)
 bool CharacterMoverPool::SetPosition(World& world, EntityId entity,
                                      const Vec3d& position)
 {
-    if (!Ready(world) || !S)
+    if (!RestorePosition(world, entity, position))
         return false;
-    const CharacterMoverLink* link = world.TryGet<CharacterMoverLink>(entity);
-    LocalTransform* transform = world.TryGet<LocalTransform>(entity);
-    if (link == nullptr || transform == nullptr || link->MoverSlot >= S->Slots.size())
-        return false;
-    State::Slot& slot = S->Slots[link->MoverSlot];
-    if (slot.Owner != entity || !slot.Mover)
-        return false;
-    slot.Mover->SetPosition(position);
-    transform->Value.Position = position;
     // This is a teleport, not motion. Rendering must not blend the character
     // across the gap it just skipped.
     RequestTransformHistorySnap(world, entity);
