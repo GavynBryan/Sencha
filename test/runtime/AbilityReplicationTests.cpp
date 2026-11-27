@@ -1499,6 +1499,39 @@ TEST_F(AbilityReplication, AnotherPeerIsSentNoneOfAFullGrantList)
     RecordProperty("observer_seed_bytes", std::to_string(bare));
 }
 
+TEST_F(AbilityReplication, AnActorsGrantImageIsSizedByWhatItHolds)
+{
+    ClientPeer = kOwner;
+    for (int i = 0; i < 3; ++i)
+        Grant(kShot, "asset://abilities/shot_" + std::to_string(i) + ".sdata", "g_" + std::to_string(i));
+    (void)Publish();
+    ASSERT_EQ(AbilityGrantsOf(Client.Entities, Remote()).size(), 3u);
+    const ReplicatedComponent* grants = Layout.Find(ResolveComponentTypeId<AbilityGrants>());
+    const ReplicationChangeStore::EntityState* held = Changes.Find(Identity.TryFind(Actor));
+    ASSERT_NE(held, nullptr);
+    const auto image = std::ranges::find_if(held->Components, [&](const ReplicationChangeStore::ComponentState& state) {
+        return Layout.At(state.WireIndex) == grants;
+    });
+    ASSERT_NE(image, held->Components.end());
+    EXPECT_LT(image->Bytes.size(), 100u) << "three grants are an image of three, not of the most an actor may hold";
+}
+
+TEST_F(AbilityReplication, AWearersImageIsSizedByWhatItWears)
+{
+    ClientPeer = kOwner;
+    (void)Wear(4, true);
+    (void)Publish();
+    ASSERT_EQ(EquipmentRecordsOf(Client.Entities, Remote()).size(), 4u);
+    const ReplicatedComponent* equipment = Layout.Find(ResolveComponentTypeId<EquipmentState>());
+    const ReplicationChangeStore::EntityState* held = Changes.Find(Identity.TryFind(Actor));
+    ASSERT_NE(held, nullptr);
+    const auto image = std::ranges::find_if(held->Components, [&](const ReplicationChangeStore::ComponentState& state) {
+        return Layout.At(state.WireIndex) == equipment;
+    });
+    ASSERT_NE(image, held->Components.end());
+    EXPECT_LT(image->Bytes.size(), 140u) << "four records are an image of four, not of every slot a layout may have";
+}
+
 // A client that heard nothing while records came and went is sent what is worn now.
 TEST_F(AbilityReplication, ALateOwnerIsSentWhatIsWornNow)
 {

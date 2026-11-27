@@ -446,14 +446,14 @@ namespace
         return true;
     }
 
-    const std::uint64_t* ElementMasksFor(const ReplicatedComponent& component, const ReplicationImageParts& parts,
-                                         std::uint64_t fields, std::span<const std::uint64_t> elements)
+    bool ElementMasksFit(const ReplicatedComponent& component, const ReplicationImageParts& parts,
+                         std::uint64_t fields, std::span<const std::uint64_t> elements)
     {
         std::size_t needed = 0;
         for (std::size_t list = 0; list < component.Lists.size(); ++list)
             if ((fields & ListBit(component, list)) != 0)
                 needed += parts.Lists[list].Count;
-        return elements.size() == needed ? elements.data() : nullptr;
+        return elements.size() == needed;
     }
 }
 
@@ -810,9 +810,9 @@ bool ReplicationEncodeComponent(const ReplicatedComponent& component,
     ReplicationImageParts parts;
     if (!ReplicationSplitImage(component, image, parts))
         return false;
-    const std::uint64_t* masks = ElementMasksFor(component, parts, mask, elements);
-    if (masks == nullptr)
+    if (!ElementMasksFit(component, parts, mask, elements))
         return false;
+    const std::uint64_t* masks = elements.data();
     for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
         if ((mask & ListBit(component, list)) == 0)
@@ -851,9 +851,9 @@ std::size_t ReplicationEncodedComponentBits(const ReplicatedComponent& component
     ReplicationImageParts parts;
     if (!ReplicationSplitImage(component, image, parts))
         return bits;
-    const std::uint64_t* masks = ElementMasksFor(component, parts, mask, elements);
-    if (masks == nullptr)
+    if (!ElementMasksFit(component, parts, mask, elements))
         return bits;
+    const std::uint64_t* masks = elements.data();
     for (std::size_t list = 0; list < component.Lists.size(); ++list)
     {
         if ((mask & ListBit(component, list)) == 0)

@@ -334,8 +334,8 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 An actor runs only what it is granted. Its `AbilityGrants` row names a list in
 the World's `AbilityGrantLists` (`docs/ecs/row-lists.md`), so an actor is stored
 by how many grants it holds; the row keeps the count and the next id. It holds at
-most `kAbilityGrantCapacity` (64), which is what its owner can be sent
-("Replication"); the grant past that is refused and reported as below. Code reads
+most `kAbilityGrantCapacity` (64); its owner is sent a list declared at the same
+most ("Replication"); the grant past that is refused and reported as below. Code reads
 grants with `AbilityGrantsOf` and changes them with `GrantAbility`,
 `RevokeAbilityGrant` and `SetAbilityGrants`; scenes, snapshots and Kyusu hold them
 by value as an `AbilityGrantList`. Each grant is an ability, a kind (authored on the actor, held by an effect, made by a
@@ -588,9 +588,10 @@ records (`ActiveAbilities` derives both), and presents them with the same
 `AbilityPresentationSystem` and the same first-sight rule.
 
 The actor's own state goes to its owner, who predicts with it: `AbilityGrants`
-(in grant order, in pages of four, a page no grant reaches left at its default and
-not sent, so the owner is sent about 24 B a grant rounded up to a page and a
-change resends its page; each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
+(a replicated list in grant order, `docs/plans/networking.md` 6.2, at most
+`kAbilityGrantCapacity`: the owner is sent the count and about 24 B a grant, a
+changed grant resends that grant alone, and revoking one from the middle resends
+the grants after it; each grant's ability by wire key and its entry by the `NameWireKey` of the entry's
 key and binding together, found in the owner's own interned entries, so two grants
 of one ability under one key and bound apart stay apart; a grant whose entry the
 owner has not interned is held but bound to no input, and a table refuses to

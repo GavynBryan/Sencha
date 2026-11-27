@@ -632,6 +632,7 @@ no migration; this list is what each version changed.
 | 9 | A grant's entry key is its key and binding together; a placing prefab spawns as one group. |
 | 10 | An unreliable snapshot spans datagrams. |
 | 11 | Grant and equipment images reshaped when they moved off the row into pooled lists. |
+| 12 | The list grammar: `AbilityGrants` and `EquipmentState` cross as replicated lists, then `GameplayTagContainer` and `AttributeSet`. |
 
 ---
 

@@ -56,6 +56,10 @@ The pool has no budget: it grows with the lists live in the World and reports
 `Stats()` (live, spare, peak, unreferenced, allocations, reuses). What bounds a
 list is its component's own rule: `kAbilityGrantCapacity` for grants
 (`docs/gameplay/abilitykit.md`, "Grants and input"), a layout's slots for worn
-records (`docs/gameplay/equipment.md`, "Capacities").
+records (`docs/gameplay/equipment.md`, "Capacities"). The wire does not add a bound
+of its own: both lists cross as replicated lists declared at the same most
+(`docs/plans/networking.md` 6.2), so raising a capacity is the constant, as
+long as the list at its most still fits one snapshot, which the replication
+layout checks at startup (`ListTooLarge`).
 `test/core/ListPoolTests.cpp` pins the reference rules and the retention limit
 at its boundary.

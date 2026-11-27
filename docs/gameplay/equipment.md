@@ -178,11 +178,12 @@ the code gives:
   A zone NPC's equipment follows its zone's state: its authored record comes
   back with the zone, and a change made at run time is kept only as far as the
   zone record keeps the entities involved.
-- **Wire.** Everyone is sent the layout and each record's key, definition,
-  slots and primary slot. Only the owner is sent the sources. Each record is a
-  run of its own, so a change to one record resends that record; sources go
-  two to a run. Removing a record moves the last into its place, which changes
-  at most two record runs. A run no record reaches is not sent. Record order
+- **Wire.** The records are a replicated list (`docs/plans/networking.md`
+  6.2) of at most `kEquipmentRecordCapacity`. Everyone is sent the layout, the
+  count and each record's key, definition, slots and primary slot. Only the
+  owner is sent the sources, which are a run of each record of their own. A
+  change to one record resends that record. Removing a record moves the last
+  into its place, which resends that one record and the count. Record order
   means nothing: records are found by slot, source or key.
 - **Seed size.** A snapshot may span datagrams (`docs/plans/networking.md`), so
   a pawn wearing all 32 records reaches its owner in one snapshot
@@ -253,13 +254,16 @@ bolt bind one action at two priorities.
 |---|---|---|
 | Slots in a layout | `kMaxEquipmentSlots` (32): a record's slots are a 32-bit mask | the layout is refused when it is compiled |
 | Records on a wearer | `kEquipmentRecordCapacity`, which is `kMaxEquipmentSlots`: a record holds at least one slot and no two hold the same one | with every slot taken, `Equip` swaps (it takes the first slot its item names); there is no refusal for a full list. A scene whose records name no slot, share one, or number more than 32 refuses to load. |
-| Grants on a wearer | `kAbilityGrantCapacity` (64, what an owner can be sent), counting what is reserved for effects not yet granted | `Equip` answers `GrantRoom`; a record derived at load or reload goes `RefusedForRoom`, traced once, and is derived when there is room |
+| Grants on a wearer | `kAbilityGrantCapacity` (64), counting what is reserved for effects not yet granted | `Equip` answers `GrantRoom`; a record derived at load or reload goes `RefusedForRoom`, traced once, and is derived when there is room |
 | Tags on a wearer | `GameplayTagContainer::Capacity` (32) | `Equip` answers `TagRoom`; at a derivation the effect layer counts and reports the tags the container refuses (`docs/gameplay/abilitykit.md`) |
 
 Each has a test at its boundary in `test/runtime/EquipmentTests.cpp`
 (`AWearerWearsARecordInEverySlotALayoutCanHaveAndTheNextEquipSwaps` for
-records). Neither records nor grants are a fixed row on the wearer: both are
-lists stored by their length.
+records). Neither records nor grants are a fixed row on the wearer or a fixed
+image on the wire: both are lists stored by their length and sent by it, so
+the wire follows `kEquipmentRecordCapacity` and `kAbilityGrantCapacity` rather
+than bounding them (`AbilityReplication.AWearersImageIsSizedByWhatItWears`,
+`AnActorsGrantImageIsSizedByWhatItHolds`).
 
 ## Worn grant entries
 
@@ -439,8 +443,7 @@ pass derives it.
 
 ## Not yet
 
-Recorded in `docs/deferred.md`: more than thirty-two slots in a layout, a wire
-image sized by what it holds, tracing equipped grants that tie on an action, deriving a zone's equipped
+Recorded in `docs/deferred.md`: more than thirty-two slots in a layout, tracing equipped grants that tie on an action, deriving a zone's equipped
 records as it loads, one-shot effects when an item is equipped, a second layer
 that takes part in moving an entry, owner-only fields a former owner keeps,
 predicted equips ("Predicting gives and transfers"), authoring a waiting

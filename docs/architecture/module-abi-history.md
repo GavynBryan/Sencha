@@ -1922,3 +1922,17 @@ counts clamped elements (`Clamped`), and `ReplicationLayoutError` gains
 `ListTooLarge`. No engine component declares a list yet, so the replication
 table hash, the wire and the net protocol (11) are unchanged. Save and scene
 formats are unchanged.
+
+## v93
+
+`AbilityGrants` and `EquipmentState` cross as replicated lists. `AbilityGrantsWire`
+is `AbilityGrantsWireHead` (`NextId`) and a list of up to
+`kAbilityGrantCapacity` `AbilityGrantWire` (its words and its source, both
+owner-only); `EquipmentStateWire` is `EquipmentStateWireHead` (the layout) and
+a list of up to `kEquipmentRecordCapacity` `EquipmentRecordWire` (its words for
+everyone, its source for the owner). Their codecs take a `ReplicationImage`.
+The page and record members, their member-pointer tables, the "names one member
+per" asserts, `kAbilityGrantsPerWirePage`, `kAbilityGrantWirePages` and
+`kEquipmentSourcesPerWireRun` go. The replication table hash moves, and the
+list grammar now reaches the wire, so `kNetProtocolVersion` is 12. Save and
+scene formats are unchanged.

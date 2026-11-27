@@ -167,6 +167,24 @@ TEST(ReplicationCodec, AListAtItsMostDecodesAndOnePastIsRefused)
     EXPECT_EQ(ReplicationDecodeImage(component, reader, received), ReplicationDecodeError::CountAboveMost);
 }
 
+TEST(ReplicationCodec, AnEmptiedListTravelsAsACountOfZero)
+{
+    RosterLayout roster;
+    const ReplicatedComponent& component = *roster.Component;
+    ReplicationImage received(component);
+    ImageOf(component, RosterOf(1, { 4, 5 }), received);
+    ReplicationImage emptied(component);
+    ImageOf(component, RosterOf(1, {}), emptied);
+
+    std::vector<std::byte> scratch(kScratchBytes);
+    NetBitWriter writer(scratch);
+    ASSERT_TRUE(ReplicationEncodeComponent(component, emptied.Bytes(), ListBit(component, 0), writer, {}));
+    EXPECT_EQ(writer.BitsWritten(), ReplicationEncodedComponentBits(component, emptied.Bytes(), ListBit(component, 0)));
+    NetBitReader reader(writer.Written());
+    ASSERT_EQ(ReplicationDecodeImage(component, reader, received), ReplicationDecodeError::None);
+    EXPECT_EQ(received.Count(0), 0u);
+}
+
 TEST(ReplicationCodec, ATruncatedListIsRefused)
 {
     RosterLayout roster;

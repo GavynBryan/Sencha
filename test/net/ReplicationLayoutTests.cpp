@@ -473,6 +473,16 @@ TEST(EngineReplicationLayout, EveryFieldLiesInsideItsComponent)
             EXPECT_NE(field.Scalar, FieldScalar::Unsupported)
                 << component.Name << "." << field.Name;
         }
+        for (const ReplicatedList& list : component.Lists)
+        {
+            for (const ReplicatedField& field : list.Fields)
+            {
+                EXPECT_LE(field.Offset + field.Count * field.Size, list.Stride)
+                    << component.Name << "." << list.Name << "." << field.Name;
+                EXPECT_NE(field.Scalar, FieldScalar::Unsupported)
+                    << component.Name << "." << list.Name << "." << field.Name;
+            }
+        }
     }
 }
 

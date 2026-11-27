@@ -1614,13 +1614,12 @@ described in `docs/navigation/runtime.md`, "Agents".
 ## More than thirty-two slots in a layout
 
 - **What:** a record's slots are a 32-bit mask, so a layout has at most
-  `kMaxEquipmentSlots` (32) slots and a wearer at most 32 records. Record
-  storage no longer bounds it: only the mask and the wire's 32 record runs do.
-- **Where:** `equipment/EquipmentLayout.h`, `EquipmentRecord::Slots`,
-  `equipment/EquipmentStateWire.h`.
+  `kMaxEquipmentSlots` (32) slots and a wearer at most 32 records. Neither
+  record storage nor the wire bounds it: the records cross as a replicated list
+  declared at `kEquipmentRecordCapacity`.
+- **Where:** `equipment/EquipmentLayout.h`, `EquipmentRecord::Slots`.
 - **Trigger:** a layout that needs a thirty-third slot. Then widen the mask to
-  64 bits and page the record runs as grants are paged; both are wire and ABI
-  changes.
+  64 bits and raise the capacity; the wire follows the constant.
 
 ## Effect grants are matched against every grant the target holds
 

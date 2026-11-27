@@ -2,6 +2,7 @@
 
 #include <controller/LookOrientation.h>
 #include <net/ReplicationCodec.h>
+#include <net/ReplicationImage.h>
 #include <net/ReplicationSchemas.h>
 #include <net/ReplicationLayout.h>
 #include <world/ComponentRegistrar.h>
@@ -36,6 +37,33 @@ namespace
         ComponentRegistrar components(nullptr, nullptr, &layout);
         RegisterEngineComponents(components);
         return layout;
+    }
+
+    std::vector<std::byte> PatternImage(const ReplicatedComponent& component, std::size_t multiplier, std::size_t offset)
+    {
+        ReplicationImage image(component);
+        for (std::size_t list = 0; list < component.Lists.size(); ++list)
+            (void)image.ResizeElements(list, 3);
+        std::vector<std::byte> bytes(image.Bytes().begin(), image.Bytes().end());
+        ReplicationImageParts parts;
+        EXPECT_TRUE(ReplicationSplitImage(component, bytes, parts));
+        for (std::size_t i = 0; i < component.Size; ++i)
+            bytes[i] = static_cast<std::byte>((i * multiplier + offset) & 0x3F);
+        for (std::size_t list = 0; list < component.Lists.size(); ++list)
+            for (std::size_t i = 0; i < 3 * component.Lists[list].Stride; ++i)
+                bytes[parts.Lists[list].Offset + i] = static_cast<std::byte>((i * multiplier + offset + list) & 0x3F);
+        ReplicationSnapToWire(component, bytes);
+        return bytes;
+    }
+
+    std::vector<std::uint64_t> VisibleElementRuns(const ReplicatedComponent& component, std::uint64_t fields,
+                                                  bool forOwner)
+    {
+        std::vector<std::uint64_t> elements;
+        for (std::size_t list = 0; list < component.Lists.size(); ++list)
+            if ((fields & (std::uint64_t{ 1 } << (component.Fields.size() + list))) != 0)
+                elements.insert(elements.end(), 3, ReplicationVisibleElementRuns(component.Lists[list], forOwner));
+        return elements;
     }
 
     const ReplicatedComponent& LookComponent(const ReplicationLayout& layout)
@@ -510,41 +538,51 @@ TEST(ReplicationCodec, EveryEngineComponentRoundTripsFromDefaults)
     {
         for (const ReplicatedComponent& component : layout.Components())
         {
-            std::vector<std::byte> current(component.Size, std::byte{ 0 });
-            std::vector<std::byte> target(component.Size, std::byte{ 0 });
-
-            // A recognisable pattern, snapped to what the wire can carry so the
-            // comparison below is exact rather than approximate.
-            for (std::size_t i = 0; i < current.size(); ++i)
-                current[i] = static_cast<std::byte>((i * 7 + 3) & 0x3F);
-            ReplicationSnapToWire(component, current);
+            const std::vector<std::byte> current = PatternImage(component, 7, 3);
+            const std::uint64_t visible = ReplicationVisibleFields(component, forOwner);
+            const std::vector<std::uint64_t> elements = VisibleElementRuns(component, visible, forOwner);
 
             std::array<std::byte, kScratchBytes> scratch{};
             NetBitWriter writer(scratch);
-            ASSERT_TRUE(ReplicationEncodeComponent(
-                component, current, ReplicationVisibleFields(component, forOwner),
-                writer))
+            ASSERT_TRUE(ReplicationEncodeComponent(component, current, visible, writer, elements))
                 << component.Name;
             ASSERT_LE(writer.BitsWritten(), ReplicationMaxComponentBits(component))
                 << component.Name << " exceeded its own stated maximum";
 
+            ReplicationImage target(component);
             NetBitReader reader(writer.Written());
-            ASSERT_TRUE(ReplicationDecodeComponent(component, reader, target))
+            ASSERT_EQ(ReplicationDecodeImage(component, reader, target), ReplicationDecodeError::None)
                 << component.Name;
+            const std::span<const std::byte> held = target.Bytes();
 
-            // Only fields addressed to this receiver are claimed to survive;
-            // the rest of the component is the receiver's own business.
-            for (const ReplicatedField& field : component.Fields)
+            const auto expectRuns = [&](std::span<const ReplicatedField> fields, std::size_t from, std::size_t to,
+                                        std::string_view where) {
+                for (const ReplicatedField& field : fields)
+                {
+                    if (field.OwnerOnly && !forOwner)
+                        continue;
+                    if (field.OwnerLocal && forOwner)
+                        continue;
+                    const std::size_t span = field.Count * field.Size;
+                    EXPECT_EQ(std::memcmp(current.data() + from + field.Offset, held.data() + to + field.Offset, span),
+                              0)
+                        << component.Name << where << "." << field.Name << (forOwner ? " (as owner)" : " (as peer)");
+                }
+            };
+            expectRuns(component.Fields, 0, 0, "");
+            ReplicationImageParts sent;
+            ReplicationImageParts arrived;
+            ASSERT_TRUE(ReplicationSplitImage(component, current, sent));
+            ASSERT_TRUE(ReplicationSplitImage(component, held, arrived));
+            for (std::size_t list = 0; list < component.Lists.size(); ++list)
             {
-                if (field.OwnerOnly && !forOwner)
+                if ((visible & (std::uint64_t{ 1 } << (component.Fields.size() + list))) == 0)
                     continue;
-                if (field.OwnerLocal && forOwner)
-                    continue;
-                const std::size_t span = field.Count * field.Size;
-                EXPECT_EQ(std::memcmp(current.data() + field.Offset,
-                                      target.data() + field.Offset, span), 0)
-                    << component.Name << "." << field.Name
-                    << (forOwner ? " (as owner)" : " (as peer)");
+                const ReplicatedList& declared = component.Lists[list];
+                ASSERT_EQ(arrived.Lists[list].Count, 3u) << component.Name << "." << declared.Name;
+                for (std::size_t element = 0; element < 3; ++element)
+                    expectRuns(declared.Fields, sent.Lists[list].Offset + element * declared.Stride,
+                               arrived.Lists[list].Offset + element * declared.Stride, "." + declared.Name);
             }
         }
     }
@@ -970,29 +1008,26 @@ TEST(ReplicationCodec, WhatTheSizerReservesIsWhatTheWriterSpends)
     {
         for (const ReplicatedComponent& component : layout.Components())
         {
-            std::vector<std::byte> current(component.Size, std::byte{ 0 });
-            for (std::size_t i = 0; i < current.size(); ++i)
-                current[i] = static_cast<std::byte>((i * 11 + 5) & 0x3F);
-            ReplicationSnapToWire(component, current);
-
+            const std::vector<std::byte> current = PatternImage(component, 11, 5);
             const std::uint64_t visible =
                 ReplicationVisibleFields(component, forOwner);
 
             // Every subset that matters: nothing owed, everything owed, and
-            // each single field on its own -- a per-field disagreement hides
-            // inside a full mask when another field happens to cancel it.
+            // each single field or list on its own -- a per-field disagreement
+            // hides inside a full mask when another field happens to cancel it.
             std::vector<std::uint64_t> masks{ 0, visible };
-            for (std::size_t i = 0; i < component.Fields.size(); ++i)
+            for (std::size_t i = 0; i < component.Fields.size() + component.Lists.size(); ++i)
                 masks.push_back(visible & (std::uint64_t{ 1 } << i));
 
             for (const std::uint64_t mask : masks)
             {
+                const std::vector<std::uint64_t> elements = VisibleElementRuns(component, mask, forOwner);
                 std::array<std::byte, kScratchBytes> scratch{};
                 NetBitWriter writer(scratch);
-                ASSERT_TRUE(ReplicationEncodeComponent(component, current, mask, writer))
+                ASSERT_TRUE(ReplicationEncodeComponent(component, current, mask, writer, elements))
                     << component.Name;
                 EXPECT_EQ(writer.BitsWritten(),
-                          ReplicationEncodedComponentBits(component, current, mask))
+                          ReplicationEncodedComponentBits(component, current, mask, elements))
                     << component.Name << " measured differently than it was written";
             }
         }
