@@ -147,6 +147,7 @@ struct ParamFacts
     std::string Label;
     std::string Description;
     std::string Units;
+    std::string Widget;
     std::string TargetComponent; // as annotated, resolved by the compiler in the companion
     std::string RangeMin;
     std::string RangeMax;
@@ -1039,6 +1040,7 @@ private:
             else if (Split(text, "sencha.label=", value))              out.Label = value;
             else if (Split(text, "sencha.description=", value))        out.Description = value;
             else if (Split(text, "sencha.units=", value))              out.Units = value;
+            else if (Split(text, "sencha.widget=", value))             out.Widget = value;
             else if (Split(text, "sencha.min=", value))                out.Min = value;
             else if (Split(text, "sencha.max=", value))                out.Max = value;
             else if (Split(text, "sencha.asset=", value))              out.AssetKind = value;
@@ -1492,6 +1494,8 @@ void EmitArgumentSchema(std::ostream& out, const ParamFacts& param, const std::s
         out << "            field.Summary = " << Literal(param.Description) << ";\n";
     if (!param.Units.empty())
         out << "            field.Units = " << Literal(param.Units) << ";\n";
+    if (!param.Widget.empty())
+        out << "            field.Editor.Widget = " << Literal(param.Widget) << ";\n";
     out << "            AuthoredValueTraits<" << param.Type << ">::Describe(field);\n";
     if (!param.TargetComponent.empty())
     {
@@ -1556,7 +1560,7 @@ void EmitDecodes(std::ostream& out,
         else
         {
             out << "        " << param.Type << " " << param.Local << "{};\n"
-                << "        if (!AuthoredValueTraits<" << param.Type << ">::Decode(" << slot(index)
+                << "        if (!DecodeAuthoredArgument<" << param.Type << ">(self, " << slot(index)
                 << ", " << param.Local << "))\n";
         }
         out << "            return " << refusal("InvalidArguments", index) << ";\n";

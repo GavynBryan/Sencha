@@ -19,6 +19,7 @@
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Counter.h>
+#include <authored/AuthoredApi.h>
 #include <logic/CounterVocabulary.h>
 #include <logic/ResponseSet.h>
 #include <logic/ResponseVerbs.h>
@@ -806,7 +807,8 @@ TEST_F(ResponsesFixture, ACounterGatesAResponseThroughItsBounds)
         DeclareCounterVocabulary(verbs, queries, events);
         ASSERT_TRUE(CommitTogether(verbs, queries, events));
     }
-    AuthoredQueryBindingToken counter = BindCounterQuery(*Queries, WorldState);
+    CounterOperations counters(WorldState, Logging.GetLogger<CounterOperations>(), nullptr);
+    AuthoredApiBindings counter = BindAuthoredApi(nullptr, Queries.get(), counters);
     const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
         "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Boss.Warden.Defeated"}},
                         "require": {"min": 1}}],
@@ -833,7 +835,8 @@ TEST_F(ResponsesFixture, ABoundsBlockWithOnlyAMaximumAdmitsZero)
         DeclareCounterVocabulary(verbs, queries, events);
         ASSERT_TRUE(CommitTogether(verbs, queries, events));
     }
-    AuthoredQueryBindingToken counter = BindCounterQuery(*Queries, WorldState);
+    CounterOperations counters(WorldState, Logging.GetLogger<CounterOperations>(), nullptr);
+    AuthoredApiBindings counter = BindAuthoredApi(nullptr, Queries.get(), counters);
     const EntityId door = PlaceSensor(kSensorEnterEvent, R"({
         "conditions": [{"query": "counter.value", "arguments": {"name": {"tag": "Alarm.Raised"}},
                         "require": {"max": 5}}],

@@ -10,6 +10,7 @@
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
 #include <inventory/InventoryKit.h>
+#include <authored/AuthoredApi.h>
 #include <inventory/InventoryVocabulary.h>
 #include <participant/LocalControl.h>
 #include <time/SimClock.h>
@@ -54,9 +55,7 @@ protected:
         EXPECT_TRUE(InstallEngineVocabulary(world));
         Verbs = std::make_unique<VerbDispatcher>(*FindVerbRegistry(world));
         Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(world));
-        const VerbRegistry& catalog = Verbs->Registry();
-        Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), Items));
-        QueryToken = BindInventoryQuery(*Queries, std::as_const(world));
+        Bound = BindAuthoredApi(Verbs.get(), Queries.get(), Items);
     }
 
     World& Entities() { return Runtime.Entities(); }
@@ -89,8 +88,7 @@ protected:
     InventoryOperations Items{ Entities(), Clock };
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
-    std::vector<VerbBindingToken> Tokens;
-    AuthoredQueryBindingToken QueryToken;
+    AuthoredApiBindings Bound;
 };
 } // namespace
 

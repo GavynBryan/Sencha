@@ -1845,3 +1845,20 @@ scene take new contents in place, so the scene kind registers a reload.
 into a stack: registered when new, reloaded where resident. A document cook's
 cache key now holds the schema fingerprints of the components its scene carries,
 so cooked scenes recook once. No format, save or protocol change.
+
+## v88
+
+The tag, save, level-change, counter, inventory and equipment verbs and queries
+are declared by annotations on their operation classes and read through their
+generated companions: `GameplayTagOperations`, `SavedGameOperations` (new, over
+`SavedGames`), `LevelChangeOperations` (now a class), `CounterOperations`,
+`InventoryOperations` and `EquipmentOperations` take typed arguments, and their
+`Invoke*` trampolines, `Bind*Query` functions and name constants go
+(`AuthoredApiDefinition<T>::Name_<Method>` names a verb). A data-definition id
+with a `NamedIdField` is an authored argument decoded against the provider's
+World (`AuthoredWorldDecoded`, `DecodeAuthoredArgument`); `VerbRefusal` and
+`VerbResult` take a `VerbAnswer`; `SENCHA_WIDGET` names a parameter's editor
+widget. `LevelKind`, `LevelMemory` and `LevelChangeBodies` gain an `EnumSchema`.
+`level.change` lists `kind` after `bodies`; `inventory.give` and
+`inventory.transfer` declare their count's range. Save format, scene format and
+net protocol are unchanged.

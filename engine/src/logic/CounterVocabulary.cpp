@@ -1,5 +1,6 @@
 #include <logic/CounterVocabulary.h>
 
+#include <authored/AuthoredApi.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/AuthoredValueTraits.h>
 #include <core/logging/Logger.h>
@@ -28,50 +29,6 @@ namespace
         return MakeDataField(DataFieldKind::GameplayTag, "name", "Name", "Which counter.");
     }
 
-    DataFieldSchema HolderField()
-    {
-        return AuthoredField<std::optional<EntityId>>(
-            "holder", "Holder", "Whose counter, such as a participant's body. The world's when absent.");
-    }
-
-    VerbDefinition Verb(std::string_view name, std::string label, std::string description, DataFieldSchema number)
-    {
-        VerbDefinition verb;
-        verb.Name = std::string(name);
-        verb.DisplayName = std::move(label);
-        verb.Description = std::move(description);
-        verb.Category = "Counters";
-        verb.Arguments.Children = { NameField(), std::move(number), HolderField() };
-        return verb;
-    }
-
-    bool HolderGone(const World& world, const std::optional<EntityId>& holder)
-    {
-        return holder.has_value() && holder->IsValid() && !world.IsAlive(*holder);
-    }
-
-    struct Request
-    {
-        GameplayTagId Name;
-        std::int64_t Number = 0;
-        EntityId Holder;
-    };
-
-    VerbAdmission Read(const World& world, const VerbInvocation& invocation, Request& out)
-    {
-        std::optional<EntityId> holder;
-        if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetTag(0, out.Name)
-            || !invocation.Arguments->TryGetInt(1, out.Number) || !ReadAuthoredArgument(*invocation.Arguments, 2, holder)
-            || !out.Name.IsValid() || HolderGone(world, holder))
-            return VerbAdmission::InvalidArguments;
-        out.Holder = holder.value_or(EntityId{});
-        if (!IsSimulationAuthority(world))
-            return VerbAdmission::Refused;
-        if (!world.IsRegistered<Counter>() || !world.IsRegistered<Held>() || !world.HasResource<HeldRecordIndex>())
-            return VerbAdmission::Unavailable;
-        return VerbAdmission::Accepted;
-    }
-
     std::int64_t SaturatingSum(std::int64_t current, std::int64_t amount)
     {
         constexpr std::int64_t kMost = std::numeric_limits<std::int64_t>::max();
@@ -89,43 +46,12 @@ namespace
                                                       : world.AddResource<CounterSaturation>();
     }
 
-    AuthoredQueryStatus EvaluateValue(const World& world, std::span<const AuthoredValue> arguments,
-                                      AuthoredValue& result)
-    {
-        GameplayTagId name;
-        std::optional<EntityId> holder;
-        if (!ReadAuthoredArgument(arguments, 0, name) || !ReadAuthoredArgument(arguments, 1, holder) || !name.IsValid())
-            return AuthoredQueryStatus::InvalidArguments;
-        if (HolderGone(world, holder))
-            return AuthoredQueryStatus::Unavailable;
-        result = AuthoredValue::Int(CounterValue(world, name, holder.value_or(EntityId{})));
-        return AuthoredQueryStatus::Value;
-    }
 }
 
 void DeclareCounterVocabulary(VerbRegistrationScope& verbs, AuthoredQueryRegistrationScope& queries,
                               AuthoredEventRegistrationScope& events)
 {
-    (void)verbs.Declare(Verb(kCounterSetVerb, "Set counter",
-                             "Sets a named number, kept by saves. Zero unsets it. Values past a 32-bit integer are "
-                             "held at its bound.",
-                             AuthoredField<std::int64_t>("value", "Value", "What it becomes.")));
-    DataFieldSchema amount = AuthoredField<std::int64_t>("amount", "Amount", "What is added; negative takes away.");
-    amount.Required = false;
-    amount.Default = std::int64_t{ 1 };
-    (void)verbs.Declare(Verb(kCounterAddVerb, "Add to counter",
-                             "Adds to a named number, kept by saves. Reaching zero unsets it. Values past a 32-bit "
-                             "integer are held at its bound.",
-                             std::move(amount)));
-
-    AuthoredQueryDefinition value;
-    value.Name = std::string(kCounterValueQuery);
-    value.DisplayName = "Counter value";
-    value.Description = "A named number; zero when it was never set.";
-    value.Category = "Counters";
-    value.Arguments.Children = { NameField(), HolderField() };
-    value.Result = MakeDataField(DataFieldKind::Int, "value", "Value");
-    (void)queries.Declare(std::move(value));
+    DeclareAuthoredApi<CounterOperations>(&verbs, &queries);
 
     AuthoredEventDefinition changed;
     changed.Name = std::string(kCounterChangedEvent);
@@ -196,21 +122,41 @@ CounterOperations::CounterOperations(World& world, Logger& log, AuthoredEventDis
 {
 }
 
-VerbAdmission CounterOperations::Set(const VerbInvocation& invocation)
+VerbAnswer CounterOperations::Admit(GameplayTagId name, std::optional<EntityId> holder) const
 {
-    Request request;
-    if (const VerbAdmission read = Read(*Entities, invocation, request); read != VerbAdmission::Accepted)
-        return read;
-    return Write(invocation, request.Name, request.Holder, request.Number);
+    if (!name.IsValid())
+        return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
+    if (holder.has_value() && holder->IsValid() && !Entities->IsAlive(*holder))
+        return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 2);
+    if (!IsSimulationAuthority(*Entities))
+        return VerbAdmission::Refused;
+    if (!Entities->IsRegistered<Counter>() || !Entities->IsRegistered<Held>() || !Entities->HasResource<HeldRecordIndex>())
+        return VerbAdmission::Unavailable;
+    return VerbAnswer{};
 }
 
-VerbAdmission CounterOperations::Add(const VerbInvocation& invocation)
+VerbAnswer CounterOperations::Set(const VerbInvocation& invocation, GameplayTagId name, std::int64_t value,
+                                  std::optional<EntityId> holder)
 {
-    Request request;
-    if (const VerbAdmission read = Read(*Entities, invocation, request); read != VerbAdmission::Accepted)
-        return read;
-    const std::int64_t current = CounterValue(*Entities, request.Name, request.Holder);
-    return Write(invocation, request.Name, request.Holder, SaturatingSum(current, request.Number));
+    if (const VerbAnswer admitted = Admit(name, holder); !admitted.Accepted())
+        return admitted;
+    return Write(invocation, name, holder.value_or(EntityId{}), value);
+}
+
+VerbAnswer CounterOperations::Add(const VerbInvocation& invocation, GameplayTagId name, std::int64_t amount,
+                                  std::optional<EntityId> holder)
+{
+    if (const VerbAnswer admitted = Admit(name, holder); !admitted.Accepted())
+        return admitted;
+    const std::int64_t current = CounterValue(*Entities, name, holder.value_or(EntityId{}));
+    return Write(invocation, name, holder.value_or(EntityId{}), SaturatingSum(current, amount));
+}
+
+std::optional<std::int64_t> CounterOperations::Value(GameplayTagId name, std::optional<EntityId> holder) const
+{
+    if (holder.has_value() && holder->IsValid() && !Entities->IsAlive(*holder))
+        return std::nullopt;
+    return CounterValue(*Entities, name, holder.value_or(EntityId{}));
 }
 
 VerbAdmission CounterOperations::Write(const VerbInvocation& invocation, GameplayTagId name, EntityId holder,
@@ -233,9 +179,4 @@ VerbAdmission CounterOperations::Write(const VerbInvocation& invocation, Gamepla
         (void)Events->Publish(holder, CounterChanged{ .Name = name, .Value = write.Value, .Holder = holder },
                               invocation.Id);
     return VerbAdmission::Accepted;
-}
-
-AuthoredQueryBindingToken BindCounterQuery(AuthoredQueryDispatcher& dispatcher, const World& world)
-{
-    return dispatcher.Bind<&EvaluateValue>(dispatcher.Registry().Find(kCounterValueQuery), world);
 }

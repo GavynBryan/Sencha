@@ -893,11 +893,7 @@ namespace
             EXPECT_TRUE(InstallEngineVocabulary(Entities()));
             Verbs = std::make_unique<VerbDispatcher>(*FindVerbRegistry(Entities()));
             Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(Entities()));
-            const VerbRegistry& catalog = Verbs->Registry();
-            Tokens.push_back(Verbs->Bind<&InvokeEquipmentEquip>(catalog.Find(kEquipmentEquipVerb), Operations));
-            Tokens.push_back(Verbs->Bind<&InvokeEquipmentUnequip>(catalog.Find(kEquipmentUnequipVerb), Operations));
-            Tokens.push_back(Verbs->Bind<&InvokeEquipmentCycle>(catalog.Find(kEquipmentCycleVerb), Operations));
-            QueryTokens = BindEquipmentQueries(*Queries, std::as_const(Entities()));
+            Generated.push_back(BindAuthoredApi(Verbs.get(), Queries.get(), Operations));
         }
 
         VerbAdmission Invoke(std::string_view verb, std::vector<std::pair<std::string, EntityId>> entities,
@@ -1007,8 +1003,7 @@ namespace
         std::pair<VerbId, VerbAnswer> Last;
         std::unique_ptr<VerbDispatcher> Verbs;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
-        std::vector<VerbBindingToken> Tokens;
-        std::vector<AuthoredQueryBindingToken> QueryTokens;
+        std::vector<AuthoredApiBindings> Generated;
         VerbSequenceRunner Runner;
     };
 }
@@ -1017,31 +1012,31 @@ TEST_F(EquipmentVocabularyTest, TheVerbsChangeWhatTheQueriesSee)
 {
     const EntityId ring = Give(RingItem);
     const EntityId sword = Give(Greatsword);
-    EXPECT_EQ(Invoke(kEquipmentEquipVerb, { { "wearer", Hero }, { "entry", ring } }, { { "slot", "ring.right" } }),
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<EquipmentOperations>::Name_Equip, { { "wearer", Hero }, { "entry", ring } }, { { "slot", "ring.right" } }),
               VerbAdmission::Accepted);
     AuthoredValue worn;
-    ASSERT_EQ(Ask(kEquipmentInSlotQuery, { AuthoredValue::Entity(Hero), AuthoredValue::String("ring.right") }, worn),
+    ASSERT_EQ(Ask(AuthoredApiDefinition<EquipmentOperations>::Name_InSlot, { AuthoredValue::Entity(Hero), AuthoredValue::String("ring.right") }, worn),
               AuthoredQueryStatus::Value);
     EntityId entry;
     ASSERT_TRUE(worn.TryGetEntity(entry));
     EXPECT_EQ(entry, ring);
-    EXPECT_EQ(Ask(kEquipmentInSlotQuery, { AuthoredValue::Entity(Hero), AuthoredValue::String("ring.left") }, worn),
+    EXPECT_EQ(Ask(AuthoredApiDefinition<EquipmentOperations>::Name_InSlot, { AuthoredValue::Entity(Hero), AuthoredValue::String("ring.left") }, worn),
               AuthoredQueryStatus::Unavailable) << "an empty slot has no answer";
 
-    EXPECT_EQ(Invoke(kEquipmentCycleVerb, { { "wearer", Hero } }, { { "group", "hand" } }), VerbAdmission::Accepted);
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<EquipmentOperations>::Name_Cycle, { { "wearer", Hero } }, { { "group", "hand" } }), VerbAdmission::Accepted);
     AuthoredValue rings;
-    ASSERT_EQ(Ask(kEquipmentSourcesQuery, { AuthoredValue::Entity(Hero), AuthoredValue::Tag(Ring) }, rings),
+    ASSERT_EQ(Ask(AuthoredApiDefinition<EquipmentOperations>::Name_Sources, { AuthoredValue::Entity(Hero), AuthoredValue::Tag(Ring) }, rings),
               AuthoredQueryStatus::Value);
     ASSERT_EQ(rings.Children().size(), 1u);
     ASSERT_TRUE(rings.Children()[0].TryGetEntity(entry));
     EXPECT_EQ(entry, ring);
-    ASSERT_EQ(Ask(kEquipmentInSlotQuery, { AuthoredValue::Entity(Hero), AuthoredValue::String("hand.off") }, worn),
+    ASSERT_EQ(Ask(AuthoredApiDefinition<EquipmentOperations>::Name_InSlot, { AuthoredValue::Entity(Hero), AuthoredValue::String("hand.off") }, worn),
               AuthoredQueryStatus::Value);
     ASSERT_TRUE(worn.TryGetEntity(entry));
     EXPECT_EQ(entry, sword) << "cycled in, both hands";
 
-    EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Accepted);
-    EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Refused)
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<EquipmentOperations>::Name_Unequip, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Accepted);
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<EquipmentOperations>::Name_Unequip, { { "wearer", Hero } }, { { "slot", "ring.right" } }), VerbAdmission::Refused)
         << "nothing is there to take off";
     EXPECT_EQ(LastAnswer(), "refused: missing");
 }
@@ -1050,10 +1045,9 @@ TEST_F(EquipmentVocabularyTest, ATakenItemIsWornByTheEntryTheTakeAnswered)
 {
     InventoryOperations items{ Entities(), Clock };
     const VerbRegistry& catalog = Verbs->Registry();
-    Tokens.push_back(Verbs->Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), items));
-    Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), items));
-    ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryTakeVerb))->Result.has_value());
-    ASSERT_TRUE(catalog.Get(catalog.Find(kInventoryGiveVerb))->Result.has_value());
+    Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, items));
+    ASSERT_TRUE(catalog.Get(catalog.Find(AuthoredApiDefinition<InventoryOperations>::Name_Take))->Result.has_value());
+    ASSERT_TRUE(catalog.Get(catalog.Find(AuthoredApiDefinition<InventoryOperations>::Name_Give))->Result.has_value());
 
     std::vector<std::string> errors;
     const CompiledVerbSequence compiled = CompileSequence(R"({"commands": [
@@ -1077,7 +1071,7 @@ TEST_F(EquipmentVocabularyTest, ATakenItemIsWornByTheEntryTheTakeAnswered)
 TEST_F(EquipmentVocabularyTest, ASecondRingGivenIsTheOneTheSequenceWearsAndARefusedGiveWearsNothing)
 {
     InventoryOperations items{ Entities(), Clock };
-    Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(Verbs->Registry().Find(kInventoryGiveVerb), items));
+    Generated.push_back(BindAuthoredApi(Verbs.get(), nullptr, items));
     const EntityId first = Give(RingItem);
     std::vector<std::string> errors;
     const CompiledVerbSequence compiled = CompileSequence(R"({"commands": [
@@ -2383,8 +2377,8 @@ TEST_F(EquipmentVocabularyTest, AForcedUnequipTakesOffACursedRing)
                         .EquipEffects = { { Glow, 1.0f } }, .EquipLockTags = { bound } });
     Declare();
     ASSERT_EQ(Gear().Equip(Hero, Give(cursed)).Refusal, EquipmentRefusal::None);
-    EXPECT_EQ(Invoke(kEquipmentUnequipVerb, { { "wearer", Hero } }, { { "slot", "ring.left" } }), VerbAdmission::Refused);
-    EXPECT_EQ(InvokeForced(kEquipmentUnequipVerb, Hero, "ring.left"), VerbAdmission::Accepted);
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<EquipmentOperations>::Name_Unequip, { { "wearer", Hero } }, { { "slot", "ring.left" } }), VerbAdmission::Refused);
+    EXPECT_EQ(InvokeForced(AuthoredApiDefinition<EquipmentOperations>::Name_Unequip, Hero, "ring.left"), VerbAdmission::Accepted);
     EXPECT_EQ(State().Count, 0u);
 }
 

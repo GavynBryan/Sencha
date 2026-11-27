@@ -118,7 +118,8 @@ public:
     SENCHA_RESULT("flame", GoldenTorch)
     VerbResult<EntityId, GoldenRefusal> Light(
         SENCHA_TARGET("torch", GoldenTorch) EntityId torch,
-        SENCHA_ARG("fuel") SENCHA_MIN(0) SENCHA_UNITS("seconds") SENCHA_DESCRIPTION("How long it burns.")
+        SENCHA_ARG("fuel") SENCHA_MIN(0) SENCHA_UNITS("seconds") SENCHA_WIDGET("slider")
+            SENCHA_DESCRIPTION("How long it burns.")
             float fuel = 10.0f);
 
     SENCHA_VERB("test.torch.douse")

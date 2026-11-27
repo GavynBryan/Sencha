@@ -35,6 +35,8 @@
 #define SENCHA_MIN(value)            SENCHA_ANNOTATE("sencha.min=" #value)
 #define SENCHA_MAX(value)            SENCHA_ANNOTATE("sencha.max=" #value)
 #define SENCHA_UNITS(text)           SENCHA_ANNOTATE("sencha.units=" text)
+// The editor widget a parameter's row uses: SENCHA_WIDGET("direction").
+#define SENCHA_WIDGET(name)          SENCHA_ANNOTATE("sencha.widget=" name)
 #define SENCHA_TARGET_1(key)         SENCHA_ANNOTATE("sencha.target=" key)
 #define SENCHA_TARGET_2(key, type)                                             \
     SENCHA_ANNOTATE("sencha.target=" key)                                      \

@@ -61,8 +61,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeAbilityCancel>(catalog.Find(kAbilityCancelVerb), *Abilities));
     Verbs.push_back(verbs.Bind<&InvokeAbilityGrant>(catalog.Find(kAbilityGrantVerb), *Abilities));
     Verbs.push_back(verbs.Bind<&InvokeAbilityRevoke>(catalog.Find(kAbilityRevokeVerb), *Abilities));
-    Verbs.push_back(verbs.Bind<&InvokeTagsGrant>(catalog.Find(kTagsGrantVerb), *Tags));
-    Verbs.push_back(verbs.Bind<&InvokeTagsRevoke>(catalog.Find(kTagsRevokeVerb), *Tags));
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Tags));
     Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
@@ -88,57 +87,40 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
 
 EngineVocabularyBindings::~EngineVocabularyBindings()
 {
+    Generated.clear();
     Queries.clear();
     Verbs.clear();
 }
 
 void EngineVocabularyBindings::BindSavedGames(SavedGames& saves, VerbDispatcher& verbs)
 {
-    const VerbRegistry& catalog = verbs.Registry();
-    Verbs.push_back(verbs.Bind<&InvokeSaveWrite>(catalog.Find(kSaveWriteVerb), saves));
-    Verbs.push_back(verbs.Bind<&InvokeSaveRestore>(catalog.Find(kSaveRestoreVerb), saves));
-    Verbs.push_back(verbs.Bind<&InvokeSaveDelete>(catalog.Find(kSaveDeleteVerb), saves));
-    Verbs.push_back(verbs.Bind<&InvokeSaveCopy>(catalog.Find(kSaveCopyVerb), saves));
+    Saves = std::make_unique<SavedGameOperations>(saves);
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *Saves));
 }
 
 void EngineVocabularyBindings::BindLevelChanges(LevelChange& changes, VerbDispatcher& verbs)
 {
-    LevelChanges = std::make_unique<LevelChangeOperations>(LevelChangeOperations{ .Changes = changes, .Entities = Entities });
-    Verbs.push_back(verbs.Bind<&InvokeLevelChange>(verbs.Registry().Find(kLevelChangeVerb), *LevelChanges));
+    LevelChanges = std::make_unique<LevelChangeOperations>(changes, Entities);
+    Generated.push_back(BindAuthoredApi(&verbs, nullptr, *LevelChanges));
 }
 
 void EngineVocabularyBindings::BindCounters(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries, Logger& log,
                                             AuthoredEventDispatcher* events)
 {
     Counters = std::make_unique<CounterOperations>(Entities, log, events);
-    const VerbRegistry& catalog = verbs.Registry();
-    Verbs.push_back(verbs.Bind<&InvokeCounterSet>(catalog.Find(kCounterSetVerb), *Counters));
-    Verbs.push_back(verbs.Bind<&InvokeCounterAdd>(catalog.Find(kCounterAddVerb), *Counters));
-    Queries.push_back(BindCounterQuery(queries, std::as_const(Entities)));
+    Generated.push_back(BindAuthoredApi(&verbs, &queries, *Counters));
 }
 
 void EngineVocabularyBindings::BindInventory(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
 {
     Items = std::make_unique<InventoryOperations>(Entities, Clock);
-    const VerbRegistry& catalog = verbs.Registry();
-    Verbs.push_back(verbs.Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), *Items));
-    Verbs.push_back(verbs.Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), *Items));
-    Verbs.push_back(verbs.Bind<&InvokeInventoryTransfer>(catalog.Find(kInventoryTransferVerb), *Items));
-    Verbs.push_back(verbs.Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), *Items));
-    Verbs.push_back(verbs.Bind<&InvokeInventoryUse>(catalog.Find(kInventoryUseVerb), *Items));
-    Queries.push_back(BindInventoryQuery(queries, std::as_const(Entities)));
-    Generated.push_back(BindAuthoredApi(nullptr, &queries, *Items));
+    Generated.push_back(BindAuthoredApi(&verbs, &queries, *Items));
 }
 
 void EngineVocabularyBindings::BindEquipment(VerbDispatcher& verbs, AuthoredQueryDispatcher& queries)
 {
     Worn = std::make_unique<EquipmentOperations>(Entities, Clock);
-    const VerbRegistry& catalog = verbs.Registry();
-    Verbs.push_back(verbs.Bind<&InvokeEquipmentEquip>(catalog.Find(kEquipmentEquipVerb), *Worn));
-    Verbs.push_back(verbs.Bind<&InvokeEquipmentUnequip>(catalog.Find(kEquipmentUnequipVerb), *Worn));
-    Verbs.push_back(verbs.Bind<&InvokeEquipmentCycle>(catalog.Find(kEquipmentCycleVerb), *Worn));
-    for (AuthoredQueryBindingToken& token : BindEquipmentQueries(queries, std::as_const(Entities)))
-        Queries.push_back(std::move(token));
+    Generated.push_back(BindAuthoredApi(&verbs, &queries, *Worn));
 }
 
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)

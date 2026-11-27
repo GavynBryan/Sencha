@@ -245,6 +245,7 @@ if(FRAMEWORK_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/CubeDemoScene.cpp
         ${CMAKE_SOURCE_DIR}/example/CubeDemo/FreeCamera.cpp)
     target_include_directories(framework_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/support
         ${CMAKE_SOURCE_DIR}/templates/fps/src
         ${CMAKE_SOURCE_DIR}/templates/platformer/src
         ${CMAKE_SOURCE_DIR}/templates/horror/src)

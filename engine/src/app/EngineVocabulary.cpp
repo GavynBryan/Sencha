@@ -7,6 +7,7 @@
 #include <audio/AudioVerbs.h>
 #include <camera/CameraFovScaleVerbs.h>
 #include <camera/CameraShakeVerbs.h>
+#include <authored/AuthoredApi.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <logic/ClaimVocabulary.h>
@@ -57,7 +58,7 @@ bool InstallEngineVocabulary(World& world)
     DeclareAnimRequestVerbs(scope);
     DeclareEffectVerbs(scope);
     DeclareAbilityVerbs(scope);
-    DeclareGameplayTagVerbs(scope);
+    DeclareAuthoredApi<GameplayTagOperations>(&scope, nullptr);
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
     DeclareAudioVerbs(scope);
@@ -69,8 +70,9 @@ bool InstallEngineVocabulary(World& world)
     DeclareProjectileVocabulary(scope, eventScope);
     DeclareContactLineVocabulary(scope, queryScope);
     DeclareInteractUseVocabulary(scope, eventScope);
-    DeclareSavedGameVerbs(scope);
-    DeclareLevelChangeVerbs(scope, eventScope);
+    DeclareAuthoredApi<SavedGameOperations>(&scope, nullptr);
+    DeclareAuthoredApi<LevelChangeOperations>(&scope, nullptr);
+    DeclareLevelChangeEvents(eventScope);
     DeclarePhysicsQueries(queryScope);
     DeclareNavigationQueries(queryScope);
     DeclareCounterVocabulary(scope, queryScope, eventScope);

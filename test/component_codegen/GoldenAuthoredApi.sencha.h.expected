@@ -152,43 +152,43 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static_assert(AuthoredComponentType<GoldenTorch>,
                   "test/component_codegen/GoldenAuthoredApi.h:120: SENCHA_VERB(\"test.torch.light\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredArgumentType<float>,
-                  "test/component_codegen/GoldenAuthoredApi.h:122: SENCHA_VERB(\"test.torch.light\"): parameter 'fuel' has type 'float', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:123: SENCHA_VERB(\"test.torch.light\"): parameter 'fuel' has type 'float', which is not an authored argument type");
     static_assert(CanRepresentSchemaDefault<float>,
-                  "test/component_codegen/GoldenAuthoredApi.h:122: SENCHA_VERB(\"test.torch.light\"): parameter 'fuel' of type 'float' cannot declare a schema default");
+                  "test/component_codegen/GoldenAuthoredApi.h:123: SENCHA_VERB(\"test.torch.light\"): parameter 'fuel' of type 'float' cannot declare a schema default");
     static_assert(AuthoredBoundFits<float>(0),
-                  "test/component_codegen/GoldenAuthoredApi.h:122: SENCHA_VERB(\"test.torch.light\"): SENCHA_MIN(0) on parameter 'fuel' is not a number inside what 'float' holds");
+                  "test/component_codegen/GoldenAuthoredApi.h:123: SENCHA_VERB(\"test.torch.light\"): SENCHA_MIN(0) on parameter 'fuel' is not a number inside what 'float' holds");
     static_assert(IsAuthoredArgumentType<std::optional<EntityId>>,
-                  "test/component_codegen/GoldenAuthoredApi.h:126: SENCHA_VERB(\"test.torch.douse\"): parameter 'torch' has type 'std::optional<EntityId>', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:127: SENCHA_VERB(\"test.torch.douse\"): parameter 'torch' has type 'std::optional<EntityId>', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<EntityId>,
-                  "test/component_codegen/GoldenAuthoredApi.h:132: SENCHA_LEASE(\"test.torch.hold\"): parameter 'torch' has type 'EntityId', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:133: SENCHA_LEASE(\"test.torch.hold\"): parameter 'torch' has type 'EntityId', which is not an authored argument type");
     static_assert(AuthoredComponentType<GoldenTorch>,
-                  "test/component_codegen/GoldenAuthoredApi.h:132: SENCHA_LEASE(\"test.torch.hold\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
+                  "test/component_codegen/GoldenAuthoredApi.h:133: SENCHA_LEASE(\"test.torch.hold\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredArgumentType<float>,
-                  "test/component_codegen/GoldenAuthoredApi.h:133: SENCHA_LEASE(\"test.torch.hold\"): parameter 'seconds' has type 'float', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:134: SENCHA_LEASE(\"test.torch.hold\"): parameter 'seconds' has type 'float', which is not an authored argument type");
     static_assert(CanRepresentSchemaDefault<float>,
-                  "test/component_codegen/GoldenAuthoredApi.h:133: SENCHA_LEASE(\"test.torch.hold\"): parameter 'seconds' of type 'float' cannot declare a schema default");
+                  "test/component_codegen/GoldenAuthoredApi.h:134: SENCHA_LEASE(\"test.torch.hold\"): parameter 'seconds' of type 'float' cannot declare a schema default");
     static_assert(AuthoredRangeFits<float>(0, 30),
-                  "test/component_codegen/GoldenAuthoredApi.h:133: SENCHA_LEASE(\"test.torch.hold\"): SENCHA_MIN(0) and SENCHA_MAX(30) on parameter 'seconds' are not an ordered range inside what 'float' holds");
+                  "test/component_codegen/GoldenAuthoredApi.h:134: SENCHA_LEASE(\"test.torch.hold\"): SENCHA_MIN(0) and SENCHA_MAX(30) on parameter 'seconds' are not an ordered range inside what 'float' holds");
     static_assert(IsAuthoredArgumentType<int32_t>,
-                  "test/component_codegen/GoldenAuthoredApi.h:141: SENCHA_LEASE(\"test.torch.flicker\"): parameter 'rate' has type 'int32_t', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:142: SENCHA_LEASE(\"test.torch.flicker\"): parameter 'rate' has type 'int32_t', which is not an authored argument type");
     static_assert(AuthoredBoundFits<int32_t>(8),
-                  "test/component_codegen/GoldenAuthoredApi.h:141: SENCHA_LEASE(\"test.torch.flicker\"): SENCHA_MAX(8) on parameter 'rate' is not a number inside what 'int32_t' holds");
+                  "test/component_codegen/GoldenAuthoredApi.h:142: SENCHA_LEASE(\"test.torch.flicker\"): SENCHA_MAX(8) on parameter 'rate' is not a number inside what 'int32_t' holds");
     static_assert(IsAuthoredArgumentType<AssetRef>,
-                  "test/component_codegen/GoldenAuthoredApi.h:147: SENCHA_VERB(\"test.torch.glint\"): parameter 'mesh' has type 'AssetRef', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:148: SENCHA_VERB(\"test.torch.glint\"): parameter 'mesh' has type 'AssetRef', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<std::string_view>,
-                  "test/component_codegen/GoldenAuthoredApi.h:148: SENCHA_VERB(\"test.torch.glint\"): parameter 'note' has type 'std::string_view', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:149: SENCHA_VERB(\"test.torch.glint\"): parameter 'note' has type 'std::string_view', which is not an authored argument type");
     static_assert(CanRepresentSchemaDefault<std::string_view>,
-                  "test/component_codegen/GoldenAuthoredApi.h:148: SENCHA_VERB(\"test.torch.glint\"): parameter 'note' of type 'std::string_view' cannot declare a schema default");
+                  "test/component_codegen/GoldenAuthoredApi.h:149: SENCHA_VERB(\"test.torch.glint\"): parameter 'note' of type 'std::string_view' cannot declare a schema default");
     static_assert(IsAuthoredArgumentType<AuthoredDataRef>,
-                  "test/component_codegen/GoldenAuthoredApi.h:151: SENCHA_VERB(\"test.torch.fuel_with\"): parameter 'fuel' has type 'AuthoredDataRef', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:152: SENCHA_VERB(\"test.torch.fuel_with\"): parameter 'fuel' has type 'AuthoredDataRef', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<EntityId>,
-                  "test/component_codegen/GoldenAuthoredApi.h:154: SENCHA_QUERY(\"test.torch.flame\"): parameter 'torch' has type 'EntityId', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:155: SENCHA_QUERY(\"test.torch.flame\"): parameter 'torch' has type 'EntityId', which is not an authored argument type");
     static_assert(AuthoredComponentType<GoldenTorch>,
-                  "test/component_codegen/GoldenAuthoredApi.h:154: SENCHA_QUERY(\"test.torch.flame\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
+                  "test/component_codegen/GoldenAuthoredApi.h:155: SENCHA_QUERY(\"test.torch.flame\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredResultType<AuthoredQueryValueType<std::optional<GoldenFlame>>>,
-                  "test/component_codegen/GoldenAuthoredApi.h:154: SENCHA_QUERY(\"test.torch.flame\"): the result of 'Flame' has type 'std::optional<GoldenFlame>', which is not an authored result type");
+                  "test/component_codegen/GoldenAuthoredApi.h:155: SENCHA_QUERY(\"test.torch.flame\"): the result of 'Flame' has type 'std::optional<GoldenFlame>', which is not an authored result type");
     static_assert(IsAuthoredResultType<AuthoredQueryValueType<std::vector<EntityId>>>,
-                  "test/component_codegen/GoldenAuthoredApi.h:157: SENCHA_QUERY(\"test.torch.lit\"): the result of 'LitTorches' has type 'std::vector<EntityId>', which is not an authored result type");
+                  "test/component_codegen/GoldenAuthoredApi.h:158: SENCHA_QUERY(\"test.torch.lit\"): the result of 'LitTorches' has type 'std::vector<EntityId>', which is not an authored result type");
     static_assert(requires(const GoldenTorchSystem& provider) {
                       { provider.AuthoredWorld() } -> std::same_as<const World&>;
                   },
@@ -251,18 +251,18 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static VerbAnswer Invoke_Ignite(GoldenTorchSystem& self, const VerbInvocation& invocation)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), torch))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), torch))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
         GoldenLamp brightness{};
-        if (!AuthoredValueTraits<GoldenLamp>::Decode(invocation.Arguments->At(1), brightness))
+        if (!DecodeAuthoredArgument<GoldenLamp>(self, invocation.Arguments->At(1), brightness))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
         float seconds{};
-        if (!AuthoredValueTraits<float>::Decode(invocation.Arguments->At(2), seconds))
+        if (!DecodeAuthoredArgument<float>(self, invocation.Arguments->At(2), seconds))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 2);
         std::optional<EntityId> instigator{};
-        if (!AuthoredValueTraits<std::optional<EntityId>>::Decode(invocation.Arguments->At(3), instigator))
+        if (!DecodeAuthoredArgument<std::optional<EntityId>>(self, invocation.Arguments->At(3), instigator))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 3);
         return AnswerAuthoredVerb(self.Ignite(invocation, std::move(torch), std::move(brightness), std::move(seconds), std::move(instigator)), invocation.Result);
     }
@@ -303,7 +303,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static VerbAnswer Invoke_Rename(GoldenTorchSystem& self, const VerbInvocation& invocation)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), torch))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), torch))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
@@ -341,10 +341,10 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static AuthoredQueryStatus Evaluate_CanIgnite(const GoldenTorchSystem& self, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, AuthoredArgumentAt(arguments, 0), torch))
             return AuthoredQueryStatus::InvalidArguments;
         int32_t level{};
-        if (!AuthoredValueTraits<int32_t>::Decode(AuthoredArgumentAt(arguments, 1), level))
+        if (!DecodeAuthoredArgument<int32_t>(self, AuthoredArgumentAt(arguments, 1), level))
             return AuthoredQueryStatus::InvalidArguments;
         return AnswerAuthoredQuery(self.CanIgnite(std::move(torch), std::move(level)), result);
     }
@@ -368,7 +368,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static AuthoredQueryStatus Evaluate_BurnTime(const GoldenTorchSystem& self, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, AuthoredArgumentAt(arguments, 0), torch))
             return AuthoredQueryStatus::InvalidArguments;
         return AnswerAuthoredQuery(self.BurnTime(std::move(torch)), result);
     }
@@ -390,6 +390,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
             field.Key = "fuel";
             field.Summary = "How long it burns.";
             field.Units = "seconds";
+            field.Editor.Widget = "slider";
             AuthoredValueTraits<float>::Describe(field);
             AuthoredValueField(field).Numeric.Minimum = static_cast<double>(0);
             field.Default = AuthoredSchemaDefault<float>::ToDefault(static_cast<float>(10));
@@ -410,12 +411,12 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static VerbAnswer Invoke_Light(GoldenTorchSystem& self, const VerbInvocation& invocation)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), torch))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), torch))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
         float fuel{};
-        if (!AuthoredValueTraits<float>::Decode(invocation.Arguments->At(1), fuel))
+        if (!DecodeAuthoredArgument<float>(self, invocation.Arguments->At(1), fuel))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
         return AnswerAuthoredVerb(self.Light(std::move(torch), std::move(fuel)), invocation.Result);
     }
@@ -438,7 +439,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static VerbAnswer Invoke_Douse(GoldenTorchSystem& self, const VerbInvocation& invocation)
     {
         std::optional<EntityId> torch{};
-        if (!AuthoredValueTraits<std::optional<EntityId>>::Decode(invocation.Arguments->At(0), torch))
+        if (!DecodeAuthoredArgument<std::optional<EntityId>>(self, invocation.Arguments->At(0), torch))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), torch))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
@@ -479,12 +480,12 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
         if (invocation.Step == LeaseStep::Probe)
             return self.HoldGoesOn(invocation.Owner) ? VerbAnswer{} : VerbAnswer(VerbAdmission::Refused);
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), torch))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), torch))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
         float seconds{};
-        if (!AuthoredValueTraits<float>::Decode(invocation.Arguments->At(1), seconds))
+        if (!DecodeAuthoredArgument<float>(self, invocation.Arguments->At(1), seconds))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
         return AnswerAuthoredVerb(self.Hold(invocation, std::move(torch), std::move(seconds)), invocation.Result);
     }
@@ -513,7 +514,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
         if (invocation.Step == LeaseStep::Probe)
             return VerbAnswer(VerbAdmission::Refused);
         int32_t rate{};
-        if (!AuthoredValueTraits<int32_t>::Decode(invocation.Arguments->At(0), rate))
+        if (!DecodeAuthoredArgument<int32_t>(self, invocation.Arguments->At(0), rate))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         return AnswerAuthoredVerb(self.Flicker(std::move(rate)), invocation.Result);
     }
@@ -547,7 +548,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
         if (!mesh.Read(invocation.Arguments->At(0)))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         std::string_view note{};
-        if (!AuthoredValueTraits<std::string_view>::Decode(invocation.Arguments->At(1), note))
+        if (!DecodeAuthoredArgument<std::string_view>(self, invocation.Arguments->At(1), note))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
         return AnswerAuthoredVerb(self.Glint(mesh.Get(), std::move(note)), invocation.Result);
     }
@@ -569,7 +570,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static VerbAnswer Invoke_FuelWith(GoldenTorchSystem& self, const VerbInvocation& invocation)
     {
         AuthoredDataRef fuel{};
-        if (!AuthoredValueTraits<AuthoredDataRef>::Decode(invocation.Arguments->At(0), fuel))
+        if (!DecodeAuthoredArgument<AuthoredDataRef>(self, invocation.Arguments->At(0), fuel))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         return AnswerAuthoredVerb(self.FuelWith(std::move(fuel)), invocation.Result);
     }
@@ -593,7 +594,7 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
     static AuthoredQueryStatus Evaluate_Flame(const GoldenTorchSystem& self, std::span<const AuthoredValue> arguments, AuthoredValue& result)
     {
         EntityId torch{};
-        if (!AuthoredValueTraits<EntityId>::Decode(AuthoredArgumentAt(arguments, 0), torch))
+        if (!DecodeAuthoredArgument<EntityId>(self, AuthoredArgumentAt(arguments, 0), torch))
             return AuthoredQueryStatus::InvalidArguments;
         return AnswerAuthoredQuery(self.Flame(std::move(torch)), result);
     }
@@ -637,21 +638,21 @@ struct AuthoredApiDefinition<GoldenBenchVerbs>
     using Target = GoldenBenchVerbs;
 
     static_assert(IsAuthoredArgumentType<EntityId>,
-                  "test/component_codegen/GoldenAuthoredApi.h:170: SENCHA_VERB(\"test.bench.touch\"): parameter 'target' has type 'EntityId', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:171: SENCHA_VERB(\"test.bench.touch\"): parameter 'target' has type 'EntityId', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<EntityId>,
-                  "test/component_codegen/GoldenAuthoredApi.h:177: SENCHA_VERB(\"test.bench.paint\"): parameter 'target' has type 'EntityId', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:178: SENCHA_VERB(\"test.bench.paint\"): parameter 'target' has type 'EntityId', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<std::string_view>,
-                  "test/component_codegen/GoldenAuthoredApi.h:178: SENCHA_VERB(\"test.bench.paint\"): parameter 'label' has type 'std::string_view', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:179: SENCHA_VERB(\"test.bench.paint\"): parameter 'label' has type 'std::string_view', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<AssetRef>,
-                  "test/component_codegen/GoldenAuthoredApi.h:179: SENCHA_VERB(\"test.bench.paint\"): parameter 'decal' has type 'AssetRef', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:180: SENCHA_VERB(\"test.bench.paint\"): parameter 'decal' has type 'AssetRef', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<float>,
-                  "test/component_codegen/GoldenAuthoredApi.h:180: SENCHA_VERB(\"test.bench.paint\"): parameter 'scale' has type 'float', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:181: SENCHA_VERB(\"test.bench.paint\"): parameter 'scale' has type 'float', which is not an authored argument type");
     static_assert(IsAuthoredArgumentType<int32_t>,
-                  "test/component_codegen/GoldenAuthoredApi.h:181: SENCHA_VERB(\"test.bench.paint\"): parameter 'layer' has type 'int32_t', which is not an authored argument type");
+                  "test/component_codegen/GoldenAuthoredApi.h:182: SENCHA_VERB(\"test.bench.paint\"): parameter 'layer' has type 'int32_t', which is not an authored argument type");
     static_assert(requires(const GoldenBenchVerbs& provider) {
                       { provider.AuthoredWorld() } -> std::same_as<const World&>;
                   },
-                  "test/component_codegen/GoldenAuthoredApi.h:170: a verb of 'GoldenBenchVerbs' takes a SENCHA_TARGET, so 'GoldenBenchVerbs' answers const World& AuthoredWorld() const, which the adapter asks whether the target is alive");
+                  "test/component_codegen/GoldenAuthoredApi.h:171: a verb of 'GoldenBenchVerbs' takes a SENCHA_TARGET, so 'GoldenBenchVerbs' answers const World& AuthoredWorld() const, which the adapter asks whether the target is alive");
 
     static constexpr std::string_view Name_Touch = "test.bench.touch";
     static constexpr std::string_view Name_Paint = "test.bench.paint";
@@ -672,7 +673,7 @@ struct AuthoredApiDefinition<GoldenBenchVerbs>
     static VerbAnswer Invoke_Touch(GoldenBenchVerbs& self, const VerbInvocation& invocation)
     {
         EntityId target{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), target))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), target))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), target))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
@@ -720,21 +721,21 @@ struct AuthoredApiDefinition<GoldenBenchVerbs>
     static VerbAnswer Invoke_Paint(GoldenBenchVerbs& self, const VerbInvocation& invocation)
     {
         EntityId target{};
-        if (!AuthoredValueTraits<EntityId>::Decode(invocation.Arguments->At(0), target))
+        if (!DecodeAuthoredArgument<EntityId>(self, invocation.Arguments->At(0), target))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 0);
         if (!AuthoredTargetAlive(self.AuthoredWorld(), target))
             return VerbArgumentAnswer(VerbAdmission::UnresolvedReference, 0);
         std::string_view label{};
-        if (!AuthoredValueTraits<std::string_view>::Decode(invocation.Arguments->At(1), label))
+        if (!DecodeAuthoredArgument<std::string_view>(self, invocation.Arguments->At(1), label))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 1);
         AuthoredHeldArgument<AssetRef> decal;
         if (!decal.Read(invocation.Arguments->At(2)))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 2);
         float scale{};
-        if (!AuthoredValueTraits<float>::Decode(invocation.Arguments->At(3), scale))
+        if (!DecodeAuthoredArgument<float>(self, invocation.Arguments->At(3), scale))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 3);
         int32_t layer{};
-        if (!AuthoredValueTraits<int32_t>::Decode(invocation.Arguments->At(4), layer))
+        if (!DecodeAuthoredArgument<int32_t>(self, invocation.Arguments->At(4), layer))
             return VerbArgumentAnswer(VerbAdmission::InvalidArguments, 4);
         return AnswerAuthoredVerb(self.Paint(std::move(target), std::move(label), decal.Get(), std::move(scale), std::move(layer)), invocation.Result);
     }
@@ -749,11 +750,11 @@ template <>
 struct AuthoredApiDefinition<GoldenTorchLitEvent>
 {
     static_assert(IsAuthoredResultType<EntityId>,
-                  "test/component_codegen/GoldenAuthoredApi.h:200: SENCHA_EVENT(\"test.torch.lit\"): member 'Instigator' has type 'EntityId', which is not an authored result type");
+                  "test/component_codegen/GoldenAuthoredApi.h:201: SENCHA_EVENT(\"test.torch.lit\"): member 'Instigator' has type 'EntityId', which is not an authored result type");
     static_assert(IsAuthoredResultType<GoldenLamp>,
-                  "test/component_codegen/GoldenAuthoredApi.h:204: SENCHA_EVENT(\"test.torch.lit\"): member 'Brightness' has type 'GoldenLamp', which is not an authored result type");
+                  "test/component_codegen/GoldenAuthoredApi.h:205: SENCHA_EVENT(\"test.torch.lit\"): member 'Brightness' has type 'GoldenLamp', which is not an authored result type");
     static_assert(AuthoredComponentType<GoldenTorch>,
-                  "test/component_codegen/GoldenAuthoredApi.h:197: SENCHA_EVENT(\"test.torch.lit\"): SENCHA_EVENT_SOURCE(GoldenTorch) names a type that is not a component");
+                  "test/component_codegen/GoldenAuthoredApi.h:198: SENCHA_EVENT(\"test.torch.lit\"): SENCHA_EVENT_SOURCE(GoldenTorch) names a type that is not a component");
 
     static constexpr std::string_view EventName = "test.torch.lit";
 

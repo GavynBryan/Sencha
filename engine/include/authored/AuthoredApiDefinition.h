@@ -191,6 +191,16 @@ template<typename T, typename E>
     return answer.Answer();
 }
 
+// One argument as the generated adapter reads it: plainly, or against the provider's World.
+template<typename T, typename Provider>
+[[nodiscard]] bool DecodeAuthoredArgument(const Provider& provider, const AuthoredValue& value, T& out)
+{
+    if constexpr (AuthoredWorldDecoded<T>)
+        return AuthoredValueTraits<T>::DecodeIn(provider.AuthoredWorld(), value, out);
+    else
+        return AuthoredValueTraits<T>::Decode(value, out);
+}
+
 [[nodiscard]] bool AuthoredTargetAlive(const World& world, EntityId target);
 
 // An absent optional target is not checked.

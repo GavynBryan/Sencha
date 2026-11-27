@@ -34,7 +34,8 @@ class ProjectileSystem;
 class ResponseOperations;
 class ResponsesSystem;
 class LevelChange;
-struct LevelChangeOperations;
+class LevelChangeOperations;
+class SavedGameOperations;
 class SavedGames;
 class World;
 
@@ -109,6 +110,7 @@ private:
     std::unique_ptr<InventoryOperations> Items;
     std::unique_ptr<EquipmentOperations> Worn;
     std::unique_ptr<LevelChangeOperations> LevelChanges;
+    std::unique_ptr<SavedGameOperations> Saves;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;
     std::vector<AuthoredApiBindings> Generated;

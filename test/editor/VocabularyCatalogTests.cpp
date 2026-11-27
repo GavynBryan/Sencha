@@ -102,8 +102,8 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[8].Name, kEffectHoldLease);
     EXPECT_EQ(verbs[9].Name, kAbilityActivateVerb);
     EXPECT_EQ(verbs[12].Name, kAbilityRevokeVerb);
-    EXPECT_EQ(verbs[13].Name, kTagsGrantVerb);
-    EXPECT_EQ(verbs[14].Name, kTagsRevokeVerb);
+    EXPECT_EQ(verbs[13].Name, AuthoredApiDefinition<GameplayTagOperations>::Name_Grant);
+    EXPECT_EQ(verbs[14].Name, AuthoredApiDefinition<GameplayTagOperations>::Name_Revoke);
     EXPECT_EQ(verbs[15].Name, kTimeScaleLease);
     EXPECT_EQ(verbs[16].Name, kMovementBurstLease);
     EXPECT_EQ(verbs[18].Name, kMovementModeLease);
@@ -127,20 +127,20 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[37].Name, kLineCutVerb);
     EXPECT_EQ(verbs[38].Name, kLineRetractVerb);
     EXPECT_EQ(verbs[39].Name, kInteractUseVerb);
-    EXPECT_EQ(verbs[40].Name, kSaveWriteVerb);
-    EXPECT_EQ(verbs[41].Name, kSaveRestoreVerb);
-    EXPECT_EQ(verbs[42].Name, kSaveDeleteVerb);
-    EXPECT_EQ(verbs[43].Name, kSaveCopyVerb);
-    EXPECT_EQ(verbs[44].Name, kLevelChangeVerb);
-    EXPECT_EQ(verbs[45].Name, kCounterSetVerb);
-    EXPECT_EQ(verbs[46].Name, kCounterAddVerb);
-    EXPECT_EQ(verbs[47].Name, kInventoryTakeVerb);
-    EXPECT_EQ(verbs[48].Name, kInventoryGiveVerb);
-    EXPECT_EQ(verbs[49].Name, kInventoryTransferVerb);
-    EXPECT_EQ(verbs[50].Name, kInventoryDropVerb);
-    EXPECT_EQ(verbs[51].Name, kInventoryUseVerb);
-    EXPECT_EQ(verbs[52].Name, kEquipmentEquipVerb);
-    EXPECT_EQ(verbs[54].Name, kEquipmentCycleVerb);
+    EXPECT_EQ(verbs[40].Name, AuthoredApiDefinition<SavedGameOperations>::Name_Write);
+    EXPECT_EQ(verbs[41].Name, AuthoredApiDefinition<SavedGameOperations>::Name_Restore);
+    EXPECT_EQ(verbs[42].Name, AuthoredApiDefinition<SavedGameOperations>::Name_Delete);
+    EXPECT_EQ(verbs[43].Name, AuthoredApiDefinition<SavedGameOperations>::Name_Copy);
+    EXPECT_EQ(verbs[44].Name, AuthoredApiDefinition<LevelChangeOperations>::Name_Change);
+    EXPECT_EQ(verbs[45].Name, AuthoredApiDefinition<CounterOperations>::Name_Set);
+    EXPECT_EQ(verbs[46].Name, AuthoredApiDefinition<CounterOperations>::Name_Add);
+    EXPECT_EQ(verbs[47].Name, AuthoredApiDefinition<InventoryOperations>::Name_Take);
+    EXPECT_EQ(verbs[48].Name, AuthoredApiDefinition<InventoryOperations>::Name_Give);
+    EXPECT_EQ(verbs[49].Name, AuthoredApiDefinition<InventoryOperations>::Name_Transfer);
+    EXPECT_EQ(verbs[50].Name, AuthoredApiDefinition<InventoryOperations>::Name_Drop);
+    EXPECT_EQ(verbs[51].Name, AuthoredApiDefinition<InventoryOperations>::Name_Use);
+    EXPECT_EQ(verbs[52].Name, AuthoredApiDefinition<EquipmentOperations>::Name_Equip);
+    EXPECT_EQ(verbs[54].Name, AuthoredApiDefinition<EquipmentOperations>::Name_Cycle);
     EXPECT_EQ(verbs[55].Name, kPerceptionStimulusVerb);
     EXPECT_EQ(verbs[56].Name, kClaimsHoldLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
@@ -150,14 +150,14 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(queries[8].Name, kNavigationPhaseQuery);
     EXPECT_EQ(queries[9].Name, kNavigationFailureQuery);
     EXPECT_EQ(queries[10].Name, kNavigationRemainingQuery);
-    EXPECT_EQ(queries[15].Name, kCounterValueQuery);
-    EXPECT_EQ(queries[16].Name, kInventoryCountQuery);
+    EXPECT_EQ(queries[15].Name, AuthoredApiDefinition<CounterOperations>::Name_Value);
+    EXPECT_EQ(queries[16].Name, AuthoredApiDefinition<InventoryOperations>::Name_Count);
     EXPECT_EQ(queries[16].ArgumentCount, 4u);
     EXPECT_EQ(queries[17].Name, AuthoredApiDefinition<InventoryOperations>::Name_Entry);
     EXPECT_EQ(queries[18].Name, AuthoredApiDefinition<InventoryOperations>::Name_Property);
     EXPECT_EQ(queries[19].Name, AuthoredApiDefinition<InventoryOperations>::Name_Total);
-    EXPECT_EQ(queries[20].Name, kEquipmentInSlotQuery);
-    EXPECT_EQ(queries[21].Name, kEquipmentSourcesQuery);
+    EXPECT_EQ(queries[20].Name, AuthoredApiDefinition<EquipmentOperations>::Name_InSlot);
+    EXPECT_EQ(queries[21].Name, AuthoredApiDefinition<EquipmentOperations>::Name_Sources);
 }
 
 TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)

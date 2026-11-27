@@ -842,13 +842,7 @@ protected:
         EXPECT_TRUE(InstallEngineVocabulary(Entities()));
         Verbs = std::make_unique<VerbDispatcher>(*FindVerbRegistry(Entities()));
         Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(Entities()));
-        const VerbRegistry& catalog = Verbs->Registry();
-        Tokens.push_back(Verbs->Bind<&InvokeInventoryTake>(catalog.Find(kInventoryTakeVerb), Operations));
-        Tokens.push_back(Verbs->Bind<&InvokeInventoryGive>(catalog.Find(kInventoryGiveVerb), Operations));
-        Tokens.push_back(Verbs->Bind<&InvokeInventoryTransfer>(catalog.Find(kInventoryTransferVerb), Operations));
-        Tokens.push_back(Verbs->Bind<&InvokeInventoryDrop>(catalog.Find(kInventoryDropVerb), Operations));
-        QueryToken = BindInventoryQuery(*Queries, std::as_const(Runtime).Entities());
-        Searches = BindAuthoredApi(nullptr, Queries.get(), Operations);
+        Searches = BindAuthoredApi(Verbs.get(), Queries.get(), Operations);
     }
 
     VerbAdmission Invoke(std::string_view verb, std::vector<std::pair<std::string, EntityId>> entities,
@@ -904,7 +898,7 @@ protected:
         AuthoredValue result;
         const std::vector<AuthoredValue> arguments{ AuthoredValue::Entity(container), definition, tag,
                                                     AuthoredValue::Bool(within) };
-        EXPECT_EQ(Queries->Evaluate(Queries->Registry().Resolve(kInventoryCountQuery), arguments, result),
+        EXPECT_EQ(Queries->Evaluate(Queries->Registry().Resolve(AuthoredApiDefinition<InventoryOperations>::Name_Count), arguments, result),
                   AuthoredQueryStatus::Value);
         std::int64_t count = -1;
         EXPECT_TRUE(result.TryGetInt(count));
@@ -937,8 +931,6 @@ protected:
     std::pair<VerbId, VerbAnswer> Last;
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
-    std::vector<VerbBindingToken> Tokens;
-    AuthoredQueryBindingToken QueryToken;
     AuthoredApiBindings Searches;
 };
 }
@@ -946,25 +938,45 @@ protected:
 TEST_F(InventoryVocabularyTest, TheVerbsChangeWhatTheCountSays)
 {
     const AuthoredValue arrows = Item("asset://items/arrow.sdata");
-    EXPECT_EQ(Invoke(kInventoryGiveVerb, { { "into", Hero } }, { Definition("asset://items/arrow.sdata"), Count(25) }),
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Give, { { "into", Hero } }, { Definition("asset://items/arrow.sdata"), Count(25) }),
               VerbAdmission::Accepted);
     EXPECT_EQ(CountIn(Hero, arrows), 25);
 
     const EntityId chest = Container();
-    EXPECT_EQ(Invoke(kInventoryTransferVerb, { { "entry", Held(Hero)[0] }, { "into", chest } }, { Count(4) }),
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Transfer, { { "entry", Held(Hero)[0] }, { "into", chest } }, { Count(4) }),
               VerbAdmission::Accepted);
     EXPECT_EQ(CountIn(Hero, arrows), 21);
     EXPECT_EQ(CountIn(chest, arrows), 4);
 
-    EXPECT_EQ(Invoke(kInventoryDropVerb, { { "entry", Held(chest)[0] } }), VerbAdmission::Accepted);
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Drop, { { "entry", Held(chest)[0] } }), VerbAdmission::Accepted);
     EXPECT_TRUE(Held(chest).empty());
-    EXPECT_EQ(Invoke(kInventoryTakeVerb, { { "pickup", Pickup(Cloak, 1) }, { "into", chest } }), VerbAdmission::Accepted);
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Take, { { "pickup", Pickup(Cloak, 1) }, { "into", chest } }), VerbAdmission::Accepted);
     EXPECT_EQ(Held(chest).size(), 1u);
 
     const EntityId wardrobe = Container({ .Capacity = 0, .Accepts = Wearable });
-    EXPECT_EQ(Invoke(kInventoryGiveVerb, { { "into", wardrobe } }, { Definition("asset://items/arrow.sdata"), Count(1) }),
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Give, { { "into", wardrobe } }, { Definition("asset://items/arrow.sdata"), Count(1) }),
               VerbAdmission::Refused);
     EXPECT_EQ(LastAnswer(), "refused: not_accepted") << "the reason by name, not number";
+}
+
+TEST_F(InventoryVocabularyTest, AGiveRefusesAnItemNobodyDeclaredAndCannotAuthorACountBelowOne)
+{
+    EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Give, { { "into", Hero } },
+                     { Definition("asset://items/none.sdata") }),
+              VerbAdmission::InvalidArguments);
+    EXPECT_EQ(LastAnswer(), "invalid argument 'definition'");
+    EXPECT_TRUE(Held(Hero).empty());
+
+    VerbBindingDesc desc;
+    desc.Key = "give.none";
+    desc.KeyId = MakeVerbBindingKey(desc.Key);
+    desc.VerbName = std::string(AuthoredApiDefinition<InventoryOperations>::Name_Give);
+    desc.Arguments = { Definition("asset://items/arrow.sdata"), Count(0) };
+    CompiledVerbBinding binding;
+    std::vector<std::string> errors;
+    EXPECT_FALSE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities()), binding, errors));
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors.front().find("count"), std::string::npos) << errors.front();
 }
 
 TEST_F(InventoryVocabularyTest, ADropLandsInTheZoneWhereItFallsAndIsKeptThereUnlessToldNot)
@@ -984,7 +996,7 @@ TEST_F(InventoryVocabularyTest, ADropLandsInTheZoneWhereItFallsAndIsKeptThereUnl
             literals.back().Key = "keep";
             literals.back().Literal = JsonValue(*keep);
         }
-        EXPECT_EQ(Invoke(kInventoryDropVerb, { { "entry", entry } }, std::move(literals)), VerbAdmission::Accepted);
+        EXPECT_EQ(Invoke(AuthoredApiDefinition<InventoryOperations>::Name_Drop, { { "entry", entry } }, std::move(literals)), VerbAdmission::Accepted);
         return Index().HolderOf(entry);
     };
 

@@ -3,7 +3,9 @@
 #include <authored/AuthoredValue.h>
 #include <core/metadata/DataSchema.h>
 #include <core/metadata/EnumSchema.h>
+#include <core/metadata/NamedIdField.h>
 #include <math/Vec.h>
+#include <world/serialization/NamedIdVocabulary.h>
 
 #include <cmath>
 #include <concepts>
@@ -22,15 +24,26 @@
 // contract (int64 integers, double floats, enums by name) is described in
 // docs/gameplay/authored-api.md.
 
+class World;
+
 template<typename T>
 struct AuthoredValueTraits;
 
-// What an argument may be: described and decoded.
 template<typename T>
-concept IsAuthoredArgumentType = requires(const AuthoredValue& value, T& out, DataFieldSchema& field) {
-    AuthoredValueTraits<T>::Describe(field);
+concept AuthoredPlainDecoded = requires(const AuthoredValue& value, T& out) {
     { AuthoredValueTraits<T>::Decode(value, out) } -> std::same_as<bool>;
 };
+
+// Decoded against the World a provider answers for: a name its vocabulary holds.
+template<typename T>
+concept AuthoredWorldDecoded = requires(const World& world, const AuthoredValue& value, T& out) {
+    { AuthoredValueTraits<T>::DecodeIn(world, value, out) } -> std::same_as<bool>;
+};
+
+// What an argument may be: described and decoded.
+template<typename T>
+concept IsAuthoredArgumentType = requires(DataFieldSchema& field) { AuthoredValueTraits<T>::Describe(field); }
+                              && (AuthoredPlainDecoded<T> || AuthoredWorldDecoded<T>);
 
 // What a result, a field or a payload member may be: described and encoded.
 template<typename T>
@@ -238,6 +251,29 @@ struct AuthoredValueTraits<AuthoredDataRef>
     static bool Decode(const AuthoredValue& value, AuthoredDataRef& out) { return value.TryGetDataAsset(out.Reference); }
 };
 
+// A definition named by its data asset, found in the World's vocabulary of that kind of
+// definition; one the World does not hold refuses.
+template<IsNamedIdField Id>
+    requires(NamedIdField<Id>::Kind == NamedIdKind::DataDefinition)
+struct AuthoredValueTraits<Id>
+{
+    static void Describe(DataFieldSchema& field)
+    {
+        field.Kind = DataFieldKind::DataAssetRef;
+        field.Reference.DataSubtype = std::string(NamedIdField<Id>::Vocabulary().DataSubtype);
+    }
+
+    static bool DecodeIn(const World& world, const AuthoredValue& value, Id& out)
+    {
+        const AssetRef* reference = nullptr;
+        if (!value.TryGetDataAsset(reference))
+            return false;
+        const std::uint32_t found = NamedIdField<Id>::Vocabulary().Find(world, reference->Path);
+        out = Id{ found };
+        return found != 0;
+    }
+};
+
 // Floating-point only: an integer vector would narrow the double components.
 template<int N, typename T>
     requires(N >= 2 && N <= 4 && (std::same_as<T, float> || std::same_as<T, double>))
@@ -318,7 +354,7 @@ struct AuthoredValueTraits<std::optional<T>>
     }
 
     static bool Decode(const AuthoredValue& value, std::optional<T>& out)
-        requires IsAuthoredArgumentType<T>
+        requires AuthoredPlainDecoded<T>
     {
         if (value.IsNone())
         {
@@ -327,6 +363,21 @@ struct AuthoredValueTraits<std::optional<T>>
         }
         T inner{};
         if (!AuthoredValueTraits<T>::Decode(value, inner))
+            return false;
+        out = std::move(inner);
+        return true;
+    }
+
+    static bool DecodeIn(const World& world, const AuthoredValue& value, std::optional<T>& out)
+        requires AuthoredWorldDecoded<T>
+    {
+        if (value.IsNone())
+        {
+            out.reset();
+            return true;
+        }
+        T inner{};
+        if (!AuthoredValueTraits<T>::DecodeIn(world, value, inner))
             return false;
         out = std::move(inner);
         return true;
@@ -461,14 +512,14 @@ template<IsAuthoredValueType T>
 }
 
 // Decodes slot `slot`; a slot past the end reads as absent.
-template<IsAuthoredArgumentType T>
+template<AuthoredPlainDecoded T>
 [[nodiscard]] bool ReadAuthoredArgument(std::span<const AuthoredValue> arguments, std::size_t slot, T& out)
 {
     static const AuthoredValue absent;
     return AuthoredValueTraits<T>::Decode(slot < arguments.size() ? arguments[slot] : absent, out);
 }
 
-template<IsAuthoredArgumentType T>
+template<AuthoredPlainDecoded T>
 [[nodiscard]] bool ReadAuthoredArgument(const AuthoredArguments& arguments, std::size_t slot, T& out)
 {
     return ReadAuthoredArgument(arguments.Values(), slot, out);

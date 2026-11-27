@@ -46,6 +46,11 @@ public:
     {
     }
 
+    constexpr VerbRefusal(VerbAnswer answer)
+        : Admission(answer)
+    {
+    }
+
     [[nodiscard]] constexpr VerbAnswer Answer() const { return Admission; }
 
 private:
@@ -72,6 +77,11 @@ public:
 
     constexpr VerbResult(VerbAdmission status)
         : Admission(status)
+    {
+    }
+
+    constexpr VerbResult(VerbAnswer answer)
+        : Admission(answer)
     {
     }
 

@@ -8,6 +8,8 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <logic/Counter.h>
 #include <logic/CounterVocabulary.h>
+#include <authored/AuthoredApi.h>
+#include "GeneratedVerbCall.h"
 #include <net/NetReplicationComponents.h>
 #include <save/HeldRecordSaves.h>
 #include <world/ComponentRegistrar.h>
@@ -97,9 +99,9 @@ namespace
             Events = std::make_unique<AuthoredEventDispatcher>(*FindAuthoredEventRegistry(Entities),
                                                                Logging.GetLogger<CounterWorld>());
             Queries = std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(Entities));
-            ValueToken = BindCounterQuery(*Queries, Entities);
             Operations = std::make_unique<CounterOperations>(Entities, Logging.GetLogger<CounterOperations>(),
                                                              Events.get());
+            ValueToken = BindAuthoredApi(nullptr, Queries.get(), *Operations);
             Subscription = Events->Subscribe<&Listener::Hear>(
                 FindAuthoredEventRegistry(Entities)->Resolve(kCounterChangedEvent), EntityId{}, Heard);
         }
@@ -125,7 +127,7 @@ namespace
             const AuthoredArguments arguments = Arguments(name, value, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return Operations->Set(invocation);
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Set, invocation).Status;
         }
 
         VerbAdmission Add(GameplayTagId name, std::int64_t amount, std::optional<EntityId> holder = {})
@@ -133,7 +135,7 @@ namespace
             const AuthoredArguments arguments = Arguments(name, amount, holder);
             VerbInvocation invocation;
             invocation.Arguments = &arguments;
-            return Operations->Add(invocation);
+            return CallGeneratedVerb(*Operations, AuthoredApiDefinition<CounterOperations>::Name_Add, invocation).Status;
         }
 
         std::optional<std::int64_t> Value(GameplayTagId name, std::optional<EntityId> holder = {})
@@ -142,7 +144,7 @@ namespace
                                                 holder.has_value() ? AuthoredValue::Entity(*holder) : AuthoredValue{} };
             AuthoredValue result;
             std::int64_t value = 0;
-            if (Queries->Evaluate(FindAuthoredQueryRegistry(Entities)->Resolve(kCounterValueQuery), arguments, result)
+            if (Queries->Evaluate(FindAuthoredQueryRegistry(Entities)->Resolve(AuthoredApiDefinition<CounterOperations>::Name_Value), arguments, result)
                     != AuthoredQueryStatus::Value
                 || !result.TryGetInt(value))
                 return std::nullopt;
@@ -177,7 +179,7 @@ namespace
         std::unique_ptr<AuthoredEventDispatcher> Events;
         std::unique_ptr<AuthoredQueryDispatcher> Queries;
         std::unique_ptr<CounterOperations> Operations;
-        AuthoredQueryBindingToken ValueToken;
+        AuthoredApiBindings ValueToken;
         AuthoredEventSubscription Subscription;
         Listener Heard;
     };
@@ -274,7 +276,7 @@ TEST(Counters, OnlyTheAuthorityChangesACounterAndAGoneHolderIsRefused)
     CounterWorld world;
     const EntityId body = world.Body();
     world.Entities.DestroyEntity(body);
-    EXPECT_EQ(world.Set(world.Boss, 1, body), VerbAdmission::InvalidArguments);
+    EXPECT_EQ(world.Set(world.Boss, 1, body), VerbAdmission::UnresolvedReference);
     EXPECT_EQ(world.Value(world.Boss, body), std::nullopt);
 
     world.Entities.AddResource<SimulationAuthority>().Authoritative = false;

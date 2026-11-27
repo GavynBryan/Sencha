@@ -73,6 +73,15 @@ enum class LevelMemory : std::uint8_t
     Authored,
 };
 
+template<>
+struct EnumSchema<LevelMemory>
+{
+    static constexpr std::array Values = {
+        EnumValue{ LevelMemory::Remembered, "remembered", "Remembered" },
+        EnumValue{ LevelMemory::Authored, "authored", "Authored" },
+    };
+};
+
 // What becomes of the participants' bodies.
 enum class LevelChangeBodies : std::uint8_t
 {
@@ -80,6 +89,15 @@ enum class LevelChangeBodies : std::uint8_t
     Fresh,
     // The same bodies, held still while no level stands and placed when the new one arrives.
     Kept,
+};
+
+template<>
+struct EnumSchema<LevelChangeBodies>
+{
+    static constexpr std::array Values = {
+        EnumValue{ LevelChangeBodies::Kept, "kept", "Kept" },
+        EnumValue{ LevelChangeBodies::Fresh, "fresh", "Fresh" },
+    };
 };
 
 enum class LevelChangeKind : std::uint8_t
