@@ -5,7 +5,7 @@ bindings, relays, and the LevelFlow graphs that come next:
 
 - a **verb** is an operation content may request: `door.open`;
 - a **query** is a question content may ask about the simulation now:
-  `inventory.has_item`, `game.torch.lit`;
+  `inventory.count`, `game.torch.lit`;
 - an **event** is an announcement gameplay code makes when something happened:
   `torch.lit`.
 
@@ -290,6 +290,15 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `counter.set {name, value, holder?}`, `counter.add {name, amount = 1, holder?}` | verb | gameplay / authority only | a named number of the world or of the holder, kept by saves; zero unsets it, and a value past a 32-bit integer is held at its bound (`docs/gameplay/counters.md`) |
 | `counter.value {name, holder?}` | query | — | the counter's value, zero when unset; test it with `require` |
 | `counter.changed {name, value, holder}` | event | published to the World's dispatcher, source the holder | a verb changed a counter; zero when it was unset |
+| `inventory.give {into, definition, count = 1}` | verb | gameplay / authority only | units of an item into a container, open stacks first, all or none (`docs/gameplay/inventory.md`) |
+| `inventory.take {pickup, into}` | verb | gameplay / authority only | an entry the pickup holds, or what it counts, into a container; the pickup goes once empty |
+| `inventory.transfer {entry, into, count = 0, force = false}`, `inventory.drop {entry, at?, force = false}` | verb | gameplay / authority only | an entry, or part of a stack, into a container, or out into a pickup in its holder's zone; only a requested move can be withheld by a layer above |
+| `inventory.use {entry, user?}` | verb | gameplay / authority only | the item's use, run by `user` (its holder when absent) in the next ability pass, when that actor may use it |
+| `inventory.count {container, definition?, tag?, within = false}` | query | — | units held, spent entries not counted, of a definition and carrying a tag; `within` counts what entries hold too; test it with `require` |
+| `equipment.equip {wearer, entry, slot?}` | verb | gameplay / authority only | an entry the wearer may use into the slots its item occupies, replacing what holds them; checked whole, refused under a lock (`docs/gameplay/equipment.md`) |
+| `equipment.unequip {wearer, slot, force = false}`, `equipment.cycle {wearer, group}` | verb | gameplay / authority only | ends the record holding a slot (forced, whatever lock holds it); or wears the next entry the group's first slot takes, unequipping when nothing else fits |
+| `equipment.in_slot {wearer, slot}` | query | — | the entry a slot holds; unavailable when it holds none or waits for one |
+| `equipment.sources {wearer, tag}` | query | — | every worn entry whose item carries the tag |
 | `responses.enable`, `responses.disable {entity, binding = ""}` | verb | gameplay / authority only | one response binding, or all of an entity's, armed or disarmed (`docs/gameplay/responses.md`) |
 | `trigger.interact {activator}` | verb | gameplay / authority only | `sensor.interact` delivered at every volume the activator stands in, at the next response pass |
 | `interact.use {activator, range, origin?, direction?}` | verb | gameplay / authority only | `interact.use` delivered at the first body the activator's aim (or the given ray) strikes within range, when its responses answer it (`docs/gameplay/responses.md`, "Use") |

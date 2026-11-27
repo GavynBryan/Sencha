@@ -321,16 +321,15 @@ TEST(ReplicationCadence, AnEntityTheCapDroppedIsNotReportedDead)
 // fit rides a later snapshot.
 //=============================================================================
 
-TEST(ReplicationBudgetRuntime, TheBudgetIsClampedToWhatOneDatagramCanCarry)
+TEST(ReplicationBudgetRuntime, TheBudgetIsClampedToWhatTheUnreliableChannelFragments)
 {
     ReplicationRuntime runtime;
-    EXPECT_EQ(runtime.SnapshotBytes(), kNetMaxSnapshotBytes)
-        << "the shipping default is not what a datagram holds";
+    EXPECT_EQ(runtime.SnapshotBytes(), kNetDefaultSnapshotBytes) << "the shipping default";
+    EXPECT_GT(kNetDefaultSnapshotBytes, kNetMaxPayloadBytes) << "a snapshot may span datagrams";
 
     runtime.SetSnapshotBytes(kNetMaxSnapshotBytes * 4);
     EXPECT_EQ(runtime.SnapshotBytes(), kNetMaxSnapshotBytes)
-        << "a snapshot larger than a datagram is one that never arrives: there "
-           "is no fragmentation behind this channel";
+        << "no larger than the largest message the channel fragments";
 
     runtime.SetSnapshotBytes(1);
     EXPECT_EQ(runtime.SnapshotBytes(), kNetMinSnapshotBytes)
@@ -452,7 +451,7 @@ TEST(ReplicationSize, OneDatagramSeedsFortyEntities)
     SizedWorld world(40);
     const std::size_t bytes = world.Publish();
 
-    EXPECT_LE(bytes, kNetMaxSnapshotBytes)
+    EXPECT_LE(bytes, kNetMaxPayloadBytes - kNetPayloadKindBytes)
         << "a datagram no longer seeds forty entities, so joining now takes "
            "more round trips than it did";
     // Twenty-four bytes covers a transform at wire precision plus the envelope

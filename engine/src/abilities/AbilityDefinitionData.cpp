@@ -1633,12 +1633,26 @@ DataFieldSchema AbilityGrantEntriesSchema(std::string key, std::string label)
     ability.Children.push_back(std::move(reference));
     entry.Children.push_back(std::move(ability));
     entry.Children.push_back(BindingSchema("binding", "Binding"));
+    entry.Children.push_back(AbilityGrantParametersSchema("parameters", "Parameters"));
+    return List(std::move(key), std::move(label), std::move(entry));
+}
+
+bool ParseAbilityGrantParameters(const JsonValue& list, const std::string& path,
+                                 std::vector<AbilityGrantParameter>& out, std::vector<AbilityDiagnostic>& diagnostics)
+{
+    const std::size_t before = diagnostics.size();
+    std::vector<AssetRef> dependencies;
+    out = Reader(diagnostics, dependencies).GrantParameters(list, {}, path);
+    return diagnostics.size() == before;
+}
+
+DataFieldSchema AbilityGrantParametersSchema(std::string key, std::string label)
+{
     DataFieldSchema parameter = KeyedRecord("parameter", "Parameter");
     DataFieldSchema value = MakeDataField(DataFieldKind::Float, "value", "Value");
     value.Default = 0.0;
     parameter.Children.push_back(std::move(value));
-    entry.Children.push_back(List("parameters", "Parameters", std::move(parameter)));
-    return List(std::move(key), std::move(label), std::move(entry));
+    return List(std::move(key), std::move(label), std::move(parameter));
 }
 
 bool CompileAbilityDeclaration(const JsonValue& data,

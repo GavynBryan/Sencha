@@ -47,6 +47,10 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
 bool RemoveEffect(World& world, EntityId effect);
 // Ends every lasting effect `owner` holds. Not inside a query.
 std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner);
+void FindEffectsOwnedBy(const World& world, const LeaseOwner& owner, std::vector<EntityId>& out);
+// Whether an instance's definition is still the one it applied from: its
+// modifiers fold from the definition as it is, its tags and timing did not.
+[[nodiscard]] bool IsEffectInstanceCurrent(const World& world, EntityId instance);
 
 // One fixed tick's lifetime pass: counts every active target's effects down a tick;
 // a period or end that falls due is what the next tick sees.

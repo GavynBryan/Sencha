@@ -18,7 +18,9 @@
 //
 //   - Unreliable-sequenced: newest wins, stale dropped, nothing resent.
 //     Snapshots, inputs, and cues. A snapshot that arrives after a newer one is
-//     worthless, so delivering it would be worse than dropping it.
+//     worthless, so delivering it would be worse than dropping it. A message
+//     larger than one datagram is fragmented and delivered only whole; a newer
+//     message superseding it drops whatever of it has arrived.
 //   - Reliable-ordered: windowed ack, resend, fragmentation. Handshake, table
 //     sync, zone grants and baselines, cvar sync, disconnect. Anything a peer
 //     must not miss is, by definition, state -- and state travels here.
@@ -68,11 +70,25 @@ inline constexpr std::size_t kNetMaxPayloadBytes =
 inline constexpr std::size_t kNetMaxFragmentPayloadBytes =
     kNetMaxPayloadBytes - kNetReliableHeaderBytes;
 
-// A reliable message may span this many fragments. The cap bounds what a peer
-// can make the receiver hold while a reassembly is incomplete.
+// A message may span this many fragments. The cap bounds what a peer can make
+// the receiver hold while a reassembly is incomplete.
 inline constexpr std::uint8_t kNetMaxFragments = 32;
 inline constexpr std::size_t kNetMaxReliableMessageBytes =
     kNetMaxFragmentPayloadBytes * kNetMaxFragments;
+
+// An unreliable packet carries its fragment's place, index(1) + count(1), only
+// when its message spans more than one datagram, which the header's flags say:
+// a message that fits one costs nothing more. A message is named by its first
+// fragment's packet sequence, so newest-wins compares messages, not packets.
+inline constexpr std::uint8_t kNetPacketFragmented = 0x01;
+inline constexpr std::size_t kNetUnreliableFragmentHeaderBytes = 2;
+inline constexpr std::size_t kNetMaxUnreliableFragmentPayloadBytes =
+    kNetMaxPayloadBytes - kNetUnreliableFragmentHeaderBytes;
+inline constexpr std::size_t kNetMaxUnreliableMessageBytes =
+    kNetMaxUnreliableFragmentPayloadBytes * kNetMaxFragments;
+// Incomplete unreliable messages held at once: a newer one completing drops
+// every older one, so only a burst of loss keeps more than one open.
+inline constexpr std::size_t kNetMaxPendingUnreliableReassemblies = 4;
 
 // The ack window: the newest reliable sequence a peer reports, plus a bitfield
 // covering the 32 before it.
@@ -119,8 +135,8 @@ public:
         std::vector<std::byte> Bytes;
     };
 
-    // Queues a message. Unreliable is fire-and-forget; reliable is retained
-    // until acked and fragmented if it does not fit one datagram.
+    // Queues a message, fragmented if it does not fit one datagram. Unreliable
+    // is fire-and-forget; reliable is retained until acked.
     // False when the message is larger than the channel allows, or when the
     // reliable window is full.
     [[nodiscard]] bool Send(NetChannelKind kind, std::span<const std::byte> message);
@@ -136,6 +152,7 @@ public:
     // reports the error, which the session counts as a strike.
     [[nodiscard]] std::vector<std::vector<std::byte>> Receive(
         std::span<const std::byte> packet, NetDecodeError& error);
+    [[nodiscard]] std::size_t PendingUnreliableReassemblies() const { return UnreliableReassemblies.size(); }
 
     void SetResendSeconds(double seconds) { ResendSeconds = seconds; }
 
@@ -166,6 +183,14 @@ private:
     };
 
     void AckOutbound(std::uint16_t ack, std::uint32_t ackBits);
+    [[nodiscard]] std::vector<std::vector<std::byte>> ReceiveUnreliable(std::span<const std::byte> packet,
+                                                                      std::uint16_t sequence, NetDecodeError& error);
+    // Adds one fragment to the reassembly named `id`, opening it if new and
+    // evicting the oldest past `cap`. The whole message once every part is in;
+    // empty until then. False for a fragment count that contradicts the open one.
+    [[nodiscard]] static bool Reassemble(std::deque<Reassembly>& open, std::size_t cap, std::uint16_t id,
+                                         std::uint8_t index, std::uint8_t count, std::span<const std::byte> payload,
+                                         std::optional<std::vector<std::byte>>& whole);
     void RecordReliableReceipt(std::uint16_t sequence);
     [[nodiscard]] std::vector<std::byte> BuildPacket(NetChannelKind kind,
                                                      std::uint16_t packetSequence,
@@ -202,6 +227,8 @@ private:
     std::uint16_t NextReliableDelivery = 0;
     std::unordered_map<std::uint16_t, std::vector<std::byte>> Held;
     std::deque<Reassembly> Reassemblies;
+    // Keyed by the message's first packet sequence.
+    std::deque<Reassembly> UnreliableReassemblies;
 
     std::uint64_t ResendCount = 0;
     std::uint64_t StaleCount = 0;

@@ -39,6 +39,11 @@ public:
 
     [[nodiscard]] double GetFixedDt() const { return FixedDt; }
     [[nodiscard]] uint64_t GetTickIndex() const { return TickIndex; }
+    // The current tick's for zero, which a producer on the frame clock sends.
+    [[nodiscard]] FixedSimTime TimeOfTick(uint64_t tick) const
+    {
+        return FixedSimTime{ .DeltaSeconds = FixedDt, .TickIndex = tick != 0 ? tick : TickIndex };
+    }
 
     FixedSimTime BeginFixedTick()
     {

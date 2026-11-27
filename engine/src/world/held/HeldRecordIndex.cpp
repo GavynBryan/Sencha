@@ -58,6 +58,19 @@ void HeldRecordIndex::HolderDeparted(EntityId holder)
         Departed.push_back(holder);
 }
 
+void HeldRecordIndex::Await(EntityId record, PersistentEntityId holder)
+{
+    const auto found = Listings.find(record);
+    if (found == Listings.end() || !holder.IsValid() || found->second.Awaited == holder)
+        return;
+    Listing& listing = found->second;
+    Remove(record, listing);
+    listing.Holder = {};
+    listing.Awaited = holder;
+    Insert(Awaiting[holder], record, listing.Position);
+    Unsettled.push_back(record);
+}
+
 void HeldRecordIndex::NoteChanged(EntityId record)
 {
     const auto found = Listings.find(record);
@@ -89,12 +102,62 @@ std::uint32_t HeldRecordIndex::Revision(EntityId holder) const
     return found != Revisions.end() ? found->second : 0u;
 }
 
+int HeldRecordIndex::Depth(EntityId entity) const
+{
+    int depth = 0;
+    for (EntityId at = entity; depth <= kHeldDeepestNesting && at.IsValid(); ++depth)
+    {
+        const auto found = Listings.find(at);
+        if (found == Listings.end())
+            return depth;
+        at = found->second.Holder;
+    }
+    return depth;
+}
+
+int HeldRecordIndex::Height(EntityId entity) const
+{
+    int height = 0;
+    std::vector<EntityId> level{ entity };
+    while (height <= kHeldDeepestNesting)
+    {
+        std::vector<EntityId> below;
+        for (const EntityId at : level)
+            below.insert(below.end(), RecordsOf(at).begin(), RecordsOf(at).end());
+        if (below.empty())
+            return height;
+        level = std::move(below);
+        ++height;
+    }
+    return height;
+}
+
 std::vector<EntityId> HeldRecordIndex::AllRecords() const
 {
     std::vector<EntityId> records;
     records.reserve(Listings.size());
     for (const auto& [record, listing] : Listings)
         records.push_back(record);
+    std::ranges::sort(records);
+    return records;
+}
+
+std::vector<EntityId> HeldRecordIndex::Holders() const
+{
+    std::vector<EntityId> holders;
+    holders.reserve(ByHolder.size());
+    for (const auto& [holder, records] : ByHolder)
+        if (holder.IsValid())
+            holders.push_back(holder);
+    std::ranges::sort(holders);
+    return holders;
+}
+
+std::vector<EntityId> HeldRecordIndex::AwaitingRecords() const
+{
+    std::vector<EntityId> records;
+    for (const auto& [id, waiting] : Awaiting)
+        records.insert(records.end(), waiting.begin(), waiting.end());
     std::ranges::sort(records);
     return records;
 }

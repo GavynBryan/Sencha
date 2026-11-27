@@ -10,6 +10,7 @@
 #include <participant/ParticipantControl.h>
 #include <world/RuntimeWorld.h>
 #include <world/SimulationAuthority.h>
+#include <world/held/HeldRecords.h>
 #include <zone/ZoneStateStore.h>
 
 #include <utility>
@@ -68,6 +69,7 @@ void LevelChange::Commit()
     level.Unload();
     if (ZoneStateStore* memory = world.TryGetResource<ZoneStateStore>())
         memory->Install(request.ZoneState);
+    DestroyAwaitingHeldRecords(world);
     if (ActiveCameraService* cameras = world.TryGetResource<ActiveCameraService>();
         cameras != nullptr && !world.IsAlive(cameras->GetActive()))
     {

@@ -380,6 +380,14 @@ DataFieldSchema MakeDataField(DataFieldKind kind, std::string key, std::string d
     return field;
 }
 
+DataFieldSchema MakeOptionalDataField(DataFieldKind kind, std::string key, std::string displayName,
+                                      std::string summary)
+{
+    DataFieldSchema field = MakeDataField(kind, std::move(key), std::move(displayName), std::move(summary));
+    field.Required = false;
+    return field;
+}
+
 DataFieldSchema MakeKeyedListRecordSchema(std::string listKey, std::string elementKey)
 {
     DataFieldSchema element = MakeDataField(DataFieldKind::Record, {}, {});

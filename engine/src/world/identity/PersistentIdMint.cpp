@@ -24,3 +24,11 @@ PersistentEntityId EnsurePersistentId(World& world, EntityId entity)
         world.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ minted });
     return minted;
 }
+
+bool HasAuthoredPersistentId(const World& world, EntityId entity)
+{
+    const PersistentIdComponent* identity = world.IsRegistered<PersistentIdComponent>() && world.IsAlive(entity)
+        ? world.TryGet<PersistentIdComponent>(entity)
+        : nullptr;
+    return identity != nullptr && IsAuthoredPersistentEntityId(identity->Id);
+}

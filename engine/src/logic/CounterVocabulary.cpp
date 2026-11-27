@@ -180,7 +180,7 @@ CounterWrite WriteCounter(World& world, GameplayTagId name, EntityId holder, std
     else if (record.IsValid())
     {
         world.TryGet<Counter>(record)->Value = write.Value;
-        world.GetResource<HeldRecordIndex>().NoteChanged(record);
+        NoteHeldRecordChanged(world, record);
     }
     else
     {

@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <string>
 #include <vector>
 
 namespace
@@ -65,7 +67,7 @@ TEST(HeldRecordSaves, WhatTheWorldAndARootHoldIsSavedButNotWhatOthersHold)
 {
     SavingWorld world;
     const EntityId body = world.Identified(PersistentEntityId{ 0x10 });
-    const EntityId stranger = world.Identified(PersistentEntityId{ 0x20 });
+    const EntityId stranger = world.Identified(PersistentEntityId{ PersistentEntityIdRuntimeBit | 0x20 });
     (void)world.HeldBy(EntityId{});
     const EntityId bag = world.HeldBy(body);
     (void)world.HeldBy(bag);
@@ -137,4 +139,29 @@ TEST(HeldRecordSaves, CapturingGivesARecordMadeAtRunTimeAnId)
     ASSERT_NE(world.Entities.TryGet<PersistentIdComponent>(record), nullptr);
     EXPECT_EQ(saved.Find("records")->AsArray().front().Find("id")->AsString(),
               PersistentEntityIdToString(world.IdOf(record)));
+}
+
+TEST(HeldRecordSaves, WhatAnAuthoredHolderHoldsAndWhatWaitsIsSavedButNotWhatContentAuthored)
+{
+    SavingWorld world;
+    const EntityId chest = world.Identified(PersistentEntityId{ 0xC4E57 });
+    const EntityId authored = world.Entities.CreateEntity();
+    world.Entities.AddComponent<PersistentIdComponent>(authored, PersistentIdComponent{ PersistentEntityId{ 0x5A0D } });
+    world.Entities.AddComponent<Held>(authored, Held{ .Holder = { .Entity = chest, .Target = PersistentEntityId{ 0xC4E57 } } });
+    const EntityId deposit = world.HeldBy(chest);
+    const EntityId inAuthored = world.HeldBy(authored);
+    const EntityId waiting = world.Entities.CreateEntity();
+    world.Entities.AddComponent<Held>(waiting, Held{ .Holder = { .Entity = {}, .Target = PersistentEntityId{ 0x99 } } });
+
+    const JsonValue saved = CaptureHeldRecords(world.Entities, {}, world.Serializers, world.Context);
+
+    std::vector<std::string> ids;
+    for (const JsonValue& record : saved.Find("records")->AsArray())
+        ids.push_back(record.Find("id")->AsString());
+    std::ranges::sort(ids);
+    std::vector<std::string> expected{ PersistentEntityIdToString(world.IdOf(deposit)),
+                                       PersistentEntityIdToString(world.IdOf(inAuthored)),
+                                       PersistentEntityIdToString(world.IdOf(waiting)) };
+    std::ranges::sort(expected);
+    EXPECT_EQ(ids, expected) << "the authored record comes back with its zone, not from the save";
 }
