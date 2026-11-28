@@ -103,8 +103,8 @@ Verify at stage start: that the list is complete. Search for every component wit
 `Vec3` or `Quat` member whose meaning is a world position or direction. An entity
 holding one with no entry is refused by name, not relocated silently wrong.
 
-`LevelCarry`'s existing refusals (bodies, parented entities, held records as roots)
-stay with `LevelCarry`. They are policy of a level change, not of the operation.
+A caller's own refusals (which entities it is willing to move at all) stay with the
+caller. They are policy, not part of the operation.
 
 ### 2.4 `RelocationSerial`
 
