@@ -120,8 +120,6 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
 
 void RegisterEngineRelocation(World& world)
 {
-    // Wiring only, in the order above. Rules of one stage touch disjoint state,
-    // so the order decides nothing but which runs first.
     RegisterWorldRelocation(world);
     RegisterNavigationRelocation(world);
     RegisterPhysicsRelocation(world);

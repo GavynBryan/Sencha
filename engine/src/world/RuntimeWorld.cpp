@@ -43,7 +43,6 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     Entities_.AddResource<PersistentEntityIndex>();
     InstallHeldRecords(Entities_);
 
-    // How each engine component follows RelocateEntity; a game adds its own.
     RegisterEngineRelocation(Entities_);
 
     // Likewise scene instance groups: the component's own hooks keep the

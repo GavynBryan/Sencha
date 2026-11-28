@@ -84,8 +84,7 @@ CarryRefusal RefuseCarrying(const World& world, std::span<const EntityId> entiti
         const bool held = world.IsRegistered<Held>() && world.HasComponent<Held>(entity);
         const bool childed = RootAndDescendants(world, entity).size() > 1;
         const bool instanceRoot = world.IsRegistered<SceneInstance>() && world.HasComponent<SceneInstance>(entity);
-        if (parented || held || ParticipantWithBody(world, entity).IsValid() || (childed && !instanceRoot)
-            || !RefusingComponent(world, entity).empty())
+        if (parented || held || ParticipantWithBody(world, entity).IsValid() || (childed && !instanceRoot))
             return CarryRefusal::NotCarriable;
     }
     return CarryRefusal::None;
@@ -150,11 +149,15 @@ void LevelCarry::Arrive(RuntimeWorld& runtime, ResponsesSystem* responses, Logge
         if (moved.Outcome != RelocationOutcome::Relocated)
         {
             Held.push_back(carried);
-            Drop(runtime, log, "it could not be relocated");
+            Drop(runtime, log, moved.Component.empty() ? std::string("it could not be relocated")
+                                                       : "it holds " + std::string(moved.Component)
+                                                             + ", which refuses relocation");
             continue;
         }
-        // It was out of every simulation for the load: there is no motion to carry across.
-        RequestTransformHistorySnap(world, carried.Root);
+        // Out of every simulation for the load: no motion to carry across.
+        for (const EntityId member : carried.Group)
+            if (world.IsAlive(member))
+                RequestTransformHistorySnap(world, member);
         TakeAnIdOfItsOwnIfTheLevelHoldsItsOwn(world, carried.Root);
         if (KeepsLevelState(world))
             (void)KeepArrivedWithZone(world, carried.Root);

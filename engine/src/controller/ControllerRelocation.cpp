@@ -4,7 +4,6 @@
 
 namespace
 {
-    // Pending look input is a displacement from this aim, not a heading, so it needs no turn.
     void TurnYaw(LookOrientation& look, const RelocationFrame& frame)
     {
         look.Yaw += frame.Yaw;

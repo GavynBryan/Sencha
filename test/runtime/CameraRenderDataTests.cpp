@@ -152,7 +152,7 @@ TEST(CameraRenderDataExclusion, ACameraWithHistoryIsDrawnFromTheBlend)
     harness.WorldState.AddComponent<WorldTransformHistory>(harness.Camera, WorldTransformHistory{
         .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
         .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
-        .Snap = false });
+        .State = HistoryState::Steady });
 
     CameraRenderData data;
     ASSERT_TRUE(CameraRenderDataSystem::Build(

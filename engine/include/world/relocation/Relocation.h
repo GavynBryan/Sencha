@@ -4,6 +4,8 @@
 #include <ecs/StoragePartitionId.h>
 #include <math/geometry/3d/Transform3d.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -14,66 +16,61 @@ class World;
 
 struct RigidRelocation
 {
-    // Old space to new space. Must be rigid: unit scale.
+    // Old space to new space; unit scale.
     Transform3f Mapping = Transform3f::Identity();
-    // Unset: every member stays in the partition it is in. Never inferred from a position.
+    // Unset: every member stays where it is. Never inferred from a position.
     std::optional<StoragePartitionId> Partition{};
-    // Where in the fixed tick the entity crossed, from 0 to 1, which is where its
-    // drawn pose crosses (docs/gameplay/relocation.md, "Presenting").
-    float TickFraction = 1.0f;
+    // Where in the fixed tick it crossed, 0 to 1; zero outside a tick.
+    float TickFraction = 0.0f;
 };
 
 enum class RelocationOutcome : std::uint8_t
 {
     Relocated,
     Gone,
-    // The root has a parent, so its transform is not in the space the mapping maps.
     Parented,
     NotRigid,
-    // A member holds a component whose rule refuses; RelocationResult::Component names it.
     Refused,
 };
 
 struct RelocationResult
 {
     RelocationOutcome Outcome = RelocationOutcome::Relocated;
-    // The refusing component's stable name, when Refused.
+    // The refusing component's stable name.
     std::string_view Component{};
-    // The root's serial after this relocation; zero unless Relocated.
     std::uint32_t Serial = 0;
-    // The mapping tilted world up, so state that is held about world up (a yaw) was kept as it was.
+    // The mapping tilts world up, so state held about world up was kept.
     bool KeptUprightState = false;
 };
 
-// Moves `root` and its descendants through a rigid mapping: one owner for every
-// discontinuous move of an entity. Owner thread, outside any query: it moves
-// partitions and may add RelocationSerial. Nothing changes when it refuses.
+// Owner thread, outside any query. Nothing changes when it refuses.
 RelocationResult RelocateEntity(World& world, EntityId root, const RigidRelocation& relocation);
 
-// The stable name of a component in `root`'s group whose rule refuses every
-// relocation; empty when there is none.
-[[nodiscard]] std::string_view RefusingComponent(const World& world, EntityId root);
-
-// The relocations of the frame so far, in the order they happened. A World
-// resource, emptied at the end of the frame (ClearFrameRelocations), so a
-// presentation consumer can carry its own history of an entity across.
+// A World resource: the frame's relocations in order, emptied at the end of the
+// frame (docs/gameplay/relocation.md, "FrameRelocations").
 struct FrameRelocation
 {
     EntityId Entity{};
     std::uint32_t Serial = 0;
     Transform3f Mapping = Transform3f::Identity();
-    float TickFraction = 1.0f;
+    float TickFraction = 0.0f;
 };
 
 class FrameRelocations
 {
 public:
-    void Record(const FrameRelocation& relocation) { Entries.push_back(relocation); }
+    void Record(const FrameRelocation& relocation)
+    {
+        Entries.push_back(relocation);
+        MostInAFrame = std::max(MostInAFrame, Entries.size());
+    }
     void Clear() { Entries.clear(); }
     [[nodiscard]] std::span<const FrameRelocation> All() const { return Entries; }
+    [[nodiscard]] std::size_t HighWater() const { return MostInAFrame; }
 
 private:
     std::vector<FrameRelocation> Entries;
+    std::size_t MostInAFrame = 0;
 };
 
 void ClearFrameRelocations(World& world);

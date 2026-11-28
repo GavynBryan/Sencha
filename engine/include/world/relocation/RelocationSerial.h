@@ -8,10 +8,8 @@
 
 class World;
 
-// How many times this entity has been relocated (docs/gameplay/relocation.md).
-// A consumer that remembers the value it last saw knows the entity was moved
-// discontinuously since then when the two differ; only equality means anything,
-// so the count may wrap. Added by the first relocation and sent to every machine.
+// Advanced by every relocation (docs/gameplay/relocation.md). Only equality
+// means anything, so it may wrap.
 struct SENCHA_COMPONENT("sencha.relocation_serial")
        SENCHA_SCHEMA("RelocationSerial")
        SENCHA_REPLICATED

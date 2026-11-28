@@ -944,7 +944,6 @@ void Engine::RegisterSimulationFramePhases()
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
-        // After every presentation consumer of this frame has read them.
         ClearFrameRelocations(*zones.Entities);
 
         engine.World().EndFrameView();

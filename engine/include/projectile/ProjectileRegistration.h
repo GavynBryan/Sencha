@@ -13,5 +13,4 @@ inline void RegisterProjectileComponents(ComponentRegistrar& registrar)
     registrar.AddAll<ProjectileComponents>();
 }
 
-// A projectile in flight keeps flying the way the mapping turns it.
 void RegisterProjectileRelocation(World& world);

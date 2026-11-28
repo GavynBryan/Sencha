@@ -186,8 +186,8 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving
-// it is a deliberate act with a reason, never a side effect: the last move sent
-// gameplay tags and attributes as replicated lists, after grants and equipment.
+// it is a deliberate act with a reason, never a side effect: the last move added
+// RelocationSerial, replicated, at the end of the world vocabulary.
 constexpr std::uint64_t kFrozenReplicationTableHash = 0x4155CC5B73E34B85ULL;
 
 struct EngineVocabulary

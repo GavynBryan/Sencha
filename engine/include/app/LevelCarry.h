@@ -21,8 +21,7 @@ enum class CarryRefusal : std::uint8_t
     None,
     // The loaded level has no landmark of that name, or none was named.
     NoLandmark,
-    // Gone, a held record, a body, parented, with children and not the root of a scene instance, or holding
-    // state a relocation refuses.
+    // Gone, a held record, a body, parented, or with children and not the root of a scene instance.
     NotCarriable,
 };
 
@@ -39,9 +38,8 @@ public:
     // the landmark's place is kept, and its zone records it departed.
     void TakeOut(RuntimeWorld& runtime, std::span<const EntityId> entities, std::string landmark,
                  const ScopeOf& scopeOf);
-    // Once the level it enters is resident: each is relocated from the landmark it left to the landmark of the
-    // same name (RelocateEntity), into the zone holding its new place, as a member that zone keeps. Nothing is
-    // held after it.
+    // Once the level it enters is resident: each is relocated between the two landmarks into the zone holding
+    // its new place, as a member that zone keeps. Nothing is held after it.
     void Arrive(RuntimeWorld& runtime, ResponsesSystem* responses, Logger& log);
     // A change that failed or was replaced: what is held is destroyed and logged.
     void Drop(RuntimeWorld& runtime, Logger& log, std::string_view why);

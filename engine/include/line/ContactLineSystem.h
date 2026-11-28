@@ -201,6 +201,9 @@ void CollectContactLines(const World& world, std::vector<ContactLineSegment>& ou
 // Draws home `instigator`'s kept lines, all of them or all but the newest.
 void RetractKeptContactLines(World& world, EntityId instigator, bool keepNewest = false);
 
+// Draws home every line that is one of `entities` or is out from one of them.
+void RetractContactLinesOf(World& world, std::span<const EntityId> entities);
+
 // Stretches every line's span from its tip to where its instigator is drawn.
 // Each frame on a presenting host, before propagation.
 void PlaceContactLines(World& world, double presentationAlpha);

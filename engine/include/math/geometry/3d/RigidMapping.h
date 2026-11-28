@@ -2,10 +2,8 @@
 
 #include <math/geometry/3d/Transform3d.h>
 
+#include <cassert>
 #include <cmath>
-
-// A rigid mapping is a Transform3f with unit scale: a rotation and a translation
-// taking one space to another. These answer what such a mapping does to world up.
 
 // How far from one each scale axis may be for the mapping to count as rigid.
 inline constexpr float kRigidScaleTolerance = 1.0e-4f;
@@ -22,6 +20,7 @@ inline constexpr float kUprightCosineTolerance = 1.0e-5f;
 
 [[nodiscard]] inline Transform3f InverseRigidMapping(const Transform3f& mapping)
 {
+    assert(IsRigidMapping(mapping) && "a scaled transform has no rigid inverse");
     const Quatf back = mapping.Rotation.Conjugate();
     return Transform3f{ back.RotateVector(-mapping.Position), back, Vec3d::One() };
 }
@@ -31,8 +30,7 @@ inline constexpr float kUprightCosineTolerance = 1.0e-5f;
     return 1.0f - rotation.RotateVector(Vec3d::Up()).Dot(Vec3d::Up()) <= kUprightCosineTolerance;
 }
 
-// The turn about world up that `rotation` gives forward, in radians, in the sense
-// Quatf::FromAxisAngle(Vec3d::Up(), yaw) turns.
+// Radians about +Y: 0 facing -Z, positive turning towards -X, as FromAxisAngle(Up, yaw) turns.
 [[nodiscard]] inline float YawAboutWorldUp(const Quatf& rotation)
 {
     const Vec3d forward = rotation.RotateVector(Vec3d::Forward());

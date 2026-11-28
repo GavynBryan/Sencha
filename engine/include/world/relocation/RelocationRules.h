@@ -9,16 +9,15 @@
 #include <span>
 #include <vector>
 
-// What one relocation does, as a component's rule sees it.
 struct RelocationFrame
 {
-    // Old space to new space; rigid.
     Transform3f Mapping = Transform3f::Identity();
-    // Radians about world up. Rules that need it run only when Upright.
+    // Radians about world up; meaningful only when Upright.
     float Yaw = 0.0f;
     bool Upright = true;
-    // Where in the fixed tick the entity crossed, from 0 to 1.
-    float TickFraction = 1.0f;
+    float TickFraction = 0.0f;
+    // Root first.
+    std::span<const EntityId> Group;
 
     [[nodiscard]] Vec3d MapPoint(const Vec3d& point) const { return Mapping.TransformPoint(point); }
     [[nodiscard]] Vec3d MapVector(const Vec3d& vector) const { return Mapping.Rotation.RotateVector(vector); }
@@ -27,13 +26,10 @@ struct RelocationFrame
 
 enum class RelocationRuleKind : std::uint8_t
 {
-    // Runs under every rigid mapping.
     Maps,
-    // Runs only under a mapping that keeps world up; otherwise the state is kept as it was.
     MapsWhenUpright,
-    // Runs after every Maps rule of the group: a backend's copy of state those rules relocated.
+    // After every Maps rule: a backend's copy of state those rules relocated.
     Mirrors,
-    // The component holds world-space state no relocation is defined for: an entity carrying it is refused.
     Refuses,
 };
 
@@ -41,9 +37,8 @@ using RelocateComponentFn = void (*)(void* context, World& world, EntityId entit
 using RelocateGroupFn = void (*)(void* context, World& world, std::span<const EntityId> group,
                                  const RelocationFrame& frame);
 
-// A World resource: how each component holding world-space state relocates
-// (docs/gameplay/relocation.md). A component with no rule holds none. Rules run
-// on the owner thread, outside any query, and may not change archetypes.
+// A World resource (docs/gameplay/relocation.md). Rules run on the owner
+// thread outside any query and may not change archetypes.
 class RelocationRules
 {
 public:
@@ -61,9 +56,9 @@ public:
         void* Context = nullptr;
     };
 
-    // One rule per component: a second for the same component replaces the first in place.
+    // One rule per component: a second replaces the first.
     void Set(const ComponentRule& rule);
-    // Runs once per relocation with the whole group, after its Maps rules. Adding the same rule twice keeps one.
+    // Once per relocation, after the Maps rules. Idempotent.
     void AddGroupRule(const GroupRule& rule);
 
     [[nodiscard]] std::span<const ComponentRule> ComponentRules() const { return Components; }
@@ -76,7 +71,6 @@ private:
 
 RelocationRules& EnsureRelocationRules(World& world);
 
-// For a World that registered T; nothing otherwise, so a partial vocabulary stays valid.
 template <typename T>
 void SetRelocationRule(World& world, RelocationRuleKind kind, RelocateComponentFn relocate, void* context = nullptr)
 {
@@ -92,7 +86,6 @@ void RefuseRelocation(World& world)
     SetRelocationRule<T>(world, RelocationRuleKind::Refuses, nullptr);
 }
 
-// A rule that is a function of the component's own value.
 template <typename T, void (*Relocate)(T&, const RelocationFrame&)>
 void RelocateValue(void*, World& world, EntityId entity, const RelocationFrame& frame)
 {

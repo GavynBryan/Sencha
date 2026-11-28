@@ -17,7 +17,6 @@ namespace
         body.AngularVelocity = frame.MapVector(body.AngularVelocity);
     }
 
-    // Pairs seen on the side it left; the far side's sensors report it afresh.
     void ForgetSensorPairs(void*, World& world, std::span<const EntityId> group, const RelocationFrame&)
     {
         SensorOverlaps* overlaps = world.TryGetResource<SensorOverlaps>();
@@ -29,8 +28,7 @@ namespace
         });
     }
 
-    // A live body's pose and a dynamic body's velocities are pulled from the
-    // backend each step, so the relocated components are pushed to it here.
+    // A live body's pose and velocities are pulled from the backend each step.
     void MirrorBody(void* context, World& world, EntityId entity, const RelocationFrame&)
     {
         PhysicsWorld& simulation = *static_cast<PhysicsWorld*>(context);
@@ -50,7 +48,6 @@ namespace
         }
     }
 
-    // The mover is the authoritative position: the next sweep starts from it.
     void MirrorMover(void* context, World& world, EntityId entity, const RelocationFrame&)
     {
         CharacterMoverPool& movers = *static_cast<CharacterMoverPool*>(context);

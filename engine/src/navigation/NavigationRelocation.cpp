@@ -7,9 +7,6 @@
 
 namespace
 {
-    // Given again with a fresh id, so its route is planned again from the new
-    // side; a point order's point is carried with the agent. The progress
-    // describes the superseded order and is replaced when the follower plans.
     void OrderAgain(void*, World& world, EntityId agent, const RelocationFrame& frame)
     {
         const NavAgentRequest* order = std::as_const(world).TryGet<NavAgentRequest>(agent);

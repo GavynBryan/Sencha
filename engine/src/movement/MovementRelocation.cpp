@@ -4,6 +4,7 @@
 #include <movement/components/HeldMotion.h>
 #include <world/relocation/RelocationRules.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace
@@ -46,21 +47,28 @@ namespace
         request.UpAxis = frame.MapVector(request.UpAxis);
     }
 
-    // Found again by the first sweep on the far side.
     void ForgetSupport(SupportState& support, const RelocationFrame&) { support = SupportState{}; }
     void ForgetImmersion(Immersion& immersion, const RelocationFrame&) { immersion = Immersion{}; }
 
-    // Letting go of the slot is the tether's own end (MovementOperations::EndTether).
-    void EndTether(TetherSession& tether, const RelocationFrame&) { tether = TetherSession{}; }
-
-    // A cling holds a surface on the side it left; the mode's own exit ends it at the next transition.
-    void LeaveClingMode(void*, World& world, EntityId entity, const RelocationFrame&)
+    void CarryTetherPoint(TetherSession& tether, const RelocationFrame& frame)
     {
-        const LocomotionModeRegistry* modes = std::as_const(world).TryGetResource<LocomotionModeRegistry>();
-        ModeTransitionRequest* request = world.TryGet<ModeTransitionRequest>(entity);
-        if (modes == nullptr || request == nullptr)
+        if (tether.Owner.IsSet() && !tether.Anchor.IsValid())
+            tether.Point = frame.MapPoint(tether.Point);
+    }
+
+    void CarryOrLeaveCling(void*, World& world, EntityId entity, const RelocationFrame& frame)
+    {
+        ClingSession* cling = world.TryGet<ClingSession>(entity);
+        if (cling == nullptr)
             return;
-        *request = ModeTransitionRequest{ .Target = modes->FreeMode(), .Class = ModeRequestClass::Forced, .Pending = true };
+        if (std::ranges::find(frame.Group, cling->Surface) != frame.Group.end())
+        {
+            cling->Anchor = frame.MapPoint(cling->Anchor);
+            cling->SurfaceNormal = frame.MapVector(cling->SurfaceNormal);
+            return;
+        }
+        if (const LocomotionModeRegistry* modes = std::as_const(world).TryGetResource<LocomotionModeRegistry>())
+            (void)RequestLocomotionMode(world, entity, modes->FreeMode(), ModeRequestClass::Forced);
     }
 }
 
@@ -79,6 +87,7 @@ void RegisterMovementRelocation(World& world)
                                      &RelocateValue<MotionRequest, &TurnMotionRequest>);
     SetRelocationRule<SupportState>(world, RelocationRuleKind::Maps, &RelocateValue<SupportState, &ForgetSupport>);
     SetRelocationRule<Immersion>(world, RelocationRuleKind::Maps, &RelocateValue<Immersion, &ForgetImmersion>);
-    SetRelocationRule<TetherSession>(world, RelocationRuleKind::Maps, &RelocateValue<TetherSession, &EndTether>);
-    SetRelocationRule<ClingSession>(world, RelocationRuleKind::Maps, &LeaveClingMode);
+    SetRelocationRule<TetherSession>(world, RelocationRuleKind::Maps,
+                                     &RelocateValue<TetherSession, &CarryTetherPoint>);
+    SetRelocationRule<ClingSession>(world, RelocationRuleKind::Maps, &CarryOrLeaveCling);
 }

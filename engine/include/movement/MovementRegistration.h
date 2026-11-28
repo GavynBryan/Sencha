@@ -73,8 +73,6 @@ void RegisterMovementComponents(World& world);
 // replays the hook, so a name declared in one is a name declared in all.
 void InstallMovementVocabulary(World& world);
 
-// How a character's velocities, support and held motion follow a relocation
-// (docs/gameplay/relocation.md).
 void RegisterMovementRelocation(World& world);
 
 // The default MoveSpeed attribute and the Jump ability/effects, authored as

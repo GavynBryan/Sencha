@@ -183,7 +183,9 @@ TEST(Relocation, EveryEngineEntryRelocatesTheStateItOwns)
     EXPECT_TRUE(Near(fx.Read<MotionRequest>(mover).Velocity, turned));
     EXPECT_EQ(fx.Read<SupportState>(mover).Kind, SupportKind::None) << "support is found again on the far side";
     EXPECT_FALSE(fx.Read<Immersion>(mover).Volume.IsValid());
-    EXPECT_FALSE(fx.Read<TetherSession>(mover).Owner.IsSet()) << "the tether ends rather than spanning the gap";
+    EXPECT_TRUE(fx.Read<TetherSession>(mover).Owner.IsSet()) << "a tether is not cut by a relocation";
+    EXPECT_TRUE(Near(fx.Read<TetherSession>(mover).Point, kMapping.TransformPoint(east)))
+        << "a tether to a point keeps its point where the mapping put it";
     EXPECT_TRUE(Near(fx.Read<RigidBody>(mover).LinearVelocity, turned));
     EXPECT_TRUE(Near(fx.Read<RigidBody>(mover).AngularVelocity, turned));
     EXPECT_TRUE(Near(fx.Read<ProjectileMotion>(mover).Velocity, turned));
@@ -230,13 +232,40 @@ TEST(Relocation, AMappingThatTiltsUpKeepsTheYawAndSaysSo)
         << "what is not held about world up still turns";
 }
 
-TEST(Relocation, AClingingCharacterLeavesTheModeThroughItsOwnExit)
+TEST(Relocation, ATetherToAnEntityKeepsNamingItWhetherOrNotItMovedToo)
 {
     RelocationWorld fx;
     World& world = fx.Entities();
+    const EntityId hook = fx.Spawn(Vec3d(5.0f, 0.0f, 0.0f));
+    const EntityId hauler = fx.Spawn(Vec3d::Zero());
+    const EntityId hauled = fx.SpawnChild(hauler, Vec3d(1.0f, 0.0f, 0.0f));
+    TetherSession tether;
+    tether.Owner = LeaseOwner{ hook, 1 };
+    tether.Point = Vec3d(9.0f, 9.0f, 9.0f);
+    tether.Length = 2.0f;
+    tether.Anchor = hauler;
+    world.AddComponent<TetherSession>(hauled, tether);
+    tether.Anchor = hook;
+    world.AddComponent<TetherSession>(hauler, tether);
+
+    ASSERT_EQ(fx.Relocate(hauler).Outcome, RelocationOutcome::Relocated);
+
+    EXPECT_EQ(fx.Read<TetherSession>(hauled).Anchor, hauler) << "an anchor carried along stays valid";
+    EXPECT_EQ(fx.Read<TetherSession>(hauler).Anchor, hook) << "an anchor left behind is the caller's question";
+    EXPECT_TRUE(fx.Read<TetherSession>(hauler).Owner.IsSet());
+    EXPECT_TRUE(Near(fx.Read<TetherSession>(hauled).Point, Vec3d(9.0f, 9.0f, 9.0f)))
+        << "the point of a tether to an entity means nothing and is left alone";
+}
+
+TEST(Relocation, AClingToASurfaceLeftBehindLeavesTheModeThroughItsOwnRequest)
+{
+    RelocationWorld fx;
+    World& world = fx.Entities();
+    const EntityId wall = fx.Spawn(Vec3d(0.0f, 0.0f, -1.0f));
     const EntityId climber = fx.Spawn(Vec3d::Zero());
     world.AddComponent<ModeTransitionRequest>(climber, ModeTransitionRequest{});
     ClingSession cling;
+    cling.Surface = wall;
     cling.Anchor = Vec3d(1.0f, 2.0f, 3.0f);
     world.AddComponent<ClingSession>(climber, cling);
 
@@ -248,20 +277,62 @@ TEST(Relocation, AClingingCharacterLeavesTheModeThroughItsOwnExit)
     EXPECT_EQ(request.Target, world.GetResource<LocomotionModeRegistry>().FreeMode());
 }
 
+TEST(Relocation, AClingToASurfaceThatMovedTooIsCarriedAndKept)
+{
+    RelocationWorld fx;
+    World& world = fx.Entities();
+    const EntityId raft = fx.Spawn(Vec3d::Zero());
+    const EntityId climber = fx.SpawnChild(raft, Vec3d(0.0f, 1.0f, 0.0f));
+    world.AddComponent<ModeTransitionRequest>(climber, ModeTransitionRequest{});
+    ClingSession cling;
+    cling.Surface = raft;
+    cling.Anchor = Vec3d(1.0f, 2.0f, 3.0f);
+    cling.SurfaceNormal = Vec3d(1.0f, 0.0f, 0.0f);
+    world.AddComponent<ClingSession>(climber, cling);
+
+    ASSERT_EQ(fx.Relocate(raft).Outcome, RelocationOutcome::Relocated);
+
+    EXPECT_FALSE(fx.Read<ModeTransitionRequest>(climber).Pending);
+    EXPECT_TRUE(Near(fx.Read<ClingSession>(climber).Anchor, kMapping.TransformPoint(Vec3d(1.0f, 2.0f, 3.0f))));
+    EXPECT_TRUE(Near(fx.Read<ClingSession>(climber).SurfaceNormal, kQuarterTurn.RotateVector(Vec3d(1.0f, 0.0f, 0.0f))));
+}
+
+TEST(Relocation, ALineOutFromARelocatedInstigatorDrawsHome)
+{
+    RelocationWorld fx;
+    World& world = fx.Entities();
+    const EntityId caster = fx.Spawn(Vec3d::Zero());
+    const EntityId elsewhere = fx.Spawn(Vec3d::Zero());
+    const EntityId line = fx.Spawn(Vec3d(10.0f, 0.0f, 0.0f));
+    const EntityId other = fx.Spawn(Vec3d(10.0f, 0.0f, 0.0f));
+    ContactLineState state;
+    state.Instigator = caster;
+    state.Stage = ContactLineStage::Anchored;
+    state.Kept = true;
+    world.AddComponent<ContactLineState>(line, state);
+    state.Instigator = elsewhere;
+    world.AddComponent<ContactLineState>(other, state);
+
+    ASSERT_EQ(fx.Relocate(caster).Outcome, RelocationOutcome::Relocated) << "a line does not hold a relocation back";
+
+    EXPECT_EQ(fx.Read<ContactLineState>(line).Stage, ContactLineStage::Retracting);
+    EXPECT_EQ(fx.Read<ContactLineState>(other).Stage, ContactLineStage::Anchored);
+}
+
 TEST(Relocation, AComponentWhoseRuleRefusesStopsTheWholeGroupByNameAndChangesNothing)
 {
     RelocationWorld fx;
     World& world = fx.Entities();
     const EntityId root = fx.Spawn(Vec3d(1.0f, 0.0f, 0.0f));
-    const EntityId line = fx.SpawnChild(root, Vec3d(0.0f, 1.0f, 0.0f));
-    world.AddComponent<ContactLineState>(line, ContactLineState{});
+    const EntityId marker = fx.SpawnChild(root, Vec3d(0.0f, 1.0f, 0.0f));
+    world.AddComponent<TestAnchor>(marker, TestAnchor{});
     world.AddComponent<KinematicState>(root, KinematicState{ .Velocity = Vec3d(1.0f, 0.0f, 0.0f) });
+    RefuseRelocation<TestAnchor>(world);
 
-    EXPECT_EQ(RefusingComponent(world, root), "sencha.contact_line_state");
     const RelocationResult result = fx.Relocate(root);
 
     EXPECT_EQ(result.Outcome, RelocationOutcome::Refused);
-    EXPECT_EQ(result.Component, "sencha.contact_line_state");
+    EXPECT_EQ(result.Component, "test.relocation.anchor");
     EXPECT_TRUE(Near(fx.Read<LocalTransform>(root).Value.Position, Vec3d(1.0f, 0.0f, 0.0f)));
     EXPECT_TRUE(Near(fx.Read<KinematicState>(root).Velocity, Vec3d(1.0f, 0.0f, 0.0f)));
     EXPECT_EQ(world.GetEntityPartition(root), kHere);
@@ -391,4 +462,33 @@ TEST(Relocation, WithNoPartitionEveryMemberStaysWhereItIs)
     ASSERT_EQ(fx.Relocate(root, kMapping, std::nullopt).Outcome, RelocationOutcome::Relocated);
 
     EXPECT_EQ(fx.Entities().GetEntityPartition(root), kHere);
+}
+
+TEST(Relocation, WhatIsDrawnBetweenTicksIsRelocatedInPlaceWithoutAStructuralChange)
+{
+    RelocationWorld fx;
+    World& world = fx.Entities();
+    const EntityId walker = fx.Spawn(Vec3d::Zero());
+    world.AddComponent<WorldTransformHistory>(walker, WorldTransformHistory{});
+    ASSERT_TRUE(world.HasComponent<RelocationSerial>(walker)) << "the history brings its serial";
+    const std::uint64_t before = world.StructuralVersion();
+
+    ASSERT_EQ(fx.Relocate(walker, kMapping, std::nullopt).Serial, 1u);
+
+    EXPECT_EQ(world.StructuralVersion(), before);
+}
+
+TEST(Relocation, TheFrameRecordKeepsItsHighWaterAcrossAClear)
+{
+    RelocationWorld fx;
+    World& world = fx.Entities();
+    const EntityId root = fx.Spawn(Vec3d::Zero());
+    (void)fx.SpawnChild(root, Vec3d(0.0f, 1.0f, 0.0f));
+
+    (void)fx.Relocate(root);
+    ClearFrameRelocations(world);
+    (void)fx.Relocate(root, InverseRigidMapping(kMapping), kHere);
+
+    EXPECT_EQ(world.GetResource<FrameRelocations>().All().size(), 2u);
+    EXPECT_EQ(world.GetResource<FrameRelocations>().HighWater(), 2u) << "one relocation of a root and a child";
 }

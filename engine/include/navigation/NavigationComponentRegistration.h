@@ -15,5 +15,4 @@ inline void RegisterNavigationComponents(ComponentRegistrar& registrar)
     registrar.AddAll<NavigationComponents>();
 }
 
-// An agent's order is given again from where a relocation left it.
 void RegisterNavigationRelocation(World& world);

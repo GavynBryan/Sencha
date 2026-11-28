@@ -74,13 +74,13 @@ namespace
     };
 }
 
-TEST(TransformHistoryRelocation, UntilTheNextCaptureTheBlendIsTheOneBeforeTheCrossing)
+TEST(TransformHistoryRelocation, AFrameDrawnBeforeTheNextCaptureSeesTheBlendCarriedAcross)
 {
     WalkWorld world;
     world.WalkAndCross();
 
-    EXPECT_TRUE(Near(world.PresentedAt(0.0), Vec3d(0.0f, 0.0f, 0.0f)));
-    EXPECT_TRUE(Near(world.PresentedAt(1.0), Vec3d(1.0f, 0.0f, 0.0f)));
+    EXPECT_TRUE(Near(world.PresentedAt(0.0), kMapping.TransformPoint(Vec3d(0.0f, 0.0f, 0.0f))));
+    EXPECT_TRUE(Near(world.PresentedAt(1.0), kMapping.TransformPoint(Vec3d(1.0f, 0.0f, 0.0f))));
 }
 
 TEST(TransformHistoryRelocation, BeforeTheCrossingFractionItIsDrawnOnTheSideItCameFrom)
@@ -114,7 +114,7 @@ TEST(TransformHistoryRelocation, TheCaptureAfterThatBlendsInTheNewSpaceAlone)
     world.Step(kMapping.Rotation.RotateVector(Vec3d(1.0f, 0.0f, 0.0f)));
     world.Capture();
 
-    EXPECT_EQ(world.Entities.TryGet<WorldTransformHistory>(world.Walker)->Crossing, HistoryCrossing::None);
+    EXPECT_EQ(world.Entities.TryGet<WorldTransformHistory>(world.Walker)->State, HistoryState::Steady);
     EXPECT_TRUE(Near(world.PresentedAt(0.0), kMapping.TransformPoint(Vec3d(2.0f, 0.0f, 0.0f))));
 }
 
@@ -148,7 +148,7 @@ TEST(TransformHistoryRelocation, ASnapOutranksACarryWhicheverCameFirst)
         world.Capture();
 
         const WorldTransformHistory& history = *world.Entities.TryGet<WorldTransformHistory>(world.Walker);
-        EXPECT_EQ(history.Crossing, HistoryCrossing::None);
+        EXPECT_EQ(history.State, HistoryState::Steady);
         EXPECT_TRUE(Near(world.PresentedAt(0.0), kMapping.TransformPoint(Vec3d::Zero()))) << snapFirst;
     }
 }

@@ -4,7 +4,7 @@
 
 namespace
 {
-    // A child's local transform is in its parent's space, which moves with the parent.
+    // A child's local transform is in its parent's space.
     void MapRootPose(void*, World& world, EntityId entity, const RelocationFrame& frame)
     {
         if (world.HasComponent<Parent>(entity))

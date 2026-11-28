@@ -6,7 +6,6 @@
 
 namespace
 {
-    // What it remembered was seen from the side it left.
     void Forget(ObservationMemory& memory, const RelocationFrame&)
     {
         memory.Count = 0;

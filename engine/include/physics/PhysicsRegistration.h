@@ -48,10 +48,6 @@ using PhysicsComponents = ComponentSet<
 void RegisterPhysicsComponents(ComponentRegistrar& registrar);
 void RegisterPhysicsComponents(World& world);
 
-// A body's velocities turn with a relocation and the sensor pairs of what moved
-// are forgotten (docs/gameplay/relocation.md).
 void RegisterPhysicsRelocation(World& world);
-
-// The live body and character mover follow the relocated transform. Both must
-// outlive every relocation in `world`.
+// `simulation` and `movers` must outlive every relocation in `world`.
 void InstallPhysicsBackendRelocation(World& world, PhysicsWorld& simulation, CharacterMoverPool& movers);

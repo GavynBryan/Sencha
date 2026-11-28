@@ -47,5 +47,4 @@ inline void RegisterWorldComponents(ComponentRegistrar& registrar)
     registrar.AddAll<WorldComponents>();
 }
 
-// How the transforms and their history follow a relocation.
 void RegisterWorldRelocation(World& world);

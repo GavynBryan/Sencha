@@ -2,10 +2,9 @@
 
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
+#include <math/geometry/3d/RigidMapping.h>
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
-
-#include <math/geometry/3d/RigidMapping.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -13,28 +12,23 @@
 
 namespace
 {
-// Every transition of a history at a capture, in one place.
-void Roll(WorldTransformHistory& history, const Transform3f& pose, bool snap)
+Transform3f CrossingOf(const WorldTransformHistory& history)
 {
-    if (snap)
+    return Transform3f{ history.CrossingTranslation, history.CrossingRotation, Vec3d::One() };
+}
+
+void Roll(WorldTransformHistory& history, const Transform3f& pose, bool snapAll)
+{
+    if (snapAll || history.State == HistoryState::Snapping)
     {
-        // Both ends of the blend are this tick: drawn exactly where the simulation put it.
         history.Previous = pose;
         history.Current = pose;
-        history.Snap = false;
-        history.Crossing = HistoryCrossing::None;
+        history.State = HistoryState::Steady;
         return;
     }
-    if (history.Crossing == HistoryCrossing::Pending)
-    {
-        history.Previous = history.CrossingMapping * history.Current;
-        history.Current = pose;
-        history.Crossing = HistoryCrossing::Presenting;
-        return;
-    }
-    history.Previous = history.Current;
+    history.Previous = history.State == HistoryState::Carrying ? CrossingOf(history) * history.Current : history.Current;
     history.Current = pose;
-    history.Crossing = HistoryCrossing::None;
+    history.State = history.State == HistoryState::Carrying ? HistoryState::Crossing : HistoryState::Steady;
 }
 } // namespace
 
@@ -52,16 +46,33 @@ void CaptureWorldTransformHistory(World& world,
         const auto worlds = view.template Read<WorldTransform>();
 
         for (uint32_t row = 0; row < view.Count(); ++row)
-            Roll(histories[row], worlds[row].Value, snapAll || histories[row].Snap);
+            Roll(histories[row], worlds[row].Value, snapAll);
     });
 }
 
 void CarryWorldTransformHistory(WorldTransformHistory& history, const Transform3f& mapping, float tickFraction)
 {
-    history.CrossingMapping =
-        history.Crossing == HistoryCrossing::Pending ? mapping * history.CrossingMapping : mapping;
-    history.CrossedAt = std::clamp(tickFraction, 0.0f, 1.0f);
-    history.Crossing = HistoryCrossing::Pending;
+    const float fraction = std::clamp(tickFraction, 0.0f, 1.0f);
+    switch (history.State)
+    {
+    case HistoryState::Snapping:
+        return;
+    case HistoryState::Carrying:
+    {
+        const Transform3f composed = mapping * CrossingOf(history);
+        history.CrossingRotation = composed.Rotation;
+        history.CrossingTranslation = composed.Position;
+        history.CrossedAt = std::max(history.CrossedAt, fraction);
+        return;
+    }
+    case HistoryState::Steady:
+    case HistoryState::Crossing:
+        history.CrossingRotation = mapping.Rotation;
+        history.CrossingTranslation = mapping.Position;
+        history.CrossedAt = fraction;
+        history.State = HistoryState::Carrying;
+        return;
+    }
 }
 
 void RequestTransformHistorySnap(World& world, EntityId entity)
@@ -69,7 +80,7 @@ void RequestTransformHistorySnap(World& world, EntityId entity)
     if (!world.IsRegistered<WorldTransformHistory>())
         return;
     if (WorldTransformHistory* history = world.TryGet<WorldTransformHistory>(entity))
-        history->Snap = true;
+        history->State = HistoryState::Snapping;
 }
 
 void PlaceSpawnedRoot(World& world, EntityId root, const Vec3d& position, std::optional<Quatf> rotation)
@@ -145,7 +156,10 @@ Transform3f ResolvePresentationPose(const WorldTransformHistory& history, double
 {
     const float t = alpha <= 0.0 ? 0.0f : (alpha >= 1.0 ? 1.0f : static_cast<float>(alpha));
     const Transform3f blended = Transform3f::Interpolate(history.Previous, history.Current, t);
-    if (history.Crossing != HistoryCrossing::Presenting || t >= history.CrossedAt)
-        return blended;
-    return InverseRigidMapping(history.CrossingMapping) * blended;
+    // Only a frame drawn between an out-of-tick relocation and the next capture sees Carrying.
+    if (history.State == HistoryState::Carrying)
+        return CrossingOf(history) * blended;
+    if (history.State == HistoryState::Crossing && t < history.CrossedAt)
+        return InverseRigidMapping(CrossingOf(history)) * blended;
+    return blended;
 }

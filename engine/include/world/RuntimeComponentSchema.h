@@ -30,9 +30,8 @@ std::span<const ComponentTypeId> EngineComponentIds();
 // schema and apply it to a World.
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema);
 
-// Each owning feature's relocation rules for the components it registered in
-// `world` (docs/gameplay/relocation.md). Rules that reach a backend are installed
-// by the host that owns the backend. Idempotent.
+// Each feature's relocation rules (docs/gameplay/relocation.md). Idempotent;
+// rules that reach a backend are installed by the host that owns it.
 void RegisterEngineRelocation(World& world);
 
 // Every serializable scene component must also have runtime storage in the

@@ -309,8 +309,7 @@ enters. The request is refused `no_landmark` when it names none, or the loaded
 level has none of that name, and `not_carriable` for an entity that is gone, a
 body, a held record, parented, has children without being the root of a
 scene instance (its children would be lost at its first save, since such an
-entity is kept whole), or holds state a relocation refuses
-(`docs/gameplay/relocation.md`), and for a change that is not a `Travel`.
+entity is kept whole), and for a change that is not a `Travel`.
 
 1. **Out of the simulation for the gap.** At the commit, before the level
    unloads, each carried entity and its descendants move into
@@ -335,14 +334,16 @@ entity is kept whole), or holds state a relocation refuses
    the landmark it left to the landmark it enters, into the resident zone whose
    bounds hold its new place (a drop's rule, `ZonePlacement`). So it keeps its
    offset from the landmark, and everything the relocation rules cover follows:
-   its velocities and aim turn with the landmark, its support and held motion
-   end, its navigation order is given again with a fresh id and a point order's
+   its velocities and aim turn with the landmark, its support is found again,
+   a tether to a point keeps its point moved with the landmark, its contact
+   lines draw home, its navigation order is given again with a fresh id and a point order's
    point moved with the landmark (so a follower of a kept body keeps following),
    its decision agent lets go of its claim, target, destination and contact
    (`ForgetDecisionPlace`), its observation memory empties and its sensor pairs
    are forgotten. An effect whose owner stayed behind ended when the owner
-   unloaded. Its history snaps, since it was out of every simulation during the
-   load.
+   unloaded. Its history and each descendant's snap, since they were out of
+   every simulation during the load. A relocation the rules refuse loses the
+   entity like a missing landmark does, and the log names the component.
 5. **It is kept where it arrived.** In a game that keeps level state it is
    marked `KeptWithZone` (`KeepArrivedWithZone`, which lets it keep an authored
    id). It is then a gained member of the level it entered, saved with that

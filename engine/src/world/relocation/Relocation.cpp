@@ -97,7 +97,8 @@ RelocationResult RelocateEntity(World& world, EntityId root, const RigidRelocati
     const RelocationFrame frame{ .Mapping = relocation.Mapping,
                                  .Yaw = upright ? YawAboutWorldUp(relocation.Mapping.Rotation) : 0.0f,
                                  .Upright = upright,
-                                 .TickFraction = std::clamp(relocation.TickFraction, 0.0f, 1.0f) };
+                                 .TickFraction = std::clamp(relocation.TickFraction, 0.0f, 1.0f),
+                                 .Group = group };
 
     RelocationResult result;
     result.KeptUprightState = RunComponentRules(world, rules, group, frame, RelocationRuleKind::Maps);
@@ -118,13 +119,6 @@ RelocationResult RelocateEntity(World& world, EntityId root, const RigidRelocati
             result.Serial = serial;
     }
     return result;
-}
-
-std::string_view RefusingComponent(const World& world, EntityId root)
-{
-    if (!world.IsAlive(root))
-        return {};
-    return RefusingName(world, RulesOf(world), RootAndDescendants(world, root));
 }
 
 void ClearFrameRelocations(World& world)

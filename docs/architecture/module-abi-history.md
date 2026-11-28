@@ -1958,17 +1958,21 @@ unchanged.
 ## v95
 
 One relocation operation (`world/relocation/Relocation.h`,
-`docs/gameplay/relocation.md`): `RelocateEntity`, `RigidRelocation`,
-`RelocationResult`, `RefusingComponent`, the `FrameRelocations` World resource
-and `ClearFrameRelocations`; the `RelocationRules` World resource with
-`SetRelocationRule`, `RefuseRelocation` and `RelocateValue`; each feature's
-`Register*Relocation` beside its component registration, `RegisterEngineRelocation`
-(`world/RuntimeComponentSchema.h`) and `InstallPhysicsBackendRelocation`. The
-replicated `RelocationSerial` component joins `WorldComponents` last, so the
-replication table hash moves and every component after it takes the next dense
-index; the net protocol is unchanged. `WorldTransformHistory` gains `Crossing`,
-`CrossingMapping` and `CrossedAt` after `Snap`, and `CarryWorldTransformHistory`
-is new. `LevelCarry` relocates its arrivals and drops its per-entity offset.
+`docs/gameplay/relocation.md`): `RelocateEntity`, `RigidRelocation` (its
+`TickFraction` defaults to zero), `RelocationResult`, the `FrameRelocations`
+World resource with its high-water mark, and `ClearFrameRelocations`; the
+`RelocationRules` World resource with `SetRelocationRule`, `RefuseRelocation`
+and `RelocateValue`, and `RelocationFrame` carrying the moved group; each
+feature's `Register*Relocation` beside its component registration,
+`RegisterEngineRelocation` (`world/RuntimeComponentSchema.h`),
+`InstallPhysicsBackendRelocation` and `RetractContactLinesOf`. The replicated
+`RelocationSerial` component joins `WorldComponents` last, so the replication
+table hash moves and every component after it takes the next dense index; the
+net protocol is unchanged. `WorldTransformHistory` replaces `Snap` with one
+lifecycle enum, `State` (`HistoryState`), gains `CrossingRotation`,
+`CrossingTranslation` and `CrossedAt`, and owes `RelocationSerial` through its
+`DerivedComponents`; `CarryWorldTransformHistory` is new. `LevelCarry`
+relocates its arrivals and drops its per-entity offset.
 `RootAndDescendants` (`world/transform/TransformHierarchy.h`) and
 `RigidMapping.h` are new. Save and scene formats are unchanged:
 `RelocationSerial` is neither saved nor authored, and the history is

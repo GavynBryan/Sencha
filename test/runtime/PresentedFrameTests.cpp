@@ -76,7 +76,7 @@ struct Rig
         Entities.AddComponent(Body, WorldTransformHistory{
             .Previous = At(Vec3d(0.0f, 0.0f, 0.0f), Quatf::FromAxisAngle(Vec3d::Up(), 0.2f)),
             .Current = At(Vec3d(4.0f, 0.0f, 0.0f), Quatf::FromAxisAngle(Vec3d::Up(), 0.6f)),
-            .Snap = false });
+            .State = HistoryState::Steady });
 
         Camera = Entities.CreateEntity();
         Entities.AddComponent(Camera, LocalTransform{
