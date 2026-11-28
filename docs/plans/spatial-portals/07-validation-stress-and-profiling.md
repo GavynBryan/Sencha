@@ -277,8 +277,7 @@ recorded where shown. A limit without all four is a defect however generous the 
 - `docs/renderer/`: `frame.md` and `features-and-passes.md` for runtime composition;
   `constraints.md` for limits and the corrected push-constant size; `extending.md`,
   which still describes registration order as draw order.
-- `docs/gameplay/`: `camera.md`, `saves.md`, `game-module.md` (level carry now calls the
-  relocation operation).
+- `docs/gameplay/`: `camera.md`, `saves.md`, `relocation.md`.
 - `docs/particles/runtime.md`, `docs/navigation/runtime.md`, `docs/physics/`.
 - `editor/ARCHITECTURE.md` for the entity-reference property kind.
 - A subsystem document for links themselves, written when Stage 1 lands. This suite is
@@ -290,7 +289,7 @@ Before v0.1, v0.2 or v1.0 is called complete:
 
 - [ ] `CLAUDE.md` reread against the final diff.
 - [ ] One mapping, read from `ResolvedLinks`, by every consumer.
-- [ ] One relocation operation; `LevelCarry` calls it.
+- [ ] One relocation operation; every discontinuous move calls it.
 - [ ] No space id, dimension or second world.
 - [ ] No runtime id or partition id persisted.
 - [ ] No engine identifier named for a genre or a game.

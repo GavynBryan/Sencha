@@ -76,10 +76,11 @@ they cross in v0.1 through that sweep (`06`, section 5), not by this rule.
 ### 2.5 Zone ownership
 
 A zone-owned body that commits moves to the destination zone's partition and is kept
-with that zone (`02`, section 3.8). If Stage 3 found the keep-with-zone path does not
-cover authored entities, the residency record is built here: `ZoneStateStore` records
-the entity as departed from its authored zone and gained by the other, so unload,
-reload, save and load all find it where it went.
+with that zone (`02`, section 3.8). For an authored body, the residency record is built
+here: `ZoneStateStore` records the entity as having left its authored zone and arrived
+in the other, so unload, reload, save and load all find it where it went. The `departed`
+list that landmark carry used was removed with it; build the record with the
+zone-membership work, as one mechanism for every runtime zone change.
 
 Active to active keeps the body. Active to a zone not in Physics is refused: the
 aperture is not traversable for a body whose destination cannot simulate it.

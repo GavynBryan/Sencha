@@ -53,8 +53,7 @@ the serial with each sample. When the two bracketing samples have different seri
 holds the earlier sample until the render time reaches the later one, then shows the
 later. A remote entity is never drawn between two apertures.
 
-This is not link-specific. It also fixes level carry and any debug teleport for remote
-entities.
+This is not link-specific. It also covers any debug teleport for remote entities.
 
 A later refinement, not in v0.1: carry the earlier sample through the mapping so the
 approach and departure both stay smooth. It needs the mapping on the wire and is
@@ -312,7 +311,7 @@ return `CrossZoneUnsupported`.
   upright link, entry in front of one aperture, exit in front of the other, with a
   traversal kind tag of its own so a profile can deny it. An agent walks into the
   aperture, the character crossing relocates it, and its order is reissued by the
-  relocation as `LevelCarry` does today. The planner already falls back from the
+  relocation. The planner already falls back from the
   straight-line heuristic when a link is cheaper than its span.
 - **Cross-zone link.** Not routable until the cross-zone planner exists. The link's
   positions are in the manifest from Stage 1 for that planner to use.
@@ -328,8 +327,8 @@ avoids it when its traversal kind is denied; resumes its order on the far side.
 Sight is a range and cone check and one straight ray. Hearing is straight-line distance.
 `ObservationMemory` stores world positions.
 
-- On relocation, the relocated entity's observation memory is cleared, as `LevelCarry`
-  does. That is in Stage 2's registered entries.
+- On relocation, the relocated entity's observation memory is cleared. That is in
+  Stage 2's registered entries.
 - An agent does not see or hear through a link. An observer standing in front of an
   aperture is unaware of a target visible through it.
 
