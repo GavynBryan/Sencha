@@ -78,14 +78,6 @@ public:
     // is for the local value itself.
     void SetWorldTransform(EntityId entity, const Transform3f& world);
 
-    // The entity's world transform composed from the live local chain, walking
-    // its ancestry right now. Mutation paths use this rather than the derived
-    // WorldTransform component: the component is refreshed once per frame at
-    // the render boundary, and a mutation between refreshes must convert
-    // against what the scene IS, not what it last rendered as. Identity for an
-    // entity without a local transform.
-    [[nodiscard]] Transform3f ComposeWorldTransform(EntityId entity) const;
-
     // The entity's spatial parent, invalid when it has none.
     [[nodiscard]] EntityId GetParent(EntityId entity) const;
     // Whether `ancestor` appears anywhere on `entity`'s parent chain. False for

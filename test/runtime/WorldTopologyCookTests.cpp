@@ -40,7 +40,7 @@ TEST(WorldTopologyCook, EmitsReciprocalCrossGraphDockEndpoints)
     input.Transform.Position = Vec3d{ 5, 2, 9 };
 
     std::string error;
-    ASSERT_TRUE(CookWorldTopology(manifest, std::span{ &input, 1 }, {}, &error)) << error;
+    ASSERT_TRUE(CookWorldTopology(manifest, std::span{ &input, 1 }, {}, {}, &error)) << error;
     ASSERT_EQ(manifest.Zones[0].Docks.size(), 1u);
     ASSERT_EQ(manifest.Zones[1].Docks.size(), 1u);
     const DockEndpoint& a = manifest.Zones[0].Docks[0];
@@ -50,11 +50,11 @@ TEST(WorldTopologyCook, EmitsReciprocalCrossGraphDockEndpoints)
     EXPECT_EQ(a.OtherZone, b.OwnerZone);
     EXPECT_EQ(a.Side, DockSide::A);
     EXPECT_EQ(b.Side, DockSide::B);
-    EXPECT_EQ(a.Normal, -b.Normal);
-    EXPECT_EQ(a.Right, -b.Right);
-    EXPECT_EQ(a.Up, b.Up);
-    EXPECT_EQ(a.Origin, b.Origin);
-    EXPECT_EQ(a.HalfExtents, b.HalfExtents);
+    EXPECT_EQ(a.Frame.Normal, -b.Frame.Normal);
+    EXPECT_EQ(a.Frame.Right, -b.Frame.Right);
+    EXPECT_EQ(a.Frame.Up, b.Frame.Up);
+    EXPECT_EQ(a.Frame.Origin, b.Frame.Origin);
+    EXPECT_EQ(a.Frame.HalfExtents, b.Frame.HalfExtents);
     ASSERT_EQ(manifest.DockDebugMap.size(), 1u);
     EXPECT_EQ(manifest.DockDebugMap[0].AuthoredEntity, 42u);
 }
@@ -70,7 +70,7 @@ TEST(WorldTopologyCook, EmitsReciprocalLinkEndpoints)
     const AuthoredLinkCookInput input{ .Link = link, .AuthoredEntity = 77 };
 
     std::string error;
-    ASSERT_TRUE(CookWorldTopology(manifest, {}, std::span{ &input, 1 }, &error)) << error;
+    ASSERT_TRUE(CookWorldTopology(manifest, {}, std::span{ &input, 1 }, {}, &error)) << error;
     ASSERT_EQ(manifest.Zones[0].Links.size(), 1u);
     ASSERT_EQ(manifest.Zones[1].Links.size(), 1u);
     EXPECT_EQ(manifest.Zones[0].Links[0].OtherZone, ZoneId{ 0xa2 });
@@ -96,8 +96,8 @@ TEST(WorldTopologyCook, OutputIsStableAcrossAuthoredInputOrder)
         { .Dock = low, .AuthoredEntity = 10 },
     };
 
-    ASSERT_TRUE(CookWorldTopology(first, ascending, {}));
-    ASSERT_TRUE(CookWorldTopology(second, descending, {}));
+    ASSERT_TRUE(CookWorldTopology(first, ascending, {}, {}));
+    ASSERT_TRUE(CookWorldTopology(second, descending, {}, {}));
     EXPECT_EQ(first, second);
 }
 
@@ -111,7 +111,7 @@ TEST(WorldTopologyCook, DuplicateIdsFailWithoutAmbiguousEndpoints)
     };
     std::string error;
 
-    EXPECT_FALSE(CookWorldTopology(manifest, inputs, {}, &error));
+    EXPECT_FALSE(CookWorldTopology(manifest, inputs, {}, {}, &error));
     EXPECT_NE(error.find("unique"), std::string::npos);
     EXPECT_EQ(manifest, before);
 }

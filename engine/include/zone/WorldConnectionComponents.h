@@ -3,6 +3,7 @@
 #include <core/metadata/EnumSchema.h>
 #include <ecs/ComponentAnnotations.h>
 #include <math/Vec.h>
+#include <world/identity/PersistableRef.h>
 #include <world/serialization/SceneFieldCodec.h>
 #include <zone/WorldPartitionIds.h>
 
@@ -73,6 +74,30 @@ WorldLink
 
     SENCHA_FIELD("directions")
     std::uint32_t Directions = DockDirectionBoth;
+
+    // Both set, the link joins two apertures in space; neither, it is a demand
+    // edge only; one alone is invalid. docs/zone/links.md.
+    SENCHA_FIELD("endpoint_a")
+    SENCHA_LABEL("Endpoint A")
+    PersistableRef EndpointA{};
+
+    SENCHA_FIELD("endpoint_b")
+    SENCHA_LABEL("Endpoint B")
+    PersistableRef EndpointB{};
+};
+
+// One end of a link: the entity's transform is the frame, its forward the front.
+struct SENCHA_COMPONENT("sencha.link_aperture")
+       SENCHA_SCHEMA("LinkAperture")
+       SENCHA_SCENE_CHUNK("LAPT")
+       SENCHA_PLACEABLE("Link Aperture")
+       SENCHA_PLACE_ICON("plane")
+LinkAperture
+{
+    SENCHA_FIELD("half_extents")
+    SENCHA_LABEL("Half Extents")
+    SENCHA_TOOLTIP("Half the opening's width and height, in metres. Both ends of a link match.")
+    Vec2d HalfExtents{ 1.0f, 2.0f };
 };
 
 struct SENCHA_COMPONENT("Dock Gate Binding")

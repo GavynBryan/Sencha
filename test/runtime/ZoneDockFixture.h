@@ -35,18 +35,15 @@ inline void AddFixtureDockPair(WorldPartitionManifest& manifest, std::uint64_t i
         .OwnerZone = zoneA,
         .OtherZone = zoneB,
         .Side = DockSide::A,
-        .Origin = origin,
-        .Normal = Vec3d{ 1, 0, 0 },
-        .Right = Vec3d{ 0, 0, 1 },
-        .Up = Vec3d{ 0, 1, 0 },
-        .HalfExtents = Vec2d{ 8, 8 },
+        .Frame = ApertureFrame{ .Origin = origin, .Normal = Vec3d{ 1, 0, 0 }, .Right = Vec3d{ 0, 0, 1 },
+                                .Up = Vec3d{ 0, 1, 0 }, .HalfExtents = Vec2d{ 8, 8 } },
         .Directions = 3,
     };
     a->Docks.push_back(endpoint);
     endpoint.OwnerZone = zoneB;
     endpoint.OtherZone = zoneA;
     endpoint.Side = DockSide::B;
-    endpoint.Normal = Vec3d{ -1, 0, 0 };
-    endpoint.Right = Vec3d{ 0, 0, -1 };
+    endpoint.Frame.Normal = Vec3d{ -1, 0, 0 };
+    endpoint.Frame.Right = Vec3d{ 0, 0, -1 };
     b->Docks.push_back(endpoint);
 }

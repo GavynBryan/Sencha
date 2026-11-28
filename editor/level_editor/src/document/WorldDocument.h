@@ -123,6 +123,9 @@ public:
     [[nodiscard]] bool CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& docks,
                                                std::vector<AuthoredLinkCookInput>& links,
                                                std::string* error = nullptr) const;
+    // The link apertures one zone's document holds, as the topology cook reads them.
+    static void CollectAuthoredApertures(const EditorDocument& zoneDocument, ZoneId zone,
+                                         std::vector<AuthoredApertureCookInput>& apertures);
 
     [[nodiscard]] std::span<const ContentRiskRecord> ValidationRecords() const
     {

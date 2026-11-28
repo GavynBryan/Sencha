@@ -20,19 +20,16 @@ WorldPartitionIndex CrossingIndex(Vec3d normal = Vec3d{ 1, 0, 0 },
         .OwnerZone = ZoneA,
         .OtherZone = ZoneB,
         .Side = DockSide::A,
-        .Origin = {},
-        .Normal = normal,
-        .Right = right,
-        .Up = up,
-        .HalfExtents = { 2, 3 },
+        .Frame = ApertureFrame{ .Origin = {}, .Normal = normal, .Right = right,
+                                .Up = up, .HalfExtents = { 2, 3 } },
         .Directions = directions,
     };
     DockEndpoint b = a;
     b.OwnerZone = ZoneB;
     b.OtherZone = ZoneA;
     b.Side = DockSide::B;
-    b.Normal = -normal;
-    b.Right = -right;
+    b.Frame.Normal = -normal;
+    b.Frame.Right = -right;
 
     WorldPartitionManifest manifest;
     ZoneHeader zoneA;

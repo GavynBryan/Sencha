@@ -194,15 +194,26 @@ bool ReadUint32(const JsonValue& object, const char* key, uint32_t& out)
     return true;
 }
 
-bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
+constexpr const char* kFrameKeys[] = { "origin", "normal", "right", "up", "half_extents" };
+
+bool ReadApertureFrame(const JsonValue& value, ApertureFrame& out)
 {
-    std::string ignored;
-    const JsonValue* side = value.Find("side");
     const JsonValue* origin = value.Find("origin");
     const JsonValue* normal = value.Find("normal");
     const JsonValue* right = value.Find("right");
     const JsonValue* up = value.Find("up");
     const JsonValue* halfExtents = value.Find("half_extents");
+    return origin != nullptr && ReadVec3(*origin, out.Origin)
+        && normal != nullptr && ReadVec3(*normal, out.Normal)
+        && right != nullptr && ReadVec3(*right, out.Right)
+        && up != nullptr && ReadVec3(*up, out.Up)
+        && halfExtents != nullptr && ReadVec2(*halfExtents, out.HalfExtents);
+}
+
+bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
+{
+    std::string ignored;
+    const JsonValue* side = value.Find("side");
     return value.IsObject()
         && ReadRequiredId(value, "id", DockIdFromString, out.Id, &ignored, "id")
         && ReadRequiredId(value, "owner_zone", ZoneIdFromString, out.OwnerZone,
@@ -212,12 +223,24 @@ bool ReadDockEndpoint(const JsonValue& value, DockEndpoint& out)
         && side != nullptr && side->IsString()
         && (side->AsString() == "a" || side->AsString() == "b")
         && (out.Side = side->AsString() == "a" ? DockSide::A : DockSide::B, true)
-        && origin != nullptr && ReadVec3(*origin, out.Origin)
-        && normal != nullptr && ReadVec3(*normal, out.Normal)
-        && right != nullptr && ReadVec3(*right, out.Right)
-        && up != nullptr && ReadVec3(*up, out.Up)
-        && halfExtents != nullptr && ReadVec2(*halfExtents, out.HalfExtents)
+        && ReadApertureFrame(value, out.Frame)
         && ReadUint32(value, "directions", out.Directions);
+}
+
+// Present or absent as a whole: an endpoint written before links had
+// apertures, or for a demand-only link, carries none of the keys.
+bool ReadOptionalAperture(const JsonValue& value, std::optional<ApertureFrame>& out)
+{
+    const bool any = std::any_of(std::begin(kFrameKeys), std::end(kFrameKeys),
+                                 [&value](const char* key) { return value.Find(key) != nullptr; });
+    out.reset();
+    if (!any)
+        return true;
+    ApertureFrame frame;
+    if (!ReadApertureFrame(value, frame))
+        return false;
+    out = frame;
+    return true;
 }
 
 bool ReadLinkEndpoint(const JsonValue& value, LinkEndpoint& out)
@@ -234,7 +257,8 @@ bool ReadLinkEndpoint(const JsonValue& value, LinkEndpoint& out)
         && (side->AsString() == "a" || side->AsString() == "b")
         && (out.Side = side->AsString() == "a" ? DockSide::A : DockSide::B, true)
         && ReadUint32(value, "kind", out.Kind)
-        && ReadUint32(value, "directions", out.Directions);
+        && ReadUint32(value, "directions", out.Directions)
+        && ReadOptionalAperture(value, out.Aperture);
 }
 
 std::optional<TransitionTopology> TopologyFromString(std::string_view text)
@@ -257,21 +281,31 @@ JsonValue WriteVec3(const Vec3d& v)
     return JsonValue{ std::move(array) };
 }
 
+JsonValue WriteVec2(const Vec2d& v)
+{
+    JsonValue::Array array;
+    array.emplace_back(static_cast<double>(v.X));
+    array.emplace_back(static_cast<double>(v.Y));
+    return JsonValue{ std::move(array) };
+}
+
+void WriteApertureFrame(JsonValue::Object& value, const ApertureFrame& frame)
+{
+    value.emplace_back("origin", WriteVec3(frame.Origin));
+    value.emplace_back("normal", WriteVec3(frame.Normal));
+    value.emplace_back("right", WriteVec3(frame.Right));
+    value.emplace_back("up", WriteVec3(frame.Up));
+    value.emplace_back("half_extents", WriteVec2(frame.HalfExtents));
+}
+
 JsonValue WriteDockEndpoint(const DockEndpoint& endpoint)
 {
-    JsonValue::Array halfExtents;
-    halfExtents.emplace_back(static_cast<double>(endpoint.HalfExtents.X));
-    halfExtents.emplace_back(static_cast<double>(endpoint.HalfExtents.Y));
     JsonValue::Object value;
     value.emplace_back("id", JsonValue{ DockIdToString(endpoint.Id) });
     value.emplace_back("owner_zone", JsonValue{ ZoneIdToString(endpoint.OwnerZone) });
     value.emplace_back("other_zone", JsonValue{ ZoneIdToString(endpoint.OtherZone) });
     value.emplace_back("side", JsonValue{ endpoint.Side == DockSide::A ? "a" : "b" });
-    value.emplace_back("origin", WriteVec3(endpoint.Origin));
-    value.emplace_back("normal", WriteVec3(endpoint.Normal));
-    value.emplace_back("right", WriteVec3(endpoint.Right));
-    value.emplace_back("up", WriteVec3(endpoint.Up));
-    value.emplace_back("half_extents", JsonValue{ std::move(halfExtents) });
+    WriteApertureFrame(value, endpoint.Frame);
     value.emplace_back("directions", JsonValue{ static_cast<double>(endpoint.Directions) });
     return JsonValue{ std::move(value) };
 }
@@ -285,6 +319,8 @@ JsonValue WriteLinkEndpoint(const LinkEndpoint& endpoint)
     value.emplace_back("side", JsonValue{ endpoint.Side == DockSide::A ? "a" : "b" });
     value.emplace_back("kind", JsonValue{ static_cast<double>(endpoint.Kind) });
     value.emplace_back("directions", JsonValue{ static_cast<double>(endpoint.Directions) });
+    if (endpoint.Aperture.has_value())
+        WriteApertureFrame(value, *endpoint.Aperture);
     return JsonValue{ std::move(value) };
 }
 

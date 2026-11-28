@@ -13,6 +13,7 @@
 #include <world/registry/Registry.h>
 #include <zone/WorldConnectionComponents.h>
 #include <zone/WorldPartitionIds.h>
+#include <world/transform/DerivedTransform.h>
 
 #include <format>
 #include <string>
@@ -86,7 +87,7 @@ namespace
                 const WorldDock* dock = scene.GetRegistry().Components.TryGet<WorldDock>(entity);
                 if (dock == nullptr)
                     continue;
-                const Transform3f placed = scene.GetScene().ComposeWorldTransform(entity);
+                const Transform3f placed = ComposeWorldTransform(scene.GetRegistry().Components, entity);
                 const std::string_view directions =
                     dock->Directions == DockDirectionBoth  ? "both"
                     : dock->Directions == DockDirectionAToB ? "a_to_b"

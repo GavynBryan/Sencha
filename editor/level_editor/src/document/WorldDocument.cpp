@@ -7,6 +7,8 @@
 #include <core/json/JsonStringify.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
+#include <world/identity/PersistentIdComponent.h>
+#include <zone/WorldLinkValidation.h>
 #include <zone/WorldPartitionValidation.h>
 #include <zone/WorldConnectionComponents.h>
 #include <zone/ZoneDemand.h>
@@ -1223,6 +1225,22 @@ bool WorldDocument::CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& 
     return true;
 }
 
+void WorldDocument::CollectAuthoredApertures(const EditorDocument& zoneDocument, ZoneId zone,
+                                             std::vector<AuthoredApertureCookInput>& apertures)
+{
+    const EditorScene& scene = zoneDocument.GetScene();
+    const Registry& registry = zoneDocument.GetRegistry();
+    for (EntityId entity : scene.GetAllEntities())
+    {
+        const LinkAperture* aperture = registry.Components.TryGet<LinkAperture>(entity);
+        const PersistentIdComponent* id = registry.Components.TryGet<PersistentIdComponent>(entity);
+        const Transform3f* transform = scene.TryGetWorldTransform(entity);
+        if (aperture == nullptr || id == nullptr || !id->Id.IsValid() || transform == nullptr)
+            continue;
+        apertures.push_back({ .Id = id->Id, .Zone = zone, .Aperture = *aperture, .Transform = *transform });
+    }
+}
+
 void WorldDocument::RunValidation()
 {
     ValidationRecords_.clear();
@@ -1235,10 +1253,24 @@ void WorldDocument::RunValidation()
     WorldPartitionManifest compiled = Manifest_;
     std::vector<AuthoredDockCookInput> docks;
     std::vector<AuthoredLinkCookInput> links;
-    if (CollectAuthoredTopology(docks, links) && CookWorldTopology(compiled, docks, links))
+    std::vector<AuthoredApertureCookInput> apertures;
+    std::vector<ZoneId> openZones;
+    for (const ZoneHeader& header : Manifest_.Zones)
+    {
+        const auto open = OpenZones_.find(header.Id);
+        if (open == OpenZones_.end())
+            continue;
+        openZones.push_back(header.Id);
+        CollectAuthoredApertures(*open->second.Document, header.Id, apertures);
+    }
+    const bool collected = CollectAuthoredTopology(docks, links);
+    if (collected && CookWorldTopology(compiled, docks, links, apertures))
         ValidationRecords_ = ValidateWorldPartitionManifest(compiled, WorldPartitionIndex::Build(compiled));
     else
         ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
+    if (collected)
+        for (ContentRiskRecord& record : ValidateAuthoredLinks(Manifest_, docks, links, apertures, openZones))
+            ValidationRecords_.push_back(std::move(record));
 
     std::vector<DockId> dockIds;
     std::vector<LinkId> linkIds;
@@ -1349,9 +1381,10 @@ void WorldDocument::RunValidation()
                 const bool duplicate = std::find(linkIds.begin(), linkIds.end(), link->Id)
                     != linkIds.end();
                 linkIds.push_back(link->Id);
+                const bool spatial = link->EndpointA.Target.IsValid() && link->EndpointB.Target.IsValid();
                 const bool zonesKnown = FindZoneHeader(link->ZoneA) != nullptr
                     && FindZoneHeader(link->ZoneB) != nullptr
-                    && link->ZoneA != link->ZoneB;
+                    && (link->ZoneA != link->ZoneB || spatial);
                 if (!link->Id.IsValid() || duplicate || !zonesKnown
                     || link->Kind != LinkKind::Teleport
                     || link->Directions < 1u || link->Directions > 3u)

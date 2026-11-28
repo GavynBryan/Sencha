@@ -20,6 +20,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
+#include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
 #include <cstring>
@@ -856,7 +857,7 @@ namespace
         const EntityId body = FindById(host, PersistentEntityId{ 0x201 });
         host.GetScene().RefreshDerivedTransforms();
         const Vec3d bodyBefore =
-            host.GetScene().ComposeWorldTransform(body).Position;
+            ComposeWorldTransform(host.GetRegistry().Components, body).Position;
 
         // The body should sit at the origin afterwards; everything shifts by
         // its world position, children following their roots.
@@ -866,17 +867,17 @@ namespace
         host.GetScene().RefreshDerivedTransforms();
 
         const Vec3d bodyAfter =
-            host.GetScene().ComposeWorldTransform(body).Position;
+            ComposeWorldTransform(host.GetRegistry().Components, body).Position;
         EXPECT_NEAR(bodyAfter.X, 0.0f, 1.0e-4f);
         EXPECT_NEAR(bodyAfter.Y, 0.0f, 1.0e-4f);
         EXPECT_NEAR(bodyAfter.Z, 0.0f, 1.0e-4f);
         // The local root moved by the same shift.
-        EXPECT_NEAR(host.GetScene().ComposeWorldTransform(local).Position.X,
+        EXPECT_NEAR(ComposeWorldTransform(host.GetRegistry().Components, local).Position.X,
                     -bodyBefore.X, 1.0e-4f);
 
         command->Undo();
         host.GetScene().RefreshDerivedTransforms();
-        EXPECT_NEAR(host.GetScene().ComposeWorldTransform(body).Position.X,
+        EXPECT_NEAR(ComposeWorldTransform(host.GetRegistry().Components, body).Position.X,
                     bodyBefore.X, 1.0e-4f);
     }
 } // namespace

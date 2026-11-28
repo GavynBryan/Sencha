@@ -25,17 +25,6 @@ bool IsFinitePositiveAabb(const Aabb3d& bounds)
     return true;
 }
 
-bool IsFinite(Vec3d value)
-{
-    return std::isfinite(value.X) && std::isfinite(value.Y)
-        && std::isfinite(value.Z);
-}
-
-bool IsUnit(Vec3d value)
-{
-    return IsFinite(value) && std::abs(value.SqrMagnitude() - 1.0f) <= 1.0e-3f;
-}
-
 // Human-legible reference for a message: the authored name when set, else the
 // hex id. Messages are baked at validation time, so a rename that re-runs
 // validation re-renders them with the new name.
@@ -254,11 +243,11 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 valid = first.Side != second.Side
                     && first.OwnerZone == second.OtherZone
                     && first.OtherZone == second.OwnerZone
-                    && first.Origin == second.Origin
-                    && first.HalfExtents == second.HalfExtents
-                    && first.Normal == -second.Normal
-                    && first.Right == -second.Right
-                    && first.Up == second.Up
+                    && first.Frame.Origin == second.Frame.Origin
+                    && first.Frame.HalfExtents == second.Frame.HalfExtents
+                    && first.Frame.Normal == -second.Frame.Normal
+                    && first.Frame.Right == -second.Frame.Right
+                    && first.Frame.Up == second.Frame.Up
                     && first.Directions == second.Directions;
             }
             for (std::size_t i = begin; i < end && valid; ++i)
@@ -274,13 +263,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                         other = &zone;
                 }
                 valid = owner != nullptr && other != nullptr && owner != other
-                    && endpoint.HalfExtents.X > 0.0f && endpoint.HalfExtents.Y > 0.0f
-                    && IsFinite(endpoint.Origin)
-                    && IsUnit(endpoint.Normal) && IsUnit(endpoint.Right)
-                    && IsUnit(endpoint.Up)
-                    && std::abs(endpoint.Normal.Dot(endpoint.Right)) <= 1.0e-3f
-                    && std::abs(endpoint.Normal.Dot(endpoint.Up)) <= 1.0e-3f
-                    && std::abs(endpoint.Right.Dot(endpoint.Up)) <= 1.0e-3f
+                    && IsValidApertureFrame(endpoint.Frame)
                     && endpoint.Directions >= 1u && endpoint.Directions <= 3u;
             }
             if (!valid)
@@ -323,7 +306,11 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 valid = first.Side != second.Side && first.Kind == second.Kind
                     && first.OwnerZone == second.OtherZone
                     && first.OtherZone == second.OwnerZone
-                    && first.Directions >= 1u && first.Directions <= 3u;
+                    && first.Directions >= 1u && first.Directions <= 3u
+                    && first.Aperture.has_value() == second.Aperture.has_value();
+                for (const LinkEndpoint* endpoint : { &first, &second })
+                    if (valid && endpoint->Aperture.has_value())
+                        valid = IsValidApertureFrame(*endpoint->Aperture);
             }
             if (!valid)
             {

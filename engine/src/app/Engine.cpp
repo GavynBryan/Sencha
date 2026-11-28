@@ -87,6 +87,7 @@
 #include <world/RuntimeWorld.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializer.h>
+#include <zone/ResolvedLinksSystem.h>
 
 #ifdef SENCHA_ENABLE_VULKAN
 #include <graphics/vulkan/GraphicsServices.h>
@@ -1492,6 +1493,11 @@ int Engine::Run(Game& game)
     // index, and a game reaches the queries through Schedule().Get<>().
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
+
+    // Every host resolves links: a world without one costs an empty query.
+    // Before the game's hook, so a consumer orders itself after it.
+    EngineSystems.Register<ResolvedLinksSystem>(*RuntimeWorldState, &ConsoleState->Registry(),
+                                                &LoggingState.GetLogger<ResolvedLinksSystem>());
 
     if (PresentsAWindow(Configuration))
         EngineSystems.Register<PresentationSettingsSystem>(*LevelState, *RuntimeWorldState, ContentState->Assets(),

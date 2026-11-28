@@ -12,6 +12,7 @@
 #include "workspace/EditorWorkspace.h"
 
 #include <world/identity/PersistentIdComponent.h>
+#include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
 #include <format>
@@ -125,7 +126,7 @@ void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
           { .Invoke = [&w, document] {
                 EditorDocument& doc = document();
                 EditorScene& scene = doc.GetScene();
-                if (auto command = MakeSetSceneOriginCommand(scene, doc, scene.ComposeWorldTransform(Primary(w)).Position))
+                if (auto command = MakeSetSceneOriginCommand(scene, doc, ComposeWorldTransform(scene.GetRegistry().Components, Primary(w)).Position))
                     w.Commands.Execute(std::move(command));
             },
             .Enabled = [&w] { return Primary(w).IsValid(); } });

@@ -26,3 +26,19 @@ void SeedDerivedWorldTransform(World& world, EntityId entity)
     if (!world.InitializeComponent<WorldTransform>(entity, WorldTransform{ seeded }))
         world.AddComponent<WorldTransform>(entity, WorldTransform{ seeded });
 }
+
+Transform3f ComposeWorldTransform(const World& world, EntityId entity)
+{
+    Transform3f composed = Transform3f::Identity();
+    if (!world.IsRegistered<LocalTransform>())
+        return composed;
+    // A chain longer than the live entities is a cycle, so damaged parentage ends.
+    for (std::size_t remaining = world.EntityCount() + 1; entity.IsValid() && remaining > 0; --remaining)
+    {
+        if (const LocalTransform* local = world.TryGet<LocalTransform>(entity))
+            composed = local->Value * composed;
+        const Parent* parent = world.TryGet<Parent>(entity);
+        entity = parent != nullptr && world.IsAlive(parent->Entity) ? parent->Entity : EntityId{};
+    }
+    return composed;
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <math/geometry/3d/Transform3d.h>
 
 class World;
 
@@ -24,3 +25,7 @@ class World;
 // how a headless or tool world with a different vocabulary stays valid.
 //=============================================================================
 void SeedDerivedWorldTransform(World& world, EntityId entity);
+
+// The entity's world transform composed from its LocalTransform and its
+// parents' now, for a reader that cannot wait for propagation to run.
+[[nodiscard]] Transform3f ComposeWorldTransform(const World& world, EntityId entity);

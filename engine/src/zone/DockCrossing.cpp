@@ -32,7 +32,7 @@ float CapsulePlaneSupport(const DockEndpoint& endpoint,
 {
     return std::max(0.0f, options.CapsuleRadius)
         + std::max(0.0f, options.CapsuleHalfHeight)
-            * std::abs(endpoint.Normal.Dot(Vec3d::Up()));
+            * std::abs(endpoint.Frame.Normal.Dot(Vec3d::Up()));
 }
 
 } // namespace
@@ -52,7 +52,7 @@ AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
     {
         if (endpoint.Id != state.SuppressedDock)
             continue;
-        const float side = (position - endpoint.Origin).Dot(endpoint.Normal);
+        const float side = (position - endpoint.Frame.Origin).Dot(endpoint.Frame.Normal);
         suppressedDockStillNear = std::abs(side) < HysteresisDistance;
         break;
     }
@@ -66,9 +66,9 @@ AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
     {
         if (!AllowsOutgoing(endpoint) || endpoint.Id == state.SuppressedDock)
             continue;
-        const float previousSide = (state.PreviousPosition - endpoint.Origin).Dot(endpoint.Normal);
-        const float currentSide = (position - endpoint.Origin).Dot(endpoint.Normal);
-        const float normalMotion = (position - state.PreviousPosition).Dot(endpoint.Normal);
+        const float previousSide = (state.PreviousPosition - endpoint.Frame.Origin).Dot(endpoint.Frame.Normal);
+        const float currentSide = (position - endpoint.Frame.Origin).Dot(endpoint.Frame.Normal);
+        const float normalMotion = (position - state.PreviousPosition).Dot(endpoint.Frame.Normal);
         const bool sweptAcross = previousSide < -SideEpsilon
             && currentSide > SideEpsilon;
         // A fixed-step sample can land exactly on the plane. Preserve that
@@ -85,11 +85,11 @@ AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
         if (t < 0.0f || t > 1.0f)
             continue;
         const Vec3d intersection = departedPlane
-            ? state.PreviousPosition - endpoint.Normal * previousSide
+            ? state.PreviousPosition - endpoint.Frame.Normal * previousSide
             : state.PreviousPosition + (position - state.PreviousPosition) * t;
-        const Vec3d local = intersection - endpoint.Origin;
-        if (std::abs(local.Dot(endpoint.Right)) > endpoint.HalfExtents.X
-            || std::abs(local.Dot(endpoint.Up)) > endpoint.HalfExtents.Y)
+        const Vec3d local = intersection - endpoint.Frame.Origin;
+        if (std::abs(local.Dot(endpoint.Frame.Right)) > endpoint.Frame.HalfExtents.X
+            || std::abs(local.Dot(endpoint.Frame.Up)) > endpoint.Frame.HalfExtents.Y)
             continue;
         if (t < bestT || (t == bestT && best != nullptr
                           && endpoint.Id.Value < best->Id.Value))
@@ -108,7 +108,7 @@ AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
 
     const float support = CapsulePlaneSupport(*best, options);
     const Vec3d safe = bestIntersection
-        - best->Normal * (support + HysteresisDistance);
+        - best->Frame.Normal * (support + HysteresisDistance);
     DockTraversalResult result{
         .Status = DockTraversalStatus::Crossed,
         .Dock = best->Id,
@@ -116,7 +116,7 @@ AdvanceZoneFocus(ZoneFocusState& state, const WorldPartitionIndex& index,
         .To = best->OtherZone,
         .CrossingPoint = bestIntersection,
         .SafeSourcePosition = safe,
-        .PlaneNormal = best->Normal,
+        .PlaneNormal = best->Frame.Normal,
     };
 
     if (!DestinationResident(best->OtherZone, options))
