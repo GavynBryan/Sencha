@@ -44,15 +44,16 @@ classification, segment starting on the plane, segment ending on the plane.
 
 ### 2.1 Why it is its own stage
 
-`LevelCarry::Arrive` already moves an entity through a rigid mapping: it places the
-root, rotates rigid-body and kinematic velocity (`Turn`), moves the group's storage
-partition, snaps transform history, clears perception memory and sensor pairs, and
-reissues a navigation order with its point carried across. Link traversal needs the same
-operation with a different mapping. Writing it again beside `LevelCarry` would be a
-second implementation of one mechanism.
+When this plan was written, `LevelCarry::Arrive` moved entities carried across a level
+change through a rigid mapping: it placed the root, rotated rigid-body and kinematic
+velocity, moved the group's storage partition, snapped transform history, cleared
+perception memory and sensor pairs, and reissued a navigation order with its point
+carried across. Link traversal needs the same operation with a different mapping.
 
-Stage 2 extracts it and has no dependency on links. It lands with `LevelCarry` as its
-only caller, and behaviour of a level change does not change.
+Stage 2 extracted it, with no dependency on links. The owner then removed landmark
+carry (2026-11-28): a level change moves bodies only, and moving through the world is
+zone streaming. The operation and its rules stay. Until Stage 3 it has no caller and is
+covered by its own tests.
 
 ### 2.2 Shape
 
@@ -67,8 +68,8 @@ struct RigidRelocation
 RelocationResult RelocateEntity(World&, EntityId root, const RigidRelocation&);
 ```
 
-The caller supplies the destination partition. `LevelCarry` gets it from
-`ZonePlacement::PartitionAt`; a link gets it from the link's destination zone. The
+The caller supplies the destination partition. A link gets it from the link's
+destination zone. The
 operation never infers a zone from a position (D1).
 
 ### 2.3 What it transforms
@@ -90,9 +91,9 @@ Entries Stage 2 registers, from the state the character stack holds today:
 | `LookOrientation.Yaw`, `PendingLookInput` | add the mapping's yaw; requires an upright mapping |
 | `SupportState`, `Immersion` | reset; support is found again on the far side |
 | `TetherSession`, `ClingSession`, `FlightSession` anchors | end the session through its own exit, not by editing its anchor |
-| `ObservationMemory`, decision place | clear, as `LevelCarry` does |
-| sensor pairs touching the group | forget, as `LevelCarry` does |
-| navigation order | reissue with its point carried through, as `LevelCarry`'s `OrderAgain` does |
+| `ObservationMemory`, decision place and claims | clear |
+| sensor pairs touching the group | forget |
+| navigation order | reissue with its point carried through |
 | `WorldTransformHistory` | section 2.5 |
 
 Attachments and held records follow through `DispatchPartitionMoves`, which already
@@ -102,8 +103,8 @@ Verify at stage start: that the list is complete. Search for every component wit
 `Vec3` or `Quat` member whose meaning is a world position or direction. An entity
 holding one with no entry is refused by name, not relocated silently wrong.
 
-`LevelCarry`'s existing refusals (bodies, parented entities, held records as roots)
-stay with `LevelCarry`. They are policy of a level change, not of the operation.
+A caller's own refusals (which entities it is willing to move at all) stay with the
+caller. They are policy, not part of the operation.
 
 ### 2.4 `RelocationSerial`
 
@@ -155,7 +156,8 @@ This is the only place where "which side is it drawn on this frame" is decided.
 
 - `RelocationTests`: every registered entry, an unregistered world-space component
   refuses, serial advances once, partition move carries attachments and held records.
-- `LevelCarryTests` pass unchanged. That is the regression gate for the extraction.
+- A classification test fails until every engine component either has a rule or is
+  listed as holding no world-space state.
 - `TransformHistoryRelocationTests`: presented pose at alpha below, at and above the
   crossing fraction; a child presented through a relocated parent.
 - A character mover moved between two active zones keeps its mover. `RigidBodyBinding`
@@ -278,16 +280,17 @@ Until the lease is honoured the aperture is not traversable for that entity.
 ### 3.8 Zone ownership
 
 - A pawn in the persistent partition: relocate, no partition move.
-- A zone-owned character: relocate with the destination partition, then keep it with
-  the destination zone through the existing `KeepArrivedWithZone` path that
-  `LevelCarry`, projectiles and inventory drops use.
-
-Verify at stage start: that the keep-with-zone path records an authored entity as
-departed from one zone and gained by another in `ZoneStateStore`, so the move survives
-unload, reload and save. `docs/plans/runtime-stable-identity.md` names "the first design
-need that moves an authored entity between zones at runtime" as the trigger for a
-residency record. If the path does not cover it, v0.1 limits traversal to persistent
-pawns and runtime-spawned entities and the record is built in Stage 7.
+- A runtime-spawned zone-owned character: relocate with the destination partition,
+  then keep it with the destination zone through `KeepWithZone`, as projectiles and
+  inventory drops do.
+- An authored zone-owned character: not traversable in v0.1. Removing landmark carry
+  removed `KeepArrivedWithZone` and the `departed` zone list, so nothing records an
+  authored entity leaving its zone; it would reappear in its old zone on reload.
+  `docs/plans/runtime-stable-identity.md` names "the first design need that moves an
+  authored entity between zones at runtime" as the trigger for a residency record.
+  Stage 7 builds it, together with the zone-membership work in
+  `docs/plans/zone-membership-and-hardening.md`, rather than reviving the removed list.
+  Until then the aperture is solid for such an entity, refused with its own reason.
 
 ### 3.9 Forced teardown
 
@@ -298,8 +301,7 @@ No mapping to a destination that no longer resolves is ever applied.
 ### 3.10 Authored event
 
 A committed crossing delivers a `link.crossed` event with the instigator to both
-aperture entities through `ResponsesSystem`, as `LevelArrived` is delivered to a
-landmark. It is declared through the annotated-vocabulary path so
+aperture entities through `ResponsesSystem`. It is declared through the annotated-vocabulary path so
 `docs/reference/vocabulary.md` regenerates.
 
 ### 3.11 Counters and debug draw

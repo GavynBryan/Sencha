@@ -76,8 +76,8 @@ A second invariant carries the transfer:
 
 > Moving an entity discontinuously is one operation with one owner. It transforms or
 > resets every piece of spatial state the entity holds, advances the entity's
-> relocation serial, and records the mapping. Link traversal, level carry and any later
-> teleport call that operation.
+> relocation serial, and records the mapping. Link traversal and any later teleport call
+> that operation.
 
 ## 3. What changed from revision 1
 
@@ -86,7 +86,7 @@ A second invariant carries the transfer:
 | `StableEntityRef { ZoneId, PersistentEntityId }` with resolution epochs | `PersistableRef { EntityId, PersistentEntityId }` (`engine/include/world/identity/PersistableRef.h`), ids unique across the world, one `PersistentEntityIndex` per `World` | Use `PersistableRef`. No epochs: a dead generational `EntityId` is the staleness check. Partition-slot aliasing cannot happen and its tests are dropped. |
 | A new relationship entity type | `WorldLink` with `LinkKind::Teleport` (`engine/include/zone/WorldConnectionComponents.h`) already lives in the world scene and already feeds streaming demand | The link is a `WorldLink` that gains two endpoint references (D2). |
 | Portal demand built on participation leases | Links are demand edges in `ComputeZoneDemand`; the linked zone is a one-hop neighbour. Leases exist in `WorldPartitionRuntime` but have no production holder, no denial signal and no forced-teardown wiring | Demand comes from the existing edge. Leases are used only to pin a straddle, and their gaps are closed as general work when first used. |
-| A portal-specific transfer | `LevelCarry::Arrive` (`engine/src/app/LevelCarry.cpp`) already places, turns velocity, rezones, snaps history, clears perception memory and reissues navigation orders | Extract one relocation operation and make both call it (D10). |
+| A portal-specific transfer | `LevelCarry::Arrive` placed, turned velocity, rezoned, snapped history, cleared perception memory and reissued navigation orders for entities carried across a level change. The owner removed landmark carry on 2026-11-28 | Stage 2 extracted that work as the relocation operation before the removal. Its rules stay; link traversal is its first caller (D10). |
 | A migration journal read by physics | `World::MoveEntityToPartition` records `EntityPartitionMove` for registered followers (attachments, held records). Physics reconciles by partition set and keeps a body moved between two active zones | No journal work. One missing test: a character mover moved between active zones. |
 | `PhysicsScene` with record families, angular impulses, constraints, contact hooks | `PhysicsStepSystem` owns `PhysicsWorld`, `RigidBodyBinding`, `CharacterMoverPool`. The facade has velocity get and set, `TeleportBody`, `WakeBody` and a one-way driven-pose drive. No impulses, mass, inertia, centre of mass, motion quality, contact listener or per-pair filter | Coupled bodies need a facade stage first (`04`, Stage 9). v0.2 adds an uncoupled tier that needs none of it. |
 | Extraction and one forward pass per frame extended in place | The runtime frame has one camera, one `RenderQueue`, one light set (`DefaultRenderPipeline`). The editor already draws several views through `FrameComposition` and `RenderTargetStore` | The runtime adopts `FrameComposition`; a linked view is a second view (`03`). |
@@ -181,10 +181,12 @@ records. Neither is an entity.
 
 ### D10. One relocation operation
 
-Link traversal does not get its own transfer code. `LevelCarry`'s placement and turn
-logic is extracted into the relocation operation in `02`, and `LevelCarry` becomes its
-first caller. Each component that holds world-space state registers how it relocates,
-so a later component adds an entry instead of editing the operation.
+Link traversal does not get its own transfer code. The relocation operation in `02`
+owns it. It was extracted from landmark carry, which the owner has since removed, so
+until Stage 3 lands it has no caller and is carried by its own tests: planned
+infrastructure with a named consumer. Each component that holds world-space state
+registers how it relocates, so a later component adds an entry instead of editing the
+operation.
 
 ### D11. Each side lights its own half
 
@@ -234,7 +236,7 @@ depends on unmerged work waits for it or is folded into it.
 |---|---|---|
 | 0 | Owner rulings on D2, D14, D15. Fixtures. Zero-link baselines. | `07` |
 | 1 | Geometry kernel. `LinkAperture`, `WorldLink` endpoints, `ResolvedLinks`, cook, validation, authoring, debug draw. | `01`, `02` |
-| 2 | Relocation operation extracted from `LevelCarry`. `RelocationSerial`. History that presents a relocation correctly. | `02` |
+| 2 | Relocation operation. `RelocationSerial`. History that presents a relocation correctly. | `02` |
 | 3 | Character traversal on one machine: crossing in the shared tick, straddle, refusal, focus, demand. | `02` |
 | 4 | Linked views: runtime `FrameComposition`, targets, oblique clip, composite, sky per view. | `03` |
 | 5 | Replicated traversal: serial on the wire, interpolation, command frames, replay. | `06` |
@@ -269,7 +271,7 @@ Stages 12 and 13 do not depend on 9 to 11 and may be reordered.
 Unresolved because a zone is not resident is distinct from malformed. Nothing authored,
 cooked or saved contains an `EntityId` or a storage partition id.
 
-**Relocation.** One operation. `LevelCarry` calls it. Every registered component
+**Relocation.** One operation, and every discontinuous move calls it. Every registered component
 relocates or resets; an entity holding an unregistered world-space component is refused
 with its name. The serial advances exactly once per relocation.
 
@@ -318,8 +320,7 @@ Stop and ask the owner when:
 
 1. A public SDK or game-module ABI change becomes necessary.
 2. A persisted or cooked format needs a change that is not additive.
-3. The relocation operation cannot serve `LevelCarry` without changing what a level
-   change does.
+3. The relocation operation would need a branch for one particular caller.
 4. A link would need to become streaming policy inside `WorldPartitionRuntime` beyond
    the demand edge it already is.
 5. Straddle pinning cannot be expressed with participation leases once their gaps are
