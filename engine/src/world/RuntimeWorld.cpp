@@ -10,6 +10,7 @@
 #include <ecs/Query.h>
 #include <ecs/WorldComponentSchema.h>
 #include <effects/AppliedEffects.h>
+#include <world/RuntimeComponentSchema.h>
 #include <world/held/HeldRecords.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -41,6 +42,8 @@ RuntimeWorld::RuntimeWorld(const WorldComponentSchema& schema)
     // component's hooks maintain the index as zones import and detach.
     Entities_.AddResource<PersistentEntityIndex>();
     InstallHeldRecords(Entities_);
+
+    RegisterEngineRelocation(Entities_);
 
     // Likewise scene instance groups: the component's own hooks keep the
     // index exact through streaming, spawning, and per-entity destruction.

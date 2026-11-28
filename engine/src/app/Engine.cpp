@@ -68,6 +68,7 @@
 #include <audio/AudioSystem.h>
 #include <navigation/NavAgentSystem.h>
 #include <navigation/NavigationSystem.h>
+#include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsStepSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
@@ -1561,9 +1562,11 @@ int Engine::Run(Game& game)
         EngineSystems.After<FreeLocomotionSystem, ResponsesSystem>();
     // After the game's systems, which is where physics is registered if at all.
     {
-        const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
+        PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
         if (physics != nullptr)
         {
+            InstallPhysicsBackendRelocation(RuntimeWorldState->Entities(), physics->GetSimulation(),
+                                            physics->GetCharacterMovers());
             VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
             if (ResponsesSystem* responses = EngineSystems.Get<ResponsesSystem>())
                 VocabularyBindings->BindInteraction(physics->GetSimulation(), *responses, *VerbDispatcherState);

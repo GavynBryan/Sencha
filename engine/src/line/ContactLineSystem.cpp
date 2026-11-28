@@ -651,6 +651,17 @@ void RetractKeptContactLines(World& world, EntityId instigator, bool keepNewest)
     });
 }
 
+void RetractContactLinesOf(World& world, std::span<const EntityId> entities)
+{
+    if (!world.IsRegistered<ContactLineState>())
+        return;
+    const auto among = [&](EntityId entity) { return std::ranges::find(entities, entity) != entities.end(); };
+    world.ForEachComponent<ContactLineState>([&](EntityId line, ContactLineState& state) {
+        if (state.Stage != ContactLineStage::Retracting && (among(line) || among(state.Instigator)))
+            BeginRetract(state);
+    });
+}
+
 ContactLineSystem& RegisterContactLineSystem(EngineSchedule& schedule, World& world,
                                              const ContactLineSystem::Services& services)
 {

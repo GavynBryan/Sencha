@@ -14,3 +14,5 @@ inline void RegisterNavigationComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<NavigationComponents>();
 }
+
+void RegisterNavigationRelocation(World& world);

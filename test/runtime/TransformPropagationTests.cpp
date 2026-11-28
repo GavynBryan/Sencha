@@ -625,7 +625,7 @@ TEST(TransformPropagation, PresentationChildComposesFromTheParentsInterpolatedPo
     world.AddComponent(body, WorldTransformHistory{
         .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
         .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
-        .Snap = false });
+        .State = HistoryState::Steady });
     world.AddComponent(camera, LocalTransform{ Transform3f(Vec3d(0.0f, 1.0f, 0.0f), Quatf::Identity(), Vec3d::One()) });
     world.AddComponent(camera, WorldTransform{});
     world.AddComponent(camera, Parent{ body });
@@ -684,7 +684,7 @@ TEST(TransformPropagation, PresentationPoseOfBlendsHistoryAndFallsBackToTheTrans
     world.AddComponent(blended, WorldTransformHistory{
         .Previous = Transform3f(Vec3d(0.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
         .Current = Transform3f(Vec3d(10.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One()),
-        .Snap = false });
+        .State = HistoryState::Steady });
     EXPECT_EQ(PresentationPoseOf(world, blended, 0.25).Position, Vec3d(2.5f, 0.0f, 0.0f));
 
     const EntityId plain = world.CreateEntity();

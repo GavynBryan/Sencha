@@ -14,3 +14,5 @@ inline void RegisterControllerComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<ControllerComponents>();
 }
+
+void RegisterControllerRelocation(World& world);

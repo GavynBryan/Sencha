@@ -1,5 +1,7 @@
 #include <assets/cook/AnimationRootExtraction.h>
 
+#include <math/geometry/3d/RigidMapping.h>
+
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -63,13 +65,6 @@ namespace
         return Quat<float>::Slerp(KeyRotation(*track, at.A), KeyRotation(*track, at.B), at.T);
     }
 
-    // The heading of `turn` about +Y: 0 facing -Z, positive turning towards -X.
-    float HeadingOf(const Quat<float>& turn)
-    {
-        const Vec3d forward = turn.RotateVector(Vec3d{ 0.0f, 0.0f, -1.0f });
-        return std::atan2(-forward.X, -forward.Z);
-    }
-
     // `angle` moved by whole turns to within half a turn of `near`.
     float Unwrap(float angle, float near)
     {
@@ -126,7 +121,7 @@ bool ExtractAnimationRootMotion(AnimationClipData& clip, const SkeletonData& ske
     const Vec3d start = TranslationAt(translation, rest.BindTranslation, times.front());
     const Quat<float> startTurn = RotationAt(rotation, rest.BindRotation, times.front()).Inverse();
     const auto headingAt = [&](const Quat<float>& orientation, float near) {
-        return Unwrap(HeadingOf(orientation * startTurn), near);
+        return Unwrap(YawAboutWorldUp(orientation * startTurn), near);
     };
 
     AnimationRootCurve curve;

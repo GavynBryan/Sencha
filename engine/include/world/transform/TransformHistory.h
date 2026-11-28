@@ -1,10 +1,14 @@
 #pragma once
 
 #include <ecs/ComponentAnnotations.h>
+#include <ecs/ComponentTraits.h>
 #include <ecs/EntityId.h>
 #include <math/geometry/3d/Transform3d.h>
+#include <world/relocation/RelocationSerial.h>
 
+#include <cstdint>
 #include <optional>
+#include <tuple>
 
 class StoragePartitionSet;
 class World;
@@ -22,19 +26,40 @@ class World;
 // exactly as before, which is what keeps this off the cost of static geometry
 // and out of editor worlds entirely (it is runtime-only and never serialized).
 //
-// Snap means "there is no previous pose to blend from": a freshly spawned or
-// streamed-in entity, or one that was teleported. Blending across a teleport
-// would draw the entity streaking through the space between.
+// A snap means there is no previous pose to blend from: a freshly spawned or
+// streamed-in entity, or one teleported without a mapping. A relocation through
+// a rigid mapping is carried instead (docs/gameplay/relocation.md, "Presenting").
 //
 // Mesh and shadow-caster extraction consume this; they have to agree or a
 // shadow separates from the object casting it. Light extraction does not, so a
 // light on a history-carrying entity still steps at the tick rate.
 //=============================================================================
+enum class HistoryState : std::uint8_t
+{
+    // The next capture collapses both poses onto the pose it samples.
+    Snapping,
+    Steady,
+    // Relocated since the last capture.
+    Carrying,
+    // The blend the last capture opened crosses at CrossedAt.
+    Crossing,
+};
+
 struct SENCHA_COMPONENT("sencha.world_transform_history") WorldTransformHistory
 {
     Transform3f Previous;
     Transform3f Current;
-    bool Snap = true;
+    HistoryState State = HistoryState::Snapping;
+    // The crossing's rigid mapping, old space to new.
+    Quatf CrossingRotation = Quatf::Identity();
+    Vec3d CrossingTranslation = Vec3d::Zero();
+    float CrossedAt = 0.0f;
+};
+
+template <>
+struct ComponentTraits<WorldTransformHistory>
+{
+    using DerivedComponents = std::tuple<RelocationSerial>;
 };
 #if !defined(SENCHA_CODEGEN)
 #  include <world/transform/TransformHistory.sencha.h>
@@ -49,16 +74,21 @@ void CaptureWorldTransformHistory(World& world,
                                   bool snapAll);
 
 // Collapse one entity's history, for a teleport that the rest of the frame
-// should not blend through. Safe to call on an entity without history.
+// should not blend through. Safe to call on an entity without history. A snap
+// outranks a carried relocation, whichever was asked for first.
 void RequestTransformHistorySnap(World& world, EntityId entity);
+
+// A relocation through a rigid `mapping` at `tickFraction` of the tick the next
+// capture closes. A second one before that capture composes with the first.
+void CarryWorldTransformHistory(WorldTransformHistory& history, const Transform3f& mapping, float tickFraction);
 
 // Moves a parentless root just spawned to `position`, and `rotation` when given,
 // and gives it a history snapped there, so it is drawn between ticks from here
 // on without streaking from wherever its prefab was built.
 void PlaceSpawnedRoot(World& world, EntityId root, const Vec3d& position, std::optional<Quatf> rotation);
 
-// The pose to render: the blend between the last two ticks, or the current
-// pose when there is nothing meaningful to blend from.
+// The pose to render, and the one place that decides which side of a
+// relocation an entity is drawn on.
 [[nodiscard]] Transform3f ResolvePresentationPose(const WorldTransformHistory& history,
                                                   double alpha);
 

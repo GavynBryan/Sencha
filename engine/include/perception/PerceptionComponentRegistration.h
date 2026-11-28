@@ -13,3 +13,5 @@ inline void RegisterPerceptionComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<PerceptionComponents>();
 }
+
+void RegisterPerceptionRelocation(World& world);

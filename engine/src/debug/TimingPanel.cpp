@@ -148,6 +148,8 @@ void TimingPanel::Draw()
                 latest->PresentWaitLate,
                 estimateMs(latest->PresentLatencyEstimateSeconds),
                 estimateMs(latest->FrameLatencyEstimateSeconds));
+    ImGui::Text("Relocations: %u  (most in a frame: %u)", latest->World.Relocations,
+                latest->World.RelocationsHighWater);
     ImGui::Text("Lifecycle: %s  Discontinuity: %s  Render result: %d",
                 LifecycleName(latest->LifecycleState),
                 DiscontinuityName(latest->TemporalDiscontinuityReason),

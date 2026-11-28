@@ -307,7 +307,7 @@ crosses keeps its offset from the landmark of that name in the level it leaves
 and stands at the same offset from the landmark of that name in the level it
 enters. The request is refused `no_landmark` when it names none, or the loaded
 level has none of that name, and `not_carriable` for an entity that is gone, a
-body, a held record, parented, or has children without being the root of a
+body, a held record, parented, has children without being the root of a
 scene instance (its children would be lost at its first save, since such an
 entity is kept whole), and for a change that is not a `Travel`.
 
@@ -328,23 +328,28 @@ entity is kept whole), and for a change that is not a `Travel`.
    lifetime forgets; only a new game, or a restore of a save written before it
    left, does. So entering the old level `Authored`, or a rest for an
    `at_restore` entity, puts no second copy there.
-4. **What it referred to is cleared on arrival:** its navigation order is
-   given again (below), so its route is planned again; its decision agent lets
-   go of its claim, target, destination and contact (`ForgetDecisionPlace`);
-   its observation memory empties; its sensor pairs are forgotten; an effect
-   whose owner stayed behind ended when the owner unloaded.
-5. **Arrival.** Once the level is resident the landmark is looked for as a
-   body's arrival is; it stands at the landmark composed with its offset, in the
-   resident zone whose bounds hold that place (a drop's rule, `ZonePlacement`),
-   its velocities turned with the landmark, and, in a game that keeps level
-   state, marked `KeptWithZone` (`KeepArrivedWithZone`, which lets it keep an
-   authored id). It is then a gained member of the level it entered, saved with
-   that zone, and a save asked for during the change, which waits for the
-   bodies, holds it there.
-6. **Its order is issued again.** A navigation order in place when it left is
-   requested again on arrival with a fresh id, a point order's point moved with
-   the landmark, so a follower of a kept body keeps following.
-7. **The level it enters can find it.** Its landmark receives `level.arrived`,
+4. **Arrival is a relocation.** Once the level is resident the landmark is
+   looked for as a body's arrival is, and the carried entity is relocated
+   (`RelocateEntity`, `docs/gameplay/relocation.md`) through the mapping from
+   the landmark it left to the landmark it enters, into the resident zone whose
+   bounds hold its new place (a drop's rule, `ZonePlacement`). So it keeps its
+   offset from the landmark, and everything the relocation rules cover follows:
+   its velocities and aim turn with the landmark, its support is found again,
+   a tether to a point keeps its point moved with the landmark, its contact
+   lines draw home, its navigation order is given again with a fresh id and a point order's
+   point moved with the landmark (so a follower of a kept body keeps following),
+   its decision agent lets go of its claim, target, destination and contact
+   (`ForgetDecisionPlace`), its observation memory empties and its sensor pairs
+   are forgotten. An effect whose owner stayed behind ended when the owner
+   unloaded. Its history and each descendant's snap, since they were out of
+   every simulation during the load. A relocation the rules refuse loses the
+   entity like a missing landmark does, and the log names the component.
+5. **It is kept where it arrived.** In a game that keeps level state it is
+   marked `KeptWithZone` (`KeepArrivedWithZone`, which lets it keep an authored
+   id). It is then a gained member of the level it entered, saved with that
+   zone, and a save asked for during the change, which waits for the bodies,
+   holds it there.
+6. **The level it enters can find it.** Its landmark receives `level.arrived`,
    once per carried entity, with the entity as instigator; responses on the
    landmark filter by the arrival's tags, and later addressing is by the sensors
    it enters.

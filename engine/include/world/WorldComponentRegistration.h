@@ -4,6 +4,7 @@
 #include <world/held/Held.h>
 #include <world/LevelLandmark.h>
 #include <world/identity/PersistentIdComponent.h>
+#include <world/relocation/RelocationSerial.h>
 #include <world/scene/SceneInstance.h>
 #include <world/transform/PresentationOffset.h>
 #include <world/transform/TransformComponents.h>
@@ -37,9 +38,13 @@ using WorldComponents = ComponentSet<
     // Where a body arrives when a level change or a save names it.
     LevelLandmark,
     // A run-time entity its zone keeps: docs/gameplay/saves.md.
-    KeptWithZone>;
+    KeptWithZone,
+    // How often it was moved discontinuously: docs/gameplay/relocation.md.
+    RelocationSerial>;
 
 inline void RegisterWorldComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<WorldComponents>();
 }
+
+void RegisterWorldRelocation(World& world);

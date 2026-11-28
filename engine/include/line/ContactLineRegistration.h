@@ -11,3 +11,6 @@ inline void RegisterContactLineComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<ContactLineComponents>();
 }
+
+// A line out from something relocated draws home (docs/gameplay/relocation.md).
+void RegisterContactLineRelocation(World& world);

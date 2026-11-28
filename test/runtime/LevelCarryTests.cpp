@@ -1,8 +1,10 @@
 #include <abilities/AbilityKit.h>
+#include <controller/LookOrientation.h>
 #include <app/LevelCarry.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/ILogSink.h>
 #include <core/logging/LoggingProvider.h>
+#include <ecs/StoragePartitionSet.h>
 #include <ecs/WorldComponentSchema.h>
 #include <effects/ActiveEffect.h>
 #include <effects/EffectRegistry.h>
@@ -13,22 +15,26 @@
 #include <inventory/InventoryComponents.h>
 #include <inventory/InventoryKit.h>
 #include <logic/Claims.h>
+#include <movement/components/CharacterFacts.h>
 #include <logic/decision/DecisionAgent.h>
 #include <navigation/NavAgent.h>
 #include <navigation/NavAgentRequests.h>
 #include <perception/ObservationMemory.h>
 #include <physics/SensorOverlaps.h>
+#include <physics/components/RigidBody.h>
 #include <world/ComponentRegistrar.h>
 #include <world/LevelLandmark.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
 #include <world/held/HeldRecords.h>
+#include <world/relocation/RelocationRules.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/serialization/SceneSerializationContext.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformHistory.h>
 #include <zone/KeptWithZone.h>
 #include <zone/ZonePackageImporter.h>
 #include <zone/ZonePlacement.h>
@@ -41,6 +47,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
@@ -431,4 +438,102 @@ TEST(LevelCarry, WhatIsHeldWhenTheLevelItEntersHasNoSuchLandmarkIsLostAndReporte
     EXPECT_FALSE(world.Carry.Holds());
     ASSERT_EQ(world.Log.Errors.size(), 1u);
     EXPECT_NE(world.Log.Errors[0].find("lift"), std::string::npos);
+}
+
+namespace
+{
+    EntityId PlaceRuntime(World& world, StoragePartitionId partition, const Transform3f& pose,
+                          EntityId parent = EntityId{})
+    {
+        const EntityId entity = world.CreateEntity(partition);
+        world.AddComponent<LocalTransform>(entity, LocalTransform{ pose });
+        world.AddComponent<WorldTransform>(entity, WorldTransform{ parent.IsValid()
+                                                                        ? world.TryGet<WorldTransform>(parent)->Value * pose
+                                                                        : pose });
+        if (parent.IsValid())
+            world.AddComponent<Parent>(entity, Parent{ parent });
+        world.AddComponent<WorldTransformHistory>(entity, WorldTransformHistory{ .Previous = pose,
+                                                                                .Current = pose,
+                                                                                .State = HistoryState::Steady });
+        return entity;
+    }
+}
+
+TEST(LevelCarry, ACarriedRootAndItsChildArriveTurnedWithTheLandmarkAndBothHistoriesSnap)
+{
+    CarryWorld world;
+    world.EnterCellar();
+    World& entities = world.Entities();
+    const EntityId cart = PlaceRuntime(entities, world.PartitionOf(kRoom), At(kCrateAt));
+    const EntityId load = PlaceRuntime(entities, world.PartitionOf(kRoom), At(Vec3d(0.0, 1.0, 0.0)), cart);
+
+    world.TakeOut({ cart });
+    world.Leave(kRoom);
+    world.EnterAttic();
+    world.Arrive();
+
+    const Vec3d arrived = kThereAt + kQuarterTurn.RotateVector(kCrateAt - kLiftAt);
+    EXPECT_TRUE(Near(entities.TryGet<LocalTransform>(cart)->Value.Position, arrived));
+    EXPECT_TRUE(entities.TryGet<LocalTransform>(cart)->Value.Rotation.NearlyEquals(kQuarterTurn, 1e-5f));
+    EXPECT_TRUE(Near(entities.TryGet<LocalTransform>(load)->Value.Position, Vec3d(0.0, 1.0, 0.0)));
+    EXPECT_TRUE(Near(entities.TryGet<WorldTransform>(load)->Value.Position,
+                     arrived + kQuarterTurn.RotateVector(Vec3d(0.0, 1.0, 0.0))));
+    EXPECT_EQ(entities.GetEntityPartition(load), world.PartitionOf(kHall));
+    for (const EntityId member : { cart, load })
+        EXPECT_EQ(entities.TryGet<WorldTransformHistory>(member)->State, HistoryState::Snapping)
+            << "out of every simulation for the load, so no motion is carried across";
+    StoragePartitionSet hall;
+    hall.Add(world.PartitionOf(kHall));
+    CaptureWorldTransformHistory(entities, hall, false);
+    for (const EntityId member : { cart, load })
+        EXPECT_TRUE(Near(ResolvePresentationPose(*entities.TryGet<WorldTransformHistory>(member), 0.0).Position,
+                         entities.TryGet<WorldTransform>(member)->Value.Position))
+            << "drawn where it arrived, never at the level it left";
+}
+
+TEST(LevelCarry, ACarriedEntitysVelocitiesAndAimTurnWithTheLandmark)
+{
+    CarryWorld world;
+    world.EnterCellar();
+    World& entities = world.Entities();
+    const EntityId crate = world.Resolve(kCrate);
+    const Vec3d east(1.0f, 0.0f, 0.0f);
+    entities.AddComponent<KinematicState>(crate, KinematicState{ .Velocity = east });
+    RigidBody body;
+    body.LinearVelocity = east;
+    body.AngularVelocity = east;
+    entities.AddComponent<RigidBody>(crate, body);
+    entities.AddComponent<LookOrientation>(crate, LookOrientation{ .Yaw = 0.3f });
+
+    world.TakeOut({ crate });
+    world.Leave(kRoom);
+    world.EnterAttic();
+    world.Arrive();
+
+    const Vec3d turned = kQuarterTurn.RotateVector(east);
+    EXPECT_TRUE(Near(entities.TryGet<KinematicState>(crate)->Velocity, turned));
+    EXPECT_TRUE(Near(entities.TryGet<RigidBody>(crate)->LinearVelocity, turned));
+    EXPECT_TRUE(Near(entities.TryGet<RigidBody>(crate)->AngularVelocity, turned));
+    EXPECT_NEAR(entities.TryGet<LookOrientation>(crate)->Yaw, 0.3f + std::numbers::pi_v<float> * 0.5f, 1e-4f)
+        << "an aim turns with the landmark, as its rotation always did";
+}
+
+TEST(LevelCarry, WhatARelocationRefusesIsLostAndTheLogNamesWhy)
+{
+    CarryWorld world;
+    world.EnterCellar();
+    World& entities = world.Entities();
+    const EntityId crate = world.Resolve(kCrate);
+    entities.AddComponent<AimFacing>(crate);
+    RefuseRelocation<AimFacing>(entities);
+
+    world.TakeOut({ crate });
+    world.Leave(kRoom);
+    world.EnterAttic();
+    world.Arrive();
+
+    EXPECT_FALSE(entities.IsAlive(crate));
+    EXPECT_FALSE(world.Carry.Holds());
+    ASSERT_EQ(world.Log.Errors.size(), 1u);
+    EXPECT_NE(world.Log.Errors[0].find("sencha.aim_facing"), std::string::npos) << world.Log.Errors[0];
 }

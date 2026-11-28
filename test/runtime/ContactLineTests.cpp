@@ -35,6 +35,7 @@
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/SimulationAuthority.h>
+#include <world/relocation/Relocation.h>
 #include <world/transform/TransformComponents.h>
 
 #include <optional>
@@ -479,6 +480,30 @@ TEST_F(ContactLines, AKeptLineLeashesItsInstigator)
     RetractKeptContactLines(WorldState, Shooter);
     Tick(1);
     EXPECT_FALSE(WorldState.TryGet<TetherSession>(Shooter)->Owner.IsSet()) << "a line drawn home holds nobody";
+}
+
+TEST_F(ContactLines, ARelocatedInstigatorIsNotLeashedBackTowardTheTipItLeft)
+{
+    Holder = LeaseOwner{ .Entity = Shooter, .Key = 7 };
+    Keep = true;
+    LeashSlack = 2.0f;
+    Shape();
+    WorldState.AddComponent<TetherSession>(Shooter, TetherSession{});
+    RegisterEngineRelocation(WorldState);
+    Wall(Vec3d(10.5f, 0.0f, 0.0f), Vec3d(0.5f, 3.0f, 3.0f));
+    Throw(Vec3d(10.0f, 0.0f, 0.0f));
+    Tick(20);
+    LetGo();
+    Tick(2);
+    ASSERT_TRUE(WorldState.TryGet<TetherSession>(Shooter)->Owner.IsSet());
+
+    const Transform3f away{ Vec3d(500.0f, 0.0f, 0.0f), Quatf::Identity(), Vec3d::One() };
+    ASSERT_EQ(RelocateEntity(WorldState, Shooter, RigidRelocation{ .Mapping = away }).Outcome,
+              RelocationOutcome::Relocated);
+    Tick(1);
+
+    EXPECT_FALSE(WorldState.TryGet<TetherSession>(Shooter)->Owner.IsSet())
+        << "a leash re-taken here would haul it back toward a tip in the space it left";
 }
 
 TEST_F(ContactLines, ALineLeftStuckCanBeFoundAndMeasuredBack)

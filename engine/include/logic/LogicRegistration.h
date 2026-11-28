@@ -28,3 +28,5 @@ inline void RegisterLogicComponents(ComponentRegistrar& registrar)
     registrar.AddSerializer(MakeVerbRelaySerializer());
     registrar.AddSerializer(MakeResponsesSerializer());
 }
+
+void RegisterLogicRelocation(World& world);

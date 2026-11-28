@@ -61,7 +61,7 @@ TEST(TransformHistory, FirstCaptureHasNothingToBlendFrom)
     const WorldTransformHistory& history = world.HistoryOf(entity);
     EXPECT_FLOAT_EQ(history.Previous.Position.X, 5.0f);
     EXPECT_FLOAT_EQ(history.Current.Position.X, 5.0f);
-    EXPECT_FALSE(history.Snap);
+    EXPECT_EQ(history.State, HistoryState::Steady);
     EXPECT_FLOAT_EQ(ResolvePresentationPose(history, 0.0).Position.X, 5.0f);
 }
 

@@ -2007,3 +2007,38 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Consumer:** none yet.
 - **Trigger:** a plan that needs "this authored entity is gone" in the same
   patch document as component edits.
+
+## Discontinuous moves without a mapping
+
+- **What:** `RelocationSerial` advances only through `RelocateEntity`. A move
+  that places an entity somewhere rather than carrying it through a rigid
+  mapping snaps its transform history and leaves the serial alone: a level
+  change placing a kept body at its arrival landmark (`LevelChange::MoveBody`),
+  the dock clamp holding a pawn at a zone that is not ready
+  (`templates/fps/src/PawnStreaming.cpp`), and `PlaceSpawnedRoot`. A consumer
+  comparing serials sees continuous motion across them.
+- **Where:** `engine/src/app/LevelChange.cpp`, `templates/fps/src/PawnStreaming.cpp`,
+  `engine/src/world/transform/TransformHistory.cpp`; the serial in
+  `engine/include/world/relocation/RelocationSerial.h`.
+- **Consumer:** remote interpolation that holds across a serial change, which
+  the spatial portal suite's replicated traversal stage adds.
+- **Trigger:** the first serial consumer that also sees one of these moves: a
+  networked level change (see "Changing level inside a network session"), or a
+  replicated pawn the dock clamp corrects. Give a placement the serial without
+  a mapping (advance it and record no mapping in `FrameRelocations`), rather
+  than a second counter.
+
+## A contact line drawing home across a relocation
+
+- **What:** a relocation starts the retract of every contact line out from a
+  member (`RetractContactLinesOf`), but the line's tip stays in the space the
+  instigator left. For up to `kMostRetractSeconds` the drawn span stretches from
+  that tip to the relocated instigator. A level change never shows it, since the
+  old zone unloads; a crossing through a link would. Either end the line at once
+  (the system's own `Remove`, which also ends a throw still in the air), or map
+  the tip through the relocation so it draws home on the instigator's side.
+- **Where:** `engine/src/line/ContactLineRelocation.cpp`,
+  `engine/src/line/ContactLineSystem.cpp` (`RetractContactLinesOf`, `DrawIn`).
+- **Consumer:** character traversal through a link.
+- **Trigger:** Stage 3 of the spatial portal suite, character traversal through
+  a link.

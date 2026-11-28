@@ -118,6 +118,19 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterAttachmentComponents(registrar);
 }
 
+void RegisterEngineRelocation(World& world)
+{
+    RegisterWorldRelocation(world);
+    RegisterNavigationRelocation(world);
+    RegisterPhysicsRelocation(world);
+    RegisterMovementRelocation(world);
+    RegisterControllerRelocation(world);
+    RegisterLogicRelocation(world);
+    RegisterPerceptionRelocation(world);
+    RegisterProjectileRelocation(world);
+    RegisterContactLineRelocation(world);
+}
+
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)
 {
     ComponentRegistrar registrar(&schema, nullptr, nullptr);

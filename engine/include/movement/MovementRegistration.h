@@ -73,6 +73,8 @@ void RegisterMovementComponents(World& world);
 // replays the hook, so a name declared in one is a name declared in all.
 void InstallMovementVocabulary(World& world);
 
+void RegisterMovementRelocation(World& world);
+
 // The default MoveSpeed attribute and the Jump ability/effects, authored as
 // data.
 void RegisterDefaultMovementAbilities(World& world);

@@ -35,11 +35,11 @@ public:
     using ScopeOf = std::function<ZoneStateScope(EntityId)>;
 
     // Before the level it leaves unloads. Each entity and its descendants leave for the holding partition,
-    // its place from the landmark is kept, and its zone records it departed.
+    // the landmark's place is kept, and its zone records it departed.
     void TakeOut(RuntimeWorld& runtime, std::span<const EntityId> entities, std::string landmark,
                  const ScopeOf& scopeOf);
-    // Once the level it enters is resident: each stands at the landmark of the same name, in the zone holding
-    // that place, as a member that zone keeps. Nothing is held after it.
+    // Once the level it enters is resident: each is relocated between the two landmarks into the zone holding
+    // its new place, as a member that zone keeps. Nothing is held after it.
     void Arrive(RuntimeWorld& runtime, ResponsesSystem* responses, Logger& log);
     // A change that failed or was replaced: what is held is destroyed and logged.
     void Drop(RuntimeWorld& runtime, Logger& log, std::string_view why);
@@ -51,7 +51,6 @@ private:
     {
         EntityId Root;
         std::vector<EntityId> Group;
-        Transform3f Offset = Transform3f::Identity();
     };
 
     std::string Landmark;

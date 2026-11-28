@@ -12,3 +12,5 @@ inline void RegisterProjectileComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<ProjectileComponents>();
 }
+
+void RegisterProjectileRelocation(World& world);
