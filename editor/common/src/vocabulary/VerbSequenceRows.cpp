@@ -1,9 +1,12 @@
 #include "vocabulary/VerbSequenceRows.h"
 
 #include "data/JsonObjectEdit.h"
+#include "properties/EntityReferenceProperty.h"
 #include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 #include "vocabulary/AuthoredConstantText.h"
+
+#include <core/identity/Id.h>
 
 #include <algorithm>
 #include <array>
@@ -307,9 +310,17 @@ void ArgumentRows(const std::string& prefix, const DataFieldSchema& contract, co
             break;
         }
         case ArgumentSource::Entity:
-            row.Children.push_back(TextProperty(key + ".value", "Identity", ReadMemberString(*argument, "entity"),
-                                                "The entity's persistent identity, sixteen hex digits."));
+        {
+            PropertyNode entity = EntityReferenceProperty(key + ".value", "Entity",
+                                                          ReadMemberString(*argument, "entity"), "None",
+                                                          "A placed entity, wherever in the world it is.");
+            // A command cannot run without what it requires, so that is never cleared.
+            if (field.Required)
+                std::erase_if(entity.Descriptor.Verbs,
+                              [](const PropertyVerb& verb) { return verb.Id == EntityReferenceVerbs::Clear; });
+            row.Children.push_back(std::move(entity));
             break;
+        }
         case ArgumentSource::Result:
         {
             const std::vector<std::string_view> options = ResultsFor(field, results);
@@ -572,7 +583,13 @@ std::optional<JsonValue> ArgumentValue(const DataFieldSchema& field, const JsonV
             return std::nullopt;
         return Port(value);
     }
-    case ArgumentSource::Entity: return JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(value)) } });
+    case ArgumentSource::Entity:
+        // Cleared, an argument it may go without is unset; one it requires is refused.
+        if (value.empty())
+            return field.Required ? std::nullopt : std::optional<JsonValue>(JsonValue());
+        if (!PersistentEntityIdFromString(value).has_value())
+            return std::nullopt;
+        return JsonValue(JsonValue::Object{ { "entity", JsonValue(std::string(value)) } });
     case ArgumentSource::Result:
     {
         const std::vector<std::string_view> fitting = ResultsFor(field, results);

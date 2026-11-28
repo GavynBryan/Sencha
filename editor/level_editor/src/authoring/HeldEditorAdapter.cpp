@@ -1,16 +1,11 @@
 #include "HeldEditorAdapter.h"
 
 #include "ComponentValueCommit.h"
-#include "document/EntityLabel.h"
 #include "properties/SettingProperties.h"
 
-#include <ecs/Query.h>
 #include <world/held/Held.h>
 #include <world/held/HeldRecordIndex.h>
-#include <world/identity/PersistentIdComponent.h>
 
-#include <algorithm>
-#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,34 +13,16 @@
 
 namespace
 {
-    constexpr std::string_view kWorld = "The world";
+    constexpr std::string_view kHolder = "holder";
 
-    struct HolderChoice
+    // A holder is another entity of the same document, never one it holds:
+    // what it holds is parked with the zone it is in.
+    EntityReferenceFilter Holders(const EditorComponentInspectorContext& context)
     {
-        std::string Label;
-        PersistableRef Holder;
-    };
-
-    std::vector<HolderChoice> HolderChoices(const EditorComponentInspectorContext& context)
-    {
-        const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-        std::vector<HolderChoice> choices;
-        Query<Read<PersistentIdComponent>> identified(world);
-        identified.ForEachChunk([&](auto& view) {
-            const auto ids = view.template Read<PersistentIdComponent>();
-            for (std::uint32_t row = 0; row < view.Count(); ++row)
-            {
-                const EntityId entity = view.Entity(row);
-                if (!ids[row].Id.IsValid() || IsHeldWithin(world, entity, context.Entity))
-                    continue;
-                choices.push_back({ std::format("{} ({})", EntityLabel(context.Document, entity),
-                                                PersistentEntityIdToString(ids[row].Id)),
-                                    PersistableRef{ .Entity = entity, .Target = ids[row].Id } });
-            }
-        });
-        std::ranges::sort(choices, {}, &HolderChoice::Label);
-        choices.insert(choices.begin(), HolderChoice{ std::string(kWorld), PersistableRef{} });
-        return choices;
+        return EntityReferenceFilter{ .Within = &context.Document,
+                                      .Admits = [held = context.Entity](const EntityReferenceSubject& subject) {
+                                          return !IsHeldWithin(subject.Components, subject.Entity, held);
+                                      } };
     }
 
     class HeldEditorAdapter final : public IEditorComponentAdapter
@@ -60,20 +37,26 @@ namespace
             const Held* held = world.TryGet<Held>(context.Entity);
             if (held == nullptr)
                 return {};
-            std::vector<HolderChoice> choices = HolderChoices(context);
-            auto current = std::ranges::find(choices, held->Holder.Target,
-                                             [](const HolderChoice& choice) { return choice.Holder.Target; });
-            if (current == choices.end())
-                current = choices.insert(choices.end(), { std::format("Not in this document ({})",
-                                                                      PersistentEntityIdToString(held->Holder.Target)),
-                                                          held->Holder });
-            std::vector<std::string_view> options;
-            for (const HolderChoice& choice : choices)
-                options.push_back(choice.Label);
-            return { ChoiceProperty("holder", "Holder", options, static_cast<std::size_t>(current - choices.begin()),
-                                    "What holds it: a chest's contents, a character's possessions, or the world's."),
+            PropertyNode holder = EntityReferenceProperty(
+                std::string(kHolder), "Holder",
+                held->Holder.Target.IsValid() ? PersistentEntityIdToString(held->Holder.Target) : std::string{},
+                "The world", "What holds it: a chest's contents, a character's possessions, or the world's.");
+            if (held->Holder.Target.IsValid() && !context.Scene.EntityWithPersistentId(held->Holder.Target).IsValid())
+            {
+                EntityReferenceReading reading = ReadEntityReference(context.World, holder.Value);
+                if (reading.State == EntityReferenceState::Loaded)
+                    reading.Text += ", not in this document";
+                ShowEntityReference(holder, reading);
+            }
+            return { std::move(holder),
                      NumberProperty("position", "Position", static_cast<double>(held->Position), 0.0, 65535.0, 1.0,
                                     "Its place among what its holder holds.") };
+        }
+
+        std::optional<EntityReferenceFilter> ReferenceFilter(const EditorComponentInspectorContext& context,
+                                                             std::string_view key) const override
+        {
+            return key == kHolder ? std::optional(Holders(context)) : std::nullopt;
         }
 
         PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
@@ -84,13 +67,19 @@ namespace
             if (held == nullptr)
                 return PropertyEditResult::Gone;
             Held after = *held;
-            if (key == "holder")
+            if (key == kHolder)
             {
-                const std::vector<HolderChoice> choices = HolderChoices(context);
-                const auto chosen = std::ranges::find(choices, value, &HolderChoice::Label);
-                if (chosen == choices.end())
-                    return PropertyEditResult::Refused;
-                after.Holder = chosen->Holder;
+                after.Holder = {};
+                if (!value.empty())
+                {
+                    const std::optional<PersistentEntityId> target = PersistentEntityIdFromString(value);
+                    const std::optional<EntityReferenceSubject> holder =
+                        target.has_value() ? AdmittedEntityReference(context.World, Holders(context), *target)
+                                           : std::nullopt;
+                    if (!holder.has_value())
+                        return PropertyEditResult::Refused;
+                    after.Holder = PersistableRef{ .Entity = holder->Entity, .Target = *target };
+                }
             }
             else if (key == "position")
             {

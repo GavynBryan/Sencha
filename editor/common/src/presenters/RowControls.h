@@ -20,8 +20,9 @@ inline constexpr std::string_view LongText = "longtext"; // text that runs over 
 inline constexpr std::string_view Number = "number";     // typed or dragged; Number, Min and Max when bounded
 inline constexpr std::string_view Vector = "vector";     // Parts side by side, Choices naming each
 inline constexpr std::string_view Plot = "plot";         // Parts are bar heights, left to right
+inline constexpr std::string_view Entity = "entity";     // Value names an entity; Parts[0] is how it reads
 
 // Every one, in the order a model's author meets them.
 inline constexpr std::array kAll = { Text, Range, Choice, Toggle, Asset, Color, Section, Action, LongText, Number, Vector,
-                                     Plot };
+                                     Plot, Entity };
 } // namespace RowControls

@@ -12,6 +12,8 @@ constexpr std::size_t kChoiceLimit = 4;
 constexpr std::size_t kActionLimit = 3;
 constexpr std::size_t kSummaryLimit = 4;
 
+// An entity reference is read out but never a fan: what it may name is a
+// list for the sheet's picker (More...), not a handful of petals.
 bool Offered(const PropertyNode& node, bool assets)
 {
     const PropertyDescriptor& d = node.Descriptor;
@@ -21,11 +23,16 @@ bool Offered(const PropertyNode& node, bool assets)
         || (d.Kind == PropertyKind::Asset && assets);
 }
 
+const std::string& ShownValue(const PropertyNode& node)
+{
+    return node.Reading.empty() ? node.Value : node.Reading;
+}
+
 bool ReadsOut(const PropertyNode& node)
 {
     const PropertyKind kind = node.Descriptor.Kind;
     return kind != PropertyKind::Group && kind != PropertyKind::Unsupported && !node.Descriptor.Advanced
-        && !node.Value.empty();
+        && !ShownValue(node).empty();
 }
 
 template <typename Visit>
@@ -76,7 +83,7 @@ void ContextMenuModel::Build(const WorkspaceSelectionFacet& selection)
                 continue;
             Walk(sections[section].Source->Nodes(), [&](const PropertyNode& node) {
                 if (Lines.size() <= kSummaryLimit && ReadsOut(node) && !details)
-                    Lines.push_back(node.Descriptor.Label + "  " + node.Value);
+                    Lines.push_back(node.Descriptor.Label + "  " + ShownValue(node));
                 if (choices >= kChoiceLimit || !Offered(node, assets))
                     return;
                 Entry entry{ .Kind = EntryKind::Choice, .Label = node.Descriptor.Label, .InDetails = details,
@@ -126,7 +133,7 @@ void ContextMenuModel::Build(const WorkspaceSelectionFacet& selection)
             if (section.Source != nullptr)
                 Walk(section.Source->Nodes(), [&](const PropertyNode& node) {
                     if (Lines.size() <= kSummaryLimit && ReadsOut(node))
-                        Lines.push_back(node.Descriptor.Label + "  " + node.Value);
+                        Lines.push_back(node.Descriptor.Label + "  " + ShownValue(node));
                 });
 
     const ActionContextStack* actions = Callbacks.Actions ? Callbacks.Actions() : nullptr;

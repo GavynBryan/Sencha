@@ -1,5 +1,7 @@
 #include "vocabulary/VerbSequenceRows.h"
 
+#include "properties/EntityReferenceProperty.h"
+
 #include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
 #include <core/json/JsonParser.h>
@@ -10,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <source_location>
@@ -101,6 +104,33 @@ TEST_F(VerbSequenceRowsTest, AValueTheArgumentCannotTakeIsRefused)
     EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "nowhere").has_value());
     EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.verb", "movement.burst.typo").has_value());
     EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k3.verb", "movement.launch").has_value());
+}
+
+// A command aimed at one placed entity names it by its persistent identity,
+// through the entity-reference kind the inspector picks it with.
+TEST_F(VerbSequenceRowsTest, AnArgumentFromAnEntityIsAnEntityReference)
+{
+    JsonValue sequence = Must(ActOnVerbSequence(EmptyVerbSequence(), Vocabulary, "commands", "add", "movement.launch"));
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.source", "Entity"));
+    const std::vector<PropertyNode> unsetRows = VerbSequenceRows(sequence, Vocabulary, {});
+    const PropertyNode* unset = Find(unsetRows, "k0.arg.target.value");
+    ASSERT_NE(unset, nullptr);
+    EXPECT_EQ(unset->Descriptor.Kind, PropertyKind::EntityReference);
+    EXPECT_EQ(unset->Reading, "None");
+
+    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "00000000000c4e57"));
+    const JsonValue& target = *sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target");
+    EXPECT_EQ(JsonStringify(target), R"({"entity":"00000000000c4e57"})");
+    const std::vector<PropertyNode> rows = VerbSequenceRows(sequence, Vocabulary, {});
+    EXPECT_EQ(Find(rows, "k0.arg.target.value")->Value, "00000000000c4e57");
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "nowhere").has_value())
+        << "text that is no persistent identity was taken";
+
+    // An empty identity is refused at run time, so a target the launch requires is never cleared.
+    const PropertyNode* picked = Find(rows, "k0.arg.target.value");
+    EXPECT_TRUE(std::ranges::none_of(picked->Descriptor.Verbs,
+                                     [](const PropertyVerb& verb) { return verb.Id == EntityReferenceVerbs::Clear; }));
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "").has_value());
 }
 
 TEST_F(VerbSequenceRowsTest, CommandsReorderAndAChangedVerbKeepsWhatItStillTakes)

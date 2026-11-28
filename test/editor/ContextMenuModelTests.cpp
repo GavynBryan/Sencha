@@ -187,3 +187,36 @@ TEST_F(ContextMenuModelTest, AnAssetIsChosenFromWhatIsToHandOrBrowsedFor)
     EXPECT_EQ(Invoked, (std::vector<std::string>{ "browse" }));
     EXPECT_EQ(Light.Values["material"], "asset://materials/brick.smat");
 }
+
+namespace
+{
+class HolderSource final : public ReadOnlyPropertySource
+{
+public:
+    [[nodiscard]] std::vector<PropertyNode> Nodes() const override
+    {
+        PropertyNode holder = EntityReferenceProperty("holder", "Holder", "00000000000c4e57", "The world");
+        holder.Reading = "Chest \xC2\xB7 Cellar";
+        return { holder };
+    }
+};
+} // namespace
+
+TEST_F(ContextMenuModelTest, AnEntityReferenceReadsAsItsTargetAndIsLeftToTheSheet)
+{
+    HolderSource holder;
+    ContextMenuModel model{ { .Aim = {},
+                              .Selection =
+                                  [&] {
+                                      return WorkspaceSelectionFacet{
+                                          .Title = "arrows", .Sections = { { .Heading = "Held", .Source = &holder } } };
+                                  },
+                              .Actions = {},
+                              .Details = {} },
+                            Catalog };
+    model.Opening({});
+    const std::vector<std::string> summary = model.Summary();
+    ASSERT_EQ(summary.size(), 2u);
+    EXPECT_EQ(summary[1], "Holder  Chest \xC2\xB7 Cellar") << "a reference read out as its raw identity";
+    EXPECT_EQ(IndexOf(model, "Holder"), -1) << "a reference is picked on the sheet, not from a fan";
+}

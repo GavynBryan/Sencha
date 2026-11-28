@@ -6,6 +6,7 @@
 // path would have shown up as an unrelated failure or not at all.
 
 #include "authoring/EditorComponentAdapter.h"
+#include "authoring/EntityReferences.h"
 #include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/EquipmentStateEditorAdapter.h"
 #include "authoring/HeldEditorAdapter.h"
@@ -14,7 +15,6 @@
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
-#include "document/EntityLabel.h"
 #include "document/WorldDocument.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/ValueCommand.h"
@@ -273,38 +273,42 @@ TEST_F(ComponentEditCommandTest, AnEntrysCountStaysWithinWhatItsStackHolds)
 TEST_F(ComponentEditCommandTest, AHeldRecordsHolderIsPickedAmongTheDocumentsEntitiesAndUndone)
 {
     WorldDocument world(Logging);
+    EditorDocument& document = world.FocusDocument();
     SelectionContext selectionContext;
     SelectionService selection{ selectionContext };
-    World& components = Components();
+    World& components = document.GetScene().GetRegistry().Components;
     const auto identified = [&](PersistentEntityId id) {
-        const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
-        if (components.HasComponent<PersistentIdComponent>(entity))
-            components.TryGet<PersistentIdComponent>(entity)->Id = id;
-        else
-            components.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
+        const EntityId entity = document.GetScene().CreateEntity(Vec3d::Zero());
+        components.RemoveComponent<PersistentIdComponent>(entity);
+        components.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
         return entity;
     };
-    const EntityId chest = identified(PersistentEntityId{ 0xC4E57 });
+    (void)identified(PersistentEntityId{ 0xC4E57 });
     const EntityId arrows = identified(PersistentEntityId{ 0xA770 });
     components.AddComponent<Held>(arrows, Held{});
     const EntityId inside = identified(PersistentEntityId{ 0x1D1E });
     components.AddComponent<Held>(inside, Held{ .Holder = { .Entity = arrows, .Target = PersistentEntityId{ 0xA770 } } });
 
     const std::unique_ptr<IEditorComponentAdapter> held = MakeHeldEditorAdapter();
-    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+    EditorComponentInspectorContext context{ .World = world, .Document = document, .Scene = document.GetScene(),
                                              .Selection = selection, .Commands = Commands, .Entity = arrows };
     const std::vector<PropertyNode> rows = held->InspectorNodes(context);
     ASSERT_FALSE(rows.empty());
-    const std::vector<std::string>& choices = rows.front().Descriptor.Choices;
-    const std::string chestLabel = EntityLabel(Document, chest) + " (00000000000c4e57)";
-    EXPECT_EQ(choices.front(), "The world");
-    EXPECT_NE(std::ranges::find(choices, chestLabel), choices.end());
-    EXPECT_EQ(std::ranges::find(choices, EntityLabel(Document, arrows) + " (000000000000a770)"), choices.end());
-    EXPECT_EQ(std::ranges::find(choices, EntityLabel(Document, inside) + " (0000000000001d1e)"), choices.end())
-        << "a record cannot be held by what it holds";
+    EXPECT_EQ(rows.front().Descriptor.Kind, PropertyKind::EntityReference);
+    EXPECT_EQ(rows.front().Reading, "The world");
+    const std::optional<EntityReferenceFilter> holders = held->ReferenceFilter(context, "holder");
+    ASSERT_TRUE(holders.has_value());
+    const std::vector<EntityReferenceChoice> choices = EntityReferenceCandidates(world, *holders);
+    const auto offered = [&](std::string_view value) {
+        return std::ranges::find(choices, value, &EntityReferenceChoice::Value) != choices.end();
+    };
+    EXPECT_TRUE(offered("00000000000c4e57"));
+    EXPECT_FALSE(offered("000000000000a770"));
+    EXPECT_FALSE(offered("0000000000001d1e")) << "a record cannot be held by what it holds";
 
-    ASSERT_EQ(held->SetInspectorValue(context, "holder", chestLabel), PropertyEditResult::Applied);
+    ASSERT_EQ(held->SetInspectorValue(context, "holder", "00000000000c4e57"), PropertyEditResult::Applied);
     EXPECT_EQ(components.TryGet<Held>(arrows)->Holder.Target, PersistentEntityId{ 0xC4E57 });
+    EXPECT_EQ(held->SetInspectorValue(context, "holder", "0000000000001d1e"), PropertyEditResult::Refused);
     EXPECT_EQ(held->SetInspectorValue(context, "holder", "Nobody here"), PropertyEditResult::Refused);
     Commands.Undo();
     EXPECT_FALSE(components.TryGet<Held>(arrows)->Holder.Target.IsValid());
@@ -314,15 +318,14 @@ TEST_F(ComponentEditCommandTest, AHeldRecordsHolderIsPickedAmongTheDocumentsEnti
 TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
 {
     WorldDocument world(Logging);
+    EditorDocument& document = world.FocusDocument();
     SelectionContext selectionContext;
     SelectionService selection{ selectionContext };
-    World& components = Components();
+    World& components = document.GetScene().GetRegistry().Components;
     const auto identified = [&](PersistentEntityId id) {
-        const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
-        if (components.HasComponent<PersistentIdComponent>(entity))
-            components.TryGet<PersistentIdComponent>(entity)->Id = id;
-        else
-            components.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
+        const EntityId entity = document.GetScene().CreateEntity(Vec3d::Zero());
+        components.RemoveComponent<PersistentIdComponent>(entity);
+        components.AddComponent<PersistentIdComponent>(entity, PersistentIdComponent{ id });
         return entity;
     };
     EquipmentLayout body;
@@ -348,44 +351,51 @@ TEST_F(ComponentEditCommandTest, AWearersSlotIsFilledFromWhatItHoldsAndUndone)
         return entry;
     };
     (void)heldBy(guard, PersistentEntityId{ 0x60A2D }, PersistentEntityId{ 0x5A0D }, sword);
-    const EntityId great = heldBy(guard, PersistentEntityId{ 0x60A2D }, PersistentEntityId{ 0x62EA7 }, greatsword);
+    (void)heldBy(guard, PersistentEntityId{ 0x60A2D }, PersistentEntityId{ 0x62EA7 }, greatsword);
     (void)heldBy(guard, PersistentEntityId{ 0x60A2D }, PersistentEntityId{ 0x2126 }, ring);
     const EntityId thief = identified(PersistentEntityId{ 0x7E1EF });
-    const EntityId stolen = heldBy(thief, PersistentEntityId{ 0x7E1EF }, PersistentEntityId{ 0x5701E }, sword);
+    (void)heldBy(thief, PersistentEntityId{ 0x7E1EF }, PersistentEntityId{ 0x5701E }, sword);
 
     const std::unique_ptr<IEditorComponentAdapter> equipment = MakeEquipmentStateEditorAdapter();
-    EditorComponentInspectorContext context{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+    EditorComponentInspectorContext context{ .World = world, .Document = document, .Scene = document.GetScene(),
                                              .Selection = selection, .Commands = Commands, .Entity = guard };
     const auto row = [&](std::string_view key) {
         const std::vector<PropertyNode> rows = equipment->InspectorNodes(context);
         const auto found = std::ranges::find(rows, key, &PropertyNode::Key);
         EXPECT_NE(found, rows.end()) << key;
-        return found != rows.end() ? found->Descriptor : PropertyDescriptor{};
+        return found != rows.end() ? *found : PropertyNode{};
     };
-    const std::vector<std::string> offered = row("slot:hand.main").Choices;
-    EXPECT_EQ(offered.front(), "Empty");
-    EXPECT_EQ(offered.size(), 3u) << "the sword and the greatsword, not the ring";
-    EXPECT_EQ(std::ranges::find(offered, EntityLabel(Document, stolen) + " (000000000005701e)"), offered.end())
-        << "what another holds is not this wearer's to wear";
+    EXPECT_EQ(row("slot:hand.main").Descriptor.Kind, PropertyKind::EntityReference);
+    EXPECT_EQ(row("slot:hand.main").Reading, "Empty");
+    const std::optional<EntityReferenceFilter> wearable = equipment->ReferenceFilter(context, "slot:hand.main");
+    ASSERT_TRUE(wearable.has_value());
+    std::vector<std::string> offered;
+    for (const EntityReferenceChoice& choice : EntityReferenceCandidates(world, *wearable))
+        offered.push_back(choice.Value);
+    std::ranges::sort(offered);
+    EXPECT_EQ(offered, (std::vector<std::string>{ "0000000000005a0d", "0000000000062ea7" }))
+        << "the sword and the greatsword, not the ring, and not what another holds";
 
     const auto state = [&]() -> const EquipmentState& { return *std::as_const(components).TryGet<EquipmentState>(guard); };
     const auto worn = [&] { return EquipmentRecordsOf(components, guard); };
-    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Applied);
+    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "0000000000005a0d"), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u);
     EXPECT_EQ(worn()[0].Slots, 1u);
     EXPECT_EQ(worn()[0].Derivation, EquipmentDerivation::Pending);
-    EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", offered[1]), PropertyEditResult::Unchanged);
+    EXPECT_EQ(row("slot:hand.main").Value, "0000000000005a0d");
+    EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "0000000000005a0d"), PropertyEditResult::Unchanged);
+    EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "000000000005701e"), PropertyEditResult::Refused)
+        << "what another holds is not this wearer's to wear";
     EXPECT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "Nobody's"), PropertyEditResult::Refused);
     EXPECT_EQ(equipment->SetInspectorValue(context, "layout", "asset://equipment/other.sdata"), PropertyEditResult::Refused);
 
-    const std::string greatLabel = EntityLabel(Document, great) + " (0000000000062ea7)";
-    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", greatLabel), PropertyEditResult::Applied);
+    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.main", "0000000000062ea7"), PropertyEditResult::Applied);
     ASSERT_EQ(state().Count, 1u) << "it replaces what held its slots";
     EXPECT_EQ(worn()[0].Slots, 3u);
     EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });
     EXPECT_EQ(worn()[0].Key, 2u) << "a key is never reused";
 
-    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.off", "Empty"), PropertyEditResult::Applied);
+    ASSERT_EQ(equipment->SetInspectorValue(context, "slot:hand.off", ""), PropertyEditResult::Applied);
     EXPECT_EQ(state().Count, 0u);
     Commands.Undo();
     EXPECT_EQ(worn()[0].Source.Target, PersistentEntityId{ 0x62EA7 });

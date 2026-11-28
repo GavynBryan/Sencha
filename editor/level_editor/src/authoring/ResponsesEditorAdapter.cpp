@@ -313,6 +313,13 @@ public:
         return Commit(context, before, std::move(after));
     }
 
+    // A command may act on any placed entity: a switch opens a door in another zone.
+    std::optional<EntityReferenceFilter> ReferenceFilter(const EditorComponentInspectorContext&,
+                                                         std::string_view key) const override
+    {
+        return ParseBindingKey(key).has_value() ? std::optional(EntityReferenceFilter{}) : std::nullopt;
+    }
+
     PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
                                     std::string_view verb, std::string_view choice) const override
     {

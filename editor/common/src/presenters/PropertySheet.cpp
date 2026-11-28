@@ -34,6 +34,7 @@ std::string_view ControlFor(const PropertyDescriptor& descriptor)
     case PropertyKind::Number: return RowControls::Number;
     case PropertyKind::Vector: return RowControls::Vector;
     case PropertyKind::Plot:   return RowControls::Plot;
+    case PropertyKind::EntityReference: return RowControls::Entity;
     case PropertyKind::Text:
     case PropertyKind::Unsupported:
     default:                   return RowControls::Text;
@@ -134,6 +135,8 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Parts = { ColorSwatch(ParseColorValue(node.Value).value_or(ColorValue{}).Color) };
     if (row.Control == RowControls::Asset && !node.Value.empty())
         row.Parts = { std::string(PathLeaf(node.Value)) };
+    if (row.Control == RowControls::Entity)
+        row.Parts = { node.Reading.empty() ? node.Value : node.Reading };
     if (row.Control == RowControls::Number)
     {
         row.Number = ParseNumber(node.Value).value_or(0.0);
@@ -418,6 +421,13 @@ std::vector<std::string> PropertySheet::CandidatesOf(std::span<const PropertySec
 {
     const IPropertySource* source = SourceOf(sections, index);
     return source != nullptr ? source->Candidates(Rows[index].Key) : std::vector<std::string>{};
+}
+
+std::vector<EntityReferenceChoice> PropertySheet::ReferenceChoicesOf(std::span<const PropertySection> sections,
+                                                                    std::size_t index) const
+{
+    const IPropertySource* source = SourceOf(sections, index);
+    return source != nullptr ? source->ReferenceChoices(Rows[index].Key) : std::vector<EntityReferenceChoice>{};
 }
 
 void PropertySheet::Hold(std::size_t index)

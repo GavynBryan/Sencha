@@ -4,19 +4,16 @@
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
-#include "document/EntityLabel.h"
 #include "document/commands/ValueCommand.h"
 #include "properties/SettingProperties.h"
 
-#include <ecs/Query.h>
 #include <equipment/Equipment.h>
 #include <equipment/EquipmentComponents.h>
 #include <inventory/Inventory.h>
 #include <inventory/InventoryComponents.h>
-#include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
-#include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,41 +25,38 @@ namespace
 
     struct EntryChoice
     {
-        std::string Label;
         PersistableRef Entry;
         ItemId Definition;
     };
 
-    std::string EntryLabel(const EditorDocument& document, EntityId entity, PersistentEntityId id)
+    // An entry the wearer holds whose item goes into the slot first.
+    EntityReferenceFilter Wearable(const EditorComponentInspectorContext& context, EquipmentLayoutId layout,
+                                   std::uint8_t slot)
     {
-        return std::format("{} ({})", EntityLabel(document, entity), PersistentEntityIdToString(id));
+        return EntityReferenceFilter{
+            .Within = &context.Document,
+            .Admits = [wearer = context.Entity, layout, slot](const EntityReferenceSubject& subject) {
+                const World& world = subject.Components;
+                const ItemEntry* entry = world.IsRegistered<ItemEntry>() ? world.TryGet<ItemEntry>(subject.Entity)
+                                                                         : nullptr;
+                const ItemDefinition* item = entry != nullptr ? FindItemDefinition(world, entry->Definition) : nullptr;
+                const EquipmentLayout* slots = FindEquipmentLayout(world, layout);
+                return item != nullptr && slots != nullptr && subject.Entity != wearer
+                    && IsHeldWithin(world, subject.Entity, wearer) && ItemTakesSlotFirst(world, *slots, slot, *item);
+            } };
     }
 
-    std::vector<EntryChoice> EntryChoices(const EditorComponentInspectorContext& context, const EquipmentLayout& layout,
-                                          std::uint8_t slot)
+    std::optional<EntryChoice> WearableEntry(EditorComponentInspectorContext& context, EquipmentLayoutId layout,
+                                             std::uint8_t slot, std::string_view value)
     {
-        const World& world = std::as_const(context.Scene.GetRegistry()).Components;
-        std::vector<EntryChoice> choices;
-        if (!world.IsRegistered<ItemEntry>() || !world.IsRegistered<PersistentIdComponent>())
-            return choices;
-        Query<Read<ItemEntry>, Read<PersistentIdComponent>> entries(world);
-        entries.ForEachChunk([&](auto& view) {
-            const auto items = view.template Read<ItemEntry>();
-            const auto ids = view.template Read<PersistentIdComponent>();
-            for (std::uint32_t row = 0; row < view.Count(); ++row)
-            {
-                const EntityId entity = view.Entity(row);
-                const ItemDefinition* item = FindItemDefinition(world, items[row].Definition);
-                if (item == nullptr || !ids[row].Id.IsValid() || entity == context.Entity
-                    || !IsHeldWithin(world, entity, context.Entity))
-                    continue;
-                if (ItemTakesSlotFirst(world, layout, slot, *item))
-                    choices.push_back({ EntryLabel(context.Document, entity, ids[row].Id),
-                                        PersistableRef{ .Entity = entity, .Target = ids[row].Id }, items[row].Definition });
-            }
-        });
-        std::ranges::sort(choices, {}, &EntryChoice::Label);
-        return choices;
+        const std::optional<PersistentEntityId> target = PersistentEntityIdFromString(value);
+        const std::optional<EntityReferenceSubject> entry =
+            target.has_value() ? AdmittedEntityReference(context.World, Wearable(context, layout, slot), *target)
+                               : std::nullopt;
+        if (!entry.has_value())
+            return std::nullopt;
+        return EntryChoice{ .Entry = PersistableRef{ .Entity = entry->Entity, .Target = *target },
+                            .Definition = entry->Components.TryGet<ItemEntry>(entry->Entity)->Definition };
     }
 
     void RemoveRecordsWhere(EquipmentRecordList& worn, auto&& matches)
@@ -116,26 +110,30 @@ namespace
     PropertyNode SlotRow(const EditorComponentInspectorContext& context, const EquipmentLayout& layout,
                          std::span<const EquipmentRecord> records, std::uint8_t slot)
     {
-        const std::vector<EntryChoice> choices = EntryChoices(context, layout, slot);
-        std::vector<std::string> labels{ std::string(kEmpty) };
-        for (const EntryChoice& choice : choices)
-            labels.push_back(choice.Label);
-        std::size_t current = 0;
-        if (const EquipmentRecord* record = RecordHolding(records, slot))
+        const EquipmentRecord* record = RecordHolding(records, slot);
+        const bool sourced = record != nullptr && record->Source.Target.IsValid();
+        PropertyNode row = EntityReferenceProperty(std::string(kSlotPrefix) + layout.Slots[slot].Key,
+                                                   layout.Slots[slot].Key,
+                                                   sourced ? PersistentEntityIdToString(record->Source.Target)
+                                                           : std::string{},
+                                                   std::string(kEmpty),
+                                                   "The entry worn here, among those it holds whose item goes into "
+                                                   "this slot.");
+        if (record != nullptr && !sourced)
         {
-            const auto worn = std::ranges::find(choices, record->Source.Target,
-                                                [](const EntryChoice& choice) { return choice.Entry.Target; });
-            current = labels.size();
-            if (worn != choices.end())
-                current = 1 + static_cast<std::size_t>(worn - choices.begin());
-            else
-                labels.push_back(record->Source.Target.IsValid()
-                                     ? std::format("Not held here ({})", PersistentEntityIdToString(record->Source.Target))
-                                     : std::string("Waiting for another"));
+            row.Reading = "Waiting for another";
+            row.Descriptor.Verbs.push_back({ .Id = std::string(EntityReferenceVerbs::Clear), .Label = "Clear" });
         }
-        const std::vector<std::string_view> options(labels.begin(), labels.end());
-        return ChoiceProperty(std::string(kSlotPrefix) + layout.Slots[slot].Key, layout.Slots[slot].Key, options, current,
-                              "The entry worn here, among those it holds whose item goes into this slot.");
+        const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+        const EntityId source = sourced ? context.Scene.EntityWithPersistentId(record->Source.Target) : EntityId{};
+        if (sourced && (!source.IsValid() || !IsHeldWithin(world, source, context.Entity)))
+        {
+            EntityReferenceReading reading = ReadEntityReference(context.World, row.Value);
+            if (reading.State == EntityReferenceState::Loaded)
+                reading.Text += ", not held here";
+            ShowEntityReference(row, reading);
+        }
+        return row;
     }
 
     class EquipmentStateEditorAdapter final : public IEditorComponentAdapter
@@ -155,6 +153,20 @@ namespace
                 for (std::size_t slot = 0; slot < layout->Slots.size(); ++slot)
                     rows.push_back(SlotRow(context, *layout, EquipmentRecordsOf(world, *state), static_cast<std::uint8_t>(slot)));
             return rows;
+        }
+
+        std::optional<EntityReferenceFilter> ReferenceFilter(const EditorComponentInspectorContext& context,
+                                                             std::string_view key) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const EquipmentState* state = world.TryGet<EquipmentState>(context.Entity);
+            const EquipmentLayout* layout = state != nullptr ? FindEquipmentLayout(world, state->Layout) : nullptr;
+            if (layout == nullptr || !key.starts_with(kSlotPrefix))
+                return std::nullopt;
+            const std::uint8_t slot = FindEquipmentSlot(*layout, key.substr(kSlotPrefix.size()));
+            if (slot == kNoEquipmentSlot)
+                return std::nullopt;
+            return Wearable(context, state->Layout, slot);
         }
 
         PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
@@ -180,16 +192,15 @@ namespace
                     layout != nullptr ? FindEquipmentSlot(*layout, key.substr(kSlotPrefix.size())) : kNoEquipmentSlot;
                 if (slot == kNoEquipmentSlot)
                     return PropertyEditResult::Gone;
-                if (value == kEmpty)
+                if (value.empty())
                     RemoveRecordsWhere(after, [&](const EquipmentRecord& record) { return ((record.Slots >> slot) & 1u) != 0; });
                 else
                 {
-                    const std::vector<EntryChoice> choices = EntryChoices(context, *layout, slot);
-                    const auto chosen = std::ranges::find(choices, value, &EntryChoice::Label);
+                    const std::optional<EntryChoice> chosen = WearableEntry(context, held->Layout, slot, value);
                     const EquipmentRecord* worn = RecordHolding(before.Records, slot);
-                    if (chosen != choices.end() && worn != nullptr && worn->Source.Target == chosen->Entry.Target)
+                    if (chosen.has_value() && worn != nullptr && worn->Source.Target == chosen->Entry.Target)
                         return PropertyEditResult::Unchanged;
-                    if (chosen == choices.end() || !Wear(world, *layout, after, *chosen, slot))
+                    if (!chosen.has_value() || !Wear(world, *layout, after, *chosen, slot))
                         return PropertyEditResult::Refused;
                 }
             }

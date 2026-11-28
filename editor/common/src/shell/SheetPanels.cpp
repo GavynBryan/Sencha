@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
+#include "presenters/RowControls.h"
 #include "shell/Shelf.h"
 #include "text/PathLeaf.h"
 #include "ui/ScreenModel.h"
@@ -13,6 +14,13 @@
 #include <algorithm>
 #include <format>
 #include <utility>
+
+namespace
+{
+// The choices an entity-reference row's pick opens answer by this, never a
+// property's own verb: choosing one sets the row.
+constexpr std::string_view kPickReference = "pick-reference";
+} // namespace
 
 SheetPanels::SheetPanels(SheetPanelsHost host)
     : Host(std::move(host))
@@ -131,7 +139,13 @@ bool SheetPanels::Handle(const UiAction& action)
     else if (id == Drop)
         DropCarried({ at.Sheet, at.Row });
     else if (id == Pick)
-        PickAsset({ at.Sheet, at.Row }, action.Arg(2).AsBool());
+    {
+        const std::optional<UiRow> shown = Shown(at);
+        if (shown.has_value() && shown->Control == RowControls::Entity)
+            PickReference({ at.Sheet, at.Row }, action.Arg(2).AsBool());
+        else
+            PickAsset({ at.Sheet, at.Row }, action.Arg(2).AsBool());
+    }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, at.Row, action.Arg(2));
     return true;
@@ -141,6 +155,20 @@ void SheetPanels::Act(SheetPoint at, std::string_view verb, std::string_view cho
 {
     PropertySheet& sheet = Sheet(at.Sheet);
     const std::vector<PropertySection> sections = Host.Sections(at.Sheet);
+    if (verb == kPickReference)
+    {
+        // The rows may have moved while the choices were open: the pick
+        // belongs to the property it was opened for, or to nothing.
+        const std::optional<SheetPoint> opened = std::exchange(PickingFor, std::nullopt);
+        const std::string key = std::exchange(PickingKey, {});
+        if (opened.has_value() && opened->Sheet == at.Sheet && opened->Row == at.Row
+            && sheet.EditKeyOf(at.Row) == key)
+            (void)sheet.Set(sections, at.Row, choice);
+        else
+            Host.Notices.Post("What was being chosen for changed; nothing was set", NoticeTone::Warning,
+                              NoticeClockNow());
+        return;
+    }
     const bool removes = sheet.Removes(at.Row, verb);
     const std::string label = sheet.LabelOf(at.Row);
     if (sheet.Act(sections, at.Row, verb, choice) != PropertyEditResult::Applied || !removes)
@@ -247,6 +275,38 @@ void SheetPanels::PickAsset(SheetPoint at, bool follows)
                            if (commit && row.has_value())
                                (void)chosen.Set(Host.Sections(which), *row, path);
                        } });
+}
+
+void SheetPanels::PickReference(SheetPoint at, bool follows)
+{
+    // An entity is chosen among those the field admits; with Ctrl, its target
+    // becomes the selection.
+    PropertySheet& sheet = Sheet(at.Sheet);
+    if (follows)
+    {
+        Act(at, EntityReferenceVerbs::Select, {});
+        return;
+    }
+    const std::optional<UiRow> shown = Shown(at);
+    if (!shown.has_value() || !shown->Editable)
+        return;
+    const std::vector<EntityReferenceChoice> choices = sheet.ReferenceChoicesOf(Host.Sections(at.Sheet), at.Row);
+    if (choices.empty())
+    {
+        Host.Notices.Post(std::format("Nothing here can go in {}", sheet.LabelOf(at.Row)), NoticeTone::Info,
+                          NoticeClockNow());
+        return;
+    }
+    PropertyVerb pick{ .Id = std::string(kPickReference), .Label = sheet.LabelOf(at.Row) };
+    for (const EntityReferenceChoice& choice : choices)
+    {
+        pick.Choices.push_back(choice.Label);
+        pick.ChoiceNotes.push_back(choice.Place);
+        pick.ChoiceKeys.push_back(choice.Value);
+    }
+    PickingFor = at;
+    PickingKey = sheet.EditKeyOf(at.Row);
+    Host.OpenChoices(at, pick);
 }
 
 std::optional<std::size_t> SheetPanels::Present(SheetId sheet, std::span<const PropertySection> sections,

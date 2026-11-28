@@ -1,5 +1,6 @@
 #pragma once
 
+#include "properties/EntityReferenceProperty.h"
 #include "properties/PropertyNode.h"
 
 #include <cstdint>
@@ -50,6 +51,11 @@ public:
     // What an asset property may be set to, as the values an edit takes. Asked
     // when a picker opens, never per frame: it may scan the project.
     [[nodiscard]] virtual std::vector<std::string> Candidates(std::string_view /*key*/) const { return {}; }
+    // What an entity-reference property may be set to, asked the same way.
+    [[nodiscard]] virtual std::vector<EntityReferenceChoice> ReferenceChoices(std::string_view /*key*/) const
+    {
+        return {};
+    }
     // One of the property's verbs, as one step; `choice` is one of the verb's
     // choices, or empty for a verb that has none.
     virtual PropertyEditResult Act(std::string_view /*key*/, std::string_view /*verb*/, std::string_view /*choice*/)

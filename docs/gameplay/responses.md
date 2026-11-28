@@ -76,7 +76,9 @@ instigator), then **Only when** -- conditions, all of which must hold -- and
 where the event carries a tag, and every query that answers true or false or a
 number. A number query holds when its answer lies within **At least** and
 **At most**; either may be left empty. Each argument
-comes from a constant, a port, or an entity by its persistent identity; new
+comes from a constant, a port, or an entity, picked by name from any loaded
+zone and stored as its persistent identity (clearing one the command may go
+without unsets it; one it requires cannot be cleared); new
 commands start aimed at the event's instigator, as a bumper launches whoever
 entered it. **Problems** lists what does not resolve against the project's
 vocabulary, and a volume that would sense nothing.

@@ -20,6 +20,7 @@ class CommandStack;
 class EditorDocument;
 struct ICommand;
 class EditorComponentAdapterRegistry;
+class IEditorComponentAdapter;
 class SelectionService;
 class WorldDocument;
 struct EditorComponentInspectorContext;
@@ -81,6 +82,8 @@ public:
     [[nodiscard]] std::vector<AssetFieldCandidate> AssetChoices(std::string_view key) const;
     // The same, as the paths an edit takes.
     [[nodiscard]] std::vector<std::string> Candidates(std::string_view key) const override;
+    // What an adapter's entity-reference property may name, by its filter.
+    [[nodiscard]] std::vector<EntityReferenceChoice> ReferenceChoices(std::string_view key) const override;
 
 private:
     struct Field
@@ -95,6 +98,21 @@ private:
     using Writer = std::function<bool(const Field&, std::byte*)>;
 
     [[nodiscard]] std::optional<Field> Resolve(std::string_view key) const;
+    // An adapter's property: the adapter, the one holder it edits, and the key
+    // within the component.
+    struct AdapterProperty
+    {
+        const IEditorComponentAdapter* Adapter = nullptr;
+        EntityId Holder;
+        std::string_view Key;
+    };
+    [[nodiscard]] AdapterProperty AdapterPropertyOf(std::string_view key) const;
+    // What an adapter's property holds when it is an entity reference.
+    [[nodiscard]] static std::optional<std::string> ReferenceValue(const AdapterProperty& property,
+                                                                   const EditorComponentInspectorContext& context);
+    // A reference cleared, or its target selected.
+    [[nodiscard]] PropertyEditResult ActOnReference(std::string_view key, std::string_view value,
+                                                    std::string_view verb);
     [[nodiscard]] EditorComponentInspectorContext InspectorContext(EntityId entity) const;
     // The one selected entity holding the component an adapter key names, or
     // invalid: adapters edit one object at a time.
