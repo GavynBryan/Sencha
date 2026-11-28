@@ -653,11 +653,12 @@ do the work and delete the entry.
   roadmap's hierarchical cross-zone planner (`docs/plans/engine-roadmap.md`,
   Track A item 6) will own. Its design is not settled, so the analysis does
   not wait for it.
-- **Where:** `WorldReachability.cpp` (`Walk`, `Mouth`, `Landing`).
+- **Where:** `WorldReachability.cpp` (`Walk`, `Mouth`, `Landing`, `LinkCrossing`).
 - **Trigger:** the cross-zone planner lands. The analysis then asks it rather
   than walking docks itself, keeping its sure and possible scenarios, gate
-  assumptions and one-way drops; world links get positions through the same
-  work (`navigation-core.md`, section 7) and stop being unconsidered.
+  assumptions and one-way drops. Spatial world links are already walked like
+  docks (`docs/zone/links.md`, "Reachability"); the planner takes them over
+  with the docks.
 
 ## Navigation agents
 
@@ -2007,3 +2008,29 @@ described in `docs/navigation/runtime.md`, "Agents".
 - **Consumer:** none yet.
 - **Trigger:** a plan that needs "this authored entity is gone" in the same
   patch document as component edits.
+
+## Opening and closing a world link at run time
+
+- **What:** a spatial link is active whenever both apertures are resident and
+  valid; nothing can shut one. `DockGateBinding` gates a dock, and nothing gates
+  a link.
+- **Where:** `ResolvedLinks::Rebuild` (`engine/src/zone/ResolvedLinks.cpp`),
+  `DockGateBinding` (`engine/include/zone/WorldConnectionComponents.h`).
+- **Trigger:** the first content that gates a link. Generalise
+  `DockGateBinding` to name a link as well, with a link closed while its gate
+  is shut, rather than adding a second gate.
+
+## Recess depth behind a link aperture
+
+- **What:** a character's capsule centre must pass an aperture's plane, so the
+  aperture needs free volume behind it at least one capsule radius deep plus a
+  margin. Nothing checks this. The world cook has no registered character
+  profiles to take a radius from and no collision query over a zone's cooked
+  geometry. `ValidateAuthoredLinks` therefore checks no recess.
+- **Where:** `engine/src/zone/WorldLinkValidation.cpp`;
+  `docs/plans/spatial-portals/01-link-data-and-authoring.md`, section 4.2;
+  `00-execution-overview.md`, decision D6.
+- **Trigger:** character traversal through links (spatial portals Stage 3).
+  It needs the profiles' capsule radii at cook time and a static-geometry
+  overlap query against the zone's collision. The same query also serves the
+  editor's recess indicator (`01` section 5.5).

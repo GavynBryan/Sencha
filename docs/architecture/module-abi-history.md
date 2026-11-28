@@ -1954,3 +1954,20 @@ position under the authority's. A component made of lists alone names
 `AttributeSetWireValues` go. The replication table hash moves; the net
 protocol stays 12, which this series introduced. Save and scene formats are
 unchanged.
+
+## v95
+
+`WorldLink` (`zone/WorldConnectionComponents.h`) gains `EndpointA` and
+`EndpointB`, two `PersistableRef` fields that are null by default, so its
+layout and its cooked schema fingerprint change. `LinkAperture`
+(`sencha.link_aperture`, chunk `LAPT`) is a new component in `ZoneComponents`.
+`LinkEndpoint` in the world manifest gains an optional `Aperture` frame, and
+`CookWorldTopology` takes the authored apertures. The new public headers are
+`math/geometry/3d/ApertureFrame.h`, `zone/ResolvedLinks.h`,
+`zone/ResolvedLinksSystem.h` and `zone/WorldLinkValidation.h`, plus
+`ComposeWorldTransform` in `world/transform/DerivedTransform.h`. A `WLNK`
+chunk without the endpoint fields reads as a demand-only link and a manifest
+endpoint without frame keys reads as one with no aperture; a cooked scene
+carrying `WLNK` is refused by the new schema fingerprint and recooked. The
+replication table and the net protocol do not change: neither component is
+replicated. docs/zone/links.md.

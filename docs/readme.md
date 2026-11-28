@@ -51,6 +51,12 @@ test/       GoogleTest-based engine tests.
 - `docs/core-systems-map.md` is the first broad map of the engine: core
   systems, ownership, dependency directions, frame flow, and constraints.
 
+## World Partition Docs
+
+- `docs/zone/links.md` covers world links: the aperture component, the frame
+  convention, the geometry kernel, the cook and its validation rules, and the
+  per-frame resolution consumers read.
+
 ## Renderer Docs
 
 `docs/renderer/` is the reference for the render layer as it exists in the
