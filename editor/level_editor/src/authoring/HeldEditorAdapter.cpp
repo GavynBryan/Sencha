@@ -37,13 +37,18 @@ namespace
             const Held* held = world.TryGet<Held>(context.Entity);
             if (held == nullptr)
                 return {};
-            return { EntityReferenceProperty(std::string(kHolder), "Holder",
-                                             held->Holder.Target.IsValid()
-                                                 ? PersistentEntityIdToString(held->Holder.Target)
-                                                 : std::string{},
-                                             "The world",
-                                             "What holds it: a chest's contents, a character's possessions, or the "
-                                             "world's."),
+            PropertyNode holder = EntityReferenceProperty(
+                std::string(kHolder), "Holder",
+                held->Holder.Target.IsValid() ? PersistentEntityIdToString(held->Holder.Target) : std::string{},
+                "The world", "What holds it: a chest's contents, a character's possessions, or the world's.");
+            if (held->Holder.Target.IsValid() && !context.Scene.EntityWithPersistentId(held->Holder.Target).IsValid())
+            {
+                EntityReferenceReading reading = ReadEntityReference(context.World, holder.Value);
+                if (reading.State == EntityReferenceState::Loaded)
+                    reading.Text += ", not in this document";
+                ShowEntityReference(holder, reading);
+            }
+            return { std::move(holder),
                      NumberProperty("position", "Position", static_cast<double>(held->Position), 0.0, 65535.0, 1.0,
                                     "Its place among what its holder holds.") };
         }

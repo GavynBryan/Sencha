@@ -97,6 +97,9 @@ private:
     std::array<PropertySheet, 2> Sheets;
     std::array<std::optional<std::size_t>, 2> ScrolledTo;
     NumberScrub Scrub;
+    // The entity-reference row whose choices are open, and the property it held.
+    std::optional<SheetPoint> PickingFor;
+    std::string PickingKey;
 
     UiModelPropertyId TypingId;
     UiModelRowsId ToolRows;

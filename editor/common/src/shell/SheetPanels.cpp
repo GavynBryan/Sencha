@@ -157,7 +157,16 @@ void SheetPanels::Act(SheetPoint at, std::string_view verb, std::string_view cho
     const std::vector<PropertySection> sections = Host.Sections(at.Sheet);
     if (verb == kPickReference)
     {
-        (void)sheet.Set(sections, at.Row, choice);
+        // The rows may have moved while the choices were open: the pick
+        // belongs to the property it was opened for, or to nothing.
+        const std::optional<SheetPoint> opened = std::exchange(PickingFor, std::nullopt);
+        const std::string key = std::exchange(PickingKey, {});
+        if (opened.has_value() && opened->Sheet == at.Sheet && opened->Row == at.Row
+            && sheet.EditKeyOf(at.Row) == key)
+            (void)sheet.Set(sections, at.Row, choice);
+        else
+            Host.Notices.Post("What was being chosen for changed; nothing was set", NoticeTone::Warning,
+                              NoticeClockNow());
         return;
     }
     const bool removes = sheet.Removes(at.Row, verb);
@@ -295,6 +304,8 @@ void SheetPanels::PickReference(SheetPoint at, bool follows)
         pick.ChoiceNotes.push_back(choice.Place);
         pick.ChoiceKeys.push_back(choice.Value);
     }
+    PickingFor = at;
+    PickingKey = sheet.EditKeyOf(at.Row);
     Host.OpenChoices(at, pick);
 }
 

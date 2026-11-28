@@ -20,6 +20,8 @@
 namespace
 {
 constexpr std::string_view kWorldScenePlace = "World scene";
+// Hex digits of an identity shown to tell same-named candidates apart.
+constexpr std::size_t kShortIdentity = 6;
 
 struct LoadedDocument
 {
@@ -66,6 +68,28 @@ bool Admits(const EntityReferenceFilter& filter, const EntityReferenceSubject& s
     return !filter.Admits || filter.Admits(subject);
 }
 
+// Two placements of one prefab in one zone read alike: each sorted run of them
+// carries the tail of its identity in its note.
+void TellApartSameNamed(std::vector<EntityReferenceChoice>& sorted)
+{
+    for (std::size_t first = 0; first < sorted.size();)
+    {
+        std::size_t last = first + 1;
+        while (last < sorted.size() && sorted[last].Label == sorted[first].Label
+               && sorted[last].Place == sorted[first].Place)
+            ++last;
+        if (last - first > 1)
+            for (std::size_t i = first; i < last; ++i)
+            {
+                const std::string& value = sorted[i].Value;
+                const std::string_view tail = std::string_view(value).substr(value.size() - kShortIdentity);
+                sorted[i].Place = sorted[i].Place.empty() ? std::format("#{}", tail)
+                                                          : std::format("{} \xC2\xB7 #{}", sorted[i].Place, tail);
+            }
+        first = last;
+    }
+}
+
 std::string Placed(std::string name, const std::string& place)
 {
     return place.empty() ? name : std::format("{} \xC2\xB7 {}", name, place);
@@ -99,6 +123,7 @@ std::vector<EntityReferenceChoice> EntityReferenceCandidates(WorldDocument& worl
     std::ranges::sort(choices, [](const EntityReferenceChoice& a, const EntityReferenceChoice& b) {
         return std::tie(a.Label, a.Place, a.Value) < std::tie(b.Label, b.Place, b.Value);
     });
+    TellApartSameNamed(choices);
     return choices;
 }
 

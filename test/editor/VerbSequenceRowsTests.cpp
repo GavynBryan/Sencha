@@ -1,5 +1,7 @@
 #include "vocabulary/VerbSequenceRows.h"
 
+#include "properties/EntityReferenceProperty.h"
+
 #include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
 #include <core/json/JsonParser.h>
@@ -10,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <source_location>
@@ -123,9 +126,11 @@ TEST_F(VerbSequenceRowsTest, AnArgumentFromAnEntityIsAnEntityReference)
     EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "nowhere").has_value())
         << "text that is no persistent identity was taken";
 
-    sequence = Must(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", ""));
-    EXPECT_EQ(JsonStringify(*sequence.Find("commands")->AsArray()[0].Find("arguments")->Find("target")),
-              R"({"entity":""})");
+    // An empty identity is refused at run time, so a target the launch requires is never cleared.
+    const PropertyNode* picked = Find(rows, "k0.arg.target.value");
+    EXPECT_TRUE(std::ranges::none_of(picked->Descriptor.Verbs,
+                                     [](const PropertyVerb& verb) { return verb.Id == EntityReferenceVerbs::Clear; }));
+    EXPECT_FALSE(SetVerbSequenceValue(sequence, Vocabulary, "k0.arg.target.value", "").has_value());
 }
 
 TEST_F(VerbSequenceRowsTest, CommandsReorderAndAChangedVerbKeepsWhatItStillTakes)

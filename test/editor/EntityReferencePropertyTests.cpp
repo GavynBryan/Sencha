@@ -14,12 +14,17 @@
 #include "selection/SelectionContext.h"
 #include "selection/SelectionService.h"
 
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <logic/ResponseSet.h>
+#include <logic/Responses.h>
 #include <world/held/Held.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -281,4 +286,106 @@ TEST_F(EntityReferenceTest, HeldIsEditedThroughTheSharedKindWithoutChangingFocus
     commands.Undo();
     commands.Undo();
     EXPECT_FALSE(components.TryGet<Held>(arrows.Entity)->Holder.Target.IsValid());
+}
+
+TEST_F(EntityReferenceTest, SameNamedCandidatesInOnePlaceAreToldApartByIdentity)
+{
+    const Placed first = Place(CellarDocument(), "Chest");
+    const Placed second = Place(CellarDocument(), "Chest");
+    const Placed elsewhere = Place(AtticDocument(), "Chest");
+    const std::vector<EntityReferenceChoice> choices = EntityReferenceCandidates(World, {});
+    const EntityReferenceChoice* a = Offered(choices, first.Value);
+    const EntityReferenceChoice* b = Offered(choices, second.Value);
+    ASSERT_NE(a, nullptr);
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(a->Place, "Cellar \xC2\xB7 #" + first.Value.substr(10));
+    EXPECT_EQ(b->Place, "Cellar \xC2\xB7 #" + second.Value.substr(10));
+    EXPECT_EQ(Offered(choices, elsewhere.Value)->Place, "Attic") << "a name alone in its place needs no identity";
+}
+
+TEST_F(EntityReferenceTest, AHolderOutsideTheRecordsDocumentSaysSo)
+{
+    SelectionContext context;
+    SelectionService selection{ context };
+    CommandStack commands;
+    const Placed arrows = Place(CellarDocument(), "Arrows");
+    const Placed lamp = Place(AtticDocument(), "Lamp");
+    CellarDocument().GetScene().GetRegistry().Components.AddComponent<Held>(
+        arrows.Entity, Held{ .Holder = { .Entity = {}, .Target = *PersistentEntityIdFromString(lamp.Value) } });
+    const EditorComponentInspectorContext inspector{ .World = World,
+                                                     .Document = CellarDocument(),
+                                                     .Scene = CellarDocument().GetScene(),
+                                                     .Selection = selection,
+                                                     .Commands = commands,
+                                                     .Entity = arrows.Entity };
+    const std::vector<PropertyNode> rows = MakeHeldEditorAdapter()->InspectorNodes(inspector);
+    ASSERT_FALSE(rows.empty());
+    EXPECT_EQ(rows.front().Reading, "Lamp \xC2\xB7 Attic, not in this document");
+}
+
+// A response command aimed at an entity in another zone: picked there, cleared
+// and put back, all without the focus moving.
+TEST_F(EntityReferenceTest, AResponsesCommandIsAimedAtAnEntityInAnotherZoneThroughTheSource)
+{
+    SelectionContext context;
+    SelectionService selection{ context };
+    CommandStack commands;
+    EditorComponentAdapterRegistry adapters;
+    ASSERT_TRUE(adapters.Register(MakeResponsesEditorAdapter()));
+    ComponentPropertySource source(World, selection, commands, adapters);
+
+    ::World& components = CellarDocument().GetScene().GetRegistry().Components;
+    const Placed lever = Place(CellarDocument(), "Lever");
+    const Placed crate = Place(CellarDocument(), "Crate");
+    const Placed lamp = Place(AtticDocument(), "Lamp");
+    components.AddComponent<Responses>(lever.Entity, Responses{});
+    const std::optional<JsonValue> bindings = JsonParse(
+        R"({"shake":{"on":"sensor.enter","sequence":{"commands":[{"verb":"camera.shake","arguments":{"subject":{"entity":")"
+        + crate.Value + R"("}}}]}}})");
+    ASSERT_TRUE(bindings.has_value());
+    ASSERT_TRUE(SetResponseBindings(components, lever.Entity, *bindings));
+    selection.BindDocument(&components);
+    selection.SetSelection({ SelectableRef::EntitySelection(CellarDocument().GetScene().GetRegistry().Id,
+                                                            lever.Entity) });
+
+    const auto subject = [&]() -> PropertyNode {
+        PropertyNode found;
+        const std::function<void(const std::vector<PropertyNode>&)> walk = [&](const std::vector<PropertyNode>& nodes) {
+            for (const PropertyNode& node : nodes)
+            {
+                if (node.Key.ends_with("k0.arg.subject.value"))
+                    found = node;
+                walk(node.Children);
+            }
+        };
+        walk(source.Nodes());
+        return found;
+    };
+    const auto stored = [&]() -> std::string {
+        const JsonValue* authored = ResponseBindingsSource(components, lever.Entity);
+        const JsonValue* argument = authored->Find("shake")->Find("sequence")->Find("commands")->AsArray()[0]
+                                        .Find("arguments")->Find("subject");
+        return argument != nullptr ? JsonStringify(*argument) : std::string("unset");
+    };
+    const PropertyNode aimed = subject();
+    ASSERT_EQ(aimed.Descriptor.Kind, PropertyKind::EntityReference);
+    EXPECT_EQ(aimed.Reading, "Crate \xC2\xB7 Cellar");
+    const std::string key = aimed.Key;
+
+    const std::vector<EntityReferenceChoice> choices = source.ReferenceChoices(key);
+    const EntityReferenceChoice* offeredLamp = Offered(choices, lamp.Value);
+    ASSERT_NE(offeredLamp, nullptr) << "an entity in another loaded zone was not offered";
+    EXPECT_EQ(offeredLamp->Place, "Attic");
+
+    ASSERT_TRUE(source.BeginEdit(key));
+    ASSERT_EQ(source.CommitEdit(key, lamp.Value), PropertyEditResult::Applied);
+    EXPECT_EQ(World.FocusZone(), Cellar) << "a pick changed the focus";
+    EXPECT_EQ(stored(), R"({"entity":")" + lamp.Value + R"("})");
+    EXPECT_EQ(subject().Reading, "Lamp \xC2\xB7 Attic");
+
+    ASSERT_EQ(source.Act(key, EntityReferenceVerbs::Clear, {}), PropertyEditResult::Applied);
+    EXPECT_EQ(stored(), "unset") << "a cleared argument the command may go without is unset";
+    commands.Undo();
+    EXPECT_EQ(stored(), R"({"entity":")" + lamp.Value + R"("})");
+    EXPECT_EQ(World.FocusZone(), Cellar);
 }

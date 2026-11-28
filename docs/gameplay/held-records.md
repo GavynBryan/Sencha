@@ -188,7 +188,8 @@ differs from its content, and is kept with it:
 In Kyusu, a `Held` component's holder is an entity reference
 (`editor/ARCHITECTURE.md`, `authoring/`) picked among the identified entities
 of the record's own document, never the record itself or what it holds;
-clearing it gives the record to the world. Its position is a number. A placed prefab's members name each other by that
+clearing it gives the record to the world, and a holder in another document
+reads as not in this one. Its position is a number. A placed prefab's members name each other by that
 placement's ids: `Held`'s schema declares its holder an entity reference, so
 composition renames it (`docs/editor/scene-composition.md`).
 
