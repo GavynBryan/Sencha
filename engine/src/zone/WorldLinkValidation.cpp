@@ -1,25 +1,15 @@
 #include <zone/WorldLinkValidation.h>
 
 #include <math/geometry/3d/ApertureFrame.h>
+#include <zone/ApertureClaims.h>
 
 #include <algorithm>
-#include <cmath>
 #include <format>
-#include <map>
 #include <string>
 #include <utility>
 
 namespace
 {
-
-const AuthoredApertureCookInput* FindAperture(std::span<const AuthoredApertureCookInput> apertures,
-                                              PersistentEntityId id)
-{
-    for (const AuthoredApertureCookInput& aperture : apertures)
-        if (aperture.Id == id)
-            return &aperture;
-    return nullptr;
-}
 
 bool Contains(std::span<const ZoneId> zones, ZoneId zone)
 {
@@ -70,16 +60,9 @@ std::vector<ContentRiskRecord> ValidateAuthoredLinks(const WorldPartitionManifes
     std::stable_sort(sorted.begin(), sorted.end(),
                      [](const WorldLink* a, const WorldLink* b) { return a->Id.Value < b->Id.Value; });
 
-    std::map<std::uint64_t, std::vector<LinkId>> claims;
+    ApertureClaims claims;
     for (const WorldLink* link : sorted)
-        for (const PersistableRef* ref : { &link->EndpointA, &link->EndpointB })
-        {
-            if (!ref->Target.IsValid())
-                continue;
-            std::vector<LinkId>& claimants = claims[ref->Target.Value];
-            if (std::find(claimants.begin(), claimants.end(), link->Id) == claimants.end())
-                claimants.push_back(link->Id);
-        }
+        claims.Add(*link);
 
     std::vector<ContentRiskRecord> records;
     const auto report = [&](ContentRiskSeverity severity, LinkId link, std::string rule, std::string message) {
@@ -115,7 +98,7 @@ std::vector<ContentRiskRecord> ValidateAuthoredLinks(const WorldPartitionManifes
         {
             const LinkSide& side = sides[index];
             const std::string target = PersistentEntityIdToString(side.Ref.Target);
-            const AuthoredApertureCookInput* aperture = FindAperture(apertures, side.Ref.Target);
+            const AuthoredApertureCookInput* aperture = FindAuthoredAperture(apertures, side.Ref.Target);
             found[index] = aperture;
             if (aperture == nullptr)
             {
@@ -139,8 +122,7 @@ std::vector<ContentRiskRecord> ValidateAuthoredLinks(const WorldPartitionManifes
                        std::format("link {} end {}: aperture {} has a {}", name, side.Name, target,
                                    ApertureFrameFaultName(fault)));
             }
-            const std::vector<LinkId>& claimants = claims[side.Ref.Target.Value];
-            for (const LinkId other : claimants)
+            for (const LinkId other : claims.Claimants(side.Ref.Target))
                 if (other != link->Id)
                     report(ContentRiskSeverity::Error, link->Id, "partition.link.aperture_claimed_twice",
                            std::format("link {} end {}: aperture {} is also named by link {}", name, side.Name,
@@ -151,8 +133,7 @@ std::vector<ContentRiskRecord> ValidateAuthoredLinks(const WorldPartitionManifes
         {
             const Vec2d halfA = found[0]->Aperture.HalfExtents;
             const Vec2d halfB = found[1]->Aperture.HalfExtents;
-            if (std::abs(halfA.X - halfB.X) > ApertureTolerance::MatchingExtents
-                || std::abs(halfA.Y - halfB.Y) > ApertureTolerance::MatchingExtents)
+            if (!ApertureExtentsMatch(halfA, halfB))
                 report(ContentRiskSeverity::Error, link->Id, "partition.link.extents_differ",
                        std::format("link {} joins apertures of {}x{} and {}x{} half extents", name, halfA.X, halfA.Y,
                                    halfB.X, halfB.Y));
@@ -180,7 +161,7 @@ std::vector<ContentRiskRecord> ValidateAuthoredLinks(const WorldPartitionManifes
 
     std::vector<const AuthoredApertureCookInput*> unlinked;
     for (const AuthoredApertureCookInput& aperture : apertures)
-        if (!claims.contains(aperture.Id.Value))
+        if (claims.Claimants(aperture.Id).empty())
             unlinked.push_back(&aperture);
     std::sort(unlinked.begin(), unlinked.end(),
               [](const auto* a, const auto* b) { return a->Id.Value < b->Id.Value; });

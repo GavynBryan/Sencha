@@ -28,11 +28,9 @@ struct DockEndpoint
     ZoneId OwnerZone{};
     ZoneId OtherZone{};
     DockSide Side = DockSide::A;
-    Vec3d Origin{};
-    Vec3d Normal = Vec3d::Forward();
-    Vec3d Right = Vec3d::Right();
-    Vec3d Up = Vec3d::Up();
-    Vec2d HalfExtents{ 1.0f, 1.5f };
+    // This side's view of the dock's one rectangle: its normal points into the
+    // other zone, and its right is the other side's left.
+    ApertureFrame Frame{ .HalfExtents = Vec2d{ 1.0f, 1.5f } };
     uint32_t Directions = 3;
 
     friend bool operator==(const DockEndpoint&, const DockEndpoint&) = default;

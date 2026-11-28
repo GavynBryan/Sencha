@@ -6,10 +6,9 @@
 #include <world/identity/PersistableRef.h>
 #include <world/transform/DerivedTransform.h>
 #include <world/transform/TransformComponents.h>
+#include <zone/ApertureClaims.h>
 
 #include <algorithm>
-#include <cmath>
-#include <unordered_map>
 #include <utility>
 
 namespace
@@ -27,7 +26,8 @@ namespace
     {
         LinkId Id{};
         EntityId Link{};
-        bool Spatial = false;
+        // Only a link that got as far as resolving its sides depends on residency.
+        bool ResolvesSides = false;
         SideTrack A{};
         SideTrack B{};
     };
@@ -122,7 +122,10 @@ struct ResolvedLinks::Cache
         if (world.IsRegistered<LinkAperture>())
             ChangedApertures.emplace(world);
         if (world.IsRegistered<LinkAperture>() && world.IsRegistered<LocalTransform>())
+        {
             MovedApertures.emplace(world);
+            PlacedApertures.emplace(world);
+        }
     }
 
     const World* Owner = nullptr;
@@ -130,6 +133,8 @@ struct ResolvedLinks::Cache
     Query<Changed<WorldLink>> ChangedLinks;
     std::optional<Query<Changed<LinkAperture>>> ChangedApertures;
     std::optional<Query<Changed<LocalTransform>, With<LinkAperture>>> MovedApertures;
+    // A parent's move reaches an aperture only through propagation's write.
+    std::optional<Query<Changed<WorldTransform>, With<LinkAperture>>> PlacedApertures;
     std::uint32_t LastFrame = 0;
     bool Updated = false;
     std::vector<LinkTrack> Tracks;
@@ -214,6 +219,8 @@ bool ResolvedLinks::NeedsRebuild(const RuntimeWorld& runtime)
         cache.ChangedApertures->ForEachChunk(any, reference);
     if (!changed && cache.MovedApertures)
         cache.MovedApertures->ForEachChunk(any, reference);
+    if (!changed && cache.PlacedApertures)
+        cache.PlacedApertures->ForEachChunk(any, reference);
     if (changed)
         return true;
 
@@ -223,7 +230,7 @@ bool ResolvedLinks::NeedsRebuild(const RuntimeWorld& runtime)
         const LinkTrack& track = cache.Tracks[index];
         if (!world.IsAlive(track.Link))
             return true;
-        if (!track.Spatial)
+        if (!track.ResolvesSides)
             continue;
         const LinkState& state = States_[index];
         for (const auto& [side, zone] : { std::pair{ &track.A, state.ZoneA }, std::pair{ &track.B, state.ZoneB } })
@@ -255,16 +262,9 @@ void ResolvedLinks::Rebuild(RuntimeWorld& runtime)
     });
     std::sort(authored.begin(), authored.end(), Before<Authored>);
 
-    std::unordered_map<std::uint64_t, std::uint32_t> claimants;
+    ApertureClaims claims;
     for (const Authored& link : authored)
-    {
-        const PersistentEntityId a = link.Value.EndpointA.Target;
-        const PersistentEntityId b = link.Value.EndpointB.Target;
-        if (a.IsValid())
-            ++claimants[a.Value];
-        if (b.IsValid() && b != a)
-            ++claimants[b.Value];
-    }
+        claims.Add(link.Value);
 
     std::vector<LinkState> previousStates = std::move(States_);
     std::vector<LinkTrack> previousTracks = std::move(cache.Tracks);
@@ -282,7 +282,6 @@ void ResolvedLinks::Rebuild(RuntimeWorld& runtime)
         const LinkTrack* previous = FindTracked(previousTracks, link.Id, link.Link);
         const bool hasA = value.EndpointA.Target.IsValid();
         const bool hasB = value.EndpointB.Target.IsValid();
-        track.Spatial = hasA && hasB;
 
         const auto fail = [&state](LinkFault fault) {
             state.Resolution = LinkResolution::Invalid;
@@ -294,10 +293,11 @@ void ResolvedLinks::Rebuild(RuntimeWorld& runtime)
             fail(LinkFault::OneEndpoint);
         else if (value.EndpointA.Target == value.EndpointB.Target)
             fail(LinkFault::SameAperture);
-        else if (claimants[value.EndpointA.Target.Value] > 1 || claimants[value.EndpointB.Target.Value] > 1)
+        else if (claims.Contested(value.EndpointA.Target) || claims.Contested(value.EndpointB.Target))
             fail(LinkFault::ClaimedTwice);
         else
         {
+            track.ResolvesSides = true;
             const SideResolution a = ResolveSide(runtime, value.EndpointA, value.ZoneA);
             const SideResolution b = ResolveSide(runtime, value.EndpointB, value.ZoneB);
             const bool movedA = Moved(track.A, previous != nullptr ? &previous->A : nullptr, a);
@@ -312,8 +312,7 @@ void ResolvedLinks::Rebuild(RuntimeWorld& runtime)
                 state.Resolution = LinkResolution::AwaitingA;
             else if (b.Outcome == SideOutcome::Awaiting)
                 state.Resolution = LinkResolution::AwaitingB;
-            else if (std::abs(a.Frame.HalfExtents.X - b.Frame.HalfExtents.X) > ApertureTolerance::MatchingExtents
-                     || std::abs(a.Frame.HalfExtents.Y - b.Frame.HalfExtents.Y) > ApertureTolerance::MatchingExtents)
+            else if (!ApertureExtentsMatch(a.Frame.HalfExtents, b.Frame.HalfExtents))
                 fail(LinkFault::ExtentsDiffer);
             else if (movedA || movedB)
                 fail(LinkFault::Moved);

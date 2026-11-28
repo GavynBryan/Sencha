@@ -1962,8 +1962,12 @@ unchanged.
 layout and its cooked schema fingerprint change. `LinkAperture`
 (`sencha.link_aperture`, chunk `LAPT`) is a new component in `ZoneComponents`.
 `LinkEndpoint` in the world manifest gains an optional `Aperture` frame, and
+`DockEndpoint`'s `Origin`, `Normal`, `Right`, `Up` and `HalfExtents` become one
+`ApertureFrame Frame` (the manifest's JSON is unchanged).
+`EditorScene::ComposeWorldTransform` is gone; the editor calls the engine's.
+`WorldTopologyCook.h` and the new `WorldLinkValidation.h` are cook-only, and
 `CookWorldTopology` takes the authored apertures. The new public headers are
-`math/geometry/3d/ApertureFrame.h`, `zone/ResolvedLinks.h`,
+`math/geometry/3d/ApertureFrame.h`, `zone/ApertureClaims.h`, `zone/ResolvedLinks.h`,
 `zone/ResolvedLinksSystem.h` and `zone/WorldLinkValidation.h`, plus
 `ComposeWorldTransform` in `world/transform/DerivedTransform.h`. A `WLNK`
 chunk without the endpoint fields reads as a demand-only link and a manifest

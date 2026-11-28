@@ -255,19 +255,16 @@ TEST(WorldPartitionManifest, EndpointAndDebugMapsRoundTrip)
         .OwnerZone = ZoneId{ 0xa1 },
         .OtherZone = ZoneId{ 0xa2 },
         .Side = DockSide::A,
-        .Origin = { 8, 2, 0 },
-        .Normal = { 1, 0, 0 },
-        .Right = { 0, 0, 1 },
-        .Up = { 0, 1, 0 },
-        .HalfExtents = { 2, 3 },
+        .Frame = ApertureFrame{ .Origin = { 8, 2, 0 }, .Normal = { 1, 0, 0 }, .Right = { 0, 0, 1 },
+                                .Up = { 0, 1, 0 }, .HalfExtents = { 2, 3 } },
         .Directions = 3,
     };
     DockEndpoint reverse = dock;
     reverse.OwnerZone = ZoneId{ 0xa2 };
     reverse.OtherZone = ZoneId{ 0xa1 };
     reverse.Side = DockSide::B;
-    reverse.Normal = -dock.Normal;
-    reverse.Right = -dock.Right;
+    reverse.Frame.Normal = -dock.Frame.Normal;
+    reverse.Frame.Right = -dock.Frame.Right;
     manifest.Zones[0].Docks.push_back(dock);
     manifest.Zones[1].Docks.push_back(reverse);
     manifest.DockDebugMap.push_back({ DockId{ 0xd1 }, 0x42 });
@@ -326,6 +323,33 @@ TEST(WorldPartitionManifest, LinkApertureFramesRoundTripAndAreAllOrNothing)
     const auto damaged = JsonParse(text);
     ASSERT_TRUE(damaged.has_value());
     EXPECT_FALSE(ReadWorldPartitionManifest(*damaged, &error).has_value());
+}
+
+// A dock endpoint's rectangle is one ApertureFrame in memory; on disk its keys
+// stay where they always were, so cooked worlds read and write byte for byte.
+TEST(WorldPartitionManifest, ADockEndpointKeepsItsKeysAndTheirOrder)
+{
+    WorldPartitionManifest manifest = ParseFixture(CanonicalFixture);
+    manifest.Transitions.clear();
+    manifest.Zones[0].Docks.push_back(DockEndpoint{
+        .Id = DockId{ 0xd1 },
+        .OwnerZone = ZoneId{ 0xa1 },
+        .OtherZone = ZoneId{ 0xa2 },
+        .Side = DockSide::A,
+        .Frame = ApertureFrame{ .Origin = { 8, 2, 0 }, .Normal = { 1, 0, 0 }, .Right = { 0, 0, 1 },
+                                .Up = { 0, 1, 0 }, .HalfExtents = { 2, 3 } },
+        .Directions = 3,
+    });
+    const JsonValue written = WriteWorldPartitionManifest(manifest);
+    const JsonValue* zones = written.Find("zones");
+    ASSERT_NE(zones, nullptr);
+    const JsonValue* docks = zones->AsArray()[0].Find("dock_endpoints");
+    ASSERT_NE(docks, nullptr);
+    const auto expected = JsonParse(R"({"id": "00000000000000d1", "owner_zone": "00000000000000a1",
+        "other_zone": "00000000000000a2", "side": "a", "origin": [8, 2, 0], "normal": [1, 0, 0],
+        "right": [0, 0, 1], "up": [0, 1, 0], "half_extents": [2, 3], "directions": 3})");
+    ASSERT_TRUE(expected.has_value());
+    EXPECT_EQ(JsonStringify(docks->AsArray()[0], false), JsonStringify(*expected, false));
 }
 
 TEST(WorldPartitionManifest, GraphStreamingRoundTripsPresentSubset)

@@ -2034,3 +2034,19 @@ described in `docs/navigation/runtime.md`, "Agents".
   It needs the profiles' capsule radii at cook time and a static-geometry
   overlap query against the zone's collision. The same query also serves the
   editor's recess indicator (`01` section 5.5).
+
+## Dock focus crossings on the aperture kernel
+
+- **What:** `AdvanceZoneFocus` (`engine/src/zone/DockCrossing.cpp`) tests a
+  swept position against a dock's rectangle with its own side and rectangle
+  arithmetic, while `math/geometry/3d/ApertureFrame.h` (`CrossAperture`,
+  `ApertureSignedDistance`, `InsideApertureRectangle`) answers the same
+  questions for links. Two implementations of one crossing. Moving dock focus
+  onto the kernel now would change focus behaviour: dock focus keeps a
+  side epsilon, a plane-departure rule and hysteresis that the kernel's
+  half-open crossing does not have.
+- **Where:** `engine/src/zone/DockCrossing.cpp`; `engine/src/math/geometry/3d/ApertureFrame.cpp`.
+- **Trigger:** character traversal through links (spatial portals Stage 3),
+  which needs the same crossing math beside dock focus and brings the
+  hysteresis tolerances to the kernel. Fold dock focus onto those primitives
+  there, with its focus tests as the guard.

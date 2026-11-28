@@ -156,7 +156,7 @@ TEST(WorldTopologyCookSeam, AnUnmirroredEndpointIsRejectedByValidation)
     // Break only the mirror: keep both endpoints, both zones, both ids.
     ZoneHeader& zoneB = manifest.Zones[1];
     ASSERT_EQ(zoneB.Docks.size(), 1u);
-    zoneB.Docks[0].Right = -zoneB.Docks[0].Right;
+    zoneB.Docks[0].Frame.Right = -zoneB.Docks[0].Frame.Right;
 
     const WorldPartitionIndex index = WorldPartitionIndex::Build(manifest);
     const std::vector<ContentRiskRecord> records =

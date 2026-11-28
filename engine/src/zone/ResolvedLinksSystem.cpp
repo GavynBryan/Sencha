@@ -84,9 +84,9 @@ ResolvedLinksSystem::ResolvedLinksSystem(RuntimeWorld& runtime, ConsoleRegistry*
         .Source = { "world" },
     });
     (void)console->RegisterCommand({
-        .Name = "links",
+        .Name = "world.links",
         .Owner = "world",
-        .Usage = "links",
+        .Usage = "world.links",
         .Help = "Prints every world link's state and the resolution counters.",
         .Callback = [&world](ConsoleExecutionContext&, std::span<const std::string>) { return DescribeLinks(world); },
     });

@@ -9,6 +9,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/transform/TransformComponents.h>
+#include <world/transform/TransformPropagation.h>
 #include <zone/ResolvedLinks.h>
 #include <zone/WorldConnectionComponents.h>
 #include <zone/ZonePackageImporter.h>
@@ -299,6 +300,12 @@ TEST(ResolvedLinks, AnApertureClaimedTwiceInvalidatesBothLinks)
         }
         ASSERT_EQ(Invalidations(world.Links()).size(), 2u);
         EXPECT_EQ(Invalidations(world.Links())[0].Id, kDoor);
+        world.Update();
+        world.Update();
+        const std::uint64_t total = world.Links().Stats().TotalRebuilds;
+        for (int frame = 0; frame < 5; ++frame)
+            world.Update();
+        EXPECT_EQ(world.Links().Stats().TotalRebuilds, total) << "a link faulted by authored data tracks no residency";
     }
 }
 
@@ -341,6 +348,7 @@ TEST(ResolvedLinks, MalformedLinksAreInvalidAndDiagnosedOncePerTransition)
         world.Update();
         world.Update();
         EXPECT_TRUE(world.Links().Transitions().empty()) << c.Name << ": once per transition";
+        EXPECT_EQ(world.Links().Stats().Rebuilds, 0u) << c.Name << ": a quiet frame does not rebuild";
     }
 }
 
@@ -458,4 +466,88 @@ TEST(LinkContinuation, OneWayLinksAndTheEarliestCrossingDecide)
     const Vec3d hallFront = links[0].FrameB.Origin + links[0].FrameB.Normal;
     EXPECT_FALSE(ContinueThroughLinks(links, hallFront, links[0].FrameB.Origin - links[0].FrameB.Normal).has_value())
         << "the door goes from the room to the hall only";
+}
+
+TEST(ResolvedLinks, AnApertureMovedByItsParentInvalidatesItsLink)
+{
+    LinkWorld world;
+    world.Author({ Link(kDoor, kRoom, kRoomAperture, kHall, kHallAperture) });
+    world.RoomAndHall();
+    const EntityId parent = world.Entities().CreateEntity();
+    world.Entities().AddComponent<LocalTransform>(parent, LocalTransform{ Transform3f::Identity() });
+    world.Entities().AddComponent<WorldTransform>(parent, WorldTransform{ Transform3f::Identity() });
+    world.Entities().AddComponent<Parent>(world.Resolve(kRoomAperture), Parent{ parent });
+    PropagateTransforms(world.Entities());
+    world.Update();
+    world.Update();
+    world.Update();
+    ASSERT_EQ(world.State(kDoor).Resolution, LinkResolution::Active);
+
+    world.Entities().TryGet<LocalTransform>(parent)->Value.Position.X += 3.0f;
+    PropagateTransforms(world.Entities());
+    world.Update();
+    EXPECT_EQ(world.State(kDoor).Resolution, LinkResolution::Invalid) << "the aperture's world frame moved";
+    EXPECT_EQ(world.State(kDoor).Fault, LinkFault::Moved);
+}
+
+TEST(ResolvedLinks, AWriteThatChangesNothingKeepsTheLinkActive)
+{
+    LinkWorld world;
+    world.Author({ Link(kDoor, kRoom, kRoomAperture, kHall, kHallAperture) });
+    world.RoomAndHall();
+    world.Update();
+    world.Update();
+    Query<Write<LocalTransform>, With<LinkAperture>> written(world.Entities());
+    written.ForEachChunk([](auto& view) { (void)view.template Write<LocalTransform>(); });
+    world.Update();
+    EXPECT_EQ(world.Links().Stats().Rebuilds, 1u) << "the write is seen";
+    EXPECT_EQ(world.State(kDoor).Resolution, LinkResolution::Active) << "and the frame it compares is the same";
+    EXPECT_TRUE(world.Links().Transitions().empty());
+}
+
+TEST(ResolvedLinks, AMoveLaterInTheFrameOfAnUpdateIsSeen)
+{
+    LinkWorld world;
+    world.Author({ Link(kDoor, kRoom, kRoomAperture, kHall, kHallAperture) });
+    world.RoomAndHall();
+    world.Update();
+    world.Update();
+    world.Links().Update(world.Runtime);
+    world.Entities().TryGet<LocalTransform>(world.Resolve(kRoomAperture))->Value.Position.X += 0.5f;
+    world.Entities().AdvanceFrame();
+    world.Update();
+    EXPECT_EQ(world.State(kDoor).Fault, LinkFault::Moved);
+}
+
+namespace
+{
+    ResolvedLink HandBuilt(LinkId id, const ApertureFrame& a, const ApertureFrame& b)
+    {
+        ResolvedLink link;
+        link.Id = id;
+        link.FrameA = a;
+        link.FrameB = b;
+        link.AToB = ApertureMapping(a, b);
+        link.BToA = ApertureMapping(b, a);
+        return link;
+    }
+}
+
+TEST(LinkContinuation, AnEqualCrossingGoesToTheLowerIdThenToSideA)
+{
+    const ApertureFrame wall = MakeApertureFrame(At(Vec3d{ 0, 1, 0 }), Vec2d{ 1, 2 });
+    const ApertureFrame far = MakeApertureFrame(At(Vec3d{ 40, 1, 0 }), Vec2d{ 1, 2 });
+    const ApertureFrame farther = MakeApertureFrame(At(Vec3d{ 80, 1, 0 }), Vec2d{ 1, 2 });
+    const Vec3d from{ 0, 1, -1 };
+    const Vec3d to{ 0, 1, 1 };
+
+    const ResolvedLink twoLinks[] = { HandBuilt(kDoor, wall, far), HandBuilt(kWindow, wall, farther) };
+    const std::optional<LinkContinuation> lower = ContinueThroughLinks(twoLinks, from, to);
+    ASSERT_TRUE(lower.has_value());
+    EXPECT_EQ(lower->Link->Id, kDoor);
+
+    const ResolvedLink oneLink[] = { HandBuilt(kDoor, wall, wall) };
+    const std::optional<LinkContinuation> sideA = ContinueThroughLinks(oneLink, from, to);
+    ASSERT_TRUE(sideA.has_value());
+    EXPECT_EQ(sideA->Entered, DockSide::A);
 }

@@ -6,7 +6,7 @@ class RuntimeWorld;
 struct PreSimulateContext;
 
 // Brings the World's ResolvedLinks up to date once a frame, before any tick,
-// logs each link that turns invalid, answers the `links` console command and
+// logs each link that turns invalid, answers the `world.links` console command and
 // draws resolved links under `world.links.debug.draw`. docs/zone/links.md.
 class ResolvedLinksSystem
 {

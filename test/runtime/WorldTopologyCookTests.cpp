@@ -50,11 +50,11 @@ TEST(WorldTopologyCook, EmitsReciprocalCrossGraphDockEndpoints)
     EXPECT_EQ(a.OtherZone, b.OwnerZone);
     EXPECT_EQ(a.Side, DockSide::A);
     EXPECT_EQ(b.Side, DockSide::B);
-    EXPECT_EQ(a.Normal, -b.Normal);
-    EXPECT_EQ(a.Right, -b.Right);
-    EXPECT_EQ(a.Up, b.Up);
-    EXPECT_EQ(a.Origin, b.Origin);
-    EXPECT_EQ(a.HalfExtents, b.HalfExtents);
+    EXPECT_EQ(a.Frame.Normal, -b.Frame.Normal);
+    EXPECT_EQ(a.Frame.Right, -b.Frame.Right);
+    EXPECT_EQ(a.Frame.Up, b.Frame.Up);
+    EXPECT_EQ(a.Frame.Origin, b.Frame.Origin);
+    EXPECT_EQ(a.Frame.HalfExtents, b.Frame.HalfExtents);
     ASSERT_EQ(manifest.DockDebugMap.size(), 1u);
     EXPECT_EQ(manifest.DockDebugMap[0].AuthoredEntity, 42u);
 }

@@ -63,6 +63,24 @@ ApertureFrame MakeApertureFrame(const Transform3f& world, Vec2d halfExtents)
     };
 }
 
+bool IsValidApertureFrame(const ApertureFrame& frame)
+{
+    constexpr float tolerance = ApertureTolerance::Orthonormal;
+    const auto unit = [](const Vec3d& axis) {
+        return Finite(axis) && std::abs(axis.SqrMagnitude() - 1.0f) <= tolerance;
+    };
+    return Finite(frame.Origin) && unit(frame.Normal) && unit(frame.Right) && unit(frame.Up)
+        && std::abs(frame.Normal.Dot(frame.Right)) <= tolerance && std::abs(frame.Normal.Dot(frame.Up)) <= tolerance
+        && std::abs(frame.Right.Dot(frame.Up)) <= tolerance && std::isfinite(frame.HalfExtents.X)
+        && std::isfinite(frame.HalfExtents.Y) && frame.HalfExtents.X > 0.0f && frame.HalfExtents.Y > 0.0f;
+}
+
+bool ApertureExtentsMatch(const Vec2d& a, const Vec2d& b)
+{
+    return std::abs(a.X - b.X) <= ApertureTolerance::MatchingExtents
+        && std::abs(a.Y - b.Y) <= ApertureTolerance::MatchingExtents;
+}
+
 float ApertureSignedDistance(const ApertureFrame& frame, const Vec3d& point)
 {
     return (point - frame.Origin).Dot(frame.Normal);

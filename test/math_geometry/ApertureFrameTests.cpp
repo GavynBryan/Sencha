@@ -313,3 +313,46 @@ TEST(ApertureFrame, ValidFramesAreFiniteRigidAndHavePositiveExtents)
     EXPECT_NEAR(frame.Normal.Magnitude(), 1.0f, kClose) << "the frame is built from the normalized rotation";
     ExpectNear(frame.Normal, Yaw(30.0f).RotateVector(Vec3d::Forward()), "normal");
 }
+
+TEST(ApertureFrame, MatchingExtentsToleranceIsInclusive)
+{
+    constexpr float tolerance = ApertureTolerance::MatchingExtents;
+    EXPECT_TRUE(ApertureExtentsMatch(Vec2d{ 0, 0 }, Vec2d{ 0.5f * tolerance, 0 }));
+    EXPECT_TRUE(ApertureExtentsMatch(Vec2d{ 0, 0 }, Vec2d{ tolerance, 0 }));
+    EXPECT_TRUE(ApertureExtentsMatch(Vec2d{ 0, 0 }, Vec2d{ 0, -tolerance }));
+    EXPECT_FALSE(ApertureExtentsMatch(Vec2d{ 0, 0 }, Vec2d{ 2.0f * tolerance, 0 }));
+    EXPECT_FALSE(ApertureExtentsMatch(Vec2d{ 0, 0 }, Vec2d{ 0, 2.0f * tolerance }));
+}
+
+TEST(ApertureFrame, UnitScaleToleranceSitsBetweenItsNeighbours)
+{
+    // One plus the tolerance is not representable, so the boundary is judged on
+    // the floats either side of it.
+    constexpr float tolerance = ApertureTolerance::UnitScale;
+    const auto scaled = [](float x) { return Transform3f{ Vec3d::Zero(), Quatf::Identity(), Vec3d{ x, 1, 1 } }; };
+    const float atBelow = std::nextafter(1.0f + tolerance, 1.0f);
+    const float atAbove = std::nextafter(1.0f + tolerance, 2.0f);
+    EXPECT_EQ(CheckApertureFrame(scaled(1.0f + 0.9f * tolerance), Vec2d{ 1, 1 }), ApertureFrameFault::None);
+    EXPECT_EQ(CheckApertureFrame(scaled(atBelow), Vec2d{ 1, 1 }), ApertureFrameFault::None);
+    EXPECT_EQ(CheckApertureFrame(scaled(atAbove), Vec2d{ 1, 1 }), ApertureFrameFault::ScaleNotUnit);
+    EXPECT_EQ(CheckApertureFrame(scaled(1.0f + 1.1f * tolerance), Vec2d{ 1, 1 }), ApertureFrameFault::ScaleNotUnit);
+    EXPECT_EQ(CheckApertureFrame(scaled(1.0f - 1.1f * tolerance), Vec2d{ 1, 1 }), ApertureFrameFault::ScaleNotUnit);
+}
+
+TEST(ApertureFrame, AStoredFrameIsValidWhenOrthonormalWithPositiveExtents)
+{
+    const ApertureFrame good = Frame(Vec3d{ 1, 2, 3 }, Yaw(30.0f));
+    EXPECT_TRUE(IsValidApertureFrame(good));
+    ApertureFrame skewed = good;
+    skewed.Up = (good.Up + good.Normal * 0.1f).Normalized();
+    EXPECT_FALSE(IsValidApertureFrame(skewed));
+    ApertureFrame stretched = good;
+    stretched.Right = good.Right * 1.1f;
+    EXPECT_FALSE(IsValidApertureFrame(stretched));
+    ApertureFrame flat = good;
+    flat.HalfExtents = Vec2d{ 1, 0 };
+    EXPECT_FALSE(IsValidApertureFrame(flat));
+    ApertureFrame lost = good;
+    lost.Origin = Vec3d{ std::numeric_limits<float>::infinity(), 0, 0 };
+    EXPECT_FALSE(IsValidApertureFrame(lost));
+}

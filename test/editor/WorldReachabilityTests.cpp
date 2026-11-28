@@ -139,6 +139,25 @@ namespace
             return link.Id;
         }
 
+        // A platform four metres above the basement floor, which no walk climbs.
+        void Platform() { (void)World.ZoneDocument(Basement)->GetScene().CreateBrush(Vec3d{ 5, -4.5f, 5 }, Vec3d{ 2, 0.5f, 2 }); }
+
+        // A link within the basement from an aperture just past the floor's
+        // edge, its front turned by `entryYaw`, to one standing on the platform.
+        LinkId SameZoneLink(float entryYaw)
+        {
+            WorldLink link;
+            link.Id = World.MintLinkId();
+            link.ZoneA = Basement;
+            link.ZoneB = Basement;
+            link.Directions = DockDirectionAToB;
+            link.EndpointA.Target = Aperture(Basement, Vec3d{ 8.5f, -6, 0 }, entryYaw);
+            link.EndpointB.Target = Aperture(Basement, Vec3d{ 5, -2, 5 }, 90.0f);
+            EditorScene& scene = World.WorldSceneDocument().GetScene();
+            scene.GetRegistry().Components.AddComponent(scene.CreateEntity(Vec3d{}), link);
+            return link.Id;
+        }
+
         JsonValue Ok(std::string_view name, std::string_view arguments)
         {
             const JsonValue answer = Operations.Invoke(name, JsonParse(arguments).value_or(JsonValue{}));
@@ -270,6 +289,39 @@ namespace
         std::vector<std::string> expected{ LinkIdToString(tipped), LinkIdToString(demand.Id) };
         std::ranges::sort(expected);
         EXPECT_EQ(unconsidered, expected);
+    }
+
+    constexpr std::string_view kOntoPlatform = R"({"from": [-5, -8, -5], "to": [5, -4, 5]})";
+
+    TEST_F(WorldReachabilityTest, ASameZoneLinkJoinsTwoPartsOfOneZone)
+    {
+        Platform();
+        EXPECT_EQ(Outcome(Ok("world.reachable", kOntoPlatform)), "unreached") << "nothing climbs onto the platform";
+        const LinkId link = SameZoneLink(90.0f);
+        const JsonValue onto = Ok("world.reachable", kOntoPlatform);
+        EXPECT_EQ(Outcome(onto), "reached") << JsonStringify(onto);
+        ASSERT_EQ(onto.Find("links")->AsArray().size(), 1u);
+        EXPECT_EQ(onto.Find("links")->AsArray()[0].AsString(), LinkIdToString(link));
+    }
+
+    TEST_F(WorldReachabilityTest, AnApertureIsEnteredFromItsFrontOnly)
+    {
+        Platform();
+        (void)SameZoneLink(-90.0f);
+        EXPECT_EQ(Outcome(Ok("world.reachable", kOntoPlatform)), "unreached")
+            << "the floor lies behind the aperture, and its front faces the drop";
+    }
+
+    TEST_F(WorldReachabilityTest, ALinkValidationRejectsIsNotWalked)
+    {
+        const LinkId link = Link(DockDirectionAToB);
+        EditorScene& basement = World.ZoneDocument(Basement)->GetScene();
+        basement.GetRegistry().Components.ForEachComponent<LinkAperture>(
+            [](EntityId, LinkAperture& aperture) { aperture.HalfExtents = Vec2d{ 1.5f, 2.0f }; });
+        const JsonValue down = Ok("world.reachable", std::string(kDown) + "}");
+        EXPECT_EQ(Outcome(down), "unreached") << "apertures of two sizes make no link";
+        ASSERT_EQ(down.Find("unconsidered")->AsArray().size(), 1u);
+        EXPECT_EQ(down.Find("unconsidered")->AsArray()[0].AsString(), LinkIdToString(link));
     }
 
     TEST_F(WorldReachabilityTest, ASecondWayDownBypassesTheGate)

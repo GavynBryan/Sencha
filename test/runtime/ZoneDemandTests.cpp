@@ -454,8 +454,8 @@ TEST(ZoneDemand, CrossGraphDockSeedsDestinationGraphPolicy)
     endpoint.OwnerZone = b.Id;
     endpoint.OtherZone = a.Id;
     endpoint.Side = DockSide::B;
-    endpoint.Normal = -endpoint.Normal;
-    endpoint.Right = -endpoint.Right;
+    endpoint.Frame.Normal = -endpoint.Frame.Normal;
+    endpoint.Frame.Right = -endpoint.Frame.Right;
     b.Docks.push_back(endpoint);
     b.Links.push_back(MakeEdge(0xc1, b.Id.Value, c.Id.Value));
     manifest.Zones = { a, b, c };

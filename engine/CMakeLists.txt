@@ -182,6 +182,10 @@ if(NOT SENCHA_ENABLE_COOK)
         # a shipped runtime has no use for it.
         "[/\\\\]src[/\\\\]navigation[/\\\\]tooling[/\\\\]"
         "[/\\\\]include[/\\\\]navigation[/\\\\]tooling[/\\\\]"
+        # Compiling a world's authored docks, links and apertures into its
+        # manifest, and judging them: the world cook's, never the runtime's.
+        "[/\\\\]zone[/\\\\]WorldTopologyCook\\.(h|cpp)$"
+        "[/\\\\]zone[/\\\\]WorldLinkValidation\\.(h|cpp)$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
         list(FILTER SENCHA_ENGINE_HEADERS EXCLUDE REGEX "${_pattern}")

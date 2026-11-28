@@ -184,25 +184,6 @@ bool EditorScene::ValidateIdentities(std::string* error) const
     return true;
 }
 
-Transform3f EditorScene::ComposeWorldTransform(EntityId entity) const
-{
-    const World& world = Registry_.Components;
-    Transform3f composed = Transform3f::Identity();
-    if (const LocalTransform* local = world.TryGet<LocalTransform>(entity))
-        composed = local->Value;
-
-    // Bounded like IsAncestorOf, so damaged parentage terminates.
-    std::size_t remaining = Entities.size();
-    for (EntityId parent = GetParent(entity);
-         parent.IsValid() && remaining > 0;
-         parent = GetParent(parent), --remaining)
-    {
-        if (const LocalTransform* local = world.TryGet<LocalTransform>(parent))
-            composed = local->Value * composed;
-    }
-    return composed;
-}
-
 EntityId EditorScene::GetParent(EntityId entity) const
 {
     const Parent* parent = Registry_.Components.TryGet<Parent>(entity);
@@ -349,7 +330,7 @@ void EditorScene::DestroyEntity(EntityId entity)
     {
         if (candidate == entity || GetParent(candidate) != entity)
             continue;
-        const Transform3f held = ComposeWorldTransform(candidate);
+        const Transform3f held = ::ComposeWorldTransform(Registry_.Components, candidate);
         (void)SetParent(candidate, grandparent);
         SetWorldTransform(candidate, held);
     }
@@ -406,7 +387,7 @@ void EditorScene::SetWorldTransform(EntityId entity, const Transform3f& world)
     // propagation applies, so a value placed here reads back unchanged. The
     // frame is composed live rather than read from the derived component,
     // which can be a refresh behind the mutation being made.
-    const Transform3f frame = ComposeWorldTransform(parent);
+    const Transform3f frame = ::ComposeWorldTransform(Registry_.Components, parent);
     Transform3f local;
     local.Position = frame.InverseTransformPoint(world.Position);
     local.Rotation = frame.Rotation.Conjugate() * world.Rotation;

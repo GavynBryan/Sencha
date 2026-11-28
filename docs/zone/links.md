@@ -58,6 +58,8 @@ They touch no ECS, renderer, physics or cvar.
 | Function | Answers |
 |---|---|
 | `CheckApertureFrame`, `MakeApertureFrame` | whether a transform and extents make a valid frame, and the frame |
+| `IsValidApertureFrame` | whether a stored frame (a manifest's) is orthonormal with positive extents |
+| `ApertureExtentsMatch` | whether two apertures are the same size within `MatchingExtents` |
 | `ApertureSignedDistance`, `ClassifyApertureSide` | which side of the plane a point is on |
 | `ApertureCoordinates`, `InsideApertureRectangle` | where a point falls in the rectangle, with an explicit edge tolerance |
 | `SphereSupportInterval`, `CapsuleSupportInterval` | the nearest and farthest signed distance a shape reaches |
@@ -69,7 +71,8 @@ has not crossed, and one that starts on it and goes behind crosses at fraction
 zero, so consecutive segments count each crossing exactly once.
 
 Tolerances are named, one per purpose, in `ApertureTolerance`: `PlaneSide`,
-`RectangleEdge`, `UnitScale`, `Upright`, `MatchingExtents`. The tolerances that
+`RectangleEdge`, `UnitScale`, `Upright` (a cosine shortfall, the measure the
+relocation work's `KeepsWorldUp` uses), `MatchingExtents`, `Orthonormal`. The tolerances that
 only character traversal uses (capsule fit, exit separation, clear hysteresis)
 arrive with traversal.
 
@@ -115,7 +118,16 @@ unlinked-aperture warnings, sorted by aperture id.
 
 `partition.link.endpoint_invalid` (`WorldPartitionValidation`) also checks the
 cooked manifest: either both endpoints carry a frame or neither does, and every
-frame is orthonormal with positive extents.
+frame passes `IsValidApertureFrame`. Whether a spatial link has its frames at
+all is the authored rules' to say, since only they know which zones were read:
+a well-formed link in a zone Kyusu has not opened compiles without frames, and
+the cook, which opens every zone, gives it them. A `DockEndpoint` holds its
+rectangle as an `ApertureFrame` too, read and written by the same code.
+
+`ApertureClaims` (`zone/ApertureClaims.h`) counts which links name each
+aperture, for the authored rules and for resolution alike. The world cook's
+files (`WorldTopologyCook`, `WorldLinkValidation`) build only with
+`SENCHA_ENABLE_COOK`.
 
 The recess-depth check (an aperture needs free volume behind it as deep as a
 character's radius) is not here. The cook has no character profiles and no
@@ -166,13 +178,17 @@ away.
 An update rebuilds the whole table only when one of these may have changed:
 
 - a `WorldLink` (a cached `Changed<WorldLink>` query);
-- a `LinkAperture` or an aperture's `LocalTransform`;
+- a `LinkAperture`, an aperture's `LocalTransform`, or its `WorldTransform`,
+  which is how a parent's move reaches it (frames are composed from the parent
+  chain with `ComposeWorldTransform`);
 - a tracked link or aperture entity's life;
-- the residency of a zone a spatial link names.
+- the residency of a zone named by a link that got as far as resolving its
+  sides. A link faulted from authored data alone (one endpoint, one aperture
+  twice, an aperture two links name) depends on no residency.
 
 Change queries compare one frame behind the last update. A write later in the
 frame of an update is therefore still seen, and a change costs one redundant
-rebuild on the following frame. A quiet frame costs one empty pass of the three
+rebuild on the following frame. A quiet frame costs one empty pass of the four
 change queries, plus a liveness check and two residency lookups per spatial
 link. In a world with no links, the queries match no archetype and no entity is
 read. A rebuild is O(L log L) in authored links and allocates. There is no cap:
@@ -185,20 +201,21 @@ in with neighbour participation (visible and physics by default). With
 
 ## Debug
 
-- `links` (console) prints every link's state and fault, `(not upright)` for an
+- `world.links` (console) prints every link's state and fault, `(not upright)` for an
   active link that is not, and the counters: active, awaiting, invalid,
   demand-only and total rebuilds.
 - `world.links.debug.draw` (cvar, off) draws each active link's rectangles and
   front normals, coloured by whether the link is upright, and a marker behind
   aperture A together with where the mapping carries it. Link ids and states are
-  read from `links`; the debug line channel draws no text.
+  read from `world.links`; the debug line channel draws no text.
 - `ResolvedLinks::Stats()` holds the same counters for tools and tests.
 
 ## Reachability
 
 `world.reachable` and `world.bypasses` (Kyusu level operations) walk a spatial
 link the way they walk a dock. A walker reaches the mouth of the aperture it
-enters, then lands one step in front of the other aperture. The walk works
+enters, from in front of it only, then lands one step in front of the other
+aperture. The walk works
 within a zone and between two. The result lists links crossed under `links`.
-Demand-only links, links whose apertures are missing, and links that are not
-upright are listed under `unconsidered`.
+Demand-only links, links `ValidateAuthoredLinks` rejects, and links that are
+not upright are listed under `unconsidered`.

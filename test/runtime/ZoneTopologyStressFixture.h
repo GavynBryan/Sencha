@@ -133,11 +133,8 @@ inline void AddStressDockPair(WorldPartitionManifest& manifest,
         .OwnerZone = zoneA,
         .OtherZone = zoneB,
         .Side = DockSide::A,
-        .Origin = origin,
-        .Normal = normal,
-        .Right = right,
-        .Up = up,
-        .HalfExtents = halfExtents,
+        .Frame = ApertureFrame{ .Origin = origin, .Normal = normal, .Right = right,
+                                .Up = up, .HalfExtents = halfExtents },
         .Directions = 3,
     };
     a->Docks.push_back(endpoint);
@@ -145,8 +142,8 @@ inline void AddStressDockPair(WorldPartitionManifest& manifest,
     endpoint.OwnerZone = zoneB;
     endpoint.OtherZone = zoneA;
     endpoint.Side = DockSide::B;
-    endpoint.Normal = -normal;
-    endpoint.Right = -right;
+    endpoint.Frame.Normal = -normal;
+    endpoint.Frame.Right = -right;
     b->Docks.push_back(endpoint);
 }
 

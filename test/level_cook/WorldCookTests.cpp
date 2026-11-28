@@ -841,3 +841,52 @@ TEST_F(WorldCookTest, ALinkEditRestalesNoZone)
             << "a link's frames live in the manifest, not in a zone's cooked content";
     EXPECT_EQ(after.Zones[0].Links[0].Directions, DockDirectionAToB);
 }
+
+// Live validation sees only open zones. A well-formed link inside a zone that
+// is closed compiles without frames, and that alone is no error.
+TEST_F(WorldCookTest, ASameZoneLinkInAClosedZoneIsNoLiveError)
+{
+    ZoneId second{};
+    {
+        WorldDocument world(Logging);
+        world.NewWorld("TestWorld");
+        const ZoneId first = world.Manifest().Zones[0].Id;
+        second = world.AddZone(world.Manifest().Graphs[0].Id, "Second");
+        ASSERT_TRUE(world.SetZoneBounds(first, Aabb3d::FromMinMax(Vec3d{ -8, 0, -8 }, Vec3d{ 8, 4, 8 })));
+        ASSERT_TRUE(world.SetZoneBounds(second, Aabb3d::FromMinMax(Vec3d{ 24, 0, -5 }, Vec3d{ 40, 4, 5 })));
+        ASSERT_TRUE(world.SetFocusZone(second));
+        const PersistentEntityId a =
+            PlaceAperture(world.FocusDocument(), Transform3f{ Vec3d{ 28, 2, 0 }, Quatf::Identity(), Vec3d::One() });
+        const PersistentEntityId b = PlaceAperture(
+            world.FocusDocument(),
+            Transform3f{ Vec3d{ 36, 2, 0 }, Quatf::FromAxisAngle(Vec3d::Up(), 3.14159265f), Vec3d::One() });
+        WorldLink link;
+        link.Id = world.MintLinkId();
+        link.ZoneA = second;
+        link.ZoneB = second;
+        link.EndpointA.Target = a;
+        link.EndpointB.Target = b;
+        EditorDocument& worldScene = world.WorldSceneDocument();
+        worldScene.GetScene().GetRegistry().Components.AddComponent(worldScene.GetScene().CreateEntity(Vec3d{}), link);
+        worldScene.MarkDirty();
+        ASSERT_TRUE(world.SetFocusZone(first));
+        ASSERT_TRUE(world.SaveWorldAs(WorldPath()));
+    }
+
+    WorldDocument reloaded(Logging);
+    ASSERT_TRUE(reloaded.LoadWorld(WorldPath()));
+    if (reloaded.IsZoneOpen(second))
+    {
+        ASSERT_TRUE(reloaded.UnloadZone(second));
+    }
+    ASSERT_FALSE(reloaded.IsZoneOpen(second));
+    reloaded.Revalidate();
+    for (const ContentRiskRecord& record : reloaded.ValidationRecords())
+        EXPECT_NE(record.Severity, ContentRiskSeverity::Error) << record.RuleId << ": " << record.Message;
+
+    const WorldCookResult cooked = CookWorld(reloaded, Root, 16.0, Logging, nullptr);
+    ASSERT_TRUE(cooked.Success) << cooked.Error;
+    const WorldPartitionManifest manifest = ParseCookedManifest(cooked.CookedManifestPath);
+    ASSERT_EQ(manifest.Zones[1].Links.size(), 2u);
+    EXPECT_TRUE(manifest.Zones[1].Links[0].Aperture.has_value()) << "the cook opens every zone";
+}

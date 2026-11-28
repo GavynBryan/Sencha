@@ -32,17 +32,6 @@ void SetError(std::string* error, std::string message)
         *error = std::move(message);
 }
 
-const AuthoredApertureCookInput* FindAperture(std::span<const AuthoredApertureCookInput> apertures,
-                                              const PersistableRef& ref)
-{
-    if (!ref.Target.IsValid())
-        return nullptr;
-    for (const AuthoredApertureCookInput& aperture : apertures)
-        if (aperture.Id == ref.Target)
-            return &aperture;
-    return nullptr;
-}
-
 std::optional<ApertureFrame> CookedFrame(const AuthoredApertureCookInput* aperture)
 {
     if (aperture == nullptr
@@ -52,6 +41,17 @@ std::optional<ApertureFrame> CookedFrame(const AuthoredApertureCookInput* apertu
 }
 
 } // namespace
+
+const AuthoredApertureCookInput* FindAuthoredAperture(std::span<const AuthoredApertureCookInput> apertures,
+                                                      PersistentEntityId id)
+{
+    if (!id.IsValid())
+        return nullptr;
+    for (const AuthoredApertureCookInput& aperture : apertures)
+        if (aperture.Id == id)
+            return &aperture;
+    return nullptr;
+}
 
 bool CookWorldTopology(WorldPartitionManifest& manifest,
                        std::span<const AuthoredDockCookInput> docks,
@@ -107,30 +107,23 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
                                         DockIdToString(dock.Id)));
             return false;
         }
-        const ApertureFrame frame = MakeApertureFrame(input.Transform, dock.HalfExtents);
-        const Vec3d normal = -frame.Normal;
-        const Vec3d right = frame.Right;
-        const Vec3d up = frame.Up;
+        ApertureFrame frame = MakeApertureFrame(input.Transform, dock.HalfExtents);
+        frame.Normal = -frame.Normal;
 
         DockEndpoint endpointA{
             .Id = dock.Id,
             .OwnerZone = zoneA->Id,
             .OtherZone = zoneB->Id,
             .Side = DockSide::A,
-            .Origin = input.Transform.Position,
-            .Normal = normal,
-            .Right = right,
-            .Up = up,
-            .HalfExtents = dock.HalfExtents,
+            .Frame = frame,
             .Directions = dock.Directions,
         };
         DockEndpoint endpointB = endpointA;
         endpointB.OwnerZone = zoneB->Id;
         endpointB.OtherZone = zoneA->Id;
         endpointB.Side = DockSide::B;
-        endpointB.Normal = -normal;
-        endpointB.Right = -right;
-        endpointB.Up = up;
+        endpointB.Frame.Normal = -frame.Normal;
+        endpointB.Frame.Right = -frame.Right;
 
         FindZone(cooked, zoneA->Id)->Docks.push_back(std::move(endpointA));
         FindZone(cooked, zoneB->Id)->Docks.push_back(std::move(endpointB));
@@ -184,8 +177,8 @@ bool CookWorldTopology(WorldPartitionManifest& manifest,
         endpointB.Side = DockSide::B;
         if (spatial)
         {
-            const std::optional<ApertureFrame> frameA = CookedFrame(FindAperture(apertures, link.EndpointA));
-            const std::optional<ApertureFrame> frameB = CookedFrame(FindAperture(apertures, link.EndpointB));
+            const std::optional<ApertureFrame> frameA = CookedFrame(FindAuthoredAperture(apertures, link.EndpointA.Target));
+            const std::optional<ApertureFrame> frameB = CookedFrame(FindAuthoredAperture(apertures, link.EndpointB.Target));
             if (frameA.has_value() && frameB.has_value())
             {
                 endpointA.Aperture = frameA;

@@ -8,6 +8,7 @@
 #include <core/json/JsonParser.h>
 #include <navigation/NavLinkComponent.h>
 #include <world/registry/Registry.h>
+#include <world/transform/DerivedTransform.h>
 
 #include <algorithm>
 #include <string>
@@ -23,7 +24,7 @@ std::vector<NavLinkRecord> CollectNavLinks(const EditorDocument& document)
     world.ForEachComponent<NavLink>(
         [&](EntityId entity, const NavLink& link)
         {
-            const Transform3f toWorld = document.GetScene().ComposeWorldTransform(entity);
+            const Transform3f toWorld = ComposeWorldTransform(document.GetRegistry().Components, entity);
             NavLinkRecord cooked;
             cooked.Id = link.Id;
             cooked.Traversal = std::string(link.Traversal.View());

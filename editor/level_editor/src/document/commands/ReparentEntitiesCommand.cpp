@@ -3,6 +3,8 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 
+#include <world/transform/DerivedTransform.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -37,7 +39,7 @@ void ReparentEntitiesCommand::Execute()
                 entry.PreviousLocal = *local;
             // Composed live, like the conversion that will consume it: the
             // derived component can be a refresh behind an edit made this frame.
-            entry.World = Scene.ComposeWorldTransform(entry.Entity);
+            entry.World = ComposeWorldTransform(Scene.GetRegistry().Components, entry.Entity);
         }
         if (Reorder)
         {

@@ -31,6 +31,10 @@ struct AuthoredApertureCookInput
     Transform3f Transform{};
 };
 
+// The aperture of that persistent id, or null; an invalid id finds none.
+[[nodiscard]] const AuthoredApertureCookInput* FindAuthoredAperture(
+    std::span<const AuthoredApertureCookInput> apertures, PersistentEntityId id);
+
 // A link whose two apertures are both among `apertures`, with valid frames,
 // cooks each frame onto its side's endpoint; any other link cooks as a demand
 // edge. Whether a spatial link is well formed is ValidateAuthoredLinks' to say.

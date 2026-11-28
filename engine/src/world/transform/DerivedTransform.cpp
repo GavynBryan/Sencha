@@ -29,12 +29,11 @@ void SeedDerivedWorldTransform(World& world, EntityId entity)
 
 Transform3f ComposeWorldTransform(const World& world, EntityId entity)
 {
-    // A parent chain this long is a cycle, not a hierarchy.
-    constexpr int kDeepestParentChain = 64;
     Transform3f composed = Transform3f::Identity();
     if (!world.IsRegistered<LocalTransform>())
         return composed;
-    for (int depth = 0; entity.IsValid() && depth < kDeepestParentChain; ++depth)
+    // A chain longer than the live entities is a cycle, so damaged parentage ends.
+    for (std::size_t remaining = world.EntityCount() + 1; entity.IsValid() && remaining > 0; --remaining)
     {
         if (const LocalTransform* local = world.TryGet<LocalTransform>(entity))
             composed = local->Value * composed;

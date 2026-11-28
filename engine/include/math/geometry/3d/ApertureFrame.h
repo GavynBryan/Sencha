@@ -33,6 +33,8 @@ namespace ApertureTolerance
     inline constexpr float Upright = 1.0e-5f;
     // Half extents of two linked apertures may differ by this many metres.
     inline constexpr float MatchingExtents = 1.0e-3f;
+    // How far a stored frame's axes may stray from unit length and from square.
+    inline constexpr float Orthonormal = 1.0e-3f;
 }
 
 enum class ApertureFrameFault : std::uint8_t
@@ -52,6 +54,13 @@ enum class ApertureFrameFault : std::uint8_t
 
 // The frame of an aperture whose world transform passes CheckApertureFrame.
 [[nodiscard]] ApertureFrame MakeApertureFrame(const Transform3f& world, Vec2d halfExtents);
+
+// A stored frame, as a manifest holds one: a finite origin, unit axes square to
+// each other, and finite positive half extents.
+[[nodiscard]] bool IsValidApertureFrame(const ApertureFrame& frame);
+
+// Whether two apertures are the same size, as the two ends of a link must be.
+[[nodiscard]] bool ApertureExtentsMatch(const Vec2d& a, const Vec2d& b);
 
 enum class ApertureSide : std::uint8_t
 {

@@ -25,27 +25,6 @@ bool IsFinitePositiveAabb(const Aabb3d& bounds)
     return true;
 }
 
-bool IsFinite(Vec3d value)
-{
-    return std::isfinite(value.X) && std::isfinite(value.Y)
-        && std::isfinite(value.Z);
-}
-
-bool IsUnit(Vec3d value)
-{
-    return IsFinite(value) && std::abs(value.SqrMagnitude() - 1.0f) <= 1.0e-3f;
-}
-
-bool IsCookedRectangleValid(const Vec3d& origin, const Vec3d& normal, const Vec3d& right, const Vec3d& up,
-                            const Vec2d& halfExtents)
-{
-    return halfExtents.X > 0.0f && halfExtents.Y > 0.0f
-        && IsFinite(origin) && IsUnit(normal) && IsUnit(right) && IsUnit(up)
-        && std::abs(normal.Dot(right)) <= 1.0e-3f
-        && std::abs(normal.Dot(up)) <= 1.0e-3f
-        && std::abs(right.Dot(up)) <= 1.0e-3f;
-}
-
 // Human-legible reference for a message: the authored name when set, else the
 // hex id. Messages are baked at validation time, so a rename that re-runs
 // validation re-renders them with the new name.
@@ -264,11 +243,11 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 valid = first.Side != second.Side
                     && first.OwnerZone == second.OtherZone
                     && first.OtherZone == second.OwnerZone
-                    && first.Origin == second.Origin
-                    && first.HalfExtents == second.HalfExtents
-                    && first.Normal == -second.Normal
-                    && first.Right == -second.Right
-                    && first.Up == second.Up
+                    && first.Frame.Origin == second.Frame.Origin
+                    && first.Frame.HalfExtents == second.Frame.HalfExtents
+                    && first.Frame.Normal == -second.Frame.Normal
+                    && first.Frame.Right == -second.Frame.Right
+                    && first.Frame.Up == second.Frame.Up
                     && first.Directions == second.Directions;
             }
             for (std::size_t i = begin; i < end && valid; ++i)
@@ -284,8 +263,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                         other = &zone;
                 }
                 valid = owner != nullptr && other != nullptr && owner != other
-                    && IsCookedRectangleValid(endpoint.Origin, endpoint.Normal, endpoint.Right, endpoint.Up,
-                                              endpoint.HalfExtents)
+                    && IsValidApertureFrame(endpoint.Frame)
                     && endpoint.Directions >= 1u && endpoint.Directions <= 3u;
             }
             if (!valid)
@@ -329,17 +307,10 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                     && first.OwnerZone == second.OtherZone
                     && first.OtherZone == second.OwnerZone
                     && first.Directions >= 1u && first.Directions <= 3u
-                    && first.Aperture.has_value() == second.Aperture.has_value()
-                    && (first.Aperture.has_value() || first.OwnerZone != first.OtherZone);
+                    && first.Aperture.has_value() == second.Aperture.has_value();
                 for (const LinkEndpoint* endpoint : { &first, &second })
-                {
                     if (valid && endpoint->Aperture.has_value())
-                    {
-                        const ApertureFrame& frame = *endpoint->Aperture;
-                        valid = IsCookedRectangleValid(frame.Origin, frame.Normal, frame.Right, frame.Up,
-                                                       frame.HalfExtents);
-                    }
-                }
+                        valid = IsValidApertureFrame(*endpoint->Aperture);
             }
             if (!valid)
             {

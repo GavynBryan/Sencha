@@ -15,11 +15,12 @@
 #include <math/geometry/3d/Aabb3d.h>
 #include <math/geometry/3d/ApertureFrame.h>
 #include <navigation/tooling/NavMeshSnapshot.h>
-#include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
+#include <zone/WorldLinkValidation.h>
 #include <zone/WorldPartitionManifest.h>
+#include <zone/WorldTopologyCook.h>
 
 #include <algorithm>
 #include <deque>
@@ -105,7 +106,7 @@ namespace
         std::vector<Connection> Connections;
         std::vector<std::string> Unknown;
         // World links travel cannot use: demand edges with no apertures, links
-        // whose apertures are missing, and links that tip a walker over.
+        // validation rejects, and links that tip a walker over.
         std::vector<std::string> Unconsidered;
         std::string Profile;
 
@@ -116,39 +117,34 @@ namespace
         }
     };
 
-    struct ApertureAt
+    // Every link validation rejects, keyed by id; travel does not use them.
+    std::set<std::uint64_t> RejectedLinks(const WorldDocument& world, std::span<const AuthoredDockCookInput> docks,
+                                          std::span<const AuthoredLinkCookInput> links,
+                                          std::span<const AuthoredApertureCookInput> apertures,
+                                          std::span<const ZoneId> zones)
     {
-        Transform3f Frame;
-        Vec2d Half;
-    };
-
-    std::optional<ApertureAt> FindAperture(WorldDocument& world, ZoneId zone, const PersistableRef& ref)
-    {
-        const EditorDocument* document = world.ZoneDocument(zone);
-        if (document == nullptr || !ref.Target.IsValid())
-            return std::nullopt;
-        const EntityId entity = document->GetScene().EntityWithPersistentId(ref.Target);
-        const LinkAperture* aperture = document->GetRegistry().Components.TryGet<LinkAperture>(entity);
-        const Transform3f* frame = document->GetScene().TryGetWorldTransform(entity);
-        if (aperture == nullptr || frame == nullptr
-            || CheckApertureFrame(*frame, aperture->HalfExtents) != ApertureFrameFault::None)
-            return std::nullopt;
-        return ApertureAt{ *frame, aperture->HalfExtents };
+        std::set<std::uint64_t> rejected;
+        for (const ContentRiskRecord& record : ValidateAuthoredLinks(world.Manifest(), docks, links, apertures, zones))
+            if (record.Severity == ContentRiskSeverity::Error && record.Kind == ContentRiskSourceKind::Link)
+                rejected.insert(record.SourceId);
+        return rejected;
     }
 
-    // A spatial link a walker can pass: both apertures found, and the link
-    // keeps up pointing up.
-    std::optional<Connection> LinkCrossing(WorldDocument& world, const WorldLink& link)
+    // A spatial link a walker can pass: well formed, and it keeps up pointing up.
+    std::optional<Connection> LinkCrossing(const WorldLink& link, std::span<const AuthoredApertureCookInput> apertures,
+                                           const std::set<std::uint64_t>& rejected)
     {
-        const std::optional<ApertureAt> a = FindAperture(world, link.ZoneA, link.EndpointA);
-        const std::optional<ApertureAt> b = FindAperture(world, link.ZoneB, link.EndpointB);
-        if (!a || !b)
+        const AuthoredApertureCookInput* a = FindAuthoredAperture(apertures, link.EndpointA.Target);
+        const AuthoredApertureCookInput* b = FindAuthoredAperture(apertures, link.EndpointB.Target);
+        if (a == nullptr || b == nullptr || rejected.contains(link.Id.Value))
             return std::nullopt;
-        const Transform3f aToB = ApertureMapping(MakeApertureFrame(a->Frame, a->Half), MakeApertureFrame(b->Frame, b->Half));
+        const Transform3f aToB = ApertureMapping(MakeApertureFrame(a->Transform, a->Aperture.HalfExtents),
+                                                 MakeApertureFrame(b->Transform, b->Aperture.HalfExtents));
         if (!IsUprightMapping(aToB))
             return std::nullopt;
         return Connection{ .Link = link.Id, .Name = LinkIdToString(link.Id), .A = link.ZoneA, .B = link.ZoneB,
-                           .FrameA = a->Frame, .FrameB = b->Frame, .Half = a->Half, .Directions = link.Directions };
+                           .FrameA = a->Transform, .FrameB = b->Transform, .Half = a->Aperture.HalfExtents,
+                           .Directions = link.Directions };
     }
 
     std::optional<WorldGraph> BuildGraph(WorldDocument& world, const JsonValue& arguments, EditorOperationOutcome& refusal)
@@ -195,6 +191,19 @@ namespace
             graph.Zones.push_back(std::move(walk));
         }
 
+        std::vector<AuthoredApertureCookInput> apertures;
+        std::vector<ZoneId> zones;
+        for (const ZoneHeader& header : world.Manifest().Zones)
+            if (const EditorDocument* document = world.ZoneDocument(header.Id))
+            {
+                zones.push_back(header.Id);
+                WorldDocument::CollectAuthoredApertures(*document, header.Id, apertures);
+            }
+        std::vector<AuthoredDockCookInput> docks;
+        std::vector<AuthoredLinkCookInput> links;
+        (void)world.CollectAuthoredTopology(docks, links);
+        const std::set<std::uint64_t> rejected = RejectedLinks(world, docks, links, apertures, zones);
+
         const EditorDocument& scene = world.WorldSceneDocument();
         readGates(scene);
         const World& components = scene.GetScene().GetRegistry().Components;
@@ -202,7 +211,7 @@ namespace
         {
             if (const WorldLink* link = components.TryGet<WorldLink>(entity))
             {
-                if (std::optional<Connection> crossing = LinkCrossing(world, *link))
+                if (std::optional<Connection> crossing = LinkCrossing(*link, apertures, rejected))
                     graph.Connections.push_back(std::move(*crossing));
                 else
                     graph.Unconsidered.push_back(LinkIdToString(link->Id));
@@ -269,8 +278,11 @@ namespace
                                      Side side)
     {
         const Transform3f& frame = connection.Frame(side);
+        // A dock is walked into from either side of its plane; an aperture only
+        // from its front, which is local -Z.
+        const float behind = connection.Link.IsValid() ? 0.0f : kMouthDepth;
         const Aabb3d mouth(Vec3d{ -(connection.Half.X + kMouthReach), -(connection.Half.Y + kMouthReach), -kMouthDepth },
-                           Vec3d{ connection.Half.X + kMouthReach, connection.Half.Y + kMouthReach, kMouthDepth });
+                           Vec3d{ connection.Half.X + kMouthReach, connection.Half.Y + kMouthReach, behind });
         std::optional<NavLocation> best;
         float bestDistance = 0.0f;
         std::vector<Vec3d> local;
@@ -487,8 +499,8 @@ namespace
             "is left through a dock: by walking to its mouth, crossing it the ways it allows, and landing "
             "where it puts you, so a dock in a floor is a drop. A gated dock counts as shut in the sure walk unless "
             "assumed open. A world link with two apertures is walked the same way, in at the front of one and out "
-            "at the front of the other, within a zone or between two; a link with no apertures, or whose apertures "
-            "are missing or tip a walker over, is listed as unconsidered. Opens every zone.";
+            "at the front of the other, within a zone or between two; a link with no apertures, one the world's "
+            "validation rejects, or one that tips a walker over, is listed as unconsidered. Opens every zone.";
         entry.Definition.Parameters = DataField::Record({}, {}, {}, Parameters({
             DataField::Vector("from", {}, "world position"), DataField::Vector("to", {}, "world position") }));
         entry.Definition.Result = DataField::Record({}, {}, {}, {
