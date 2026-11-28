@@ -28,8 +28,9 @@ namespace ApertureTolerance
     inline constexpr float RectangleEdge = 1.0e-4f;
     // How far each axis of an aperture's scale may stray from one.
     inline constexpr float UnitScale = 1.0e-4f;
-    // Length of the difference between world up and its image under a mapping.
-    inline constexpr float Upright = 1.0e-3f;
+    // How far below one the cosine between world up and its image under a
+    // mapping may fall for the mapping to keep up (about a quarter of a degree).
+    inline constexpr float Upright = 1.0e-5f;
     // Half extents of two linked apertures may differ by this many metres.
     inline constexpr float MatchingExtents = 1.0e-3f;
 }

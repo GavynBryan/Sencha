@@ -255,16 +255,18 @@ TEST(ApertureFrame, VelocitiesAndOrientationTurnWithTheMapping)
 
 TEST(ApertureFrame, UprightToleranceIsJudgedOnTheImageOfUp)
 {
-    // Rolling B about its normal tilts the image of up by the roll angle.
+    // Rolling B about its normal tilts the image of up by the roll angle, so
+    // the cosine between up and its image is the roll's cosine.
     constexpr float tolerance = ApertureTolerance::Upright;
     const ApertureFrame a = Frame(Vec3d::Zero());
     const auto rolled = [&](float radians) { return ApertureMapping(a, Frame(Vec3d{ 5, 0, 0 }, Roll(radians))); };
+    const float limit = std::acos(1.0f - tolerance);
     EXPECT_TRUE(IsUprightMapping(rolled(0.0f)));
-    EXPECT_TRUE(IsUprightMapping(rolled(0.9f * tolerance)));
-    EXPECT_FALSE(IsUprightMapping(rolled(1.1f * tolerance)));
-    const Transform3f atTolerance = rolled(2.0f * std::asin(0.5f * tolerance));
-    const float tilt = (atTolerance.Rotation.RotateVector(Vec3d::Up()) - Vec3d::Up()).Magnitude();
-    EXPECT_NEAR(tilt, tolerance, 1.0e-5f) << "the tilt is measured as the length the test sets";
+    EXPECT_TRUE(IsUprightMapping(rolled(0.9f * limit)));
+    EXPECT_FALSE(IsUprightMapping(rolled(1.1f * limit)));
+    const Transform3f atTolerance = rolled(limit);
+    const float shortfall = 1.0f - atTolerance.Rotation.RotateVector(Vec3d::Up()).Dot(Vec3d::Up());
+    EXPECT_NEAR(shortfall, tolerance, 1.0e-6f) << "the tilt is measured as the cosine the test sets";
 }
 
 TEST(ApertureFrame, ValidFramesAreFiniteRigidAndHavePositiveExtents)

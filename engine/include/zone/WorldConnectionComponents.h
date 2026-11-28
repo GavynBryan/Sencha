@@ -91,6 +91,7 @@ struct SENCHA_COMPONENT("sencha.link_aperture")
        SENCHA_SCHEMA("LinkAperture")
        SENCHA_SCENE_CHUNK("LAPT")
        SENCHA_PLACEABLE("Link Aperture")
+       SENCHA_PLACE_ICON("plane")
 LinkAperture
 {
     SENCHA_FIELD("half_extents")

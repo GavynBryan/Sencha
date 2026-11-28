@@ -135,5 +135,5 @@ Transform3f ApertureMapping(const ApertureFrame& entry, const ApertureFrame& exi
 
 bool IsUprightMapping(const Transform3f& mapping, float tolerance)
 {
-    return (mapping.Rotation.RotateVector(Vec3d::Up()) - Vec3d::Up()).Magnitude() <= tolerance;
+    return 1.0f - mapping.Rotation.RotateVector(Vec3d::Up()).Dot(Vec3d::Up()) <= tolerance;
 }
