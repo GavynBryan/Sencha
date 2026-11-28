@@ -29,7 +29,8 @@ struct DockEndpoint
     ZoneId OtherZone{};
     DockSide Side = DockSide::A;
     // This side's view of the dock's one rectangle: its normal points into the
-    // other zone, and its right is the other side's left.
+    // other zone, the opposite of a link aperture's front, so it is not an
+    // input to ApertureMapping or CrossAperture.
     ApertureFrame Frame{ .HalfExtents = Vec2d{ 1.0f, 1.5f } };
     uint32_t Directions = 3;
 

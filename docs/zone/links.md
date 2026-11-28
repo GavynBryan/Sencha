@@ -188,7 +188,11 @@ An update rebuilds the whole table only when one of these may have changed:
 
 Change queries compare one frame behind the last update. A write later in the
 frame of an update is therefore still seen, and a change costs one redundant
-rebuild on the following frame. A quiet frame costs one empty pass of the four
+rebuild on the following frame. An aperture parented under an entity whose
+presented pose is rewritten every frame (a spawned root with transform history,
+a projectile, an attachment with a presentation offset) would rebuild the table
+every frame. Such an aperture is a moving endpoint, which links do not support;
+author apertures under static scene roots. A quiet frame costs one empty pass of the four
 change queries, plus a liveness check and two residency lookups per spatial
 link. In a world with no links, the queries match no archetype and no entity is
 read. A rebuild is O(L log L) in authored links and allocates. There is no cap:
