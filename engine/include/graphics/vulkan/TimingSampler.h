@@ -22,11 +22,13 @@ public:
                                 const SwapchainState& swapchain,
                                 uint64_t swapchainRecreateCount,
                                 RenderFrameResult renderResult,
+                                const TimingWorldCounts& world,
                                 const GpuTimestampPool* gpuTimestamps = nullptr,
                                 const CpuScopeTimings* cpuScopes = nullptr);
 
     static void PushLifecycleFrame(TimingHistory& history,
                                    const RuntimeFrameSnapshot& frame,
                                    const SwapchainState& swapchain,
-                                   uint64_t swapchainRecreateCount);
+                                   uint64_t swapchainRecreateCount,
+                                   const TimingWorldCounts& world);
 };

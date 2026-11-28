@@ -42,11 +42,13 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
                                     const SwapchainState& swapchain,
                                     uint64_t swapchainRecreateCount,
                                     RenderFrameResult renderResult,
+                                    const TimingWorldCounts& world,
                                     const GpuTimestampPool* gpuTimestamps,
                                     const CpuScopeTimings* cpuScopes)
 {
     TimingFrameSample sample =
         BuildBaseSample(frame, swapchain, swapchainRecreateCount);
+    sample.World = world;
     if (gpuTimestamps != nullptr)
     {
         const auto& scopes = gpuTimestamps->LastScopes();
@@ -75,10 +77,12 @@ void TimingSampler::PushRenderFrame(TimingHistory& history,
 void TimingSampler::PushLifecycleFrame(TimingHistory& history,
                                        const RuntimeFrameSnapshot& frame,
                                        const SwapchainState& swapchain,
-                                       uint64_t swapchainRecreateCount)
+                                       uint64_t swapchainRecreateCount,
+                                       const TimingWorldCounts& world)
 {
     TimingFrameSample sample =
         BuildBaseSample(frame, swapchain, swapchainRecreateCount);
+    sample.World = world;
     sample.RenderResult = static_cast<int>(RenderFrameResult::SkippedMinimized);
     sample.Presented = false;
     sample.LifecycleOnly = true;

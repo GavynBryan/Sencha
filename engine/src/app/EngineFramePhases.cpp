@@ -21,6 +21,7 @@
 #include <runtime/spawn/GainedMemberSpawns.h>
 #include <runtime/spawn/SceneSpawnService.h>
 #include <world/RuntimeWorld.h>
+#include <time/TimingHistory.h>
 #include <world/relocation/Relocation.h>
 #include <zone/AsyncZoneLoader.h>
 #include <zone/WorldPartitionRuntime.h>
@@ -72,6 +73,15 @@ namespace
     {
         const std::uint32_t window = SdlEventWindowId(event);
         return window == 0 || window == primaryWindow;
+    }
+
+    [[nodiscard, maybe_unused]] TimingWorldCounts WorldCountsOf(const World& world)
+    {
+        const FrameRelocations* relocations = world.TryGetResource<FrameRelocations>();
+        if (relocations == nullptr)
+            return {};
+        return TimingWorldCounts{ .Relocations = static_cast<std::uint32_t>(relocations->All().size()),
+                                  .RelocationsHighWater = static_cast<std::uint32_t>(relocations->HighWater()) };
     }
 }
 #endif
@@ -944,6 +954,7 @@ void Engine::RegisterSimulationFramePhases()
             .LifecycleOnly = rf.LifecycleOnly,
         };
         engine.Schedule().RunEndFrame(endFrame);
+        [[maybe_unused]] const TimingWorldCounts worldCounts = WorldCountsOf(*zones.Entities);
         ClearFrameRelocations(*zones.Entities);
 
         engine.World().EndFrameView();
@@ -959,7 +970,8 @@ void Engine::RegisterSimulationFramePhases()
                 engine.Timing(),
                 rf,
                 GraphicsState->Frames.PrimarySwapchain().GetState(),
-                GraphicsState->Frames.PrimarySwapchain().GetRecreateCount());
+                GraphicsState->Frames.PrimarySwapchain().GetRecreateCount(),
+                worldCounts);
         }
 #endif
     });
@@ -1218,6 +1230,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             swapchain.GetState(),
             swapchain.GetRecreateCount(),
             renderResult,
+            WorldCountsOf(engine.World().Entities()),
             engine.Instrumentation().GpuTimestamps,
             engine.Instrumentation().CpuScopes);
         // After the render phase, so pass-exit publishes are in the frame.

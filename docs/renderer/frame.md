@@ -281,6 +281,8 @@ is that such a display, if it stops returning images, holds the loop.
 | `present_wait_late_count` | exact | 1 when the primary acquired an image whose last present had not completed present wait yet: the completion arrived after the display let the image go. In MAILBOX and IMMEDIATE it also counts presents replaced before they were shown |
 | `present_latency_estimate_ms` | estimate | newest present reported displayed, from its queueing; -1 if none |
 | `frame_latency_estimate_ms` | estimate | the same present, from its frame's start; -1 if none |
+| `relocations_count` | exact | entities relocated this frame, one per member per relocation (`docs/gameplay/relocation.md`) |
+| `relocations_high_water_count` | exact | the most relocations any frame has recorded |
 
 **Frame time smoothness** belongs to the time domain. The loop's measured
 deltas carry scheduler and compositor noise however frames are paced;

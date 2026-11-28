@@ -1,0 +1,36 @@
+sizeof main=84 branch=116 count=10000 passes=300
+main   ms: min 0.174 median 0.177 p90 0.211
+branch ms: min 0.200 median 0.203 p90 0.246
+cold-path ms (crossing out of line): median 0.198
+layout ms (116 bytes, no state branch): median 0.177
+median ratio branch/main 1.150  (ns/instance main 17.68 branch 20.32) sink 5.91442e+10
+sizeof main=84 branch=116 count=10000 passes=300
+main   ms: min 0.174 median 0.175 p90 0.210
+branch ms: min 0.201 median 0.203 p90 0.244
+cold-path ms (crossing out of line): median 0.197
+layout ms (116 bytes, no state branch): median 0.177
+median ratio branch/main 1.159  (ns/instance main 17.55 branch 20.33) sink 5.91442e+10
+sizeof main=84 branch=116 count=10000 passes=300
+main   ms: min 0.174 median 0.175 p90 0.207
+branch ms: min 0.199 median 0.201 p90 0.241
+cold-path ms (crossing out of line): median 0.196
+layout ms (116 bytes, no state branch): median 0.176
+median ratio branch/main 1.149  (ns/instance main 17.48 branch 20.09) sink 5.91442e+10
+sizeof main=84 branch=116 count=100000 passes=300
+main   ms: min 1.781 median 1.893 p90 2.112
+branch ms: min 2.037 median 2.165 p90 2.446
+cold-path ms (crossing out of line): median 2.111
+layout ms (116 bytes, no state branch): median 1.891
+median ratio branch/main 1.144  (ns/instance main 18.93 branch 21.65) sink 2.19902e+12
+sizeof main=84 branch=116 count=100000 passes=300
+main   ms: min 1.774 median 1.892 p90 2.157
+branch ms: min 2.059 median 2.196 p90 2.467
+cold-path ms (crossing out of line): median 2.109
+layout ms (116 bytes, no state branch): median 1.891
+median ratio branch/main 1.161  (ns/instance main 18.92 branch 21.96) sink 2.19902e+12
+sizeof main=84 branch=116 count=100000 passes=300
+main   ms: min 1.778 median 1.904 p90 2.130
+branch ms: min 2.026 median 2.163 p90 2.421
+cold-path ms (crossing out of line): median 2.125
+layout ms (116 bytes, no state branch): median 1.904
+median ratio branch/main 1.136  (ns/instance main 19.04 branch 21.63) sink 2.19902e+12

@@ -57,6 +57,8 @@ namespace
 			{ "present_latency_estimate_ms", timing.PresentLatencyEstimateSeconds < 0.0 ? -1.0 : timing.PresentLatencyEstimateSeconds * kToMs },
 			{ "frame_latency_estimate_ms", timing.FrameLatencyEstimateSeconds < 0.0 ? -1.0 : timing.FrameLatencyEstimateSeconds * kToMs },
 			{ "fixed_ticks_count", static_cast<double>(timing.FixedTicks) },
+			{ "relocations_count", static_cast<double>(timing.World.Relocations) },
+			{ "relocations_high_water_count", static_cast<double>(timing.World.RelocationsHighWater) },
 			{ "presented_bool", timing.Presented ? 1.0 : 0.0 },
 			{ "swapchain_width_px", static_cast<double>(timing.SwapchainWidth) },
 			{ "swapchain_height_px", static_cast<double>(timing.SwapchainHeight) },

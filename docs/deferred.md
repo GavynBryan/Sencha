@@ -2027,3 +2027,18 @@ described in `docs/navigation/runtime.md`, "Agents".
   replicated pawn the dock clamp corrects. Give a placement the serial without
   a mapping (advance it and record no mapping in `FrameRelocations`), rather
   than a second counter.
+
+## A contact line drawing home across a relocation
+
+- **What:** a relocation starts the retract of every contact line out from a
+  member (`RetractContactLinesOf`), but the line's tip stays in the space the
+  instigator left. For up to `kMostRetractSeconds` the drawn span stretches from
+  that tip to the relocated instigator. A level change never shows it, since the
+  old zone unloads; a crossing through a link would. Either end the line at once
+  (the system's own `Remove`, which also ends a throw still in the air), or map
+  the tip through the relocation so it draws home on the instigator's side.
+- **Where:** `engine/src/line/ContactLineRelocation.cpp`,
+  `engine/src/line/ContactLineSystem.cpp` (`RetractContactLinesOf`, `DrawIn`).
+- **Consumer:** character traversal through a link.
+- **Trigger:** Stage 3 of the spatial portal suite, character traversal through
+  a link.

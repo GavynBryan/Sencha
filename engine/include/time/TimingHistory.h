@@ -7,6 +7,14 @@
 #include <cstdint>
 #include <vector>
 
+// What the simulated World did in the frame, beside the frame's timing.
+struct TimingWorldCounts
+{
+    uint32_t Relocations = 0;
+    // The most relocations any frame has recorded (FrameRelocations::HighWater).
+    uint32_t RelocationsHighWater = 0;
+};
+
 struct TimingFrameSample
 {
     double RawDtSeconds = 0.0;
@@ -34,6 +42,7 @@ struct TimingFrameSample
     // Ticks this frame owed but the catch-up cap refused. Sustained non-zero
     // values mean simulation cannot keep up with wall time.
     uint32_t TicksDropped = 0;
+    TimingWorldCounts World{};
     int LifecycleState = 0;
     int TemporalDiscontinuityReason = 0;
     uint32_t RuntimeEvents = 0;

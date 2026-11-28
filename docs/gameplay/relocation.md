@@ -118,7 +118,7 @@ calls `InstallPhysicsBackendRelocation` once the game's physics is registered.
 | `DecisionAgent` | `ForgetDecisionPlace`: claim, target, destination and contact let go |
 | `NavAgentRequest` | given again with a fresh id, a point order's point mapped |
 | sensor pairs touching the group | forgotten (group rule) |
-| contact lines that are in the group or out from a member | drawn home through their own exit, `RetractContactLinesOf` (group rule) |
+| contact lines that are in the group or out from a member | drawn home through their own exit, `RetractContactLinesOf` (group rule); the tip stays where it was while it draws home (`docs/deferred.md`, "A contact line drawing home across a relocation") |
 | `PhysicsBodyLink` | the live body teleported to the relocated pose; a dynamic, awake body's backend velocities set from the turned `RigidBody` (`Mirrors`) |
 | `CharacterMoverLink` | the mover moved to the relocated position without a snap (`Mirrors`) |
 
@@ -138,7 +138,10 @@ a cling whose surface is a member. A rule for the holder's component, or a group
 rule, decides it, since only the relocation knows the group. What is still
 meaningful is carried (a tether's or cling's anchor that moved with the group);
 what is anchored in the space left behind ends through its owner's own exit (a
-contact line draws home, so its leash lets go). A tether whose anchor entity
+contact line draws home, so its leash lets go). A line drawing home keeps its tip
+in the space the instigator left, so its span stretches across until it is
+home; a level change never shows that, a link crossing would, and it is
+deferred to that stage. A tether whose anchor entity
 stays on the far side of a mapping is the caller's question: link traversal
 answers it, this stage does not.
 
@@ -221,7 +224,10 @@ relocation.
 Its bound per frame is the sum over the frame's relocations of each group's size:
 the members moved, times how often. It keeps its storage across frames, so a
 frame with no more relocations than an earlier one allocates nothing, and
-`FrameRelocations::HighWater` reports the largest frame seen. There is no cap:
+`FrameRelocations::HighWater` reports the largest frame seen. Both the frame's
+count and the high-water mark are reported with the frame's timing sample
+(`TimingWorldCounts`): the timing panel shows them, and a frame capture writes
+them as `relocations_count` and `relocations_high_water_count`. There is no cap:
 each entry is an event something caused, and the work is proportional to it.
 
 ## Presenting
